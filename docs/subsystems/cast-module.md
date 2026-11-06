@@ -2998,6 +2998,16 @@ sky over the same `0x50` passes, and on its gate the hit lands with the victim t
 caster. Arm 6 follows the victim's body through the knockdown. Arms 3 to 5 write both saved
 seat pairs back every pass, holding off the clips' root motion.
 
+**Scythe Wind turns its caster on arm 2.** The arm writes the victim's saved pair back
+and turns the caster onto the victim's **body** pair (`FUN_80019B28(victim[+0x40],
+victim[+0x3C], caster[+0x38], caster[+0x34]) + 0x800` at `0x801F7B3C..0x801F7B64`),
+and its shot reads the turned heading; arm 4's hit turns the victim off the caster
+(`0x801F7FEC..0x801F8004`). Every later shot's yaw subtracts the caster's heading, so
+a walk that left it on the live pair stood the Done band's case 6 some `20` units of
+yaw off retail's. On retail's frame steps the `dohaty_nova_v2_pre_scythe_wind` film reads
+`.841` before and `.854` after (arm 4 `.822` to `.840`, `0x51` `.796` to `.824`).
+Grade `disassembly` + `capture`.
+
 **The last arm drains twice a pass.** Bloody Horns' arm 6, Scythe Wind's arm 5 (PROT 0951
 `0x5B`) and Rolling Flare's arm 4 (PROT 0950 `0x5A`) each take `scalar * delta` off the
 countdown ahead of the shot, which aims on the drained word (`0x801F7A18..0x801F7A30`,

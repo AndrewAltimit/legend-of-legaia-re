@@ -63,10 +63,22 @@ pub fn scythe_wind_camera(
         // `0x801F79C8..0x801F79F4`, the arm's in-reach and walking paths both.
         0 => arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE),
         2 => {
+            // `0x801F7B3C..0x801F7B64`: the caster turned onto the victim's
+            // body pair (`FUN_80019B28(victim[+0x40], victim[+0x3C],
+            // caster[+0x38], caster[+0x34]) + 0x800`), the heading every
+            // later shot's yaw subtracts.
+            let body = st.victim_body.unwrap_or(v);
+            arm.caster_write.facing = Some(
+                super::bearing_12bit_approx(body.z, body.x, c.z, c.x).wrapping_add(0x800) & 0xFFF,
+            );
             arm.caster_write.rate = Some(SLOW_RATE);
             arm.victim_write.rate = Some(SLOW_RATE);
             arm.shot = Some(ModuleShot {
-                angles: [0x40, (0xA00 - i32::from(c.facing as i16)) as i16, 0],
+                angles: [
+                    0x40,
+                    (0xA00 - i32::from(arm.caster_write.facing.unwrap_or(c.facing) as i16)) as i16,
+                    0,
+                ],
                 tr: [0, 0x500, 0x600],
                 focus: focus_on(c),
                 frames: 0xC,
@@ -103,8 +115,14 @@ pub fn scythe_wind_camera(
                 arm.hold = true;
             } else {
                 st.countdown.0 += SPEED_SCALAR * 0x60;
+                // `0x801F7FEC..0x801F8004`: the victim turned off the caster
+                // (`FUN_80019B28` of the two live pairs, `+ 0x800`), so the
+                // knock-back carries it away from the caster.
                 arm.victim_write = CaptureSeatWrite {
                     rate: Some(FULL_RATE),
+                    facing: Some(
+                        super::bearing_12bit_approx(c.z, c.x, v.z, v.x).wrapping_add(0x800) & 0xFFF,
+                    ),
                     ..Default::default()
                 };
                 arm.folds_hit = true;
