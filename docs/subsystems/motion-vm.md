@@ -287,6 +287,18 @@ facing along the longer axis, mode `0` on the diagonal. Cutscene walks carry
 `3` (`C7 <id> <tx> <tz> 33`) - `kor5` P2[5] returns its three cast members
 to tile column `18` that way, facing `-X`.
 
+**A frame is the frame step's count of steps.** The arm loops
+`_DAT_1F800393` times (`bgtz v0,0x80037C08` / `addiu s2,s2,-1` at
+`0x80037D44`), each iteration a step of `0x80 / (4 << (mode & 7))` that
+re-reads both deltas, so a frame can close the dominant axis and cut the
+diagonal in one call. The default mode's clamp stays on the step for the
+frame's later iterations. An iteration that finds both deltas zero ends the
+leg with no facing write (`0x80037B7C`); a step that lands on the target in
+the frame's last iteration leaves the leg running, and it ends on the next
+frame's first. The facing comes from the last iteration's axis set. Port:
+`MotionState::walk_iterations`; the differential test `motion_vm` in
+`crates/retail-exec` holds the arm and the other five to the bytes.
+
 Entry `i` is `i * 0x200` in the retail heading space (`0` = -Z), so a walking
 actor's facing is always one of eight compass points and **never an
 in-between angle** - there is no walk-turn interpolation anywhere in retail.
@@ -431,7 +443,7 @@ position write-through, and no heading derivation (facings come from
 `seed_field_npc_facings`). Disc + save-library oracle:
 `crates/parity/tests/field_npc_entry_positions_disc.rs`.
 
-`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
+`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM call per game frame at the frame step's count of steps, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
 
 **A placement's own `0x4C 0x51` ops are not a route.** Each is an instant seat (the op writes `+0x14`/`+0x18` outright), and a record carries one per story-flag branch, so the entry pre-run's executed branch is the whole of their effect.
 Looping the seats as a patrol walks an NPC between story stations retail never connects: town01's gate guards (placements 32 and 33, beside the exit to the world map) stand on their seats in every catalogued town01 field-run state, across both emulators and the whole chapter, while the ambient-stream wanderers beside them move.

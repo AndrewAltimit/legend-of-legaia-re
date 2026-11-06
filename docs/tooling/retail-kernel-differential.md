@@ -300,3 +300,11 @@ now runs the walk at the head of each battle frame and matches it over every gua
 word split between the port's raw half and its tracker. The infliction-time guard tests the port keeps
 (Glare, the Rot arms) are retail's own: PROT 0940 tests Stone and Master Guard before it writes the bit
 (`0x801F7054..0x801F7070`), and the Rot arms read both guards ahead of their draw.
+
+The motion VM `FUN_8003774C`, run leg by leg frame by frame over all six ops, found the tile walk `0x47`
+taking one step of the whole frame's distance where the arm takes the frame step's count of steps, each
+re-reading the deltas: a frame that closed the dominant axis stopped there instead of starting the
+diagonal, and an approach mode's second axis waited a frame. It also ended a leg on the frame that landed
+on the target, where retail ends it on the next frame's first iteration, so every scripted walk and the
+script parked on it resumed a frame early. The compass walks, the compass ramp, the hold and the
+face-target ramp match.

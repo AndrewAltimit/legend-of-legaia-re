@@ -84,6 +84,7 @@
   </table>
   <p>The opcode numbers are the field VM's own: the jump table is indexed <code>(op &amp; 0x7F) &minus; 0x37</code> over <code>0x37..0x4C</code>, and every slot not listed above ends the leg.</p>
   <p id="approach-mode"><strong>The <code>0x47</code> approach mode.</strong> While both axes are still open, the high nibble of the mode byte decides which ones a step moves. Mode <code>0</code> closes the dominant axis alone, clamped to the difference, until the two deltas are equal, then cuts the diagonal. Any other mode masks the open axes at the full step: <code>3</code> walks the diagonal from the first frame and finishes on the longer axis, <code>1</code> closes X first, <code>2</code> Z first. The two laws end an uneven leg facing different ways - mode <code>3</code> along the longer axis, mode <code>0</code> on the diagonal - and cutscene walks carry <code>3</code>.</p>
+  <p><strong>A frame is several steps.</strong> The arm takes the frame step's count of steps, each re-reading both deltas, so one frame can close the dominant axis and start the diagonal. A step that lands on the target in the frame's last step leaves the leg running; the next frame finds it there and ends it, which is when the script resumes.</p>
 </section>
 
 <section class="doc-section" id="facing">

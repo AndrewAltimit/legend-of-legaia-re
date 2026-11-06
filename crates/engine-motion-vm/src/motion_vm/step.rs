@@ -165,72 +165,95 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
         }
         MotionOp::Hold => StepResult::Yield,
         MotionOp::MoveTowardTarget => {
-            let cur_x = state.world_x as i32;
-            let cur_z = state.world_z as i32;
-            let dx = target.x as i32 - cur_x;
-            let dz = target.z as i32 - cur_z;
-            // Retail's axis mask (`0x80037C18`): bit 0 = X still to close,
-            // bit 1 = Z still to close.
-            let mut mask = u8::from(dx != 0) | (u8::from(dz != 0) << 1);
-            if mask == 0 {
-                state.walk_facing = None;
-                state.pc = body_off as u16;
-                return StepResult::Done;
-            }
+            // The arm runs `_DAT_1F800393` iterations of one step each
+            // (`bgtz v0,0x80037C08` / `addiu s2,s2,-1` at `0x80037D44`),
+            // re-reading the deltas every time; `speed` is the step.
+            let iterations = state.walk_iterations.max(1);
             let mut step = speed;
-            if mask == 3 && state.approach != 0 {
-                // A non-zero approach mode masks the open axes at the full
-                // step (`0x80037C34..0x80037C48`): mode `3` cuts the diagonal
-                // from the first frame, so a leg longer on one axis ends on
-                // that axis alone - and faces along it.
-                mask &= state.approach;
-            } else if mask == 3 {
-                // Retail's default approach mode (`0x80037C4C..0x80037C98`):
-                // an actor with both axes open walks the **dominant axis
-                // alone**, clamped to the difference, until the two remaining
-                // deltas are equal - only then does it cut the diagonal. That
-                // sequencing is what makes a walking NPC face a cardinal
-                // direction for most of a leg instead of a diagonal from
-                // frame one.
-                let (ax, az) = (dx.abs(), dz.abs());
-                if ax != az {
-                    mask = if az < ax { 1 } else { 2 };
-                    step = step.min(ax.abs_diff(az) as i32);
+            let (tx, tz) = (i32::from(target.x), i32::from(target.z));
+            // The last iteration's axis set and the deltas it moved from.
+            let mut last = (0u8, 0i32, 0i32);
+            let mut arrived = false;
+            for _ in 0..iterations {
+                // Retail's deltas run actor minus target (`0x80037C10`).
+                let t1 = i32::from(state.world_x) - tx;
+                let t0 = i32::from(state.world_z) - tz;
+                // The axis mask (`0x80037C18`): bit 0 = X still to close,
+                // bit 1 = Z still to close.
+                let mut mask = u8::from(t1 != 0) | (u8::from(t0 != 0) << 1);
+                if mask == 0 {
+                    // `0x80037B7C`: done, with no axis set, so no facing.
+                    arrived = true;
+                    last.0 = 0;
+                    break;
+                }
+                if mask == 3 && state.approach != 0 {
+                    // A non-zero approach mode masks the open axes
+                    // (`0x80037C34..0x80037C48`): mode `3` cuts the diagonal
+                    // from the first iteration, so a leg longer on one axis
+                    // ends on that axis alone - and faces along it.
+                    mask &= state.approach;
+                } else if mask == 3 {
+                    // The default mode (`0x80037C4C..0x80037C98`): with both
+                    // axes open the dominant axis walks alone until the two
+                    // deltas are equal, only then the diagonal. The clamp to
+                    // the difference stays on the step for the rest of the
+                    // frame's iterations.
+                    let (ax, az) = (t1.abs(), t0.abs());
+                    if ax != az {
+                        mask = if az < ax { 1 } else { 2 };
+                        step = step.min((ax - az).abs());
+                    }
+                }
+                // Each axis steps toward its target and snaps onto it on an
+                // overshoot (`0x80037CA4..0x80037D3C`).
+                let close = |cur: i16, d: i32, goal: i32| -> i16 {
+                    if d < 0 {
+                        if d + step > 0 {
+                            goal as i16
+                        } else {
+                            cur.wrapping_add(step as i16)
+                        }
+                    } else if d - step < 0 {
+                        goal as i16
+                    } else {
+                        cur.wrapping_sub(step as i16)
+                    }
+                };
+                if mask & 1 != 0 {
+                    state.world_x = close(state.world_x, t1, tx);
+                }
+                if mask & 2 != 0 {
+                    state.world_z = close(state.world_z, t0, tz);
+                }
+                last = (mask, t1, t0);
+            }
+            // The tail (`0x80037D4C..0x80037DDC`) snaps `+0x26` to the
+            // compass entry of the last iteration's axis signs, on every
+            // frame the leg is still running. The port writes it on a
+            // change only, which reads the same unless another writer
+            // posed the actor in between.
+            let (mask, t1, t0) = last;
+            if mask != 0 {
+                let sx = if mask & 1 != 0 { -t1.signum() } else { 0 };
+                let sz = if mask & 2 != 0 { -t0.signum() } else { 0 };
+                if let Some(idx) = walk_facing_index(sx, sz)
+                    && state.walk_facing != Some(idx)
+                {
+                    state.walk_facing = Some(idx);
+                    if let Some(yaw) = heading_lut_engine(idx) {
+                        state.yaw = yaw;
+                        state.yaw_written = true;
+                    }
                 }
             }
-            let step_x = if mask & 1 != 0 {
-                dx.signum() * step.min(dx.abs())
-            } else {
-                0
-            };
-            let step_z = if mask & 2 != 0 {
-                dz.signum() * step.min(dz.abs())
-            } else {
-                0
-            };
-            state.world_x = (cur_x + step_x) as i16;
-            state.world_z = (cur_z + step_z) as i16;
-            // Walk-direction-implied facing: the `0x47` tail (`0x80037D4C`)
-            // snaps `+0x26` to the 8-way compass from the step's axis signs.
-            // The heading is written **once per leg** at the first moving
-            // frame and again only when the step direction changes (the
-            // dominant-axis → diagonal cut) - runtime-pinned on the Mei
-            // dinner walk-on, where every leg holds a single heading for its
-            // whole run. Re-writing the same compass value every moving
-            // frame is indistinguishable for the walk itself, but would
-            // clobber an interleaved writer (an interact-bearing pose), so
-            // the port writes on change only.
-            if let Some(idx) = walk_facing_index(step_x, step_z)
-                && state.walk_facing != Some(idx)
-            {
-                state.walk_facing = Some(idx);
-                if let Some(yaw) = heading_lut_engine(idx) {
-                    state.yaw = yaw;
-                    state.yaw_written = true;
-                }
-            }
-            if state.world_x == target.x && state.world_z == target.z {
+            // The leg is done only on an iteration that finds both deltas
+            // zero: a step that lands on the target in the frame's last
+            // iteration leaves the leg running, and it ends on the next
+            // frame's first.
+            if arrived {
                 state.walk_facing = None;
+                state.op_accum = 0;
                 state.pc = body_off as u16;
                 StepResult::Done
             } else {

@@ -209,9 +209,12 @@ fn step_move_toward_target_walks_diagonally() {
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!((s.world_x, s.world_z), (3, 3));
     assert_eq!(s.pc, 0);
-    // Second step: x += 2 (clamped), z += 2 -> arrives.
-    assert_eq!(step(&mut s, t, &bc), StepResult::Done);
+    // Second step: x += 2 (clamped), z += 2 -> arrives, and the leg runs on:
+    // only an iteration that finds both deltas zero ends it.
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!((s.world_x, s.world_z), (5, 5));
+    assert_eq!(s.pc, 0);
+    assert_eq!(step(&mut s, t, &bc), StepResult::Done);
     assert_eq!(s.pc, 1);
 }
 
@@ -468,8 +471,10 @@ fn target_select_bit_skips_target_byte() {
     let mut s = st(0, 0, 5);
     let t = tgt(2, 0, 0);
     // 0x47 + high bit -> consumes a target byte. With speed > distance,
-    // a single step lands on target -> Done -> PC moves past op + target.
+    // a single step lands on target; the next call finds it there -> Done
+    // -> PC moves past op + target.
     let bc = [0x47 | 0x80, 0xFB];
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!(step(&mut s, t, &bc), StepResult::Done);
     assert_eq!(s.pc, 2, "PC should advance past op byte + target byte");
 }
@@ -516,9 +521,11 @@ fn patrol_leg_move_then_face_sequence() {
     assert_eq!(s.world_x, 3);
     assert_eq!(s.pc, 0, "PC stays on op while yielding");
 
-    // Frame 2: x += 3. Arrives at x=6. Done. PC advances to next op.
-    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Done);
+    // Frame 2: x += 3. Arrives at x=6, still running.
+    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Yield);
     assert_eq!(s.world_x, 6);
+    // Frame 3: both deltas zero. Done. PC advances to next op.
+    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Done);
     assert_eq!(s.pc, 1, "PC moved past MoveTowardTarget op");
 
     // Now FaceTarget: waypoint is (6, 0, 0), actor is at (6, 0, 0).

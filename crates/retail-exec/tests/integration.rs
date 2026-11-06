@@ -37,6 +37,7 @@ mod magic_level;
 mod melee_hit;
 mod menu_stats;
 mod monster_pick;
+mod motion_vm;
 mod muscle_contest;
 mod passive_sweep;
 mod queue_head;
