@@ -3682,8 +3682,9 @@ pass at the display's own `320 x 240`, with retail's vertex snap, fill rule,
 texel rounding and dither. Its capture is the native frame, compared pixel
 for pixel with the crop. A state made in PCSX-Redux is the one exception to
 the console's rules: that emulator's software GPU takes the texel without the
-console's half-texel bias and [walks a flat-shaded quad along its outline](../subsystems/renderer-port.md#the-native-target)
-instead of splitting it, so its child runs with
+console's half-texel bias, [walks a flat-shaded quad along its outline](../subsystems/renderer-port.md#the-native-target)
+instead of splitting it and dithers on its own table
+([below](#a-pcsx-redux-frame-keeps-what-the-console-floors)), so its child runs with
 `LEGAIA_PSX_CAPTURE_RASTER=pcsx-redux` (`PsxTexelRule::PcsxRedux`) and the
 score measures the engine, not the capture's rasteriser. A Mednafen capture
 matches the console's rule. Any other render mode is a capture at an integer
@@ -4239,7 +4240,7 @@ Shapes the corpus separates, each with what it indicates:
 | Shape | Indicates |
 |---|---|
 | engine frame far closer to the state's **other** framebuffer than to the displayed one (`koru_pre_*`, `cort_evolved_card_pre_doomsday`) | the capture instant: the engine drew retail's next pass and the RAM does not say what the screen's pass was ([below](#the-other-framebuffer)) |
-| retail `3` to `6` luma brighter on a PCSX-Redux state, evenly over the frame and with a stronger `4 x 4` pattern (`gimard_burning_attack`) | that emulator's dither on Gouraud polygons ([below](#a-pcsx-redux-frame-keeps-what-the-console-floors)) |
+| retail `3` to `6` luma brighter on a PCSX-Redux state, evenly over the frame and with a stronger `4 x 4` pattern (`gimard_burning_attack`) | that emulator's dither on Gouraud polygons, which the image child reproduces; a residual of this shape is a polygon the child reads as the wrong kind ([below](#a-pcsx-redux-frame-keeps-what-the-console-floors)) |
 | camera exact, frame smeared by stretched texture planes or one flat colour | a mesh retail does not draw there: a sky dome's back faces ([NCLIP](../subsystems/renderer.md#the-field-pass-culls-back-faces)), a never-spawned actor slot at the origin, a prop at the wrong [render scale](../subsystems/renderer.md#field-static-object-placement-town01), or a window-owned prop outside the region box |
 | engine frame black where retail shows a floor or backdrop, every other channel exact (`noaru_field_card_walk`) | a mesh-bearing ambient part seated off its anchor: noaru's ice floor rides the camera focus through move-VM ext `0x24` ([move-vm-overlay-ext](../subsystems/move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07)) |
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
@@ -4316,15 +4317,35 @@ and the fans' mean colour reads `(165, 94, 39)` in the buffer, `(145, 75, 30)`
 under the console rule, `(162, 93, 39)` under the emulator's, and `(150, 77, 32)`
 in the engine. Each fan's builder output matches retail's scratch block byte for
 byte, and its level, radius, rotation and dispatcher calls (`primcall.csv`) match
-the engine's frame for frame, so the film's arm-1 residue is this rule. The same split shows across the corpus, where retail less
-engine luma on field states means `-1.6` on Mednafen and `+1.7` on PCSX-Redux.
+the engine's frame for frame, so the film's arm-1 residue is this rule.
+Across the field states, retail less engine luma read `-1.6`
+on Mednafen and `+1.7` on PCSX-Redux. The Mednafen half was the engine's: its
+texture blend took the texel at its display expansion `t5 * 255 / 31` where
+the GPU multiplies `t5 * 8` ([shading](../subsystems/shading.md#step-4-the-colour-word---why-raw-textures-look-darker-or-brighter)),
+and with the blend at the GPU's precision the Mednafen field states read
+`-0.5`.
 
-Reproducing the rule in the image child beside the texel rule (telling a flat
-polygon from a Gouraud one by the colour's screen derivative) closes the mean and
-moves the block score both ways: `gimard_burning_attack` `.863` to `.879`,
-`battle_noaru_gilium_lv2_strike` `.904` to `.882`, `koru_pre_blade_breath` `.740`
-to `.725`. The child does not carry it. A faithful version needs the packet's
-Gouraud bit in the mesh, and the block tolerance forgives most of the gap anyway.
+The image child carries the emulator's rule on a PCSX-Redux state, beside the
+texel rule (`PsxTexelRule::PcsxRedux`, `psx_params.w = 2`):
+
+- a Gouraud polygon dithers on the `0..7` table (`psx_dither`);
+- a Gouraud semi-transparent textured polygon hands the blend its foreground
+  rounded on the same table (`psx_blend_foreground_pcsx`): the emulator adds
+  the 8-bit modulate to the 8-bit background and dithers the sum, so each
+  stacked layer keeps the half step the console floors. `jagaroom`'s tall
+  curtains are additive layers three deep, and Big Wave's water sheet is two
+  (`B / 2 + F / 2` and `B + F / 4`); both read `5` to `15` levels darker in
+  the engine before this rule and match after it;
+- a flat-shaded textured polygon is cut to 5 bits with no dither, as that
+  emulator's `getTextureTransColShade` draws it. The test is the packet
+  colour's screen derivative (zero across a flat polygon), which also takes a
+  Gouraud polygon whose corners agree for a flat one; that misreading is the
+  residual on `kor_field_route_walk`.
+
+Over the field states the PCSX-Redux bias moved from `-2.3` to `-0.3` and the
+mean absolute error from `5.7` to `4.2`; the block score moves on a few dozen
+states, `jagaroom_field_door_hop` `.982` to `.997` the largest field gain, none
+lower by more than `.004`.
 
 ### A near-camera ghost is checked against retail's own packets
 

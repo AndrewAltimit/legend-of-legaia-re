@@ -52,6 +52,12 @@ pub(crate) const PSX_DITHER_WGSL: &str = r#"
 // colour component before truncation to the 5-bit-per-channel BGR555
 // framebuffer. `enable < 0.5` passes the colour through unchanged.
 // Reference: nocash PSX-SPX "GPU - Dithering/Color-Depth".
+//
+// `dither_on >= 1.5` is the PCSX-Redux instrument
+// (`PsxTexelRule::PcsxRedux`): that emulator's software GPU rounds a channel
+// up when its low three bits exceed `{7,0,6,1, 2,5,3,4, 1,6,0,7, 4,3,5,2}`
+// (`src/gpu/soft/soft.cc`, `applyDither`), an offset of `0..7` where the
+// console's is `-4..3`: half a 5-bit step brighter on every dithered pixel.
 fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
     if (dither_on < 0.5) {
         return rgb;
@@ -62,6 +68,14 @@ fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
         -3.0,  1.0, -4.0,  0.0,
          3.0, -1.0,  2.0, -2.0,
     );
+    if (dither_on >= 1.5) {
+        dm = array<f32, 16>(
+            0.0, 7.0, 1.0, 6.0,
+            5.0, 2.0, 4.0, 3.0,
+            6.0, 1.0, 7.0, 0.0,
+            3.0, 4.0, 2.0, 5.0,
+        );
+    }
     let xi = u32(frag.x) & 3u;
     let yi = u32(frag.y) & 3u;
     let d = dm[yi * 4u + xi];
@@ -225,6 +239,20 @@ fn psx_modulate(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
     return clamp(texel * colour / 128.0, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// The same blend at the GPU's own precision, for a dithered draw: the 5-bit
+// texel times the 8-bit colour, `(t5 * c8) >> 4`, an 8-bit value the dither
+// then cuts to 5 bits. The texel enters as `t5 * 8`, not as its display
+// expansion `(t5 << 3) | (t5 >> 2)` (`t5 * 255 / 31`), which reads every
+// modulated texel up to `t5 / 4` levels too bright - 2.8% of the channel.
+// Mednafen (`ModTexel`) and PCSX-Redux (`getTextureTransColShadeXDither`,
+// `XCOL1D(color) * m1 >> 4`) compute it this way.
+// Reference: nocash PSX-SPX "GPU - Texture Color / Blending".
+fn psx_modulate_gpu(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
+    let t5 = round(clamp(texel, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0);
+    let c8 = clamp(colour, vec3<f32>(0.0), vec3<f32>(255.0));
+    return min(floor(t5 * c8 / 16.0), vec3<f32>(255.0)) / 255.0;
+}
+
 // The foreground a semi-transparent textured prim hands the GPU's blend
 // equation, truncated to its 5-bit channel: the modulate
 // `texel5 * colour / 128` is floored to a 5-bit value before `B + F` reads
@@ -237,6 +265,42 @@ fn psx_modulate(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
 // Reference: nocash PSX-SPX "GPU - Texture Color / Blending".
 fn psx_blend_foreground(rgb: vec3<f32>) -> vec3<f32> {
     return floor(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0 + 0.001) / 31.0;
+}
+
+// The same foreground under the PCSX-Redux instrument
+// (`PsxTexelRule::PcsxRedux`, `dither >= 1.5`): that emulator's software GPU
+// adds the 8-bit modulate `(t5 * c8) >> 4` to the 8-bit background and runs
+// its dither over the sum (`getTextureTransColShadeXDither`), so the
+// background's whole steps pass and the foreground's low bits round up on
+// its `0..7` table - about half a step per layer where the console floors.
+// Stacked additive layers (`jagaroom`'s curtains, Big Wave's water sheet)
+// gain that half step once each.
+// A primitive whose packet colour is one word on every corner: no change
+// across the fragment's quad (`width` is `fwidth` of the packet colour). The
+// PCSX-Redux instrument's test for the flat draw that emulator neither
+// dithers nor blends at full precision.
+fn pcsx_flat_shaded(width: vec3<f32>) -> bool {
+    return all(width == vec3<f32>(0.0));
+}
+
+// A colour cut to the framebuffer's 5 bits with no dither, expanded back as
+// `(c5 << 3) | (c5 >> 2)`: a flat-shaded textured draw under the PCSX-Redux
+// instrument, `(t5 * c8) >> 7`.
+fn psx_floor5(rgb: vec3<f32>) -> vec3<f32> {
+    let c5 = floor(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0 / 8.0 + 0.001);
+    return (c5 * 8.0 + floor(c5 / 4.0)) / 255.0;
+}
+
+fn psx_blend_foreground_pcsx(rgb: vec3<f32>, frag: vec2<f32>) -> vec3<f32> {
+    var dm = array<f32, 16>(
+        0.0, 7.0, 1.0, 6.0,
+        5.0, 2.0, 4.0, 3.0,
+        6.0, 1.0, 7.0, 0.0,
+        3.0, 4.0, 2.0, 5.0,
+    );
+    let d = dm[(u32(frag.y) & 3u) * 4u + (u32(frag.x) & 3u)];
+    let m8 = floor(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 248.0 + 0.001);
+    return min(floor((m8 + d) / 8.0), vec3<f32>(31.0)) / 31.0;
 }
 
 // GTE depth cue (DPCS, cop2 0x780010) - the one colour op the retail TMD

@@ -191,6 +191,16 @@ none. The formula, its inputs and the evidence are in
 [`renderer.md`](renderer.md#the-light-source-rows), and the colour-word
 encoding per primitive type in [`renderer.md`](renderer.md#lighting).
 
+The multiply runs on the texel's **5-bit** value: the GPU forms
+`(t5 * colour) >> 4`, an 8-bit channel, and the dither cuts that to 5 bits. A
+texel enters as `t5 * 8`, never as its 8-bit display expansion
+`(t5 << 3) | (t5 >> 2)` (`t5 * 255 / 31`), which reads every modulated texel
+up to `t5 / 4` levels brighter: a full-white texel under `0x80` is `248`
+before the dither, not `255`. The port's dithered mesh path computes it that
+way (`psx_modulate_gpu` on both hosts); scored against the Mednafen states,
+whose GPU forms the same product, the expansion had put every field frame
+about one level too bright.
+
 2D sprites ride the same rule. The widget-sprite emitters stamp the packet
 word `0x64808080` / `0x66808080` (`FUN_8002C488` at `0x8002C4C0` and
 `0x8002C5C4..0x8002C5CC`): colour `0x808080`, the neutral multiply, so menu and
@@ -312,7 +322,11 @@ closing `43 12` / `43 13` wipe and the next one's head raises it again, so the
 word reads `1` in every library state. `World::toggles.draw_dither` carries it,
 and both hosts gate PSX mode's dither on it. With dither on, a 4x4 ordered offset is added before each
 channel is cut to 5 bits, which is where the fine cross-hatch on gradients
-comes from. The port renders clean by default and reproduces the retail
+comes from. The offsets run `-4..3`, so a dithered channel averages half a
+step under its 8-bit value, the same mean a plain floor gives; an emulator
+whose table runs `0..7` (PCSX-Redux) averages half a step brighter
+([`retail-compare.md`](../tooling/retail-compare.md#a-pcsx-redux-frame-keeps-what-the-console-floors)).
+The port renders clean by default and reproduces the retail
 dither with `set_psx_mode`
 ([`renderer.md`](renderer.md#retails-dither-law-stated-separately-from-the-ports-default)).
 

@@ -48,7 +48,12 @@ field's [draw order](#the-field-sorts-by-each-primitives-link). The hosts run PS
   PSX GPU's 4x4 offset matrix and quantized to 5 bits per channel (BGR555
   framebuffer depth) - the cross-hatch gradients of retail output. The
   WGSL helper (`PSX_DITHER_WGSL`) mirrors the unit-tested CPU `psx_dither`
-  module, and the composed shaders are naga-validated in the test suite.
+  module, and the composed shaders are naga-validated in the test suite. A
+  dithered textured draw blends at the GPU's precision first,
+  `(t5 * colour) >> 4` (`psx_modulate_gpu`; [shading](shading.md#step-4-the-colour-word---why-raw-textures-look-darker-or-brighter)).
+  Under the PCSX-Redux texel rule the dither and the Gouraud blend foreground
+  take that emulator's table instead, an instrument for its captures
+  ([retail-compare](../tooling/retail-compare.md#a-pcsx-redux-frame-keeps-what-the-console-floors)).
 - **TSB / CBA flat shading per primitive.** Texture page and CLUT base
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
