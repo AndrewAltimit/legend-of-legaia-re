@@ -271,3 +271,6 @@ now pays the stepper's `(item-table price * qty) >> 1`.
 The round end's waker `FUN_801F45A4` read only the raw half of the port's status word, so a Numb the
 status tracker held drew no `rand()` and never woke; it also wore off on a three-round count retail does
 not have. The waker now reads and clears both halves, and Numb lasts until it or a hit's strip clears it.
+
+The partition-2 record dispatcher `FUN_8003BDE0` matches over every such record of every scene MAN on the
+disc: the record it locates, its C1-any and C2-all story-flag gates, and the script entry it installs.
