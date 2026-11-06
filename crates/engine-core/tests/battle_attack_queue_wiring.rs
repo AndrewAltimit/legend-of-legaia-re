@@ -399,3 +399,49 @@ fn an_unseeded_actor_still_resolves_a_single_strike() {
         "an unseeded attacker still lands its strike"
     );
 }
+
+#[test]
+fn a_one_swing_stream_lands_its_swing_once() {
+    // The strike loop stages a stream's last byte and leaves for `0x1F` on the
+    // same step (the terminator test reads the new cursor,
+    // `0x801E3998..0x801E39AC`), so a one-swing stream stages and leaves from
+    // a cursor of `0`. That must not read as an unseeded stream: the edge's
+    // basic hit would land on top of the swing's own
+    // (`battle_map02_lip_kid_strike`: retail lands the one swing's `48`).
+    let mut w = battle_awaiting_command();
+    let slot = acting_slot(&w);
+    confirm_attack(&mut w);
+    let first = queued_swings(&w, slot)[0];
+    for (i, b) in w.actors[slot].battle.params.iter_mut().enumerate() {
+        *b = if i == 0 { first } else { 0 };
+    }
+    assert_eq!(queued_swings(&w, slot), vec![first]);
+    let target = w.actors[slot].battle.active_target as usize;
+
+    let hp_before = w.actors[target].battle.hp;
+    let mut hits: Vec<u16> = Vec::new();
+    let mut acted = false;
+    let mut hp_after = w.actors[target].battle.hp;
+    for _ in 0..8000 {
+        w.set_pad(0);
+        w.tick();
+        let acting = w.battle_ctx.active_actor as usize == slot;
+        for fx in w.drain_battle_hit_fx() {
+            if acting && fx.target_slot as usize == target && !fx.is_heal {
+                hits.push(fx.amount);
+            }
+        }
+        acted |= acting;
+        hp_after = w.actors[target].battle.hp;
+        if (acted && !acting) || w.battle.command.is_some() {
+            break;
+        }
+    }
+
+    assert_eq!(hits.len(), 1, "one swing queued, one hit: {hits:?}");
+    assert_eq!(
+        u32::from(hp_before) - u32::from(hp_after),
+        u32::from(hits[0]),
+        "HP loss over the turn is the one swing's hit, with no edge hit beside it"
+    );
+}

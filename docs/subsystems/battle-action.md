@@ -201,7 +201,12 @@ status on the monster, the target's key unspent, and the Counterattack passive, 
 `world::battle::counterattack`. Per-frame physics: target/attacker drift along bearing scaled by
 `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the
 character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]`
-until the `0x00` terminator is hit (the magic band is the one that terminates on `-1`). The stream alphabet for a party attack is direction
+until the `0x00` terminator is hit (the magic band is the one that terminates on `-1`).
+The terminator test sits after the drift block (`0x801E3998..0x801E39AC`), which the stage
+path falls into, so it reads the cursor the stage just bumped: the last byte stages and the
+band leaves for `0x1F` on the same pass. A one-swing stream therefore leaves the loop from a
+cursor of `0` (`battle_map02_lip_kid_strike`: queue `05 00`, `0x1E` to `0x1F` in one pass with
+`+0x1DA = 5`), and only the cursor after the pass tells it from a stream that was never seeded. The stream alphabet for a party attack is direction
 swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (see
 [art-data.md](../formats/art-data.md)); the Miracle-Art continuation refills consumed
 slots with `0x19` before re-walking. Staged ids `>= 0x10` are remapped to the dynamic
