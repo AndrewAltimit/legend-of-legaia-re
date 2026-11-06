@@ -1310,8 +1310,18 @@ impl RetailBattle {
         // loop's framing (case 7, `0x801E36E8`) re-arms every pass, so the
         // table's yaw increment says how many passes have run
         // ([`strike_passes_off_table`]).
-        let passes = if self.walk_clock_capture() {
+        let passes = if self.walk_clock_arrival() {
+            // Saved on the arrival pass itself: the poll `0x19` stored `0x1E`
+            // and armed case 6 there (`0x801E35B4..0x801E35C8`), so the
+            // table is the approach's, not case 7's ladder, and the counter
+            // is the walk's last reading.
+            0
+        } else if self.walk_clock_capture() {
             strike_passes_off_table(self.cam_tween_steps[1], step)
+        } else if self.strike_cursor == 0 && accum == 0 && state == 0x1E {
+            // The same arrival pass with the idle the poll staged already
+            // committed (accumulator `0`, no loop pass run).
+            0
         } else {
             accum / (8 * u16::from(step)) + 2
         };

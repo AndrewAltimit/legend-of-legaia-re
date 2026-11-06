@@ -2742,3 +2742,54 @@ fn a_magic_band_accumulator_reads_the_older_steps_where_they_add_up() {
     put8(&mut ram, ctx + 7, 0x70);
     assert_eq!(frame_step::magic_band_older_steps(&ram), None);
 }
+
+/// A monster strike saved on its arrival pass (`0x1E` just stored by the
+/// poll `0x19`, cursor `ctx[+0x15]` still `0`, the walk clip on) holds the
+/// approach's case-6 table, not case 7's ladder: its walk ended on the RAM's
+/// counter, so the approach start reads that counter as the arrival
+/// (`battle_nilboa_lucifer_strike`, `568`; read off the ladder it was `530`
+/// and the replay walked four passes where retail's ring shows 27).
+#[test]
+fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 3;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.caster_clip = 1;
+    b.strike_cursor = 0;
+    b.target_code = 0;
+    b.party_count = 1;
+    b.span_gate = SpanGate::Age { accum: 432 };
+    b.step_run = (2, 16);
+    b.walk_yaw_base = 568;
+    // The case-6 table the arrival armed: the yaw has landed.
+    b.cam_tween_steps = [0; 9];
+    b.captured = vec![None; 8];
+    b.captured[0] = Some(([0, 0], [0, 0], 0, 0));
+    b.captured[3] = Some(([0, 312], [0, 0], 0, 0));
+    assert!(b.walk_clock_arrival());
+    let app = b.capture_approach_yaw().expect("a walk to place");
+    assert_eq!(app.arrive, 568);
+    assert_eq!((app.strike, app.target_ground), ([0, 312], [0, 0]));
+    // The same pass with the staged idle committed (clip `0`, accumulator
+    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`).
+    b.caster_clip = 0;
+    b.span_gate = SpanGate::Age { accum: 0 };
+    assert_eq!(b.capture_approach_yaw().map(|a| a.arrive), Some(568));
+    b.caster_clip = 1;
+    b.span_gate = SpanGate::Age { accum: 432 };
+    // One strike-loop pass later the table is case 7's, read off its ladder.
+    b.strike_cursor = 1;
+    assert!(!b.walk_clock_arrival());
+    assert!(b.capture_approach_yaw().is_none_or(|a| a.arrive < 568));
+}
