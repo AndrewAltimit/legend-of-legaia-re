@@ -125,7 +125,7 @@ const FIRST_ITEM: &str = "Healing Leaf";
 
 /// Stage geometry, matching the settings page's plate.
 const X0: i32 = 10;
-const Y0: i32 = 5;
+const Y0: i32 = 2;
 const WIDTH: i32 = 300;
 const ROW_H: i32 = 11;
 const HELP_H: i32 = 12;
@@ -181,9 +181,14 @@ impl PlayWindowApp {
         let changed = chrome::CHANGED.to_f32();
         let world = &self.session.host.world;
         let items = world.item_name_pairs();
-        let height = 14 + CHEAT_ROWS as i32 * ROW_H + 3 + NOTE_LINES as i32 * HELP_H + HELP_H + 2;
+        let height = super::settings_panel::plate_height(CHEAT_ROWS, NOTE_LINES);
         let mut out = Vec::new();
-        self.push_scrim(&mut out, (X0, Y0), (WIDTH as u32, height as u32), 0.82);
+        self.push_scrim(
+            &mut out,
+            (X0, Y0),
+            (WIDTH as u32, height as u32),
+            super::settings_panel::PANEL_SCRIM,
+        );
         let width = |s: &str| self.font.layout_ascii(s).advance_x as i32;
         let put = |out: &mut Vec<TextDraw>, s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(legaia_engine_ui::text_draws_for(
@@ -241,12 +246,7 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        put(
-            &mut out,
-            CONTROLS,
-            (left, Y0 + height - HELP_H - 2),
-            heading,
-        );
+        put(&mut out, CONTROLS, (left, Y0 + height - HELP_H), heading);
         out
     }
 }

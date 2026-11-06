@@ -119,7 +119,7 @@ pub(super) fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) ->
 /// Stage geometry of the settings page. Its plate is translucent and narrower
 /// than the stage, so a toggled light or fog shows around it.
 const X0: i32 = 10;
-const Y0: i32 = 5;
+const Y0: i32 = 2;
 const WIDTH: i32 = 300;
 const ROW_H: i32 = 11;
 /// The row help's line budget: the longest row help wraps to this many.
@@ -127,6 +127,22 @@ const HELP_LINES: usize = 3;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Up/Down pick  Left/Right change  Esc close";
 const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
+
+/// The scrim under every page of the `F12` panel. Near-opaque: the panel
+/// is read while the game holds still, and over the party readout's bright
+/// digits a lighter scrim (0.82, 0.85) let them show through between the
+/// rows. One value, so the pages do not change darkness as they flip.
+pub(super) const PANEL_SCRIM: f32 = 0.94;
+/// The space between the help lines and the controls line at the plate's
+/// foot, so the controls never read as one more line of help.
+const FOOTER_GAP: i32 = legaia_app_theme::spacing::CHROME_LINE_GAP;
+
+/// The height of a Settings / Cheats plate: the heading, `rows` rows, a
+/// `lines`-line help budget, the gap, and the controls line. The controls
+/// line is the plate's last `HELP_H`.
+pub(super) const fn plate_height(rows: usize, lines: usize) -> i32 {
+    15 + rows as i32 * ROW_H + 3 + lines as i32 * HELP_H + FOOTER_GAP + HELP_H
+}
 
 impl PlayWindowApp {
     /// Whether the panel owns the frame: it is up, in a window a player is at
@@ -224,10 +240,14 @@ impl PlayWindowApp {
         let key = chrome::KEY.to_f32();
         let text = chrome::TEXT.to_f32();
         let changed = chrome::CHANGED.to_f32();
-        let rows_h = SETTINGS_ROWS.len() as i32 * ROW_H;
-        let height = 14 + rows_h + 3 + HELP_LINES as i32 * HELP_H + HELP_H + 2;
+        let height = plate_height(SETTINGS_ROWS.len(), HELP_LINES);
         let mut out = Vec::new();
-        self.push_scrim(&mut out, (X0, Y0), (WIDTH as u32, height as u32), 0.82);
+        self.push_scrim(
+            &mut out,
+            (X0, Y0),
+            (WIDTH as u32, height as u32),
+            PANEL_SCRIM,
+        );
         let width = |s: &str| self.font.layout_ascii(s).advance_x as i32;
         let put = |out: &mut Vec<TextDraw>, s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(legaia_engine_ui::text_draws_for(
@@ -284,7 +304,7 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        y = Y0 + height - HELP_H - 2;
+        y = Y0 + height - HELP_H;
         match self.options_save_error.borrow().as_deref() {
             Some(e) => put(&mut out, e, (left, y), heading),
             None => put(&mut out, CONTROLS, (left, y), heading),
@@ -356,6 +376,22 @@ mod tests {
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
             assert!(width(STARTUP_LINE_FOR_TEST) <= 310);
         }
+    }
+
+    /// The Settings plate, the taller of the two, stays on the stage with
+    /// its controls line clear of the help budget.
+    #[test]
+    fn the_plate_fits_the_stage_with_a_gap_above_the_controls() {
+        let h = plate_height(SETTINGS_ROWS.len(), HELP_LINES);
+        // The font's descenders reach 14 px below a line's origin.
+        let controls_y = Y0 + h - HELP_H;
+        assert!(
+            controls_y + 14 <= legaia_engine_ui::BOOT_UI_STAGE_H as i32,
+            "{h}"
+        );
+        let help_end =
+            Y0 + 15 + SETTINGS_ROWS.len() as i32 * ROW_H + 3 + HELP_LINES as i32 * HELP_H;
+        assert!(Y0 + h - HELP_H - help_end >= FOOTER_GAP);
     }
 
     #[test]
