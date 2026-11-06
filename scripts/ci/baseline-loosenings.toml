@@ -760,3 +760,36 @@ reason = "Patched-executable state (the evolved-Cort PCSX state) is not retail e
 changes = [
   ["states/cort_evolved_approach_cutscene/image", 0.999, 0.998],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Every map install now runs FUN_8003ADAC's tail: the 0x28-frame post-load pad hold and the entry fade pair. The hold keeps the bench's walk script (pad from frame 30) parked for ten more frames, so the overworld walk ends on a different stretch of map01 whose view draws more terrain: with the hold zeroed and the script started at frame 40 the old binary reads 151.98 / 222.30 draws, the same as the new one. The two fade quads cost about 0.4 draws a frame over the first 40 frames and drop when they land. With both disabled every browser draw count returns to the old baseline exactly. The bundles and the small native alloc moves are the wave's ported code (cast modules, battle status rules, the HUD short-idle marker); no new per-frame path."
+changes = [
+  ["counts/browser/battle/enhanced/gl_draws_per_frame", 215.88, 215.98],
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125214, 125228],
+  ["counts/browser/battle/retail/gl_draws_per_frame", 185.6, 185.7],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124323, 124431],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 148.25, 148.26],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 125.85, 125.9],
+  ["counts/browser/town01/enhanced/gl_draws_per_frame", 90.23, 90.24],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 58339, 58367],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.59, 43.79],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48575, 48603],
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 210.46, 221.16],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161875, 168788],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 141.74, 151.13],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157659, 165066],
+  ["counts/bundle/gzip_bytes", 7004124, 7028645],
+  ["counts/bundle/play_gzip_bytes", 4886163, 4897791],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4509.1, 4519.5],
+  ["counts/native/battle/retail/allocs_per_frame", 1314.4, 1319.8],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4680.7, 4681.0],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1402.8, 1403.7],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4642.3, 4650.3],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1346.2, 1351.5],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.5, 2672.6],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1412.6, 1412.7],
+  ["counts/native/town01/retail/allocs_per_frame", 1226.8, 1227.0],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1571.5, 1571.7],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1274.8, 1274.9],
+]
