@@ -74,6 +74,15 @@ pub struct PcmRetailArgs {
     /// lag: a state with a looping emitter holds it for the whole recording.
     #[arg(long, requires = "retail_wav")]
     pub cue_voices: bool,
+    /// Mix in the engine's own cues from the state on, on the track's lag: a
+    /// `play-window` capture child's `LEGAIA_DIAG_AUDIO_WAV` recording (the
+    /// fight seeded into the state, its music bus silent), which carries what
+    /// the engine's cast keys after the state's instant.
+    #[arg(long, requires = "retail_wav")]
+    pub cast_wav: Option<PathBuf>,
+    /// Print the level and correlation second by second.
+    #[arg(long)]
+    pub per_second: bool,
     /// mednafen's recording of the same window: score the engine against it.
     #[arg(long)]
     pub retail_wav: Option<PathBuf>,
@@ -536,6 +545,44 @@ fn render_cue_voices(st: &legaia_mednafen::SaveState, samples: usize) -> Result<
     Ok(pcm)
 }
 
+/// How far the engine's cast recording `cast` (sample `0` its seed's gate)
+/// sits from the state's instant (the retail recording's sample `0`): the shift
+/// within one vsync either way whose cast best fits what is left of `retail`
+/// once the aligned track `track` (`lag` as [`score_window`] reads it) is taken
+/// out. Positive delays the cast.
+pub fn fit_cast_offset(retail: &[i16], track: &[i16], cast: &[i16], lag: i64) -> i64 {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let n = (retail.len() / 2).min(cast.len() / 2);
+    let left: Vec<f64> = (0..n as i64)
+        .map(|t| mono(retail, t, MEDNAFEN_RECORD_GAIN) - mono(track, t + lag, 1.0))
+        .collect();
+    let c: Vec<f64> = (0..n as i64).map(|t| mono(cast, t, 1.0)).collect();
+    let fit = |d: i64| -> f64 {
+        let (mut dot, mut ee) = (0.0, 0.0);
+        for (t, l) in left.iter().enumerate() {
+            let k = t as i64 - d;
+            if let Some(v) = usize::try_from(k).ok().and_then(|k| c.get(k)) {
+                dot += l * v;
+                ee += v * v;
+            }
+        }
+        dot / ee.max(1.0).sqrt()
+    };
+    let reach = RETAIL_VSYNC_SAMPLES as i64;
+    let coarse = (-reach..=reach)
+        .step_by(8)
+        .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+        .unwrap_or(0);
+    (coarse - 8..=coarse + 8)
+        .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+        .unwrap_or(0)
+}
+
 /// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
 /// frame `t` stands on the engine's frame `t + lag`, and a voice resumed from
 /// the state is on retail's clock.
@@ -636,6 +683,17 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             let cues = render_cue_voices(&st, args.samples)?;
             mix_at_lag(&mut pcm, &cues, lag);
         }
+        if let Some(cast) = &args.cast_wav {
+            let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
+            let lag = score_window(&retail, &pcm).lag;
+            let cast = read_wav(cast)?;
+            // The child's gate tick stands within a vsync of the state's
+            // instant, not on its sample: the cast's own offset is fitted
+            // against what the track leaves of the recording, and reported.
+            let offset = fit_cast_offset(&retail, &pcm, &cast, lag);
+            println!("{}: cast offset {offset:+} samples", args.label);
+            mix_at_lag(&mut pcm, &cast, lag + offset);
+        }
         (pcm, args.label.clone())
     };
     if let Some(p) = &args.engine_wav {
@@ -652,11 +710,62 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             score.lag,
             score.windows
         );
+        if args.per_second {
+            let retail = read_wav(p)?;
+            for (i, s) in per_second_scores(&retail, &pcm, score.lag)
+                .iter()
+                .enumerate()
+            {
+                println!(
+                    "  {i:>3}s: corr {:.4} level {:+.2} dB residual {:.1} dB",
+                    s.corr_median, s.level_db, s.residual_db
+                );
+            }
+        }
         if let Some(out) = &args.json {
             std::fs::write(out, serde_json::to_string_pretty(&score)?)?;
         }
     }
     Ok(())
+}
+
+/// Level and correlation one second at a time at the fixed lag `lag` (as
+/// [`score_window`] reads one: retail's frame `t` on the engine's `t + lag`):
+/// where in a recording the two part. A second retail holds silent reads
+/// nothing.
+pub fn per_second_scores(retail: &[i16], engine: &[i16], lag: i64) -> Vec<PcmScore> {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let second = SPU_INTERNAL_RATE as usize;
+    let span = (retail.len() / 2).min(engine.len() / 2);
+    (0..span / second)
+        .map(|i| {
+            let (mut rr, mut ee, mut re, mut d) = (0.0, 0.0, 0.0, 0.0);
+            for t in i * second..(i + 1) * second {
+                let r = mono(retail, t as i64, MEDNAFEN_RECORD_GAIN);
+                let e = mono(engine, t as i64 + lag, 1.0);
+                rr += r * r;
+                ee += e * e;
+                re += r * e;
+                d += (r - e) * (r - e);
+            }
+            if (rr / second as f64).sqrt() < SILENT_RMS {
+                return PcmScore::default();
+            }
+            PcmScore {
+                corr_median: re / (rr * ee + 1e-9).sqrt(),
+                corr_p10: 0.0,
+                level_db: 10.0 * (rr / ee.max(1.0)).log10(),
+                residual_db: 10.0 * (d / rr + 1e-9).log10(),
+                lag,
+                windows: 1,
+            }
+        })
+        .collect()
 }
 
 /// mednafen's WAV recording is the emulated output at `3/4`: a resumed SPU

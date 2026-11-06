@@ -436,17 +436,21 @@ is left is a note's sound, not its time: the next step is the pad tones' stems (
 `0x20840`, `0x12220`, `0x14950`) fitted against the river-subtracted recording band by band,
 beside the same tones in `mei_house_inside`.
 
-### What renders a cast's cues for the real-PCM channels?
+### How long does a summon's seek hold its voice?
 
-*Status:* open
+*Status:* open (measured)
 
-`zeto_call_wave_mid_cast` reads `+5.09` dB in the `track` channel because the recording's
-first six seconds carry the cast's cues and the channel renders the score alone
-([not a volume path](re-do-not-re-walk.md#zeto_call_wave_mid_casts-5-db-is-not-a-volume-path)).
-A channel for it needs the battle seed of the retail comparison corpus
-(`retail_compare_battle`, the cast's phase gate) run with the audio director attached,
-its SFX bus recorded from the seed's first vsync and mixed beside the track render on the
-track's lag.
+The real-PCM [`cast` channel](../subsystems/audio.md#the-cast-channel) places each summon's head clip on
+both sides: Orb's `XA13.XA` channel `1` starts `0.99` s later in retail than in the engine, Swordie's `0.71` s,
+Theeder's `0.23` s, Nighto's `0.16` s, Zenoir's `0.08` s. Orb's arm 1 seeks the drive
+to the clip's file (`FUN_8003EAE4(0, 0xC)` at `0x801F6B98`) and arm 2 returns busy on `FUN_8003F2B8(1)`
+(`0x801F6BB8`) until the seek ends, then calls the head cue (`0x801F6BC8`); the port's arms pass at once
+(`stream_poll_arm`, `sideband_wait_arm`). The seek's length depends on where the drive stands, which the
+port does not model. The same recordings play the `XA13.XA` clips at `0x7FFE` where the starter sets
+`0x75EA` (`+0.74` dB), from a writer not yet named. What closes it: a frame-stepped mednafen run
+(`scripts/mednafen/xa-start.py`'s method) reading the phase byte `ctx[+0x279]`, the drive-state word
+`0x8007BC20` and the CD volume pair across arms 1 and 2 of Orb and Swordie, and a write watch on the CD
+volume register under PCSX-Redux.
 
 ## Title / boot / overlays
 

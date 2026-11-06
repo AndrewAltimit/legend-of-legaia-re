@@ -989,8 +989,9 @@ In one-second windows retail is `+2` to `+16` dB louder over the recording's fir
 seconds only, where the cast's own cues sound, and within `0.03` dB of the engine in
 every window after; the channel renders the score and nothing the cast keys, and the
 state has no cue voice sounding at its first sample (no voice record owned `0x21`), so
-`--cue-voices` changes nothing. The level is the cast's cues in a whole-window energy
-ratio ([real retail PCM](../subsystems/audio.md#real-retail-pcm)).
+`--cue-voices` changes nothing. The level is the cast's CD-XA voice (`XA11` channel `0`) in a
+whole-window energy ratio, and the [`cast` channel](../subsystems/audio.md#the-cast-channel),
+which renders it, reads `+0.01` dB.
 
 ### The cue funnels' de-dup word is not dead
 

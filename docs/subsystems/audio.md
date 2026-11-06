@@ -3450,7 +3450,7 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
-| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | a cast's cues this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window; the cue differential reads every row of this state alike, levels included |
+| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | the cast's CD-XA voice, which this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window. The [`cast` channel](#the-cast-channel) renders it |
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
@@ -3463,6 +3463,61 @@ second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after
 while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
 against the resumed SPU, river included
 ([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
+
+<a id="the-cast-channel"></a>
+**The cast channel.** A battle state mid-cast keeps sounding what the cast keys after its instant:
+its CD-XA voice, its cue ring, the victims' reaction cues. The fifth channel, **`cast`**
+(`--cast-wav`), renders those from the engine itself. The retail comparison corpus seeds the
+fight into the state (its image child, `LEGAIA_RC_CHILD_LOG=1`); the child is run again reading
+the disc's CD-XA, with its director on a device-less output that it pulls once a tick, one console
+vsync of samples a tick, and records the mix from the seed's gate on with the music bus at `0`
+(`LEGAIA_DIAG_AUDIO_WAV`, stopped `20` vsyncs past the action SM's Done band, where the child plays
+on into a turn retail's recording never takes). That recording is mixed into the track render on the
+track's lag, at an offset fitted within one vsync either way and reported, because the gate tick
+stands within a vsync of the state's instant and not on its sample; the score is over the cast's own
+span. `--per-second` prints level and correlation second by second.
+
+| State | `cast` corr | Level | Offset | Reading |
+|---|---|---|---|---|
+| `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
+| `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | level right in every second; seconds `5..7` read `0.48..0.88`, the party's hit and its reactions |
+| `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
+| `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
+| `theeder_summon_mid_cast` | `0.721` | `+0.20` dB | `+55` | the voice starts `0.23` s before retail's |
+| `zenoir_summon_mid_cast` | `0.784` | `+1.07` dB | `+449` | the voice within `0.08` s of retail's |
+| `nighto_summon_mid_cast` | `0.331` | `-0.77` dB | `-138` | the voice starts `0.16` s before retail's |
+| `orb_summon_mid_cast` | `0.241` | `+0.01` dB | `-323` | the voice starts `0.99` s before retail's, `0.7` dB quieter |
+| `swordie_summon_mid_cast` | `0.154` | `-0.26` dB | `+224` | the voice starts `0.71` s before retail's, `0.7` dB quieter |
+| `gilium_summon_mid_cast` | `0.238` | `-0.97` dB | `+463` | |
+
+What it found on Call Wave, both from the disassembly and both confirmed by the recording:
+
+- **The voice was Big Wave's.** PROT 0946's arm 0 forks on the caster's latch: clear, Call Wave's
+  branch calls `0x150` (`XA11` channel `0`); set, Big Wave's calls `0x151` (channel `1`), and the head
+  cue scan reads the first call laid out, Big Wave's. The recording's residual places `XA11` channel
+  `0` at correlation `0.995`, channel `1` at `0.03`. PROT 0953 has the same shape (the charge `0x159`,
+  the punch `0x15A`); both resolve their branch now
+  ([cast module](cast-module.md#the-cast-voice-cd-xa)).
+- **Call Wave folded as a hit.** The port landed it on its target, Zeto himself, for `289`, and his
+  knockback's cues (`0x23B`, three of `0x18`) sounded `5.8` s in, `12` dB over a recording that holds
+  the score alone there. Call Wave's branch never reaches the module's one damage site
+  ([cast module](cast-module.md#capture-band-camera)).
+
+Over the six seconds the per-second levels went from `+7.5`, `+0.7`, `-1.1`, `+3.1`, `+5.5`, `-2.2`
+dB to within `0.15` dB, and second six from `-13.7` to `-0.4` dB. The first second keeps `+0.65` dB in
+its first `100` ms, which is the recorder's start: the track channel skips that window for the same
+reason.
+
+The summons part on time, and the voice shows how: placed against its decoded channel on both
+sides, a summon's head clip starts up to a second earlier in the engine. Retail's summon modules seek the
+drive to the clip's file on one arm (`FUN_8003EAE4`, Orb's `(0, 0xC)` at `0x801F6B98`) and poll it on the
+next (`FUN_8003F2B8(1)` at `0x801F6BB8`), returning busy until the seek is done, and only then call the head
+cue; the port's stream is resident, so those arms pass at once
+(`cast_module_camera::stream_poll_arm`) and the voice and everything after it come early by the seek.
+`zenoir_summon_mid_cast` lands its voice within `0.08` s, which a state captured after its seek would read. Orb's and Swordie's
+clips (`XA13.XA`) also play `0.74` dB louder in retail than at the cue gain, which is the step from `0x75EA` to
+the full `0x7FFE`: something in those casts raises the CD volume past the starter's level
+([open](../reference/open-rev-eng-threads.md#how-long-does-a-summons-seek-hold-its-voice)).
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not

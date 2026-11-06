@@ -251,6 +251,8 @@ impl PlayWindowApp {
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
         r.set_frame_persist(self.session.host.world.cast_frame_persists());
+        #[cfg(feature = "oracles")]
+        self.record_audio_wav();
         self.capture_cast_sequence_frame(r, &|| target(scene));
         // Screenshot harness: at the target tick, read the frame back
         // offscreen and exit instead of presenting to the window.
@@ -382,6 +384,28 @@ struct CastSeqRecorder {
     shots: u64,
 }
 
+/// The `LEGAIA_DIAG_AUDIO_WAV` recorder's run state
+/// ([`PlayWindowApp::record_audio_wav`]).
+#[cfg(feature = "oracles")]
+struct AudioWavRecorder {
+    path: std::path::PathBuf,
+    /// Stereo frames to keep from the gate on.
+    frames: usize,
+    /// The interleaved mix from the gate on.
+    pcm: Vec<i16>,
+    /// The last tick pulled, so a redraw that ran no tick pulls nothing.
+    last_tick: Option<u64>,
+    /// Fractional output frames carried between ticks.
+    carry: f64,
+    /// The tick the capture's gate first held.
+    start: Option<u64>,
+    /// `LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL`: stop this many ticks past the action
+    /// SM's Done band instead of at the length.
+    done_tail: Option<u64>,
+    /// The tick the Done band was first seen.
+    done: Option<u64>,
+}
+
 /// Action state `0x28`, cast begin: the state every Magic action - a party
 /// summon, a monster spell, a capture-class cast - passes through first.
 const CAST_BEGIN_STATE: u8 = 0x28;
@@ -389,6 +413,118 @@ const CAST_BEGIN_STATE: u8 = 0x28;
 const HEAL_BEGIN_STATE: u8 = 0x3C;
 
 impl PlayWindowApp {
+    /// `LEGAIA_DIAG_AUDIO_WAV=<path>` instrument: the engine half of the
+    /// real-PCM `cast` channel (`docs/subsystems/audio.md`, real retail PCM).
+    ///
+    /// The capture child routes its director to no device
+    /// (`LEGAIA_AUDIO_DETACHED=1`), so nothing pulls the mix core. This pulls
+    /// it once a tick from the first tick on, one console vsync of output a
+    /// tick (`pcm_retail::RETAIL_VSYNC_SAMPLES`, carried), so every cue the
+    /// fight keys sounds and decays on the clock retail's recording runs on.
+    /// What the capture's own gate sees from its first tick on is kept:
+    /// `LEGAIA_DIAG_AUDIO_WAV_SECONDS` (default `10`) of it, written as a
+    /// 44.1 kHz stereo WAV, and the child exits `0`. The music bus is at `0`
+    /// unless `LEGAIA_DIAG_AUDIO_WAV_BUS=all`: its voices still take their
+    /// voices and their reverb send, only their output is silent, because the
+    /// score's own phase is the `track` channel's to stand. The master volume
+    /// is the unscaled mix. With `LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL=<ticks>` the
+    /// recording stops that many ticks past the action SM's Done band
+    /// (`0x50` / `0x51` / `0x5A` / `0x65`), where a cast's own sound ends and the
+    /// fight's next turn begins. The child must not take its frame on the gate
+    /// (`LEGAIA_DIAG_CAPTURE_TICK` past the window).
+    #[cfg(feature = "oracles")]
+    fn record_audio_wav(&self) {
+        use legaia_engine_audio::AudioSink as _;
+        static REC: std::sync::OnceLock<Option<std::sync::Mutex<AudioWavRecorder>>> =
+            std::sync::OnceLock::new();
+        let Some(director) = self.session.bgm.as_ref() else {
+            return;
+        };
+        let Some(rec) = REC.get_or_init(|| {
+            let path = std::path::PathBuf::from(std::env::var_os("LEGAIA_DIAG_AUDIO_WAV")?);
+            let seconds: f64 = std::env::var("LEGAIA_DIAG_AUDIO_WAV_SECONDS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10.0);
+            let sink = director.audio();
+            if std::env::var("LEGAIA_DIAG_AUDIO_WAV_BUS").as_deref() != Ok("all") {
+                sink.set_bus_volumes(0, legaia_engine_audio::VOLUME_LEVEL_UNITY);
+            }
+            sink.set_master_volume(100);
+            Some(std::sync::Mutex::new(AudioWavRecorder {
+                path,
+                frames: (seconds * f64::from(legaia_engine_audio::SPU_INTERNAL_RATE)) as usize,
+                pcm: Vec::new(),
+                last_tick: None,
+                carry: 0.0,
+                start: None,
+                done_tail: std::env::var("LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                done: None,
+            }))
+        }) else {
+            return;
+        };
+        let Ok(mut rec) = rec.lock() else {
+            return;
+        };
+        let tick = self.tick_no;
+        if rec.last_tick == Some(tick) {
+            return;
+        }
+        let ticks = rec.last_tick.map_or(1, |t| tick.saturating_sub(t).max(1));
+        rec.last_tick = Some(tick);
+        if rec.start.is_none() && self.capture_gate_met() {
+            eprintln!("audio wav: the capture's gate at tick {tick}");
+            rec.start = Some(tick);
+        }
+        let want = ticks as f64 * legaia_parity::pcm_retail::RETAIL_VSYNC_SAMPLES + rec.carry;
+        let n = want as usize;
+        rec.carry = want - n as f64;
+        let keep = rec.start.is_some();
+        let pcm = &mut rec.pcm;
+        director.audio().with_core(|core| {
+            for _ in 0..n {
+                let (l, r) = core.next_frame();
+                if keep {
+                    pcm.push(l);
+                    pcm.push(r);
+                }
+            }
+        });
+        let rec = &mut *rec;
+        let world = &self.session.host.world;
+        if rec.start.is_some()
+            && rec.done.is_none()
+            && world.mode == SceneMode::Battle
+            && matches!(world.battle_ctx.action_state, 0x50 | 0x51 | 0x5A | 0x65)
+        {
+            rec.done = Some(tick);
+        }
+        let done = rec
+            .done
+            .zip(rec.done_tail)
+            .is_some_and(|(d, tail)| tick >= d + tail);
+        if done || rec.pcm.len() >= rec.frames * 2 {
+            rec.pcm.truncate(rec.frames * 2);
+            match legaia_parity::pcm_oracle::write_wav(&rec.path, &rec.pcm) {
+                Ok(()) => {
+                    println!(
+                        "[ok] audio wav {} from tick {:?}",
+                        rec.path.display(),
+                        rec.start
+                    );
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("audio wav: write {}: {e:#}", rec.path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     /// `LEGAIA_DIAG_CAST_SEQ=<dir>` instrument: the engine side of the
     /// per-cast frame-sequence oracle (`docs/tooling/cast-sequence-oracle.md`).
     ///
