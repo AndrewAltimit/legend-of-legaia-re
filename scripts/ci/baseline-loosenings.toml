@@ -738,3 +738,25 @@ reason = "The play bundle grows 0.25% with what the wave ports (the ground grid'
 changes = [
   ["counts/bundle/play_gzip_bytes", 4873935, 4886163],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The Done / gate pass (state 0x5A, 0x801E6428..0x801E6470) frames the seat it ran on, not the next actor the port armed in the same tick. A retail recording played on from dohaty_nova_v2_pre_scythe_wind holds the earlier actor's framing through 0x0A and 0x0C, so the old Gomboo .998 matched only through the bug; its replay now runs about one camera pass ahead (yaw 3796 against 3757). Xain's camera rose .875 to .921 in the same change while its still lost .001 to the shifted swing."
+changes = [
+  ["states/battle_map01_gomboo_steal_mid_cast/camera", 0.998, 0.986],
+  ["states/battle_tunnelc_xain_bloody_horns_mid_cast/image", 0.72, 0.719],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "No cast module calls the status applier FUN_800402F4: Stone Circle (PROT 0941) stores no status and Curse / Curse All write the bit with no roll, so the rand() draws the port made for them are gone. The replay of this strike runs on a BATTLE_RNG_SEEDS seed, not retail's stream, and deals its later random elements differently. Bisected to that commit alone."
+changes = [
+  ["states/battle_korb2_ghost_knight_strike/image", 0.997, 0.994],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Patched-executable state (the evolved-Cort PCSX state) is not retail evidence and reports drift only; it moved by .001 under the wave's retail-correct changes and was not chased."
+changes = [
+  ["states/cort_evolved_approach_cutscene/image", 0.999, 0.998],
+]
