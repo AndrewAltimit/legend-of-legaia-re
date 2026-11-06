@@ -736,6 +736,111 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
     out
 }
 
+/// The system flags a fight's record raises **anywhere** ahead of its
+/// battle-entry op, beyond the [`BATTLE_ENTRY_ARM_WINDOW`] the
+/// [`walk_battle_entry_arms`] pairing reads, in a record the scene-entry
+/// script (`P1[0]`) does not spawn.
+///
+/// `korb3`'s Gaza record `P2[2]` sets `0x41D` as its first op (`+0x1E`) and
+/// enters row `15` a whole cutscene later (`+0x115E`); the entry script reads
+/// `0x41D` up with `0x41E` down as the *return* from that fight (`74 1D`,
+/// `74 1E` at `+0x129..`, then `54 1E` and `44 2A`). A capture of the fight
+/// therefore holds a flag retail raised after its entry had run, exactly as
+/// a window arm's is.
+///
+/// The spawn test separates that shape from the record the entry itself
+/// starts on the flag being down: `town0b`'s arrival cutscene `P2[26]` sets
+/// `0x307` as its first op, and `P1[0]` spawns it while `0x307` is clear
+/// (`73 07` / `44 79` at `+0x44E`), so holding `0x307` back replays the whole
+/// cutscene. Only a flag whose last write ahead of the entry op is a SET is
+/// returned (`korb3`'s `0x0B` is set and cleared around each dialogue).
+///
+/// A separate list from [`walk_battle_entry_arms`]: a direct `--battle`
+/// entry replays the window arms (`World::replay_scripted_battle_arm`), and a
+/// cutscene's opening flags are not part of the entry.
+pub fn walk_battle_record_flag_sets(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
+    let counts: Vec<usize> = (0..3)
+        .map(|p| {
+            man_file
+                .header
+                .partition_counts
+                .get(p)
+                .copied()
+                .unwrap_or(0)
+                .max(0) as usize
+        })
+        .collect();
+    // The flat indices the scene-entry script spawns.
+    let entry_spawns: Vec<usize> = partition_record_span(man_file, man, 1, 0)
+        .map(|(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .filter_map(|i| match i.info {
+                    InsnInfo::SpawnRecord { global_index } => Some(usize::from(global_index)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let base: usize = counts[..partition].iter().sum();
+        for index in 0..counts[partition] {
+            if entry_spawns.contains(&(base + index)) {
+                continue;
+            }
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            // The last write of each flag ahead of the record's first entry op.
+            let mut last: BTreeMap<u16, (bool, usize)> = BTreeMap::new();
+            let mut row = None;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::WarpOrInteract {
+                        op1,
+                        is_warp: false,
+                        ..
+                    } => {
+                        row = Some(op1);
+                        break;
+                    }
+                    InsnInfo::SystemFlag { kind, idx, .. } => match kind {
+                        FlagKind::Set => {
+                            last.insert(idx, (true, insn.pc));
+                        }
+                        FlagKind::Clear => {
+                            last.insert(idx, (false, insn.pc));
+                        }
+                        FlagKind::Test => {}
+                    },
+                    _ => {}
+                }
+            }
+            let Some(row) = row else {
+                continue;
+            };
+            out.extend(
+                last.into_iter()
+                    .filter(|(_, (set, _))| *set)
+                    .map(|(flag, (_, pc))| BattleEntryArm {
+                        partition,
+                        record: index,
+                        abs_pc: script_start + pc,
+                        flag,
+                        row,
+                        after_entry: false,
+                        clears: false,
+                    }),
+            );
+        }
+    }
+    out
+}
+
 /// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
 /// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
 /// entry) in record `index` of `partition` names, in linear decode order.

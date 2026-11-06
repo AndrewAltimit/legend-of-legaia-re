@@ -217,12 +217,32 @@ pub fn entry_latches(
         .scene_battle_entry_arms
         .iter()
         .filter(|a| u16::from(a.row) == row);
+    // The record's earlier SETs, where the entry does not start that record
+    // ([`legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets`]):
+    // `korb3`'s Gaza record raises `0x41D` a cutscene ahead of its entry op.
+    let record_sets: Vec<u16> = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+        .and_then(|man| {
+            let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
+            Some(
+                legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets(&mf, &man)
+                    .into_iter()
+                    .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
+                    .map(|a| a.flag)
+                    .collect(),
+            )
+        })
+        .unwrap_or_default();
     let mut raise: Vec<u16> = arms
         .clone()
         .filter(|a| !a.clears && held.contains(&a.flag))
         .map(|a| a.flag)
         .chain(tail)
         .chain(park.map(|p| p.guard))
+        .chain(record_sets)
         .collect();
     raise.sort_unstable();
     raise.dedup();

@@ -4501,15 +4501,19 @@ Holding `0x307` back would replay the whole cutscene inside the settle window.
 A capture whose formation cell matches no registered row has no row to key
 the arms on.
 
-Nor does the arm window reach a flag the record raised long before its entry
-op. `korb3`'s Gaza record `P2[2]` sets `0x41D` as its first op (`+0x1E`) and
-enters row `15` at `+0x115E`, a whole cutscene later, and the entry script
-reads `0x41D` up with `0x41E` down as the return: it sets `0x41E` and spawns
-`P2[3]`, which sets `0x511` and holds the player, so the loop never selects
-`0x528`. The four `battle_gaza2_*` captures score those three bits. Widening
-the window to the record is not a rule the disc supports: `town0b`'s `0x307`
-sits in the same position and is the flag whose absence replays the arrival
-cutscene.
+A flag the record raised long before its entry op is a latch as well, read
+outside the window. `korb3`'s Gaza record `P2[2]` sets `0x41D` as its first op
+(`+0x1E`) and enters row `15` at `+0x115E`, a whole cutscene later, and the
+entry script reads `0x41D` up with `0x41E` down as the return: it sets `0x41E`
+and spawns `P2[3]`, which sets `0x511` and holds the player, so a landing with
+`0x41D` up never selected `0x528`. What separates it from `town0b`'s `0x307`,
+which sits in the same position and whose absence replays the arrival cutscene,
+is who starts the record: `town0b`'s entry spawns `P2[26]` while `0x307` is
+down (`73 07` · `44 79` at `+0x44E`), and nothing in `korb3`'s entry spawns
+the Gaza record. So every flag whose last write ahead of the entry op is a
+SET, in a record the scene-entry script does not spawn, is held back with the
+window arms (`man_field_scripts::walk_battle_record_flag_sets`), and the
+`gaza2` battle captures read `flags` `1.0` against `.995`.
 
 ### A fight entered without a position snapshot
 
