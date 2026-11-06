@@ -1004,6 +1004,7 @@
    ],
    "dev_deps": [
     "actor-formats",
+    "overlay-images",
     "save"
    ],
    "bins": [],
