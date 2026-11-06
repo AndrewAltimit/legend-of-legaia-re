@@ -1,6 +1,6 @@
 //! The **Stone-gaze / Curse infliction arm** of a capture-class enemy cast
-//! (`FUN_800402F4` classes 9 / 10 - the literal-class calls the streamed
-//! boss modules make) and the chain it gates: a landed Stone drives the
+//! (Glare's inline repeat of `FUN_800402F4` class 9, Curse and Curse All's
+//! bare `ori 0x1000`) and the chain it gates: a landed Stone drives the
 //! status-CLUT recolour (`FUN_8004CE2C`'s fourth pass,
 //! `legaia_engine_battle::battle_status_clut`) through the same `BattleHud::sync_status` +
 //! `StatusClutState::step` pair every render host ticks.
@@ -106,7 +106,7 @@ fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
         "Stone Guard nullifies the petrify"
     );
 
-    // Curse All (0x53) is the class-10 twin: same roll, Curse bit.
+    // Curse All (0x53): PROT 0944 writes the bit with no roll.
     w.apply_enemy_agl_status(3, 0x53, &[1]);
     assert!(
         w.battle
@@ -114,7 +114,7 @@ fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
             .statuses(1)
             .iter()
             .any(|s| s.kind == StatusKind::Curse),
-        "Curse All lands Curse through the same AGL roll"
+        "Curse All lands Curse"
     );
 
     // A non-listed move id is a no-op (and draws no RNG).
@@ -229,4 +229,34 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
         "Curse does not clear +0x1DE"
     );
     assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
+}
+
+/// Stone Circle (`0xB9`, PROT 0941) is a damage cast: the image stores nothing
+/// to `+0x16E`, so it petrifies no one and draws no roll. Curse All (`0x53`,
+/// PROT 0944) writes Curse with no roll and no guard test.
+#[test]
+fn stone_circle_petrifies_no_one_and_curse_all_draws_nothing() {
+    let mut w = stone_world();
+    let rng_before = w.rng_state;
+    w.apply_enemy_agl_status(3, 0xB9, &[0, 1, 2]);
+    assert_eq!(w.rng_state, rng_before);
+    assert!((0..3).all(|t| w.battle.status_effects.statuses(t).is_empty()));
+
+    // Curse Guard on seat 0's record, where the sweep reads it.
+    w.load_party(legaia_save::Party::zeroed(3));
+    let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
+    bits[0..4].copy_from_slice(&(1u32 << 0x19).to_le_bytes());
+    w.party.roster.members[0].set_ability_bits(bits);
+    w.party.character_ability_bits[0] = 1 << 0x19;
+    w.party.party_count = 3;
+    for i in 0..3 {
+        w.actors[i].battle.hp = 200;
+    }
+    w.apply_enemy_agl_status(3, 0x53, &[0, 1, 2]);
+    assert_eq!(w.rng_state, rng_before);
+    assert!((0..3).all(|t| w.battle.status_effects.has(t, StatusKind::Curse)));
+    // The guard is the sweep's to honour, on the next battle frame.
+    w.tick_battle_passive_sweep();
+    assert!(!w.battle.status_effects.has(0, StatusKind::Curse));
+    assert!(w.battle.status_effects.has(1, StatusKind::Curse));
 }

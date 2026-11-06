@@ -206,35 +206,62 @@ impl World {
         }
     }
 
-    /// The **Stone / Curse infliction arm** of a capture-class boss cast -
-    /// the engine stand-in for the streamed module's
-    /// `FUN_800402F4(9 | 10, ..)` calls (jump-table entries decoded off the
-    /// disc: class 9 = `0x80041C70` `ori 0x4` Stone, class 10 = `0x80041E64`
-    /// `ori 0x1000` Curse; roll kernel
-    /// [`legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`]).
+    /// The status a monster's capture-class cast lands once its module has
+    /// run, keyed on the move. Read off the module images, no module calls
+    /// the applier `FUN_800402F4`; each writes `+0x16E` itself, or not at all:
     ///
-    /// **Which moves** is the disclosed-inference half: the class byte is a
-    /// literal in the streamed capture-class module code (no spell-table
-    /// field carries it, and the modules reach the applier through runtime
-    /// dispatch, so no static scan recovers the pairing). The list is
-    /// therefore keyed on the four capture-class records whose effect is the
-    /// status: **Glare** `0x3C` (Stone - capture-pinned: the `status_effects`
-    /// module doc's Glare before/after save pair shows `+0x16E` `0 -> 4`),
-    /// **Stone Circle** `0xB9` (Stone), **Curse** `0x40` and **Curse All**
-    /// `0x53` (Curse) - the latter three graded inference from the records'
-    /// names + published behaviour.
+    /// | move | module | what it writes |
+    /// |---|---|---|
+    /// | `0x3C` Glare | PROT 0940 | Stone on a party target: the applier's roll, then Stone and Master Guard tested (`0x801F7054..0x801F7070`), then `ori 0x4` and the queued-action cancel and item refund (`0x801F7090..0x801F70EC`) |
+    /// | `0xB9` Stone Circle | PROT 0941 | nothing: a damage cast through `FUN_801DD4B0` on each standing, unstoned party seat (`0x801F6F68..0x801F6FAC`), with no store to `+0x16E` in the image |
+    /// | `0x40` Curse | PROT 0943 | `ori 0x1000` on its target, no roll and no guard test (`0x801F740C..0x801F741C`) |
+    /// | `0x53` Curse All | PROT 0944 | `ori 0x1000` on one target, or on every standing seat of a side, no roll and no guard test (`0x801F7B24..0x801F7C34`) |
+    ///
+    /// A guard clears what Curse wrote on the next battle frame
+    /// ([`World::tick_battle_passive_sweep`]). Curse and Curse All have no
+    /// retail caster (`docs/subsystems/cast-module.md`).
+    ///
+    /// PORT: overlay_cast_glare_divide_0940_801f69f8 (PROT 0940; the Stone landing)
+    pub fn apply_enemy_agl_status(&mut self, caster: u8, move_id: u8, targets: &[u8]) {
+        use legaia_engine_battle_vm::status_effects::StatusKind;
+        match move_id {
+            GLARE_ID => self.roll_status_class(caster, move_id, StatusKind::Stone, targets, true),
+            0x40 | 0x53 => {
+                if (caster as usize) < self.party.party_count as usize {
+                    return;
+                }
+                // A group cast takes only the standing seats (`lhu +0x14C` /
+                // `beqz` at `0x801F7B88`, `0x801F7C0C`); a single target is
+                // written whatever its HP.
+                let group = move_id == 0x53 && targets.len() > 1;
+                for &t in targets {
+                    if group
+                        && self
+                            .actors
+                            .get(usize::from(t))
+                            .is_none_or(|a| a.battle.hp == 0)
+                    {
+                        continue;
+                    }
+                    self.battle.status_effects.apply(t, StatusKind::Curse);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The **Stone / Curse arms of the item applier** `FUN_800402F4` (class 9
+    /// = `0x80041C70` `ori 0x4` Stone, class 10 = `0x80041E64` `ori 0x1000`
+    /// Curse; roll kernel
+    /// [`legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`]),
+    /// which Glare's body repeats inline with the guard test between the roll
+    /// and the bit (`guard_first`). The applier itself tests no guard: it
+    /// writes the bit and the sweep clears it.
     ///
     /// Faithful shape per the disassembly (`800402f4.txt`
     /// `0x80041C70..0x80041FB0`): party seats only, one `rand()` draw per
     /// rolled target, `target_agl < rand % (attacker_agl + target_agl)`
-    /// lands the bit. The guard accessories gate at **infliction** here.
-    /// For Glare that is retail's own order: PROT 0940's body tests Stone and
-    /// Master Guard (`0x801F7054..0x801F7070`) before its inline `ori 0x4`,
-    /// so a guarded seat also keeps its queued action. Whether the other
-    /// three modules test first or call the applier, which writes the bit
-    /// unconditionally and leaves the clear to the per-frame sweep
-    /// [`World::tick_battle_passive_sweep`] (cancelling the queued action on
-    /// the way), is not measured.
+    /// lands the bit.
     ///
     /// **The Stone arm's tail is asymmetric with the Curse one, and both
     /// halves are ported.** Between the roll and the exit the class-9 arm
@@ -249,21 +276,23 @@ impl World {
     /// refunds nor cancels, which is why Curse only grays the Magic command
     /// while Stone eats the turn outright.
     ///
-    /// PORT: FUN_800402F4 (class-9 / class-10 arms - live wiring; the roll
-    /// kernel carries the instruction-level cite)
+    /// PORT: FUN_800402F4 (class-9 / class-10 arms; the roll kernel carries
+    /// the instruction-level cite)
     /// REF: FUN_800421D4 (the bag-add primitive the refund calls; kernel
     /// mirrored in `legaia_save::retail_inventory`)
-    pub fn apply_enemy_agl_status(&mut self, caster: u8, move_id: u8, targets: &[u8]) {
+    pub fn roll_status_class(
+        &mut self,
+        caster: u8,
+        move_id: u8,
+        kind: legaia_engine_battle_vm::status_effects::StatusKind,
+        targets: &[u8],
+        guard_first: bool,
+    ) {
         use legaia_engine_battle_vm::status_effects::{StatusKind, agl_status_inflict_roll};
         /// Accessory-passive index `0x19` = **Curse Guard** (Magic Amulet).
         const CURSE_GUARD_BIT: u32 = 1 << 0x19;
         /// Accessory-passive index `0x1A` = **Stone Guard** (Stone Amulet).
         const STONE_GUARD_BIT: u32 = 1 << 0x1A;
-        let kind = match move_id {
-            0x3C | 0xB9 => StatusKind::Stone,
-            0x40 | 0x53 => StatusKind::Curse,
-            _ => return,
-        };
         if (caster as usize) < self.party.party_count as usize {
             return;
         }
@@ -309,7 +338,7 @@ impl World {
                 .get(t as usize)
                 .copied()
                 .unwrap_or(0);
-            if bits & (guard_bit | MASTER_GUARD_BIT) != 0 {
+            if guard_first && bits & (guard_bit | MASTER_GUARD_BIT) != 0 {
                 continue;
             }
             self.battle.status_effects.apply(t, kind);

@@ -308,3 +308,9 @@ diagonal, and an approach mode's second axis waited a frame. It also ended a leg
 on the target, where retail ends it on the next frame's first iteration, so every scripted walk and the
 script parked on it resumed a frame early. The compass walks, the compass ramp, the hold and the
 face-target ramp match.
+
+Holding the Stone and Curse arms to the module images found that no cast module calls the applier
+`FUN_800402F4`. Stone Circle (PROT 0941) writes no status at all and is a damage cast, where the port
+rolled Stone on every party seat and drew a `rand()` for each; Curse and Curse All write `ori 0x1000`
+with no roll and no guard test, where the port rolled for them. Glare repeats the class-9 roll inline,
+guard test first, as the port had it.

@@ -3019,6 +3019,10 @@ presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
 
 ### PROT 0941 (Stone Circle, `0xB9`)
 
+Stone Circle petrifies no one. The image has no store to `+0x16E` and no call to the
+applier `FUN_800402F4`; its strike calls the bypass wrapper `FUN_801DD4B0` with power
+`0xC0` on each party seat that stands and is not Stoned (`0x801F6F68..0x801F6FAC`).
+
 The charge record's part calls the stager, which seats the column; arm 1 hides the
 party, then cuts up to pitch `0x200` over the origin and seats three records at each of
 eight ring points, a `rand() % 8` slot landing on each one's `+0x54`. The hide is two
