@@ -50,6 +50,36 @@ impl World {
         action
     }
 
+    /// The side-band stream every monster turn starts: the turn pick seeds
+    /// the applier's base slot `ctx[+0x277] = 3 * record[+0x1C]` and arms it
+    /// (`ctx[+0x276] = 1`), and the applier `FUN_801F12D0` uploads the
+    /// group's pages to `(512, 0)` / `(640, 0)` with CLUT rows 488 / 490 -
+    /// the pages a capture cast's records sample (Kiss of Death's lips at
+    /// tpage `0x88`, CLUT `0x7A00`). The battle entry writes the formation's
+    /// groups in seat order, so in a mixed formation the pages held the last
+    /// seat's group whatever monster acted.
+    ///
+    /// REF: FUN_801DABA4 (the per-turn base-byte seed), FUN_801F12D0
+    fn stream_monster_turn_sideband(&mut self, slot: u8) {
+        let Some(readef) = self.tables.readef_dat.clone() else {
+            return;
+        };
+        let Some(group) = self
+            .actors
+            .get(usize::from(slot))
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.tables.monster_catalog.get(id))
+            .map(|d| d.readef_group)
+        else {
+            return;
+        };
+        crate::battle_sideband_textures::write_readef_group_textures(
+            &readef,
+            group,
+            &mut self.battle.vram_loads,
+        );
+    }
+
     /// Arm a monster's turn at its dispatch: the action its pick decided
     /// ([`Self::decide_monster_turn`], parked since the pick), or one decided
     /// now for a seat no pick parked (a debug seed's forced turn, a test).
@@ -57,6 +87,7 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState;
 
         self.battle_ctx.active_actor = slot;
+        self.stream_monster_turn_sideband(slot);
         // A debug seed's forced cast armed after the pick (the capture seed
         // primes it on the first battle tick, which can follow the round
         // start's pick) names this turn's action; the pick re-decides.
