@@ -3006,6 +3006,13 @@ stores per seat on every held pass, `+0x04 = 0` and `+0x21C = 0xFF`
 (`0x801F6C70`, `0x801F6C7C`). The draw tick reads the colour word, so the byte alone
 hides nothing.
 
+Arm 1's pass halts the part pool (`jal 0x80050E74` at `0x801F6BF0`) ahead of the cut
+and the ring, so the charge and its column are gone once the stones rise, and arm 3's
+pass halts it again (`0x801F71D0`). The port marks both passes `flushes_pool`
+(`stone_circle_camera`). On the cast-sequence film the column had stood beside the
+stones through arm 2 (arm 2 `0.784` to `0.790`, arm 4 `0.906` to `0.915`); what
+stays apart there is which stones are up, each rising off its `rand() % 8` slot.
+
 ### The stagers of the enemy cells
 
 A part's op `0x20` reaches a module's stager. A charge record whose whole program is

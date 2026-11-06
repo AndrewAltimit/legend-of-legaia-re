@@ -35,9 +35,9 @@ const BLAST: [u32; 6] = [
 /// | arm | camera and seats | countdown |
 /// |---|---|---|
 /// | 0 (`0x801F6AB0`) | on the caster: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x500, 0x600)`, `0xC` frames; the charge record | seed `scalar << 8` |
-/// | 1 (`0x801F6B38`) | every pass TR z `+= k`, every party seat hidden; on its pass the party back, a cut: pitch `0x200`, TR `(0, 0, 0x2000)`; the ring | `+= scalar << 7` |
+/// | 1 (`0x801F6B38`) | every pass TR z `+= k`, every party seat hidden; on its pass the pool halted, the party back, a cut: pitch `0x200`, TR `(0, 0, 0x2000)`; the ring | `+= scalar << 7` |
 /// | 2 (`0x801F6E38`) | every pass TR z `+= 12k`, TR y `-= 2k`; on its pass six records and the hit | `+= scalar << 8` |
-/// | 3 (`0x801F7154`) | on its pass TR `(0, 0x500, 0xC00)`, `0x40` frames | `+= scalar << 6` |
+/// | 3 (`0x801F7154`) | on its pass the pool halted, TR `(0, 0x500, 0xC00)`, `0x40` frames | `+= scalar << 6` |
 /// | 4 (`0x801F72A0`) | the wait; on its pass the body's exit | - |
 ///
 /// The damage is `steal_sweep_tick`'s. Not ported: the shuffled `+0x54` each ring
@@ -85,6 +85,9 @@ pub fn stone_circle_camera(
                 render_flag: Some(0),
                 ..Default::default()
             };
+            // The pass halts the part pool ahead of the cut and the ring
+            // (`jal 0x80050E74` at `0x801F6BF0`): the charge's column goes.
+            arm.flushes_pool = true;
             arm.shot = Some(shot(0x200, 0, 0x2000, 1));
             st.countdown.add(1 << 7);
             arm.ring = Some((RING_RECORDS, rot));
@@ -109,6 +112,8 @@ pub fn stone_circle_camera(
                 arm.hold = true;
                 return arm;
             }
+            // ... and so does arm 3's (`jal 0x80050E74` at `0x801F71D0`).
+            arm.flushes_pool = true;
             arm.shot = Some(shot(0, 0x500, 0xC00, 0x40));
             st.countdown.add(1 << 6);
         }
@@ -135,5 +140,23 @@ mod tests {
         assert_eq!(pass.party_write.colour, Some(0x2008_0200));
         assert_eq!(pass.shot.unwrap().tr, [0, 0, 0x2000]);
         assert!(pass.ring.is_some());
+    }
+
+    /// Arms 1 and 3 halt the part pool on their pass, not while held
+    /// (`0x801F6BF0`, `0x801F71D0`): the charge's column is gone once the
+    /// ring rises.
+    #[test]
+    fn arms_one_and_three_halt_the_pool_on_their_pass() {
+        for phase in [1u8, 3] {
+            let mut st = ModuleCamState::default();
+            st.countdown.0 = SPEED_SCALAR << 4;
+            let held = stone_circle_camera(&mut st, phase, ModuleCamSeats::default());
+            assert!(held.hold && !held.flushes_pool, "arm {phase} held");
+            st.countdown.0 = 0;
+            let pass = stone_circle_camera(&mut st, phase, ModuleCamSeats::default());
+            assert!(!pass.hold && pass.flushes_pool, "arm {phase} pass");
+        }
+        let mut st = ModuleCamState::default();
+        assert!(!stone_circle_camera(&mut st, 2, ModuleCamSeats::default()).flushes_pool);
     }
 }
