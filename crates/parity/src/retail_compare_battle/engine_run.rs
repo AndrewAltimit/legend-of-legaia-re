@@ -757,7 +757,7 @@ pub fn run_engine_battle(
                     {
                         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
                     }
-                    if battle.module_cam_aligned()
+                    if (battle.module_cam_aligned() || battle.walk_arm_follow_aligned())
                         && let Some(cam) = session.host.world.battle.camera.as_mut()
                     {
                         cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1);

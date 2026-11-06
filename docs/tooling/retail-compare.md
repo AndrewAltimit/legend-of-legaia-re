@@ -2622,6 +2622,15 @@ past the walk's commit; taken on the arm's first tick its retake fell on the ban
 frame, and `image` read `.719` where the gate's own pass reads `.799`. Arm 0 commits no clip
 of its own, so its word counts the band and the arm alone stays its gate.
 
+That later gate stands inside the walk arm's case-6 follow, which re-arms every pass
+toward an endpoint the RAM holds; where it set out from is the replay's history. The
+headless channel takes retail's live camera there (`RetailBattle::walk_arm_follow_aligned`,
+`BattleCamera::align_module_shot`), with the yaw put as far short of the engine's endpoint
+as retail's stood from its when the two endpoints agree within the yaw ease band (the
+follow heads for `3653` against retail's `3658`): `camera` `.878` to `1.000`. The image
+child keeps the displayed pose its `LEGAIA_BATTLE_CAM_ALIGN` seats, since walking the
+follow's table back stops on its last re-arm, not on the frame on screen.
+
 **A shot armed past a skipped walk-in.** Those bodies' arms 0 and 1 walk Koru
 into reach and frame him through case 6 on every pass; a retail film of the
 walk (`koru_pre_thunder_needle`, 36 vsyncs of arm 1) swings that framing onto

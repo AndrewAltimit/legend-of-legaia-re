@@ -702,6 +702,30 @@ impl RetailBattle {
             )
     }
 
+    /// A `0x70` capture inside a walk-in body's walk arm (arm 1, the case-6
+    /// follow re-armed every pass, `capture_approach_follows`), its follow
+    /// still walking: the headless channel's live camera takes retail's
+    /// (`BattleCamera::align_module_shot`). The follow's endpoint is the
+    /// RAM's; where it set out from is the replay's own history.
+    /// `battle_tunnelc_xain_bloody_horns_mid_cast` sits one pass into Bloody
+    /// Horns' walk, the engine's follow at yaw `3237` heading for `3653`
+    /// where retail's stood at `2986` heading for `3658` (`camera` `.878` to
+    /// `1.000`). The image child keeps the displayed pose its
+    /// `LEGAIA_BATTLE_CAM_ALIGN` seats: walking the follow's table back
+    /// stops on the last re-arm, not on the frame on screen.
+    pub fn walk_arm_follow_aligned(&self) -> bool {
+        self.action_state == 0x70
+            && self.module_phase == 1
+            && !self.cam_landed
+            && legaia_engine_cast::cast_module_ticks::capture_body_for_action(self.queued_action)
+                .is_some_and(|(entry, body)| {
+                    legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                        entry,
+                        Some(body),
+                    )
+                })
+    }
+
     /// Every captured combatant's live pair and heading by engine slot - the
     /// ground the capture holds, not the seed's (which [`Self::undrift`]
     /// may have moved) - for the phase's ground seat

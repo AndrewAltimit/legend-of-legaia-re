@@ -282,7 +282,8 @@ impl BattleCamera {
     /// nothing in play calls it.
     pub fn align_module_shot(&mut self, live: BattleCamPose, end: BattleCamPose) -> u8 {
         use super::camera_step::{
-            ALIGN_ANGLE_TOLERANCE, ALIGN_FOCUS_TOLERANCE, ALIGN_TR_TOLERANCE,
+            ALIGN_ANGLE_TOLERANCE, ALIGN_FOCUS_EASE_BAND, ALIGN_FOCUS_TOLERANCE,
+            ALIGN_TR_TOLERANCE, ALIGN_YAW_EASE_BAND,
         };
         let Some(g) = self.module_glide.filter(|g| !g.landed()) else {
             return 0;
@@ -299,6 +300,19 @@ impl BattleCamera {
         }
         if ang(g.target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
+            mask |= 2;
+        } else if ang(g.target.yaw, end.yaw) <= ALIGN_YAW_EASE_BAND
+            && (g.target.focus[0] - end.focus[0]).abs() + (g.target.focus[2] - end.focus[2]).abs()
+                <= ALIGN_FOCUS_EASE_BAND
+        {
+            // The same framing on bodies a few units off: the yaw endpoint
+            // carries a heading the replay lands within a band of. Where the
+            // shot set out from is history, so the engine's is put as far
+            // short of its own endpoint as retail's live yaw stood from its
+            // (`battle_tunnelc_xain_bloody_horns_mid_cast`: the walk's
+            // follow heads for `3653` against retail's `3658`).
+            let signed = |a: f32, b: f32| (a - b + 2048.0).rem_euclid(4096.0) - 2048.0;
+            self.pose.yaw = nearest(self.pose.yaw, g.target.yaw + signed(live.yaw, end.yaw));
             mask |= 2;
         }
         // A per-vsync shot counts its angles down on the arc left

@@ -25,13 +25,13 @@ pub(super) const ALIGN_ANGLE_TOLERANCE: f32 = 2.0;
 /// carries retail's remaining distance over to the engine's own endpoint:
 /// under the `0x80` the yaw ladder's nearest rungs stand apart, so a wrong
 /// rung or side still reads as one.
-const ALIGN_YAW_EASE_BAND: f32 = 64.0;
+pub(super) const ALIGN_YAW_EASE_BAND: f32 = 64.0;
 /// ... and how far apart the two focus endpoints may stand (X and Z summed,
 /// world units) for that to be the same framing of the same bodies: a yaw
 /// that agrees over a body standing somewhere else agrees by accident (the
 /// parked Gaza of `battle_gaza2_park_0x19_target_vahn`, whose engine twin
 /// is still walking in from 1800 units off).
-const ALIGN_FOCUS_EASE_BAND: f32 = 256.0;
+pub(super) const ALIGN_FOCUS_EASE_BAND: f32 = 256.0;
 /// How far [`BattleCamera::align_close_up_accum`] moves the close-up
 /// accumulator: one three-vsync pass, `8` a vsync.
 const CLOSE_UP_ALIGN_TOLERANCE: u32 = 24;
