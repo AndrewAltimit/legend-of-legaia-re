@@ -7342,3 +7342,58 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "ropeway"
 topics = ["battle", "enemy attack", "ropeway", "harvest"]
+
+[[scenarios]]
+slot = 255
+label = "garmel_field_card_boot"
+backup_fingerprint = "7f862651615f8d4bda8087adca87b693b9599387a559e778547e3901d28168ba"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+description = "Sky Gardens (garmel) free field run from the story-ladder card (playthrough-ladder-pro00-14.mcr block 2, isolate_card_save.py --keep 2 --restamp 0), cold boot of a staged, unpatched image + memory-card load (autorun_boot_continue.lua, the calibrated CONTINUE ladder, field-run checkpoint at vsync 6544). RETAIL disc, pad only, no pokes; the player's movement-disabled bit 0x80000 is clear, unlike the chapter2_garmel_* states."
+topics = ["field", "garmel", "card boot", "probe state"]
+
+[[scenarios]]
+label = "battle_garmel_vera_v2_strike"
+backup_fingerprint = "ba96a3bc2df026eca4ea858d37def5d728e82b3733a6dbe7dc82683143e7c601"
+description = "garmel battle, formation [29, 64]: monster id 29 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 1329 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_vera_v2_heal_mid_cast"
+backup_fingerprint = "4ed402f63bc0ecd4ea746933deec5a55338160770c093ae229c845145559c8f0"
+description = "garmel battle, formation [29, 64]: monster id 29 mid-cast spell 0x2E: category 2, action state 0x3E. RETAIL disc: garmel_field_card_boot played forward (saved 3956 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zenoir_strike"
+backup_fingerprint = "b366184ad714a6891e6befa9457efc9e8133a740b1cf9c1bec4c0cd3a6cd836d"
+description = "garmel battle, formation [29, 64]: monster id 64 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 1566 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zenoir_fire_claw_mid_cast"
+backup_fingerprint = "34f49bc44a8214a1e3cb7deea38cf19f96ae1412a362f6faf2288a3524da1f32"
+description = "garmel battle, formation [29, 64]: monster id 64 mid-cast spell 0x2B: category 2, action state 0x2B. RETAIL disc: garmel_field_card_boot played forward (saved 2492 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zeto_strike"
+backup_fingerprint = "02ea9683aaf395f17bcf3d8d6f9825eec712d3429bb0720a2834252f8e6612e8"
+description = "garmel battle, formation [75]: monster id 75 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 13546 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
