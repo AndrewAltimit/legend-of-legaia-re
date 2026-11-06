@@ -298,10 +298,10 @@ impl<'m> DrawCtx<'_, 'm> {
         } else {
             let in_battle = app.session.host.world.mode == SceneMode::Battle;
             if in_battle {
+                // The env/actor watermark is set inside `push_actors`, after
+                // the ground grid and the backdrop's slot-1 ribbon: both are
+                // stage, not bodies.
                 self.push_battle_backdrop(&mut out);
-                // Everything after the backdrop is a battle body.
-                self.r
-                    .set_occlusion_env_draws(out.draws.len(), out.color_draws.len());
             } else {
                 self.push_field_env(&mut out, &cues);
             }
