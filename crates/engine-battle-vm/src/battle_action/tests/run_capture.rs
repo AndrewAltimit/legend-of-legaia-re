@@ -436,6 +436,19 @@ fn run_wait_press_skips_only_the_failed_run_message() {
         StepOutcome::Transition { to, .. } if to == ActionState::DoneCleanup.as_byte()
     ));
 
+    // A button held across the 32-vsync window skips it as a press does
+    // (`or v0,v0,a0` at `0x801E5990`).
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunWait.as_byte();
+    ctx.frame_timer = 0x3C;
+    ctx.absorbed_seru = 0;
+    host.pad_held_32 = 0x40;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneCleanup.as_byte()
+    ));
+
     let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
     ctx.action_state = ActionState::RunWait.as_byte();
     ctx.frame_timer = 0x3C;

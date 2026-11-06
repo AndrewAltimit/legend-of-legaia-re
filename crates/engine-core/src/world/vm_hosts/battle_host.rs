@@ -118,14 +118,17 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // Every draw the state machine takes is a retail `jal 0x80056798`.
         self.world.next_rand()
     }
-    /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
-    /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
-    /// of the pair - the newly-pressed mask the retail pad pump writes
-    /// (`legaia_engine_system::retail_pad::RetailPadState::pressed`) - and has no analogue
-    /// for the second, so this is the press edge alone. That is the stricter
-    /// half: it can only ever *decline* to cut the banner short.
+    /// `_DAT_8007B874`, the newly-pressed mask the retail pad pump writes
+    /// (`legaia_engine_system::retail_pad::RetailPadState::pressed`). Only
+    /// tested for zero, so the pump's raw layout needs no packing here.
     fn pad_word(&self) -> u16 {
         self.world.input.retail_pad().pressed as u16
+    }
+    /// `_DAT_8007B938`, the same pump's 32-vsync AND window
+    /// (`RetailPadState::held_32`), which the banner skip and the failed-run
+    /// skip fold into the press.
+    fn pad_held_32(&self) -> u16 {
+        self.world.input.retail_pad().held_32 as u16
     }
     fn previous_action_cleared(&self, _: u8) -> bool {
         self.world.battle.prev_action_cleared && !self.world.capture_read_pending()

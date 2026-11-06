@@ -286,7 +286,10 @@ handler below sees a direction bit only on the frame confirm is pressed, which
 is what turns its direction tests into "take the highlighted chip".
 
 **Without one**, `0x801D0B0C` builds `s2 = _DAT_8007B874 | _DAT_8007B938`, the
-plain packed pad, and the direction tests are direct presses.
+plain packed pad, and the direction tests are direct presses. The second word is
+the pad pump's 32-vsync held window, so a direction held that long reads as a
+press on every pass; the port's command input is the edge alone
+(`battle_command_pad_edges`).
 
 `0x14` seeds `ctx[+0x880] = 0x8000` (`0x801D0ECC`), so a freshly armed prompt is
 highlighted on its Left arm.
@@ -939,7 +942,7 @@ the executable at boot), raised by the battle **side-band tick**
 80056320  _sw  v0,0x7494(v1)      ; caption pointer _DAT_80077494 = 0x80078CB4
 8005631c  jal  0x801d8de8         ; HUD element 0x5A
 80056360  jal  0x801d829c         ; camera aimed at the first monster seat
-80056370  ...                     ; phase 1: any packed-pad press zeroes the timer
+80056370  ...                     ; phase 1: B874 | B938 non-zero zeroes the timer
 80056400  sh   s0,0x6ae(v1)       ; expired -> phase 2
 80056418  jal  0x801f6b70         ; phase 2: the overlay-967 hook, every frame
 800565c4  sh   s0,0x6b0(v0)       ; ctx[+0x6B0] = 1 through phases 0 and 1
@@ -959,7 +962,9 @@ flow byte at `0x14`, whose caption arm queues the caption on the tutorial box
 queue and publishes the hold; the per-frame tick then decays the timer, and
 its drain removes the caption and opens the round. The hold also selects the
 battle camera's Dialogue close-up, which is the `FUN_801D829C` aim above. A
-world with no caption text skips the hold.
+world with no caption text skips the hold. The phase-1 skip's pad term is the
+press or the pump's 32-vsync held window (`0x80056384..0x80056398`), so a
+button held through the caption cuts it as a press does.
 
 ### How the sparring fight ends - the `ctx[+0x6B4]` countdown
 

@@ -47,11 +47,12 @@ pub(super) fn run_wait<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     // A failed run's message is skippable: on that arm only, a newly-pressed
-    // button (`_DAT_8007B874 | _DAT_8007B938`, `0x801E5978..0x801E5990`)
+    // or long-held button (`_DAT_8007B874 | _DAT_8007B938`,
+    // `0x801E5978..0x801E5990`)
     // zeroes the countdown (`sh zero,0x2(s7)` at `0x801E59A0`) ahead of the
     // pass's decrement, so the press ends the wait on the same pass. The
     // successful escape's arm (`0x801E59A4`) reads no pad.
-    if ctx.absorbed_seru == 0 && host.pad_word() != 0 && ctx.frame_timer > 0 {
+    if ctx.absorbed_seru == 0 && host.pad_word() | host.pad_held_32() != 0 && ctx.frame_timer > 0 {
         ctx.frame_timer = 0;
     }
     if !tick_frame_timer(host, ctx) {

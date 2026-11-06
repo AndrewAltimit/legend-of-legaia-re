@@ -121,6 +121,13 @@ pub struct BakaFight {
     /// The packed pad edge the host handed over for the next cabinet tick
     /// (consumed by it). See [`Self::set_cabinet_pad`].
     pub(super) cabinet_pad: u16,
+    /// The retail pad pump's second half over the held word [`Self::frame`]
+    /// is handed (`FUN_8001822C` from `0x800184E0`), kept for its 32-vsync
+    /// AND window `_DAT_8007B938`: the player select folds it into the edge
+    /// (`0x801CFA74`), so a direction held for the whole window steps the
+    /// cursor every frame. One pump per call, which is one vsync per cabinet
+    /// tick ([`Self::frame`] ticks at a step of `1`).
+    pub(super) cabinet_hold: legaia_engine_system::retail_pad::RetailPadState,
     /// Both fighters' strike data. With it installed an exchange is booked
     /// only on the tick the winner's strike lands (retail's `+0x0C == 1`
     /// gate); without it (a fight built from bare configs) the exchange
@@ -238,6 +245,7 @@ impl BakaFight {
             cabinet_frame: crate::baka_cabinet::CabinetFrame::default(),
             tables: None,
             cabinet_pad: 0,
+            cabinet_hold: Default::default(),
             strike: None,
             rate_divisor: STRIKE_RATE_DIVISOR,
             afterimages: Vec::new(),

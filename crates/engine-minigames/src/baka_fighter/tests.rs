@@ -1485,3 +1485,54 @@ fn the_clear_fighter_tick_raises_its_flag_and_runs_its_clip() {
     assert_eq!(a.flags, 8 | ACTOR_FLAG_NO_SHADOW);
     assert_eq!(a.clock, 5);
 }
+
+/// The player select folds the 32-vsync held window `_DAT_8007B938` into its
+/// edge (`or a2,a3,v0` at `0x801CFA74`): a direction pressed once steps the
+/// cursor once, and held for the whole window steps it on every frame after.
+/// Confirm still reads the edge alone (`andi v0,a3,0x44`).
+#[test]
+fn a_held_direction_scrolls_the_player_select_once_the_window_fills() {
+    use crate::baka_cabinet::{CABINET_RIGHT, CABINET_START, ST_ATTRACT, ST_SELECT};
+    use legaia_engine_system::retail_pad::REPEAT_WINDOW;
+    let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1).with_attract();
+    for _ in 0..2_000 {
+        if f.cabinet().state() == ST_SELECT {
+            break;
+        }
+        // Start leaves the attract; nothing is held on the way in.
+        let start = if f.cabinet().state() == ST_ATTRACT {
+            CABINET_START
+        } else {
+            0
+        };
+        f.frame(start, 0, 0);
+    }
+    assert_eq!(
+        f.cabinet().state(),
+        ST_SELECT,
+        "the attract never reached the select"
+    );
+    let start = f.cabinet().select_cursor();
+    f.frame(CABINET_RIGHT, CABINET_RIGHT, 0);
+    assert_eq!(
+        f.cabinet().select_cursor(),
+        (start + 1) % 3,
+        "the press steps once"
+    );
+    // Held with no new edge: nothing until the ring holds Right in every one
+    // of its slots, which the press frame plus `REPEAT_WINDOW - 1` more fill.
+    for _ in 1..REPEAT_WINDOW - 1 {
+        f.frame(0, CABINET_RIGHT, 0);
+        assert_eq!(f.cabinet().select_cursor(), (start + 1) % 3);
+    }
+    // The window fills on the next pump and stays full: one step per frame.
+    let mut cursor = (start + 1) % 3;
+    for _ in 0..4 {
+        f.frame(0, CABINET_RIGHT, 0);
+        cursor = (cursor + 1) % 3;
+        assert_eq!(f.cabinet().select_cursor(), cursor);
+    }
+    // Letting go clears the window at once.
+    f.frame(0, 0, 0);
+    assert_eq!(f.cabinet().select_cursor(), cursor);
+}

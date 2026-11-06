@@ -676,17 +676,30 @@ pub trait BattleActionHost {
         self.display_tick() / crate::battle_action::motion::ROOT_MOTION_FRAME_VSYNCS
     }
 
-    /// Any pad activity this frame, as retail's packed pair
-    /// `_DAT_8007B874 | _DAT_8007B938` (see
-    /// `docs/subsystems/arts-command-gauge.md` on the packed layout). The
-    /// Done band's fade-down reads exactly that `or` and only for
-    /// zero-vs-non-zero (`0x801E6088..0x801E609C`), so a host that has no
-    /// pad word can return `1` for "something is held" and `0` for idle.
+    /// The newly-pressed pad word `_DAT_8007B874` (see
+    /// `docs/subsystems/arts-command-gauge.md` on the packed layout). Every
+    /// reader in the action SM tests it for zero-vs-non-zero only, so a host
+    /// that has no pad word can return `1` for "something was pressed" and
+    /// `0` for idle. The Seru-absorb teardown skip reads it alone
+    /// (`0x801E63A8`); the banner skip and the failed-run skip read it with
+    /// [`Self::pad_held_32`].
     ///
     /// Default `0` - an unattended host never cuts the level-up banner
     /// short, which is the same tail retail gives a player who does not
     /// press anything.
     fn pad_word(&self) -> u16 {
+        0
+    }
+
+    /// The pad pump's 32-vsync AND window `_DAT_8007B938` (`gp+0x620`,
+    /// rebuilt every vsync at `0x80018594..0x800185BC`): the buttons held
+    /// across the whole window. The Done band's banner skip
+    /// (`0x801E6088..0x801E6098`) and the failed run's message skip
+    /// (`0x801E5978..0x801E5990`) `or` it into [`Self::pad_word`], so a
+    /// button held through either skips it as a fresh press would.
+    ///
+    /// Default `0`, the stricter half: it can only decline a skip.
+    fn pad_held_32(&self) -> u16 {
         0
     }
 
