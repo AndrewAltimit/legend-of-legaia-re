@@ -245,8 +245,12 @@ impl World {
     ///
     /// The retail function's other `+0x8000` use - the world-map continent
     /// `0x1000` on-grid flag side effect on the entity's flag word - is not
-    /// reproduced here. Returns `0` when the grid / LUT isn't loaded or the
-    /// tile is out of range.
+    /// reproduced here. Returns `0` when the grid isn't loaded.
+    ///
+    /// Off the grid the sampler reads what retail reads: the sub-cell halves
+    /// toward zero (a position in `-64..0` is on tile `0`), the object cell
+    /// wraps through its masks, and the corner block reads on into the
+    /// neighbouring `.MAP` regions ([`Self::field_map_byte`]).
     ///
     /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
@@ -299,51 +303,96 @@ impl World {
         if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return 0;
         }
-        let tile_x = world_x >> 7;
-        let tile_z = world_z >> 7;
-        // The 2x2 block needs (tile_x+1, tile_z+1) in range.
-        if tile_x < 0
-            || tile_z < 0
-            || tile_x as usize + 1 >= FIELD_GRID_STRIDE
-            || tile_z as usize + 1 >= FIELD_GRID_STRIDE
-        {
-            return 0;
-        }
-        let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
-        let g = &self.terrain.collision_grid;
-        // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
-        let c00 = (g[base] & 0x0F) as usize;
-        let c01 = (g[base + 1] & 0x0F) as usize;
-        let c10 = (g[base + FIELD_GRID_STRIDE] & 0x0F) as usize;
-        let c11 = (g[base + FIELD_GRID_STRIDE + 1] & 0x0F) as usize;
+        // Retail reads the entity's position as two halfwords (`lhu 0x14` /
+        // `lhu 0x18`), takes the 64-unit sub-cell `pos >> 6` and halves it
+        // toward zero (`srl 0x1f` / `addu` / `sra 1`, `0x80019358..0x80019380`):
+        // a position in `-64..0` reads tile `0`, not tile `-1`.
+        let (x, z) = (world_x as i16, world_z as i16);
+        let (sx, sz) = (i32::from(x) >> 6, i32::from(z) >> 6);
+        let (tile_x, tile_z) = (sx / 2, sz / 2);
+        // The 2x2 block is four unbounded byte reads off `+0x4000`
+        // (`lbu 0x0/0x1/0x80/0x81(s0)`): a tile on the grid's last row or
+        // column reads its neighbour from the next row or the object map.
+        let base = 0x4000 + tile_z * FIELD_GRID_STRIDE as i32 + tile_x;
+        let tier = |off: i32| usize::from(self.field_map_byte(base + off) & 0x0F);
+        let (c00, c01, c10, c11) = (tier(0), tier(1), tier(0x80), tier(0x81));
         let (l00, l01, l10, l11) = (
-            lut[c00] as i32,
-            lut[c01] as i32,
-            lut[c10] as i32,
-            lut[c11] as i32,
+            i32::from(lut[c00]),
+            i32::from(lut[c01]),
+            i32::from(lut[c10]),
+            i32::from(lut[c11]),
         );
         // Ramp / stair tile: flat tile mean + the authored elevation override.
-        if self.field_tile_has_elevation_override(tile_x, tile_z) {
+        // The cell index wraps (`andi 0xfe` / `andi 0x7f00`, `0x800192D4` /
+        // `0x800192E4`), so it always lands on the grid.
+        let cell = self
+            .terrain
+            .object_cells
+            .get(((tile_z & 0x7F) as usize) * FIELD_GRID_STRIDE + (tile_x & 0x7F) as usize)
+            .copied()
+            .unwrap_or(0);
+        if cell & CELL_ELEVATION_OVERRIDE != 0 {
             let mean = (l00 + l01 + l10 + l11) >> 2;
-            let delta = legaia_engine_field::field_elevation::lookup_elevation_override(
-                &self.terrain.elevation_overrides,
-                tile_x as u8,
-                tile_z as u8,
-            )
-            .map_or(0, |r| r.delta_at(world_x, world_z));
+            // `FUN_801D5AE0` compares the record's tile bytes against the
+            // sign-extended tile, so a tile off `0..=255` matches nothing.
+            let delta = u8::try_from(tile_x)
+                .ok()
+                .zip(u8::try_from(tile_z).ok())
+                .and_then(|(tx, tz)| {
+                    legaia_engine_field::field_elevation::lookup_elevation_override(
+                        &self.terrain.elevation_overrides,
+                        tx,
+                        tz,
+                    )
+                })
+                .map_or(0, |r| r.delta_at(i32::from(x), i32::from(z)));
             return mean + delta;
         }
         if c00 == c01 && c00 == c10 && c00 == c11 {
             return l00;
         }
-        let wx = world_x & 0x7F;
-        let wz = world_z & 0x7F;
+        let wx = i32::from(x) & 0x7F;
+        let wz = i32::from(z) & 0x7F;
         let acc =
             (l01 * wx + l00 * (0x80 - wx)) * (0x80 - wz) + l10 * (0x80 - wx) * wz + l11 * wx * wz;
         if acc < 0 {
             (acc + 0x3FFF) >> 14
         } else {
             acc >> 14
+        }
+    }
+
+    /// One byte of the resident `.MAP` image at `offset`, over the three
+    /// regions the port holds: the descriptor table (`+0x0000`), the collision
+    /// grid (`+0x4000`) and the object map (`+0x8000`, little-endian words).
+    /// Anything else reads `0`: below the image is memory the port does not
+    /// model.
+    pub(crate) fn field_map_byte(&self, offset: i32) -> u8 {
+        let Ok(off) = usize::try_from(offset) else {
+            return 0;
+        };
+        match off {
+            0..0x4000 => self
+                .terrain
+                .static_window
+                .descriptors
+                .get(off)
+                .copied()
+                .unwrap_or(0),
+            0x4000..0x8000 => self
+                .terrain
+                .collision_grid
+                .get(off - 0x4000)
+                .copied()
+                .unwrap_or(0),
+            0x8000..0x10000 => {
+                let i = off - 0x8000;
+                self.terrain
+                    .object_cells
+                    .get(i / 2)
+                    .map_or(0, |w| w.to_le_bytes()[i % 2])
+            }
+            _ => 0,
         }
     }
 

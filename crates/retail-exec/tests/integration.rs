@@ -26,6 +26,7 @@ mod field_vm;
 mod field_walls;
 mod fishing_cadence;
 mod fishing_fight;
+mod floor_height;
 mod inn;
 mod inventory;
 mod item_apply;

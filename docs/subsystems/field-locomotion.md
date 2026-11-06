@@ -393,7 +393,7 @@ quad = 1 << ((zc & 1) << 1 | (xc & 1))   ; tested against byte >> 4
 
 The `+2` (Z) and round-up / `-1` (X) push the half-tile-centred player (positions are `tile*128 + 64`) onto the **forward** tile, which is how the ~47-unit lookahead lands a full tile ahead.
 
-**The `+2` Z bias is authored into the wall bits.** The floor sampler `FUN_80019278` indexes the *same bytes* with plain floor (`>> 6`, then `>> 1`, no bias) for the low nibble, while the wall probe applies the bias to the high nibble. So one byte's two nibbles live under two different world-to-cell mappings, and grid **row 0's wall bits are unreachable** for `z >= 0`. In X, `ceil - 1` equals the floor everywhere except exact 64-multiples, which the even step parity never reaches. Capture evidence is under [Engine model](#engine-model).
+**The `+2` Z bias is authored into the wall bits.** The floor sampler `FUN_80019278` indexes the *same bytes* with no bias (`>> 6`, then halved toward zero, so `-64..0` is tile `0`) for the low nibble, while the wall probe applies the bias to the high nibble. So one byte's two nibbles live under two different world-to-cell mappings, and grid **row 0's wall bits are unreachable** for `z >= 0`. In X, `ceil - 1` equals the floor everywhere except exact 64-multiples, which the even step parity never reaches. Capture evidence is under [Engine model](#engine-model).
 
 `FUN_801D56C4` (PROT 0897, `0x801D56C4..0x801D577C`) is the single-point form of the same sampler - same row / column / high-nibble / quadrant shape - which the wall-slide resolver calls. (`0x801D5718` is that probe's own row-index `sll` at `+0x54`, not an entry.)
 

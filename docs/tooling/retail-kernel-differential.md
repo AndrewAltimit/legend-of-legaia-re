@@ -245,3 +245,8 @@ system flags `5` / `6`. The Items screen's confirm used the same stand-in, so it
 had greyed. The probe now runs the ported validator over the roster records, and the party heal's walk
 reads a present id of `3` as the dead quad: out of battle the validator's pointer arrays stop at three,
 so that read is stale stack in retail.
+
+The floor sampler `FUN_80019278`, with the kind-2 lookup `FUN_801D5630` live beneath it, matches on every
+tile of the grid, ramps and stairs included. Off it the port called the floor `0`, where retail halves the
+sub-cell toward zero (a position in `-64..0` stands on tile `0`), wraps the object cell through its masks
+and reads the corner block on into the descriptor table or the object map.

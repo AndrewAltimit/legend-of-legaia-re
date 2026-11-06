@@ -183,8 +183,7 @@ fn the_use_list_probe_answers_what_retail_answers() {
         // The Items screen's confirm gate: a row the probe greys cannot be
         // used, and one it lights can, wherever the catalog offers the item.
         let screen = build_pause_items_session(&w);
-        if w
-            .tables
+        if w.tables
             .item_catalog
             .get(id)
             .is_some_and(|e| e.usable_in_field)
