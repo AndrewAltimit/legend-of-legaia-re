@@ -254,3 +254,5 @@ and reads the corner block on into the descriptor table or the object map.
 The Arrange kernel `FUN_801D64A8` matches the port's sort over every window. Reading its caller for the
 differential found the port sorting only the screen's rows: the bag never moved, so the next Items screen,
 the battle window and the save all kept the old order.
+The menu's stat block, the seeder `FUN_801CF5D0` and the summer `FUN_801CF650` the Status page, the Equip
+compare columns and the shop preview draw, matches `menu_stat_block` over the disc's equipment table.

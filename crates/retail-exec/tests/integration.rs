@@ -35,6 +35,7 @@ mod item_probe;
 mod level_up;
 mod magic_level;
 mod melee_hit;
+mod menu_stats;
 mod monster_pick;
 mod muscle_contest;
 mod queue_head;
