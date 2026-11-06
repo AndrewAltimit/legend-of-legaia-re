@@ -276,7 +276,13 @@ fn fan_fading_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
 pub(super) fn displayed_morph_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let per_vsync = if off == 0x78 { h(0x90) >> 3 } else { h(0xB8) };
-    (h(u32::from(off)) - per_vsync * lag).clamp(0, 0x1000) as u16
+    // A level whose program switched its rate inside the lag ran the old
+    // rate before it ([`part_rate_history`]).
+    let delta = (off == 0x78)
+        .then(|| part_rate_history::rewound_delta(ram, node, 0x90, lag))
+        .flatten()
+        .unwrap_or(per_vsync * lag);
+    (h(u32::from(off)) - delta).clamp(0, 0x1000) as u16
 }
 
 /// Whether part `node` is a melee ray burst under its envelope gate (`+0x10`
@@ -616,7 +622,15 @@ pub(crate) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32)
         0x54 => -8,
         _ => 0,
     };
-    let then = now - per_vsync * lag;
+    // A rate the program switched inside the lag ran its old value before
+    // the switch ([`part_rate_history`]).
+    let history = match off {
+        0xC8 if mode == 2 || mode == 6 => Some(0xCA),
+        0xB4 | 0xB6 | 0xB8 | 0xBA if mode == 2 || mode == 6 => Some(off + 0x0C),
+        _ => None,
+    }
+    .and_then(|rate| part_rate_history::rewound_delta(ram, node, rate, lag));
+    let then = now - history.unwrap_or(per_vsync * lag);
     // The length channel `+0xC8` grows from zero off op `0x1C`'s rate: one
     // that rewinds past zero was (re)started inside the lag and stood at
     // zero on screen. Call Wave's spent volley reads `0` at rate `96`; taken

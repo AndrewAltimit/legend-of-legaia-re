@@ -2989,7 +2989,11 @@ centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle
 `(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
 origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
-arm. The arm's phase store sits behind the fork on the last roll, which the
+arm. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
+stand `+0xC8 >> 3` apart, so its length channel is its width: the record's program
+fades it in and widens it at `+0xCA = 96` for one wait of `248`, then narrows it at
+`-96` while it fades out, and halts (`0x0D -128`, `0x1C 12`, `0x09 31`, `0x1C -12`,
+`0x0D 128`, `0x09 31`, `0x08`). The arm's phase store sits behind the fork on the last roll, which the
 presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
 
 ### PROT 0941 (Stone Circle, `0xB9`)

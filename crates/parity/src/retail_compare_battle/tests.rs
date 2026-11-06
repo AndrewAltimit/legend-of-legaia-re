@@ -2399,3 +2399,37 @@ fn only_the_counter_storing_walk_ins_drop_the_yaw_clock() {
         "a summon is no capture body"
     );
 }
+
+/// A part whose program switched a rate inside the display lag is taken back
+/// on the old rate before the switch: PROT 0964's ray (`0x801F9008`) on the
+/// pass its length turned from `+96` to `-96`, length `384`, reads `288`
+/// eight vsyncs back, and one twelve vsyncs into the shrink reads `336`.
+#[test]
+fn a_rate_switched_inside_the_lag_rewinds_on_the_old_rate() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let rec = 0x801F_9008u32;
+    // `13 -128`, `28 12`, `9 31`, `28 -12`, `13 128`, `9 31`, `8` after the
+    // record's two-halfword head and a `9 0`.
+    let prog: [i16; 16] = [
+        -1, 0, 9, 0, 13, -128, 28, 12, 9, 31, 28, -12, 13, 128, 9, 31,
+    ];
+    for (i, &v) in prog.iter().enumerate() {
+        put16(&mut ram, rec + 2 * i as u32, v as u16);
+    }
+    put16(&mut ram, rec + 32, 8);
+    let n = 0x8008_1AE4;
+    put32(&mut ram, n + 0x48, rec);
+    put16(&mut ram, n + 0x70, 16);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0xC8, 384);
+    put16(&mut ram, n + 0xCA, (-96i16) as u16);
+    put16(&mut ram, n + 0x54, 248);
+    put16(&mut ram, n + 0x78, 0);
+    put16(&mut ram, n + 0x90, 1024);
+    assert_eq!(ram_read::displayed_part_halfword(&ram, n, 0xC8, 8), 288);
+    // Its level was fading in at `-128` a vsync until the switch.
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, n, 0x78, 8), 1024);
+    put16(&mut ram, n + 0x54, 152);
+    put16(&mut ram, n + 0xC8, 240);
+    assert_eq!(ram_read::displayed_part_halfword(&ram, n, 0xC8, 8), 336);
+}

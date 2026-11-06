@@ -1806,6 +1806,26 @@ eight; seeded, the whole fan lands on retail's rays, the lower half over the
 floor that both retail and the port paint first
 ([battle-stage-camera](../subsystems/battle-stage-camera.md#where-the-grid-sorts)).
 
+**A rate the program switched inside the lag.** A channel is taken back on
+its current rate only while the lag stays inside the part's current wait
+(`part_rate_history`). The program runs to a `WAIT_SET` (op `0x09`) and parks
+its PC `+0x70` past it; the tick drains the wait `+0x54` by `8` a vsync, so
+`(set - +0x54) / 8` is how many vsyncs the current rates have run. A longer
+lag reaches into the previous wait, on the rates the ops before it set
+(`0x1C` the length rate `+0xCA`, `0x0D` / `0x2B` / `0x37` the level rate
+`+0x90`, `0x14` the radius and height rates). The vsync a wait runs out on
+still integrates on the old rates, so a wait of `n` spans `n / 8 + 1`
+vsyncs. The Rogue strikes' rays widen at `+96` for one wait of `248`, then
+narrow at `-96` (the ray's width is its length channel: the default arm's
+shape `1` fans its three pairs `C8 >> 3` apart). Four of the twenty in
+`battle_rugi_rogue_rogue_thunder_mid_cast` stand on the switch pass at
+`384`; taken back on `-96` they drew at `480`, two and a half times retail's
+beam, where the frame on screen drew `288`. Taken back across the switch, the
+three Rogue strikes read `0.871` to `0.976` (Thunder), `0.918` to `0.981`
+(Flame) and `0.921` to `0.971` (Wind). A program the walk cannot follow (a
+loop, a variable-size op, a PC not past a wait) keeps the single-rate
+rewind.
+
 ### A turning effect part's banks are a clock
 
 The exception is a part seated once that **turns**. The effect-script walk's
