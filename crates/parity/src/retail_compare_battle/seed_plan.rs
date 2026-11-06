@@ -115,10 +115,16 @@ impl RetailBattle {
         // step `3` (ring entries `575..585`), and at the default `2` the
         // replay's eye stood `89` closer than retail's (camera `.991` to
         // `.998`).
+        // A capture on the module tick's arm 0 still frames on the walk-in's
+        // case 6 (the approach leg's), which counts passes the same way, and
+        // there a history that never left its step names the step of the
+        // whole band: `battle_jou_freed_v3_water_crystals_mid_cast` ran sixteen
+        // step-`3` passes, and on the replay's `2` its yaw stood `55` past
+        // retail's (camera `.972` to `.999`).
         if matches!(self.span_gate, SpanGate::CaptureFade { .. })
-            && matches!(self.action_state, 0x6E | 0x6F)
+            && (matches!(self.action_state, 0x6E | 0x6F) && self.step_run.1 < 16
+                || self.action_state == 0x70 && self.module_phase == 0)
             && self.step_run.0 != default
-            && self.step_run.1 < 16
         {
             return Some((self.step_run.0, 0x6E, None, None));
         }

@@ -782,7 +782,11 @@ retail's camera turns up onto the same endpoint (RAM at arm 0: yaw `2850`
 rising at `68` a vsync). A retail film of an injected Bloody Horns shows the
 same hold: through `0x5A`, `0x0A` and `0x0C`'s first vsyncs the table is the
 finished actor's (`yaw_end` drifting `+4` a pass with the counter), and the
-next end appears with `0x28` (grade `capture`).
+next end appears with `0x28` (grade `capture`). A film played on from
+`dohaty_nova_v2_pre_scythe_wind` (parked in `0x0A` behind a Spirit) reads the
+same: `0x0A` and `0x0C` hold the Spirit member's endpoint (yaw `2309`, TR z
+`3276`), and the first new one (yaw `2048`, TR z `4915`) is on screen with
+`0x28`.
 
 ### Framing cases
 
