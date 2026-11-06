@@ -1119,7 +1119,10 @@ impl RetailBattle {
                 {
                     seats.push(seat);
                 }
-                for seat in landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)) {
+                for seat in attack_arm_glide_seats(ram, ctx)
+                    .into_iter()
+                    .chain(landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)))
+                {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);
                     }

@@ -2400,6 +2400,53 @@ fn only_the_counter_storing_walk_ins_drop_the_yaw_clock() {
     );
 }
 
+/// A bar and plaque the Attack arm raised, retired in the RAM, are seated on
+/// the elapsed the yaw counter's passes since the arm name, less the newest
+/// two (`battle_nilboa_aluru_v2_strike`: counter `0x212` at step `2`, both
+/// retired at `14`, the screen at `14`); past their landing on screen, or off
+/// the arm's rung, nothing is seated.
+#[test]
+fn attack_arm_glides_are_seated_off_the_yaw_counter() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put16(&mut ram, STEP_MODE, 0x10);
+    for i in 0..16 {
+        put16(&mut ram, FRAME_HISTORY + i * 2, 0x1C0);
+    }
+    put8(&mut ram, ctx + 7, 0x1E);
+    for (slot, target, start) in [(0u32, [16i16, 192], [16i16, 234]), (1, [16, 12], [16, -26])] {
+        let r = ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        put8(&mut ram, r + 1, 14);
+        put16(&mut ram, r + 4, target[0] as u16);
+        put16(&mut ram, r + 6, target[1] as u16);
+        put16(&mut ram, r + 8, start[0] as u16);
+        put16(&mut ram, r + 10, start[1] as u16);
+    }
+    put16(&mut ram, ctx + 0x6DA, 0x212);
+    let seats = attack_arm_glide_seats(&ram, ctx);
+    assert_eq!(
+        seats,
+        vec![
+            HudGlideSeat {
+                target: [16, 192],
+                elapsed: 14,
+                total: 16
+            },
+            HudGlideSeat {
+                target: [16, 12],
+                elapsed: 14,
+                total: 16
+            },
+        ]
+    );
+    // Two passes later the screen shows them landed.
+    put16(&mut ram, ctx + 0x6DA, 0x216);
+    assert!(attack_arm_glide_seats(&ram, ctx).is_empty());
+    // A counter on another rung names no arm.
+    put16(&mut ram, ctx + 0x6DA, 0x812);
+    assert!(attack_arm_glide_seats(&ram, ctx).is_empty());
+}
+
 /// A part whose program switched a rate inside the display lag is taken back
 /// on the old rate before the switch: PROT 0964's ray (`0x801F9008`) on the
 /// pass its length turned from `+96` to `-96`, length `384`, reads `288`

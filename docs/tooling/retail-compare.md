@@ -1401,9 +1401,23 @@ below and the plate twenty-three right - thirteen of sixteen - and the frame
 on screen shows ten (`0.763` to `0.893`). `battle_noa_miracle_art_combo`'s
 plaque and bar are the same case (`0.892` to `0.964`). A record both tables
 draw at rest landed before the older table was built and stays landed; the
-one capture this cannot place is one saved on the pass right after the
+one capture the tables cannot place is one saved on the pass right after the
 landing pass, where the displayed frame still shows the last in-flight
 `elapsed` and both tables draw the rest seat.
+
+The yaw counter places that capture for the two widgets the action seed
+raises on the Attack arm's pass (`attack_arm_glide_seats`). The seed stores
+state `0x14` and the counter's `0x200` rung and raises the readout bar for a
+party target on the same pass (`0x801E2F14..0x801E2F44`), the actor plaque
+opening beside it; every later pass adds its step to each `elapsed` and
+drifts the counter by `(step * 4) / 3` (`0x801E29E4..0x801E2A24`). So in the
+approach and strike states (`0x14`, `0x19`, `0x1E`) the counter's distance
+from the rung counts the passes since the raise, walked back over the
+history's steps, and the frame on screen drew both at the elapsed those
+passes less the newest two had built. `battle_nilboa_aluru_v2_strike` reads
+the counter at `0x212` (nine step-`2` passes), bar and plaque retired at
+`14` with both tables at rest, and the screen shows them six and five pixels
+short of their seats (`0.865` to `0.988`).
 
 A Spirit turn's AP bar and AP plate are seated by value as well as by glide
 (`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
