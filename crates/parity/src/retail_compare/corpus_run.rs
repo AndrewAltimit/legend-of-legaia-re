@@ -306,6 +306,9 @@ pub(super) fn run_one(
         }
     };
     retail.settle_on_loaded_scene(cdname);
+    if let Some(note) = retail.seat_source_staging(entry, scus) {
+        report.detail.insert("staging_source".into(), note);
+    }
     if let Some(pending) = &retail.pending_scene {
         report.detail.insert(
             "pending_scene".into(),

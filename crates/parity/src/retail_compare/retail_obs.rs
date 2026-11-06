@@ -924,6 +924,55 @@ fn display_frame(ram: &[u8], vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<
 
 /// Read a library state of either emulator. `scus` is `SCUS_942.54`, which a
 /// PCSX-Redux state needs for its RAM anchor search.
+impl RetailObs {
+    /// Take the follow camera's staging pose from the capture a menu state
+    /// was opened from ([`CorpusEntry::staging_source`]).
+    ///
+    /// A pause menu's overlay loads over the field overlay's window, so a
+    /// menu state's RAM holds the live pose but reads zero at the staging
+    /// descriptor `0x801F3580`. The ease `FUN_801DB510` runs only on a frame
+    /// the player moved, so a menu opened over a player standing mid-ease
+    /// holds that ease's pose for as long as it is open: the target it was
+    /// heading for is the source capture's descriptor. It is taken only when
+    /// the source stands on this state's live pose and player position, so a
+    /// source that moved first is not read as this state's.
+    ///
+    /// Returns the report note, `None` when nothing was looked up.
+    pub fn seat_source_staging(&mut self, entry: &CorpusEntry, scus: &[u8]) -> Option<String> {
+        if self.camera_staging.is_some() || self.class != StateClass::Menu {
+            return None;
+        }
+        let (emulator, path) = entry.staging_source.clone()?;
+        let source = CorpusEntry {
+            emulator,
+            path,
+            staging_source: None,
+            ..entry.clone()
+        };
+        let src = match read_retail(&source, scus) {
+            Ok(src) => src,
+            Err(e) => return Some(format!("staging source unreadable: {e:#}")),
+        };
+        let Some(staging) = src.camera_staging else {
+            return Some("staging source holds no staging pose".into());
+        };
+        if src.camera != self.camera || src.player != self.player {
+            return Some(format!(
+                "staging source stands elsewhere (live {:?}, player {:?}); not taken",
+                src.camera, src.player
+            ));
+        }
+        self.camera_staging = Some(CameraObs {
+            focus: self.camera.focus,
+            ..staging
+        });
+        Some(format!(
+            "staging pose {}/{}/{} eye={:?} from the source capture, on this state's live pose",
+            staging.pitch, staging.yaw, staging.h, staging.eye
+        ))
+    }
+}
+
 pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
     match entry.emulator {
         "mednafen" => {

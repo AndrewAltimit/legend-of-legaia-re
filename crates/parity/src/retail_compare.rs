@@ -243,6 +243,11 @@ pub struct CorpusEntry {
     /// directory: `Ok` the image on disk, `Err` the file name that is not
     /// there. A card-screen state mounts it on the engine side.
     pub memory_card: Option<std::result::Result<PathBuf, String>>,
+    /// The scenario's `staging_source`, resolved to that state's backup as
+    /// `(emulator, file)`: the capture a menu state was opened from, whose
+    /// follow-camera staging descriptor the menu's RAM no longer holds
+    /// ([`RetailObs::seat_source_staging`]).
+    pub staging_source: Option<(&'static str, PathBuf)>,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -252,6 +257,17 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
     let mut seen = std::collections::HashSet::new();
     const EMULATORS: [&str; 2] = ["mednafen", "pcsx-redux"];
     let backups = legaia_ram_image::scenarios::LibraryIndex::open(library, &EMULATORS);
+    let backup_of = |label: &str| -> Option<(&'static str, PathBuf)> {
+        let fp = manifest
+            .scenarios
+            .iter()
+            .find(|s| s.label == label)?
+            .backup_fingerprint
+            .as_deref()?;
+        EMULATORS
+            .iter()
+            .find_map(|&e| backups.backup_for(e, fp).map(|p| (e, p)))
+    };
     for sc in &manifest.scenarios {
         let Some(fp) = sc.backup_fingerprint.as_deref() else {
             continue;
@@ -277,6 +293,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                             Err(name.clone())
                         }
                     }),
+                    staging_source: sc.staging_source.as_deref().and_then(backup_of),
                 });
             }
         }

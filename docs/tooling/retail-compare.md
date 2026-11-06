@@ -3283,13 +3283,18 @@ A pause-menu capture keeps the field's camera words (`0x8007B790`, `0x800840B8..
 the focus pair) where the field left them, but not the follow ease's staging
 descriptor `0x801F3580`: the menu overlay loads over the field overlay's window
 (`0x801CE000` up to `0x801F3xxx` differ between a walk state and a menu opened
-from it, and the descriptor reads zero), so a menu state has only the live pose to
-score against. The six `menu_*_kor_retail` captures open the menu over
-`kor_field_route_walk`'s frozen ease: retail's live yaw `1702` and eye Y `681`,
-the engine's compose yaw `1605` and eye Y `768` - the walk state's own
-descriptor to the unit ([below](#the-staging-descriptor)). They read `camera`
-`.949` on that history, which no seat replays; the walk state itself reads
-`1.000` on its descriptor.
+from it, and the descriptor reads zero), so a menu state's own RAM has only the live
+pose to score against. The ease runs only on a frame the player moved, so a menu
+opened over a player standing mid-ease holds that ease's pose, and the pose it was
+heading for is the descriptor of the capture the menu was opened from. A scenario
+names that capture as its `staging_source`; the corpus reads the source's
+descriptor and takes it as the menu state's staging pose when the source stands on
+the menu state's live pose and player position (`RetailObs::seat_source_staging`;
+the report's `staging_source` detail says which). The six `menu_*_kor_retail`
+captures open the menu over `kor_field_route_walk`'s frozen ease: retail's live yaw
+`1702` and eye Y `681` on both, the walk state's descriptor yaw `1605` and eye Y
+`768`, which is the engine's compose to the unit ([below](#the-staging-descriptor)).
+They read `camera` `1.000` on it, against `.949` on the live pose alone.
 
 The map display (game mode `0x0D`) classes as a menu: a settled overworld field,
 then `L1`. It scores no `camera`: the survey camera is staged on the frame, not on

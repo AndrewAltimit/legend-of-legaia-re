@@ -6992,6 +6992,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_items_target_kor_retail"
@@ -7001,6 +7002,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_door_light_kor_retail"
@@ -7010,6 +7012,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_incense_kor_retail"
@@ -7019,6 +7022,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_door_wind_map03_retail"
@@ -7037,6 +7041,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "magic", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_magic_target_kor_retail"
@@ -7046,6 +7051,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "magic", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "shop_buy_quantity_retock_retail"

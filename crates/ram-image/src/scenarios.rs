@@ -167,6 +167,12 @@ pub struct Scenario {
     /// harness may enter the source scene and take the door instead.
     #[serde(default)]
     pub arrival: Option<ScenarioArrival>,
+    /// The label of the state this one was made from without moving the
+    /// player, when this one's RAM has lost the follow camera's staging
+    /// descriptor `0x801F3580` (a pause menu's overlay loads over it). The
+    /// source's descriptor is the pose the frozen ease was heading for.
+    #[serde(default)]
+    pub staging_source: Option<String>,
 }
 
 /// [`Scenario::arrival`]: the door a capture came through.
