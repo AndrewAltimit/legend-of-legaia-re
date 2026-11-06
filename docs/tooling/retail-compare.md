@@ -156,7 +156,9 @@ Three variables expose what a battle state hands its `play-window` child.
 `LEGAIA_RC_CHILD_ENV=1` prints the seat variables, `LEGAIA_RC_CHILD_CMD=1` the
 whole command line (enough to re-run the child by hand from its work
 directory), and `LEGAIA_RC_ENV_OVERRIDE="K=V;K=V"` replaces seat variables after
-the seat is computed, an empty value removing one. A sweep of one value under
+the seat is computed, an empty value removing one. Entries split on newlines,
+and on a `;` only where an assignment (`NAME=`) follows it, so a seat value that
+is itself a `;`-joined list (`LEGAIA_SEAT_DANCE_PROPS`) passes whole. A sweep of one value under
 `--fresh --filter =<label>` says which seat moves a frame before any seat code
 changes; the Done-arm camera walk back
 ([below](#an-ease-out-camera-carries-its-history)) was found by sweeping the
