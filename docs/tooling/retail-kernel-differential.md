@@ -329,3 +329,13 @@ each battle frame, found the HUD reading the tracker's statuses where the loop a
 `FUN_8002C2E4` read the whole `+0x16E` word: a Curse a cast wrote, an enemy special's Venom or a rotted limb
 greyed no gauge and drew no element. The rows now carry `World::raw_status_word`. The range metric
 `FUN_8004E2F0` matches `range_metric` over every seat pairing, reach and size class.
+
+Seating the port's half of each `+0x16E` word the way a game reaches it, the tracked kinds in the tracker
+and the rest in the raw half (`common::seat_status`), turned the monster picker, the turn picker and the Auto
+delegation differentials red: a Confuse the tracker held was invisible to the picker's own `0x380` arms and to
+the Counterattack roll, and a Stone or Numb it held did not veto the Auto fill (`0x801F04FC`). The same split
+reader sat in the seed's retarget gate (`0x801E2C8C`), the victory re-pick's `0x404` test and the win pose's
+status tier (`0x8004E828`). All of them now read `World::raw_status_word` or the host's `status_word`. Reading
+the seed's gate whole showed the engine running the retarget `FUN_801E7320` twice for a raw Confuse, once where
+it arms the monster's turn and again at the seed; retail calls it once (`0x801E2CA0`), so the seed hook no
+longer repeats it.

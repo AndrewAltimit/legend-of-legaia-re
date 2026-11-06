@@ -87,11 +87,8 @@ impl World {
                 guard: guards[i],
             })
             .collect();
-        let status = self
-            .actors
-            .get(usize::from(seat))
-            .map(|a| a.battle.field_flags)
-            .unwrap_or(0);
+        // The whole `+0x16E` word, tracker included.
+        let status = self.raw_status_word(seat);
         let family = combo::weight_family(self.attack_swing_class_of(target));
         let pool = combo::build_candidate_pool(&commands, family, status);
         // The action gauge `+0x154`, read the way the Arts command input

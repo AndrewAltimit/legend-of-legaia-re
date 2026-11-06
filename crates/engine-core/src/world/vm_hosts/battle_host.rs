@@ -404,9 +404,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::MonsterSetup { actor_slot });
-        // Faithful `FUN_801E7320`: expand the targeting class the action picker
-        // left in `actor.active_target` into a concrete target slot.
-        self.world.resolve_monster_target(actor_slot);
+        // `FUN_801E7320` (`jal` at `0x801E2CA0`) runs once a turn, and the
+        // World has already run it where it arms the monster's turn
+        // (`World::maybe_confuse_retarget` on every arming path, over the
+        // whole word). Running it again here re-rolled a confused monster's
+        // target and drew its `rand()`s twice.
     }
     fn recompute_battle_order(&mut self) {
         self.world

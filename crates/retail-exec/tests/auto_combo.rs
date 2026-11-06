@@ -2,7 +2,7 @@
 //! the pool arm's weights and spend loop, the art insertion tail and its learn
 //! gate, and the delegated arm of an Evil Medallion wearer.
 
-use crate::common::{Rng, disc, scus_cpu};
+use crate::common::{Rng, disc, scus_cpu, seat_status};
 use legaia_actor_formats::battle_char_assembly::decode_record0;
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_battle_loop::round_flow::PendingPartyAction;
@@ -71,7 +71,9 @@ fn gen_round(rng: &mut Rng) -> Round {
         r.gauge[s] =
             [1, 29, 30, 60, 100, 120, 140, 60 + rng.below(100) as u16][rng.below(8) as usize];
         r.spirit[s] = [0, 18, 20, 32, 50, 100, rng.below(101) as u16][rng.below(7) as usize];
-        r.status[s] = [0, 0, 0, 0, 0, 0, 0, 8, 0x10, 0x20, 0x38, 0x1000][rng.below(12) as usize];
+        r.status[s] = [
+            0, 0, 0, 0, 0, 0, 0, 8, 0x10, 0x20, 0x38, 0x1000, 4, 0x400, 0x380,
+        ][rng.below(15) as usize];
         r.halved[s] = rng.below(4) == 0;
         r.armed[s] = rng.below(2) == 0;
         r.known[s] = if rng.below(2) == 0 {
@@ -197,7 +199,8 @@ fn seed_port(w: &mut World, r: &Round, banks: &[Vec<u8>], guards: [u16; 4]) {
         a.battle.liveness = 1;
         a.battle.agl = r.gauge[s];
         a.battle.spirit_gauge = r.spirit[s];
-        a.battle.field_flags = r.status[s];
+        seat_status(w, s as u8, r.status[s], r.seed >> s & 1 != 0);
+        let a = &mut w.actors[s];
         a.battle.params = Default::default();
         w.battle.auto_combo.flags[s] = r.flagged[s];
         w.battle.round_flow.pending[s] =

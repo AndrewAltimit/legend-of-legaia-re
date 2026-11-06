@@ -509,9 +509,12 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
     let monster_standing = (0..monsters).any(|m| retail_alive(RETAIL_FIRST_MONSTER + m));
     ctx.delegated_seats = 0;
     for slot in 0..party {
-        let Some(status) = host.actor(slot).map(|a| a.field_flags) else {
+        // The whole `+0x16E` word: a Stone or Numb the host's tracker holds
+        // vetoes the fill (`& 0x404`) as a raw one does.
+        if host.actor(slot).is_none() {
             continue;
-        };
+        }
+        let status = host.status_word(slot);
         if !gate_selects_auto_fill(host.character_ability_bits_high(slot), status) {
             continue;
         }
@@ -920,7 +923,9 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::DoneCleanup);
     }
     let category = ActionCategory::from_byte(actor.action_category);
-    let field_flags = actor.field_flags;
+    // `lhu v0,0x16e(s3)` / `andi v0,v0,0x380` at `0x801E2C8C`: the whole word,
+    // so a Confuse the host's tracker holds reaches the retarget.
+    let field_flags = host.status_word(actor_slot);
     let party_count = host.party_count();
     host.seed_entry(actor_slot);
 

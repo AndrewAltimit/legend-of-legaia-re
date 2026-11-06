@@ -4,7 +4,7 @@
 //! members standing and not Stoned, the drop roll, the purse and EXP caps, and
 //! the level-ups `FUN_801E9504` takes from it on one `rand()` stream.
 
-use crate::common::{Rng, disc, scus, scus_cpu};
+use crate::common::{Rng, disc, scus, scus_cpu, seat_status};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
@@ -213,8 +213,8 @@ fn seed_port(world: &mut World, w: &Win) -> (FormationDef, MonsterCatalog) {
         world.party.level_up_tracker.xp[m] = w.xp[m];
         let a = &mut world.actors[m];
         a.battle.hp = w.member_hp[m];
-        a.battle.field_flags = w.member_status[m];
         a.battle_monster_id = None;
+        seat_status(world, m as u8, w.member_status[m], w.seed >> m & 1 != 0);
     }
     for s in 0..w.monsters {
         let id = 0x40 + s as u16;

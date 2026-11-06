@@ -144,10 +144,11 @@ impl World {
     fn pick_victory_pose(&mut self, seat: usize) -> Option<u8> {
         let table = self.tables.victory_pose_table?;
         let actor = self.actors.get(seat)?;
+        // The whole `+0x16E` word, tracker included.
         let (hp, hp_max, status) = (
             actor.battle.hp,
             actor.battle.max_hp,
-            actor.battle.field_flags,
+            self.raw_status_word(seat as u8),
         );
         let round = self.battle.monster_ai_state.mode_flags;
         let tier = victory_pose_tier(hp, hp_max, round, status);
