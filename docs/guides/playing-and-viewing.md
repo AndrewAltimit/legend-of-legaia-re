@@ -324,6 +324,14 @@ controller its platform's gamepad backend sees, and works with the keyboard
 alone when none is connected. The launcher's *Controls* page and Key Config
 (Select on the Options screen) rebind keys only; a controller's layout is fixed.
 
+On a touch screen the browser play page draws an on-screen pad over the
+picture: a D-pad you can roll a thumb around (diagonals included), the four
+face buttons, L1 / L2 / R1 / R2 and Select / Start. It shows by default on a
+phone or tablet; the **Touch pad** button under the picture shows or hides it
+on any device, and the choice is remembered. Its presses reach the game as a
+controller's do, so every screen that takes a pad takes it; a drag on the
+picture outside the buttons still turns the camera.
+
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
 double-click puts the framing back to retail, centred on the party (the

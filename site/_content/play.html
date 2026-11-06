@@ -133,6 +133,47 @@ body.play-embedded.xw-preview .play-screen, body.play-embedded.xw-preview .play-
 /* The expansion workbench's 3D preview (`?xwpreview=1`): the picture is
    looked at and clicked to pick tiles, so no veil dims it. */
 body.xw-preview .play-focus-veil { display: none; }
+/* The on-screen pad (touch-pad.js): over the picture, above the focus veil,
+   translucent so the scene stays readable. Only its buttons take pointer
+   input; a touch anywhere else still reaches the canvas (camera drag). */
+.touch-pad { position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.touch-pad.is-hidden { display: none; }
+body.xw-preview .touch-pad { display: none; }
+.touch-pad .tp-btn, .touch-pad .tp-dpad { pointer-events: auto; touch-action: none; }
+.touch-pad .tp-btn {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 26, 40, 0.45); color: rgba(235, 240, 250, 0.85);
+  border: 1px solid rgba(235, 240, 250, 0.35); font-family: var(--font-mono);
+}
+.touch-pad .tp-btn.is-held { background: rgba(120, 160, 230, 0.6); }
+.touch-pad .tp-dpad {
+  position: absolute; left: 3%; bottom: 5%; width: clamp(96px, 24%, 170px); aspect-ratio: 1;
+  border-radius: 50%; background: rgba(20, 26, 40, 0.3);
+}
+.touch-pad .tp-arm { position: absolute; background: rgba(20, 26, 40, 0.5);
+  border: 1px solid rgba(235, 240, 250, 0.35); border-radius: 4px; }
+.touch-pad .tp-arm-up, .touch-pad .tp-arm-down { left: 35%; width: 30%; height: 36%; }
+.touch-pad .tp-arm-left, .touch-pad .tp-arm-right { top: 35%; height: 30%; width: 36%; }
+.touch-pad .tp-arm-up { top: 0; } .touch-pad .tp-arm-down { bottom: 0; }
+.touch-pad .tp-arm-left { left: 0; } .touch-pad .tp-arm-right { right: 0; }
+.touch-pad .tp-dpad.is-up .tp-arm-up, .touch-pad .tp-dpad.is-down .tp-arm-down,
+.touch-pad .tp-dpad.is-left .tp-arm-left, .touch-pad .tp-dpad.is-right .tp-arm-right {
+  background: rgba(120, 160, 230, 0.6); }
+.touch-pad .tp-face {
+  position: absolute; right: 3%; bottom: 5%; width: clamp(110px, 26%, 180px); aspect-ratio: 1; }
+.touch-pad .tp-round { width: 34%; height: 34%; border-radius: 50%; font-size: clamp(14px, 3vw, 22px); }
+.touch-pad .tp-triangle { left: 33%; top: 0; }
+.touch-pad .tp-circle { right: 0; top: 33%; }
+.touch-pad .tp-cross { left: 33%; bottom: 0; }
+.touch-pad .tp-square { left: 0; top: 33%; }
+.touch-pad .tp-middle { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%);
+  display: flex; gap: 0.6rem; }
+.touch-pad .tp-small { position: static; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.65rem; }
+.touch-pad .tp-shoulder { top: 3%; width: clamp(44px, 10%, 72px); height: clamp(26px, 7%, 40px);
+  border-radius: 6px; font-size: 0.75rem; }
+.touch-pad .tp-l2 { left: 3%; } .touch-pad .tp-l1 { left: calc(4% + clamp(44px, 10%, 72px)); }
+.touch-pad .tp-r2 { right: 3%; } .touch-pad .tp-r1 { right: calc(4% + clamp(44px, 10%, 72px)); }
 body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 /* The picture takes the frame's own shape: the workbench's view is as wide
    as its window, not 4:3. */
@@ -507,6 +548,8 @@ div.play-vis-head { cursor: default; }
         <div class="play-btn-row">
           <button id="play-recenter" type="button">Reset camera</button>
           <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <button id="play-touch-pad" type="button" aria-pressed="false"
+                  title="Show or hide the on-screen pad (D-pad, face buttons, shoulders, Start and Select) for a touch screen. Shown by default on a phone or tablet; remembered.">Touch pad</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
             <span id="play-volume-value">1x</span>
@@ -1141,6 +1184,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/webgl-psx-target.js"></script>
 <script src="js/play-quality-ladder.js"></script>
 <script src="js/pad-bindings.js"></script>
+<script src="js/touch-pad.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-view-constants.js"></script>
 <script src="js/play-atlas-blitter.js"></script>
@@ -3047,6 +3091,39 @@ div.play-vis-head { cursor: default; }
 
   /* Reset camera: the view's shared reset (`resetCamera`, which drives the
    * engine's `Camera::recenter_follow` - the native double-click's kernel). */
+  /* The on-screen pad for a touch screen (touch-pad.js). Its presses join the
+   * controller poll, so the field, the menus and the title card all read
+   * them; a first touch takes focus and unlocks audio, as a canvas click does.
+   * Shown by default where the only pointer is a finger; the button's choice
+   * is remembered. */
+  {
+    const TOUCH_KEY = 'legaia.touch-pad';
+    const touchBtn = document.getElementById('play-touch-pad');
+    const touchPad = window.LegaiaTouchPad
+      && LegaiaTouchPad.install(canvas.closest('.play-canvas-wrap'), {
+        onPress: () => {
+          if (document.activeElement !== canvas) canvas.focus({ preventScroll: true });
+          if (view && typeof view._enableAudio === 'function') view._enableAudio();
+        },
+      });
+    if (touchPad && touchBtn) {
+      let stored = null;
+      try { stored = localStorage.getItem(TOUCH_KEY); } catch (_) {}
+      const show = (on, remember) => {
+        touchPad.setShown(on);
+        touchBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        touchBtn.classList.toggle('btn-accent', on);
+        if (remember) { try { localStorage.setItem(TOUCH_KEY, on ? '1' : '0'); } catch (_) {} }
+      };
+      show(stored === null ? LegaiaTouchPad.wantedByDefault() : stored === '1', false);
+      /* A finger taps; the pad's own buttons take the controls too. */
+      if (LegaiaTouchPad.wantedByDefault()) veil.textContent = 'Tap to take the controls';
+      touchBtn.addEventListener('click', () => show(!touchPad.shown(), true));
+    } else if (touchBtn) {
+      touchBtn.hidden = true;
+    }
+  }
+
   document.getElementById('play-recenter').addEventListener('click', () => {
     if (!view) return;
     view.resetCamera();
