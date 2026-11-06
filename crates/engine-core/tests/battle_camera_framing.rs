@@ -166,3 +166,53 @@ fn disc_records_carry_the_size_class_the_camera_frames_on() {
         "only {seen} records decoded; archive truncated?"
     );
 }
+
+/// The pass that ends an actor's turn frames that actor. Retail's gate `0x5A`
+/// re-arms case 6 / 8 on the finished seat and stores `0x0A` in the same pass
+/// (`0x801E6428..0x801E6470`); the next seat is framed first at its seed
+/// `0x0C`. The port's host can arm the next actor (`ctx[+0x13]`, state
+/// `0x00`) in the tick the gate's pass ran, before the camera steps on that
+/// pass: the framing stays on the seat the pass ran on.
+#[test]
+fn the_gate_pass_frames_the_finished_seat_not_the_next() {
+    use legaia_engine_battle_loop::round_flow::RoundPhase;
+    use legaia_engine_core::battle_cam_inputs::battle_cam_inputs;
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
+        mode: SceneMode::Battle,
+        ..World::default()
+    };
+    for i in 0..8 {
+        let actor = world.spawn_actor(i);
+        actor.battle.liveness = 1;
+        actor.move_state.world_x = 100 * i as i16;
+        actor.move_state.world_z = -50 * i as i16;
+    }
+    world.toggles.battle_sm_frame_cadence = true;
+    world.battle.round_flow.phase = RoundPhase::Execute;
+    // The gate's pass ran on seat 1; the host has since armed seat 3.
+    world.battle.sm_ran_state = Some(0x5A);
+    world.battle.sm_ran_actor = Some(1);
+    world.battle_ctx.active_actor = 3;
+    world.battle_ctx.action_state = ActionState::Begin.as_byte();
+    let framed = battle_cam_inputs(&world)
+        .acting
+        .expect("an acting seat")
+        .world;
+    assert_eq!(
+        framed,
+        [100.0, 0.0, -50.0],
+        "the gate frames the finished seat"
+    );
+    // Once a pass runs on the new seat, it is that seat's.
+    world.battle.sm_ran_state = Some(0x00);
+    world.battle.sm_ran_actor = Some(3);
+    let framed = battle_cam_inputs(&world)
+        .acting
+        .expect("an acting seat")
+        .world;
+    assert_eq!(framed, [300.0, 0.0, -150.0]);
+}

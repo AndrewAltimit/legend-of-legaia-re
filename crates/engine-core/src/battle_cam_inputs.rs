@@ -30,7 +30,7 @@ use legaia_engine_camera::projection;
 /// REF: FUN_801E295C
 fn spirit_band_framed_slot(world: &World) -> u8 {
     use legaia_engine_battle_vm::battle_action::ActionState;
-    let acting = world.battle_ctx.active_actor;
+    let acting = ran_pass_actor(world);
     let state = world.battle_ctx.action_state;
     if state != ActionState::SpiritFireDamage.as_byte()
         && state != ActionState::SpiritPostDamage.as_byte()
@@ -43,6 +43,29 @@ fn spirit_band_framed_slot(world: &World) -> u8 {
         .map(|a| a.battle.active_target)
         .filter(|&t| t < 8 && world.actors.get(usize::from(t)).is_some())
         .unwrap_or(acting)
+}
+
+/// The acting seat of the pass the camera frames. The camera frames the state
+/// the SM's last pass ran (`World::battle_camera_state`), and a pass that ends
+/// an actor's turn - the Done band `0x50..=0x52` or the gate `0x5A` - frames
+/// that actor: retail's `0x5A` re-arms case 6 / 8 on the finished seat and
+/// stores `0x0A` in the same pass (`0x801E6428..0x801E6470`), and the next
+/// seat is framed first by its seed `0x0C` (`0x801E2D50`). The port's host
+/// can arm the next actor (`ctx[+0x13]`, state `0x00`) in the tick that pass
+/// ran, before the camera steps on it, so the pass's own seat is kept.
+fn ran_pass_actor(world: &World) -> u8 {
+    let live = world.battle_ctx.active_actor;
+    match (world.battle.sm_ran_actor, world.battle.sm_ran_state) {
+        (Some(seat), Some(ran))
+            if seat != live
+                && matches!(ran, 0x50..=0x52 | script::END_OF_ACTION_STATE)
+                && world.battle_camera_state() == ran
+                && world.actors.get(usize::from(seat)).is_some() =>
+        {
+            seat
+        }
+        _ => live,
+    }
 }
 
 /// Derive the shared battle-camera drive inputs from the live world state -
@@ -802,6 +825,7 @@ impl World {
         );
         let world_was = (
             self.battle.sm_ran_state,
+            self.battle.sm_ran_actor,
             self.battle.camera_frame_height,
             self.battle.round_flow.phase,
         );
@@ -812,6 +836,7 @@ impl World {
         self.battle_ctx.action_state = script::END_OF_ACTION_STATE;
         self.battle_ctx.camera_variant = style;
         self.battle.sm_ran_state = Some(script::END_OF_ACTION_STATE);
+        self.battle.sm_ran_actor = Some(seat);
         self.battle.camera_frame_height = depth;
         self.battle.round_flow.phase = RoundPhase::Execute;
         let inputs = battle_cam_inputs(self);
@@ -827,6 +852,7 @@ impl World {
         ) = ctx_was;
         (
             self.battle.sm_ran_state,
+            self.battle.sm_ran_actor,
             self.battle.camera_frame_height,
             self.battle.round_flow.phase,
         ) = world_was;

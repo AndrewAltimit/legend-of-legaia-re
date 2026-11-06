@@ -270,11 +270,11 @@ Recordings confirm the yaw half of the law (`inc = ceil(gap_before / 0xC)`, the 
 
 ### Xain's frame at Bloody Horns' band entry
 
-`open` `battle_tunnelc_xain_bloody_horns_mid_cast` (image `.72`, camera `1.000`) shows Xain square to the camera with a translucent body behind him. The RAM's pass is arm 0's, whose case 6 the port now frames on retail's endpoint ([walk-in bodies](../subsystems/cast-module.md#capture-walk-in-bodies)), but the frame on screen is two passes older, inside `0x6F`, and its yaw is where the band's case 6 had swung from the earlier actor's framing.
+`partial` `battle_tunnelc_xain_bloody_horns_mid_cast` (image `.72`, camera `.921`) shows Xain square to the camera with a translucent body behind him (Vahn, seat 0, ghost bits `0x83000000` in the RAM). The RAM's pass is arm 0's, and retail's table reads that arm's case 6 from yaw `2850`, rising `68` a vsync onto `3658`. The frame on screen is two passes older, inside `0x6F`.
 
-The endpoint there is about `0x800 + 20 - 3014`, and the tween takes the shortest arc from the earlier pose: retail's walk back reads `2714` turning up, the replay's `3520` turning down, its earlier pose `1012` about `90` units below where the arc flips.
+The direction of the turn is settled: the replay's camera framed the incoming seat in the Done band's last pass and turned down through `0` from yaw `1012`, where retail's held the finished actor's shot through the setup states and turned up ([between two actors](../subsystems/battle-stage-camera.md#how-a-frames-camera-is-chosen)). The replay now turns up too, but reaches arm 0 at yaw `3052` where retail stands at `2850`: on the chase law that is about five passes, or an earlier actor's shot other than the replay's (Noa's Spirit at yaw `2228`).
 
-No yaw over the whole turn exceeds `.76`, and neither of the state's ordering tables is the frame on screen (record 0 is the next pass, record 1 still filling). A film from a state a round earlier that reads the camera through the earlier actor's Done band would name the pose the band set out from ([the earlier-actor thread](#battle--rendering)). Grade `capture`.
+No yaw over the whole turn exceeds `.76` in the image, so the rest of the residue is Xain's and Vahn's placement. A film from a state a round earlier that reads the camera through the earlier actor's Done band would name the pose the band set out from ([the earlier-actor thread](#battle--rendering)). Grade `capture`.
 
 ### A near body the child draws opaque
 

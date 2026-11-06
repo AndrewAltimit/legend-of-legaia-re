@@ -1574,9 +1574,12 @@ impl BattleDrive {
                 || arm0_roll)
         });
         if end == SpanGate::Landed {
+            // From the tick the replay arms the captured seat: the setup
+            // states arm no framing, so the earlier actor's stands through
+            // them, and the drive can end on the tick the SM reaches `want`.
             if let Some(e) = steer.prior
                 && ours
-                && state == want
+                && (state == want || PRE_SEED_STATES.contains(&state))
             {
                 let (seat, target) = e.engine_seats(pc);
                 world.seat_prior_action_framing(seat, e.category, target, e.style, e.depth as i16);

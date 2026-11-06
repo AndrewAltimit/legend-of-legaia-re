@@ -803,6 +803,10 @@ pub struct BattleState {
     /// the camera frames on retail's cadence
     /// (`World::battle_camera_state`).
     pub sm_ran_state: Option<u8>,
+    /// The acting seat `ctx[+0x13]` that pass ran on. A pass that ends an
+    /// actor's turn (the Done band, the gate `0x5A`) frames that actor, and
+    /// the host may arm the next one before the camera steps on the pass.
+    pub sm_ran_actor: Option<u8>,
     /// The battle frame the defeat fade's sink last lowered its bodies on
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
@@ -1406,6 +1410,7 @@ impl BattleState {
             frame_step_seed_from: None,
             frame_step_seed_after_accum: None,
             sm_ran_state: None,
+            sm_ran_actor: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),
             form_transition: Default::default(),

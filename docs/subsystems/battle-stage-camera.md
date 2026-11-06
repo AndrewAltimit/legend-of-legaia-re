@@ -770,6 +770,20 @@ Port: `battle_cam_script::end_of_action_phase` and
 next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
 while the round is executing.
 
+The gate's pass frames the seat it ran on, not the next one. The port's host
+can arm the next actor (state `0x00`, a new `ctx[+0x13]`) in the tick the
+Done or gate pass ran, before the camera steps on that pass, so the camera
+keeps the seat of the pass it frames (`BattleState::sm_ran_actor`,
+`battle_cam_inputs::ran_pass_actor`). Framed on the incoming seat instead, the
+Done band's case 6 tweened onto that seat for three setup passes and the seed
+`0x0C` set out from there: `battle_tunnelc_xain_bloody_horns_mid_cast` then
+reached Bloody Horns' walk-in turning down from yaw `1012` through `0`, where
+retail's camera turns up onto the same endpoint (RAM at arm 0: yaw `2850`
+rising at `68` a vsync). A retail film of an injected Bloody Horns shows the
+same hold: through `0x5A`, `0x0A` and `0x0C`'s first vsyncs the table is the
+finished actor's (`yaw_end` drifting `+4` a pass with the counter), and the
+next end appears with `0x28` (grade `capture`).
+
 ### Framing cases
 
 `FUN_801D5854`'s case argument indexes a ten-entry jump table at `0x801CEA00`
