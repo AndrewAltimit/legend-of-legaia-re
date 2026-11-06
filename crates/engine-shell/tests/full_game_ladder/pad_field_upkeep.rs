@@ -35,12 +35,33 @@ fn boss_bound() -> bool {
 /// (`NativeSession::pause_wipe`). A press sent into the wipe is lost, and the
 /// field heal then walked out of a menu it never drove.
 pub(super) fn open_pause_menu(session: &mut NativeSession) {
+    wait_out_pad_hold(session);
     tap_pad(session, PadButton::Start.mask());
     for _ in 0..120 {
         if session.field_menu.is_none() || session.pause_wipe().menu_spawned() {
             break;
         }
         let _ = session.tick();
+    }
+}
+
+/// Stand out the field pad hold `_DAT_8007B6B4` with the pad released. The
+/// player tick skips the pad controller, and with it the menu accept, while
+/// it drains (`FUN_801D1344`, `0x801D16C8..0x801D16E4`): every map install
+/// seats `0x28` of it (`FUN_8003ADAC`) - scene entry, save load and the
+/// field-back load after each fight - and a conversation's release `0x10`
+/// (`FUN_80039B7C`). A Start sent into it is lost, and the heal, equip and
+/// dress passes that follow a fight walked on as if the menu had nothing to
+/// offer: Koru (`nilboa`) was met with Noa at 8 HP and a bag of Blooms.
+pub(super) fn wait_out_pad_hold(session: &mut NativeSession) {
+    for _ in 0..0x40 {
+        if session.host.world.field_warp_words().1 == 0 {
+            break;
+        }
+        session.host.world.set_pad(0);
+        if session.tick().is_err() {
+            break;
+        }
     }
 }
 
@@ -70,15 +91,7 @@ pub(super) fn swap_leader(session: &mut NativeSession) -> bool {
     // The gate refuses the press while the pad hold `_DAT_8007B6B4` runs - a
     // conversation's release leaves `0x10` of it (`FUN_80039B7C`) - so stand
     // it out first, as a player whose press did nothing would press again.
-    for _ in 0..0x40 {
-        if session.host.world.field_warp_words().1 == 0 {
-            break;
-        }
-        session.host.world.set_pad(0);
-        if session.tick().is_err() {
-            break;
-        }
-    }
+    wait_out_pad_hold(session);
     let before = session.host.world.party.party_leader_slot;
     tap_pad(session, PadButton::Square.mask());
     for _ in 0..240 {
@@ -335,6 +348,15 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
                             used += 1;
                             PadButton::Cross.mask()
                         }
+                    }
+                    // An all-party restorative (Healing Bloom, Magic Fruit)
+                    // picks no row: its confirm takes one more Cross and
+                    // fans out over the party. Backing out of it left a bag
+                    // of Blooms unspent while `nilboa`'s road wore Noa to
+                    // 8 HP, and Koru opened on a round of heals.
+                    (PauseItemsFocus::List, InventoryUseState::AllPartyConfirm { .. }) => {
+                        used += 1;
+                        PadButton::Cross.mask()
                     }
                     _ => PadButton::Circle.mask(),
                 }

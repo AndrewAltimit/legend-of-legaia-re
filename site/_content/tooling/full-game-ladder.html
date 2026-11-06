@@ -234,6 +234,8 @@
   <ul>
     <li><strong>Scripted sequences</strong> get Cross on a press-2-release-14 duty cycle, and nothing while no script holds the frame.</li>
     <li><strong>The naming prompt's Yes/No confirm</strong> gets Up first, since it opens on No.</li>
+    <li><strong>A menu press waits out the field pad hold</strong> (<code>_DAT_8007B6B4</code>): every map install seats <code>0x28</code> frames of it, the field-back load after each fight included, and a conversation's release <code>0x10</code>. The pad controller and its menu accept sit it out, so a Start sent into it is lost; the heal and dress passes after a fight press only once it is out.</li>
+    <li><strong>An all-party restorative</strong> (Healing Bloom, Magic Fruit) is confirmed on its party-wide confirm, which picks no row.</li>
     <li><code>BootSession::tick</code> routes the naming prompt's pad edges and drains the per-tick queues as both play hosts do, so a headless driver that only ticks crosses the opening.</li>
   </ul>
 </section>
