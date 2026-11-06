@@ -114,11 +114,18 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
-    /// PROT 0952 `0x5C`'s saved seats `[caster x, caster z, victim x, victim z]`
-    /// (`0x801F7BB8`, `0x801F7BB0`).
+    /// A module's saved seats `[caster x, caster z, victim x, victim z]`, which
+    /// its arms write back each pass: PROT 0952 `0x5C`'s (`0x801F7BB8`,
+    /// `0x801F7BB0`), PROT 0951 `0x5B`'s (`0x801F89DC`, `0x801F89D4`); PROT
+    /// 0950 keeps the victim's first.
     pub horns_pin: [i16; 4],
-    /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`).
+    /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`); PROT 0951 `0x5B`'s
+    /// saved victim height (`0x801F89D6`).
     pub horns_lift: i16,
+    /// Which halves of [`Self::horns_pin`] an arm has saved, where a director
+    /// writes back only what it saved (PROT 0951): bit 0 the victim's, bit 1
+    /// the caster's.
+    pub pin_saved: u8,
     /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
     pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.

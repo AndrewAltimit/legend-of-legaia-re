@@ -2995,8 +2995,9 @@ cuts to the caster on clip `9`; arm 3's shot re-aims every pass and stages clip 
 turns the shot onto the victim, who rises three drains a pass for `0x40` passes. Arm 5 sets
 the height to `-0x1400` and drops it at eight drains a pass, so the victim falls out of the
 sky over the same `0x50` passes, and on its gate the hit lands with the victim turned off the
-caster. Arm 6 follows the victim's body through the knockdown. Arms 3 to 5 write both saved
-seat pairs back every pass, holding off the clips' root motion.
+caster. Arm 6 follows the victim's body through the knockdown. Arm 0 saves the victim's pair
+(`0x801F7218..0x801F723C`) and arms 0 to 2 write it back; arm 2 saves the caster's, and arms 3
+to 5 write both back every pass, holding off the clips' root motion.
 
 **Scythe Wind turns its caster on arm 2.** The arm writes the victim's saved pair back
 and turns the caster onto the victim's **body** pair (`FUN_80019B28(victim[+0x40],
@@ -3117,6 +3118,17 @@ twelve-frame shot on every pass, so the framing trails a countdown-driven endpoi
 rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
 pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
 the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
+
+**The arms pin both seats.** Arm 0 saves the victim's `+0x34..+0x3B` at `0x801F89D4`
+(`0x801F78E8..0x801F790C`) and arm 2 the caster's at `0x801F89DC`
+(`0x801F7AEC..0x801F7B10`). Arms 0 to 2 write the victim's back every pass, arms 3 and 4
+both (`0x801F7BF4..0x801F7C44`, `0x801F7D2C..0x801F7D78`), ahead of the shot, the wind's
+record (`FUN_80021B04` on `victim + 0x34`, `0x801F7CEC`) and the knock-back bearing.
+Arm 5 writes neither, so the knock-back carries the victim off. Unpinned, the victim the
+walk-in nudged stood `(-1, -819)` beside retail's `(0, -812)`, and the wind's rings with
+it. Pinned, the `dohaty_nova_v2_pre_scythe_wind` film reads `.854` to `.856` (arm 3 `.885`
+to `.894`) and `tunnelb_nova_pre_scythe_wind` `.891` to `.906` (arm 4 `.875` to `.890`,
+`0x51` `.857` to `.884`). Grade `disassembly` + `capture`.
 
 ### PROT 0951 (Chaos Flare)
 

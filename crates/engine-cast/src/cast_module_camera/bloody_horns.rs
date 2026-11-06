@@ -63,13 +63,39 @@ pub fn bloody_horns_camera(
     phase: u8,
     seats: ModuleCamSeats,
 ) -> CaptureCamArm {
-    let (c, v) = (seats.caster, seats.victim);
+    let (mut c, mut v) = (seats.caster, seats.victim);
     let mut arm = CaptureCamArm::default();
+    // Arm 0 saves the victim's pair (`0x801F7218..0x801F723C`) and arms 0 to 2
+    // write it back (`0x801F7334..0x801F7358`, `0x801F73E8..0x801F7408`,
+    // `0x801F743C..0x801F7460`). Arm 0 runs one pass; a host that enters on
+    // arm 1 saves there.
+    if phase <= 1 && st.pin_saved & 1 == 0 {
+        st.horns_pin[2] = v.x;
+        st.horns_pin[3] = v.z;
+        st.pin_saved |= 1;
+    }
+    if phase <= 2 && st.pin_saved & 1 != 0 {
+        (v.x, v.z) = (st.horns_pin[2], st.horns_pin[3]);
+        arm.victim_write.x = Some(v.x);
+        arm.victim_write.z = Some(v.z);
+    }
+    // Arms 3 to 5 read both pairs after [`pin`] writes them.
+    if (3..=5).contains(&phase) {
+        let [cx, cz, vx, vz] = st.horns_pin;
+        (c.x, c.z, v.x, v.z) = (cx, cz, vx, vz);
+    }
     match phase {
         // `0x801F72EC..0x801F7328`.
         0 => arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE),
         2 => {
-            st.horns_pin = [c.x, c.z, v.x, v.z];
+            // `0x801F7414..0x801F7438`: the caster's pair saved.
+            st.horns_pin[0] = c.x;
+            st.horns_pin[1] = c.z;
+            if st.pin_saved & 1 == 0 {
+                st.horns_pin[2] = v.x;
+                st.horns_pin[3] = v.z;
+            }
+            st.pin_saved |= 3;
             st.horns_lift = 0;
             arm.caster_write = CaptureSeatWrite {
                 rate: Some(SLOW_RATE),
@@ -202,6 +228,21 @@ mod tests {
         };
         assert!(a.folds_hit);
         assert_eq!(a.victim_write.y, Some(0));
+    }
+
+    /// The victim's pair is the one arm 1 found, not where it stood by arm 2.
+    #[test]
+    fn the_victim_is_pinned_from_the_walk() {
+        let mut st = ModuleCamState::default();
+        bloody_horns_camera(&mut st, 1, seats());
+        let mut drift = seats();
+        drift.victim.z += 9;
+        let a = bloody_horns_camera(&mut st, 2, drift);
+        assert_eq!(a.victim_write.z, Some(404));
+        assert_eq!(st.horns_pin, [388, 575, 104, 404]);
+        let a = bloody_horns_camera(&mut st, 3, drift);
+        assert_eq!(a.shot.unwrap().focus, [-388, 0, -575]);
+        assert_eq!(a.victim_write.z, Some(404));
     }
 
     #[test]
