@@ -2554,9 +2554,15 @@ same state byte. Three refinements:
   agrees with its endpoints. The capture takes the live pose outright
   (`RetailBattle::camera_behind_commit`, `LEGAIA_SEAT_CAM_BEHIND_COMMIT`,
   `BattleCamera::align_commit_pass`): `image` `.678` to `.706`, `camera`
-  `.986` to `1.0`. What remains is Vahn on the art's first key where the
-  displayed frame still holds the starter's last, and the rays' own `rand()`
-  stream.
+  `.986` to `1.0`. What remains is mostly the rays' own `rand()` stream:
+  retail's two framebuffers score `.860` against each other, the engine's
+  frame `.848` against the displayed one. Vahn's pose is the smaller part,
+  and the display lag cannot move it: the SpecialStarter's event-path cut
+  freezes every slot until the art commits
+  ([battle-actor-rendering](../subsystems/battle-actor-rendering.md)), so
+  the child's frames from tick `460` to `536` of the drive draw one pose, and
+  any retake inside that span (`LEGAIA_CAPTURE_DISPLAY_LAG` `3` or `18`)
+  lands on it. The gate's own tick `538` is the art's first pass.
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the
