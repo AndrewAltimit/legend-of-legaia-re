@@ -1300,6 +1300,28 @@ impl LegaiaRuntime {
         }
     }
 
+    /// This frame's drawable subset of [`Self::play_mg_dance_marker_indices`]
+    /// under the staged venue camera, over the positions the last
+    /// [`Self::play_mg_dance_marker_step`] returned: the marker tiles and the
+    /// animated hall props (the stage-entrance curtain among them) cut by the
+    /// kernel the native window cuts them with
+    /// (`dance_venue::psx_gpu_visible_indices`). Off the art's own track before
+    /// the venue is staged, as [`Self::play_mg_dance_env_visible_indices`] falls back.
+    pub fn play_mg_dance_marker_visible_indices(&self) -> Vec<u32> {
+        let Some(art) = self.minigame_art() else {
+            return Vec::new();
+        };
+        let staged = self
+            .scene_host
+            .host()
+            .and_then(|h| h.world.minigames.dance_venue.as_ref())
+            .map(|s| s.camera);
+        match staged {
+            Some(camera) => art.dance_marker_visible_indices_with(&camera),
+            None => art.dance_marker_visible_indices(),
+        }
+    }
+
     pub fn play_mg_dance_env_flat_rgba(&self) -> Vec<u8> {
         self.minigame_art()
             .map(|a| a.dance_env_flat_rgba())

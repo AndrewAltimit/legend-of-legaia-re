@@ -557,7 +557,9 @@ window.MgDance = (function () {
      * GPU would: a polygon spanning more than 1023 x 511 screen pixels is
      * refused whole, which is what keeps the stage-entrance curtain out of
      * the camera track's far poses (the kernel is the native window's,
-     * `dance_venue::psx_gpu_visible_indices`). The orbit view draws it all. */
+     * `dance_venue::psx_gpu_visible_indices`). The curtain is an animated
+     * prop, so it sits in the marker block, which is cut the same way
+     * (`dance_marker_visible_indices`). The orbit view draws it all. */
     function indexKey(a) {
       let h = 0x811c9dc5 ^ a.length;
       for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 0x01000193);
@@ -567,15 +569,22 @@ window.MgDance = (function () {
     function setHallIndices(b, engineCamera) {
       if (!b.env || !api.dance_env_visible_indices) return;
       const vis = engineCamera ? api.dance_env_visible_indices() : null;
-      const key = vis ? indexKey(vis) : 'full';
+      const mvis = vis && b.markerBase >= 0 && api.dance_marker_visible_indices
+        ? api.dance_marker_visible_indices() : null;
+      const key = vis ? indexKey(vis) + '/' + (mvis ? indexKey(mvis) : '-') : 'full';
       if (key === b.envIdxKey) return;
       b.envIdxKey = key;
       if (!vis) { b.renderer.updateIndices(b.fullIdx); return; }
-      const tail = b.fullIdx.length - b.envIdxEnd;
+      const tail = mvis ? mvis.length : b.fullIdx.length - b.envIdxEnd;
       const out = new Uint32Array(b.castIdxLen + vis.length + tail);
       out.set(b.fullIdx.subarray(0, b.castIdxLen), 0);
       for (let i = 0; i < vis.length; i++) out[b.castIdxLen + i] = vis[i] + b.envBase;
-      out.set(b.fullIdx.subarray(b.envIdxEnd), b.castIdxLen + vis.length);
+      const at = b.castIdxLen + vis.length;
+      if (mvis) {
+        for (let i = 0; i < mvis.length; i++) out[at + i] = mvis[i] + b.markerBase;
+      } else {
+        out.set(b.fullIdx.subarray(b.envIdxEnd), at);
+      }
       b.renderer.updateIndices(out);
     }
 

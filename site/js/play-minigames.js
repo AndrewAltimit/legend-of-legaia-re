@@ -533,15 +533,18 @@
   }
 
   /* The hall under the engine camera draws only the triangles the PSX GPU
-   * would: one spanning more than 1023 x 511 screen pixels is refused whole,
-   * which keeps the stage-entrance curtain out of the camera track's far
-   * poses. The subset is the engine's (`play_mg_dance_env_visible_indices`,
+   * would: one spanning more than 1023 x 511 screen pixels is refused whole.
+   * The marker block is cut the same way: it carries the animated hall
+   * props, and the stage-entrance curtain among them spans the whole frame
+   * from behind on the camera track's far poses, which retail's GPU refuses
+   * and the native window cuts. The subsets are the engine's
+   * (`play_mg_dance_env_visible_indices`, `play_mg_dance_marker_visible_indices`,
    * the `dance_venue::psx_gpu_visible_indices` kernel the native window cuts
-   * its hall with); swapped in only when it changes. */
+   * its hall, tiles and props with); swapped in only when they change. */
   function hallIndexKey(a) {
     let h = 0x811c9dc5 ^ a.length;
     for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 0x01000193);
-    return a.length + ':' + (h >>> 0);
+    return h >>> 0;
   }
 
   function hallIndices(rt, view, sc) {
@@ -550,15 +553,22 @@
     if (!hall || !r || !r.updateIndices
       || typeof rt.play_mg_dance_env_visible_indices !== 'function') return;
     const vis = sc.vp && sc.vp.length === 16 ? rt.play_mg_dance_env_visible_indices() : null;
-    const key = vis ? hallIndexKey(vis) : 'full';
+    const mvis = vis && sc.markerBase >= 0 && typeof rt.play_mg_dance_marker_visible_indices === 'function'
+      ? rt.play_mg_dance_marker_visible_indices() : null;
+    const key = vis ? `${vis.length}:${hallIndexKey(vis)}:${mvis ? mvis.length + ':' + hallIndexKey(mvis) : '-'}` : 'full';
     if (key === hall.key) return;
     hall.key = key;
     if (!vis) { r.updateIndices(hall.full); return; }
-    const tail = hall.full.length - hall.end;
+    const tail = mvis ? mvis.length : hall.full.length - hall.end;
     const out = new Uint32Array(hall.castLen + vis.length + tail);
     out.set(hall.full.subarray(0, hall.castLen), 0);
     for (let i = 0; i < vis.length; i++) out[hall.castLen + i] = vis[i] + hall.base;
-    out.set(hall.full.subarray(hall.end), hall.castLen + vis.length);
+    const at = hall.castLen + vis.length;
+    if (mvis) {
+      for (let i = 0; i < mvis.length; i++) out[at + i] = mvis[i] + sc.markerBase;
+    } else {
+      out.set(hall.full.subarray(hall.end), at);
+    }
     r.updateIndices(out);
   }
 

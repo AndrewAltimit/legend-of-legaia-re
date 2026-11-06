@@ -533,7 +533,7 @@ Both tracks open on pose 0, whose records are the entry's own stores, so the fir
 
 **Port.** `DanceCameraTrack` (`from_overlay` for the tables, `dance_camera_ease_table` for the ease, `tick` for the block), held by the run (`DanceGame::advance_camera` / `camera_pose`), plus `dance_venue::venue_camera_at` for the field-frame pose. `sync_dance_venue` advances it once per staged frame on the native window and the browser play page.
 
-The native window re-uploads its hall bake through the visibility rule whenever the kept set changes (`refresh_dance_venue_view`); the browser pages swap the hall's index span for `play_mg_dance_env_visible_indices` / `dance_env_visible_indices`. A disc-gated test pins the curtain out of the key-1 frame and the rest of the hall in it. The minigames page advances its track in `dance_tick`, which it does not call during its count-in, so there the camera starts moving with the song.
+The native window re-uploads its hall bake, each marker tile and each prop through the visibility rule whenever the kept set changes (`refresh_dance_venue_view`); the browser pages swap the hall's index span for `play_mg_dance_env_visible_indices` / `dance_env_visible_indices` and the marker block's for `play_mg_dance_marker_visible_indices` / `dance_marker_visible_indices`. The curtain is a prop, so it sits in the marker block: with only the hall cut, the pages drew it across the whole frame on the far poses. A disc-gated test pins the curtain out of the key-1 frame and the rest of the hall in it. The minigames page advances its track in `dance_tick`, which it does not call during its count-in, so there the camera starts moving with the song.
 
 ## Assets
 
