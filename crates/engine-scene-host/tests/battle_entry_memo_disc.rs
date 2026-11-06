@@ -8,7 +8,7 @@
 //! Noa) and an equipment change are in the walk. The form and the VRAM its log
 //! replays must equal a fresh build's, hit or miss.
 //!
-//! Skips without `LEGAIA_DISC_BIN`.
+//! Skips without `LEGAIA_DISC_BIN` or without an `extracted/` tree (PROT.DAT + CDNAME.TXT).
 
 use std::path::PathBuf;
 
@@ -86,7 +86,7 @@ fn outfits() -> Vec<[u8; 5]> {
 #[test]
 fn a_memoised_battle_form_is_what_a_fresh_build_makes() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let index = ProtIndex::open_extracted(&dir).expect("open extracted tree");
@@ -162,7 +162,7 @@ fn a_memoised_battle_form_is_what_a_fresh_build_makes() {
 #[test]
 fn a_memo_hands_out_clips_it_keeps_unchanged() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let index = ProtIndex::open_extracted(&dir).expect("open extracted tree");
@@ -209,7 +209,7 @@ impl PartyFormDisc for MovingDisc<'_> {
 #[test]
 fn the_verify_switch_catches_a_party_form_hit_that_differs() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let index = ProtIndex::open_extracted(&dir).expect("open extracted tree");
@@ -248,7 +248,7 @@ fn the_verify_switch_catches_a_party_form_hit_that_differs() {
 #[test]
 fn the_verify_switch_catches_a_stage_hit_that_differs() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let mut host = SceneHost::open_extracted(&dir).expect("open extracted tree");
@@ -276,7 +276,7 @@ fn the_verify_switch_catches_a_stage_hit_that_differs() {
 #[test]
 fn a_memoised_stage_is_what_a_fresh_build_makes() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let mut host = SceneHost::open_extracted(&dir).expect("open extracted tree");
@@ -338,7 +338,7 @@ fn a_memoised_stage_is_what_a_fresh_build_makes() {
 #[test]
 fn one_monster_walk_is_the_mesh_and_the_ids_of_two() {
     let Some(dir) = extracted_dir() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     use legaia_actor_formats::monster_archive as ma;

@@ -424,8 +424,9 @@ jobs:
     runs-on: self-hosted
     # The runner is shared, so this job's wasm-pack build competes with any
     # other build on the box. 10 minutes was tight enough that contention
-    # alone could fail a deploy that had nothing wrong with it.
-    timeout-minutes: 30
+    # alone could fail a deploy that had nothing wrong with it. The deploy
+    # step's own poll (25 min, below) has to fit inside this too.
+    timeout-minutes: 45
     permissions:
       pages: write
       id-token: write
@@ -487,6 +488,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        with:
+          # The action's own status poll gives up after 10 minutes by default,
+          # and GitHub's side has been seen sitting in `finished_file_sync`
+          # past that on a deploy with nothing wrong in it. 25 minutes stays
+          # inside the job's own limit.
+          timeout: 1500000
 
   # -- CI Summary -------------------------------------------------------------
   notify:
