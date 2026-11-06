@@ -749,6 +749,51 @@ fn a_done_capture_on_the_seeded_countdown_is_the_arm_pass() {
     assert!(!done_arm_pass(&ram, ctx, 0x51), "the settle gate holds it");
 }
 
+/// The pass before an Attack's Done arm is the return state's exit, which
+/// re-arms nothing, so the screen two passes back stands one stale case-7 step
+/// behind the Done arm's origin. `koru_pre_*`'s words (Gala on Koru, step 3):
+/// one pass back on case 8 is yaw `3496`, depth `6730`, focus z `-342`; case 7
+/// (yaw `3300`, depth `prescale(5120) = 8192`, focus the midpoint `-233`) takes
+/// them to `3595`, `5998`, `-399`. Pitch and `TR.y` stay.
+#[test]
+fn a_done_arm_capture_walks_the_strike_exit_on_case_7() {
+    use legaia_engine_camera::projection::BattleCamPose;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (gala, koru) = (0x800E_C9E8u32, 0x800E_D264u32);
+    put32(&mut ram, ACTOR_TABLE, gala);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, koru);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, gala + 0x1DE, 3);
+    put8(&mut ram, gala + 0x1DD, 3);
+    put16(&mut ram, gala + 0x3C, 19);
+    put16(&mut ram, gala + 0x40, (-792i16) as u16);
+    put16(&mut ram, koru + 0x3C, 2);
+    put16(&mut ram, koru + 0x40, 327);
+    put8(&mut ram, koru + 0x1F1, 4);
+    put16(&mut ram, ctx + 0x6D0, 5120);
+    // The Done table's yaw endpoint.
+    put16(&mut ram, ctx + TWEEN_TABLE + 4 + 2, 3300);
+    let one_back = BattleCamPose {
+        pitch: 4073.0,
+        yaw: 3496.0,
+        tr: [-74.0, 1280.0, 6730.0],
+        focus: [10.0, 0.0, -342.0],
+    };
+    let p = done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).expect("case 7");
+    assert_eq!(p.yaw, 3595.0);
+    assert_eq!(p.tr, [-113.0, 1280.0, 5998.0]);
+    assert_eq!(p.focus, [10.0, 0.0, -399.0]);
+    assert_eq!(p.pitch, 4073.0, "case 8 holds the live pitch");
+    // A target on its knockdown kept case 8 on the held passes.
+    put8(&mut ram, koru + 0x1D9, 4);
+    assert!(done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).is_none());
+    put8(&mut ram, koru + 0x1D9, 0);
+    // A Spirit or a cast has no strike band.
+    put8(&mut ram, gala + 0x1DE, 2);
+    assert!(done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).is_none());
+}
+
 /// A PROT 0962 charge body waiting in arm 3 walks the wind-up shot arm 2
 /// built once over `0xC` units: `koru_blade_breath_mid_cast` holds it two
 /// units in (yaw `99` a unit, `979` to go), so a walk back of two step-`2`

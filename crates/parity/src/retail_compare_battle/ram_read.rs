@@ -799,11 +799,8 @@ impl RetailBattle {
                 game_anchors::u16_at(ram, ctx + 0x6DA),
                 DISPLAY_LAG_PASSES,
             );
-            let passes = if done_arm_pass(ram, ctx, action_state) {
-                passes.min(1)
-            } else {
-                passes
-            };
+            let done_arm = done_arm_pass(ram, ctx, action_state);
+            let passes = if done_arm { passes.min(1) } else { passes };
             // Each pass on its own step where the older ordering table's
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.
@@ -874,6 +871,14 @@ impl RetailBattle {
                 }
             };
             let mut shown = walk(&steps);
+            // The Done arm's own pass: the pass before it was the strike
+            // band's exit, which walked case 7's stale increments.
+            if done_arm
+                && steps.len() == 1
+                && let Some(p) = done_arm_strike_walk_back(ram, ctx, shown, display_pass_steps(ram))
+            {
+                shown = p;
+            }
             // A turning shot re-aims the live yaw a fixed `step * n` on every
             // pass and lands it inside that pass, so the RAM's yaw reads on
             // its endpoint and the passes back stood those steps behind it

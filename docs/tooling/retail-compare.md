@@ -150,6 +150,19 @@ failed is not stored. The newest three generations are kept.
 the cache, and the subcommand refuses `--cache` beside a baseline flag. Use
 `--fresh` for a re-measure, for instance to see whether a score is a flake.
 
+### Probing the image child's seat
+
+Three variables expose what a battle state hands its `play-window` child.
+`LEGAIA_RC_CHILD_ENV=1` prints the seat variables, `LEGAIA_RC_CHILD_CMD=1` the
+whole command line (enough to re-run the child by hand from its work
+directory), and `LEGAIA_RC_ENV_OVERRIDE="K=V;K=V"` replaces seat variables after
+the seat is computed, an empty value removing one. A sweep of one value under
+`--fresh --filter =<label>` says which seat moves a frame before any seat code
+changes; the Done-arm camera walk back
+([below](#an-ease-out-camera-carries-its-history)) was found by sweeping the
+displayed yaw this way. The override is a probe only: the cache keys on every
+`LEGAIA_*` variable, so an override run never feeds a normal one.
+
 ## Reading the report
 
 `report.md` opens with the channel means over the seeded states and the
@@ -4114,14 +4127,16 @@ was saved, and a frame far from both measures the engine.
 | `koru_pre_blade_breath`, `_thunder_needle`, `_gigaton_press` | `.740` | `.983` | `.735` |
 | `cort_evolved_card_pre_doomsday` | `.820` | `.995` | `.818` |
 
-These four are Done arm passes (`done_arm_pass`):
-the RAM is the first pass on the Done table, the image child walks the pose one
-pass back along it, and the undisplayed buffer is that pass. The screen is a
-pass older still, on the strike band's own framing, whose table the arm
-overwrote. The RAM holds no second endpoint to walk back against, and the two
-buffers stand as far apart as the engine stands from the screen, which is
-what a swing of the framing between two passes looks like. Closing it needs a
-word the state does not have; retake a state a pass into the Done band instead.
+These four are Done arm passes (`done_arm_pass`), and the scores are the
+child's frame when it walked the pose one pass back along the Done table: it
+drew the undisplayed buffer, which is that pass. The screen is a pass older
+still, on the strike band's case-7 table, and the two buffers stand as far
+apart as the engine stood from the screen, which is what a swing of the
+framing between two passes looks like. The RAM holds no case-7 endpoint, but
+its inputs are there, and the return state's exit pass re-arms nothing, so
+the step back is that table's last increment
+([the Done arm's pass](#an-ease-out-camera-carries-its-history)); walked that way the
+four read `.904` / `.996` against the displayed buffer.
 
 A frame near neither buffer is not cleared by this test, and a seat the child
 already took back reads closer to the displayed one by construction, so only a
@@ -5113,14 +5128,31 @@ the walk's step. A walk under eight vsyncs is left to the replay
 The same capture is the Done arm's own pass: its countdown `ctx[+0x6D8]`
 still holds the `0x3C` the arm seeds in the pass that stores `0x51`, with
 every HP bar settled, so nothing has stepped it (`done_arm_pass`). That pass
-was the first to walk the Done table; the pass before walked the strike
-band's framing, which the RAM no longer holds. The displayed pose is
-therefore walked back one pass and no further, as on the seed's own `0x14`
-pass (`tween_passes_back`). The image child takes the displayed pose when the
-replay's endpoints agree on the components the walk back moved
-(`BattleCamera::glide_endpoint_matches_walked`): the Done tail holds its
-pitch at the strike's residue (`-23` retail, `-26` replay), a component the
-displayed frame shows unchanged. `koru_pre_*` read `image` `.667` to `.740`.
+was the first to walk the Done table, so the first pass back is a step of
+that table. The pass before it was the return state `0x20`'s exit, and that
+pass arms no framing: it stores `0x50` (`0x801E5590`) and jumps to the state
+tail at `0x801E5F64` past the case `7` / `8` fork, so the walker task steps the
+increments the last held `0x20` pass armed and nothing re-arms them. The
+frame on screen is that held pass, one exit-pass step further back along
+case 7's table (`done_arm_strike_walk_back`). Case 7's endpoints are not in
+the RAM, but every input is: the yaw is case 8's (both bases reduce to
+`ctx[+0x6DA] - actor[+0x46] - 0x700`), the depth `prescale(ctx[+0x6D0])`, the
+focus the midpoint of the two body pairs. The exit pass moved each component
+by the increment `ceil(G / 0xC)` the held pass armed off its gap `G`, and two
+walks of it narrowed `G` to the gap the Done arm saw, which pins `G`.
+
+The image child takes the displayed pose when the replay's endpoints agree on
+the components the walk back moved
+(`BattleCamera::glide_endpoint_matches_walked`). Case 8 on an idle monster
+holds the live pitch and `TR.y` (`0x801D6BFC`), and the replay's strike leaves
+both a few units off retail's (pitch `-23` retail, `-26` replay), so the walk
+leaves those two on the first pass back: a walked one fails the test and drops
+the whole pose. `koru_pre_*` (yaw `3445` to `3496` on case 8, then `3595` on
+case 7; depth `6730` to `5998`) read `image` `.735` one pass back and `.904`
+two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
+`.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
+target on its knockdown or get-up (case 8 on the held passes too), a framing
+style `2` / `3` and a monster's pull-in keep the one-pass pose.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and

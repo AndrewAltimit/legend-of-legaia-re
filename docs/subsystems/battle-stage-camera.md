@@ -1133,6 +1133,12 @@ live `+0x36` for case 7's Y), not the live pair case 6 reads.
 | `0x20` return | `0x801E54EC`, fork `0x801E5660..0x801E56C0` | as `0x1F`; also `8` when a party slot faces a target in a death clip (anim `7` / `8`) |
 | `0x52` / `0xFD` | `0x801E5F74` | `8` unconditionally |
 
+The pass on which `0x20` lets go arms nothing: it stores `0x50` (`0x801E5590`)
+and jumps to the state tail at `0x801E5F64` before the fork, so the walker steps
+the increments the last held pass armed, and case 8 is armed by the Done arm a
+pass later. An Attack's Done band therefore opens with one un-re-armed step of
+case 7's table between the two framings.
+
 `player_steal_skeleton_pre` (`0x1E`) reads case 7's tween targets;
 `player_steal_skeleton_banner` (`0x20`, the skeleton on its knockdown at HP
 `0`) reads case 8's death re-frame at the ramp cap.
