@@ -279,6 +279,16 @@ impl BattleHud {
         }
     }
 
+    /// Seat the slot's whole `+0x16E` status word - the world's raw half OR
+    /// its tracker (`World::raw_status_word`) - for the status element and
+    /// the gauge colour, which read the word in retail (`FUN_8002C2E4`,
+    /// `FUN_80046A20`).
+    pub fn sync_status_word(&mut self, slot: u8, word: u16) {
+        if let Some(s) = self.slots.get_mut(slot as usize) {
+            s.status_word = Some(word);
+        }
+    }
+
     /// Mark a slot as inactive (empty actor pool entry). Clears name and
     /// gauges so the renderer skips the row.
     pub fn clear_slot(&mut self, slot: u8) {

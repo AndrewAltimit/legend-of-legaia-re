@@ -52,9 +52,15 @@ pub struct BattleSlotHud {
     pub status_icons: Vec<StatusKind>,
     /// Displayed character level - retail's char record `+0x130`, which the
     /// status element's no-ailment arm draws beside the base marker (see
-    /// [`Self::status_element`]). `0` means "unknown", and the hosts draw the
-    /// bare marker rather than "LV 0".
+    /// [`Self::status_element`]). `0` means "unknown", and the hosts draw
+    /// the bare marker rather than "LV 0".
     pub level: u8,
+    /// The slot's whole retail `+0x16E` status word as the world holds it
+    /// (`World::raw_status_word`: the raw half a cast or a hit's status arm
+    /// writes, OR the tracker's packed bits), seated by
+    /// [`BattleHud::sync_status_word`]. `None` for a host that syncs only the
+    /// tracker, which then reads [`Self::status_icons`] alone.
+    pub status_word: Option<u16>,
 }
 
 impl BattleSlotHud {
@@ -105,9 +111,11 @@ impl BattleSlotHud {
     ///
     /// The whole-gauge precedence is retail's: death first (`hp == 0` after
     /// the ramp settles), then the status override, then per-bar fill
-    /// ratios. The status flag retail reads is actor `+0x16E`; the engine
-    /// approximates it with "any active status icon", the same stand-in
-    /// [`legaia_engine_ui::hp_bar_color_index`]'s callers use.
+    /// ratios. The status flag retail reads is the whole actor `+0x16E` word
+    /// (`lhu v0,0x16e(a1)` / `beq v0,zero` at `0x80046AE0` and `0x80046C24`),
+    /// so any bit greys the gauge to `3`: a Curse a cast wrote raw, a rotted
+    /// limb, a Venom from an enemy special. [`Self::status_display_flags`]
+    /// is that word.
     ///
     /// Since `hp` here is the **displayed** (ramping) value, the bar colour
     /// tracks the drain exactly as retail's gauge does - `FUN_80046A20`
@@ -120,7 +128,7 @@ impl BattleSlotHud {
             self.hp_max,
             self.mp,
             self.mp_max,
-            u16::from(!self.status_icons.is_empty()),
+            self.status_display_flags(),
         )
     }
 
@@ -142,15 +150,22 @@ impl BattleSlotHud {
     /// The slot's packed retail status word - battle actor `+0x16E`, the
     /// halfword `FUN_80047430` mirrors to the display record's `+0x6F6`.
     ///
-    /// Built from the typed [`Self::status_icons`] set through
+    /// The world's word when a host seated one ([`Self::status_word`]): the
+    /// raw half matters, because retail's appliers write bits the tracker
+    /// never holds (a cast's Curse, a hit's Venom), and the status element
+    /// and the gauge read the word.
+    ///
+    /// Without it, built from the typed [`Self::status_icons`] set through
     /// [`legaia_engine_battle_vm::status_effects::pack_display_flags`]. Rot packs
-    /// its **whole** limb group here rather than a single rolled bit: the HUD
+    /// its **whole** limb group there rather than a single rolled bit: the HUD
     /// snapshot carries kinds, not instances, and the ladder only tests the
     /// group. Faint contributes no bit - it is the zero-HP arm of the ladder.
     pub fn status_display_flags(&self) -> u16 {
-        self.status_icons
-            .iter()
-            .fold(0u16, |w, k| w | k.display_bit())
+        self.status_word.unwrap_or_else(|| {
+            self.status_icons
+                .iter()
+                .fold(0u16, |w, k| w | k.display_bit())
+        })
     }
 
     /// The single status element retail draws for this slot, chosen by the

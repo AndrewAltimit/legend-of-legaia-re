@@ -3178,6 +3178,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-patch",
  "legaia-engine-battle",
+ "legaia-engine-battle-hud",
  "legaia-engine-battle-loop",
  "legaia-engine-battle-vm",
  "legaia-engine-cast",

@@ -380,6 +380,12 @@ character record read `0x5C8` bytes early (`0x80084140 + 0x5C8 == 0x80084708`):
 
 The status word is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it
 with a paired `lhu` / `sh` on both its arms (`0x80047680`, `0x80048040`).
+The port seats that word on each HUD row from `World::raw_status_word` (the
+raw half a cast or a hit's status arm writes, OR the tracker,
+`BattleHud::sync_status_word`), for this element and for the gauge colours
+below. Reading the tracker alone left a Curse a cast wrote, an enemy special's
+Venom or a rotted limb with no element and no tier `3`; the retail
+differential `battle_gauge` holds the colours to `FUN_80046A20`.
 
 | Condition | Draw |
 |---|---|

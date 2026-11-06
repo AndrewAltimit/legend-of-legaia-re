@@ -323,3 +323,9 @@ the record's byte to both, so the height pass and the ambient lifetime read a st
 directional steps probed the player even with the VM's own flag bit `0` set, where the arm skips the
 call (`0x80038484..0x80038490`). The wander, the home step, the facing ramp, the touch-woken wait and
 the flag, cue and bit ops match.
+
+The battle frame's gauge loop `FUN_80046A20` (`0x80046A80..0x80046D28`), against the rows both hosts sync
+each battle frame, found the HUD reading the tracker's statuses where the loop and the status element
+`FUN_8002C2E4` read the whole `+0x16E` word: a Curse a cast wrote, an enemy special's Venom or a rotted limb
+greyed no gauge and drew no element. The rows now carry `World::raw_status_word`. The range metric
+`FUN_8004E2F0` matches `range_metric` over every seat pairing, reach and size class.

@@ -136,6 +136,9 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
             },
         );
         hud.sync_level(*slot, row.level);
+        // The status element and the gauge read the actor's whole word, raw
+        // half included (`FUN_8002C2E4`, `FUN_80046A20` at `0x80046AE0`).
+        hud.sync_status_word(*slot, world.raw_status_word(*slot));
     }
     for slot in cleared {
         hud.clear_slot(slot);

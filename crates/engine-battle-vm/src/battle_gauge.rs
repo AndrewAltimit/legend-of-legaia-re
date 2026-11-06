@@ -64,8 +64,10 @@
 //! but `FUN_800349EC` folds an active status into the caution tier and has
 //! no `3`, where `FUN_80046A20` overrides the whole gauge to `3`. The battle
 //! numerals and fills both take this law; the readout pair tints the menus
-//! and the field party HUD. The status flag retail reads at actor `+0x16E` is approximated on
-//! the engine side by "any active status icon".
+//! and the field party HUD. The status flag is the whole actor `+0x16E` word,
+//! which the HUD takes from `World::raw_status_word` (the raw half a cast or a
+//! hit writes, OR the tracker), so a cast-written Curse or a rotted limb greys
+//! the gauge as in retail.
 
 /// Gauge fill-colour index: actor is dead (`cur_hp == 0`).
 pub const GAUGE_DEAD: u8 = 2;
