@@ -1462,6 +1462,7 @@ Traps, each of which has produced a false drift report:
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
 | startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
+| startup hang | A native child at 0 CPU that never maps is waiting on a wedged input-method server; scripted windows opt out of XIM ([below](#a-native-child-that-hangs-before-its-window-maps)). |
 
 ### A native child that dies before its event loop opens
 
@@ -1521,6 +1522,24 @@ startup race:
 | Legaia Explorer's Play button | `legaia_explorer::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
 
 A `SIGSEGV` after the line is a different crash and is never relaunched.
+
+### A native child that hangs before its window maps
+
+The second startup failure is a hang, not a death. `winit`'s X11 backend opens
+an XIM input context at startup and waits for the input-method server
+(`XMODIFIERS=@im=ibus` on a GNOME desktop) to reply. When that server stops
+answering, every new window sits in `poll` at 0 CPU-seconds with one socket
+to the X server. It never maps and logs nothing, while `xdpyinfo` and the
+windows already open keep working. A wedged `ibus-x11` hung the full gate's
+smoke captures and a CI job's minigame ladder this way. Pausing it
+(`kill -STOP` on `ibus-x11`) reproduces the hang on demand.
+
+A scripted `play-window` (`--screenshot`, `--screenshot-every`,
+`--pad-script` or `--key-script`) sets `XMODIFIERS=@im=none` for itself in
+`main`, before any thread starts, so a capture never waits on an input
+method. A window a person plays keeps the desktop's input method. A hang in
+an older binary clears with `ibus restart`, but a window already waiting stays
+stuck on its dead connection.
 
 Paired tick-locked and matching frame for frame: field walk and camera, the
 dialogue box (typewriter, page hand, row scroll), the pause menu's Items /
