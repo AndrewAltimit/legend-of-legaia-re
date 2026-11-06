@@ -2480,3 +2480,33 @@ fn a_rate_switched_inside_the_lag_rewinds_on_the_old_rate() {
     put16(&mut ram, n + 0xC8, 240);
     assert_eq!(ram_read::displayed_part_halfword(&ram, n, 0xC8, 8), 336);
 }
+
+/// A magic-band capture whose accumulator adds up only on the history past
+/// its newest entry: `battle_garmel_songi_hyper_wave_mid_cast` holds `48`
+/// over steps `3, 2, 2, 2` (newest first), three step-`2` passes, so the
+/// display's two passes ran on step `2`. One that adds up on the newest
+/// reading keeps it.
+#[test]
+fn a_magic_band_accumulator_reads_the_older_steps_where_they_add_up() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x2B);
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    // The newest entry (cursor 4, so slot 3) is the dear frame.
+    put32(&mut ram, frame_step::FRAME_HISTORY_CURSOR, 4);
+    for k in 0..16u32 {
+        put16(&mut ram, frame_step::FRAME_HISTORY + k * 2, 0x1C0);
+    }
+    put16(&mut ram, frame_step::FRAME_HISTORY + 3 * 2, 534);
+    assert_eq!(frame_step::recent_pass_steps(&ram)[..3], [3, 2, 2]);
+    put32(&mut ram, ctx + 0x87C, 48);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), Some([2, 2]));
+    // `24 + 16 + 16`: the newest reading adds up, so it stands.
+    put32(&mut ram, ctx + 0x87C, 56);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), None);
+    // Outside `0x2B` the accumulator counts other passes.
+    put32(&mut ram, ctx + 0x87C, 48);
+    put8(&mut ram, ctx + 7, 0x70);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), None);
+}

@@ -818,8 +818,11 @@ impl RetailBattle {
             // Each pass on its own step where the older ordering table's
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.
-            let steps = display_pass_steps(ram);
-            let confirmed = steps != [frame_step(ram); 2];
+            let older = magic_band_older_steps(ram);
+            let steps = older.unwrap_or_else(|| display_pass_steps(ram));
+            // The older reading keeps the largest increment's own divisor (the
+            // cast-effect shot's is not case 6's `0xC`).
+            let confirmed = older.is_none() && steps != [frame_step(ram); 2];
             let steps: Vec<u8> = (0..usize::from(passes))
                 .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                 .collect();
