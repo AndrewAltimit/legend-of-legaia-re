@@ -352,3 +352,11 @@ box and finds the pick differ: every hit overwrites the caller's `+0x98` link, s
 is talked to, where the port takes the nearest. Switching to slot order changed the casino's `koin1` door
 `P1[56]` into a talk with `P1[63]`, so the port keeps the nearest until a capture reads that scene's spawn
 order.
+
+The text-width measurer `FUN_80035F04`, with its expander, matches `Font::measure` over strings with author
+escapes, colour codes, accent cells and newlines at both glyph pads, and disagrees with `Font::layout` on most of
+them: the layout draws `0x5E X` and `0xFF X` as glyphs and gives `0xCE` its sprite's advance or none. The balloon
+spawner's and the world-map labels' widths read the layout and now read the measure. The battle-intro name
+banner `FUN_801D9D3C` matches `enemy_menu_rows` and `layout_enemy_menu_rows` over the measure. On four labels that
+cannot sit side by side inside `6..0x13A`, retail's relax-and-clamp loop never settles and spins for ever, where the
+port stops at its bound.

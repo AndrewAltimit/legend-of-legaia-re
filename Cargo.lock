@@ -3194,6 +3194,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-minigame-formats",

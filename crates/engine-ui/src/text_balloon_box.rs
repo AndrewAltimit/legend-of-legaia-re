@@ -40,14 +40,20 @@
 use crate::*;
 
 /// Measure a balloon line the way `FUN_80035F04` does for the spawner: the
-/// rendered advance of the raw page bytes in the host's dialog font.
+/// page bytes through the expander (`0x5E X` and `0xFF X` author escapes,
+/// `0xCE` escape advances, colour codes taking no width) and the widest
+/// `0x7C` line - [`legaia_font::Font::measure`], which the retail
+/// differential `text_width` holds to the routine. `Font::layout` lays the
+/// escapes out as glyphs and is no measure.
 ///
 /// Hosts feed the result to
 /// `legaia_engine_core::world::World::commit_text_balloon_width`, which
 /// applies the retail centring and leaves the record carrying the same `x`
 /// retail computes at spawn.
 pub fn text_balloon_text_width(font: &legaia_font::Font, text: &[u8]) -> i16 {
-    font.layout(text).advance_x.min(i16::MAX as u32) as i16
+    font.measure(text, &legaia_font::MeasureOptions::default())
+        .max_px
+        .min(i16::MAX as u32) as i16
 }
 
 /// Window chrome for the balloon at the engine's `frame_rect`
