@@ -48,6 +48,7 @@ mod spirit_cleanup;
 mod spoils;
 mod stat_aggregator;
 mod tint_ease;
+mod turn_pick;
 mod unequip;
 mod validator;
 mod walk_step;

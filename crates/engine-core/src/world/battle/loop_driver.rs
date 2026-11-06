@@ -5,6 +5,9 @@
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
+
+/// The `+0x16E` status word's Stone bit.
+const STONE_WORD_BIT: u16 = 0x0004;
 mod hits;
 mod round;
 
@@ -932,11 +935,16 @@ impl World {
     /// defeated even though the actor's `liveness` stays non-zero). A petrified
     /// member is still a valid target ("distraction") - this only governs the
     /// party-/monster-wipe checks, not target selection.
+    ///
+    /// Stone is the `+0x16E` word's bit `0x4`, whoever wrote it: the turn
+    /// picker's side scans (`andi v0,v0,0x4` at `0x801DADB4` / `0x801DAE3C`)
+    /// test the word, so a Stone a cast wrote into the raw half counts as
+    /// surely as one the status tracker holds.
     pub(crate) fn actor_effectively_defeated(&self, slot: u8) -> bool {
         self.actors
             .get(slot as usize)
             .is_none_or(|a| a.battle.liveness == 0)
-            || self.battle.actor_is_petrified(slot)
+            || self.raw_status_word(slot) & STONE_WORD_BIT != 0
     }
 
     /// The per-round status-`0x400` waker retail's action-SM state `0xFF`

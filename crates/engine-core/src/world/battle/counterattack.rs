@@ -47,7 +47,11 @@ impl World {
     /// PORT: FUN_801DABA4 (`0x801DAF74..0x801DB050`, the counter roll)
     pub(in crate::world) fn roll_counterattack(&mut self, monster: u8, target: u8) {
         let pc = self.party.party_count.clamp(1, 3);
-        if target >= pc {
+        let category = self
+            .actors
+            .get(usize::from(monster))
+            .map_or(0, |a| a.battle.action_category);
+        if category != 3 || target >= pc {
             return;
         }
         if self.next_rand() & 1 == 0 {

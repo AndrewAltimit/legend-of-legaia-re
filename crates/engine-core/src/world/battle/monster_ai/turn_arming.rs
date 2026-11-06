@@ -32,8 +32,17 @@ impl World {
             // re-rolls a living one, so the approach never walks at a corpse
             // (the short step `0x19` has no timeout); the counter roll
             // follows the redirect.
+            //
+            // Both read the category the pick left in `+0x1DE`
+            // (`lbu a2,0x1de(s0)` at `0x801DB18C`, `0x801DAF7C`): a walk that
+            // matched nothing stores none, and its stale `0` neither
+            // redirects nor rolls a counter.
             MonsterAction::Physical { target } => {
-                *target = self.redirect_dead_battle_target(*target, 3, 0);
+                let (category, param0) = self
+                    .actors
+                    .get(usize::from(slot))
+                    .map_or((0, 0), |a| (a.battle.action_category, a.battle.params[0]));
+                *target = self.redirect_dead_battle_target(*target, category, param0);
                 self.roll_counterattack(slot, *target);
             }
             MonsterAction::Wait | MonsterAction::Flee => {}

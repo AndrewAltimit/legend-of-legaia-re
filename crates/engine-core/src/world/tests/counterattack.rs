@@ -27,6 +27,9 @@ fn counter_world(counter: bool) -> World {
         world.actors[i].battle.max_hp = 100;
     }
     world.actors[0].battle.init_key = 30;
+    // The monster's pick stored a strike (`+0x1DE == 3`), which the roll
+    // reads first.
+    world.actors[1].battle.action_category = 3;
     world.battle.round_flow.pending[0] = Some(PendingPartyAction::Attack { target: 1 });
     world
 }
@@ -54,6 +57,13 @@ fn the_picker_arms_the_counter_latch_on_half_its_coins() {
         world.rng_state = seed.wrapping_mul(0x9E37_79B9);
         world.roll_counterattack(1, 0);
         assert_eq!(world.battle_ctx.counter_pending, 0, "the turn is spent");
+        let mut world = counter_world(true);
+        world.actors[1].battle.action_category = 0;
+        world.rng_state = seed.wrapping_mul(0x9E37_79B9);
+        let before = world.rng_state;
+        world.roll_counterattack(1, 0);
+        assert_eq!(world.battle_ctx.counter_pending, 0, "no strike stored");
+        assert_eq!(world.rng_state, before, "and no coin drawn");
     }
 }
 

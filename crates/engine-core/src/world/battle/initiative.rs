@@ -30,7 +30,11 @@ impl World {
     /// picked monster's AI decided on the spot while both sides stand (the
     /// side scans clear `ctx[+0x276]` otherwise, `0x801DADEC` / `0x801DAE74`).
     /// Returns the pick and the key it spent.
-    pub(in crate::world) fn initiative_pick_and_decide(&mut self) -> Option<(u8, u16)> {
+    ///
+    /// Public as the seam the retail-kernel differential drives the whole of
+    /// `FUN_801DABA4` through; the battle loop reaches it through
+    /// [`Self::next_turn_pick`] and the round start's park.
+    pub fn initiative_pick_and_decide(&mut self) -> Option<(u8, u16)> {
         self.battle_ctx.counter_pending = 0;
         self.parked_turn.monster = None;
         // What the last pick's AI decided for its strike rides to that
@@ -54,6 +58,12 @@ impl World {
     /// the round's first dispatch.
     pub(in crate::world) fn park_round_start_pick(&mut self) {
         self.parked_turn.pick = self.initiative_pick_and_decide();
+    }
+
+    /// The action the last pick decided for the monster it picked, parked
+    /// for that monster's dispatch.
+    pub fn parked_monster_action(&self) -> Option<&(u8, MonsterAction)> {
+        self.parked_turn.monster.as_ref()
     }
 
     /// The round start's parked pick, if it has not been dispatched yet.

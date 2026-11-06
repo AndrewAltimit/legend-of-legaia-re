@@ -258,3 +258,12 @@ the battle window and the save all kept the old order.
 
 The menu's stat block, the seeder `FUN_801CF5D0` and the summer `FUN_801CF650` the Status page, the Equip
 compare columns and the shop preview draw, matches `menu_stat_block` over the disc's equipment table.
+
+The whole turn picker `FUN_801DABA4`, with the monster picker, the redirect and the Counterattack roll live
+beneath it, found four defects. The picker's Numb tail had no port: a Numbed monster cast or struck where
+retail's turn arms nothing. A walk that matched nothing stored category `3` in the port, so the redirect
+re-rolled and the Counterattack coin was flipped where retail's stale `0` does neither, and the roll never
+read the stored category at all. The side scans counted a seat down only on a Stone the status tracker held,
+so a cast-written Stone left a petrified side's monster deciding a turn. The sweep, the tie pick and the
+item refund match. The Confirm-path sale `ShopSession::try_sell` priced per unit off the shop's stock; it
+now pays the stepper's `(item-table price * qty) >> 1`.
