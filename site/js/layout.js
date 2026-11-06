@@ -324,6 +324,7 @@ const NAV = [
       { href: 'tooling/retail-kernel-differential.html', text: 'Retail kernel differential', key: 'tooling/retail-kernel-differential' },
       { href: 'tooling/determinism-replay.html', text: 'Determinism replay', key: 'tooling/determinism-replay' },
       { href: 'tooling/retail-compare.html', text: 'Retail comparison corpus', key: 'tooling/retail-compare' },
+      { href: 'tooling/cast-sequence-oracle.html', text: 'Cast-sequence oracle', key: 'tooling/cast-sequence-oracle', indent: true },
       { href: 'tooling/full-game-ladder.html', text: 'Full-game ladder', key: 'tooling/full-game-ladder' },
       { href: 'tooling/soak-harness.html', text: 'Soak harness', key: 'tooling/soak-harness' },
       { href: 'tooling/frame-bench.html', text: 'Frame benchmark', key: 'tooling/frame-bench' },

@@ -795,6 +795,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/retail-compare.html", "Retail comparison corpus", "tooling/retail-compare", "tooling/retail-compare.html"),
+    ("tooling/cast-sequence-oracle.html", "Cast-sequence oracle", "tooling/cast-sequence-oracle", "tooling/cast-sequence-oracle.html"),
     ("tooling/full-game-ladder.html", "Full-game ladder", "tooling/full-game-ladder", "tooling/full-game-ladder.html"),
     ("tooling/soak-harness.html", "Soak harness", "tooling/soak-harness", "tooling/soak-harness.html"),
     ("tooling/frame-bench.html", "Frame benchmark", "tooling/frame-bench", "tooling/frame-bench.html"),

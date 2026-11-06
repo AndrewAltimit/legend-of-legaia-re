@@ -1,0 +1,169 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; cast-sequence oracle</div>
+  <h1>The cast-sequence oracle: score a whole cast, frame by frame</h1>
+  <p class="lede">One spell, summon or monster cast recorded on both sides, from the cast's begin to past its Done band, and scored against retail frame by frame. It is the time-axis sibling of the <a href="retail-compare.html">retail comparison corpus</a>: a save state holds one instant of a cast that runs for hundreds of vsyncs, and on most summons that instant is the white flash the frame metric cannot see under. The recordings carry retail pixels and RAM, so they stay out of the repository.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A library battle state feeds two recorders. The retail side is a PCSX-Redux probe that injects the cast into the caster's queue and grabs the displayed frame and per-vsync metadata. The engine side is the retail comparison corpus's image child for the same state, re-run with the cast seeded and the play-window recorder on. Both recordings go to the scorer, which pairs frames on the action state machine's clock and the module phase, scores each pair with the corpus metric and writes a report and a strip.">
+      <defs><marker id="cso-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="85" width="150" height="60" rx="4"/>
+      <text class="dg-label" x="85" y="110">Battle state</text><text class="dg-sub" x="85" y="128">from the library</text>
+      <path class="dg-edge" d="M160 105 L218 60" marker-end="url(#cso-ah)"/>
+      <path class="dg-edge" d="M160 125 L218 170" marker-end="url(#cso-ah)"/>
+      <rect class="dg-node-accent" x="222" y="22" width="270" height="72" rx="4"/>
+      <text class="dg-label" x="357" y="44">Retail: PCSX-Redux probe</text>
+      <text class="dg-sub" x="357" y="62">inject the cast at action state 0x0A,</text>
+      <text class="dg-sub" x="357" y="78">grab frames + per-vsync metadata</text>
+      <rect class="dg-node-accent" x="222" y="136" width="270" height="72" rx="4"/>
+      <text class="dg-label" x="357" y="158">Engine: corpus image child</text>
+      <text class="dg-sub" x="357" y="176">the state's fight, cast seeded,</text>
+      <text class="dg-sub" x="357" y="192">play-window recorder per tick</text>
+      <path class="dg-edge" d="M492 58 L560 100" marker-end="url(#cso-ah)"/>
+      <path class="dg-edge" d="M492 172 L560 130" marker-end="url(#cso-ah)"/>
+      <rect class="dg-node" x="564" y="78" width="160" height="74" rx="4"/>
+      <text class="dg-label" x="644" y="100">Pair + score</text>
+      <text class="dg-sub" x="644" y="118">on the action clock</text>
+      <text class="dg-sub" x="644" y="134">and the module phase</text>
+      <path class="dg-edge" d="M724 115 L756 115" marker-end="url(#cso-ah)"/>
+      <rect class="dg-node-ok" x="760" y="78" width="110" height="74" rx="4"/>
+      <text class="dg-label" x="815" y="104">report</text>
+      <text class="dg-sub" x="815" y="122">segments,</text>
+      <text class="dg-sub" x="815" y="138">strip, cues</text>
+    </svg>
+    <figcaption>The driver <code>scripts/ci/cast-sequence.py</code> runs the three stages and caches each one until something it depends on changes. The scorer is <code>legaia-engine cast-sequence-score</code> (<code>crates/parity</code>); a disc-free test pins the pairing rule on synthetic recordings.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="running-it" data-doc="running-it">
+  <h2>Running it</h2>
+<pre><code># first run: retail capture (an emulator run, a few minutes), engine seed, engine run, score
+scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
+
+# after an engine change: re-run only the engine side and the score (seconds)
+scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --engine-only
+
+# re-score cached recordings with another display-lag rule
+scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --score-only --retail-lag 4</code></pre>
+  <p>Several casts go through <code>cast-sequence-batch.py</code>: the retail recordings side by side, then the engine runs one at a time. A retail recording is a headless emulator at normal speed, and two recordings of one cast are not byte-identical, so a residual smaller than two retail runs differ from each other is noise. The driver builds <code>legaia-engine</code> with the <code>oracles</code> feature, which the scorer and the recorder's frame shots need. Output lands under <code>captures/cast-sequence/&lt;state&gt;_&lt;spell&gt;/</code>, which is gitignored.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>--caster</code> / <code>--target</code></td><td>The seat whose queue is rewritten and the seat it aims at. A caster seat of 3 or more is a monster.</td></tr>
+      <tr><td><code>--monster-pick</code></td><td>Write a monster's cast where its AI pick returns, so any battle state that reaches the monster's turn records any spell it owns a clip for.</td></tr>
+      <tr><td><code>--physical</code></td><td>Film the strike a harvested state already holds instead of injecting a cast; <code>--strike-deal</code> stands the engine on retail's hand.</td></tr>
+      <tr><td><code>--retail-steps</code></td><td>Run the engine on the recording's own frame steps, a disclosed harness seat that takes the frame's cost out of what is left.</td></tr>
+      <tr><td><code>--rand-at &lt;state&gt;:&lt;phase&gt;</code></td><td>Hold the engine's <code>rand()</code> stream on retail's seed word under one cast key.</td></tr>
+      <tr><td><code>--retail-parts</code></td><td>Log every live move-VM part per vsync on the retail side, to read beside the engine's <code>parts.csv</code>.</td></tr>
+      <tr><td><code>--recapture</code> / <code>--reseed</code> / <code>--rerecord</code></td><td>Redo one cached stage.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="what-each-side-records" data-doc="what-each-side-records">
+  <h2>What each side records</h2>
+  <ul class="bullets">
+    <li><strong>Retail.</strong> The probe loads the state, taps Cross past any prompt, and on the caster's action state <code>0x0A</code> writes the cast into its queue: past the command-flow validator, before <code>0x0C</code> reads the category. Retail then pages the module in and runs it on its own bytes. From the cast begin (<code>0x28</code>) it grabs the displayed frame every few vsyncs and writes one metadata row per vsync: action state, module phase, acting seat, frame step, every seat's HP, the main loop's frame counter, the side-band token, the CD words and the <code>rand()</code> seed. Side files hold the caster's clip and pose, the camera and its tween table, and the summon creature.</li>
+    <li><strong>Engine.</strong> The driver asks the corpus for the state's image child (the card-load resume, the battle row, the stage, the HUD bars, the seed), then re-runs it with the state's own drive and gate removed, the cast seeded and the recorder on. The child is tick-locked and deterministic, writes its frame cropped to the compared <code>320 &times; 224</code>, and maps its seats back to retail's numbering. On the cast begin it takes retail's camera pose from the recording's first row, a harness seat that moves no game state, so the opening states score their own framing rather than wherever the child's camera happened to stand.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="pairing" data-doc="the-pairing-rule,the-game-clock,the-camera-against-the-step">
+  <h2>Pairing frames on the game's clock</h2>
+  <p>Frames pair on the action state machine's clock, never on wall time.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 205" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two rows of segments, retail on top and engine below. Each segment is a run of one key: the action state, or inside a cast module the module phase. Retail's segments are 0x28, 0x29, 0x32, phase 1, phase 2, phase 3 and 0x51 with varying lengths; the engine's are the same keys except 0x32, which it passes in one tick, and with different lengths. Dashed lines join segments with the same key, aligned by longest common subsequence. Inside each aligned pair, a retail frame k vsyncs in on the game clock pairs with the engine frame k ticks in, clamped to the engine segment's last tick.">
+      <text class="dg-label dg-start" x="10" y="52">Retail</text>
+      <rect class="dg-node" x="90" y="34" width="60" height="28" rx="3"/><text class="dg-sub" x="120" y="52">0x28</text>
+      <rect class="dg-node" x="150" y="34" width="50" height="28" rx="3"/><text class="dg-sub" x="175" y="52">0x29</text>
+      <rect class="dg-node-warn" x="200" y="34" width="70" height="28" rx="3"/><text class="dg-sub" x="235" y="52">0x32</text>
+      <rect class="dg-node-accent" x="270" y="34" width="150" height="28" rx="3"/><text class="dg-sub" x="345" y="52">phase 1</text>
+      <rect class="dg-node-accent" x="420" y="34" width="200" height="28" rx="3"/><text class="dg-sub" x="520" y="52">phase 2</text>
+      <rect class="dg-node-accent" x="620" y="34" width="150" height="28" rx="3"/><text class="dg-sub" x="695" y="52">phase 3</text>
+      <rect class="dg-node" x="770" y="34" width="90" height="28" rx="3"/><text class="dg-sub" x="815" y="52">0x51</text>
+      <text class="dg-label dg-start" x="10" y="152">Engine</text>
+      <rect class="dg-node" x="90" y="134" width="60" height="28" rx="3"/><text class="dg-sub" x="120" y="152">0x28</text>
+      <rect class="dg-node" x="150" y="134" width="50" height="28" rx="3"/><text class="dg-sub" x="175" y="152">0x29</text>
+      <rect class="dg-node-accent" x="200" y="134" width="160" height="28" rx="3"/><text class="dg-sub" x="280" y="152">phase 1</text>
+      <rect class="dg-node-accent" x="360" y="134" width="170" height="28" rx="3"/><text class="dg-sub" x="445" y="152">phase 2</text>
+      <rect class="dg-node-accent" x="530" y="134" width="150" height="28" rx="3"/><text class="dg-sub" x="605" y="152">phase 3</text>
+      <rect class="dg-node" x="680" y="134" width="90" height="28" rx="3"/><text class="dg-sub" x="725" y="152">0x51</text>
+      <path class="dg-edge-dim" d="M120 62 L120 134 M175 62 L175 134 M345 62 L280 134 M520 62 L445 134 M695 62 L605 134 M815 62 L725 134"/>
+      <text class="dg-sub dg-start" x="200" y="22">0x32 has no engine segment: a CD read the engine answers at once</text>
+      <text class="dg-sub dg-start" x="90" y="190">a segment is a run of one key; keys align by longest common subsequence</text>
+    </svg>
+    <figcaption>A retail frame <em>k</em> vsyncs into its segment, measured on the game clock, pairs with the engine frame <em>k</em> ticks into the aligned segment, clamped to that segment's last tick: an engine arm that ends early is compared at its last frame for the rest of retail's arm, which is what a viewer would see.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Display lag.</strong> A retail grab shows the frame built two game frames earlier, so it is keyed on the row two frame-counter bumps back; on an on-time frame that is <code>2 &times; step</code> vsyncs. A frame that overran keeps its image up for every vsync it ran over, which a vsync rule would have scored against the wrong arm.</li>
+    <li><strong>The game clock.</strong> Retail's frame driver picks a step from the slowest of the last sixteen frames, capped at <code>4</code>, but a heavy effect frame can still cost <code>5</code> to <code>12</code> vsyncs. Its timers drain one step regardless, so on wall vsyncs a retail arm runs long while its game time does not. The probe's frame counter turns each run of one counter value into one frame of its step, and that clock is what the engine's lengths match: Gilium's summon band is <code>2423</code> wall vsyncs, <code>2240</code> on the game clock, and <code>2244</code> engine ticks.</li>
+    <li><strong>The score.</strong> Each pair is scored with the corpus metric (<code>within</code>, the share of 8&times;8 blocks within 24 per channel). Pairs whose retail frame is a white flash or a fade are counted apart, and the cast's number is the mean over the rest.</li>
+    <li><strong>The camera against the step.</strong> The camera files on both sides, read at the score's own pairs, are the camera's error frame by frame. Run beside <code>--retail-steps</code>, the two split it: what the seated run closes is the frame step's, what it leaves is the framing law's or the seat's.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="rand" data-doc="the-rand-stream">
+  <h2>The <code>rand()</code> stream</h2>
+  <p>Retail draws every <code>rand()</code> from one seed word. The engine's world stream is the same generator, but it reaches a cast's arms after another number of draws, so an arm whose look is its draws plays another pattern: Gigaton Press picks each of its sixteen falling rocks by <code>rand() % 4</code>. <code>--rand-at</code> sets the engine's stream to the word retail held on the last vsync under one key, so the pass that leaves the key draws as retail's did; on a Gigaton Press capture the rocks' arm scores <code>.770</code> with it and <code>.649</code> without.</p>
+</section>
+
+<section class="doc-section" id="physical" data-doc="a-monsters-physical-attack">
+  <h2>A monster's physical attack</h2>
+  <p><code>--physical</code> films the strike a harvested <code>battle_*_strike</code> state already holds. Neither side is steered: retail plays on from the state, and the engine child keeps the state's own pad drive and starts recording on its gate. Past the capture's instant nothing holds the two rounds together - the block roll, the next queue byte and later picks draw on each side's own stream - so <code>--strike-deal</code> stands the engine on retail's hand at the gate: the striker's queue, the approach terms, its working ATK and the seed going into each hit. Dealt that way, most strike recordings match retail cue for cue: block verdict, damage rolls, the flinch's impact pick and the times.</p>
+</section>
+
+<section class="doc-section" id="sound" data-doc="the-sound-channel">
+  <h2>The sound channel</h2>
+  <p>Both sides also write one row per sound cue played: retail's from the cue ring sampled every vsync (an edge into "countdown zero, id not negative" is one cue), the engine's from the audio director's command record each tick. A retail cue is placed into engine time the way a frame is - its segment, its offset on the game clock - and matches the nearest unmatched engine cue of the same id within a tolerance; a second pass lists near misses as timing, the rest as missing or extra. CD-XA voice clips are not ring cues and are scored apart. The channel found, among others, the defeat cue the clip commit writes into the ring itself, a reacting seat the engine read as idle so Theeder's sweep struck it every pass, and Zenoir's opening hit landing on the wrong arm.</p>
+  <p>The level of the voice itself, rather than its timing, is measured against mednafen's audio output by the <a href="../subsystems/audio-internals.html#real-pcm">real-PCM cast channel</a>; how a summon's voice waits for the CD drive is on the <a href="../subsystems/cast-module.html#voice">cast module</a> page.</p>
+</section>
+
+<section class="doc-section" id="waits" data-doc="waits-the-engine-does-not-run">
+  <h2>Waits the engine does not run</h2>
+  <p>Some waits in a summon band are CD reads, which the engine's resident streams answer at once, so their segments part on length without any engine error. The pairing keys each segment on its own, so they do not shift the rest of the cast's pairs.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Wait</th><th>What it polls</th><th>Retail</th><th>Engine</th></tr></thead>
+    <tbody>
+      <tr><td>State <code>0x32</code></td><td>the read the cast trigger started in <code>0x29</code></td><td>about 16 vsyncs</td><td>one pass</td></tr>
+      <tr><td>The side-band arm</td><td>the applier stage that streams the cast's slots of <code>summon.dat</code></td><td>28 to 30 vsyncs a slot</td><td>held for the same CD time</td></tr>
+      <tr><td>A stream-poll arm</td><td>the creature's own read</td><td>a few vsyncs</td><td>one pass</td></tr>
+      <tr><td>Capture states <code>0x6E</code> / <code>0x6F</code></td><td>the queued read, then the module's own</td><td>14..17 and 4..6 vsyncs</td><td>held 14 and 4 ticks</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The capture band's two polls are held because neither idles: each pass walks a framing or pulls the shot depth in, so a tween opened two ticks early stands on another pose for its whole length.</p>
+</section>
+
+<section class="doc-section" id="monster-cast" data-doc="a-monster-cast-from-any-battle-state">
+  <h2>A monster cast from any battle state</h2>
+  <p>A monster's AI pick and the use of its result run in the same pass, so no vsync hook can get between them. With <code>--monster-pick</code> the probe breaks just after the pick returns, where the queue it wrote is final and unread, and writes the cast there with the same two stores the AI's own cast arms make. Any battle state that reaches the monster's turn therefore records any spell the monster owns a clip for. The engine half hands the monster the round's first turn from the first prompt and stands each slot on the ground retail's earlier actions left.</p>
+</section>
+
+<section class="doc-section" id="reading-the-report" data-doc="reading-the-report,limits">
+  <h2>Reading the report, and its limits</h2>
+  <p><code>report.md</code> opens with the mean, the minimum and the excluded counts, then the segment table (each key's retail length in wall vsyncs and on the game clock, the engine's in ticks, its pairs and mean), the worst pairs, the strip rows (<code>retail | engine | |diff|</code>) and the sound score. Lengths that part are a pacing defect; a one-tick engine segment against a long retail one is an arm the engine runs through without its countdown.</p>
+  <ul class="bullets">
+    <li><strong>The fight is the state's.</strong> A state the corpus cannot image has no engine side.</li>
+    <li><strong>The cast starts from the first prompt.</strong> Ground pairs carry over; facing, status, HP already lost and the camera history an earlier action left do not, so the frames before the module owns the camera can part on framing alone.</li>
+    <li><strong>Damage and <code>rand()</code> are not aligned</strong> unless <code>--rand-at</code> holds the stream on one key, so popups and HP readouts can differ.</li>
+    <li><strong>The target has to suit the spell.</strong> A heal aimed at a monster parks the module; the probe quits on a park and the driver reports it.</li>
+    <li><strong>An item cast (the flutes) is not injectable</strong>, and a cast longer than the grab cap is cut unless the cap is raised.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="retail-oracle-method.html">Retail oracle method</a>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="../subsystems/cast-module.html">Cast modules</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>
