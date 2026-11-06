@@ -3623,6 +3623,21 @@ three units). The bodies without that store keep the half turn
   4 to 6, while its `+0x21D` reads `4` at every vsync: what holds the byte at `4` is
   [open](../reference/open-rev-eng-threads.md).
 
+  Each branch seats its own records at the world origin on zero angles: the punch's
+  arm 0 seven (`0x801F7BD0` .. `0x801F7A0C`, `0x801F6B0C..0x801F6BB0`), the charge's
+  four (`0x801F7854`, `0x801F77C8`, `0x801F7838`, `0x801F78CC`). The charge hides every
+  party seat, its arm 1 tints the caster `7` and its arm 2 shows the party again. The
+  punch's arm 6 seats two trail records `0x801F7AF8` a battle frame, held or not, each
+  with three `rand()` draws stored over it (`+0x84 = r % 3 - 1`, `+0xB4 = r % 0x400 +
+  0x80`, `+0x28 = n * 0x600 + r % 0x200` for its running index `n`), and on its pass
+  halts every one and seats the fist `0x801F7D20` `620` units ahead of the caster at
+  height `-0x154`. The records' op `0x20` calls run the stager `FUN_801F7624` (arm 2:
+  three triples turned off the caller's yaw). Before, the pager seated the whole image
+  at once and arm 7 drew a black stage where retail's frame is the burst over a bright
+  wash: frame by frame, the punch (`battle_tunnelc_xain_terio_punch_mid_cast`) `.346`
+  to `.554` (arm 7 `.190` to `.695`), the charge (`..._bull_charge_mid_cast`) `.602` to
+  `.887`. Arm 8's starfield, where the engine still draws the cave, is not read yet.
+
 - **Capture bodies run no strike setup.** A capture-class cast's arm calls its
   damage wrapper itself, so `FUN_801E09F8`'s effect lists and the move-power
   record's cue `+0x0D` (`0x801E184C`) never run for it. Chaos Flare (`0x36`)'s record
