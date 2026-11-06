@@ -599,6 +599,16 @@ impl PlayWindowApp {
                     Some(pose) => world.refresh_battle_camera_ghost_on(pose),
                     None => world.refresh_battle_camera_ghost(),
                 }
+            } else if let Some(pose) = ghost_pose
+                && (0x6E..=0x71).contains(&world.battle_ctx.action_state)
+            {
+                // In the capture band only the near-camera test sets a bit
+                // (the target-selection row arm is `0x28..=0x2E`'s), and it
+                // reads the camera it is handed: retail's pose names the bits
+                // whatever the alignment took (`battle_uru2_nurga_glare_mid_cast`,
+                // the second Nurga faint as retail draws it). A magic-band
+                // frame keeps the replay's bits, which its row arm set.
+                world.refresh_battle_camera_ghost_on(pose);
             }
             // A seat the displayed frame drew elsewhere than the RAM's ground
             // (`LEGAIA_BATTLE_DISPLAYED_SEAT`): moved after the alignment, so

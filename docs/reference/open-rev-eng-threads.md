@@ -276,13 +276,6 @@ The direction of the turn is settled: the replay's camera framed the incoming se
 
 No yaw over the whole turn exceeds `.76` in the image, so the rest of the residue is Xain's and Vahn's placement. A film from a state a round earlier that reads the camera through the earlier actor's Done band would name the pose the band set out from ([the earlier-actor thread](#battle--rendering)). Grade `capture`.
 
-### A near body the child draws opaque
-
-`open` `battle_uru2_nurga_glare_mid_cast` holds a near body that retail draws faint. The body is the second Nurga
-(`+0x8 = 0x83000000` in the RAM), and it is opaque in the child because its frame reads
-action `0x6F`, outside the magic band's row arm, and the child's partly aligned pose
-takes no re-derive of the bits (`redraw_prep.rs`, `mask == 0xFF`). Grade `capture`.
-
 ### The map display pointer's ink
 
 `partial` On `world_map_display_map01_retail` the pointer draws dark red with shaded

@@ -2930,7 +2930,11 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)),
   so the displayed frame's bits come from one pass further back than its pose.
   The image child takes them there (`LEGAIA_BATTLE_GHOST_POSE`,
-  `displayed_ghost_pose`), and the frame reads `.991`. A strike on its first
+  `displayed_ghost_pose`), and the frame reads `.991`. In the capture band
+  `0x6E..=0x71` the child runs the pass on that pose even when its camera took
+  only part of retail's: there only the near-camera test sets a bit, and the
+  test reads the pose it is handed (`battle_uru2_nurga_glare_mid_cast` `.906`
+  to `.948`). A magic-band frame keeps the replay's bits, which its row arm set. A strike on its first
   case-7 arm holds the shown pose instead: the arm's yaw sits `0x700` past its
   endpoint, and the pass before it belongs to the case-6 framing that had all
   but landed there.
