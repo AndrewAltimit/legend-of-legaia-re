@@ -98,7 +98,7 @@ def read_kv(path: Path) -> dict:
 def engine_ground(retail: str) -> str:
     """Re-key the recorded ground list from retail pool slots to engine slots.
 
-    The probe writes one `x:z` (or `-`) per retail pool slot: the party at
+    The probe writes one `x:z:facing` (or `-`) per retail pool slot: the party at
     0..2, the monsters at 3 + m whatever the party size. The engine packs the
     monsters behind the party, so monster m is engine slot party_count + m
     (the re-key `RetailBattle::engine_ground` does for the corpus seeds).
@@ -213,18 +213,22 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
-def retail_opening_pose(out: Path) -> str | None:
+def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
     """The camera pose on retail's cast begin (`0x28`, or a heal's `0x3C`), as
     `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`: `cam.csv`'s pitch, yaw and eye with
     `body.csv`'s focus. A harness seat: the child drops the capture's drive and
     runs no earlier actor, so its camera would open elsewhere and the band's
-    opening passes would score that, not the framing law."""
+    opening passes would score that, not the framing law. A `--physical` film
+    (`first_row`) opens on the state's own instant, mid-glide wherever the
+    state sat, so it takes the recording's first row; the child seats it on
+    the gate's tick."""
     begin = (0x28, 0x3C)
+    keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
         with open(out / "retail" / "cam.csv") as f:
-            cam = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+            cam = next((r for r in csv.DictReader(f) if keep(r)), None)
         with open(out / "retail" / "body.csv") as f:
-            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+            body = next((r for r in csv.DictReader(f) if keep(r)), None)
     except OSError:
         return None
     if cam is None or body is None:
@@ -454,7 +458,7 @@ def run_engine(a, out: Path) -> bool:
         target = int(done.get("cast_target", "-1"))
         target = target if 0 <= target < 3 else a.target
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
-    if not a.physical and (pose := retail_opening_pose(out)):
+    if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
     if not a.physical and (cursor := retail_opening_cursor(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor

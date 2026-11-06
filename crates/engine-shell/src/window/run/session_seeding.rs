@@ -389,7 +389,7 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             Some(legaia_engine_battle_loop::frame_clock::RetailStepTrack::parse(&text));
     }
 
-    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...[;cursor,...]]`:
+    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast
     // (`InflightCastSeed`), with each battle slot's ground (`-` keeps the
@@ -401,12 +401,8 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             .split(',')
             .filter_map(|p| p.trim().parse().ok())
             .collect();
-        let mut ground = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
-        for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
-            *g = tok.split_once(':').and_then(|(x, z)| {
-                Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
-            });
-        }
+        let (ground, facing) = parse_seed_ground(ground_s);
+        world.battle.forced_ground_facing = facing;
         let mut idle = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         for (c, tok) in idle.iter_mut().zip(idle_s.split(',')) {
             *c = tok.trim().parse::<i32>().ok();
@@ -424,7 +420,7 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
-    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p][,t<slot>][;x:z,...]` (decimal
+    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p][,t<slot>][;x:z[:facing],...]` (decimal
     // or `0x..`): the monster in engine battle `seat` casts `spell` on its next
     // turn instead of the AI's pick, a single-target cast landing on party
     // `slot` with `,t` (with `,p`, that turn is taken from the
@@ -445,19 +441,19 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
                 let (head, ground_s) = s.split_once(';').unwrap_or((s.as_str(), ""));
                 let mut it = head.split(',');
                 let (a, b) = (it.next()?, it.next()?);
-                let mut ground =
-                    [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
-                for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
-                    *g = tok.split_once(':').and_then(|(x, z)| {
-                        Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
-                    });
-                }
+                let (ground, facing) = parse_seed_ground(ground_s);
                 let rest: Vec<&str> = it.map(str::trim).collect();
                 let target = rest
                     .iter()
                     .find_map(|t| t.strip_prefix('t'))
                     .and_then(parse);
-                Some((parse(a)?, parse(b)?, rest.contains(&"p"), ground, target))
+                Some((
+                    parse(a)?,
+                    parse(b)?,
+                    rest.contains(&"p"),
+                    (ground, facing),
+                    target,
+                ))
             })
     {
         log::info!(
@@ -471,7 +467,10 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         world.battle.forced_monster_cast = Some((seat, spell));
         world.battle.forced_monster_cast_at_prompt = at_prompt;
         world.battle.forced_monster_target = target;
-        world.battle.forced_monster_ground = ground;
+        (
+            world.battle.forced_monster_ground,
+            world.battle.forced_ground_facing,
+        ) = ground;
     }
     // `LEGAIA_SEAT_CUE_CLUT=<x>`: the parked palette column the retail state's
     // effect row holds (`BattleState::cue_clut_seed`).
@@ -1102,5 +1101,46 @@ pub(in crate::window) fn fire_deferred_battle(session: &mut NativeSession, tick_
         });
     if let Some((_, spec)) = due {
         arm_requested_battle(session, &spec);
+    }
+}
+
+/// A debug seed's ground list: one `x:z` or `x:z:facing` per battle slot
+/// (`-` keeps the seat), the facing the capture's `+0x46`.
+type SeedGround = (
+    [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+    [Option<u16>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+);
+
+fn parse_seed_ground(list: &str) -> SeedGround {
+    use legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS;
+    let mut ground = [None; INFLIGHT_GROUND_SLOTS];
+    let mut facing = [None; INFLIGHT_GROUND_SLOTS];
+    for ((g, f), tok) in ground
+        .iter_mut()
+        .zip(facing.iter_mut())
+        .zip(list.split(','))
+    {
+        let mut parts = tok.split(':').map(str::trim);
+        let (Some(x), Some(z)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if let (Ok(x), Ok(z)) = (x.parse::<i16>(), z.parse::<i16>()) {
+            *g = Some([x, z]);
+            *f = parts.next().and_then(|t| t.parse::<u16>().ok());
+        }
+    }
+    (ground, facing)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_seed_ground_token_takes_an_optional_facing() {
+        let (g, f) = super::parse_seed_ground("-444:-93:638,-,104:404,1:2:x");
+        assert_eq!(g[0], Some([-444, -93]));
+        assert_eq!(f[0], Some(638));
+        assert_eq!((g[1], f[1]), (None, None));
+        assert_eq!((g[2], f[2]), (Some([104, 404]), None));
+        assert_eq!((g[3], f[3]), (Some([1, 2]), None));
     }
 }

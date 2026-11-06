@@ -307,7 +307,8 @@ local guard_at_cast = ""
 local caster_at_cast = -1
 local target_at_cast = -1
 
--- Each pool slot's live ground pair +0x34 / +0x38 (`-` for an empty slot):
+-- Each pool slot's live ground pair +0x34 / +0x38 and facing +0x46 (`-` for
+-- an empty slot; the facing turns the body pair the range law reads):
 -- the engine's inflight seed seats every combatant there at its dispatch, so
 -- an action retail ran before the cast (a monster that struck first and was
 -- not walked home) leaves the same stage.
@@ -352,7 +353,7 @@ local function ground_pairs()
             local x, z = u16(a + 0x34), u16(a + 0x38)
             if x >= 0x8000 then x = x - 0x10000 end
             if z >= 0x8000 then z = z - 0x10000 end
-            t[#t + 1] = string.format("%d:%d", x, z)
+            t[#t + 1] = string.format("%d:%d:%d", x, z, u16(a + 0x46) % 0x1000)
         else
             t[#t + 1] = "-"
         end

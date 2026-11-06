@@ -486,6 +486,12 @@ pub struct BattleState {
     /// ground a capture's earlier actions left - as
     /// [`InflightCastSeed::ground`] does for a party caster.
     pub forced_monster_ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
+    /// Each battle slot's facing `+0x46` beside a debug seed's ground
+    /// ([`Self::forced_monster_ground`], [`InflightCastSeed::ground`]), where
+    /// the capture recorded one: an earlier actor of retail's round leaves
+    /// its seat turned, and a target's body pair - what the range law reads
+    /// - is the pose centroid turned by that facing. `None` keeps the seat's.
+    pub forced_ground_facing: [Option<u16>; INFLIGHT_GROUND_SLOTS],
     /// Party seats a debug seed stands in the Spirit stance when the forced
     /// monster turn is dispatched from the prompt
     /// ([`Self::forced_monster_cast_at_prompt`]).
@@ -1351,6 +1357,7 @@ impl BattleState {
             element_roll_seed: None,
             forced_monster_cast_at_prompt: false,
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
+            forced_ground_facing: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],
             combo_cluster_held: false,
             forced_steal: false,

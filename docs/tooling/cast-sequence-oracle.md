@@ -152,7 +152,7 @@ the series a summon close-up's framing is read off. A third, `cam.csv`, holds
 per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
 tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
 At cast begin it also logs each pool slot's ground pair
-`+0x34` / `+0x38` (`done.txt`). With `LEGAIA_PRE_TRACE=1` the probe also
+`+0x34` / `+0x38` and facing `+0x46` (`done.txt`, `x:z:facing`). With `LEGAIA_PRE_TRACE=1` the probe also
 writes `pre.csv`, one row per in-battle vsync **before** the inject: the
 action state, the acting seat, the frame step, the yaw counter `ctx[+0x6DA]`,
 the strike cursor `ctx[+0x15]`, and for seats `0..3` the committed and staged
@@ -206,7 +206,22 @@ recording's first row of that state (`LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`, `retail_o
 in the driver): `cam.csv`'s pitch, yaw and eye with `body.csv`'s focus. This is a
 seat of the harness and moves no game state. Without it `0x28` and `0x29` score
 wherever the child's camera happened to stand; with it their framing tracks retail's to
-a couple of units, and the opening's error is the frame's own.
+a couple of units, and the opening's error is the frame's own. A `--physical` film opens
+on the state's own instant, mid-glide wherever the state sat, so it takes the recording's
+first row instead and seats it on the gate's tick: its drive plays the round through the
+cast's own `0x28` first, which would take the seat there. On
+`battle_map01_lippian_kiss_of_death_mid_cast` the first row stands at TR z `3404`, where the
+child's glide stood at `4204`.
+
+**The ground carries the facing.** An earlier actor of retail's round leaves its seat
+turned, and the range law measures a target by its body pair, the pose centroid turned by
+that facing. The engine child stands each slot on the recorded facing beside its pair
+(`BattleState::forced_ground_facing`, read from the `x:z:facing` tokens of
+`LEGAIA_BATTLE_MONSTER_CAST` / `LEGAIA_BATTLE_INFLIGHT`). Recorded from
+`battle_tunnelc_xain_strike`, Gala had struck Xain earlier in the round and faced `839`;
+her body pair stood `425` from Xain against a reach of `416`, so Bloody Horns' arm 0 walks
+one pass in. Unturned she stood `398` off, the engine skipped the walk and Xain cast from
+`67` units further back: the film read `.799` that way and `.873` seated.
 
 Both sides also write `creature.csv`, the summon creature's clip, staged byte,
 cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
