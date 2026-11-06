@@ -3396,7 +3396,7 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   `0x15`), sampled at the capture's level `0x801D1A84` or hold `0x801D1A70`.
 - **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`), sampled at the capture's card clock `DAT_801DBE94`: the card's whole picture is a function of that clock, and a state word alone stands the engine on the fade-in.
 
-A dance frame stands the display lag behind the RAM, so the gate takes the banner counter and the `GO!` accumulator back two game frames.
+A dance frame stands the display lag behind the RAM, so the gate takes the banner counter and the `GO!` accumulator back two game frames. The accumulator moves `dt * 2` a frame (`0x801CFC08` / `0x801CFC5C`), twice the counter's step, and the emit draws it doubled again as the brightness `acc * 2`: a gate that took the brightness back by the counter's lag stood one frame short, and `GO!` read one step dim on `minigame_dance_retail_go_out` and one step bright on `_go_in`.
 
 The hall's light show is palette work on a clock of game frames, whose lengths the capture measured and the engine's fixed tick does not, and its base palettes are the walked-in field's last paint ([dance](../subsystems/minigame-dance.md#the-halls-palettes-are-the-fields-last-paint)). So a dance state's image child takes three seats, none of which changes the game:
 
