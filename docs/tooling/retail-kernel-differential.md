@@ -377,3 +377,7 @@ catalog placeholder (`MP * 8`, `MP * 6`) where the applier `FUN_800402F4` caps t
 level-scaled amount, so 122 of 125 casts wrote different records. The port also charged MP for a
 cast on a member already at full HP, which retail's confirm refuses through the validator.
 
+The field walk-regen tick `FUN_801D0B90` (PROT 0897) matches `tick_walk_regen` over the present party's
+records: the step counter, the HP / MP / AP Walk bumps with their clamps (a current above its cap snaps
+down), a fallen member's bump, and the Incense window's wear-off edge with its event pointer and flag.
+

@@ -64,5 +64,6 @@ mod tint_ease;
 mod turn_pick;
 mod unequip;
 mod validator;
+mod walk_regen;
 mod walk_step;
 mod zone_ramp;
