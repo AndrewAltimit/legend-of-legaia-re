@@ -3834,8 +3834,10 @@ enters the choice.
 The call sits on one arm of the phase byte `ctx[+0x279]`, after the arm that seeks
 (`FUN_8003EAE4`) and the poll of the drive (`FUN_8003F2B8(1)`): arm `3` in PROT 0903..0905,
 `4` in 0906..0908, `2` in most of the rest and `0` in the capture band from 0935
-(`module_head_cue_arm` walks each tick's dispatch). So a cast is heard well after
-it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
+(`module_head_cue_arm` walks each tick's dispatch). The poll holds the arm for as long as the drive
+takes over the seek and the one the battle's seek-ahead selector issued before it, which the port runs
+on a drive model ([the drive holds a summon's voice](audio.md#the-drive-holds-a-summons-voice)). So a cast
+is heard well after it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
 call is outside its tick, and raises at the arming seam.
 
 A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who

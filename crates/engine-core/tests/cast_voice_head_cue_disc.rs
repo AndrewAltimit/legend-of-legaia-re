@@ -406,3 +406,42 @@ fn ultimate_rave_cues_its_kill_roll() {
     assert_eq!(seen, [true, true], "both paths reached");
     eprintln!("[ok] PROT 0924 cues 0x18A on a miss, 0x189 on the kill");
 }
+
+/// The drive wait ahead of a module's voice, read off its bytes: the arm that
+/// seeks the drive to the clip file and the arm that polls the seek
+/// (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`). Orb's PROT
+/// 0911 seeks `0xC` (`XA13`) on arm 1 and polls on arm 2 (`0x801F6B98`,
+/// `0x801F6BB8`), which the frame-stepped `orb_summon_mid_cast` shows holding
+/// for the seek; Zeto's PROT 0946 calls its head cue with no seek at all.
+#[test]
+fn a_summon_module_seeks_its_file_then_waits_on_the_drive() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    use legaia_engine_battle_vm::battle_cast_cue::{ModuleDriveArms, module_drive_arms};
+    let images = band_images(&dir);
+    let arms = |entry: u32| {
+        let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
+        module_drive_arms(bytes)
+    };
+    let mut listed = Vec::new();
+    for (entry, _) in &images {
+        if let Some(a) = arms(*entry) {
+            listed.push(format!(
+                "{entry}:{}/{}/{:#x}",
+                a.seek_arm, a.poll_arm, a.slot
+            ));
+        }
+    }
+    eprintln!("[ok] drive arms: {}", listed.join(" "));
+    assert_eq!(
+        arms(911),
+        Some(ModuleDriveArms {
+            seek_arm: 1,
+            poll_arm: 2,
+            slot: 0xC
+        })
+    );
+    assert_eq!(arms(946), None);
+}

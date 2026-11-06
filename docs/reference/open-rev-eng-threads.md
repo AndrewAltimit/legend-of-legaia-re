@@ -440,19 +440,18 @@ beside the same tones in `mei_house_inside`.
 
 ### How long does a summon's seek hold its voice?
 
-*Status:* open (measured)
+*Status:* partial (measured)
 
-The real-PCM [`cast` channel](../subsystems/audio.md#the-cast-channel) places each summon's head clip on
-both sides: Orb's `XA13.XA` channel `1` starts `0.99` s later in retail than in the engine, Swordie's `0.71` s,
-Theeder's `0.23` s, Nighto's `0.16` s, Zenoir's `0.08` s. Orb's arm 1 seeks the drive
-to the clip's file (`FUN_8003EAE4(0, 0xC)` at `0x801F6B98`) and arm 2 returns busy on `FUN_8003F2B8(1)`
-(`0x801F6BB8`) until the seek ends, then calls the head cue (`0x801F6BC8`); the port's arms pass at once
-(`stream_poll_arm`, `sideband_wait_arm`). The seek's length depends on where the drive stands, which the
-port does not model. The same recordings play the `XA13.XA` clips at `0x7FFE` where the starter sets
-`0x75EA` (`+0.74` dB), from a writer not yet named. What closes it: a frame-stepped mednafen run
-(`scripts/mednafen/xa-start.py`'s method) reading the phase byte `ctx[+0x279]`, the drive-state word
-`0x8007BC20` and the CD volume pair across arms 1 and 2 of Orb and Swordie, and a write watch on the CD
-volume register under PCSX-Redux.
+The drive's two seeks ahead of the head cue are modelled
+([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)): Orb's voice
+now lands `64` ms after retail's where it was `0.99` s early, Swordie's `6` ms where it was `0.71` s, both at
+retail's level. Two parts are not: the side-band read that precedes the selector's seek (`ctx[+0x276]`,
+`cmd 6` reads in the `summon.dat` region on every frame-stepped summon state, `24` vsyncs on Orb's), which the
+port's resident side-band skips, and the game loop's freeze inside the seek arm's `CdlSetloc`, which the port
+models for the audio frame only (the battle's actors and camera keep ticking). `theeder_summon_mid_cast` and
+`nighto_summon_mid_cast` still start `0.23` and `0.16` s early. What closes it: `drive-timeline.py` across
+Theeder's and Nighto's arms beside the engine's cast-sequence `meta.csv`, and the side-band read's sectors per
+action.
 
 ## Title / boot / overlays
 

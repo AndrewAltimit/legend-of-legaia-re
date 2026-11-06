@@ -537,6 +537,12 @@ impl<S: AudioSink> BootSession<S> {
         if let Some(pct) = duck {
             bgm.set_duck_pct(pct);
         }
+        // A summon module's seek arm blocks the game loop inside its
+        // `CdlSetloc` while the drive finishes the seek before it: the frame
+        // driver that steps the duck and drains the cue ring does not run.
+        if self.host.world.cast_drive_blocks_frame() {
+            return Some(SfxFrameReport::default());
+        }
         let report = bgm.tick_audio_frame(configured);
         for (id, voice) in &report.fired {
             log::debug!("SFX cue {id:#04x} fired on voice {voice}");

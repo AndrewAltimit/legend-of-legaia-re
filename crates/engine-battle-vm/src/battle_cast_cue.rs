@@ -340,6 +340,70 @@ pub fn body_head_cue_arm(image: &[u8], body_va: u32) -> Option<u8> {
 
 fn head_cue_arm(image: &[u8], body_va: Option<u32>) -> Option<u8> {
     let (_, site) = head_cue_site(image, body_va)?;
+    site_arm(image, site)
+}
+
+/// `CdSync(1)`, the non-blocking poll of the drive's last command.
+const JAL_DRIVE_POLL: u32 = jal_word(0x8003_F2B8);
+
+/// The drive wait ahead of a summon module's voice: the arm that seeks the
+/// drive to its clip file (`FUN_8003EAE4(0, slot)`), the arm that polls the seek
+/// (`FUN_8003F2B8(1)`) and returns busy until it is done, and the seek table
+/// index it parks on. Orb's PROT 0911 seeks `0xC` on arm 1 (`0x801F6B98`) and
+/// polls on arm 2 (`0x801F6BB8`), where the head cue follows the poll. `None`
+/// when the image's content has no literal seek, or no poll in the seek's own
+/// function after it.
+///
+/// REF: FUN_8003EAE4, FUN_8003F2B8
+pub fn module_drive_arms(image: &[u8]) -> Option<ModuleDriveArms> {
+    let end = match legaia_overlay_images::slot_b_module::content_end(
+        image,
+        legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE,
+    ) {
+        0 => image.len(),
+        n => n.min(image.len()),
+    };
+    let words: Vec<u32> = image[..end & !3]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let (seek_site, slot) = words.iter().enumerate().find_map(|(site, &w)| {
+        (w == JAL_DRIVE_SEEK)
+            .then(|| match resolve_arg(&words, site, 5) {
+                ArgSource::Literal(slot) => Some((site, slot)),
+                _ => None,
+            })
+            .flatten()
+    })?;
+    let func = legaia_overlay_images::slot_b_module::framed_functions(image)
+        .into_iter()
+        .find(|f| f.start / 4 <= seek_site && seek_site < f.end / 4)?;
+    let poll_site = (seek_site + 1..(func.end / 4).min(words.len())).find(|&site| {
+        words[site] == JAL_DRIVE_POLL
+            && matches!(resolve_arg(&words, site, 4), ArgSource::Literal(1))
+    })?;
+    Some(ModuleDriveArms {
+        seek_arm: site_arm(image, seek_site)?,
+        poll_arm: site_arm(image, poll_site)?,
+        slot: u32::from(slot),
+    })
+}
+
+/// [`module_drive_arms`]'s answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleDriveArms {
+    /// The arm whose pass issues the seek.
+    pub seek_arm: u8,
+    /// The arm that returns busy until the seek completes.
+    pub poll_arm: u8,
+    /// The seek table index the seek parks on (`XA<slot + 1>`).
+    pub slot: u32,
+}
+
+/// The phase arm of `image`'s tick whose body holds word `site`.
+fn site_arm(image: &[u8], site: usize) -> Option<u8> {
     let func = legaia_overlay_images::slot_b_module::framed_functions(image)
         .into_iter()
         .find(|f| f.start / 4 <= site && site < f.end / 4)?;
