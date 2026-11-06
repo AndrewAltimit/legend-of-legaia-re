@@ -333,12 +333,31 @@ impl World {
                 );
             }
             if arm == 0 {
-                self.casting.module_cam.creature = Some(ModuleSeat {
+                let seated = ModuleSeat {
                     x: 0,
                     y: 0,
                     z: VIGURO_SEAT_Z,
                     facing: 0x800,
-                });
+                };
+                self.casting.module_cam.creature = Some(seated);
+                // The installer stands the seat there before the tick's arm
+                // 4 reads it (`lh v0,0x38(s4)` at `0x801F6C7C`): the early
+                // seat's idle point would read as already arrived and let the
+                // arrival gate through on its first pass. Only a live seat
+                // the host feeds is restood: a driver that steps the module
+                // without the band seam walks no creature.
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|c| self.actors.get_mut(usize::from(c)))
+                {
+                    a.move_state.world_x = seated.x;
+                    a.move_state.world_z = seated.z;
+                    a.battle.facing_angle = seated.facing;
+                }
+                if self.casting.module_cam.creature_live.is_some() {
+                    self.casting.module_cam.creature_live = Some(seated);
+                }
                 // This is where retail's installer runs (`FUN_801F19EC` in the
                 // stager, `0x801F7B2C`): the node is new, its clip at the top, the
                 // rate `2`. The port's early seat has been idling hidden since the
