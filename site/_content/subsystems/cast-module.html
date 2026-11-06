@@ -138,6 +138,29 @@
 <section class="doc-section" id="camera">
   <h2>The module owns the camera</h2>
   <p>Neither band's tick state calls a framing case of the action state machine. The camera is the module's, moved with two kernels: a <strong>shot</strong> - pitch / yaw / roll, translation and a negated focus handed to the same tween builder the <a href="battle-stage-camera.html">battle camera</a> uses - and <strong>drifts</strong>, values added straight into the pose globals on every pass an arm runs. A module with no camera arms leaves the held pose alone.</p>
+  <p><strong>A shot lands each component on its own.</strong> The tween builder runs once, on the arm&rsquo;s pass, and gives every component (pitch, yaw, roll, the three translation words and the focus) a per-vsync increment of <code>ceil(|gap| / frames)</code>; the walker adds that times the pass&rsquo;s frame step and stores the endpoint once the component reaches it. So a shot is not an arrive-together glide: a gap that does not divide by its duration runs on the rounded-up increment and lands early, and a component the shot leaves alone keeps whatever the drifts give it. Vera&rsquo;s arm-1 shot turns the yaw 1000 units over <code>0x60</code> frames at 11 a vsync, which a retail recording of the cast and the summon&rsquo;s frame-step table both read. The two angle lanes count down their own shortest arc and store the endpoint when the arc runs out, never comparing the live angle, so a turn across the <code>0x1000</code> wrap ends after its own arc.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 960 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two components of one module shot plotted over the shot's frames. Yaw has a gap of 1000 over 96 frames, so its increment rounds up to 11 a vsync and it lands at frame 91, five frames before the shot's nominal end. Pitch has a small gap and lands after a few frames. A drift added every pass moves TR z, which the shot leaves alone, for as long as the arm runs.">
+      <defs><marker id="cm-cam-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-edge-dim" d="M60 210 L600 210"/>
+      <path class="dg-edge-dim" d="M60 210 L60 30"/>
+      <text class="dg-sub" x="330" y="236">frames since the arm&rsquo;s pass (0 .. 96)</text>
+      <path class="dg-edge-dim" d="M60 196 L600 50"/>
+      <path class="dg-edge" d="M60 196 L572 50 L600 50"/>
+      <circle class="dg-node-accent" cx="572" cy="50" r="6"/>
+      <text class="dg-label dg-start" x="612" y="46">yaw: 11 a vsync, lands at frame 91</text>
+      <text class="dg-sub dg-start" x="612" y="66">dashed: an arrive-together glide</text>
+      <path class="dg-edge" d="M60 150 L130 120 L600 120"/>
+      <circle class="dg-node-accent" cx="130" cy="120" r="6"/>
+      <text class="dg-sub dg-start" x="612" y="124">pitch: small gap, lands early, holds</text>
+      <path class="dg-edge" d="M60 200 L600 168" marker-end="url(#cm-cam-arrow)"/>
+      <text class="dg-sub dg-start" x="612" y="172">TR z: no shot gap, the drift moves it</text>
+    </svg>
+    <figcaption>One shot, three lanes: each component walks its own rounded-up increment and lands on its own; a drift only moves what the shot leaves alone, or what has already landed.</figcaption>
+  </figure>
+  <p><strong>A drift under a shot in flight is spent.</strong> On a component the shot still moves, the walker overwrites the drift with the endpoint when it lands, so the shot ends where it was aimed. The drift survives on components the shot does not move, and on every component once the shot has landed.</p>
+  <p><strong>A summon band runs on the module&rsquo;s countdown.</strong> From the actor freeze <code>0x34</code> on, the summon states only re-enter the module, and the band lasts as long as one word in the module&rsquo;s own image: armed as a multiple of the frame scalar and drained by scalar &times; step every battle frame. A walk arm hands the camera back to the action machine&rsquo;s framing: Gimard&rsquo;s walk-in calls the creature framing case every pass and swings the action machine&rsquo;s own yaw counter, which the machine&rsquo;s prologue keeps drifting beside it, so the closing shot frames the caster from wherever the walk and the drift left that counter.</p>
+  <p>The port has one director per module, each read off its own tick&rsquo;s instructions: it runs on the phase the body is about to run, withholds the body&rsquo;s pass while an arm&rsquo;s gate holds, and arms the shot both hosts&rsquo; battle camera then walks. A module with no director arms no shot and keeps the held pose.</p>
 </section>
 
 <section class="doc-section" id="data-vs-code">
