@@ -799,6 +799,100 @@ pub const PLAYER_CHEAT_LIST: [(&str, &str); 12] = [
     ("travel", "Unlock all Travel maps"),
 ];
 
+/// How a [`PLAYER_CHEAT_LIST`] row is worked on a panel with no text field
+/// (the window's `F12` Cheats page, driven by arrows or a controller).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheatControl {
+    /// One press applies it.
+    Press,
+    /// An on / off switch, applied on every change; [`cheat_switch_on`]
+    /// reads where it stands.
+    Switch,
+    /// A value picked from a ladder, then applied with a press.
+    Amount {
+        /// The values Left / Right step through, smallest first.
+        values: &'static [i64],
+        /// Where the ladder starts.
+        default: usize,
+    },
+    /// An item picked by name from the build's item table; a press adds one.
+    Item,
+}
+
+/// One line saying what [`PLAYER_CHEAT_LIST`] row `key` does, for a panel
+/// with no hover text (the window's `F12` Cheats page).
+pub fn cheat_help(key: &str) -> &'static str {
+    match key {
+        "level" => "Every party member to this level, with each one's own retail growth.",
+        "restore" => "HP and MP refilled and the fallen revived, in battle too.",
+        "max-ap" => "Every member's AP (Spirit) gauge full.",
+        "seru" => "Every Seru spell learned, at this level.",
+        "arts" => "Every art in each member's list learned.",
+        "max-items" => "Every held item and usable consumable to 99.",
+        "gold" => "The gold purse set to this amount.",
+        "coins" => "The casino coin bank set to this amount.",
+        "item" => "Pick an item with Left / Right; each press adds one.",
+        "encounters" => "Random encounters off; story and boss fights still happen.",
+        "noclip" => "Walk through walls, people and props. Doors still open.",
+        "travel" => "With a pack: the Journal's Travel page lists every map.",
+        _ => "",
+    }
+}
+
+/// Party level ladder for the `level` row.
+const LEVEL_LADDER: &[i64] = &[1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 99];
+/// Seru magic levels.
+const SERU_LADDER: &[i64] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+/// Gold and coin amounts, up to the purse cap.
+const PURSE_LADDER: &[i64] = &[0, 1_000, 10_000, 50_000, 100_000, 1_000_000, 9_999_999];
+
+impl CheatControl {
+    /// The control for [`PLAYER_CHEAT_LIST`] `key`.
+    pub fn for_key(key: &str) -> Option<CheatControl> {
+        Some(match key {
+            "restore" | "max-ap" | "arts" | "max-items" => CheatControl::Press,
+            "encounters" | "noclip" | "travel" => CheatControl::Switch,
+            "level" => CheatControl::Amount {
+                values: LEVEL_LADDER,
+                default: 4,
+            },
+            "seru" => CheatControl::Amount {
+                values: SERU_LADDER,
+                default: SERU_LADDER.len() - 1,
+            },
+            "gold" | "coins" => CheatControl::Amount {
+                values: PURSE_LADDER,
+                default: 4,
+            },
+            "item" => CheatControl::Item,
+            _ => return None,
+        })
+    }
+}
+
+/// Where a [`CheatControl::Switch`] row stands, as its label reads it:
+/// `encounters` is the *No encounters* row, on while random encounters are
+/// off. `None` for a key that is not a switch.
+pub fn cheat_switch_on(world: &World, key: &str) -> Option<bool> {
+    match key {
+        "encounters" => Some(!world.toggles.live_gameplay_loop),
+        "noclip" => Some(world.locomotion.walk_through_walls),
+        "travel" => Some(world.toggles.travel_all_maps),
+        _ => None,
+    }
+}
+
+/// The cheat that turns switch row `key` to `on`, as its label reads it
+/// (the inverse of [`cheat_switch_on`]).
+pub fn cheat_switch_to(key: &str, on: bool) -> Option<PlayerCheat> {
+    match key {
+        "encounters" => Some(PlayerCheat::RandomEncounters(!on)),
+        "noclip" => Some(PlayerCheat::WalkThroughWalls(on)),
+        "travel" => Some(PlayerCheat::UnlockTravel(on)),
+        _ => None,
+    }
+}
+
 impl PlayerCheat {
     /// The [`PLAYER_CHEAT_LIST`] key of this cheat.
     pub fn key(&self) -> &'static str {
@@ -816,6 +910,34 @@ impl PlayerCheat {
             PlayerCheat::WalkThroughWalls(_) => "noclip",
             PlayerCheat::UnlockTravel(_) => "travel",
         }
+    }
+
+    /// The cheat a panel control names: [`PLAYER_CHEAT_LIST`] `key`, a
+    /// numeric operand `n` (level, Seru level, gold, coins, item quantity;
+    /// `1` / `0` for the three switches) and a text operand `text` (the item
+    /// query). Both play hosts' cheat panels build their values here: the
+    /// page's buttons through `cheat_apply`, the window's `F12` Cheats page
+    /// through [`CheatControl`]. `None` for a key not on the list.
+    pub fn from_key(key: &str, n: f64, text: &str) -> Option<PlayerCheat> {
+        let byte = n.clamp(0.0, 255.0) as u8;
+        Some(match key {
+            "level" => PlayerCheat::PartyLevel(byte),
+            "restore" => PlayerCheat::Restore,
+            "max-ap" => PlayerCheat::MaxAp,
+            "seru" => PlayerCheat::GrantSeru(byte),
+            "arts" => PlayerCheat::LearnAllArts,
+            "max-items" => PlayerCheat::MaxItems,
+            "gold" => PlayerCheat::Gold(n as i64),
+            "coins" => PlayerCheat::Coins(n.max(0.0) as u64),
+            "item" => PlayerCheat::GiveItem {
+                query: text.to_string(),
+                qty: byte,
+            },
+            "encounters" => PlayerCheat::RandomEncounters(n != 0.0),
+            "noclip" => PlayerCheat::WalkThroughWalls(n != 0.0),
+            "travel" => PlayerCheat::UnlockTravel(n != 0.0),
+            _ => return None,
+        })
     }
 
     /// Parse an `ITEM[:QTY]` spec (QTY defaults to 1; `-` / `_` read as
@@ -887,6 +1009,49 @@ mod tests {
                 qty: 5
             }
         );
+    }
+
+    #[test]
+    fn every_listed_cheat_has_a_panel_control_and_builds_from_its_key() {
+        for (key, _) in PLAYER_CHEAT_LIST {
+            let control = CheatControl::for_key(key).unwrap_or_else(|| panic!("{key}"));
+            let n = match control {
+                CheatControl::Amount { values, default } => {
+                    assert!(default < values.len(), "{key}");
+                    assert!(values.windows(2).all(|w| w[0] < w[1]), "{key}");
+                    values[default] as f64
+                }
+                _ => 1.0,
+            };
+            let cheat = PlayerCheat::from_key(key, n, "healing leaf").expect(key);
+            assert_eq!(cheat.key(), key);
+            assert!(!cheat_help(key).is_empty(), "{key}");
+            assert_eq!(
+                matches!(control, CheatControl::Switch),
+                cheat_switch_to(key, true).is_some(),
+                "{key}"
+            );
+        }
+        assert_eq!(PlayerCheat::from_key("nope", 0.0, ""), None);
+        assert_eq!(CheatControl::for_key("nope"), None);
+    }
+
+    #[test]
+    fn switch_rows_read_as_their_labels_say() {
+        let mut w = world_with_trio();
+        w.toggles.live_gameplay_loop = true;
+        assert_eq!(cheat_switch_on(&w, "encounters"), Some(false));
+        let c = cheat_switch_to("encounters", true).unwrap();
+        w.apply_cheat(&c, None);
+        assert!(!w.toggles.live_gameplay_loop, "No encounters on");
+        assert_eq!(cheat_switch_on(&w, "encounters"), Some(true));
+        for key in ["noclip", "travel"] {
+            w.apply_cheat(&cheat_switch_to(key, true).unwrap(), None);
+            assert_eq!(cheat_switch_on(&w, key), Some(true), "{key}");
+            w.apply_cheat(&cheat_switch_to(key, false).unwrap(), None);
+            assert_eq!(cheat_switch_on(&w, key), Some(false), "{key}");
+        }
+        assert_eq!(cheat_switch_on(&w, "gold"), None);
     }
 
     #[test]

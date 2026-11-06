@@ -9,29 +9,6 @@ use crate::runtime::LegaiaRuntime;
 use legaia_engine_cheats::cheats::{PlayerCheat, WorldCheats};
 use wasm_bindgen::prelude::*;
 
-/// A [`PlayerCheat`] from the page's `(key, number, text)` triple.
-fn cheat_from_key(key: &str, n: f64, text: &str) -> Option<PlayerCheat> {
-    let byte = n.clamp(0.0, 255.0) as u8;
-    Some(match key {
-        "level" => PlayerCheat::PartyLevel(byte),
-        "restore" => PlayerCheat::Restore,
-        "max-ap" => PlayerCheat::MaxAp,
-        "seru" => PlayerCheat::GrantSeru(byte),
-        "arts" => PlayerCheat::LearnAllArts,
-        "max-items" => PlayerCheat::MaxItems,
-        "gold" => PlayerCheat::Gold(n as i64),
-        "coins" => PlayerCheat::Coins(n.max(0.0) as u64),
-        "item" => PlayerCheat::GiveItem {
-            query: text.to_string(),
-            qty: byte,
-        },
-        "encounters" => PlayerCheat::RandomEncounters(n != 0.0),
-        "noclip" => PlayerCheat::WalkThroughWalls(n != 0.0),
-        "travel" => PlayerCheat::UnlockTravel(n != 0.0),
-        _ => return None,
-    })
-}
-
 impl LegaiaRuntime {
     fn apply_player_cheat(&mut self, cheat: &PlayerCheat) -> String {
         let Some(h) = self.scene_host.host_mut() else {
@@ -51,7 +28,7 @@ impl LegaiaRuntime {
     /// query). Returns the one-line outcome the native window logs for the
     /// same cheat. Unknown keys return a reason.
     pub fn cheat_apply(&mut self, key: &str, n: f64, text: &str) -> String {
-        let Some(cheat) = cheat_from_key(key, n, text) else {
+        let Some(cheat) = PlayerCheat::from_key(key, n, text) else {
             return format!("unknown cheat '{key}'");
         };
         self.apply_player_cheat(&cheat)

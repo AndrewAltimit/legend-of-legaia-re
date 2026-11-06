@@ -360,7 +360,7 @@ shadow rows, fog, see-through walls, free-angle movement and the volumes, in
 the launcher's words and writing the same `legaia-options.toml`. Up / Down
 pick a row and Left / Right (Cross, or `Enter`) change it, with the row's help
 underneath; a change takes effect behind the panel at once. `L1` / `R1` (`Tab`)
-flip to the **Keys** page: every toggle key with its current state (`F11`
+flip to the **Cheats** page ([below](#cheats)), then to the **Keys** page: every toggle key with its current state (`F11`
 fullscreen among them), the key each pad button is on (Cross, Circle, Start,
 ...), read from the live Key Config table, and the mouse's camera controls.
 `Esc`, `F12`, Circle or Start close the panel. A state the original game does
@@ -560,7 +560,12 @@ so the state they leave is one a playthrough could reach:
 
 On the browser play page they sit in the collapsed **Cheats** panel under the
 canvas, beside **Battle tools**; the panel's **No encounters** box is the same
-switch as the one in Battle tools. Native flags apply once the scene is
+switch as the one in Battle tools. In the native window they are the `F12`
+panel's **Cheats** page, any time in play: Up / Down pick a cheat, Left / Right
+choose its level, amount or item (the item row adds one per press, starting on
+the Healing Leaf), and Cross or `Enter` applies it; the three switches flip on
+Left / Right too. The outcome line the page shows on its status line appears
+under the rows. The flags still work at launch and apply once the scene is
 entered; `F6` and `F7` work any time.
 
 ```bash

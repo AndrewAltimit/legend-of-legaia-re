@@ -243,6 +243,7 @@ impl PlayWindowApp {
             hotkey_help: false,
             panel_page: Default::default(),
             settings_cursor: 0,
+            cheats_page: Default::default(),
             options_save_error: Default::default(),
             // Armed by `cmd_play_window_with_record` for an interactive
             // window only.

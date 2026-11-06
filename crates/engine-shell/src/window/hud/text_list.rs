@@ -86,6 +86,7 @@ impl PlayWindowApp {
         if self.hotkey_help {
             stage.extend(match self.panel_page() {
                 crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
+                crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
                 crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
             });
         }

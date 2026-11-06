@@ -8,7 +8,8 @@
 //! Left / Right change it, Cross steps it; `L1` / `R1` (or `Tab`) flip to the
 //! key list, Circle, Start, `F12` or `Esc` close the panel. The game holds
 //! still under the panel, except in a multiplayer session, whose peers would
-//! stall: there `F12` shows the key list alone and takes no pad input.
+//! stall: there `F12` shows the key list alone and takes no pad input. The
+//! pages run Settings, Cheats (`window::cheats_panel`), then the key list.
 //!
 //! The browser play page has no twin of this page and needs none: its
 //! *Visual enhancements* panel and sound sliders sit beside the canvas, in
@@ -44,6 +45,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 15] = [
 pub(super) enum PanelPage {
     #[default]
     Settings,
+    Cheats,
     Keys,
 }
 
@@ -54,6 +56,8 @@ pub(super) enum PanelInput {
     Move(i32),
     /// Step the row's value: forward for a positive direction.
     Change(i8),
+    /// Cross: step a setting forward, apply a cheat.
+    Confirm,
     Flip,
     Close,
 }
@@ -72,8 +76,10 @@ pub(super) fn panel_input(edge: u16) -> Option<PanelInput> {
         Some(PanelInput::Move(1))
     } else if hit(PadButton::Left) {
         Some(PanelInput::Change(-1))
-    } else if hit(PadButton::Right) || hit(PadButton::Cross) {
+    } else if hit(PadButton::Right) {
         Some(PanelInput::Change(1))
+    } else if hit(PadButton::Cross) {
+        Some(PanelInput::Confirm)
     } else {
         None
     }
@@ -89,7 +95,7 @@ pub(super) fn settings_chord(held: u16, edge: u16) -> bool {
 }
 
 /// Break `text` into lines no wider than `max_w` by the `width` metric.
-fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) -> Vec<String> {
+pub(super) fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     for word in text.split_whitespace() {
@@ -120,7 +126,7 @@ const ROW_H: i32 = 11;
 const HELP_LINES: usize = 3;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Up/Down pick  Left/Right change  Esc close";
-const FLIP_HINT: &str = "L1/R1 or Tab: keys";
+const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
 
 impl PlayWindowApp {
     /// Whether the panel owns the frame: it is up, in a window a player is at
@@ -168,14 +174,19 @@ impl PlayWindowApp {
                 self.settings_cursor = (self.settings_cursor as i32 + d).rem_euclid(n) as usize;
             }
             PanelInput::Change(dir) if page == PanelPage::Settings => self.change_setting(dir),
-            PanelInput::Move(_) | PanelInput::Change(_) => {}
+            PanelInput::Confirm if page == PanelPage::Settings => self.change_setting(1),
+            PanelInput::Move(d) if page == PanelPage::Cheats => self.cheats_page.move_cursor(d),
+            PanelInput::Change(dir) if page == PanelPage::Cheats => self.cheats_change(dir),
+            PanelInput::Confirm if page == PanelPage::Cheats => self.cheats_apply(),
+            PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
 
     /// `Tab`, `L1`, `R1`: the other page.
     pub(super) fn flip_panel(&mut self) {
         self.panel_page = match self.panel_page {
-            PanelPage::Settings => PanelPage::Keys,
+            PanelPage::Settings => PanelPage::Cheats,
+            PanelPage::Cheats => PanelPage::Keys,
             PanelPage::Keys => PanelPage::Settings,
         };
     }
@@ -316,7 +327,7 @@ mod tests {
             (PadButton::Down, Move(1)),
             (PadButton::Left, Change(-1)),
             (PadButton::Right, Change(1)),
-            (PadButton::Cross, Change(1)),
+            (PadButton::Cross, Confirm),
             (PadButton::L1, Flip),
             (PadButton::R1, Flip),
             (PadButton::Circle, Close),

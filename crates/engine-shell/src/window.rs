@@ -36,6 +36,7 @@ mod boot_cutscene;
 #[path = "window/camera.rs"]
 mod camera;
 
+mod cheats_panel;
 /// Opt-in developer menu (`LEGAIA_DEV_MENU=1`) - the host screen for the
 /// ported retail dev-menu kernels.
 #[path = "window/dev_menu.rs"]
