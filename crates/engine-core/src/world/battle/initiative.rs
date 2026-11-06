@@ -585,7 +585,16 @@ impl World {
                 }
             }
         }
-        if !self.any_battle_speed() {
+        // Every seat down (the sweep has spent every key): retail's pick still
+        // walks the keys and draws its tie roll (`jal 0x80056798` at
+        // `0x801DAD0C`) before it learns the round is over, so the port takes
+        // the keyed pick too rather than the no-SPD walk, which draws nothing.
+        let anyone_standing = self
+            .actors
+            .iter()
+            .take(BATTLE_SLOTS)
+            .any(|a| a.battle.liveness != 0);
+        if !self.any_battle_speed() && anyone_standing {
             // Flat turn tokens, walked in slot order from the round's start
             // (party first, then monsters) - see `RoundFlow::flat_walk_last`.
             let n = self.actors.len().min(BATTLE_SLOTS);

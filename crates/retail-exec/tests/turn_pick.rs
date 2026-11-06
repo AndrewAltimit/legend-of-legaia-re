@@ -359,14 +359,6 @@ fn the_turn_picker_picks_what_retail_picks() {
     let (mut monster_turns, mut counters, mut refunds, mut ends) = (0, 0, 0, 0);
     for round in 0..20000 {
         let t = gen_turn(&mut rng);
-        // A battle with every combatant down has ended before any pick.
-        if t.party
-            .iter()
-            .chain(t.monsters.iter().map(|m| &m.seat))
-            .all(|s| s.hp == 0)
-        {
-            continue;
-        }
         seed_retail(&mut cpu, &t);
         state.set(t.seed);
         match cpu.call(PICK, &[]) {
