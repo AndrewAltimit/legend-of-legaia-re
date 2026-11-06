@@ -3138,6 +3138,11 @@ twelve-frame shot on every pass, so the framing trails a countdown-driven endpoi
 rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
 pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
 the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
+Each of arms 3 to 5 calls the builder `FUN_801D829C` ahead of its hold (`0x801F7CD4`,
+`0x801F7E08`, `0x801F80B0`), so the tween table the RAM holds is the current pass's,
+built off that pass's gap; Bloody Horns' arms 3 to 6 do the same (`0x801F7624`,
+`0x801F7798`, `0x801F78EC`, `0x801F7A7C`). Both bodies build their arm-2 shot once
+(`cast_module_camera::capture_shot_rearms_every_pass`).
 
 **The arms pin both seats.** Arm 0 saves the victim's `+0x34..+0x3B` at `0x801F89D4`
 (`0x801F78E8..0x801F790C`) and arm 2 the caster's at `0x801F89DC`

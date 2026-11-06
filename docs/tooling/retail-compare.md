@@ -2830,6 +2830,30 @@ shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.886`;
 `zeto_call_wave_mid_cast` (PROT 0946 arm 2, on arm 1's `0x100`-frame pan)
 reads `.998` to `.996` on the table's walk.
 
+An arm that builds its shot on **every** pass, ahead of its countdown gate,
+is the exception: the table the RAM holds was built on the RAM's own pass, so
+each pass before it stood the re-arm's wider share back, as a framing re-armed
+every pass does (`capture_shot_rearms_every_pass`: Scythe Wind's arms 3 to 5,
+Bloody Horns' 3 to 6, each with its `FUN_801D829C` call ahead of the hold;
+[cast-module](../subsystems/cast-module.md#prot-0951-scythe-wind)).
+`battle_dohaty_nova_v2_scythe_wind_mid_cast` sits in arm 4 at step `4`, TR z
+`2940` with `80` to go at `10` a unit: two passes back on the table's own
+increments it stands at `2860`, on the re-arm's share at `2840`, and the image
+reads `.860` and `.982`. A scan of the displayed pose along the table puts
+the best frame there (`.997` at ten units back, `.860` at eight). Grade
+`disassembly` + `capture`.
+
+`battle_map01_lippian_kiss_of_death_mid_cast` is the open case of the other
+kind. Arm 0's twelve-frame shot (TR z `301` a unit, `3005` to go) was built
+two units before the RAM, so the display, two passes back, predates the shot
+and stands on the table `0x6F` armed before it; the walk back on the shot's
+increments carries it six units (`image` `.903`). Scanned along the same line
+the frame reads best four units back (`.945`, TR z `5812`, yaw `3670`), one
+pass past the shot's origin. The RAM no longer holds the earlier table, and
+the newest history entry (`0x2BC`, the clamp) cannot be the step of the pass
+that walked two units, so the pass steps are a second unknown. A retail film
+of the band's entry across arm 0 would place both.
+
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'
 `+0x78` by `step << 6` a pass while `ctx[+0x243]` is up, and the cast begin's
@@ -5554,7 +5578,14 @@ keeps the gate's frame (`RetailBattle::walk_in_shot_aligned`): the three Koru
 mid-casts hold the wind-up entry (`5` / `6` / `7`) at cursor `0` on the live
 slot and the run entry `1` at `136` on the displayed one, the run clip the
 walk-in played, with the gold ground ring around it (`image` `.943` to
-`.976` each).
+`.976` each). The walk itself is the fourth case
+(`RetailBattle::walk_arm_follow_aligned`): arm 0 of a walking body queues the
+walk clip with the `+0x1DC` bump (PROT 0952 at `0x801F72C4..0x801F72D0`), which
+commits it mid-clip on the next anim tick, so a capture one pass into the walk
+arm holds the walk on the live slot and the idle on the displayed one, at the
+ring's pair. `battle_tunnelc_xain_bloody_horns_mid_cast`'s rings read the idle
+at `0` and `(590, 202)` there and the walk `1` at `16` and `(502, 192)` live;
+posed on them Xain reads `.845` against `.796` on the replay's idle at `176`.
 
 A monster cast's accumulator gate takes the same seat, commit or no commit. The
 gate stops where the replay's accumulator reads the RAM's, so its frame carries

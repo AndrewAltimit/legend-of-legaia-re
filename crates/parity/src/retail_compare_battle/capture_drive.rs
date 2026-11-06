@@ -937,6 +937,15 @@ impl RetailBattle {
         // the arm the RAM is in, after the frame on screen was built, so
         // the display still shows the run clip the walk-in played.
         let walked_cast = self.walk_in_shot_aligned();
+        // A walk-in body one pass into its walk arm
+        // ([`Self::walk_arm_follow_aligned`]) whose walk clip committed
+        // inside the display lag: arm 0 queues the walk with the `+0x1DC`
+        // bump (PROT 0952's `sb v1,0x1da(s2)` / `sb v0,0x1dc(s2)` at
+        // `0x801F72C8..0x801F72D0`), which commits it mid-clip on the next
+        // anim tick, after the frame on screen was built, so that frame
+        // still shows the caster's idle on the ring's pair. Only a commit
+        // the rings show counts (`committed` below).
+        let walk_arm = self.walk_arm_follow_aligned();
         // A monster cast's accumulator gate: the frame the gate stops on
         // carries the clip the RAM's accumulator pairs with, two passes past
         // the keyframe the screen shows, and the cast clip is a one-shot the
@@ -949,11 +958,14 @@ impl RetailBattle {
         // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
         // frame shows `12`).
         let magic_band = self.monster_magic_band_age() || self.monster_spirit_band_age();
-        if pool < 3 || !(strike || walked_cast || magic_band) {
+        if pool < 3 || !(strike || walked_cast || walk_arm || magic_band) {
             return None;
         }
         let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
         let committed = clip != self.caster_clip;
+        if walk_arm && !committed {
+            return None;
+        }
         if !committed && !magic_band && (walked_cast || !self.walk_clock_capture()) {
             return None;
         }

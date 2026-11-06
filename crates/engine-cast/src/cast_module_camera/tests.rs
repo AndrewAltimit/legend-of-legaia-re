@@ -1428,3 +1428,27 @@ fn the_sideband_poll_arm_covers_the_band() {
     assert_eq!(sideband_wait_arm(923), Some(1));
     assert_eq!(sideband_wait_arm(926), None);
 }
+
+/// The arms that re-build their shot every pass, against those built once.
+#[test]
+fn only_the_sweep_arms_rearm_their_shot_every_pass() {
+    assert!(!capture_shot_rearms_every_pass(951, SCYTHE_WIND_BODY, 2));
+    for phase in 3..=5 {
+        assert!(capture_shot_rearms_every_pass(951, SCYTHE_WIND_BODY, phase));
+    }
+    assert!(!capture_shot_rearms_every_pass(952, BLOODY_HORNS_BODY, 2));
+    for phase in 3..=6 {
+        assert!(capture_shot_rearms_every_pass(
+            952,
+            BLOODY_HORNS_BODY,
+            phase
+        ));
+    }
+    for phase in 0..=5 {
+        assert!(!capture_shot_rearms_every_pass(
+            955,
+            KISS_OF_DEATH_BODY,
+            phase
+        ));
+    }
+}

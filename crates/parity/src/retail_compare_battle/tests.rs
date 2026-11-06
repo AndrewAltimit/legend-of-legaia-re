@@ -1978,6 +1978,32 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         );
     }
 
+    // A walk-in body one pass into its walk arm whose walk clip committed
+    // inside the lag (`battle_tunnelc_xain_bloody_horns_mid_cast`: the rings
+    // hold the idle at `0` on the displayed slot, the walk `1` at `16` live).
+    {
+        let mut c = b.clone();
+        c.action_state = 0x70;
+        c.module_phase = 1;
+        c.cam_landed = false;
+        c.queued_action = 0x5C;
+        c.queued_category = 2;
+        c.span_gate = SpanGate::None;
+        c.caster_clip = 1;
+        assert!(c.walk_arm_follow_aligned());
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "the idle before the walk's commit");
+        assert_eq!((clips[0].clip, clips[0].cursor), (0, 0));
+        let seats = c.engine_image_displayed_seats();
+        assert_eq!(seats.len(), 1);
+        assert_eq!((seats[0].x, seats[0].z), (-39, 291), "the ring's pair");
+        c.caster_clip = 0;
+        assert!(
+            c.engine_image_displayed_clips().is_empty(),
+            "no commit in the window"
+        );
+    }
+
     // The strike's target still idles: its loop is seated, as no hit has
     // staged its reaction yet; a cast's target keeps the replay's clock.
     b.span_gate = SpanGate::Age { accum: 0 };

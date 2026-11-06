@@ -318,6 +318,30 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
     }
 }
 
+/// Whether a capture body's arm `phase` re-arms its shot on **every pass**,
+/// ahead of the arm's countdown gate, so the tween table the RAM holds was
+/// built on the pass the RAM is in, off the gap that pass saw, and each pass
+/// before it stood the re-arm's wider share back - not a table built once and
+/// walked since. Each listed arm calls the builder `FUN_801D829C` (`a3 =
+/// 0xC`) before its `bgtz` / `blez` hold:
+///
+/// | PROT | body | arms | builder calls |
+/// |---|---|---|---|
+/// | 0951 | `0x801F77E8` (`0x5B` Scythe Wind) | 3..=5 | `0x801F7CD4`, `0x801F7E08`, `0x801F80B0` |
+/// | 0952 | `0x801F7118` (`0x5C` Bloody Horns) | 3..=6 | `0x801F7624`, `0x801F7798`, `0x801F78EC`, `0x801F7A7C` |
+///
+/// The first shot of each (arm 2, `0x801F7BCC` / `0x801F74F4`) is built
+/// once. Kiss of Death (PROT 0955) builds every shot once: arm 0 at
+/// `0x801F883C`, and arms 1 and 3 behind their gates (`0x801F8A10` past the
+/// `bgtz` at `0x801F89A0`, `0x801F8C1C` past `0x801F8BAC`).
+pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool {
+    match (entry, body) {
+        (951, super::SCYTHE_WIND_BODY) => (3..=5).contains(&phase),
+        (952, super::BLOODY_HORNS_BODY) => (3..=6).contains(&phase),
+        _ => false,
+    }
+}
+
 /// The yaw counter `ctx[+0x6DA]` a capture body's **finishing arm** leaves:
 /// most bodies end on the same three stores - the busy result cleared, `sb
 /// zero,0xd` (the framing style) and `li 0x780` / `sh` into `ctx[+0x6DA]`

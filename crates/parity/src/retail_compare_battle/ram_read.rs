@@ -843,6 +843,27 @@ impl RetailBattle {
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);
+            // ... unless the arm re-arms its shot every pass
+            // (`capture_shot_rearms_every_pass`: Scythe Wind's arms 3..=5,
+            // Bloody Horns' 3..=6), which walks back on the re-arm's widening
+            // share as a framing re-armed every pass does
+            // (`battle_dohaty_nova_v2_scythe_wind_mid_cast`, arm 4 at step 4:
+            // TR z `2940` stood `2840` two passes back, not the once-built
+            // table's `2860`; `image` `.860` to `.997`).
+            let module_rearms = module_shot
+                && active.is_some_and(|actor| {
+                    legaia_engine_cast::cast_module_ticks::capture_body_for_action(
+                        game_anchors::u8_at(ram, actor + 0x1DF),
+                    )
+                    .is_some_and(|(entry, body)| {
+                        legaia_engine_cast::cast_module_camera::capture_shot_rearms_every_pass(
+                            entry,
+                            body,
+                            game_anchors::u8_at(ram, ctx + 0x279),
+                        )
+                    })
+                });
+            let module_shot = module_shot && !module_rearms;
             // The setup states ahead of the seed arm no framing either
             // (`0x00` / `0x0A` / `0x0B`): the finished actor's table walks on
             // at its own increment (`jou_nova_v3_pre_scythe_wind`: yaw `2251`
@@ -871,6 +892,9 @@ impl RetailBattle {
                     )
                 {
                     displayed_module_cam_live(ram, ctx, steps)
+                } else if module_rearms {
+                    // The arm's shot divisor is the builder's `0xC`.
+                    displayed_cam_live_steps(ram, ctx, steps, true, [None; 9], [0; 9], false)
                 } else {
                     let walk_arm = walk_arm_prior_end(ram, ctx);
                     displayed_cam_live_steps(
