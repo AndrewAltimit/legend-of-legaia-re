@@ -698,10 +698,15 @@ impl RetailBattle {
             .then_some(self.cam_accum);
         // A frame inside the stream poll's arm is placed by the arm alone.
         // A frame inside a side-band wait is placed by the band's clocks,
-        // with the engine's arm held busy until they get there.
-        let sideband_wait = module_phase.is_some_and(|p| {
-            legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry) == Some(p)
-        });
+        // with the engine's arm held busy until they get there. A frame on
+        // the poll arm with the stage already down has passed the poll: its
+        // pass stands inside the seek's `CdlSetloc` behind it
+        // (`gilium_summon_mid_cast`, stage `0` on arm 1, the drive finishing
+        // the selector's seek), which the engine's drive holds on its own.
+        let sideband_wait = self.sideband_stage != 0
+            && module_phase.is_some_and(|p| {
+                legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry) == Some(p)
+            });
         let stream_wait = module_phase.is_some_and(|p| {
             legaia_engine_cast::cast_module_camera::stream_poll_arm(entry) == Some(p)
         });
