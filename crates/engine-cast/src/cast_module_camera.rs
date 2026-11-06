@@ -1000,6 +1000,7 @@ mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 mod capture_spawns;
+mod chaos_flare;
 pub mod creature;
 mod creature_spawns;
 mod cross_beam;
@@ -1024,6 +1025,7 @@ mod nighto;
 mod nova;
 mod orb;
 mod plasma_strike;
+mod power_charge;
 mod power_up;
 mod puera;
 mod rolling_flare;
@@ -1059,6 +1061,9 @@ pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_c
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
+pub use chaos_flare::{
+    CHAOS_FLARE_BODY, CHAOS_FLARE_BURST_RECORDS, CHAOS_FLARE_CHARGE_RECORDS, chaos_flare_camera,
+};
 pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
@@ -1101,6 +1106,7 @@ pub use plasma_strike::{
     NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
 };
+pub use power_charge::{POWER_CHARGE_BODY, POWER_CHARGE_RECORD, power_charge_camera};
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
@@ -1126,7 +1132,9 @@ pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories
 pub use water_column::{WATER_COLUMN_COUNTDOWN, water_column_camera};
 pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
 pub use water_hazard::{water_hazard_camera, water_hazard_ring};
-pub use white_shield::{WHITE_SHIELD_BODY, WHITE_SHIELD_COUNTDOWN, white_shield_camera};
+pub use white_shield::{
+    WHITE_SHIELD_BODY, WHITE_SHIELD_COUNTDOWN, WHITE_SHIELD_RECORD, white_shield_camera,
+};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {

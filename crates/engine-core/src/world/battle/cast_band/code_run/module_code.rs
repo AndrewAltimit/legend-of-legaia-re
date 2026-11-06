@@ -1822,6 +1822,7 @@ impl World {
                     let a = &self.actors[usize::from(slot)];
                     if (!arm.party_live_only || a.battle.hp > 0)
                         && !(arm.party_skip_stoned && self.battle.actor_is_petrified(slot))
+                        && !(arm.party_skip_victim && slot == victim_slot)
                     {
                         self.apply_capture_seat_writes(slot, arm.party_write);
                     }

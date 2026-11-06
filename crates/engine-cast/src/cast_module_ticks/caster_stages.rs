@@ -163,13 +163,14 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: Some(&[0]),
     },
-    // PROT 0951 `0x36` (`0x801F6A20`): walk, then `8` at `0x801F6D64`.
+    // PROT 0951 `0x36` (`0x801F6A20`): walk, then `8` on arm 2's pass
+    // (`0x801F6D64`); the arm runs on while it plays.
     CasterStageRow {
         prot_entry: 951,
         action_ids: &[0x36],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: true,
-        arms: None,
+        arms: Some(&[2]),
     },
     // PROT 0951 `0x5B` (`0x801F77E8`): walk, then `9` at `0x801F7B6C`.
     CasterStageRow {
@@ -198,13 +199,14 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: Some(&[0]),
     },
-    // PROT 0955 `0x6F` (`0x801F7FA4`): walk, then `7` at `0x801F826C`.
+    // PROT 0955 `0x6F` (`0x801F7FA4`): walk, then `7` on arm 2's pass
+    // (`0x801F826C`).
     CasterStageRow {
         prot_entry: 955,
         action_ids: &[0x6F],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: true,
-        arms: None,
+        arms: Some(&[2]),
     },
     // PROT 0955 `0x70` (`0x801F767C`), arm 0, by the caster's monster id:
     // `7` for `0x7F`, `9` for `0x28..=0x2A`, `8` for `0x83..=0x85`
@@ -220,13 +222,14 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: Some(&[0]),
     },
-    // PROT 0955 `0x72` (`0x801F7158`): `0x0A` at `0x801F72AC`.
+    // PROT 0955 `0x72` (`0x801F7158`): `0x0A` on arm 0's pass
+    // (`0x801F72AC`).
     CasterStageRow {
         prot_entry: 955,
         action_ids: &[0x72],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0957 `0x77` (`0x801F6A14`): `0x0A` at `0x801F6C50`.
     CasterStageRow {

@@ -112,6 +112,10 @@ pub struct CaptureCamArm {
     pub party_live_only: bool,
     /// [`Self::party_write`] also skips a Stoned seat (`+0x16E & 4`).
     pub party_skip_stoned: bool,
+    /// [`Self::party_write`] skips the victim's seat (PROT 0951 `0x36`'s
+    /// arm 2 walks `0 .. ctx[+0x00]` past `caster[+0x1DD]`,
+    /// `0x801F6E48..0x801F6E90`).
+    pub party_skip_victim: bool,
     /// The pass's fold turns each seat it reaches on the caster:
     /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34])
     /// + 0x800` into `+0x46` (PROT 0957's arm 5, `0x801F75A4..0x801F75CC`).
@@ -277,12 +281,14 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
+        (951, super::CHAOS_FLARE_BODY) => Some(super::chaos_flare_camera),
         (957, super::DEATH_GAME_BODY) => Some(super::death_game_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
         (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
         (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
         (955, super::WHITE_SHIELD_BODY) => Some(super::white_shield_camera),
+        (955, super::POWER_CHARGE_BODY) => Some(super::power_charge_camera),
         _ => None,
     }
 }

@@ -57,7 +57,7 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
-/// The stagers of PROT 0935, 0941, 0942, 0943, 0945, 0951, 0956 and 0964 (`gp[+0x714]` off the
+/// The stagers of PROT 0935, 0941, 0942, 0943, 0945, 0951, 0955, 0956 and 0964 (`gp[+0x714]` off the
 /// 64-word table at `0x801F6734`), reached from their parts' op `0x20`:
 ///
 /// | PROT | stager | arm: seats, on the caller |
@@ -68,6 +68,7 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 /// | 0943 | `FUN_801F769C` | 0: `0x801F7788`; 1: `0x801F784C`, `0x801F78A8`; 2: `0x801F791C`, each at the caller's scale |
 /// | 0945 | `FUN_801F776C` | 0, 1: `0x801F7878` at the caller's scale; 2: `0x801F7CF0`; 3: `0x801F7DF0` |
 /// | 0951 | `FUN_801F81DC` | 0: `0x801F82EC`; 1: that and `0x801F83B0`; 2: `0x801F84EC`; 3: `0x801F87DC`, `0x801F8908` (2 and 3 at the caller's scale) |
+/// | 0955 | `FUN_801F9370` | 0: `0x801F93EC` (White Shield's shield, called by arm 0's `0x801F93D4`); 1: `0x801F9744` (Power Charge's aura, called by arm 0's `0x801F972C`); both on the caller's `+0x14` / `+0x24` at its `+0x72` |
 /// | 0956 | `FUN_801F7EC4` | 0: `0x801F80B4`; 1: `0x801F8290`, `0x801F82DC`, `0x801F8330`, `0x801F84C4`, at the caller's scale; 2: `0x801F850C`, the same |
 /// | 0964 | `FUN_801F8BF8` | 0: `0x801F8EDC` / `8F38` / `8F94` by the last roll; 1: four `0x801F9008`, each on six draws; 2: `0x801F9568` (all at the caller's scale) |
 ///
@@ -78,6 +79,7 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 /// PORT: FUN_801F769C (PROT 0943's stager)
 /// PORT: FUN_801F776C (PROT 0945's stager)
 /// PORT: FUN_801F7EC4 (PROT 0956's stager)
+/// PORT: overlay_cast_white_shield_0955_801f9370 (PROT 0955's stager)
 pub fn enemy_cast_stager_spawns(
     entry: u32,
     arm: u8,
@@ -110,6 +112,8 @@ pub fn enemy_cast_stager_spawns(
             at(0x801F_84C4, own),
         ],
         (956, 2) => vec![at(0x801F_850C, own)],
+        (955, 0) => vec![at(0x801F_93EC, own)],
+        (955, 1) => vec![at(0x801F_9744, own)],
         (951, 0) => vec![at(0x801F_82EC, 0x1000)],
         (951, 1) => vec![at(0x801F_82EC, 0x1000), at(0x801F_83B0, 0x1000)],
         (951, 2) => vec![at(0x801F_84EC, own)],
