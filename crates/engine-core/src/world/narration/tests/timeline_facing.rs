@@ -445,3 +445,50 @@ fn an_npc_walk_advances_on_the_game_frame_grid() {
     // Landed on the game frame at vsync 6; the turn runs on the next one.
     assert_eq!(freed_at, Some(8));
 }
+
+/// A cross-context walk-to-tile on an NPC frees the actor for the record's
+/// next op two game frames after the step that lands: the kernel's done
+/// comes on the frame after that step (only an iteration that finds both
+/// deltas zero ends the leg), and the record, which ticks ahead of the
+/// walker, sees the halt bit clear on the frame after that. A
+/// `dolk2_market_noa` capture (`autorun_field_leg_timing.lua`, placement
+/// flat 31 on `C7 1F 48 54 22`) lands on vsync 1223, clears `0x400` on
+/// 1225 and runs the next op on it on 1227, at frame step 2.
+#[test]
+fn an_npc_tile_walk_frees_its_actor_two_game_frames_after_it_lands() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let mut w = timeline_with_npc_facing_op(0x82, 0x00, 0x000);
+    // From (1152, 960) to tile (8, 7) = (1088, 960) at 16 a step, frame step
+    // 2: 32 a game frame, two game frames. Then `B8 05 86 00` (an instant
+    // turn to compass 6, engine heading 0x400; the walk faces 0xC00) and a
+    // long wait.
+    w.npcs.positions.insert(5, (1152, 960));
+    w.cutscene.timeline = Some(CutsceneTimeline::new(
+        vec![
+            0xC7, 0x05, 0x08, 0x07, 0x01, 0xB8, 0x05, 0x86, 0x00, 0x4A, 0xFF, 0x7F,
+        ],
+        0,
+    ));
+    w.clock.game_tick_live = true;
+    w.clock.frame_step = 2;
+    let mut landed = None;
+    let mut turned = None;
+    for vsync in 0..20 {
+        w.clock.game_tick_fired = vsync % 2 == 0;
+        w.step_cutscene_timeline();
+        w.tick_field_npc_motions();
+        if landed.is_none() && w.npcs.positions.get(&5) == Some(&(1088, 960)) {
+            landed = Some(vsync);
+        }
+        if turned.is_none() && w.npcs.headings.get(&5).copied() == Some(0x400) {
+            turned = Some(vsync);
+        }
+    }
+    let landed = landed.expect("the walk lands");
+    assert_eq!(landed, 2, "two game frames of 32, the first the arming one");
+    assert_eq!(
+        turned,
+        Some(landed + 4),
+        "retail runs the next op on the walker two game frames after the landing step"
+    );
+}

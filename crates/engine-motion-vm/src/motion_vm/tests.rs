@@ -749,3 +749,37 @@ fn touch_post_out_of_range_does_not_post() {
     assert_eq!(post_touch(&t, 4), None);
     assert_eq!(post_touch(&t, usize::MAX), None);
 }
+
+/// A retail leg frame by frame: `dolk2_market_noa`, placement flat 31 on
+/// `C7 1F 48 54 22` (tile `(0x48, 0x54)` = `(9280, 10816)`, approach mode
+/// `2`, pace `2`: 8 units a step) at frame step 2, from `(8960, 11648)`.
+/// The capture (`autorun_field_leg_timing.lua`, one row a vsync) shows the
+/// arming frame at `(8960, 11632)`, Z closed before X moves, the landing step
+/// 71 game frames later (vsync 1223) with `0x400` still up, and the bit
+/// clear on the next game frame (vsync 1225).
+#[test]
+fn a_captured_tile_walk_lands_and_ends_on_retails_frames() {
+    let mut s = MotionState {
+        walk_iterations: 2,
+        approach: 2,
+        ..st(8960, 11648, 8)
+    };
+    let t = tgt(9280, 0, 10816);
+    let bc = [0x47];
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+    assert_eq!((s.world_x, s.world_z), (8960, 11632), "the arming frame");
+    let mut frame = 0;
+    while (s.world_x, s.world_z) != (9280, 10816) {
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        frame += 1;
+        if s.world_z != 10816 {
+            assert_eq!(s.world_x, 8960, "Z closes before X moves");
+        }
+    }
+    assert_eq!(frame, 71, "the landing step, vsync 1223");
+    assert_eq!(
+        step(&mut s, t, &bc),
+        StepResult::Done,
+        "the bit clears, vsync 1225"
+    );
+}

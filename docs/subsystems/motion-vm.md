@@ -295,7 +295,13 @@ diagonal in one call. The default mode's clamp stays on the step for the
 frame's later iterations. An iteration that finds both deltas zero ends the
 leg with no facing write (`0x80037B7C`); a step that lands on the target in
 the frame's last iteration leaves the leg running, and it ends on the next
-frame's first. The facing comes from the last iteration's axis set. Port:
+frame's first. The facing comes from the last iteration's axis set. A
+`dolk2_market_noa` capture (`autorun_field_leg_timing.lua`, flat 31 on
+`C7 1F 48 54 22` at frame step 2) shows it: the landing step at vsync 1223 with
+`0x400` still up, the bit clear at 1225, and the record, which ticks ahead of the
+walker, running its next op on the actor at 1227. A compass walk (`0x37` /
+`0x41`) ends inside the landing call instead, which the same capture's
+`C1 F8 ..` legs show. Port:
 `MotionState::walk_iterations`; the differential test `motion_vm` in
 `crates/retail-exec` holds the arm and the other five to the bytes.
 
