@@ -25,6 +25,10 @@ pub struct FieldHudMemberData {
     pub mp: u16,
     pub mp_max: u16,
     pub alive: bool,
+    /// The character record's `+0x12E` status word, which the readout tint
+    /// `FUN_800349EC` folds into the caution tier (`lh v0,0x6f6(v1)` at
+    /// `0x80034A44`, off `0x80084140 + char * 0x414`).
+    pub status: u16,
 }
 
 /// Host-side owner of the field party HUD's per-frame state.

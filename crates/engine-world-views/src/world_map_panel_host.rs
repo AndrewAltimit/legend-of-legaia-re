@@ -198,6 +198,10 @@ pub fn field_party_hud_members(
                 mp: hms.mp_cur,
                 mp_max: hms.mp_max,
                 alive: hms.hp_cur > 0,
+                status: rec
+                    .raw
+                    .get(0x12E..0x130)
+                    .map_or(0, |b| u16::from_le_bytes([b[0], b[1]])),
             })
         })
         .collect()
