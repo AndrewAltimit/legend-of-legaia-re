@@ -337,9 +337,9 @@ fn the_regeneration_passives_restore_what_retail_restores() {
         state.set(s.seed);
         assert_eq!(cpu.call(0x801E_752C, &[]), Stop::Returned, "{s:?}");
         seed_port(&mut w, &s);
-        w.tables.character_max_mp = vec![400; 3];
         for m in 0..3 {
             w.actors[m].battle.mp = 40;
+            w.actors[m].battle.mp_max = 400;
         }
         w.tick_status_effects();
         let mut r_out = Vec::new();

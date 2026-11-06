@@ -76,11 +76,9 @@ impl World {
         //   too so field-side consumers of the projection stay consistent.
         let field_roster =
             self.mode != SceneMode::Battle && self.party.roster.members.get(idx).is_some();
-        // BattleActor holds `mp` but not `max_mp`; engines that wire the
-        // character record into the actor populate it via a sibling field.
-        // For the snapshot we use the character_max_mp accessor (defaults
-        // to `mp` itself when not separately tracked, which gives a
-        // conservative "MP already capped" reading).
+        // In battle the MP ceiling is the seat's own `+0x152`
+        // (`BattleActor::mp_max`), which a battle-local write can move off
+        // the record's.
         let status_mask = self
             .battle
             .status_effects
@@ -105,12 +103,7 @@ impl World {
                     hp: a.battle.hp,
                     hp_max: a.battle.max_hp,
                     mp: a.battle.mp,
-                    mp_max: self
-                        .tables
-                        .character_max_mp
-                        .get(idx)
-                        .copied()
-                        .unwrap_or(a.battle.mp),
+                    mp_max: a.battle.mp_max,
                     is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
                     status_mask,
                 },
@@ -144,13 +137,7 @@ impl World {
                     rec.set_hp_mp_sp(hms);
                     self.mirror_roster_hp_mp(idx);
                 } else if let Some(a) = self.actors.get_mut(idx) {
-                    let cap = self
-                        .tables
-                        .character_max_mp
-                        .get(idx)
-                        .copied()
-                        .unwrap_or(u16::MAX);
-                    a.battle.mp = a.battle.mp.saturating_add(amount).min(cap);
+                    a.battle.mp = a.battle.mp.saturating_add(amount).min(a.battle.mp_max);
                 }
             }
             legaia_engine_menus::items::ItemOutcome::Cured { kind } => {

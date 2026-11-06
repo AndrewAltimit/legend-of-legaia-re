@@ -67,13 +67,12 @@ fn mp_outcomes_halve_the_seat_ceiling_too() {
     let mut w = fd_world();
     w.apply_fatal_outcome(CASTER, VICTIM, FatalOutcome::HalveMp);
     assert_eq!(w.actors[0].battle.mp, 20);
-    assert_eq!(w.tables.character_max_mp[0], 30);
+    assert_eq!(w.actors[0].battle.mp_max, 30);
+    // The record-side ceiling is the battle's seed, not the seat: untouched.
+    assert_eq!(w.tables.character_max_mp[0], 60);
     let mut w = fd_world();
     w.apply_fatal_outcome(CASTER, VICTIM, FatalOutcome::DrainMp);
-    assert_eq!(
-        (w.actors[0].battle.mp, w.tables.character_max_mp[0]),
-        (0, 0)
-    );
+    assert_eq!((w.actors[0].battle.mp, w.actors[0].battle.mp_max), (0, 0));
 }
 
 #[test]

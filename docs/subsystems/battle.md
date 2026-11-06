@@ -184,7 +184,7 @@ One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are
 | `+0x50` | ptr | Party mesh descriptor (`+0x18` = the TMD registered at setup). |
 | `+0x58` | u16 | `size << 5` (monster size class, written by `FUN_800513F0`). |
 | `+0x74` / `+0x78` | u32 / u16 | Drawn colour word and blend weight, written by the tint pass `FUN_8004A908`. |
-| `+0x14C..+0x152` | u16 | HP and MP (`+0x14C` / `+0x14E` HP, `+0x150` / `+0x152` MP), mirrored at `+0x172` / `+0x174` for the gauges. |
+| `+0x14C..+0x152` | u16 | HP and MP (`+0x14C` / `+0x14E` HP, `+0x150` / `+0x152` MP), mirrored at `+0x172` / `+0x174` for the gauges. The maximum `+0x152` is the seat's own from battle init on; Lapis Wave zeroes it without touching the record. |
 | `+0x154` / `+0x156` | u16 | AGL - the action gauge (current, base). |
 | `+0x158` / `+0x15A` | u16 | ATK. |
 | `+0x15C` / `+0x15E` | u16 | UDF (upper defence). |

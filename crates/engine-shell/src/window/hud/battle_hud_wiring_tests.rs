@@ -551,7 +551,9 @@ fn monster_rows_are_diagnostic_only() {
 #[test]
 fn native_battle_hud_hp_tints_span_the_retail_tiers() {
     let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
-        let hud = hud_with_party_row(hp, 100, 0, 0);
+        // A full MP pool keeps the MP pair on the normal tint: a party
+        // row draws its MP pair even at `0/0` (danger), as retail does.
+        let hud = hud_with_party_row(hp, 100, 50, 50);
         draws(&hud)
             .iter()
             .filter(|d| d.src != SOLID)

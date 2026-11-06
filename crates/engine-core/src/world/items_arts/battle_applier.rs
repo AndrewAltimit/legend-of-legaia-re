@@ -182,7 +182,7 @@ impl World {
             return ItemOutcome::NoEffect;
         };
         let (hp, mp) = (a.battle.hp, a.battle.mp);
-        let max = self.tables.character_max_mp.get(i).copied().unwrap_or(mp);
+        let max = a.battle.mp_max;
         let mut delta = 0u16;
         if hp != 0 {
             delta = max.wrapping_sub(mp);

@@ -39,9 +39,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = world.party.roster_names();
 
-    // Party rows. `character_max_mp` is the only MP ceiling the world carries
-    // (`BattleActor` has live `mp` but no max), and it is keyed by battle
-    // ordinal - the same index `build_battle_item_session` uses.
+    // Party rows. The MP ceiling is the seat's own `+0x152`
+    // (`BattleActor::mp_max`), the halfword retail's MP tint reads
+    // (`FUN_80046A20`, `0x80046B74`) - not the record's, which Lapis Wave
+    // leaves alone when it zeroes the seat's.
     //
     // HP is the **displayed** value, not the live one: retail's readout draws
     // actor `+0x172`, the bar the per-frame ramp `FUN_80047430` walks toward
@@ -67,7 +68,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
                 hp_max: a.battle.max_hp,
                 // The readout `+0x174`, ramped off `+0x178` as HP is.
                 mp: a.battle.mp_display.unwrap_or(a.battle.mp),
-                mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
+                mp_max: a.battle.mp_max,
                 ap_slot: (i < world.battle.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`

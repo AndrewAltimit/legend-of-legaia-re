@@ -56,7 +56,6 @@ fn the_party_gauges_take_retail_colours() {
         w.load_party(Party::zeroed(3));
         w.enter_battle(3, 2);
         w.party.party_count = 3;
-        w.tables.character_max_mp = vec![0; 3];
         let mut words = [0u16; 3];
         for s in 0..3u32 {
             let max_hp = [1u16, 4, 7, 100, 999, 9999][rng.below(6) as usize];
@@ -92,7 +91,7 @@ fn the_party_gauges_take_retail_colours() {
             a.max_hp = max_hp;
             a.liveness = hp;
             a.mp = mp;
-            w.tables.character_max_mp[s as usize] = max_mp;
+            a.mp_max = max_mp;
             // Half the time the tracked kinds sit in the tracker, as a hit's
             // status arm leaves them; the rest stays in the raw half.
             let mut raw = word;

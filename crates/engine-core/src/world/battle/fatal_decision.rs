@@ -315,14 +315,7 @@ impl World {
             hp: a.battle.hp,
             max_hp: a.battle.max_hp,
             mp: a.battle.mp,
-            // The battle actor carries current MP alone; the ceiling every
-            // battle surface reads is the per-seat `character_max_mp`.
-            max_mp: self
-                .tables
-                .character_max_mp
-                .get(usize::from(victim))
-                .copied()
-                .unwrap_or(0),
+            max_mp: a.battle.mp_max,
             hp_bar_delta: a.battle.hp_bar_pending,
             mp_readout: a.battle.last_mp_cost,
             status: self.raw_status_word(victim),
@@ -338,6 +331,7 @@ impl World {
             a.battle.hp = v.hp;
             a.battle.max_hp = v.max_hp;
             a.battle.mp = v.mp;
+            a.battle.mp_max = v.max_mp;
             a.battle.hp_bar_pending = v.hp_bar_delta;
             a.battle.last_mp_cost = v.mp_readout;
             a.battle.atk_working = v.atk;
@@ -345,9 +339,6 @@ impl World {
             if step.status_cleared {
                 a.battle.field_flags = 0;
             }
-        }
-        if victim < self.party.party_count {
-            self.set_character_max_mp(victim, v.max_mp);
         }
         if let Some(s) = self.battle.defense_split.get_mut(usize::from(victim))
             && s.is_some()

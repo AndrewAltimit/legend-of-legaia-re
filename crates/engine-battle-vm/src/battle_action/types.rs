@@ -365,6 +365,14 @@ pub struct BattleActor {
     pub liveness: u16,
     /// `+0x150` - current MP (subtracted by Magic / Spirit cast costs).
     pub mp: u16,
+    /// `+0x152` - the seat's **maximum MP**. Battle init copies it from the
+    /// character record (`FUN_80053CB8`, `0x80053E50..0x80053E58`) or the
+    /// monster record `+0x10` (`FUN_80054CB0`, `0x8005518C`); from then on it
+    /// is seat-local: the HUD's MP tint (`FUN_80046A20`, `0x80046B74`), the
+    /// item MP-restore clamp and the action validator read it, and PROT
+    /// 0943's Lapis Wave (`0x801F6D1C`) and PROT 0954's Fatal Decision write
+    /// it without touching the record.
+    pub mp_max: u16,
     /// `+0x16E` - per-actor flag bank. Bit `0x4` = "non-targetable", bits
     /// `0x380` = AI-controlled, `0x404` = AI + non-targetable. Read at state
     /// `ActionSeed` to decide between party-setup and monster-setup hooks.

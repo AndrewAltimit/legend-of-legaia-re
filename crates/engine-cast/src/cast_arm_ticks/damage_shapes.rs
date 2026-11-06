@@ -17,7 +17,8 @@ pub struct CastArmExtState {
     /// `+0x150` - MP **working**. PROT 0943's `0xB5` body zeroes it on every
     /// seat (`sh zero, 0x150(v0)` at `0x801F6D08`).
     pub mp: u16,
-    /// `+0x152` - MP **base**, zeroed in the same breath (`0x801F6D1C`).
+    /// `+0x152` - the seat's maximum MP, zeroed in the same breath
+    /// (`0x801F6D1C`); the engine carries it as `BattleActor::mp_max`.
     pub mp_base: u16,
     /// `+0x178` - where that body stashes the pre-drain `+0x150`
     /// (`lhu v0, 0x150(v1); sh v0, 0x178(v1)` at `0x801F6CF4`/`0x801F6CFC`).
