@@ -274,6 +274,17 @@ impl RetailBattle {
                 .contains(&self.action_state)
     }
 
+    /// A monster's Spirit / Item band capture (a class-0 Heal or Hyper Heal,
+    /// which the action seed's class-byte discriminator routes to `0x3C`):
+    /// [`SpanGate::Age`] on a monster seat, category `2`, state `0x3D..=0x40`.
+    pub fn monster_spirit_band_age(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 2
+            && super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+    }
+
     /// The yaw the frame before a turning case `0xE` shot stood on. Case `0xE`
     /// aims the live yaw `step * 4` on from wherever it stands, every pass
     /// (`0x801DCB18`), and its accumulator counts the passes it has run, so
@@ -937,12 +948,7 @@ impl RetailBattle {
         // cursor is the display lag past the keyframe on screen
         // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
         // frame shows `12`).
-        let spirit_band = matches!(
-            (self.seed_plan(), self.span_gate),
-            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
-        ) && self.queued_category == 2
-            && super::SPIRIT_STAGE_STATES.contains(&self.action_state);
-        let magic_band = self.monster_magic_band_age() || spirit_band;
+        let magic_band = self.monster_magic_band_age() || self.monster_spirit_band_age();
         if pool < 3 || !(strike || walked_cast || magic_band) {
             return None;
         }
@@ -1500,8 +1506,18 @@ impl RetailBattle {
     /// `0x80`. A base on the floor `0x20` may have sat there for those vsyncs, so
     /// it stays as read, the way a weight on a ceiling does
     /// ([`Self::displayed_backdrop_cue`]).
+    ///
+    /// A monster's Spirit / Item band capture takes the same seat. State
+    /// `0x3C` raises the latch (`sb v0,0x243(v1)` at `0x801E3B68`) and `0x3D`
+    /// then holds until the caster's idle reaches its natural end, so how far
+    /// the base has dimmed by the gate is the caster's idle phase at the
+    /// seed, which the replay's own rounds decide: a harness seat, not a
+    /// ramp the engine gets wrong. `battle_garmel_vera_v2_heal_mid_cast`
+    /// holds base `0x38` (nine vsyncs of dim, the backdrop weight's `576`
+    /// agreeing) where the replay, its wait `36` passes longer, sat on the
+    /// floor `0x20` and drew the ground at half retail's brightness.
     pub fn displayed_ambient_base(&self) -> Option<u8> {
-        if !self.monster_magic_band_age() {
+        if !(self.monster_magic_band_age() || self.monster_spirit_band_age()) {
             return None;
         }
         let base = u16::from(self.ambient_word).checked_sub(0x40)?;

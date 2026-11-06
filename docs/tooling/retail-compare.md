@@ -2863,6 +2863,16 @@ the RAM holds after a clip's first passes drew both a display lag earlier
 (`RetailBattle::displayed_ambient_base`, `LEGAIA_BATTLE_AMBIENT_BASE`). This is
 what the ice stage's `battle_noaru_*` casts were reading darker than retail.
 
+A monster's Spirit / Item band (a class-0 Heal routed to `0x3C`) seats the ambient
+base the same way. State `0x3C` raises the latch (`0x801E3B68`) and `0x3D` holds
+until the caster's idle reaches its natural end, so how far the base has dimmed
+by the gate is the caster's idle phase at the seed, which the replay's own rounds
+decide: a harness seat, not a ramp the engine runs wrong.
+`battle_garmel_vera_v2_heal_mid_cast` holds base `0x38` (nine vsyncs of dim, its
+backdrop weight `576` agreeing), where the replay, its wait `36` passes longer,
+had sat on the floor `0x20` and drew the ground at half retail's brightness
+(`image` `.703` to `1.000`).
+
 A capture past the band's start read its counter that many ticks into `0x70`
 too, so for a `0x70` gate the hold stands short of retail's counter by the
 module ticks the band takes to reach the gate's arm and countdown
@@ -4192,6 +4202,19 @@ pose is law from what the RAM still holds
   `ctx[+0x6D0]`, focus the caster.
 - **The start** is the earlier actor's framing, or the prompt's far framing on a
   round's first actor (`walk_start`).
+
+**The terminator pass in the RAM.** A capture on `0x2B` at accumulator `0`
+holds the terminator pass itself: it stored `0x2B` and armed nothing, so the
+RAM's tween table is the one the `0x2A` pass before it armed, and both passes of
+the display lag moved `increment * step` on it rather than the widening share a
+re-armed walk takes (`chain_terminator_pass`, walked by
+`displayed_module_cam_live`). The table says so: its largest increment is not
+what a re-arm on the RAM's pass stores and is what one a pass earlier stores.
+`battle_garmel_zenoir_fire_claw_mid_cast` holds yaw `3311` on increment `12`
+with `70` to go at step `3` (a re-arm there would store `9`); its frame draws at
+yaw `3239`, TR z `5493`, where the re-arm walk had put `3209` / `5448`
+(`image` `.797` to `.995`). The camera channel reads the RAM's pose and was
+`1.000` throughout.
 
 One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
 armed pass, with the terminator still to come (`case6_walk_passes`'s

@@ -309,6 +309,34 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_garmel_zenoir_fire_claw_mid_cast`: the animation chain's
+/// terminator pass armed no framing, so the RAM's yaw increment `12` with
+/// `70` to go at step `3` is the pass before's re-arm (`ceil(142 / 12)`), not
+/// this pass's (`ceil(106 / 12) = 9`), and both lag passes walked it.
+#[test]
+fn the_chain_terminator_pass_walks_back_on_the_table_it_found() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 3311);
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(1) + 2, 3381);
+    put32(&mut ram, 0x8008_40C0, 5619);
+    put16(&mut ram, rec(5), 21);
+    put16(&mut ram, rec(5) + 2, 5734);
+    assert!(camera_align::chain_terminator_pass(&ram, ctx, 0x2B, 3));
+    // Not outside `0x2B`, and not where this pass's own re-arm fits.
+    assert!(!camera_align::chain_terminator_pass(&ram, ctx, 0x2A, 3));
+    put16(&mut ram, rec(1), 9);
+    put16(&mut ram, rec(5), 10);
+    assert!(!camera_align::chain_terminator_pass(&ram, ctx, 0x2B, 3));
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(5), 21);
+    let p = camera_align::displayed_module_cam_live(&ram, ctx, &[3, 3]);
+    assert_eq!(p.yaw, 3239.0);
+    assert_eq!(p.tr[2], 5493.0);
+}
+
 /// `battle_map01_frog_strike`: one pass past the strike commit its eye walks
 /// the pull-in's first table, so the frame on screen still stands on the depth
 /// the shot had landed on (`4915`), and walks no further back than that.

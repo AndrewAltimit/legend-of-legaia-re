@@ -861,7 +861,15 @@ impl RetailBattle {
                         capture_fade_end_shift(ram, ctx, steps),
                         false,
                     )
-                } else if module_shot || unarmed_setup {
+                } else if module_shot
+                    || unarmed_setup
+                    || chain_terminator_pass(
+                        ram,
+                        ctx,
+                        action_state,
+                        steps.first().copied().unwrap_or(1),
+                    )
+                {
                     displayed_module_cam_live(ram, ctx, steps)
                 } else {
                     let walk_arm = walk_arm_prior_end(ram, ctx);
