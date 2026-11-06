@@ -404,6 +404,64 @@ pub struct ModuleDriveArms {
 
 /// The phase arm of `image`'s tick whose body holds word `site`.
 fn site_arm(image: &[u8], site: usize) -> Option<u8> {
+    site_arm_body(image, site).map(|(phase, _)| phase)
+}
+
+/// Whether the head cue's call waits on its arm's own gate as well as on the
+/// drive: a branch to the arm's busy return ahead of the drive poll, as Gilium's
+/// PROT 0923 arm 2 drains its countdown `0x801FA4F8` (`bgtz a1,0x801F8B5C` at
+/// `0x801F6CAC`) before it polls (`0x801F6CB4`) and calls `0x16E`. Such a call
+/// lands on the pass the arm's hold lets through; a call that follows only the
+/// poll (Orb's PROT 0911 arm 2) lands once the drive is idle.
+pub fn head_cue_waits_arm_gate(image: &[u8], body_va: Option<u32>) -> bool {
+    let Some((_, site)) = head_cue_site(image, body_va) else {
+        return false;
+    };
+    let words: Vec<u32> = image
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let target = |at: usize| -> Option<usize> {
+        let w = *words.get(at)?;
+        let op = w >> 26;
+        let branch = matches!(op, 0x04..=0x07) || (op == 0x01 && matches!((w >> 16) & 0x1F, 0 | 1));
+        branch.then(|| (at as i64 + 1 + i64::from(w as u16 as i16)) as usize)
+    };
+    // The poll's busy return: the `bne v0, zero` right after `jal 0x8003F2B8`.
+    let Some(poll) = (site.saturating_sub(16)..site)
+        .rev()
+        .find(|&i| words.get(i) == Some(&JAL_DRIVE_POLL))
+    else {
+        return false;
+    };
+    let Some(busy) = (poll + 1..(poll + 4).min(site)).find_map(target) else {
+        return false;
+    };
+    // Back from the poll to the arm's head: the previous arm's closing jump
+    // (`j` / `jr`) bounds it. The dispatch walk can read an arm-internal skip
+    // (Gilium's `blez v1,0x801F6CB4` past its countdown) as the body's start.
+    let jump = |i: usize| {
+        words
+            .get(i)
+            .is_some_and(|&w| w >> 26 == 0x02 || (w >> 26 == 0 && w & 0x3F == 0x08))
+    };
+    let mut i = poll;
+    while i > poll.saturating_sub(DISPATCH_WALK_LIMIT) && i > 0 {
+        i -= 1;
+        if jump(i) {
+            break;
+        }
+        if target(i) == Some(busy) {
+            return true;
+        }
+    }
+    false
+}
+
+/// [`site_arm`] with the arm body's first word.
+fn site_arm_body(image: &[u8], site: usize) -> Option<(u8, usize)> {
     let func = legaia_overlay_images::slot_b_module::framed_functions(image)
         .into_iter()
         .find(|f| f.start / 4 <= site && site < f.end / 4)?;
@@ -444,7 +502,7 @@ fn site_arm(image: &[u8], site: usize) -> Option<u8> {
             best = Some((body, phase as u8));
         }
     }
-    best.map(|(_, phase)| phase)
+    best.map(|(body, phase)| (phase, body))
 }
 
 /// The clip file the module's head seek parks the drive on: the slot of the

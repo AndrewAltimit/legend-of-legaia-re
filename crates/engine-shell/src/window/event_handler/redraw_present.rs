@@ -393,6 +393,10 @@ struct AudioWavRecorder {
     frames: usize,
     /// The interleaved mix from the gate on.
     pcm: Vec<i16>,
+    /// The audio level the director applied on each recorded tick
+    /// (`AudioDirector::duck_applied`, `DAT_8007B6EC`), written beside the WAV
+    /// as `<path>.duck`: the duck the score is to be rendered under.
+    duck: Vec<u8>,
     /// The last tick pulled, so a redraw that ran no tick pulls nothing.
     last_tick: Option<u64>,
     /// Fractional output frames carried between ticks.
@@ -455,6 +459,7 @@ impl PlayWindowApp {
                 path,
                 frames: (seconds * f64::from(legaia_engine_audio::SPU_INTERNAL_RATE)) as usize,
                 pcm: Vec::new(),
+                duck: Vec::new(),
                 last_tick: None,
                 carry: 0.0,
                 start: None,
@@ -483,6 +488,9 @@ impl PlayWindowApp {
         let n = want as usize;
         rec.carry = want - n as f64;
         let keep = rec.start.is_some();
+        if keep {
+            rec.duck.push(director.duck_applied());
+        }
         let pcm = &mut rec.pcm;
         director.audio().with_core(|core| {
             for _ in 0..n {
@@ -508,6 +516,8 @@ impl PlayWindowApp {
             .is_some_and(|(d, tail)| tick >= d + tail);
         if done || rec.pcm.len() >= rec.frames * 2 {
             rec.pcm.truncate(rec.frames * 2);
+            let duck: String = rec.duck.iter().map(|l| format!("{l}\n")).collect();
+            let _ = std::fs::write(rec.path.with_extension("duck"), duck);
             match legaia_parity::pcm_oracle::write_wav(&rec.path, &rec.pcm) {
                 Ok(()) => {
                     println!(

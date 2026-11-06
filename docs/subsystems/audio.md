@@ -3486,18 +3486,27 @@ track's lag, at an offset fitted within one vsync either way and reported, becau
 stands within a vsync of the state's instant and not on its sample; the score is over the cast's own
 span. `--per-second` prints level and correlation second by second.
 
+A summon ducks the score to `75` % across the cast, and the track render plays the state's own sequence
+volume, so the channel renders the score under a duck as well: the child writes the audio level its
+director applied each tick beside the WAV (`<wav>.duck`), and the render walks a level from the state's
+own `_DAT_8007B910` one unit a vsync toward where the engine's level is heading, halved, on the track's lag
+(`pcm_retail::duck_schedule`). The walk is the measurement's, not the engine's: the child's seed does not
+carry the state's level (`zenoir_summon_mid_cast` stands at `192`, mid-ramp, and seeds at `215`), so the
+score is rendered as retail's ramp would carry it from where the state stands. On Orb the engine's applied
+level tracks a frame-stepped retail one within `8` units across the ramp.
+
 | State | `cast` corr | Level | Offset | Reading |
 |---|---|---|---|---|
 | `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
-| `theeder_summon_mid_cast` | `0.721` | `+0.20` dB | `+55` | the voice starts `0.23` s before retail's |
-| `zenoir_summon_mid_cast` | `0.832` | `+1.02` dB | `+725` | the voice within `0.08` s of retail's |
-| `nighto_summon_mid_cast` | `0.331` | `-0.77` dB | `-138` | the voice starts `0.16` s before retail's |
-| `orb_summon_mid_cast` | `0.907` | `-0.53` dB | `+284` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
-| `swordie_summon_mid_cast` | `0.966` | `-0.59` dB | `-289` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
-| `gilium_summon_mid_cast` | `0.244` | `-1.35` dB | `+94` | |
+| `theeder_summon_mid_cast` | `0.722` | `+2.30` dB | `+55` | the voice starts `0.23` s before retail's |
+| `zenoir_summon_mid_cast` | `0.812` | `+1.59` dB | `+725` | the voice within `0.08` s of retail's |
+| `nighto_summon_mid_cast` | `0.328` | `+0.13` dB | `-138` | the voice starts `0.16` s before retail's |
+| `orb_summon_mid_cast` | `0.949` | `+0.04` dB | `+284` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
+| `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-289` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
+| `gilium_summon_mid_cast` | `0.194` | `-0.54` dB | `+94` | the voice `0.30` s early, and lifted to full CD volume under a duck that has settled in retail by its start ([below](#the-drive-holds-a-summons-voice)) |
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 
@@ -3539,11 +3548,22 @@ level change under a sounding clip lifts it to the full CD volume
 ([the CD input volume](#the-cd-input-volume)), and Orb's duck is still ramping when its voice starts only
 because the blocked frames held the ramp.
 
-What is left on these rows is not the voice. The track render plays the score at the state's own sequence
-volume, and a summon ducks it to `75` % across the cast, so the engine side reads about half a dB loud
-wherever the score dominates. `theeder_summon_mid_cast` and `nighto_summon_mid_cast` still start their
-voices `0.23` and `0.16` s early; their seeks run under longer holds of their own, so the remainder is
-elsewhere, and the side-band read ahead of the selector's seek (`ctx[+0x276]`) is not modelled
+**A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
+`bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue
+as soon as the drive was idle, while the countdown still held the arm, and the voice started `0.59` s early
+- under a duck still ramping, so the level step lifted it to full CD volume where retail's plays at the cue
+level. That is the `-1.35` dB the row read. `head_cue_waits_arm_gate` reads the shape off the image (a branch
+to the poll's busy return ahead of the poll, within the arm); of the band only PROT 0923 has it, and its cue
+now lands on the pass the arm's hold lets through: `0.30` s early, the rest of the arm's length
+(`55` vsyncs from its seek in retail, `40` in the port) unexplained.
+
+Theeder's and Nighto's voices are not held by the drive: their selector seeks and their own seeks both
+land on `XA8`, so the module's seek is a few vsyncs, and their voices still start `0.23` and `0.16` s early.
+Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86` vsyncs after the state, behind the side-band
+read (`cmd 6` reads in the `summon.dat` region, `41347..41446` in three chunks), and arm 2 runs past the
+end of the log at `+187` where the port's countdown leaves it at `+213`; arm 2 also polls the selector's
+latch `0x8007BDB0` for the creature stream (`seru.rs`), which the port reads as ready. Theeder's `+2.30` dB
+(retail louder) is not explained: its duck and the engine's both start ramping near `+118`
 ([open](../reference/open-rev-eng-threads.md#how-long-does-a-summons-seek-hold-its-voice)).
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is

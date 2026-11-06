@@ -426,14 +426,22 @@ fn a_summon_module_seeks_its_file_then_waits_on_the_drive() {
         module_drive_arms(bytes)
     };
     let mut listed = Vec::new();
-    for (entry, _) in &images {
+    let mut gated = Vec::new();
+    for (entry, bytes) in &images {
         if let Some(a) = arms(*entry) {
             listed.push(format!(
                 "{entry}:{}/{}/{:#x}",
                 a.seek_arm, a.poll_arm, a.slot
             ));
         }
+        if legaia_engine_battle_vm::battle_cast_cue::head_cue_waits_arm_gate(bytes, None) {
+            gated.push(*entry);
+        }
     }
+    eprintln!("[ok] head cues behind their arm's own gate: {gated:?}");
+    // Gilium's arm 2 drains its countdown before the poll; Orb's polls at once.
+    assert!(gated.contains(&923));
+    assert!(!gated.contains(&911));
     eprintln!("[ok] drive arms: {}", listed.join(" "));
     assert_eq!(
         arms(911),

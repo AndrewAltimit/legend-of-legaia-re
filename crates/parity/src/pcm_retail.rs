@@ -166,7 +166,9 @@ pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<Ret
 }
 
 /// Run `track` vsync by vsync until the sequencer reaches `pos`, then render
-/// `samples` stereo samples, one vsync every `vsync_samples`.
+/// `samples` stereo samples, one vsync every `vsync_samples`. `seq_vols`, when
+/// given, is the sequence volume of each rendered vsync ([`duck_schedule`]).
+#[allow(clippy::too_many_arguments)]
 pub fn render_aligned(
     entry: &[u8],
     pos: &RetailSeqPosition,
@@ -175,6 +177,7 @@ pub fn render_aligned(
     pass: u32,
     verbose: bool,
     stems: Option<&Path>,
+    seq_vols: Option<&[u8]>,
 ) -> Result<Vec<i16>> {
     let mut d = TraceBgmDirector::new();
     d.master_vol = pos.seq_vol;
@@ -251,11 +254,58 @@ pub fn render_aligned(
     if let Some(prefix) = stems {
         render_stems(&mut d, &mut carry, vsync_samples, samples, &mut out, prefix)?;
     }
+    let mut vsync = 0usize;
     while out.len() < samples * 2 {
+        // The sequence volume of this vsync of the window, when the caller
+        // hands a schedule: the duck a cast ramps the score under.
+        if let Some(v) = seq_vols.and_then(|v| v.get(vsync).or(v.last()))
+            && let Some(s) = d.sequencer_mut()
+        {
+            s.set_master_vol(*v);
+        }
         step(&mut d, &mut carry, Some(&mut out));
+        vsync += 1;
     }
     out.truncate(samples * 2);
     Ok(out)
+}
+
+/// The sequence volume a cast's score plays at, one entry per output vsync of
+/// the track render. `levels` is the engine child's applied audio level per tick
+/// (`<cast>.duck`); `start` is the state's own level `_DAT_8007B910`, which the
+/// child's seed does not carry (a state taken mid-ramp, `zenoir_summon_mid_cast`
+/// at `192`, seeds at `215`). The level walks from `start` one unit a vsync
+/// toward where the engine's level is heading - the next value it rests on -
+/// as retail's ramp does (`legaia_engine_audio::duck::step_duck`), and plays
+/// halved, as every level-to-volume site halves it. Vsync `k` of the render
+/// stands on recording sample `k * vsync - lag`.
+pub fn duck_schedule(levels: &[u8], start: u8, lag: i64, vsync_samples: f64) -> Vec<u8> {
+    if levels.is_empty() {
+        return Vec::new();
+    }
+    // Where the engine's level next rests, tick by tick.
+    let mut target = levels.to_vec();
+    for k in (0..levels.len().saturating_sub(1)).rev() {
+        if levels[k] != levels[k + 1] {
+            target[k] = target[k + 1];
+        }
+    }
+    let mut level = start;
+    let walked: Vec<u8> = target
+        .iter()
+        .map(|&t| {
+            let at = level;
+            legaia_engine_audio::duck::step_duck(&mut level, t);
+            at
+        })
+        .collect();
+    let shift = (-lag as f64 / vsync_samples).round() as i64;
+    (0..walked.len())
+        .map(|k| {
+            let at = (k as i64 + shift).clamp(0, walked.len() as i64 - 1) as usize;
+            walked[at] >> 1
+        })
+        .collect()
 }
 
 /// [`render_aligned`]'s window with the mix's parts kept apart: one tick of
@@ -675,6 +725,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.pass,
             args.verbose,
             args.stems.as_deref(),
+            None,
         )?;
         if args.cue_voices {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
@@ -683,10 +734,33 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             let cues = render_cue_voices(&st, args.samples)?;
             mix_at_lag(&mut pcm, &cues, lag);
         }
-        if let Some(cast) = &args.cast_wav {
+        if let Some(cast_path) = &args.cast_wav {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
             let lag = score_window(&retail, &pcm).lag;
-            let cast = read_wav(cast)?;
+            // The score under the cast's duck, as the engine child applied it
+            // tick by tick: the state's own volume holds for none of a summon.
+            if let Ok(text) = std::fs::read_to_string(cast_path.with_extension("duck")) {
+                let levels: Vec<u8> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
+                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let ram = st.main_ram()?;
+                let start =
+                    i32::from_le_bytes(ram[0x7_B910..0x7_B914].try_into()?).clamp(0, 255) as u8;
+                let vols = duck_schedule(&levels, start, lag, args.vsync_samples);
+                if !vols.is_empty() {
+                    pcm = render_aligned(
+                        &track_bytes,
+                        &pos,
+                        args.samples,
+                        args.vsync_samples,
+                        args.pass,
+                        false,
+                        None,
+                        Some(&vols),
+                    )?;
+                }
+            }
+            let lag = score_window(&retail, &pcm).lag;
+            let cast = read_wav(cast_path)?;
             // The child's gate tick stands within a vsync of the state's
             // instant, not on its sample: the cast's own offset is fitted
             // against what the track leaves of the recording, and reported.
@@ -910,6 +984,23 @@ fn read_position(state: &Path, extracted: &Path) -> Result<(RetailSeqPosition, V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_duck_ramps_from_the_states_own_level() {
+        // The engine ramps 215 -> 161 a unit a vsync; a state taken at 192
+        // reaches 161 in 31 vsyncs, as `zenoir_summon_mid_cast` does.
+        let engine: Vec<u8> = (161..=215)
+            .rev()
+            .chain(std::iter::repeat_n(161, 20))
+            .collect();
+        let v = duck_schedule(&engine, 192, 0, RETAIL_VSYNC_SAMPLES);
+        assert_eq!(v[0], 96);
+        assert_eq!(v[31], 80);
+        assert_eq!(*v.last().unwrap(), 80);
+        // At the engine's own start the schedule is the engine's level halved.
+        let same = duck_schedule(&engine, 215, 0, RETAIL_VSYNC_SAMPLES);
+        assert!(same.iter().zip(&engine).all(|(v, l)| *v == l >> 1));
+    }
 
     #[test]
     fn a_resumed_voice_lands_on_the_tracks_lag() {

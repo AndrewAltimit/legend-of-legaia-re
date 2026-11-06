@@ -58,6 +58,12 @@ impl World {
         self.casting.drive_arms =
             legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(image).map(|a| (a, false));
         self.casting.drive = cd::CdDrive::at(cd::SIDE_BAND_LBA);
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
+            self.cast_module_for(spell_id).unwrap_or(0),
+            spell_id,
+        );
+        self.casting.module_voice_gated =
+            legaia_engine_battle_vm::battle_cast_cue::head_cue_waits_arm_gate(image, body);
         if self.casting.drive_arms.is_none() {
             return;
         }
@@ -124,6 +130,29 @@ impl World {
         if self.module_drive_holds(arm) {
             return;
         }
+        // A call behind its arm's own gate waits for the pass the arm's hold
+        // lets through ([`Self::raise_cast_voice_on_pass`]).
+        if self.casting.module_voice_gated
+            && self
+                .casting
+                .module_voice_due
+                .is_some_and(|(_, due)| due == arm)
+        {
+            return;
+        }
+        self.raise_due_cast_voice(arm);
+    }
+
+    /// The module's pass on `arm` went through its hold this tick: a head cue
+    /// behind the arm's own gate (Gilium's countdown ahead of the poll) makes
+    /// its call now.
+    pub(in crate::world::battle::cast_band) fn raise_cast_voice_on_pass(&mut self, arm: u8) {
+        if self.casting.module_voice_gated && !self.module_drive_holds(arm) {
+            self.raise_due_cast_voice(arm);
+        }
+    }
+
+    fn raise_due_cast_voice(&mut self, arm: u8) {
         if let Some((spell_id, due)) = self.casting.module_voice_due
             && arm >= due
         {

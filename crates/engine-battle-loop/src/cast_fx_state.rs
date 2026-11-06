@@ -86,6 +86,10 @@ pub struct CastFxState {
     /// The display frame the module last stepped the drive on: a drive no
     /// module is stepping holds nothing.
     pub drive_ticked_at: u64,
+    /// The head cue's call sits behind its arm's own gate as well as the
+    /// drive poll (`battle_cast_cue::head_cue_waits_arm_gate`): it lands on
+    /// the pass the arm's hold lets through.
+    pub module_voice_gated: bool,
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
@@ -485,6 +489,7 @@ impl CastFxState {
             drive: Default::default(),
             drive_arms: None,
             drive_ticked_at: 0,
+            module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,

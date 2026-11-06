@@ -255,6 +255,9 @@ impl World {
                 d
             })
         };
+        if direction.as_ref().is_some_and(|d| !d.hold) {
+            self.raise_cast_voice_on_pass(ctx.phase);
+        }
         // PROT 0903's settle arm halves the victim's animation rate on every
         // pass, held or not: the store (`lbu v0,0x69(a0)` / `srl v0,v0,0x1` /
         // `sb v0,0x21d(s2)` at `0x801F76C8..0x801F76D8`) sits past the

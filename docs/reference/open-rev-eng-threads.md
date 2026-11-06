@@ -450,9 +450,11 @@ retail's level. Two parts are not: the side-band read that precedes the selector
 `cmd 6` reads in the `summon.dat` region on every frame-stepped summon state, `24` vsyncs on Orb's), which the
 port's resident side-band skips, and the game loop's freeze inside the seek arm's `CdlSetloc`, which the port
 models for the audio frame only (the battle's actors and camera keep ticking). `theeder_summon_mid_cast` and
-`nighto_summon_mid_cast` still start `0.23` and `0.16` s early. What closes it: `drive-timeline.py` across
-Theeder's and Nighto's arms beside the engine's cast-sequence `meta.csv`, and the side-band read's sectors per
-action.
+`nighto_summon_mid_cast` still start `0.23` and `0.16` s early, behind waits that are not the drive's: Theeder
+reaches arm 1 `86` vsyncs after its state behind the side-band read, and its arm 2 polls the selector's latch
+`0x8007BDB0`, which the port reads as ready. Gilium's voice, behind its arm-2 countdown, is `0.30` s early, the
+arm `40` vsyncs long in the port against `55` in retail. What closes it: `drive-timeline.py` across those arms
+beside the engine's cast-sequence `meta.csv`, the side-band read's sectors per action, and the latch's writers.
 
 ## Title / boot / overlays
 
