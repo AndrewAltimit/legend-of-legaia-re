@@ -39,6 +39,7 @@ impl SlotMachine {
         // (`FUN_801D2114` at `0x801CF74C..0x801CF7DC`, then `jal 0x801D0554`),
         // so a Stop press plans from the row the reel stood on and the roll-in
         // turns it the same frame.
+        // REF: FUN_801d2114 (the press, ported as `press_stop`)
         if phase == SlotPhase::Stopping {
             for (reel, m) in [PACK_SQUARE, PACK_CROSS, PACK_CIRCLE]
                 .into_iter()

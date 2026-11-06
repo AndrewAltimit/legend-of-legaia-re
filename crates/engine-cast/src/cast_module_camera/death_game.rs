@@ -88,6 +88,7 @@ pub enum DeathGameLabel {
 pub const LABEL_ROWS_Y: [i32; 2] = [0x90, 0x9C];
 /// A card's label column: `x = i * 0x4C + 0x30 - width / 2`, the width
 /// `FUN_80035F04`'s (`0x801F8004..0x801F800C`, `addiu s2,s2,0x4c`).
+// REF: FUN_80035F04 (the width measure; the host's font measures it)
 pub const LABEL_FIRST_CENTRE_X: i32 = 0x30;
 pub const LABEL_STEP_X: i32 = 0x4C;
 
