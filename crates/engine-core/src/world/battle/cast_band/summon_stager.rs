@@ -345,6 +345,9 @@ impl World {
                     // (`li v0,0x78` at `0x801F7DA0`).
                     self.battle.combo_cluster_held = false;
                     self.fold_pending_cast();
+                    if run.as_ref().is_some_and(|r| r.prot_entry == 904) {
+                        self.show_theeder_fold_targets();
+                    }
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;
                 }

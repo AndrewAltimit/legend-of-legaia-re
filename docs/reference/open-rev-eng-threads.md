@@ -473,10 +473,12 @@ module's seek arm polls the stage before its own seek
 With those, every summon state's voice lands `8..13` vsyncs after mednafen's, inside the cast channel's seek
 window. What is not modelled is the band ahead of the module: the stage's drop against arm 1 is `8` vsyncs
 in on Theeder, about `7` on Gilium, `4` on Swordie and `0` on Orb, where the port's stand-in for the read
-(`30` vsyncs a slot and a first-slot seek) lands it within `5` of each. Theeder's arm 2 also polls the
-selector's latch `0x8007BDB0`, which the port reads as ready, and its `+2.3` dB is unexplained. What closes
-it: the `0x32..0x34` band's own length per cast against retail (the transfer SM's request lag and the
-applier's consume passes, `FUN_801F17F8` / `FUN_801F12D0`), and the latch's writers.
+(`30` vsyncs a slot and a first-slot seek) lands it within `5` of each. The band ahead of the module is
+not one length either: from the state to the flash, Theeder's `0x33` runs `7` vsyncs longer in the port
+(the invoke clip's cursor holds `3` ticks after its commit and its first effect record fires at cursor
+`~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. What closes it: the invoke clip's
+first passes after its commit against retail's (the caster's `+0x68` cursor beside `ctx[+0x87C]`), and
+`0x34`'s hold on the caster's `+0x1D9`.
 
 ## Title / boot / overlays
 

@@ -82,10 +82,11 @@ impl World {
     /// One vsync of a summon cast's drive, every vsync of the cast whether or
     /// not the module runs a pass (a blocked frame included): the seek in
     /// flight runs on, and the selector's queued seek goes out once the
-    /// side-band applier has dropped its stage. A frame-stepped
-    /// `theeder_summon_mid_cast` writes the selector's latch `0x8007BDB0`
-    /// (`-1` to clip `7`) on the vsync `ctx[+0x276]` reads `0`, `8` vsyncs into
-    /// the module's arm 1, and the drive leaves `summon.dat` for `XA8.XA` then.
+    /// side-band applier has dropped its stage. Frame-stepped,
+    /// `theeder_summon_mid_cast`'s drive leaves `summon.dat` for `XA8.XA` on the
+    /// vsync `ctx[+0x276]` reads `0`, `8` vsyncs into the module's arm 1, and
+    /// `orb_summon_mid_cast` holds the latch `0x8007BDB0` at the selector's
+    /// `0x1A` with the `XA27` seek just issued.
     pub(in crate::world) fn tick_cast_drive(&mut self) {
         if self.mode != legaia_engine_mode::mode::SceneMode::Battle
             || self.casting.drive_arms.is_none()

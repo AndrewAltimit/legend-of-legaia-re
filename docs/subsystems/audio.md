@@ -3501,7 +3501,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
-| `theeder_summon_mid_cast` | `0.904` | `+2.32` dB | `-378` | the voice past the drive's wait aligns `9.9` vsyncs earlier than the engine's, inside the seek window ([below](#the-cast-channels-seek-window)) |
+| `theeder_summon_mid_cast` | `0.701` | `-0.27` dB | `-378` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `11` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)) |
 | `zenoir_summon_mid_cast` | `0.812` | `+1.59` dB | `+725` | the voice within `0.08` s of retail's |
 | `nighto_summon_mid_cast` | `0.973` | `+0.10` dB | `-274` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.994` | `+0.02` dB | `+246` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
@@ -3582,8 +3582,8 @@ now lands on the pass the arm's hold lets through.
 **The selector seeks when the side-band drops.** Frame-stepped, every summon state shows the same order:
 the module's seek arm (Gilium's arm 1, `0x801F6BEC`) first returns busy on the side-band stage
 `ctx[+0x276]` while the cast's last `summon.dat` slot is still being consumed; on the vsync the stage reads
-`0`, the selector writes its latch `0x8007BDB0` (`-1` to clip `7` on Theeder) and seeks the drive to the
-caster's clip file, and the arm's own `CdlSetloc` then holds the loop behind that seek. The stage drops `8`
+`0`, the selector seeks the drive to the caster's clip file (Orb's state shows the latch `0x8007BDB0` at
+the selector's `0x1A` with the `XA27` seek just issued), and the arm's own `CdlSetloc` then holds the loop behind that seek. The stage drops `8`
 vsyncs into Theeder's arm 1, about `7` into Gilium's, `4` into Swordie's and at Orb's entry. The port issued
 the selector's seek as the cast armed and stepped the drive only on the module's passes, so the seek ran
 from the arm's entry and the loop froze there, with the side-band wait ahead of it gone. Gilium's arm drains
@@ -3601,11 +3601,22 @@ land on `XA8`, so the module's seek is a few vsyncs, and the cast channel's voic
 `11.0` and `13.1` vsyncs after mednafen's. Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86`
 vsyncs after the state, behind the side-band read (`cmd 6` reads in the `summon.dat` region,
 `41347..41446` in three chunks, `30` vsyncs a slot after a first of `46`), holds the arm `8` vsyncs on the
-stage, then `23` on the selector's `XA8` seek, and arm 2 runs past the
-end of the log at `+187` where the port's countdown leaves it at `+213`; arm 2 also polls the selector's
-latch `0x8007BDB0` for the creature stream (`seru.rs`), which the port reads as ready. Theeder's `+2.30` dB
-(retail louder) is not explained: its duck and the engine's both start ramping near `+118`
-([open](../reference/open-rev-eng-threads.md#how-long-does-a-summons-seek-hold-its-voice)).
+stage, then `23` on the selector's `XA8` seek. The module writes the latch `0x8007BDB0` itself: arm 1
+(`0x801F6C38`) polls the stage, seeks `FUN_8003EAE4(0, 7)` and stores `7` there, zeroing `0x8007BC20`;
+arm 2 waits on `ctx[+0x6D8]` alone; arm 3 polls `CdSync(1)` and calls `0x136`. Gilium's arm 1 stores its
+own clip `0xD` the same way, after the selector's `7`.
+
+**A fold on a hidden seat held Theeder's cast.** The port lands Theeder's damage through the band's fold
+on the tick the ray first strikes a seat, while the module's ray hits stay presentation. In
+`theeder_summon_mid_cast` the first strike was another seat, so the fold struck the victim while the
+summon band still hid it; a hidden body does not tick (`0x800474D4`), its knockdown never ended, the ray
+skips a reacting seat, and arm 14's row poll held the cast past the recording with the score still ducked:
+the `+2.32` dB the row read was retail's score coming back up `17` s in. PROT 0904's one damage site stores
+the hit's presentation beside the HP write (`+0x04 = 0x3FF0000`, render flag `0`, `+0x21F = 2`,
+`0x801F7D9C` / `0x801F7DB4`); the fold now carries those stores to every monster it sets reacting
+(`World::show_theeder_fold_targets`), and the cast ends on retail's second. The row's correlation fell
+because the score's window is the cast's own seconds, and the cast now ends: the per-second readings over
+the first `14` s are unchanged.
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
