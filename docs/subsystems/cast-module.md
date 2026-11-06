@@ -2962,6 +2962,14 @@ unhidden victim. A `--physical` film of `battle_map01_lippian_kiss_of_death_mid_
 read `.449` frame by frame; with them `.815` (arm 4 `1.000`, arm 3 `.880`).
 Grade `disassembly` + `capture`.
 
+The lips sample the side-band page, not the module image: record `0x801F9440`'s
+sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
+the applier fills from `readef.DAT` on the caster's own turn
+([battle_sideband_textures](../formats/summon-readef.md)). In a mixed formation the
+page holds whatever monster acted last, so the port streams each monster's group on
+its turn; with the formation's groups written once in seat order, the Lip King fight
+(`[0x21, 0x44]`) drew a dev placeholder page where the lips belong (`.552` to `.765`).
+
 ### PROT 0952 (Bloody Horns)
 
 `cast_module_camera::bloody_horns_camera` carries arms 2 to 6 of the `0x5C` body
@@ -3636,7 +3644,11 @@ three units). The bodies without that store keep the half turn
   at once and arm 7 drew a black stage where retail's frame is the burst over a bright
   wash: frame by frame, the punch (`battle_tunnelc_xain_terio_punch_mid_cast`) `.346`
   to `.554` (arm 7 `.190` to `.695`), the charge (`..._bull_charge_mid_cast`) `.602` to
-  `.887`. Arm 8's starfield, where the engine still draws the cave, is not read yet.
+  `.887`. Arm 8's starfield is record `0x801F799C`, a camera-space sprite on the
+  side-band page `(512, 0)`, over a stage the byte `3` keeps dark; the arm's clear
+  (`sb zero,0x278` at `0x801F75E4`) sits behind its countdown and settle gates, so
+  the director stores it rather than the presentation decoder at the arm's entry
+  (arm 8 `.264` to `.898`, the punch `.747`).
 
 - **Capture bodies run no strike setup.** A capture-class cast's arm calls its
   damage wrapper itself, so `FUN_801E09F8`'s effect lists and the move-power

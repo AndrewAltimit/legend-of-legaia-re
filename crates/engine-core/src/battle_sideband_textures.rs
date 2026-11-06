@@ -18,11 +18,11 @@
 //! all carry group `7`, so the turn streams `readef.DAT` slots 21 and 22.
 //! Slot 22 is the 4x4 icon sheet.
 //!
-//! The engine streams nothing per turn, so the battle-entry VRAM build takes
-//! these writes instead: every distinct monster group of the formation, in
-//! seat order (a later seat's group overwrites an earlier one where they
-//! differ, which is what the turn order would leave on the last monster's
-//! turn). Party groups (`3 * (char - 1)`, below `0x0C`) are not written:
+//! The battle-entry VRAM build writes every distinct monster group of the
+//! formation in seat order, so the pages hold something before the first
+//! turn, and every monster turn then streams its own group
+//! (`World::take_monster_turn`), so a cast samples its caster's pages in a
+//! mixed formation too. Party groups (`3 * (char - 1)`, below `0x0C`) are not written:
 //! their first slot is a dev placeholder page and their second is an "ME"
 //! archive, never a texture.
 //!
