@@ -3520,6 +3520,13 @@ three units). The bodies without that store keep the half turn
   Arm 8's exit waits on every party seat's `+0x1D9` (`0`, a downed one `8`), and
   that wait, not the word, sets the arm's length: a retail recording holds it `238`
   vsyncs on a `160`-vsync word.
+  Call Wave never reaches arm 7, the module's one damage site (`jal 0x801DD4B0` at
+  `0x801F73DC`): arms 1 and 2 step on, and arm 3 ends the module once its countdown
+  drains (`s6` cleared at `0x801F6E84`). The cast is the warning and owes no fold
+  (`cast_module_ticks::call_wave_folds`, and its baked power `0x120` is Big Wave's alone in
+  `CAPTURE_SITE_POWERS`); the port had folded it as a hit on its own
+  target, Zeto himself, whose knockback cues then sounded where retail is silent
+  ([real retail PCM](audio.md#the-cast-channel)).
 - **0953** arm 0 forks on the caster's battle-scoped latch word
   `0x801C8FE0 + (ctx[+0x13] + 1) * 4` (the monster AI's cooldown
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves
@@ -3811,7 +3818,8 @@ it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0
 call is outside its tick, and raises at the arming seam.
 
 A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who
-is casting (`forked_head_cue`): Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
+is casting or which branch arm 0 takes (`forked_head_cue`, `latch_forked_head_cue`): Call Wave's `0x150`
+against Big Wave's `0x151`, Terio Punch's charge `0x159` against its punch `0x15A`, Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
 Windhash, PROT 0961 and 0962 on the formation's first monster, Terror Scream on three monster-id bands
 with no line outside them (`0x801F7758..0x801F77B8`), and the Rogue strikes on their element. PROT 0944's
 fork on the victim's HP (`0x801F6B20..0x801F6B38`) is not carried.
@@ -3914,7 +3922,12 @@ The **head** cue of each image: the first dispatcher call inside the image's
 own `content_bytes`, never its inherited tail. Several modules raise further
 cues later (`0955` has six sites, `0962` four, `0941` seven counting the
 funnel); those are per-phase beds. `0925` and `0926` share a cue because
-`0926` is the null-stager sibling of `0925`.
+`0926` is the null-stager sibling of `0925`. Two single-body modules fork their
+arm 0 on the caster's latch ahead of the call, and the scan reads the branch laid
+out first: PROT 0946's is Big Wave's, while Call Wave calls `0x150` (`XA11.XA`
+channel `0`, `0x801F6CF4`), and PROT 0953's is the punch, while the charge calls
+`0x159` (`0x801F6E5C`). The port resolves both branches (`forked_head_cue`,
+`latch_forked_head_cue`).
 
 | PROT | image | site | cue | file | channel | span (vsyncs) |
 |---|---|---|---|---|---|---|

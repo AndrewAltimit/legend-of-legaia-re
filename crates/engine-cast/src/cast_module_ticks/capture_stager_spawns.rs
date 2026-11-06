@@ -229,6 +229,21 @@ pub const ROLLED_STAGER_RECORDS: [u32; 3] = [0x801F_7970, 0x801F_7E80, 0x801F_90
 /// part's position, banks, wait and channel block: the lean rate `+0x84`.
 pub const ROLLED_STAGER_EXTRA_OFFSETS: [u16; 1] = [0x84];
 
+/// PROT 0946, Call Wave (`0x55`) and Big Wave (`0x56`) in one body.
+pub const CALL_WAVE_ENTRY: u32 = 946;
+/// Big Wave's action id: the choreography PROT 0946's arm 0 runs on its
+/// latch-set branch (`0x801F6B00`), which the port keys on the action.
+pub const BIG_WAVE_ACTION: u8 = 0x56;
+
+/// Whether PROT 0946 owes a fold for `action_id`. Only Big Wave hits: its
+/// arm 7 is the module's one damage site (`jal 0x801DD4B0` at `0x801F73DC`).
+/// Call Wave runs arms 0..3 and arm 3 ends the module once its countdown
+/// drains (`s6` cleared at `0x801F6E84`, the exit at `0x801F6E88`), so it never
+/// reaches arm 7: the cast is the warning, its damage is the next turn's.
+pub fn call_wave_folds(action_id: u8) -> bool {
+    action_id == BIG_WAVE_ACTION
+}
+
 /// PROT 0946's wave record the stager's arm 1 seats.
 pub const CALL_WAVE_WAVE_RECORD: u32 = 0x801F_7BF8;
 /// The handle table `0x801F7F30` arm 1 fills: sixteen slots, and arm 1 seats

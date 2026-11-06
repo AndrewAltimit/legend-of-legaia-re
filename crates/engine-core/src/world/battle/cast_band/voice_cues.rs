@@ -94,6 +94,13 @@ impl World {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
         } else if (entry, spell_id) == (944, 0x37) {
             self.guilty_cross_line()
+        } else if let Some(cue) = legaia_engine_battle_vm::battle_cast_cue::latch_forked_head_cue(
+            entry,
+            self.caster_latch(self.battle_ctx.active_actor).unwrap_or(0),
+        ) {
+            // The cue's arm-0 pass raises it ahead of the arm's own latch write
+            // (`run_cast_module_code`), so this reads the branch's latch.
+            cue
         } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
             let Some(cue) = line else {
                 return;
