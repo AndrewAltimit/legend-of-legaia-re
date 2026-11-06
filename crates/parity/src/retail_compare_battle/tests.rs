@@ -64,7 +64,8 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
         summon_fade_on(&ram, false),
         Some(RetailFade {
             to_white: true,
-            age: 6
+            age: 6,
+            spawn_step: None,
         })
     );
     // Landed and 14 into the hold: 20 + 20 + 14 vsyncs, less the one the
@@ -86,6 +87,37 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
     // A killed block is not the live flash.
     put32(&mut ram, actor + 0x10, ACTOR_DONE);
     assert_eq!(summon_fade(&ram), None);
+}
+
+/// A `0x35` flash-out's spawn step is its age less what the sustain word
+/// drained: `zenoir_summon_mid_cast`'s block (`96` of `0x78` left, age `24`)
+/// beside the word's `97` spawned on a step-`1` pass. A word a module
+/// reseeded reads no step.
+#[test]
+fn reads_the_flash_outs_spawn_step_off_the_sustain_word() {
+    use legaia_engine_battle_vm::battle_action::SUMMON_FLASH_OUT;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800F_0000;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    ram[(ctx + 7) as usize & 0x1F_FFFF] = 0x35;
+    put16(&mut ram, ctx + 0x6D8, 97);
+    let actor = 0x8008_2AEC;
+    put32(&mut ram, actor + 0x0C, FADE_ACTOR_TICK);
+    let b = actor + 0x7C;
+    put16(&mut ram, b + 0x10, template_delta(&SUMMON_FLASH_OUT) as u16);
+    put16(&mut ram, b + 0x18, 1);
+    put16(&mut ram, b + 0x22, 1);
+    put16(&mut ram, b + 0x20, 96);
+    assert_eq!(
+        summon_fade_on(&ram, true),
+        Some(RetailFade {
+            to_white: false,
+            age: 24,
+            spawn_step: Some(1),
+        })
+    );
+    put16(&mut ram, ctx + 0x6D8, 140);
+    assert_eq!(summon_fade_on(&ram, true).and_then(|f| f.spawn_step), None);
 }
 
 /// The frame step comes off the duration history's longest entry, and

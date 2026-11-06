@@ -128,12 +128,18 @@ impl PhaseGate {
     pub(crate) fn env_state_and_fade(&self) -> String {
         match self.fade {
             None => format!("{}", self.action_state),
-            Some(f) => format!(
-                "{},{},{}",
-                self.action_state,
-                if f.to_white { "white" } else { "black" },
-                f.age
-            ),
+            Some(f) => {
+                let mut s = format!(
+                    "{},{},{}",
+                    self.action_state,
+                    if f.to_white { "white" } else { "black" },
+                    f.age
+                );
+                if let Some(step) = f.spawn_step {
+                    s.push_str(&format!(":{step}"));
+                }
+                s
+            }
         }
     }
 
@@ -202,10 +208,17 @@ impl PhaseGate {
         let mut it = parts.into_iter();
         let action_state = it.next()?.parse().ok()?;
         let fade = match (it.next(), it.next()) {
-            (Some(dir), Some(age)) => Some(RetailFade {
-                to_white: dir == "white",
-                age: age.parse().ok()?,
-            }),
+            (Some(dir), Some(age)) => {
+                let (age, spawn_step) = match age.split_once(':') {
+                    Some((a, s)) => (a, Some(s.parse().ok()?)),
+                    None => (age, None),
+                };
+                Some(RetailFade {
+                    to_white: dir == "white",
+                    age: age.parse().ok()?,
+                    spawn_step,
+                })
+            }
             _ => None,
         };
         Some(Self {
@@ -290,6 +303,11 @@ impl PhaseGate {
             for _ in 0..want.age {
                 f.step_vsyncs(1);
             }
+        }
+        // The re-run flash is the capture's, spawn pass and all: the gate
+        // that placed the frame reads the same age past it again.
+        if let Some(s) = want.spawn_step {
+            world.presentation.fade_spawn_step = s;
         }
         true
     }
@@ -412,10 +430,20 @@ impl PhaseGate {
         if on_stream_arm {
             return true;
         }
+        // With the capture's spawn step known, both ages are taken back to
+        // the spawn pass's end, each by its own pass's step
+        // ([`RetailFade::spawn_step`]).
+        let (have_back, want_age) = match want.spawn_step {
+            Some(s) => (
+                u16::from(world.presentation.fade_spawn_step),
+                want.age.saturating_sub(u16::from(s)),
+            ),
+            None => (0, want.age),
+        };
         world.presentation.fade.as_ref().is_some_and(|f| {
             f.kind == 1
                 && (f.target_rgb()[0] == 0xFF) == want.to_white
-                && f.age_vsyncs() >= want.age
+                && f.age_vsyncs().saturating_sub(have_back) >= want_age
         })
     }
 }
@@ -431,6 +459,18 @@ pub struct RetailFade {
     pub to_white: bool,
     /// Vsyncs since the spawn, the start delay included.
     pub age: u16,
+    /// The step of the pass the flash spawned on, where the capture shows
+    /// it. The fade actor `FUN_80025000` is appended to the actor list the
+    /// battle frame driver heads, so the walk that runs the action SM's
+    /// spawn ticks it on the same pass (`FUN_80020454` links at the tail,
+    /// `FUN_8002519C` reads `next` after the tick), and its age carries that
+    /// pass's step. The step is the frame cost's, which the replay's cadence
+    /// does not reproduce: Mednafen's `zenoir_summon_mid_cast` spawned its
+    /// flash-out on a step-`1` pass where the replay's runs step `2`, and
+    /// every other clock of the band (the sustain word, the module's camera
+    /// walker) starts on the pass after. So with this set the gate places
+    /// the frame on the age past the spawn pass ([`PhaseGate::met`]).
+    pub spawn_step: Option<u8>,
 }
 
 #[cfg(test)]

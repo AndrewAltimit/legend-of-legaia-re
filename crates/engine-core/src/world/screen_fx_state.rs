@@ -17,6 +17,12 @@ pub struct ScreenFxState {
     /// [`crate::world::World::tick`]; dropped when the ramp completes. Hosts draw an
     /// overlay from [`legaia_engine_system::fade::FadeState::rgb`] while this is `Some`.
     pub fade: Option<legaia_engine_system::fade::FadeState>,
+    /// The vsyncs [`Self::fade`] was stepped on the pass that spawned it:
+    /// the summon band's flashes tick on their spawn pass
+    /// (`BattleHostImpl::spawn_screen_fade`), by that pass's step. `0` for
+    /// a fade that did not. The capture gate reads the flash's age past
+    /// its spawn pass off it (`legaia_engine_capture::phase_gate::RetailFade::spawn_step`).
+    pub fade_spawn_step: u8,
     /// Further full-screen fades running beside [`Self::fade`]: retail's
     /// fade spawner allocates a pool actor per call, so a module can run its
     /// own ramps while the summon band's flash is still up (PROT 0905's
@@ -134,6 +140,7 @@ impl ScreenFxState {
         Self {
             pending_fade: None,
             fade: None,
+            fade_spawn_step: 0,
             module_fades: Vec::new(),
             effect_tween_slot: None,
             effect_target_rgb: [0; 3],

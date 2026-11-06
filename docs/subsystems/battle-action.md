@@ -381,7 +381,7 @@ The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), a
 
 `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`; its case `0x12` also arms the summon cast close-up camera (see [below](#the-summon-cast-close-up-camera)). When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor.
 
-The new actor ticks on its spawn pass (the pool's tick passes run after the action SM): the first `0x34` row of a step-`3` cast already holds delay `17`, so the port steps a fade it spawns here by the pass (`spawn_screen_fade`).
+The new actor ticks on its spawn pass. The action SM runs inside the battle frame driver `FUN_80046A20` (`jal 0x801E295C` at `0x80047048`), which is the head node of actor list `0x8007C34C` (spawned from the template at `0x800767DC` by `0x80055FC0`); the spawner links the fade at that list's tail (`FUN_80020454`), and the walk `FUN_8002519C` reaches it later in the same pass. The first `0x34` row of a step-`3` cast already holds delay `17`, so the port steps a fade it spawns here by the pass (`spawn_screen_fade`), and records the step for the capture gate (`ScreenFxState::fade_spawn_step`).
 
 **Next:** `0x34`.
 

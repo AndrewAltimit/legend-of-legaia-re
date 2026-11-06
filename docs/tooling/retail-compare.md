@@ -3084,7 +3084,7 @@ vsync, so each kind of capture adds the clock that places it inside:
 
 | Capture | Extra clock | `LEGAIA_CAPTURE_GATE` suffix |
 |---|---|---|
-| Full-screen flash up | the flash's age in vsyncs (`FadeState::age_vsyncs`) | - |
+| Full-screen flash up | the flash's age in vsyncs (`FadeState::age_vsyncs`); for a `0x35` flash-out whose spawn step the sustain word gives, the age past its spawn pass ([below](#the-flash-outs-spawn-pass)) | `:<step>` on the age |
 | `0x33`, no flash yet | caster committed clip `9` and close-up accumulator `ctx[+0x87C]` (`BattleCamera::close_up_accum`) reached retail's | `a<acc>` |
 | PROT 0903 walk arm (`11`) | yaw base `ctx[+0x6DA]`, which the arm swings `6 * scalar` a vsync from `0x200` and the action SM's prologue drifts beside it ([below](#the-walk-arms-yaw-is-two-clocks)) | `y<yaw>` |
 | PROT 0903 countdown arms (`1..=10`) | module countdown word `0x801F7960`, draining `scalar` a vsync (`ModuleCamState::countdown`) | `c<count>` |
@@ -3100,6 +3100,21 @@ Notes on the rows:
   by its per-frame delta. Its `+0x7C` block's countdowns give its age:
   `delay0 - delay` in the start delay, `delay0 + duration0 - duration - 1` once
   landed (the landing frame steps both).
+- <a id="the-flash-outs-spawn-pass"></a>**The flash-out's spawn pass.** The
+  fade actor ticks on the pass that spawns it: the action SM runs inside the
+  battle frame driver `FUN_80046A20`, the head node of actor list
+  `0x8007C34C`, and `FUN_80024E80` links the fade at that list's tail, which
+  the same walk reaches. So the age carries the spawn pass's step, and that
+  step is the frame cost's, which the replay's cadence does not reproduce;
+  every other clock of the band (the sustain word, the module's camera
+  walker, the cast's cues) starts on the pass after. The `0x34` pass arms the
+  sustain word `ctx[+0x6D8]` to `0x78` beside the spawn and each `0x35` pass
+  drains it by its step, so `age - (0x78 - word)` is the spawn step where it
+  reads `1..=4` (a module that reseeds the word leaves something else, and
+  the gate keeps the whole age). The gate then compares both sides' ages past
+  their own spawn passes. `zenoir_summon_mid_cast` spawned on a step-`1`
+  pass, the replay on a step-`2` one: on the whole age the frame stood a pass
+  early (`camera` `.98`, the cast channel's voice past its fit window).
 - **Accumulator alignment.** Either `0x33` / `0x34` gate also carries
   retail's accumulator as a value to align to, not to wait on (`k<acc>`,
   [below](#an-ease-out-camera-carries-its-history)).

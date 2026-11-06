@@ -547,9 +547,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and runs the loader on its `+0x7C` block; the engine's
     /// [`legaia_engine_system::fade::FadeState`] is that block.
     ///
-    /// The spawned actor ticks on its spawn pass: retail's action SM runs
-    /// ahead of the pool's tick passes, and the new fade is in the pool by
-    /// then. On `battle_kor_spoon_strike`'s Zenoir film the flash-in's block
+    /// The spawned actor ticks on its spawn pass. The action SM runs inside
+    /// the battle frame driver `FUN_80046A20` (`jal 0x801E295C` at
+    /// `0x80047048`), which is the actor at the head of list `0x8007C34C`
+    /// (spawned from the template at `0x800767DC` by `0x80055FC0`); the fade
+    /// spawner links its actor at that list's tail (`FUN_80020454`), and the
+    /// walk `FUN_8002519C` reaches it later in the same pass. On `battle_kor_spoon_strike`'s Zenoir film the flash-in's block
     /// on the first `0x34` row already holds delay `17` (`20` less the step-`3`
     /// pass), and six passes later its colour has run three vsyncs of ramp.
     /// The world tick steps its fades ahead of the battle tick, so the
@@ -574,6 +577,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             id,
         );
         let pass = self.world.battle.anim_pass_vsyncs;
+        self.world.presentation.fade_spawn_step = pass;
         if pass > 0
             && let Some(fade) = &mut self.world.presentation.fade
             && !fade.step_vsyncs(pass)
