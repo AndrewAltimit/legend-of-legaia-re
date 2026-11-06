@@ -4743,6 +4743,20 @@ image child seats the live pose, taken back two ease steps for a player who
 moved on its last pass ([the seeding model](#the-seeding-model),
 `walk_rewind`).
 
+<a id="the-other-framebuffer"></a>
+
+A PCSX-Redux state holds both framebuffers, and the one not on display is the
+pass between the RAM and the frame on screen. `kor_field_route_walk` displays
+the buffer at VRAM `y 240`; the one at `y 0`, scored the same way, reads `.998`
+against the engine seated on the rewind's **first** step alone - yaw `1735`,
+eye `(0, 652, 4768)`, the player on the previous-pass pair `(1656, 3730)` - where
+the displayed buffer reads `.817` against it. So the one-step law holds to the
+unit on a stair walk, and what the displayed frame still misses (`.912` on the
+two-step seat) sits in the second step: a pose one ease step past the first
+(`1769`, `622`) does not reach the fit the open thread names
+([open threads](../reference/open-rev-eng-threads.md)). Dump both buffers with
+`pcsxr-state vram` and crop each at its own display origin.
+
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat
 ([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
