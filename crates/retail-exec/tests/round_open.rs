@@ -400,3 +400,71 @@ fn the_status_tick_drains_what_retail_drains() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The tick over consecutive rounds with an ailment the port's status
+/// tracker holds - Sleep (`0x800`), the `0x380` group, Numb (`0x400`) - beside
+/// the same bits in retail's word: retail's tick never clears them, so
+/// neither may a count of the tracker's.
+#[test]
+fn a_tracked_ailment_lasts_as_long_as_the_word() {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    let state = Rc::new(Cell::new(0));
+    let (Some(mut cpu), Some(scus)) = (battle_cpu(&state), scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut w = World::new();
+    w.set_accessory_passives(AccessoryPassives::from_disc(
+        &AccessoryPassiveTable::from_scus(&scus).expect("passives"),
+    ));
+    let kinds = [
+        (StatusKind::Sleep, 0x0800u16),
+        (StatusKind::Confuse, 0x0380),
+        (StatusKind::Numb, 0x0400),
+    ];
+    let mut rng = Rng(0x534C_5045);
+    let mut failures = Vec::new();
+    let mut held = 0;
+    for round in 0..2000 {
+        let mut s = gen_seats(&mut rng);
+        s.status = [0; 7];
+        let mut ailed: Vec<(u8, usize)> = Vec::new();
+        for r in 0..7u8 {
+            if rng.below(2) == 0 {
+                ailed.push((r, rng.below(3) as usize));
+            }
+        }
+        for &(r, k) in &ailed {
+            s.status[usize::from(r)] = kinds[k].1;
+        }
+        seed_retail(&mut cpu, &s);
+        seed_port(&mut w, &s);
+        for &(r, k) in &ailed {
+            if let Some(e) = engine_seat(&s, r) {
+                w.actors[usize::from(e)].battle.field_flags = 0;
+                w.battle.status_effects.apply(e, kinds[k].0);
+            }
+        }
+        state.set(s.seed);
+        for tick in 0..6 {
+            assert_eq!(cpu.call(0x801E_752C, &[]), Stop::Returned, "{s:?}");
+            w.tick_status_effects();
+            for r in 0..7u8 {
+                let Some(e) = engine_seat(&s, r) else {
+                    continue;
+                };
+                let a = ACTOR + u32::from(r) * ACTOR_STRIDE;
+                let retail = cpu.mem.rd16(a + 0x16E) & 0x0F80;
+                let port = w.raw_status_word(e) & 0x0F80;
+                held += u32::from(retail != 0);
+                if retail != port && failures.len() < 6 {
+                    failures.push(format!(
+                        "round {round} tick {tick} seat {r}: retail {retail:#x} port {port:#x}"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(held > 5000, "{held}");
+}

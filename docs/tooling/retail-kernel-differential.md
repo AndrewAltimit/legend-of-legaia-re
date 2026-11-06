@@ -281,3 +281,8 @@ more. A pass whose later cast entry fails its MP test keeps what an earlier entr
 left the seat without the cast retail plays. And monsters `0x97` / `0x98` under a `0x380` status clear a stored
 cast to `0` and keep the ring, or keep any other category and skip the ring (`0x801EAD58..0x801EAD80`); the
 port ran neither.
+
+The round tick run over six rounds with an ailment the port's status tracker holds, beside the same bits in
+retail's word, found Sleep (`0x800`) and the `0x380` group wearing off after three rounds in the port, where
+retail's tick never clears them: like Numb they last until a hit's `0x0F80` strip, a cure or the battle's end.
+The port's hit strip also left a tracked Confuse standing; it now clears the whole family.

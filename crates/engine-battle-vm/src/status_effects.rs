@@ -167,8 +167,11 @@ impl StatusKind {
             // Numb wears off on the round-end waker's `rand() & 7 == 0`
             // (`FUN_801F45A4`) or a hit's strip, never on a count.
             StatusKind::Numb => 255,
-            StatusKind::Sleep => 3,
-            StatusKind::Confuse => 3,
+            // Sleep and the `0x380` group: no retail writer clears them on a
+            // count - the round tick `FUN_801E752C` leaves them standing -
+            // only a hit's `0x0F80` strip, a cure or the battle's end.
+            StatusKind::Sleep => 255,
+            StatusKind::Confuse => 255,
             // Stone has no in-battle cure - it lasts the whole battle. 255 is
             // effectively "until battle end" (no battle runs that many turns).
             StatusKind::Stone => 255,
@@ -194,8 +197,15 @@ impl StatusKind {
     /// `true` if being hit clears this status. Sleep wakes on damage, and Numb
     /// clears on being attacked too (the wiki: it wears off "by being attacked
     /// or enough turns passing").
+    ///
+    /// The kinds are the word's `0x0F80` family, which retail's on-hit strip
+    /// clears whole (`andi v0,a1,0xf07f` at `0x801EDA5C`): Confuse's `0x380`
+    /// group with them.
     pub fn clears_on_damage(self) -> bool {
-        matches!(self, StatusKind::Numb | StatusKind::Sleep)
+        matches!(
+            self,
+            StatusKind::Numb | StatusKind::Sleep | StatusKind::Confuse
+        )
     }
 }
 
