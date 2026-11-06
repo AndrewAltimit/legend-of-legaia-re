@@ -20,10 +20,8 @@ pub fn heading_lut_engine(idx: u8) -> Option<u16> {
 /// The **walk-direction-implied facing** index retail derives from a step's
 /// axis signs - the tail of the `0x47` `MoveTowardTarget` case at
 /// `0x80037D4C..0x80037DDC`, which writes `actor+0x26` from
-/// [`heading_lut_engine`]. The written heading holds **one value per walk
-/// leg** (runtime-pinned: a leg's whole run carries a single heading), so
-/// the port issues the write at the leg's first moving frame and on a
-/// step-direction change only.
+/// [`heading_lut_engine`] on every frame the leg runs. A straight run holds
+/// one value (runtime-pinned: a leg's whole run carries a single heading).
 ///
 /// This is the reason a walking NPC's facing is always one of eight compass
 /// points and never an arbitrary bearing: retail quantises here, it does not

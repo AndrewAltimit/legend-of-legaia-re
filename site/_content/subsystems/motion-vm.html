@@ -91,7 +91,7 @@
   <h2>How an actor's facing changes</h2>
   <p>Watch a villager walk and they only ever face one of eight directions, yet a scripted turn in a cutscene glides smoothly. Those are two different laws, and which one an actor gets is a property of the bytecode, not the situation.</p>
   <ul class="bullets">
-    <li><strong>Snap (walking).</strong> A <code>0x47</code> leg reduces its step to axis signs, maps them through the eight-entry compass LUT at <code>0x80073F04</code> and writes the heading outright. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point, one value per leg - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field heading is a multiple of <code>0x200</code>.</li>
+    <li><strong>Snap (walking).</strong> A <code>0x47</code> leg reduces its step to axis signs, maps them through the eight-entry compass LUT at <code>0x80073F04</code> and writes the heading outright, on every frame the leg runs. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point, one value per leg - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field heading is a multiple of <code>0x200</code>.</li>
     <li><strong>Ramp (the rotate ops).</strong> <code>0x38</code> and <code>0x4C</code> interpolate over a frame budget: each tick, <code>heading += arc &times; speed / remaining</code> measured from the <em>live</em> heading, and the terminal frame snaps exactly onto the target so rounding never leaves the actor short.</li>
   </ul>
   <h3 id="talk-facing">Talk-time facing is not this VM</h3>

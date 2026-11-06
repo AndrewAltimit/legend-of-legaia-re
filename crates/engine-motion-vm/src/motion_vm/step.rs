@@ -228,18 +228,16 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                 }
                 last = (mask, t1, t0);
             }
-            // The tail (`0x80037D4C..0x80037DDC`) snaps `+0x26` to the
-            // compass entry of the last iteration's axis signs, on every
-            // frame the leg is still running. The port writes it on a
-            // change only, which reads the same unless another writer
-            // posed the actor in between.
+            // The tail (`0x80037D4C..0x80037DDC`) stores `+0x26` from the
+            // compass entry of the last iteration's axis signs on every
+            // frame the leg is still running (`sh v0,0x26(s0)` at
+            // `0x80037DDC`, no compare ahead of it), so a heading another
+            // writer posed mid-leg lasts one frame.
             let (mask, t1, t0) = last;
             if mask != 0 {
                 let sx = if mask & 1 != 0 { -t1.signum() } else { 0 };
                 let sz = if mask & 2 != 0 { -t0.signum() } else { 0 };
-                if let Some(idx) = walk_facing_index(sx, sz)
-                    && state.walk_facing != Some(idx)
-                {
+                if let Some(idx) = walk_facing_index(sx, sz) {
                     state.walk_facing = Some(idx);
                     if let Some(yaw) = heading_lut_engine(idx) {
                         state.yaw = yaw;

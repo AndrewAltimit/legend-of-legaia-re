@@ -337,36 +337,30 @@ fn rotate_ramp_holds_raw_headings_across_the_wrap() {
     assert_eq!(*last, 0x800, "terminal snap lands exactly on the target");
 }
 
-/// The walk snap is **once per leg** (plus once per step-direction
-/// change), not a rewrite on every moving frame: `yaw_written` fires on
-/// the first moving frame and on the dominant-axis → diagonal cut only,
-/// so an interleaved writer's pose survives a straight leg.
+/// The walk snap stores the heading on **every** frame the leg runs
+/// (`sh v0,0x26(s0)` at `0x80037DDC`, no compare ahead of it): one compass
+/// value per straight run, rewritten each frame, so a pose another writer
+/// set mid-leg lasts one frame. The arrival frame's successor writes nothing.
 #[test]
-fn walk_leg_writes_heading_once_per_direction() {
+fn walk_leg_writes_heading_every_running_frame() {
     let mut s = st(0, 0, 4);
     let t = tgt(100, 0, 20);
     let bc = [0x47];
-    // Frame 1: leg start - the write.
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert!(s.yaw_written, "leg start writes the walk facing");
     assert_eq!(s.yaw, 0x400, "+X compass");
-    // Frames 2..20: X still dominates - same direction, no rewrite.
     for i in 0..19 {
+        s.yaw = 0x123; // an interleaved writer's pose
         assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
-        assert!(!s.yaw_written, "straight-leg frame {i} must not rewrite");
+        assert!(s.yaw_written, "straight-leg frame {i} rewrites");
         assert_eq!(s.yaw, 0x400, "held compass heading");
     }
-    // Deltas equal: the diagonal cut is a direction change - one write.
+    // Deltas equal: the diagonal.
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
-    assert!(s.yaw_written, "direction change writes again");
     assert_eq!(s.yaw, 0x200, "+X +Z diagonal");
-    // Next leg re-writes even in the same direction: leg state clears.
     while step(&mut s, t, &bc) != StepResult::Done {}
+    assert!(!s.yaw_written, "the done frame writes no facing");
     assert_eq!(s.walk_facing, None, "leg completion clears the leg state");
-    s.pc = 0;
-    let t2 = tgt(200, 0, 120);
-    assert_eq!(step(&mut s, t2, &bc), StepResult::Yield);
-    assert!(s.yaw_written, "a new leg writes at its start");
 }
 
 /// The traced per-op ramp rates come from `arc / budget` - the law's

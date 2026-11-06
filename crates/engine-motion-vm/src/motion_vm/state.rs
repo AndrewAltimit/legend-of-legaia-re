@@ -80,8 +80,7 @@ pub struct MotionState {
     pub pc: u16,
     /// The facing-LUT index the in-flight `0x47` leg last wrote (`None`
     /// before the leg's first moving frame; cleared when the leg completes).
-    /// The walk snap writes `yaw` only when this changes - once per leg for
-    /// a straight leg, plus once at the dominant-axis → diagonal cut.
+    /// The walk snap writes `yaw` on every frame the leg runs.
     pub walk_facing: Option<u8>,
     /// The `0x47` leg's **approach mode**, the walk op's mode byte `>> 4`
     /// (`srl a1,a1,0x4` at `0x80037BEC`). `0` is the default law - the
