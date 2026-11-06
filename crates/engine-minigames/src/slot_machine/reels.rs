@@ -234,7 +234,8 @@ pub const ROLL_IN_SPEED: i32 = 0x66;
 /// budget runs out, then locked on the row it stands on. So a landing further off
 /// than the budget reaches is never made: the reel stops short.
 ///
-/// PORT: FUN_801d0554 (the roll to the row, from `pos` to the row it locks on)
+/// REF: FUN_801d0554 (the roll-in collapsed into one call for the frame-free
+/// `SlotMachine::stop_reel`; the per-frame port is `SlotMachine::roll_reels`)
 pub fn roll_to_row(mut pos: i32, row: usize, mut budget: i32) -> usize {
     loop {
         pos = (pos + ROLL_IN_SPEED).rem_euclid(REEL_WRAP);

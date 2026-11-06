@@ -197,6 +197,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
 | `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
 | `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
+| `slot_machine::roll_to_row` | the frame-free `stop_reel`'s collapsed roll-in, which no host calls; the per-frame port of `FUN_801d0554` is `SlotMachine::roll_reels`, so the helper carries `REF`, not `PORT` |
 
 ### Open rows
 
