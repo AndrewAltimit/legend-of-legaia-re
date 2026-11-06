@@ -297,6 +297,49 @@
   <p>Both play hosts open the display on L1 with its labels and panel through one shared module (<code>legaia_engine_field::map_display</code>). The player's pointer is the move-VM part the module seats on the leader from its spawn record at <code>0x801CF6E8</code>: the last mesh of the kingdom pack, turning steadily under an additive colour word, drawn by both hosts through the field part pass. The port draws the kingdom whole instead of applying the survey's visible tile window.</p>
 </section>
 
+<section class="doc-section" id="party-readout" data-doc="-">
+  <h2>The party HP readout</h2>
+  <p>Stand still in a town, a dungeon or on the overworld and the party's HP and MP panel fades in at the screen's edge; take a step and it goes. It is not a menu and not a phase machine: <code>FUN_801D0D38</code> is called from the player's own tick every frame (<code>0x801D1660</code>), and builds the panel once an idle countdown runs out.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The party readout's per-frame decision. First the suppress terms: a held direction, the Field HP Display option set to Off, the script menu lock, or another image in the field overlay's slot, and nothing is drawn. Otherwise the entry arm: while the player is engaged by a script, the system lock is up, the pad hold is up or the warp timer runs, the countdown is re-armed, to 0x28 frames under Immediate or 0xA0 under Gradual, or 0 and 0x50 when the short-idle marker from an encounter is set. Otherwise the idle countdown: a position change re-arms it, an unchanged position takes the frame step off it, and at zero the panel is drawn.">
+      <defs><marker id="wmh-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-warn" x="12" y="20" width="250" height="96" rx="4"/>
+      <text class="dg-label" x="137" y="42">Suppressed: draw nothing</text>
+      <text class="dg-sub" x="137" y="62">a direction held (walking)</text>
+      <text class="dg-sub" x="137" y="78">Field HP Display = Off</text>
+      <text class="dg-sub" x="137" y="94">menu lock; slot A not the field's</text>
+      <rect class="dg-node" x="304" y="20" width="270" height="96" rx="4"/>
+      <text class="dg-label" x="439" y="42">Entry arm: re-arm the countdown</text>
+      <text class="dg-sub" x="439" y="62">script engaged, system lock 0x400,</text>
+      <text class="dg-sub" x="439" y="78">pad hold or warp timer up</text>
+      <text class="dg-sub" x="439" y="94">0x28 / 0xA0; marker set: 0 / 0x50</text>
+      <rect class="dg-node-accent" x="304" y="146" width="270" height="84" rx="4"/>
+      <text class="dg-label" x="439" y="168">Idle countdown</text>
+      <text class="dg-sub" x="439" y="188">moved: re-arm to 0x28 / 0xA0</text>
+      <text class="dg-sub" x="439" y="204">still: minus the frame step</text>
+      <rect class="dg-node-ok" x="616" y="160" width="230" height="56" rx="4"/>
+      <text class="dg-label" x="731" y="184">Panel drawn</text>
+      <text class="dg-sub" x="731" y="202">countdown at zero</text>
+      <path class="dg-edge" d="M439 116 L439 142" marker-end="url(#wmh-ah)"/>
+      <text class="dg-edge-label" x="446" y="134">none of those</text>
+      <path class="dg-edge" d="M574 188 L612 188" marker-end="url(#wmh-ah)"/>
+      <path class="dg-edge" d="M262 68 L300 68" marker-end="url(#wmh-ah)"/>
+      <text class="dg-edge-label" x="616" y="52">checked in this order,</text>
+      <text class="dg-edge-label" x="616" y="68">every frame, from the</text>
+      <text class="dg-edge-label" x="616" y="84">player's tick</text>
+    </svg>
+    <figcaption>The suppress terms bail before anything else; the entry arm holds the countdown full while something else owns the player; only then does standing still count. The Field HP Display option is the pause menu's: Immediate, Gradual or Off.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>After a door or a load</strong> the readout comes up <code>0x28</code> frames after the pad comes back, because every map install leaves the pad hold at <code>0x28</code> and the entry arm keeps the countdown full until it drains (<a href="field-locomotion.html#post-load-hold">the post-load hold</a>).</li>
+    <li><strong>After a fight</strong> it comes up on the first frame the pad does. The encounter hand-off raises a short-idle marker, the battle and its intro replace the HUD's overlay so nothing clears it, and the entry arm reads it and arms a countdown of zero.</li>
+    <li><strong>No ending scene shows it.</strong> The script runner raises the player's engaged bit on every frame it steps a spawned context, so a script that holds the player keeps the countdown re-arming. The bit is read a frame late, so the frame a script first engages the player still draws the panel.</li>
+    <li><strong>Some scenes never show it</strong>: those whose script raises the menu lock with op <code>2E 1B</code>, such as <code>town0e</code> and <code>urudre1</code>.</li>
+    <li><strong>None over the battle transition.</strong> The routine lives in the field overlay's slot, and the field-to-battle intro (PROT 0979) loads into that slot, so no readout appears over the intro.</li>
+  </ul>
+  <p><strong>In the port.</strong> One suppress kernel answers every term for both hosts (<code>world_map_panel_host::field_hud_rearm_held</code>, <code>field_hud_warp_rearm</code>), and <code>FieldPartyHud</code> runs the countdown, its frame-late engaged term and the short-idle marker (<code>tick_marked</code>, raised from <code>EncounterState::hud_short_idle_raises</code>).</p>
+</section>
+
 <section class="doc-section" id="compass-ring" data-doc="-">
   <h2>Which way is up</h2>
   <p>Retail's pad remap is not a trigonometric rotation. It looks the held direction up in an eight-entry compass ring, adds a whole number of 45-degree steps for the camera, and writes the ring entry back over the pad's direction bits. With a step count of zero it is the identity: Up walks world <code>Z+</code>, Right walks world <code>X+</code>.</p>
