@@ -164,7 +164,9 @@ impl StatusKind {
     pub fn default_duration(self) -> u8 {
         match self {
             StatusKind::Toxic | StatusKind::Venom | StatusKind::Rot | StatusKind::Curse => 255,
-            StatusKind::Numb => 3,
+            // Numb wears off on the round-end waker's `rand() & 7 == 0`
+            // (`FUN_801F45A4`) or a hit's strip, never on a count.
+            StatusKind::Numb => 255,
             StatusKind::Sleep => 3,
             StatusKind::Confuse => 3,
             // Stone has no in-battle cure - it lasts the whole battle. 255 is

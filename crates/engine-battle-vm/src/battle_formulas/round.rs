@@ -598,8 +598,9 @@ pub const ACTION_STREAM_RANGE: std::ops::Range<usize> = 0x1DF..0x1EF;
 // ---------------------------------------------------------------------------
 
 /// The status halfword bit the per-round waker services (battle actor
-/// `+0x16E` bit `0x400` - the latent guard-disabling status; no retail
-/// applier sets it, see `docs/subsystems/battle.md`).
+/// `+0x16E` bit `0x400`, Numb on the icon ladder; its one retail setter is
+/// the missed Kiss of Death in PROT 0955, see
+/// `docs/subsystems/battle-round-loop.md`).
 pub const STATUS_BIT_0X400: u16 = 0x400;
 
 /// Per-round RNG waker for status bit `0x400`, one actor slot's step.

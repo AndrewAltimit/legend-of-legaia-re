@@ -952,29 +952,36 @@ impl World {
     ///
     /// Retail sweeps the seven battle-actor slots and, for each **live** actor
     /// whose `+0x16E` carries bit `0x400`, draws one RNG sample and clears the
-    /// bit on a 1-in-8 hit. The port keeps `+0x16E` as
-    /// `BattleActor::field_flags`, so the sweep runs over the same word. The
-    /// RNG is drawn only for a live afflicted actor - stepping the stream for
-    /// an empty or unafflicted slot would desync it - and no retail applier
-    /// sets `0x400`, so on a normal battle this loop consumes nothing.
+    /// bit on a 1-in-8 hit. `0x400` is **Numb** (the icon ladder's sprite
+    /// `0x1D`), so this is how Numb wears off between rounds; the other way
+    /// is a hit's `0x0F80` strip. The port keeps the word in two halves -
+    /// `BattleActor::field_flags` and the status tracker - and the sweep reads
+    /// and clears both. The RNG is drawn only for a live afflicted actor;
+    /// stepping the stream for an empty or unafflicted slot would desync it.
+    ///
+    /// Public as the seam the retail-kernel differential drives.
     ///
     /// PORT: FUN_801F45A4 (the caller-side slot sweep)
-    pub(in crate::world) fn tick_status_0x400_wakes(&mut self) {
+    pub fn tick_status_0x400_wakes(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{STATUS_BIT_0X400, status_0x400_wakes};
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         // Retail's `&DAT_801C9370` sweep runs seven slots.
         const RETAIL_ACTOR_SLOTS: usize = 7;
         let n = self.actors.len().min(RETAIL_ACTOR_SLOTS);
         for slot in 0..n {
-            let (status, alive) = {
-                let a = &self.actors[slot].battle;
-                (a.field_flags, a.liveness != 0)
-            };
+            // The word is one in retail: the raw half a cast wrote and the
+            // Numb a hit's status arm left in the tracker both carry `0x400`.
+            let status = self.raw_status_word(slot as u8);
+            let alive = self.actors[slot].battle.liveness != 0;
             if !alive || status & STATUS_BIT_0X400 == 0 {
                 continue;
             }
             let roll = self.next_rand() as u16;
-            if let Some(next) = status_0x400_wakes(status, alive, || roll) {
-                self.actors[slot].battle.field_flags = next;
+            if status_0x400_wakes(status, alive, || roll).is_some() {
+                self.actors[slot].battle.field_flags &= !STATUS_BIT_0X400;
+                self.battle
+                    .status_effects
+                    .cure(slot as u8, StatusKind::Numb);
             }
         }
     }

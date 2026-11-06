@@ -267,3 +267,7 @@ read the stored category at all. The side scans counted a seat down only on a St
 so a cast-written Stone left a petrified side's monster deciding a turn. The sweep, the tie pick and the
 item refund match. The Confirm-path sale `ShopSession::try_sell` priced per unit off the shop's stock; it
 now pays the stepper's `(item-table price * qty) >> 1`.
+
+The round end's waker `FUN_801F45A4` read only the raw half of the port's status word, so a Numb the
+status tracker held drew no `rand()` and never woke; it also wore off on a three-round count retail does
+not have. The waker now reads and clears both halves, and Numb lasts until it or a hit's strip clears it.

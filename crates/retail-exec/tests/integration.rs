@@ -40,6 +40,7 @@ mod monster_pick;
 mod muscle_contest;
 mod queue_head;
 mod round_boundary;
+mod round_end;
 mod round_open;
 mod separation;
 mod seru_debuff;
