@@ -763,7 +763,7 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "Every map install now runs FUN_8003ADAC's tail: the 0x28-frame post-load pad hold and the entry fade pair. The hold keeps the bench's walk script (pad from frame 30) parked for ten more frames, so the overworld walk ends on a different stretch of map01 whose view draws more terrain: with the hold zeroed and the script started at frame 40 the old binary reads 151.98 / 222.30 draws, the same as the new one. The two fade quads cost about 0.4 draws a frame over the first 40 frames and drop when they land. With both disabled every browser draw count returns to the old baseline exactly. The bundles and the small native alloc moves are the wave's ported code (cast modules, battle status rules, the HUD short-idle marker); no new per-frame path."
+reason = "Every map install now runs FUN_8003ADAC's tail: the 0x28-frame post-load pad hold and the entry fade pair. The hold keeps the bench's walk script (pad from frame 30) parked for ten more frames, so the overworld walk ends on a different stretch of map01 whose view draws more terrain: with the hold zeroed and the script started at frame 40 the old binary reads 151.98 / 222.30 draws, the same as the new one. The two fade quads cost about 0.4 draws a frame over the first 40 frames and drop when they land. With both disabled every browser draw count returns to the old baseline exactly. The bundles and the small native alloc moves are the wave's ported code (cast modules, battle status rules, the HUD short-idle marker); no new per-frame path. The live map preview (`scene_live`) steps the camera halves its world tick needs, as the play hosts do."
 changes = [
   ["counts/browser/battle/enhanced/gl_draws_per_frame", 215.88, 215.98],
   ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125214, 125228],
@@ -780,7 +780,7 @@ changes = [
   ["counts/browser/world_map/retail/gl_draws_per_frame", 141.74, 151.13],
   ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157659, 165066],
   ["counts/bundle/gzip_bytes", 7004124, 7028645],
-  ["counts/bundle/play_gzip_bytes", 4886163, 4897791],
+  ["counts/bundle/play_gzip_bytes", 4886163, 4897802],
   ["counts/native/battle/retail/alloc_kb_per_frame", 4509.1, 4519.5],
   ["counts/native/battle/retail/allocs_per_frame", 1314.4, 1320.0],
   ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4680.7, 4681.0],
