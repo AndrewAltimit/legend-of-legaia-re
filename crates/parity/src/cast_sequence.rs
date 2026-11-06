@@ -106,6 +106,22 @@ pub struct Row {
     pub shot: Option<String>,
     /// Pixel geometry of a retail shot (`width`, `height`, `bpp`).
     pub geom: (usize, usize, u8),
+    /// The engine's display-frame clock (`frames` column): it stands still on
+    /// a tick the module's blocking seek holds the whole frame.
+    pub display_frames: Option<u64>,
+    /// The engine module's CD-seek wait on this tick, when it has one.
+    pub drive: Option<DriveRow>,
+}
+
+/// The engine recorder's drive columns (`drive_seek_arm`, `drive_poll_arm`,
+/// `drive_busy`): the module's seek and poll arms
+/// (`battle_cast_cue::module_drive_arms`) and the vsyncs the modelled drive
+/// still owes after the tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DriveRow {
+    pub seek_arm: u8,
+    pub poll_arm: u8,
+    pub busy: u32,
 }
 
 /// One side's recording.
@@ -182,6 +198,19 @@ impl Side {
                     field(r, "h").unwrap_or(FRAME_H),
                     field(r, "bpp").unwrap_or(16),
                 ),
+                display_frames: field(r, "frames"),
+                drive: match (
+                    field::<i32>(r, "drive_seek_arm"),
+                    field::<i32>(r, "drive_poll_arm"),
+                    field::<i32>(r, "drive_busy"),
+                ) {
+                    (Some(s), Some(p), Some(b)) if s >= 0 && p >= 0 => Some(DriveRow {
+                        seek_arm: s as u8,
+                        poll_arm: p as u8,
+                        busy: b.max(0) as u32,
+                    }),
+                    _ => None,
+                },
             });
         }
         if rows.is_empty() {
@@ -508,6 +537,9 @@ pub enum FrameClass {
     Scene,
     White,
     Dark,
+    /// A retail frame of a CD-seek wait arm past the engine's live frames
+    /// there: retail's drive held longer, inside the window ([`DriveWait`]).
+    DriveHold,
 }
 
 /// One retail frame and the engine frame paired with it.
@@ -552,6 +584,10 @@ pub struct SegmentReport {
     pub pairs: usize,
     /// Mean `within` over the segment's scene pairs.
     pub mean_within: Option<f64>,
+    /// Engine ticks this segment's pairs were moved by to absorb a CD-seek
+    /// wait ([`DriveWait::live_shift`]); `None` outside one's reach.
+    #[serde(default)]
+    pub drive_shift: Option<i64>,
 }
 
 /// The whole cast's comparison.
@@ -572,6 +608,10 @@ pub struct Report {
     /// Mean `within` over the white pairs, for watching the flash level.
     pub white_mean_within: Option<f64>,
     pub dark_pairs: usize,
+    /// Retail frames of a CD-seek wait the engine's drive answered sooner
+    /// ([`FrameClass::DriveHold`]), out of the mean.
+    #[serde(default)]
+    pub drive_hold_pairs: usize,
     /// Retail frames with no engine counterpart (a segment the engine never
     /// ran, or a frame shown before the recording began).
     pub unpaired_retail: usize,
@@ -582,14 +622,73 @@ pub struct Report {
     pub engine_frames: usize,
     pub segments: Vec<SegmentReport>,
     pub pairs: Vec<Pair>,
+    /// The module's CD-seek wait and the window the pairing absorbed it in.
+    #[serde(default)]
+    pub drive_wait: Option<DriveWait>,
+    /// The mean with the wait paired strictly, where a wait was absorbed.
+    #[serde(default)]
+    pub strict_mean_within: Option<f64>,
     /// The sound channel ([`crate::cast_sequence_sound`]), when both sides
     /// carry an `sfx.csv`.
     #[serde(default)]
     pub sound: Option<crate::cast_sequence_sound::SoundReport>,
 }
 
-/// Pair the two recordings and score every pair.
+/// Pair the two recordings and score every pair, absorbing a CD-seek wait
+/// inside its window ([`DriveWait`]).
 pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Report> {
+    compare_with(label, retail, engine, lag, true)
+}
+
+/// The vsyncs past the engine's own wait that a retail wait may still take
+/// and be absorbed: the larger of [`MAX_LAG`] and half the engine's wait.
+pub fn drive_window_margin(engine_wait: u64) -> u64 {
+    MAX_LAG.max(engine_wait / 2)
+}
+
+/// A module's CD-seek wait as the two recordings show it, and the window the
+/// pairing absorbs it in (`docs/tooling/cast-sequence-oracle.md`, "CD-seek
+/// waits").
+///
+/// The seek arm's `CdlSetloc` blocks the game loop while the drive finishes
+/// the seek before it; the engine holds the whole frame there (its display
+/// clock stands still), retail's blocked frame overruns its step. The poll
+/// arm returns busy until the module's own seek completes, with the rest of
+/// the frame running. How long either takes is the drive's seek time, which
+/// the engine models once (`battle_cd_drive`, fitted to mednafen) and which
+/// differs between emulators and drives.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriveWait {
+    pub seek_arm: u8,
+    pub poll_arm: u8,
+    /// Engine ticks of the seek arm the blocking seek held whole.
+    pub engine_frozen: u64,
+    /// Engine ticks of the poll arm that returned busy on the drive.
+    pub engine_poll_hold: u64,
+    /// Retail's wall vsyncs in the two arms past the engine's own passes
+    /// there: its wait, measured against the engine's arms.
+    pub retail_wait: u64,
+    /// The same on retail's game clock: the part of its wait the rest of the
+    /// frame ran through (a blocked frame counts only its step).
+    pub retail_live_wait: u64,
+    /// The waits accepted, vsyncs: `0` up to the engine's (the model's) wait
+    /// plus [`drive_window_margin`].
+    pub window: (u64, u64),
+    /// Retail's wait fell inside the window, so the pairing absorbed it.
+    pub accepted: bool,
+    /// Engine poll hold less retail's live wait: how far the frame content
+    /// that ran through the wait stands ahead in the engine after it.
+    pub live_shift: i64,
+}
+
+/// [`compare`], with the drive wait's tolerance on or off (`strict`).
+pub fn compare_with(
+    label: &str,
+    retail: &Side,
+    engine: &Side,
+    lag: Lag,
+    tolerate_drive: bool,
+) -> Result<Report> {
     // The retail probe logs from the inject, which can sit an action or two
     // before the cast begins; only the rows its frames can display matter.
     let first = retail
@@ -633,16 +732,121 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
         .collect();
     let seg_of = |segs: &[Segment], t: u64| segs.iter().position(|s| s.start <= t && t <= s.end);
 
+    // The module's CD-seek wait: its two arms' first aligned segments.
+    let drive = engine.rows.iter().find_map(|r| r.drive);
+    let mut wait: Option<DriveWait> = None;
+    let mut wait_segs: Vec<(usize, usize)> = Vec::new();
+    let mut frozen: std::collections::BTreeSet<u64> = Default::default();
+    if let Some(d) = drive {
+        for arm in [d.seek_arm, d.poll_arm] {
+            if let Some(&(ri, ei)) = aligned
+                .iter()
+                .find(|&&(ri, _)| rs[ri].key == Key::Module(arm))
+                && !wait_segs.contains(&(ri, ei))
+            {
+                wait_segs.push((ri, ei));
+            }
+        }
+        let row_ix = |t: u64| engine.rows.binary_search_by_key(&t, |r| r.t).ok();
+        let (mut held, mut hold, mut r_wall, mut r_game) = (0u64, 0u64, 0u64, 0u64);
+        for &(ri, ei) in &wait_segs {
+            let (rseg, eseg) = (&rs[ri], &es[ei]);
+            let (mut seg_frozen, mut seg_hold) = (0u64, 0u64);
+            for t in eseg.start..=eseg.end {
+                let Some(i) = row_ix(t) else { continue };
+                let row = &engine.rows[i];
+                let still = i > 0
+                    && row.display_frames.is_some()
+                    && engine.rows[i - 1].display_frames == row.display_frames;
+                if rseg.key == Key::Module(d.seek_arm) && still {
+                    seg_frozen += 1;
+                    frozen.insert(t);
+                } else if rseg.key == Key::Module(d.poll_arm)
+                    && row.drive.is_some_and(|x| x.busy > 0)
+                {
+                    seg_hold += 1;
+                }
+            }
+            let own = eseg.len() - seg_frozen - seg_hold;
+            let rgame = game(rseg.end).saturating_sub(game(rseg.start)) + 1;
+            r_wall += rseg.len().saturating_sub(own);
+            r_game += rgame.saturating_sub(own);
+            held += seg_frozen;
+            hold += seg_hold;
+        }
+        let engine_wait = held + hold;
+        let window = (0, engine_wait + drive_window_margin(engine_wait));
+        if !wait_segs.is_empty() {
+            wait = Some(DriveWait {
+                seek_arm: d.seek_arm,
+                poll_arm: d.poll_arm,
+                engine_frozen: held,
+                engine_poll_hold: hold,
+                retail_wait: r_wall,
+                retail_live_wait: r_game,
+                window,
+                accepted: tolerate_drive && r_wall <= window.1,
+                live_shift: hold as i64 - r_game as i64,
+            });
+        }
+    }
+    let absorb = wait.as_ref().filter(|w| w.accepted);
+    if absorb.is_none() {
+        frozen.clear();
+    }
+    // The engine's clock for the pairing offset: one per tick, less the ticks
+    // an absorbed seek held whole.
+    let mut live: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut n = 0u64;
+    for r in &engine.rows {
+        live.insert(r.t, n);
+        if !frozen.contains(&r.t) {
+            n += 1;
+        }
+    }
+    let last_wait_ri = wait_segs.iter().map(|&(ri, _)| ri).max();
+    // The engine ticks the absorbed shift may move a pair across: from the
+    // wait's first arm to the end of the module band.
+    let band = absorb.and_then(|_| {
+        let lo = wait_segs.iter().map(|&(_, ei)| es[ei].start).min()?;
+        let hi = es
+            .iter()
+            .filter(|s| matches!(s.key, Key::Module(_)))
+            .map(|s| s.end)
+            .max()?;
+        Some((lo, hi))
+    });
+    // A post-wait segment pairs on one of two clocks: the module's arm clock
+    // (shift `0`), or the clock the rest of the frame ran on through the wait
+    // (`-live_shift`). Nothing between: a free search over the span would
+    // also fit the one-tick offsets the wait has nothing to do with.
+    let shifts: Vec<i64> = match absorb {
+        Some(w) if w.live_shift != 0 => vec![0, -w.live_shift],
+        _ => vec![0],
+    };
+    let nearest = |want: u64, lo: u64, hi: u64| -> Option<(u64, &Row)> {
+        let before = engine_shots.range(lo..=want).next_back();
+        let after = engine_shots.range(want..=hi).next();
+        match (before, after) {
+            (Some(b), Some(a)) => Some(if want - *b.0 <= *a.0 - want { b } else { a }),
+            (b, a) => b.or(a),
+        }
+        .map(|(&t, &r)| (t, r))
+    };
+
     // What each retail frame pairs with; the frames themselves are read and
     // scored below, on as many threads as there are.
     struct Job<'a> {
         row: &'a Row,
-        erow: &'a Row,
         shown: u64,
         shown_st7: u8,
         key: Key,
+        ri: usize,
         into: u64,
-        et: u64,
+        /// The engine frame per candidate shift, `(shift, tick, row)`.
+        cands: Vec<(i64, u64, &'a Row)>,
+        /// A retail frame of a wait arm past the engine's live frames there.
+        hold: bool,
     }
     let mut jobs: Vec<Job<'_>> = Vec::new();
     let mut unpaired = 0usize;
@@ -669,57 +873,126 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
         };
         let (rseg, eseg) = (&rs[ri], &es[ei]);
         let into = game(shown).saturating_sub(game(rseg.start));
-        let want = eseg.start + into.min(eseg.len() - 1);
-        // The engine frame nearest the wanted tick inside the segment.
-        let before = engine_shots.range(eseg.start..=want).next_back();
-        let after = engine_shots.range(want..=eseg.end).next();
-        let Some((&et, erow)) = (match (before, after) {
-            (Some(b), Some(a)) => Some(if want - *b.0 <= *a.0 - want { b } else { a }),
-            (b, a) => b.or(a),
-        }) else {
+        // The engine row `into` live ticks into the segment, clamped to its
+        // last tick.
+        let base = live[&eseg.start];
+        let want = live
+            .range(eseg.start..=eseg.end)
+            .find(|&(t, &l)| !frozen.contains(t) && l - base >= into)
+            .map_or(eseg.end, |(&t, _)| t);
+        let live_len = live
+            .range(eseg.start..=eseg.end)
+            .filter(|&(t, _)| !frozen.contains(t))
+            .count() as u64;
+        let hold = absorb.is_some() && wait_segs.contains(&(ri, ei)) && into >= live_len;
+        let post_wait = matches!(rseg.key, Key::Module(_)) && last_wait_ri.is_some_and(|w| ri > w);
+        let mut cands = Vec::new();
+        for &s in if post_wait { &shifts[..] } else { &[0][..] } {
+            let got = match (s, band) {
+                (0, _) | (_, None) => nearest(want, eseg.start, eseg.end),
+                (s, Some((lo, hi))) => {
+                    let w = (want as i64 + s).clamp(lo as i64, hi as i64) as u64;
+                    nearest(w, lo, hi)
+                }
+            };
+            if let Some((t, r)) = got {
+                cands.push((s, t, r));
+            }
+        }
+        if cands.is_empty() {
             unpaired += 1;
             continue;
-        };
+        }
         jobs.push(Job {
             row,
-            erow,
             shown,
             shown_st7: shown_row.st7,
             key: rseg.key,
+            ri,
             into,
-            et,
+            cands,
+            hold,
         });
     }
-    let pairs = crate::parallel::parallel_map(
+    let scored = crate::parallel::parallel_map(
         &jobs,
         crate::parallel::default_jobs(),
-        |j| -> Result<Pair> {
-            let s: ImageScore = score(&retail.frame(j.row)?, &engine.frame(j.erow)?);
-            let class = if s.retail_luma < DARK_LUMA {
-                FrameClass::Dark
-            } else if s.retail_luma > WHITE_LUMA {
-                FrameClass::White
-            } else {
-                FrameClass::Scene
-            };
-            Ok(Pair {
-                retail_vsync: j.row.t,
-                shown_vsync: j.shown,
-                engine_tick: j.et,
-                key: j.key,
-                into: j.into,
-                retail_st7: j.shown_st7,
-                engine_st7: j.erow.st7,
-                class,
-                within: s.within,
-                mae: s.mae,
-                retail_luma: s.retail_luma,
-                engine_luma: s.engine_luma,
-            })
+        |j| -> Result<Vec<ImageScore>> {
+            let r = retail.frame(j.row)?;
+            j.cands
+                .iter()
+                .map(|(_, _, e)| Ok(score(&r, &engine.frame(e)?)))
+                .collect()
         },
     )
     .into_iter()
     .collect::<Result<Vec<_>>>()?;
+    let class_of = |s: &ImageScore| {
+        if s.retail_luma < DARK_LUMA {
+            FrameClass::Dark
+        } else if s.retail_luma > WHITE_LUMA {
+            FrameClass::White
+        } else {
+            FrameClass::Scene
+        }
+    };
+    // Each post-wait segment takes the clock its scene pairs score best on:
+    // what a segment shows runs on the module's arm clock (effects the arm
+    // spawns) or on the clock that ran through the wait (a fade or a rise
+    // spawned before it).
+    let mut seg_shift: BTreeMap<usize, i64> = BTreeMap::new();
+    if shifts.len() > 1 {
+        let mut sums: BTreeMap<usize, Vec<(f64, usize)>> = BTreeMap::new();
+        for (j, sc) in jobs.iter().zip(&scored) {
+            if j.cands.len() != shifts.len() || class_of(&sc[0]) != FrameClass::Scene {
+                continue;
+            }
+            let v = sums
+                .entry(j.ri)
+                .or_insert_with(|| vec![(0.0, 0); shifts.len()]);
+            for (k, s) in sc.iter().enumerate() {
+                v[k].0 += s.within;
+                v[k].1 += 1;
+            }
+        }
+        for (ri, v) in sums {
+            let best = (0..shifts.len())
+                .max_by(|&a, &b| {
+                    let m = |k: usize| v[k].0 / v[k].1.max(1) as f64;
+                    m(a).total_cmp(&m(b))
+                        .then(shifts[b].abs().cmp(&shifts[a].abs()))
+                })
+                .map_or(0, |k| shifts[k]);
+            seg_shift.insert(ri, best);
+        }
+    }
+    let pairs: Vec<Pair> = jobs
+        .iter()
+        .zip(&scored)
+        .map(|(j, sc)| {
+            let want = seg_shift.get(&j.ri).copied().unwrap_or(0);
+            let k = j.cands.iter().position(|c| c.0 == want).unwrap_or(0);
+            let (s, (_, et, erow)) = (&sc[k], &j.cands[k]);
+            Pair {
+                retail_vsync: j.row.t,
+                shown_vsync: j.shown,
+                engine_tick: *et,
+                key: j.key,
+                into: j.into,
+                retail_st7: j.shown_st7,
+                engine_st7: erow.st7,
+                class: if j.hold {
+                    FrameClass::DriveHold
+                } else {
+                    class_of(s)
+                },
+                within: s.within,
+                mae: s.mae,
+                retail_luma: s.retail_luma,
+                engine_luma: s.engine_luma,
+            }
+        })
+        .collect();
 
     let scene: Vec<&Pair> = pairs
         .iter()
@@ -748,6 +1021,7 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
                     engine_len: Some(es[ej].len()),
                     pairs: 0,
                     mean_within: None,
+                    drive_shift: None,
                 });
                 ej += 1;
             }
@@ -779,6 +1053,7 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
                 .filter(|p| s.start <= p.shown_vsync && p.shown_vsync <= s.end)
                 .count(),
             mean_within: mean(&in_seg),
+            drive_shift: seg_shift.get(&i).copied(),
         });
     }
     for e in &es[ej.min(es.len())..] {
@@ -791,9 +1066,15 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
             engine_len: Some(e.len()),
             pairs: 0,
             mean_within: None,
+            drive_shift: None,
         });
     }
 
+    let strict_mean_within = if absorb.is_some() {
+        Some(compare_with(label, retail, engine, lag, false)?.mean_within)
+    } else {
+        None
+    };
     Ok(Report {
         label: label.to_string(),
         lag,
@@ -804,6 +1085,10 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
         white_pairs: white.len(),
         white_mean_within: mean(&white),
         dark_pairs: pairs.iter().filter(|p| p.class == FrameClass::Dark).count(),
+        drive_hold_pairs: pairs
+            .iter()
+            .filter(|p| p.class == FrameClass::DriveHold)
+            .count(),
         unpaired_retail: unpaired,
         state_mismatch_pairs: pairs
             .iter()
@@ -813,6 +1098,8 @@ pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Re
         engine_frames: engine_shots.len(),
         segments,
         pairs,
+        drive_wait: wait,
+        strict_mean_within,
         sound: None,
     })
 }
@@ -842,11 +1129,37 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
             "wall vsyncs (no frame counter in the capture)"
         },
     ));
-    s.push_str("## Segments\n\n`retail game` is the segment on retail's game clock; `slow frames` counts the retail frames that ran past their step and the vsyncs they ran over by.\n\n| key | retail vsyncs | retail game | slow frames | engine ticks | pairs | mean within |\n|---|---|---|---|---|---|---|\n");
+    if let Some(w) = &r.drive_wait {
+        s.push_str(&format!(
+            "**CD-seek wait** (module arms {} seek / {} poll): the engine held {} ticks whole on the \
+             seek and {} on the poll; retail's wait read {} vsyncs ({} on the game clock) against a \
+             window of {}..={}. {}\n\n",
+            w.seek_arm,
+            w.poll_arm,
+            w.engine_frozen,
+            w.engine_poll_hold,
+            w.retail_wait,
+            w.retail_live_wait,
+            w.window.0,
+            w.window.1,
+            if w.accepted {
+                format!(
+                    "Absorbed: live shift {:+} ticks, {} retail hold frames out of the mean; strict \
+                     pairing mean {}.",
+                    w.live_shift,
+                    r.drive_hold_pairs,
+                    r.strict_mean_within.map_or("-".into(), |m| format!("{m:.3}"))
+                )
+            } else {
+                "Outside the window or `--strict-drive`: paired strictly.".to_string()
+            }
+        ));
+    }
+    s.push_str("## Segments\n\n`retail game` is the segment on retail's game clock; `slow frames` counts the retail frames that ran past their step and the vsyncs they ran over by; `shift` is the engine ticks an absorbed CD-seek wait moved the segment's pairs by.\n\n| key | retail vsyncs | retail game | slow frames | engine ticks | pairs | mean within | shift |\n|---|---|---|---|---|---|---|---|\n");
     for g in &r.segments {
         let o = |v: Option<u64>| v.map_or("-".to_string(), |v| v.to_string());
         s.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
             g.key,
             o(g.retail_len),
             o(g.retail_game_len),
@@ -857,7 +1170,8 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
             },
             o(g.engine_len),
             g.pairs,
-            g.mean_within.map_or("-".into(), |m| format!("{m:.3}"))
+            g.mean_within.map_or("-".into(), |m| format!("{m:.3}")),
+            g.drive_shift.map_or("-".into(), |d| format!("{d:+}"))
         ));
     }
     let mut w: Vec<&Pair> = r
@@ -991,12 +1305,16 @@ pub struct CastSequenceArgs {
     /// matches at.
     #[arg(long, default_value_t = crate::cast_sequence_sound::DEFAULT_TOLERANCE)]
     pub sound_tolerance: u64,
+    /// Pair a module's CD-seek wait strictly, with no window
+    /// ([`DriveWait`]).
+    #[arg(long)]
+    pub strict_drive: bool,
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?.first_action_only();
     let engine = Side::read(&a.engine)?;
-    let mut report = compare(&a.label, &retail, &engine, a.retail_lag)?;
+    let mut report = compare_with(&a.label, &retail, &engine, a.retail_lag, !a.strict_drive)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
     std::fs::create_dir_all(&a.out)?;
@@ -1040,6 +1358,30 @@ pub fn run(a: CastSequenceArgs) -> Result<()> {
         report.dark_pairs,
         report.unpaired_retail
     );
+    if let Some(w) = &report.drive_wait {
+        println!(
+            "{}: CD-seek wait arms {}/{}: engine {} held + {} poll, retail {} ({} live), window {}..={}: {}",
+            report.label,
+            w.seek_arm,
+            w.poll_arm,
+            w.engine_frozen,
+            w.engine_poll_hold,
+            w.retail_wait,
+            w.retail_live_wait,
+            w.window.0,
+            w.window.1,
+            if w.accepted {
+                format!(
+                    "absorbed, live shift {:+}, hold frames {}, strict mean {:.3}",
+                    w.live_shift,
+                    report.drive_hold_pairs,
+                    report.strict_mean_within.unwrap_or(0.0)
+                )
+            } else {
+                "paired strictly".to_string()
+            }
+        );
+    }
     Ok(())
 }
 
@@ -1062,6 +1404,8 @@ mod tests {
             acting,
             shot: None,
             geom: (FRAME_W, FRAME_H, 16),
+            display_frames: None,
+            drive: None,
         };
         let side = Side {
             dir: PathBuf::new(),
@@ -1147,6 +1491,8 @@ mod tests {
                     acting: 0,
                     shot: None,
                     geom: (FRAME_W, FRAME_H, 16),
+                    display_frames: None,
+                    drive: None,
                 });
                 t += 1;
             }

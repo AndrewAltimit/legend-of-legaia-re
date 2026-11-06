@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use legaia_parity::cast_sequence::{FrameClass, Key, Lag, Side, compare};
+use legaia_parity::cast_sequence::{FrameClass, Key, Lag, Side, compare, compare_with};
 
 /// A BGR555 grey `v` (5-bit) over the 320 x 228 display.
 fn retail_raw(v5: u16) -> Vec<u8> {
@@ -176,4 +176,142 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
     );
     // The whole frames between the cut ends: the 4-vsync one ran 2 over.
     assert_eq!((seg.overrun_frames, seg.overrun_vsyncs), (1, 2));
+}
+
+/// Write an engine recording with the drive columns: `(tick, phase, level,
+/// display frame, drive busy)` rows, all in state `0x35`, seek arm `2`, poll
+/// arm `3`.
+fn engine_with_drive(ed: &Path, rows: &[(u64, u8, u8, u64, u32)]) {
+    let mut meta = String::from(
+        "tick,st7,phase,acting,frames,shot,drive_seek_arm,drive_poll_arm,drive_busy\n",
+    );
+    for &(t, phase, level, frames, busy) in rows {
+        let name = format!("e_{t:05}.png");
+        engine_png(&ed.join(&name), expand(u16::from(level)));
+        writeln!(meta, "{t},53,{phase},0,{frames},{name},2,3,{busy}").unwrap();
+    }
+    std::fs::write(ed.join("meta.csv"), meta).unwrap();
+}
+
+/// A retail recording at step 1, fixed lag 0: `(vsync, phase, level)` rows.
+fn retail_rows(rd: &Path, rows: &[(u64, u8, u16)]) {
+    let mut meta = String::from("vsync,st7,phase,step,shot,w,h,bpp\n");
+    for &(t, phase, level) in rows {
+        let name = format!("r_{t:05}.raw");
+        std::fs::write(rd.join(&name), retail_raw(level)).unwrap();
+        writeln!(meta, "{t},53,{phase},1,{name},320,228,16").unwrap();
+    }
+    std::fs::write(rd.join("meta.csv"), meta).unwrap();
+}
+
+/// The engine's blocking seek holds six whole frames on the seek arm, where
+/// retail's drive answered at once: inside the window, the pairing counts the
+/// arm on the engine's live ticks and every pair matches; strictly, the held
+/// frames push the rest of the arm out of step.
+#[test]
+fn a_held_seek_inside_the_window_pairs_on_the_live_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rd, ed) = (dir.path().join("retail"), dir.path().join("engine"));
+    std::fs::create_dir_all(&rd).unwrap();
+    std::fs::create_dir_all(&ed).unwrap();
+    let mut r = Vec::new();
+    for t in 100..117u64 {
+        let phase = match t {
+            100..=109 => 2,
+            110 => 3,
+            _ => 4,
+        };
+        r.push((t, phase, (t - 100) as u16));
+    }
+    retail_rows(&rd, &r);
+    let mut e = vec![(10, 2, 0, 0, 7)];
+    for (i, t) in (11..17u64).enumerate() {
+        e.push((t, 2, 0, 0, 6 - i as u32));
+    }
+    for (k, t) in (17..26u64).enumerate() {
+        e.push((t, 2, k as u8 + 1, k as u64 + 1, 0));
+    }
+    e.push((26, 3, 10, 10, 0));
+    for (k, t) in (27..33u64).enumerate() {
+        e.push((t, 4, k as u8 + 11, k as u64 + 11, 0));
+    }
+    engine_with_drive(&ed, &e);
+    let retail = Side::read(&rd).unwrap();
+    let engine = Side::read(&ed).unwrap();
+
+    let r = compare("held seek", &retail, &engine, Lag::Fixed(0)).unwrap();
+    let w = r.drive_wait.as_ref().unwrap();
+    assert!(w.accepted);
+    assert_eq!(
+        (w.engine_frozen, w.engine_poll_hold, w.retail_wait),
+        (6, 0, 0)
+    );
+    assert_eq!(w.window, (0, 14));
+    for p in &r.pairs {
+        assert_eq!(
+            p.within, 1.0,
+            "vsync {} paired with tick {}",
+            p.retail_vsync, p.engine_tick
+        );
+    }
+    assert!(r.strict_mean_within.unwrap() < 1.0);
+
+    let strict = compare_with("held seek", &retail, &engine, Lag::Fixed(0), false).unwrap();
+    assert!(!strict.drive_wait.unwrap().accepted);
+    assert!(strict.mean_within < 1.0);
+}
+
+/// The engine's poll arm waits five ticks on the drive with the frame running,
+/// retail's one: the content that ran through the wait stands four ticks ahead
+/// in the engine's next arm, and the window moves that arm's pairs back by it.
+#[test]
+fn a_longer_poll_inside_the_window_shifts_the_next_arm() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rd, ed) = (dir.path().join("retail"), dir.path().join("engine"));
+    std::fs::create_dir_all(&rd).unwrap();
+    std::fs::create_dir_all(&ed).unwrap();
+    // One grey level per vsync of the clock the frame runs on, four 5-bit
+    // steps apart (past the metric's block tolerance), repeating every eight.
+    let level = |g: u64| ((g * 4) % 32) as u16;
+    let mut r = Vec::new();
+    for t in 100..115u64 {
+        let phase = match t {
+            100..=103 => 2,
+            104 => 3,
+            _ => 4,
+        };
+        r.push((t, phase, level(t - 100)));
+    }
+    retail_rows(&rd, &r);
+    let mut e = Vec::new();
+    for g in 0..19u64 {
+        let (phase, busy) = match g {
+            0..=3 => (2, 0),
+            4..=8 => (3, 9 - g as u32),
+            _ => (4, 0),
+        };
+        e.push((10 + g, phase, level(g) as u8, g, busy));
+    }
+    engine_with_drive(&ed, &e);
+    let retail = Side::read(&rd).unwrap();
+    let engine = Side::read(&ed).unwrap();
+
+    let r = compare("long poll", &retail, &engine, Lag::Fixed(0)).unwrap();
+    let w = r.drive_wait.as_ref().unwrap();
+    assert!(w.accepted);
+    assert_eq!(
+        (w.engine_poll_hold, w.retail_live_wait, w.live_shift),
+        (5, 1, 4)
+    );
+    let seg = r.segments.iter().find(|s| s.key == Key::Module(4)).unwrap();
+    assert_eq!(seg.drive_shift, Some(-4));
+    for p in &r.pairs {
+        assert_eq!(
+            p.within, 1.0,
+            "vsync {} paired with tick {}",
+            p.retail_vsync, p.engine_tick
+        );
+    }
+    let strict = compare_with("long poll", &retail, &engine, Lag::Fixed(0), false).unwrap();
+    assert!(strict.mean_within < 1.0);
 }

@@ -523,6 +523,8 @@ mod tests {
                     acting: 0,
                     shot: Some(String::new()),
                     geom: (FRAME_W, FRAME_H, 16),
+                    display_frames: None,
+                    drive: None,
                 });
                 t += 1;
                 f += 1;

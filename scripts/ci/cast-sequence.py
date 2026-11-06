@@ -528,12 +528,21 @@ def score(a, out: Path) -> int:
         cmd += ["--retail-lag", str(a.retail_lag)]
     if a.sound_tolerance is not None:
         cmd += ["--sound-tolerance", str(a.sound_tolerance)]
+    if a.strict_drive:
+        cmd += ["--strict-drive"]
     r = subprocess.run(cmd, cwd=REPO)
     if r.returncode == 0:
         rep = json.loads((out / "report.json").read_text())
         print(f"[score] {out.name}: mean {rep['mean_within']:.3f} over {rep['valid_pairs']} pairs "
               f"(min {rep['min_within']:.3f}; white {rep['white_pairs']}, dark {rep['dark_pairs']}, "
               f"unpaired {rep['unpaired_retail']}) -> {out / 'report.md'}")
+        if w := rep.get("drive_wait"):
+            # The module's CD-seek wait and its window: what the pairing absorbed.
+            verdict = (f"absorbed, live shift {w['live_shift']:+}, {rep.get('drive_hold_pairs', 0)} hold "
+                       f"frames, strict mean {rep['strict_mean_within']:.3f}") if w["accepted"] else "paired strictly"
+            print(f"[score] {out.name}: CD-seek wait (arms {w['seek_arm']}/{w['poll_arm']}): engine "
+                  f"{w['engine_frozen']} held + {w['engine_poll_hold']} poll, retail {w['retail_wait']}, "
+                  f"window {w['window'][0]}..{w['window'][1]}: {verdict}")
         snd = rep.get("sound")
         if snd:
             print(f"[score] {out.name}: sound cue score {snd['score']:.3f} (id {snd['id_score']:.3f}): "
@@ -587,6 +596,8 @@ def main() -> int:
     ap.add_argument("--engine-timeout", type=int, default=600, help="engine child wall-clock cap, seconds")
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
+    ap.add_argument("--strict-drive", action="store_true",
+                    help="pair a summon module's CD-seek wait strictly, with no window")
     ap.add_argument("--sound-tolerance", type=int,
                     help="sound channel: ticks a cue still matches at (default 6)")
     ap.add_argument("--watch", default="",
