@@ -233,7 +233,15 @@ impl MenuRuntimeHost<'_> {
                     .get(&item_id)
                     .copied()
                     .unwrap_or(0);
-                if let Some((item_id, qty, delta)) = session.try_sell(held) {
+                // Retail's sale credit reads the item table's price
+                // (`FUN_801DBD94`, `0x801DBEC0..0x801DBED4`).
+                let item_price = self
+                    .world
+                    .shops
+                    .item_shop_data
+                    .as_ref()
+                    .map(|d| d.price(item_id));
+                if let Some((item_id, qty, delta)) = session.try_sell(held, item_price) {
                     self.world.party.money = (self.world.party.money + delta).clamp(0, 9_999_999);
                     // Take the units off the slot the row named where the host
                     // staged one; the id path is the fallback for a row list
