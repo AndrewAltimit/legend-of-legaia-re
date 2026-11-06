@@ -156,6 +156,9 @@ pub struct ModuleCamState {
     /// ([`summon_holds::Gate::RampUp`] / [`summon_holds::Gate::RampDown`]):
     /// PROT 0918's creature record `+0x72`, PROT 0922's clip frame `+0x68`.
     pub ramp: i32,
+    /// A module's own pass counter: PROT 0955's `0x801F9D30`, zeroed by Kiss
+    /// of Death's arm 0 and bumped by every pass of arms 1 and 2.
+    pub pass_count: u32,
     /// Whether every monster seat has settled - a living one back on idle,
     /// a dead one faded out - fed in by the host each tick for a settle
     /// gate ([`summon_holds::Gate::Settle`]).
@@ -1081,7 +1084,10 @@ pub use gola_mushura_barra::*;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
-pub use kiss_of_death::{KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN, kiss_of_death_camera};
+pub use kiss_of_death::{
+    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN,
+    KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
+};
 pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,

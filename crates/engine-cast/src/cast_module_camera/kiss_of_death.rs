@@ -3,8 +3,23 @@
 
 use super::{
     CaptureCamArm, CaptureDrift, CaptureSeatWrite, ModuleCamSeats, ModuleCamState, ModuleShot,
-    bearing_12bit_approx, focus_on, yaw_from,
+    ModuleSpawn, SpawnAnchor, SpawnRecord, bearing_12bit_approx, focus_on, yaw_from,
 };
+
+/// Arm 0's two records on the caster (`0x801F87A4..0x801F87C8`).
+pub const KISS_OF_DEATH_ARM0_RECORDS: [u32; 2] = [0x801F_9440, 0x801F_94E8];
+/// The record arms 1 and 2 seat on the caster every other pass
+/// (`0x801F893C..0x801F8950`, `0x801F8AA8..0x801F8ABC`).
+pub const KISS_OF_DEATH_PASS_RECORD: u32 = 0x801F_9568;
+
+/// A record on the caster seat itself: `a0 = caster + 0x34`,
+/// `a1 = caster + 0x44`, scale `0x1000`.
+const fn on_caster_seat(record: u32) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(record),
+        anchor: SpawnAnchor::CasterShifted { dy: 0, dz: 0 },
+    }
+}
 
 /// PROT 0955's Kiss of Death tick body, the trampoline's `0x6E` arm.
 pub const KISS_OF_DEATH_BODY: u32 = 0x801F_86A4;
@@ -68,18 +83,48 @@ pub fn kiss_of_death_camera(
     });
     if phase == 0 {
         st.countdown.0 = super::SPEED_SCALAR * 12;
+        st.pass_count = 0;
+        let [a, b] = KISS_OF_DEATH_ARM0_RECORDS;
+        let mut pass_spawns = [None; 5];
+        pass_spawns[0] = Some(on_caster_seat(a));
+        pass_spawns[1] = Some(on_caster_seat(b));
         return CaptureCamArm {
             shot: Some(on_caster(-0x20, third(seats.depth_raw), 0xC)),
+            pass_spawns,
+            // Every standing seat hidden (`sw zero,0x4` / `sb 0xFF,0x21c`
+            // behind the HP test, `0x801F887C..0x801F88B0`), then the caster
+            // shown again (`0x801F88B4..0x801F88C4`).
+            others_write: CaptureSeatWrite {
+                colour: Some(0),
+                render_flag: Some(0xFF),
+                ..Default::default()
+            },
+            others_live_only: true,
+            caster_write: CaptureSeatWrite {
+                colour: Some(0x2008_0200),
+                render_flag: Some(0),
+                ..Default::default()
+            },
             ..Default::default()
         };
     }
     if !(1..=5).contains(&phase) {
         return CaptureCamArm::default();
     }
+    // Arms 1 and 2 seat the record on an odd count, ahead of their gate,
+    // once a pass (the director runs every tick of it).
+    let mut pass_spawns = [None; 5];
+    if phase <= 2 && st.opens_pass {
+        if st.pass_count & 1 == 1 {
+            pass_spawns[0] = Some(on_caster_seat(KISS_OF_DEATH_PASS_RECORD));
+        }
+        st.pass_count = st.pass_count.wrapping_add(1);
+    }
     if st.countdown.drain_above(0) {
         return CaptureCamArm {
             drift: push,
             hold: true,
+            pass_spawns,
             ..Default::default()
         };
     }
@@ -91,10 +136,16 @@ pub fn kiss_of_death_camera(
     }
     let mut arm = CaptureCamArm {
         drift: push,
+        pass_spawns,
         ..Default::default()
     };
     match phase {
-        1 => arm.shot = Some(on_caster(0x80, half(seats.depth_raw), 0xA0)),
+        1 => {
+            arm.shot = Some(on_caster(0x80, half(seats.depth_raw), 0xA0));
+            // The caster's tint state `7`, the soft red (`li v0,0x7` /
+            // `sb v0,0x21c(s2)`, `0x801F8A28..0x801F8A34`).
+            arm.caster_write.render_flag = Some(7);
+        }
         3 => {
             let v = seats.victim;
             let facing = (bearing_12bit_approx(c.z, c.x, v.z, v.x).wrapping_add(0x800)) & 0xFFF;
@@ -179,5 +230,37 @@ mod tests {
                 super::super::MODULE_DRAIN_PER_TICK as i16
             );
         }
+    }
+
+    /// Arm 0 seats its two records on the caster and hides every standing
+    /// seat but the caster; arms 1 and 2 seat the burst record on every other
+    /// pass; arm 1's passing pass tints the caster soft red.
+    #[test]
+    fn the_arms_seat_their_records_and_tint_the_caster() {
+        let mut st = ModuleCamState::default();
+        let a = kiss_of_death_camera(&mut st, 0, seats());
+        let recs: Vec<_> = a.pass_spawns.iter().flatten().map(|s| s.record).collect();
+        assert_eq!(
+            recs,
+            KISS_OF_DEATH_ARM0_RECORDS.map(SpawnRecord::Module).to_vec()
+        );
+        assert_eq!(a.others_write.render_flag, Some(0xFF));
+        assert!(a.others_live_only);
+        assert_eq!(a.caster_write.render_flag, Some(0));
+        // Seated on the passes the count reads odd, ticks between passes none.
+        let mut seated = Vec::new();
+        for pass in 0..4 {
+            st.opens_pass = true;
+            let a = kiss_of_death_camera(&mut st, 1, seats());
+            seated.push(a.pass_spawns[0].is_some());
+            st.opens_pass = false;
+            let between = kiss_of_death_camera(&mut st, 1, seats());
+            assert!(between.pass_spawns[0].is_none(), "pass {pass}");
+        }
+        assert_eq!(seated, [false, true, false, true]);
+        st.countdown.0 = 0;
+        st.opens_pass = false;
+        let a = kiss_of_death_camera(&mut st, 1, seats());
+        assert_eq!(a.caster_write.render_flag, Some(7));
     }
 }

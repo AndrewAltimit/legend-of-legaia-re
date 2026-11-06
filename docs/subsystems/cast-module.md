@@ -2938,6 +2938,27 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 
+### PROT 0955 (Kiss of Death)
+
+`kiss_of_death_camera` carries the body's records and tints beside its shots.
+Arm 0 seats two records on the caster seat (`0x801F9440`, `0x801F94E8`,
+`a0 = caster + 0x34`, `a1 = caster + 0x44`, scale `0x1000`,
+`0x801F87A4..0x801F87C8`): the lips the frame fills with through arms 3 and 4,
+over black. The same arm hides every standing seat (`+0x04 = 0`,
+`+0x21C = 0xFF` behind the HP test, `0x801F887C..0x801F88B0`) and shows the
+caster again. Arms 1 and 2 bump a pass counter (`0x801F9D30`, zeroed by arm
+0) ahead of their gate and seat the burst record `0x801F9568` on the caster
+whenever it read odd, keeping each handle in a list (`0x801F9B28`, count
+`0x801F9D2C`); arm 2's passing pass halts every listed record
+(`0x801F8B14..0x801F8B60`). Arm 1's passing pass sets the caster's tint state
+`7`, the soft red (`0x801F8A28..0x801F8A34`).
+
+Without them the body's records went in all at once on the band's first tick
+and drew nothing a retail frame of the cast holds, and the camera cut to an
+unhidden victim. A `--physical` film of `battle_map01_lippian_kiss_of_death_mid_cast`
+read `.449` frame by frame; with them `.815` (arm 4 `1.000`, arm 3 `.880`).
+Grade `disassembly` + `capture`.
+
 ### PROT 0952 (Bloody Horns)
 
 `cast_module_camera::bloody_horns_camera` carries arms 2 to 6 of the `0x5C` body
@@ -3492,7 +3513,7 @@ three units). The bodies without that store keep the half turn
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
-| 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown. Arm 0's seat tints (every standing seat `+0x21C = 0xFF`, the caster restored) and arm 1's caster `+0x21C = 7` are not ported |
+| 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown, the records and the tints ([below](#prot-0955-kiss-of-death)) |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 
 - **0944** frames on the caster's facing, which the cast begin points at its

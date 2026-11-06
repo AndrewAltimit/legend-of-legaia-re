@@ -828,7 +828,11 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
             body,
-            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+            Some(
+                super::TERROR_SCREAM_BODY
+                    | super::VOID_ACCESSORIES_BODY
+                    | super::KISS_OF_DEATH_BODY
+            )
         ),
         957 => matches!(
             body,
@@ -858,7 +862,11 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
         955 => matches!(
             body,
-            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+            Some(
+                super::TERROR_SCREAM_BODY
+                    | super::VOID_ACCESSORIES_BODY
+                    | super::KISS_OF_DEATH_BODY
+            )
         ),
         957 => matches!(
             body,
@@ -896,6 +904,11 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
     match (prot_entry, phase) {
         (949, 2) => &super::water_crystals::ARM2_HALTS,
+        // Kiss of Death's arm 2 walks the handles of the records arms 1 and
+        // 2 seated (`0x801F9B28`, count `0x801F9D2C`) and halts each
+        // (`0x801F8B14..0x801F8B60`). No other body in PROT 0955 seats the
+        // record.
+        (955, 2) => &[super::KISS_OF_DEATH_PASS_RECORD],
         _ => &[],
     }
 }
