@@ -246,12 +246,10 @@ pub fn assign_pending(delta: i16) -> i32 {
 /// renames the fields onto the MP pair, so it carries a `REF` rather than a
 /// second `PORT` tag and the `FUN_80047430` anchor stays on the live HP arms
 /// above (the `first_live_monster_slot` precedent in
-/// `battle_action::pool_ops`). It has no production caller because there is
-/// no MP readout to move: [`crate::battle_action::BattleActor`] carries live
-/// `mp` (`+0x150`) and `last_mp_cost` (`+0x178`) but no `mp_display`
-/// (`+0x174`), and the battle HUD draws live MP directly. Adding the field
-/// without a HUD consumer would be dead state, so the missing prerequisite is
-/// an MP readout in the HUD, not a caller for this leaf.
+/// `battle_action::pool_ops`). Its caller is
+/// [`crate::battle_action::BattleActor::tick_mp_bar`], which `engine-core`
+/// runs beside the HP ramp each battle frame; the battle HUD draws the
+/// readout it moves.
 ///
 /// REF: FUN_80047430 (party arm of the MP readout ramp)
 pub fn party_mp_step(display: u16, pending: i16) -> BarStep {
@@ -429,6 +427,32 @@ mod tests {
             assert!(frames < 100);
         }
         assert_eq!(st.display, 140, "total travel equals the seed");
+    }
+
+    #[test]
+    fn a_cast_ramps_the_party_mp_readout_down_to_live_mp() {
+        use crate::battle_action::BattleActor;
+        use crate::battle_slot::RetailSlot;
+        // The cast's debit: live MP already down, `+0x178` seeded.
+        let mut a = BattleActor {
+            mp: 40,
+            last_mp_cost: 60,
+            ..Default::default()
+        };
+        a.tick_mp_bar(RetailSlot::new(0));
+        assert_eq!(a.mp_display, Some(85), "a quarter of 60 off the old 100");
+        for _ in 0..40 {
+            a.tick_mp_bar(RetailSlot::new(0));
+        }
+        assert_eq!((a.mp_display, a.last_mp_cost), (Some(40), 0));
+        // A monster seat's readout never moves.
+        let mut m = BattleActor {
+            mp: 40,
+            last_mp_cost: 60,
+            ..Default::default()
+        };
+        m.tick_mp_bar(RetailSlot::new(3));
+        assert_eq!((m.mp_display, m.last_mp_cost), (None, 60));
     }
 
     #[test]

@@ -422,8 +422,14 @@ pub struct BattleActor {
     /// accumulator is therefore absorbing, and parks the action SM in state
     /// `0x51` forever on any party-targeted action.
     pub hp_bar_pending: i32,
-    /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
+    /// `+0x178` - the MP readout's signed accumulator: a cast seeds it with
+    /// its cost, an MP item with the negated restore, and the party arm of
+    /// `FUN_80047430` moves a quarter of it into [`Self::mp_display`] a frame
+    /// (`lh` at `0x800475C0`).
     pub last_mp_cost: u16,
+    /// `+0x174` - the MP readout the battle HUD draws and its gauge colour
+    /// reads (`0x80046B78`). `None` while it rests on live MP.
+    pub mp_display: Option<u16>,
     /// `+0x21D` - the per-actor **animation-rate scalar** (normal `8`). Three
     /// consumers read it in the dumped corpus, which is what settles the
     /// name:
@@ -826,6 +832,27 @@ impl BattleActor {
         let st = crate::battle_hp_bar::bar_step_for_slot(slot, display, self.hp_bar_pending);
         self.hp_display = Some(st.display);
         self.hp_bar_pending = st.pending;
+    }
+
+    /// One frame of the MP readout ramp (`FUN_80047430`, `0x800475A4..
+    /// 0x80047620`): a party seat moves a quarter of `+0x178` out of it and
+    /// off `+0x174`. The monster arm runs the HP fields instead
+    /// ([`crate::battle_hp_bar::party_mp_step`]'s note), so a monster's
+    /// readout never moves.
+    ///
+    /// REF: FUN_80047430 (kernel in `battle_hp_bar::party_mp_step`)
+    pub fn tick_mp_bar(&mut self, slot: crate::battle_slot::RetailSlot) {
+        let pending = self.last_mp_cost as i16;
+        if pending == 0 || !slot.is_party() {
+            return;
+        }
+        // At rest the readout is live MP before the debit the seed matches.
+        let display = self
+            .mp_display
+            .unwrap_or(self.mp.wrapping_add(pending as u16));
+        let st = crate::battle_hp_bar::party_mp_step(display, pending);
+        self.mp_display = Some(st.display);
+        self.last_mp_cost = st.pending as u16;
     }
 
     /// Force the displayed HP back onto live HP, dropping any outstanding

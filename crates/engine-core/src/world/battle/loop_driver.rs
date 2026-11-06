@@ -102,6 +102,7 @@ impl World {
                 a.battle.hp_bar_pending = i32::from(shown) - i32::from(a.battle.hp);
             }
             a.battle.tick_hp_bar(retail_slot);
+            a.battle.tick_mp_bar(retail_slot);
         }
     }
 

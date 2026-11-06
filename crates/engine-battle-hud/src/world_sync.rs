@@ -65,7 +65,8 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
                 alive: a.battle.liveness != 0,
                 hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
-                mp: a.battle.mp,
+                // The readout `+0x174`, ramped off `+0x178` as HP is.
+                mp: a.battle.mp_display.unwrap_or(a.battle.mp),
                 mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
                 ap_slot: (i < world.battle.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
