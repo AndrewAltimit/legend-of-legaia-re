@@ -314,3 +314,12 @@ Holding the Stone and Curse arms to the module images found that no cast module 
 rolled Stone on every party seat and drew a `rand()` for each; Curse and Curse All write `ori 0x1000`
 with no roll and no guard test, where the port rolled for them. Glare repeats the class-9 roll inline,
 guard test first, as the port had it.
+
+The ambient motion VM `FUN_80038158`, run tick by tick over generated streams of every op that stays
+off the GPU, the model loader, the floor sampler and the ramp pool, with the two overlay probes and
+`rand()` answered alike on both sides, found two defects. A restamp of the requested move from the
+default-move record left the pair `+0x88` / `+0x5C` an earlier `0x02` had written, where retail stores
+the record's byte to both, so the height pass and the ambient lifetime read a stale word. And the
+directional steps probed the player even with the VM's own flag bit `0` set, where the arm skips the
+call (`0x80038484..0x80038490`). The wander, the home step, the facing ramp, the touch-woken wait and
+the flag, cue and bit ops match.

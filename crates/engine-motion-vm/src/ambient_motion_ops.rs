@@ -163,6 +163,16 @@ impl AmbientMotion {
     /// The shared tail at `0x800383D4`: write the operand halfword to
     /// **both** `actor+0x88` (requested move) and `actor+0x5C` (anim
     /// cursor). One `sh` each, of the same sign-extended `b1 | b2 << 8`.
+    /// Restamp the requested move from a default-move record byte: retail
+    /// stores the zero-extended byte to both `+0x88` and `+0x5C`
+    /// (`sh v0,0x88(s3)` / `sh v0,0x5c(s3)`, e.g. `0x80038420..0x80038424`
+    /// and `0x800390C4..0x800390CC`), so the pair an earlier `0x02` wrote is
+    /// replaced.
+    pub(crate) fn restamp_move(&mut self, id: u8) {
+        self.requested_move = Some(id);
+        self.move_pair = Some(i16::from(id));
+    }
+
     fn write_move_pair(&mut self, body: &[u8]) {
         let v = i16::from_le_bytes([body[1], body[2]]);
         self.move_pair = Some(v);
@@ -287,7 +297,7 @@ impl AmbientMotion {
         if self.default_move[0] != DEFAULT_MOVE_UNSET {
             // `0x80038AC0`: the record's **anim** byte, as in the walk ops'
             // prologue.
-            self.requested_move = Some(self.default_move[1]);
+            self.restamp_move(self.default_move[1]);
         }
         let step = (0x80u32 >> (bits + 2)) as i16;
         let (nx, nz) = walk_apply(self.x, self.z, dir, step);

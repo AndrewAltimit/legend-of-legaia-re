@@ -823,7 +823,9 @@ sentinel. The case head `0x8003859C..0x800385C8` stores the record's
 then leaves through the shared epilogue `0x800390A8` (`j` at `0x80038610`),
 which stores the **move** byte (`+0`) - so a turn plays the record's turning
 clip and hands back to its idle move on the tick it snaps. The port is
-`AmbientMotion::step_facing_ramp`.
+`AmbientMotion::step_facing_ramp`. Every restamp stores the zero-extended record
+byte to both words, so it also replaces a full pair an earlier `0x02`, `0x0A` or
+`0x0B` wrote (`AmbientMotion::restamp_move`).
 
 #### Op `0x0D` `[0D, b1, b2, b3]` - pre-unwrap + tween
 

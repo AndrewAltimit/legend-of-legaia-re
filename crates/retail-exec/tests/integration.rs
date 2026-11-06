@@ -2,6 +2,7 @@
 //! disc against the Rust kernel that claims to port it. Skips without
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
 
+mod ambient_motion;
 mod arrange;
 mod arts_gauge;
 mod arts_queue;
