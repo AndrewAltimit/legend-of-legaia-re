@@ -28,7 +28,9 @@
 //!   player sees them before the game starts.
 //! - **Saves folder** opens the data directory; its second action (or a
 //!   dropped `.mcr` / `.mcd` / `.gme` / `.mcs`) mounts an emulator memory
-//!   card as the save screen's card 2 (`--card`, `LauncherSettings::card`).
+//!   card as the save screen's card 2 (`--card`, `LauncherSettings::card`):
+//!   first the cards used here before, in turn
+//!   (`LauncherSettings::recent_cards`), then a file dialog.
 //! - **Play** starts the game in a child process (winit allows one event
 //!   loop per process, and the launcher holds it) and closes the window.
 //!   A clean exit ends the launcher; a failure brings the window back with
@@ -372,6 +374,12 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
 /// that no game data ships is on the *Choose disc* help.
 const FIRST_RUN_CARD: &str =
     "Use your own .bin or .cue dump: click Choose disc, drop the file here, or paste its path.";
+
+/// The *Choose disc* help on the first run. Short enough to leave the help
+/// box its key reminder: the first run is when a player least knows the
+/// screen is keyboard-driven. The disc card above says how to choose.
+const FIRST_RUN_HELP: &str = "Pick your own disc image: a dump's .bin, or its .cue. It is checked and remembered; \
+     no game data comes with this program. Ctrl+O.";
 
 /// A focusable control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1082,7 +1090,7 @@ impl LauncherApp {
         match launcher::inspect_card(path) {
             Ok(info) => {
                 log::info!("launcher: memory card {}", info.path.display());
-                self.settings.card = Some(info.path.clone());
+                self.settings.remember_card(&info.path);
                 self.save_settings();
                 self.status = Some(vec![(card_summary(&info), GOOD)]);
                 self.card = Some(Ok(info));
@@ -1110,6 +1118,26 @@ impl LauncherApp {
                 DIM,
             )]);
         }
+        self.win.request_redraw();
+    }
+
+    /// *Saves folder*'s second action: mount the next memory card used
+    /// here before that still reads ([`launcher::next_recent_card`]), and
+    /// past the last one, the file dialog.
+    fn step_card(&mut self) {
+        let Some(info) = launcher::next_recent_card(&self.settings, launcher::inspect_card) else {
+            self.browse_card();
+            return;
+        };
+        log::info!(
+            "launcher: memory card {} (used before)",
+            info.path.display()
+        );
+        self.settings.card = Some(info.path.clone());
+        self.save_settings();
+        self.status = Some(vec![(card_summary(&info), GOOD)]);
+        self.card = Some(Ok(info));
+        self.focus = Item::DataFolder;
         self.win.request_redraw();
     }
 
@@ -1164,7 +1192,7 @@ impl LauncherApp {
                 self.rebind = KeyRebindSession::new(Mapping::default());
                 self.save_bindings("Every key is back on its default.".into());
             }
-            Item::DataFolder if dir < 0 => self.browse_card(),
+            Item::DataFolder if dir < 0 => self.step_card(),
             Item::DataFolder => self.open_data_folder(),
             Item::Quit => evl.exit(),
             Item::Opt(row) => {
@@ -1673,37 +1701,30 @@ impl LauncherApp {
                     "Choose your disc image first.".into()
                 }
             }
-            Item::ChooseDisc => {
-                match (&self.disc, &self.recent_offer) {
-                    (Some(_), Some(offer)) => change_disc_help(offer),
-                    (Some(d), None) => {
-                        format!("Pick another disc image. Now: {}", d.path.display())
-                    }
-                    (None, Some(offer)) => choose_disc_help(offer),
-                    (None, None) => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                             raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
-                        .into(),
+            Item::ChooseDisc => match (&self.disc, &self.recent_offer) {
+                (Some(_), Some(offer)) => change_disc_help(offer),
+                (Some(d), None) => {
+                    format!("Pick another disc image. Now: {}", d.path.display())
                 }
-            }
-            Item::Online => "Start the game with the Multiplayer screen open: host a room \
-                             others on your network join, or join one with its address and \
-                             room code. Tab opens the same screen in play."
+                (None, Some(offer)) => choose_disc_help(offer),
+                (None, None) => FIRST_RUN_HELP.into(),
+            },
+            Item::Online => "Start on the Multiplayer screen: host a room for your network, \
+                             or join one by its address and room code. Tab opens it in play."
                 .into(),
             Item::Expansion => match &self.expansion {
                 None => match self.packs.as_slice() {
-                    [] => "Play with an expansion pack: new maps, quests and fights made for \
-                           the port. Choose an .lxpack file, or the pack.toml in a pack folder."
+                    [] => "Packs add maps, quests and fights made for the port. Choose an \
+                           .lxpack file, or the pack.toml in a pack folder."
                         .into(),
                     [one] => format!(
-                        "Play with an expansion pack: new maps, quests and fights made for the \
-                         port. Enter picks {}, which came with the game; press again to choose \
-                         an .lxpack file.",
+                        "Packs add maps, quests and fights made for the port. Enter picks {}, \
+                         which came with the game; again, a file.",
                         one.name
                     ),
                     many => format!(
-                        "Play with an expansion pack: new maps, quests and fights made for the \
-                         port. Enter steps through the {} packs found (`legaia-engine packs`), \
-                         then offers a file.",
+                        "Packs add maps, quests and fights made for the port. Enter steps \
+                         through the {} found, then offers a file.",
                         many.len()
                     ),
                 },
@@ -1734,7 +1755,9 @@ impl LauncherApp {
                 ),
             },
             Item::BindReset => "Put every button back on the key it starts on.".into(),
-            Item::DataFolder => data_folder_help(self.card.as_ref()),
+            Item::DataFolder => {
+                data_folder_help(self.card.as_ref(), self.settings.other_recent_cards())
+            }
             Item::Quit => "Close the launcher. Esc.".into(),
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
@@ -2412,15 +2435,25 @@ const CARD_FIX: &str = "Choose a .mcr, .mcd, .gme or .mcs card (Shift+Enter), or
 
 /// *Saves folder*'s help: the game's own card is in that folder; an
 /// emulator card can ride beside it as card 2 (`--card`).
-fn data_folder_help(card: Option<&Result<launcher::CardInfo, String>>) -> String {
+///
+/// `others` is how many cards used before the second action can step to
+/// ([`LauncherSettings::other_recent_cards`]).
+fn data_folder_help(card: Option<&Result<launcher::CardInfo, String>>, others: usize) -> String {
     let mut s = String::from("Open the folder your saves and settings live in. ");
-    match card {
-        None => s.push_str("Right-click or Shift+Enter: use an emulator memory card as card 2."),
-        Some(Ok(info)) => {
-            s.push_str(&card_summary(info));
-            s.push_str(" Delete removes it.");
+    match (card, others) {
+        (None, 0) => {
+            s.push_str("Right-click or Shift+Enter: use an emulator memory card as card 2.")
         }
-        Some(Err(_)) => s.push_str("Card 2 cannot be read. Delete removes it."),
+        (None, _) => s.push_str("Right-click or Shift+Enter: card 2 from a card used before."),
+        (Some(Ok(info)), others) => {
+            s.push_str(&card_summary(info));
+            s.push_str(if others > 0 {
+                " Shift+Enter: the next. Delete removes it."
+            } else {
+                " Delete removes it."
+            });
+        }
+        (Some(Err(_)), _) => s.push_str("Card 2 cannot be read. Delete removes it."),
     }
     s
 }
@@ -3199,17 +3232,22 @@ mod tests {
             format: "mcr",
             saves,
         };
-        out.push(("saves, no card".into(), one(&data_folder_help(None))));
-        for n in [0, 1, 15] {
+        for others in [0, 5] {
             out.push((
-                format!("saves, card with {n}"),
-                one(&data_folder_help(Some(&Ok(card(n))))),
+                format!("saves, no card, {others} used before"),
+                one(&data_folder_help(None, others)),
+            ));
+            for n in [0, 1, 15] {
+                out.push((
+                    format!("saves, card with {n}, {others} used before"),
+                    one(&data_folder_help(Some(&Ok(card(n))), others)),
+                ));
+            }
+            out.push((
+                format!("saves, bad card, {others} used before"),
+                one(&data_folder_help(Some(&Err(String::new())), others)),
             ));
         }
-        out.push((
-            "saves, bad card".into(),
-            one(&data_folder_help(Some(&Err(String::new())))),
-        ));
         let why = "Unrecognised save container (4096 bytes).".to_string();
         for head in [
             "Not a memory card the game can use:",
@@ -3313,6 +3351,43 @@ mod tests {
             }
         }
         assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
+    }
+
+    /// The buttons' own help leaves the help box its key reminder, with and
+    /// without a disc: the reminder is the screen's only word that it is
+    /// keyboard-driven, and the first run is when a player needs it most.
+    #[test]
+    fn button_help_keeps_the_key_reminder() {
+        let disc = DiscInfo {
+            path: "/home/player/Games/Legend of Legaia (USA).bin".into(),
+            bin: "/home/player/Games/Legend of Legaia (USA).bin".into(),
+            executable: launcher::USA_EXECUTABLE.into(),
+        };
+        let mut lost = Vec::new();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            for with_disc in [false, true] {
+                let mut app =
+                    LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+                app.status = None;
+                if with_disc {
+                    app.problem = None;
+                    app.disc = Some(disc.clone());
+                }
+                for item in BUTTONS {
+                    app.focus = item;
+                    let l = help_layout(&c, &app.help_lines());
+                    if !l.footer {
+                        lost.push(format!("{name}: {item:?} (disc: {with_disc})"));
+                    }
+                }
+            }
+        }
+        assert!(
+            lost.is_empty(),
+            "the key reminder is pushed out:\n{}",
+            lost.join("\n")
+        );
     }
 
     /// Every button label fits its button, in both fonts, in each of its

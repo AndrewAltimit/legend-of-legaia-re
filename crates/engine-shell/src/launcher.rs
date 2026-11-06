@@ -93,6 +93,13 @@ pub struct LauncherSettings {
     /// the same reader (`legaia_save::emu::MountedCard`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub card: Option<PathBuf>,
+    /// Memory cards mounted here before, newest first, at most
+    /// [`RECENT_CARDS_MAX`] ([`Self::remember_card`]): a player with cards
+    /// from two emulators (or a card per playthrough) steps between them
+    /// with *Saves folder*'s second action instead of a file dialog each
+    /// time ([`next_recent_card`]). Removing the card keeps it listed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_cards: Vec<PathBuf>,
     /// Disc images that validated here before, newest first, at most
     /// [`RECENT_DISCS_MAX`] ([`Self::remember_disc`]). [`Self::disc`] is the
     /// head of the list once one has been chosen; the rest are what *Choose
@@ -109,6 +116,8 @@ pub struct LauncherSettings {
 
 /// How many disc images [`LauncherSettings::recent_discs`] keeps.
 pub const RECENT_DISCS_MAX: usize = 6;
+/// How many memory cards [`LauncherSettings::recent_cards`] keeps.
+pub const RECENT_CARDS_MAX: usize = 6;
 
 impl LauncherSettings {
     /// Make `path` the disc to boot and the newest entry of
@@ -124,6 +133,30 @@ impl LauncherSettings {
         self.recent_discs.retain(|p| p != path);
         self.recent_discs.insert(0, path.to_path_buf());
         self.recent_discs.truncate(RECENT_DISCS_MAX);
+    }
+
+    /// Make `path` the mounted memory card and the newest entry of
+    /// [`Self::recent_cards`] (an older entry for the same file moves up).
+    pub fn remember_card(&mut self, path: &Path) {
+        // A card mounted by a settings file older than the list joins it, so
+        // it is not lost when another one replaces it.
+        if let Some(old) = self.card.take()
+            && !self.recent_cards.contains(&old)
+        {
+            self.recent_cards.insert(0, old);
+        }
+        self.card = Some(path.to_path_buf());
+        self.recent_cards.retain(|p| p != path);
+        self.recent_cards.insert(0, path.to_path_buf());
+        self.recent_cards.truncate(RECENT_CARDS_MAX);
+    }
+
+    /// How many remembered cards are not the mounted one.
+    pub fn other_recent_cards(&self) -> usize {
+        self.recent_cards
+            .iter()
+            .filter(|p| self.card.as_deref() != Some(p.as_path()))
+            .count()
     }
 
     /// The remembered discs other than [`Self::disc`], newest first.
@@ -388,6 +421,30 @@ pub fn next_recent_disc(
         .map(|k| list[(start + k) % list.len()].as_path())
         .filter(|p| Some(*p) != cur)
         .find_map(|p| validate(p).ok())
+}
+
+/// The remembered card after [`LauncherSettings::card`] in
+/// [`LauncherSettings::recent_cards`] that still mounts: what *Saves
+/// folder*'s second action steps to. With no card mounted (or one not in
+/// the list) the walk starts at the newest. It does not wrap: past the
+/// oldest card the answer is `None`, and the caller offers a file dialog,
+/// so every step either mounts a card used before or asks for a new one.
+/// Stepping does not reorder the list ([`LauncherSettings::remember_card`]
+/// does, for a card chosen from a file).
+pub fn next_recent_card(
+    settings: &LauncherSettings,
+    inspect: impl Fn(&Path) -> std::result::Result<CardInfo, String>,
+) -> Option<CardInfo> {
+    let list = &settings.recent_cards;
+    let cur = settings.card.as_deref();
+    let start = cur
+        .and_then(|c| list.iter().position(|p| p == c))
+        .map_or(0, |i| i + 1);
+    list[start.min(list.len())..]
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|p| Some(*p) != cur)
+        .find_map(|p| inspect(p).ok())
 }
 
 /// The `play-window` argument list a launcher start boots: the title screen
@@ -1879,6 +1936,66 @@ mod tests {
         // A settings file from before the list still loads.
         std::fs::write(&f, "disc = \"/g/old.bin\"\n").unwrap();
         assert!(LauncherSettings::load(&f).unwrap().recent_discs.is_empty());
+    }
+
+    #[test]
+    fn recent_cards_step_forward_then_hand_over_to_the_file_dialog() {
+        let mut s = LauncherSettings::default();
+        for n in 0..8 {
+            s.remember_card(Path::new(&format!("/c/{n}.mcr")));
+        }
+        assert_eq!(s.recent_cards.len(), RECENT_CARDS_MAX);
+        assert_eq!(s.card.as_deref(), Some(Path::new("/c/7.mcr")));
+        assert_eq!(s.other_recent_cards(), RECENT_CARDS_MAX - 1);
+        // Re-choosing an older card moves it up without a repeat.
+        s.remember_card(Path::new("/c/5.mcr"));
+        assert_eq!(s.recent_cards[0], Path::new("/c/5.mcr"));
+        assert_eq!(s.recent_cards.len(), RECENT_CARDS_MAX);
+        // `/c/4.mcr` no longer mounts.
+        let inspect = |p: &Path| {
+            if p == Path::new("/c/4.mcr") {
+                Err("gone".to_string())
+            } else {
+                Ok(CardInfo {
+                    path: p.to_path_buf(),
+                    format: "mcr",
+                    saves: 0,
+                })
+            }
+        };
+        let mut seen = Vec::new();
+        while let Some(next) = next_recent_card(&s, inspect) {
+            seen.push(next.path.clone());
+            s.card = Some(next.path);
+        }
+        let names: Vec<_> = seen
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["/c/7.mcr", "/c/6.mcr", "/c/3.mcr", "/c/2.mcr"]);
+        // Stepping kept the order; with the card removed the walk starts at
+        // the newest again.
+        assert_eq!(s.recent_cards[0], Path::new("/c/5.mcr"));
+        s.card = None;
+        assert_eq!(
+            next_recent_card(&s, inspect).unwrap().path,
+            Path::new("/c/5.mcr")
+        );
+        assert_eq!(s.other_recent_cards(), RECENT_CARDS_MAX);
+        // An old settings file without the key loads with an empty list.
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("launcher.toml");
+        std::fs::write(&f, "card = \"/c/old.mcr\"\n").unwrap();
+        let old = LauncherSettings::load(&f).unwrap();
+        assert!(old.recent_cards.is_empty());
+        assert!(next_recent_card(&old, inspect).is_none());
+        // Choosing another card keeps the old one on the list.
+        let mut old = old;
+        old.remember_card(Path::new("/c/new.mcr"));
+        assert_eq!(
+            old.recent_cards,
+            [Path::new("/c/new.mcr"), Path::new("/c/old.mcr")]
+        );
     }
 
     #[test]

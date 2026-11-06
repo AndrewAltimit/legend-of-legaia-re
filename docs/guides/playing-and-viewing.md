@@ -277,7 +277,10 @@ single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
 through the game's own reader, says how many Legend of Legaia saves it holds,
 remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
 those saves load and save in place - what the browser play page's card import
-does. `Delete` on the button removes it. `LEGAIA_ENGINE_CONFIG_DIR` and
+does. `Delete` on the button removes it. The last few cards are remembered
+too (`recent_cards`): the same right-click steps through those that still
+read, newest first, then offers the file dialog, so moving between two
+emulators' cards takes no browsing. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 
