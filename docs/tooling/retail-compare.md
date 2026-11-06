@@ -4254,12 +4254,20 @@ swapped) places the capture:
 | `battle_noaru_gilium_lv2_strike` | PCSX-Redux | `91.0` | `86.5` | `91.0` |
 | `koru_pre_blade_breath` | PCSX-Redux | `33.3` | `31.1` | `33.4` |
 | `minigame_muscle_dome_retail_skeleton_hyper_arts` | PCSX-Redux | `47.5` | `43.3` | `46.7` |
+| `battle_rugi_rogue_element_change_mid_cast` | PCSX-Redux | `55.3` | `48.1` | `55.5` |
+| `battle_tunnelb_nova_scythe_wind_mid_cast` | PCSX-Redux | `32.3` | `29.7` | `32.4` |
 | `battle_gimard_tail_fire_a` | Mednafen | `46.4` | `45.1` | `47.9` |
 | `battle_melee_hit_spark` | Mednafen | `48.5` | `47.2` | `50.1` |
 
 So the gap is the capture emulator's and the engine sits on the console's side:
 Burning Attack's frame at luma `55`, under the tunnel's two stacked layers, is
-no missing light. The same split shows across the corpus, where retail less
+no missing light. Element Change is the extreme case: up to eight additive ray
+fans (draw kind 4, mode `0x201`, colour word `0xC9000000`) stack over the floor,
+and the fans' mean colour reads `(165, 94, 39)` in the buffer, `(145, 75, 30)`
+under the console rule, `(162, 93, 39)` under the emulator's, and `(150, 77, 32)`
+in the engine. Each fan's builder output matches retail's scratch block byte for
+byte, and its level, radius, rotation and dispatcher calls (`primcall.csv`) match
+the engine's frame for frame, so the film's arm-1 residue is this rule. The same split shows across the corpus, where retail less
 engine luma on field states means `-1.6` on Mednafen and `+1.7` on PCSX-Redux.
 
 Reproducing the rule in the image child beside the texel rule (telling a flat
