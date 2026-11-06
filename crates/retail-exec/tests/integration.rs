@@ -25,6 +25,7 @@ mod dialog_pager;
 mod encounter_roll;
 mod enemy_impact;
 mod escape;
+mod field_magic;
 mod field_vm;
 mod field_walls;
 mod fishing_cadence;
