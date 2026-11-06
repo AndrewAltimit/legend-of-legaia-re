@@ -215,7 +215,7 @@
 <section class="doc-section" id="port" data-doc="port-notes,evidence">
   <h2>In the port, and how it is known</h2>
   <p>The dispatcher lives in <code>legaia_engine_vm::field</code> (<code>step/menu_ctrl/</code>), with one <code>FieldHost</code> hook per sub-cluster implemented over the world by <code>FieldHostImpl</code>. Feature homes include the reflection controller, the actor clone, the morph-weight apply, the casino coin bank, the escape timer, the step-counter reroll and the camera-zone requests.</p>
-  <p>Every arm address and width on this page comes from the disassembly of the field VM, not the decompiled C - which rendered several arms wrongly: absolute jumps that are relative skips, halts that advance from a branch delay slot, and <code>TAKE_ITEM</code> as a menu poll. Disc usage comes from the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">field-op census</a>, taken at decoded instruction boundaries. Live captures confirm the reflection controllers and the clear colour.</p>
+  <p>Every arm address and width on this page comes from the disassembly of the field VM, not the decompiled C - which rendered several arms wrongly: absolute jumps that are relative skips, halts that advance from a branch delay slot, and <code>TAKE_ITEM</code> as a menu poll. Disc usage comes from the <a href="../tooling/field-op-census.html">field-op census</a>, taken at decoded instruction boundaries. Live captures confirm the reflection controllers and the clear colour.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

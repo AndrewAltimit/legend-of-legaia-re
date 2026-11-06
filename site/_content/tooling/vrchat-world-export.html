@@ -1,0 +1,104 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; world export</div>
+  <h1>World export: a scene as textured <code>.glb</code> files and a manifest</h1>
+  <p class="lede"><code>legaia-engine export-glb</code> bakes any field, town or world-map scene into textured <code>.glb</code> files plus a JSON manifest, sized and organised for building the scene as a private VRChat world, or for any other glTF consumer (Blender, Godot, three.js). This page is the reference for what it writes; the step-by-step build is the <a href="../guides/vrchat-world.html">VRChat world guide</a>. The output is decoded from your own disc: it stays local and is never redistributed.</p>
+</header>
+
+<section class="doc-section" id="invocation" data-doc="invocation">
+  <h2>Invocation</h2>
+<pre><code>legaia-engine export-glb --scene town01 --out glb-export       # one scene
+legaia-engine export-glb --all-scenes --out glb-export         # everything
+legaia-engine export-glb --items --out glb-export              # every equipment item
+legaia-engine export-glb --party --out glb-export              # Vahn, Noa, Gala field forms</code></pre>
+  <p>It reads <code>extracted/</code> or <code>--disc &lt;image.bin&gt;</code>. <code>--scale</code> sets glTF metres per PSX unit (default 1/128: one 128-unit walk tile is one metre, which reads right against a headset's real player scale). <code>--include-sky</code> keeps the sky shells the site viewers hide; <code>--no-npcs</code> and <code>--no-props</code> drop those families. <code>--all-scenes</code> skips cutscene labels, reports each scene's yield and continues past failures.</p>
+</section>
+
+<section class="doc-section" id="one-scene" data-doc="what-one-scene-exports">
+  <h2>What one scene exports</h2>
+<pre><code>glb-export/town01/
+├── town01.glb        the assembled world (+ baked morph animation)
+├── npcs/*.glb        one animated glb per catalogued placement
+├── props/*.glb       animated placed props (windmills, doors)
+├── music/bgm_*.wav   the scene's entry BGM as a seamless loop
+└── manifest.json     transforms, labels and conventions</code></pre>
+  <p>Everything is composed by the same kernels the browser viewers render with, so the export matches the on-screen pages.</p>
+  <ul class="bullets">
+    <li><strong>World</strong> - the field-scene page's assembly: the ground heightfield, terrain tiles and placed objects at their resolved <code>.MAP</code> transforms, clip-bound placements posed at frame 0. One VRAM-derived texture atlas with nearest sampling, the packet colours on <code>COLOR_0</code> (linearised so a linear-colour-space importer reproduces retail's <code>texel &times; colour / 128</code>), PSX transparency as a cutout mask. Semi-transparent primitives split into one blend material per PSX blend rate, named <code>legaia_semi_abr&lt;N&gt;</code>: core glTF has only alpha blending, so the <em>name</em> is the contract an importer restores the real blend from, and the Unity kit maps the additive rates to an additive shader.</li>
+    <li><strong>NPCs</strong> - each catalogued placement's mesh with its spawn clip first and every matching scene clip as a named animation; spawn transforms live in the manifest.</li>
+    <li><strong>Animated props</strong> - each distinct (mesh, clip) pair whose clip has more than one frame, object-local, with every placement in the manifest. The world keeps their frame-0 twins, so these are opt-in upgrades.</li>
+    <li><strong>Ambient vertex morphs</strong> - in the scenes where the engine's scene-entry pulse runs (the <code>jou</code> family and Rim Elm's shoreline), one morph target per envelope lane and a looping weights animation of exactly one period: the wave sheet washes in and out in any glTF player.</li>
+    <li><strong>Music</strong> - the scene's first BGM rendered through the engine's SPU and sequencer, only the detected loop region, so a looping audio source repeats it seamlessly.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="items-party" data-doc="--items-every-equipment-item,--party-the-partys-field-forms">
+  <h2>Equipment items and the party</h2>
+  <ul class="bullets">
+    <li><strong><code>--items</code></strong> exports every equippable record of the four player battle files - weapons, Ra-Seru, armour, headgear, footwear - two files each: <code>*_alone.glb</code>, the item cut out with its grip repaired (a grabbable pickup, a Blender prop), and <code>*_with_limb.glb</code>, the exact cut with its host limb. Both carry the character's battle action clips and the weapon's swings. It is the same kernel as the <a href="../characters.html">characters page</a>'s equipment viewer, and the manifest repeats each record's honesty tags so a heuristic cut is told apart from a curated one. Item files are in raw PSX units.</li>
+    <li><strong><code>--party</code></strong> exports Vahn, Noa and Gala as they walk the towns: each field mesh textured from its field pages, with the 7-clip locomotion bank as named takes (<code>Idle</code> first, <code>Walk</code> second). The files and the manifest's roster have the same shape as a scene's villagers, so a builder places a party member the way it places any NPC.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="manifest" data-doc="manifest">
+  <h2>The manifest and its frame</h2>
+  <p><code>manifest.json</code> carries the scale and axis conventions, a suggested spawn (the median of the placed objects - the village centre, not the map's), and the placement arrays:</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Array</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td><code>npcs[]</code></td><td>file, kind (talk / door / prop), the dialog's first line, position on the retail floor sampler, clips. The position is where retail's spawn prologue actually puts the actor under fresh-game flags, not the raw placement tile.</td></tr>
+      <tr><td><code>doors[]</code></td><td>portal placements with their target map</td></tr>
+      <tr><td><code>animated_props[]</code></td><td>file, frame count, whether retail leaves the clip free-running (the windmill) or holds it for a script (a door), each instance's position and rotation, and door tags</td></tr>
+      <tr><td><code>teleports[]</code></td><td>retail's intra-scene doorways, both families, as trigger boxes with a floor-sampled destination and arrival facing: a house interior is an unused corner of the same map</td></tr>
+      <tr><td><code>scene_portals[]</code></td><td>town exits and overworld entrances: trigger box, target scene, arrival point in the target's frame</td></tr>
+      <tr><td><code>music</code>, <code>world_anim</code></td><td>the BGM loop and the baked morph clip</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The PSX frame has X right, Y down and Z into the screen. The export frame maps a point x, y, z to x, minus y, minus z: a 180-degree turn about X, with determinant plus one, so Y points up as glTF expects and nothing is mirrored. Triangle winding is reversed, because a PSX front face runs clockwise on the Y-down screen and glTF's front face runs counter-clockwise.">
+      <defs><marker id="vw-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-label" x="140" y="24">PSX world</text>
+      <path class="dg-edge" d="M110 100 L190 100" marker-end="url(#vw-ah)"/><text class="dg-sub dg-start" x="196" y="104">X right</text>
+      <path class="dg-edge" d="M110 100 L110 160" marker-end="url(#vw-ah)"/><text class="dg-sub dg-start" x="118" y="164">Y down</text>
+      <path class="dg-edge" d="M110 100 L160 60" marker-end="url(#vw-ah)"/><text class="dg-sub dg-start" x="166" y="58">Z into the screen</text>
+      <rect class="dg-node-accent" x="330" y="70" width="220" height="60" rx="4"/>
+      <text class="dg-label" x="440" y="94">(x, y, z) &#8594; (x, &#8722;y, &#8722;z)</text>
+      <text class="dg-sub" x="440" y="114">Rx(180), determinant +1</text>
+      <path class="dg-edge" d="M250 100 L326 100" marker-end="url(#vw-ah)"/>
+      <path class="dg-edge" d="M550 100 L626 100" marker-end="url(#vw-ah)"/>
+      <text class="dg-label" x="740" y="24">Export (glTF)</text>
+      <path class="dg-edge" d="M710 100 L790 100" marker-end="url(#vw-ah)"/><text class="dg-sub dg-start" x="796" y="104">X right</text>
+      <path class="dg-edge" d="M710 100 L710 40" marker-end="url(#vw-ah)"/><text class="dg-sub dg-start" x="718" y="46">Y up</text>
+      <path class="dg-edge" d="M710 100 L660 140" marker-end="url(#vw-ah)"/><text class="dg-sub" x="640" y="156">Z toward the viewer</text>
+      <text class="dg-sub" x="440" y="190">a rotation, not a mirror: winding is reversed so retail's front faces stay front-facing</text>
+    </svg>
+    <figcaption>Both frames are right-handed, so one rotation is the whole conversion: stand at the eye retail's camera uses, look where it looks, and a glTF viewer draws what retail draws. The world glb, the NPC and prop files and every number in the manifest share this frame (<code>conventions.world_frame: "psx_rx180"</code>), and placement rotations carry all three authored angles, so a leaning plank keeps its tilt.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Winding.</strong> Retail's field front face runs clockwise on its Y-down screen; glTF's runs counter-clockwise, so the bake reverses every triangle and a viewer that culls by winding keeps what retail's cull keeps. Materials stay double-sided anyway: retail's camera never walks round a building, and a VR player does.</li>
+    <li><strong>The landmark test.</strong> Handedness is settled by looking, not by counting reflections: render the raw glb from a retail state's own camera, and the picture must match retail's frame better than its left-right flip.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="verification" data-doc="verification,faithful-vs-approximated">
+  <h2>Verification, and what is approximated</h2>
+  <p>Disc-free tests pin the handedness on a synthetic pitched, rolled and yawed record; a disc-gated test assembles <code>town01</code>, validates every glb container, and checks the sky filter, the prop split, both doorway families and the world-map gate portal, the door tags, the shoreline morphs, the ground's up-facing winding and every animated prop instance against its world twin.</p>
+  <p>Geometry, textures, packet-colour shading, placements, floor heights, the walk surface, the doorway data, the shoreline morphs and the BGM render are retail-parity kernels. A static export approximates the rest by design: NPCs loop a clip instead of running their scripts, non-door props free-run, a door swing becomes open-on-approach, and script doors are frozen at the cold-entry story state. The Unity kit layers optional realism passes (lighting, day and night, fog, grass, interiors, ambience) and furniture (a mirror, a video screen, a card table) on top, each generated from scratch; switching them all off restores the faithful build.</p>
+</section>
+
+<section class="doc-section" id="slot-machine" data-doc="the-playable-slot-machine">
+  <h2>The playable slot machine</h2>
+  <p>The kit also builds the casino slot machine as an in-world cabinet from a separate feed: <code>asset slot-art</code> decodes the slot overlay and its art pack into images and a manifest with the payout table, the scene-geometry tables and the retail projection constants. An editor menu composes the whole retail screen onto a cabinet's screen face through the retail software projection, and an UdonSharp port of the engine's <a href="../subsystems/minigame-slot-machine.html">slot rules</a> drives it, checked against a committed rules-parity fixture. The cabinet model is the one thing you bring.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../guides/vrchat-world.html">VRChat world guide</a>
+    <a href="../characters.html">Characters</a>
+    <a href="../subsystems/vr-mode.html">VR mode</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/vrchat-world-export.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

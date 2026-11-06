@@ -1,0 +1,143 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; host drift</div>
+  <h1>Host drift: keeping three hosts on one engine</h1>
+  <p class="lede">The port ships one engine behind three framebuffers: the native play window, the browser play page and the browser minigames page. A feature wired into one host and not another is invisible in a diff, because no file holds both columns. This page covers the gates that catch that class of defect, what each cannot see, and the two runs that compare the hosts' actual output.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Host</th><th>Crate</th><th>Driven by</th></tr></thead>
+    <tbody>
+      <tr><td>Native play window</td><td><code>engine-shell</code></td><td>wgpu through <code>engine-render</code></td></tr>
+      <tr><td>Browser play page</td><td><code>web-play</code></td><td><code>site/js/play-app.js</code> and its view files</td></tr>
+      <tr><td>Browser minigames page</td><td><code>web-minigames</code></td><td>per-minigame modules under <code>site/js/</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Both play hosts tick one <code>engine-session::BootSession</code>; the minigames page drives the <code>World</code>-free rules engines directly. Every question below narrows the one before it, and each has its own instrument:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four questions in a row. Does each host reach the feature: tiers 1, 8, 9, 10 and 13. Do both feed it the same thing: tiers 2, 3, 4, 5 and 12. Does each host run and draw it every frame: tiers 6, 7, 11, 14 and 17. Do the two frames match: the frame-body trace for world state and the host pair run for pixels. A feature absent on both hosts passes every drift gate; the page export reach check finds those.">
+      <defs><marker id="hd-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="30" width="190" height="80" rx="4"/>
+      <text class="dg-label" x="105" y="56">Reached?</text><text class="dg-sub" x="105" y="76">does each host reach it</text><text class="dg-sub" x="105" y="94">tiers 1, 8, 9, 10, 13</text>
+      <path class="dg-edge" d="M200 70 L226 70" marker-end="url(#hd-ah)"/>
+      <rect class="dg-node" x="230" y="30" width="190" height="80" rx="4"/>
+      <text class="dg-label" x="325" y="56">Same inputs?</text><text class="dg-sub" x="325" y="76">do both feed it alike</text><text class="dg-sub" x="325" y="94">tiers 2, 3, 4, 5, 12</text>
+      <path class="dg-edge" d="M420 70 L446 70" marker-end="url(#hd-ah)"/>
+      <rect class="dg-node" x="450" y="30" width="190" height="80" rx="4"/>
+      <text class="dg-label" x="545" y="56">Every frame?</text><text class="dg-sub" x="545" y="76">run and drawn each frame</text><text class="dg-sub" x="545" y="94">tiers 6, 7, 11, 14, 17</text>
+      <path class="dg-edge" d="M640 70 L666 70" marker-end="url(#hd-ah)"/>
+      <rect class="dg-node-ok" x="670" y="30" width="200" height="80" rx="4"/>
+      <text class="dg-label" x="770" y="56">Same frames?</text><text class="dg-sub" x="770" y="76">frame-body trace (state)</text><text class="dg-sub" x="770" y="94">host pair run (pixels)</text>
+      <rect class="dg-node-warn" x="10" y="140" width="630" height="44" rx="4"/>
+      <text class="dg-sub" x="325" y="167">absent on BOTH hosts: no drift gate fails - page export reach finds it</text>
+      <path class="dg-edge-dim" d="M105 110 L105 140"/>
+    </svg>
+    <figcaption>Every tier is a source scan that answers one question and is silent about the rest, so a green suite is a floor, not host parity. Only the frame-body trace and the host pair run actually run both hosts.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="where" data-doc="where-the-rows-live,where-the-gates-run">
+  <h2>Where the rows live and where the gates run</h2>
+  <p>Tiers 1-3 and 5-17 are <code>scripts/ci/check-ui-host-drift.py</code> (<code>--list</code> prints the surface table, <code>--selftest</code> the detector controls); tier 4 is <code>check-trait-override-symmetry.py</code>. The script is an entry point over a package that keeps the rows a contributor edits (one module per table under <code>rows/</code>), the analysis (one module per tier) and the report apart. A row that names a file no longer on disk would check nothing, so a path check fails the gate on any such row.</p>
+  <ul class="bullets">
+    <li><strong>CI is the authority.</strong> Every tier runs in the CI gates job and in the pre-commit hook as a fast mirror. A gate may be hook-only only when its input is gitignored (the Ghidra dump corpus, the extracted disc), and it must then skip cleanly where the input is absent.</li>
+    <li><strong>Nothing above compiles the browser host.</strong> The <code>wasm32</code>-only blocks in the web crates are invisible to the host-triple cargo gates, so <code>check-wasm-target.sh</code> type-checks them on a staged change and on every pull-request push.</li>
+    <li><strong>A wasm export is a property of its impl block.</strong> A method outside the <code>#[wasm_bindgen]</code> block compiles and passes every gate and is "not a function" in the browser; only a headless run of the built bundle sees that.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="tiers" data-doc="tier-1---reachability-does-a-screen-reach-both-hosts,tier-2---paired-constants-do-paired-values-agree,tier-3---simulation-do-both-hosts-feed-the-same-kernel,tier-4---trait-override-symmetry,tier-5---input-does-any-page-carry-its-own-keyboard-table,tier-6---diagnostics-is-a-debug-draw-off-on-both-hosts,tier-7---render-kernels-same-draw-list-same-kernel-every-surface,tier-8---ownership-does-the-host-hold-the-engine-type-or-only-read-it,tier-9---variant-coverage-does-each-host-answer-every-variant,tier-10---entry-symmetry-is-the-phase-armed-only-from-a-debug-key,tier-11---frame-path-does-an-early-exit-skip-a-kernel-the-frame-still-draws,tier-12---content-do-two-paired-kernels-call-the-same-engine,tier-13---boot-installs-does-the-pages-boot-install-what-the-native-boot-installs,tier-14---save-routing-does-every-save-go-through-the-retail-screen,tier-15---engine-environment-reads,tier-16---minigame-cues-key-the-live-spu,tier-17---page-state-the-gl-state-and-frame-order-the-page-owes">
+  <h2>The seventeen tiers</h2>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Tier</th><th>Question</th><th>Blind to</th></tr></thead>
+    <tbody>
+      <tr><td>1 reachability</td><td>does each <code>engine-ui</code> draw builder reach both hosts? (derived: every builder is a screen)</td><td>arguments, runtime reach</td></tr>
+      <tr><td>2 paired constants</td><td>do two named constants carry one value?</td><td>how the value is used</td></tr>
+      <tr><td>3 simulation</td><td>do two injection sites name the same kernels?</td><td>arguments, order</td></tr>
+      <tr><td>4 trait overrides</td><td>does every implementer override the same defaulted hooks?</td><td>what the bodies do</td></tr>
+      <tr><td>5 input</td><td>does a page carry its own keyboard table?</td><td>-</td></tr>
+      <tr><td>6 diagnostics</td><td>is an additive debug draw default-off on both hosts?</td><td>an undeclared debug draw</td></tr>
+      <tr><td>7 render kernels</td><td>does every surface building a draw list name its kernel?</td><td>a kernel with no rule</td></tr>
+      <tr><td>8 ownership</td><td>does each host hold the engine type, or only read it?</td><td>how it is driven</td></tr>
+      <tr><td>9 variant coverage</td><td>does each host answer every enum variant?</td><td>whether the arm draws</td></tr>
+      <tr><td>10 entry symmetry</td><td>is a phase armed only from a debug key?</td><td>data decoded beside the phase</td></tr>
+      <tr><td>11 frame path</td><td>does an early exit skip a kernel the frame still draws?</td><td>whether paired kernels do the same work</td></tr>
+      <tr><td>12 content</td><td>do two paired frame kernels reach the same engine calls?</td><td>arguments, guards</td></tr>
+      <tr><td>13 boot installs</td><td>does the page's boot make every install the native boot makes?</td><td>tables written as field assignments</td></tr>
+      <tr><td>14 save routing</td><td>does every save and load go through the retail screen's applier?</td><td>the page's save-bar import</td></tr>
+      <tr><td>15 engine environment</td><td>does an engine crate read a switch from the process environment?</td><td>a crate no browser host links</td></tr>
+      <tr><td>16 page cues</td><td>does the minigames page key the live SPU rather than play decoded PCM?</td><td>whether the id is right</td></tr>
+      <tr><td>17 page state</td><td>does the play page keep the GL state and frame order a measured defect left wrong?</td><td>state no row names; the pixels</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each tier's rows, worked cases and exact rules are on the full page. The pattern is the same throughout: a tier that has caught a shipped defect is kept, with a self-test proving its detector fires on the shape it was built for.</p>
+</section>
+
+<section class="doc-section" id="js-gates" data-doc="two-javascript-side-gates,page-export-reach,what-a-waiver-may-say">
+  <h2>The page's own gates, and waivers</h2>
+  <ul class="bullets">
+    <li><strong>Sticky renderer state.</strong> Every page renderer setter that stores a value until the next call must be staged once a frame ahead of every mode branch, unless classified with a reason. Five such values had been staged in the field branch only, so a battle entered from the overworld kept the overworld's curvature and the field's face cull.</li>
+    <li><strong>Page export reach.</strong> Every method the runtime exports must be named by some page source or waived. It is the converse of the tiers, and the only check that finds a feature both hosts lack: the fishing start export was pinned by tests and documented, with no page control calling it.</li>
+    <li><strong>Waivers name a blocking capability</strong> - something that does not exist yet, spelled concretely enough to recognise when it lands. "Not wired yet" is undone work, not a waiver. Both waiver files are checked for staleness on every run.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="frame-body" data-doc="output-level-the-frame-body-trace">
+  <h2>The frame-body trace: same calls, same world?</h2>
+  <p>A source scan cannot see the same calls producing different world state: a step one host runs per redraw and the other per tick, a loop that ends early on one side. The disc-gated <code>host_frame_parity</code> test runs both hosts in one process without a renderer - the native play window's app assembled headless, and the real page runtime driven the way the page's frame loop drives it - samples each display frame (scene, mode, pad edges, world frame, <code>rand()</code> state, script cursor, actors, NPCs, camera, flags, bag, dialogue, battle, menus, audio) and reports the first frame each channel parts on.</p>
+  <p>Each scenario runs at three cadences - one tick per display frame, two (a 30&nbsp;Hz display) and one every other frame (120&nbsp;Hz) - because a clock split between the redraw and the tick is invisible at 60&nbsp;Hz. Each also asserts what it exercised (a menu opened and closed, a battle was won through to the overworld, each minigame entered and left), so agreement on a world that never moved fails.</p>
+</section>
+
+<section class="doc-section" id="host-pair" data-doc="the-host-pair-run,pairing-frames-what-a-screenshot-adds">
+  <h2>The host pair run: same frames?</h2>
+<pre><code>scripts/ci/host-pair.mjs --site &lt;site&gt; --engine target/release-test/legaia-engine --out &lt;scratch&gt; \
+    [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--from n]</code></pre>
+  <p><code>host-pair.mjs</code> runs one scene on one pad script in the play window and in the built play page, pairs them by world frame, and compares both what they hold (the trace text) and what they drew (the share of pixels off at 320&times;240). It is the one check that sees the page's JavaScript and GL state against the window. <code>--mode enhanced</code> can drop one pass on both hosts (<code>no_ssao</code>, <code>no_lighting</code>, <code>no_fog</code>, <code>no_fade</code>) to split a pixel difference by the pass behind it. Its scenes cover a walk, each pause row, a talk, a shop, an inn, a fight to its results, a summon, every minigame, retail card saves carried from one host to the other, and seeded random presses over the whole pad.</p>
+  <p>A healthy pair agrees on every sampled trace and differs by a few tenths of a percent of pixels: hairline rows on flat 3D edges where a tie lands on the other row. It prints and asserts nothing; it needs a disc, a built bundle and a display.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>What it found, with every tier green</th><th>What it looked like</th></tr></thead>
+    <tbody>
+      <tr><td>Sticky GL state</td><td>leaving the dance hall left its face winding behind, and the field drew with its ground gone</td></tr>
+      <tr><td>A fill rule on a bottom-up window</td><td>every sprite drew a row low; the slot machine's dot matrix lost its top rows</td></tr>
+      <tr><td>A page clock over an engine clock</td><td>the dance hall's panels flipped once a page frame instead of on the dance's own clock</td></tr>
+      <tr><td>An actor watermark set early</td><td>the window's battle floor took no ambient occlusion where the page's did</td></tr>
+      <tr><td>A pass the other host never runs</td><td>the window ran ambient occlusion in the minigame venues; both now ask one scope test</td></tr>
+      <tr><td>A cut on half a buffer</td><td>a stage curtain seen from behind covered the whole frame for about a hundred ticks</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="shapes" data-doc="shapes-no-tier-fails-on,open-differences">
+  <h2>Shapes no tier fails on, and open differences</h2>
+  <p>Reading the hosts side by side with every tier green still finds defects, and the shapes recur: <strong>one decision fed two inputs</strong> (the occlusion-fade arming gate excluded different modes on each host), <strong>a rule spelled beside the shared predicate</strong> (the page let Start open the pause menu over a shop), <strong>an input contract one host does not honour</strong> (a held word where the menu wanted edges, so one press stepped several rows), <strong>a typed channel narrowed at one host</strong>, and <strong>opposite defaults on one knob</strong>. Four of these shapes became tiers; the rest are decided per instance.</p>
+  <p>Some differences are deliberate and listed as such: the two default key layouts (a desktop layout and WASD walking cannot share one table), the output level (the site's pages share a quieter level), the look-and-feel preset the launcher sets in one row and the page in two boxes, and the in-frame settings panel only a window needs.</p>
+</section>
+
+<section class="doc-section" id="shared" data-doc="where-each-shared-decision-lives,gaps-absent-from-both-hosts-overworld-curvature-ground-shadow,the-field-readout-over-the-battle-transition,adding-coverage">
+  <h2>Where each shared decision lives</h2>
+  <p>The full page keeps one row per decision that has one engine implementation both hosts call - the frame loop and its clocks, cameras, lighting, screen effects, menus, saves, audio routing - and most rows are pinned by a tier-3 row on the kernel's name. A host that re-spells one locally is drift.</p>
+  <ul class="bullets">
+    <li><strong>Gaps absent from both hosts</strong> fail no tier, because a symmetric absence is parity. The ones found that way - the overworld curvature, the field drop shadow, the battle ground shadow, the scene-entry fade - now draw on both hosts through one kernel each.</li>
+    <li><strong>The field readout over the battle transition</strong>: retail draws none, because the transition overlay loads into the slot the HUD lives in; one suppress kernel carries that term for both hosts (<a href="../subsystems/world-map.html#party-readout">the party readout</a>).</li>
+    <li><strong>Adding coverage</strong> is mostly declaring: a screen appears on the surface by existing, a paired constant or feature joins by its row, a diagnostic by being declared, a boot install by being an engine call both boots make, and a situation by a scenario in the frame-body trace that fails when the run never reached it.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/engine.html">The engine</a>
+    <a href="../subsystems/browser-host.html">Browser host</a>
+    <a href="frame-hash.html">Browser frame hash</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

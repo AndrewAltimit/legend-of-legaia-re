@@ -179,15 +179,18 @@
 /tooling/address-reference-scan.html
 /tooling/build-and-test-speed.html
 /tooling/byte-accounting.html
+/tooling/capture-coverage.html
 /tooling/cast-sequence-oracle.html
 /tooling/determinism-replay.html
 /tooling/disc-coverage.html
 /tooling/expansion-workbench.html
 /tooling/extraction.html
+/tooling/field-op-census.html
 /tooling/frame-bench.html
 /tooling/frame-hash.html
 /tooling/full-game-ladder.html
 /tooling/ghidra.html
+/tooling/host-drift.html
 /tooling/index.html
 /tooling/mednafen-automation.html
 /tooling/overlay-capture.html
@@ -209,6 +212,8 @@
 /tooling/static-overlay-pipeline.html
 /tooling/translation-workbench.html
 /tooling/translation.html
+/tooling/vrchat-world-export.html
+/tooling/walk-film.html
 /viewer.html
 /world-overview.html
 /world.html

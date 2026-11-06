@@ -240,7 +240,7 @@
 
 <section class="doc-section" id="three-hosts">
   <h2>Three hosts, one engine</h2>
-  <p>No host carries a second copy of the game. The two play hosts tick the same <code>engine-session</code> <code>BootSession</code> over the same <code>World</code>; the minigames page drives the World-free minigame rules engines directly. What differs is only the shell: the window, the GPU API and the audio device. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md">Host drift</a> covers the gates that keep a feature from landing in one host only.</p>
+  <p>No host carries a second copy of the game. The two play hosts tick the same <code>engine-session</code> <code>BootSession</code> over the same <code>World</code>; the minigames page drives the World-free minigame rules engines directly. What differs is only the shell: the window, the GPU API and the audio device. <a href="tooling/host-drift.html">Host drift</a> covers the gates that keep a feature from landing in one host only.</p>
   <figure class="cm-hosts">
     <svg viewBox="0 0 880 400" role="img" aria-labelledby="cm-hosts-t">
       <title id="cm-hosts-t">The native play-window and the browser play page both run engine-session over engine-core; the minigames page runs the minigame rules engines without a World.</title>
@@ -297,6 +297,6 @@
     <a href="subsystems/engine.html#crate-layout">Crate layering</a>
     <a href="architecture.html">How the layers stack</a>
     <a href="subsystems/browser-host.html">The browser host</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md">Host drift</a>
+    <a href="tooling/host-drift.html">Host drift</a>
   </div>
 </section>
