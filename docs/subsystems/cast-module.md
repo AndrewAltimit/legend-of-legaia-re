@@ -2962,6 +2962,22 @@ unhidden victim. A `--physical` film of `battle_map01_lippian_kiss_of_death_mid_
 read `.449` frame by frame; with them `.815` (arm 4 `1.000`, arm 3 `.880`).
 Grade `disassembly` + `capture`.
 
+Arm 3's cut shows the victim and hides the caster on the pass it leaves
+(`+0x04 = 0x20080200`, `+0x21C = 0` on the victim and `+0x04 = 0`,
+`+0x21C = 0xFF` on the caster, `0x801F8C24..0x801F8C50`), so arms 4 and 5 frame
+the victim alone; the `0xFF` arm shows every combat slot whose HP `+0x14C` is
+non-zero again (`0x801F8E8C..0x801F8ED4`). Two things in arm 4 sit on the roll's
+branch. The body draws one `rand()`, arm 4's past its gate (`jal 0x80056798` at
+`0x801F8CBC`), and no other arm draws. The message bar (`0x800774AC = 0x801F9A9C`,
+`FUN_801D8DE8(0x5B, 0)` at `0x801F8CD4..0x801F8CE0`) belongs to the odd leg, the
+miss that marks Numb; the hit leg branches past it at `0x801F8CC8`. Both legs
+leave arm 4 for arm 5, so the generic presentation decode cannot tell them apart,
+and the port raises the line by hand on the miss
+(`MESSAGE_BAR_BODIES_PORTED_BY_HAND`, `KISS_OF_DEATH_MISS_LINE`). With the victim
+hidden through arm 5, the miss line raised on a hit and a draw on every passing
+pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
+HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn

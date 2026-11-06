@@ -73,6 +73,16 @@ pub fn white_shield_tick(
     })
 }
 
+/// The Kiss of Death arm that draws its roll: arm `4`'s single
+/// `FUN_80056798()` (`jal 0x80056798` at `0x801F8CBC`, past the countdown
+/// gate) is the body's only `rand()`.
+pub const KISS_OF_DEATH_ROLL_ARM: u8 = 4;
+
+/// The line Kiss of Death's **miss** leg raises on the message bar
+/// (`0x800774AC = 0x801F9A9C` and `FUN_801D8DE8(0x5B, 0)` at
+/// `0x801F8CD4..0x801F8CE0`); the hit leg raises nothing.
+pub const KISS_OF_DEATH_MISS_LINE: u32 = 0x801F_9A9C;
+
 /// `+0x16E` bit `0x400` - the flag PROT 0955's Kiss of Death sets on its
 /// victim when the instant-death roll **misses** (`ori v0,v0,0x400` at
 /// `0x801F8CFC`).

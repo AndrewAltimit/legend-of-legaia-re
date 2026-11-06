@@ -108,6 +108,16 @@ pub fn kiss_of_death_camera(
             ..Default::default()
         };
     }
+    if phase == crate::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE {
+        // `0x801F8E8C..0x801F8ED4`: every combat slot `0..7` whose HP
+        // `+0x14C` is non-zero shown again (`+0x04 = 0x20080200`,
+        // `+0x21C = 0`), the caster among them.
+        return CaptureCamArm {
+            others_write: super::v_windhash::SHOWN,
+            others_live_only: true,
+            ..Default::default()
+        };
+    }
     if !(1..=5).contains(&phase) {
         return CaptureCamArm::default();
     }
@@ -149,10 +159,15 @@ pub fn kiss_of_death_camera(
         3 => {
             let v = seats.victim;
             let facing = (bearing_12bit_approx(c.z, c.x, v.z, v.x).wrapping_add(0x800)) & 0xFFF;
+            // The cut onto the victim shows it and hides the caster
+            // (`0x801F8C24..0x801F8C50`: `+0x04 = 0x20080200` and
+            // `+0x21C = 0` on the victim, `+0x04 = 0` and `+0x21C = 0xFF` on
+            // the caster): arm 0 hid every seat but the caster.
             arm.victim_write = CaptureSeatWrite {
                 facing: Some(facing),
-                ..Default::default()
+                ..super::v_windhash::SHOWN
             };
+            arm.caster_write = super::v_windhash::HIDDEN;
             arm.shot = Some(ModuleShot {
                 angles: [0, yaw_from(0x800, facing), 0],
                 tr: [0, 0x500, 0x600],
@@ -262,5 +277,24 @@ mod tests {
         st.opens_pass = false;
         let a = kiss_of_death_camera(&mut st, 1, seats());
         assert_eq!(a.caster_write.render_flag, Some(7));
+    }
+
+    /// Arm 3's cut shows the victim and hides the caster
+    /// (`0x801F8C24..0x801F8C50`); the `0xFF` arm shows every living seat
+    /// (`0x801F8E8C..0x801F8ED4`).
+    #[test]
+    fn the_cut_swaps_the_shown_seat_and_the_exit_shows_every_living_one() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = 0;
+        let a = kiss_of_death_camera(&mut st, 3, seats());
+        assert_eq!(a.victim_write.colour, Some(0x2008_0200));
+        assert_eq!(a.victim_write.render_flag, Some(0));
+        assert!(a.victim_write.facing.is_some());
+        assert_eq!(a.caster_write.colour, Some(0));
+        assert_eq!(a.caster_write.render_flag, Some(0xFF));
+        let a = kiss_of_death_camera(&mut st, 0xFF, seats());
+        assert_eq!(a.others_write.colour, Some(0x2008_0200));
+        assert_eq!(a.others_write.render_flag, Some(0));
+        assert!(a.others_live_only);
     }
 }

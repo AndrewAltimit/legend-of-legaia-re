@@ -929,9 +929,17 @@ impl World {
                     Some(ticks::white_shield_tick(&mut ctx, &mut caster, record))
                 }
                 (955, Some(ticks::KISS_OF_DEATH_TICK)) => {
-                    let roll = Some(self.next_rand());
+                    // The body's one `rand()` is arm 4's, on the pass its
+                    // gate opens (`0x801F8CBC`); the other arms draw none.
+                    let roll =
+                        (ctx.phase == ticks::KISS_OF_DEATH_ROLL_ARM).then(|| self.next_rand());
                     let (step, refund) = ticks::kiss_of_death_tick(&mut ctx, &mut victim, roll);
                     run.item_refund = refund;
+                    // Only the odd (miss) leg raises the bar
+                    // (`0x801F8CC8` branches the hit leg past the raise).
+                    if roll.is_some_and(|r| r & 1 != 0) {
+                        self.raise_module_message_bar(entry, ticks::KISS_OF_DEATH_MISS_LINE);
+                    }
                     Some(step)
                 }
                 (955, Some(ticks::MELT_SPRAY_TICK)) => {
