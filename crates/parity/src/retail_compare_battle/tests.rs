@@ -2002,6 +2002,18 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
             c.engine_image_displayed_clips().is_empty(),
             "no commit in the window"
         );
+        // Past the walk, a module arm poses the caster on the displayed slot
+        // with no commit in the window (`cort_evolved_card_doomsday_mid_cast`).
+        c.module_phase = 4;
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "a capture-band module arm");
+        assert_eq!((clips[0].clip, clips[0].cursor), (0, 0));
+        let seats = c.engine_image_displayed_seats();
+        assert_eq!(
+            (seats[0].x, seats[0].z),
+            (-39, 291),
+            "on the ring's pair, as a magic band's caster"
+        );
     }
 
     // The strike's target still idles: its loop is seated, as no hit has

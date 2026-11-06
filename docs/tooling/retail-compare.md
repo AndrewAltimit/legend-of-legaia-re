@@ -5587,6 +5587,20 @@ ring's pair. `battle_tunnelc_xain_bloody_horns_mid_cast`'s rings read the idle
 at `0` and `(590, 202)` there and the walk `1` at `16` and `(502, 192)` live;
 posed on them Xain reads `.845` against `.796` on the replay's idle at `176`.
 
+Past the walk, a monster's capture-band module arm takes the seat with no
+commit in the window, as the magic band's accumulator gate does. The retake
+runs `2 * frame_step` vsyncs back (`display_lag_vsyncs`), and
+on passes the history stores as the clamp `0x2BC` the frame step reads `3`
+where the passes ran `4`, so the replay's frame stands short of the screen
+while the rings name the keyframe it showed. `cort_evolved_card_doomsday_mid_cast`
+holds Cort's clip `7` on a cursor ring of `128, 96, 64`, `32` a pass, which is
+`8` a vsync over four-vsync passes; the retake drew `80`, and the ring's `64`
+reads `image` `.894` to `.997`. Across the corpus's cast states the seat also
+lifts `battle_teien_berserker_stone_circle_mid_cast` (`.945` to `.964`),
+`battle_nilboa_neo_grude_power_up_mid_cast` and
+`battle_taiku_thermo_void_accessories_mid_cast`, and moves no state down by
+more than `.002`. Grade `capture`.
+
 A monster cast's accumulator gate takes the same seat, commit or no commit. The
 gate stops where the replay's accumulator reads the RAM's, so its frame carries
 the RAM's keyframe, two passes past the screen, and the cursor seat refuses a

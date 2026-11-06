@@ -958,6 +958,17 @@ impl RetailBattle {
         // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
         // frame shows `12`).
         let magic_band = self.monster_magic_band_age() || self.monster_spirit_band_age();
+        // A monster's capture-band module arm (`0x70`, past the walk-in
+        // cases above) poses the caster on the displayed slot too: the
+        // retake's lag is `2 * frame_step` vsyncs, and on a pass the history
+        // stores as the clamp `0x2BC` the frame step reads `3` where the pass
+        // ran `4`, so the replay's frame stands a pass-share short of the
+        // screen while the rings name the keyframe it showed
+        // (`cort_evolved_card_doomsday_mid_cast`: cursor ring `128, 96, 64`
+        // on clip `7`, `32` a pass; the retake drew `80`, the ring's `64`
+        // reads `image` `.894` to `.997`).
+        let band_cast = self.action_state == 0x70 && !walk_arm && !walked_cast;
+        let magic_band = magic_band || band_cast;
         if pool < 3 || !(strike || walked_cast || walk_arm || magic_band) {
             return None;
         }
