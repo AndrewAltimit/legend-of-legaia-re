@@ -925,3 +925,10 @@ changes = [
   ["states/town01_field_card_boot/image", 1.0, 0.999],
   ["states/zenoir_summon_mid_cast/camera", 1.0, 0.98],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Gap wave 30 adds retail behaviour to the play bundle: the seat's own max MP, the whole-word status readers, the cure palette restore and MP readout ramp, Death Game's card labels, the fishing button and gate rules, the slot machine's reel roll-in, the move-VM shatter row and the summon fade's spawn-pass step. The compressed play bundle grows 6.8 KB (0.14%); no asset or dependency was added."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4897802, 4904603],
+]
