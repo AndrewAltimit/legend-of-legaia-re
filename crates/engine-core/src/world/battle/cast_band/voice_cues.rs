@@ -110,6 +110,17 @@ impl World {
             })
     }
 
+    /// One vsync of a frame [`Self::cast_drive_blocks_frame`] holds: retail's
+    /// loop sits inside the seek arm's `CdlSetloc`, so only the drive moves
+    /// (and the seek issues once it is free); no actor, camera or module pass
+    /// runs, and the display-frame clock the camera and the battle passes
+    /// count on stands still with them (advancing it hands the camera the
+    /// held frames as a catch-up on the first pass after).
+    pub fn step_blocked_cast_frame(&mut self) {
+        let arm = self.casting.module_phase;
+        self.step_module_drive(arm);
+    }
+
     /// Whether the module's `arm` returns busy on the drive this pass: its seek
     /// arm until the drive is free to take the seek, its poll arm until the
     /// seek completes.

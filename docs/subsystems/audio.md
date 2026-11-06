@@ -3539,8 +3539,12 @@ nothing else in RAM moving, then the `XA13` seek runs `29` vsyncs under the poll
 runs. Every seek of the five summon states fits one law, `0.3` s plus a full-disc traverse a second, plus
 two vsyncs of logical seek ([`battle_cd_drive`](../../crates/engine-battle-vm/src/battle_cd_drive.rs)). The
 port runs that drive: the selector's seek as the module arms, the module's own on its seek arm, both arms
-held while it is busy, the head cue not called on a busy pass, and the audio frame (the duck, the cue ring)
-not stepped while the seek arm blocks (`World::cast_drive_blocks_frame`). The seek and poll arms are read
+held while it is busy, the head cue not called on a busy pass, and the whole frame held while the seek arm
+blocks (`World::cast_drive_blocks_frame`): `World::tick` steps only the drive, and the audio frame (the duck,
+the cue ring), the camera, the actors and the display-frame clock they count on stand still. Advancing that
+clock alone hands the camera the held vsyncs as a catch-up on the first pass after; holding the module while
+the rest ran moved `zenoir_summon_mid_cast`'s camera off retail's (`1.000` to `0.980`), which the held
+frame puts back. The seek and poll arms are read
 off each image (`module_drive_arms`); PROT 0903..0934 carry the pair, no capture module does.
 
 Orb's and Swordie's voices then play at retail's level too, which the drive's wait is what exposes: the

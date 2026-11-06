@@ -54,6 +54,14 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // A summon's seek arm blocks retail's whole game loop on the drive
+        // (`World::cast_drive_blocks_frame`): a frame-stepped
+        // `orb_summon_mid_cast` moves only what the interrupt handlers write
+        // across the hold. The camera, the actors and the module stand still.
+        if self.cast_drive_blocks_frame() {
+            self.step_blocked_cast_frame();
+            return None;
+        }
         // A pinned encounter entry ([`EncounterState::rng_hold`]).
         if let Some(seed) = self.encounters.rng_hold {
             if self.mode == SceneMode::Battle {
