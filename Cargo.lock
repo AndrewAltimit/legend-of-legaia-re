@@ -1914,6 +1914,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-system",
  "legaia-font",
+ "legaia-overlay-images",
  "legaia-save",
  "legaia-ui-formats",
 ]
@@ -3178,6 +3179,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-patch",
  "legaia-engine-battle",
+ "legaia-engine-battle-hud",
  "legaia-engine-battle-loop",
  "legaia-engine-battle-vm",
  "legaia-engine-cast",
@@ -3193,6 +3195,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-minigame-formats",

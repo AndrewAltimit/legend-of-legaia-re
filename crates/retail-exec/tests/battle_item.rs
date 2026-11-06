@@ -166,7 +166,6 @@ fn seed_port(w: &mut World, seats: &[Seat; 5], caster: u8, typed: bool, rng_seed
     w.party.party_count = 3;
     w.battle.status_effects = Default::default();
     w.battle_ctx.active_actor = caster;
-    w.tables.character_max_mp = seats[..3].iter().map(|s| s.max_mp).collect();
     for (i, st) in seats.iter().enumerate() {
         let slot = i as u8;
         w.battle.attack[i] = st.atk.0;
@@ -183,6 +182,7 @@ fn seed_port(w: &mut World, seats: &[Seat; 5], caster: u8, typed: bool, rng_seed
         a.max_hp = st.max_hp;
         a.liveness = u16::from(st.hp != 0);
         a.mp = st.mp;
+        a.mp_max = st.max_mp;
         a.agl = st.gauge;
         a.agl_base = st.gauge_base;
         a.spirit_shield = st.shield;
@@ -208,7 +208,7 @@ fn seed_port(w: &mut World, seats: &[Seat; 5], caster: u8, typed: bool, rng_seed
     w.rng_state = rng_seed;
 }
 
-fn read_port(w: &World, slot: u8, max_mp: u16) -> Seat {
+fn read_port(w: &World, slot: u8) -> Seat {
     let i = usize::from(slot);
     let a = &w.actors[i].battle;
     let split = w.battle.defense_split[i].unwrap_or_default();
@@ -217,7 +217,7 @@ fn read_port(w: &World, slot: u8, max_mp: u16) -> Seat {
         hp: a.hp,
         max_hp: a.max_hp,
         mp: a.mp,
-        max_mp: w.tables.character_max_mp.get(i).copied().unwrap_or(max_mp),
+        max_mp: a.mp_max,
         gauge: a.agl,
         gauge_base: a.agl_base,
         atk: (w.battle.attack[i], w.battle.attack_base[i]),
@@ -299,7 +299,7 @@ fn every_battle_item_writes_what_retail_writes() {
                 let mut r = read_retail(&mut cpu, s);
                 // The fade `+0x21C = 2` is `stand_revived_party_member` here.
                 r.render = 0;
-                let p = read_port(&w, s, seats[usize::from(s)].max_mp);
+                let p = read_port(&w, s);
                 if r != p {
                     failures.push(format!(
                         "item {id:#04x} class {} tier {} round {round} target {target} seat {s}:\n before {:?}\n retail {r:?}\n port   {p:?}",

@@ -142,6 +142,7 @@ pub fn field_party_hud_draws(
             mp: m.mp,
             mp_max: m.mp_max,
             alive: m.alive,
+            status: m.status,
         })
         .collect();
     let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);

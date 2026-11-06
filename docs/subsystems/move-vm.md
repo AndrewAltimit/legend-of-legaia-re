@@ -182,7 +182,7 @@ subsection under the table.
 | `0x1E` | - | 8 | Render-mode-4 setup: `+0x5A = 4`, `+0xC4/+0xCC..+0xD6 = v1..v7` |
 | `0x1F` | - | 8 | Morph install: `+0x9E \|= byte`, `+0xB0/+0xB2/+0xA8/+0xAA/+0xAC/+0xAE = v2..v7` |
 | `0x20` | - | 3 | Indirect call `(*(gp+0x714))(actor, v1, v2)` - [below](#0x20---slot-b-module-hook) |
-| `0x21` | - | 7 | Per-id record write to `DAT_8007BE60 + v1*0xC` (5 halfwords + i32); `+0x6D = v1` |
+| `0x21` | - | 7 | Shatter-row write: row `v1` of `DAT_8007BE60` (four halfwords + sign-extended `v6`), `+0x6D = v1` - [below](#0x21---shatter-row) |
 | `0x22` | - | 1 | Continue-epilogue (advances the PC, nothing else) |
 | `0x23` | - | 0xD | Draw-kind-4 node, `0x4000` sprite arm - [below](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x24` | - | 3 | `+0xA8 += v1; +0xAC += v1; +0xAA += v2; +0xAE += v2` (sprite pos / UV double-add) |
@@ -303,6 +303,34 @@ The `jalr` at SCUS `0x80023764` calls whatever sits in `gp[+0x714]`
 
 Port: `MoveHost::ext_20`. The dance minigame's part host implements it
 (`crates/engine-minigames/src/dance/finish.rs`); the default is a no-op.
+
+### 0x21 - shatter row
+
+The arm at `0x8002377C..0x800237D4` computes `row = 0x8007BE60 + v1 * 0xC`,
+stores `v1` into the part's `+0x6D`, the four halfwords `v2..v5` at
+`row + 0..+6` and the sign-extended `v6` at `row + 8`. That is the same
+deformation table the field VM's `43 07` writes
+([`script-vm.md`](script-vm.md#0x43-sub-7--8---the-spin-and-shrink-deformation)):
+the burst offset, the sweep front and the flag word the shatter renderer reads
+while the part's `+0x7A` is non-zero
+([renderer](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+
+Six stager records issue it. `rikuroa` / `rikuroa2` records `56` / `57` are
+two meshes the parents `2` / `3` spawn through op `0x25`, which the streamed
+`rikuroa` MAN spawns with `34 30 01` / `34 30 02`. Each waits `0x3F` vsyncs,
+writes its row (record `56` row `2`, offset `(0, 0xA8, 0)`; record `57` row
+`1`, `(0, 0x140, 0)`; flag word `4` for both), then ramps `+0x7A` by `0x30` a
+tick. Flag word `4` is `0x40000` in the draw word, the shrink flag, so the
+triangles collapse in place about an offset centre rather than flying apart at
+full size from the part's origin. `jagaroom` records `20` / `21` write row `1`
+with a zero offset and the same flag.
+
+Port: `MoveVmHostImpl::face_rotation_setup` writes the row into
+`World::npcs.face_rows`, and `World::ambient_mesh_part_draws` hands each part
+the row its `+0x6D` names (`SummonPartDraw::shatter_row`), which
+`apply_render_state` passes to the shatter kernel on both hosts. The battle
+summon parts keep row zero, which every battle capture reads. Disc test
+`engine-scene-host` `ambient_shatter_row_disc`.
 
 ### 0x25 - spawn child part
 
@@ -618,6 +646,14 @@ group descriptors (`0x80021BF4..0x80021C54`), with `+0x5A = 1` and flag
 scale `+0x72` and colour word `+0x74` / `+0x78` every frame, until the part
 halts (`0x8`) or a script raises `0x2`. The global index is the record's
 own `model_sel`, so the scene-pack slot is `model_sel - 5`.
+
+Both hosts resolve that slot against the scene's environment pack
+(`engine-scene::field_env::env_pack_tmd_indices`, the TMD-count vote the
+placements use), not against the entry the scene bundle names. In `rikuroa`,
+`taiku`, `doman`, `balden`, `nilboa` and seventeen other scenes the pack
+streams from an entry the bundle does not name, or the bundle entry holds no
+TMD, so a bundle-keyed list is empty there and every field-effect part goes
+undrawn.
 
 `opdeene`'s light cone over the Seru in the opening narration is one: record
 `0x394` of the scene's stager bundle, `model_sel 0x4C` (pack slot `71`, an

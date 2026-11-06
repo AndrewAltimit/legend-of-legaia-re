@@ -702,6 +702,30 @@ impl RetailBattle {
             )
     }
 
+    /// A `0x70` capture inside a walk-in body's walk arm (arm 1, the case-6
+    /// follow re-armed every pass, `capture_approach_follows`), its follow
+    /// still walking: the headless channel's live camera takes retail's
+    /// (`BattleCamera::align_module_shot`). The follow's endpoint is the
+    /// RAM's; where it set out from is the replay's own history.
+    /// `battle_tunnelc_xain_bloody_horns_mid_cast` sits one pass into Bloody
+    /// Horns' walk, the engine's follow at yaw `3237` heading for `3653`
+    /// where retail's stood at `2986` heading for `3658` (`camera` `.878` to
+    /// `1.000`). The image child keeps the displayed pose its
+    /// `LEGAIA_BATTLE_CAM_ALIGN` seats: walking the follow's table back
+    /// stops on the last re-arm, not on the frame on screen.
+    pub fn walk_arm_follow_aligned(&self) -> bool {
+        self.action_state == 0x70
+            && self.module_phase == 1
+            && !self.cam_landed
+            && legaia_engine_cast::cast_module_ticks::capture_body_for_action(self.queued_action)
+                .is_some_and(|(entry, body)| {
+                    legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                        entry,
+                        Some(body),
+                    )
+                })
+    }
+
     /// Every captured combatant's live pair and heading by engine slot - the
     /// ground the capture holds, not the seed's (which [`Self::undrift`]
     /// may have moved) - for the phase's ground seat
@@ -784,6 +808,14 @@ impl RetailBattle {
             }
         }
         let pool = usize::from(self.active_actor);
+        // A monster on the clip the frame on screen showed, which moved
+        // inside the lag all the same: the arrival's idle stage committed on
+        // the displayed pass and the loop's passes since backed it off its
+        // target (`battle_jou_cort_181_strike`: ring `(-201, 530)` displayed,
+        // `(-206, 546)` live, idle record on slots `0..=2`).
+        if let Some(seat) = self.displayed_monster_strike_seat() {
+            return vec![seat];
+        }
         if pool >= 3
             || pool >= usize::from(self.party_count.clamp(1, 3))
             || !(0x1E..=0x20).contains(&self.action_state)
@@ -802,6 +834,39 @@ impl RetailBattle {
             facing: None,
             body: None,
         }]
+    }
+
+    /// [`Self::engine_image_displayed_seats`]' seat for a monster strike
+    /// whose displayed clip is the RAM's (no commit inside the lag, not a
+    /// walk on the clock) but whose live pair moved inside the lag: the
+    /// displayed frame's ring pair.
+    fn displayed_monster_strike_seat(
+        &self,
+    ) -> Option<legaia_engine_capture::ground_snap::GroundSnap> {
+        let pool = usize::from(self.active_actor);
+        let strike = matches!(self.seed_plan(), SeedPlan::Action { state: 0x1E, .. })
+            && self.queued_category == 3
+            && matches!(self.span_gate, SpanGate::Age { .. });
+        if pool < 3
+            || !strike
+            || self.walk_clock_capture()
+            || self.displayed_strike_clip().is_some()
+        {
+            return None;
+        }
+        let m = pool - 3;
+        if m >= usize::from(self.monster_count) {
+            return None;
+        }
+        let then = (*self.displayed_ground.get(pool)?)?;
+        let live = self.captured.get(pool).copied().flatten()?.0;
+        (then != live).then(|| legaia_engine_capture::ground_snap::GroundSnap {
+            slot: self.party_count.clamp(1, 3) + m as u8,
+            x: then[0],
+            z: then[1],
+            facing: None,
+            body: None,
+        })
     }
 
     /// The acting monster's clip on the **displayed** frame, for the image
@@ -865,7 +930,19 @@ impl RetailBattle {
         // carries the clip the RAM's accumulator pairs with, two passes past
         // the keyframe the screen shows, and the cast clip is a one-shot the
         // cursor seat leaves alone.
-        let magic_band = self.monster_magic_band_age();
+        //
+        // A monster's Spirit / Item band (a class-0 Heal or Hyper Heal,
+        // `0x3D..=0x40`) is the same clock: its cast clip commits at `0x3D`
+        // and plays through `0x3E` on the gate's accumulator, so the RAM's
+        // cursor is the display lag past the keyframe on screen
+        // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
+        // frame shows `12`).
+        let spirit_band = matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 2
+            && super::SPIRIT_STAGE_STATES.contains(&self.action_state);
+        let magic_band = self.monster_magic_band_age() || spirit_band;
         if pool < 3 || !(strike || walked_cast || magic_band) {
             return None;
         }
@@ -1464,12 +1541,42 @@ impl RetailBattle {
             .then_some(RAISED_POOL)
     }
 
+    /// The maximum MP engine slot `slot` stands on when the capture's seat
+    /// word `+0x152` holds what its character record's `+0x108` does not.
+    /// Battle init copies the record's (`FUN_80053CB8`, `0x80053E58`), and
+    /// from there the seat's is the fight's own: Lapis Wave zeroes it
+    /// (`0x801F6D1C`) and Fatal Decision halves or zeroes it, neither touching
+    /// the record. A replay seeded past such a cast never runs it, so the
+    /// seat takes the capture's word (`battle_deene_lapis_strike`: `0` on
+    /// every seat against records of `602` / `509` / `660`).
+    pub fn party_seat_mp_max_off_record(&self, slot: usize, seat: &Combatant) -> Option<u16> {
+        let record = *self.record_mp_max.get(slot)?;
+        (slot < usize::from(self.party_count.clamp(1, 3)) && record != 0 && seat.mp_max != record)
+            .then_some(seat.mp_max)
+    }
+
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
     /// (`ActionSteer::walk_clock`).
     pub fn walk_clock_capture(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x1E } if seat >= 3)
             && self.queued_category == 3
             && self.caster_clip == 1
+            && matches!(self.span_gate, SpanGate::Age { .. })
+    }
+
+    /// A [`Self::walk_clock_capture`] saved on the arrival pass itself, no
+    /// strike-loop pass run yet (`ctx[+0x15] == 0`; `ActionSteer::arrival`).
+    pub fn walk_clock_arrival(&self) -> bool {
+        self.walk_clock_capture() && self.strike_cursor == 0
+    }
+
+    /// Whether the search may aim the striker's physical turns at the
+    /// capture's target (`ActionSteer::strike_aim`): a monster strike whose
+    /// target is a party seat.
+    pub fn strike_aim_steerable(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && self.queued_category == 3
+            && self.target_code < 3
             && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
@@ -1669,6 +1776,12 @@ impl RetailBattle {
                     // stream whose kill rolls no steal shows another frame.
                     spoils: seat < 3 && self.spoils_caption,
                     walk_clock: self.walk_clock_capture(),
+                    arrival: self.walk_clock_arrival(),
+                    strike_aim: self.strike_aim_steer,
+                    tough: self.party.iter().enumerate().any(|(i, c)| {
+                        c.as_ref()
+                            .is_some_and(|c| self.party_seat_pool_raised(i, c).is_some())
+                    }),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {

@@ -6,7 +6,7 @@
 //! the Seru absorb roll, the status arms of the clip's `+0x7A` class, the
 //! reaction entry and the HP write.
 
-use crate::common::{Rng, disc, scus_cpu};
+use crate::common::{Rng, disc, scus_cpu, split_statuses};
 use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
@@ -383,6 +383,7 @@ fn seed_port(w: &mut World, h: &Hit) {
             w.tables.monster_catalog.insert(def);
         }
     }
+    split_statuses(w, h.seed);
     let ti = usize::from(h.target);
     let ai = usize::from(h.attacker);
     w.actors[ti].battle.damage_accum = h.accum;

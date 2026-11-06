@@ -204,6 +204,10 @@ pub struct SummonPartDraw {
     /// The part's shatter word `+0x7A`: non-zero breaks its mesh apart
     /// through the shatter renderer ([`crate::part_shatter`]).
     pub shatter: i16,
+    /// The deformation-table row (`0x8007BE60`) the part's `+0x6D` names:
+    /// the burst offset and the flag half of the shatter word. Zero for a
+    /// part whose row nothing wrote.
+    pub shatter_row: legaia_render_kernels::shatter::ShatterRow,
 }
 
 impl SummonPartDraw {
@@ -228,7 +232,7 @@ impl SummonPartDraw {
     pub fn apply_render_state(&self, mesh: &mut legaia_tmd::mesh::VramMesh) {
         // The shatter works on the object-local vertices, ahead of the
         // object matrix that carries the scale.
-        crate::part_shatter::apply_part_shatter(mesh, self.shatter);
+        crate::part_shatter::apply_part_shatter_row(mesh, self.shatter, self.shatter_row);
         if self.scale != SPAWN_RENDER_SCALE {
             let k = f32::from(self.scale) / 4096.0;
             for p in &mut mesh.positions {

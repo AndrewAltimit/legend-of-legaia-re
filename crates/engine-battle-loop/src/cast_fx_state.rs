@@ -83,9 +83,17 @@ pub struct CastFxState {
         legaia_engine_battle_vm::battle_cast_cue::ModuleDriveArms,
         bool,
     )>,
-    /// The display frame the module last stepped the drive on: a drive no
-    /// module is stepping holds nothing.
+    /// The display frame the module last ran a pass with its drive arms on:
+    /// a drive no module is stepping blocks nothing.
     pub drive_ticked_at: u64,
+    /// The battle seek-ahead selector's seek to the caster's clip file, not
+    /// issued yet: `FUN_8004DA00` sends it once the side-band applier stage
+    /// `ctx[+0x276]` has dropped back to `0`, so it waits out the token.
+    pub selector_seek: Option<u32>,
+    /// The world's tick has already run this vsync of the drive
+    /// (`World::tick_cast_drive`); the module's pass after it in the same
+    /// tick does not run it again.
+    pub drive_vsync_done: bool,
     /// The head cue's call sits behind its arm's own gate as well as the
     /// drive poll (`battle_cast_cue::head_cue_waits_arm_gate`): it lands on
     /// the pass the arm's hold lets through.
@@ -489,6 +497,8 @@ impl CastFxState {
             drive: Default::default(),
             drive_arms: None,
             drive_ticked_at: 0,
+            selector_seek: None,
+            drive_vsync_done: false,
             module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,

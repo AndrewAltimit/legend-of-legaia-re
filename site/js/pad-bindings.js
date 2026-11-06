@@ -122,9 +122,24 @@
   }
   let gamepadHeld = new Set();
 
-  /* The pad buttons every connected standard-mapped gamepad holds now. */
+  /* Buttons an on-screen control holds (the play page's touch pad,
+   * touch-pad.js), by pad button name. They join the controller poll below
+   * rather than keeping a path of their own: every page already merges that
+   * poll into its pad word, so a touch press is a controller press to every
+   * reader - the field tick, the menus, the title card, the minigames page's
+   * named-button handlers - and needs no call site of its own. */
+  const virtualHeld = new Set();
+  window.legaiaVirtualPad = {
+    press(name) { virtualHeld.add(name); },
+    release(name) { virtualHeld.delete(name); },
+    releaseAll() { virtualHeld.clear(); },
+    held() { return Array.from(virtualHeld); },
+  };
+
+  /* The pad buttons every connected standard-mapped gamepad holds now, and
+   * the on-screen control's. */
   function gamepadButtons() {
-    const out = new Set();
+    const out = new Set(virtualHeld);
     if (!GP_LAYOUT) return out;
     const names = GP_LAYOUT.buttons;
     const dead = GP_LAYOUT.stick_dead_zone;
@@ -170,7 +185,9 @@
    * `true` when anything changed, so the caller re-packs its pad word. Call
    * once per display frame, before the frame reads `pulse`. */
   window.legaiaPollGamepad = (held, pulse) => {
-    if (!GP_LAYOUT) return false;
+    /* No layout (a stale bundle) reads no controller, but the on-screen
+     * control still names its buttons directly. */
+    if (!GP_LAYOUT && !virtualHeld.size && !gamepadHeld.size) return false;
     const { now, pressed, released } = pollGamepadEdges();
     let changed = false;
     for (const name of now) {

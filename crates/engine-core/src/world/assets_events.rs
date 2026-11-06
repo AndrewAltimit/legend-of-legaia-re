@@ -588,12 +588,7 @@ impl World {
             }
         }
         if word & 0x40 != 0 {
-            let max_mp = self
-                .tables
-                .character_max_mp
-                .get(usize::from(slot))
-                .copied()
-                .unwrap_or(0);
+            let max_mp = self.seat_max_mp(usize::from(slot));
             if let Some(a) = self.actors.get_mut(usize::from(slot)) {
                 a.battle.mp += max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
             }

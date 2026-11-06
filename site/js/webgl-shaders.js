@@ -1445,6 +1445,14 @@ void main() {
   }
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
+  /* A dithered opaque draw blends at the GPU's precision: the 5-bit texel
+   * times the colour byte, (t5 * c8) >> 4, which the dither then cuts. Twin
+   * of engine-render's psx_modulate_gpu: the display expansion of the texel
+   * (t5 * 255 / 31) reads every modulated texel up to 2.8% too bright. */
+  if (u_psx.w >= 0.5 && u_semi_pass != 1) {
+    vec3 t5 = floor(clamp(color.rgb, 0.0, 1.0) * 31.0 + 0.5);
+    lit = min(floor(t5 * floor(prim_color * 255.0 + 0.5) / 16.0), vec3(255.0)) / 255.0;
+  }
   /* Opt-in dynamic light over the baked shading (identity when off), at
    * native's point in the chain: after the modulate. */
   lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),

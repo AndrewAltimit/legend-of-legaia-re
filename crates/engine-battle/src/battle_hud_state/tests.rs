@@ -429,6 +429,29 @@ fn slot_views_carries_the_single_retail_status_element() {
 }
 
 #[test]
+fn a_seated_status_word_drives_the_element_and_the_gauge() {
+    // A Curse a cast wrote raw is in the word and not in the tracker: the
+    // element and the gauge both read the word (`FUN_8002C2E4`,
+    // `FUN_80046A20` at `0x80046AE0`).
+    let mut hud = BattleHud::new();
+    hud.slots[0].alive = true;
+    hud.slots[0].hp = 50;
+    hud.slots[0].hp_max = 60;
+    hud.slots[0].mp = 9;
+    hud.slots[0].mp_max = 40;
+    assert_eq!(hud.slots[0].gauge_fill_indices(), (7, 9));
+    hud.sync_status_word(0, 0x1000);
+    assert!(hud.slots[0].status_icons.is_empty());
+    assert_eq!(hud.slots[0].status_display_flags(), 0x1000);
+    assert_eq!(hud.slots[0].gauge_fill_indices(), (3, 3));
+    // A rotted limb alone greys the gauge too.
+    hud.sync_status_word(0, 0x0010);
+    assert_eq!(hud.slots[0].gauge_fill_indices(), (3, 3));
+    hud.sync_status_word(0, 0);
+    assert_eq!(hud.slots[0].gauge_fill_indices(), (7, 9));
+}
+
+#[test]
 fn slot_status_element_is_the_packed_word_through_the_retail_ladder() {
     let mut s = BattleSlotHud {
         alive: true,

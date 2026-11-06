@@ -57,6 +57,14 @@ pub const WHITE_LUMA: f64 = 230.0;
 /// band runs on, `4`).
 const MAX_LAG: u64 = 8;
 
+/// Game frames a retail grab's screen fade stands behind the RAM when only
+/// the other ordering table links the fade's quad ([`Row::fade_back`]): one,
+/// where the scene stands two ([`Side::shown_by_frame`]). The fade actor links
+/// its `POLY_F4` into the table of the pass it steps for, so the table holding
+/// it places the fade (`retail-compare.md`, "The screen fades read their own
+/// table").
+const FADE_FRAMES_BACK: u32 = 1;
+
 /// What a segment is keyed on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Key {
@@ -111,6 +119,17 @@ pub struct Row {
     pub display_frames: Option<u64>,
     /// The engine module's CD-seek wait on this tick, when it has one.
     pub drive: Option<DriveRow>,
+    /// The engine's screen fade on this tick (`fade_white` / `fade_level`
+    /// columns): `Some(level)`, the fade colour's brightest channel, while a
+    /// fade actor runs; `None` with none. A recording made before the
+    /// `fade_level` column reads `255` for any running fade.
+    pub fade: Option<u8>,
+    /// Retail's `fade_back` column: the passes the grab's screen fade stands
+    /// behind the RAM, by which ordering table links the fade's quad
+    /// (`retail_compare_battle::display_lag::fade_passes_back`): `2` (the
+    /// current one, the two-pass law), `1` (only the other), `None` for no
+    /// fade or a recording made before the column.
+    pub fade_back: Option<u8>,
 }
 
 /// The engine recorder's drive columns (`drive_seek_arm`, `drive_poll_arm`,
@@ -199,6 +218,11 @@ impl Side {
                     field(r, "bpp").unwrap_or(16),
                 ),
                 display_frames: field(r, "frames"),
+                fade_back: field::<u8>(r, "fade_back").filter(|&b| b > 0),
+                fade: match field::<i32>(r, "fade_white") {
+                    Some(w) if w >= 0 => Some(field(r, "fade_level").unwrap_or(255)),
+                    _ => None,
+                },
                 drive: match (
                     field::<i32>(r, "drive_seek_arm"),
                     field::<i32>(r, "drive_poll_arm"),
@@ -381,6 +405,13 @@ impl Side {
     /// `None` without the `frame` column or before the recording holds that
     /// frame.
     fn shown_by_frame(&self, row: &Row) -> Option<u64> {
+        self.shown_frames_back(row, 2)
+    }
+
+    /// The row `back` game frames before the one `row`'s grab displays the
+    /// newest of: [`Self::shown_by_frame`] at `back = 2`, the screen fade's
+    /// own table at `back = 1` ([`FADE_FRAMES_BACK`]).
+    fn shown_frames_back(&self, row: &Row, back: u32) -> Option<u64> {
         let f = row.frame?;
         let i = self.rows.binary_search_by_key(&row.t, |r| r.t).ok()?;
         // The frame before this one ran past its step: its flip lands a
@@ -394,7 +425,7 @@ impl Side {
                 .count();
             len > usize::from(prev.step.max(1))
         };
-        let want = f.checked_sub(if late_flip { 3 } else { 2 })?;
+        let want = f.checked_sub(if late_flip { back + 1 } else { back })?;
         self.rows[..=i]
             .iter()
             .rev()
@@ -563,6 +594,10 @@ pub struct Pair {
     pub mae: f64,
     pub retail_luma: f64,
     pub engine_luma: f64,
+    /// Paired on the screen fade's row, one game frame younger than the
+    /// scene's ([`FADE_FRAMES_BACK`]).
+    #[serde(default)]
+    pub fade: bool,
 }
 
 /// One aligned (or unaligned) segment with its timing on both sides.
@@ -618,6 +653,9 @@ pub struct Report {
     /// Pairs whose two sides sit in different action states under one module
     /// phase key.
     pub state_mismatch_pairs: usize,
+    /// Pairs taken on the screen fade's row ([`Pair::fade`]).
+    #[serde(default)]
+    pub fade_pairs: usize,
     pub retail_frames: usize,
     pub engine_frames: usize,
     pub segments: Vec<SegmentReport>,
@@ -847,30 +885,15 @@ pub fn compare_with(
         cands: Vec<(i64, u64, &'a Row)>,
         /// A retail frame of a wait arm past the engine's live frames there.
         hold: bool,
+        /// Paired on the screen fade's row ([`FADE_FRAMES_BACK`]).
+        fade: bool,
     }
-    let mut jobs: Vec<Job<'_>> = Vec::new();
-    let mut unpaired = 0usize;
-    let mut retail_frames = 0usize;
-    for row in retail.rows.iter().filter(|r| r.shot.is_some()) {
-        retail_frames += 1;
-        let shown = match lag {
-            Lag::Auto => retail
-                .shown_by_frame(row)
-                .or_else(|| row.t.checked_sub(2 * u64::from(row.step.max(1)))),
-            Lag::Fixed(n) => row.t.checked_sub(n),
-        };
-        let Some(shown) = shown else {
-            unpaired += 1;
-            continue;
-        };
-        let (Some(shown_row), Some(ri)) = (retail.row_at(shown), seg_of(&rs, shown)) else {
-            unpaired += 1;
-            continue;
-        };
-        let Some(&ei) = to_engine.get(&ri) else {
-            unpaired += 1;
-            continue;
-        };
+    // The engine frame a retail frame showing row `shown` pairs with; `None`
+    // when the row has no aligned engine segment.
+    let pair_at = |ix: usize, shown: u64| -> Option<Job<'_>> {
+        let row = &retail.rows[ix];
+        let (shown_row, ri) = (retail.row_at(shown)?, seg_of(&rs, shown)?);
+        let &ei = to_engine.get(&ri)?;
         let (rseg, eseg) = (&rs[ri], &es[ei]);
         let into = game(shown).saturating_sub(game(rseg.start));
         // The engine row `into` live ticks into the segment, clamped to its
@@ -900,10 +923,9 @@ pub fn compare_with(
             }
         }
         if cands.is_empty() {
-            unpaired += 1;
-            continue;
+            return None;
         }
-        jobs.push(Job {
+        Some(Job {
             row,
             shown,
             shown_st7: shown_row.st7,
@@ -912,6 +934,48 @@ pub fn compare_with(
             into,
             cands,
             hold,
+            fade: false,
+        })
+    };
+    let mut jobs: Vec<Job<'_>> = Vec::new();
+    let mut unpaired = 0usize;
+    let mut retail_frames = 0usize;
+    for (ix, row) in retail
+        .rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.shot.is_some())
+    {
+        retail_frames += 1;
+        let shown = match lag {
+            Lag::Auto => retail
+                .shown_by_frame(row)
+                .or_else(|| row.t.checked_sub(2 * u64::from(row.step.max(1)))),
+            Lag::Fixed(n) => row.t.checked_sub(n),
+        };
+        let Some(job) = shown.and_then(|shown| pair_at(ix, shown)) else {
+            unpaired += 1;
+            continue;
+        };
+        // The screen fades read their own table: the fade actor links its
+        // quad into the table of the pass it steps for, and where only the
+        // other table holds it the grab shows the fade one game frame younger
+        // than the scene ([`FADE_FRAMES_BACK`]). Where the engine frame the
+        // scene pairs with shows a fade, the pair moves to the fade's row.
+        let fade_job = (lag == Lag::Auto
+            && row.fade_back == Some(FADE_FRAMES_BACK as u8)
+            && job.cands[0].2.fade.is_some_and(|level| level > 0))
+        .then(|| {
+            retail
+                .shown_frames_back(row, FADE_FRAMES_BACK)
+                .or_else(|| row.t.checked_sub(u64::from(row.step.max(1))))
+                .and_then(|shown| pair_at(ix, shown))
+        })
+        .flatten()
+        .filter(|f| f.cands[0].2.fade.is_some());
+        jobs.push(match fade_job {
+            Some(f) => Job { fade: true, ..f },
+            None => job,
         });
     }
     let scored = crate::parallel::parallel_map(
@@ -990,6 +1054,7 @@ pub fn compare_with(
                 mae: s.mae,
                 retail_luma: s.retail_luma,
                 engine_luma: s.engine_luma,
+                fade: j.fade,
             }
         })
         .collect();
@@ -1094,6 +1159,7 @@ pub fn compare_with(
             .iter()
             .filter(|p| p.retail_st7 != p.engine_st7)
             .count(),
+        fade_pairs: pairs.iter().filter(|p| p.fade).count(),
         retail_frames,
         engine_frames: engine_shots.len(),
         segments,
@@ -1110,7 +1176,8 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
     s.push_str(&format!(
         "**Mean `within` {:.3}** over {} scene pairs (min {:.3}). White-flash pairs: {} (mean {}); \
          dark pairs: {}; retail frames with no engine counterpart: {}; pairs in different action \
-         states: {}. Retail frames {}, engine frames {}, display lag {:?}, retail paced on {}.\n\n",
+         states: {}; pairs on the screen fade's row: {}. Retail frames {}, engine frames {}, \
+         display lag {:?}, retail paced on {}.\n\n",
         r.mean_within,
         r.valid_pairs,
         r.min_within,
@@ -1120,6 +1187,7 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
         r.dark_pairs,
         r.unpaired_retail,
         r.state_mismatch_pairs,
+        r.fade_pairs,
         r.retail_frames,
         r.engine_frames,
         r.lag,
@@ -1406,6 +1474,8 @@ mod tests {
             geom: (FRAME_W, FRAME_H, 16),
             display_frames: None,
             drive: None,
+            fade: None,
+            fade_back: None,
         };
         let side = Side {
             dir: PathBuf::new(),
@@ -1493,6 +1563,8 @@ mod tests {
                     geom: (FRAME_W, FRAME_H, 16),
                     display_frames: None,
                     drive: None,
+                    fade: None,
+                    fade_back: None,
                 });
                 t += 1;
             }
@@ -1550,6 +1622,11 @@ mod tests {
         // On-time frames flip on their bump.
         let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1)]);
         assert_eq!(t.shown_by_frame(&t.rows[2]), Some(t.rows[0].t));
+        // The fade's own table stands one frame back: frame 3 past its bump
+        // shows frame 2's fade.
+        for r in rows_of(3).skip(1) {
+            assert_eq!(s.shown_frames_back(r, FADE_FRAMES_BACK), Some(last_of(2)));
+        }
     }
 
     #[test]

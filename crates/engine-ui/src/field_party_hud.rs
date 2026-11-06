@@ -132,6 +132,9 @@ pub struct FieldHudMember<'a> {
     /// Drives the dead tier of the readout-tint law, exactly as on the battle
     /// strip: a downed member's HP *and* MP go red, the name does not dim.
     pub alive: bool,
+    /// The record's `+0x12E` status word: any bit tints the HP readout in the
+    /// caution tier above a quarter (`FUN_800349EC`).
+    pub status: u16,
 }
 
 /// Everything one field party-HUD frame needs.
@@ -381,7 +384,7 @@ pub fn field_party_hud_draws_for(
         // Readout-tint law, identical to the battle strip's: a downed member
         // paints both readouts in the dead tier and leaves the name alone.
         let hp_tint = if m.alive {
-            tier_color(hp_bar_color_index(m.hp, m.hp_max, false))
+            tier_color(hp_bar_color_index(m.hp, m.hp_max, m.status != 0))
         } else {
             gauge_fill_color(2)
         };
@@ -494,6 +497,7 @@ mod tests {
                 mp: 35,
                 mp_max: 35,
                 alive: true,
+                status: 0,
             },
             FieldHudMember {
                 name: "Noa",
@@ -503,6 +507,7 @@ mod tests {
                 mp: 16,
                 mp_max: 16,
                 alive: true,
+                status: 0,
             },
             FieldHudMember {
                 name: "Gala",
@@ -512,6 +517,7 @@ mod tests {
                 mp: 48,
                 mp_max: 48,
                 alive: true,
+                status: 0,
             },
         ]
     }
@@ -563,6 +569,7 @@ mod tests {
             mp: 35,
             mp_max: 35,
             alive: true,
+            status: 0,
         }];
         let d = field_party_hud_draws_for(
             &f,
@@ -602,6 +609,7 @@ mod tests {
             mp: 10,
             mp_max: 48,
             alive: false,
+            status: 0,
         }];
         let d = field_party_hud_draws_for(
             &f,

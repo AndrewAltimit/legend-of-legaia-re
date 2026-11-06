@@ -116,14 +116,14 @@ fn a_matched_reel_gesture_spawns_the_strike_splash_through_the_world_tick() {
     assert_eq!(world.mode, SceneMode::Fishing);
     assert_eq!(world.minigames.fx.len(), 0, "no splash before the gesture");
 
-    // Cast through the world's pad path: Circle opens the wind-up, Circle
+    // Cast through the world's pad path: Cross opens the wind-up, Cross
     // again locks the power, and the lure flies.
     frame(&mut world, 0);
-    frame(&mut world, PadButton::Circle.mask());
+    frame(&mut world, PadButton::Cross.mask());
     for _ in 0..WINDUP_FRAMES + 112 {
         frame(&mut world, 0);
     }
-    frame(&mut world, PadButton::Circle.mask());
+    frame(&mut world, PadButton::Cross.mask());
     let phase = |w: &World| w.minigames.fishing.as_ref().map(|s| s.phase());
     while phase(&world) == Some(PondPhase::Flight) {
         frame(&mut world, 0);

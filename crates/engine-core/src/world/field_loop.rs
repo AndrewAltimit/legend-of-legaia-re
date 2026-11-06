@@ -362,12 +362,12 @@ impl World {
 
     /// The battle loader's HP / MP seat for the first `party_count` members
     /// ([`Self::enter_battle_from_formation`], `FUN_80053CB8`): each member's
-    /// live HP, max HP and MP from its roster record, the HP-bar cursor
+    /// live HP, max HP, MP and max MP from its roster record, the HP-bar cursor
     /// settled on it. A member without a record, or one whose record was
     /// never filled (max HP `0` - a synthetic world with no roster), keeps
     /// the values already on its actor.
     ///
-    /// PORT: FUN_80053CB8 (`0x80053D8C..0x80053E10`, the HP / MP stores)
+    /// PORT: FUN_80053CB8 (`0x80053D8C..0x80053E58`, the HP / MP stores)
     pub(crate) fn seed_party_battle_hp_from_records(&mut self, party_count: u8) {
         for slot in 0..usize::from(party_count).min(self.actors.len()) {
             let Some(hms) = self
@@ -386,6 +386,7 @@ impl World {
             a.hp = hms.hp_cur;
             a.max_hp = hms.hp_max;
             a.mp = hms.mp_cur;
+            a.mp_max = hms.mp_max;
             if a.hp_display.is_some() {
                 a.hp_display = Some(hms.hp_cur);
             }
@@ -731,6 +732,9 @@ impl World {
             a.battle.hp = def.hp;
             a.battle.max_hp = def.hp;
             a.battle.mp = def.mp;
+            // `+0x152` from the monster record's `+0x10` (`FUN_80054CB0`,
+            // `0x80055184..0x8005518C`), the same halfword as `+0x150`.
+            a.battle.mp_max = def.mp;
             a.battle.liveness = 1;
             a.battle.action_category = 3;
             // Live + base action gauge (actor `+0x154` / `+0x156`). The

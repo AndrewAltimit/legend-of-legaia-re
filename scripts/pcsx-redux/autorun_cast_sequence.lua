@@ -284,6 +284,37 @@ local function tou32(v)
     return v
 end
 
+-- `fade_back`: which ordering table holds the screen fade's quad on this
+-- vsync (`retail_compare_battle::display_lag::fade_passes_back`). The fade
+-- actor links its POLY_F4 (0x2A / 0x2B) into OT bucket 1 of the table its
+-- pass builds, so the grab shows the fade `2` passes back when the current
+-- record (`gp+0x434`) already links one, `1` when only the other does, and
+-- `0` stands for neither.
+local DOUBLE_BUFFER, DOUBLE_BUFFER_STRIDE, DOUBLE_BUFFER_INDEX = 0x8007BF30, 0x74, 0x8007B74C
+local function kseg0(w) return bit.bor(bit.band(w, 0xFFFFFF), 0x80000000) % 0x100000000 end
+local function record_links_fade(i)
+    local ot = u32(DOUBLE_BUFFER + i * DOUBLE_BUFFER_STRIDE + 0x70)
+    local function in_ram(a) return a >= 0x80000000 and a < 0x80200000 end
+    if not in_ram(ot) then return false end
+    local p = kseg0(u32(ot + 4))
+    for _ = 1, 64 do
+        if (p >= ot and p < ot + 0x4000) or not in_ram(p) then return false end
+        local tag = u32(p)
+        local code = bit.band(bit.rshift(u32(p + 4), 24), 0xFE)
+        if bit.rshift(tag, 24) ~= 0 and code == 0x2A then return true end
+        p = kseg0(tag)
+    end
+    return false
+end
+-- On the probe table, like `cast_parts_row`: the frame body has no upvalue
+-- to spare.
+function probe.cast_fade_back()
+    local cur = bit.band(u16(DOUBLE_BUFFER_INDEX), 1)
+    if record_links_fade(cur) then return 2 end
+    if record_links_fade(1 - cur) then return 1 end
+    return 0
+end
+
 local meta, body, cam, pre, creature
 -- The cue ring's sampler, hung off `probe` (on_capture already sits at
 -- Lua's 60-upvalue cap, so it takes no new upvalue).
@@ -307,7 +338,8 @@ local guard_at_cast = ""
 local caster_at_cast = -1
 local target_at_cast = -1
 
--- Each pool slot's live ground pair +0x34 / +0x38 (`-` for an empty slot):
+-- Each pool slot's live ground pair +0x34 / +0x38 and facing +0x46 (`-` for
+-- an empty slot; the facing turns the body pair the range law reads):
 -- the engine's inflight seed seats every combatant there at its dispatch, so
 -- an action retail ran before the cast (a monster that struck first and was
 -- not walked home) leaves the same stage.
@@ -352,7 +384,7 @@ local function ground_pairs()
             local x, z = u16(a + 0x34), u16(a + 0x38)
             if x >= 0x8000 then x = x - 0x10000 end
             if z >= 0x8000 then z = z - 0x10000 end
-            t[#t + 1] = string.format("%d:%d", x, z)
+            t[#t + 1] = string.format("%d:%d:%d", x, z, u16(a + 0x46) % 0x1000)
         else
             t[#t + 1] = "-"
         end
@@ -407,7 +439,7 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread,rand")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread,rand,fade_back")
         -- The acting seat's body against the camera that frames it: clip,
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
@@ -699,12 +731,12 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
-            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
+            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED), probe.cast_fade_back())
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
         probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the

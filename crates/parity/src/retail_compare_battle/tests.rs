@@ -64,7 +64,8 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
         summon_fade_on(&ram, false),
         Some(RetailFade {
             to_white: true,
-            age: 6
+            age: 6,
+            spawn_step: None,
         })
     );
     // Landed and 14 into the hold: 20 + 20 + 14 vsyncs, less the one the
@@ -86,6 +87,37 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
     // A killed block is not the live flash.
     put32(&mut ram, actor + 0x10, ACTOR_DONE);
     assert_eq!(summon_fade(&ram), None);
+}
+
+/// A `0x35` flash-out's spawn step is its age less what the sustain word
+/// drained: `zenoir_summon_mid_cast`'s block (`96` of `0x78` left, age `24`)
+/// beside the word's `97` spawned on a step-`1` pass. A word a module
+/// reseeded reads no step.
+#[test]
+fn reads_the_flash_outs_spawn_step_off_the_sustain_word() {
+    use legaia_engine_battle_vm::battle_action::SUMMON_FLASH_OUT;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800F_0000;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    ram[(ctx + 7) as usize & 0x1F_FFFF] = 0x35;
+    put16(&mut ram, ctx + 0x6D8, 97);
+    let actor = 0x8008_2AEC;
+    put32(&mut ram, actor + 0x0C, FADE_ACTOR_TICK);
+    let b = actor + 0x7C;
+    put16(&mut ram, b + 0x10, template_delta(&SUMMON_FLASH_OUT) as u16);
+    put16(&mut ram, b + 0x18, 1);
+    put16(&mut ram, b + 0x22, 1);
+    put16(&mut ram, b + 0x20, 96);
+    assert_eq!(
+        summon_fade_on(&ram, true),
+        Some(RetailFade {
+            to_white: false,
+            age: 24,
+            spawn_step: Some(1),
+        })
+    );
+    put16(&mut ram, ctx + 0x6D8, 140);
+    assert_eq!(summon_fade_on(&ram, true).and_then(|f| f.spawn_step), None);
 }
 
 /// The frame step comes off the duration history's longest entry, and
@@ -222,16 +254,18 @@ fn a_loading_fight_names_its_reason() {
 }
 
 #[test]
-fn combatant_score_skips_a_missing_engine_max_mp() {
+fn combatant_score_counts_a_zero_max_mp() {
     let r = Combatant {
         hp: 10,
         hp_max: 20,
-        mp: 5,
-        mp_max: 9,
+        mp: 0,
+        mp_max: 0,
     };
-    let e = Combatant { mp_max: 0, ..r };
-    let (s, _) = combatant_score(&[Some(r)], &[e], "m", &[]);
+    let (s, _) = combatant_score(&[Some(r)], &[r], "p", &[]);
     assert_eq!(s, 1.0);
+    let e = Combatant { mp_max: 602, ..r };
+    let (s, d) = combatant_score(&[Some(r)], &[e], "p", &[]);
+    assert_eq!(s, 0.75, "{d}");
     let (s, d) = combatant_score(&[Some(r)], &[], "p", &[]);
     assert_eq!(s, 0.0, "{d}");
 }
@@ -505,6 +539,20 @@ fn a_locked_walk_nearest_on_slot_three_chased_the_walks_heading() {
     // Off the walk clip the same ring is an arrival two passes into the loop,
     // which read the loop's own heading (`battle_noaru_gilium_lv2_strike`).
     put8(&mut ram, attacker + 0x1D9, 8);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
+
+    // A swing committed on the RAM's pass alone, the walk's record held on
+    // slots `1..=3` (`battle_map03_moldy_worm_strike`): the displayed frame's
+    // pass still ran the walk.
+    let record = |k: u32| attacker + ram_read::RING_RECORD + k * 4;
+    put32(&mut ram, record(0), 0x800B_21E4);
+    for k in 1..=4 {
+        put32(&mut ram, record(k), 0x800A_DFD8);
+    }
+    let h = camera_align::walk_heading(&ram, ctx).expect("swing committed on the RAM's pass");
+    assert_eq!(h.displayed, 2483);
+    // ... but not when the record changed by slot `2`.
+    put32(&mut ram, record(2), 0x800B_21E4);
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
@@ -1870,6 +1918,12 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     let clips = b.engine_image_displayed_clips();
     assert_eq!(clips.len(), 1, "the magic band");
     assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
+    // So does a monster's Spirit / Item band (a class-0 Heal), whose cast
+    // clip plays through `0x3E` on the same accumulator.
+    b.action_state = 0x3E;
+    let clips = b.engine_image_displayed_clips();
+    assert_eq!(clips.len(), 1, "the Spirit / Item band");
+    assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
     b.action_state = 0x1E;
     b.queued_category = 3;
 
@@ -1912,6 +1966,68 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     assert!(b.party_spirit_round());
     b.party_categories = vec![0];
     assert!(!b.party_spirit_round(), "a member swung or acted otherwise");
+}
+
+/// A monster strike whose displayed frame shows the RAM's own clip but whose
+/// live pair moved inside the lag (`battle_jou_cort_181_strike`: the arrival's
+/// idle committed on the displayed pass, and the loop's passes since backed
+/// Cort off his target, `(-201, 530)` displayed against `(-206, 546)` live):
+/// the image child stands the attacker on the displayed frame's ring pair.
+#[test]
+fn a_monster_strike_that_moved_inside_the_lag_stands_on_the_displayed_pair() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x0A);
+    let (vahn, cort, record) = (0x800E_C9E8u32, 0x800E_D000u32, 0x800A_8158u32);
+    for (slot, base) in [(0u32, vahn), (3, cort)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 60);
+    }
+    put32(&mut ram, 0x801C_9348, record);
+    let (idle, walk) = (0x800B_0AE8u32, 0x800B_1C2Cu32);
+    for (i, e) in [idle, walk].into_iter().enumerate() {
+        put32(&mut ram, record + 0x4C + 4 * i as u32, e);
+    }
+    put16(&mut ram, cort + 0x34, (-206i16) as u16);
+    put16(&mut ram, cort + 0x38, 546);
+    for (k, (e, cur, x, z)) in [
+        (idle, 32u16, -206i32, 546i32),
+        (idle, 16, -206, 546),
+        (idle, 0, -201, 530),
+        (walk, 188, -185, 466),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        put32(&mut ram, cort + 0x234 + 4 * k, e);
+        put16(&mut ram, cort + 0x17A + 2 * k, cur);
+        put32(&mut ram, cort + POSITION_RING + 8 * k, x as u32);
+        put32(&mut ram, cort + POSITION_RING + 8 * k + 4, z as u32);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 3;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.caster_clip = 0;
+    b.span_gate = SpanGate::Age { accum: 64 };
+    let pc = b.party_count.clamp(1, 3);
+    assert!(
+        b.engine_image_displayed_clips().is_empty(),
+        "no commit in the window"
+    );
+    let seats = b.engine_image_displayed_seats();
+    assert_eq!(seats.len(), 1);
+    assert_eq!((seats[0].slot, seats[0].x, seats[0].z), (pc, -201, 530));
+    // Standing where it stood, it takes no seat.
+    b.displayed_ground[3] = Some([-206, 546]);
+    assert!(b.engine_image_displayed_seats().is_empty());
 }
 
 /// A round prompt caught on its far framing's arm: `gaza2_card_first_menu`'s
@@ -2445,6 +2561,56 @@ fn attack_arm_glides_are_seated_off_the_yaw_counter() {
     // A counter on another rung names no arm.
     put16(&mut ram, ctx + 0x6DA, 0x812);
     assert!(attack_arm_glide_seats(&ram, ctx).is_empty());
+}
+
+/// A Spirit / Item band's plaques, retired in the RAM, are seated on the
+/// backdrop weight's age less the display lag
+/// (`battle_deene_garnet_heal_mid_cast`: weight `0x500`, both retired at
+/// `13`, a seven-vsync lag, the screen at `13`); a weight on a ceiling, a
+/// rise already landed on screen or a fallen latch seats nothing.
+#[test]
+fn spirit_band_plaques_are_seated_off_the_backdrop_weight() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let backdrop = 0x800F_0000;
+    put8(&mut ram, ctx + 7, 0x3E);
+    put8(&mut ram, ctx + 0x243, 1);
+    put32(&mut ram, ctx + 0x106C, backdrop);
+    put16(&mut ram, backdrop + 0x78, 0x500);
+    for (slot, target, start) in [
+        (0u32, [16i16, 12], [16i16, -26]),
+        (1, [251, 192], [251, 234]),
+        (2, [-304, 192], [16, 192]),
+    ] {
+        let r = ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        put8(&mut ram, r + 1, 13);
+        put16(&mut ram, r + 4, target[0] as u16);
+        put16(&mut ram, r + 6, target[1] as u16);
+        put16(&mut ram, r + 8, start[0] as u16);
+        put16(&mut ram, r + 10, start[1] as u16);
+    }
+    let seat = |target, elapsed| HudGlideSeat {
+        target,
+        elapsed,
+        total: 16,
+    };
+    assert_eq!(
+        spirit_band_glide_seats(&ram, ctx, 7),
+        vec![seat([16, 12], 13), seat([251, 192], 13)],
+        "the plaques, not the roster panel leaving"
+    );
+    assert!(
+        spirit_band_glide_seats(&ram, ctx, 2).is_empty(),
+        "landed on screen"
+    );
+    put16(&mut ram, backdrop + 0x78, 0x800);
+    assert!(
+        spirit_band_glide_seats(&ram, ctx, 7).is_empty(),
+        "a ceiling"
+    );
+    put16(&mut ram, backdrop + 0x78, 0x500);
+    put8(&mut ram, ctx + 0x243, 0);
+    assert!(spirit_band_glide_seats(&ram, ctx, 7).is_empty(), "no latch");
 }
 
 /// A part whose program switched a rate inside the display lag is taken back

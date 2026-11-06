@@ -182,7 +182,7 @@ impl World {
             return ItemOutcome::NoEffect;
         };
         let (hp, mp) = (a.battle.hp, a.battle.mp);
-        let max = self.tables.character_max_mp.get(i).copied().unwrap_or(mp);
+        let max = a.battle.mp_max;
         let mut delta = 0u16;
         if hp != 0 {
             delta = max.wrapping_sub(mp);
@@ -225,7 +225,8 @@ impl World {
 
     /// Class 3 stores `+0x16E = 0` with no gate at all: Medicine works on the
     /// fallen too. (`FUN_8005133C` ahead of it restores a petrified palette;
-    /// the HUD's status sync does that here.)
+    /// the HUD's status sync does that here, on the word losing its marks:
+    /// `StatusClutState::sync_word`.)
     ///
     /// PORT: FUN_800402F4 (class 3, `0x80040E64..0x80040EB8`)
     fn battle_cure_all(&mut self, target: u8) -> ItemOutcome {

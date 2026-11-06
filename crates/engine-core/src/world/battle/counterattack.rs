@@ -57,10 +57,9 @@ impl World {
         if self.next_rand() & 1 == 0 {
             return;
         }
-        let blocked = self
-            .actors
-            .get(usize::from(monster))
-            .is_none_or(|a| a.battle.field_flags & COUNTER_BLOCKING_STATUS != 0);
+        // The whole word (`lhu` of `+0x16E`): a tracked Confuse blocks too.
+        let blocked = self.actors.get(usize::from(monster)).is_none()
+            || self.raw_status_word(monster) & COUNTER_BLOCKING_STATUS != 0;
         if blocked {
             return;
         }

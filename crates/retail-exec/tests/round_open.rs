@@ -3,7 +3,7 @@
 //! `World::roll_battle_formation`; `FUN_801E752C`, the status tick, against
 //! `World::tick_status_effects`.
 
-use crate::common::{Rng, disc, scus, scus_cpu};
+use crate::common::{Rng, disc, scus, scus_cpu, split_statuses};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
@@ -199,6 +199,7 @@ fn seed_port(w: &mut World, s: &Seats) {
             a.battle_monster_id = Some(u16::from(s.monster_id));
         }
     }
+    split_statuses(w, s.seed);
     w.rng_state = s.seed;
 }
 
@@ -336,9 +337,9 @@ fn the_regeneration_passives_restore_what_retail_restores() {
         state.set(s.seed);
         assert_eq!(cpu.call(0x801E_752C, &[]), Stop::Returned, "{s:?}");
         seed_port(&mut w, &s);
-        w.tables.character_max_mp = vec![400; 3];
         for m in 0..3 {
             w.actors[m].battle.mp = 40;
+            w.actors[m].battle.mp_max = 400;
         }
         w.tick_status_effects();
         let mut r_out = Vec::new();

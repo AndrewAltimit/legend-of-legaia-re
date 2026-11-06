@@ -213,7 +213,17 @@ impl LegaiaViewer {
                 return b.decoded;
             }
         }
-        Vec::new()
+        // The stream form, as `find_scene_bundle` (the NPC catalog's
+        // resolver) falls back to: fourteen scenes (`doman`, `kor`, `taiku`,
+        // `rikuroa`, ...) carry their clip bank only as a type-0x05 chunk of
+        // a DATA_FIELD stream. Without it the catalog names a bank this
+        // decode can't open, and every NPC there draws unposed, each part at
+        // its TMD-local origin (heads inside torsos).
+        legaia_actor_formats::player_anm::find_in_stream(buf)
+            .into_iter()
+            .next()
+            .map(|b| b.decoded)
+            .unwrap_or_default()
     }
 
     /// Raw bytes of one record from the player-ANM bundle at `prot_index`.

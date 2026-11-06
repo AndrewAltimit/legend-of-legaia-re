@@ -183,6 +183,8 @@ There is **no KO bit**. A dead actor is one whose `+0x14C` is zero, which is why
 
 The port holds the same conditions twice. `BattleActor::field_flags` is the raw word (the cast band ORs its debuff bits straight in), and the status tracker holds a typed instance list the turn loop reads. `World::raw_status_word` composes them: the typed list packs through `status_effects::pack_display_flags`, whose bit map is this table, and the raw word ORs in unchanged. A consumer that wants retail's word therefore gets every bit either half carries, including the delegation group the typed list has no kind for.
 
+Every port reader of `+0x16E` takes that composed word, since retail reads the halfword whole everywhere: the monster and turn pickers' `0x380` arms, the Counterattack roll, the Auto fill's Stone / Numb veto (`0x801F04FC`), the seed's retarget gate (`0x801E2C8C`), the victory re-pick's `0x404` test, the win pose's status tier (`0x8004E828`), the HUD's gauge colour and status element (`FUN_80046A20`, `FUN_8002C2E4`), the limb dimming in the per-actor draw `FUN_80048A08`, and the cast modules' seat view. A reader of one half alone missed a Confuse the tracker held or a Curse a cast wrote; the retail differentials hold each of them to the whole word ([retail-kernel-differential](../tooling/retail-kernel-differential.md)).
+
 ### `FUN_801F45A4` - per-round status-`0x400` waker
 
 A 38-instruction leaf (`ghidra/scripts/funcs/overlay_0898_static_801f45a4.txt`). It loops the seven actor slots of `&DAT_801C9370`. For each live actor (`+0x14C != 0`) whose `+0x16E` carries bit `0x400`, it draws one `FUN_80056798` sample and, on `rng & 7 == 0`, clears exactly that bit (`andi 0xFBFF` at `0x801F4610`). The RNG is consumed only for live afflicted actors.

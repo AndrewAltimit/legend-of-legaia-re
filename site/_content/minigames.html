@@ -605,13 +605,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-throw" type="button" id="fishing-reel-b"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Reel soft<span class="mg-key"><span data-pad-key="Square">V</span> (hold)</span></button>
         </div>
         <p class="mg-controls">
-          <b><kbd data-pad-key="Circle">X</kbd> casts and locks the power meter; hold
-          <kbd data-pad-key="Cross">Z</kbd> (Cross) or <kbd data-pad-key="Square">V</kbd>
-          (Square) to reel.</b> While the lure is out, every fresh press feeds the bite, and a
+          <b><kbd data-pad-key="Cross">Z</kbd> (Cross) or <kbd data-pad-key="Square">V</kbd>
+          (Square) casts and locks the power meter, as in the game; press them again to
+          reel.</b> While the lure is out, every fresh press feeds the bite, and a
           strike can only land while a reel button is held - try the rhythm
           <em>Cross&nbsp;&middot; pause&nbsp;&middot; Cross</em>, or the Square-tap cadence the
-          <a href="writeups/spirit-fish.html">Spirit-fish write-up</a> decodes. After a catch or
-          a snapped line, <kbd data-pad-key="Circle">X</kbd> casts again. The camera is
+          <a href="writeups/spirit-fish.html">Spirit-fish write-up</a> decodes. A snapped
+          line returns you to the shore by itself; after a catch, <kbd data-pad-key="Circle">X</kbd>
+          (Circle) puts the fish away once its plate is up. Circle also gives up a cast while the
+          lure is out. The camera is
           retail's own and follows the cast by itself: it closes in over the water on the
           wind-up, holds the in-water view through the fight and turns to the catch.
         </p>
@@ -2342,17 +2344,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         if (!e.repeat) slotPadEdges |= SLOT_PAD[b];
       }
     } else if (active === 'fishing') {
-      /* Pad map: Circle casts (a port binding - retail casts on Cross /
-       * Square and Circle abandons the cast), Cross (reel bit 0x40) = reel A, Square
-       * (reel bit 0x80) = reel B. Every FRESH press is ORed into the packed
-       * newly-pressed word (retail _DAT_8007B874 layout: 0x8000 Left, 0x2000
-       * Right, 0x40 / 0x80 the reels); the engine's bite_pad_nudge counts the
-       * strike-credit nudge from it - three masks, the two reels as one, and
-       * never the cast press. */
+      /* Retail pad map: a fresh Cross / Square press casts and locks the
+       * meter (state 0x0C / 0x14 `& 0xC0`), held Cross (reel bit 0x40) = reel
+       * A, Square (reel bit 0x80) = reel B, and Circle gives up the cast and
+       * dismisses the catch (the tail's `& 0x21`). Every FRESH press is ORed
+       * into the packed newly-pressed word (retail _DAT_8007B874 layout:
+       * 0x8000 Left, 0x2000 Right, 0x20 Circle, 0x40 / 0x80 the reels); the
+       * engine reads the cast and leave edges and counts the strike-credit
+       * nudge (bite_pad_nudge: three masks, the two reels as one) from it. */
       /* The venue hub reads the same packed word: Triangle / Select open it
        * at the shore (retail state 0x0C's `& 0x110`), Up / Down move its
        * cursor, Cross confirms, Circle backs out. */
-      if (b === 'Circle') { e.preventDefault(); if (!e.repeat) fishPressed |= 0x20; fishingCastPress(); }
+      if (b === 'Circle') { e.preventDefault(); if (!e.repeat) fishPressed |= 0x20; }
       else if (b === 'Triangle' || b === 'Select') {
         e.preventDefault();
         if (!e.repeat) fishPressed |= (b === 'Triangle') ? 0x10 : 0x100;
@@ -2588,7 +2591,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     fishingExchangeRender();
     fishingPrizesRender();
     verdict($('fishing-verdict'),
-      (venue ? 'Vidna' : 'Buma') + ` pond - ${keyLabel('Circle')} to cast.`, '');
+      (venue ? 'Vidna' : 'Buma') + ` pond - ${keyLabel('Cross')} to cast.`, '');
   }
 
   /* Space / Cast button: a one-shot press consumed by the next tick. */
@@ -2607,7 +2610,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       } else if (e.e === 'landed') {
         verdict($('fishing-verdict'),
           `Landed ${(st.fish && st.fish.name) || 'the fish'} for ` +
-          `${e.points.toLocaleString()} points! ${keyLabel('Circle')} to cast again.`, 'good');
+          `${e.points.toLocaleString()} points! ${keyLabel('Circle')} once the plate is up, then ${keyLabel('Cross')} to cast again.`, 'good');
         fishingExchangeRender();
         if (window.LegaiaSaves) {
           const d = LegaiaSaves.getMinigames().fishing || {};
@@ -2618,7 +2621,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           });
         }
       } else if (e.e === 'snapped') {
-        verdict($('fishing-verdict'), `The line snapped! ${keyLabel('Circle')} to cast again.`, 'bad');
+        verdict($('fishing-verdict'), `The line snapped! ${keyLabel('Cross')} to cast again once the banner clears.`, 'bad');
       } else if (e.e === 'hub_leave') {
         fishLive = false;
         verdict($('fishing-verdict'), 'You left the venue. Start again to fish.', '');

@@ -60,6 +60,11 @@
 --                    the last formation. A formation no row holds is skipped
 --                    unless LEGAIA_WANT_FORCE=1, which writes it over row 0
 --                    (a synthetic fight: say so in the state's description).
+--   LEGAIA_WANT_WIDE 1 = also widen every region's tile box to the whole map,
+--                    so the roll fires wherever the walk stands: a scene whose
+--                    live condition group covers only tiles the walk never
+--                    reaches (concnow) rolls nothing otherwise. Say so in the
+--                    state's description.
 --   LEGAIA_TOUGH     1 = at each round prompt write every party seat's HP, its
 --                    readout and its pending delta back to full, so a low-level
 --                    party outlasts the rounds; 2 = also raise each seat's
@@ -114,6 +119,7 @@ for f in string.gmatch(probe.getenv("LEGAIA_WANT", ""), "[^;]+") do
     WANT[#WANT + 1] = ids
 end
 local WANT_FORCE = probe.getenv_num("LEGAIA_WANT_FORCE", 0) == 1
+local WANT_WIDE = probe.getenv_num("LEGAIA_WANT_WIDE", 0) == 1
 local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) >= 1
 local TOUGH_POOL = probe.getenv_num("LEGAIA_TOUGH", 0) == 2
 local WOUND = probe.getenv_num("LEGAIA_WOUND", 0)
@@ -231,6 +237,12 @@ local function arm_want(ids, vsync)
     end
     for r = 0, rcount - 1 do
         local base = rtab + 1 + r * rstr
+        if WANT_WIDE then
+            probe.write_u8(base + 0, 0)
+            probe.write_u8(base + 1, 0)
+            probe.write_u8(base + 2, 0xFF)
+            probe.write_u8(base + 3, 0xFF)
+        end
         probe.write_u8(base + 4, 0x40)
         probe.write_u8(base + 6, row)
         probe.write_u8(base + 7, 1)

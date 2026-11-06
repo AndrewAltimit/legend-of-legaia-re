@@ -133,6 +133,20 @@ keeps the whole emulator state from that action's `0x0A`, ahead of the pick, whi
 replays the same cast for the [cast-sequence oracle](cast-sequence-oracle.md). A
 cast the AI will not pick in the rounds given still needs `--monster-pick`.
 
+A one-swing monster sits in the strike loop `0x1E` for a single pass: the loop stages
+its last byte and leaves for `0x1F` together
+([battle-action](../subsystems/battle-action.md#attack-chain---strike-loop-0x1e)), so the
+default `LEGAIA_HOLD` of 8 vsyncs never sees it held and the attack stays uncovered however
+often the monster swings. `LEGAIA_HOLD=1` saves it on the pass after the band opens.
+
+`LEGAIA_WANT` points every region at the row but keeps each region's tile box, so a
+scene whose live [condition group](../formats/encounter.md#the-condition-array-story-flag-gated-region-groups)
+covers only tiles the walk never reaches rolls nothing. `LEGAIA_WANT_WIDE=1` also widens
+every box to the whole map; the state's description says so. A source state whose player
+carries the movement-disabled bit `0x80000` at `+0x10` (an event holds it) takes no step at
+all, so no roll fires there either way (`concnow_field_door_hop_settled`,
+`chapter2_garmel_pre_zeto`).
+
 A state is a valid run of the game whichever way it was reached, so state-making runs
 take `run_probe.sh --fast --turbo`: no display, several at once, well above 1x
 ([headless runs](pcsx-redux-automation.md#headless-runs)).

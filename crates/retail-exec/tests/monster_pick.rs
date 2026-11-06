@@ -3,7 +3,7 @@
 //! swing budget, the flee checkpoint, the per-monster-id switch and the
 //! recent-target ring, all on one `rand()` stream.
 
-use crate::common::{Rng, disc, scus, scus_cpu};
+use crate::common::{Rng, disc, scus, scus_cpu, seat_status};
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_core::world::{MonsterAction, World};
 use legaia_engine_menus::pause_screens::MenuTextTables;
@@ -103,7 +103,7 @@ fn gen_monster(rng: &mut Rng) -> Monster {
         tags,
         costs,
         spirit: rng.below(101) as u16,
-        status: [0, 0, 0, 0x400, 0x80][rng.below(5) as usize],
+        status: [0, 0, 0, 0x400, 0x80, 0x380, 0x1381][rng.below(7) as usize],
     }
 }
 
@@ -234,7 +234,7 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.mp = p.party_mp[m];
         a.battle.liveness = u16::from(p.party_hp[m] != 0);
         a.battle.init_key = p.party_keys[m];
-        a.battle.field_flags = p.party_status[m];
+        seat_status(w, m as u8, p.party_status[m], p.seed >> m & 1 != 0);
         w.battle.attack[m] = 0;
         w.battle.accuracy[m] = 0;
     }
@@ -262,9 +262,9 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.agl = m.gauge;
         a.battle.agl_base = m.gauge.max(1);
         a.battle.spirit_gauge = m.spirit;
-        a.battle.field_flags = m.status;
         a.battle.liveness = 1;
         a.battle_monster_id = Some(key);
+        seat_status(w, seat as u8, m.status, p.seed >> (8 + i) & 1 != 0);
     }
     w.rng_state = p.seed;
 }

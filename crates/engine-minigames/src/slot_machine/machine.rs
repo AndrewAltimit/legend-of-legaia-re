@@ -83,11 +83,16 @@ pub struct SlotMachine {
     /// payline (`FUN_801d0fa8` starts its row counter on the raw row and counts
     /// down one row a face, and the payline is the fifth face).
     pub(super) reel_pos: [i32; REEL_COUNT],
-    /// Reel velocities during a spin (`DAT_801d3cd0..`). Magnitudes are
-    /// visual pacing, not pinned - host-rate constants.
+    /// Reel velocities during the spin-up (`DAT_801d3cd0..`): [`SPIN_RAMP`]
+    /// a frame to [`SPIN_SPEED`], one reel at a time.
     pub(super) reel_vel: [i32; REEL_COUNT],
-    /// Landed payline row per reel (`None` while still spinning).
+    /// Landed payline row per reel (`None` while still spinning or rolling
+    /// in): the landed flag `DAT_801d3d10[reel]`.
     pub(super) stopped: [Option<usize>; REEL_COUNT],
+    /// A stopped reel rolling in: its landing row (`DAT_801d3ce0[reel]`) and
+    /// the budget left (`DAT_801d3cf0[reel]`), from its Stop press until it
+    /// lands ([`SlotMachine::roll_reels`]).
+    pub(super) rolling: [Option<(usize, i32)>; REEL_COUNT],
     /// Spin-up timer (`DAT_801d3c90`), frames until stopping is allowed.
     pub(super) spin_timer: i32,
     /// This spin armed the long spin-up: `DAT_801d3c90` started at `0x18`.
@@ -280,6 +285,7 @@ impl SlotMachine {
                 REEL_COUNT],
             reel_vel: [0; REEL_COUNT],
             stopped: [None; REEL_COUNT],
+            rolling: [None; REEL_COUNT],
             spin_timer: 0,
             spin_long: false,
             spin_up_last_tick: false,
@@ -465,6 +471,7 @@ impl SlotMachine {
         self.reel_pos = seat.reel_pos;
         self.reel_vel = [0; REEL_COUNT];
         self.stopped = [None; REEL_COUNT];
+        self.rolling = [None; REEL_COUNT];
         self.feature_mode = seat.feature_mode;
         self.bonus_spins = seat.bonus_spins;
         self.net_take = seat.net_take;
@@ -509,6 +516,7 @@ impl SlotMachine {
     pub fn reel_stop_open(&self, reel: usize) -> bool {
         matches!(self.phase, SlotPhase::Spinning | SlotPhase::Stopping)
             && self.stopped.get(reel).is_some_and(|s| s.is_none())
+            && self.rolling.get(reel).is_some_and(|r| r.is_none())
     }
 
     /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
@@ -560,9 +568,17 @@ impl SlotMachine {
         }
     }
 
-    /// How many reels are stopped this spin (`DAT_801d3d2c`).
+    /// How many reels have taken their Stop press this spin (`DAT_801d3d2c`),
+    /// landed or still rolling in.
     pub fn reels_stopped(&self) -> usize {
-        self.stopped.iter().filter(|s| s.is_some()).count()
+        (0..REEL_COUNT)
+            .filter(|&r| self.stopped[r].is_some() || self.rolling[r].is_some())
+            .count()
+    }
+
+    /// Whether `reel` has landed (`DAT_801d3d10[reel]`): its roll-in is over.
+    pub fn reel_landed(&self, reel: usize) -> bool {
+        self.stopped.get(reel).is_some_and(|s| s.is_some())
     }
 
     /// `true` when the spin timer has expired and stop inputs are accepted.

@@ -98,6 +98,37 @@ impl World {
         &self.casting.module_theeder.trail.hist
     }
 
+    /// PROT 0904 shows every seat it damages: each arm-12 hit stores the
+    /// presentation word `+0x04 = 0x3FF0000`, the render flag `0` and
+    /// `+0x21F = 2` beside the HP write (`0x801F7D9C` / `0x801F7DB4`), the
+    /// one damage site the module has. The port's fold stands in for that
+    /// site's magnitude and may strike a seat the ray has not crossed yet, the
+    /// summon band still hiding it (`0x34`'s `+0x21C = 0xFF`): a hidden body
+    /// does not tick (`0x800474D4`), so its reaction never ended and arm 14's
+    /// row poll held the cast for good (`theeder_summon_mid_cast` sat on it
+    /// past the recording, the score left ducked). The fold carries the hit's
+    /// presentation stores to every monster it set reacting.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 12, the hit's presentation stores)
+    pub(in crate::world::battle) fn show_theeder_fold_targets(&mut self) {
+        use legaia_engine_cast::seru_magic_ticks::{
+            THEEDER_HIT_PRESENT_WORD, THEEDER_HIT_RENDER_21F,
+        };
+        let pc = usize::from(self.party.party_count);
+        for i in pc..self.actors.len() {
+            if self.actors[i].battle_monster_id.is_none()
+                || self.actors[i].battle_reaction.is_none()
+                || !self.battle_body_hidden(i)
+            {
+                continue;
+            }
+            let a = &mut self.actors[i];
+            a.battle.render_flag = 0;
+            a.battle.render_color = THEEDER_HIT_PRESENT_WORD;
+            a.battle.impact_state = THEEDER_HIT_RENDER_21F;
+        }
+    }
+
     /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
     /// seen from `centre` - the geometry PROT 0904's swinging-ray sweep
     /// gates each hit on, and the one thing the module's arm 12 needs from its

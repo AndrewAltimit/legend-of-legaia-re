@@ -116,6 +116,7 @@
   </table>
   </div>
   <p>Three masks are read as units: <code>0xF84</code> gates a slot out of the selectable scans, <code>0x0F80</code> is what taking damage clears, and <code>0x0404</code> is the whole-actor inert test. There is no KO bit: a dead actor is one whose HP halfword is zero, which is why every consumer pairs the two.</p>
+  <p>The port keeps the word in two halves, the raw bits a cast writes and a typed tracker a hit&rsquo;s status arm fills, and composes them back into one halfword for every reader. Retail reads the halfword whole everywhere, so each reader does too: the pickers, the Counterattack roll, the Auto fill, the HUD&rsquo;s gauge colour and status element, the limb dimming and the cast modules&rsquo; seats. A reader of one half missed a Confuse the tracker held or a Curse a cast wrote; the off-disc differentials hold each one to the whole word.</p>
 </section>
 
 <section class="doc-section" id="escape">

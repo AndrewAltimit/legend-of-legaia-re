@@ -54,6 +54,9 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // The CD drive runs on every vsync, held frame or not
+        // (`World::tick_cast_drive`).
+        self.tick_cast_drive();
         // A summon's seek arm blocks retail's whole game loop on the drive
         // (`World::cast_drive_blocks_frame`): a frame-stepped
         // `orb_summon_mid_cast` moves only what the interrupt handlers write

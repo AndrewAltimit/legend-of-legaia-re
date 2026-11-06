@@ -227,11 +227,9 @@ impl World {
                 mp,
                 party_count: pc,
                 monster_count: seated.max(1),
-                field_flags: self
-                    .actors
-                    .get(slot as usize)
-                    .map(|a| a.battle.field_flags)
-                    .unwrap_or(0),
+                // The monster's whole `+0x16E` word: a Confuse the tracker
+                // holds is in it (the `0x380` arms read the word).
+                field_flags: self.raw_status_word(slot),
                 allies_with_mp,
                 spirit_gauge: self
                     .actors

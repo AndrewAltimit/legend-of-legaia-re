@@ -17,6 +17,28 @@ pub(super) fn template_delta(
     (((i32::from(t.end_rgb[0]) - i32::from(t.start_rgb[0])) * 0x40) / i32::from(t.duration)) as i16
 }
 
+/// The band's sustain word `ctx[+0x6D8]`.
+const BAND_WORD: u32 = 0x6D8;
+
+/// The step of the pass a `0x35` capture's flash-out spawned on, off the
+/// band's sustain word: the `0x34` pass arms the word to `0x78`
+/// (`sh v0,0x2(s7)` at `0x801E4B20`) and spawns the flash in the same pass
+/// (`jal 0x80024E80` at `0x801E4BAC`), the fade's tick drains the step on
+/// that pass too ([`RetailFade::spawn_step`]), and each `0x35` pass after
+/// drains the word by its own step (`0x801E4BCC..0x801E4BDC`). The age less
+/// what the word drained is then the spawn pass's step. `None` where that
+/// is no step (`1..=4`): a module that reseeds or drains the word itself,
+/// or the drain clamp's pin at `1`, has left it something else.
+fn flash_out_spawn_step(ram: &[u8], age: i32) -> Option<u8> {
+    let ctx = game_anchors::u32_at(ram, BATTLE_CTX);
+    if !in_ram(ctx) || game_anchors::u8_at(ram, ctx + 7) != 0x35 {
+        return None;
+    }
+    let word = i32::from(game_anchors::u16_at(ram, ctx + BAND_WORD) as i16);
+    let step = age - (0x78 - word);
+    (1..=4).contains(&step).then_some(step as u8)
+}
+
 /// Find the live summon flash among the fade actors: tick word
 /// `FUN_80025000`, not done, kind `1`, id `1`, and the delta of one of the
 /// two summon templates (the creature's own fades share the actor and the
@@ -83,6 +105,11 @@ pub fn summon_fade_on(ram: &[u8], pass_clock: bool) -> Option<RetailFade> {
             return Some(RetailFade {
                 to_white,
                 age: age.clamp(0, i32::from(u16::MAX)) as u16,
+                spawn_step: if to_white {
+                    None
+                } else {
+                    flash_out_spawn_step(ram, age)
+                },
             });
         }
     }

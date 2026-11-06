@@ -124,6 +124,9 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
     legaia_engine_battle::battle_tutorial::BATTLE_REPORT_FLAG,
     legaia_engine_battle::battle_tutorial::BATTLE_ENTRY_CLEARED_FLAG,
 ];
+/// The map id a Muscle Dome leg's fight start `FUN_801D1510` stores in
+/// `0x80084540` (`other6`, [`RetailBattle::map_define`]).
+pub(crate) const DOME_LEG_MAP_DEFINE: u16 = 0x4C6;
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// The options screen's Select Attack config word.
@@ -380,6 +383,10 @@ pub struct RetailBattle {
     /// (char - 1) * 0x414 + 0x104`), against which a seat's own word `+0x14E`
     /// shows a probe's raise ([`Self::party_seat_pool_raised`]).
     pub record_hp_max: Vec<u16>,
+    /// Each party seat's character record's maximum MP (`+0x108`), against
+    /// which a seat's own word `+0x152` shows a battle-local write
+    /// ([`Self::party_seat_mp_max_off_record`]).
+    pub record_mp_max: Vec<u16>,
     /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).
     /// For the seats a menu capture's member follows, this round's commit.
     pub party_categories: Vec<u8>,
@@ -406,6 +413,9 @@ pub struct RetailBattle {
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.
     pub module_phase: u8,
+    /// `ctx[+0x276]` - the side-band applier stage, up while the cast's
+    /// `summon.dat` slots are still streaming.
+    pub sideband_stage: u8,
     /// The acting seat's latch word `0x801C8FE0 + (ctx[+0x13] + 1) * 4`.
     pub caster_latch: u32,
     /// Vsyncs the capture's displayed frame lags its RAM
@@ -427,6 +437,10 @@ pub struct RetailBattle {
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
+    /// What the action SM's prologue drifted the yaw counter `ctx[+0x6DA]`
+    /// by over the same two passes: `max(1, 4 * step / 3)` a pass
+    /// (`0x801E29E4..0x801E2A24`).
+    pub display_pass_yaw_drift: u16,
     /// Vsyncs the displayed frame's screen fades lag the RAM's fade actors
     /// by ([`displayed_fade_lag_vsyncs`]).
     pub display_fade_lag: u16,
@@ -600,6 +614,11 @@ pub struct RetailBattle {
     /// it only when no stream reaches the phase on the picks the replay drew
     /// itself, so every state a stream reaches keeps its own fight.
     pub strike_stream_steer: bool,
+    /// A monster strike's physical turns aimed at the capture's target
+    /// (`ActionSteer::strike_aim`). Not a capture fact: the battle search
+    /// raises it only once no stream reached the phase on the targets the
+    /// replay picked itself.
+    pub strike_aim_steer: bool,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
@@ -646,6 +665,10 @@ pub struct RetailBattle {
     /// record's opening (`jouine`'s Cort cutscene raising `0x645`) leaves the
     /// flags where retail's entry op found them. Empty as read.
     pub entry_lowers: Vec<u16>,
+    /// The system-script PC the seed's settle stops on: retail's, when it is
+    /// parked straight after spawning the fight's record
+    /// ([`engine_run::SpawnPark`]). `None` as read; the corpus run fills it.
+    pub entry_park: Option<usize>,
     /// The state was made on a shiny-Seru patched disc (its `resident_patch`
     /// names `shiny-seru`): that build's battle init takes one `rand()` draw
     /// for the shiny roll ahead of the formation draws
@@ -788,6 +811,12 @@ impl RetailBattle {
             ids: self.monster_ids.clone(),
             scripted: self.scripted,
         }
+    }
+
+    /// A Muscle Dome leg: battle init's map id is the arena's
+    /// ([`DOME_LEG_MAP_DEFINE`]) while the field under it stays `koin1`.
+    pub fn dome_leg(&self) -> bool {
+        self.map_define == DOME_LEG_MAP_DEFINE
     }
 }
 

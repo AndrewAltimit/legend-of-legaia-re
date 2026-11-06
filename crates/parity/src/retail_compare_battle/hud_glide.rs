@@ -261,3 +261,78 @@ pub(super) fn attack_arm_glide_seats(ram: &[u8], ctx: u32) -> Vec<HudGlideSeat> 
         })
         .collect()
 }
+
+/// The battle-frame depth-cue pass `FUN_80050120` adds `step << 6` to the
+/// backdrop pair's weight (`+0x78`) a pass while the action latch
+/// `ctx[+0x243]` is up (`0x80050600..0x8005065C`), and takes it back to `0`
+/// at the same rate once the latch falls.
+const BACKDROP_CUE_PER_VSYNC: u16 = 0x40;
+/// The weight's ceilings (`0x800` outdoors, `0xC00` / `0x1000` under the
+/// module stage bytes): a weight on one may have sat there for any time.
+const BACKDROP_CUE_CEILINGS: [u16; 3] = [0x800, 0xC00, 0x1000];
+/// The Spirit / Item band past its pre-arm.
+const SPIRIT_BAND: std::ops::RangeInclusive<u8> = 0x3D..=0x40;
+/// The capture-class band (`0x6E..=0x71`), whose cast begin raises the same
+/// latch behind its `0x6E` store (`0x801E44FC`).
+const CAPTURE_BAND: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
+
+/// The actor plaque and target plaque of a Spirit / Item band, retired in the
+/// RAM but still rising on the displayed frame, timed off the backdrop weight.
+///
+/// The band's pre-arm `0x3C` raises the latch (`0x801E3B6C`), and the
+/// plaques' sixteen-vsync rise and the weight's ramp count the same vsyncs
+/// from there: `battle_jou_vera_v3_heal_mid_cast` holds both plaques in
+/// flight at `15` beside weight `960` (`15 * 0x40`), and
+/// `battle_deene_garnet_heal_mid_cast` holds them retired at `13` beside
+/// weight `0x500` (twenty vsyncs: `13`, then its step-`3` landing pass and
+/// the step-`4` pass the capture froze in). A retired record cannot say when
+/// it landed ([`landed_glide_pool_seats`] needs the older table to show it
+/// moving), and in Garnet's capture both tables draw the plaques at rest
+/// while the screen, two passes back, shows them eight pixels short. The
+/// weight on the displayed frame, `lag` vsyncs less, is the rise's age
+/// there. A weight on a ceiling says nothing and seats nothing.
+pub(super) fn spirit_band_glide_seats(ram: &[u8], ctx: u32, lag: u16) -> Vec<HudGlideSeat> {
+    let state = game_anchors::u8_at(ram, ctx + 7);
+    if !(SPIRIT_BAND.contains(&state) || CAPTURE_BAND.contains(&state))
+        || game_anchors::u8_at(ram, ctx + 0x243) == 0
+    {
+        return Vec::new();
+    }
+    let rec = game_anchors::u32_at(ram, ctx + 0x106C);
+    if !in_ram(rec) {
+        return Vec::new();
+    }
+    let cue = game_anchors::u16_at(ram, rec + 0x78);
+    if BACKDROP_CUE_CEILINGS.contains(&cue) {
+        return Vec::new();
+    }
+    let total = 16u16;
+    let Some(shown) = (cue / BACKDROP_CUE_PER_VSYNC).checked_sub(lag) else {
+        return Vec::new();
+    };
+    if shown >= total {
+        return Vec::new();
+    }
+    (0..HUD_GLIDE_SLOTS)
+        .filter_map(|s| {
+            let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+            let at = |o: u32| {
+                [
+                    game_anchors::i16_at(ram, r + o),
+                    game_anchors::i16_at(ram, r + o + 2),
+                ]
+            };
+            let last = u16::from(game_anchors::u8_at(ram, r + 1));
+            let (target, start) = (at(4), at(8));
+            // The actor plaque (record 68) from above the screen, the target
+            // plaque (record 81) from below it onto the bar's row.
+            let plaque = (target, start) == ([16, 12], [16, -26])
+                || (target[1] == 192 && start == [target[0], 234]);
+            (game_anchors::u8_at(ram, r) == 0 && plaque && shown <= last).then_some(HudGlideSeat {
+                target,
+                elapsed: shown as u8,
+                total: total as u8,
+            })
+        })
+        .collect()
+}

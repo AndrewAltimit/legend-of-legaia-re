@@ -100,24 +100,26 @@ impl PlayWindowApp {
         res: &SceneResources,
         tmd_src_index: &[usize],
     ) {
-        // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
-        // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
-        // indexed by a field stager's relative `model_sel`. Kept as its own clone
-        // because `res` is consumed below; the field-FX render path looks meshes up
-        // here instead of the battle `global_tmd_pool`.
+        // Field move-VM stager scene-pack TMD list: the environment pack
+        // (`field_env::env_pack_tmd_indices`, scan order) = retail
+        // `DAT_8007C018[5..]`, indexed by a field stager's relative
+        // `model_sel` - the same list the browser page resolves its parts
+        // through. Not the scene bundle's entry: in 22 scenes (`rikuroa`,
+        // `taiku`, `doman`, `balden`, `nilboa` among them) the pack streams
+        // from an entry the bundle does not name, and a bundle-keyed list left
+        // every field-FX and ambient mesh part there undrawn on this host.
+        // Kept as its own clone because `res` is consumed below; the field-FX
+        // render path looks meshes up here instead of the battle
+        // `global_tmd_pool`.
         let field_stager_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)> = self
             .session
             .host
             .scene
             .as_ref()
-            .and_then(|scene| {
-                legaia_engine_scene::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
-            })
-            .map(|bundle_entry| {
-                res.tmds
-                    .iter()
-                    .filter(|t| t.entry_idx == bundle_entry)
-                    .map(|t| (t.tmd.clone(), t.raw.clone()))
+            .map(|scene| {
+                legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res)
+                    .into_iter()
+                    .map(|i| (res.tmds[i].tmd.clone(), res.tmds[i].raw.clone()))
                     .collect()
             })
             .unwrap_or_default();

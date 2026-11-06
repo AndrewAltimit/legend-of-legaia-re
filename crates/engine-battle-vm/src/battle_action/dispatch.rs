@@ -509,9 +509,12 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
     let monster_standing = (0..monsters).any(|m| retail_alive(RETAIL_FIRST_MONSTER + m));
     ctx.delegated_seats = 0;
     for slot in 0..party {
-        let Some(status) = host.actor(slot).map(|a| a.field_flags) else {
+        // The whole `+0x16E` word: a Stone or Numb the host's tracker holds
+        // vetoes the fill (`& 0x404`) as a raw one does.
+        if host.actor(slot).is_none() {
             continue;
-        };
+        }
+        let status = host.status_word(slot);
         if !gate_selects_auto_fill(host.character_ability_bits_high(slot), status) {
             continue;
         }
@@ -920,7 +923,9 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::DoneCleanup);
     }
     let category = ActionCategory::from_byte(actor.action_category);
-    let field_flags = actor.field_flags;
+    // `lhu v0,0x16e(s3)` / `andi v0,v0,0x380` at `0x801E2C8C`: the whole word,
+    // so a Confuse the host's tracker holds reaches the retarget.
+    let field_flags = host.status_word(actor_slot);
     let party_count = host.party_count();
     host.seed_entry(actor_slot);
 
@@ -950,6 +955,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // per-action camera-angle variant, rolled `rand() % 4` before the
     // category dispatch. Each category arm below may narrow it further.
     ctx.camera_variant = (host.rng() % 4) as u8;
+    ctx.seed_camera_variant = ctx.camera_variant;
 
     // Per-action camera framing (`FUN_801F0348` at `801e2d2c`). Retail runs
     // this unconditionally on the seed path, ahead of - and independent of -
@@ -1026,7 +1032,15 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // Capture harness: a replay that knows the variant retail's seed rolled
     // lands it over the engine's own roll, after every draw above was made
     // (`BattleActionCtx::camera_variant_pin`). Nothing in play sets it.
+    // The pin is retail's byte after the category arm; where the arm left
+    // the roll standing (`Attack`, `Spirit`, `Run`, ...) that byte is also the
+    // roll the seed's own framing read, so the seed pass frames on it too.
+    // Where the arm narrowed it, retail's roll is not in the capture and the
+    // seed keeps the engine's.
     if let Some(pin) = ctx.camera_variant_pin {
+        if ctx.camera_variant == ctx.seed_camera_variant {
+            ctx.seed_camera_variant = pin;
+        }
         ctx.camera_variant = pin;
     }
     transition(ctx, next)

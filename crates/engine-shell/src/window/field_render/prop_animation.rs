@@ -32,10 +32,8 @@ impl PlayWindowApp {
             let Some(Some(mesh_idx)) = self.field_pack_mesh_idx.get(slot).copied() else {
                 continue;
             };
-            // The env-pack TMD the slot's mesh was uploaded from. A scene
-            // whose pack is not the bundle's own (`rikuroa` streams it)
-            // has no stager list entry for the slot; the upload's own
-            // source is the same TMD either way.
+            // The env-pack TMD the slot's mesh was uploaded from; the
+            // upload's own source is the same TMD.
             let Some((tmd, raw)) = self
                 .field_stager_tmds
                 .get(slot)

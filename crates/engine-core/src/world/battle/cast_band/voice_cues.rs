@@ -47,10 +47,11 @@ impl World {
     }
 
     /// Stand the drive where a summon module finds it
-    /// ([`legaia_engine_battle_vm::battle_cd_drive`]): the side-band read done,
-    /// and the battle seek-ahead selector's seek to the caster's clip file
-    /// issued (`FUN_8004DA00`, which arms once the side-band stage is `0`). A
-    /// module with no seek-and-poll pair waits on nothing.
+    /// ([`legaia_engine_battle_vm::battle_cd_drive`]): the side-band read's
+    /// head, and the battle seek-ahead selector's seek to the caster's clip
+    /// file queued (`FUN_8004DA00`, which sends it once the side-band stage
+    /// `ctx[+0x276]` is `0` again, [`Self::tick_cast_drive`]). A module with
+    /// no seek-and-poll pair waits on nothing.
     ///
     /// REF: FUN_8004DA00, FUN_8003EAE4
     fn arm_module_drive(&mut self, image: &[u8], spell_id: u8) {
@@ -58,6 +59,7 @@ impl World {
         self.casting.drive_arms =
             legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(image).map(|a| (a, false));
         self.casting.drive = cd::CdDrive::at(cd::SIDE_BAND_LBA);
+        self.casting.selector_seek = None;
         let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
             self.cast_module_for(spell_id).unwrap_or(0),
             spell_id,
@@ -72,28 +74,70 @@ impl World {
             && let Some(class) = self.spell_table_class(spell_id)
         {
             let slot = self.party_roster_slot(caster) as u8 + 1;
-            if let Some(lba) = cd::clip_lba(u32::from(cd::party_magic_seek_clip(slot, class))) {
-                self.casting.drive.seek(lba);
-            }
+            self.casting.selector_seek =
+                cd::clip_lba(u32::from(cd::party_magic_seek_clip(slot, class)));
         }
     }
 
-    /// One vsync of the drive, and the module's seek on its arm's pass: the
-    /// seek arm waits out what is in flight (its `CdlSetloc` blocks on the
-    /// drive), then issues `FUN_8003EAE4(0, slot)`. Whether `arm` holds this
-    /// pass is [`Self::module_drive_holds`].
-    pub(in crate::world::battle::cast_band) fn step_module_drive(&mut self, arm: u8) {
+    /// One vsync of a summon cast's drive, every vsync of the cast whether or
+    /// not the module runs a pass (a blocked frame included): the seek in
+    /// flight runs on, and the selector's queued seek goes out once the
+    /// side-band applier has dropped its stage. Frame-stepped,
+    /// `theeder_summon_mid_cast`'s drive leaves `summon.dat` for `XA8.XA` on the
+    /// vsync `ctx[+0x276]` reads `0`, `8` vsyncs into the module's arm 1, and
+    /// `orb_summon_mid_cast` holds the latch `0x8007BDB0` at the selector's
+    /// `0x1A` with the `XA27` seek just issued.
+    pub(in crate::world) fn tick_cast_drive(&mut self) {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || self.casting.drive_arms.is_none()
+        {
+            return;
+        }
+        self.drive_vsync();
+        self.casting.drive_vsync_done = true;
+    }
+
+    fn drive_vsync(&mut self) {
         self.casting.drive.tick();
+        let invoking = self.battle_ctx.action_state
+            == legaia_engine_battle_vm::battle_action::ActionState::SummonInvoke.as_byte();
+        if !invoking
+            && self.battle_ctx.menu_open == 0
+            && let Some(lba) = self.casting.selector_seek.take()
+        {
+            self.casting.drive.seek(lba);
+        }
+    }
+
+    /// The module's pass on `arm` with its drive: the seek arm polls the
+    /// side-band stage first and returns busy while it is up, then issues
+    /// `FUN_8003EAE4(0, slot)`, whose `CdlSetloc` waits out what is in flight
+    /// ([`Self::cast_drive_blocks_frame`]). Whether `arm` holds this pass is
+    /// [`Self::module_drive_holds`].
+    pub(in crate::world::battle::cast_band) fn step_module_drive(&mut self, arm: u8) {
         self.casting.drive_ticked_at = self.clock.display_frames;
+        // A pass the world's tick did not lead (a module stepped on its own)
+        // runs its vsync of the drive here.
+        if !std::mem::take(&mut self.casting.drive_vsync_done) {
+            self.drive_vsync();
+        }
         if let Some((a, issued)) = self.casting.drive_arms
             && !issued
             && arm >= a.seek_arm
-            && self.casting.drive.idle()
+            && self.module_seek_ready()
             && let Some(lba) = legaia_engine_battle_vm::battle_cd_drive::clip_lba(a.slot)
         {
             self.casting.drive.seek(lba);
             self.casting.drive_arms = Some((a, true));
         }
+    }
+
+    /// The seek arm's `CdlSetloc` goes out: the side-band stage is down, the
+    /// selector's seek has been sent, and the drive has finished it.
+    fn module_seek_ready(&self) -> bool {
+        self.battle_ctx.menu_open == 0
+            && self.casting.selector_seek.is_none()
+            && self.casting.drive.idle()
     }
 
     /// Whether retail's game loop is held inside the seek arm's `CdlSetloc`
@@ -105,6 +149,7 @@ impl World {
     pub fn cast_drive_blocks_frame(&self) -> bool {
         self.mode == legaia_engine_mode::mode::SceneMode::Battle
             && self.casting.drive_ticked_at + 1 >= self.clock.display_frames
+            && self.battle_ctx.menu_open == 0
             && self.casting.drive_arms.is_some_and(|(a, issued)| {
                 !issued && self.casting.module_phase == a.seek_arm && !self.casting.drive.idle()
             })
@@ -122,12 +167,20 @@ impl World {
     }
 
     /// Whether the resident module's current arm waits on the drive: the
-    /// seek arm before its seek issues, the poll arm until the seek completes.
-    /// What the oracles read to place a cast's CD-seek wait (the PCM cast
-    /// channel's `.drive` sidecar).
+    /// seek arm behind the selector's seek, the poll arm until the module's
+    /// own seek completes. The seek arm's passes before that, held on the
+    /// side-band stage, wait on the applier and not on the drive. What the
+    /// oracles read to place a cast's CD-seek wait (the PCM cast channel's
+    /// `.drive` sidecar).
     pub fn cast_drive_waiting(&self) -> bool {
+        let phase = self.casting.module_phase;
         self.mode == legaia_engine_mode::mode::SceneMode::Battle
-            && self.module_drive_holds(self.casting.module_phase)
+            && self.module_drive_holds(phase)
+            && !self.casting.drive_arms.is_some_and(|(a, issued)| {
+                !issued
+                    && phase == a.seek_arm
+                    && (self.battle_ctx.menu_open != 0 || self.casting.selector_seek.is_some())
+            })
     }
 
     /// Whether the module's `arm` returns busy on the drive this pass: its seek

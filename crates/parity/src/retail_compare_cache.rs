@@ -168,6 +168,13 @@ impl ResultCache {
         hash_str(&mut h, &format!("{:?}", entry.resident_disc));
         hash_str(&mut h, &format!("{:?}", entry.ram_injected));
         hash_file(&mut h, &entry.path).ok()?;
+        match &entry.staging_source {
+            Some((emulator, source)) => {
+                hash_str(&mut h, emulator);
+                hash_file(&mut h, source).ok()?;
+            }
+            None => hash_str(&mut h, "no staging source"),
+        }
         match &entry.memory_card {
             Some(Ok(card)) => hash_file(&mut h, card).ok()?,
             other => hash_str(&mut h, &format!("{other:?}")),

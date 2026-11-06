@@ -536,7 +536,11 @@ pub fn battle_hud_draws_for(
                 hp_tint,
             );
 
-            if slot.mp_max > 0 {
+            // The MP pair is drawn for every party member, a zero ceiling
+            // included: retail's MP tint (`FUN_80046A20`, `0x80046B74`) reads
+            // `+0x152` with no zero test, so a seat Lapis Wave emptied shows
+            // `0/0` in the danger colour rather than losing the field.
+            if slot.is_party || slot.mp_max > 0 {
                 label(
                     &mut sprites,
                     &mut text,
@@ -637,7 +641,7 @@ pub fn battle_hud_draws_for(
             BAR_DIGIT_Y + dy,
             hp_tint,
         );
-        if slot.mp_max > 0 {
+        if slot.is_party || slot.mp_max > 0 {
             label(
                 &mut sprites,
                 &mut text,

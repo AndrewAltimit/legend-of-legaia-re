@@ -33,9 +33,16 @@ pub struct PondInput {
     /// decoder, and the D-pad (`0x2000` right, `0x4000` down, `0x8000` left)
     /// the rod actor's lift and roll read ([`crate::fishing_actors::RodActor::drive`]).
     pub reel_mask: u32,
-    /// The cast / confirm edge (Circle `0x20` in retail; `X` on both browser pages, and Space as well
-    /// on the minigames page).
+    /// The cast edge: a new Cross (`0x40`) or Square (`0x80`) press, the
+    /// `_DAT_8007B874 & 0xC0` both the idle shore (state `0xC`, `0x801CF99C`)
+    /// and the power meter (state `0x14`, `0x801CFBA4`) test. It starts the
+    /// wind-up and locks the meter.
     pub cast_edge: bool,
+    /// The leave edge: a new Circle (`0x20`) or L2 (`0x01`) press, the mode
+    /// SM tail's `_DAT_8007B874 & 0x21` (`0x801D0318`). It drops the cast back
+    /// to the shore (state `10`) on a frame whose state allows it
+    /// ([`PondSession::tick`]).
+    pub leave_edge: bool,
     /// The strike credit's pad nudge this frame - what
     /// [`crate::fishing_actors::bite_pad_nudge`] counts off the newly-pressed
     /// word (D-pad left, D-pad right, the reel pair as one mask).
@@ -52,10 +59,11 @@ impl PondInput {
     /// hosts.
     ///
     /// The reel bits are **held** Cross / Square (`_DAT_8007b850 & 0xc0`),
-    /// the cast edge a **new** Circle press, and the strike credit's nudge
+    /// the cast edge a **new** Cross / Square press and the leave edge a
+    /// **new** Circle / L2 press, and the strike credit's nudge
     /// is [`crate::fishing_actors::bite_pad_nudge`] over the newly-pressed
     /// word rotated into the packed retail layout (`_DAT_8007B874`): D-pad
-    /// left, D-pad right and the reel pair as one mask, never the cast.
+    /// left, D-pad right and the reel pair as one mask.
     pub fn from_engine_pad(pad: u16, pad_prev: u16) -> Self {
         use legaia_engine_system::pad::PadButton as B;
         let mut reel_mask = 0u32;
@@ -86,7 +94,8 @@ impl PondInput {
         PondInput {
             reel_edge,
             reel_mask,
-            cast_edge: pressed & B::Circle.mask() != 0,
+            cast_edge: pressed & (B::Cross.mask() | B::Square.mask()) != 0,
+            leave_edge: pressed & (B::Circle.mask() | B::L2.mask()) != 0,
             edge_bonus: crate::fishing_actors::bite_pad_nudge(u32::from(pressed.rotate_right(8))),
         }
     }
@@ -158,6 +167,16 @@ pub struct PondSession {
     pub(super) fish_scale: u16,
     /// Points awarded by the last landed catch.
     pub(super) last_award: i32,
+    /// The catch's from-right banner timer `DAT_801D915C`, seeded `1` at
+    /// the catch: while it runs, the mode SM tail clears the leave gate
+    /// (`clear s7` at `0x801D01F8`); it advances by the frame step while
+    /// `FUN_801D75DC` still draws (under [`BANNER_FRAMES`]) and is zeroed
+    /// the frame it stops.
+    pub(super) catch_banner: i32,
+    /// The line-break banner timer `DAT_801D9164`, seeded `1` by the break
+    /// arm (`0x801D3C54`). State `0x28` returns to the shore the frame
+    /// `FUN_801D7528` stops drawing (`0x801CFEF0..0x801CFF04`).
+    pub(super) break_banner: i32,
     /// The landed catch's result-plate counter (the result actor's `+0x1A`
     /// in `FUN_801D5298`): `0` on the landing, `+4` per frame step, held at
     /// `0x1000`. [`PondSession::catch_result`] derives the plate's brightness
@@ -233,3 +252,14 @@ pub struct PondVenue {
 /// step to `DAT_801D9054` and leaves once it exceeds `0xC` (`slti v0,v0,0xd`
 /// at `0x801CFA40`), so thirteen frames at step `1`.
 pub const WINDUP_FRAMES: i32 = 13;
+
+/// Frames a fishing banner draws (`slti v0,a0,0xc8` in `FUN_801D75DC` and
+/// `FUN_801D7528`): the catch's from-right banner holds the leave gate shut,
+/// and the line-break pair parks state `0x28`, for this long.
+pub const BANNER_FRAMES: i32 = 0xC8;
+
+/// The result plate's counter at which it sets the accept word
+/// `DAT_801D90BC`: the plate's level `clamp(ramp - 0x180, 0, 0x100)` reaches
+/// `0x100` (`FUN_801D5298`, `0x801D55DC..0x801D5614`). States `0x21` / `0x22`
+/// load the word as the leave gate.
+pub const RESULT_ACCEPT_RAMP: i32 = 0x280;

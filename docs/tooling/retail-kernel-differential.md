@@ -323,3 +323,41 @@ the record's byte to both, so the height pass and the ambient lifetime read a st
 directional steps probed the player even with the VM's own flag bit `0` set, where the arm skips the
 call (`0x80038484..0x80038490`). The wander, the home step, the facing ramp, the touch-woken wait and
 the flag, cue and bit ops match.
+
+The battle frame's gauge loop `FUN_80046A20` (`0x80046A80..0x80046D28`), against the rows both hosts sync
+each battle frame, found the HUD reading the tracker's statuses where the loop and the status element
+`FUN_8002C2E4` read the whole `+0x16E` word: a Curse a cast wrote, an enemy special's Venom or a rotted limb
+greyed no gauge and drew no element. The rows now carry `World::raw_status_word`. The range metric
+`FUN_8004E2F0` matches `range_metric` over every seat pairing, reach and size class.
+
+Seating the port's half of each `+0x16E` word the way a game reaches it, the tracked kinds in the tracker
+and the rest in the raw half (`common::seat_status`), turned the monster picker, the turn picker and the Auto
+delegation differentials red: a Confuse the tracker held was invisible to the picker's own `0x380` arms and to
+the Counterattack roll, and a Stone or Numb it held did not veto the Auto fill (`0x801F04FC`). The same split
+reader sat in the seed's retarget gate (`0x801E2C8C`), the victory re-pick's `0x404` test and the win pose's
+status tier (`0x8004E828`). All of them now read `World::raw_status_word` or the host's `status_word`. Reading
+the seed's gate whole showed the engine running the retarget `FUN_801E7320` twice for a raw Confuse, once where
+it arms the monster's turn and again at the seed; retail calls it once (`0x801E2CA0`), so the seed hook no
+longer repeats it. The cast modules' seat view had the same split: a module's Stone test and its cure masks
+(Vera's `+0x16E` mask) saw the raw half alone, so a cure left a Venom a hit had dealt. The view now carries
+the whole word, and a tracked ailment whose bits a module clears leaves the tracker.
+
+The shop's quantity steppers, buy `FUN_801DB7F4` and sell `FUN_801DBD94`, match the port's sessions and the
+runtime's purse and bag writes over generated pad scripts, bounds and stacks. One arm differs by choice: at 99
+held retail opens the buy stepper with a bound of `0`, buys the one copy it starts on and takes the gold for a
+copy the add then trims, where the port's runtime refuses the buy. In play the list refuses a row built at 99 before
+the stepper opens ([shop.md](../subsystems/shop.md#screen-composition)), so the arm is latent.
+
+The field interact probe `FUN_801CF9F4`, run over crowds of actors around the probe point, confirms the port's
+box and finds the pick differ: every hit overwrites the caller's `+0x98` link, so the last actor in list order
+is talked to, where the port takes the nearest. Switching to slot order changed the casino's `koin1` door
+`P1[56]` into a talk with `P1[63]`, so the port keeps the nearest until a capture reads that scene's spawn
+order.
+
+The text-width measurer `FUN_80035F04`, with its expander, matches `Font::measure` over strings with author
+escapes, colour codes, accent cells and newlines at both glyph pads, and disagrees with `Font::layout` on most of
+them: the layout draws `0x5E X` and `0xFF X` as glyphs and gives `0xCE` its sprite's advance or none. The balloon
+spawner's and the world-map labels' widths read the layout and now read the measure. The battle-intro name
+banner `FUN_801D9D3C` matches `enemy_menu_rows` and `layout_enemy_menu_rows` over the measure. On four labels that
+cannot sit side by side inside `6..0x13A`, retail's relax-and-clamp loop never settles and spins for ever, where the
+port stops at its bound.

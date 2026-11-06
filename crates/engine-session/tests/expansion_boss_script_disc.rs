@@ -123,6 +123,22 @@ fn every_sample_pack_scripted_move_is_backed_by_disc_data() {
     assert!(scripted >= 6, "the six sample-pack boss scripts");
 }
 
+/// The auto party's swing is retail's AI-seat arm (`FUN_801EED1C`'s
+/// no-input queue): a target whose record `+0x1E` reads `2` takes one low
+/// swing `0x0E`, whose power byte is the equipped boots' (`0x13` on the
+/// starting set) - the class the limb-vs-height law (`0x801EC488..0x801EC554`)
+/// misses on that same target. A Lapis-based Seraph is such a target, so the
+/// auto party would never land a hit on it. Reading every seated record as
+/// class `0` gives the auto party its two arm swings, which connect with
+/// every class; the bosses' scripts, not the limb law, are under test here.
+fn auto_party_reaches_every_target(w: &mut legaia_engine_core::world::World) {
+    if w.mode == SceneMode::Battle {
+        for def in w.tables.monster_catalog.by_id.values_mut() {
+            def.swing_class = 0;
+        }
+    }
+}
+
 /// What one boss fight showed.
 #[derive(Debug, Default)]
 struct Seen {
@@ -148,6 +164,7 @@ fn fight(boss: &str, permille: u16, seed: u32) -> Option<Seen> {
     let mut in_battle = false;
     let mut last_cat = [0u8; 8];
     for tick in 0..BATTLE_TICKS {
+        auto_party_reaches_every_target(&mut session.host.world);
         session.host.world.set_pad(0);
         session.tick().expect("tick");
         let w = &session.host.world;

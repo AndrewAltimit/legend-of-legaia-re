@@ -365,6 +365,14 @@ pub struct BattleActor {
     pub liveness: u16,
     /// `+0x150` - current MP (subtracted by Magic / Spirit cast costs).
     pub mp: u16,
+    /// `+0x152` - the seat's **maximum MP**. Battle init copies it from the
+    /// character record (`FUN_80053CB8`, `0x80053E50..0x80053E58`) or the
+    /// monster record `+0x10` (`FUN_80054CB0`, `0x8005518C`); from then on it
+    /// is seat-local: the HUD's MP tint (`FUN_80046A20`, `0x80046B74`), the
+    /// item MP-restore clamp and the action validator read it, and PROT
+    /// 0943's Lapis Wave (`0x801F6D1C`) and PROT 0954's Fatal Decision write
+    /// it without touching the record.
+    pub mp_max: u16,
     /// `+0x16E` - per-actor flag bank. Bit `0x4` = "non-targetable", bits
     /// `0x380` = AI-controlled, `0x404` = AI + non-targetable. Read at state
     /// `ActionSeed` to decide between party-setup and monster-setup hooks.
@@ -422,8 +430,14 @@ pub struct BattleActor {
     /// accumulator is therefore absorbing, and parks the action SM in state
     /// `0x51` forever on any party-targeted action.
     pub hp_bar_pending: i32,
-    /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
+    /// `+0x178` - the MP readout's signed accumulator: a cast seeds it with
+    /// its cost, an MP item with the negated restore, and the party arm of
+    /// `FUN_80047430` moves a quarter of it into [`Self::mp_display`] a frame
+    /// (`lh` at `0x800475C0`).
     pub last_mp_cost: u16,
+    /// `+0x174` - the MP readout the battle HUD draws and its gauge colour
+    /// reads (`0x80046B78`). `None` while it rests on live MP.
+    pub mp_display: Option<u16>,
     /// `+0x21D` - the per-actor **animation-rate scalar** (normal `8`). Three
     /// consumers read it in the dumped corpus, which is what settles the
     /// name:
@@ -826,6 +840,27 @@ impl BattleActor {
         let st = crate::battle_hp_bar::bar_step_for_slot(slot, display, self.hp_bar_pending);
         self.hp_display = Some(st.display);
         self.hp_bar_pending = st.pending;
+    }
+
+    /// One frame of the MP readout ramp (`FUN_80047430`, `0x800475A4..
+    /// 0x80047620`): a party seat moves a quarter of `+0x178` out of it and
+    /// off `+0x174`. The monster arm runs the HP fields instead
+    /// ([`crate::battle_hp_bar::party_mp_step`]'s note), so a monster's
+    /// readout never moves.
+    ///
+    /// REF: FUN_80047430 (kernel in `battle_hp_bar::party_mp_step`)
+    pub fn tick_mp_bar(&mut self, slot: crate::battle_slot::RetailSlot) {
+        let pending = self.last_mp_cost as i16;
+        if pending == 0 || !slot.is_party() {
+            return;
+        }
+        // At rest the readout is live MP before the debit the seed matches.
+        let display = self
+            .mp_display
+            .unwrap_or(self.mp.wrapping_add(pending as u16));
+        let st = crate::battle_hp_bar::party_mp_step(display, pending);
+        self.mp_display = Some(st.display);
+        self.last_mp_cost = st.pending as u16;
     }
 
     /// Force the displayed HP back onto live HP, dropping any outstanding
@@ -1299,6 +1334,14 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
     pub camera_variant: u8,
+
+    /// [`Self::camera_variant`] as the action seed's own framing call reads
+    /// it: the raw `rand() % 4` roll. The seed stores the roll
+    /// (`sb v0,0xd(a0)` at `0x801E2D30`) and calls `FUN_801D5854(ctx[+0x13],
+    /// 6)` at `0x801E2D50` **before** the category arm narrows the byte
+    /// (Magic's `sb zero` at `0x801E2EC8`), so the seed pass frames on the
+    /// roll while the pass after it frames on the narrowed value.
+    pub seed_camera_variant: u8,
 
     /// Capture-harness pin for [`Self::camera_variant`]: when set, the
     /// action seed (`0x0C`) stores it over its own `rand() % 4` roll and the

@@ -690,7 +690,9 @@ canvas.npc-canvas:active { cursor: grabbing; }
     }
     if (!posed) {
       playBtn.disabled = true;
-      anmNote.textContent = 'This actor is a single piece and needs no pose - it has no clip.';
+      anmNote.textContent = n.nobj > 1
+        ? `This actor's clip could not be read, so its ${n.nobj} parts sit unposed at their own origins.`
+        : 'This actor is a single piece and needs no pose - it has no clip.';
     }
 
     setName(n);

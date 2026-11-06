@@ -336,7 +336,8 @@ impl LegaiaRuntime {
         host.world.minigame_caption(&ms::StatusHost {
             slot_machine_drawn: self.play_mg_slot_cabinet_ready(),
             fishing_keys: ms::FishingKeys {
-                cast: key("Circle"),
+                cast: key("Cross"),
+                back: key("Circle"),
                 reel_a: key("Cross"),
                 reel_b: key("Square"),
                 menu: key("Triangle"),

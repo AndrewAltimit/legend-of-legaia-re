@@ -347,18 +347,18 @@ fn fishing_frame(world: &mut World, mask: u16) {
     let _ = world.tick();
 }
 
-/// Circle edge -> wind-up -> power sweep -> Circle lock -> flight -> the lure
-/// lands in the pre-hook loop.
+/// Cross edge -> wind-up -> power sweep -> Cross lock -> flight -> the lure
+/// lands in the pre-hook loop (retail casts on the reel pair's press).
 fn fishing_cast(world: &mut World) {
     use legaia_engine_fishing::fishing::{PondPhase, WINDUP_FRAMES};
-    let circle = input::PadButton::Circle.mask();
+    let cast = input::PadButton::Cross.mask();
     fishing_frame(world, 0);
-    fishing_frame(world, circle);
+    fishing_frame(world, cast);
     for _ in 0..WINDUP_FRAMES + 96 {
         fishing_frame(world, 0);
     }
     assert_eq!(fishing_phase(world), PondPhase::Power);
-    fishing_frame(world, circle);
+    fishing_frame(world, cast);
     assert_eq!(fishing_phase(world), PondPhase::Flight);
     while fishing_phase(world) == PondPhase::Flight {
         fishing_frame(world, 0);
@@ -460,9 +460,20 @@ fn fishing_casts_hooks_and_reels_to_a_resolution() {
         fishing_phase(&world),
         PondPhase::Landed | PondPhase::Snapped
     ));
-    // Circle dismisses the result back to the shore, raising the recast event.
-    fishing_frame(&mut world, 0);
-    fishing_frame(&mut world, input::PadButton::Circle.mask());
+    // A broken line returns by itself once its banner ends; a catch is put
+    // away by Circle once the plate's accept word is up and the catch banner
+    // has run. Either way the shore comes back with the recast event.
+    for f in 0..400 {
+        if fishing_phase(&world) == PondPhase::Idle {
+            break;
+        }
+        let mask = if f % 2 == 1 {
+            input::PadButton::Circle.mask()
+        } else {
+            0
+        };
+        fishing_frame(&mut world, mask);
+    }
     assert_eq!(fishing_phase(&world), PondPhase::Idle);
     assert!(world.minigames.fishing_events.contains(&PondEvent::Recast));
 }
@@ -631,6 +642,14 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     let _ = world.tick();
     world.set_pad(input::PadButton::Square.mask() | input::PadButton::Circle.mask());
     let _ = world.tick();
+    // The reels roll in (`FUN_801D0554`) before the spin is evaluated.
+    world.set_pad(0);
+    for _ in 0..64 {
+        if world.minigames.slot_machine.as_ref().unwrap().phase() != SlotPhase::Stopping {
+            break;
+        }
+        let _ = world.tick();
+    }
     let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Payout);
     assert_eq!(
@@ -905,15 +924,15 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     }
     let _ = world.take_sfx_ring_ops();
     let mut ops = Vec::new();
-    let circle = input::PadButton::Circle.mask();
+    let cast = input::PadButton::Cross.mask();
     fishing_frame(&mut world, 0);
-    fishing_frame(&mut world, circle);
+    fishing_frame(&mut world, cast);
     ops.extend(world.take_sfx_ring_ops());
     for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 96 {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
-    fishing_frame(&mut world, circle);
+    fishing_frame(&mut world, cast);
     ops.extend(world.take_sfx_ring_ops());
     let landing = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(2, 0x204);
     assert!(!ops.contains(&landing), "nothing before the lure flies");

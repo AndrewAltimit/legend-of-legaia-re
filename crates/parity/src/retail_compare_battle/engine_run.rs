@@ -162,16 +162,18 @@ pub(super) fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8])
 /// scripted bit is not one - the sparring fight and the Rim Elm Gimard
 /// read it clear.)
 ///
-/// Returns `(raise, lower)`: the SET arms the save holds up, and the CLEAR
+/// Returns `(raise, lower, park)`: the SET arms the save holds up, the CLEAR
 /// arms of the same row the save holds down
-/// ([`legaia_engine_field::man_field_scripts::BattleEntryArm::clears`]).
+/// ([`legaia_engine_field::man_field_scripts::BattleEntryArm::clears`]), and
+/// the system script's [`SpawnPark`] when retail's is parked on one - whose
+/// guard flag joins `raise`.
 pub fn entry_latches(
     extracted: &Path,
     retail: &RetailObs,
     battle: &RetailBattle,
-) -> (Vec<u16>, Vec<u16>) {
+) -> (Vec<u16>, Vec<u16>, Option<usize>) {
     let Some(save) = retail.save.clone() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), None);
     };
     let held = crate::retail_compare::system_flag_ids(&save);
     // The report flag is the entry tail's own write (`FUN_801DA51C`,
@@ -190,7 +192,7 @@ pub fn entry_latches(
         enable_audio: false,
     };
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
-        return (tail, Vec::new());
+        return (tail, Vec::new(), None);
     };
     crate::retail_compare::pin_seed_retail(
         &mut session.host.world.toggles,
@@ -202,19 +204,64 @@ pub fn entry_latches(
         ..Default::default()
     };
     let _landing = session.resume_save(save, &retail.scene, &opts);
+    let man = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+        .and_then(|man| Some((legaia_scene_formats::man_section::parse(&man).ok()?, man)));
+    // A Muscle Dome leg is entered by the arena, not a formation row: its
+    // latches are the flags the reception's course pick raises on its way
+    // through the dome door ([`walk_minigame_door_flag_sets`]), `koin1`'s
+    // dome-return marker `0x509` among them.
+    //
+    // [`walk_minigame_door_flag_sets`]: legaia_engine_field::man_field_scripts::walk_minigame_door_flag_sets
+    if battle.dome_leg() {
+        let dome = legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.op0();
+        let mut raise: Vec<u16> = man
+            .iter()
+            .flat_map(|(mf, man)| {
+                legaia_engine_field::man_field_scripts::walk_minigame_door_flag_sets(mf, man)
+            })
+            .filter(|&(op0, f)| op0 == dome && held.contains(&f))
+            .map(|(_, f)| f)
+            .chain(tail)
+            .collect();
+        raise.sort_unstable();
+        raise.dedup();
+        return (raise, Vec::new(), None);
+    }
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
-        return (tail, Vec::new());
+        return (tail, Vec::new(), None);
     };
+    let park = retail
+        .scripts
+        .pooled_system_pc
+        .and_then(|pc| spawn_park(&session.host, pc, row))
+        .filter(|p| held.contains(&p.guard));
     let arms = world
         .scene_battle_entry_arms
         .iter()
         .filter(|a| u16::from(a.row) == row);
+    // The record's earlier SETs, where the entry does not start that record
+    // ([`legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets`]):
+    // `korb3`'s Gaza record raises `0x41D` a cutscene ahead of its entry op.
+    let record_sets: Vec<u16> = man
+        .iter()
+        .flat_map(|(mf, man)| {
+            legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets(mf, man)
+        })
+        .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
+        .map(|a| a.flag)
+        .collect();
     let mut raise: Vec<u16> = arms
         .clone()
         .filter(|a| !a.clears && held.contains(&a.flag))
         .map(|a| a.flag)
         .chain(tail)
+        .chain(park.map(|p| p.guard))
+        .chain(record_sets)
         .collect();
     raise.sort_unstable();
     raise.dedup();
@@ -225,7 +272,82 @@ pub fn entry_latches(
         .collect();
     lower.sort_unstable();
     lower.dedup();
-    (raise, lower)
+    (raise, lower, park.map(|p| p.pc))
+}
+
+/// Retail's scene system script parked on the yield straight after the
+/// op-`0x44` spawn of the record that enters the fight, behind the test of
+/// the record's own run latch: `[7x <guard> -> pc] [44 <flat>] [21]`, with
+/// `pc` the PC after the `0x21`.
+///
+/// `town0b`'s entry body reads `73 07 05 00 · 44 79 · 21` at `+0x44E`: on
+/// the pass that finds `0x307` down it spawns `P2[26]`, the Gimard raid,
+/// and yields. That record raises `0x307` as its first op and takes the
+/// player, and the system SM `FUN_801DA51C` runs no pass while a record
+/// holds the player, so the context stays on `+0x455` through the whole
+/// raid and the fight it enters (row `2`, `3E 00 02` at `+0x851`). The rest
+/// of that pass - the region selector at `+0x4D3` - never ran, so the
+/// capture holds `0x528` (selected earlier in the pass) and none of
+/// `0x19B..0x1AA`.
+///
+/// A seed that lands the save with the guard up skips the spawn and runs
+/// the whole pass, raising `0x19D` there. The seed holds the guard back
+/// from the landing ([`entry_latches`]) and stops its settle on the tick
+/// the engine's system script parks on the same PC
+/// ([`RetailBattle::entry_park`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnPark {
+    /// The PC after the `0x21` (retail's system `+0x9E`).
+    pub pc: usize,
+    /// The test's flag, which the spawned record raises itself.
+    pub guard: u16,
+}
+
+/// The [`SpawnPark`] retail's system script holds at `pc`, when the spawned
+/// record enters formation row `row` and raises the guard flag.
+fn spawn_park(
+    host: &legaia_engine_scene_host::scene_host::SceneHost,
+    pc: usize,
+    row: u16,
+) -> Option<SpawnPark> {
+    use legaia_engine_field::man_field_scripts as mfs;
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, decode};
+    let bc = &host.world.field_bytecode;
+    if pc < 7 || bc.get(pc - 1) != Some(&0x21) {
+        return None;
+    }
+    let InsnInfo::SpawnRecord { global_index } = decode(bc, pc - 3).ok()?.info else {
+        return None;
+    };
+    let InsnInfo::SystemFlag {
+        kind: FlagKind::Test,
+        idx: guard,
+        target: Some(t),
+        ..
+    } = decode(bc, pc - 7).ok()?.info
+    else {
+        return None;
+    };
+    if t != pc {
+        return None;
+    }
+    let man = host.scene.as_ref()?.field_man_payload(&host.index).ok()??;
+    let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
+    let n0 = mf.header.partition_counts[0].max(0) as usize;
+    let n1 = mf.header.partition_counts[1].max(0) as usize;
+    let idx = usize::from(global_index).checked_sub(n0 + n1)?;
+    if !mfs::record_battle_entry_rows(&mf, &man, 2, idx)
+        .iter()
+        .any(|&r| u16::from(r) == row)
+    {
+        return None;
+    }
+    let (start, pc0, len) = mfs::partition_record_span(&mf, &man, 2, idx)?;
+    let body = man.get(start..start + len)?;
+    let raises = LinearWalker::new(body, pc0).flatten().any(
+        |i| matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Set, idx, .. } if idx == guard),
+    );
+    raises.then_some(SpawnPark { pc, guard })
 }
 
 /// Seed the engine into `retail`'s battle and sample it.
@@ -281,6 +403,16 @@ pub fn run_engine_battle(
         session.field_vram_tick();
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
+        // Retail's field ran no pass past the one that spawned the fight's
+        // record ([`SpawnPark`]).
+        if battle.entry_park == Some(session.host.world.field_pc) {
+            break;
+        }
+    }
+    // The region-selector band the settle re-selected at the seat is history
+    // retail's field had already written ([`crate::retail_compare::hold_selector_bands`]).
+    if let Some(save) = retail.save.as_ref() {
+        crate::retail_compare::hold_selector_bands(&mut session.host.world, save);
     }
     for &idx in &battle.entry_latches {
         session.host.world.system_flag_set(idx);
@@ -400,7 +532,10 @@ pub fn run_engine_battle(
     // never ran the SM's entry tail: the flags the forced entry's tail just
     // wrote go back to the capture's own (the `jou` boss casts hold the
     // victory latch of an earlier fight right through theirs).
-    if battle.battle_id != 0 {
+    // A Muscle Dome leg is the arena's fight start (`FUN_801D1510`), not the
+    // entity SM's either: a capture of a later leg holds the victory latch
+    // `0x35` the leg before it raised.
+    if battle.battle_id != 0 || battle.dome_leg() {
         let held = retail
             .save
             .as_ref()
@@ -416,10 +551,24 @@ pub fn run_engine_battle(
     }
     // Read on the latch as well: the entry's own round-one Begin may have
     // run already and moved `+0x290` into `+0x291`.
+    //
+    // A scripted back attack (`formation_ambush_scripted`: Lapis, and the
+    // two maps' `0x3D..=0x3F`) is not a draw: retail's fight opened on the
+    // same round, so the capture's history holds it and every stream takes
+    // it. Counting it as a surprise rejected every stream of
+    // `battle_deene_lapis_strike` and scored the first, read at the ambush's
+    // prompt (Vahn `5420` against the capture's `9999`).
     let surprise_opening = {
         let w = &session.host.world;
         let none = legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None;
-        w.battle_formation() != none || w.battle_formation_latched() != none
+        let scripted = legaia_engine_battle_vm::battle_formulas::formation_ambush_scripted(
+            &legaia_engine_battle_vm::battle_formulas::FormationInputs {
+                ability_bits: 0,
+                monster_id: battle.monster_ids.first().copied().unwrap_or(0),
+                map_id: w.battle.map_id as u16,
+            },
+        );
+        !scripted && (w.battle_formation() != none || w.battle_formation_latched() != none)
     };
     // Reconstruct the mid-fight HP / MP (the engine seeds full bars).
     //
@@ -462,6 +611,7 @@ pub fn run_engine_battle(
                     hp,
                     mp: c.mp,
                     hp_max: battle.party_seat_pool_raised(slot, c),
+                    mp_max: battle.party_seat_mp_max_off_record(slot, c),
                     ground: ground.get(slot).copied().flatten(),
                     facing: facing.get(slot).copied().flatten(),
                     defeat_lanes: (hp == 0)
@@ -627,7 +777,7 @@ pub fn run_engine_battle(
                     {
                         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
                     }
-                    if battle.module_cam_aligned()
+                    if (battle.module_cam_aligned() || battle.walk_arm_follow_aligned())
                         && let Some(cam) = session.host.world.battle.camera.as_mut()
                     {
                         cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1);
@@ -644,6 +794,27 @@ pub fn run_engine_battle(
         }
         (SeedPlan::Menu { .. } | SeedPlan::Action { .. }, _) if prompt_tick.is_some() => {
             if let Some(drive) = battle.battle_drive() {
+                // A scripted ambush's opening round (`formation_ambush_scripted`)
+                // has struck the party between the seed and this prompt; the
+                // capture's bars are a later round's, so the party stands back
+                // on its seeded HP and MP here. Any other opening reaches the prompt
+                // untouched, and this writes what is already there.
+                {
+                    let pc = session.host.world.party.party_count.clamp(1, 3);
+                    for sd in hp_seed.iter().filter(|sd| sd.slot < pc) {
+                        if let Some(a) = session.host.world.actors.get_mut(usize::from(sd.slot))
+                            && a.battle.hp != 0
+                            && sd.hp != 0
+                        {
+                            a.battle.hp = sd.hp;
+                            a.battle.liveness = sd.hp;
+                            a.battle.mp = sd.mp;
+                            if a.battle.hp_display.is_some() {
+                                a.battle.hp_display = Some(sd.hp);
+                            }
+                        }
+                    }
+                }
                 let track = session.host.bgm_track_word.or(director.last);
                 let mut snap = combat_snapshot(&mut session.host.world, track);
                 // The bars were seeded ahead of the action's landed hits
@@ -1043,35 +1214,18 @@ pub(super) fn combat_snapshot(
     field_track: Option<u16>,
 ) -> CombatSnapshot {
     let pc = world.party.party_count.clamp(1, 3) as usize;
-    // Battle ordinal `s` holds roster record `party_roster_slot(s)` (the
-    // present-party list): a solo duel's Gala is ordinal 0 but record 2, and
-    // retail's battle init copies the max from *that* record (`+0x108`,
-    // `FUN_80053CB8` at `0x80053E50`).
-    let roster = world.save_full().party;
-    let party_maxes: Vec<(u16, u16)> = (0..pc)
-        .map(|s| {
-            roster
-                .members
-                .get(world.party_roster_slot(s))
-                .map_or((0, 0), |m| {
-                    let v = m.hp_mp_sp();
-                    (v.hp_max, v.mp_max)
-                })
-        })
-        .collect();
-    let comb = |a: &legaia_engine_core::world::Actor, mp_max: u16| Combatant {
+    // Every seat's max MP is its own `+0x152`: battle init copies it from the
+    // ordinal's roster record (`FUN_80053CB8`, `0x80053E50`) or the monster
+    // record (`FUN_80054CB0`, `0x8005518C`), and Lapis Wave / Fatal Decision
+    // move it without touching either record.
+    let comb = |a: &legaia_engine_core::world::Actor| Combatant {
         hp: a.battle.hp,
         hp_max: a.battle.max_hp,
         mp: a.battle.mp,
-        mp_max,
+        mp_max: a.battle.mp_max,
     };
     let party = (0..pc)
-        .filter_map(|s| {
-            world
-                .actors
-                .get(s)
-                .map(|a| comb(a, party_maxes.get(s).map_or(0, |m| m.1)))
-        })
+        .filter_map(|s| world.actors.get(s).map(comb))
         .collect();
     let mcount = world
         .battle
@@ -1082,14 +1236,7 @@ pub(super) fn combat_snapshot(
         .map(|m| world.actors.get(pc + m).and_then(|a| a.battle_monster_id))
         .collect();
     let monsters = (0..mcount)
-        .filter_map(|m| {
-            let a = world.actors.get(pc + m)?;
-            let mp_max = a
-                .battle_monster_id
-                .and_then(|id| world.tables.monster_catalog.get(id))
-                .map_or(0, |d| d.mp);
-            Some(comb(a, mp_max))
-        })
+        .filter_map(|m| world.actors.get(pc + m).map(comb))
         .collect();
     CombatSnapshot {
         mode: world.mode,

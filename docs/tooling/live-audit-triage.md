@@ -115,7 +115,7 @@ Settled rows:
 | `move_image`, move op `0x40` | `conc*`, `deroa`, `bubu1`, ending scenes | Wired: [`move-vm.md`](../subsystems/move-vm.md#0x40---move_image). |
 | `clear_party_state_region`, `4C 32` | 5 sites, dev pickers | Wired: clears the flag bank. |
 | `set_dither`, `4C ED` | 27 sites | Wired: [`shading.md`](../subsystems/shading.md#step-7-dither-and-the-15-bit-framebuffer). |
-| `face_rotation_setup`, move op `0x21` | Not censused here | Gap: needs the render path `field_channels.rs` names. |
+| `face_rotation_setup`, move op `0x21` | 6 stager records (`rikuroa`, `rikuroa2`, `jagaroom`) | Wired: the row reaches the part's shatter draw ([`move-vm.md`](../subsystems/move-vm.md#0x21---shatter-row)). |
 | `snapshot_play_clock`, `4C EE` | `edlast` only | Left: the end of the game, with no save after it. |
 | `refresh_collision_y`, `4C DA` | 9 sites | Replaced: the VM drops the height bit and the next tick's floor sample lands the same `+0x16`. |
 | `reset_party_pack_load_state`, `4C E9` | `opurud` only | Replaced: the port has no load gate; every scene entry runs the swap. |
@@ -197,6 +197,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
 | `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
 | `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
+| `slot_machine::roll_to_row` | the frame-free `stop_reel`'s collapsed roll-in, which no host calls; the per-frame port of `FUN_801d0554` is `SlotMachine::roll_reels`, so the helper carries `REF`, not `PORT` |
 
 ### Open rows
 

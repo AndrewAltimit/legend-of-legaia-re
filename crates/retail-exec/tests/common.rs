@@ -55,3 +55,46 @@ pub fn diff_offsets(a: &[u8], b: &[u8]) -> Vec<String> {
         .map(|(i, (x, y))| format!("+{i:#x}: retail {x:#04x} port {y:#04x}"))
         .collect()
 }
+
+/// Tracked kinds and the `+0x16E` bit each packs to.
+pub const TRACKED_STATUS: [(legaia_engine_battle_vm::status_effects::StatusKind, u16); 7] = {
+    use legaia_engine_battle_vm::status_effects::StatusKind as K;
+    [
+        (K::Venom, 0x0001),
+        (K::Toxic, 0x0002),
+        (K::Stone, 0x0004),
+        (K::Numb, 0x0400),
+        (K::Sleep, 0x0800),
+        (K::Curse, 0x1000),
+        // The tracker holds the delegation group whole.
+        (K::Confuse, 0x0380),
+    ]
+};
+
+/// Seat a retail `+0x16E` word on the port's actor `slot`, split the way the
+/// port can hold one: with `split`, each tracked kind's bit goes into the status
+/// tracker, as a hit's status arm leaves it, and the rest stays in the raw
+/// half a cast writes. Every reader of the word has to see both halves.
+pub fn seat_status(w: &mut legaia_engine_core::world::World, slot: u8, word: u16, split: bool) {
+    let mut raw = word;
+    if split {
+        for (kind, bit) in TRACKED_STATUS {
+            if word & bit == bit {
+                w.battle.status_effects.apply(slot, kind);
+                raw &= !bit;
+            }
+        }
+    }
+    w.actors[usize::from(slot)].battle.field_flags = raw;
+}
+
+/// [`seat_status`] over every actor the test has seated a raw word on, each
+/// split or not by a bit of `salt`.
+pub fn split_statuses(w: &mut legaia_engine_core::world::World, salt: u32) {
+    for i in 0..w.actors.len().min(32) {
+        let word = w.actors[i].battle.field_flags;
+        if word != 0 {
+            seat_status(w, i as u8, word, salt >> i & 1 != 0);
+        }
+    }
+}

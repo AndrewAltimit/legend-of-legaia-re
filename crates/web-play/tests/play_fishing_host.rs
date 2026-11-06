@@ -27,7 +27,6 @@
 use legaia_web_play::runtime::LegaiaRuntime;
 
 const CROSS: u16 = 0x4000;
-const CIRCLE: u16 = 0x2000;
 
 fn loaded_in_town() -> Option<LegaiaRuntime> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -141,8 +140,8 @@ fn fishing_session_starts_and_the_hud_draws() {
 
 /// The page contributes no cast/reel input path of its own - the pad word it
 /// already routes plus `tick_frame` is the whole path, because the driver is
-/// `World::tick_fishing`. Pin that: a Circle edge starts the wind-up, the power
-/// meter sweeps, a second Circle edge locks it, the lure flies and lands (the
+/// `World::tick_fishing`. Pin that: a Cross edge starts the wind-up, the power
+/// meter sweeps, a second Cross edge locks it, the lure flies and lands (the
 /// persistent cast counter increments), and holding Cross reels the empty
 /// line back in.
 #[test]
@@ -166,19 +165,19 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     assert_eq!(phase(&rt), "idle", "a session opens at the shore");
     let casts = state(&rt)["casts"].as_i64().expect("casts");
 
-    // Circle edge -> wind-up; the meter opens after the wind-up frames.
+    // Cross edge -> wind-up; the meter opens after the wind-up frames.
     tick(&mut rt, 0, 1);
-    tick(&mut rt, CIRCLE, 1);
-    assert_eq!(phase(&rt), "windup", "Circle starts the cast");
+    tick(&mut rt, CROSS, 1);
+    assert_eq!(phase(&rt), "windup", "Cross starts the cast");
     tick(&mut rt, 0, 110);
     assert_eq!(phase(&rt), "power");
     assert!(
         state(&rt)["cast_power"].as_i64().unwrap_or(-1) > 0,
         "the cast meter sweeps"
     );
-    // A second Circle edge locks the power; the lure flies and lands.
-    tick(&mut rt, CIRCLE, 1);
-    assert_eq!(phase(&rt), "flight", "Circle locks the power meter");
+    // A second Cross edge locks the power; the lure flies and lands.
+    tick(&mut rt, CROSS, 1);
+    assert_eq!(phase(&rt), "flight", "Cross locks the power meter");
     for _ in 0..600 {
         if phase(&rt) != "flight" {
             break;

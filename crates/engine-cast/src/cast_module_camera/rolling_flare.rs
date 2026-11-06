@@ -40,7 +40,7 @@ fn orbit(on: ModuleSeat, facing: u16, cd: i32, base: i32, far: i32) -> ModuleSho
 /// |---|---|---|
 /// | 2 (`0x801F7CF0`) | the caster's pair kept, the victim's put back; the caster turns on the victim; a shot on the victim: pitch `-0x20`, yaw `0x600 - facing`, TR `(0, 0x400, 0x800)`, `0xC` frames | `= scalar << 7` |
 /// | 3 (`0x801F7E20`) | both pairs held; every pass on the victim's live pair: yaw `0x800 - cd / 2 - facing`, TR z `0xA00 - cd / 2`; the `0x100` hit on the gate | `+= scalar << 6` |
-/// | 4 (`0x801F8028`) | every pass on the victim's body pair: yaw `0x900 - cd / 2 - facing`, TR z `0xB00 - cd / 2`; the gate, then the victim's settle | - |
+/// | 4 (`0x801F8028`) | every pass on the victim's body pair: yaw `0x900 - cd / 2 - facing`, TR z `0xB00 - cd / 2`; the gate, then the victim's settle | drained twice a pass |
 ///
 /// PORT: overlay_cast_rolling_flare_0950_801f79f8 (PROT 0950 `0x5A`; the camera arms, the seat pins and the walk's reach)
 pub fn rolling_flare_camera(
@@ -91,9 +91,13 @@ pub fn rolling_flare_camera(
             }
         }
         4 => {
+            // Two drains a pass: one ahead of the shot, which aims on it
+            // (`0x801F8088..0x801F8090`), one behind it while the word stays
+            // positive (`0x801F80B8..0x801F80E4`).
             let body = st.victim_body.unwrap_or(v);
-            let held = st.countdown.0 > 0 && st.countdown.drain_above(0);
+            st.countdown.drain();
             arm.shot = Some(orbit(body, c.facing, st.countdown.0, 0x900, 0xB00));
+            let held = st.countdown.0 > 0 && st.countdown.drain_above(0);
             if held || !st.victim_settled {
                 arm.hold = true;
             } else {

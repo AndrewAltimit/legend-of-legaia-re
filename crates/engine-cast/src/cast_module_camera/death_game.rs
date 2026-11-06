@@ -8,6 +8,8 @@ use super::capture::{CaptureCamArm, CaptureDrift, CapturePoseSet, CaptureSeatWri
 use super::v_windhash::{HIDDEN, seat};
 use super::{ModuleCamSeats, ModuleCamState, ModuleShot, focus_on, yaw_from};
 
+/// The PROT entry the Death Game module's image is paged from.
+pub const DEATH_GAME_PROT: u32 = 957;
 /// PROT 0957's Death Game tick body.
 pub const DEATH_GAME_BODY: u32 = crate::cast_module_ticks::SUMMON_EFFECT_TICK_B;
 /// Arm 1's four records (`0x801F7D7C`).
@@ -61,6 +63,51 @@ pub enum DeathGameOutcome {
     BothHeal,
 }
 
+/// Head string `n` of the module image (`0x801F69D8 + 8 n`, NUL-terminated
+/// inside its eight bytes): what [`DeathGameLabel::Head`] names.
+pub fn head_string(image: &[u8], n: u8) -> Option<&[u8]> {
+    let start = usize::from(n) * 8;
+    let cell = image.get(start..start + 8)?;
+    let len = cell.iter().position(|&b| b == 0).unwrap_or(cell.len());
+    Some(&cell[..len])
+}
+
+/// One line of arm 3's label pair under a card (`0x801F7F50..0x801F810C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathGameLabel {
+    /// The victim's name, actor `+0x1BC` (`addiu s7,s2,0x1bc` at `0x801F7F7C`).
+    Victim,
+    /// The module's head string `n`, at image offset `n * 8` (`0x801F69D8 +
+    /// 8 n`): the caster, the two outcomes and the shared word, read off the
+    /// user's disc.
+    Head(u8),
+}
+
+/// The label rows' pen `y` (`li s6,0x90`, `li s4,0x9c` at `0x801F7F80` /
+/// `0x801F7F8C`).
+pub const LABEL_ROWS_Y: [i32; 2] = [0x90, 0x9C];
+/// A card's label column: `x = i * 0x4C + 0x30 - width / 2`, the width
+/// `FUN_80035F04`'s (`0x801F8004..0x801F800C`, `addiu s2,s2,0x4c`).
+// REF: FUN_80035F04 (the width measure; the host's font measures it)
+pub const LABEL_FIRST_CENTRE_X: i32 = 0x30;
+pub const LABEL_STEP_X: i32 = 0x4C;
+
+/// The two lines arm 3 draws under a card of `value`; `None` for a value off
+/// `1..=4`, whose column the loop skips. Value `1` is the victim over head `0`,
+/// `2` head `1` over head `0`, `3` head `2` over head `3`, `4` head `2` over
+/// head `4` (the arms at `0x801F7FF0`, `0x801F8028`, `0x801F806C`,
+/// `0x801F80A0`).
+pub fn label_pair(value: u8) -> Option<[DeathGameLabel; 2]> {
+    use DeathGameLabel::{Head, Victim};
+    Some(match value {
+        1 => [Victim, Head(0)],
+        2 => [Head(1), Head(0)],
+        3 => [Head(2), Head(3)],
+        4 => [Head(2), Head(4)],
+        _ => return None,
+    })
+}
+
 /// The pad reads of arm 5, fed by the host (`_DAT_8007B874` against `0x2000`,
 /// `0x8000` and `_DAT_800846D0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -111,6 +158,10 @@ pub struct DeathGame {
     /// The word the digit reads this pass: arm 5's timer, arm 6's frozen one.
     /// `None` off those arms, where neither sprite is drawn.
     pub digit_word: Option<i32>,
+    /// Arm 3 draws the labels this pass: its word, drained, is in
+    /// `0x180..=0x580` (`addiu v0,v0,-0x180; sltiu v0,v0,0x401` at
+    /// `0x801F7F6C`).
+    pub labels_up: bool,
 }
 
 /// One screen-space `0x2C` `POLY_FT4` of arms 5 and 6: colour `0x808080`, tag
@@ -251,6 +302,14 @@ impl DeathGame {
         Some([digit, pointer])
     }
 
+    /// Arm 3's labels this pass: per card, its two lines and their pen
+    /// `(x centre, y)` - the host measures each string and draws it at
+    /// `centre - width / 2`. `None` when arm 3 draws nothing.
+    pub fn labels(&self) -> Option<[Option<[DeathGameLabel; 2]>; 4]> {
+        self.labels_up
+            .then(|| std::array::from_fn(|i| label_pair(self.table[i])))
+    }
+
     /// The picked card's value.
     pub fn picked_value(&self) -> u8 {
         self.table[self.pair[0]]
@@ -272,7 +331,7 @@ fn drift(tr_z: i16, tr_y: i16) -> Option<CaptureDrift> {
 /// | 0 (`0x801F7ADC`) | cue `0x153`; the caster turned on its victim, every live seat hidden, the caster shown at rate `2`; the deal; a cut behind the caster | `= 0x700` |
 /// | 1 (`0x801F7D14`) | rate `2`, TR z `+8`, TR y `-1`; then four backdrop records | `= 0x200` |
 /// | 2 (`0x801F7E04`) | rate `0`, the same drift; then the four card faces | `= 0x600` |
-/// | 3 (`0x801F7F50`) | the labels under the cards; then the swap counters zeroed | - |
+/// | 3 (`0x801F7F50`) | the labels under the cards ([`DeathGame::labels`]); then the swap counters zeroed | - |
 /// | 4 (`0x801F8130`) | thirteen swaps of sixteen frames, each opening on `FUN_8004FE5C(0x44, caster)` and three or more draws | `= 0x960` |
 /// | 5 (`0x801F87F0`) | the timer and pointer sprites; the pad, cue `0x22` a step; on confirm or a spent word cue `0x21` and the cards turned over | `= 0x200` |
 /// | 6 (`0x801F8BEC`) | both sprites, the frozen digit; then the pick | - |
@@ -289,7 +348,7 @@ fn drift(tr_z: i16, tr_y: i16) -> Option<CaptureDrift> {
 /// feeds the pad, and carries out the cues, the parts and the outcome. This
 /// director owns the phase. Arms 5 and 6's packets are [`DeathGame::sprites`].
 ///
-/// PORT: FUN_801F798C, overlay_summon_effect_table_0957_801f798c (PROT 0957 `0x76`; the phase walk, deal, shuffle, pad, pick and results; the labels and the heal flash `FUN_801E22C8` are not drawn)
+/// PORT: FUN_801F798C, overlay_summon_effect_table_0957_801f798c (PROT 0957 `0x76`; the phase walk, deal, shuffle, pad, pick, labels and results; the heal flash `FUN_801E22C8` is not drawn)
 pub fn death_game_camera(
     st: &mut ModuleCamState,
     phase: u8,
@@ -308,6 +367,7 @@ pub fn death_game_camera(
     g.turns_pick = false;
     g.outcome = None;
     g.digit_word = None;
+    g.labels_up = false;
     let word = &mut st.countdown;
     match phase {
         0 => {
@@ -364,7 +424,9 @@ pub fn death_game_camera(
             }
         }
         3 => {
-            if word.drain_above(0) {
+            let above = word.drain_above(0);
+            g.labels_up = (word.0.wrapping_sub(0x180) as u32) <= 0x400;
+            if above {
                 arm.hold = true;
             } else {
                 g.counter = 0;
@@ -677,6 +739,33 @@ mod tests {
         assert_eq!(g.sprites().unwrap()[1].uv[1], (0xF7, 0x88));
         g.digit_word = None;
         assert!(g.sprites().is_none());
+    }
+
+    #[test]
+    fn arm_three_labels_each_card_by_its_value_inside_its_window() {
+        use DeathGameLabel::{Head, Victim};
+        let mut st = ModuleCamState::default();
+        st.death_game.table = [3, 1, 4, 2];
+        // Arm 2 leaves the word at `0x600`; a pass drains `8 * delta`.
+        st.countdown.0 = 0x600;
+        let _ = death_game_camera(&mut st, 3, ModuleCamSeats::default());
+        assert_eq!(st.countdown.0, 0x5F8);
+        assert!(st.death_game.labels().is_none(), "dark above 0x580");
+        st.countdown.0 = 0x588;
+        let _ = death_game_camera(&mut st, 3, ModuleCamSeats::default());
+        let rows = st.death_game.labels().expect("0x580 draws");
+        assert_eq!(rows[0], Some([Head(2), Head(3)]));
+        assert_eq!(rows[1], Some([Victim, Head(0)]));
+        assert_eq!(rows[2], Some([Head(2), Head(4)]));
+        assert_eq!(rows[3], Some([Head(1), Head(0)]));
+        st.countdown.0 = 0x180;
+        let _ = death_game_camera(&mut st, 3, ModuleCamSeats::default());
+        assert!(st.death_game.labels().is_none(), "dark below 0x180");
+        assert_eq!(label_pair(0), None);
+        // Any other arm draws none.
+        st.countdown.0 = 0x400;
+        let _ = death_game_camera(&mut st, 4, ModuleCamSeats::default());
+        assert!(st.death_game.labels().is_none());
     }
 
     #[test]

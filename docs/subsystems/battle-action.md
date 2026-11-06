@@ -201,7 +201,12 @@ status on the monster, the target's key unspent, and the Counterattack passive, 
 `world::battle::counterattack`. Per-frame physics: target/attacker drift along bearing scaled by
 `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the
 character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]`
-until the `0x00` terminator is hit (the magic band is the one that terminates on `-1`). The stream alphabet for a party attack is direction
+until the `0x00` terminator is hit (the magic band is the one that terminates on `-1`).
+The terminator test sits after the drift block (`0x801E3998..0x801E39AC`), which the stage
+path falls into, so it reads the cursor the stage just bumped: the last byte stages and the
+band leaves for `0x1F` on the same pass. A one-swing stream therefore leaves the loop from a
+cursor of `0` (`battle_map02_lip_kid_strike`: queue `05 00`, `0x1E` to `0x1F` in one pass with
+`+0x1DA = 5`), and only the cursor after the pass tells it from a stream that was never seeded. The stream alphabet for a party attack is direction
 swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (see
 [art-data.md](../formats/art-data.md)); the Miracle-Art continuation refills consumed
 slots with `0x19` before re-walking. Staged ids `>= 0x10` are remapped to the dynamic
@@ -375,6 +380,8 @@ The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), a
 #### State `0x33` - Summon - fade in
 
 `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`; its case `0x12` also arms the summon cast close-up camera (see [below](#the-summon-cast-close-up-camera)). When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor.
+
+The new actor ticks on its spawn pass. The action SM runs inside the battle frame driver `FUN_80046A20` (`jal 0x801E295C` at `0x80047048`), which is the head node of actor list `0x8007C34C` (spawned from the template at `0x800767DC` by `0x80055FC0`); the spawner links the fade at that list's tail (`FUN_80020454`), and the walk `FUN_8002519C` reaches it later in the same pass. The first `0x34` row of a step-`3` cast already holds delay `17`, so the port steps a fade it spawns here by the pass (`spawn_screen_fade`), and records the step for the capture gate (`ScreenFxState::fade_spawn_step`).
 
 **Next:** `0x34`.
 
@@ -801,6 +808,17 @@ roll. (The arm addresses come from the seed's own category jump table at
 `0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
 `0x801E2D68`.)
 
+The seed's own framing reads the roll, not the narrowed byte: the
+`FUN_801D5854(ctx[+0x13], 6)` call at `0x801E2D50` sits between the roll's store
+(`0x801E2D30`) and the category dispatch (`0x801E2D88`), so a Magic action's seed
+pass frames on `rand() % 4` and only the `0x28` pass after it frames on the `0`
+the Magic arm stores. `dohaty_nova_v2_pre_scythe_wind`'s recording shows it: the
+seed pass arms the tween toward yaw `2048`, which is `ctx[+0x6DA]` (`0x800`) less
+Nova's unturned facing `0x800` plus the half turn of an odd roll, and the `0x28`
+pass re-arms toward `3980` on style `0` and the turned facing. Port:
+`BattleActionCtx::seed_camera_variant`, which `battle_action_framing` reads while
+the camera frames the seed pass.
+
 Two later bands narrow it again. State `0x14` masks it to bit 0 on its
 **in-range shortcut** into the strike loop (`lbu` / `andi 1` / `sb` at
 `0x801E321C..0x801E322C`) - the outer `switch`'s entry for `0x14` is
@@ -1119,7 +1137,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x16E` | u16 | Per-actor flag bank. Bit `0x4` = "non-targetable", bit `0x380` = "AI-controlled", bit `0x404` = "AI + non-targetable". Read at state-`0x0C` to decide between `FUN_801EED1C` and `FUN_801E7320`. |
 | `+0x10` | i32 | **Pending HP-bar delta** - how much `+0x172` still has to move. Ramped into the bar a quarter at a time by `FUN_80047430`, and only while it is non-zero. |
 | `+0x172`/`+0x174` | u16 | **Displayed** HP / MP - the values the HUD bars draw, lagging live HP `+0x14C` and live MP `+0x150`. `FUN_80047430` ramps `+0x172` by the `+0x10` accumulator and `+0x174` by `+0x178`, in the same quarter-step shape. |
-| `+0x178` | u16 | Last-action MP cost (used to display `-N MP` on screen). |
+| `+0x178` | i16 | **Pending MP-bar delta** - the MP twin of `+0x10`, seeded at each cast and MP item and moved onto `+0x174` a quarter at a time on a party seat. |
 | `+0x1D9` | u8 | **Current** anim ID (read-only here; written by the animation system). |
 | `+0x1DA` | u8 | **Queued** next anim ID. The state machine writes this; the animation system reads `+0x1D9` toward `+0x1DA`. |
 | `+0x1DC` | u8 | Per-actor flag bits. `0x01` = "windup done", `0x02` = "advance done", `0x04` = "exit". Set by the strike/spell loops. |

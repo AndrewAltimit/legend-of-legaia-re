@@ -48,7 +48,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.minigames.casino_coins = 200;
-    world.enter_slot_machine(SlotMachine::new(payouts.clone(), 41, 200));
+    world.enter_slot_machine(SlotMachine::new(payouts.clone(), 29, 200));
     assert_eq!(world.mode, SceneMode::SlotMachine);
 
     // Play a handful of spins through the pad; every evaluated spin must
@@ -57,8 +57,9 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     // jackpot line and play the bonus round out, so the bonus-round invariants
     // below are exercised too - `bonus_spins_seen` keeps that non-vacuous. The
     // seed is a search result, not a property: it moved when the landing
-    // search took retail's window and payline choice (`FUN_801d2440`), and when
-    // state `0` took its four discarded draws.
+    // search took retail's window and payline choice (`FUN_801d2440`), when
+    // state `0` took its four discarded draws, and when state `3` took its
+    // stops ahead of the frame's LCG draw and the reels rolled in.
     let mut bonus_spins_seen = 0;
     for spin in 0..8 {
         let m = world.minigames.slot_machine.as_ref().unwrap();
@@ -112,6 +113,14 @@ fn playwindow_load_path_spins_the_real_payout_table() {
             world.set_pad(0);
             let _ = world.tick();
             world.set_pad(b.mask());
+            let _ = world.tick();
+        }
+        // The reels roll in (`FUN_801D0554`) before the spin is evaluated.
+        world.set_pad(0);
+        for _ in 0..64 {
+            if world.minigames.slot_machine.as_ref().unwrap().phase() != SlotPhase::Stopping {
+                break;
+            }
             let _ = world.tick();
         }
         let m = world.minigames.slot_machine.as_ref().unwrap();

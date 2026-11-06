@@ -88,6 +88,9 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 message: Some((0x801C_ED18, 25)),
                 plate_cleared: true,
                 walk_clock: true,
+                arrival: true,
+                strike_aim: true,
+                tough: true,
                 rung: Some(0x200),
                 ..ActionSteer::default()
             },

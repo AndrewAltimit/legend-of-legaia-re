@@ -953,6 +953,15 @@ impl RetailBattle {
                         })
                 })
                 .collect(),
+            record_mp_max: (0..u32::from(party_count))
+                .map(|s| {
+                    u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s))
+                        .checked_sub(1)
+                        .map_or(0, |i| {
+                            game_anchors::u16_at(ram, 0x8008_4708 + i * 0x414 + 0x108)
+                        })
+                })
+                .collect(),
             party_categories: (0..u32::from(party_count))
                 .map(|s| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
@@ -980,6 +989,10 @@ impl RetailBattle {
             arrival_cue: arrival_columns(ram),
             dohati_gauge: dohati_gauge(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            display_pass_yaw_drift: display_pass_steps(ram)
+                .iter()
+                .map(|&s| legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(s))
+                .sum(),
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
             step_run: newest_step_run(ram),
@@ -1124,6 +1137,7 @@ impl RetailBattle {
                 }
                 for seat in attack_arm_glide_seats(ram, ctx)
                     .into_iter()
+                    .chain(spirit_band_glide_seats(ram, ctx, displayed_lag_vsyncs(ram)))
                     .chain(landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)))
                 {
                     if !seats.iter().any(|s| s.target == seat.target) {
@@ -1169,6 +1183,7 @@ impl RetailBattle {
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
             strike_stream_steer: false,
+            strike_aim_steer: false,
             approach_terms: (
                 game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
                 game_anchors::u16_at(ram, ctx + 0x6D4) as i16,
@@ -1192,6 +1207,7 @@ impl RetailBattle {
                 .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
+            sideband_stage: game_anchors::u8_at(ram, ctx + 0x276),
             caster_latch: game_anchors::u32_at(
                 ram,
                 0x801C_8FE0 + (u32::from(active_actor) + 1) * 4,
@@ -1202,6 +1218,7 @@ impl RetailBattle {
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
             entry_lowers: Vec::new(),
+            entry_park: None,
             resident_shiny_seru: false,
             inflight_idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
             // Only where the close-up's three-frame tween lands inside a pass

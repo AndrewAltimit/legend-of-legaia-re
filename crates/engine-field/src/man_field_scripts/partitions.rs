@@ -736,6 +736,167 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
     out
 }
 
+/// The system flags a fight's record raises **anywhere** ahead of its
+/// battle-entry op, beyond the [`BATTLE_ENTRY_ARM_WINDOW`] the
+/// [`walk_battle_entry_arms`] pairing reads, in a record the scene-entry
+/// script (`P1[0]`) does not spawn.
+///
+/// `korb3`'s Gaza record `P2[2]` sets `0x41D` as its first op (`+0x1E`) and
+/// enters row `15` a whole cutscene later (`+0x115E`); the entry script reads
+/// `0x41D` up with `0x41E` down as the *return* from that fight (`74 1D`,
+/// `74 1E` at `+0x129..`, then `54 1E` and `44 2A`). A capture of the fight
+/// therefore holds a flag retail raised after its entry had run, exactly as
+/// a window arm's is.
+///
+/// The spawn test separates that shape from the record the entry itself
+/// starts on the flag being down: `town0b`'s arrival cutscene `P2[26]` sets
+/// `0x307` as its first op, and `P1[0]` spawns it while `0x307` is clear
+/// (`73 07` / `44 79` at `+0x44E`), so holding `0x307` back replays the whole
+/// cutscene. Only a flag whose last write ahead of the entry op is a SET is
+/// returned (`korb3`'s `0x0B` is set and cleared around each dialogue).
+///
+/// A separate list from [`walk_battle_entry_arms`]: a direct `--battle`
+/// entry replays the window arms (`World::replay_scripted_battle_arm`), and a
+/// cutscene's opening flags are not part of the entry.
+pub fn walk_battle_record_flag_sets(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
+    let counts: Vec<usize> = (0..3)
+        .map(|p| {
+            man_file
+                .header
+                .partition_counts
+                .get(p)
+                .copied()
+                .unwrap_or(0)
+                .max(0) as usize
+        })
+        .collect();
+    // The flat indices the scene-entry script spawns.
+    let entry_spawns: Vec<usize> = partition_record_span(man_file, man, 1, 0)
+        .map(|(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .filter_map(|i| match i.info {
+                    InsnInfo::SpawnRecord { global_index } => Some(usize::from(global_index)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let base: usize = counts[..partition].iter().sum();
+        for index in 0..counts[partition] {
+            if entry_spawns.contains(&(base + index)) {
+                continue;
+            }
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            // The last write of each flag ahead of the record's first entry op.
+            let mut last: BTreeMap<u16, (bool, usize)> = BTreeMap::new();
+            let mut row = None;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::WarpOrInteract {
+                        op1,
+                        is_warp: false,
+                        ..
+                    } => {
+                        row = Some(op1);
+                        break;
+                    }
+                    InsnInfo::SystemFlag { kind, idx, .. } => match kind {
+                        FlagKind::Set => {
+                            last.insert(idx, (true, insn.pc));
+                        }
+                        FlagKind::Clear => {
+                            last.insert(idx, (false, insn.pc));
+                        }
+                        FlagKind::Test => {}
+                    },
+                    _ => {}
+                }
+            }
+            let Some(row) = row else {
+                continue;
+            };
+            out.extend(
+                last.into_iter()
+                    .filter(|(_, (set, _))| *set)
+                    .map(|(flag, (_, pc))| BattleEntryArm {
+                        partition,
+                        record: index,
+                        abs_pc: script_start + pc,
+                        flag,
+                        row,
+                        after_entry: false,
+                        clears: false,
+                    }),
+            );
+        }
+    }
+    out
+}
+
+/// The system flags each minigame door raises on its way out: for every
+/// door form of op `0x3E` (`op0 >= 100`, the mode-24 sub-id `op0 - 100`),
+/// the flags whose last write in the straight-line run ending at the op (from
+/// the record's previous unconditional jump) is a SET, as `(op0, flag)`.
+///
+/// `koin1`'s reception `P1[9]` opens a Muscle Dome course on three arms, each
+/// `55 09` (the dome-return marker), its own course flag set and the other
+/// two cleared, then `3E 69`. The entry script reads `0x509` up as the return
+/// from the dome (`75 09` / `65 09` at `+0x181`, then the result records), so
+/// a capture of a leg holds a flag retail raised after its entry had run.
+pub fn walk_minigame_door_flag_sets(man_file: &ManFile, man: &[u8]) -> Vec<(u8, u16)> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut run: BTreeMap<u16, bool> = BTreeMap::new();
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::JmpRel { .. } => run.clear(),
+                    InsnInfo::SystemFlag { kind, idx, .. } => match kind {
+                        FlagKind::Set => {
+                            run.insert(idx, true);
+                        }
+                        FlagKind::Clear => {
+                            run.insert(idx, false);
+                        }
+                        FlagKind::Test => {}
+                    },
+                    InsnInfo::WarpOrInteract {
+                        op0, is_warp: true, ..
+                    } => {
+                        out.extend(run.iter().filter(|(_, s)| **s).map(|(f, _)| (op0, *f)));
+                        run.clear();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
 /// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
 /// entry) in record `index` of `partition` names, in linear decode order.

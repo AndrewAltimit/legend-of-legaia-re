@@ -1004,6 +1004,7 @@
    ],
    "dev_deps": [
     "actor-formats",
+    "overlay-images",
     "save"
    ],
    "bins": [],
@@ -4152,6 +4153,7 @@
     "container-formats",
     "disc-patch",
     "engine-battle",
+    "engine-battle-hud",
     "engine-battle-loop",
     "engine-battle-vm",
     "engine-cast",
@@ -4167,6 +4169,7 @@
     "engine-scene",
     "engine-system",
     "engine-vm",
+    "font",
     "game-tables",
     "lzs",
     "minigame-formats",

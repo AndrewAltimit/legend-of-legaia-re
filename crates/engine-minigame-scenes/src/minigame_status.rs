@@ -137,7 +137,10 @@ pub struct StatusHost<'a> {
 /// bindings are the visitor's to change.
 #[derive(Debug, Clone, Copy)]
 pub struct FishingKeys<'a> {
+    /// Casts and locks the meter (the pad's Cross).
     pub cast: &'a str,
+    /// Gives up a cast and dismisses the catch (the pad's Circle).
+    pub back: &'a str,
     pub reel_a: &'a str,
     pub reel_b: &'a str,
     /// Opens the venue hub (the pad's Triangle).
@@ -226,7 +229,7 @@ pub fn caption(
 /// session's own derivation, [`PondSession::status_rows`]), then the session
 /// affordances - venue hub, quit, point exchange.
 pub fn fishing_status_rows(s: &PondSession, keys: &FishingKeys<'_>) -> Vec<StatusRow> {
-    let (line, hint) = s.status_rows(keys.cast, keys.reel_a, keys.reel_b);
+    let (line, hint) = s.status_rows(keys.cast, keys.back, keys.reel_a, keys.reel_b);
     vec![
         StatusRow::readout([line]),
         StatusRow::hint([hint]),
@@ -483,7 +486,8 @@ mod tests {
     use super::*;
 
     const KEYS: FishingKeys<'static> = FishingKeys {
-        cast: "Circle",
+        cast: "Cross",
+        back: "Circle",
         reel_a: "Cross",
         reel_b: "Square",
         menu: "Triangle",

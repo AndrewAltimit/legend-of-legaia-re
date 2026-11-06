@@ -44,6 +44,8 @@ impl PondSession {
             fish_scale: 0,
             last_award: 0,
             result_ramp: 0,
+            catch_banner: 0,
+            break_banner: 0,
             events: Vec::new(),
             venue_map: None,
             lure_actor: None,
@@ -279,9 +281,9 @@ impl PondSession {
     /// ([`crate::fishing_actors::fishing_line`]); later calls in the same
     /// frame return the same line.
     ///
-    /// `None` outside the in-water phases, with no lure or no rod tip.
-    /// Retail also draws the line while the lure flies out; the port's lure
-    /// exists only from the landing, so the line does too.
+    /// `None` outside the flight and in-water phases, with no lure or no rod
+    /// tip. The flight reaches the same tail (`0x801D2920` branches to it on
+    /// every frame the power lasts), so the line follows the lure out.
     pub fn line_frame(
         &mut self,
         project: impl FnOnce([i32; 3]) -> Option<(i16, i16)>,
@@ -290,7 +292,10 @@ impl PondSession {
             return self.line;
         }
         self.line_latched = true;
-        if !matches!(self.phase, PondPhase::Waiting | PondPhase::Hooked) {
+        if !matches!(
+            self.phase,
+            PondPhase::Flight | PondPhase::Waiting | PondPhase::Hooked
+        ) {
             return None;
         }
         let lure = self.lure_actor?;
@@ -326,22 +331,36 @@ impl PondSession {
                 self.rod_actor = None;
             }
         }
+        // The mode SM's leave gate (`$s7`): which states let the tail's
+        // Circle / L2 edge drop the cast back to the shore.
+        let mut may_leave = false;
+        let entry = self.phase;
         match self.phase {
             PondPhase::Idle => {
                 if input.cast_edge {
+                    // State `10` seeds the meter for the cast; state `0xC`'s
+                    // `& 0xC0` edge starts the wind-up.
+                    self.cast = CastPower::seeded();
                     self.phase = PondPhase::WindUp;
                     self.timer = 0;
                 }
             }
-            PondPhase::WindUp => {
-                self.timer += fs;
-                if self.timer >= WINDUP_FRAMES {
-                    self.cast = CastPower::new();
-                    self.phase = PondPhase::Power;
+            PondPhase::WindUp | PondPhase::Power => {
+                // State `0xD` counts the wind-up and, past `0xC` frame-steps,
+                // enters `0x14` with the meter zeroed (`0x801CFA40..0x801CFA60`);
+                // either way it falls through into `0x14`'s body, so the meter
+                // runs and the lock edge is live through the wind-up too.
+                if self.phase == PondPhase::WindUp {
+                    self.timer += fs;
+                    if self.timer >= WINDUP_FRAMES {
+                        self.timer = 0;
+                        self.cast.zero();
+                        self.phase = PondPhase::Power;
+                    }
                 }
-            }
-            PondPhase::Power => {
                 self.cast.advance(cast_step * fs);
+                // `li s7,1` at `0x801CFB68`, cleared again by the lock arm.
+                may_leave = !input.cast_edge;
                 if input.cast_edge {
                     let power = self.cast.lock();
                     // The release spawns the lure (`0x801CFC88..0x801CFD14`).
@@ -379,6 +398,8 @@ impl PondSession {
                 }
             }
             PondPhase::Waiting => {
+                // State `0x19` opens the leave gate (`li s7,1` at `0x801CFD2C`).
+                may_leave = true;
                 self.drive_rod(input, false, fs);
                 self.step_lure(None, fs);
                 let button = match ReelInput::from_pad_mask(input.reel_mask) {
@@ -481,6 +502,8 @@ impl PondSession {
                     self.phase = PondPhase::Idle;
                     return;
                 };
+                // A fish on is still state `0x19`.
+                may_leave = true;
                 self.drive_rod(input, true, fs);
                 self.step_lure(Some(self.last_swim), fs);
                 if let Some(lure) = self.lure_actor.as_mut() {
@@ -520,6 +543,7 @@ impl PondSession {
                 if broke {
                     self.events.push(PondEvent::Snapped);
                     self.phase = PondPhase::Snapped;
+                    self.break_banner = 1;
                     // One lure consumed (`FUN_80042310(lure + 0x9D, 1)`).
                     self.spent_lures
                         .push(super::rod_menu::lure_item_id(self.lure));
@@ -534,6 +558,8 @@ impl PondSession {
                     self.record.credit(sp.index, award);
                     self.last_award = award;
                     self.result_ramp = 0;
+                    // The from-right banner (`DAT_801D915C = 1`).
+                    self.catch_banner = 1;
                     self.events.push(PondEvent::Landed(award));
                     self.phase = PondPhase::Landed;
                     // So does the reel-in arm (`0x801D3CB4`).
@@ -542,24 +568,59 @@ impl PondSession {
                     }
                 }
             }
-            PondPhase::Landed | PondPhase::Snapped => {
-                if self.phase == PondPhase::Landed {
-                    // `FUN_801D5298`: `+0x1A += frame_step * 4`
-                    // (`0x801D52F4..0x801D5314`), held at `0x1000`
-                    // (`0x801D54B8..0x801D54CC`).
-                    self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
-                }
-                if input.cast_edge {
-                    self.fight_species = None;
-                    self.line_record = 0;
-                    self.depth = 0;
-                    self.lure_actor = None;
-                    self.rod_actor = None;
-                    self.events.push(PondEvent::Recast);
-                    self.phase = PondPhase::Idle;
+            PondPhase::Landed => {
+                // `FUN_801D5298`: `+0x1A += frame_step * 4`
+                // (`0x801D52F4..0x801D5314`), held at `0x1000`
+                // (`0x801D54B8..0x801D54CC`).
+                self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
+                // States `0x21` / `0x22` load the plate's accept word
+                // `DAT_801D90BC` as the leave gate (`0x801CFED8`).
+                may_leave = self.result_ramp >= RESULT_ACCEPT_RAMP;
+            }
+            PondPhase::Snapped => {
+                // State `0x28`: back to the shore once the line-break pair
+                // stops drawing, then advance its timer
+                // (`0x801CFEE4..0x801CFF20`). The gate stays shut.
+                if self.break_banner >= BANNER_FRAMES {
+                    self.break_banner = 0;
+                    self.return_to_shore();
+                } else {
+                    self.break_banner += fs;
                 }
             }
         }
+        // PORT: FUN_801cf3bc (the `$s7` leave gate and the tail's `& 0x21` edge)
+        // The tail: the catch banner shuts the gate while it runs
+        // (`0x801D01E4..0x801D0228`), then the leave edge is honoured
+        // (`0x801D0318..0x801D033C`).
+        if matches!(entry, PondPhase::Waiting | PondPhase::Hooked) && self.phase != entry {
+            // The lure tick ended the cast this frame (the reel-in or the
+            // break): the state it left is not `0x19`'s.
+            may_leave = false;
+        }
+        if self.catch_banner != 0 {
+            may_leave = false;
+            if self.catch_banner < BANNER_FRAMES {
+                self.catch_banner += fs;
+            } else {
+                self.catch_banner = 0;
+            }
+        }
+        if may_leave && input.leave_edge {
+            self.return_to_shore();
+        }
+    }
+
+    /// Back to the cast loop (state `10`): the working set of the cast goes,
+    /// and the hosts hear [`PondEvent::Recast`].
+    fn return_to_shore(&mut self) {
+        self.fight_species = None;
+        self.line_record = 0;
+        self.depth = 0;
+        self.lure_actor = None;
+        self.rod_actor = None;
+        self.events.push(PondEvent::Recast);
+        self.phase = PondPhase::Idle;
     }
 }
 
@@ -784,9 +845,15 @@ impl PondSession {
     /// The host status rows - a phase line and a key hint - both play hosts
     /// print above the retail HUD while the fishing sprite page is undecoded.
     /// Engine affordance text, not retail; one copy so the hosts agree.
-    /// `cast` / `reel_a` / `reel_b` are the host's own key names for Circle,
-    /// Cross and Square.
-    pub fn status_rows(&self, cast: &str, reel_a: &str, reel_b: &str) -> (String, String) {
+    /// `cast` / `back` / `reel_a` / `reel_b` are the host's own key names for
+    /// the cast press (Cross), the leave press (Circle), Cross and Square.
+    pub fn status_rows(
+        &self,
+        cast: &str,
+        back: &str,
+        reel_a: &str,
+        reel_b: &str,
+    ) -> (String, String) {
         let line = match self.phase {
             PondPhase::Idle => format!("FISHING  ({cast} = cast)"),
             PondPhase::WindUp => "FISHING  winding up".to_string(),
@@ -801,14 +868,14 @@ impl PondSession {
                 self.strength
             ),
             PondPhase::Landed => format!(
-                "FISHING  landed! +{} points  ({cast} = again)",
+                "FISHING  landed! +{} points  ({back} = again)",
                 self.last_award
             ),
-            PondPhase::Snapped => format!("FISHING  the line snapped!  ({cast} = again)"),
+            PondPhase::Snapped => "FISHING  the line snapped!".to_string(),
         };
         let hint = match self.phase {
             PondPhase::Waiting | PondPhase::Hooked => {
-                format!("hold {reel_a} / {reel_b} to reel")
+                format!("press {reel_a} / {reel_b} to reel, {back} gives up the cast")
             }
             _ => format!("{cast} casts, {reel_a} / {reel_b} reel"),
         };

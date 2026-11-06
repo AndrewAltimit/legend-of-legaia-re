@@ -23,6 +23,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             fade: Some(RetailFade {
                 to_white: false,
                 age: 24,
+                spawn_step: None,
             }),
             module_phase: None,
             cam_accum: None,
@@ -52,6 +53,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             fade: Some(RetailFade {
                 to_white: false,
                 age: 20,
+                spawn_step: Some(1),
             }),
             module_phase: Some(2),
             cam_accum: None,
@@ -68,6 +70,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             fade: Some(RetailFade {
                 to_white: true,
                 age: 31,
+                spawn_step: None,
             }),
             module_phase: Some(2),
             cam_accum: None,

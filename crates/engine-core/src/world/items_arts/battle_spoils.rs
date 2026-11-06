@@ -7,17 +7,29 @@ use super::*;
 pub const BATTLE_GOLD_CAP: i32 = 99_999_999;
 
 impl World {
-    /// Set per-slot character max MP (mirrors `char_record[+0x140]`
-    /// from the save record). Engines call this once per scene init -
-    /// usually from `set_character_record_for_slot`. Unset slots default
-    /// to `0`, which makes [`Self::use_item`] treat MP healing as a
-    /// no-op for that slot.
+    /// Set battle ordinal `slot`'s max MP from its character record: the
+    /// per-ordinal `character_max_mp` table and the seat's own `+0x152`
+    /// ([`legaia_engine_battle_vm::battle_action::BattleActor::mp_max`]),
+    /// which is what battle init copies the record's ceiling into
+    /// (`FUN_80053CB8`, `0x80053E50..0x80053E58`). Every in-battle reader
+    /// goes through [`Self::seat_max_mp`]; a battle-local write (Lapis Wave,
+    /// Fatal Decision) sets the seat alone and leaves the record's ceiling.
     pub fn set_character_max_mp(&mut self, slot: u8, mp_max: u16) {
         let i = slot as usize;
         if i >= self.tables.character_max_mp.len() {
             self.tables.character_max_mp.resize(i + 1, 0);
         }
         self.tables.character_max_mp[i] = mp_max;
+        if let Some(a) = self.actors.get_mut(i) {
+            a.battle.mp_max = mp_max;
+        }
+    }
+
+    /// Battle seat `slot`'s max MP, actor `+0x152` - the ceiling the HUD's MP
+    /// tint, the MP-restore clamps and the action validator read. `0` past
+    /// the actor table.
+    pub fn seat_max_mp(&self, slot: usize) -> u16 {
+        self.actors.get(slot).map_or(0, |a| a.battle.mp_max)
     }
 
     /// Credit `xp` EXP to roster character `char_id`: the level-up tracker's

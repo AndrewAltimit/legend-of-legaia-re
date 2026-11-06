@@ -3,7 +3,7 @@
 //! dead-target redirect `FUN_801DB124` and the Counterattack roll - against
 //! `World::initiative_pick_and_decide`, on one `rand()` stream.
 
-use crate::common::{Rng, disc, scus, scus_cpu};
+use crate::common::{Rng, disc, scus, scus_cpu, seat_status};
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_core::world::{MonsterAction, World};
@@ -36,7 +36,7 @@ const ENTRY: u32 = 0x8016_0000;
 
 /// The ailment words a seat starts the pick with: nothing, Stone, a
 /// counter-blocking Confuse bit, and Numb.
-const STATUS: [u16; 6] = [0, 0, 0, 4, 0x80, 0x400];
+const STATUS: [u16; 8] = [0, 0, 0, 4, 0x80, 0x400, 0x380, 0x0B83];
 
 #[derive(Debug, Clone)]
 struct Seat {
@@ -263,7 +263,13 @@ fn seed_port(w: &mut World, t: &Turn) {
         a.hp = s.hp;
         a.liveness = u16::from(s.hp != 0);
         a.init_key = s.key;
-        a.field_flags = s.status;
+        seat_status(
+            w,
+            e as u8,
+            s.status,
+            (u32::from(s.hp) + u32::from(s.key)) & 1 != 0,
+        );
+        let a = &mut w.actors[e].battle;
         a.spirit_gauge = s.spirit;
         if let Some(id) = s.item {
             a.action_category = 1;

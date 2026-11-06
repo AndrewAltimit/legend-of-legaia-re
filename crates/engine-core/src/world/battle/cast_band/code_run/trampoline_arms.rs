@@ -10,13 +10,15 @@ impl World {
     /// [`legaia_engine_cast::cast_arm_ticks::CastArmExtState`] carries, lifted
     /// off one actor slot.
     ///
-    /// Two of them have an engine home: `+0x150` is the actor's live MP and
-    /// `+0x172` its max HP. The other three do not, and the reason is that no
-    /// routine in PROT 0903..0966 reads them back - `+0x152` (the MP base) and
-    /// `+0x178` (where PROT 0943's drain stashes the old working MP) are
-    /// write-only in the band, and `+0x1F3` sits one byte past the end of the
-    /// engine's `+0x1DF..+0x1F2` action-parameter window. They round-trip
-    /// through the view for the tick's own arithmetic and are dropped here.
+    /// Three of them have an engine home: `+0x150` is the actor's live MP,
+    /// `+0x152` its max MP (zeroed by PROT 0943's Lapis Wave, read back by
+    /// the HUD, the MP-restore clamps and the validator) and `+0x172` its max
+    /// HP. The other two do not, and the reason is that no routine in PROT
+    /// 0903..0966 reads them back - `+0x178` (where PROT 0943's drain stashes
+    /// the old working MP) is write-only in the band, and `+0x1F3` sits one
+    /// byte past the end of the engine's `+0x1DF..+0x1F2` action-parameter
+    /// window. They round-trip through the view for the tick's own
+    /// arithmetic and are dropped here.
     pub(in crate::world::battle::cast_band) fn cast_arm_ext_state(
         &self,
         slot: u8,
@@ -27,14 +29,14 @@ impl World {
         };
         CastArmExtState {
             mp: a.battle.mp,
-            mp_base: a.battle.mp,
+            mp_base: a.battle.mp_max,
             mp_stash: 0,
             max_hp: a.battle.max_hp,
             reaction_extra: 0,
         }
     }
 
-    /// Write back the two halves of [`Self::cast_arm_ext_state`] the engine
+    /// Write back the three fields of [`Self::cast_arm_ext_state`] the engine
     /// actually carries.
     pub(in crate::world::battle::cast_band) fn write_cast_arm_ext_state(
         &mut self,
@@ -45,6 +47,7 @@ impl World {
             return;
         };
         a.battle.mp = st.mp;
+        a.battle.mp_max = st.mp_base;
         a.battle.max_hp = st.max_hp;
     }
 
@@ -347,6 +350,8 @@ impl World {
     pub(in crate::world) fn apply_effect_child_hit(&mut self, slot: usize, damage: i32) -> i32 {
         use legaia_engine_battle_vm::battle_cast_census::{EffectChildVictim, effect_child_hit};
         let mut cursor = self.battle_ctx.cast_readout_cursor;
+        // The whole `+0x16E` word, tracker included.
+        let word = self.raw_status_word(slot as u8);
         let Some(a) = self.actors.get_mut(slot) else {
             return 0;
         };
@@ -355,7 +360,7 @@ impl World {
         let mut victim = EffectChildVictim {
             hp: a.battle.hp,
             hp_bar_delta: a.battle.hp_bar_pending,
-            flags: a.battle.field_flags,
+            flags: word,
             staged_anim: a.battle.queued_anim,
             restage: 0,
             reaction_alt: p(0x1EF),

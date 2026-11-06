@@ -423,6 +423,12 @@ fn seed_and_settle(
                 for idx in retail.seed_latches() {
                     session.host.world.system_flag_set(idx);
                 }
+                // So is the region-selector band: the settle's passes ran at
+                // the seat, where the record holds the player, not where
+                // retail's last pass stood ([`hold_selector_bands`]).
+                if let Some(save) = retail.save.as_ref() {
+                    hold_selector_bands(&mut session.host.world, save);
+                }
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));

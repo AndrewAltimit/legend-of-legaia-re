@@ -39,9 +39,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = world.party.roster_names();
 
-    // Party rows. `character_max_mp` is the only MP ceiling the world carries
-    // (`BattleActor` has live `mp` but no max), and it is keyed by battle
-    // ordinal - the same index `build_battle_item_session` uses.
+    // Party rows. The MP ceiling is the seat's own `+0x152`
+    // (`BattleActor::mp_max`), the halfword retail's MP tint reads
+    // (`FUN_80046A20`, `0x80046B74`) - not the record's, which Lapis Wave
+    // leaves alone when it zeroes the seat's.
     //
     // HP is the **displayed** value, not the live one: retail's readout draws
     // actor `+0x172`, the bar the per-frame ramp `FUN_80047430` walks toward
@@ -65,8 +66,9 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
                 alive: a.battle.liveness != 0,
                 hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
-                mp: a.battle.mp,
-                mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
+                // The readout `+0x174`, ramped off `+0x178` as HP is.
+                mp: a.battle.mp_display.unwrap_or(a.battle.mp),
+                mp_max: a.battle.mp_max,
                 ap_slot: (i < world.battle.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`
@@ -136,6 +138,9 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
             },
         );
         hud.sync_level(*slot, row.level);
+        // The status element and the gauge read the actor's whole word, raw
+        // half included (`FUN_8002C2E4`, `FUN_80046A20` at `0x80046AE0`).
+        hud.sync_status_word(*slot, world.raw_status_word(*slot));
     }
     for slot in cleared {
         hud.clear_slot(slot);
@@ -339,6 +344,60 @@ fn dome_intro_names(
     let seat_x = i32::from(legaia_engine_battle::battle_seats::monster_seat(1, 0, false).x);
     let x = (0xA0 + (seat_x >> 3) - width / 2).clamp(6, (0x13A - width).max(6));
     vec![(name.to_string(), x)]
+}
+
+/// PROT 0957 `0x76` (Death Game) arm 3's labels this frame, as `(text, pen x,
+/// pen y)` in stage pixels: under each card its two lines, the victim's name
+/// or one of the module's head strings, each centred on the card's column by
+/// its `FUN_80035F04` width (`font`) and drawn through `FUN_80036888`
+/// (`0x801F7F50..0x801F810C`). Empty off arm 3's window, outside battle, and
+/// with no module image (disc-free).
+pub fn battle_death_game_labels(
+    world: &legaia_engine_core::world::World,
+    font: &legaia_font::Font,
+) -> Vec<(Vec<u8>, i32, i32)> {
+    use legaia_engine_cast::cast_module_camera::{
+        DEATH_GAME_PROT, DeathGameLabel, LABEL_FIRST_CENTRE_X, LABEL_ROWS_Y, LABEL_STEP_X,
+        head_string,
+    };
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return Vec::new();
+    }
+    let Some(rows) = world.casting.module_cam.death_game.labels() else {
+        return Vec::new();
+    };
+    let Some(image) = world
+        .casting
+        .effect_pool
+        .as_ref()
+        .and_then(|p| p.module(DEATH_GAME_PROT))
+        .map(|m| m.bytes.clone())
+    else {
+        return Vec::new();
+    };
+    let victim = world
+        .casting
+        .module_cam
+        .victim_slot
+        .map(|slot| crate::actor_names::actor_name(world, slot).into_bytes());
+    let mut out = Vec::new();
+    for (i, pair) in rows.iter().enumerate() {
+        let Some(pair) = pair else { continue };
+        for (line, y) in pair.iter().zip(LABEL_ROWS_Y) {
+            let text = match line {
+                DeathGameLabel::Victim => victim.clone(),
+                DeathGameLabel::Head(n) => head_string(&image, *n).map(<[u8]>::to_vec),
+            };
+            let Some(text) = text else { continue };
+            let width = font
+                .measure(&text, &legaia_font::MeasureOptions::default())
+                .max_px as i32;
+            // `x = i * 0x4C - ((width >> 1) - 0x30)`.
+            let x = i as i32 * LABEL_STEP_X - ((width >> 1) - LABEL_FIRST_CENTRE_X);
+            out.push((text, x, y));
+        }
+    }
+    out
 }
 
 /// The boss-name banner a battle-stage module has up this frame, as

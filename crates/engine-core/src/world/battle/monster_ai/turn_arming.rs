@@ -231,6 +231,8 @@ impl World {
             a.battle.mp = PIN;
             a.battle.hp_display = Some(PIN);
             a.battle.hp_bar_pending = 0;
+            // `sh 200,0x174` beside the `+0x150` store: the MP readout too.
+            a.battle.mp_display = Some(PIN);
         }
     }
 

@@ -517,7 +517,7 @@
     <dt>Reported as</dt><dd>On the Japanese release a coin vendor sells an item while 99 are held; the coins go and the count stays 99 (community report)</dd>
     <dt>Cause</dt><dd>The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99</dd>
     <dt>Where</dt><dd>Japanese prize session <code>0x801DE978</code> in PROT 0899 and bag add <code>0x80043210</code> in <code>SCPS_100.59</code>; USA counterparts <code>FUN_801DC1CC</code> and <code>FUN_800421D4</code></dd>
-    <dt>Affects</dt><dd>Every coin prize row on the Japanese release; equipment bought "to the bag" in a gold shop on every release</dd>
+    <dt>Affects</dt><dd>Every coin prize row on the Japanese release; the gold shop's buy paths carry the same gap, behind the list's own 99 gate on the USA release</dd>
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - Japanese, USA and French code read; not run</dd>
   </dl>
 
@@ -566,7 +566,7 @@
     <figcaption>Both rows are read from the code of the build they name. The USA build put two checks in front of a purchase path that is otherwise the Japanese one.</figcaption>
   </figure>
 
-  <p>Because only the coin counter was fixed, every release still has a relative of this fault in the ordinary gold shop. Stackable items go through a quantity screen capped at <code>99 - held</code>, but equipment does not: the buy confirm tests only gold, and the "to the bag" row adds the item and debits gold with no held-count read between them. Buying a hundredth copy of one piece of equipment takes the gold and leaves 99. That is read from the instructions of the USA and Japanese builds (the French build is the USA code relocated) and has not been run.</p>
+  <p>The ordinary gold shop has the same missing test past its list, for both kinds of item. The buy confirm tests only gold. Equipment goes to the "to the bag" row, which adds the item and debits gold with no held-count read between them. Stackable items go to a quantity screen whose bound is <code>min(gold / price, 99, 99 - held)</code>, but the bound only stops the number climbing: the list starts the number at 1 and the screen's confirm buys it whatever the bound, which the <a href="../../tooling/retail-kernel-differential.html">retail kernel differential</a> shows by running the screen off the disc at 99 held. On the USA build the gate sits one step earlier: the shop&rsquo;s list marks a row whose stack is at 99 when the list is built, and buzzes on a marked row before either path runs, which a capture confirms. So the gaps past the list are latent. Not yet read: whether a purchase that brings a stack to 99 inside one visit rebuilds that row (if not, the next confirm reaches the quantity screen at bound 0 and buys a hundredth copy), and whether the Japanese build&rsquo;s list carries the same gate. The port refuses the buy at the grant either way.</p>
 
   <details class="disclosure">
     <summary>The instructions</summary>
@@ -618,7 +618,7 @@
       <tr><td><code>0x80042F4C</code></td><td>SCUS</td><td>Held count of an item</td><td>disassembly</td></tr>
       <tr><td><code>0x800421D4</code></td><td>SCUS</td><td>Bag add; trim at <code>0x800422E0..0x80042300</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801DCEF8</code>, <code>0x801D69E4</code></td><td>French PROT 0899</td><td>Front check and row dim, as on USA</td><td>disassembly</td></tr>
-      <tr><td><code>0x801DB21C</code>, <code>0x801DB380</code></td><td>PROT 0899</td><td>USA gold-shop equipment buy with no held-count check ("to the bag" row <code>0x801DB478..0x801DB4C8</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DB21C</code>, <code>0x801DB380</code></td><td>PROT 0899</td><td>USA gold-shop equipment buy with no held-count check past the list&rsquo;s 99 gate ("to the bag" row <code>0x801DB478..0x801DB4C8</code>)</td><td>disassembly</td></tr>
       <tr><td><code>0x801DDB14</code></td><td>Japanese PROT 0899</td><td>The same "to the bag" row, through <code>0x801DDB6C</code></td><td>disassembly</td></tr>
       <tr><td>the Japanese result on screen</td><td>-</td><td>Coins taken, count stays 99</td><td>community report</td></tr>
     </tbody>

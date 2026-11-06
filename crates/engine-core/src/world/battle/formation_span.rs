@@ -124,7 +124,7 @@ impl World {
         &mut self,
         bars: legaia_engine_battle_loop::battle_state::CaptureReseatBars,
     ) {
-        use legaia_engine_battle_vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::{StatusKind, display_flags};
         let slot = bars.slot;
         let word = bars.status;
         if let (Some(g), Some(a)) = (bars.gauge, self.actors.get_mut(usize::from(slot))) {
@@ -152,6 +152,15 @@ impl World {
             .collect();
         for k in stray {
             self.battle.status_effects.strip(slot, k);
+        }
+        // The raw half of the word (`BattleActor::field_flags`, what a cast
+        // module writes) takes the same reseat: the HUD gauge and status
+        // element read the whole word, so a Curse the replay's cast left
+        // there would tint a row the capture shows clean. The seed's word
+        // carries the ailment bits less the Confuse group, which stays.
+        let seedable = display_flags::AILMENT_MASK & !display_flags::CONFUSE_MASK;
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            a.battle.field_flags &= !(seedable & !word);
         }
     }
 

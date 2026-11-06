@@ -157,8 +157,10 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
     }
     // Let the meter climb a while, then lock: a deep cast keeps the readout
     // above the bite ladder's live threshold, which is what makes a strike
-    // possible at all.
-    for _ in 0..110 {
+    // possible at all. The meter steps on the frame the wind-up hands over
+    // (the wind-up runs the meter's body), so 109 more frames and the lock's
+    // own step lock it at `0xDE0`.
+    for _ in 0..109 {
         mg.fishing_pond_tick(0, false, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
     }
@@ -201,7 +203,8 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
     }
     seen.snapped |= phase(mg) == "snapped";
     if matches!(phase(mg).as_str(), "landed" | "snapped") {
-        mg.fishing_pond_tick(0, true, 0);
+        // Circle (`0x20`, the leave edge) puts the catch away.
+        mg.fishing_pond_tick(0, false, 0x20);
         seen.absorb(&mg.fishing_pond_hud_json());
         for _ in 0..0x110 {
             mg.fishing_pond_tick(0, false, 0);
@@ -382,9 +385,9 @@ fn the_play_page_services_the_same_banner_timers() {
     const CIRCLE: u16 = 0x2000;
     let cast = |rt: &mut LegaiaRuntime| {
         tick(rt, 0, 1);
-        tick(rt, CIRCLE, 1);
-        tick(rt, 0, 110);
-        tick(rt, CIRCLE, 1);
+        tick(rt, CROSS, 1);
+        tick(rt, 0, 109);
+        tick(rt, CROSS, 1);
         tick(rt, 0, 200);
     };
 
@@ -423,10 +426,16 @@ fn the_play_page_services_the_same_banner_timers() {
     }
     assert!(resolved, "the play page's fight never resolved");
 
-    // Circle dismisses the result.
-    tick(&mut rt, 0, 1);
-    tick(&mut rt, CIRCLE, 1);
-    assert_eq!(phase(&rt), "idle", "Circle must return to the shore");
+    // A snap returns by itself once its banner ends; Circle puts a catch away
+    // once the plate's accept word is up and the catch banner has run.
+    for _ in 0..200 {
+        if phase(&rt) == "idle" {
+            break;
+        }
+        tick(&mut rt, 0, 1);
+        tick(&mut rt, CIRCLE, 1);
+    }
+    assert_eq!(phase(&rt), "idle", "the result must return to the shore");
 
     // The HUD still composes while the banners run - the page reads it every
     // frame and a live banner must not close the payload.

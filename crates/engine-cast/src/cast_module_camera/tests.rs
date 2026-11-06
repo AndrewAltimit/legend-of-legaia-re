@@ -1417,13 +1417,14 @@ fn ozma_ray_fans_take_their_seeds_in_seat_order() {
     assert_eq!(ozma_ray_seed(0x801F_A170, 0), None);
 }
 
-/// The side-band poll sits on the arm the table in `cast-module.md` names,
-/// and PROT 0923's, behind its arm-0 drain, stays its director's.
+/// The side-band poll sits on the arm the table in `cast-module.md` names:
+/// PROT 0923's on arm 1 (`t7 = 1`, `beq v1,t7,0x801F6BEC` at `0x801F6A8C`),
+/// behind that arm's drain.
 #[test]
 fn the_sideband_poll_arm_covers_the_band() {
     assert_eq!(sideband_wait_arm(934), Some(2));
     assert_eq!(sideband_wait_arm(932), Some(2));
     assert_eq!(sideband_wait_arm(933), Some(1));
-    assert_eq!(sideband_wait_arm(923), None);
+    assert_eq!(sideband_wait_arm(923), Some(1));
     assert_eq!(sideband_wait_arm(926), None);
 }

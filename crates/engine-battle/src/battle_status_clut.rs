@@ -149,7 +149,18 @@ pub struct StatusClutState {
     /// Each slot's [`RotClutWindows`] row, set by the host from the seat's
     /// character id ([`Self::set_rot_windows`]).
     windows: [Option<[u8; ROT_CLUT_ROW_LEN]>; PARTY_CLUT_SLOTS],
+    /// Last-seen `+0x16E & 0x3C` (Stone and the Rot limbs), the cure detector
+    /// of [`Self::sync_word`].
+    marked: [u16; PARTY_CLUT_SLOTS],
+    /// A cure took a mark off: the next [`Self::step`] puts the pristine row
+    /// back, as `FUN_8005133C` does.
+    restore: [bool; PARTY_CLUT_SLOTS],
 }
+
+/// The status bits whose recolour a cure undoes: Stone (`0x04`) and the three
+/// Rot limbs (`0x38`) - the `andi v0,v0,0x3c` gate ahead of each
+/// `jal 0x8005133c` in the applier (`0x80040E9C`, `0x80040FC0`).
+pub const CLUT_MARK_BITS: u16 = 0x003C;
 
 impl StatusClutState {
     /// Fold this frame's Stone bit for `slot` (actor `+0x16E & 0x0004`) into
@@ -184,6 +195,32 @@ impl StatusClutState {
         self.rot_seen[i] = status & ROT_CLUT_LIMB_BITS.iter().fold(0, |m, b| m | b);
     }
 
+    /// Fold this frame's whole `+0x16E` word for `slot`: the Stone and Rot
+    /// latches ([`Self::arm`], [`Self::arm_rot`]) and the cure that undoes
+    /// them. A cure in retail (the applier's classes, Vera, Orb, Spoon, Horn,
+    /// the fatal-decision module) runs `FUN_8005133C` when the word carried
+    /// any of [`CLUT_MARK_BITS`]: it uploads the pristine palette back over
+    /// row `481 + slot` and sets all four latches `+0x220..+0x223` to `1`, so
+    /// any mark the cure left re-fires on the next pass. Here a mark leaving
+    /// the word is that cure.
+    ///
+    /// PORT: FUN_8005133C (the palette restore and the latch re-arm)
+    pub fn sync_word(&mut self, slot: u8, word: u16) {
+        let i = slot as usize;
+        if i >= PARTY_CLUT_SLOTS {
+            return;
+        }
+        let marked = word & CLUT_MARK_BITS;
+        if self.marked[i] & !marked != 0 {
+            self.restore[i] = true;
+            self.seen[i] = false;
+            self.rot_seen[i] = 0;
+        }
+        self.marked[i] = marked;
+        self.arm(slot, word & 0x0004 != 0);
+        self.arm_rot(slot, word);
+    }
+
     /// Seat the Rot windows the next [`Self::step`] tints over, one row per
     /// party slot (`None` for an empty seat or a host without the table).
     pub fn set_rot_windows(&mut self, windows: [Option<[u8; ROT_CLUT_ROW_LEN]>; PARTY_CLUT_SLOTS]) {
@@ -192,7 +229,9 @@ impl StatusClutState {
 
     /// Whether any slot's latch is waiting for a [`Self::step`].
     pub fn armed(&self) -> bool {
-        self.latch.iter().any(|&l| l) || self.rot_latch.iter().flatten().any(|&l| l)
+        self.latch.iter().any(|&l| l)
+            || self.rot_latch.iter().flatten().any(|&l| l)
+            || self.restore.iter().any(|&r| r)
     }
 
     /// The pristine palette for `slot`, snapshotted off VRAM on first use.
@@ -232,6 +271,16 @@ impl StatusClutState {
         let mut wrote = false;
         for slot in 0..PARTY_CLUT_SLOTS {
             let row = PARTY_CLUT_ROW_BASE + slot as u16;
+            // A cure's `FUN_8005133C`: the pristine row back. With no copy
+            // taken, nothing was recoloured and there is nothing to undo.
+            if self.restore[slot] {
+                self.restore[slot] = false;
+                if let Some(src) = self.pristine[slot].as_ref() {
+                    let staged: Vec<u8> = src.iter().flat_map(|&c| c.to_le_bytes()).collect();
+                    vram.write_clut_row(0, row, &staged);
+                    wrote = true;
+                }
+            }
             // The Stone arm (`0x8004D6C0..0x8004D79C`): the whole row grey.
             if self.latch[slot]
                 && let Some(src) = self.pristine_row(vram, slot)
@@ -334,6 +383,33 @@ mod tests {
         st.arm(1, true);
         assert!(!st.armed());
         assert!(!st.step(&mut vram), "the +0x220 latch fires once");
+    }
+
+    #[test]
+    fn a_cure_puts_the_pristine_row_back_and_re_arms() {
+        let mut vram = legaia_tim::Vram::new();
+        let row = PARTY_CLUT_ROW_BASE;
+        let original = seed_row(&mut vram, row);
+        let mut st = StatusClutState::default();
+        // Stoned with a rotted limb: grey, then the limb's window blue.
+        st.set_rot_windows([Some([0, 16, 16, 32, 32, 48]), None, None]);
+        st.sync_word(0, 0x0014);
+        assert!(st.step(&mut vram));
+        assert_ne!(read_row(&vram, row), original);
+        // A cure that leaves the Rot: the row comes back, then the limb
+        // re-tints off the pristine copy, as the re-armed latch does.
+        st.sync_word(0, 0x0010);
+        assert!(st.armed());
+        assert!(st.step(&mut vram));
+        let after = read_row(&vram, row);
+        assert_eq!(after[0..16], original[0..16]);
+        assert_eq!(after[32..], original[32..]);
+        assert_ne!(after[16..32], original[16..32]);
+        // The whole cure: everything back.
+        st.sync_word(0, 0);
+        assert!(st.step(&mut vram));
+        assert_eq!(read_row(&vram, row), original);
+        assert!(!st.armed());
     }
 
     #[test]

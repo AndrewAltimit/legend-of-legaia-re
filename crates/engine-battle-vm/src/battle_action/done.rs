@@ -695,8 +695,7 @@ fn victory_pose_fixup<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
         // distribution retail's rejection loop converges to, but bounded.
         let eligible: Vec<u8> = (0..party_count)
             .filter(|&s| {
-                host.actor(s)
-                    .is_some_and(|a| a.liveness != 0 && a.field_flags & 0x404 == 0)
+                host.actor(s).is_some_and(|a| a.liveness != 0) && host.status_word(s) & 0x404 == 0
             })
             .collect();
         if eligible.is_empty() {

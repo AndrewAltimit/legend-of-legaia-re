@@ -81,6 +81,7 @@ impl World {
             a.battle.hp = hms.hp_cur;
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;
+            a.battle.mp_max = hms.mp_max;
             a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
             // Seed the per-slot turn-order SPD from the record's live stats so
             // a battle's next-actor selector can run the initiative scheme.
@@ -230,6 +231,7 @@ impl World {
             a.battle.hp = hms.hp_cur;
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;
+            a.battle.mp_max = hms.mp_max;
             a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
         }
     }

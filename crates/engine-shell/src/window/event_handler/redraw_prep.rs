@@ -769,10 +769,20 @@ impl PlayWindowApp {
         // glides between). After `sync_battle_render` so battle entry sees
         // `battle_stage_mesh`; before the render borrow reads the pose.
         self.tick_battle_camera();
-        // A cast recording's opening: the pose retail's recording stood on.
+        // A cast recording's opening: the pose retail's recording stood on,
+        // on the cast begin, or for a film that opens on the capture's own
+        // gate (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`) on that gate's tick.
+        // A gate film's drive plays the round through its own `0x28` first,
+        // so it seats on the gate alone.
+        let on_gate = std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate");
+        let seat_now = if on_gate {
+            self.capture_gate_met()
+        } else {
+            matches!(self.session.host.world.battle_ctx.action_state, 0x28 | 0x3C)
+        };
         if let Some(sc) = self.screenshot.as_ref() {
             let world = &mut self.session.host.world;
-            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+            if seat_now
                 && let Some(pose) = sc.cast_seq_seat_pose.take()
                 && let Some(cam) = world.battle.camera.as_mut()
             {

@@ -171,7 +171,7 @@ impl World {
                 if a.battle.max_hp == 0 {
                     return None;
                 }
-                let mp_max = self.tables.character_max_mp.get(i).copied().unwrap_or(0);
+                let mp_max = a.battle.mp_max;
                 // Row label = the occupying character's name (roster_names is
                 // roster-slot keyed; `i` is the battle ordinal).
                 let name = names

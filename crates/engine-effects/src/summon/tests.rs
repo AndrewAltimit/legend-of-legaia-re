@@ -548,6 +548,7 @@ fn colour_render_state_packs_the_blend_word_and_scale() {
         scale: 0x2000,
         colour: legaia_render_kernels::sprite_arm::ColourWord::from_words(0xC900_0000, 1),
         shatter: 0,
+        shatter_row: Default::default(),
     };
     let mut mesh = legaia_tmd::mesh::ColorMesh {
         positions: vec![[1.0, 2.0, 3.0]; 3],

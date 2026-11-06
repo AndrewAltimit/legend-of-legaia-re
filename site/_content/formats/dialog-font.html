@@ -208,7 +208,7 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
     </svg>
     <figcaption>Every byte but the four control bytes reaches the common advance tail; a space (<code>0x20</code>) takes the advance without emitting a sprite. The optional unit cap - the typewriter&rsquo;s reveal counter - counts glyphs, line breaks and whole escapes; an ink change costs nothing.</figcaption>
   </figure>
-  <p>A separate pixel measurer (the same expansion, then the widest <code>0x7C</code>-separated line) exists for the few surfaces that size themselves to their text, such as the battle name plaque.</p>
+  <p>A separate pixel measurer (the same expansion, then the widest <code>0x7C</code>-separated line) exists for the few surfaces that size themselves to their text, such as the battle name plaque. The port&rsquo;s measurer is <code>Font::measure</code>, which matches <code>FUN_80035F04</code> run off the disc at both glyph pads; the draw layout (<code>Font::layout</code>) gives escapes their drawn advance instead, so a text balloon or a world-map label sizes itself through the measure, never the layout.</p>
   <details class="disclosure">
     <summary>Per-glyph GPU packet</summary>
     <div class="disclosure-body">

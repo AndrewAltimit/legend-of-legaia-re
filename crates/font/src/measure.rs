@@ -1,6 +1,6 @@
 //! Pixel width of an encoded dialog / UI string, the way retail draws it.
 //!
-//! PORT: FUN_80036514, FUN_80036888
+//! PORT: FUN_80036514, FUN_80036888, FUN_80035F04
 //!
 //! Retail never measures the bytes a string is stored as. Every draw goes
 //! through the substitution expander `FUN_80036514`, which rewrites the

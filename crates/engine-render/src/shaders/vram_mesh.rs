@@ -752,7 +752,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if cue_first {
         prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
     }
-    let lit = psx_modulate(color.rgb, prim);
+    // A dithered draw (PSX mode) blends at the GPU's precision, an 8-bit
+    // value the dither then cuts; the clean path keeps the continuous blend.
+    var lit = psx_modulate(color.rgb, prim);
+    if u.psx_params.w >= 0.5 {
+        lit = psx_modulate_gpu(color.rgb, prim);
+    }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_window(
@@ -774,7 +779,19 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     } else {
         cued = apply_grade(enhanced, u.grade);
     }
-    let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
+    // The PCSX-Redux instrument (`dither >= 1.5`) dithers a Gouraud polygon
+    // only: that emulator draws a flat-shaded textured one at 5 bits, the
+    // modulate floored and nothing added (`getTextureTransColShade`). The
+    // packet colour's derivative tells the two apart: zero across a flat
+    // polygon's four-pixel quad, and across a Gouraud one whose corners
+    // happen to agree, which that emulator still dithers.
+    let flat = pcsx_flat_shaded(fwidth(in.prim_color));
+    var dither = u.psx_params.w;
+    if dither >= 1.5 && flat {
+        dither = 0.0;
+        cued = psx_floor5(cued);
+    }
+    let rgb = psx_dither(cued, in.clip_pos.xy, dither);
     return vec4<f32>(rgb, color.a);
 }
 
@@ -874,7 +891,12 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // (`B + 0.25 * F`), as it does on the browser play page where the 0.25 is
     // a blend factor. Retail's quarter is `F >> 2`; the unfloored quarter
     // keeps the two hosts on one law.
-    return vec4<f32>(psx_blend_foreground(cued) * f_scale, 1.0);
+    let flat = pcsx_flat_shaded(fwidth(in.prim_color));
+    var fg = psx_blend_foreground(cued);
+    if u.psx_params.w >= 1.5 && !flat {
+        fg = psx_blend_foreground_pcsx(cued, in.clip_pos.xy);
+    }
+    return vec4<f32>(fg * f_scale, 1.0);
 }
 
 @fragment

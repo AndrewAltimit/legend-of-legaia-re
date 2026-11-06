@@ -102,6 +102,7 @@ impl World {
                 a.battle.hp_bar_pending = i32::from(shown) - i32::from(a.battle.hp);
             }
             a.battle.tick_hp_bar(retail_slot);
+            a.battle.tick_mp_bar(retail_slot);
         }
     }
 
@@ -541,12 +542,10 @@ impl World {
         }
 
         // Pre-step snapshot of the attack chain's cursor. The chain consumes
-        // one queued swing byte per frame it advances (`actor[+0x15]`, bumped
-        // at the same site that stages the byte), and resets the cursor to `0`
-        // on the frame it reads the terminator - so `strike_cursor_before` is
-        // both "did this frame stage a swing" and, at the terminator, "how
-        // many swings this action ran". Both readings are consumed by the
-        // strike reconciliation below the step.
+        // one queued swing byte per step it stages (`actor[+0x15]`, bumped at
+        // the same site that stages the byte), so a cursor that moved across
+        // the step is "this step staged a swing" - the reading the zero-length
+        // clip fallback below consumes.
         let chain_actor = self.battle_ctx.active_actor as usize;
         let chain_state_before = self.battle_ctx.action_state;
         let strike_cursor_before = self
@@ -641,17 +640,30 @@ impl World {
         // Generic physical attack: deal damage on the strike-landed edge when
         // **the chain itself staged nothing**.
         //
-        // `strike_cursor_before` is the number of bytes this action's chain
-        // consumed (the terminator step leaves it at the terminator index).
-        // A zero count is an actor whose stream was never seeded - a monster
-        // whose catalog carries no attack entries (the synthetic catalog), or
-        // a synthetic party slot - and that keeps its single edge-triggered
-        // application: the AGL-budget swings, resolved as immediate hits and
-        // applied as one combo total.
+        // The cursor **after** the step is the number of bytes this action's
+        // chain staged: the stage site bumps it and the band never rewinds
+        // it, and the terminator test reads the new cursor on the same step
+        // (`0x801E3998..0x801E39AC`), so a one-swing stream stages its byte
+        // and leaves for `0x1F` in one step, from a cursor of `0`. The
+        // pre-step cursor therefore reads `0` for a one-swing stream too, and
+        // keying on it struck every single-swing monster twice: the swing's
+        // own hit off its clip's event frame, and a basic hit on the edge
+        // (`battle_map02_lip_kid_strike`: `19` on the `0x1F` edge, then the
+        // swing's `50`, where retail lands the swing's `48` alone). A zero
+        // post-step count is an actor whose stream was never seeded - a
+        // monster whose catalog carries no attack entries (the synthetic
+        // catalog), or a synthetic party slot - and that keeps its single
+        // edge-triggered application: the AGL-budget swings, resolved as
+        // immediate hits and applied as one combo total.
+        let strike_cursor_after = self
+            .actors
+            .get(chain_actor)
+            .map(|a| a.battle.strike_index)
+            .unwrap_or(0);
         if let StepOutcome::Transition { from, to } = outcome
             && from == ActionState::AttackChain.as_byte()
             && to == ActionState::AttackRecovery.as_byte()
-            && strike_cursor_before == 0
+            && strike_cursor_after == 0
         {
             self.apply_basic_attack();
         }

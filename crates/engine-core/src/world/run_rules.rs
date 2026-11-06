@@ -443,6 +443,7 @@ impl World {
             a.battle.hp = hms.hp_cur;
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;
+            a.battle.mp_max = hms.mp_max;
         }
         self.seed_party_battle_stats();
     }

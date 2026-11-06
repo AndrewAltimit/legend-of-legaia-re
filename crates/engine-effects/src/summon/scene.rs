@@ -416,6 +416,8 @@ impl SummonScene {
                     scale: s.field_72,
                     colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
                     shatter: crate::part_shatter::part_shatter_word(s),
+                    // The battle rows read zero in every capture.
+                    shatter_row: Default::default(),
                 }
             })
             .collect()

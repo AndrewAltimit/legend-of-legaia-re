@@ -4,9 +4,9 @@
 use super::*;
 
 /// Fraction of equal `(hp, hp_max, mp, mp_max)` fields over the retail
-/// combatants; `mp_max` is left out where the engine has none (`0`), and so
-/// is any field the manifest names as written by the capture probe after
-/// battle init (`injected`, e.g. `p0.mp_max`).
+/// combatants; any field the manifest names as written by the capture probe
+/// after battle init (`injected`, e.g. `p0.mp_max`) is left out. `mp_max` is
+/// the seat's own `+0x152` on both sides, a zero included.
 pub(super) fn combatant_score(
     retail: &[Option<Combatant>],
     engine: &[Combatant],
@@ -27,9 +27,6 @@ pub(super) fn combatant_score(
             ("mp_max", r.mp_max, e.map(|e| e.mp_max)),
         ];
         for (name, want, got) in fields {
-            if name == "mp_max" && got == Some(0) {
-                continue;
-            }
             let key = format!("{tag}{i}.{name}");
             if injected.contains(&key) {
                 skipped.push(format!("{key} retail={want} engine={got:?}"));

@@ -71,9 +71,16 @@ fn walks_partition1_and_decodes_inline_tetsu_arm() {
 /// controller, skipped by `actor_placements`) and record 1 (a placed actor
 /// whose `[N=0][model][actions][tx][tz]` header is followed by `script`).
 fn man_with_placement_script(script: &[u8]) -> (ManFile, Vec<u8>) {
+    man_with_entry_and_placement(&[0x21], script)
+}
+
+/// [`man_with_placement_script`] with the scene-entry record's (`P1[0]`)
+/// script given too.
+fn man_with_entry_and_placement(entry: &[u8], script: &[u8]) -> (ManFile, Vec<u8>) {
     let data_region_offset = 0x40usize;
-    // Record 0: a minimal controller (`N=0`, header, halt).
-    let rec0: &[u8] = &[0x00, 0, 0, 0, 0, 0x21];
+    // Record 0: a controller (`N=0`, header, the entry script).
+    let mut rec0 = vec![0x00, 0, 0, 0, 0];
+    rec0.extend_from_slice(entry);
     // Record 1: N=0, model=5, actions=0, tile (3,4), then the script.
     let mut rec1 = vec![0x00, 0x05, 0x00, 0x03, 0x04];
     rec1.extend_from_slice(script);
@@ -81,7 +88,7 @@ fn man_with_placement_script(script: &[u8]) -> (ManFile, Vec<u8>) {
     let off0 = 0u32;
     let off1 = rec0.len() as u32;
     let mut man = vec![0u8; data_region_offset];
-    man.extend_from_slice(rec0);
+    man.extend_from_slice(&rec0);
     man.extend_from_slice(&rec1);
 
     let header = ManHeader {
@@ -1047,6 +1054,54 @@ fn battle_entry_arm_pairs_through_the_low_op0_entry_form() {
     let arms = walk_battle_entry_arms(&mf, &man);
     let flags: Vec<(u16, u8)> = arms.iter().map(|a| (a.flag, a.row)).collect();
     assert_eq!(flags, vec![(0x30C, 2)]);
+}
+
+/// A fight's record raises flags far ahead of its entry op (`korb3`'s Gaza
+/// record sets `0x41D` a cutscene before `3E FF 0F`): each flag whose last
+/// write ahead of the op is a SET is listed, one set and cleared again is not,
+/// and nothing past the op counts.
+#[test]
+fn battle_record_flag_sets_take_the_record_s_earlier_sets() {
+    let mut script = vec![0x54, 0x1D, 0x50, 0x0B];
+    script.resize(script.len() + BATTLE_ENTRY_ARM_WINDOW + 2, 0x25); // Nops
+    script.extend_from_slice(&[0x60, 0x0B, 0x3E, 0xFF, 0x0F, 0x51, 0x96, 0x21]);
+    let (mf, man) = man_with_placement_script(&script);
+    let sets: Vec<(u16, u8)> = walk_battle_record_flag_sets(&mf, &man)
+        .iter()
+        .map(|a| (a.flag, a.row))
+        .collect();
+    assert_eq!(sets, vec![(0x41D, 0x0F)]);
+}
+
+/// A record the scene-entry script spawns is not read: `town0b`'s entry
+/// spawns its arrival cutscene `P2[26]` while `0x307` is down, and that
+/// record's own first op raises `0x307`.
+#[test]
+fn battle_record_flag_sets_skip_a_record_the_entry_spawns() {
+    let script = [
+        0x53, 0x07, 0x25, 0x25, 0x25, 0x25, 0x25, 0x3E, 0x00, 0x02, 0x21,
+    ];
+    // `44 01`: spawn flat record 1, the placement record.
+    let (mf, man) = man_with_entry_and_placement(&[0x44, 0x01, 0x21], &script);
+    assert!(walk_battle_record_flag_sets(&mf, &man).is_empty());
+    let (mf, man) = man_with_placement_script(&script);
+    assert_eq!(walk_battle_record_flag_sets(&mf, &man).len(), 1);
+}
+
+/// `koin1`'s course pick: `55 09`, the course flag up, the other two down,
+/// then the dome door `3E 69`. A jump ends the run, so the SET ahead of it
+/// is not the door's.
+#[test]
+fn minigame_door_flag_sets_take_the_run_into_the_door() {
+    let (mf, man) = man_with_placement_script(&[
+        0x55, 0x99, 0x26, 0x02, 0x00, // SET 0x599, JmpRel +2 (ends the run)
+        0x55, 0x09, 0x55, 0x36, 0x65, 0x37, 0x65, 0x38, 0x4A, 0x1E, 0x00, // the arm
+        0x3E, 0x69, 0x00, 0x00, 0x00, 0x00, 0x21,
+    ]);
+    assert_eq!(
+        walk_minigame_door_flag_sets(&mf, &man),
+        vec![(0x69, 0x509), (0x69, 0x536)]
+    );
 }
 
 // ---- developer flag-menu arms (`debug_flag_menu_arm`) ----

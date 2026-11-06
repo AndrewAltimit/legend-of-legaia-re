@@ -372,7 +372,9 @@ fn page_press(mg: &mut LegaiaMinigames) -> &'static str {
             .and_then(|a| a.iter().position(|v| v == true))
         {
             Some(r) => (STOP[r], "stop"),
-            None => return "none",
+            // Every stop is in and a reel is still rolling in
+            // (`FUN_801D0554`): the page steps a frame with no press.
+            None => (0, "roll"),
         },
         "payout" => (CROSS, "collect"),
         _ => return "none",

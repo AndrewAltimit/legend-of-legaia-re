@@ -225,16 +225,20 @@ pub fn stop_plan_with_budget(
     }
 }
 
+/// What the reel integrator turns every reel a frame in state 3
+/// (`addiu v0,v0,0x66` in `FUN_801D0554`).
+pub const ROLL_IN_SPEED: i32 = 0x66;
+
 /// The turn the reel makes after its stop (`FUN_801d0554`): `0x66` a frame, one
 /// budget frame spent each, until its high byte reads the landing row or the
 /// budget runs out, then locked on the row it stands on. So a landing further off
 /// than the budget reaches is never made: the reel stops short.
 ///
-/// PORT: FUN_801d0554 (the roll to the row, from `pos` to the row it locks on)
+/// REF: FUN_801d0554 (the roll-in collapsed into one call for the frame-free
+/// `SlotMachine::stop_reel`; the per-frame port is `SlotMachine::roll_reels`)
 pub fn roll_to_row(mut pos: i32, row: usize, mut budget: i32) -> usize {
-    const ROLL_SPEED: i32 = 0x66;
     loop {
-        pos = (pos + ROLL_SPEED).rem_euclid(REEL_WRAP);
+        pos = (pos + ROLL_IN_SPEED).rem_euclid(REEL_WRAP);
         budget -= 1;
         if (pos >> 8) as usize == row || budget < 0 {
             return (pos >> 8) as usize;

@@ -205,9 +205,8 @@ pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
 /// "empty = dead" colour, so a depleted bar simply reads as danger.
 ///
 // Same reach as [`hp_bar_color_index`] - see the note there. The MP field it
-// tints is drawn only when the slot carries a non-zero `mp_max`, which in the
-// native window means party rows: `World` keeps the MP ceiling in
-// `character_max_mp` (keyed by battle ordinal) and monsters have none.
+// tints is drawn for party rows (a zero ceiling included) and for any other
+// row carrying a non-zero `mp_max`; monster rows carry none.
 pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     if (max >> 2) < cur {
         if cur <= (max >> 1) { 6 } else { 7 }

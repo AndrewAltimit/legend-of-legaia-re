@@ -583,7 +583,7 @@ impl PlayWindowApp {
             use std::io::Write as _;
             let _ = writeln!(
                 meta,
-                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy"
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
@@ -733,17 +733,21 @@ impl PlayWindowApp {
                 *slot = a.battle.hp.to_string();
             }
         }
-        let (fade_white, fade_age) =
-            w.presentation
-                .fade
-                .as_ref()
-                .filter(|f| f.kind == 1)
-                .map_or((-1, -1), |f| {
-                    (
-                        i32::from(f.target_rgb()[0] == 0xFF),
-                        i32::from(f.age_vsyncs()),
-                    )
-                });
+        // `fade_level`: the fade colour's brightest channel on this tick, the
+        // oracle's cue that the screen shows the fade (`cast_sequence`'s
+        // `FADE_FRAMES_BACK`).
+        let (fade_white, fade_age, fade_level) = w
+            .presentation
+            .fade
+            .as_ref()
+            .filter(|f| f.kind == 1)
+            .map_or((-1, -1, -1), |f| {
+                (
+                    i32::from(f.target_rgb()[0] == 0xFF),
+                    i32::from(f.age_vsyncs()),
+                    i32::from(f.rgb().into_iter().max().unwrap_or(0)),
+                )
+            });
         let accum = w
             .battle
             .camera
@@ -763,7 +767,7 @@ impl PlayWindowApp {
         use std::io::Write as _;
         let _ = writeln!(
             rec.meta,
-            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy}",
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level}",
             w.casting.module_phase,
             w.clock.display_frames,
             w.battle_ctx.frame_timer,

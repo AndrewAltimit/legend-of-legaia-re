@@ -525,6 +525,8 @@ mod tests {
                     geom: (FRAME_W, FRAME_H, 16),
                     display_frames: None,
                     drive: None,
+                    fade: None,
+                    fade_back: None,
                 });
                 t += 1;
                 f += 1;

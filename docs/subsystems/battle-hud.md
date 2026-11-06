@@ -293,6 +293,14 @@ command or playing an action out - and shows that actor only:
 | `MP` label sprite `(224,86)` | `(192, 194)` |
 | MP current / separator / maximum | right edge 238 / `(240, 188)` / right edge 274 (two digits start at 258) |
 
+The current values are the displayed words, not the live ones: HP `+0x172` and
+MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
+signed accumulator onto each a frame - `+0x10` for HP, `+0x178` for MP (the MP
+block at `0x800475A4..0x80047620`, on a party seat) - so a cast's MP counts down
+over a few frames rather than dropping, and the gauge colour (`0x80046B78`)
+reads the same `+0x174`. Port: `BattleActor::mp_display` carries `+0x174`,
+`tick_mp_bar` runs `party_mp_step` beside the HP ramp, and the HUD rows draw it.
+
 When the bar takes over, the panels do not stop drawing. Retail moves the whole
 cluster to `y = 230`, below the 228-line display window - the same park row the
 arts input screen uses
@@ -380,6 +388,12 @@ character record read `0x5C8` bytes early (`0x80084140 + 0x5C8 == 0x80084708`):
 
 The status word is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it
 with a paired `lhu` / `sh` on both its arms (`0x80047680`, `0x80048040`).
+The port seats that word on each HUD row from `World::raw_status_word` (the
+raw half a cast or a hit's status arm writes, OR the tracker,
+`BattleHud::sync_status_word`), for this element and for the gauge colours
+below. Reading the tracker alone left a Curse a cast wrote, an enemy special's
+Venom or a rotted limb with no element and no tier `3`; the retail
+differential `battle_gauge` holds the colours to `FUN_80046A20`.
 
 | Condition | Draw |
 |---|---|
@@ -708,6 +722,11 @@ at `(16, 192)` and the move name, and no cluster record). Port:
 | 81 | target plaque | a party member's action on a monster; `x` written to `304 - w` so the blue plate's cap ends at 312; rises from `y = 236` to the bar's row; wiped by the `0x51` teardown, sliding back out for categories `1..=3` |
 | 76 / 77 | move name | `y = 150`, four X fields written to `0xA0 - width / 2`; plain glyphs, no plate |
 | 80 | combo cluster anchor | `(328, 170)` to `(168, 170)` over sixteen frames |
+
+A monster spell's name opens on the cast-begin pass `0x28` (`FUN_801D8DE8(0x4C, 0)`
+at `0x801E4458`), not on the seed that stores `0x28`: the films of Bloody Horns and
+Scythe Wind hold no name on the frame the seed's framing shows and the name on the
+next. The port shows it from the pass after `0x28` (`battle_move_name`).
 
 The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,

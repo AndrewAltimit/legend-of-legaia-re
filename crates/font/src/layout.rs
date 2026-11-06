@@ -24,17 +24,14 @@ impl Font {
     /// Escape sequences (`0xCE`, `0xCF`) are recognized but their argument
     /// byte is consumed without rendering - the runtime substitution table
     /// is host-side state we don't model here.
-    /// PORT: FUN_80035F04
+    /// A glyph layout, not retail's width measure: `FUN_80035F04` runs the
+    /// expander first (`0x5E X` and `0xFF X` author escapes, `0xCE` escape
+    /// advances from the table, colour codes taking no width), which this
+    /// walk does not, so a string carrying them lays out to another width.
+    /// The measure is [`Font::measure`]; the retail differential `text_width`
+    /// holds that one to the routine and records this one's disagreement.
     ///
-    /// `FUN_80035F04` (SCUS `0x80035f04`) is retail's MES line-width measurement
-    /// pass: it walks an MES message, handles `0x7C` newline by tracking the
-    /// max-so-far pen advance, consumes the `0xCE` / `0xCF` 2-byte inline
-    /// escapes without advancing, accumulates per-glyph widths from the font
-    /// width table at `DAT_80073F1C` (the same proportional table this loader
-    /// reads from `dialog_font_widths.csv`), and returns the max line width
-    /// across all newline-separated lines. [`Layout::advance_x`] is the
-    /// engine-side equivalent return value; this `layout` method is a superset
-    /// that also emits the per-glyph positions for the renderer.
+    /// REF: FUN_80035F04
     pub fn layout(&self, text: &[u8]) -> Layout {
         self.layout_padded(text, 0)
     }

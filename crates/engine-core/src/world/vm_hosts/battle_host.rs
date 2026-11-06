@@ -404,9 +404,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::MonsterSetup { actor_slot });
-        // Faithful `FUN_801E7320`: expand the targeting class the action picker
-        // left in `actor.active_target` into a concrete target slot.
-        self.world.resolve_monster_target(actor_slot);
+        // `FUN_801E7320` (`jal` at `0x801E2CA0`) runs once a turn, and the
+        // World has already run it where it arms the monster's turn
+        // (`World::maybe_confuse_retarget` on every arming path, over the
+        // whole word). Running it again here re-rolled a confused monster's
+        // target and drew its `rand()`s twice.
     }
     fn recompute_battle_order(&mut self) {
         self.world
@@ -545,6 +547,17 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and runs the loader on its `+0x7C` block; the engine's
     /// [`legaia_engine_system::fade::FadeState`] is that block.
     ///
+    /// The spawned actor ticks on its spawn pass. The action SM runs inside
+    /// the battle frame driver `FUN_80046A20` (`jal 0x801E295C` at
+    /// `0x80047048`), which is the actor at the head of list `0x8007C34C`
+    /// (spawned from the template at `0x800767DC` by `0x80055FC0`); the fade
+    /// spawner links its actor at that list's tail (`FUN_80020454`), and the
+    /// walk `FUN_8002519C` reaches it later in the same pass. On `battle_kor_spoon_strike`'s Zenoir film the flash-in's block
+    /// on the first `0x34` row already holds delay `17` (`20` less the step-`3`
+    /// pass), and six passes later its colour has run three vsyncs of ramp.
+    /// The world tick steps its fades ahead of the battle tick, so the
+    /// engine's fade stood one pass behind retail's.
+    ///
     /// REF: FUN_80024E80 (ported as [`legaia_engine_system::fade::spawn_fade`], which
     /// stamps `id` into the template's last word)
     fn spawn_screen_fade(
@@ -563,6 +576,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             },
             id,
         );
+        let pass = self.world.battle.anim_pass_vsyncs;
+        self.world.presentation.fade_spawn_step = pass;
+        if pass > 0
+            && let Some(fade) = &mut self.world.presentation.fade
+            && !fade.step_vsyncs(pass)
+            && !fade.holds_at_end()
+        {
+            self.world.presentation.fade = None;
+        }
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.module_pass(World::summon_stager_tick)

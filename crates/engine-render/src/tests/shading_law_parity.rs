@@ -93,6 +93,83 @@ fn the_blend_foreground_truncates_to_five_bits_on_both_hosts() {
     }
 }
 
+/// A dithered textured draw blends at the GPU's precision: the 5-bit texel
+/// times the colour byte, `(t5 * c8) >> 4`, an 8-bit value - not the texel's
+/// display expansion `t5 * 255 / 31`, which reads up to `t5 / 4` levels
+/// brighter (`t5 = 31` at `0x80`: `248`, not `255`).
+#[test]
+fn the_dithered_modulate_takes_the_texel_at_five_bits() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let mut m = Machine::new(&native, no_fetch());
+    let f = m.function("psx_modulate_gpu");
+    // `(texel5, colour byte)` -> the GPU's 8-bit value.
+    for (t5, c, want) in [
+        (31u32, 0x80u32, 248u32),
+        (16, 0x80, 128),
+        (10, 0x60, 60),
+        (31, 0xFF, 255),
+        (1, 0x08, 0),
+    ] {
+        let texel = t5 as f32 / 31.0;
+        let out = m
+            .call(f, vec![Val::f(&[texel; 3]), Val::f(&[c as f32; 3])])
+            .ok()
+            .flatten()
+            .expect("modulate");
+        assert_eq!(
+            (out.floats()[0] * 255.0).round() as u32,
+            want,
+            "texel5 {t5} colour {c:#x}"
+        );
+    }
+}
+
+/// The PCSX-Redux instrument's two rules: its dither table rounds a channel
+/// up when the low three bits pass `{7,0,6,1, 2,5,3,4, 1,6,0,7, 4,3,5,2}`
+/// (an offset of `0..7`, the console's `-4..3`), and a Gouraud blend's
+/// foreground rounds on the same table. Over a 4x4 block the instrument's
+/// mean is the 8-bit value itself, the console's half a step under it.
+#[test]
+fn the_pcsx_redux_instrument_rounds_where_the_console_floors() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let mut m = Machine::new(&native, no_fetch());
+    let dither = m.function("psx_dither");
+    let fg = m.function("psx_blend_foreground_pcsx");
+    let c8 = 100.0f32; // 12 steps and 4 levels.
+    let (mut console, mut pcsx, mut blend) = (0u32, 0u32, 0u32);
+    for y in 0..4 {
+        for x in 0..4 {
+            let frag = [x as f32 + 0.5, y as f32 + 0.5];
+            let mut run = |rule: f32| -> u32 {
+                let out = m
+                    .call(
+                        dither,
+                        vec![Val::f(&[c8 / 255.0; 3]), Val::f(&frag), Val::f(&[rule])],
+                    )
+                    .ok()
+                    .flatten()
+                    .expect("dither");
+                (out.floats()[0] * 255.0).round() as u32 >> 3
+            };
+            console += run(1.0);
+            pcsx += run(2.0);
+            let out = m
+                .call(fg, vec![Val::f(&[c8 / 248.0; 3]), Val::f(&frag)])
+                .ok()
+                .flatten()
+                .expect("foreground");
+            blend += (out.floats()[0] * 31.0).round() as u32;
+        }
+    }
+    // 100 = 12.5 steps: the table rounds half the block up, the console's
+    // offsets reach the next step on none of it.
+    assert_eq!(pcsx, 12 * 16 + 8, "pcsx dither");
+    assert_eq!(blend, 12 * 16 + 8, "pcsx foreground");
+    assert_eq!(console, 12 * 16, "console dither");
+}
+
 // ---- the shared scene state, staged into each host's uniforms ----
 
 const STAGE_W: f32 = 320.0;
@@ -276,6 +353,10 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
         .insert("uv_affine".into(), (vec![0.0; 2], vec![0.0; 2]));
     m.gradients
         .insert("prim_bary".into(), (vec![0.0; 4], vec![0.0; 4]));
+    // The PCSX-Redux instrument's flat-polygon test reads the packet colour's
+    // width; these fragments run the console's rule, where it never decides.
+    m.gradients
+        .insert("prim_color".into(), (vec![0.0; 3], vec![0.0; 3]));
     // The renderer's per-ABR blend pipelines pick the entry by the mode's
     // foreground pre-scale (`psx_blend::src_shader_scale`).
     let entry = match frag.blend {

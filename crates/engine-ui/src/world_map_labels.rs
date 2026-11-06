@@ -29,10 +29,12 @@ use crate::*;
 /// screen point.
 pub type MapLabelDraw<'a> = (&'a [u8], i32, i32);
 
-/// A label's measured width - `FUN_80035F04`, the rendered advance of the
-/// name in the dialog font.
+/// A label's measured width - `FUN_80035F04` through
+/// [`legaia_font::Font::measure`] (the retail differential `text_width`).
 pub fn map_label_text_width(font: &legaia_font::Font, name: &[u8]) -> i32 {
-    font.layout(name).advance_x.min(i32::MAX as u32) as i32
+    font.measure(name, &legaia_font::MeasureOptions::default())
+        .max_px
+        .min(i32::MAX as u32) as i32
 }
 
 /// The boxes behind every label, later records first.

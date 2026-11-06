@@ -517,15 +517,11 @@ pub fn engine_frame_with(
     // empty value, removes) seat variables over the computed seat, to test
     // which one moves a frame without editing the seat code.
     if let Ok(over) = std::env::var("LEGAIA_RC_ENV_OVERRIDE") {
-        for kv in over.split(';').filter(|s| !s.is_empty()) {
-            match kv.split_once('=') {
-                Some((k, "")) => {
-                    cmd.env_remove(k);
-                }
-                Some((k, v)) => {
-                    cmd.env(k, v);
-                }
-                None => {}
+        for (k, v) in parse_env_override(&over) {
+            if v.is_empty() {
+                cmd.env_remove(k);
+            } else {
+                cmd.env(k, v);
             }
         }
     }
@@ -717,9 +713,62 @@ pub fn write_side_by_side(path: &Path, retail: &Frame, engine: &Frame) -> Result
     Ok(())
 }
 
+/// Split a `LEGAIA_RC_ENV_OVERRIDE` value into `(key, value)` pairs.
+///
+/// Entries are `K=V` joined by `;` or newlines, but a `;` only ends an entry
+/// when the text after it opens another assignment (`NAME=`, `NAME` an
+/// identifier). Seat values are themselves `;`-joined lists
+/// (`LEGAIA_SEAT_DANCE_PROPS="3:12:1;4:0:1"`), so splitting on every `;` would
+/// keep the first list element and silently drop the rest. A trailing `;`
+/// is a separator.
+pub fn parse_env_override(over: &str) -> Vec<(&str, &str)> {
+    fn opens_assignment(rest: &str) -> bool {
+        let Some((k, _)) = rest.split_once('=') else {
+            return false;
+        };
+        let mut c = k.chars();
+        matches!(c.next(), Some(ch) if ch.is_ascii_alphabetic() || ch == '_')
+            && c.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    }
+    let mut entries = Vec::new();
+    for line in over.lines() {
+        let mut start = 0;
+        for (i, _) in line.match_indices(';') {
+            let rest = line[i + 1..].trim_start();
+            if rest.is_empty() || opens_assignment(rest) {
+                entries.push(&line[start..i]);
+                start = i + 1;
+            }
+        }
+        entries.push(&line[start..]);
+    }
+    entries
+        .into_iter()
+        .map(str::trim)
+        .filter_map(|kv| kv.split_once('='))
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn env_override_keeps_semicolon_lists_whole() {
+        assert_eq!(
+            parse_env_override("LEGAIA_SEAT_DANCE_PROPS=3:12:1;4:0:1;LEGAIA_SEAT=;B=2"),
+            vec![
+                ("LEGAIA_SEAT_DANCE_PROPS", "3:12:1;4:0:1"),
+                ("LEGAIA_SEAT", ""),
+                ("B", "2"),
+            ]
+        );
+        assert_eq!(
+            parse_env_override("A=1;2\nB=x;y=z;C=3;"),
+            vec![("A", "1;2"), ("B", "x"), ("y", "z"), ("C", "3")]
+        );
+    }
 
     fn solid(v: u8) -> Frame {
         Frame {

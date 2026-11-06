@@ -575,3 +575,35 @@ fn numb_party_member_with_no_command_passes_its_turn_without_a_swing() {
     assert_eq!(armed_category(0x0800), 0, "Sleep: no command, no swing");
     assert_eq!(armed_category(0), 3, "a free member still auto-strikes");
 }
+
+/// The capture reseat strips an ailment the captured word does not carry from
+/// both halves of the word: the tracker and the raw bits a cast module wrote
+/// (`battle_korb2_ghost_knight_strike`'s replayed Curse). Bits the capture
+/// holds, and the Confuse group the seed never carries, stay.
+#[test]
+fn capture_reseat_clears_the_raw_half_of_a_stray_ailment() {
+    use legaia_engine_battle_loop::battle_state::CaptureReseatBars;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party.party_count = 1;
+    for i in 0..2 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world.actors[0].battle.field_flags = 0x1000 | 0x0001 | 0x0380;
+    world.battle.status_effects.apply(0, StatusKind::Curse);
+    world.battle.capture_reseat = Some((1, Vec::new()));
+    world.battle.capture_reseat_bars = vec![CaptureReseatBars {
+        slot: 0,
+        hp: 100,
+        mp: 0,
+        status: 0x0001,
+        gauge: None,
+    }];
+    world.seed_battle_formation_recentre(1);
+    assert_eq!(world.actors[0].battle.field_flags, 0x0001 | 0x0380);
+    assert!(world.battle.status_effects.statuses(0).is_empty());
+    assert_eq!(world.raw_status_word(0), 0x0381);
+}

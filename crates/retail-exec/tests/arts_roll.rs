@@ -4,7 +4,7 @@
 //! monster special) and `World::player_summon_predamage` (the summon branch,
 //! attacker slot 7).
 
-use crate::common::{Rng, disc, scus};
+use crate::common::{Rng, disc, scus, split_statuses};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_battle_vm::battle_formulas::ROLL_ALIAS_KILLS;
@@ -192,6 +192,7 @@ fn seed_port(w: &mut World, r: &Roll) {
             r.target_element
         });
     }
+    split_statuses(w, r.seed);
     if r.guarding {
         w.battle.guarding[usize::from(r.target)] = true;
     }

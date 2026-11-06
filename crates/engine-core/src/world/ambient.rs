@@ -897,6 +897,9 @@ impl World {
                     scale: s.field_72,
                     colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
                     shatter: legaia_engine_effects::part_shatter::part_shatter_word(s),
+                    // The row the part's `+0x6D` names: move-VM op `0x21`
+                    // writes it into the shared table (`MoveVmHostImpl`).
+                    shatter_row: self.shatter_row(s.face_rotation),
                 })
             })
             .collect()

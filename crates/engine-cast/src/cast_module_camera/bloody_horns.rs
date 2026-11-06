@@ -53,10 +53,9 @@ fn pin(st: &ModuleCamState, arm: &mut CaptureCamArm) {
 /// | 3 (`0x801F752C`) | every pass on the caster: yaw base `0x9C0`, TR z `0x700 - cd/2`, clip `0xA` next. On the gate: the caster back to full rate, the victim's flinch at rate `1` | `+= scalar << 6` |
 /// | 4 (`0x801F7678`) | every pass on the victim: yaw base `0x980`, TR z `0x800 - cd/2`, the victim rising `3 * drain`. On the gate: the height to `-0x1400` | `+= scalar * 0x50` |
 /// | 5 (`0x801F77D4`) | the same: yaw base `0x930`, TR z `0x940 - cd/2`, falling `8 * drain`. On the gate: the hit | `+= scalar * 0x60` |
-/// | 6 (`0x801F79DC`) | on the victim's body: yaw base `0x8D0`, TR z `0xAC0 - cd/2`; ends on the gate | - |
+/// | 6 (`0x801F79DC`) | on the victim's body: yaw base `0x8D0`, TR z `0xAC0 - cd/2`; ends on the gate and the victim's settle | drained twice a pass |
 ///
-/// The phase chain is [`crate::cast_module_ticks::bloody_horns_tick`]. Not
-/// ported: arm 6's wait on the victim's clip past the gate, a few vsyncs.
+/// The phase chain is [`crate::cast_module_ticks::bloody_horns_tick`].
 ///
 /// PORT: overlay_cast_bloody_horns_0952_801f7118 (PROT 0952 `0x5C`; the camera arms and the seat writes)
 pub fn bloody_horns_camera(
@@ -64,13 +63,39 @@ pub fn bloody_horns_camera(
     phase: u8,
     seats: ModuleCamSeats,
 ) -> CaptureCamArm {
-    let (c, v) = (seats.caster, seats.victim);
+    let (mut c, mut v) = (seats.caster, seats.victim);
     let mut arm = CaptureCamArm::default();
+    // Arm 0 saves the victim's pair (`0x801F7218..0x801F723C`) and arms 0 to 2
+    // write it back (`0x801F7334..0x801F7358`, `0x801F73E8..0x801F7408`,
+    // `0x801F743C..0x801F7460`). Arm 0 runs one pass; a host that enters on
+    // arm 1 saves there.
+    if phase <= 1 && st.pin_saved & 1 == 0 {
+        st.horns_pin[2] = v.x;
+        st.horns_pin[3] = v.z;
+        st.pin_saved |= 1;
+    }
+    if phase <= 2 && st.pin_saved & 1 != 0 {
+        (v.x, v.z) = (st.horns_pin[2], st.horns_pin[3]);
+        arm.victim_write.x = Some(v.x);
+        arm.victim_write.z = Some(v.z);
+    }
+    // Arms 3 to 5 read both pairs after [`pin`] writes them.
+    if (3..=5).contains(&phase) {
+        let [cx, cz, vx, vz] = st.horns_pin;
+        (c.x, c.z, v.x, v.z) = (cx, cz, vx, vz);
+    }
     match phase {
         // `0x801F72EC..0x801F7328`.
         0 => arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE),
         2 => {
-            st.horns_pin = [c.x, c.z, v.x, v.z];
+            // `0x801F7414..0x801F7438`: the caster's pair saved.
+            st.horns_pin[0] = c.x;
+            st.horns_pin[1] = c.z;
+            if st.pin_saved & 1 == 0 {
+                st.horns_pin[2] = v.x;
+                st.horns_pin[3] = v.z;
+            }
+            st.pin_saved |= 3;
             st.horns_lift = 0;
             arm.caster_write = CaptureSeatWrite {
                 rate: Some(SLOW_RATE),
@@ -138,10 +163,15 @@ pub fn bloody_horns_camera(
             }
         }
         6 => {
-            let held = st.countdown.drain_above(0);
+            // Two drains a pass, as Scythe Wind's last arm: one ahead of the
+            // shot, one behind it while the word stays positive
+            // (`0x801F7A84..0x801F7AB0`), then the wait on the victim's
+            // clip.
+            st.countdown.drain();
+            let cd = st.countdown.0;
             let on = st.victim_body.unwrap_or(v);
-            arm.shot = Some(sweep(focus_on(on), c.facing, st.countdown.0, 0x8D0, 0xAC0));
-            arm.hold = held;
+            arm.shot = Some(sweep(focus_on(on), c.facing, cd, 0x8D0, 0xAC0));
+            arm.hold = (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled;
         }
         _ => {}
     }
@@ -198,6 +228,21 @@ mod tests {
         };
         assert!(a.folds_hit);
         assert_eq!(a.victim_write.y, Some(0));
+    }
+
+    /// The victim's pair is the one arm 1 found, not where it stood by arm 2.
+    #[test]
+    fn the_victim_is_pinned_from_the_walk() {
+        let mut st = ModuleCamState::default();
+        bloody_horns_camera(&mut st, 1, seats());
+        let mut drift = seats();
+        drift.victim.z += 9;
+        let a = bloody_horns_camera(&mut st, 2, drift);
+        assert_eq!(a.victim_write.z, Some(404));
+        assert_eq!(st.horns_pin, [388, 575, 104, 404]);
+        let a = bloody_horns_camera(&mut st, 3, drift);
+        assert_eq!(a.shot.unwrap().focus, [-388, 0, -575]);
+        assert_eq!(a.victim_write.z, Some(404));
     }
 
     #[test]

@@ -56,13 +56,7 @@ impl ActionValidatorHost for WorldActionValidator<'_> {
             hp,
             hp_max: a.max_hp,
             mp: a.mp,
-            mp_max: self
-                .world
-                .tables
-                .character_max_mp
-                .get(slot as usize)
-                .copied()
-                .unwrap_or(a.mp),
+            mp_max: a.mp_max,
         })
     }
 

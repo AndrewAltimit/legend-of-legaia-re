@@ -864,3 +864,48 @@ fn a_party_wide_cast_opens_no_combo_cluster() {
     w.battle_ctx.action_state = 0x2B;
     assert!(battle_panels_visible(&w));
 }
+
+/// PROT 0957's arm 3 draws two lines under each card, each centred on the
+/// card's column `i * 0x4C + 0x30` by its measured width, at `y = 0x90` and
+/// `0x9C`: the victim's name or a module head string, picked by the card's
+/// value (`0x801F7F50..0x801F810C`).
+#[test]
+fn death_game_labels_centre_each_cards_two_lines() {
+    let mut w = battle_world(1);
+    let font = legaia_font::synthetic_for_tests();
+    // A stand-in head table: five NUL-padded eight-byte cells.
+    let mut image = vec![0u8; 0x40];
+    for (i, s) in [&b"Hd0"[..], b"Hd1", b"Hd2", b"Hd3", b"Hd4"]
+        .iter()
+        .enumerate()
+    {
+        image[i * 8..i * 8 + s.len()].copy_from_slice(s);
+    }
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
+    assert!(pool.insert(957, &image));
+    w.casting.effect_pool = Some(std::sync::Arc::new(pool));
+    w.casting.module_cam.victim_slot = Some(0);
+    w.casting.module_cam.death_game.table = [1, 2, 3, 4];
+    assert!(battle_death_game_labels(&w, &font).is_empty(), "off arm 3");
+    w.casting.module_cam.death_game.labels_up = true;
+    let labels = battle_death_game_labels(&w, &font);
+    let victim = crate::actor_names::actor_name(&w, 0).into_bytes();
+    let want: [(&[u8], usize, i32); 8] = [
+        (&victim, 0, 0x90),
+        (b"Hd0", 0, 0x9C),
+        (b"Hd1", 1, 0x90),
+        (b"Hd0", 1, 0x9C),
+        (b"Hd2", 2, 0x90),
+        (b"Hd3", 2, 0x9C),
+        (b"Hd2", 3, 0x90),
+        (b"Hd4", 3, 0x9C),
+    ];
+    assert_eq!(labels.len(), want.len());
+    for ((text, x, y), (wt, col, wy)) in labels.iter().zip(want) {
+        let width = font
+            .measure(wt, &legaia_font::MeasureOptions::default())
+            .max_px as i32;
+        assert_eq!(text.as_slice(), wt);
+        assert_eq!((*x, *y), (col as i32 * 0x4C + 0x30 - (width >> 1), wy));
+    }
+}

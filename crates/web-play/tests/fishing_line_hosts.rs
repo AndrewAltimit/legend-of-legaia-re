@@ -66,14 +66,14 @@ fn the_play_page_draw_list_carries_the_line_while_a_fish_is_hooked() {
         }
     };
     const CROSS: u16 = 0x4000;
-    const CIRCLE: u16 = 0x2000;
     let cast = |rt: &mut LegaiaRuntime| {
         tick(rt, 0, 1);
-        tick(rt, CIRCLE, 1);
+        tick(rt, CROSS, 1);
         // A full charge: a weak throw lands inside `LAND_RECORD` and retail
-        // reels it straight back in.
-        tick(rt, 0, 110);
-        tick(rt, CIRCLE, 1);
+        // reels it straight back in. The wind-up's last frame steps the meter
+        // too, so 109 frames and the lock's own step.
+        tick(rt, 0, 109);
+        tick(rt, CROSS, 1);
         tick(rt, 0, 200);
     };
     let line_drawn = |rt: &LegaiaRuntime| {
@@ -161,7 +161,8 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
             }
             mg.fishing_pond_tick(0, false, 0);
         }
-        for _ in 0..110 {
+        // The wind-up's last frame steps the meter too: lock at `0xDE0`.
+        for _ in 0..109 {
             mg.fishing_pond_tick(0, false, 0);
         }
         mg.fishing_pond_tick(0, true, 0);

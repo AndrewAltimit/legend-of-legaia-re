@@ -511,7 +511,7 @@ The writer set is fully enumerated in the static images (`SCUS_942.54` plus ever
 **Lifecycle writers.**
 
 - **Battle-start seed.** `0x80051720` copies the persistent per-character status word (`+0x6F6` off `0x80084140`) into `+0x16E`. The mirror runs the other way per frame (`sh v0,0x6f6` sites paired with each cure in `FUN_8004CE2C`, and the conditional persist `0x80047680` in `FUN_80047430`, gated on bits `0x404`). `+0x6F6` is only ever written as a copy of `+0x16E` or by those cure masks, so it originates nothing.
-- **Battle-exit / KO clears.** `sh zero,0x16e` at `0x80046EB0` (`FUN_80046A20` per-party exit clear) and `0x80040EB8` / `0x80040FDC` (death cleanup).
+- **Battle-exit clear and item arms.** `sh zero,0x16e` at `0x80046EB0` (`FUN_80046A20` per-party exit clear), and at `0x80040EB8` / `0x80040FDC` in the item handler `FUN_800402F4`: the Medicine cure arm and the revive arm (the revive also clears `+0x1F9`). Nothing clears the word at KO, so a fallen member keeps its ailment bits until an item or the battle's exit clears them.
 
 **Infliction appliers.** Two overlay-resident legs share one kind -> bit map (dumps `ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt` / `overlay_battle_action_801e09f8.txt`):
 
@@ -541,7 +541,7 @@ Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word
 - the per-round waker `FUN_801F45A4`, which loops the 7 actor slots and clears exactly bit `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` at `0x801F4614`; dump `ghidra/scripts/funcs/overlay_0898_static_801f45a4.txt`). Not `FUN_801F452C`: that is the 30-instruction magic-level-increased banner composer ending at `0x801F45A0`;
 - item / spell cure masks `andi 0xFB84` / `0xFF84` / `0xFFFC` in the slot-B battle-support images (e.g. `0x801FC6AC` in 0902's image);
 - the on-hit strip `andi 0xF07F` at `0x801EDA5C` (`FUN_801EC3E4`) and its bit-`0x4`-gated sibling at `0x801DE2E8..0x801DE2FC` (`FUN_801DDB30`);
-- the battle-exit and KO clears above.
+- the battle-exit clear and the two item arms above.
 
 So bit `0x400` has a complete consumer / curer lifecycle (hit-strip class, a dedicated RNG waker, an accessory immunity, item cures, a battle-exit clear) and one infliction path, the missed Kiss of Death: a static-image sweep alone reads it as latent, because the setter sits in a cast image.
 

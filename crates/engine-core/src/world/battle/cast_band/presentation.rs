@@ -88,6 +88,13 @@ const OZMA_LADDER_FADE_DECODED_SITE: u32 = 0x801F_907C;
 /// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
 /// composed line) and 0954 (Fatal Decision, ported whole).
 const MESSAGE_BARS_PORTED_BY_HAND: [u32; 3] = [940, 941, 954];
+/// Module bodies whose message-bar raise a hand port makes because the
+/// decode cannot see the branch it sits on: PROT 0955's Kiss of Death raises
+/// its line on the roll's miss leg only, and both legs leave arm 4 for arm 5.
+const MESSAGE_BAR_BODIES_PORTED_BY_HAND: [(u32, u32); 1] = [(
+    955,
+    legaia_engine_cast::cast_module_ticks::KISS_OF_DEATH_TICK,
+)];
 /// Modules whose CLUT copy a hand port already issues.
 const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// Modules whose tick ports (or chain-body tables) store the stage byte
@@ -407,6 +414,9 @@ impl World {
                         .is_some())
                     && exit.from_arm(phase_in) == phase_out
                     && !MESSAGE_BARS_PORTED_BY_HAND.contains(&entry)
+                    && !body.is_some_and(|b| {
+                        MESSAGE_BAR_BODIES_PORTED_BY_HAND.contains(&(entry, b))
+                    })
                     && sites
                         .iter()
                         .filter(|o| message_bar_exit(&o.call) == Some(exit))

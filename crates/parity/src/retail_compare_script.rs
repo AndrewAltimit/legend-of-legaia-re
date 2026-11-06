@@ -126,6 +126,10 @@ pub struct RetailScripts {
     /// The scene system script's PC (`+0x9E` of the node ticked by
     /// `FUN_801DA51C`): where the entry script's last pass parked.
     pub system_pc: Option<usize>,
+    /// The scene system script's PC read off the actor pool, when no live
+    /// list holds the node ([`pooled_system_pc`]): a battle capture's, whose
+    /// field actors the fight has unlinked.
+    pub pooled_system_pc: Option<usize>,
     /// The field pager mid-page: its typing row's window index and reveal
     /// counter, while `_DAT_801F2734` is the typing state `0x0B`
     /// ([`pager_typing`]).
@@ -247,8 +251,41 @@ impl RetailScripts {
                     .unwrap_or_default(),
             });
         }
+        if out.system_pc.is_none() {
+            out.pooled_system_pc = pooled_system_pc(ram);
+        }
         out
     }
+}
+
+/// The actor pool's pointer table (`0x8007C370`, the allocator pair
+/// `FUN_80020454` / `FUN_80020DE0`) and how many slots it holds: node `i` is
+/// `0x8007C5AC + i * 0xD8`.
+const ACTOR_POOL: u32 = 0x8007_C370;
+const ACTOR_POOL_SLOTS: u32 = 0x8F;
+
+/// The PC of the one pool node still carrying the scene system script's tick
+/// and channel id (`+0x0C = FUN_801DA51C`, `+0x50 = 0xFB`), `None` when none
+/// or several do. A battle takes the field's actors off the lists the
+/// field tick walks, and the system node keeps the PC its last pass parked
+/// on: `town0b`'s Gimard raid captures hold it on `+0x455`.
+fn pooled_system_pc(ram: &[u8]) -> Option<usize> {
+    let mut found = None;
+    for i in 0..ACTOR_POOL_SLOTS {
+        let node = game_anchors::u32_at(ram, ACTOR_POOL + 4 * i);
+        if !in_ram(node)
+            || game_anchors::u32_at(ram, node + 0x0C) != SYSTEM_SCRIPT_TICK
+            || game_anchors::u16_at(ram, node + 0x50) != 0xFB
+            || !in_ram(game_anchors::u32_at(ram, node + 0x90))
+        {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        found = usize::try_from(game_anchors::i16_at(ram, node + 0x9E)).ok();
+    }
+    found
 }
 
 /// The engine context running the same record as `script`, if any.
@@ -358,6 +395,42 @@ mod tests {
         // A disengaged context is not running.
         w32(&mut ram, rec + 0x10, 0);
         assert!(RetailScripts::from_ram(&ram).running.is_empty());
+    }
+
+    /// A system node no list links (a battle capture's) is read off the
+    /// actor pool; a second candidate makes the read ambiguous, and a live
+    /// list's node wins over the pool.
+    #[test]
+    fn a_battle_capture_reads_the_system_pc_off_the_pool() {
+        fn w32(ram: &mut [u8], va: u32, v: u32) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        fn w16(ram: &mut [u8], va: u32, v: u16) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut ram = vec![0u8; 0x20_0000];
+        let node = |i: u32| 0x8007_C5ACu32 + i * 0xD8;
+        for i in 0..ACTOR_POOL_SLOTS {
+            w32(&mut ram, ACTOR_POOL + 4 * i, node(i));
+        }
+        let sys = node(19);
+        w32(&mut ram, sys + 0x0C, SYSTEM_SCRIPT_TICK);
+        w16(&mut ram, sys + 0x50, 0xFB);
+        w32(&mut ram, sys + 0x90, 0x800E_242D);
+        w16(&mut ram, sys + 0x9E, 0x455);
+        let s = RetailScripts::from_ram(&ram);
+        assert_eq!((s.system_pc, s.pooled_system_pc), (None, Some(0x455)));
+        let other = node(40);
+        w32(&mut ram, other + 0x0C, SYSTEM_SCRIPT_TICK);
+        w16(&mut ram, other + 0x50, 0xFB);
+        w32(&mut ram, other + 0x90, 0x800E_242D);
+        assert_eq!(RetailScripts::from_ram(&ram).pooled_system_pc, None);
+        w32(&mut ram, other + 0x0C, 0);
+        w32(&mut ram, ACTOR_LIST_HEADS, sys);
+        let s = RetailScripts::from_ram(&ram);
+        assert_eq!((s.system_pc, s.pooled_system_pc), (Some(0x455), None));
     }
 
     /// A gate op aimed at a placement still walking the compass leg the

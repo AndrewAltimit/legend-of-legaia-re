@@ -238,7 +238,34 @@ engine still runs each frame, and the 2D overlay is still drawn.
 
 ## The report button (`play-report.js`)
 
-*Copy report* beside the disc picker puts on the clipboard what a bug report needs: the bundle's version, the browser, the GL renderer, the window, the disc file's name and size, the status line, `state_json` and `mode_state_json`, the stored options and switches, and the page's last warnings and errors (the module wraps `console.warn` / `console.error` and listens for uncaught errors from before any other script runs; an engine trap is noted too). It holds no disc bytes. A call into a trapped engine answers `(unavailable: ...)`, since a report is most wanted then. With no clipboard (a plain-http page, a refused permission) the text goes in a selected box under the bar. The desktop twin is `legaia_app_theme::game_exit::report_text`, on the launcher's Ctrl+C and Explorer's error banner.
+*Copy report* beside the disc picker puts on the clipboard what a bug report needs:
+the bundle's version, the browser, the GL renderer, the window, the input devices
+(pointer kind, touch points, the touch pad, connected controllers), the disc file's
+name and size, the status line, `state_json` and `mode_state_json`, the stored
+options and switches, and the page's last warnings and errors (the module wraps
+`console.warn` / `console.error` and listens for uncaught errors from before any
+other script runs; an engine trap is noted too). It holds no disc bytes. A call into
+a trapped engine answers `(unavailable: ...)`, since a report is most wanted then.
+With no clipboard (a plain-http page, a refused permission) the text goes in a
+selected box under the bar. The desktop twin is
+`legaia_app_theme::game_exit::report_text`, on the launcher's Ctrl+C and Explorer's
+error banner.
+
+## The touch pad (`touch-pad.js`)
+
+An on-screen PSX pad over the picture for a touch screen: a D-pad, the four face
+buttons, the shoulders and Select / Start. It holds each pressed button through
+`window.legaiaVirtualPad` in `pad-bindings.js`, a source that joins the controller
+poll (`legaiaPollGamepad`, `legaiaGamepadEdges`) rather than keeping a path of its
+own, so a touch press reaches every reader a controller press does - the field
+tick, the menus, the title card - with no call site of its own and no binding
+table: the control names pad buttons, and the engine's button bits answer them.
+The D-pad is one surface read by angle from its centre (a dead zone in the middle,
+about a 45-degree wedge per diagonal), so a thumb rolls between directions without
+lifting. A first touch focuses the canvas and unlocks audio, as a canvas click does.
+It shows by default where the only pointer is coarse (`(pointer: coarse)` without
+`(any-pointer: fine)`); the *Touch pad* button toggles it and the choice is stored
+under `legaia.touch-pad`. Hiding it releases whatever it held.
 
 ## FMV beats (`play_fmv`)
 

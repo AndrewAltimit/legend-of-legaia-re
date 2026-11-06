@@ -2312,11 +2312,13 @@ image's phase switch (a `beq` on the register holding `1` counted as phase
 
 | Arm | Modules |
 |---|---|
-| 0 | 0923 Gilium (after its arm-0 drain) |
-| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0925, 0927, 0928, 0929, 0933 |
+| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0923, 0925, 0927, 0928, 0929, 0933 |
 | 2 | 0903, 0905, 0906, 0907, 0908, 0914, 0915, 0918, 0930, 0931, 0932, 0934 |
 
-(0924 has no dump; 0926 is the null image.) In retail the byte is up from
+(0924 has no dump; 0926 is the null image.) PROT 0923's arm 1 drains its countdown
+`0x801FA4F8` ahead of the poll (`0x801F6BEC..0x801F6C2C`) and seeks `FUN_8003EAE4(0, 0xD)` after it, so
+the word keeps draining while the byte holds the arm: `gilium_summon_mid_cast` stands on arm 1 with the
+word at `456`, `56` under the `0x200` arm 0 stored. In retail the byte is up from
 state `0x32` until the applier has read the cast's last slot, about `30`
 vsyncs a slot ([cast-sequence oracle](../tooling/cast-sequence-oracle.md#waits-the-engine-does-not-run)),
 so the arm holds for whatever of that the band head did not cover. The
@@ -2962,6 +2964,22 @@ unhidden victim. A `--physical` film of `battle_map01_lippian_kiss_of_death_mid_
 read `.449` frame by frame; with them `.815` (arm 4 `1.000`, arm 3 `.880`).
 Grade `disassembly` + `capture`.
 
+Arm 3's cut shows the victim and hides the caster on the pass it leaves
+(`+0x04 = 0x20080200`, `+0x21C = 0` on the victim and `+0x04 = 0`,
+`+0x21C = 0xFF` on the caster, `0x801F8C24..0x801F8C50`), so arms 4 and 5 frame
+the victim alone; the `0xFF` arm shows every combat slot whose HP `+0x14C` is
+non-zero again (`0x801F8E8C..0x801F8ED4`). Two things in arm 4 sit on the roll's
+branch. The body draws one `rand()`, arm 4's past its gate (`jal 0x80056798` at
+`0x801F8CBC`), and no other arm draws. The message bar (`0x800774AC = 0x801F9A9C`,
+`FUN_801D8DE8(0x5B, 0)` at `0x801F8CD4..0x801F8CE0`) belongs to the odd leg, the
+miss that marks Numb; the hit leg branches past it at `0x801F8CC8`. Both legs
+leave arm 4 for arm 5, so the generic presentation decode cannot tell them apart,
+and the port raises the line by hand on the miss
+(`MESSAGE_BAR_BODIES_PORTED_BY_HAND`, `KISS_OF_DEATH_MISS_LINE`). With the victim
+hidden through arm 5, the miss line raised on a hit and a draw on every passing
+pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
+HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn
@@ -2979,8 +2997,28 @@ cuts to the caster on clip `9`; arm 3's shot re-aims every pass and stages clip 
 turns the shot onto the victim, who rises three drains a pass for `0x40` passes. Arm 5 sets
 the height to `-0x1400` and drops it at eight drains a pass, so the victim falls out of the
 sky over the same `0x50` passes, and on its gate the hit lands with the victim turned off the
-caster. Arm 6 follows the victim's body through the knockdown. Arms 3 to 5 write both saved
-seat pairs back every pass, holding off the clips' root motion.
+caster. Arm 6 follows the victim's body through the knockdown. Arm 0 saves the victim's pair
+(`0x801F7218..0x801F723C`) and arms 0 to 2 write it back; arm 2 saves the caster's, and arms 3
+to 5 write both back every pass, holding off the clips' root motion.
+
+**Scythe Wind turns its caster on arm 2.** The arm writes the victim's saved pair back
+and turns the caster onto the victim's **body** pair (`FUN_80019B28(victim[+0x40],
+victim[+0x3C], caster[+0x38], caster[+0x34]) + 0x800` at `0x801F7B3C..0x801F7B64`),
+and its shot reads the turned heading; arm 4's hit turns the victim off the caster
+(`0x801F7FEC..0x801F8004`). Every later shot's yaw subtracts the caster's heading, so
+a walk that left it on the live pair stood the Done band's case 6 some `20` units of
+yaw off retail's. On retail's frame steps the `dohaty_nova_v2_pre_scythe_wind` film reads
+`.841` before and `.854` after (arm 4 `.822` to `.840`, `0x51` `.796` to `.824`).
+Grade `disassembly` + `capture`.
+
+**The last arm drains twice a pass.** Bloody Horns' arm 6, Scythe Wind's arm 5 (PROT 0951
+`0x5B`) and Rolling Flare's arm 4 (PROT 0950 `0x5A`) each take `scalar * delta` off the
+countdown ahead of the shot, which aims on the drained word (`0x801F7A18..0x801F7A30`,
+`0x801F8058..0x801F806C`, `0x801F8088..0x801F8090`), and again behind it while the word is
+still positive (`blez` / `bgtz` at `0x801F7A8C`, `0x801F80C0`, `0x801F80C0`); past it each
+waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows the rate: the
+arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
+Grade `disassembly` + `capture`.
 
 ### PROT 0935 (Earthquake)
 
@@ -3082,6 +3120,17 @@ twelve-frame shot on every pass, so the framing trails a countdown-driven endpoi
 rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
 pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
 the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
+
+**The arms pin both seats.** Arm 0 saves the victim's `+0x34..+0x3B` at `0x801F89D4`
+(`0x801F78E8..0x801F790C`) and arm 2 the caster's at `0x801F89DC`
+(`0x801F7AEC..0x801F7B10`). Arms 0 to 2 write the victim's back every pass, arms 3 and 4
+both (`0x801F7BF4..0x801F7C44`, `0x801F7D2C..0x801F7D78`), ahead of the shot, the wind's
+record (`FUN_80021B04` on `victim + 0x34`, `0x801F7CEC`) and the knock-back bearing.
+Arm 5 writes neither, so the knock-back carries the victim off. Unpinned, the victim the
+walk-in nudged stood `(-1, -819)` beside retail's `(0, -812)`, and the wind's rings with
+it. Pinned, the `dohaty_nova_v2_pre_scythe_wind` film reads `.854` to `.856` (arm 3 `.885`
+to `.894`) and `tunnelb_nova_pre_scythe_wind` `.891` to `.906` (arm 4 `.875` to `.890`,
+`0x51` `.857` to `.884`). Grade `disassembly` + `capture`.
 
 ### PROT 0951 (Chaos Flare)
 
@@ -3288,9 +3337,18 @@ hosts:
 `0x801FA2B8`'s four handles, the deal and the swap words are
 `cast_module_camera::DeathGame`; `World::feed_death_game` makes the draws and reads
 the pad ahead of a pass, and `carry_death_game_pass` plays the cues and writes through
-the handles after it. The labels of arm 3 (`FUN_80036888`, the victim's name `+0x1BC`
-and four strings at `0x801F69D8..0x801F69F8`) and result `4`'s `FUN_801E22C8` are not
-drawn yet.
+the handles after it. Result `4`'s `FUN_801E22C8` is not drawn yet.
+
+**The labels** (arm 3, `0x801F7F50..0x801F810C`) draw while the drained word is in
+`0x180..=0x580`: two `FUN_80036888` lines under each card, at `y = 0x90` and `0x9C`, each
+centred on the card's column by its `FUN_80035F04` width, `x = i * 0x4C + 0x30 - (width >>
+1)`. The card's value picks the pair out of the victim's name (`+0x1BC`) and the module's
+five head strings (`0x801F69D8 + 8 n`): `1` the victim over head `0`, `2` head `1` (the
+caster's name) over head `0`, `3` head `2` over head `3`, `4` head `2` over head `4`. The
+port is `DeathGame::labels` with `engine-battle-hud::battle_death_game_labels`, which reads
+the head strings off the module image and is drawn by the battle HUD's builder on both
+hosts in the captions' ink. A retail frame of `battle_jou_puera_v3_death_game_mid_cast` in
+arm 3 and the engine's on the same pass put an equal label on the same pixels.
 
 ### PROT 0966 (Evil Seru Magic)
 

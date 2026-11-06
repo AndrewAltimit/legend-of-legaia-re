@@ -6992,6 +6992,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_items_target_kor_retail"
@@ -7001,6 +7002,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_door_light_kor_retail"
@@ -7010,6 +7012,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_incense_kor_retail"
@@ -7019,6 +7022,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "items", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_door_wind_map03_retail"
@@ -7037,6 +7041,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "magic", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "menu_magic_target_kor_retail"
@@ -7046,6 +7051,7 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "kor"
 topics = ["menu", "magic", "retail-compare"]
+staging_source = "kor_field_route_walk"
 
 [[scenarios]]
 label = "shop_buy_quantity_retock_retail"
@@ -7128,3 +7134,266 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "retona"
 topics = ["battle", "enemy attack", "Songi", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_bubu2_wailing_bird_strike"
+backup_fingerprint = "5611b181814b4cff1c9d6030624aac7e4825e44997c04469875b9738a18dcff9"
+description = "bubu2 battle, formation [72, 90]: monster id 72 mid physical attack: category 3, action state 0x1E. RETAIL disc: bubu2_field_door_hop played forward (saved 587 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_cave01_theeder_strike"
+backup_fingerprint = "161d5eda50529442a93a453bdb865356d6727560bb5276be2ea4ee55578f6d48"
+description = "cave01 battle, formation [25]: monster id 25 mid physical attack: category 3, action state 0x1E. RETAIL disc: cave01_attached_light played forward (saved 548 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_dolk_gimard_strike"
+backup_fingerprint = "4266f1849918815e63ccdeb98930a33b54a554c23a23d5d61cf9faceea3726a4"
+description = "dolk battle, formation [10, 10]: monster id 10 mid physical attack: category 3, action state 0x1E. RETAIL disc: drake_castle_to_worldmap played forward (saved 833 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dolk"
+topics = ["battle", "enemy attack", "dolk", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_nighto_v3_strike"
+backup_fingerprint = "1cdfa145102e8bea1b6641318d2ce3a8462d50ba211f43bbf1e089161614f7ed"
+description = "jou battle, formation [51, 51, 51]: monster id 51 mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward (saved 1960 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_death_wings_strike"
+backup_fingerprint = "8dc0cbf6969615a513b7b7f0ef96d210a4e387ee1f70f7d58d9b4b6a74c9b817"
+description = "map02 battle, formation [2, 67]: monster id 2 mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward (saved 12289 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_lip_kid_strike"
+backup_fingerprint = "e4eeb8424f8e2b1aef5e06e27c03b0bffacf615ca9c708bf8b5b4188c50bfd00"
+description = "map02 battle, formation [58, 32]: monster id 32 mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward (saved 3371 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_rock_lizard_strike"
+backup_fingerprint = "c0bd8c48c938143cfa5cc559b38bb33c7c3cb63f58e7c698441170c84e195216"
+description = "nilboa battle, formation [123]: monster id 123 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 5747 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_lip_king_strike"
+backup_fingerprint = "cdf78d4ad64a9c162393147e88f0894c05bc204f13c772383b205fffca53054d"
+description = "retona battle, formation [45, 33]: monster id 33 mid physical attack: category 3, action state 0x1E. RETAIL disc: retona_field_card_boot played forward (saved 1231 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa2_golem_strike"
+backup_fingerprint = "ecdec1d1c061ef83f44222950d156af4d1c39a832af388ddebc42b9c008423d8"
+description = "rikuroa2 battle, formation [128]: monster id 128 mid physical attack: category 3, action state 0x1E. RETAIL disc: rikuroa2_field_door_hop played forward (saved 800 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa2"
+topics = ["battle", "enemy attack", "rikuroa2", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_nighto_v2_strike"
+backup_fingerprint = "01f6f5d09c5a1f095eab70f9361ba438f8f19669d6a6bba859c6f4f1f802dfd7"
+description = "tower battle, formation [86, 50]: monster id 50 mid physical attack: category 3, action state 0x1E. RETAIL disc: tower_field_walk played forward (saved 1207 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy attack", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnela_mad_bird_strike"
+backup_fingerprint = "ab72e5d48e2c1105d5bdc505d722bca9d9b2b13ba60229595ae80be3026b3023"
+description = "tunnela battle, formation [71, 113]: monster id 71 mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnela_field_door_hop played forward (saved 1957 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnela"
+topics = ["battle", "enemy attack", "tunnela", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_stone_lizard_strike"
+backup_fingerprint = "036c952eb6a077040d5d41b924c671ea5346e81c9feae5d0bd0cee10771ad9c1"
+description = "tunnelb battle, formation [44, 122]: monster id 122 mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnelb_field_card_boot played forward (saved 3145 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "tunnelb", "harvest"]
+
+
+[[scenarios]]
+label = "battle_cave01_red_piura_strike"
+backup_fingerprint = "24e12e6655b78dfd957f19a52330fd01dade41e0d5363d4b5e036117f4580840"
+description = "cave01 battle, formation [19]: monster id 19 mid physical attack: category 3, action state 0x1E. RETAIL disc: cave01_attached_light played forward (saved 563 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_deene_lapis_strike"
+backup_fingerprint = "006ff29582358469dd55a238337d6d72d169e3e071a5d6bef21d52bf5bf04876"
+description = "deene battle, formation [167]: monster id 167 mid physical attack: category 3, action state 0x1E. RETAIL disc: deene_field_card_walk played forward (saved 2196 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy attack", "deene", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_scale_lizard_strike"
+backup_fingerprint = "fc865b3fcaa5a60d00189a82e0cefe3990ef74e0d98b6c49fbfd148d2e4341b1"
+description = "map03 battle, formation [60, 124]: monster id 124 mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward (saved 7653 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_gi_delilas_strike"
+backup_fingerprint = "55d13230783c7d0a79828c8341501af17b635343f4ce047442bcbcce94f1ff07"
+description = "nilboa battle, formation [162]: monster id 162 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 568 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_che_delilas_strike"
+backup_fingerprint = "88981b4686f31598ad5ee830c20b3aeba0b518b791c9acb11663a0e9817df8ef"
+description = "nilboa battle, formation [163]: monster id 163 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 5897 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_lu_delilas_strike"
+backup_fingerprint = "73757cd299872cbb1cbce8ac2be2caecbd0de01465904f32585b9419e62ec80c"
+description = "nilboa battle, formation [164]: monster id 164 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 12894 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_songi_strike"
+backup_fingerprint = "5bc174d4d66c19a5b780e415a2ebb7500d0b7072f9028ce4bebc8aa997b896b2"
+description = "noaru battle, formation [179]: monster id 179 mid physical attack: category 3, action state 0x1E. RETAIL disc: noaru_field_card_walk played forward (saved 7480 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_green_slime_strike"
+backup_fingerprint = "a522c69ed10c5f1e56ee643c6678562073dc87d2d491d821681add430ff92ed0"
+description = "map01 battle, formation [7]: monster id 7 mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward (saved 1689 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_balden_verial_strike"
+backup_fingerprint = "d8029612c818a27f0acb205c6783d3163b029029b88864c1544abcc1bb018f8f"
+description = "balden battle, formation [47, 117]: monster id 117 mid physical attack: category 3, action state 0x1E. RETAIL disc: balden_field_route_walk played forward (saved 830 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_lucifer_strike"
+backup_fingerprint = "9cfc3089af5bc4851dd2ed2da856c3027eb7cb669d1b1ae5a733ddaf0782188c"
+description = "nilboa battle, formation [118]: monster id 118 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 550 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_curry_devil_strike"
+backup_fingerprint = "2996884e11618acc8724e7dca77bd6642ef2259e57c6b3d61a236ae3cc9af453"
+description = "ropeway battle, formation [62, 116]: monster id 116 mid physical attack: category 3, action state 0x1E. RETAIL disc: ropeway_field_route_walk played forward (saved 2955 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy attack", "ropeway", "harvest"]
+
+[[scenarios]]
+slot = 255
+label = "garmel_field_card_boot"
+backup_fingerprint = "7f862651615f8d4bda8087adca87b693b9599387a559e778547e3901d28168ba"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+description = "Sky Gardens (garmel) free field run from the story-ladder card (playthrough-ladder-pro00-14.mcr block 2, isolate_card_save.py --keep 2 --restamp 0), cold boot of a staged, unpatched image + memory-card load (autorun_boot_continue.lua, the calibrated CONTINUE ladder, field-run checkpoint at vsync 6544). RETAIL disc, pad only, no pokes; the player's movement-disabled bit 0x80000 is clear, unlike the chapter2_garmel_* states."
+topics = ["field", "garmel", "card boot", "probe state"]
+
+[[scenarios]]
+label = "battle_garmel_vera_v2_strike"
+backup_fingerprint = "ba96a3bc2df026eca4ea858d37def5d728e82b3733a6dbe7dc82683143e7c601"
+description = "garmel battle, formation [29, 64]: monster id 29 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 1329 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_vera_v2_heal_mid_cast"
+backup_fingerprint = "4ed402f63bc0ecd4ea746933deec5a55338160770c093ae229c845145559c8f0"
+description = "garmel battle, formation [29, 64]: monster id 29 mid-cast spell 0x2E: category 2, action state 0x3E. RETAIL disc: garmel_field_card_boot played forward (saved 3956 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zenoir_strike"
+backup_fingerprint = "b366184ad714a6891e6befa9457efc9e8133a740b1cf9c1bec4c0cd3a6cd836d"
+description = "garmel battle, formation [29, 64]: monster id 64 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 1566 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zenoir_fire_claw_mid_cast"
+backup_fingerprint = "34f49bc44a8214a1e3cb7deea38cf19f96ae1412a362f6faf2288a3524da1f32"
+description = "garmel battle, formation [29, 64]: monster id 64 mid-cast spell 0x2B: category 2, action state 0x2B. RETAIL disc: garmel_field_card_boot played forward (saved 2492 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_zeto_strike"
+backup_fingerprint = "02ea9683aaf395f17bcf3d8d6f9825eec712d3429bb0720a2834252f8e6612e8"
+description = "garmel battle, formation [75]: monster id 75 mid physical attack: category 3, action state 0x1E. RETAIL disc: garmel_field_card_boot played forward (saved 13546 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "garmel", "harvest"]

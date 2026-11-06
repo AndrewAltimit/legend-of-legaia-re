@@ -1689,7 +1689,10 @@ a party can wipe with two statues holding near-full HP and Medicine in the bag.
 Medicine's class-3 arm stores the whole status word (`FUN_800402F4`,
 `0x80040E64..`), and the member comes back with the HP it was Stoned at, which
 beats any revive. The heal arm goes first only while a standing member sits
-within one party-wide hit of death.
+within one party-wide hit of death. A member down at 0 HP takes no cure even
+when its status word still shows every limb rotted: the item window's target
+step refuses the confirm on it, and a hand that kept pressing Cross there held
+a `concnow` fight (monsters 121 and 130) to its tick cap.
 
 Against a boss a member's first attack is its Arts string, and a cast after that
 has to beat what the string took (`arts_measured_first`, `wanted_spell`). The MP

@@ -262,9 +262,12 @@ impl BattleHud {
             return;
         }
         let icons: Vec<StatusKind> = tracker.statuses(slot).iter().map(|s| s.kind).collect();
-        self.status_clut
-            .arm(slot, icons.contains(&StatusKind::Stone));
-        self.status_clut.arm_rot(slot, tracker.display_flags(slot));
+        // The pass reads the whole word (`lhu v0,0x16e(s0)` at `0x8004D6C0`):
+        // the row's seated word when a host has one, else the tracker's bits.
+        let word = self.slots[slot as usize]
+            .status_word
+            .unwrap_or_else(|| tracker.display_flags(slot));
+        self.status_clut.sync_word(slot, word);
         self.slots[slot as usize].set_status_icons(icons);
     }
 
@@ -276,6 +279,16 @@ impl BattleHud {
     pub fn sync_level(&mut self, slot: u8, level: u8) {
         if let Some(s) = self.slots.get_mut(slot as usize) {
             s.level = level;
+        }
+    }
+
+    /// Seat the slot's whole `+0x16E` status word - the world's raw half OR
+    /// its tracker (`World::raw_status_word`) - for the status element and
+    /// the gauge colour, which read the word in retail (`FUN_8002C2E4`,
+    /// `FUN_80046A20`).
+    pub fn sync_status_word(&mut self, slot: u8, word: u16) {
+        if let Some(s) = self.slots.get_mut(slot as usize) {
+            s.status_word = Some(word);
         }
     }
 

@@ -1072,3 +1072,56 @@ fn a_door_entry_stands_on_retails_strips_and_payline_row() {
     assert_eq!(m.payline_row(0), 0x10);
     assert_eq!(m.payline_symbol(1), 9);
 }
+
+/// A Stop press through the per-frame step only starts the reel's roll-in:
+/// the integrator `FUN_801D0554` turns it `0x66` a frame on its budget, and
+/// it lands - and claims - on the row the frame-free [`SlotMachine::stop_reel`]
+/// settles on. The spin is evaluated only once all three stand on whole rows.
+#[test]
+fn a_stop_press_rolls_the_reel_in_over_the_frames_that_follow() {
+    use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE};
+    let mut rolled_frames = Vec::new();
+    for seed in 0..40u32 {
+        let mut m = SlotMachine::new(payouts(), seed, 50);
+        assert!(m.spin());
+        while m.phase() != SlotPhase::Stopping {
+            m.frame(0);
+        }
+        for _ in 0..(seed % 7) {
+            m.frame(0);
+        }
+        for (reel, press) in [PACK_SQUARE, PACK_CROSS, PACK_CIRCLE]
+            .into_iter()
+            .enumerate()
+        {
+            let mut settled = m.clone();
+            assert!(settled.stop_reel(reel));
+            let want = settled.payline_row(reel);
+            m.frame(u32::from(press));
+            let mut frames = 1;
+            while !m.reel_landed(reel) {
+                assert_eq!(m.claimed[reel], 0, "no claim before the landing");
+                assert_eq!(m.phase(), SlotPhase::Stopping, "no payout before all land");
+                m.frame(0);
+                frames += 1;
+                assert!(frames < 64, "seed {seed} reel {reel} never landed");
+            }
+            assert_eq!(m.payline_row(reel), want, "seed {seed} reel {reel}");
+            assert_eq!(m.reel_pos(reel) & 0xFF, 0, "landed on a whole row");
+            assert_eq!(m.claimed[reel], i32::from(m.strips[reel][want]) + 1);
+            rolled_frames.push(frames);
+        }
+        // The last landing's frame (or the next whole-row frame) evaluates.
+        for _ in 0..4 {
+            if m.phase() == SlotPhase::Payout {
+                break;
+            }
+            m.frame(0);
+        }
+        assert_eq!(m.phase(), SlotPhase::Payout, "seed {seed}");
+    }
+    assert!(
+        rolled_frames.iter().any(|&f| f > 2),
+        "some stop rolls in over frames: {rolled_frames:?}"
+    );
+}

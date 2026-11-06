@@ -428,7 +428,9 @@ impl Renderer {
             (true, false) => (1.0, dither),
             (true, true) => match self.psx_texel_rule.get() {
                 PsxTexelRule::Gpu => (2.0, dither),
-                PsxTexelRule::PcsxRedux => (3.0, dither),
+                // The instrument dithers on that emulator's table too
+                // (`psx_dither`, `dither_on >= 1.5`).
+                PsxTexelRule::PcsxRedux => (3.0, dither * 2.0),
             },
         }
     }

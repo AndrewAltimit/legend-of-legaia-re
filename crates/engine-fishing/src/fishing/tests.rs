@@ -32,10 +32,17 @@ fn engine_pad_input_counts_retail_pad_nudges() {
     // Left + Right + a reel: three.
     let i = PondInput::from_engine_pad(m(&[B::Left, B::Right, B::Cross]), 0);
     assert_eq!(i.edge_bonus, 3);
-    // The cast press is an edge but not a nudge.
-    let i = PondInput::from_engine_pad(m(&[B::Circle]), 0);
-    assert!(i.cast_edge);
-    assert_eq!(i.edge_bonus, 0);
+    // Retail casts on the reel pair's press (`& 0xC0`), and Circle / L2 is
+    // the leave edge (`& 0x21`), neither a cast nor a nudge.
+    let i = PondInput::from_engine_pad(m(&[B::Cross]), 0);
+    assert!(i.cast_edge && !i.leave_edge);
+    let i = PondInput::from_engine_pad(m(&[B::Square]), 0);
+    assert!(i.cast_edge && !i.leave_edge);
+    for b in [B::Circle, B::L2] {
+        let i = PondInput::from_engine_pad(b.mask(), 0);
+        assert!(i.leave_edge && !i.cast_edge);
+        assert_eq!(i.edge_bonus, 0);
+    }
     // A held (not newly pressed) button nudges nothing.
     let held = m(&[B::Left, B::Cross]);
     let i = PondInput::from_engine_pad(held, held);
@@ -116,7 +123,7 @@ fn a_session_round_trips_its_persistent_words() {
     assert_eq!(s.venue, 1);
     assert_eq!(s.persist(), persist);
     assert!(!s.catch_hud().visible, "no catch HUD before a cast");
-    let (line, hint) = s.status_rows("S", "Z", "X");
+    let (line, hint) = s.status_rows("S", "C", "Z", "X");
     assert!(line.contains("S = cast"), "{line}");
     assert!(hint.contains('Z') && hint.contains('X'), "{hint}");
 }
@@ -834,10 +841,19 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         p.tick(PondInput::default(), 1, 0x80);
     }
     assert_eq!(p.catch_result().unwrap().ramp, 0x1000);
-    // Recast returns to the shore.
+    // A cast press does not leave the plate; the leave edge does.
     p.tick(
         PondInput {
             cast_edge: true,
+            ..Default::default()
+        },
+        1,
+        0x80,
+    );
+    assert_eq!(p.phase(), PondPhase::Landed);
+    p.tick(
+        PondInput {
+            leave_edge: true,
             ..Default::default()
         },
         1,
@@ -1236,4 +1252,123 @@ fn the_reroll_reloads_per_state() {
         seen[fish.state as usize] = true;
     }
     assert_eq!(seen, [true; 4]);
+}
+
+fn press(cast: bool, leave: bool) -> PondInput {
+    PondInput {
+        cast_edge: cast,
+        leave_edge: leave,
+        ..Default::default()
+    }
+}
+
+/// The wind-up falls through into the power meter's body (`FUN_801CF3BC`
+/// case `0xD` has no `break` ahead of case `0x14`): the meter runs from the
+/// run-loop init's `0x40` seed through the wind-up, the exit zeroes it
+/// (`0x801CFA60`) before that frame's step, and a lock press during the
+/// wind-up throws the cast.
+#[test]
+fn the_wind_up_runs_the_meter_and_takes_the_lock() {
+    let mut p = pond();
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::WindUp);
+    for k in 1..WINDUP_FRAMES {
+        p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+        assert_eq!(p.phase(), PondPhase::WindUp);
+        assert_eq!(p.cast_power(), CAST_POWER_SEED + CAST_POWER_STEP * k);
+    }
+    p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Power);
+    assert_eq!(p.cast_power(), CAST_POWER_STEP, "zeroed, then one step");
+
+    let mut p = pond();
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    for _ in 0..4 {
+        p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    }
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Flight, "the wind-up takes the lock");
+}
+
+/// The leave edge (`_DAT_8007B874 & 0x21`, `0x801D0318`) is honoured only
+/// where the mode SM's `$s7` gate is open: the wind-up and power meter
+/// (`li s7,1` at `0x801CFB68`) and the lure in the water, state `0x19`
+/// (`0x801CFD2C`). The shore and the flight leave it shut.
+#[test]
+fn the_leave_edge_gives_up_a_cast_only_where_retail_opens_the_gate() {
+    let mut p = pond();
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle);
+    assert!(p.take_events().is_empty(), "the shore has no leave");
+
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle, "the wind-up gives the cast up");
+    assert_eq!(p.take_events(), vec![PondEvent::Recast]);
+
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    p.tick(press(true, false), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Flight);
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(
+        p.phase(),
+        PondPhase::Flight,
+        "the flight has no case, so no gate"
+    );
+    while p.phase() == PondPhase::Flight {
+        p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    }
+    assert_eq!(p.phase(), PondPhase::Waiting);
+    p.take_events();
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle, "state 0x19 gives the cast up");
+    assert_eq!(p.take_events(), vec![PondEvent::Recast]);
+}
+
+/// The catch is put away only once the result plate's accept word is up
+/// (`DAT_801D90BC`, set at plate counter `0x280`, `FUN_801D5298`) and the
+/// from-right banner `DAT_801D915C` has stopped (`clear s7` at
+/// `0x801D01F8`): two hundred frames from the catch at step `1`.
+#[test]
+fn the_catch_plate_waits_for_its_accept_word_and_the_banner() {
+    let mut p = pond();
+    p.phase = PondPhase::Landed;
+    p.fight_species = Some(0);
+    p.result_ramp = 0;
+    // Seeded as the catch's tick seeds it, ahead of that tick's tail.
+    p.catch_banner = 1;
+    for f in 0..BANNER_FRAMES {
+        p.tick(press(false, true), 1, CAST_POWER_STEP);
+        assert_eq!(p.phase(), PondPhase::Landed, "left on frame {f}");
+    }
+    assert!(p.result_ramp >= RESULT_ACCEPT_RAMP);
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle);
+
+    // With the banner done but the plate still dark, the gate stays shut.
+    let mut p = pond();
+    p.phase = PondPhase::Landed;
+    p.fight_species = Some(0);
+    p.result_ramp = RESULT_ACCEPT_RAMP - 8;
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Landed);
+    p.tick(press(false, true), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle);
+}
+
+/// A broken line parks state `0x28` on the converging pair and returns to
+/// the shore by itself the frame `FUN_801D7528` stops drawing (`0xC8`); the
+/// leave edge does nothing meanwhile.
+#[test]
+fn a_broken_line_returns_to_the_shore_when_its_banner_ends() {
+    let mut p = pond();
+    p.phase = PondPhase::Snapped;
+    p.break_banner = 1;
+    for _ in 1..BANNER_FRAMES {
+        p.tick(press(true, true), 1, CAST_POWER_STEP);
+        assert_eq!(p.phase(), PondPhase::Snapped);
+    }
+    p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Idle);
+    assert_eq!(p.take_events(), vec![PondEvent::Recast]);
 }

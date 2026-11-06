@@ -361,6 +361,7 @@ impl World {
                 }
             }
         }
+        self.face_forced_ground();
         let mut seated = false;
         for (slot, cursor) in seed.idle.iter().enumerate() {
             if let Some(c) = *cursor {
@@ -417,6 +418,17 @@ impl World {
                 if a.battle.seat.is_some() {
                     a.battle.seat = Some((x, z));
                 }
+            }
+        }
+        self.face_forced_ground();
+    }
+
+    /// Turn each slot a debug seed recorded a facing for
+    /// (`BattleState::forced_ground_facing`).
+    fn face_forced_ground(&mut self) {
+        for (slot, f) in self.battle.forced_ground_facing.iter().enumerate() {
+            if let (Some(f), Some(a)) = (*f, self.actors.get_mut(slot)) {
+                a.battle.facing_angle = f & 0xFFF;
             }
         }
     }
