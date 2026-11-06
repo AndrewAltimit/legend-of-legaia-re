@@ -8,7 +8,8 @@
 //! Left / Right change it, Cross steps it; `L1` / `R1` (or `Tab`) flip to the
 //! key list, Circle, Start, `F12` or `Esc` close the panel. The game holds
 //! still under the panel, except in a multiplayer session, whose peers would
-//! stall: there `F12` shows the key list alone and takes no pad input.
+//! stall: there `F12` shows the key list alone and takes no pad input. The
+//! pages run Settings, Cheats (`window::cheats_panel`), then the key list.
 //!
 //! The browser play page has no twin of this page and needs none: its
 //! *Visual enhancements* panel and sound sliders sit beside the canvas, in
@@ -44,6 +45,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 15] = [
 pub(super) enum PanelPage {
     #[default]
     Settings,
+    Cheats,
     Keys,
 }
 
@@ -54,6 +56,8 @@ pub(super) enum PanelInput {
     Move(i32),
     /// Step the row's value: forward for a positive direction.
     Change(i8),
+    /// Cross: step a setting forward, apply a cheat.
+    Confirm,
     Flip,
     Close,
 }
@@ -72,8 +76,10 @@ pub(super) fn panel_input(edge: u16) -> Option<PanelInput> {
         Some(PanelInput::Move(1))
     } else if hit(PadButton::Left) {
         Some(PanelInput::Change(-1))
-    } else if hit(PadButton::Right) || hit(PadButton::Cross) {
+    } else if hit(PadButton::Right) {
         Some(PanelInput::Change(1))
+    } else if hit(PadButton::Cross) {
+        Some(PanelInput::Confirm)
     } else {
         None
     }
@@ -89,7 +95,7 @@ pub(super) fn settings_chord(held: u16, edge: u16) -> bool {
 }
 
 /// Break `text` into lines no wider than `max_w` by the `width` metric.
-fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) -> Vec<String> {
+pub(super) fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     for word in text.split_whitespace() {
@@ -113,14 +119,30 @@ fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) -> Vec<String
 /// Stage geometry of the settings page. Its plate is translucent and narrower
 /// than the stage, so a toggled light or fog shows around it.
 const X0: i32 = 10;
-const Y0: i32 = 5;
+const Y0: i32 = 2;
 const WIDTH: i32 = 300;
 const ROW_H: i32 = 11;
 /// The row help's line budget: the longest row help wraps to this many.
 const HELP_LINES: usize = 3;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Up/Down pick  Left/Right change  Esc close";
-const FLIP_HINT: &str = "L1/R1 or Tab: keys";
+const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
+
+/// The scrim under every page of the `F12` panel. Near-opaque: the panel
+/// is read while the game holds still, and over the party readout's bright
+/// digits a lighter scrim (0.82, 0.85) let them show through between the
+/// rows. One value, so the pages do not change darkness as they flip.
+pub(super) const PANEL_SCRIM: f32 = 0.94;
+/// The space between the help lines and the controls line at the plate's
+/// foot, so the controls never read as one more line of help.
+const FOOTER_GAP: i32 = legaia_app_theme::spacing::CHROME_LINE_GAP;
+
+/// The height of a Settings / Cheats plate: the heading, `rows` rows, a
+/// `lines`-line help budget, the gap, and the controls line. The controls
+/// line is the plate's last `HELP_H`.
+pub(super) const fn plate_height(rows: usize, lines: usize) -> i32 {
+    15 + rows as i32 * ROW_H + 3 + lines as i32 * HELP_H + FOOTER_GAP + HELP_H
+}
 
 impl PlayWindowApp {
     /// Whether the panel owns the frame: it is up, in a window a player is at
@@ -168,14 +190,19 @@ impl PlayWindowApp {
                 self.settings_cursor = (self.settings_cursor as i32 + d).rem_euclid(n) as usize;
             }
             PanelInput::Change(dir) if page == PanelPage::Settings => self.change_setting(dir),
-            PanelInput::Move(_) | PanelInput::Change(_) => {}
+            PanelInput::Confirm if page == PanelPage::Settings => self.change_setting(1),
+            PanelInput::Move(d) if page == PanelPage::Cheats => self.cheats_page.move_cursor(d),
+            PanelInput::Change(dir) if page == PanelPage::Cheats => self.cheats_change(dir),
+            PanelInput::Confirm if page == PanelPage::Cheats => self.cheats_apply(),
+            PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
 
     /// `Tab`, `L1`, `R1`: the other page.
     pub(super) fn flip_panel(&mut self) {
         self.panel_page = match self.panel_page {
-            PanelPage::Settings => PanelPage::Keys,
+            PanelPage::Settings => PanelPage::Cheats,
+            PanelPage::Cheats => PanelPage::Keys,
             PanelPage::Keys => PanelPage::Settings,
         };
     }
@@ -213,10 +240,14 @@ impl PlayWindowApp {
         let key = chrome::KEY.to_f32();
         let text = chrome::TEXT.to_f32();
         let changed = chrome::CHANGED.to_f32();
-        let rows_h = SETTINGS_ROWS.len() as i32 * ROW_H;
-        let height = 14 + rows_h + 3 + HELP_LINES as i32 * HELP_H + HELP_H + 2;
+        let height = plate_height(SETTINGS_ROWS.len(), HELP_LINES);
         let mut out = Vec::new();
-        self.push_scrim(&mut out, (X0, Y0), (WIDTH as u32, height as u32), 0.82);
+        self.push_scrim(
+            &mut out,
+            (X0, Y0),
+            (WIDTH as u32, height as u32),
+            PANEL_SCRIM,
+        );
         let width = |s: &str| self.font.layout_ascii(s).advance_x as i32;
         let put = |out: &mut Vec<TextDraw>, s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(legaia_engine_ui::text_draws_for(
@@ -273,7 +304,7 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        y = Y0 + height - HELP_H - 2;
+        y = Y0 + height - HELP_H;
         match self.options_save_error.borrow().as_deref() {
             Some(e) => put(&mut out, e, (left, y), heading),
             None => put(&mut out, CONTROLS, (left, y), heading),
@@ -316,7 +347,7 @@ mod tests {
             (PadButton::Down, Move(1)),
             (PadButton::Left, Change(-1)),
             (PadButton::Right, Change(1)),
-            (PadButton::Cross, Change(1)),
+            (PadButton::Cross, Confirm),
             (PadButton::L1, Flip),
             (PadButton::R1, Flip),
             (PadButton::Circle, Close),
@@ -345,6 +376,22 @@ mod tests {
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
             assert!(width(STARTUP_LINE_FOR_TEST) <= 310);
         }
+    }
+
+    /// The Settings plate, the taller of the two, stays on the stage with
+    /// its controls line clear of the help budget.
+    #[test]
+    fn the_plate_fits_the_stage_with_a_gap_above_the_controls() {
+        let h = plate_height(SETTINGS_ROWS.len(), HELP_LINES);
+        // The font's descenders reach 14 px below a line's origin.
+        let controls_y = Y0 + h - HELP_H;
+        assert!(
+            controls_y + 14 <= legaia_engine_ui::BOOT_UI_STAGE_H as i32,
+            "{h}"
+        );
+        let help_end =
+            Y0 + 15 + SETTINGS_ROWS.len() as i32 * ROW_H + 3 + HELP_LINES as i32 * HELP_H;
+        assert!(Y0 + h - HELP_H - help_end >= FOOTER_GAP);
     }
 
     #[test]

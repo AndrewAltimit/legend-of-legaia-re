@@ -5,6 +5,9 @@
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
+
+/// The `+0x16E` status word's Stone bit.
+const STONE_WORD_BIT: u16 = 0x0004;
 mod hits;
 mod round;
 
@@ -270,6 +273,11 @@ impl World {
 
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
+
+        // The battle template's tick runs in the actor pool on every battle
+        // frame, whoever owns the rest of it, and ends in the passive sweep.
+        // REF: FUN_8004DA00
+        self.tick_battle_passive_sweep();
 
         // The side-band pass: the frame driver runs it first on every battle
         // frame (`FUN_80046A20`, `jal 0x80056208` at `0x80046D60`), ahead of
@@ -567,6 +575,7 @@ impl World {
             // took is that pass's; this pass re-arms its own.
             self.battle.spell_cam = None;
             self.battle.sm_ran_state = Some(self.battle_ctx.action_state);
+            self.battle.sm_ran_actor = Some(self.battle_ctx.active_actor);
             self.step_battle()
         } else {
             StepOutcome::Stay
@@ -931,11 +940,16 @@ impl World {
     /// defeated even though the actor's `liveness` stays non-zero). A petrified
     /// member is still a valid target ("distraction") - this only governs the
     /// party-/monster-wipe checks, not target selection.
+    ///
+    /// Stone is the `+0x16E` word's bit `0x4`, whoever wrote it: the turn
+    /// picker's side scans (`andi v0,v0,0x4` at `0x801DADB4` / `0x801DAE3C`)
+    /// test the word, so a Stone a cast wrote into the raw half counts as
+    /// surely as one the status tracker holds.
     pub(crate) fn actor_effectively_defeated(&self, slot: u8) -> bool {
         self.actors
             .get(slot as usize)
             .is_none_or(|a| a.battle.liveness == 0)
-            || self.battle.actor_is_petrified(slot)
+            || self.raw_status_word(slot) & STONE_WORD_BIT != 0
     }
 
     /// The per-round status-`0x400` waker retail's action-SM state `0xFF`
@@ -943,29 +957,92 @@ impl World {
     ///
     /// Retail sweeps the seven battle-actor slots and, for each **live** actor
     /// whose `+0x16E` carries bit `0x400`, draws one RNG sample and clears the
-    /// bit on a 1-in-8 hit. The port keeps `+0x16E` as
-    /// `BattleActor::field_flags`, so the sweep runs over the same word. The
-    /// RNG is drawn only for a live afflicted actor - stepping the stream for
-    /// an empty or unafflicted slot would desync it - and no retail applier
-    /// sets `0x400`, so on a normal battle this loop consumes nothing.
+    /// bit on a 1-in-8 hit. `0x400` is **Numb** (the icon ladder's sprite
+    /// `0x1D`), so this is how Numb wears off between rounds; the other way
+    /// is a hit's `0x0F80` strip. The port keeps the word in two halves -
+    /// `BattleActor::field_flags` and the status tracker - and the sweep reads
+    /// and clears both. The RNG is drawn only for a live afflicted actor;
+    /// stepping the stream for an empty or unafflicted slot would desync it.
+    ///
+    /// Public as the seam the retail-kernel differential drives.
     ///
     /// PORT: FUN_801F45A4 (the caller-side slot sweep)
-    pub(in crate::world) fn tick_status_0x400_wakes(&mut self) {
+    pub fn tick_status_0x400_wakes(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{STATUS_BIT_0X400, status_0x400_wakes};
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         // Retail's `&DAT_801C9370` sweep runs seven slots.
         const RETAIL_ACTOR_SLOTS: usize = 7;
         let n = self.actors.len().min(RETAIL_ACTOR_SLOTS);
         for slot in 0..n {
-            let (status, alive) = {
-                let a = &self.actors[slot].battle;
-                (a.field_flags, a.liveness != 0)
-            };
+            // The word is one in retail: the raw half a cast wrote and the
+            // Numb a hit's status arm left in the tracker both carry `0x400`.
+            let status = self.raw_status_word(slot as u8);
+            let alive = self.actors[slot].battle.liveness != 0;
             if !alive || status & STATUS_BIT_0X400 == 0 {
                 continue;
             }
             let roll = self.next_rand() as u16;
-            if let Some(next) = status_0x400_wakes(status, alive, || roll) {
-                self.actors[slot].battle.field_flags = next;
+            if status_0x400_wakes(status, alive, || roll).is_some() {
+                self.actors[slot].battle.field_flags &= !STATUS_BIT_0X400;
+                self.battle
+                    .status_effects
+                    .cure(slot as u8, StatusKind::Numb);
+            }
+        }
+    }
+
+    /// The party half of the per-frame actor pass `FUN_8004CE2C`: the
+    /// Maximum AP pin and the guard accessories' clear, one walk over the
+    /// party seats on every battle frame.
+    ///
+    /// For each seat a living wearer of Maximum AP (record `+0xF8` bit
+    /// `0x400`) has its gauge `+0x170` set to `100`; then a non-zero status
+    /// word loses every bit its guards cover
+    /// ([`legaia_engine_battle_vm::status_effects::guard_sweep_word`]). The
+    /// guard half has no HP test, so a fallen member is cleared too.
+    ///
+    /// This is what makes a guard work in retail: the melee status arms
+    /// (Venom, Toxic, Curse), an enemy special's Venom and Toxic and a cast's
+    /// raw bits are all written whatever the target wears. The port keeps the
+    /// word in two halves, and the sweep clears both. The tracker's copy goes
+    /// without a cured event, since the guard means it never took hold.
+    ///
+    /// Retail reaches it by a tail call from `FUN_8004DA00`
+    /// (`jal 0x8004ce2c` at `0x8004DC4C`), the battle template's tick that
+    /// every path through it ends in; the record mirror `+0x6F6` it also
+    /// stores has no counterpart in the port.
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// PORT: FUN_8004CE2C (`0x8004CE6C..0x8004D018`, the party walk)
+    pub fn tick_battle_passive_sweep(&mut self) {
+        use legaia_engine_battle_vm::status_effects::{
+            MAXIMUM_AP_GAUGE, MAXIMUM_AP_WORD1_BIT, guard_sweep_word,
+        };
+        let seats = usize::from(self.party.party_count).min(self.actors.len());
+        for seat in 0..seats {
+            let word0 = self.party_ability_word(seat);
+            let word1 = self.party_ability_word_f8(seat);
+            let a = &mut self.actors[seat].battle;
+            if a.hp != 0 && word1 & MAXIMUM_AP_WORD1_BIT != 0 {
+                a.spirit_gauge = MAXIMUM_AP_GAUGE;
+            }
+            let word = self.raw_status_word(seat as u8);
+            let cleared = word & !guard_sweep_word(word, word0);
+            if cleared == 0 {
+                continue;
+            }
+            self.actors[seat].battle.field_flags &= !cleared;
+            let kinds: Vec<_> = self
+                .battle
+                .status_effects
+                .statuses(seat as u8)
+                .iter()
+                .filter(|s| s.display_bit() & cleared != 0)
+                .map(|s| s.kind)
+                .collect();
+            for kind in kinds {
+                self.battle.status_effects.strip(seat as u8, kind);
             }
         }
     }
@@ -1139,5 +1216,55 @@ impl World {
         // Appended, not prepended: an undrained backlog keeps its order and
         // this tick's tail stays behind it.
         self.pending_battle_events.extend(events);
+    }
+}
+
+#[cfg(test)]
+mod passive_sweep_tests {
+    use super::*;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+
+    fn guarded_world(word0: u32, word1: u32) -> World {
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, 2);
+        w.party.party_count = 3;
+        let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
+        bits[0..4].copy_from_slice(&word0.to_le_bytes());
+        bits[4..8].copy_from_slice(&word1.to_le_bytes());
+        w.party.roster.members[0].set_ability_bits(bits);
+        for a in w.actors.iter_mut().take(3) {
+            a.battle.hp = 100;
+            a.battle.liveness = 100;
+        }
+        w
+    }
+
+    /// A Venom a monster's swing landed on a Poison Guard 1 wearer goes on
+    /// the sweep, raw or tracked; an unguarded member keeps hers.
+    #[test]
+    fn a_guard_clears_what_an_unguarded_applier_wrote() {
+        let mut w = guarded_world(1 << 0x16, 0);
+        w.battle.status_effects.apply(0, StatusKind::Venom);
+        w.actors[0].battle.field_flags = 0x0802;
+        w.battle.status_effects.apply(1, StatusKind::Venom);
+        w.tick_battle_passive_sweep();
+        assert!(!w.battle.status_effects.has(0, StatusKind::Venom));
+        assert_eq!(w.raw_status_word(0), 0x0802, "only Venom is guarded");
+        assert!(w.battle.status_effects.has(1, StatusKind::Venom));
+    }
+
+    /// Maximum AP pins a living wearer's gauge at 100 and leaves a fallen
+    /// one's alone.
+    #[test]
+    fn maximum_ap_pins_a_living_wearers_gauge() {
+        let mut w = guarded_world(0, 0x400);
+        w.actors[0].battle.spirit_gauge = 12;
+        w.tick_battle_passive_sweep();
+        assert_eq!(w.actors[0].battle.spirit_gauge, 100);
+        w.actors[0].battle.spirit_gauge = 12;
+        w.actors[0].battle.hp = 0;
+        w.tick_battle_passive_sweep();
+        assert_eq!(w.actors[0].battle.spirit_gauge, 12);
     }
 }

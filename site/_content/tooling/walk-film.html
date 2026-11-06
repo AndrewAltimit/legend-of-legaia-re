@@ -1,0 +1,69 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; field walk film</div>
+  <h1>The field walk film: one walk, both sides, pass by pass</h1>
+  <p class="lede">The retail comparison corpus scores one frame per state, so it cannot see how a walk unfolds: how fast the follow camera closes, which way the pad turns the player, what a script carrying the player does to the camera's ease. The walk film holds one pad schedule on one retail field state on both sides and compares them pass by pass. It reports and asserts nothing; its output reads retail RAM, so it stays under <code>captures/</code>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A retail field state and a pad schedule such as hold Up for frames 0 to 180 feed two sides. Retail: a PCSX-Redux probe writes one row per vsync with the player, the camera, the staging descriptor and the camera ease, plus the actor placements. Engine: the retail comparison corpus seeds the same state and writes one row per tick. The film pairs each retail pass, a row where the player or camera changed, with the last engine row on the same spot, and reports the camera fields and placements that differ.">
+      <defs><marker id="wf-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="64" width="170" height="72" rx="4"/>
+      <text class="dg-label" x="95" y="88">Field state</text>
+      <text class="dg-sub" x="95" y="106">+ pad schedule</text>
+      <text class="dg-sub" x="95" y="122">--pad 0-180:UP</text>
+      <path class="dg-edge" d="M180 88 L236 52" marker-end="url(#wf-ah)"/>
+      <path class="dg-edge" d="M180 112 L236 148" marker-end="url(#wf-ah)"/>
+      <rect class="dg-node-accent" x="240" y="16" width="290" height="64" rx="4"/>
+      <text class="dg-label" x="385" y="40">Retail: PCSX-Redux probe</text>
+      <text class="dg-sub" x="385" y="60">player, camera, staging, ease: a row a vsync</text>
+      <rect class="dg-node-accent" x="240" y="120" width="290" height="64" rx="4"/>
+      <text class="dg-label" x="385" y="144">Engine: corpus seed</text>
+      <text class="dg-sub" x="385" y="164">the same columns, a row a tick</text>
+      <path class="dg-edge" d="M530 48 L590 90" marker-end="url(#wf-ah)"/>
+      <path class="dg-edge" d="M530 152 L590 110" marker-end="url(#wf-ah)"/>
+      <rect class="dg-node-ok" x="594" y="64" width="270" height="72" rx="4"/>
+      <text class="dg-label" x="729" y="88">Pair by pass</text>
+      <text class="dg-sub" x="729" y="106">each retail pass with the last</text>
+      <text class="dg-sub" x="729" y="122">engine row on the same spot</text>
+    </svg>
+    <figcaption>The engine side seeds as the corpus does, stands the camera on the state's pose, and raises what both play hosts raise: the compass bias, the edge wall probes, terrain follow, solid and living NPCs.</figcaption>
+  </figure>
+<pre><code>scripts/ci/walk-film.py kor_field_route_walk --pad 0-180:UP --frames 200 --run
+scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # engine side only</code></pre>
+  <p><code>--run</code> sets the Field Move option to Run. Read it off the retail side's step - a run step is <code>24</code> at frame step <code>2</code>, a walk step <code>16</code> - since the seed has no host to mirror the option from.</p>
+</section>
+
+<section class="doc-section" id="reading-it" data-doc="reading-it">
+  <h2>Reading it</h2>
+  <ul class="bullets">
+    <li><strong>Pairing.</strong> A retail pass is a row where the player or the camera changed. The engine walks one vsync at a time and eases on the pass grid, so each retail pass pairs with the last engine row on the same spot, and the summary counts the camera fields that differ. A low pairing count means the two walked different paths: read that first.</li>
+    <li><strong>The pose.</strong> Both sides write the player's clip, its cursor and its rate. Retail's cursor steps once a pass, the engine's once a vsync at half the step, so the two meet on every second row.</li>
+    <li><strong>The first pass differs by construction.</strong> A state saved mid-walk has one more pass of the old pad queued.</li>
+    <li><strong>Placements.</strong> The placement report keys on the flat MAN index. A wanderer's heading and seat are <code>rand()</code> history, so one that parts from retail after a few dozen vsyncs is not a finding by itself; a placement off retail from the first row is.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="what-it-has-settled" data-doc="what-it-has-settled">
+  <h2>What it has settled</h2>
+  <ul class="bullets">
+    <li>The follow camera's ease runs once a game pass, not once a vsync (<a href="../formats/encounter.html">encounter and camera</a>); a player a script carries reads as still, and the camera focus trails a pass.</li>
+    <li>The d-pad remap reads the scene's <a href="../subsystems/field-locomotion.html#authored-octant">authored octant</a>, not the live camera angle.</li>
+    <li><code>kor3</code>'s placements hold retail's headings for a whole film, with no spin.</li>
+    <li>A placement at <code>geremi_field_door_hop</code> that looked mis-faced is not: the scene's system script turns it every pass onto the bearing of a wanderer, so its heading is that wanderer's <code>rand()</code> history one pass late, on both sides.</li>
+    <li>An ambient script's turns run at retail's rate and differ only in phase: two placements repeat retail's ramps a fixed number of vsyncs early, the wait their scripts were inside at the capture.</li>
+    <li>A held walk's clip runs at retail's rate: <code>kor_field_route_walk</code> steps <code>16</code> a pass through the same ten frames on both sides.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/walk-film.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

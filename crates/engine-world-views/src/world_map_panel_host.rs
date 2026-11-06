@@ -89,6 +89,39 @@ pub fn field_hud_suppressed(
         || field_battle_transition_active(world)
 }
 
+/// Whether `FUN_801D0D38` runs at all this frame. It lives in slot A of the
+/// field overlay, so it is neither called nor resident under a battle, the
+/// field-to-battle intro (PROT 0979 over slot A) or the overworld map display
+/// (PROT 0981 over the overlay's first `0x4000` bytes). The countdown is
+/// frozen on those frames either way; what residency decides is whether the
+/// routine's short-idle clears run ([`FieldPartyHud::tick_marked`]).
+pub fn field_hud_resident(world: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_mode::mode::SceneMode;
+    matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
+        && world.world_map.map_display.is_none()
+        && !field_battle_transition_active(world)
+}
+
+/// The warp-word terms of the HUD's scene-entry arm, which read **this**
+/// frame's values: `_DAT_8007B6B4 != 0` (`lw v0,-0x494c` / `bne` at
+/// `0x801D0DF0..0x801D0DF8`) and `_DAT_8007B6B0 != 0` (`lw v0,-0x4950` /
+/// `beq v0,zero` to the position compare at `0x801D0E04..0x801D0E0C`). Both
+/// words are drained by the player tick `FUN_801D1344` before it calls the
+/// HUD (`0x801D1618`, `jal 0x801D0D38` at `0x801D1660`), so unlike the engaged
+/// bit ([`FieldPartyHud::rearm_term`]) they need no frame of delay.
+///
+/// `_DAT_8007B6B4` is the post-load hold every map install leaves (`0x28`,
+/// `FUN_8003ADAC`) and a kind-0 warp's landing writes, so the readout's
+/// countdown starts only once the hold has drained: on a scene entry the HUD
+/// comes up `0x28` frames after the pad comes back, and after a fight - with
+/// the short-idle marker up - on the frame it does.
+///
+/// PORT: FUN_801d0d38 (`0x801D0DEC..0x801D0E0C`, the warp-word rearm terms)
+pub fn field_hud_warp_rearm(world: &legaia_engine_core::world::World) -> bool {
+    let (timer, hold) = world.field_warp_words();
+    timer != 0 || hold != 0
+}
+
 /// `true` while the encounter session sits in its field-to-battle
 /// `Transition` phase - the frames PROT 0979 owns slot A.
 pub fn field_battle_transition_active(world: &legaia_engine_core::world::World) -> bool {

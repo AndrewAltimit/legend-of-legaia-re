@@ -498,7 +498,7 @@ impl AmbientMotion {
         // restamp the walk ops open with - the record's **anim** byte, guarded
         // on its move byte.
         if self.default_move[0] != DEFAULT_MOVE_UNSET {
-            self.requested_move = Some(self.default_move[1]);
+            self.restamp_move(self.default_move[1]);
         }
         let (b1, b2) = (body[1], body[2]);
         let frames = u32::from(b2 & 0x7F);
@@ -582,7 +582,7 @@ impl AmbientMotion {
     /// default-move record's **move** byte, when one is installed.
     pub(crate) fn reload_requested_move(&mut self) {
         if self.default_move[0] != DEFAULT_MOVE_UNSET {
-            self.requested_move = Some(self.default_move[0]);
+            self.restamp_move(self.default_move[0]);
         }
     }
 
@@ -615,7 +615,7 @@ impl AmbientMotion {
         // reload uses the move byte for both - retail is inconsistent here
         // and the port keeps it.)
         if self.default_move[0] != DEFAULT_MOVE_UNSET {
-            self.requested_move = Some(self.default_move[1]);
+            self.restamp_move(self.default_move[1]);
         }
         let lut = b1 >> 4;
         let shift = u32::from(b1 & 0x0F) + 2;
@@ -631,7 +631,10 @@ impl AmbientMotion {
             budget >>= 1;
         }
 
-        if blocking.step_blocked(self.x, self.z, lut) {
+        // The probe is skipped outright for an actor whose flag word carries
+        // bit `0` (`lw v0,0x10(s3)` / `andi v0,v0,0x1` / `bne` at
+        // `0x80038484..0x80038490`): it steps through the player.
+        if self.actor_flags & 1 == 0 && blocking.step_blocked(self.x, self.z, lut) {
             // `0x800384E0`: no cursor advance, no PC advance - the op
             // re-runs next tick against the moved-on player.
             self.reload_requested_move();
@@ -726,7 +729,7 @@ impl AmbientMotion {
             // Phase 2 - turn. `0x80038DBC`.
             self.cursor = (self.cursor & 0xFF00) | 1;
             if self.default_move[0] != DEFAULT_MOVE_UNSET {
-                self.requested_move = Some(self.default_move[0]);
+                self.restamp_move(self.default_move[0]);
             }
             let turn_step = 0x1000i32 >> (bits + 2);
             let target = i32::from(heading_lut_retail(self.wander_dir));
@@ -777,7 +780,7 @@ impl AmbientMotion {
             return;
         }
         if self.default_move[0] != DEFAULT_MOVE_UNSET {
-            self.requested_move = Some(self.default_move[1]);
+            self.restamp_move(self.default_move[1]);
         }
         let step = (0x80u32 >> (bits + 2)) as i16;
         let (nx, nz) = walk_apply(self.x, self.z, dir, step);

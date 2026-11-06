@@ -105,6 +105,9 @@ pub struct PauseItemsSession {
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
     /// carrying it) small.
     arrange_rank: Option<Box<crate::menu_arrange::ArrangeRankTable>>,
+    /// An Arrange this screen ran that the bag has not taken yet
+    /// ([`Self::take_arrange`]).
+    arrange_pending: bool,
     /// Bag slots in whatever order the rows were in when the command window
     /// dispatched Throw Out - restored on the way back. Captured live rather
     /// than taken from the build, because Arrange reorders the rows in place
@@ -156,6 +159,7 @@ impl PauseItemsSession {
             incense_uses: 0,
             incense_blocked: false,
             incense_window: 0,
+            arrange_pending: false,
         }
     }
 
@@ -273,6 +277,23 @@ impl PauseItemsSession {
         matches!(
             self.inner.state,
             InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. }
+        )
+    }
+
+    /// The sort ranks this screen's Arrange runs on, once per Arrange it ran:
+    /// `Some` hands the host the sort to apply to the bag
+    /// ([`crate::item_bag::ItemBag::arrange`]), which retail's
+    /// `FUN_801D64A8` sorts in place - so the order stands after the screen
+    /// closes.
+    pub fn take_arrange(&mut self) -> Option<crate::menu_arrange::ArrangeRankTable> {
+        if !std::mem::take(&mut self.arrange_pending) {
+            return None;
+        }
+        Some(
+            self.arrange_rank
+                .as_deref()
+                .cloned()
+                .unwrap_or_else(crate::menu_arrange::ArrangeRankTable::id_order),
         )
     }
 
@@ -600,11 +621,13 @@ impl PauseItemsSession {
     /// reset the list scroll (retail zeroes `_DAT_8007BB90` /
     /// `_DAT_8007BB98` before re-opening the list window).
     ///
-    /// The engine's bag rows carry no holes (one row per held id), so
-    /// the kernel's empty-slot sink never engages here; the visible
-    /// effect is the rank reorder.
+    /// Retail sorts the bag itself; the screen's own rows are sorted here so
+    /// a host without a bag still sees the order, and [`Self::take_arrange`]
+    /// hands the sort to the host that owns one, which rebuilds the rows off
+    /// the sorted bag.
     // REF: FUN_801D64A8 (kernel lives in crate::menu_arrange)
     fn arrange(&mut self) {
+        self.arrange_pending = true;
         let rank = self
             .arrange_rank
             .as_deref()

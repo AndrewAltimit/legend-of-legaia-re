@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// The `+0x16E` status word's Numb bit.
+const NUMB_WORD_BIT: u16 = 0x0400;
+
 impl World {
     /// The cast record a monster's turn arms for `spell_id`: the catalog's,
     /// or - for a capture-class special, which the catalog does not carry -
@@ -54,9 +57,27 @@ impl World {
     /// companion target resolver `FUN_801E7320` is ported as
     /// [`Self::resolve_monster_target`] (the `monster_setup` hook).
     ///
+    /// 5. The tail: a monster whose own status word carries Numb (`0x400`)
+    ///    has its category cleared after all of it (`andi v0,v0,0x400` /
+    ///    `sb zero,0x1de(s4)` at `0x801EC094..0x801EC0A8`), so its draws are
+    ///    spent and its turn passes with nothing armed.
+    ///
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4, FUN_801DA51C
     pub fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
+        let action = self.pick_monster_action_body(slot);
+        if self.raw_status_word(slot) & NUMB_WORD_BIT != 0 {
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.battle.action_category = 0;
+            }
+            self.battle.monster_budget_armed = None;
+            return MonsterAction::Wait;
+        }
+        action
+    }
+
+    /// [`Self::pick_monster_action`] up to its Numb tail.
+    fn pick_monster_action_body(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party.party_count.max(1);
         self.battle.monster_core_clip = None;
 
@@ -227,6 +248,7 @@ impl World {
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
+            let mut skip_ring = false;
             if let Some(cast) =
                 legaia_engine_battle::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand())
             {
@@ -237,6 +259,7 @@ impl World {
                     target_class = cast.target_class;
                 }
                 spirit_writeback = cast.spirit_gauge_writeback;
+                skip_ring = cast.skip_ring;
             }
             // The 0x8A charge gate clamps the caster's own gauge as it fires
             // (`actor+0x170 = 0x32`). Applied after the RNG borrow window; it
@@ -247,16 +270,27 @@ impl World {
                 a.battle.spirit_gauge = g;
             }
             // Anti-repeat ring (applies to whichever single party target stands).
-            target_class = legaia_engine_battle::monster_ai::apply_recent_target_ring(
-                target_class,
-                spell_id,
-                pc,
-                &mut ai,
-                &mut || self.next_rand(),
-            );
+            if !skip_ring {
+                target_class = legaia_engine_battle::monster_ai::apply_recent_target_ring(
+                    target_class,
+                    spell_id,
+                    pc,
+                    &mut ai,
+                    &mut || self.next_rand(),
+                );
+            }
             self.battle.monster_ai_state = ai;
         }
 
+        // An arm that cleared the category (`0x97` / `0x98` under a `0x380`
+        // status) leaves the turn with nothing armed.
+        if overridden && category == 0 {
+            if let Some(a) = self.actors.get_mut(slot as usize) {
+                a.battle.action_category = 0;
+            }
+            self.battle.monster_budget_armed = None;
+            return MonsterAction::Wait;
+        }
         if fled && !overridden {
             if let Some(a) = self.actors.get_mut(slot as usize) {
                 a.battle.action_category = 5;
@@ -322,7 +356,13 @@ impl World {
                 .unwrap_or(slot)
         };
         if let Some(a) = self.actors.get_mut(slot as usize) {
-            a.battle.action_category = 3;
+            // A walk that matched nothing stores no category: `+0x1DE` keeps
+            // what the seat held, which the turn picker's redirect and
+            // Counterattack roll read next (`0x801DB18C`, `0x801DAF7C`). The
+            // strike is still played at the arming.
+            if !(unmatched && !overridden) {
+                a.battle.action_category = 3;
+            }
             a.battle.active_target = target;
         }
         MonsterAction::Physical { target }

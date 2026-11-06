@@ -1584,6 +1584,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["cast_frame_persists", "cast_armed_wash_prim"],
     },
+    {
+        "what": "which frames take the ambient-occlusion pass, native vs play "
+        "page - a minigame venue (Baka duel, Muscle Dome, fishing pond, dance "
+        "hall, slot machine) owns the frame under a camera of its own and "
+        "marks no actor draws. The window ran the pass there and shaded the "
+        "fighters and dancers as walls; the page never did. Both ask "
+        "`ssao_scope::ssao_applies` before staging the camera",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_render.rs",
+                "render_scene_frame",
+            ),
+            "web": ("crates/web-play/src/play_ssao.rs", "play_ssao_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ssao_applies"],
+    },
 ]
 
 

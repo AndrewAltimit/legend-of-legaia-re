@@ -330,6 +330,7 @@ impl World {
         // shortening the bracket) keeps its own.
         if self.battle.intro.is_none() {
             self.encounter_rumble();
+            self.raise_hud_short_idle();
             self.silence_field_audio_for_intro();
             use legaia_render_kernels::battle_intro_styles::{
                 INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
@@ -511,6 +512,19 @@ impl World {
         }
     }
 
+    /// The same hand-off arm raises the field party HUD's short-idle marker:
+    /// `addiu v0,zero,1` / `sw v0,-0x4a0c(a0)` at `0x801DA6FC..0x801DA704`
+    /// stores `_DAT_8007B5F4 = 1`, the one writer of a non-zero value
+    /// disc-wide. Every field fight passes the arm, a boss included: the word
+    /// reads `1` in every library battle state but the Muscle Dome and the
+    /// forced Koru fights, which do not start from the field.
+    ///
+    /// PORT: FUN_801DA51C (`0x801DA6FC..0x801DA704`, the HUD short-idle marker)
+    fn raise_hud_short_idle(&mut self) {
+        self.encounters.hud_short_idle_raises =
+            self.encounters.hud_short_idle_raises.wrapping_add(1);
+    }
+
     fn encounter_rumble(&mut self) {
         if !self.encounter_vibration_off() {
             self.rumble.motors.pulse = 0xFF;
@@ -601,6 +615,11 @@ impl World {
         self.dialogue_owns_input()
             || self.script_context_engages_player()
             || self.field_warp_in_flight()
+            // The post-warp / post-load hold `_DAT_8007B6B4`: `lw v0,-0x494c`
+            // / `bnez` at `0x801DA14C..0x801DA154`, between the engaged-bit
+            // and the warp-timer tests. A scene load leaves `0x28` of it, so
+            // the first steps out of a door or a fight roll nothing.
+            || self.locomotion.warp.hold != 0
             || self
                 .player_actor_slot
                 .and_then(|s| self.actors.get(usize::from(s)))

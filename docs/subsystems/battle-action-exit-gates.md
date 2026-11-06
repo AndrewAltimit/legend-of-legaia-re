@@ -430,7 +430,9 @@ Both arms share one roll, in a single-target form (`sltiu v0,s0,0x3` - party sea
 
 The group arm also zeroes a landed target's queued action category (`sb zero,0x1de`) and refunds a reserved battle item (`jal 0x800421d4` with `a1 = 1` when `+0x1DE == 1` and the initiative key `+0x16C` is live). Neither arm reads a guard accessory: retail writes the bit unconditionally, and the per-frame guard sweep (`FUN_8004CE2C`'s guard-clear half) removes it next frame for a protected wearer.
 
-Port: roll kernel `legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`; live wiring `World::apply_enemy_agl_status` on the monster cast fold. The guard gate is applied at infliction, which is steady-state-equivalent to retail's clear-next-frame. The move-id list is an inference: Glare `0x3C` is capture-pinned; Stone Circle `0xB9`, Curse `0x40` and Curse All `0x53` come from record names and published behaviour. A landed Stone arms the status-CLUT recolour (`FUN_8004CE2C`'s fourth pass, `engine-battle`'s `battle_status_clut`).
+Port: roll kernel `legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`; live wiring `World::apply_enemy_agl_status` on the monster cast fold. The guard gate is applied at infliction, as PROT 0940 applies Glare's: its body tests Stone and Master Guard itself (`0x801F7054..0x801F7070`) before its own `ori 0x4`, so a guarded seat keeps its queued action. The per-frame sweep (`World::tick_battle_passive_sweep`) clears whatever an unguarded applier wrote.
+
+No cast module calls the applier: Glare's PROT 0940 body repeats the class-9 roll inline; Stone Circle `0xB9` (PROT 0941) stores nothing to `+0x16E` and is a damage cast through `FUN_801DD4B0` (`0x801F6F68..0x801F6FAC`); Curse `0x40` (PROT 0943, `0x801F740C..0x801F741C`) and Curse All `0x53` (PROT 0944, `0x801F7B24..0x801F7C34`) write `ori 0x1000` with no roll and no guard test. A landed Stone arms the status-CLUT recolour (`FUN_8004CE2C`'s fourth pass, `engine-battle`'s `battle_status_clut`).
 
 <a id="the-0x19-attack-approach-park---a-second-distinct-softlock-class"></a>
 ## The `0x19` attack-approach park

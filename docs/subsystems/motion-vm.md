@@ -238,7 +238,7 @@ Dispatch is a 22-entry jump table at `0x80010EE0` indexed by `(op & 0x7F) -
 | 0x38 | 0x800379FC | RotateToAngle    | yaw ramps to a compass-LUT entry over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
 | 0x41 | 0x8003789C | CompassWalkSlow  | the same arm at rate `0x40`              |
 | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
-| 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass once per leg / step-direction change |
+| 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass on every running frame |
 | 0x4C | 0x80037DE0 | FaceTarget       | yaw ramps to the target's live bearing over a frame budget; sub-mode bytes `0x85` / `0x8E` / `0x8F` are the three retail accepts, and `0x8F` alone forces the decreasing direction instead of the shortest arc |
 |      | 0x80037FEC | (default arm)    | terminate with `Done`                    |
 
@@ -287,15 +287,33 @@ facing along the longer axis, mode `0` on the diagonal. Cutscene walks carry
 `3` (`C7 <id> <tx> <tz> 33`) - `kor5` P2[5] returns its three cast members
 to tile column `18` that way, facing `-X`.
 
+**A frame is the frame step's count of steps.** The arm loops
+`_DAT_1F800393` times (`bgtz v0,0x80037C08` / `addiu s2,s2,-1` at
+`0x80037D44`), each iteration a step of `0x80 / (4 << (mode & 7))` that
+re-reads both deltas, so a frame can close the dominant axis and cut the
+diagonal in one call. The default mode's clamp stays on the step for the
+frame's later iterations. An iteration that finds both deltas zero ends the
+leg with no facing write (`0x80037B7C`); a step that lands on the target in
+the frame's last iteration leaves the leg running, and it ends on the next
+frame's first. The facing comes from the last iteration's axis set. A
+`dolk2_market_noa` capture (`autorun_field_leg_timing.lua`, flat 31 on
+`C7 1F 48 54 22` at frame step 2) shows it: the landing step at vsync 1223 with
+`0x400` still up, the bit clear at 1225, and the record, which ticks ahead of the
+walker, running its next op on the actor at 1227. A compass walk (`0x37` /
+`0x41`) ends inside the landing call instead, which the same capture's
+`C1 F8 ..` legs show. Port:
+`MotionState::walk_iterations`; the differential test `motion_vm` in
+`crates/retail-exec` holds the arm and the other five to the bytes.
+
 Entry `i` is `i * 0x200` in the retail heading space (`0` = -Z), so a walking
 actor's facing is always one of eight compass points and **never an
 in-between angle** - there is no walk-turn interpolation anywhere in retail.
 The written heading holds **one value per walk leg**: a frame-exact trace of
 the town01 Mei dinner walk-on (per-frame `+0x26` off the static recomp)
 shows every leg - the straight `-Z` runs and the `+X +Z` diagonal walk-off
-alike - carrying a single heading for its whole run, so the port issues the
-write at the leg's first moving frame and on a step-direction change (the
-dominant-axis → diagonal cut) rather than re-writing per frame. The ops
+alike - carrying a single heading for its whole run. The tail stores it on every
+frame the leg runs (`sh v0,0x26(s0)` at `0x80037DDC`, with no compare ahead of
+it), so a heading another writer posed mid-leg lasts one frame. The ops
 index the LUT `& 0xF`, but only the first eight slots are direction entries;
 the upper half is unrelated SCUS data.
 
@@ -402,7 +420,7 @@ scripted `0x3E` interact get the same behaviour.
 
 [`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
-The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
+The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the leg's last walk-facing index (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered once a leg is done.
 
 Two deliberate departures: LUT indices `8..=15` are treated as no-ops rather than reproducing retail's overread into adjacent SCUS data, and an unrecognised `0x4C` sub-mode terminates the leg instead of yielding forever the way retail's inert arm does.
 
@@ -431,7 +449,7 @@ position write-through, and no heading derivation (facings come from
 `seed_field_npc_facings`). Disc + save-library oracle:
 `crates/parity/tests/field_npc_entry_positions_disc.rs`.
 
-`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
+`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM call per game frame at the frame step's count of steps, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
 
 **A placement's own `0x4C 0x51` ops are not a route.** Each is an instant seat (the op writes `+0x14`/`+0x18` outright), and a record carries one per story-flag branch, so the entry pre-run's executed branch is the whole of their effect.
 Looping the seats as a patrol walks an NPC between story stations retail never connects: town01's gate guards (placements 32 and 33, beside the exit to the world map) stand on their seats in every catalogued town01 field-run state, across both emulators and the whole chapter, while the ambient-stream wanderers beside them move.
@@ -811,7 +829,9 @@ sentinel. The case head `0x8003859C..0x800385C8` stores the record's
 then leaves through the shared epilogue `0x800390A8` (`j` at `0x80038610`),
 which stores the **move** byte (`+0`) - so a turn plays the record's turning
 clip and hands back to its idle move on the tick it snaps. The port is
-`AmbientMotion::step_facing_ramp`.
+`AmbientMotion::step_facing_ramp`. Every restamp stores the zero-extended record
+byte to both words, so it also replaces a full pair an earlier `0x02`, `0x0A` or
+`0x0B` wrote (`AmbientMotion::restamp_move`).
 
 #### Op `0x0D` `[0D, b1, b2, b3]` - pre-unwrap + tween
 

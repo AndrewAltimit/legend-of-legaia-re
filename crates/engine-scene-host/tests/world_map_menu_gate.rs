@@ -70,6 +70,25 @@ fn menu_for(world: &World) -> FieldMenuSession {
 /// towns and fields, `WorldMap` for the kingdom overworlds - so the predicate
 /// has to name both. The refusing half is asserted explicitly because a
 /// predicate that admitted everything would pass the admitting half alone.
+/// The scene load leaves the post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`), and the field frame pump keeps the pad controller,
+/// its menu accept included, off until it drains (`0x801D16C8..0x801D16E4`).
+/// Asserts the refusal on the entry frame, then idles through the drain.
+fn wait_out_load_hold(host: &mut SceneHost, name: &str) {
+    assert!(
+        !host.world.field_menu_open_allowed(),
+        "{name}: the menu opened under the post-load hold"
+    );
+    for _ in 0..0x40 {
+        if host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        host.world.set_pad(0);
+        host.tick().expect("tick");
+    }
+    panic!("{name}: the post-load hold never drained");
+}
+
 #[test]
 fn the_menu_open_gate_admits_exactly_the_two_walking_modes() {
     let mut world = World::new();
@@ -172,6 +191,7 @@ fn a_kingdom_overworld_both_opens_the_menu_and_offers_save() {
             host.world.party.scene_save_allowed,
             "{name}'s MAN sets the save-allow bit (_DAT_8007B6A8)"
         );
+        wait_out_load_hold(&mut host, name);
         assert!(
             host.world.field_menu_open_allowed(),
             "{name}: the pad must reach the menu-open accept here - this is \
@@ -207,6 +227,7 @@ fn a_town_opens_the_menu_but_greys_the_save_row() {
     host.enter_field_scene("town01", 0).expect("enter town01");
 
     assert_eq!(host.world.mode, SceneMode::Field);
+    wait_out_load_hold(&mut host, "town01");
     assert!(
         host.world.field_menu_open_allowed(),
         "a town has always opened the menu"

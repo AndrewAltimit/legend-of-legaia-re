@@ -84,13 +84,14 @@
   </table>
   <p>The opcode numbers are the field VM's own: the jump table is indexed <code>(op &amp; 0x7F) &minus; 0x37</code> over <code>0x37..0x4C</code>, and every slot not listed above ends the leg.</p>
   <p id="approach-mode"><strong>The <code>0x47</code> approach mode.</strong> While both axes are still open, the high nibble of the mode byte decides which ones a step moves. Mode <code>0</code> closes the dominant axis alone, clamped to the difference, until the two deltas are equal, then cuts the diagonal. Any other mode masks the open axes at the full step: <code>3</code> walks the diagonal from the first frame and finishes on the longer axis, <code>1</code> closes X first, <code>2</code> Z first. The two laws end an uneven leg facing different ways - mode <code>3</code> along the longer axis, mode <code>0</code> on the diagonal - and cutscene walks carry <code>3</code>.</p>
+  <p><strong>A frame is several steps.</strong> The arm takes the frame step's count of steps, each re-reading both deltas, so one frame can close the dominant axis and start the diagonal. A step that lands on the target in the frame's last step leaves the leg running; the next frame finds it there and ends it, which is when the script resumes.</p>
 </section>
 
 <section class="doc-section" id="facing">
   <h2>How an actor's facing changes</h2>
   <p>Watch a villager walk and they only ever face one of eight directions, yet a scripted turn in a cutscene glides smoothly. Those are two different laws, and which one an actor gets is a property of the bytecode, not the situation.</p>
   <ul class="bullets">
-    <li><strong>Snap (walking).</strong> A <code>0x47</code> leg reduces its step to axis signs, maps them through the eight-entry compass LUT at <code>0x80073F04</code> and writes the heading outright. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point, one value per leg - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field heading is a multiple of <code>0x200</code>.</li>
+    <li><strong>Snap (walking).</strong> A <code>0x47</code> leg reduces its step to axis signs, maps them through the eight-entry compass LUT at <code>0x80073F04</code> and writes the heading outright, on every frame the leg runs. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point, one value per leg - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field heading is a multiple of <code>0x200</code>.</li>
     <li><strong>Ramp (the rotate ops).</strong> <code>0x38</code> and <code>0x4C</code> interpolate over a frame budget: each tick, <code>heading += arc &times; speed / remaining</code> measured from the <em>live</em> heading, and the terminal frame snaps exactly onto the target so rounding never leaves the actor short.</li>
   </ul>
   <h3 id="talk-facing">Talk-time facing is not this VM</h3>

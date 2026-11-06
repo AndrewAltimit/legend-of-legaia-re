@@ -139,9 +139,22 @@ fn try_sell_returns_proceeds() {
     let mut s = session_with_items();
     s.select_sell_item(0, &[(10, 5)]);
     s.set_quantity(1); // 2 items (slot 1 → qty 2)
-    let result = s.try_sell(5);
+    let result = s.try_sell(5, None);
     // sell price of item 10 (buy 100) = 50; qty 2 → 100
     assert_eq!(result, Some((10, 2, 100)));
+}
+
+/// Retail halves the product, off the item table's price: an odd price
+/// over an odd quantity keeps the half the per-unit floor drops.
+#[test]
+fn try_sell_halves_the_product_of_the_item_table_price() {
+    let mut s = session_with_items();
+    s.select_sell_item(0, &[(10, 5)]);
+    s.set_quantity(2); // 3 items
+    assert_eq!(s.try_sell(5, Some(101)), Some((10, 3, 151)));
+    // A price of 1 sells for nothing, where a per-unit floor of 1 paid 3.
+    assert_eq!(s.try_sell(5, Some(1)), Some((10, 3, 1)));
+    assert_eq!(s.try_sell(5, Some(0)), Some((10, 3, 0)));
 }
 
 #[test]
@@ -149,7 +162,7 @@ fn try_sell_clamps_to_held_count() {
     let mut s = session_with_items();
     s.select_sell_item(0, &[(10, 1)]);
     s.set_quantity(8); // want 9 but only hold 1
-    let result = s.try_sell(1);
+    let result = s.try_sell(1, None);
     assert_eq!(result.map(|(_, q, _)| q), Some(1));
 }
 
@@ -157,7 +170,7 @@ fn try_sell_clamps_to_held_count() {
 fn try_sell_fails_when_hold_zero() {
     let mut s = session_with_items();
     s.select_sell_item(0, &[(10, 1)]);
-    assert!(s.try_sell(0).is_none());
+    assert!(s.try_sell(0, None).is_none());
 }
 
 #[test]

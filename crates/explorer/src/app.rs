@@ -2344,7 +2344,12 @@ impl App {
                                     .map(|pcm| export::wave_peaks(&pcm))
                                     .unwrap_or_default()
                             });
-                        draw_wave(ui, wave);
+                        // The two buttons keep their room at the minimum
+                        // window width: the waveform takes what is left.
+                        let reserve = small_button_width(ui, "Play")
+                            + small_button_width(ui, "WAV...")
+                            + 2.0 * ui.spacing().item_spacing.x;
+                        draw_wave(ui, wave, wave_width(ui.available_width(), reserve));
                         if ui.small_button("Play").clicked() {
                             match export::vag_pcm(a, &v, i) {
                                 Ok(pcm) => {
@@ -3332,48 +3337,112 @@ fn checkerboard(ui: &egui::Ui, rect: egui::Rect) {
 }
 
 fn hex_view(ui: &mut egui::Ui, bytes: &[u8]) {
-    let rows = bytes.len().div_ceil(16);
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let char_w = ui.fonts_mut(|f| f.glyph_width(&font, '0'));
+    let per_row = hex_row_bytes(ui.available_width(), char_w);
+    let rows = bytes.len().div_ceil(per_row);
     let h = ui.text_style_height(&egui::TextStyle::Monospace);
-    egui::ScrollArea::vertical()
+    egui::ScrollArea::both()
         .auto_shrink([false, false])
         .show_rows(ui, h, rows, |ui, range| {
             for r in range {
-                let off = r * 16;
-                let line = &bytes[off..(off + 16).min(bytes.len())];
-                let mut s = format!("{off:08X}  ");
-                for (i, b) in line.iter().enumerate() {
-                    s.push_str(&format!("{b:02X} "));
-                    if i == 7 {
-                        s.push(' ');
-                    }
-                }
-                for i in line.len()..16 {
-                    s.push_str("   ");
-                    if i == 7 {
-                        s.push(' ');
-                    }
-                }
-                s.push(' ');
-                s.extend(line.iter().map(|&b| {
-                    if (0x20..0x7F).contains(&b) {
-                        b as char
-                    } else {
-                        '.'
-                    }
-                }));
-                ui.monospace(s);
+                // One text row per dump row: a wrapped row would put the
+                // virtualised rows out of step with the scroll bar.
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(hex_line(bytes, r * per_row, per_row)).monospace(),
+                    )
+                    .extend(),
+                );
             }
         });
 }
 
-/// A sample's waveform as a row of peak bars, one per horizontal point.
-fn draw_wave(ui: &mut egui::Ui, peaks: &[u8]) {
-    let size = egui::vec2(export::WAVE_POINTS as f32, 16.0);
+/// The characters a hex dump row of `n` bytes takes: the offset and its gap,
+/// three per byte, the mid-row gap, a space, then one per byte.
+fn hex_line_chars(n: usize) -> usize {
+    10 + 3 * n + usize::from(n > 8) + 1 + n
+}
+
+/// Bytes per hex dump row: 16 where the row fits `width` points at
+/// `char_w` per character, else 8 (the minimum window's Hex tab).
+fn hex_row_bytes(width: f32, char_w: f32) -> usize {
+    if hex_line_chars(16) as f32 * char_w <= width {
+        16
+    } else {
+        8
+    }
+}
+
+/// The hex dump row of `bytes` at `off`, `per_row` bytes wide; a short last
+/// row is padded so its ASCII column lines up.
+fn hex_line(bytes: &[u8], off: usize, per_row: usize) -> String {
+    let line = &bytes[off.min(bytes.len())..(off + per_row).min(bytes.len())];
+    let mut s = format!("{off:08X}  ");
+    for i in 0..per_row {
+        match line.get(i) {
+            Some(b) => s.push_str(&format!("{b:02X} ")),
+            None => s.push_str("   "),
+        }
+        if i == 7 && per_row > 8 {
+            s.push(' ');
+        }
+    }
+    s.push(' ');
+    s.extend(line.iter().map(|&b| {
+        if (0x20..0x7F).contains(&b) {
+            b as char
+        } else {
+            '.'
+        }
+    }));
+    s
+}
+
+/// The narrowest a waveform gets before the row lets its buttons go.
+const WAVE_MIN_W: f32 = 24.0;
+
+/// The width (whole points) a sample row's waveform takes: what is left of
+/// `available` after `reserve` (the buttons behind it), at most
+/// [`export::WAVE_POINTS`] and at least [`WAVE_MIN_W`].
+fn wave_width(available: f32, reserve: f32) -> usize {
+    (available - reserve)
+        .floor()
+        .clamp(WAVE_MIN_W, export::WAVE_POINTS as f32) as usize
+}
+
+/// The width a `small_button` labelled `text` takes.
+fn small_button_width(ui: &egui::Ui, text: &str) -> f32 {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, egui::Color32::WHITE);
+    galley.size().x + 2.0 * ui.spacing().button_padding.x
+}
+
+/// `peaks` folded to `width` bars, each the loudest of the peaks it covers.
+fn fold_peaks(peaks: &[u8], width: usize) -> Vec<u8> {
+    if width == 0 || peaks.len() <= width {
+        return peaks.to_vec();
+    }
+    (0..width)
+        .map(|x| {
+            let from = x * peaks.len() / width;
+            let to = ((x + 1) * peaks.len() / width).max(from + 1);
+            peaks[from..to].iter().copied().max().unwrap_or(0)
+        })
+        .collect()
+}
+
+/// A sample's waveform as a row of peak bars, one per horizontal point,
+/// `width` points wide.
+fn draw_wave(ui: &mut egui::Ui, peaks: &[u8], width: usize) {
+    let size = egui::vec2(width as f32, 16.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let p = ui.painter_at(rect);
     let ink = crate::theme::c(crate::theme::palette(ui).info);
     let mid = rect.center().y;
-    for (x, &peak) in peaks.iter().enumerate() {
+    for (x, &peak) in fold_peaks(peaks, width).iter().enumerate() {
         let h = (f32::from(peak) / 255.0 * rect.height() * 0.5).max(0.5);
         let x = rect.left() + x as f32 + 0.5;
         p.line_segment(
@@ -3386,6 +3455,43 @@ fn draw_wave(ui: &mut egui::Ui, peaks: &[u8]) {
 #[cfg(test)]
 mod layout_tests {
     use super::*;
+
+    #[test]
+    fn hex_rows_halve_where_sixteen_bytes_do_not_fit() {
+        let full = hex_line(&[0x41; 16], 0, 16);
+        assert_eq!(full.len(), hex_line_chars(16));
+        assert_eq!(hex_line(&[0x41; 8], 0, 8).len(), hex_line_chars(8));
+        // A short last row keeps its ASCII column in line.
+        let short = hex_line(&[1, 2, 3], 0, 8);
+        assert_eq!(short.len(), hex_line_chars(8) - 5);
+        assert!(short.ends_with(" ..."));
+        assert_eq!(&hex_line(b"0123456789", 8, 8)[..8], "00000008");
+        // The minimum window's pane (about 390 points at 7.4 per char)
+        // gets 8; a wide one 16.
+        assert_eq!(hex_row_bytes(390.0, 7.4), 8);
+        assert_eq!(hex_row_bytes(900.0, 7.4), 16);
+    }
+
+    #[test]
+    fn waveform_gives_way_to_the_row_buttons() {
+        // Wide pane: the full waveform.
+        assert_eq!(wave_width(800.0, 100.0), export::WAVE_POINTS);
+        // The minimum window's audio pane: what the buttons leave.
+        assert_eq!(wave_width(180.5, 100.0), 80);
+        // Never below the floor.
+        assert_eq!(wave_width(50.0, 100.0), WAVE_MIN_W as usize);
+    }
+
+    #[test]
+    fn folded_peaks_keep_the_loudest_of_each_span() {
+        let peaks: Vec<u8> = (0..120).map(|i| (i % 7) as u8).collect();
+        let f = fold_peaks(&peaks, 40);
+        assert_eq!(f.len(), 40);
+        assert!(f.iter().all(|&p| p >= 2));
+        assert_eq!(fold_peaks(&[1, 9, 3, 4], 2), vec![9, 4]);
+        // Narrower than the target: unchanged.
+        assert_eq!(fold_peaks(&[5, 6], 10), vec![5, 6]);
+    }
 
     #[test]
     fn start_column_keeps_a_margin_at_the_minimum_width() {

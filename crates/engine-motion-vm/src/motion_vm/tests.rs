@@ -209,9 +209,12 @@ fn step_move_toward_target_walks_diagonally() {
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!((s.world_x, s.world_z), (3, 3));
     assert_eq!(s.pc, 0);
-    // Second step: x += 2 (clamped), z += 2 -> arrives.
-    assert_eq!(step(&mut s, t, &bc), StepResult::Done);
+    // Second step: x += 2 (clamped), z += 2 -> arrives, and the leg runs on:
+    // only an iteration that finds both deltas zero ends it.
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!((s.world_x, s.world_z), (5, 5));
+    assert_eq!(s.pc, 0);
+    assert_eq!(step(&mut s, t, &bc), StepResult::Done);
     assert_eq!(s.pc, 1);
 }
 
@@ -334,36 +337,30 @@ fn rotate_ramp_holds_raw_headings_across_the_wrap() {
     assert_eq!(*last, 0x800, "terminal snap lands exactly on the target");
 }
 
-/// The walk snap is **once per leg** (plus once per step-direction
-/// change), not a rewrite on every moving frame: `yaw_written` fires on
-/// the first moving frame and on the dominant-axis → diagonal cut only,
-/// so an interleaved writer's pose survives a straight leg.
+/// The walk snap stores the heading on **every** frame the leg runs
+/// (`sh v0,0x26(s0)` at `0x80037DDC`, no compare ahead of it): one compass
+/// value per straight run, rewritten each frame, so a pose another writer
+/// set mid-leg lasts one frame. The arrival frame's successor writes nothing.
 #[test]
-fn walk_leg_writes_heading_once_per_direction() {
+fn walk_leg_writes_heading_every_running_frame() {
     let mut s = st(0, 0, 4);
     let t = tgt(100, 0, 20);
     let bc = [0x47];
-    // Frame 1: leg start - the write.
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert!(s.yaw_written, "leg start writes the walk facing");
     assert_eq!(s.yaw, 0x400, "+X compass");
-    // Frames 2..20: X still dominates - same direction, no rewrite.
     for i in 0..19 {
+        s.yaw = 0x123; // an interleaved writer's pose
         assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
-        assert!(!s.yaw_written, "straight-leg frame {i} must not rewrite");
+        assert!(s.yaw_written, "straight-leg frame {i} rewrites");
         assert_eq!(s.yaw, 0x400, "held compass heading");
     }
-    // Deltas equal: the diagonal cut is a direction change - one write.
+    // Deltas equal: the diagonal.
     assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
-    assert!(s.yaw_written, "direction change writes again");
     assert_eq!(s.yaw, 0x200, "+X +Z diagonal");
-    // Next leg re-writes even in the same direction: leg state clears.
     while step(&mut s, t, &bc) != StepResult::Done {}
+    assert!(!s.yaw_written, "the done frame writes no facing");
     assert_eq!(s.walk_facing, None, "leg completion clears the leg state");
-    s.pc = 0;
-    let t2 = tgt(200, 0, 120);
-    assert_eq!(step(&mut s, t2, &bc), StepResult::Yield);
-    assert!(s.yaw_written, "a new leg writes at its start");
 }
 
 /// The traced per-op ramp rates come from `arc / budget` - the law's
@@ -468,8 +465,10 @@ fn target_select_bit_skips_target_byte() {
     let mut s = st(0, 0, 5);
     let t = tgt(2, 0, 0);
     // 0x47 + high bit -> consumes a target byte. With speed > distance,
-    // a single step lands on target -> Done -> PC moves past op + target.
+    // a single step lands on target; the next call finds it there -> Done
+    // -> PC moves past op + target.
     let bc = [0x47 | 0x80, 0xFB];
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
     assert_eq!(step(&mut s, t, &bc), StepResult::Done);
     assert_eq!(s.pc, 2, "PC should advance past op byte + target byte");
 }
@@ -516,9 +515,11 @@ fn patrol_leg_move_then_face_sequence() {
     assert_eq!(s.world_x, 3);
     assert_eq!(s.pc, 0, "PC stays on op while yielding");
 
-    // Frame 2: x += 3. Arrives at x=6. Done. PC advances to next op.
-    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Done);
+    // Frame 2: x += 3. Arrives at x=6, still running.
+    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Yield);
     assert_eq!(s.world_x, 6);
+    // Frame 3: both deltas zero. Done. PC advances to next op.
+    assert_eq!(step(&mut s, waypoint, &bc), StepResult::Done);
     assert_eq!(s.pc, 1, "PC moved past MoveTowardTarget op");
 
     // Now FaceTarget: waypoint is (6, 0, 0), actor is at (6, 0, 0).
@@ -747,4 +748,38 @@ fn touch_post_out_of_range_does_not_post() {
     let t = bind_records();
     assert_eq!(post_touch(&t, 4), None);
     assert_eq!(post_touch(&t, usize::MAX), None);
+}
+
+/// A retail leg frame by frame: `dolk2_market_noa`, placement flat 31 on
+/// `C7 1F 48 54 22` (tile `(0x48, 0x54)` = `(9280, 10816)`, approach mode
+/// `2`, pace `2`: 8 units a step) at frame step 2, from `(8960, 11648)`.
+/// The capture (`autorun_field_leg_timing.lua`, one row a vsync) shows the
+/// arming frame at `(8960, 11632)`, Z closed before X moves, the landing step
+/// 71 game frames later (vsync 1223) with `0x400` still up, and the bit
+/// clear on the next game frame (vsync 1225).
+#[test]
+fn a_captured_tile_walk_lands_and_ends_on_retails_frames() {
+    let mut s = MotionState {
+        walk_iterations: 2,
+        approach: 2,
+        ..st(8960, 11648, 8)
+    };
+    let t = tgt(9280, 0, 10816);
+    let bc = [0x47];
+    assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+    assert_eq!((s.world_x, s.world_z), (8960, 11632), "the arming frame");
+    let mut frame = 0;
+    while (s.world_x, s.world_z) != (9280, 10816) {
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        frame += 1;
+        if s.world_z != 10816 {
+            assert_eq!(s.world_x, 8960, "Z closes before X moves");
+        }
+    }
+    assert_eq!(frame, 71, "the landing step, vsync 1223");
+    assert_eq!(
+        step(&mut s, t, &bc),
+        StepResult::Done,
+        "the bit clears, vsync 1225"
+    );
 }

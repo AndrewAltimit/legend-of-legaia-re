@@ -123,8 +123,8 @@ impl World {
     pub(crate) fn tick_field_npc_motions(&mut self) {
         self.tick_field_npc_face_legs();
         // A walk-to-tile leg moves on the game-frame grid: the `0x47` arm
-        // spends `0x80 * DAT_1F800393 / (4 << bits)` a game frame
-        // (`FUN_8003774C`, the step read at `0x80037864`), nothing between.
+        // takes `DAT_1F800393` steps of `0x80 / (4 << bits)` a game frame
+        // (`FUN_8003774C`, the count read at `0x80037864`), nothing between.
         let grid = self.clock.script_frame_delta();
         if grid == 0 {
             return;
@@ -140,22 +140,18 @@ impl World {
                 z: motion.target.1,
                 id: 0,
             };
-            let base = motion.state.speed;
-            motion.state.speed = base.saturating_mul(grid);
+            motion.state.walk_iterations = grid;
             let result = legaia_engine_motion_vm::motion_vm::step(
                 &mut motion.state,
                 target,
                 &FIELD_NPC_MOTION_PROGRAM,
             );
-            motion.state.speed = base;
             let pos = (motion.state.world_x, motion.state.world_z);
             // The walker's heading is the one the `0x47` step itself snapped
-            // onto the eight-point compass - written **once per leg** at the
-            // first moving frame and again on a step-direction change, the
-            // retail write pattern (runtime-pinned: a walk leg holds one
-            // heading for its whole run). Gating the copy on the VM's own
-            // write keeps a heading some other writer posed (the interact
-            // face-the-speaker bearing) standing while a leg idles unmoved.
+            // onto the eight-point compass, stored on every frame the leg
+            // runs (the tail `0x80037D4C..0x80037DDC`). Gating the copy on
+            // the VM's own write leaves a heading some other writer posed
+            // standing once the leg is done.
             if motion.state.yaw_written {
                 self.npcs.headings.insert(slot, motion.state.yaw as i16);
             }

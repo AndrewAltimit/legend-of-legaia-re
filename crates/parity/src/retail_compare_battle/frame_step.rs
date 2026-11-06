@@ -148,6 +148,37 @@ pub fn display_pass_steps(ram: &[u8]) -> [u8; 2] {
     }
 }
 
+/// The steps of the two passes a magic-band `0x2B` capture's display lags,
+/// where the close-up accumulator `ctx[+0x87C]` reads the history one entry
+/// older than [`recent_pass_steps`] does. Each `0x2B` pass adds `8 * step`
+/// of its own step (`0x801D5900..0x801D5914`), so the passes since the clip
+/// commit sum to the accumulator. When they sum to it only on the entries
+/// past the newest, the newest names the step of the pass to come, and the
+/// passes on screen ran on the older ones: `battle_garmel_songi_hyper_wave_mid_cast`
+/// holds `48` over steps `3, 2, 2, 2` (newest first), three step-`2` passes,
+/// and its frame fits the RAM's table walked back two step-`2` passes (yaw
+/// `3971`, TR z about `5060`) where two step-`3` passes overshoot onto the
+/// shot's origin. `None` when the newest reading adds up, or neither does.
+pub fn magic_band_older_steps(ram: &[u8]) -> Option<[u8; 2]> {
+    let ctx = game_anchors::u32_at(ram, BATTLE_CTX);
+    if !in_ram(ctx) || game_anchors::u8_at(ram, ctx + 7) != 0x2B {
+        return None;
+    }
+    let accum = game_anchors::u32_at(ram, ctx + 0x87C);
+    let steps = recent_pass_steps(ram);
+    let sums_to = |from: usize| {
+        let mut sum = 0u32;
+        for &s in &steps[from..] {
+            if sum >= accum {
+                break;
+            }
+            sum += 8 * u32::from(s);
+        }
+        sum == accum
+    };
+    (accum > 0 && steps[0] != steps[1] && !sums_to(0) && sums_to(1)).then(|| [steps[1], steps[2]])
+}
+
 /// How far the displayed frame lags the RAM a capture holds: **two** game
 /// frames. Retail double-buffers - the CPU builds frame `N` while the GPU
 /// draws `N - 1` and the display scans out `N - 2` - so the VRAM display

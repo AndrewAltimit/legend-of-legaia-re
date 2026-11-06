@@ -28,6 +28,7 @@ impl World {
         };
         self.audio.xa_parked_clip =
             legaia_engine_battle_vm::battle_cast_cue::module_head_seek(&module.bytes);
+        self.arm_module_drive(&module.bytes, spell_id);
         // PROT 0924 draws its kill roll on arm 0, ahead of the cue's arm.
         if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             self.ultimate_rave_verdict();
@@ -45,10 +46,133 @@ impl World {
         }
     }
 
+    /// Stand the drive where a summon module finds it
+    /// ([`legaia_engine_battle_vm::battle_cd_drive`]): the side-band read done,
+    /// and the battle seek-ahead selector's seek to the caster's clip file
+    /// issued (`FUN_8004DA00`, which arms once the side-band stage is `0`). A
+    /// module with no seek-and-poll pair waits on nothing.
+    ///
+    /// REF: FUN_8004DA00, FUN_8003EAE4
+    fn arm_module_drive(&mut self, image: &[u8], spell_id: u8) {
+        use legaia_engine_battle_vm::battle_cd_drive as cd;
+        self.casting.drive_arms =
+            legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(image).map(|a| (a, false));
+        self.casting.drive = cd::CdDrive::at(cd::SIDE_BAND_LBA);
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
+            self.cast_module_for(spell_id).unwrap_or(0),
+            spell_id,
+        );
+        self.casting.module_voice_gated =
+            legaia_engine_battle_vm::battle_cast_cue::head_cue_waits_arm_gate(image, body);
+        if self.casting.drive_arms.is_none() {
+            return;
+        }
+        let caster = usize::from(self.battle_ctx.active_actor);
+        if caster < usize::from(self.party.party_count)
+            && let Some(class) = self.spell_table_class(spell_id)
+        {
+            let slot = self.party_roster_slot(caster) as u8 + 1;
+            if let Some(lba) = cd::clip_lba(u32::from(cd::party_magic_seek_clip(slot, class))) {
+                self.casting.drive.seek(lba);
+            }
+        }
+    }
+
+    /// One vsync of the drive, and the module's seek on its arm's pass: the
+    /// seek arm waits out what is in flight (its `CdlSetloc` blocks on the
+    /// drive), then issues `FUN_8003EAE4(0, slot)`. Whether `arm` holds this
+    /// pass is [`Self::module_drive_holds`].
+    pub(in crate::world::battle::cast_band) fn step_module_drive(&mut self, arm: u8) {
+        self.casting.drive.tick();
+        self.casting.drive_ticked_at = self.clock.display_frames;
+        if let Some((a, issued)) = self.casting.drive_arms
+            && !issued
+            && arm >= a.seek_arm
+            && self.casting.drive.idle()
+            && let Some(lba) = legaia_engine_battle_vm::battle_cd_drive::clip_lba(a.slot)
+        {
+            self.casting.drive.seek(lba);
+            self.casting.drive_arms = Some((a, true));
+        }
+    }
+
+    /// Whether retail's game loop is held inside the seek arm's `CdlSetloc`
+    /// this frame: the module stands on its seek arm, the seek not yet issued,
+    /// behind a drive still busy with the selector's seek. A frame-stepped
+    /// `orb_summon_mid_cast` holds the audio level `_DAT_8007B910` at `211`
+    /// through those `27` vsyncs and moves only what the interrupt handlers
+    /// write, then ramps on through the poll arm, which does not block.
+    pub fn cast_drive_blocks_frame(&self) -> bool {
+        self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.casting.drive_ticked_at + 1 >= self.clock.display_frames
+            && self.casting.drive_arms.is_some_and(|(a, issued)| {
+                !issued && self.casting.module_phase == a.seek_arm && !self.casting.drive.idle()
+            })
+    }
+
+    /// One vsync of a frame [`Self::cast_drive_blocks_frame`] holds: retail's
+    /// loop sits inside the seek arm's `CdlSetloc`, so only the drive moves
+    /// (and the seek issues once it is free); no actor, camera or module pass
+    /// runs, and the display-frame clock the camera and the battle passes
+    /// count on stands still with them (advancing it hands the camera the
+    /// held frames as a catch-up on the first pass after).
+    pub fn step_blocked_cast_frame(&mut self) {
+        let arm = self.casting.module_phase;
+        self.step_module_drive(arm);
+    }
+
+    /// Whether the resident module's current arm waits on the drive: the
+    /// seek arm before its seek issues, the poll arm until the seek completes.
+    /// What the oracles read to place a cast's CD-seek wait (the PCM cast
+    /// channel's `.drive` sidecar).
+    pub fn cast_drive_waiting(&self) -> bool {
+        self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.module_drive_holds(self.casting.module_phase)
+    }
+
+    /// Whether the module's `arm` returns busy on the drive this pass: its seek
+    /// arm until the drive is free to take the seek, its poll arm until the
+    /// seek completes.
+    pub(in crate::world::battle::cast_band) fn module_drive_holds(&self, arm: u8) -> bool {
+        let Some((a, issued)) = self.casting.drive_arms else {
+            return false;
+        };
+        (arm == a.seek_arm && !issued)
+            || (arm == a.poll_arm && issued && !self.casting.drive.idle())
+    }
+
     /// The module's pass on `arm` makes the head cue's call once `arm` has
     /// reached the cue's. An arm that leaves the module (a chain that skips the
     /// cue's arm) still raises it on the next pass it runs.
     pub fn raise_cast_voice_on_arm(&mut self, arm: u8) {
+        // The cue's arm polls the drive first and returns busy until its seek
+        // is done (`FUN_8003F2B8(1)`): no call on a busy pass.
+        if self.module_drive_holds(arm) {
+            return;
+        }
+        // A call behind its arm's own gate waits for the pass the arm's hold
+        // lets through ([`Self::raise_cast_voice_on_pass`]).
+        if self.casting.module_voice_gated
+            && self
+                .casting
+                .module_voice_due
+                .is_some_and(|(_, due)| due == arm)
+        {
+            return;
+        }
+        self.raise_due_cast_voice(arm);
+    }
+
+    /// The module's pass on `arm` went through its hold this tick: a head cue
+    /// behind the arm's own gate (Gilium's countdown ahead of the poll) makes
+    /// its call now.
+    pub(in crate::world::battle::cast_band) fn raise_cast_voice_on_pass(&mut self, arm: u8) {
+        if self.casting.module_voice_gated && !self.module_drive_holds(arm) {
+            self.raise_due_cast_voice(arm);
+        }
+    }
+
+    fn raise_due_cast_voice(&mut self, arm: u8) {
         if let Some((spell_id, due)) = self.casting.module_voice_due
             && arm >= due
         {
@@ -94,6 +218,13 @@ impl World {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
         } else if (entry, spell_id) == (944, 0x37) {
             self.guilty_cross_line()
+        } else if let Some(cue) = legaia_engine_battle_vm::battle_cast_cue::latch_forked_head_cue(
+            entry,
+            self.caster_latch(self.battle_ctx.active_actor).unwrap_or(0),
+        ) {
+            // The cue's arm-0 pass raises it ahead of the arm's own latch write
+            // (`run_cast_module_code`), so this reads the branch's latch.
+            cue
         } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
             let Some(cue) = line else {
                 return;

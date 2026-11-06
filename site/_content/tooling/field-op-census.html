@@ -1,0 +1,89 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; field-op census</div>
+  <h1>The field-VM opcode census: does any scene on the disc use op X?</h1>
+  <p class="lede"><code>asset field-op-census</code> walks every field-VM bytecode carrier on the disc, decodes it, and counts opcode occurrences, with the sub-dispatched opcodes (<code>0x4C</code>, <code>0x43</code>, <code>0x45</code>, <code>0x49</code>, <code>0x34</code>) broken out by sub-arm. It answers one question for any opcode: does a shipped scene carry it at a decoded instruction boundary? Its zeros are the point - they separate "no test drives this handler yet" from "the disc has nothing to drive it".</p>
+</header>
+
+<section class="doc-section" id="running" data-doc="-">
+  <h2>Running it</h2>
+<pre><code>asset field-op-census extracted/PROT --cdname extracted/CDNAME.TXT \
+    --csv target/field-op-census.csv
+asset field-op-census extracted/PROT --cdname extracted/CDNAME.TXT \
+    --only '4C CF' --context</code></pre>
+  <p><code>--only &lt;op&gt;</code> lists the carriers of one op (<code>4C CF</code>, <code>4CCF</code> and <code>39</code> all parse); <code>--context</code> prints the decoded neighbourhood of each clean hit; <code>--csv</code> writes the whole carrier &times; op table. The output is regenerable from the disc and is never committed. Before it, three censuses each covered one family of ops (system flags, motion flags, the op-<code>0x49</code> windows); an op outside those had no instrument at all.</p>
+</section>
+
+<section class="doc-section" id="why-decode" data-doc="why-a-byte-scan-is-not-the-instrument,the-three-carrier-kinds">
+  <h2>Decode, don't scan</h2>
+  <p>A field-VM record embeds Shift-JIS message text, and every opcode byte value occurs in prose. Scanning <code>PROT.DAT</code> for the bytes <code>4C EA</code> finds the pair inside dialogue at whatever rate two bytes occur. The census instead walks each record from its first-opcode offset with the field-VM disassembler and counts only on an instruction boundary. It walks three kinds of carrier, and each holds scripts the others do not:</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Carrier</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>bundle</code></td><td>the scene bundle's MAN (the <code>type 0x03</code> descriptor, LZS-packed)</td></tr>
+      <tr><td><code>stream</code></td><td>a <code>type 0x03</code> chunk inside a DATA_FIELD stream: the per-scene variant MAN, which carries cutscene records the bundle MAN does not</td></tr>
+      <tr><td><code>event</code></td><td>a raw event-script carrier, where a <code>.PCH</code> scene's prescript records live (the PROT entry after the <code>.PCH</code> table)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Inside a MAN every record of all three partitions is walked, each from the first-opcode offset its own partition's header shape gives. The three shapes differ, and one formula applied to all of them starts a whole record class three bytes late - which is how an entire class of door records once went missing from a count.</p>
+</section>
+
+<section class="doc-section" id="clean-total" data-doc="clean-versus-total-and-what-a-zero-means,cross-validation">
+  <h2><code>clean</code> versus <code>total</code>, and what a zero means</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One record walked from its first opcode. Instructions decode cleanly up to the first decode error; every occurrence before it counts as clean and total. After the error the walk resumes one byte on, so later boundaries are guesses, and occurrences there count only toward total.">
+      <rect class="dg-node-ok" x="20" y="40" width="70" height="36" rx="3"/><text class="dg-sub" x="55" y="62">op</text>
+      <rect class="dg-node-ok" x="94" y="40" width="110" height="36" rx="3"/><text class="dg-sub" x="149" y="62">op + operands</text>
+      <rect class="dg-node-ok" x="208" y="40" width="90" height="36" rx="3"/><text class="dg-sub" x="253" y="62">text line</text>
+      <rect class="dg-node-ok" x="302" y="40" width="80" height="36" rx="3"/><text class="dg-sub" x="342" y="62">4C 52</text>
+      <rect class="dg-node-warn" x="386" y="40" width="90" height="36" rx="3"/><text class="dg-sub" x="431" y="62">decode error</text>
+      <rect class="dg-node" x="480" y="40" width="70" height="36" rx="3"/><text class="dg-sub" x="515" y="62">?</text>
+      <rect class="dg-node" x="554" y="40" width="90" height="36" rx="3"/><text class="dg-sub" x="599" y="62">45 6C ?</text>
+      <rect class="dg-node" x="648" y="40" width="70" height="36" rx="3"/><text class="dg-sub" x="683" y="62">?</text>
+      <path class="dg-edge" d="M20 96 L382 96"/>
+      <text class="dg-sub" x="200" y="116">clean: counted in clean and total</text>
+      <path class="dg-edge-dim" d="M480 96 L860 96"/>
+      <text class="dg-sub" x="670" y="116">resumed a byte on: total only (a lead)</text>
+      <text class="dg-sub" x="440" y="22">one record, walked from its first-opcode offset</text>
+    </svg>
+    <figcaption><code>45 6C</code> has hundreds of <code>total</code> hits and no clean one, because <code>45 6C</code> is <code>"El"</code> in ASCII.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>A clean zero</strong> means no shipped scene reaches that arm through the field VM's own bytecode, so a runtime-reach row is not waiting on a replay fixture. It does not mean the handler is dead: a cross-context dispatch can still reach it.</li>
+    <li><strong>A clean hit is a lead until its record is read.</strong> A linear walk can stay error-free through message text and re-sync on a byte that is no opcode, so a rare op's few hits get <code>--context</code> and a reading.</li>
+    <li><strong>It under-counts, never over-counts.</strong> An occurrence behind an earlier desync in its own record is invisible to <code>clean</code>.</li>
+    <li><strong>Cross-checked.</strong> The camera tests' own per-arm counter over the same corpus reports the census's <code>total</code> exactly for four <code>0x4C</code> arms, and the same scene counts for the two rare ones.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="settled" data-doc="what-the-census-settled">
+  <h2>What the census settled</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Op</th><th>Finding</th></tr></thead>
+    <tbody>
+      <tr><td><code>4C EA</code> scripted game-over</td><td>Three clean occurrences, one in each kingdom world-map bundle: a named scene change, a self-looping jump, the game-over, a wait and another self-loop - a hand-off that never returns. Driving it is a story-state fixture, not a missing carrier.</td></tr>
+      <tr><td><code>4C 52</code> take item</td><td>Seventy clean occurrences across twenty-five scenes, all the same shape: a "Treasure Chest!" line, then the take, then the scene-fade pair - the chest and key-item scripts consuming the item just used. An earlier walk counted three because it stopped at each record's first text segment.</td></tr>
+      <tr><td><code>4C CF</code> script camera focus</td><td>Fifty clean occurrences, every one in <code>uru</code>, beside camera applies and camera-config writes (<a href="../subsystems/script-vm-menuctrl.html">MENU_CTRL</a>).</td></tr>
+      <tr><td><code>43 0C</code>, <code>43 09</code> wipe and tween</td><td>Zero clean occurrences and 31 incoherent ones, every one inside a record that had already desynced. The row that asked for a scene issuing them has no evidence behind it, but it stays open until those 31 are read.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="summary-table" data-doc="reading-the-summary-table">
+  <h2>Reading the summary table</h2>
+  <p>The default run prints one row per key, <code>clean</code> first, with the number of distinct scenes each op's clean hits span. The scene column counts CDNAME blocks, in extraction-index space. The header line carries the walk's own health - carriers, MAN payloads, records, desynced records, decode errors, script bytes - because a per-op count is only as good as the walk that produced it, and roughly half of all records desync somewhere, most of them text-heavy.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

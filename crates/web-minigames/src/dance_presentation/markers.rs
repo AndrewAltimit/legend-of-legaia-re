@@ -321,6 +321,33 @@ impl LegaiaMinigames {
         }
         b.markers.live_positions_for(mesh_of, props).to_vec()
     }
+
+    /// The marker block's triangles the PSX GPU draws under `camera`, over
+    /// the positions the last [`Self::dance_marker_positions_for`] /
+    /// [`Self::dance_marker_step`] handed out
+    /// ([`dance_venue::psx_gpu_visible_indices`], the kernel the native window
+    /// cuts its marker tiles and hall props with). The block carries the
+    /// animated props, the stage-entrance curtain among them, which the
+    /// camera track's far poses see from behind across the whole frame:
+    /// retail's GPU refuses those quads, and the page drew them. Empty with
+    /// no block.
+    pub fn dance_marker_visible_indices_with(
+        &self,
+        camera: &legaia_engine_camera::psx_camera::FieldCameraView,
+    ) -> Vec<u32> {
+        let Some(b) = self.dance_bodies.as_ref().filter(|b| !b.markers.is_empty()) else {
+            return Vec::new();
+        };
+        let m = &b.markers;
+        let flat = if m.live.is_empty() {
+            &m.positions
+        } else {
+            &m.live
+        };
+        let positions: Vec<[f32; 3]> = flat.as_chunks::<3>().0.to_vec();
+        let (ox, oy, oz) = b.origin;
+        dance_venue::psx_gpu_visible_indices(camera, &positions, [ox, oy, oz], &m.indices)
+    }
 }
 
 #[wasm_bindgen]

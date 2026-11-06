@@ -79,12 +79,18 @@ impl LegaiaMinigames {
     /// camera [`Self::dance_venue_vp`] frames with: the triangles the PSX GPU
     /// would not refuse for their screen span.
     pub fn dance_env_visible_indices(&self) -> Vec<u32> {
-        let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
-            dance_venue::venue_camera_at(&legaia_engine_minigames::dance::dance_scene_entry(), p)
-        });
-        let camera = tracked.or_else(|| self.dance_bodies.as_ref().map(|b| b.camera));
-        camera
+        self.dance_track_camera()
             .map(|c| self.dance_env_visible_indices_with(&c))
+            .unwrap_or_default()
+    }
+
+    /// This frame's drawable subset of [`Self::dance_marker_indices`] (the
+    /// marker tiles and the animated hall props) under the camera
+    /// [`Self::dance_venue_vp`] frames with, over the positions the last
+    /// [`Self::dance_marker_step`] handed out.
+    pub fn dance_marker_visible_indices(&self) -> Vec<u32> {
+        self.dance_track_camera()
+            .map(|c| self.dance_marker_visible_indices_with(&c))
             .unwrap_or_default()
     }
 
@@ -93,5 +99,16 @@ impl LegaiaMinigames {
             .as_ref()
             .map(|b| b.env.flat.clone())
             .unwrap_or_default()
+    }
+}
+
+impl LegaiaMinigames {
+    /// The camera this page's own run frames its hall with: the run's track
+    /// pose, else the entry record's camera.
+    fn dance_track_camera(&self) -> Option<legaia_engine_camera::psx_camera::FieldCameraView> {
+        let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
+            dance_venue::venue_camera_at(&legaia_engine_minigames::dance::dance_scene_entry(), p)
+        });
+        tracked.or_else(|| self.dance_bodies.as_ref().map(|b| b.camera))
     }
 }

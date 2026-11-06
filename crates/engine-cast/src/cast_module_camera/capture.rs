@@ -112,6 +112,10 @@ pub struct CaptureCamArm {
     pub party_live_only: bool,
     /// [`Self::party_write`] also skips a Stoned seat (`+0x16E & 4`).
     pub party_skip_stoned: bool,
+    /// [`Self::party_write`] skips the victim's seat (PROT 0951 `0x36`'s
+    /// arm 2 walks `0 .. ctx[+0x00]` past `caster[+0x1DD]`,
+    /// `0x801F6E48..0x801F6E90`).
+    pub party_skip_victim: bool,
     /// The pass's fold turns each seat it reaches on the caster:
     /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34])
     /// + 0x800` into `+0x46` (PROT 0957's arm 5, `0x801F75A4..0x801F75CC`).
@@ -147,6 +151,12 @@ pub struct CaptureCamArm {
     /// origin, `(sin / 2, 0, cos / 2)` at `i * 0x200`, the rot trio beside them,
     /// on the host's `rand() % 8` slot draws (`0x801F6CD8..0x801F6E28`).
     pub ring: Option<([u32; 3], [i16; 3])>,
+    /// `(record, first)`: this pass seats two copies of a record at the
+    /// origin, each on three `rand()` draws stored over it - `+0x84 =
+    /// r % 3 - 1`, `+0xB4 = r % 0x400 + 0x80`, `+0x28 = n * 0x600 + r % 0x200`
+    /// for its running index `n` from `first` (PROT 0953's arm 6,
+    /// `0x801F711C..0x801F71F4`).
+    pub trail: Option<(u32, u16)>,
     /// `(record, count)`: this pass seats `count` copies of a record each on
     /// five `rand()` draws (PROT 0951's arm 4, `0x801F7E34..0x801F7F14`:
     /// `x = r % 64 - 32`, `y = r % 64 - 16`, `z = 0x100`, then the angle trio
@@ -277,12 +287,14 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
+        (951, super::CHAOS_FLARE_BODY) => Some(super::chaos_flare_camera),
         (957, super::DEATH_GAME_BODY) => Some(super::death_game_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
         (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
         (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
         (955, super::WHITE_SHIELD_BODY) => Some(super::white_shield_camera),
+        (955, super::POWER_CHARGE_BODY) => Some(super::power_charge_camera),
         _ => None,
     }
 }
@@ -1138,6 +1150,45 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     }
 }
 
+/// PROT 0953's punch-branch records, seated at the world origin on zero
+/// angles (`a0 = sp+0x20`, `a1 = sp+0x10`, both zeroed in the prologue;
+/// `0x801F6B0C..0x801F6BB0`).
+pub const TERIO_PUNCH_RECORDS: [u32; 7] = [
+    0x801F_7BD0,
+    0x801F_7C40,
+    0x801F_7CB0,
+    0x801F_7A3C,
+    0x801F_7B48,
+    0x801F_799C,
+    0x801F_7A0C,
+];
+/// PROT 0953's charge-branch records, at the origin the same way
+/// (`0x801F6CEC..0x801F6D48`).
+pub const TERIO_CHARGE_RECORDS: [u32; 4] = [0x801F_7854, 0x801F_77C8, 0x801F_7838, 0x801F_78CC];
+/// The trail record arm 6 seats twice a battle frame, held or not
+/// (`0x801F711C..0x801F71F4`), each handle kept in the list at `0x801F7E98`.
+pub const TERIO_TRAIL_RECORD: u32 = 0x801F_7AF8;
+/// The record arm 6's passing pass seats ahead of the caster
+/// (`0x801F72BC..0x801F7368`).
+pub const TERIO_FIST_RECORD: u32 = 0x801F_7D20;
+
+fn at_origin(record: u32) -> Option<super::ModuleSpawn> {
+    Some(super::ModuleSpawn {
+        record: super::SpawnRecord::Module(record),
+        anchor: super::SpawnAnchor::Literal {
+            pos: [0; 3],
+            rot: [0; 3],
+        },
+    })
+}
+
+/// `caster + trunc(table * 620 / 4096)` on one axis: the arm's
+/// `* 5 * 31 * 4` then `addiu 0xFFF` / `sra 0xC` for a negative product.
+fn terio_reach(base: i16, table: i16) -> i16 {
+    let p = i32::from(table) * 620;
+    (i32::from(base) + p / 4096) as i16
+}
+
 /// PROT 0953 (Terio Punch), a single-body module: its `0x801CF56C` arm
 /// points straight at the tick `0x801F69FC`, a nine-arm switch (`sltiu 9`,
 /// table at the image head).
@@ -1199,14 +1250,23 @@ pub fn terio_punch_camera(
     match phase {
         0 if seats.caster_latch != 0 => {
             st.countdown.0 = 0;
+            // The trail list's count is cleared (`sw zero,-0x7F68` and the
+            // 128-word list at `0x801F7E98`, `0x801F6CB8..0x801F6CCC`).
+            st.pass_count = 0;
+            let mut charge_spawns = [None; 8];
+            for (o, r) in charge_spawns.iter_mut().zip(TERIO_PUNCH_RECORDS) {
+                *o = at_origin(r);
+            }
             CaptureCamArm {
                 latch: Some(0),
+                charge_spawns,
                 // `li 3; sb 0x278` and `li 1; sb 0x21d(s4)` at `0x801F6C94`. A
                 // recording's cursor advances one a vsync under it, though the
                 // byte itself reads `4` there.
                 ctx_278: Some(3),
                 caster_write: CaptureSeatWrite {
                     rate: Some(1),
+                    facing: Some(h),
                     ..Default::default()
                 },
                 ..step(
@@ -1218,6 +1278,16 @@ pub fn terio_punch_camera(
         0 => CaptureCamArm {
             latch: Some(1),
             skips_fold: true,
+            ctx_278: Some(3),
+            pass_spawns: [
+                at_origin(TERIO_CHARGE_RECORDS[0]),
+                at_origin(TERIO_CHARGE_RECORDS[1]),
+                at_origin(TERIO_CHARGE_RECORDS[2]),
+                at_origin(TERIO_CHARGE_RECORDS[3]),
+                None,
+            ],
+            // Every party seat hidden, no HP test (`0x801F6E14..0x801F6E54`).
+            party_write: super::v_windhash::HIDDEN,
             ..step(
                 shot([0, yaw_from(0x800, c.facing), 0], [0, 0x600, depth / 2], 1),
                 Some(1),
@@ -1225,20 +1295,37 @@ pub fn terio_punch_camera(
         },
         1 => {
             st.countdown.add(1 << 8);
-            step(
-                shot(
-                    [0x200, yaw_from(0x800, c.facing), 0],
-                    [0, 0, depth.wrapping_mul(2)],
-                    0x100,
-                ),
-                Some(2),
-            )
+            CaptureCamArm {
+                // The caster's tint state `7` (`li v0,0x7` / `sb v0,0x21c(s4)`
+                // at `0x801F6EE8`).
+                caster_write: CaptureSeatWrite {
+                    render_flag: Some(7),
+                    ..Default::default()
+                },
+                ..step(
+                    shot(
+                        [0x200, yaw_from(0x800, c.facing), 0],
+                        [0, 0, depth.wrapping_mul(2)],
+                        0x100,
+                    ),
+                    Some(2),
+                )
+            }
         }
         2 => {
             if st.countdown.drain_above(0) {
                 return held;
             }
-            step(None, None)
+            // The tint off and every party seat shown again
+            // (`0x801F6F2C..0x801F6F94`).
+            CaptureCamArm {
+                caster_write: CaptureSeatWrite {
+                    render_flag: Some(0),
+                    ..Default::default()
+                },
+                party_write: super::v_windhash::SHOWN,
+                ..step(None, None)
+            }
         }
         4 => {
             st.countdown.add(80);
@@ -1262,14 +1349,36 @@ pub fn terio_punch_camera(
             )
         }
         6 => {
+            // Two trail records a battle frame, held or not, each on three
+            // draws (the host's, `CaptureCamArm::trail`).
+            let trail = st.opens_pass.then(|| {
+                let first = st.pass_count as u16;
+                st.pass_count = st.pass_count.wrapping_add(2);
+                (TERIO_TRAIL_RECORD, first)
+            });
             if st.countdown.drain_above(0) {
-                return held;
+                return CaptureCamArm { trail, ..held };
             }
             st.countdown.add(96);
-            step(
-                shot([0, yaw_from(0x800, h), 0], [0, 0x550, 0x2800], 0x80),
-                Some(7),
-            )
+            // The fist ahead of the caster: `620` along its heading's
+            // `(sin, cos)`, height `-0x154`, on its angles.
+            let (sn, cs) = legaia_engine_system::trig::trig12(c.facing & 0xFFF);
+            let mut pass_spawns = [None; 5];
+            pass_spawns[0] = Some(super::ModuleSpawn {
+                record: super::SpawnRecord::Module(TERIO_FIST_RECORD),
+                anchor: super::SpawnAnchor::Literal {
+                    pos: [terio_reach(c.x, sn), -0x154, terio_reach(c.z, cs)],
+                    rot: [0, c.facing as i16, 0],
+                },
+            });
+            CaptureCamArm {
+                trail,
+                pass_spawns,
+                ..step(
+                    shot([0, yaw_from(0x800, h), 0], [0, 0x550, 0x2800], 0x80),
+                    Some(7),
+                )
+            }
         }
         7 => {
             if st.countdown.drain_above(0) {
@@ -1346,5 +1455,74 @@ mod slime_divide_tests {
         let mut st = ModuleCamState::default();
         let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
         assert_eq!(arm0.tr, [0, 0x400, 0x800]);
+    }
+}
+
+#[cfg(test)]
+mod terio_punch_tests {
+    use super::super::SpawnRecord;
+    use super::*;
+
+    fn seats(latch: i32) -> ModuleCamSeats {
+        ModuleCamSeats {
+            caster: super::super::ModuleSeat {
+                x: 0,
+                y: 0,
+                z: 800,
+                facing: 0,
+            },
+            victim: super::super::ModuleSeat {
+                x: 0,
+                y: 0,
+                z: -800,
+                facing: 0x800,
+            },
+            caster_latch: latch,
+            depth_raw: 3008,
+            ..Default::default()
+        }
+    }
+
+    /// The punch's arm 0 seats its seven records at the origin; the charge's
+    /// seats four and hides the party, and its arm 2 shows it again.
+    #[test]
+    fn each_branch_seats_its_own_records() {
+        let mut st = ModuleCamState::default();
+        let punch = terio_punch_camera(&mut st, 0, seats(1));
+        let recs: Vec<_> = punch
+            .charge_spawns
+            .iter()
+            .flatten()
+            .map(|s| s.record)
+            .collect();
+        assert_eq!(recs, TERIO_PUNCH_RECORDS.map(SpawnRecord::Module).to_vec());
+        let mut st = ModuleCamState::default();
+        let charge = terio_punch_camera(&mut st, 0, seats(0));
+        assert_eq!(charge.pass_spawns.iter().flatten().count(), 4);
+        assert_eq!(charge.party_write.render_flag, Some(0xFF));
+        st.countdown.0 = 1;
+        let shown = terio_punch_camera(&mut st, 2, seats(0));
+        assert_eq!(shown.party_write.render_flag, Some(0));
+    }
+
+    /// Arm 6 asks for two trail records on every pass that opens a battle
+    /// frame, their indices running on, and seats the fist on its pass.
+    #[test]
+    fn arm_6_trails_every_frame_and_seats_the_fist_on_its_pass() {
+        let mut st = ModuleCamState {
+            opens_pass: true,
+            ..Default::default()
+        };
+        st.countdown.0 = SPEED_SCALAR * 2;
+        let a = terio_punch_camera(&mut st, 6, seats(1));
+        assert!(a.hold);
+        assert_eq!(a.trail, Some((TERIO_TRAIL_RECORD, 0)));
+        let b = terio_punch_camera(&mut st, 6, seats(1));
+        assert!(!b.hold);
+        assert_eq!(b.trail, Some((TERIO_TRAIL_RECORD, 2)));
+        assert_eq!(
+            b.pass_spawns[0].map(|s| s.record),
+            Some(SpawnRecord::Module(TERIO_FIST_RECORD))
+        );
     }
 }

@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// `_DAT_1F800394` bit `0x0800_0000`, the menu lock: the HUD's second suppress
+/// gate (`0x801D0DA4`, `lui v0,0x800`).
+pub const HUD_SCRATCH_SUPPRESS_BIT: u32 = 0x0800_0000;
+
+/// `_DAT_1F800394` bit `0x400`, the system lock: a scene-entry rearm term
+/// (`andi v0,a0,0x400` at `0x801D0DE0`).
+pub const HUD_SCRATCH_REARM_BIT: u32 = 0x400;
+
 /// One member's row of the field party HUD, as the hosts draw it.
 ///
 /// Plain data so it crosses into the renderer-agnostic UI crate (which this
@@ -37,6 +45,13 @@ pub struct FieldPartyHud {
     /// `field_hud_rearm_held` (engine-core) as the previous frame left it - what
     /// retail's routine reads ([`Self::rearm_term`]).
     engaged_prev: bool,
+    /// `_DAT_8007B5F4`, the short-idle marker: raised by the encounter
+    /// hand-off and cleared by this routine ([`Self::tick_marked`]).
+    short_idle: bool,
+    /// The world's marker-raise count as of the last tick, so a raise the
+    /// world published since is seen once. `None` until the first tick, which
+    /// adopts the count without raising anything.
+    marker_raises_seen: Option<u32>,
 }
 
 impl FieldPartyHud {
@@ -106,6 +121,113 @@ impl FieldPartyHud {
         timer_delta: i16,
         projected_y: Option<i16>,
     ) -> HudDecision {
+        self.tick_inner(
+            hud_disabled,
+            view_mode,
+            pad_held,
+            player_pos,
+            timer_delta,
+            projected_y,
+        )
+    }
+
+    /// [`Self::tick`] with the short-idle marker `_DAT_8007B5F4` carried.
+    ///
+    /// `marker_raises` is the world's count of marker raises (the encounter
+    /// hand-off, `FUN_801DA51C` at `0x801DA704`, stores `1`); a count that
+    /// moved since the last tick raises the marker here. While it is up the
+    /// scene-entry arm arms the countdown at `0` under Immediate and `0x50`
+    /// under Gradual (`0x801D0E14..0x801D0E70`) instead of `0x28` / `0xA0`.
+    /// Retail clears it on every pass that is not the scene-entry arm: the
+    /// suppress exit (`sw zero,-0x4a0c(v0)` in the delay slot at
+    /// `0x801D0DBC`) and the position compare (`0x801D0EAC`, in the delay
+    /// slot of its `bne`, so a moving and a standing player both clear it).
+    ///
+    /// `resident` is whether the routine runs at all this frame: it lives in
+    /// slot A, so a battle, the field-to-battle intro and the overworld map
+    /// display (each an image over that slot) neither tick it nor clear the
+    /// marker - which is how the marker survives from the encounter to the
+    /// first field frame after the fight.
+    ///
+    /// `scratch` is the scratchpad word `_DAT_1F800394` (the engine's
+    /// `StoryFlagState::story_flags`): its bit `0x0800_0000`, the menu lock, is
+    /// the routine's second suppress gate (`lw a0,0x80(t1)` off
+    /// `t1 = 0x1F800314`, `and` with `lui 0x800` at `0x801D0D98..0x801D0DAC`).
+    ///
+    /// PORT: FUN_801d0d38 (`_DAT_8007B5F4`: the `0x801D0E30..0x801D0E70`
+    /// reads, the `0x801D0DBC` / `0x801D0EAC` clears; the `0x801D0DA0` menu-lock
+    /// suppress)
+    #[allow(clippy::too_many_arguments)]
+    pub fn tick_marked(
+        &mut self,
+        hud_disabled: bool,
+        view_mode: i32,
+        pad_held: u16,
+        player_pos: Option<(i16, i16)>,
+        timer_delta: i16,
+        projected_y: Option<i16>,
+        marker_raises: u32,
+        resident: bool,
+        scratch: u32,
+    ) -> HudDecision {
+        match self.marker_raises_seen {
+            Some(seen) if seen != marker_raises => self.short_idle = true,
+            _ => {}
+        }
+        self.marker_raises_seen = Some(marker_raises);
+        let rearm_arm = self.cached.is_none() && !hud_disabled;
+        let decision = self.tick_inner_with(
+            hud_disabled,
+            view_mode,
+            pad_held,
+            player_pos,
+            timer_delta,
+            projected_y,
+            scratch & HUD_SCRATCH_SUPPRESS_BIT != 0,
+        );
+        let took_entry_arm = rearm_arm && matches!(decision, HudDecision::Rearmed { .. });
+        if resident && !took_entry_arm {
+            self.short_idle = false;
+        }
+        decision
+    }
+
+    /// `_DAT_8007B5F4` as the last tick left it.
+    pub fn short_idle(&self) -> bool {
+        self.short_idle
+    }
+
+    fn tick_inner(
+        &mut self,
+        hud_disabled: bool,
+        view_mode: i32,
+        pad_held: u16,
+        player_pos: Option<(i16, i16)>,
+        timer_delta: i16,
+        projected_y: Option<i16>,
+    ) -> HudDecision {
+        self.tick_inner_with(
+            hud_disabled,
+            view_mode,
+            pad_held,
+            player_pos,
+            timer_delta,
+            projected_y,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_inner_with(
+        &mut self,
+        hud_disabled: bool,
+        view_mode: i32,
+        pad_held: u16,
+        player_pos: Option<(i16, i16)>,
+        timer_delta: i16,
+        projected_y: Option<i16>,
+        scratch_suppress: bool,
+    ) -> HudDecision {
         let rearm = self.cached.is_none();
         let stationary = match (self.cached, player_pos) {
             (Some(a), Some(b)) => a == b,
@@ -115,9 +237,9 @@ impl FieldPartyHud {
             hud_disabled,
             view_mode,
             pad: u32::from(pad_held),
-            scratch_suppress: false,
+            scratch_suppress,
             rearm,
-            short_idle: false,
+            short_idle: self.short_idle,
             timer: self.timer,
             timer_delta,
             player_stationary: stationary,

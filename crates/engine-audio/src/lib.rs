@@ -427,7 +427,24 @@ pub struct StreamResampler {
     step: f64,
 }
 
+/// The CD input at its full register `0x7FFE` (Q15) as the mixer's Q1.14 gain:
+/// what libsnd's `SsSetSerialVol(0, 0x3FFF, 0x3FFF)` leaves it at
+/// (`FUN_8002614C`, `0x80026168..0x80026174`).
+pub const CD_VOLUME_FULL_GAIN: u16 = 0x3FFF;
+
 impl StreamResampler {
+    /// Raise the CD input to full under the sounding CD-XA stream: the side
+    /// effect of the audio-level apply `FUN_8002614C`, which re-sets the serial
+    /// volume to `0x3FFF` on every level change. A one-shot cue starts at its
+    /// own level (`FUN_8003EE7C(0x75)`), so a level that moves under a clip
+    /// lifts the rest of it to full: Orb's and Swordie's voices under the
+    /// summon duck play `0.74` dB over the cue gain in retail's recordings.
+    pub fn raise_cd_volume_to_full(&mut self) {
+        if let Some(x) = self.xa.as_mut() {
+            x.gain = CD_VOLUME_FULL_GAIN;
+        }
+    }
+
     fn new(device_rate: u32) -> Self {
         let step = SPU_INTERNAL_RATE as f64 / device_rate as f64;
         // Match retail: the SPU runs Studio C reverb globally with most voices
@@ -1039,6 +1056,27 @@ mod tests {
         let (l, r) = xa.tick_for_spu();
         assert_eq!(l, 100);
         assert_eq!(r, 200);
+    }
+
+    #[test]
+    fn a_level_change_lifts_the_sounding_clip_to_full_cd_volume() {
+        let mut m = OfflineMixer::new(SPU_INTERNAL_RATE);
+        m.play_xa_shout(
+            vec![1000; 4000],
+            37_800,
+            legaia_xa::Channels::Mono,
+            0x3AF5,
+            0,
+        );
+        m.state.raise_cd_volume_to_full();
+        assert_eq!(
+            m.state.xa.as_ref().map(|x| x.gain),
+            Some(CD_VOLUME_FULL_GAIN)
+        );
+        // Nothing sounding: the next clip starts at its own level.
+        let mut idle = OfflineMixer::new(SPU_INTERNAL_RATE);
+        idle.state.raise_cd_volume_to_full();
+        assert!(idle.state.xa.is_none());
     }
 
     #[test]

@@ -47,6 +47,8 @@ impl World {
                 | 956
                 | 942
                 | 951
+                | 953
+                | 955
                 | 964
                 | 905
                 | 906
@@ -114,7 +116,7 @@ impl World {
         // which already holds the records the stager would seat.
         if matches!(
             entry,
-            938 | 940 | 941 | 942 | 944 | 945 | 951 | 959 | 960 | 962
+            938 | 940 | 941 | 942 | 944 | 945 | 951 | 953 | 955 | 959 | 960 | 962
         ) && self
             .casting
             .capture_spell
@@ -226,7 +228,7 @@ impl World {
                     self.casting.module_cam.death_game.table,
                     self.casting.module_cam.death_game.cards,
                 ),
-                935 | 941 | 942 | 943 | 945 | 951 | 956 | 964 => {
+                935 | 941 | 942 | 943 | 945 | 951 | 953 | 955 | 956 | 964 => {
                     let roll = self.battle.monster_ai_state.counter() as u8;
                     enemy_cast_stager_spawns(entry, arm, caller, roll, &mut || self.next_rand())
                 }

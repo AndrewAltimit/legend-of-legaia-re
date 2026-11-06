@@ -121,7 +121,10 @@ pub struct Palette {
     pub ink: Rgb,
     /// Secondary text.
     pub ink_dim: Rgb,
-    /// Hints and disabled text.
+    /// Hints and disabled text: still text a player reads (the key
+    /// reminder, a drop hint, a folder line), so it holds the WCAG AA 4.5:1
+    /// on every surface text sits on, and stays visibly dimmer than
+    /// [`Self::ink_dim`].
     pub ink_faint: Rgb,
     /// The title gold: headings, links, the selection outline.
     pub accent: Rgb,
@@ -162,7 +165,7 @@ pub const DARK: Palette = Palette {
     outline: Rgb(110, 118, 150),
     ink: Rgb(237, 237, 245),
     ink_dim: Rgb(153, 163, 189),
-    ink_faint: Rgb(107, 115, 138),
+    ink_faint: Rgb(128, 136, 160),
     accent: Rgb(255, 209, 92),
     accent_fill: Rgb(224, 179, 66),
     accent_fill_focus: Rgb(255, 214, 102),
@@ -192,8 +195,8 @@ pub const LIGHT: Palette = Palette {
     outline: Rgb(128, 132, 148),
     ink: Rgb(24, 26, 36),
     ink_dim: Rgb(80, 86, 104),
-    ink_faint: Rgb(120, 126, 142),
-    accent: Rgb(150, 100, 12),
+    ink_faint: Rgb(100, 106, 122),
+    accent: Rgb(140, 93, 10),
     accent_fill: Rgb(224, 179, 66),
     accent_fill_focus: Rgb(240, 196, 84),
     on_accent: Rgb(26, 20, 10),
@@ -248,7 +251,8 @@ mod tests {
 
     /// Every role an egui or canvas surface draws text or a fill under.
     fn check(p: &Palette, name: &str) {
-        let body = [p.ground, p.band, p.card];
+        // The striped grid's alternate row carries the same text as a card.
+        let body = [p.ground, p.band, p.card, p.stripe];
         for s in body {
             assert!(p.ink.contrast(s) >= 7.0, "{name}: ink on {s:?}");
             assert!(p.ink_dim.contrast(s) >= 4.5, "{name}: ink_dim on {s:?}");
@@ -258,9 +262,19 @@ mod tests {
             assert!(p.error.contrast(s) >= 4.5, "{name}: error on {s:?}");
             assert!(p.outline.contrast(s) >= 3.0, "{name}: outline on {s:?}");
             assert!(p.info.contrast(s) >= 4.5, "{name}: info on {s:?}");
-            assert!(p.ink_faint.contrast(s) >= 3.0, "{name}: ink_faint on {s:?}");
+            assert!(p.ink_faint.contrast(s) >= 4.5, "{name}: ink_faint on {s:?}");
+            // A hint still reads as a hint: a step below the secondary ink.
+            assert!(
+                p.ink_dim.contrast(s) >= p.ink_faint.contrast(s) * 1.2,
+                "{name}: ink_faint too close to ink_dim on {s:?}"
+            );
         }
         assert!(p.ink.contrast(p.raised) >= 7.0, "{name}: button text");
+        // A link or heading on a button or a striped row.
+        assert!(
+            p.accent.contrast(p.raised) >= 4.5,
+            "{name}: accent on a button"
+        );
         assert!(
             p.ink.contrast(p.hover) >= 4.5,
             "{name}: hovered button text"

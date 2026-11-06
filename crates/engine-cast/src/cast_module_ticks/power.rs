@@ -226,7 +226,8 @@ pub const CAPTURE_SITE_POWERS: &[(u32, &[u8], u16, u32)] = &[
     (937, &[], 0x26A, 0x801F_76AC),
     (939, &[], 0x60, 0x801F_70E0),
     (942, &[0xAA], 0x280, 0x801F_774C),
-    (946, &[], 0x120, 0x801F_73DC),
+    // Big Wave only: Call Wave never reaches arm 7 ([`call_wave_folds`]).
+    (946, &[BIG_WAVE_ACTION], 0x120, 0x801F_73DC),
     (947, &[], 0xEA, 0x801F_7414),
     (948, &[], 0x78, 0x801F_6FB0),
     (949, &[], 0xC0, 0x801F_7318),

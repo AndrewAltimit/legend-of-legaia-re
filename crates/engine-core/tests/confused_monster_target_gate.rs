@@ -78,7 +78,11 @@ fn battle_world(seed: u32) -> World {
 /// own slot takes retail's `clear_category_self` path (`sb zero, 0x1DE`,
 /// target = self). Filtering on `category == 3` therefore drops exactly the
 /// outcome that proves the arm ran, and reads as "the monster never acted".
-fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
+///
+/// `while_confused` holds Confuse on the slot every frame, as retail's
+/// per-frame delegation `ori 0x380` (`FUN_8004CE2C`) holds its group: a hit's
+/// `0x0F80` strip would otherwise wake the monster before its turn.
+fn armed_actions(w: &mut World, slot: u8, frames: usize, while_confused: bool) -> Vec<(u8, u8)> {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
     let mut seen: Vec<(u8, u8)> = Vec::new();
     for frame in 0..frames {
@@ -97,6 +101,9 @@ fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
         } else {
             0
         });
+        if while_confused && !w.battle.status_effects.has(slot, StatusKind::Confuse) {
+            w.battle.status_effects.apply(slot, StatusKind::Confuse);
+        }
         w.tick();
         if w.mode != SceneMode::Battle {
             break;
@@ -148,7 +155,7 @@ fn an_unconfused_monster_only_ever_arms_a_party_target() {
     let mut armed = 0usize;
     for seed in SEEDS {
         let mut w = battle_world(seed);
-        let actions = armed_actions(&mut w, PARTY, 600);
+        let actions = armed_actions(&mut w, PARTY, 600, false);
         assert!(
             !actions.is_empty(),
             "seed {seed:#x}: monster slot {PARTY} never armed an action"
@@ -188,7 +195,7 @@ fn a_confused_monster_swings_at_its_own_band() {
              is vacuous"
         );
 
-        let actions = armed_actions(&mut w, PARTY, 600);
+        let actions = armed_actions(&mut w, PARTY, 600, true);
         assert!(
             !actions.is_empty(),
             "seed {seed:#x}: the confused monster never armed an action"
@@ -358,7 +365,7 @@ fn a_confused_party_member_passes_its_turn() {
         );
 
         for slot in 0..PARTY {
-            let actions = armed_actions(&mut w, slot, 600);
+            let actions = armed_actions(&mut w, slot, 600, false);
             for (cat, t) in &actions {
                 // A member whose confusion wore off may commit again; while
                 // confused its turn arms no category of its own.

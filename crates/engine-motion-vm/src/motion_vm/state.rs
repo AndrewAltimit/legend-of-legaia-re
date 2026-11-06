@@ -80,8 +80,7 @@ pub struct MotionState {
     pub pc: u16,
     /// The facing-LUT index the in-flight `0x47` leg last wrote (`None`
     /// before the leg's first moving frame; cleared when the leg completes).
-    /// The walk snap writes `yaw` only when this changes - once per leg for
-    /// a straight leg, plus once at the dominant-axis → diagonal cut.
+    /// The walk snap writes `yaw` on every frame the leg runs.
     pub walk_facing: Option<u8>,
     /// The `0x47` leg's **approach mode**, the walk op's mode byte `>> 4`
     /// (`srl a1,a1,0x4` at `0x80037BEC`). `0` is the default law - the
@@ -92,6 +91,11 @@ pub struct MotionState {
     /// X first, `2` closes Z first. Cutscene walks carry it in their mode byte
     /// (`C7 <id> <tx> <tz> 33`).
     pub approach: u8,
+    /// How many steps the `0x47` arm takes this frame: retail's frame step
+    /// `_DAT_1F800393`, which the arm spends as that many iterations of
+    /// [`Self::speed`] each, re-reading the deltas every time. `0` reads as
+    /// one.
+    pub walk_iterations: u16,
     /// `true` when the step that just ran wrote `yaw` (a walk-snap write, a
     /// rotate-ramp tick, or a terminal snap). Engines that mirror the VM yaw
     /// into a render-heading store gate the copy on this, so a heading some

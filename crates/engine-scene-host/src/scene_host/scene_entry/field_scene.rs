@@ -185,11 +185,10 @@ impl SceneHost {
         // Likewise the kind-0 warp and the clip base: a warp does not carry
         // across a scene change, and the base starts at idle.
         self.world.reset_field_warp_and_clip();
-        if let Some(slot) = self.world.player_actor_slot
-            && let Some(actor) = self.world.actors.get_mut(slot as usize)
-        {
-            actor.move_state.flags &= !0x0008_0000;
-        }
+        // ...and the MAN installer's tail (`FUN_8003ADAC`) leaves the
+        // post-load pad hold (`_DAT_8007B6B4 = 0x28`) with the player's
+        // engaged bit cleared, and spawns the fade the scene comes up out of.
+        self.world.seat_map_install_tail();
         // Reset the persistent op-0x45 camera-param set so a new scene's
         // cutscene shots start clean (the params now MERGE per-slot across beats
         // in `camera_configure`, so a stale set would leak the prior scene's

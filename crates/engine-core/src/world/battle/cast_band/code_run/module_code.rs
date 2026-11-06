@@ -19,6 +19,7 @@ impl World {
         use legaia_engine_cast::seru_magic_ticks as ticks_a;
 
         let entry = self.cast_module_for(spell_id)?;
+        self.step_module_drive(arm);
         self.raise_cast_voice_on_arm(arm);
         self.fold_glare_on_its_arm(entry, spell_id, arm);
         // PROT 0954's body is ported whole - camera, records, wheel and
@@ -194,6 +195,7 @@ impl World {
             self.battle.camera_frame_height = d;
             self.battle_ctx.camera_frame_height = d;
         }
+        let drive_holds = self.module_drive_holds(ctx.phase);
         let direction = if has_trampoline {
             None
         } else {
@@ -226,9 +228,12 @@ impl World {
                 // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
                 // word runs. An arm that would pass makes none of its exit's
                 // stores, and keeps its drain and its drift.
-                let polling = st.sideband_busy
+                // The drive's wait holds the same way: the seek arm until the
+                // drive takes the seek, the poll arm until the seek is done.
+                let polling = (st.sideband_busy
                     && legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry)
-                        == Some(ctx.phase);
+                        == Some(ctx.phase))
+                    || drive_holds;
                 let d = if polling {
                     let mut ahead = st;
                     let d = direct(&mut ahead, ctx.phase, seats);
@@ -250,6 +255,9 @@ impl World {
                 d
             })
         };
+        if direction.as_ref().is_some_and(|d| !d.hold) {
+            self.raise_cast_voice_on_pass(ctx.phase);
+        }
         // PROT 0903's settle arm halves the victim's animation rate on every
         // pass, held or not: the store (`lbu v0,0x69(a0)` / `srl v0,v0,0x1` /
         // `sb v0,0x21d(s2)` at `0x801F76C8..0x801F76D8`) sits past the
@@ -412,6 +420,7 @@ impl World {
                     .copied(),
             );
             self.casting.module_scatter = arm.scatter;
+            self.casting.module_trail = arm.trail;
             self.casting.module_rock_burst = arm.rock_burst;
             self.casting.module_spray = arm.spray;
             self.casting.module_ring = arm.ring;
@@ -1817,6 +1826,7 @@ impl World {
                     let a = &self.actors[usize::from(slot)];
                     if (!arm.party_live_only || a.battle.hp > 0)
                         && !(arm.party_skip_stoned && self.battle.actor_is_petrified(slot))
+                        && !(arm.party_skip_victim && slot == victim_slot)
                     {
                         self.apply_capture_seat_writes(slot, arm.party_write);
                     }

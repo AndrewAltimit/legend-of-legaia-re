@@ -163,6 +163,12 @@ impl ApplicationHandler for StrPlayerApp {
         self.win.open(event_loop, "legaia-engine play-str");
     }
 
+    /// Re-arm the frame loop whenever the event loop goes idle, as the play
+    /// window does: one dropped redraw would otherwise freeze the movie.
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.win.request_redraw();
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),

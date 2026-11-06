@@ -513,6 +513,22 @@ pub fn engine_frame_with(
     for (k, v) in env {
         cmd.env(k, v);
     }
+    // Diagnostic: `LEGAIA_RC_ENV_OVERRIDE="K=V;K=V"` replaces (or, with an
+    // empty value, removes) seat variables over the computed seat, to test
+    // which one moves a frame without editing the seat code.
+    if let Ok(over) = std::env::var("LEGAIA_RC_ENV_OVERRIDE") {
+        for kv in over.split(';').filter(|s| !s.is_empty()) {
+            match kv.split_once('=') {
+                Some((k, "")) => {
+                    cmd.env_remove(k);
+                }
+                Some((k, v)) => {
+                    cmd.env(k, v);
+                }
+                None => {}
+            }
+        }
+    }
     // The comparison is against retail, so the child runs `--retail`: every
     // presentation enhancement the window defaults on stays off (the
     // volumetric ground fog, enhanced lighting, the camera-occlusion fade,
@@ -553,6 +569,9 @@ pub fn engine_frame_with(
                     .flat_map(|f| ["--set-flag".to_string(), f.to_string()]),
             );
         }
+    }
+    if std::env::var_os("LEGAIA_RC_CHILD_CMD").is_some() {
+        eprintln!("[rc-cmd] {cmd:?}");
     }
     let retake = shot.with_extension("retake");
     let _ = std::fs::remove_file(&retake);

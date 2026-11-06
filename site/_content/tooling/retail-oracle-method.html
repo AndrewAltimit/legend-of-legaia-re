@@ -63,7 +63,7 @@
   <ul class="bullets">
     <li><strong>State channels</strong> compare values read from memory: scene, mode, position, camera, music track, flags, combatants. Cheap, headless, precise; a failing one names the subsystem. Each needs its source address documented with evidence (<a href="retail-compare.html#observables">retail observables</a>).</li>
     <li><strong>The image channel</strong> compares the displayed frame, cropped from video memory by the original's own display registers, with the engine's. Render the engine's side the way the console did, at native resolution (<a href="../subsystems/renderer-port.html#psx">PSX-mode rasterisation</a>, <a href="retail-compare.html#image">the image channel</a>), and score with a block metric that tolerates dithering rather than a mean pixel error.</li>
-    <li><strong>Time-axis oracles</strong> judge what one frame cannot: record both sides from one state and pair frames on the game's own state-machine clock, not wall time (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">cast-sequence oracle</a>).</li>
+    <li><strong>Time-axis oracles</strong> judge what one frame cannot: record both sides from one state and pair frames on the game's own state-machine clock, not wall time (<a href="cast-sequence-oracle.html">cast-sequence oracle</a>).</li>
   </ul>
   <p>Read the worst states first. For each, decide whether the divergence is the instrument's (a seeding gap) or the engine's, and catalogue the shapes that recur (<a href="retail-compare.html#divergence">divergence shapes</a>).</p>
 </section>
@@ -91,7 +91,7 @@
   <ul class="bullets">
     <li><strong>Code</strong>: per executable image, the bytes covered by analysed functions, uncovered runs largest first (<a href="disc-coverage.html">disc coverage</a>).</li>
     <li><strong>Data</strong>: per archive entry, the bytes some parser consumes and the shape of the rest (<a href="byte-accounting.html">byte accounting</a>).</li>
-    <li><strong>Captures</strong>: per scene, enemy, spell and formation the data defines, whether a corpus state shows it (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/capture-coverage.md" target="_blank" rel="noopener">capture coverage</a>).</li>
+    <li><strong>Captures</strong>: per scene, enemy, spell and formation the data defines, whether a corpus state shows it (<a href="capture-coverage.html">capture coverage</a>).</li>
   </ul>
   <p>Negative results take the same discipline: a search over raw bytes, in every encoding an address can take, is what turns "no caller found" into "no reference exists".</p>
 </section>
@@ -121,7 +121,7 @@
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-oracle-method.md" target="_blank" rel="noopener">This page's source</a>
     <a href="retail-compare.html">Retail comparison corpus</a>
     <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">Cast-sequence oracle</a>
+    <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">Ratchet integrity</a>
   </div>
 </section>

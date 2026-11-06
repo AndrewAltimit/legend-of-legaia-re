@@ -44,21 +44,33 @@ impl World {
     /// without touching the counter:
     ///
     /// 1. `*(_DAT_8007C364 + 0x10) & 0x80000` - the **player actor's engaged
-    ///    bit**, the one `FUN_801D5B5C` sets on a touch/talk and the one that
-    ///    also suppresses locomotion input at the head of `FUN_801D01B0`. The
-    ///    engine's analogue is an open modal dialog.
-    /// 2. `_DAT_8007B6B4 != 0` - a **dialogue-pacing countdown**: the typing
-    ///    driver `FUN_801D1344` drains it by the frame step and clamps it at
-    ///    zero (`0x801D161C..0x801D1630`), so a non-zero value means a text
-    ///    beat is still running. Folded into the same modal-dialog test.
-    /// 3. `_DAT_8007B6B0 > 0` - the **kind-0 warp timer** of the walk-on
-    ///    dispatcher `FUN_801D1EC4`, which counts the `0x26` frames between a
-    ///    door-tile crossing and the landing
+    ///    bit** (`0x801D2EE0..0x801D2EEC`), the one `FUN_801D5B5C` sets on a
+    ///    touch/talk and the script runner `FUN_80039B7C` raises on every frame
+    ///    it steps a context. The engine reads it as
+    ///    [`crate::world::World::dialogue_owns_input`] and the bit itself on
+    ///    the player's `move_state`. The wider
+    ///    [`crate::world::World::script_context_engages_player`] is not a term:
+    ///    it counts every stepped helper record, and with it the `chitei2`
+    ///    countdown never ran out on the full-game ladder - whether retail's
+    ///    bit stands under those helpers is not captured.
+    /// 2. `_DAT_8007B6B4 != 0` (`0x801D2EF4..0x801D2F00`) - the pad hold a map
+    ///    install (`0x28`), a kind-0 warp's landing (`0x28`) and a
+    ///    conversation's release (`0x10`) leave, which the player tick drains
+    ///    by the frame step (`0x801D161C..0x801D1630`).
+    /// 3. `_DAT_8007B6B0 > 0` (`0x801D2F08..0x801D2F14`) - the **kind-0 warp
+    ///    timer** of the walk-on dispatcher `FUN_801D1EC4`, which counts the
+    ///    `0x26` frames between a door-tile crossing and the landing
     ///    ([`crate::world::World::field_warp_in_flight`]). The mode test
     ///    covers the frames where the field is not what is being driven at
     ///    all (a menu, a battle, a minigame).
     fn escape_timer_busy(&self) -> bool {
+        let player_bit = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0);
         self.dialogue_owns_input()
+            || player_bit
+            || self.locomotion.warp.hold != 0
             || self.field_warp_in_flight()
             || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
     }

@@ -276,7 +276,13 @@ fn fan_fading_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
 pub(super) fn displayed_morph_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let per_vsync = if off == 0x78 { h(0x90) >> 3 } else { h(0xB8) };
-    (h(u32::from(off)) - per_vsync * lag).clamp(0, 0x1000) as u16
+    // A level whose program switched its rate inside the lag ran the old
+    // rate before it ([`part_rate_history`]).
+    let delta = (off == 0x78)
+        .then(|| part_rate_history::rewound_delta(ram, node, 0x90, lag))
+        .flatten()
+        .unwrap_or(per_vsync * lag);
+    (h(u32::from(off)) - delta).clamp(0, 0x1000) as u16
 }
 
 /// Whether part `node` is a melee ray burst under its envelope gate (`+0x10`
@@ -616,7 +622,15 @@ pub(crate) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32)
         0x54 => -8,
         _ => 0,
     };
-    let then = now - per_vsync * lag;
+    // A rate the program switched inside the lag ran its old value before
+    // the switch ([`part_rate_history`]).
+    let history = match off {
+        0xC8 if mode == 2 || mode == 6 => Some(0xCA),
+        0xB4 | 0xB6 | 0xB8 | 0xBA if mode == 2 || mode == 6 => Some(off + 0x0C),
+        _ => None,
+    }
+    .and_then(|rate| part_rate_history::rewound_delta(ram, node, rate, lag));
+    let then = now - history.unwrap_or(per_vsync * lag);
     // The length channel `+0xC8` grows from zero off op `0x1C`'s rate: one
     // that rewinds past zero was (re)started inside the lag and stood at
     // zero on screen. Call Wave's spent volley reads `0` at rate `96`; taken
@@ -799,16 +813,16 @@ impl RetailBattle {
                 game_anchors::u16_at(ram, ctx + 0x6DA),
                 DISPLAY_LAG_PASSES,
             );
-            let passes = if done_arm_pass(ram, ctx, action_state) {
-                passes.min(1)
-            } else {
-                passes
-            };
+            let done_arm = done_arm_pass(ram, ctx, action_state);
+            let passes = if done_arm { passes.min(1) } else { passes };
             // Each pass on its own step where the older ordering table's
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.
-            let steps = display_pass_steps(ram);
-            let confirmed = steps != [frame_step(ram); 2];
+            let older = magic_band_older_steps(ram);
+            let steps = older.unwrap_or_else(|| display_pass_steps(ram));
+            // The older reading keeps the largest increment's own divisor (the
+            // cast-effect shot's is not case 6's `0xC`).
+            let confirmed = older.is_none() && steps != [frame_step(ram); 2];
             let steps: Vec<u8> = (0..usize::from(passes))
                 .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                 .collect();
@@ -874,6 +888,14 @@ impl RetailBattle {
                 }
             };
             let mut shown = walk(&steps);
+            // The Done arm's own pass: the pass before it was the strike
+            // band's exit, which walked case 7's stale increments.
+            if done_arm
+                && steps.len() == 1
+                && let Some(p) = done_arm_strike_walk_back(ram, ctx, shown, display_pass_steps(ram))
+            {
+                shown = p;
+            }
             // A turning shot re-aims the live yaw a fixed `step * n` on every
             // pass and lands it inside that pass, so the RAM's yaw reads on
             // its endpoint and the passes back stood those steps behind it
@@ -1100,7 +1122,10 @@ impl RetailBattle {
                 {
                     seats.push(seat);
                 }
-                for seat in landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)) {
+                for seat in attack_arm_glide_seats(ram, ctx)
+                    .into_iter()
+                    .chain(landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)))
+                {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);
                     }

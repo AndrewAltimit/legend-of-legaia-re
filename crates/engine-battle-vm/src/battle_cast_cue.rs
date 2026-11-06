@@ -257,12 +257,24 @@ pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
 }
 
 /// [`module_head_cue`] for one body of a multi-spell module: each body is a
-/// whole choreography with its own call (PROT 0946's `0xB9` plays `0x150` where
-/// its Call Wave plays `0x151`), so the scan stays inside the framed function at
-/// `body_va`.
+/// whole choreography with its own call, so the scan stays inside the framed
+/// function at `body_va`. A single body that forks inside its arm (PROT 0946's
+/// Call Wave `0x150` against Big Wave `0x151`) is [`forked_head_cue`]'s.
 pub fn body_head_cue(image: &[u8], body_va: u32) -> Option<ModuleHeadCue> {
     head_cue_site(image, Some(body_va)).map(|(cue, _)| cue)
 }
+
+/// PROT 0953 Terio Punch's head cue off the caster's latch
+/// `0x801C8FE0 + (seat + 1) * 4` as arm 0 reads it, before the arm writes it
+/// (`0x801F6AFC..0x801F6B04`). Clear takes the charge, whose call is `0x159`
+/// (`0x801F6E5C`); set, the punch, `0x15A` (`0x801F6CE0`), the call a scan reads
+/// first. `None` for any other module.
+pub fn latch_forked_head_cue(entry: u32, latch: i32) -> Option<u16> {
+    (entry == 953).then_some(if latch == 0 { 0x159 } else { 0x15A })
+}
+
+/// Big Wave's action id, the one PROT 0946 runs on its latch-set branch.
+const BIG_WAVE: u8 = 0x56;
 
 /// A head cue that forks on who is casting or what is queued, ahead of the call:
 /// a scan reads only the `li a0` nearest the call. `acting` is the acting seat's
@@ -272,6 +284,12 @@ pub fn body_head_cue(image: &[u8], body_va: u32) -> Option<ModuleHeadCue> {
 /// band holds (`World::guilty_cross_line`).
 ///
 /// - PROT 0940 Glare, `0x801F6ACC..0x801F6AEC`: Zora's line against everyone's.
+/// - PROT 0946, `0x801F6AD8..0x801F6B00`: arm 0 forks on the caster's latch
+///   `0x801C8FE0 + (seat + 1) * 4`. Clear, it is Call Wave's branch, which sets
+///   the latch and calls `0x150` (`0x801F6CF4`); set, Big Wave's, which clears it
+///   and calls `0x151` (`0x801F6C2C`), the call a scan reads first. The port keys
+///   the branch on the action, as the module's camera does (`capture`: the
+///   `zeto_call_wave_mid_cast` recording plays `XA11` channel `0`, `0x150`).
 /// - PROT 0947, `0x801F6AD8..0x801F6AEC`: Neo Windhash against V Windhash.
 /// - PROT 0955 Terror Scream, `0x801F7758..0x801F77B8`: three monster-id bands.
 /// - PROT 0961 and 0962, `0x801F6AC0..0x801F6AD4` and `0x801F6A7C..0x801F6A90`.
@@ -280,6 +298,7 @@ pub fn body_head_cue(image: &[u8], body_va: u32) -> Option<ModuleHeadCue> {
 pub fn forked_head_cue(entry: u32, action: u8, acting: u16, head: u16) -> Option<Option<u16>> {
     let line = match (entry, action) {
         (940, 0x3C) => Some(if acting == 0xA9 { 0x1B7 } else { 0x192 }),
+        (946, _) => Some(if action == BIG_WAVE { 0x151 } else { 0x150 }),
         (947, _) => Some(if action == 0xA7 { 0x19E } else { 0x19B }),
         (955, 0x70) => match acting {
             0x7D..=0x7F => Some(0x190),
@@ -321,6 +340,128 @@ pub fn body_head_cue_arm(image: &[u8], body_va: u32) -> Option<u8> {
 
 fn head_cue_arm(image: &[u8], body_va: Option<u32>) -> Option<u8> {
     let (_, site) = head_cue_site(image, body_va)?;
+    site_arm(image, site)
+}
+
+/// `CdSync(1)`, the non-blocking poll of the drive's last command.
+const JAL_DRIVE_POLL: u32 = jal_word(0x8003_F2B8);
+
+/// The drive wait ahead of a summon module's voice: the arm that seeks the
+/// drive to its clip file (`FUN_8003EAE4(0, slot)`), the arm that polls the seek
+/// (`FUN_8003F2B8(1)`) and returns busy until it is done, and the seek table
+/// index it parks on. Orb's PROT 0911 seeks `0xC` on arm 1 (`0x801F6B98`) and
+/// polls on arm 2 (`0x801F6BB8`), where the head cue follows the poll. `None`
+/// when the image's content has no literal seek, or no poll in the seek's own
+/// function after it.
+///
+/// REF: FUN_8003EAE4, FUN_8003F2B8
+pub fn module_drive_arms(image: &[u8]) -> Option<ModuleDriveArms> {
+    let end = match legaia_overlay_images::slot_b_module::content_end(
+        image,
+        legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE,
+    ) {
+        0 => image.len(),
+        n => n.min(image.len()),
+    };
+    let words: Vec<u32> = image[..end & !3]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let (seek_site, slot) = words.iter().enumerate().find_map(|(site, &w)| {
+        (w == JAL_DRIVE_SEEK)
+            .then(|| match resolve_arg(&words, site, 5) {
+                ArgSource::Literal(slot) => Some((site, slot)),
+                _ => None,
+            })
+            .flatten()
+    })?;
+    let func = legaia_overlay_images::slot_b_module::framed_functions(image)
+        .into_iter()
+        .find(|f| f.start / 4 <= seek_site && seek_site < f.end / 4)?;
+    let poll_site = (seek_site + 1..(func.end / 4).min(words.len())).find(|&site| {
+        words[site] == JAL_DRIVE_POLL
+            && matches!(resolve_arg(&words, site, 4), ArgSource::Literal(1))
+    })?;
+    Some(ModuleDriveArms {
+        seek_arm: site_arm(image, seek_site)?,
+        poll_arm: site_arm(image, poll_site)?,
+        slot: u32::from(slot),
+    })
+}
+
+/// [`module_drive_arms`]'s answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleDriveArms {
+    /// The arm whose pass issues the seek.
+    pub seek_arm: u8,
+    /// The arm that returns busy until the seek completes.
+    pub poll_arm: u8,
+    /// The seek table index the seek parks on (`XA<slot + 1>`).
+    pub slot: u32,
+}
+
+/// The phase arm of `image`'s tick whose body holds word `site`.
+fn site_arm(image: &[u8], site: usize) -> Option<u8> {
+    site_arm_body(image, site).map(|(phase, _)| phase)
+}
+
+/// Whether the head cue's call waits on its arm's own gate as well as on the
+/// drive: a branch to the arm's busy return ahead of the drive poll, as Gilium's
+/// PROT 0923 arm 2 drains its countdown `0x801FA4F8` (`bgtz a1,0x801F8B5C` at
+/// `0x801F6CAC`) before it polls (`0x801F6CB4`) and calls `0x16E`. Such a call
+/// lands on the pass the arm's hold lets through; a call that follows only the
+/// poll (Orb's PROT 0911 arm 2) lands once the drive is idle.
+pub fn head_cue_waits_arm_gate(image: &[u8], body_va: Option<u32>) -> bool {
+    let Some((_, site)) = head_cue_site(image, body_va) else {
+        return false;
+    };
+    let words: Vec<u32> = image
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let target = |at: usize| -> Option<usize> {
+        let w = *words.get(at)?;
+        let op = w >> 26;
+        let branch = matches!(op, 0x04..=0x07) || (op == 0x01 && matches!((w >> 16) & 0x1F, 0 | 1));
+        branch.then(|| (at as i64 + 1 + i64::from(w as u16 as i16)) as usize)
+    };
+    // The poll's busy return: the `bne v0, zero` right after `jal 0x8003F2B8`.
+    let Some(poll) = (site.saturating_sub(16)..site)
+        .rev()
+        .find(|&i| words.get(i) == Some(&JAL_DRIVE_POLL))
+    else {
+        return false;
+    };
+    let Some(busy) = (poll + 1..(poll + 4).min(site)).find_map(target) else {
+        return false;
+    };
+    // Back from the poll to the arm's head: the previous arm's closing jump
+    // (`j` / `jr`) bounds it. The dispatch walk can read an arm-internal skip
+    // (Gilium's `blez v1,0x801F6CB4` past its countdown) as the body's start.
+    let jump = |i: usize| {
+        words
+            .get(i)
+            .is_some_and(|&w| w >> 26 == 0x02 || (w >> 26 == 0 && w & 0x3F == 0x08))
+    };
+    let mut i = poll;
+    while i > poll.saturating_sub(DISPATCH_WALK_LIMIT) && i > 0 {
+        i -= 1;
+        if jump(i) {
+            break;
+        }
+        if target(i) == Some(busy) {
+            return true;
+        }
+    }
+    false
+}
+
+/// [`site_arm`] with the arm body's first word.
+fn site_arm_body(image: &[u8], site: usize) -> Option<(u8, usize)> {
     let func = legaia_overlay_images::slot_b_module::framed_functions(image)
         .into_iter()
         .find(|f| f.start / 4 <= site && site < f.end / 4)?;
@@ -361,7 +502,7 @@ fn head_cue_arm(image: &[u8], body_va: Option<u32>) -> Option<u8> {
             best = Some((body, phase as u8));
         }
     }
-    best.map(|(_, phase)| phase)
+    best.map(|(body, phase)| (phase, body))
 }
 
 /// The clip file the module's head seek parks the drive on: the slot of the
@@ -749,6 +890,11 @@ mod tests {
         assert_eq!(forked_head_cue(955, 0x70, 0x7E, 1), Some(Some(0x190)));
         assert_eq!(forked_head_cue(955, 0x70, 0x50, 1), Some(None));
         assert_eq!(forked_head_cue(947, 0x57, 1, 1), Some(Some(0x19B)));
+        assert_eq!(forked_head_cue(946, 0x55, 1, 1), Some(Some(0x150)));
+        assert_eq!(latch_forked_head_cue(953, 0), Some(0x159));
+        assert_eq!(latch_forked_head_cue(953, 1), Some(0x15A));
+        assert_eq!(latch_forked_head_cue(946, 0), None);
+        assert_eq!(forked_head_cue(946, BIG_WAVE, 1, 1), Some(Some(0x151)));
         assert_eq!(forked_head_cue(940, 0x3C, 0xA9, 1), Some(Some(0x1B7)));
         assert_eq!(forked_head_cue(940, 0x3C, 0x10, 1), Some(Some(0x192)));
     }

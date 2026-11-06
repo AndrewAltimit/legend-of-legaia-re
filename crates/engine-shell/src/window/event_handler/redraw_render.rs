@@ -57,7 +57,12 @@ impl PlayWindowApp {
         } else {
             cam
         };
-        r.set_ssao_camera(Some(ssao_cam));
+        // A minigame venue owns the frame under a camera of its own and marks
+        // no actor draws: no pass there, as on the page
+        // (`legaia_engine_session::ssao_scope`).
+        let ssao_on_frame =
+            legaia_engine_session::ssao_scope::ssao_applies(&self.session.host.world);
+        r.set_ssao_camera(ssao_on_frame.then_some(ssao_cam));
         // The stage model's Y flip hands the camera retail Y-down points,
         // which the contact shadows' key-light aim needs to know.
         r.set_ssao_camera_y_down(battle);

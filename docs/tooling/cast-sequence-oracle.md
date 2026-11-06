@@ -287,6 +287,9 @@ Frames pair on the action-SM clock, never on wall time:
    part or fade spawned by the pass already took that frame's whole step in
    retail and one tick in the engine. The rule stays; read a small camera residual
    on a slow arm against it.
+5. **CD-seek waits.** A summon module's seek and poll arms are paired inside a
+   tolerance window instead of strictly ([CD-seek waits](#cd-seek-waits)).
+   Everywhere else the rule above holds as written.
 
 Each pair is scored with the corpus metric (`within`, the fraction of `8 x 8`
 blocks within `24` per channel; [The image channel](retail-compare.md#the-image-channel)).
@@ -376,6 +379,68 @@ frames past the arm's entry holds retail's rise older than the engine's
 (`64`, eight vsyncs in, at retail's arm-4 entry in one capture), and
 the whole arm-4 segment scores low on the brighter retail frame. The
 `vera_summon_mid_cast` still, gated on the rise's own age, matches it.
+
+## CD-seek waits
+
+A summon module (PROT 0903..0934) seeks the drive to its voice clip on one
+arm and polls the seek on a later one (`module_drive_arms` reads the pair off
+the image): the seek arm's `CdlSetloc` blocks the game loop while the drive
+finishes the battle selector's seek before it, and the poll arm returns busy
+until the module's own seek completes, with the rest of the frame running
+([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)).
+How long either takes is the drive's seek time, and that is not one number:
+it varies across drives, and across emulators. The engine keeps one model
+(`battle_cd_drive`, fitted to mednafen: `0.3` s plus a full-disc traverse a
+second, plus two vsyncs), which holds the seek arm `23..36` frames whole and
+the poll arm up to `29` ticks; the PCSX-Redux films this oracle pairs against
+seek in `1..4` vsyncs. Paired strictly, the difference is scored as engine
+error: on Gimard (`0x81`) the held frames put the rest of arm 2 twenty-three
+ticks out of step (`.033` over the arm), and on Viguro (`0x87`) the content
+that ran on through the poll leaves arm 3 sixteen ticks ahead (`.233`).
+
+The oracle accepts any wait inside a window instead. The engine recorder
+writes the module's two arms and the drive's remaining vsyncs on every tick
+(`drive_seek_arm`, `drive_poll_arm`, `drive_busy`), and the pairing reads:
+
+- **The engine's wait**: the seek-arm ticks its display-frame clock stood
+  still on (the blocking seek) plus the poll-arm ticks the drive was busy.
+  This is the model's prediction, realised.
+- **Retail's wait**: the vsyncs its two arms ran past the engine's own passes
+  there (wall vsyncs), and the same on the game clock, where a blocked frame
+  counts only its step.
+- **The window**: `0` (a seek the drive answers inside the arm's own pass) up
+  to the engine's wait plus `max(8, wait / 2)` vsyncs
+  (`cast_sequence::drive_window_margin`). A retail wait outside it is paired
+  strictly.
+
+Inside the window the wait is absorbed in three places:
+
+1. **The seek arm** pairs on the engine's live ticks: a held frame does not
+   advance the offset, as retail's blocked frame advances its game clock by
+   one step only.
+2. **The wait arms' extra retail frames.** Where retail's drive held longer
+   than the engine's, its frames past the engine's live frames in that arm are
+   counted apart (`drive hold`) and left out of the mean, not scored against
+   the engine's next arm.
+3. **The arms after it.** The poll's difference (engine poll hold less
+   retail's game-clock wait, the report's `live shift`) is how far whatever
+   ran through the wait (a fade or a rise spawned before it) stands ahead in
+   the engine afterwards, while what the next arms spawn runs on their own
+   clock. Each module segment past the wait is paired on whichever of the two
+   clocks its scene pairs score higher on: the arm clock (shift `0`) or the
+   wait-through clock (shift `-live shift`). Nothing between: a free search
+   over the span fits one-tick offsets the wait has nothing to do with.
+
+A poll that waits inside its arm's own longer countdown (Gilium's family,
+`0x91..=0x95`) ends on the countdown on both sides: the measure reads retail's
+wait as the engine's and absorbs nothing. Outside drive waits nothing changes,
+and `--strict-drive` turns the window off. The report states the wait, the
+window, whether it was absorbed, the live shift, the drive-hold count and the
+strict mean, and the segment table gives each segment's shift; the driver
+prints the same line. Measured on the `party_basic_attack_vs_gobu_gobu` and
+harvested-strike Seru films (44 with drive arms), the mean goes from `.792`
+strict to `.808`, Gimard from `.847` to `.897`, Viguro from `.757` to `.786`;
+the five monster casts in the same run, with no drive arms, are unchanged.
 
 ## A monster's physical attack
 
@@ -740,7 +805,7 @@ Freed), each a frame-step-`2` run:
 |---|---|---|---|
 | `0x32` | `FUN_8003DE7C(1)`: with `0x8007B8C2` set, the pending-read word `gp+0x988` and the CD sync `FUN_8003F2B8(1)` (`0x8003DF70..0x8003DFFC`), the read the cast trigger started in `0x29` | `16` vsyncs, ending about `38` after `0x29` begins | one pass |
 | the side-band arm (below) | `ctx[+0x276]`: the applier `FUN_801F12D0` requests and consumes one `0x10800`-byte slot per stage pair, from the `1` state `0x32` stores | `28` to `30` vsyncs a request, `1` or `2` a consume; four slots for Horn and Jedo (the stage drops at `8`), three for Freed (at `6`) | the byte is never raised |
-| a stream-poll arm | `FUN_8003F2B8(1)`, the creature's own read | a few vsyncs | one pass |
+| a stream-poll arm | `FUN_8003F2B8(1)`, the creature's own read | a few vsyncs | one pass, except a summon module's drive poll, which the engine holds ([CD-seek waits](#cd-seek-waits)) |
 
 The read-span words themselves (`xaspan`, `cdbusy`, `cdmode`, `cdread`) hold
 still through the whole band in these casts, so the `0x32` wait is the

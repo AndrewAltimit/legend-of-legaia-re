@@ -59,7 +59,7 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     // Weak text (the start page's drop hint and no-game-data line, the
     // model view's orbit hint) is the palette's hint ink. egui's own is the
     // body grey at 60% alpha: 2.7:1 on the dark panel and 2.8:1 on the
-    // light one, under the 3:1 the palette holds its hints to.
+    // light one, under the WCAG AA 4.5:1 the palette holds its hints to.
     v.weak_text_color = Some(c(p.ink_faint));
 }
 
@@ -98,8 +98,8 @@ mod tests {
     use super::*;
 
     /// Weak text reads on every surface Explorer draws it over, in both
-    /// themes: the palette's hint floor (`legaia_app_theme`'s 3:1), which
-    /// egui's own alpha-faded grey missed.
+    /// themes: WCAG AA (4.5:1), the floor `legaia_app_theme` holds its hint
+    /// ink to, which egui's own alpha-faded grey missed.
     #[test]
     fn weak_text_meets_the_hint_floor_in_both_themes() {
         let ctx = egui::Context::default();
@@ -112,7 +112,7 @@ mod tests {
             for (what, surface) in [("panel", v.panel_fill), ("window", v.window_fill)] {
                 let s = Rgb(surface.r(), surface.g(), surface.b());
                 assert!(
-                    weak.contrast(s) >= 3.0,
+                    weak.contrast(s) >= 4.5,
                     "{theme:?}: weak text on the {what} is {:.2}:1",
                     weak.contrast(s)
                 );

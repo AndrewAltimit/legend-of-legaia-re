@@ -1810,7 +1810,10 @@ seated as a part. A rendezvous phase with no record behind it holds, as
 retail's does.
 
 The director `cast_module_camera::viguro_direct` carries the rest: arm 4 holds
-while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
+while the creature's `+0x38` is at or past `0x200`, read off the seat the stager's
+arm 0 has just stood at `z = 0xC00` (the port's early seat had idled at the caster,
+which read as arrived and cut to the creature shot while retail's still framed the
+vortex: arm 4 `.036` to `.982` frame by frame); arms 5, 7, 9 and 11 drain
 the countdown; arm 12 **climbs** it by a quarter of the frame product until
 it reaches `0x201`; arms 11..14 add to the yaw global every pass.
 
@@ -2938,6 +2941,35 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 
+### PROT 0955 (Kiss of Death)
+
+`kiss_of_death_camera` carries the body's records and tints beside its shots.
+Arm 0 seats two records on the caster seat (`0x801F9440`, `0x801F94E8`,
+`a0 = caster + 0x34`, `a1 = caster + 0x44`, scale `0x1000`,
+`0x801F87A4..0x801F87C8`): the lips the frame fills with through arms 3 and 4,
+over black. The same arm hides every standing seat (`+0x04 = 0`,
+`+0x21C = 0xFF` behind the HP test, `0x801F887C..0x801F88B0`) and shows the
+caster again. Arms 1 and 2 bump a pass counter (`0x801F9D30`, zeroed by arm
+0) ahead of their gate and seat the burst record `0x801F9568` on the caster
+whenever it read odd, keeping each handle in a list (`0x801F9B28`, count
+`0x801F9D2C`); arm 2's passing pass halts every listed record
+(`0x801F8B14..0x801F8B60`). Arm 1's passing pass sets the caster's tint state
+`7`, the soft red (`0x801F8A28..0x801F8A34`).
+
+Without them the body's records went in all at once on the band's first tick
+and drew nothing a retail frame of the cast holds, and the camera cut to an
+unhidden victim. A `--physical` film of `battle_map01_lippian_kiss_of_death_mid_cast`
+read `.449` frame by frame; with them `.815` (arm 4 `1.000`, arm 3 `.880`).
+Grade `disassembly` + `capture`.
+
+The lips sample the side-band page, not the module image: record `0x801F9440`'s
+sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
+the applier fills from `readef.DAT` on the caster's own turn
+([battle_sideband_textures](../formats/summon-readef.md)). In a mixed formation the
+page holds whatever monster acted last, so the port streams each monster's group on
+its turn; with the formation's groups written once in seat order, the Lip King fight
+(`[0x21, 0x44]`) drew a dev placeholder page where the lips belong (`.552` to `.765`).
+
 ### PROT 0952 (Bloody Horns)
 
 `cast_module_camera::bloody_horns_camera` carries arms 2 to 6 of the `0x5C` body
@@ -2989,10 +3021,18 @@ centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle
 `(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
 origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
-arm. The arm's phase store sits behind the fork on the last roll, which the
+arm. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
+stand `+0xC8 >> 3` apart, so its length channel is its width: the record's program
+fades it in and widens it at `+0xCA = 96` for one wait of `248`, then narrows it at
+`-96` while it fades out, and halts (`0x0D -128`, `0x1C 12`, `0x09 31`, `0x1C -12`,
+`0x0D 128`, `0x09 31`, `0x08`). The arm's phase store sits behind the fork on the last roll, which the
 presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
 
 ### PROT 0941 (Stone Circle, `0xB9`)
+
+Stone Circle petrifies no one. The image has no store to `+0x16E` and no call to the
+applier `FUN_800402F4`; its strike calls the bypass wrapper `FUN_801DD4B0` with power
+`0xC0` on each party seat that stands and is not Stoned (`0x801F6F68..0x801F6FAC`).
 
 The charge record's part calls the stager, which seats the column; arm 1 hides the
 party, then cuts up to pitch `0x200` over the origin and seats three records at each of
@@ -3001,6 +3041,13 @@ stores per seat on every held pass, `+0x04 = 0` and `+0x21C = 0xFF`
 (`0x801F6B94`, `0x801F6BA0`), and the cut writes `0x20080200` and `0` back
 (`0x801F6C70`, `0x801F6C7C`). The draw tick reads the colour word, so the byte alone
 hides nothing.
+
+Arm 1's pass halts the part pool (`jal 0x80050E74` at `0x801F6BF0`) ahead of the cut
+and the ring, so the charge and its column are gone once the stones rise, and arm 3's
+pass halts it again (`0x801F71D0`). The port marks both passes `flushes_pool`
+(`stone_circle_camera`). On the cast-sequence film the column had stood beside the
+stones through arm 2 (arm 2 `0.784` to `0.790`, arm 4 `0.906` to `0.915`); what
+stays apart there is which stones are up, each rising off its `rand() % 8` slot.
 
 ### The stagers of the enemy cells
 
@@ -3035,6 +3082,30 @@ twelve-frame shot on every pass, so the framing trails a countdown-driven endpoi
 rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
 pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
 the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
+
+### PROT 0951 (Chaos Flare)
+
+<a id="prot-0951-chaos-flare"></a>
+
+`cast_module_camera::chaos_flare_camera` carries the `0x36` body (`0x801F6A20`, twelve
+arms through the table at `0x801F69D8`); arms 0 and 1 are the walk into reach. Arm 2
+turns the caster on the victim, steps it back an eighth of its heading's sine and cosine,
+cuts on it (pitch `0x70`, TR `(0, 0x800, 0x800)`), stages the charge clip `8` with the
+bump at rate `2`, seats the charge's seven records through `FUN_80050ED4`
+(`0x801F83FC` .. `0x801F8978`) and hides every party seat but the victim. Arm 6 flushes
+the pool and seats the flare's seven (`0x801F8644` .. `0x801F895C`), takes the backdrop
+off and stores stage byte `3`; arm 8 cuts on the victim for the strike; arm 10 flushes
+again and clears the stage byte; arm 11 shows every seat with HP at rate `8`. Arms 3, 5,
+8, 9 and 11 drift the camera every pass, held or not. The records' op `0x20` calls run
+the module's stager (`FUN_801F81DC`).
+
+Without the director the pager seated all of the image's records at once and the camera
+held `0x6F`'s pose: a `--physical` film of `battle_noaru_songi_chaos_flare_mid_cast`
+read `.233` frame by frame, `.703` with it. Its charge clip `8` goes in on arm 2's pass
+(`capture_caster_stage_arms`), not ahead of the module. Not carried: arms 2 and 6's stores into the
+first monster record's node (`+0x85` / `+0x86`), the light words behind `0x800845C8`, and
+arms 9 and 10's hold of the victim's rate on its reaction clip. Grade `disassembly` +
+`capture`.
 
 ### PROT 0954 (Fatal Decision)
 
@@ -3118,6 +3189,36 @@ Its opening frames by the caster's own monster id: Terror Face (`0x7F`) stages c
 `7` on the far framing and a slow pitch drift, `0x28..=0x2A` clip `9` and
 `0x83..=0x85` clip `8` on the near framing and a yaw drift. Arms 1 and 2 each cut
 to a seat and seat the same four ring records on it, the caster and then the victim.
+
+### PROT 0955 (White Shield, Power Charge, Melt Spray)
+
+<a id="prot-0955-white-shield-power-charge-melt-spray"></a>
+
+The cell's three other bodies each place their own records, so none takes the pager's
+whole-image placement (`capture_director_seats_all`). The two that draw something do it
+through the cell's stager `FUN_801F9370`, reached from a record's op `0x20`: arm 0 seats
+`0x801F93EC`, arm 1 `0x801F9744`, each on the caller's `+0x14` / `+0x24` at its `+0x72`.
+
+- **White Shield** (`0x60`, `white_shield_camera`). Arm 0 seats `0x801F93D4` on the
+  caster seat (`0x801F8FB4..0x801F8FC8`), a twenty-byte record whose op `0x20` calls stager
+  arm 0: the shield column the frame holds through arms 1 and 2.
+- **Power Charge** (`0x72`, `power_charge_camera`). Arm 0 frames the caster's display pair
+  (pitch `-0x80`, TR `(0, 0x300, ctx[+0x6D0] / 2)`, `0xC` frames), hides every seat with HP
+  and shows the caster on tint `7` (`0x801F72D4..0x801F732C`), stages clip `0x0A` and
+  seats `0x801F972C`, which calls stager arm 1: the aura. Arm 1 drifts pitch `+2` and TR y
+  and z by the frame product until its gate, then cuts to `(0, 0x300, ctx[+0x6D0])`; arm 2
+  is the buff; `0xFF` shows every seat with HP.
+- **Melt Spray** (`0x6F`, `melt_spray_camera`) makes no spawn call at all. Its arm 2
+  stages the spray clip `7` with the bump, and arm 3 clears the staged byte once that clip
+  plays (`0x801F828C..0x801F82A0`).
+
+Power Charge's `0x0A` and Melt Spray's `7` are staged on the arm that stores them
+(`capture_caster_stage_arms`), and the module runs on while they play; staged ahead of
+the module, the caster played its whole clip before arm 0 ran. Before the stager and the
+directors, all three drew the pager's records - other bodies' rings and lips - at the
+caster's feet, or nothing. Frame by frame against `--physical` films of the `*_mid_cast`
+states: White Shield `.577` to `.797`, Power Charge `.587` to `.898`, Melt Spray `.795` to
+`.827`. Grade `disassembly` + `capture`.
 
 ### PROT 0957 (Death Game)
 
@@ -3481,7 +3582,7 @@ three units). The bodies without that store keep the half turn
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
-| 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown. Arm 0's seat tints (every standing seat `+0x21C = 0xFF`, the caster restored) and arm 1's caster `+0x21C = 7` are not ported |
+| 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown, the records and the tints ([below](#prot-0955-kiss-of-death)) |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
@@ -3509,6 +3610,13 @@ three units). The bodies without that store keep the half turn
   Arm 8's exit waits on every party seat's `+0x1D9` (`0`, a downed one `8`), and
   that wait, not the word, sets the arm's length: a retail recording holds it `238`
   vsyncs on a `160`-vsync word.
+  Call Wave never reaches arm 7, the module's one damage site (`jal 0x801DD4B0` at
+  `0x801F73DC`): arms 1 and 2 step on, and arm 3 ends the module once its countdown
+  drains (`s6` cleared at `0x801F6E84`). The cast is the warning and owes no fold
+  (`cast_module_ticks::call_wave_folds`, and its baked power `0x120` is Big Wave's alone in
+  `CAPTURE_SITE_POWERS`); the port had folded it as a hit on its own
+  target, Zeto himself, whose knockback cues then sounded where retail is silent
+  ([real retail PCM](audio.md#the-cast-channel)).
 - **0953** arm 0 forks on the caster's battle-scoped latch word
   `0x801C8FE0 + (ctx[+0x13] + 1) * 4` (the monster AI's cooldown
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves
@@ -3522,6 +3630,25 @@ three units). The bodies without that store keep the half turn
   (`0x801F6CA0`), and a retail recording's cursor advances one a vsync through arms
   4 to 6, while its `+0x21D` reads `4` at every vsync: what holds the byte at `4` is
   [open](../reference/open-rev-eng-threads.md).
+
+  Each branch seats its own records at the world origin on zero angles: the punch's
+  arm 0 seven (`0x801F7BD0` .. `0x801F7A0C`, `0x801F6B0C..0x801F6BB0`), the charge's
+  four (`0x801F7854`, `0x801F77C8`, `0x801F7838`, `0x801F78CC`). The charge hides every
+  party seat, its arm 1 tints the caster `7` and its arm 2 shows the party again. The
+  punch's arm 6 seats two trail records `0x801F7AF8` a battle frame, held or not, each
+  with three `rand()` draws stored over it (`+0x84 = r % 3 - 1`, `+0xB4 = r % 0x400 +
+  0x80`, `+0x28 = n * 0x600 + r % 0x200` for its running index `n`), and on its pass
+  halts every one and seats the fist `0x801F7D20` `620` units ahead of the caster at
+  height `-0x154`. The records' op `0x20` calls run the stager `FUN_801F7624` (arm 2:
+  three triples turned off the caller's yaw). Before, the pager seated the whole image
+  at once and arm 7 drew a black stage where retail's frame is the burst over a bright
+  wash: frame by frame, the punch (`battle_tunnelc_xain_terio_punch_mid_cast`) `.346`
+  to `.554` (arm 7 `.190` to `.695`), the charge (`..._bull_charge_mid_cast`) `.602` to
+  `.887`. Arm 8's starfield is record `0x801F799C`, a camera-space sprite on the
+  side-band page `(512, 0)`, over a stage the byte `3` keeps dark; the arm's clear
+  (`sb zero,0x278` at `0x801F75E4`) sits behind its countdown and settle gates, so
+  the director stores it rather than the presentation decoder at the arm's entry
+  (arm 8 `.264` to `.898`, the punch `.747`).
 
 - **Capture bodies run no strike setup.** A capture-class cast's arm calls its
   damage wrapper itself, so `FUN_801E09F8`'s effect lists and the move-power
@@ -3795,12 +3922,15 @@ enters the choice.
 The call sits on one arm of the phase byte `ctx[+0x279]`, after the arm that seeks
 (`FUN_8003EAE4`) and the poll of the drive (`FUN_8003F2B8(1)`): arm `3` in PROT 0903..0905,
 `4` in 0906..0908, `2` in most of the rest and `0` in the capture band from 0935
-(`module_head_cue_arm` walks each tick's dispatch). So a cast is heard well after
-it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
+(`module_head_cue_arm` walks each tick's dispatch). The poll holds the arm for as long as the drive
+takes over the seek and the one the battle's seek-ahead selector issued before it, which the port runs
+on a drive model ([the drive holds a summon's voice](audio.md#the-drive-holds-a-summons-voice)). So a cast
+is heard well after it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
 call is outside its tick, and raises at the arming seam.
 
 A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who
-is casting (`forked_head_cue`): Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
+is casting or which branch arm 0 takes (`forked_head_cue`, `latch_forked_head_cue`): Call Wave's `0x150`
+against Big Wave's `0x151`, Terio Punch's charge `0x159` against its punch `0x15A`, Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
 Windhash, PROT 0961 and 0962 on the formation's first monster, Terror Scream on three monster-id bands
 with no line outside them (`0x801F7758..0x801F77B8`), and the Rogue strikes on their element. PROT 0944's
 fork on the victim's HP (`0x801F6B20..0x801F6B38`) is not carried.
@@ -3903,7 +4033,12 @@ The **head** cue of each image: the first dispatcher call inside the image's
 own `content_bytes`, never its inherited tail. Several modules raise further
 cues later (`0955` has six sites, `0962` four, `0941` seven counting the
 funnel); those are per-phase beds. `0925` and `0926` share a cue because
-`0926` is the null-stager sibling of `0925`.
+`0926` is the null-stager sibling of `0925`. Two single-body modules fork their
+arm 0 on the caster's latch ahead of the call, and the scan reads the branch laid
+out first: PROT 0946's is Big Wave's, while Call Wave calls `0x150` (`XA11.XA`
+channel `0`, `0x801F6CF4`), and PROT 0953's is the punch, while the charge calls
+`0x159` (`0x801F6E5C`). The port resolves both branches (`forked_head_cue`,
+`latch_forked_head_cue`).
 
 | PROT | image | site | cue | file | channel | span (vsyncs) |
 |---|---|---|---|---|---|---|

@@ -270,7 +270,9 @@ impl App {
                     ui.label("Stopped");
                 }
             }
-            if ui.button("Stop").clicked() {
+            // Greyed out with nothing playing, as the Audio tab's is.
+            let playing = self.player.now_playing.is_some();
+            if ui.add_enabled(playing, egui::Button::new("Stop")).clicked() {
                 self.player.stop();
             }
         });

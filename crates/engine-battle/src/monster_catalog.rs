@@ -163,6 +163,12 @@ pub struct MonsterDef {
     ///
     /// `0` for synthetic monsters, which is the "not immune" side.
     pub wide_texture_page: u8,
+    /// Record `+0x1C` - the monster's `readef.DAT` group: on every turn of
+    /// this monster the turn pick `FUN_801DABA4` seeds the side-band
+    /// applier's base slot `3 * group` and arms it, and the applier streams
+    /// the group's texture pages to `(512, 0)` / `(640, 0)`. A cast samples
+    /// whatever its caster's own turn streamed. `0` for synthetic monsters.
+    pub readef_group: u8,
     /// Element-badge strip index the battle name plaque wears, or `None`
     /// for a monster that wears no badge.
     ///
@@ -232,6 +238,7 @@ impl MonsterDef {
             swing_class: 0,
             size_class: 0,
             wide_texture_page: 0,
+            readef_group: 0,
             plaque_badge: None,
             raw_stats: [0; 6],
             absorb_seru: 0,
@@ -427,6 +434,7 @@ pub fn monster_def_from_record(
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
     def.wide_texture_page = rec.wide_texture_page;
+    def.readef_group = rec.readef_group;
     // Record `+0x3E` / `+0x3F` - the killing-blow Seru absorb the arts
     // resolver rolls (`FUN_801EC3E4`, `0x801EE250..0x801EE2E8`).
     def.absorb_seru = rec.seru_id;
@@ -688,6 +696,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             swing_class: 0,
             size_class: 0,
             wide_texture_page: 0,
+            readef_group: 0,
             plaque_badge: None,
             // No record behind a synthetic monster: `installed_stats` answers
             // with the fields above whatever the fight class is.

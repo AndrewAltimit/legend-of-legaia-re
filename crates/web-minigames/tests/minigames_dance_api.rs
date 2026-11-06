@@ -328,3 +328,47 @@ fn dance_actor_records_reach_the_page() {
     }
     assert!(spawned, "a scoring judge spawns the banner parts");
 }
+
+/// The marker block (the step-marker tiles and the animated hall props) is cut
+/// by the GPU's span rule under the run's camera, as the hall itself is: the
+/// stage-entrance curtain is a prop, and from behind it spans the whole
+/// frame on the camera track's far poses. The page used to cut only the
+/// hall, and drew the curtain over everything for those frames while the
+/// native window refused it (`host-pair.mjs --scene dance`).
+#[test]
+fn the_marker_block_is_cut_like_the_hall() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let bytes = std::fs::read(&prot).expect("read PROT.DAT");
+    let mut mg = LegaiaMinigames::new();
+    mg.load_disc(bytes).expect("load_disc");
+    let full = mg.dance_marker_indices();
+    assert!(!full.is_empty(), "the hall carries a marker block");
+    assert!(mg.dance_start(false), "a run starts");
+    let triples: std::collections::HashSet<[u32; 3]> =
+        full.as_chunks::<3>().0.iter().copied().collect();
+    let mut kept = std::collections::BTreeSet::new();
+    for _ in 0..1200 {
+        mg.dance_tick(1);
+        mg.dance_marker_step(1);
+        let vis = mg.dance_marker_visible_indices();
+        assert!(vis.len() <= full.len());
+        assert_eq!(vis.len() % 3, 0);
+        // A subset of the block's own triangles, never a new one.
+        assert!(vis.as_chunks::<3>().0.iter().all(|t| triples.contains(t)));
+        kept.insert(vis.len());
+    }
+    // The cut follows the camera track: it refuses triangles, and not one
+    // fixed set of them.
+    assert!(
+        kept.iter().all(|&n| n < full.len()),
+        "{kept:?} of {}",
+        full.len()
+    );
+    assert!(
+        kept.len() > 1,
+        "the kept set never moved with the camera: {kept:?}"
+    );
+}

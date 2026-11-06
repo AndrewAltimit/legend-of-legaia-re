@@ -234,6 +234,9 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // Retail's counter is `0x3ce +/- rng % 0x1e7` decremented per step by the
     // region's rate increment, so a trigger takes hundreds of steps. Drive
     // steps directly rather than walking - the walk is a separate subsystem.
+    // Driving the step kernel skips the frames that drain the scene load's
+    // post-load hold (`FUN_8003ADAC`), which holds the roll (`0x801DA14C`).
+    world.release_post_load_hold();
     let mut triggered = false;
     for _ in 0..20_000 {
         if world.on_field_step() {

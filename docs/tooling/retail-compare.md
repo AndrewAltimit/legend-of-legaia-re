@@ -150,6 +150,19 @@ failed is not stored. The newest three generations are kept.
 the cache, and the subcommand refuses `--cache` beside a baseline flag. Use
 `--fresh` for a re-measure, for instance to see whether a score is a flake.
 
+### Probing the image child's seat
+
+Three variables expose what a battle state hands its `play-window` child.
+`LEGAIA_RC_CHILD_ENV=1` prints the seat variables, `LEGAIA_RC_CHILD_CMD=1` the
+whole command line (enough to re-run the child by hand from its work
+directory), and `LEGAIA_RC_ENV_OVERRIDE="K=V;K=V"` replaces seat variables after
+the seat is computed, an empty value removing one. A sweep of one value under
+`--fresh --filter =<label>` says which seat moves a frame before any seat code
+changes; the Done-arm camera walk back
+([below](#an-ease-out-camera-carries-its-history)) was found by sweeping the
+displayed yaw this way. The override is a probe only: the cache keys on every
+`LEGAIA_*` variable, so an override run never feeds a normal one.
+
 ## Reading the report
 
 `report.md` opens with the channel means over the seeded states and the
@@ -1388,9 +1401,23 @@ below and the plate twenty-three right - thirteen of sixteen - and the frame
 on screen shows ten (`0.763` to `0.893`). `battle_noa_miracle_art_combo`'s
 plaque and bar are the same case (`0.892` to `0.964`). A record both tables
 draw at rest landed before the older table was built and stays landed; the
-one capture this cannot place is one saved on the pass right after the
+one capture the tables cannot place is one saved on the pass right after the
 landing pass, where the displayed frame still shows the last in-flight
 `elapsed` and both tables draw the rest seat.
+
+The yaw counter places that capture for the two widgets the action seed
+raises on the Attack arm's pass (`attack_arm_glide_seats`). The seed stores
+state `0x14` and the counter's `0x200` rung and raises the readout bar for a
+party target on the same pass (`0x801E2F14..0x801E2F44`), the actor plaque
+opening beside it; every later pass adds its step to each `elapsed` and
+drifts the counter by `(step * 4) / 3` (`0x801E29E4..0x801E2A24`). So in the
+approach and strike states (`0x14`, `0x19`, `0x1E`) the counter's distance
+from the rung counts the passes since the raise, walked back over the
+history's steps, and the frame on screen drew both at the elapsed those
+passes less the newest two had built. `battle_nilboa_aluru_v2_strike` reads
+the counter at `0x212` (nine step-`2` passes), bar and plaque retired at
+`14` with both tables at rest, and the screen shows them six and five pixels
+short of their seats (`0.865` to `0.988`).
 
 A Spirit turn's AP bar and AP plate are seated by value as well as by glide
 (`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
@@ -1502,6 +1529,8 @@ A monster strike-clip gate also takes the strike cursor `ctx[+0x15]`: a stream w
 Case 7 arms (`0x801E36E8`) before the pass re-faces the attacker (`sh v0,0x46(s3)` at `0x801E371C`), so retail's endpoint subtracts the previous pass's heading while the capture holds this pass's. Within `8` units the snapped probe's yaw endpoint is taken as retail's (`ground_snap::strike_heading_target`): `battle_map01_gobu_gobu_strike` probes `2944` against retail's `2941` on the captured words.
 
 A magic band shot lags the other way. `0x2B` arms it once, so its table holds that pass's counter where the probe reads the RAM's, which has drifted since: within the same `8` units its yaw endpoint is taken as retail's too (`battle_garmel_songi_hyper_wave_mid_cast`, endpoint `3121`, probe `3124`, three passes in).
+
+Which steps those passes ran on is the close-up accumulator's to say. Each `0x2B` pass adds `8 * step` of its own step, so the passes since the clip commit sum to `ctx[+0x87C]`. Where they sum to it only on the history entries past the newest, the newest names the pass to come, and the displayed frame is walked back on the older two (`frame_step::magic_band_older_steps`). Songi's capture reads `48` over `3, 2, 2, 2`: walked back two step-`2` passes on the shot's own divisor it stands at yaw `3971`, TR z `5066` (`image` `.779` to `.990`), where two step-`3` passes overshot onto the shot's origin.
 
 A capture one pass younger holds no framing of case 7's at all on its screen. The walk's next pass commits the arrival's idle stage at cursor `0`, its walker step still runs on case 6's table, and only then does its SM pass arm case 7. So a capture on the commit's next cursor (clip-record ring `+0x234` slots `0` and `1` alike, slot `2` the walk) has walked one pass on case 7's table, and the frame two passes back predates it.
 Case 7's `0x700` unwrap makes that table's increment large, so walking both passes back along it lands hundreds of units away: `battle_map01_gomboo_strike` stood on yaw `896` where the frame shows about `290`.
@@ -1792,6 +1821,26 @@ restarted inside the lag). `zeto_call_wave_mid_cast` holds two volleys of
 eight; seeded, the whole fan lands on retail's rays, the lower half over the
 floor that both retail and the port paint first
 ([battle-stage-camera](../subsystems/battle-stage-camera.md#where-the-grid-sorts)).
+
+**A rate the program switched inside the lag.** A channel is taken back on
+its current rate only while the lag stays inside the part's current wait
+(`part_rate_history`). The program runs to a `WAIT_SET` (op `0x09`) and parks
+its PC `+0x70` past it; the tick drains the wait `+0x54` by `8` a vsync, so
+`(set - +0x54) / 8` is how many vsyncs the current rates have run. A longer
+lag reaches into the previous wait, on the rates the ops before it set
+(`0x1C` the length rate `+0xCA`, `0x0D` / `0x2B` / `0x37` the level rate
+`+0x90`, `0x14` the radius and height rates). The vsync a wait runs out on
+still integrates on the old rates, so a wait of `n` spans `n / 8 + 1`
+vsyncs. The Rogue strikes' rays widen at `+96` for one wait of `248`, then
+narrow at `-96` (the ray's width is its length channel: the default arm's
+shape `1` fans its three pairs `C8 >> 3` apart). Four of the twenty in
+`battle_rugi_rogue_rogue_thunder_mid_cast` stand on the switch pass at
+`384`; taken back on `-96` they drew at `480`, two and a half times retail's
+beam, where the frame on screen drew `288`. Taken back across the switch, the
+three Rogue strikes read `0.871` to `0.976` (Thunder), `0.918` to `0.981`
+(Flame) and `0.921` to `0.971` (Wind). A program the walk cannot follow (a
+loop, a variable-size op, a PC not past a wait) keeps the single-rate
+rewind.
 
 ### A turning effect part's banks are a clock
 
@@ -2883,7 +2932,11 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)),
   so the displayed frame's bits come from one pass further back than its pose.
   The image child takes them there (`LEGAIA_BATTLE_GHOST_POSE`,
-  `displayed_ghost_pose`), and the frame reads `.991`. A strike on its first
+  `displayed_ghost_pose`), and the frame reads `.991`. In the capture band
+  `0x6E..=0x71` the child runs the pass on that pose even when its camera took
+  only part of retail's: there only the near-camera test sets a bit, and the
+  test reads the pose it is handed (`battle_uru2_nurga_glare_mid_cast` `.906`
+  to `.948`). A magic-band frame keeps the replay's bits, which its row arm set. A strike on its first
   case-7 arm holds the shown pose instead: the arm's yaw sits `0x700` past its
   endpoint, and the pass before it belongs to the case-6 framing that had all
   but landed there.
@@ -4114,14 +4167,16 @@ was saved, and a frame far from both measures the engine.
 | `koru_pre_blade_breath`, `_thunder_needle`, `_gigaton_press` | `.740` | `.983` | `.735` |
 | `cort_evolved_card_pre_doomsday` | `.820` | `.995` | `.818` |
 
-These four are Done arm passes (`done_arm_pass`):
-the RAM is the first pass on the Done table, the image child walks the pose one
-pass back along it, and the undisplayed buffer is that pass. The screen is a
-pass older still, on the strike band's own framing, whose table the arm
-overwrote. The RAM holds no second endpoint to walk back against, and the two
-buffers stand as far apart as the engine stands from the screen, which is
-what a swing of the framing between two passes looks like. Closing it needs a
-word the state does not have; retake a state a pass into the Done band instead.
+These four are Done arm passes (`done_arm_pass`), and the scores are the
+child's frame when it walked the pose one pass back along the Done table: it
+drew the undisplayed buffer, which is that pass. The screen is a pass older
+still, on the strike band's case-7 table, and the two buffers stand as far
+apart as the engine stood from the screen, which is what a swing of the
+framing between two passes looks like. The RAM holds no case-7 endpoint, but
+its inputs are there, and the return state's exit pass re-arms nothing, so
+the step back is that table's last increment
+([the Done arm's pass](#an-ease-out-camera-carries-its-history)); walked that way the
+four read `.904` / `.996` against the displayed buffer.
 
 A frame near neither buffer is not cleared by this test, and a seat the child
 already took back reads closer to the displayed one by construction, so only a
@@ -4688,6 +4743,20 @@ image child seats the live pose, taken back two ease steps for a player who
 moved on its last pass ([the seeding model](#the-seeding-model),
 `walk_rewind`).
 
+<a id="the-other-framebuffer"></a>
+
+A PCSX-Redux state holds both framebuffers, and the one not on display is the
+pass between the RAM and the frame on screen. `kor_field_route_walk` displays
+the buffer at VRAM `y 240`; the one at `y 0`, scored the same way, reads `.998`
+against the engine seated on the rewind's **first** step alone - yaw `1735`,
+eye `(0, 652, 4768)`, the player on the previous-pass pair `(1656, 3730)` - where
+the displayed buffer reads `.817` against it. So the one-step law holds to the
+unit on a stair walk, and what the displayed frame still misses (`.912` on the
+two-step seat) sits in the second step: a pose one ease step past the first
+(`1769`, `622`) does not reach the fit the open thread names
+([open threads](../reference/open-rev-eng-threads.md)). Dump both buffers with
+`pcsxr-state vram` and crop each at its own display origin.
+
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat
 ([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
@@ -5113,14 +5182,31 @@ the walk's step. A walk under eight vsyncs is left to the replay
 The same capture is the Done arm's own pass: its countdown `ctx[+0x6D8]`
 still holds the `0x3C` the arm seeds in the pass that stores `0x51`, with
 every HP bar settled, so nothing has stepped it (`done_arm_pass`). That pass
-was the first to walk the Done table; the pass before walked the strike
-band's framing, which the RAM no longer holds. The displayed pose is
-therefore walked back one pass and no further, as on the seed's own `0x14`
-pass (`tween_passes_back`). The image child takes the displayed pose when the
-replay's endpoints agree on the components the walk back moved
-(`BattleCamera::glide_endpoint_matches_walked`): the Done tail holds its
-pitch at the strike's residue (`-23` retail, `-26` replay), a component the
-displayed frame shows unchanged. `koru_pre_*` read `image` `.667` to `.740`.
+was the first to walk the Done table, so the first pass back is a step of
+that table. The pass before it was the return state `0x20`'s exit, and that
+pass arms no framing: it stores `0x50` (`0x801E5590`) and jumps to the state
+tail at `0x801E5F64` past the case `7` / `8` fork, so the walker task steps the
+increments the last held `0x20` pass armed and nothing re-arms them. The
+frame on screen is that held pass, one exit-pass step further back along
+case 7's table (`done_arm_strike_walk_back`). Case 7's endpoints are not in
+the RAM, but every input is: the yaw is case 8's (both bases reduce to
+`ctx[+0x6DA] - actor[+0x46] - 0x700`), the depth `prescale(ctx[+0x6D0])`, the
+focus the midpoint of the two body pairs. The exit pass moved each component
+by the increment `ceil(G / 0xC)` the held pass armed off its gap `G`, and two
+walks of it narrowed `G` to the gap the Done arm saw, which pins `G`.
+
+The image child takes the displayed pose when the replay's endpoints agree on
+the components the walk back moved
+(`BattleCamera::glide_endpoint_matches_walked`). Case 8 on an idle monster
+holds the live pitch and `TR.y` (`0x801D6BFC`), and the replay's strike leaves
+both a few units off retail's (pitch `-23` retail, `-26` replay), so the walk
+leaves those two on the first pass back: a walked one fails the test and drops
+the whole pose. `koru_pre_*` (yaw `3445` to `3496` on case 8, then `3595` on
+case 7; depth `6730` to `5998`) read `image` `.735` one pass back and `.904`
+two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
+`.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
+target on its knockdown or get-up (case 8 on the held passes too), a framing
+style `2` / `3` and a monster's pull-in keep the one-pass pose.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and

@@ -164,6 +164,16 @@ A row settles the way any audit row does, from the disassembly:
 | `battle_command_cross` | option `0x800846C8` | the first spar explained the wrong entry style |
 | `select_attack_automatic` | option `0x800846C4` | on Automatic, the Hyper Arts lesson could not be passed |
 | `BannerInputs::ctx_override_slot` | `ctx[+0x24B]`, `0x801E6E30` | a group cast on one monster raised the group banner |
+| `HudInput::short_idle` | `_DAT_8007B5F4`, `0x801DA704` | after a fight the party readout waited its full idle instead of coming up with the pad |
+| `HudInput::scratch_suppress` | `_DAT_1F800394 & 0x0800_0000`, `0x801D0DA4` | the party readout drew in the scenes whose script raises the menu lock (`2E 1B`) |
+
+The short-idle marker was not partial once its missing terms were read off
+the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
+`beq v0,zero` at `0x801D0E0C` goes to the position compare), and the term that
+holds the arm after a fight is `_DAT_8007B6B4`, the post-load hold every map
+install leaves (`FUN_8003ADAC`, `0x28`). Seating that hold also fed the pad
+controller and the encounter roll their retail gate
+([`world-map.md`](../subsystems/world-map.md#fun_801d0d38---the-field-party-hud)).
 
 The two options were misnamed: `0x801F6C60` is `lw v0,0x46c8` off `lui v0,0x8008`,
 which is `0x800846C8`, not a `0x801D46C8` overlay word that "clears on the first
@@ -185,14 +195,11 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `RecordsScreenView::treasure_*` | the dev menu's records page only |
 | `WorldMapController::scene_base` | the kingdom falls back to the scene label, so a real base changes nothing |
 | `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
+| `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
+| `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
 
 ### Open rows
 
-- `HudInput::short_idle` is `_DAT_8007B5F4`, raised at `0x801DA704` on battle entry
-  and cleared by the HUD at `0x801D0DBC` / `0x801D0EAC`. Retail's HUD returns from a
-  fight at once under Immediate; the port's kernel lacks the scene-entry arm's
-  four terms (`0x801D0DC0..0x801D0E0C`), so seating the word alone would be a
-  partial wire.
 - `set_move2_buffer_root`, `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested`
   are the physics tick's own clip cursor. Which field clips run through it rather
   than the host's actor layer is unsettled.

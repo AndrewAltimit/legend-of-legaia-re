@@ -174,3 +174,90 @@ pub(super) fn round_prompt_pool_seat(ram: &[u8], step: u8) -> Option<HudGlideSea
         total: ROUND_PROMPT_TOTAL,
     })
 }
+
+/// The yaw counter `ctx[+0x6DA]`.
+const YAW_COUNTER: u32 = 0x6DA;
+/// The rung the action seed's Attack arm stands the counter on
+/// (`li v0,0x200; sh v0,0x4(s7)` at `0x801E2F1C..0x801E2F20`).
+const ATTACK_ARM_RUNG: u16 = 0x200;
+/// The strike states that run on the Attack arm's rung: the approach `0x14`
+/// / `0x19` and the strike `0x1E`.
+const ATTACK_RUNG_STATES: [u8; 3] = [0x14, 0x19, 0x1E];
+/// The widgets the action seed raises on the Attack arm's pass, each as its
+/// `(target, start)`: the readout bar (record 7, `FUN_801D8DE8(7, 0)` at
+/// `0x801E2F40`, a party target only) and the actor plaque.
+const ATTACK_ARM_WIDGETS: [([i16; 2], [i16; 2]); 2] =
+    [([16, 192], [16, 234]), ([16, 12], [16, -26])];
+
+/// What the prologue adds to the yaw counter on a pass of frame step `step`:
+/// `(step * 4) / 3`, or `1` where that truncates to zero
+/// (`0x801E29E4..0x801E2A24`).
+fn counter_drift(step: u8) -> u16 {
+    match (u16::from(step) * 4) / 3 {
+        0 => 1,
+        d => d,
+    }
+}
+
+/// The readout bar and actor plaque the action seed raised on the Attack
+/// arm's pass, retired in the RAM but still gliding on the displayed frame.
+///
+/// The seed stores state `0x14` and the counter's `0x200` rung, then raises
+/// the bar for a party target on the same pass (`0x801E2F14..0x801E2F44`);
+/// the plaque opens on that pass too. Each later pass drifts the counter
+/// ([`counter_drift`]) and adds its step to every glide's `elapsed`, so the
+/// counter's distance from the rung counts the passes since the raise, and
+/// the frame on screen, two passes older than the RAM, drew the glides at
+/// the elapsed those passes less the newest two had built. A record the
+/// table retired one pass before the older ordering table keeps no trace in
+/// either table ([`landed_glide_pool_seats`] cannot see it):
+/// `battle_nilboa_aluru_v2_strike` reads the counter at `0x212` (nine
+/// step-`2` passes), both glides retired at `14`, both tables at rest, and
+/// the screen shows bar and plaque six and five pixels short of their seats.
+pub(super) fn attack_arm_glide_seats(ram: &[u8], ctx: u32) -> Vec<HudGlideSeat> {
+    if !ATTACK_RUNG_STATES.contains(&game_anchors::u8_at(ram, ctx + 7)) {
+        return Vec::new();
+    }
+    let Some(mut left) = game_anchors::u16_at(ram, ctx + YAW_COUNTER).checked_sub(ATTACK_ARM_RUNG)
+    else {
+        return Vec::new();
+    };
+    // Walk the passes back to the arm's: the counter's drift over them adds
+    // up to its distance from the rung exactly, or the rung is not the arm's.
+    let steps = recent_pass_steps(ram);
+    let mut passes = 0usize;
+    while left > 0 && passes < steps.len() {
+        let d = counter_drift(steps[passes]);
+        if d > left {
+            return Vec::new();
+        }
+        left -= d;
+        passes += 1;
+    }
+    if left != 0 || passes < 2 {
+        return Vec::new();
+    }
+    let displayed: u16 = steps[2..passes].iter().map(|&s| u16::from(s)).sum();
+    (0..HUD_GLIDE_SLOTS)
+        .filter_map(|s| {
+            let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+            let at = |o: u32| {
+                [
+                    game_anchors::i16_at(ram, r + o),
+                    game_anchors::i16_at(ram, r + o + 2),
+                ]
+            };
+            let last = u16::from(game_anchors::u8_at(ram, r + 1));
+            let total = 16u16;
+            (game_anchors::u8_at(ram, r) == 0
+                && ATTACK_ARM_WIDGETS.contains(&(at(4), at(8)))
+                && displayed <= last
+                && total - last.min(total) <= 4)
+                .then(|| HudGlideSeat {
+                    target: at(4),
+                    elapsed: displayed as u8,
+                    total: total as u8,
+                })
+        })
+        .collect()
+}

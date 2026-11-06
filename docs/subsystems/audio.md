@@ -2450,8 +2450,17 @@ places:
 | `FUN_8002614C` / `FUN_8002657C`, the STR overlay | `0x3FFF` clamped to `127` | `0x7FFE` | a BGM volume change; a movie's start |
 
 So every one-shot voice - arts shouts, grunts, cast voices, field voice lines,
-minigame announcers - plays at `0x75EA`, about `0.921` (-0.71 dB), while a
-movie's audio plays at full scale. The save-state library agrees: every state
+minigame announcers - starts at `0x75EA`, about `0.921` (-0.71 dB), while a
+movie's audio plays at full scale. A voice does not keep that level through an
+audio-level change: the frame driver `FUN_8001698C` hands every change of the
+level cell `_DAT_8007B910` to `FUN_8002614C` (`0x80016A1C..0x80016A34`), which
+opens on `SsSetSerialVol(0, 0x3FFF, 0x3FFF)` (`0x80026168..0x80026174`) before it
+re-sets the sequence volumes, so a summon duck still ramping when the voice starts
+lifts the rest of the clip to `0x7FFE`. A frame-stepped `orb_summon_mid_cast` has the
+level stepping from `180` to `161` across the first `21` vsyncs of Orb's voice, and
+the recording plays it `0.74` dB over the cue gain from its second second on.
+The port lifts the sounding clip on every level step
+(`StreamResampler::raise_cd_volume_to_full`, from `AudioDirector::tick_duck`). The save-state library agrees: every state
 holds `0x0000` (between cues), `0x75EA` (battle states with a voice up) or
 `0x7FFE`. `FUN_8003EE7C(v)` is `SsSetSerialVol(0, v, v)` followed by
 `SsSetSerialAttr(0, SS_MIX, 1)`; see `ghidra/scripts/funcs/8003ee7c.txt`,
@@ -3450,7 +3459,7 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
-| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | a cast's cues this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window; the cue differential reads every row of this state alike, levels included |
+| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | the cast's CD-XA voice, which this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window. The [`cast` channel](#the-cast-channel) renders it |
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
@@ -3463,6 +3472,122 @@ second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after
 while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
 against the resumed SPU, river included
 ([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
+
+<a id="the-cast-channel"></a>
+**The cast channel.** A battle state mid-cast keeps sounding what the cast keys after its instant:
+its CD-XA voice, its cue ring, the victims' reaction cues. The fifth channel, **`cast`**
+(`--cast-wav`), renders those from the engine itself. The retail comparison corpus seeds the
+fight into the state (its image child, `LEGAIA_RC_CHILD_LOG=1`); the child is run again reading
+the disc's CD-XA, with its director on a device-less output that it pulls once a tick, one console
+vsync of samples a tick, and records the mix from the seed's gate on with the music bus at `0`
+(`LEGAIA_DIAG_AUDIO_WAV`, stopped `20` vsyncs past the action SM's Done band, where the child plays
+on into a turn retail's recording never takes). That recording is mixed into the track render on the
+track's lag, at an offset fitted within one vsync either way and reported, because the gate tick
+stands within a vsync of the state's instant and not on its sample; the score is over the cast's own
+span. `--per-second` prints level and correlation second by second.
+
+A summon ducks the score to `75` % across the cast, and the track render plays the state's own sequence
+volume, so the channel renders the score under a duck as well: the child writes the audio level its
+director applied each tick beside the WAV (`<wav>.duck`), and the render walks a level from the state's
+own `_DAT_8007B910` one unit a vsync toward where the engine's level is heading, halved, on the track's lag
+(`pcm_retail::duck_schedule`). The walk is the measurement's, not the engine's: the child's seed does not
+carry the state's level (`zenoir_summon_mid_cast` stands at `192`, mid-ramp, and seeds at `215`), so the
+score is rendered as retail's ramp would carry it from where the state stands. On Orb the engine's applied
+level tracks a frame-stepped retail one within `8` units across the ramp.
+
+| State | `cast` corr | Level | Offset | Reading |
+|---|---|---|---|---|
+| `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
+| `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
+| `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
+| `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
+| `theeder_summon_mid_cast` | `0.904` | `+2.32` dB | `-378` | the voice past the drive's wait aligns `9.9` vsyncs earlier than the engine's, inside the seek window ([below](#the-cast-channels-seek-window)) |
+| `zenoir_summon_mid_cast` | `0.812` | `+1.59` dB | `+725` | the voice within `0.08` s of retail's |
+| `nighto_summon_mid_cast` | `0.973` | `+0.10` dB | `-274` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
+| `orb_summon_mid_cast` | `0.994` | `+0.02` dB | `+246` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
+| `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-243` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
+| `gilium_summon_mid_cast` | `0.226` | `+0.02` dB | `+723` | the voice `0.30` s early, and lifted to full CD volume under a duck that has settled in retail by its start ([below](#the-drive-holds-a-summons-voice)) |
+
+What it found on Call Wave, both from the disassembly and both confirmed by the recording:
+
+- **The voice was Big Wave's.** PROT 0946's arm 0 forks on the caster's latch: clear, Call Wave's
+  branch calls `0x150` (`XA11` channel `0`); set, Big Wave's calls `0x151` (channel `1`), and the head
+  cue scan reads the first call laid out, Big Wave's. The recording's residual places `XA11` channel
+  `0` at correlation `0.995`, channel `1` at `0.03`. PROT 0953 has the same shape (the charge `0x159`,
+  the punch `0x15A`); both resolve their branch now
+  ([cast module](cast-module.md#the-cast-voice-cd-xa)).
+- **Call Wave folded as a hit.** The port landed it on its target, Zeto himself, for `289`, and his
+  knockback's cues (`0x23B`, three of `0x18`) sounded `5.8` s in, `12` dB over a recording that holds
+  the score alone there. Call Wave's branch never reaches the module's one damage site
+  ([cast module](cast-module.md#capture-band-camera)).
+
+Over the six seconds the per-second levels went from `+7.5`, `+0.7`, `-1.1`, `+3.1`, `+5.5`, `-2.2`
+dB to within `0.15` dB, and second six from `-13.7` to `-0.4` dB. The first second keeps `+0.65` dB in
+its first `100` ms, which is the recorder's start: the track channel skips that window for the same
+reason.
+
+<a id="the-drive-holds-a-summons-voice"></a>
+**The drive holds a summon's voice.** Placed against its decoded channel on both sides, a summon's head
+clip started up to a second early in the engine. A summon module seeks the drive to its clip file on one
+arm (`FUN_8003EAE4`, Orb's `(0, 0xC)` at `0x801F6B98`) and polls it on a later one (`FUN_8003F2B8(1)`,
+`CdSync(1)`, at `0x801F6BB8`), returning busy until the seek is done, and only then calls the head cue. The
+battle's seek-ahead selector (`FUN_8004DA00`) has just sent the drive to the caster's fanfare file, and the
+module's `CdlSetloc` blocks the game loop until that seek ends. `scripts/mednafen/drive-timeline.py` steps a
+state frame by frame and logs the module phase beside mednafen's drive: on `orb_summon_mid_cast` the seek
+arm holds `27` vsyncs behind the selector's `XA27` seek with the audio level frozen at `211` and almost
+nothing else in RAM moving, then the `XA13` seek runs `29` vsyncs under the poll arm while the frame loop
+runs. Every seek of the five summon states fits one law, `0.3` s plus a full-disc traverse a second, plus
+two vsyncs of logical seek ([`battle_cd_drive`](../../crates/engine-battle-vm/src/battle_cd_drive.rs)). The
+port runs that drive: the selector's seek as the module arms, the module's own on its seek arm, both arms
+held while it is busy, the head cue not called on a busy pass, and the whole frame held while the seek arm
+blocks (`World::cast_drive_blocks_frame`): `World::tick` steps only the drive, and the audio frame (the duck,
+the cue ring), the camera, the actors and the display-frame clock they count on stand still. Advancing that
+clock alone hands the camera the held vsyncs as a catch-up on the first pass after; holding the module while
+the rest ran moved `zenoir_summon_mid_cast`'s camera off retail's (`1.000` to `0.980`), which the held
+frame puts back. The seek and poll arms are read
+off each image (`module_drive_arms`); PROT 0903..0934 carry the pair, no capture module does.
+
+Orb's and Swordie's voices then play at retail's level too, which the drive's wait is what exposes: the
+level change under a sounding clip lifts it to the full CD volume
+([the CD input volume](#the-cd-input-volume)), and Orb's duck is still ramping when its voice starts only
+because the blocked frames held the ramp.
+
+<a id="the-cast-channels-seek-window"></a>
+**The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and
+across emulators (PCSX-Redux answers these seeks in `1..4` vsyncs, mednafen in the times above), and the
+port keeps one model of it. The cast channel therefore accepts any wait inside a window rather than the
+model's to the vsync. The child writes, beside the WAV, whether the module's arm waited on the drive on
+each recorded tick (`<wav>.drive`, `World::cast_drive_waiting`). Where it did, the recording before the
+wait's end mixes on the cast's own offset, and the part after it (the voice) is fitted on its own over
+the first three seconds, at any shift from the engine's whole wait earlier (a drive that answered at once)
+to `max(8, wait / 2)` vsyncs later (`pcm_retail::fit_cast_offset_after_wait`, the margin shared with the
+[cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). `audio-pcm.py` prints each
+state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
+never silent. On the five summon states with a wait: Theeder `0.722` to `0.904` (voice `-9.9` vsyncs),
+Nighto `0.326` to `0.973` (`-13.1`), Orb `0.935` to `0.994` (`-5.2`), Swordie `0.903` to `0.988`
+(`-1.1`), Gilium `0.219` to `0.226` (`+5.1`); the casts with no drive wait are unchanged. Theeder's and
+Nighto's shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of
+the port's drive on those two casts that the window covers, not emulator variance.
+
+**A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
+`bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue
+as soon as the drive was idle, while the countdown still held the arm, and the voice started `0.59` s early
+- under a duck still ramping, so the level step lifted it to full CD volume where retail's plays at the cue
+level. That is the `-1.35` dB the row read. `head_cue_waits_arm_gate` reads the shape off the image (a branch
+to the poll's busy return ahead of the poll, within the arm); of the band only PROT 0923 has it, and its cue
+now lands on the pass the arm's hold lets through: `0.30` s early, the rest of the arm's length
+(`55` vsyncs from its seek in retail, `40` in the port) unexplained.
+
+Theeder's and Nighto's voices are not held by the drive: their selector seeks and their own seeks both
+land on `XA8`, so the module's seek is a few vsyncs. The port still holds their seek arms `24` and `23` frames
+behind the selector's seek it issues as the module arms, and the cast channel's voice fit places their voices
+`9.9` and `13.1` vsyncs after mednafen's: retail's selector seek may already be done by then.
+Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86` vsyncs after the state, behind the side-band
+read (`cmd 6` reads in the `summon.dat` region, `41347..41446` in three chunks), and arm 2 runs past the
+end of the log at `+187` where the port's countdown leaves it at `+213`; arm 2 also polls the selector's
+latch `0x8007BDB0` for the creature stream (`seru.rs`), which the port reads as ready. Theeder's `+2.30` dB
+(retail louder) is not explained: its duck and the engine's both start ramping near `+118`
+([open](../reference/open-rev-eng-threads.md#how-long-does-a-summons-seek-hold-its-voice)).
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not

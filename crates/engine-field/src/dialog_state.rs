@@ -80,6 +80,17 @@ pub struct DialogState {
     /// The instant-page latch `_DAT_801F2744` (op `4C E0 00`): the next box
     /// loads its page whole.
     pub window_instant: bool,
+    /// `DAT_80073F02`, the script runner's **yielded** latch: `FUN_80039B7C`
+    /// stores `1` when a context it steps parks on a yield (state 1 -> 2,
+    /// `0x80039FE4`), and the release at modal depth `0` turns it into the
+    /// `0x10`-frame pad hold `_DAT_8007B6B4` and clears it
+    /// (`0x80039D44..0x80039D60`, `0x80039F1C..0x80039F34`). Global in
+    /// retail, so it outlives a scene change.
+    pub script_yield_latch: bool,
+    /// Whether a script context held the player at the end of the last
+    /// tick - the edge `World::tick_script_release_hold` reads its release
+    /// off.
+    pub script_engaged_prev: bool,
 }
 
 impl DialogState {
@@ -101,6 +112,8 @@ impl DialogState {
             page_mark_seat: None,
             window_rows: legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
             window_instant: false,
+            script_yield_latch: false,
+            script_engaged_prev: false,
         }
     }
 }

@@ -63,8 +63,11 @@ uses). The port's menu graph names the sub-screens:
 Gold and inventory deltas are applied when the quantity stepper confirms -
 retail has no Yes / No screen between the number and the transaction:
 `MenuRuntime::tick_quantity` takes the stepper's `Bought` / `Sold` event to
-`apply_quantity_buy` / `apply_quantity_sell`. `ShopInventory::try_buy` /
-`try_sell` remain as kernels the live path does not call.
+`apply_quantity_buy` / `apply_quantity_sell`. `ShopSession::try_buy` /
+`try_sell` remain as kernels the live path does not call; the menu graph's
+Confirm commit reaches them only with no stepper installed, and `try_sell` pays
+the same sale credit the stepper does: `(price * qty) >> 1` on the product, off
+the item table's price.
 
 ## Screen composition
 

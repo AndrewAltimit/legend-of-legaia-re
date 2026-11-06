@@ -62,6 +62,7 @@ mod framing_body;
 mod hud_glide;
 mod hud_glide_pool;
 mod inflight_seeds;
+mod part_rate_history;
 mod popup_cells;
 mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;

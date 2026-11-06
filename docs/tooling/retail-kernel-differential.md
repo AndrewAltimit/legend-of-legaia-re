@@ -237,3 +237,89 @@ The take-item fallback `FUN_800430AC` walks the present-party list at `0x8008459
 the whole roster, so a script could take an accessory off a member who was not in the party. The
 shout selector `FUN_8004C140` matches over every roster id and action constant.
 
+The Use list's applicability probe `FUN_8003043C`, run with the validator live beneath it over every
+field-usable item, found the port answering it from the catalog's effect where retail asks the validator.
+An MP restore lit for a fallen member, a stat seed for a member already at the stat's cap, and an arts
+book for a party without its reader (classes `0x0B..0x0D` match one roster id); the Doors never read
+system flags `5` / `6`. The Items screen's confirm used the same stand-in, so it could use a row the list
+had greyed. The probe now runs the ported validator over the roster records, and the party heal's walk
+reads a present id of `3` as the dead quad: out of battle the validator's pointer arrays stop at three,
+so that read is stale stack in retail. The spell twin `FUN_8003053C`, which greys a Magic row and refuses
+its cast, matches over the same seeding.
+
+The floor sampler `FUN_80019278`, with the kind-2 lookup `FUN_801D5630` live beneath it, matches on every
+tile of the grid, ramps and stairs included. Off it the port called the floor `0`, where retail halves the
+sub-cell toward zero (a position in `-64..0` stands on tile `0`), wraps the object cell through its masks
+and reads the corner block on into the descriptor table or the object map.
+
+The Arrange kernel `FUN_801D64A8` matches the port's sort over every window. Reading its caller for the
+differential found the port sorting only the screen's rows: the bag never moved, so the next Items screen,
+the battle window and the save all kept the old order.
+
+The menu's stat block, the seeder `FUN_801CF5D0` and the summer `FUN_801CF650` the Status page, the Equip
+compare columns and the shop preview draw, matches `menu_stat_block` over the disc's equipment table.
+
+The whole turn picker `FUN_801DABA4`, with the monster picker, the redirect and the Counterattack roll live
+beneath it, found four defects. The picker's Numb tail had no port: a Numbed monster cast or struck where
+retail's turn arms nothing. A walk that matched nothing stored category `3` in the port, so the redirect
+re-rolled and the Counterattack coin was flipped where retail's stale `0` does neither, and the roll never
+read the stored category at all. The side scans counted a seat down only on a Stone the status tracker held,
+so a cast-written Stone left a petrified side's monster deciding a turn. The sweep, the tie pick and the
+item refund match. The Confirm-path sale `ShopSession::try_sell` priced per unit off the shop's stock; it
+now pays the stepper's `(item-table price * qty) >> 1`.
+
+The round end's waker `FUN_801F45A4` read only the raw half of the port's status word, so a Numb the
+status tracker held drew no `rand()` and never woke; it also wore off on a three-round count retail does
+not have. The waker now reads and clears both halves, and Numb lasts until it or a hit's strip clears it.
+
+The partition-2 record dispatcher `FUN_8003BDE0` matches over every such record of every scene MAN on the
+disc: the record it locates, its C1-any and C2-all story-flag gates, and the script entry it installs.
+
+Comparing the monster picker's stored category itself, rather than reading a stored `0` as a strike, found two
+more. A pass whose later cast entry fails its MP test keeps what an earlier entry of the same walk stored
+(`0x801EA51C` sits ahead of the `+0x1DE` store at `0x801EA528`); the port dropped it, so the retry's empty walk
+left the seat without the cast retail plays. And monsters `0x97` / `0x98` under a `0x380` status clear a stored
+cast to `0` and keep the ring, or keep any other category and skip the ring (`0x801EAD58..0x801EAD80`); the
+port ran neither.
+
+The round tick run over six rounds with an ailment the port's status tracker holds, beside the same bits in
+retail's word, found Sleep (`0x800`) and the `0x380` group wearing off after three rounds in the port, where
+retail's tick never clears them: like Numb they last until a hit's `0x0F80` strip, a cure or the battle's end.
+The port's hit strip also left a tracked Confuse standing; it now clears the whole family.
+
+The camera-register zone ramp's handler `FUN_80037018`, read from its disassembly, matches
+`zone_ramp_tick` over every gate, store width, the retire arm and the zero-span trap.
+
+The party walk of the per-frame actor pass `FUN_8004CE2C` (`0x8004CE6C..0x8004D018`), which the battle
+template's tick `FUN_8004DA00` tail-calls on every battle frame, had no port. Retail's melee status arms,
+an enemy special's Venom and Toxic and a cast's raw bits are written whatever the target wears, and this
+walk takes off each bit the wearer's guards cover, fallen or not; so in the port a Poison, Curse or Numb
+Guard stopped nothing that reached the word that way, and Master Guard only stopped Rot. Maximum AP, which
+the same walk uses to hold a living wearer's gauge at 100, did nothing. `World::tick_battle_passive_sweep`
+now runs the walk at the head of each battle frame and matches it over every guard combination, with the
+word split between the port's raw half and its tracker. The infliction-time guard tests the port keeps
+(Glare, the Rot arms) are retail's own: PROT 0940 tests Stone and Master Guard before it writes the bit
+(`0x801F7054..0x801F7070`), and the Rot arms read both guards ahead of their draw.
+
+The motion VM `FUN_8003774C`, run leg by leg frame by frame over all six ops, found the tile walk `0x47`
+taking one step of the whole frame's distance where the arm takes the frame step's count of steps, each
+re-reading the deltas: a frame that closed the dominant axis stopped there instead of starting the
+diagonal, and an approach mode's second axis waited a frame. It also ended a leg on the frame that landed
+on the target, where retail ends it on the next frame's first iteration, so every scripted walk and the
+script parked on it resumed a frame early. The compass walks, the compass ramp, the hold and the
+face-target ramp match.
+
+Holding the Stone and Curse arms to the module images found that no cast module calls the applier
+`FUN_800402F4`. Stone Circle (PROT 0941) writes no status at all and is a damage cast, where the port
+rolled Stone on every party seat and drew a `rand()` for each; Curse and Curse All write `ori 0x1000`
+with no roll and no guard test, where the port rolled for them. Glare repeats the class-9 roll inline,
+guard test first, as the port had it.
+
+The ambient motion VM `FUN_80038158`, run tick by tick over generated streams of every op that stays
+off the GPU, the model loader, the floor sampler and the ramp pool, with the two overlay probes and
+`rand()` answered alike on both sides, found two defects. A restamp of the requested move from the
+default-move record left the pair `+0x88` / `+0x5C` an earlier `0x02` had written, where retail stores
+the record's byte to both, so the height pass and the ambient lifetime read a stale word. And the
+directional steps probed the player even with the VM's own flag bit `0` set, where the arm skips the
+call (`0x80038484..0x80038490`). The wander, the home step, the facing ramp, the touch-woken wait and
+the flag, cue and bit ops match.

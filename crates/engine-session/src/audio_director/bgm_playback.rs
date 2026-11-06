@@ -56,6 +56,9 @@ impl<S: AudioSink> AudioDirector<S> {
         }
         if changed {
             self.duck_pack_music();
+            // `FUN_8002614C` opens on `SsSetSerialVol(0, 0x3FFF, 0x3FFF)`: a
+            // level change lifts the CD input to full under the voice.
+            self.audio.with_core(|s| s.raise_cd_volume_to_full());
         }
         duck::step_duck(&mut self.duck_level, self.duck_target);
     }

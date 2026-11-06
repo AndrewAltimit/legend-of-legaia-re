@@ -372,6 +372,14 @@ impl World {
         // A capture body that took a branch with no damage site (PROT 0953's
         // charge, `0x801F6CEC`) owes nothing: retail never reaches its
         // `FUN_801DD6B4` on that path.
+        // So does PROT 0946's Call Wave, whose branch ends the module on arm 3
+        // and never reaches Big Wave's damage site on arm 7.
+        if self.cast_module_for(pc.spell_id)
+            == Some(legaia_engine_cast::cast_module_ticks::CALL_WAVE_ENTRY)
+            && !legaia_engine_cast::cast_module_ticks::call_wave_folds(pc.spell_id)
+        {
+            self.casting.module_skips_fold = true;
+        }
         if std::mem::take(&mut self.casting.module_skips_fold) {
             let gain = std::mem::take(&mut self.casting.module_hit_xp);
             if gain != 0 {

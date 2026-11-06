@@ -74,6 +74,15 @@ pub struct PcmRetailArgs {
     /// lag: a state with a looping emitter holds it for the whole recording.
     #[arg(long, requires = "retail_wav")]
     pub cue_voices: bool,
+    /// Mix in the engine's own cues from the state on, on the track's lag: a
+    /// `play-window` capture child's `LEGAIA_DIAG_AUDIO_WAV` recording (the
+    /// fight seeded into the state, its music bus silent), which carries what
+    /// the engine's cast keys after the state's instant.
+    #[arg(long, requires = "retail_wav")]
+    pub cast_wav: Option<PathBuf>,
+    /// Print the level and correlation second by second.
+    #[arg(long)]
+    pub per_second: bool,
     /// mednafen's recording of the same window: score the engine against it.
     #[arg(long)]
     pub retail_wav: Option<PathBuf>,
@@ -157,7 +166,9 @@ pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<Ret
 }
 
 /// Run `track` vsync by vsync until the sequencer reaches `pos`, then render
-/// `samples` stereo samples, one vsync every `vsync_samples`.
+/// `samples` stereo samples, one vsync every `vsync_samples`. `seq_vols`, when
+/// given, is the sequence volume of each rendered vsync ([`duck_schedule`]).
+#[allow(clippy::too_many_arguments)]
 pub fn render_aligned(
     entry: &[u8],
     pos: &RetailSeqPosition,
@@ -166,6 +177,7 @@ pub fn render_aligned(
     pass: u32,
     verbose: bool,
     stems: Option<&Path>,
+    seq_vols: Option<&[u8]>,
 ) -> Result<Vec<i16>> {
     let mut d = TraceBgmDirector::new();
     d.master_vol = pos.seq_vol;
@@ -242,11 +254,58 @@ pub fn render_aligned(
     if let Some(prefix) = stems {
         render_stems(&mut d, &mut carry, vsync_samples, samples, &mut out, prefix)?;
     }
+    let mut vsync = 0usize;
     while out.len() < samples * 2 {
+        // The sequence volume of this vsync of the window, when the caller
+        // hands a schedule: the duck a cast ramps the score under.
+        if let Some(v) = seq_vols.and_then(|v| v.get(vsync).or(v.last()))
+            && let Some(s) = d.sequencer_mut()
+        {
+            s.set_master_vol(*v);
+        }
         step(&mut d, &mut carry, Some(&mut out));
+        vsync += 1;
     }
     out.truncate(samples * 2);
     Ok(out)
+}
+
+/// The sequence volume a cast's score plays at, one entry per output vsync of
+/// the track render. `levels` is the engine child's applied audio level per tick
+/// (`<cast>.duck`); `start` is the state's own level `_DAT_8007B910`, which the
+/// child's seed does not carry (a state taken mid-ramp, `zenoir_summon_mid_cast`
+/// at `192`, seeds at `215`). The level walks from `start` one unit a vsync
+/// toward where the engine's level is heading - the next value it rests on -
+/// as retail's ramp does (`legaia_engine_audio::duck::step_duck`), and plays
+/// halved, as every level-to-volume site halves it. Vsync `k` of the render
+/// stands on recording sample `k * vsync - lag`.
+pub fn duck_schedule(levels: &[u8], start: u8, lag: i64, vsync_samples: f64) -> Vec<u8> {
+    if levels.is_empty() {
+        return Vec::new();
+    }
+    // Where the engine's level next rests, tick by tick.
+    let mut target = levels.to_vec();
+    for k in (0..levels.len().saturating_sub(1)).rev() {
+        if levels[k] != levels[k + 1] {
+            target[k] = target[k + 1];
+        }
+    }
+    let mut level = start;
+    let walked: Vec<u8> = target
+        .iter()
+        .map(|&t| {
+            let at = level;
+            legaia_engine_audio::duck::step_duck(&mut level, t);
+            at
+        })
+        .collect();
+    let shift = (-lag as f64 / vsync_samples).round() as i64;
+    (0..walked.len())
+        .map(|k| {
+            let at = (k as i64 + shift).clamp(0, walked.len() as i64 - 1) as usize;
+            walked[at] >> 1
+        })
+        .collect()
 }
 
 /// [`render_aligned`]'s window with the mix's parts kept apart: one tick of
@@ -536,6 +595,110 @@ fn render_cue_voices(st: &legaia_mednafen::SaveState, samples: usize) -> Result<
     Ok(pcm)
 }
 
+/// How far the engine's cast recording `cast` (sample `0` its seed's gate)
+/// sits from the state's instant (the retail recording's sample `0`): the shift
+/// within one vsync either way whose cast best fits what is left of `retail`
+/// once the aligned track `track` (`lag` as [`score_window`] reads it) is taken
+/// out. Positive delays the cast.
+pub fn fit_cast_offset(retail: &[i16], track: &[i16], cast: &[i16], lag: i64) -> i64 {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let n = (retail.len() / 2).min(cast.len() / 2);
+    let left: Vec<f64> = (0..n as i64)
+        .map(|t| mono(retail, t, MEDNAFEN_RECORD_GAIN) - mono(track, t + lag, 1.0))
+        .collect();
+    let c: Vec<f64> = (0..n as i64).map(|t| mono(cast, t, 1.0)).collect();
+    let fit = |d: i64| -> f64 {
+        let (mut dot, mut ee) = (0.0, 0.0);
+        for (t, l) in left.iter().enumerate() {
+            let k = t as i64 - d;
+            if let Some(v) = usize::try_from(k).ok().and_then(|k| c.get(k)) {
+                dot += l * v;
+                ee += v * v;
+            }
+        }
+        dot / ee.max(1.0).sqrt()
+    };
+    let reach = RETAIL_VSYNC_SAMPLES as i64;
+    let coarse = (-reach..=reach)
+        .step_by(8)
+        .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+        .unwrap_or(0);
+    (coarse - 8..=coarse + 8)
+        .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+        .unwrap_or(0)
+}
+
+/// A cast's CD-seek wait in the engine's cast recording, read off its
+/// `.drive` sidecar (one `0` / `1` line per recorded tick, `1` where the
+/// module's arm waited on the drive): `(first held tick, ticks held)` of the
+/// last such run. `None` when nothing in the recording waited.
+pub fn cast_drive_wait(drive: &str) -> Option<(usize, usize)> {
+    let held: Vec<bool> = drive.lines().map(|l| l.trim() == "1").collect();
+    let end = held.iter().rposition(|&h| h)? + 1;
+    let start = held[..end].iter().rposition(|&h| !h).map_or(0, |i| i + 1);
+    Some((start, end - start))
+}
+
+/// The voice after a cast's CD-seek wait, aligned within the seek window
+/// (`docs/subsystems/audio.md`, "The cast channel's seek window"): retail's
+/// wait may run anywhere from no extra vsync to the engine's `held` plus
+/// [`crate::cast_sequence::drive_window_margin`], so the recording from the
+/// wait's end on (`split`, a cast sample) is fitted to what is left of
+/// `retail` over that span of shifts around `offset`, the cast's own fit.
+/// Returns the shift for the part past `split` and the window searched, in
+/// samples either side of `offset` (`(-early, late)`).
+pub fn fit_cast_offset_after_wait(
+    retail: &[i16],
+    track: &[i16],
+    cast: &[i16],
+    lag: i64,
+    offset: i64,
+    split: usize,
+    held: usize,
+) -> (i64, (i64, i64)) {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let vs = RETAIL_VSYNC_SAMPLES;
+    let margin = crate::cast_sequence::drive_window_margin(held as u64) as f64;
+    // Retail's wait in [0, held + margin] vsyncs: its voice lands up to `held`
+    // vsyncs earlier than the engine's, or `margin` later.
+    let window = (-((held as f64 * vs) as i64), (margin * vs) as i64);
+    // The voice's opening seconds past the wait carry the fit.
+    let span = (3 * SPU_INTERNAL_RATE as usize).min((cast.len() / 2).saturating_sub(split));
+    let fit = |d: i64| -> f64 {
+        let (mut dot, mut ee) = (0.0, 0.0);
+        for k in split..split + span {
+            let v = mono(cast, k as i64, 1.0);
+            let t = k as i64 + d;
+            let l = mono(retail, t, MEDNAFEN_RECORD_GAIN) - mono(track, t + lag, 1.0);
+            dot += l * v;
+            ee += v * v;
+        }
+        dot / ee.max(1.0).sqrt()
+    };
+    if span == 0 {
+        return (offset, window);
+    }
+    let best = |from: i64, to: i64, step: usize| {
+        (from..=to)
+            .step_by(step)
+            .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+            .unwrap_or(offset)
+    };
+    let coarse = best(offset + window.0, offset + window.1, 64);
+    let mid = best(coarse - 64, coarse + 64, 8);
+    (best(mid - 8, mid + 8, 1), window)
+}
+
 /// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
 /// frame `t` stands on the engine's frame `t + lag`, and a voice resumed from
 /// the state is on retail's clock.
@@ -553,6 +716,7 @@ fn mix_at_lag(pcm: &mut [i16], add: &[i16], lag: i64) {
 }
 
 pub fn run(args: PcmRetailArgs) -> Result<()> {
+    let mut cast_drive: Option<serde_json::Value> = None;
     let (pcm, label) = if let Some(state) = &args.resume_state {
         let st = legaia_mednafen::SaveState::from_path(state)?;
         let mut spu = spu_resumed_from_retail(&st)?;
@@ -628,6 +792,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.pass,
             args.verbose,
             args.stems.as_deref(),
+            None,
         )?;
         if args.cue_voices {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
@@ -635,6 +800,70 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             let st = legaia_mednafen::SaveState::from_path(&path)?;
             let cues = render_cue_voices(&st, args.samples)?;
             mix_at_lag(&mut pcm, &cues, lag);
+        }
+        if let Some(cast_path) = &args.cast_wav {
+            let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
+            let lag = score_window(&retail, &pcm).lag;
+            // The score under the cast's duck, as the engine child applied it
+            // tick by tick: the state's own volume holds for none of a summon.
+            if let Ok(text) = std::fs::read_to_string(cast_path.with_extension("duck")) {
+                let levels: Vec<u8> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
+                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let ram = st.main_ram()?;
+                let start =
+                    i32::from_le_bytes(ram[0x7_B910..0x7_B914].try_into()?).clamp(0, 255) as u8;
+                let vols = duck_schedule(&levels, start, lag, args.vsync_samples);
+                if !vols.is_empty() {
+                    pcm = render_aligned(
+                        &track_bytes,
+                        &pos,
+                        args.samples,
+                        args.vsync_samples,
+                        args.pass,
+                        false,
+                        None,
+                        Some(&vols),
+                    )?;
+                }
+            }
+            let lag = score_window(&retail, &pcm).lag;
+            let cast = read_wav(cast_path)?;
+            // The child's gate tick stands within a vsync of the state's
+            // instant, not on its sample: the cast's own offset is fitted
+            // against what the track leaves of the recording, and reported.
+            let offset = fit_cast_offset(&retail, &pcm, &cast, lag);
+            println!("{}: cast offset {offset:+} samples", args.label);
+            // A CD-seek wait in the cast: the voice past it may start anywhere
+            // in the seek window, and is aligned there on its own.
+            let wait = std::fs::read_to_string(cast_path.with_extension("drive"))
+                .ok()
+                .and_then(|t| cast_drive_wait(&t));
+            match wait {
+                Some((start, held)) => {
+                    let split =
+                        (((start + held) as f64 * args.vsync_samples) as usize).min(cast.len() / 2);
+                    let (after, window) =
+                        fit_cast_offset_after_wait(&retail, &pcm, &cast, lag, offset, split, held);
+                    println!(
+                        "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
+                         samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
+                        args.label,
+                        (after - offset) as f64 / args.vsync_samples,
+                        window.0,
+                        window.1
+                    );
+                    mix_at_lag(&mut pcm, &cast[..split * 2], lag + offset);
+                    mix_at_lag(&mut pcm, &cast[split * 2..], lag + after + split as i64);
+                    cast_drive = Some(serde_json::json!({
+                        "wait_start_tick": start,
+                        "held_ticks": held,
+                        "offset": offset,
+                        "voice_offset": after,
+                        "window": [window.0, window.1],
+                    }));
+                }
+                None => mix_at_lag(&mut pcm, &cast, lag + offset),
+            }
         }
         (pcm, args.label.clone())
     };
@@ -652,11 +881,66 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             score.lag,
             score.windows
         );
+        if args.per_second {
+            let retail = read_wav(p)?;
+            for (i, s) in per_second_scores(&retail, &pcm, score.lag)
+                .iter()
+                .enumerate()
+            {
+                println!(
+                    "  {i:>3}s: corr {:.4} level {:+.2} dB residual {:.1} dB",
+                    s.corr_median, s.level_db, s.residual_db
+                );
+            }
+        }
         if let Some(out) = &args.json {
-            std::fs::write(out, serde_json::to_string_pretty(&score)?)?;
+            let mut v = serde_json::to_value(&score)?;
+            if let (Some(d), Some(m)) = (cast_drive.take(), v.as_object_mut()) {
+                m.insert("cast_drive".into(), d);
+            }
+            std::fs::write(out, serde_json::to_string_pretty(&v)?)?;
         }
     }
     Ok(())
+}
+
+/// Level and correlation one second at a time at the fixed lag `lag` (as
+/// [`score_window`] reads one: retail's frame `t` on the engine's `t + lag`):
+/// where in a recording the two part. A second retail holds silent reads
+/// nothing.
+pub fn per_second_scores(retail: &[i16], engine: &[i16], lag: i64) -> Vec<PcmScore> {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let second = SPU_INTERNAL_RATE as usize;
+    let span = (retail.len() / 2).min(engine.len() / 2);
+    (0..span / second)
+        .map(|i| {
+            let (mut rr, mut ee, mut re, mut d) = (0.0, 0.0, 0.0, 0.0);
+            for t in i * second..(i + 1) * second {
+                let r = mono(retail, t as i64, MEDNAFEN_RECORD_GAIN);
+                let e = mono(engine, t as i64 + lag, 1.0);
+                rr += r * r;
+                ee += e * e;
+                re += r * e;
+                d += (r - e) * (r - e);
+            }
+            if (rr / second as f64).sqrt() < SILENT_RMS {
+                return PcmScore::default();
+            }
+            PcmScore {
+                corr_median: re / (rr * ee + 1e-9).sqrt(),
+                corr_p10: 0.0,
+                level_db: 10.0 * (rr / ee.max(1.0)).log10(),
+                residual_db: 10.0 * (d / rr + 1e-9).log10(),
+                lag,
+                windows: 1,
+            }
+        })
+        .collect()
 }
 
 /// mednafen's WAV recording is the emulated output at `3/4`: a resumed SPU
@@ -801,6 +1085,58 @@ fn read_position(state: &Path, extracted: &Path) -> Result<(RetailSeqPosition, V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `.drive` sidecar's last run of waiting ticks is the wait the voice
+    /// follows; a recording that never waited has none.
+    #[test]
+    fn the_drive_sidecar_names_the_last_wait() {
+        assert_eq!(cast_drive_wait("0\n0\n1\n1\n1\n0\n"), Some((2, 3)));
+        assert_eq!(cast_drive_wait("1\n1\n0\n0\n1\n0\n"), Some((4, 1)));
+        assert_eq!(cast_drive_wait("1\n1\n"), Some((0, 2)));
+        assert_eq!(cast_drive_wait("0\n0\n"), None);
+        assert_eq!(cast_drive_wait(""), None);
+    }
+
+    /// The voice past the wait is found wherever the window puts it: a cast
+    /// whose voice retail started `held` vsyncs sooner fits at that shift.
+    #[test]
+    fn the_voice_after_a_wait_fits_inside_the_window() {
+        let n = 4 * SPU_INTERNAL_RATE as usize;
+        let tone = |t: usize| ((t as f64 * 0.05).sin() * (t as f64 * 0.0007).cos() * 8000.0) as i16;
+        let (split, held, early) = (20_000usize, 20usize, 7_000usize);
+        // Engine: the voice from `split + early`; retail: from `split`.
+        let mut cast = vec![0i16; n * 2];
+        let mut retail = vec![0i16; n * 2];
+        for t in 0..n - split - early {
+            let v = tone(t);
+            cast[(split + early + t) * 2] = v;
+            cast[(split + early + t) * 2 + 1] = v;
+            let r = (f64::from(v) * MEDNAFEN_RECORD_GAIN) as i16;
+            retail[(split + t) * 2] = r;
+            retail[(split + t) * 2 + 1] = r;
+        }
+        let track = vec![0i16; n * 2];
+        let (got, window) = fit_cast_offset_after_wait(&retail, &track, &cast, 0, 0, split, held);
+        assert_eq!(got, -(early as i64));
+        assert!(window.0 <= got && got <= window.1);
+    }
+
+    #[test]
+    fn the_duck_ramps_from_the_states_own_level() {
+        // The engine ramps 215 -> 161 a unit a vsync; a state taken at 192
+        // reaches 161 in 31 vsyncs, as `zenoir_summon_mid_cast` does.
+        let engine: Vec<u8> = (161..=215)
+            .rev()
+            .chain(std::iter::repeat_n(161, 20))
+            .collect();
+        let v = duck_schedule(&engine, 192, 0, RETAIL_VSYNC_SAMPLES);
+        assert_eq!(v[0], 96);
+        assert_eq!(v[31], 80);
+        assert_eq!(*v.last().unwrap(), 80);
+        // At the engine's own start the schedule is the engine's level halved.
+        let same = duck_schedule(&engine, 215, 0, RETAIL_VSYNC_SAMPLES);
+        assert!(same.iter().zip(&engine).all(|(v, l)| *v == l >> 1));
+    }
 
     #[test]
     fn a_resumed_voice_lands_on_the_tracks_lag() {

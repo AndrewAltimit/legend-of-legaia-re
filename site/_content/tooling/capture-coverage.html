@@ -1,0 +1,109 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; capture coverage</div>
+  <h1>Capture coverage: which parts of the game the retail corpus has seen</h1>
+  <p class="lede">The <a href="retail-compare.html">retail comparison corpus</a> scores the engine at every captured moment, and its headline is only as broad as the moments it holds: a median score over states that all stand in a handful of scenes, fighting a handful of monsters, says nothing about the rest of the game. This report takes its denominator from the <strong>disc</strong>, the way <a href="disc-coverage.html">disc coverage</a> does for code, asks of every scene, monster, attack, cast and screen whether some retail state shows it, and ranks what to capture next.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The disc defines every item: scenes, monsters, enemy attacks, player casts, cast modules and screens. The census reads every retail corpus state's RAM without running the engine and marks each item held when some state shows it. The baseline marks an item scored when that state already carries an image score. What is neither becomes a ranked worklist, which the capture probes fill with new retail states.">
+      <defs><marker id="cc-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="110" y="44">The disc</text>
+      <text class="dg-sub" x="110" y="62">scenes, monsters, attacks,</text>
+      <text class="dg-sub" x="110" y="78">casts, modules, screens</text>
+      <rect class="dg-node" x="10" y="120" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="110" y="144">The retail corpus</text>
+      <text class="dg-sub" x="110" y="162">every state's RAM,</text>
+      <text class="dg-sub" x="110" y="178">no engine run</text>
+      <path class="dg-edge" d="M210 55 L268 95" marker-end="url(#cc-ah)"/>
+      <path class="dg-edge" d="M210 155 L268 115" marker-end="url(#cc-ah)"/>
+      <rect class="dg-node-accent" x="262" y="70" width="210" height="70" rx="4"/>
+      <text class="dg-label" x="367" y="94">Census</text>
+      <text class="dg-sub" x="367" y="112">held: a state shows it</text>
+      <text class="dg-sub" x="367" y="128">scored: the corpus scores it</text>
+      <path class="dg-edge" d="M472 105 L520 105" marker-end="url(#cc-ah)"/>
+      <rect class="dg-node-warn" x="524" y="70" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="609" y="94">Ranked worklist</text>
+      <text class="dg-sub" x="609" y="112">uncovered items,</text>
+      <text class="dg-sub" x="609" y="128">most valuable first</text>
+      <path class="dg-edge" d="M694 105 L740 105" marker-end="url(#cc-ah)"/>
+      <rect class="dg-node-ok" x="744" y="70" width="126" height="70" rx="4"/>
+      <text class="dg-label" x="807" y="94">Capture</text>
+      <text class="dg-sub" x="807" y="112">probes walk,</text>
+      <text class="dg-sub" x="807" y="128">fight, save</text>
+      <path class="dg-edge-dim" d="M807 140 L807 200 L110 200 L110 192"/>
+    </svg>
+    <figcaption>A new state joins the corpus, and the next census counts it. The census and the report carry monster and spell names read off the disc, so both stay under the gitignored <code>captures/</code>.</figcaption>
+  </figure>
+<pre><code>scripts/ci/capture-coverage.py                # build, census, report under captures/capture-coverage/
+scripts/ci/capture-coverage.py --no-build     # reuse target/release-test/legaia-engine
+scripts/ci/capture-coverage.py --census F     # report from an existing census JSON
+scripts/ci/capture-coverage.py --summary      # the headline table only</code></pre>
+  <p>The census itself is <code>legaia-engine retail-compare --census &lt;json&gt;</code>. Like the corpus driver, the script exits cleanly with a <code>[skip]</code> line when the save library or the extracted disc is missing.</p>
+</section>
+
+<section class="doc-section" id="covered" data-doc="what-counts-as-covered,the-dimensions">
+  <h2>What counts as covered</h2>
+  <p>Two tiers per item. <strong>Held</strong>: some corpus state made on a retail disc shows it (a state that replays a patched executable never covers anything). <strong>Scored</strong>: that state also carries an image score in the corpus baseline. A held item that is not scored is a capture the corpus cannot yet seed, or one whose frame is a fade.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Dimension</th><th>Denominator</th><th>A state covers an item when</th></tr></thead>
+    <tbody>
+      <tr><td>Scenes</td><td>every town, field and world-map block of the <a href="../reference/scene-names.html">scene table</a></td><td>its loaded scene is the block (walked: a field or world-map state stands in it)</td></tr>
+      <tr><td>Monsters</td><td>every populated record of the monster archive</td><td>the formation holds the id</td></tr>
+      <tr><td>Enemy attacks</td><td>each monster's physical attack and every magic id its record carries</td><td>that monster is acting with that attack, on screen</td></tr>
+      <tr><td>Player casts</td><td>the named summon-band spells of the <a href="../formats/spell-table.html">spell table</a></td><td>a party seat acts with that spell queued</td></tr>
+      <tr><td>Cast modules</td><td>the 64 slot-B images</td><td>an acting cast pages the module</td></tr>
+      <tr><td>Menu screens</td><td>every reachable sub-screen, the title family and the map display</td><td>a menu state stands on it</td></tr>
+      <tr><td>Battle screens</td><td>the command flow's surfaces and the results window</td><td>a battle state stands on it</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>An action counts only while it is on screen</strong>: the action state sits in the attack chain, the magic or item flow, the summon flow or the module sequence. A prompt or the clean-up after the hit covers the monsters but no attack.</li>
+    <li><strong>A boss's scripted cast</strong> names an id its record does not carry, so the census is its only witness: a seen scripted cast joins the denominator as its own item. The record-carried items are fixed by the disc.</li>
+    <li><strong>Which module a cast pages</strong> follows the two loader paths of the <a href="../subsystems/cast-module.html">cast module</a> page: the summon band by id, a capture-class record by its own index.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="ranking" data-doc="ranking-the-worklist">
+  <h2>Ranking the worklist</h2>
+  <ul class="bullets">
+    <li><strong>Monsters and enemy attacks</strong> by how many formation rows across all scenes hold the monster, with the scenes it is met in - the places to walk to capture it. A monster no row holds is a scripted fight.</li>
+    <li><strong>Enemy magic attacks</strong> by how many monster records carry the id.</li>
+    <li><strong>Cast modules</strong> by how many spells share the module.</li>
+    <li><strong>Scenes</strong> towns first, then fields, then the overworlds.</li>
+  </ul>
+  <p>The report closes with every held item and the states that hold it.</p>
+</section>
+
+<section class="doc-section" id="filling" data-doc="filling-the-worklist">
+  <h2>Filling the worklist</h2>
+  <p>Every new state is made by playing the retail game under PCSX-Redux, pad only where possible, and every poke a probe does make is recorded with the state.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Probe</th><th>What it captures</th></tr></thead>
+    <tbody>
+      <tr><td><code>autorun_battle_harvest.lua</code></td><td>Walks from a field state until an encounter, plays rounds with Spirit so the monsters act, and saves a state whenever a monster's action is mid-way. <code>LEGAIA_WANT</code> names a formation by its monster ids and lets retail's own encounter roll pick it; knobs keep a low-level party alive, wound the monsters so a heal has a patient, or keep the pre-pick state for the <a href="cast-sequence-oracle.html">cast-sequence oracle</a>.</td></tr>
+      <tr><td><code>plan_walk_route.py</code> + <code>autorun_walk_route.lua</code></td><td>A planned walk for scenes a random walk never reaches: the planner searches each scene's collision grid with the teleports as edges and writes a route; the probe walks it on the pad, fights what it meets, and saves a state in every scene it enters. <code>ACT</code> and <code>TALK</code> lines work cabinets, counters and the conversations a route must have.</td></tr>
+      <tr><td><code>autorun_door_hop.lua</code></td><td>Crosses a chain of doors by holding the player on each door's walk-on tile; the door's own record runs with its story gates, so a closed door ends the run.</td></tr>
+      <tr><td><code>autorun_screen_walk.lua</code></td><td>A list of waits, presses and saves gated on the game mode or the sub-screen word, for screens behind a conversation or a menu path, such as a shop's lists.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A harvested state is a candidate until its census row shows the seat, category and id its label claims, its retail frame shows that attacker (and the spell's name banner, for a cast), and it is backed up with its scenario block naming the source state, the probe, the vsync and any poke it inherits. The scores of that scratch run are what it adds to the corpus at the next reviewed baseline update.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <a href="disc-coverage.html">Disc coverage</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/capture-coverage.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

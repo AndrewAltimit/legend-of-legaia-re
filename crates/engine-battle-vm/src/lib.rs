@@ -26,6 +26,7 @@ pub mod battle_cam_script;
 pub mod battle_cast_census;
 pub mod battle_cast_cue;
 pub mod battle_cast_dispatch;
+pub mod battle_cd_drive;
 pub mod battle_commit_log;
 pub mod battle_cue_group;
 pub mod battle_cursor_pose;

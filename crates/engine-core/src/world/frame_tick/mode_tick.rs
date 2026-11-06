@@ -54,6 +54,14 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // A summon's seek arm blocks retail's whole game loop on the drive
+        // (`World::cast_drive_blocks_frame`): a frame-stepped
+        // `orb_summon_mid_cast` moves only what the interrupt handlers write
+        // across the hold. The camera, the actors and the module stand still.
+        if self.cast_drive_blocks_frame() {
+            self.step_blocked_cast_frame();
+            return None;
+        }
         // A pinned encounter entry ([`EncounterState::rng_hold`]).
         if let Some(seed) = self.encounters.rng_hold {
             if self.mode == SceneMode::Battle {
@@ -67,6 +75,13 @@ impl World {
         self.move_vm.begin_strip_tick();
         self.refresh_bag_window();
         let outcome = self.tick_modes();
+        // The script runner's release: a conversation that showed a box and
+        // has just let the player go leaves the pad hold
+        // (`World::tick_script_release_hold`). Field-run modes only - the
+        // runner is the field's.
+        if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
+            self.tick_script_release_hold();
+        }
         // An active expansion pack's per-tick step (pack-line resolve, quest
         // state re-test); the identity with none.
         self.tick_expansion();

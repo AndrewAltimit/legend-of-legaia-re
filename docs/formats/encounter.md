@@ -352,7 +352,7 @@ The reader leaves at its very top when the formation table's count byte is zero 
 | Test | What it is |
 |---|---|
 | `*(_DAT_8007C364)+0x10 & 0x80000` | The player's engaged bit. A talk or touch raises it, and so does the script runner `FUN_80039B7C` on every frame it steps a context (`0x80039DB8..0x80039DD4`): a door, a scripted walk and an open box all hold the roll. |
-| `_DAT_8007B6B4 != 0` | The dialogue-pacing countdown the runner arms as a context closes. |
+| `_DAT_8007B6B4 != 0` | The pad hold: `0x10` as the script runner releases a conversation, `0x28` after a map install or a warp landing. |
 | `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
 | `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
 

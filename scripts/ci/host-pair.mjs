@@ -70,6 +70,9 @@ export const SCENES = {
   cast: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3] },
   /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
   arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
+  /* The retock innkeeper (placement 26, the 240 G stay): the field-VM inn record's prompt,
+   * picker and rest fade, stepped on Cross. */
+  inn: { scene: 'retock', ticks: 900, every: 30, talk: { tick: 30, slot: 26 }, taps: every(90, 890, 30, 'Cross') },
   /* Pause menu Save on the world map (saving works anywhere there): slot, block, Yes. */
   save: { scene: 'map01', ticks: 720, every: 30, taps: savePause() },
 };
@@ -117,6 +120,11 @@ SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'nati
 const MODES = {
   retail: { native: ['--retail', '--psx-render'], boxes: ['play-retail-mode', 'play-psx-render'] },
   enhanced: { native: [], boxes: [] },
+  /* Enhanced with one pass off on both hosts: splits a pixel difference by the pass behind it. */
+  no_ssao: { native: ['--no-ssao'], boxes: [], unboxes: ['play-ssao'] },
+  no_lighting: { native: ['--no-dynamic-lighting'], boxes: [], unboxes: ['play-dyn-light'] },
+  no_fog: { native: ['--no-volumetric-fog'], boxes: [], unboxes: ['play-ground-fog'] },
+  no_fade: { native: ['--no-occlusion-fade'], boxes: [], unboxes: ['play-see-through'] },
 };
 
 function nativeRun(engine, name, sc, mode, dir, opts) {
@@ -153,12 +161,14 @@ async function pageRun(cfg) {
   const btn = document.querySelector(`[data-scene="${sc.scene || 'town01'}"]`);
   if (!btn) throw new Error('no scene button ' + sc.scene);
   for (const id of cfg.boxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (!el.checked) el.click(); }
+  for (const id of cfg.unboxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (el.checked) el.click(); }
   const P = (window.__pair = window.__pair);
   P.vt = 1e6; P.virtual = true;
   btn.click();
   const view = window.__playView;
   view.stop();
   view.setPaused(true);
+  if (cfg.ssaoView) view.renderer.ssaoDebug = true;
   if (cfg.lgsf) {
     const bin = atob(cfg.lgsf);
     const bytes = new Uint8Array(bin.length);
@@ -349,7 +359,7 @@ async function main() {
     await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
     await page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 120000 });
     const lgsf = sc.lgsfPath ? fs.readFileSync(sc.lgsfPath).toString('base64') : null;
-    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, key: KEY, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
+    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
     await context.close();
     let worst = null, sum = 0, offFrames = 0, firstTrace = null, traceOff = 0;
     const rows = [];

@@ -156,6 +156,9 @@ pub struct ModuleCamState {
     /// ([`summon_holds::Gate::RampUp`] / [`summon_holds::Gate::RampDown`]):
     /// PROT 0918's creature record `+0x72`, PROT 0922's clip frame `+0x68`.
     pub ramp: i32,
+    /// A module's own pass counter: PROT 0955's `0x801F9D30`, zeroed by Kiss
+    /// of Death's arm 0 and bumped by every pass of arms 1 and 2.
+    pub pass_count: u32,
     /// Whether every monster seat has settled - a living one back on idle,
     /// a dead one faded out - fed in by the host each tick for a settle
     /// gate ([`summon_holds::Gate::Settle`]).
@@ -997,6 +1000,7 @@ mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 mod capture_spawns;
+mod chaos_flare;
 pub mod creature;
 mod creature_spawns;
 mod cross_beam;
@@ -1021,6 +1025,7 @@ mod nighto;
 mod nova;
 mod orb;
 mod plasma_strike;
+mod power_charge;
 mod power_up;
 mod puera;
 mod rolling_flare;
@@ -1056,6 +1061,9 @@ pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_c
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
+pub use chaos_flare::{
+    CHAOS_FLARE_BODY, CHAOS_FLARE_BURST_RECORDS, CHAOS_FLARE_CHARGE_RECORDS, chaos_flare_camera,
+};
 pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
@@ -1081,7 +1089,10 @@ pub use gola_mushura_barra::*;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
-pub use kiss_of_death::{KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN, kiss_of_death_camera};
+pub use kiss_of_death::{
+    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN,
+    KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
+};
 pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
@@ -1095,6 +1106,7 @@ pub use plasma_strike::{
     NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
 };
+pub use power_charge::{POWER_CHARGE_BODY, POWER_CHARGE_RECORD, power_charge_camera};
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
@@ -1120,7 +1132,9 @@ pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories
 pub use water_column::{WATER_COLUMN_COUNTDOWN, water_column_camera};
 pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
 pub use water_hazard::{water_hazard_camera, water_hazard_ring};
-pub use white_shield::{WHITE_SHIELD_BODY, WHITE_SHIELD_COUNTDOWN, white_shield_camera};
+pub use white_shield::{
+    WHITE_SHIELD_BODY, WHITE_SHIELD_COUNTDOWN, WHITE_SHIELD_RECORD, white_shield_camera,
+};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {
@@ -1423,9 +1437,10 @@ impl ModuleProfile {
 /// return: PROT 0910's and 0913's arm 2 (`jal 0x8003F2B8` at `0x801F6CDC` /
 /// `0x801F6D0C`, then `bne v0,zero`), behind arm 1's seek
 /// `FUN_8003EAE4(0, 0xC)`. Retail spends as many vsyncs there as the drive
-/// takes; the engine's stream is resident, so the arm passes at once. A
-/// capture taken on the arm is placed by the arm alone
-/// (`legaia_engine_capture`'s phase gate).
+/// takes; the engine holds the arm on its drive model
+/// (`legaia_engine_battle_vm::battle_cd_drive`, the band's
+/// `World::module_drive_holds`). A capture taken on the arm is placed by the
+/// arm alone (`legaia_engine_capture`'s phase gate).
 ///
 pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {

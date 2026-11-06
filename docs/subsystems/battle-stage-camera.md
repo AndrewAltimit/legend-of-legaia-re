@@ -770,6 +770,24 @@ Port: `battle_cam_script::end_of_action_phase` and
 next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
 while the round is executing.
 
+The gate's pass frames the seat it ran on, not the next one. The port's host
+can arm the next actor (state `0x00`, a new `ctx[+0x13]`) in the tick the
+Done or gate pass ran, before the camera steps on that pass, so the camera
+keeps the seat of the pass it frames (`BattleState::sm_ran_actor`,
+`battle_cam_inputs::ran_pass_actor`). Framed on the incoming seat instead, the
+Done band's case 6 tweened onto that seat for three setup passes and the seed
+`0x0C` set out from there: `battle_tunnelc_xain_bloody_horns_mid_cast` then
+reached Bloody Horns' walk-in turning down from yaw `1012` through `0`, where
+retail's camera turns up onto the same endpoint (RAM at arm 0: yaw `2850`
+rising at `68` a vsync). A retail film of an injected Bloody Horns shows the
+same hold: through `0x5A`, `0x0A` and `0x0C`'s first vsyncs the table is the
+finished actor's (`yaw_end` drifting `+4` a pass with the counter), and the
+next end appears with `0x28` (grade `capture`). A film played on from
+`dohaty_nova_v2_pre_scythe_wind` (parked in `0x0A` behind a Spirit) reads the
+same: `0x0A` and `0x0C` hold the Spirit member's endpoint (yaw `2309`, TR z
+`3276`), and the first new one (yaw `2048`, TR z `4915`) is on screen with
+`0x28`.
+
 ### Framing cases
 
 `FUN_801D5854`'s case argument indexes a ten-entry jump table at `0x801CEA00`
@@ -1132,6 +1150,12 @@ live `+0x36` for case 7's Y), not the live pair case 6 reads.
 | `0x1F` recovery wait | `0x801E3A88` | `7`; `8` when the target's anim `+0x1D9` is its knockdown `+0x1F1` or non-zero get-up `+0x1F2` |
 | `0x20` return | `0x801E54EC`, fork `0x801E5660..0x801E56C0` | as `0x1F`; also `8` when a party slot faces a target in a death clip (anim `7` / `8`) |
 | `0x52` / `0xFD` | `0x801E5F74` | `8` unconditionally |
+
+The pass on which `0x20` lets go arms nothing: it stores `0x50` (`0x801E5590`)
+and jumps to the state tail at `0x801E5F64` before the fork, so the walker steps
+the increments the last held pass armed, and case 8 is armed by the Done arm a
+pass later. An Attack's Done band therefore opens with one un-re-armed step of
+case 7's table between the two framings.
 
 `player_steal_skeleton_pre` (`0x1E`) reads case 7's tween targets;
 `player_steal_skeleton_banner` (`0x20`, the skeleton on its knockdown at HP

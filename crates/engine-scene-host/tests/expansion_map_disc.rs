@@ -68,6 +68,19 @@ fn player_xz(host: &SceneHost) -> (i16, i16) {
     (ms.world_x, ms.world_z)
 }
 
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the pad controller is off until it drains.
+fn wait_out_load_hold(host: &mut SceneHost) {
+    for _ in 0..0x40 {
+        if host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        host.world.set_pad(0);
+        host.tick().expect("tick");
+    }
+    panic!("the post-load hold never drained");
+}
+
 /// Hold `btn` for `frames` host ticks; returns the first non-step event.
 fn hold(host: &mut SceneHost, btn: PadButton, frames: usize) -> Option<SceneTickEvent> {
     for _ in 0..frames {
@@ -119,6 +132,7 @@ fn the_tower_floor_enters_walks_blocks_and_exits_to_rim_elm() {
     assert_eq!(placed.len(), def.props.len(), "{placed:?}");
 
     // Walk: N steps west along row 10 move the player.
+    wait_out_load_hold(&mut host);
     let start = player_xz(&host);
     assert!(hold(&mut host, PadButton::Left, 20).is_none());
     let moved = player_xz(&host);

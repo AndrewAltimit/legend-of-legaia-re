@@ -91,6 +91,15 @@ impl LegaiaRuntime {
         if !self.options_state.ssao {
             return Vec::new();
         }
+        // The window's gate on the same frame (`ssao_scope`): no pass while a
+        // minigame venue owns it.
+        if !self
+            .scene_host
+            .host()
+            .is_none_or(|h| legaia_engine_session::ssao_scope::ssao_applies(&h.world))
+        {
+            return Vec::new();
+        }
         let Ok(vp) = <[f32; 16]>::try_from(view_proj) else {
             return Vec::new();
         };

@@ -3,7 +3,15 @@
 //!
 //! See `ghidra/scripts/funcs/overlay_cast_white_shield_0955_801f8f0c.txt`.
 
-use super::{CaptureCamArm, ModuleCamSeats, ModuleCamState, ModuleShot, focus_on, yaw_from};
+use super::{
+    CaptureCamArm, ModuleCamSeats, ModuleCamState, ModuleShot, ModuleSpawn, SpawnAnchor,
+    SpawnRecord, focus_on, yaw_from,
+};
+
+/// The record arm 0 seats on the caster seat (`a0 = caster + 0x34`,
+/// `a1 = caster + 0x44`, scale `0x1000`, `0x801F8FB4..0x801F8FC8`): the
+/// shield that rises over the caster through arms 1 and 2.
+pub const WHITE_SHIELD_RECORD: u32 = 0x801F_93D4;
 
 /// PROT 0955's White Shield tick body.
 pub const WHITE_SHIELD_BODY: u32 = crate::cast_module_ticks::WHITE_SHIELD_TICK;
@@ -18,7 +26,7 @@ pub const WHITE_SHIELD_COUNTDOWN: u32 = super::KISS_OF_DEATH_COUNTDOWN;
 ///
 /// | arm | camera | countdown as it passes |
 /// |---|---|---|
-/// | 0 (`0x801F8FAC`) | pitch `-0x20`, TR z `depth / 2`, `0xC` frames | `= scalar * 0xC` |
+/// | 0 (`0x801F8FAC`) | pitch `-0x20`, TR z `depth / 2`, `0xC` frames; the shield record on the caster | `= scalar * 0xC` |
 /// | 1 (`0x801F9080`) | held, then pitch `0x80`, TR z `depth`, `0x100` frames | `+= scalar << 8` |
 /// | 2 (`0x801F9124`) | held, then pitch `0`, TR z `depth`, `0x40` frames | `+= scalar * 0x60` |
 /// | 3 (`0x801F91D8`) | held; the buff, and the body returns `0` | - |
@@ -28,7 +36,9 @@ pub const WHITE_SHIELD_COUNTDOWN: u32 = super::KISS_OF_DEATH_COUNTDOWN;
 /// toward zero (`srl 0x1f` / `addu` / `sra 1` at `0x801F9010..0x801F9018`).
 /// The body's own seat writes (the render flag of arms 1 and 2, the buff)
 /// are [`crate::cast_module_ticks::white_shield_tick`]'s; this director owns
-/// the gate that holds it.
+/// the gate that holds it and the one record the body seats, so nothing else
+/// of the cell's image goes in
+/// ([`super::capture_director_seats_all`]).
 ///
 /// PORT: overlay_cast_white_shield_0955_801f8f0c (PROT 0955 `0x60`; the camera arms and the countdown)
 pub fn white_shield_camera(
@@ -49,9 +59,15 @@ pub fn white_shield_camera(
     match phase {
         0 => {
             st.countdown.0 = super::SPEED_SCALAR * 0xC;
+            let mut pass_spawns = [None; 5];
+            pass_spawns[0] = Some(ModuleSpawn {
+                record: SpawnRecord::Module(WHITE_SHIELD_RECORD),
+                anchor: SpawnAnchor::CasterShifted { dy: 0, dz: 0 },
+            });
             CaptureCamArm {
                 shot: shot(-0x20, depth / 2, 0xC),
                 next: Some(1),
+                pass_spawns,
                 ..Default::default()
             }
         }
@@ -116,6 +132,10 @@ mod tests {
         assert_eq!(s.focus, [-207, 0, 476]);
         assert_eq!(s.frames, 0xC);
         assert_eq!(st.countdown.0, 96);
+        assert_eq!(
+            a.pass_spawns[0].map(|s| s.record),
+            Some(SpawnRecord::Module(WHITE_SHIELD_RECORD))
+        );
     }
 
     /// Arms 1 and 2 hold on the word, then cut and re-arm it; arm 3 finishes.

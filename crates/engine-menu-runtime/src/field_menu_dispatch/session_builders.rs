@@ -146,16 +146,29 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         .iter()
         .filter_map(|&id| Some((id, world.item_display_name(id)?)))
         .collect();
-    InventoryUseSession::new(
+    // The list's applicability gate is retail's probe `FUN_8003043C` when the
+    // disc item-effect table is installed, so a row it greys cannot be used.
+    let unaffected: Vec<u8> = items
+        .iter()
+        .copied()
+        .filter(|&id| crate::menu_validator::item_affects_anyone(world, id) == Some(false))
+        .collect();
+    let session = InventoryUseSession::new(
         world.tables.item_catalog.clone(),
         items,
         targets,
         InventoryContext::Field,
-    )
-    .with_item_names(names)
-    // The row payloads: retail's list entries carry a bag slot, and Use /
-    // Throw Out remove from the slot the row named.
-    .with_bag_slots(bag_slots)
+    );
+    let session = if world.tables.item_effects.is_some() {
+        session.with_field_probe(unaffected)
+    } else {
+        session
+    };
+    session
+        .with_item_names(names)
+        // The row payloads: retail's list entries carry a bag slot, and Use /
+        // Throw Out remove from the slot the row named.
+        .with_bag_slots(bag_slots)
 }
 
 /// Resolve one item id's name / description / passive lines through the

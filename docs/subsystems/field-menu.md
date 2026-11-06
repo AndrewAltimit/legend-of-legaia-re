@@ -1081,7 +1081,13 @@ Cancel -> sub-screen 1.
 display-order table at `0x801E4A88` (`table[rank] = item_id`, PROT 0899 file
 `0x16270`) into an id -> rank map in a 256-byte scratch (a duplicated id keeps
 its last rank), then selection-sorts the occupied bag pairs by rank; emptied
-slots sink behind the occupied run. Port: `engine-menus::menu_arrange`.
+slots sink behind the occupied run. The disc's table is a permutation, so every
+id has a rank. The sort runs over the bag's active window
+(`_DAT_8007B5EA.._DAT_8007B5EC`) and swaps the physical `0x80085958` pairs, so
+the order outlives the screen: the re-opened list, the battle Item window, the
+shop's sell list and the save all read the sorted bag. Port:
+`engine-menus::menu_arrange`, applied to the bag by `ItemBag::arrange`, after
+which the screen is rebuilt over it in the Use list's grouping.
 
 **Use list `FUN_801D7E50`** (sub-screen 6). Phase 0 hides the command hand
 (`|= 0x1000`) and runs the script (re-creating list 15 in place, snapping 13 /

@@ -2,6 +2,8 @@
 //! disc against the Rust kernel that claims to port it. Skips without
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
 
+mod ambient_motion;
+mod arrange;
 mod arts_gauge;
 mod arts_queue;
 mod arts_roll;
@@ -26,16 +28,23 @@ mod field_vm;
 mod field_walls;
 mod fishing_cadence;
 mod fishing_fight;
+mod floor_height;
 mod inn;
 mod inventory;
 mod item_apply;
+mod item_probe;
 mod level_up;
 mod magic_level;
 mod melee_hit;
+mod menu_stats;
 mod monster_pick;
+mod motion_vm;
 mod muscle_contest;
+mod passive_sweep;
 mod queue_head;
+mod record_spawn;
 mod round_boundary;
+mod round_end;
 mod round_open;
 mod separation;
 mod seru_debuff;
@@ -44,6 +53,8 @@ mod spirit_cleanup;
 mod spoils;
 mod stat_aggregator;
 mod tint_ease;
+mod turn_pick;
 mod unequip;
 mod validator;
 mod walk_step;
+mod zone_ramp;

@@ -20,7 +20,9 @@ pub struct ScreenFxState {
     /// Further full-screen fades running beside [`Self::fade`]: retail's
     /// fade spawner allocates a pool actor per call, so a module can run its
     /// own ramps while the summon band's flash is still up (PROT 0905's
-    /// white rise over the band's flash-out). Stepped and drawn like
+    /// white rise over the band's flash-out), and every map install spawns
+    /// its entry pair here (`FUN_8003ADAC`,
+    /// [`crate::world::World::seat_map_install_tail`]). Stepped and drawn like
     /// [`Self::fade`], dropped as each lands; cleared with the battle.
     pub(crate) module_fades: Vec<legaia_engine_system::fade::FadeState>,
     /// The live **screen-effect colour tween** the field VM's op `0x34`

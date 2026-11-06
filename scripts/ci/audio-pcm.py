@@ -18,6 +18,10 @@ Two channels per state:
            rate converter and cue gain. Rate, level and waveform; not the start.
     emitter  the track channel with the state's own cue voices resumed into it:
            a looping positional emitter holds its voices for the whole recording
+    cast   the track channel with the engine's own cues mixed in: the fight
+           seeded into a battle state by the retail comparison corpus's child,
+           its mix recorded from the seed's gate on with the music bus silent
+           (`LEGAIA_DIAG_AUDIO_WAV`), over the cast's own seconds
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
     scripts/ci/audio-pcm.py --capture --jobs 6    # the recordings side by side
@@ -32,6 +36,7 @@ import argparse
 import concurrent.futures
 import gzip
 import itertools
+import shlex
 import json
 import os
 import shutil
@@ -79,6 +84,25 @@ XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35891, 11025)}
 # A state a looping emitter sounds through: the track alone reads its energy as
 # level and correlation.
 EMITTER_STATES = ["rimelm_wall_press_left"]
+# Mid-cast battle states for the `cast` channel. The engine's recording runs from
+# the seed's gate to `CAST_DONE_TAIL` vsyncs past the action SM's Done band, where
+# the child plays on into its own next turn; the score is over that span. A state
+# not in STATES is recorded for `CAST_RECORD_SECONDS` and scored on this channel
+# alone.
+CAST_STATES = [
+    "zeto_call_wave_mid_cast",
+    "zeto_big_wave_mid_cast",
+    "cort_guilty_cross_mid_cast",
+    "cort_mystic_shield_mid_cast",
+    "theeder_summon_mid_cast",
+    "zenoir_summon_mid_cast",
+    "nighto_summon_mid_cast",
+    "orb_summon_mid_cast",
+    "swordie_summon_mid_cast",
+    "gilium_summon_mid_cast",
+]
+CAST_DONE_TAIL = 20
+CAST_RECORD_SECONDS = 40
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
 CORR_SLACK = 0.002
 LEVEL_SLACK = 0.05
@@ -177,8 +201,12 @@ def capture_missing(want, library: Path, manifest: dict, out: Path, disc: Path, 
         silenced_copy(state, silent)
         record(silent, wav, CORE_SECONDS, disc)
 
+    def cast(label: str, state: Path, wav: Path) -> None:
+        record(state, wav, CAST_RECORD_SECONDS, disc)
+
     tasks = []
-    for labels, suffix, fn in ((STATES, "", track), (CORE_STATES, ".core", core), (XA_STATES, ".core", core)):
+    for labels, suffix, fn in ((STATES, "", track), (CAST_STATES, "", cast),
+                               (CORE_STATES, ".core", core), (XA_STATES, ".core", core)):
         for label in filter(want, labels):
             state = state_file(label, library, manifest)
             wav = out / f"{label}{suffix}.wav"
@@ -200,6 +228,58 @@ def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dic
     if subprocess.run(cmd, cwd=REPO, env=env, stderr=subprocess.DEVNULL).returncode != 0:
         return {"corr_median": -1.0, "level_db": 0.0}
     return json.loads(out.read_text())
+
+
+def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path) -> Path | None:
+    """The engine's mix of a battle state's cast, the music bus silent.
+
+    The retail comparison corpus seeds the state (its image child, kept with
+    `LEGAIA_RC_CHILD_LOG=1`); the child is run again with its director on a
+    device-less output, reading the disc's CD-XA, and records from its gate on.
+    """
+    rc = out / f"{label}.rc"
+    extracted = REPO / "extracted"
+    env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error", XMODIFIERS="@im=none")
+    subprocess.run([str(exe), "retail-compare", "--out", str(rc), "--library", str(library),
+                    "--extracted-root", str(extracted), "--manifest",
+                    str(REPO / "scripts" / "scenarios.toml"), "--images", "--filter", f"={label}"],
+                   cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    kept = rc / "engine" / f"{label}.cmd.sh"
+    if not kept.exists():
+        print(f"[cast] {label}: retail-compare kept no child command")
+        return None
+    toks = shlex.split(kept.read_text())
+    work, rest = Path(toks[1]), toks[3:]
+    i = 0
+    while i < len(rest) and "=" in rest[i] and not rest[i].startswith("/"):
+        k, v = rest[i].split("=", 1)
+        env[k] = v
+        i += 1
+    args = [t for t in rest[i + 1:] if t != "--no-audio"]
+    # The child exits when its frame tick passes with the frame untaken.
+    if "--screenshot-tick" in args:
+        args[args.index("--screenshot-tick") + 1] = "40000"
+    if "--extracted-root" in args:
+        j = args.index("--extracted-root")
+        args[j : j + 2] = ["--disc", str(disc)]
+    wav = (out / f"{label}.cast.wav").resolve()
+    wav.unlink(missing_ok=True)
+    env.update({
+        "LEGAIA_AUDIO_DETACHED": "1",
+        # The frame is not taken: the child plays on past its gate.
+        "LEGAIA_DIAG_CAPTURE_TICK": "40000",
+        "LEGAIA_DIAG_AUDIO_WAV": str(wav),
+        "LEGAIA_DIAG_AUDIO_WAV_SECONDS": str(CAST_RECORD_SECONDS),
+        "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL": str(CAST_DONE_TAIL),
+    })
+    log = out / f"{label}.cast.log"
+    with log.open("w") as f:
+        subprocess.run([str(exe), *args], cwd=work, env=env, stdout=f, stderr=subprocess.STDOUT,
+                       timeout=900)
+    if not wav.exists():
+        print(f"[cast] {label}: the child wrote no recording (see {log})")
+        return None
+    return wav
 
 
 def main() -> int:
@@ -264,6 +344,34 @@ def main() -> int:
                 key=lambda r: r["corr_median"],
             )
             results[label] |= {"emitter_corr": e["corr_median"], "emitter_level": e["level_db"]}
+    for label in filter(want, CAST_STATES):
+        state = state_file(label, library, manifest)
+        wav = out / f"{label}.wav"
+        if state is None:
+            continue
+        if not wav.exists():
+            if not a.capture:
+                continue
+            record(state, wav, CAST_RECORD_SECONDS, disc)
+        cast = engine_cast_wav(exe, label, out, library, disc)
+        if cast is None:
+            continue
+        samples = (cast.stat().st_size - 44) // 4
+        c = max(
+            (score(exe, ["--label", label, "--pass", p, "--cast-wav", str(cast)], wav, samples,
+                   out / f"{label}.cast.json")
+             for p in ("0", "1", "2")),
+            key=lambda r: r["corr_median"],
+        )
+        if d := c.get("cast_drive"):
+            # The voice past the cast's CD-seek wait is aligned on its own, within
+            # the seek window (docs/subsystems/audio.md): reported, never silent.
+            vs = 737.1365
+            print(f"[cast] {label}: CD-seek wait {d['held_ticks']} ticks; voice "
+                  f"{(d['voice_offset'] - d['offset']) / vs:+.1f} vsyncs past the cast's offset, "
+                  f"window {d['window'][0] / vs:+.1f}..{d['window'][1] / vs:+.1f} vsyncs")
+        results.setdefault(label, {})
+        results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
     for label in filter(want, CORE_STATES):
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"

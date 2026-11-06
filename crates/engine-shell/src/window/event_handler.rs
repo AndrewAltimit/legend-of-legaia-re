@@ -82,6 +82,18 @@ impl ApplicationHandler for PlayWindowApp {
         self.win.request_redraw();
     }
 
+    /// Keep the frame loop alive from the event loop itself. The loop is
+    /// otherwise self-perpetuating (each `RedrawRequested` asks for the
+    /// next), so one redraw the platform drops - reported on Windows after
+    /// a right-click in the window - stopped the world for good: the
+    /// picture froze, input still arrived but nothing ticked, and only the
+    /// audio thread carried on. Asking again whenever the loop goes idle
+    /// re-arms it; a request while one is pending coalesces, so the frame
+    /// rate does not change.
+    fn about_to_wait(&mut self, _evl: &ActiveEventLoop) {
+        self.win.request_redraw();
+    }
+
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // A `--screenshot` run is driven entirely by `--key-script` /
         // `--pad-script`; host input must not reach it. The window opens on a

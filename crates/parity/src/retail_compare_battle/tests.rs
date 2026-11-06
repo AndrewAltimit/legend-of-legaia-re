@@ -749,6 +749,51 @@ fn a_done_capture_on_the_seeded_countdown_is_the_arm_pass() {
     assert!(!done_arm_pass(&ram, ctx, 0x51), "the settle gate holds it");
 }
 
+/// The pass before an Attack's Done arm is the return state's exit, which
+/// re-arms nothing, so the screen two passes back stands one stale case-7 step
+/// behind the Done arm's origin. `koru_pre_*`'s words (Gala on Koru, step 3):
+/// one pass back on case 8 is yaw `3496`, depth `6730`, focus z `-342`; case 7
+/// (yaw `3300`, depth `prescale(5120) = 8192`, focus the midpoint `-233`) takes
+/// them to `3595`, `5998`, `-399`. Pitch and `TR.y` stay.
+#[test]
+fn a_done_arm_capture_walks_the_strike_exit_on_case_7() {
+    use legaia_engine_camera::projection::BattleCamPose;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (gala, koru) = (0x800E_C9E8u32, 0x800E_D264u32);
+    put32(&mut ram, ACTOR_TABLE, gala);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, koru);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, gala + 0x1DE, 3);
+    put8(&mut ram, gala + 0x1DD, 3);
+    put16(&mut ram, gala + 0x3C, 19);
+    put16(&mut ram, gala + 0x40, (-792i16) as u16);
+    put16(&mut ram, koru + 0x3C, 2);
+    put16(&mut ram, koru + 0x40, 327);
+    put8(&mut ram, koru + 0x1F1, 4);
+    put16(&mut ram, ctx + 0x6D0, 5120);
+    // The Done table's yaw endpoint.
+    put16(&mut ram, ctx + TWEEN_TABLE + 4 + 2, 3300);
+    let one_back = BattleCamPose {
+        pitch: 4073.0,
+        yaw: 3496.0,
+        tr: [-74.0, 1280.0, 6730.0],
+        focus: [10.0, 0.0, -342.0],
+    };
+    let p = done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).expect("case 7");
+    assert_eq!(p.yaw, 3595.0);
+    assert_eq!(p.tr, [-113.0, 1280.0, 5998.0]);
+    assert_eq!(p.focus, [10.0, 0.0, -399.0]);
+    assert_eq!(p.pitch, 4073.0, "case 8 holds the live pitch");
+    // A target on its knockdown kept case 8 on the held passes.
+    put8(&mut ram, koru + 0x1D9, 4);
+    assert!(done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).is_none());
+    put8(&mut ram, koru + 0x1D9, 0);
+    // A Spirit or a cast has no strike band.
+    put8(&mut ram, gala + 0x1DE, 2);
+    assert!(done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).is_none());
+}
+
 /// A PROT 0962 charge body waiting in arm 3 walks the wind-up shot arm 2
 /// built once over `0xC` units: `koru_blade_breath_mid_cast` holds it two
 /// units in (yaw `99` a unit, `979` to go), so a walk back of two step-`2`
@@ -2353,4 +2398,115 @@ fn only_the_counter_storing_walk_ins_drop_the_yaw_clock() {
         !yaw_counter_reseeded_by(0x81),
         "a summon is no capture body"
     );
+}
+
+/// A bar and plaque the Attack arm raised, retired in the RAM, are seated on
+/// the elapsed the yaw counter's passes since the arm name, less the newest
+/// two (`battle_nilboa_aluru_v2_strike`: counter `0x212` at step `2`, both
+/// retired at `14`, the screen at `14`); past their landing on screen, or off
+/// the arm's rung, nothing is seated.
+#[test]
+fn attack_arm_glides_are_seated_off_the_yaw_counter() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put16(&mut ram, STEP_MODE, 0x10);
+    for i in 0..16 {
+        put16(&mut ram, FRAME_HISTORY + i * 2, 0x1C0);
+    }
+    put8(&mut ram, ctx + 7, 0x1E);
+    for (slot, target, start) in [(0u32, [16i16, 192], [16i16, 234]), (1, [16, 12], [16, -26])] {
+        let r = ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        put8(&mut ram, r + 1, 14);
+        put16(&mut ram, r + 4, target[0] as u16);
+        put16(&mut ram, r + 6, target[1] as u16);
+        put16(&mut ram, r + 8, start[0] as u16);
+        put16(&mut ram, r + 10, start[1] as u16);
+    }
+    put16(&mut ram, ctx + 0x6DA, 0x212);
+    let seats = attack_arm_glide_seats(&ram, ctx);
+    assert_eq!(
+        seats,
+        vec![
+            HudGlideSeat {
+                target: [16, 192],
+                elapsed: 14,
+                total: 16
+            },
+            HudGlideSeat {
+                target: [16, 12],
+                elapsed: 14,
+                total: 16
+            },
+        ]
+    );
+    // Two passes later the screen shows them landed.
+    put16(&mut ram, ctx + 0x6DA, 0x216);
+    assert!(attack_arm_glide_seats(&ram, ctx).is_empty());
+    // A counter on another rung names no arm.
+    put16(&mut ram, ctx + 0x6DA, 0x812);
+    assert!(attack_arm_glide_seats(&ram, ctx).is_empty());
+}
+
+/// A part whose program switched a rate inside the display lag is taken back
+/// on the old rate before the switch: PROT 0964's ray (`0x801F9008`) on the
+/// pass its length turned from `+96` to `-96`, length `384`, reads `288`
+/// eight vsyncs back, and one twelve vsyncs into the shrink reads `336`.
+#[test]
+fn a_rate_switched_inside_the_lag_rewinds_on_the_old_rate() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let rec = 0x801F_9008u32;
+    // `13 -128`, `28 12`, `9 31`, `28 -12`, `13 128`, `9 31`, `8` after the
+    // record's two-halfword head and a `9 0`.
+    let prog: [i16; 16] = [
+        -1, 0, 9, 0, 13, -128, 28, 12, 9, 31, 28, -12, 13, 128, 9, 31,
+    ];
+    for (i, &v) in prog.iter().enumerate() {
+        put16(&mut ram, rec + 2 * i as u32, v as u16);
+    }
+    put16(&mut ram, rec + 32, 8);
+    let n = 0x8008_1AE4;
+    put32(&mut ram, n + 0x48, rec);
+    put16(&mut ram, n + 0x70, 16);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0xC8, 384);
+    put16(&mut ram, n + 0xCA, (-96i16) as u16);
+    put16(&mut ram, n + 0x54, 248);
+    put16(&mut ram, n + 0x78, 0);
+    put16(&mut ram, n + 0x90, 1024);
+    assert_eq!(ram_read::displayed_part_halfword(&ram, n, 0xC8, 8), 288);
+    // Its level was fading in at `-128` a vsync until the switch.
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, n, 0x78, 8), 1024);
+    put16(&mut ram, n + 0x54, 152);
+    put16(&mut ram, n + 0xC8, 240);
+    assert_eq!(ram_read::displayed_part_halfword(&ram, n, 0xC8, 8), 336);
+}
+
+/// A magic-band capture whose accumulator adds up only on the history past
+/// its newest entry: `battle_garmel_songi_hyper_wave_mid_cast` holds `48`
+/// over steps `3, 2, 2, 2` (newest first), three step-`2` passes, so the
+/// display's two passes ran on step `2`. One that adds up on the newest
+/// reading keeps it.
+#[test]
+fn a_magic_band_accumulator_reads_the_older_steps_where_they_add_up() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x2B);
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    // The newest entry (cursor 4, so slot 3) is the dear frame.
+    put32(&mut ram, frame_step::FRAME_HISTORY_CURSOR, 4);
+    for k in 0..16u32 {
+        put16(&mut ram, frame_step::FRAME_HISTORY + k * 2, 0x1C0);
+    }
+    put16(&mut ram, frame_step::FRAME_HISTORY + 3 * 2, 534);
+    assert_eq!(frame_step::recent_pass_steps(&ram)[..3], [3, 2, 2]);
+    put32(&mut ram, ctx + 0x87C, 48);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), Some([2, 2]));
+    // `24 + 16 + 16`: the newest reading adds up, so it stands.
+    put32(&mut ram, ctx + 0x87C, 56);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), None);
+    // Outside `0x2B` the accumulator counts other passes.
+    put32(&mut ram, ctx + 0x87C, 48);
+    put8(&mut ram, ctx + 7, 0x70);
+    assert_eq!(frame_step::magic_band_older_steps(&ram), None);
 }

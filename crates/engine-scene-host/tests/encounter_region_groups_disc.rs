@@ -247,6 +247,10 @@ fn a_walking_player_fights_in_scenes_whose_regions_are_flag_gated() {
         actor.move_state.world_z = pz;
 
         let mut fired = false;
+        // The scene load's post-load pad hold (`FUN_8003ADAC`) holds the roll
+        // (`0x801DA14C`) until the player tick drains it; this drives the step
+        // kernel without those frames.
+        host.world.release_post_load_hold();
         for _ in 0..20_000 {
             if host.world.on_field_step() {
                 fired = true;

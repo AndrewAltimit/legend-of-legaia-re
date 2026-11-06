@@ -74,6 +74,17 @@ pub fn tick_open_subsession(
 fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
     match active {
         FieldMenuSubsession::Items(s) => {
+            // Arrange sorts the bag (`FUN_801D64A8`) and retail re-opens the
+            // list over it, so the rows come back in the Use list's grouping
+            // of the sorted bag.
+            if let Some(rank) = s.take_arrange() {
+                world.party.inventory.arrange(&rank);
+                let mut next = build_pause_items_session(world);
+                next.focus = s.focus;
+                next.command_cursor = s.command_cursor;
+                *s = next;
+                return;
+            }
             let Some(slot) = s.use_committed() else {
                 return;
             };

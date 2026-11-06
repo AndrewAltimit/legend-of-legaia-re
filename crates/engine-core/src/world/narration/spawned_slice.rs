@@ -140,11 +140,8 @@ impl World {
                 Some(slot) => !self.npcs.motions.contains_key(&slot),
                 None if grid == 0 => false,
                 None => {
-                    landed_now = self.step_player_walk_leg(
-                        walk.target,
-                        walk.speed.saturating_mul(grid),
-                        walk.approach,
-                    );
+                    landed_now =
+                        self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
                     landed_now
                 }
             };
@@ -796,11 +793,9 @@ impl World {
                         // frame that armed the park, after the script slice.
                         if grid > 0
                             && grid_live
-                            && host.world.step_player_walk_leg(
-                                (tx, tz),
-                                speed.saturating_mul(grid),
-                                b2 >> 4,
-                            )
+                            && host
+                                .world
+                                .step_player_walk_leg((tx, tz), speed, grid, b2 >> 4)
                         {
                             tl.park_landed = Some(pc + 5);
                             break;

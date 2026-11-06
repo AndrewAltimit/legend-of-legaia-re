@@ -164,9 +164,14 @@ impl StatusKind {
     pub fn default_duration(self) -> u8 {
         match self {
             StatusKind::Toxic | StatusKind::Venom | StatusKind::Rot | StatusKind::Curse => 255,
-            StatusKind::Numb => 3,
-            StatusKind::Sleep => 3,
-            StatusKind::Confuse => 3,
+            // Numb wears off on the round-end waker's `rand() & 7 == 0`
+            // (`FUN_801F45A4`) or a hit's strip, never on a count.
+            StatusKind::Numb => 255,
+            // Sleep and the `0x380` group: no retail writer clears them on a
+            // count - the round tick `FUN_801E752C` leaves them standing -
+            // only a hit's `0x0F80` strip, a cure or the battle's end.
+            StatusKind::Sleep => 255,
+            StatusKind::Confuse => 255,
             // Stone has no in-battle cure - it lasts the whole battle. 255 is
             // effectively "until battle end" (no battle runs that many turns).
             StatusKind::Stone => 255,
@@ -192,8 +197,15 @@ impl StatusKind {
     /// `true` if being hit clears this status. Sleep wakes on damage, and Numb
     /// clears on being attacked too (the wiki: it wears off "by being attacked
     /// or enough turns passing").
+    ///
+    /// The kinds are the word's `0x0F80` family, which retail's on-hit strip
+    /// clears whole (`andi v0,a1,0xf07f` at `0x801EDA5C`): Confuse's `0x380`
+    /// group with them.
     pub fn clears_on_damage(self) -> bool {
-        matches!(self, StatusKind::Numb | StatusKind::Sleep)
+        matches!(
+            self,
+            StatusKind::Numb | StatusKind::Sleep | StatusKind::Confuse
+        )
     }
 }
 
@@ -615,6 +627,49 @@ pub fn agl_status_inflict_roll(attacker_agl: u16, target_agl: u16, rand: u32) ->
         return false;
     }
     u32::from(target_agl) < rand % sum
+}
+
+/// The guard accessories' per-frame clear, in the order the sweep tests them:
+/// the record's `+0xF4` passive bit and the `andi` mask it applies to the
+/// actor's `+0x16E` word (Poison Guard 1 and 2, Rot, Curse, Stone and Numb
+/// Guard, then Master Guard).
+///
+/// PORT: FUN_8004CE2C (`0x8004CEF4..0x8004CFFC`, the masks)
+pub const GUARD_SWEEP_MASKS: [(u32, u16); 7] = [
+    (1 << 0x16, 0xFFFE),
+    (1 << 0x17, 0xFFFC),
+    (1 << 0x18, 0xFF87),
+    (1 << 0x19, 0xEFFF),
+    (1 << 0x1A, 0xFFFB),
+    (1 << 0x1B, 0xFBFF),
+    (1 << 0x1C, 0xE380),
+];
+
+/// Maximum AP (passive `0x2A`): bit `0x400` of the record's second ability
+/// word `+0xF8`. The sweep pins a living wearer's gauge `+0x170` at
+/// [`MAXIMUM_AP_GAUGE`] every frame (`0x8004CEB8..0x8004CECC`).
+pub const MAXIMUM_AP_WORD1_BIT: u32 = 0x400;
+
+/// The gauge value Maximum AP holds (`li v0,0x64`).
+pub const MAXIMUM_AP_GAUGE: u16 = 100;
+
+/// What the guard sweep leaves of a party seat's status word, given the
+/// record's first ability word. A zero word is passed by (`beq a2,zero`), and
+/// every other word runs every mask its passives select.
+///
+/// Retail has no guard test on most of its appliers: a hit, a special or a
+/// cast writes the bit whatever the wearer carries, and this sweep, which
+/// `FUN_8004DA00` tail-calls on every battle frame, takes it off again.
+///
+/// PORT: FUN_8004CE2C (`0x8004CED0..0x8004CFFC`, the guard clear)
+pub fn guard_sweep_word(word: u16, ability_word0: u32) -> u16 {
+    if word == 0 {
+        return 0;
+    }
+    GUARD_SWEEP_MASKS
+        .iter()
+        .filter(|(bit, _)| ability_word0 & bit != 0)
+        .fold(word, |w, (_, mask)| w & mask)
 }
 
 /// Tick-damage formula for Toxic - the exact strong-DoT arm of the retail

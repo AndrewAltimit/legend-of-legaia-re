@@ -488,13 +488,12 @@ fn the_stone_and_curse_arms_roll_what_retail_rolls() {
             a.params[0] = 0x77;
         }
         let list: Vec<u8> = if all { vec![0, 1, 2] } else { vec![target] };
-        let mv = match (selector, all) {
-            (9, false) => 0x3C,
-            (9, true) => 0xB9,
-            (_, false) => 0x40,
-            (_, true) => 0x53,
+        let kind = if selector == 9 {
+            legaia_engine_battle_vm::status_effects::StatusKind::Stone
+        } else {
+            legaia_engine_battle_vm::status_effects::StatusKind::Curse
         };
-        w.apply_enemy_agl_status(caster, mv, &list);
+        w.roll_status_class(caster, 0, kind, &list, false);
         for m in 0..3u8 {
             let i = usize::from(m);
             let a = actor(m);

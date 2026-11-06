@@ -714,10 +714,53 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
         ],
     ),
     (944, &[0x801F_7FD0, 0x801F_8038]),
-    (951, &[0x801F_8348, 0x801F_836C]),
+    (
+        953,
+        &[
+            0x801F_7BD0,
+            0x801F_7C40,
+            0x801F_7CB0,
+            0x801F_7A3C,
+            0x801F_7B48,
+            0x801F_799C,
+            0x801F_7A0C,
+            0x801F_7854,
+            0x801F_77C8,
+            0x801F_7838,
+            0x801F_78CC,
+            0x801F_7AF8,
+            0x801F_7D20,
+        ],
+    ),
+    (
+        951,
+        &[
+            0x801F_8348,
+            0x801F_836C,
+            0x801F_83FC,
+            0x801F_8448,
+            0x801F_8494,
+            0x801F_8530,
+            0x801F_859C,
+            0x801F_85E8,
+            0x801F_8978,
+            0x801F_8644,
+            0x801F_869C,
+            0x801F_8704,
+            0x801F_8774,
+            0x801F_8830,
+            0x801F_889C,
+            0x801F_895C,
+        ],
+    ),
     (
         955,
         &[
+            super::WHITE_SHIELD_RECORD,
+            super::POWER_CHARGE_RECORD,
+            super::KISS_OF_DEATH_ARM0_RECORDS[0],
+            super::KISS_OF_DEATH_ARM0_RECORDS[1],
+            super::KISS_OF_DEATH_PASS_RECORD,
             0x801F_95DC,
             0x801F_9630,
             0x801F_9684,
@@ -816,7 +859,7 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// shell no retail frame of the cast holds).
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 | 939 => true,
+        935 | 939 | 953 => true,
         964 => true,
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
@@ -824,11 +867,21 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
         956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
-        951 => body == Some(super::SCYTHE_WIND_BODY),
+        951 => matches!(
+            body,
+            Some(super::SCYTHE_WIND_BODY | super::CHAOS_FLARE_BODY)
+        ),
         952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
             body,
-            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+            Some(
+                super::TERROR_SCREAM_BODY
+                    | super::VOID_ACCESSORIES_BODY
+                    | super::KISS_OF_DEATH_BODY
+                    | super::WHITE_SHIELD_BODY
+                    | super::POWER_CHARGE_BODY
+                    | super::MELT_SPRAY_BODY
+            )
         ),
         957 => matches!(
             body,
@@ -847,7 +900,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 | 939 => true,
+        935 | 939 | 953 => true,
         964 => true,
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
@@ -858,14 +911,24 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
         955 => matches!(
             body,
-            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+            Some(
+                super::TERROR_SCREAM_BODY
+                    | super::VOID_ACCESSORIES_BODY
+                    | super::KISS_OF_DEATH_BODY
+                    | super::WHITE_SHIELD_BODY
+                    | super::POWER_CHARGE_BODY
+                    | super::MELT_SPRAY_BODY
+            )
         ),
         957 => matches!(
             body,
             Some(super::THUNDER_STORM_BODY | super::DEATH_GAME_BODY)
         ),
         941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
-        951 => body == Some(super::SCYTHE_WIND_BODY),
+        951 => matches!(
+            body,
+            Some(super::SCYTHE_WIND_BODY | super::CHAOS_FLARE_BODY)
+        ),
         942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
@@ -896,6 +959,15 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
     match (prot_entry, phase) {
         (949, 2) => &super::water_crystals::ARM2_HALTS,
+        // Kiss of Death's arm 2 walks the handles of the records arms 1 and
+        // 2 seated (`0x801F9B28`, count `0x801F9D2C`) and halts each
+        // (`0x801F8B14..0x801F8B60`). No other body in PROT 0955 seats the
+        // record.
+        (955, 2) => &[super::KISS_OF_DEATH_PASS_RECORD],
+        // Terio Punch's arm 6 walks the trail's handle list (`0x801F7E98`,
+        // count `0x801F8098`) on its passing pass and halts each
+        // (`0x801F728C..0x801F72B8`).
+        (953, 6) => &[super::TERIO_TRAIL_RECORD],
         _ => &[],
     }
 }

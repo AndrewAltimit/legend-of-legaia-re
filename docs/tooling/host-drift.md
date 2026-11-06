@@ -1368,6 +1368,11 @@ scripts/ci/host-pair.mjs --site <site> --engine target/release-test/legaia-engin
     [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--from n] [--gl egl --no-msaa]
 ```
 
+`--mode` takes `retail`, `enhanced`, or `enhanced` with one pass off on both
+hosts (`no_ssao`, `no_lighting`, `no_fog`, `no_fade`), which splits a pixel
+difference by the pass behind it. `LEGAIA_SSAO_VIEW=1` draws the AO term alone
+on both sides.
+
 | Side | How it runs |
 |---|---|
 | native | `play-window`'s capture sweep (`--screenshot-every`, `--pad-script`), with `LEGAIA_SWEEP_TRACE` writing the world's `host_trace` sample beside each PNG and `LEGAIA_AUDIO_DETACHED` a director over no device |
@@ -1391,7 +1396,7 @@ a scratch directory only.
 
 | Scenes | Reach |
 |---|---|
-| `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, a fight to its results and back, a seeded summon |
+| `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
 | `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
@@ -1422,6 +1427,9 @@ the world was right and the picture was not:
 | A composition older than its frame | A pause-menu tick runs no world tick, so its screen layers stayed the last field tick's, and the frame the menu closed lost its wipe: one lit frame the window shows dark |
 | A declaration a frame late | The intro readback was declared after the draw, so a fight armed on the runtime's first frame landed the transition's own strips over stale VRAM as the field capture |
 | World state written by one draw half | The window's battle mesh build dropped the field's NPC bindings and a summon seat bound only there. Both are session steps now (`battle_stage`) |
+| An actor watermark set early | The window lowered its env / actor watermark right after the battle backdrop, and pushed the ground grid and the slot-1 ribbon after it, so the floor took no ambient occlusion in a fight while the page's grid did. It is set after the stage now (`push_actors`) |
+| A pass the other host never runs | The window ran ambient occlusion in the minigame venues, under the field camera on a frame the duel and the pond draw through their own, and with no actor draws marked; the page's venues never reach the pass. Both ask `ssao_scope::ssao_applies` |
+| A cut on half a buffer | The page cut the dance hall's triangles by the GPU's span rule but not the marker block, which holds the animated props: on the camera track's far poses the stage curtain, seen from behind, covered the whole frame for about a hundred ticks |
 | A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
 
 ## Pairing frames: what a screenshot adds
@@ -1662,7 +1670,7 @@ reverse-engineering questions, so they are not on
 | shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`; the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
-| cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
+| cheats | One `WorldCheats::apply_cheat` call each, from one constructor (`PlayerCheat::from_key`). Every listed cheat is a runtime control on both hosts: the page's Cheats panel, the window's `F12` Cheats page (worked as `CheatControl` says, with no text field), and natively a launch switch too. A GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
@@ -1679,6 +1687,8 @@ reverse-engineering questions, so they are not on
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
 | dome hub shade | The Muscle Dome's first-visit backdrop is on the page's 2D layer, whose subtraction is on 8 bits; the window's is at the framebuffer's 5. The wall reads a 5-bit step brighter on the page and the title's drop shadow is a little lighter, for that one screen. |
 | pause wipe, first frames | Two the [host pair](#the-host-pair-run) reads and neither host is yet shown right on: the window draws no party HUD under the opening wipe where the page dims it, and on the frame the menu spawns the window shows the lit field for one frame where the page shows the menu. The windmill's semi-transparent blades also read darker under the window's wipe than under the page's. No retail state sits in a wipe. |
+| save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
+| lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 

@@ -212,6 +212,10 @@ fn field_entry_routes_per_region_encounters() {
     // Step until the session SM leaves Idle (a region roll fired `trigger_with`),
     // then advance the transition to `Triggered` and drain the formation.
     let mut fired = false;
+    // The scene load's post-load pad hold (`FUN_8003ADAC`) holds the roll
+    // (`0x801DA14C`) until the player tick drains it; this drives the step
+    // kernel without those frames.
+    host.world.release_post_load_hold();
     for _ in 0..20_000 {
         if host.world.on_field_step() {
             fired = true;

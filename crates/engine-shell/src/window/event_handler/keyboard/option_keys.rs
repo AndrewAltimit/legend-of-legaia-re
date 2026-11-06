@@ -146,10 +146,13 @@ impl PlayWindowApp {
                 true
             }
             KeyCode::Enter | KeyCode::NumpadEnter if self.panel_holds_game() => {
-                if !repeat
-                    && self.panel_page() == super::super::super::settings_panel::PanelPage::Settings
-                {
-                    self.change_setting(1);
+                use super::super::super::settings_panel::PanelPage;
+                if !repeat {
+                    match self.panel_page() {
+                        PanelPage::Settings => self.change_setting(1),
+                        PanelPage::Cheats => self.cheats_apply(),
+                        PanelPage::Keys => {}
+                    }
                 }
                 true
             }

@@ -117,7 +117,7 @@ Notably it does **not** clear `0x0380`, the AI-delegation group Rage
 
 The `0x2A` Maximum AP row lands in the same routine's second word
 (`+0xF8` bit `0x400`, index 42) and writes `0x64` to the actor's `+0x170`
-gauge, which is how that offset is pinned as the 0..100 AP gauge.
+gauge on every battle frame for a living wearer, which is how that offset is pinned as the 0..100 AP gauge. Port: `World::tick_battle_passive_sweep`.
 
 Bit assignments, priorities and the HUD element each drives are in
 [`save-record.md`](save-record.md#0x12e-is-the-battle-status-word) and

@@ -86,6 +86,7 @@ impl PlayWindowApp {
         if self.hotkey_help {
             stage.extend(match self.panel_page() {
                 crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
+                crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
                 crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
             });
         }
@@ -143,13 +144,12 @@ impl PlayWindowApp {
         let pad = pad_key_rows(&self.mapping);
         let l = help_panel_layout(&self.font, &entries, &pad);
         let mut out = Vec::new();
-        // Near-opaque: the panel sits over the party readout's bright
-        // digits, which at 0.85 still showed through between the rows.
+        // The scrim every page of the panel shares.
         self.push_scrim(
             &mut out,
             (l.x0 - 4, l.y0 - 4),
             ((l.width + 8) as u32, l.height as u32),
-            0.94,
+            crate::window::settings_panel::PANEL_SCRIM,
         );
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));

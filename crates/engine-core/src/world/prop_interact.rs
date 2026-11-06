@@ -439,7 +439,7 @@ impl World {
         // REF: FUN_801DE840 (0x801DF034..0x801DF044), FUN_8003774C (case 0x47)
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed, walk.approach);
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed, 1, walk.approach);
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 self.dialog.inline = Some(id);
@@ -998,9 +998,11 @@ fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
 impl World {
     /// Step the player one frame of a script walk-to-tile leg (op `0x47`
     /// on the player, `C7 F8 <tx> <tz> <mode>`), on the floor under every
-    /// step. Returns whether the player stands on the target (or there is no
-    /// player to walk). Shared by the cutscene timeline's player leg and a
-    /// prop run's.
+    /// step: `iterations` steps of `speed`, the frame step's count. Returns
+    /// whether the leg is done (or there is no player to walk), which, as the
+    /// kernel has it, is the frame after the one that lands on the target
+    /// unless an earlier iteration of the same frame landed. Shared by the
+    /// cutscene timeline's player leg and a prop run's.
     ///
     /// The player runs the same walk kernel an NPC leg does
     /// ([`legaia_engine_motion_vm::motion_vm::step`]): `approach` is the mode
@@ -1015,9 +1017,10 @@ impl World {
         &mut self,
         target: (i16, i16),
         speed: u16,
+        iterations: u16,
         approach: u8,
     ) -> bool {
-        use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, step};
+        use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
         let Some(p) = self.player_actor_slot else {
             return true;
         };
@@ -1030,6 +1033,7 @@ impl World {
             world_z: ms.world_z,
             speed: speed.max(1),
             approach,
+            walk_iterations: iterations,
             ..MotionState::default()
         };
         let goal = MotionTarget {
@@ -1037,14 +1041,13 @@ impl World {
             z: target.1,
             ..MotionTarget::default()
         };
-        step(&mut st, goal, &[0x47]);
+        let done = step(&mut st, goal, &[0x47]) == StepResult::Done;
         ms.world_x = st.world_x;
         ms.world_z = st.world_z;
         if st.yaw_written {
             ms.render_26 = (st.yaw & 0x0FFF) as i16;
         }
         let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
-        let arrived = (nx, nz) == (i32::from(target.0), i32::from(target.1));
         // The floor under every step, not just the landing tile: a leg that
         // crosses a stair run (chitei2's escape beats) otherwise carries the
         // start height through the steps and snaps at the end.
@@ -1052,7 +1055,7 @@ impl World {
         if let Some(a) = self.actors.get_mut(p as usize) {
             a.move_state.world_y = y;
         }
-        arrived
+        done
     }
 
     /// Set / clear the player's movement-disabled flag (`+0x10 & 0x80000`) -

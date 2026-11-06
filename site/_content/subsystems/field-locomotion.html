@@ -350,6 +350,80 @@
   </ul>
 </section>
 
+<section class="doc-section" id="post-load-hold" data-doc="-">
+  <h2>When the pad comes back: holds and fades</h2>
+  <p>A scene does not hand you the controller the frame it appears. Retail has one pad-hold word, <code>_DAT_8007B6B4</code>, that the player's tick drains by the frame step and tests before it reads the pad; while it is non-zero the player stands idle, no encounter is rolled and the party HUD stays in its entry arm. Several routines write it, and two of them are on every route through the field.</p>
+  <ul class="bullets">
+    <li><strong>The post-load hold.</strong> The MAN installer <code>FUN_8003AEB0</code> ends with a tail call to <code>FUN_8003ADAC</code>, which stores <code>0x28</code> and clears the movement lock. Every map install passes there - a door, a save load and a return from battle alike - so every scene opens with the pad off for <code>0x28</code> vsyncs.</li>
+    <li><strong>The entry fade.</strong> The same routine spawns two fade actors in subtract mode: an eight-frame held white and a <code>0x1E</code>-frame ramp from white down to nothing. Subtracting white is black, so the scene appears out of black. System flag <code>0x1B</code> turns both to add mode for one install, which opens out of white instead.</li>
+    <li><strong>The party readout.</strong> The field HP panel waits for the player to stand still, but its countdown cannot start while the hold is up. After a door or a load it comes up <code>0x28</code> frames after the pad does. After a fight it comes up at once: the encounter hand-off raised a short-idle marker that survives the battle, and the entry arm shortens the countdown to zero.</li>
+  </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A timing strip from a map install at vsync 0. The pad hold runs from vsync 0 to 40, and the encounter roll is off over the same span; from 40 on the pad is live. The entry fade keeps the screen black to about vsync 12 and ramps back to the scene's own level by vsync 33. The party readout after a door or a load is held in its entry arm to vsync 40, then counts 0x28 more frames and appears at about vsync 80 if the player stands still. After a fight the short-idle marker sets the countdown to zero, so the readout appears at vsync 40, the first frame the pad is live.">
+      <text class="dg-label dg-start" x="16" y="60">Pad</text>
+      <rect class="dg-node-warn" x="180" y="42" width="280" height="28" rx="3"/>
+      <text class="dg-sub" x="320" y="60">held: 0x28, drained by the frame step</text>
+      <rect class="dg-node-ok" x="460" y="42" width="350" height="28" rx="3"/>
+      <text class="dg-sub" x="635" y="60">live</text>
+      <text class="dg-label dg-start" x="16" y="104">Encounter roll</text>
+      <rect class="dg-node-warn" x="180" y="86" width="280" height="28" rx="3"/>
+      <text class="dg-sub" x="320" y="104">skipped while the hold is up</text>
+      <rect class="dg-node-ok" x="460" y="86" width="350" height="28" rx="3"/>
+      <text class="dg-sub" x="635" y="104">steps count down again</text>
+      <text class="dg-label dg-start" x="16" y="148">Entry fade</text>
+      <rect class="dg-node-warn" x="180" y="130" width="84" height="28" rx="3"/>
+      <text class="dg-sub" x="222" y="148">black</text>
+      <rect class="dg-node-accent" x="264" y="130" width="147" height="28" rx="3"/>
+      <text class="dg-sub" x="337" y="148">ramp up to the scene</text>
+      <text class="dg-sub dg-start" x="420" y="148">subtract mode: white held, then ramped out</text>
+      <text class="dg-label dg-start" x="16" y="192">HUD, door or load</text>
+      <rect class="dg-node" x="180" y="174" width="280" height="28" rx="3"/>
+      <text class="dg-sub" x="320" y="192">entry arm, held by the hold</text>
+      <rect class="dg-node-accent" x="460" y="174" width="280" height="28" rx="3"/>
+      <text class="dg-sub" x="600" y="192">idle countdown 0x28</text>
+      <path class="dg-edge" d="M740 168 L740 208"/>
+      <text class="dg-sub dg-start" x="746" y="192">readout</text>
+      <text class="dg-label dg-start" x="16" y="236">HUD, after a fight</text>
+      <rect class="dg-node" x="180" y="218" width="280" height="28" rx="3"/>
+      <text class="dg-sub" x="320" y="236">entry arm, short-idle marker set</text>
+      <path class="dg-edge" d="M460 212 L460 252"/>
+      <text class="dg-sub dg-start" x="466" y="236">readout on the first live frame</text>
+      <path class="dg-edge-dim" d="M180 266 L810 266"/>
+      <path class="dg-edge-dim" d="M180 262 L180 270 M264 262 L264 270 M411 262 L411 270 M460 262 L460 270 M740 262 L740 270"/>
+      <text class="dg-sub" x="180" y="286">0</text>
+      <text class="dg-sub" x="264" y="286">12</text>
+      <text class="dg-sub" x="411" y="286">33</text>
+      <text class="dg-sub" x="460" y="286">40</text>
+      <text class="dg-sub" x="740" y="286">80</text>
+      <text class="dg-sub dg-start" x="16" y="286">vsyncs</text>
+    </svg>
+    <figcaption>One map install, read off a retail capture of a <code>vell</code> random encounter left by Run: the hold reads <code>0x28</code> from the field-back load and drains by <code>2</code> a tick, the screen is black for the first <code>12</code> field vsyncs and back at the scene's level by vsync <code>33</code>, and the short-idle marker clears on the frame the hold reaches zero. The readout times assume the Immediate HP-display option and a player who stands still.</figcaption>
+  </figure>
+  <h3 id="release-hold">The conversation release hold</h3>
+  <p>Closing a dialogue does not hand the pad straight back either. The script runner raises a yielded latch when a context parks on a text segment; when the last context ends and the modal depth falls to zero, it clears the player's engaged bit and, with the latch up, stores <code>0x10</code> into the same hold word. A capture of a town NPC paged with Cross reads <code>16</code> on the release frame, draining by <code>2</code> a tick; the next talk opens only once it reaches zero.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three stages of ending a conversation. While the box is open the hold word is zero and a Square press is seen as an edge. On the release frame the hold is set to 0x10 vsyncs: the pad is off, no new talk opens, the leader swap and the escape-timer scheduler sit out. On the tick the hold reaches zero the pad is back.">
+      <defs><marker id="flr-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="16" y="24" width="250" height="64" rx="4"/>
+      <text class="dg-label" x="141" y="48">box open</text>
+      <text class="dg-sub" x="141" y="66">hold word 0; the box itself</text>
+      <text class="dg-sub" x="141" y="80">owns the player</text>
+      <path class="dg-edge" d="M266 56 L300 56" marker-end="url(#flr-ah)"/>
+      <rect class="dg-node-warn" x="304" y="24" width="300" height="64" rx="4"/>
+      <text class="dg-label" x="454" y="48">release: 0x10 vsyncs</text>
+      <text class="dg-sub" x="454" y="66">pad off, no new talk, no leader swap,</text>
+      <text class="dg-sub" x="454" y="80">escape-timer scheduler sits out</text>
+      <path class="dg-edge" d="M604 56 L638 56" marker-end="url(#flr-ah)"/>
+      <rect class="dg-node-ok" x="642" y="24" width="202" height="64" rx="4"/>
+      <text class="dg-label" x="743" y="48">pad back</text>
+      <text class="dg-sub" x="743" y="66">on the tick the word</text>
+      <text class="dg-sub" x="743" y="80">reaches 0 (drain, then test)</text>
+    </svg>
+    <figcaption>The release hold is why mashing Cross through the last page of a conversation does not re-open it. The leader swap's suppressor holds only through this window, not under the open box.</figcaption>
+  </figure>
+  <p><strong>In the port.</strong> <code>World::seat_map_install_tail</code> seats the post-load hold on every field scene entry and on the way back from a battle, and the overworld's pad step drains and tests it as the field's does. The two entry-fade actors run among the screen effects both hosts composite; before they were seated a scene cut straight in. <code>World::tick_script_release_hold</code> stores the release hold on the frame the engine's dialogue engagement falls; script contexts with no box (cutscene timelines, helper records) do not count, since their release has not been captured.</p>
+</section>
+
 <section class="doc-section" id="authored-octant" data-doc="-">
   <h2>The camera turn is authored, not computed</h2>
   <p>The pad remap rotates the held direction by an eighth-turn index. Nothing in retail derives that index from the camera. Its writers across the whole disc are two, and both are content: a field-VM op that sets it to a literal, and the tile-board walker. A scene author picks the octant to match the fixed camera the same script installs; a bare tile crossing never changes it.</p>

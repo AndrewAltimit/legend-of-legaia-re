@@ -660,3 +660,57 @@ fn a_timeline_commit_waits_for_the_swap_poller_instead_of_stepping_past() {
     }
     assert!(!w.audio.bgm_swap_in_flight());
 }
+
+/// A walk-to-tile on the player (`C7 F8 <tx> <tz> <mode>`) frees the record
+/// two game frames after the step that lands, as an NPC's leg does. The
+/// field VM raises the record's own `0x400` beside the player's
+/// (`0x801DF02C..0x801DF044`) and steps past the op, so the record's next op
+/// stalls on its own halt bit; the kernel, which runs after the record in
+/// the record actor's tick (`FUN_8003BC08`: slice at `0x8003BD34`, kernel at
+/// `0x8003BD50`), ends the leg on the frame after the landing step and
+/// clears both bits (`0x80037FF8..0x80038028`), and the record runs on the
+/// frame after that.
+#[test]
+fn a_player_tile_walk_frees_the_record_two_game_frames_after_it_lands() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    w.spawn_actor(0);
+    w.player_actor_slot = Some(0);
+    // From (1152, 960) to tile (8, 7) = (1088, 960) at 16 a step, frame step
+    // 2: 32 a game frame, two game frames.
+    w.actors[0].move_state.world_x = 1152;
+    w.actors[0].move_state.world_z = 960;
+    w.cutscene.timeline = Some(CutsceneTimeline::new(
+        vec![
+            0xC7, 0xF8, 0x08, 0x07, 0x01, // walk to tile (8, 7)
+            0xB2, 0xF8, 0x18, // an op on the player
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline installed)
+        ],
+        0,
+    ));
+    w.clock.game_tick_live = true;
+    w.clock.frame_step = 2;
+    let mut landed = None;
+    let mut resumed = None;
+    for vsync in 0..20 {
+        w.clock.game_tick_fired = vsync % 2 == 0;
+        w.step_cutscene_timeline();
+        let ms = &w.actors[0].move_state;
+        if landed.is_none() && (ms.world_x, ms.world_z) == (1088, 960) {
+            landed = Some(vsync);
+        }
+        if resumed.is_none() && w.cutscene.timeline.as_ref().unwrap().pc > 5 {
+            resumed = Some(vsync);
+        }
+    }
+    let landed = landed.expect("the walk lands");
+    assert_eq!(landed, 2, "two game frames of 32, the first the arming one");
+    assert_eq!(
+        resumed,
+        Some(landed + 4),
+        "the record runs two game frames after the landing step"
+    );
+}

@@ -46,6 +46,7 @@ pub mod run_rules;
 pub mod scene_actors;
 pub mod session;
 pub mod session_switches;
+pub mod ssao_scope;
 pub mod title_continue;
 pub mod xa_banks;
 

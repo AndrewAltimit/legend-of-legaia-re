@@ -200,6 +200,122 @@ pub(super) fn done_arm_pass(ram: &[u8], ctx: u32, action_state: u8) -> bool {
         })
 }
 
+/// The displayed pose of a Done-arm capture ([`done_arm_pass`]) after an
+/// Attack: `one_back` (the pose the Done arm set out from, one pass back along
+/// its own table) walked one more pass back along the **case-7** table the
+/// strike band left.
+///
+/// The return state `0x20` arms case 7 on each held pass (`li a1,0x7` at
+/// `0x801E56BC`), case 8 instead when the target's anim `+0x1D9` is its
+/// knockdown `+0x1F1` or non-zero get-up `+0x1F2`, or a party seat faces a
+/// target on anim `7` / `8` (`0x801E5660..0x801E56B4`). Its exit pass stores
+/// `0x50` (`0x801E5590`) and jumps to the state tail at `0x801E5F64` without
+/// calling `FUN_801D5854`, so that pass re-arms nothing: the walker task
+/// `FUN_8002149C` steps the case-7 increments the last held pass armed, and
+/// the Done arm re-arms case 8 one pass later. The frame on screen two passes
+/// back is therefore the held pass's pose, and the exit pass moved it by the
+/// same increment `ceil(G / 0xC)` that pass armed off its gap `G`, which two
+/// walks of it narrowed to the gap the Done arm saw:
+/// `G - (fs1 + fs2) * ceil(G / 0xC) = |end7 - one_back|`.
+///
+/// Case 7's endpoints are its base (`0x801D65DC..0x801D6694`): the yaw is case
+/// 8's (both reduce to `ctx[+0x6DA] - actor[+0x46] - 0x700`, `0x801D6708` /
+/// `0x801D67EC` + `0x801D693C`), `TR = (0, 0x500, prescale(ctx[+0x6D0]))`, and
+/// the focus the midpoint `(a + b) >> 1` of the actor's and the target's body
+/// pairs `+0x3C` / `+0x40` (live `+0x36` for Y). The pitch and `TR.y` stay
+/// on `one_back`: case 8 on an idle monster holds both from the live camera
+/// (`0x801D6BFC`), the replay's own strike leaves them a few units off
+/// retail's, and a walked component there fails the image child's endpoint
+/// test (`BattleCamera::glide_endpoint_matches_walked`), which drops the whole
+/// displayed pose (`cort_evolved_card_pre_doomsday`: `TR.y` `1290` walked to
+/// `1296` reads `.605`, held `.965`).
+///
+/// `None` (the one-pass pose stands) off an Attack, on case 8, on a framing
+/// style `2` / `3` and on a monster's pull-in (`ctx[+0x243]`), none of which
+/// this walk models. `koru_pre_*` (Gala's art tail, step `3`): the RAM's yaw
+/// `3445` walks back to `3496` on case 8 and to `3595` on case 7, depth `6730`
+/// to `5998`, focus z `-342` to `-399`; `image` `.735` one pass back and
+/// `.904` two. `cort_evolved_card_pre_doomsday` (Gala's ten-hit art on the
+/// evolved Cort): depth `6270` to `5922`, `.820` to `.965`.
+pub(super) fn done_arm_strike_walk_back(
+    ram: &[u8],
+    ctx: u32,
+    one_back: legaia_engine_camera::projection::BattleCamPose,
+    steps: [u8; 2],
+) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if seat > 7 || !in_ram(actor) || game_anchors::u8_at(ram, actor + 0x1DE) != 3 {
+        return None;
+    }
+    let style = game_anchors::u8_at(ram, ctx + 0xD);
+    if style >= 2 || (seat >= 3 && game_anchors::u8_at(ram, ctx + 0x243) != 0) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    // `0x801E5660..0x801E56B4`: the fork to case 8.
+    let anim = game_anchors::u8_at(ram, target + 0x1D9);
+    let getup = game_anchors::u8_at(ram, target + 0x1F2);
+    if anim == game_anchors::u8_at(ram, target + 0x1F1)
+        || (anim == getup && anim != 0)
+        || (seat < 3 && matches!(anim, 7 | 8))
+    {
+        return None;
+    }
+    let (_, end8) = retail_cam_tween(ram, ctx);
+    let body = |p: u32| {
+        [
+            i32::from(game_anchors::u16_at(ram, p + 0x3C) as i16),
+            i32::from(game_anchors::u16_at(ram, p + 0x36) as i16),
+            i32::from(game_anchors::u16_at(ram, p + 0x40) as i16),
+        ]
+    };
+    let (a, t) = (body(actor), body(target));
+    let mid = |k: usize| ((a[k] + t[k]) >> 1) as f32;
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0) as i16);
+    let tr_z = legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(depth);
+    let (fs1, fs2) = (i32::from(steps[0].max(1)), i32::from(steps[1].max(1)));
+    let d = SHOT_TWEEN_DIVISOR;
+    if d <= fs1 + fs2 {
+        return None;
+    }
+    // One component: `v` stood `gap` short of `end` after the exit pass.
+    let back = |v: f32, gap: f32| -> f32 {
+        let g1 = gap.round() as i32;
+        if g1 == 0 {
+            return v;
+        }
+        let mut big = g1.abs();
+        loop {
+            let next = g1.abs() + (fs1 + fs2) * ((big + d - 1) / d);
+            if next == big {
+                break;
+            }
+            big = next;
+        }
+        v - (g1.signum() * fs1 * ((big + d - 1) / d)) as f32
+    };
+    let yaw_gap = (end8.yaw - one_back.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+    Some(legaia_engine_camera::projection::BattleCamPose {
+        pitch: one_back.pitch,
+        yaw: back(one_back.yaw, yaw_gap).rem_euclid(4096.0),
+        tr: [
+            back(one_back.tr[0], -one_back.tr[0]),
+            one_back.tr[1],
+            back(one_back.tr[2], tr_z - one_back.tr[2]),
+        ],
+        focus: [
+            back(one_back.focus[0], mid(0) - one_back.focus[0]),
+            back(one_back.focus[1], mid(1) - one_back.focus[1]),
+            back(one_back.focus[2], mid(2) - one_back.focus[2]),
+        ],
+    })
+}
+
 /// The eye depth the case-6 table chased before a `0x32` capture's table was
 /// armed, as [`displayed_cam_live`]'s `prior_end` (component 5, the eye
 /// translation's Z).

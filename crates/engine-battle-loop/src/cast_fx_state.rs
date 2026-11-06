@@ -74,6 +74,22 @@ pub struct CastFxState {
     /// sits on one arm of the module's phase byte
     /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm`]).
     pub module_voice_due: Option<(u8, u8)>,
+    /// The CD drive as the resident module waits on it
+    /// ([`legaia_engine_battle_vm::battle_cd_drive`]).
+    pub drive: legaia_engine_battle_vm::battle_cd_drive::CdDrive,
+    /// The resident module's seek and poll arms, and whether its seek has
+    /// been issued this cast.
+    pub drive_arms: Option<(
+        legaia_engine_battle_vm::battle_cast_cue::ModuleDriveArms,
+        bool,
+    )>,
+    /// The display frame the module last stepped the drive on: a drive no
+    /// module is stepping holds nothing.
+    pub drive_ticked_at: u64,
+    /// The head cue's call sits behind its arm's own gate as well as the
+    /// drive poll (`battle_cast_cue::head_cue_waits_arm_gate`): it lands on
+    /// the pass the arm's hold lets through.
+    pub module_voice_gated: bool,
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
@@ -157,6 +173,9 @@ pub struct CastFxState {
     /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
     /// A director's per-pass scatter ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::scatter`]).
     pub module_scatter: Option<(u32, u8)>,
+    /// A director's per-pass trail, `(record, first index)`
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::trail`]).
+    pub module_trail: Option<(u32, u16)>,
     /// PROT 0935's rock pass, by its pass word, for the frame the host opens.
     pub module_rock_burst: Option<u8>,
     /// PROT 0964's Thunder spray records, for the frame the host opens.
@@ -467,6 +486,10 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_voice_due: None,
+            drive: Default::default(),
+            drive_arms: None,
+            drive_ticked_at: 0,
+            module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,
@@ -488,6 +511,7 @@ impl CastFxState {
             module_shake: 0,
             module_hit_arm: None,
             module_scatter: None,
+            module_trail: None,
             module_rock_burst: None,
             module_spray: None,
             module_ring: None,

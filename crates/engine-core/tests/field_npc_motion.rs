@@ -123,13 +123,13 @@ fn scripted_legs_run_through_a_dialogue() {
     );
 }
 
-/// The walk kernel writes the heading **once per leg** (plus once per
-/// step-direction change), so a facing another writer poses mid-leg - the
-/// interact face-the-speaker arctan bearing, a scripted `0x38` pose -
-/// survives while the leg keeps stepping in the same direction, instead of
-/// being re-snapped to the compass every moving frame.
+/// The walk kernel stores the heading on **every** frame the leg runs (the
+/// `0x47` tail's `sh v0,0x26(s0)` at `0x80037DDC` has no compare ahead of
+/// it), so a facing another writer poses mid-leg - the interact
+/// face-the-speaker bearing, a scripted `0x38` pose - lasts until the leg's
+/// next frame re-snaps it to the compass.
 #[test]
-fn walk_leg_heading_write_is_once_per_leg_not_per_frame() {
+fn walk_leg_heading_is_rewritten_every_running_frame() {
     let mut world = World::new();
     one_vsync_frames(&mut world);
     world.mode = SceneMode::Field;
@@ -141,16 +141,13 @@ fn walk_leg_heading_write_is_once_per_leg_not_per_frame() {
         Some(&0x400),
         "leg start writes the +X compass heading"
     );
-    // Mid-leg, another writer poses the NPC onto a NON-compass bearing (the
-    // interact face-the-speaker shape: arctan endpoints like 1075 are not
-    // compass-aligned and must survive).
     world.npcs.headings.insert(2, 1075);
     let _ = world.tick();
     assert!(world.npcs.motions.contains_key(&2), "leg still in flight");
     assert_eq!(
         world.npcs.headings.get(&2),
-        Some(&1075),
-        "a straight leg does not re-snap an interleaved facing write"
+        Some(&0x400),
+        "the running leg re-snaps an interleaved facing write"
     );
 }
 

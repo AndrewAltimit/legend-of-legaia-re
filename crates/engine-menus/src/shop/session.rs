@@ -235,10 +235,17 @@ impl ShopSession {
     }
 
     /// Attempt to execute the pending sell. `held_count` is how many of the
-    /// pending item the player currently holds. Returns `(item_id, qty,
-    /// gold_delta)` where `gold_delta` is positive (proceeds to add). Returns
-    /// `None` if in buy mode, no item is pending, or the player holds none.
-    pub fn try_sell(&self, held_count: u8) -> Option<(u8, u8, i32)> {
+    /// pending item the player currently holds, `item_table_price` the item
+    /// record's `+2` price halfword (`0x80074368 + id*0xC + 2`). Returns
+    /// `(item_id, qty, gold_delta)` where `gold_delta` is positive (proceeds
+    /// to add). Returns `None` if in buy mode, no item is pending, or the
+    /// player holds none.
+    ///
+    /// The proceeds are retail's sale credit, [`super::sell_credit`]:
+    /// `(price * qty) >> 1` on the product, off the item table's price, not
+    /// the open shop's stock. With no table the shop's stock price stands in,
+    /// and an item the shop does not stock sells for nothing.
+    pub fn try_sell(&self, held_count: u8, item_table_price: Option<u16>) -> Option<(u8, u8, i32)> {
         if self.pending_is_buying {
             return None;
         }
@@ -247,8 +254,14 @@ impl ShopSession {
         if qty == 0 {
             return None;
         }
-        let unit = self.inventory.sell_price(item_id) as i32;
-        Some((item_id, qty, unit * qty as i32))
+        let price = item_table_price
+            .or_else(|| {
+                self.inventory
+                    .find(item_id)
+                    .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+            })
+            .unwrap_or(0);
+        Some((item_id, qty, super::sell_credit(price, i32::from(qty))))
     }
 
     /// Number of items the buy list contains (caps at 255).

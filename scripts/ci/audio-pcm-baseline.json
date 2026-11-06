@@ -4,9 +4,21 @@
       "xa_corr": 0.999,
       "xa_level": -0.1319
     },
+    "cort_guilty_cross_mid_cast": {
+      "cast_corr": 0.8594,
+      "cast_level": 0.0163
+    },
+    "cort_mystic_shield_mid_cast": {
+      "cast_corr": 0.9373,
+      "cast_level": 0.0079
+    },
     "ending_vignette_fullscreen": {
       "track_corr": 0.9997,
       "track_level": 0.0057
+    },
+    "gilium_summon_mid_cast": {
+      "cast_corr": 0.2261,
+      "cast_level": 0.0163
     },
     "keikoku_chest_pre": {
       "core_corr": 1.0,
@@ -25,8 +37,8 @@
       "track_level": 0.0048
     },
     "minigame_baka_fighter": {
-      "track_corr": 0.9954,
-      "track_level": 0.0042
+      "track_corr": 0.9972,
+      "track_level": 0.0003
     },
     "minigame_fishing": {
       "track_corr": 0.9998,
@@ -37,16 +49,24 @@
       "track_level": 0.0049
     },
     "new_game_cutscene_intro_a": {
-      "track_corr": 0.9995,
-      "track_level": -0.0068
+      "track_corr": 0.9996,
+      "track_level": -0.0008
+    },
+    "nighto_summon_mid_cast": {
+      "cast_corr": 0.9733,
+      "cast_level": 0.1028
     },
     "noa_levelup_field_pre": {
       "track_corr": 0.999,
       "track_level": 0.0033
     },
+    "orb_summon_mid_cast": {
+      "cast_corr": 0.994,
+      "cast_level": 0.0232
+    },
     "party_battle_gobu_gobu": {
-      "track_corr": 0.9996,
-      "track_level": 0.0007
+      "track_corr": 0.9997,
+      "track_level": 0.0013
     },
     "rimelm_wall_press_left": {
       "emitter_corr": 0.9856,
@@ -58,9 +78,17 @@
       "track_corr": 0.999,
       "track_level": 0.0037
     },
+    "swordie_summon_mid_cast": {
+      "cast_corr": 0.9883,
+      "cast_level": 0.175
+    },
     "terra_party_battle": {
-      "track_corr": 0.9991,
-      "track_level": 0.001
+      "track_corr": 0.9992,
+      "track_level": 0.0004
+    },
+    "theeder_summon_mid_cast": {
+      "cast_corr": 0.9037,
+      "cast_level": 2.3231
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
@@ -68,9 +96,19 @@
       "track_corr": 0.9984,
       "track_level": 0.0114
     },
+    "zenoir_summon_mid_cast": {
+      "cast_corr": 0.8334,
+      "cast_level": 1.6709
+    },
+    "zeto_big_wave_mid_cast": {
+      "cast_corr": 0.986,
+      "cast_level": -0.0331
+    },
     "zeto_call_wave_mid_cast": {
-      "track_corr": 0.9994,
-      "track_level": 5.0861
+      "cast_corr": 0.9992,
+      "cast_level": 0.0064,
+      "track_corr": 0.9995,
+      "track_level": 5.085
     }
   }
 }

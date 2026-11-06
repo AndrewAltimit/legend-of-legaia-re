@@ -326,6 +326,15 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
             }
         }
+        // Everything after the stage (the backdrop shell, the ground grid,
+        // the slot-1 ribbon) is a battle body: the actor watermark that keeps
+        // SSAO and the occlusion fade off actor pixels. The grid used to sit
+        // past it, so the floor took no ambient occlusion here while the
+        // page's grid (an environment placement) did.
+        if in_battle {
+            self.r
+                .set_occlusion_env_draws(draws.len(), color_draws.len());
+        }
         // The camera the battle bodies' tint pass judges depth under
         // (`World::battle_actor_draw_plan`): the phase-scripted dome
         // camera this pass projects with in every battle.

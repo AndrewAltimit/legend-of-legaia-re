@@ -132,6 +132,7 @@
   </div>
   <p>These modules write HP with the paired accumulate convention, so they keep the invariant the <a href="battle-action-exit-gates.html#hp-gate">HP-readout gate</a> depends on.</p>
   <p>A few player summons split the roll: Zenoir's sites land a quarter, three quarters and two thirds, Swordie's four slashes and Mushura's run-over hits a quarter each. Their hits are the whole of the cast's damage, so the band folds nothing on top, and the rolls still train the spell and feed the spirit gauge.</p>
+  <p>A cast can owe no damage at all. Call Wave shares PROT 0946 with Big Wave, but its branch never reaches the module's one damage site: arms 1 and 2 step on and arm 3 ends the module once its countdown drains. It is Zeto's warning, not a hit, so the port folds nothing for it; folded as a hit, it had landed on its own target, Zeto himself, and played his knockback cues where retail is silent.</p>
 </section>
 
 <section class="doc-section" id="camera">
@@ -191,6 +192,7 @@
   <p>A capture body with no camera port is the commonest difference a frame-by-frame comparison finds: such a body runs its arms in a tick and draws its cell's whole record set at once. <strong>A pass is a battle frame, not a tick.</strong> A body re-enters once per <code>VSync(step)</code> while the engine ticks the module every display tick, so a seat made once per pass goes on the tick that opens a battle frame, and an arm's hand-over waits for the next one. Seated every tick, Ultra Charge's arm 1 draws about four times the rays its capture holds.</p>
   <h3 id="seating">Seating per arm</h3>
   <p>A module whose arms are not ported has its whole record set seated at the caster on the band's first <code>0x70</code> tick. The bodies with ported spawn calls seat them on the passes their arms make them, which also keeps a cell's other bodies' records off the screen. Among them: Evil Seru Magic, Mystic Circle, Ultra Charge, Mystic Shield, Guilty Cross, Call Wave / Big Wave, Megaton Press, Plasma Strike and Final Crisis. Spikefish seats its records per arm the same way on the summon side.</p>
+  <p>Kiss of Death (PROT 0955) is one of them. Its arm 0 seats the lips that fill the frame over black, hides every standing seat and shows the caster again; arms 1 and 2 seat a burst record on every other pass and keep the handles, and arm 2's last pass halts them all; arm 1's last pass tints the caster a soft red. Without those writes the whole record set went in on the band's first tick and the camera cut to a victim who was still on screen: a frame-by-frame film of the cast read <code>.449</code> against retail, and <code>.815</code> with them. Stone Circle's arms 1 and 3 halt the whole part pool on their pass, so the charge and its column are gone once the stones rise.</p>
   <h3 id="stagers">Stagers</h3>
   <p>A part's move-VM op <code>0x20</code> reaches its module's stager through the table at <code>0x801F6734</code>, and the stager seats further parts on the caller. So a charge record whose whole program is that call draws nothing itself: Power Up's ground glow and Stone Circle's column come from their stagers, not from the record the arm seats. The port runs the part-called stagers it has, on the summon side and on the capture side (the cells of the bodies above, plus Earthquake, Stone Circle, Power Up, Scythe Wind and Element Change). The remaining enemy cells hold stagers of the same shape that do not run yet, and their parts' calls are dropped. A call runs as soon as the frame's part tick ends, so what it seats is born on its caller's frame, as in retail, where the call runs inside the caller's own step: Element Change's first rays appear on the same frame as their emitter, which arm 0 seats on the crystal's middle (the caster's display point, raised by its pose) rather than on the floor.</p>
   <p>Barra's victim rides the creature's flight through the same kind of per-arm writes: taken off its seat onto the stage origin, carried up on the creature's arc, turned round a circle hanging beneath it, both tipped nose-down into the dive and tinted green, hung high, dropped to the ground and put back on its seat once the camera has framed it there. The tipping is a pitch the battle bodies carry on both hosts.</p>
@@ -199,6 +201,45 @@
   <h3 id="waits">Clocks the band waits on</h3>
   <p>Two pieces of retail timing and colour sit outside the tick bodies. A summon's opening arms can wait on the <strong>side-band token</strong>, the applier stage <code>ctx[+0x276]</code> that stays up while the cast's slots of <code>summon.dat</code> stream off the disc, about 30 vsyncs a slot. The port's side-band is already in memory, so it keeps the token up for that CD time alone, and a director holds on the module's poll arm while it is up, so the opening waits last as long as retail's. The poll holds the arm's way out and not what runs ahead of it: Barra's arm 1 finishes its rise first. And a part can recolour VRAM: Mule's underwater backdrop cycles its colours because one of its parts is a CLUT-cell cycler that captures the backdrop's palette row and swings its hue every frame. Battle parts run that recolour the way field ambient parts do. A module also keeps the handles of the parts and fades it spawns in arrays of its own and later kills them, sometimes a whole array in one loop; the port follows those kills, which is what clears Gilium&rsquo;s screen after its white-out.</p>
   <p>Cort's Mystic Shield is the one module effect retail keeps alive across actions: two records out of the game executable itself, a camera-facing textured sphere and the scroller that animates its texture, seated on Cort by the shield's arm 4 and posed every frame by the actor pass until he is worn to half HP, when a burst replaces it. The port seats, poses and breaks it the same way, in a scene of its own that outlives the cast.</p>
+</section>
+
+<section class="doc-section" id="voice">
+  <h2>The cast's voice and the CD drive</h2>
+  <p>A cast's spoken line is CD-XA audio streamed off the disc, not a sample in sound RAM, so a module has to point the drive at the voice's file before it can play it. A summon module does that over two arms: a <strong>seek arm</strong> issues the seek (<code>FUN_8003EAE4</code>; Orb's at <code>0x801F6B98</code>) and a later <strong>poll arm</strong> asks the drive whether it is done (<code>CdSync(1)</code> through <code>FUN_8003F2B8(1)</code>, <code>0x801F6BB8</code>), returning busy until it is. Only then does the arm call the head cue that starts the line.</p>
+  <p>The drive is rarely idle when the seek arm comes round. The battle's seek-ahead selector has just sent it to the caster's fanfare file, and the module's seek command blocks the whole game loop until that earlier seek ends. So a summon's voice waits on two seeks, the first with the game frozen and the second with frames running under the poll.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Orb's summon as three lanes over time. The CD drive first seeks to the fanfare file the battle's selector asked for, for 27 vsyncs, then seeks to the voice file for 29 vsyncs, then reads it. The module's seek arm issues its seek and blocks the game loop for the first 27 vsyncs; its poll arm then returns busy for 29 vsyncs; when the poll reports done the head cue plays the voice. The game frame is frozen for the first span, with the audio level held, and runs normally during the second.">
+      <text class="dg-label dg-start" x="16" y="56">CD drive</text>
+      <rect class="dg-node-warn" x="200" y="38" width="216" height="30" rx="3"/>
+      <text class="dg-sub" x="308" y="57">seek: the fanfare file</text>
+      <rect class="dg-node-accent" x="416" y="38" width="232" height="30" rx="3"/>
+      <text class="dg-sub" x="532" y="57">seek: the voice file</text>
+      <rect class="dg-node-ok" x="648" y="38" width="196" height="30" rx="3"/>
+      <text class="dg-sub" x="746" y="57">streaming the voice</text>
+      <text class="dg-label dg-start" x="16" y="116">Module arms</text>
+      <rect class="dg-node-warn" x="200" y="98" width="216" height="30" rx="3"/>
+      <text class="dg-sub" x="308" y="117">seek arm: the seek blocks</text>
+      <rect class="dg-node" x="416" y="98" width="232" height="30" rx="3"/>
+      <text class="dg-sub" x="532" y="117">poll arm: busy, holds</text>
+      <path class="dg-edge" d="M648 92 L648 134"/>
+      <text class="dg-sub dg-start" x="656" y="117">head cue: the voice starts</text>
+      <text class="dg-label dg-start" x="16" y="176">Game frame</text>
+      <rect class="dg-node-warn" x="200" y="158" width="216" height="30" rx="3"/>
+      <text class="dg-sub" x="308" y="177">frozen; the duck holds</text>
+      <rect class="dg-node-ok" x="416" y="158" width="428" height="30" rx="3"/>
+      <text class="dg-sub" x="630" y="177">frames run; the summon's duck ramps under the voice</text>
+      <path class="dg-edge-dim" d="M200 210 L844 210"/>
+      <path class="dg-edge-dim" d="M200 206 L200 214 M416 206 L416 214 M648 206 L648 214"/>
+      <text class="dg-sub" x="200" y="230">0</text>
+      <text class="dg-sub" x="416" y="230">27</text>
+      <text class="dg-sub" x="648" y="230">56</text>
+      <text class="dg-sub dg-start" x="16" y="230">vsyncs from the seek arm</text>
+    </svg>
+    <figcaption>Orb's summon, stepped frame by frame from <code>orb_summon_mid_cast</code> with the module phase logged beside mednafen's drive (<code>scripts/mednafen/drive-timeline.py</code>): the seek arm holds <code>27</code> vsyncs behind the selector's seek with the audio level frozen at <code>211</code>, then the voice file's seek runs <code>29</code> vsyncs under the poll arm. Every seek of the five summon states fits one law: <code>0.3</code> s, plus one second per full-disc traverse, plus two vsyncs of logical seek.</figcaption>
+  </figure>
+  <p><strong>The level lifts to full.</strong> A level change under a sounding clip resets the CD input's serial volume to full scale before the sequence volumes are re-set, so a summon's duck that is still ramping when its voice starts lifts the rest of the line to full CD volume. The frozen frames are what leave Orb's duck still ramping.</p>
+  <p><strong>In the port.</strong> <code>battle_cd_drive</code> runs the drive on that seek law: the selector's seek as the module arms, the module's own on its seek arm, both arms held while it is busy, the head cue skipped on a busy pass, and the audio frame not stepped while the seek arm blocks. The seek and poll arms are read off each image; the summon images <code>0903..0934</code> carry the pair and no capture module does. Measured against mednafen's audio output (<a href="audio-internals.html#real-pcm">real-PCM cast channel</a>), Orb's and Swordie's voices land within <code>64</code> and <code>6</code> ms of retail's, at retail's level, where they had started up to a second early.</p>
+  <p><strong>Which line a module speaks.</strong> The port finds a module's voice by scanning its tick for the first head-cue call laid out. Two single-body modules fork their arm 0 on the caster's latch ahead of that call, so the first call is not always the one that runs: PROT 0946 lays out Big Wave's line first, while Call Wave calls <code>0x150</code> (<code>XA11</code> channel <code>0</code>), and PROT 0953 lays out Terio Punch's punch first, while the charge calls <code>0x159</code>. The port resolves both forks.</p>
 </section>
 
 <section class="doc-section" id="see-also">

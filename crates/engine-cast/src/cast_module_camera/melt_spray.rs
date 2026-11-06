@@ -11,15 +11,21 @@ use super::{
 /// PROT 0955's Melt Spray tick body.
 pub const MELT_SPRAY_BODY: u32 = crate::cast_module_ticks::MELT_SPRAY_TICK;
 
+/// The clip arm 2 stages on the caster.
+const SPRAY_CLIP: u8 = 7;
+
 /// **Melt Spray** (a `beq` / `slti` chain over `0..=4` and `0xFF`). Arms 0 and
 /// 1 are the walk-in the approach leg carries
 /// ([`super::capture_approach_follows`]).
 ///
 /// | arm | camera and seats | countdown |
 /// |---|---|---|
-/// | 2 (`0x801F81C4`) | caster and victim turn on each other; a shot on the victim: pitch `-0x20`, yaw `0xE00 - facing`, TR `(0, 0x400, 0x700)`, `0xC` frames | `= scalar << 7` |
-/// | 3 (`0x801F828C`) | every pass TR z `+product`; the debuff on the gate is the tick's | `+= scalar << 6` |
+/// | 2 (`0x801F81C4`) | caster and victim turn on each other, the caster's spray clip `7` staged with the bump; a shot on the victim: pitch `-0x20`, yaw `0xE00 - facing`, TR `(0, 0x400, 0x700)`, `0xC` frames | `= scalar << 7` |
+/// | 3 (`0x801F828C`) | every pass TR z `+product` and the staged byte cleared once clip `7` plays; the debuff on the gate is the tick's | `+= scalar << 6` |
 /// | 4 (`0x801F85B0`) | the same drift; the gate, then the victim's settle | - |
+///
+/// The body seats no record (no `FUN_80021B04` / `FUN_80050ED4` call), so
+/// nothing of the cell's image goes in ([`super::capture_director_seats_all`]).
 ///
 /// PORT: overlay_cast_white_shield_0955_801f7fa4 (PROT 0955 `0x6F`; the camera arms and the arm pacing)
 pub fn melt_spray_camera(
@@ -38,8 +44,12 @@ pub fn melt_spray_camera(
             let caster_facing =
                 bearing_12bit_approx(v.z, v.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
             let victim_facing = caster_facing.wrapping_add(0x800) & 0xFFF;
+            // The spray clip, staged with the bump (`li v1,0x7` /
+            // `sb v1,0x1da(s1)`, `0x801F8264..0x801F8274`).
             arm.caster_write = CaptureSeatWrite {
                 facing: Some(caster_facing),
+                stage: Some(SPRAY_CLIP),
+                restage: true,
                 ..Default::default()
             };
             arm.victim_write = CaptureSeatWrite {
@@ -56,6 +66,11 @@ pub fn melt_spray_camera(
             st.countdown.add(1 << 7);
         }
         3 => {
+            // Every pass clears the staged byte once the clip it names plays
+            // (`0x801F828C..0x801F82A0`), so the spray runs out onto the idle.
+            if st.caster_clip == Some(SPRAY_CLIP) {
+                arm.caster_write.stage = Some(0);
+            }
             arm.drift = Some(push);
             if st.countdown.drain_above(0) {
                 arm.hold = true;

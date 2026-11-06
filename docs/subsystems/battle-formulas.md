@@ -1713,6 +1713,8 @@ carries the matching guard bit:
 | 27 | `0x400` | (the guard-disable status) |
 | 28 | `0x1C7F` | Master Guard (`0x1C`, all bits) |
 
+The sweep is reached by a tail call from the battle template's tick `FUN_8004DA00` (`0x8004DC4C`), so it runs on every battle frame. It has no HP test, it also stores the word to the record mirror `+0x6F6`, and the same walk pins a living Maximum AP wearer's gauge `+0x170` at `100` (`+0xF8` bit `0x400`). Most appliers have no guard test of their own (the melee status arms, an enemy special's Venom and Toxic, a cast's raw bits), so the sweep is what makes those guards work. Port: `status_effects::guard_sweep_word`, `World::tick_battle_passive_sweep`, run at the head of each battle frame.
+
 **No timer.** Nothing in the battle code wears a status off with time. Every store
 to `+0x16E` that clears a bit is a cure, the sweep above, a hit's `0x0F80` strip, the
 tick's scripted-monster arm or the `0x400` waker, so Venom, Toxic, Rot and Curse last

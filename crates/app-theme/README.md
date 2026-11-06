@@ -50,7 +50,10 @@ surface, accent, selection, error and outline roles over egui's own light
 widgets; in both themes a control at rest carries the `outline` edge, without
 which an unticked check box all but vanishes into the panel, and weak text
 (hints such as the start page's drop line) is `ink_faint`, where egui's own
-alpha-faded grey fell under the 3:1 hint floor.
+alpha-faded grey fell under 3:1. A hint is text a player is meant to read
+(the launcher's key reminder, a folder line, a drop hint), so `ink_faint`
+holds WCAG AA's 4.5:1 like the other text inks; it stays a visible step below
+`ink_dim`, which is what marks it as a hint.
 
 Key names are `info` (`chrome::KEY`) in all three programs: the launcher's
 Controls panel, Explorer's shortcut list and the play window's `F12` panel.
@@ -77,9 +80,11 @@ strings); the palette does not.
 ## What the tests hold
 
 - Text contrast on every surface it is drawn over, by the WCAG ratio:
-  `ink` at least 7:1; `ink_dim`, `accent`, `good`, `warn`, `error` and
-  `info` at least 4.5:1; `ink_faint` and `outline` at least 3:1 (the WCAG
-  floor for a control's boundary); button and selected-row text, and
+  `ink` at least 7:1; `ink_dim`, `ink_faint`, `accent`, `good`, `warn`,
+  `error` and `info` at least 4.5:1 (WCAG AA for body text), on the
+  striped grid's alternate row too; `ink_faint` at least a fifth dimmer
+  than `ink_dim`; `outline` at least 3:1 (the WCAG floor for a control's
+  boundary); button and selected-row text, the accent on a button, and
   the primary button's label, likewise.
 - The contrast function against the WCAG reference points.
 - The dark tokens stay within half an 8-bit step of the launcher's original

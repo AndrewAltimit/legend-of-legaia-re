@@ -1041,6 +1041,8 @@ pub(super) struct PlayWindowApp {
     pub(super) panel_page: super::settings_panel::PanelPage,
     /// The settings page's row cursor.
     pub(super) settings_cursor: usize,
+    /// The Cheats page's cursor, picks and last outcome.
+    pub(super) cheats_page: super::cheats_panel::CheatsPage,
     /// The options file would not save: said on the settings page.
     pub(super) options_save_error: std::cell::RefCell<Option<String>>,
     /// The start-up line pointing at that panel ([`StartupHint`]).

@@ -37,7 +37,11 @@
     </a>
     <a class="card" href="../guides/vrchat-world.html">
       <div class="card-title">Guide: scenes as 3D worlds</div>
-      <div class="card-body"><code>legaia-engine export-glb</code> writes a scene's textured world, NPCs and animated props as <code>.glb</code> files with a placement manifest, ready for Unity or VRChat. Full reference: <code>docs/tooling/vrchat-world-export.md</code>.</div>
+      <div class="card-body"><code>legaia-engine export-glb</code> writes a scene's textured world, NPCs and animated props as <code>.glb</code> files with a placement manifest, ready for Unity or VRChat. </div>
+    </a>
+    <a class="card" href="vrchat-world-export.html">
+      <div class="card-title">World export reference</div>
+      <div class="card-body">What <code>export-glb</code> writes: the world, NPC and prop files, equipment items and the party, the manifest's placement arrays, and the frame and winding the files share.</div>
     </a>
   </div>
 </section>
@@ -146,6 +150,10 @@
       <div class="card-title">Port catalog</div>
       <div class="card-body">Per-function status - dumped &times; documented &times; ported &times; ignored - from <code>// PORT:</code> tags in the crates, with feature views and a regenerable open-work dashboard.</div>
     </a>
+    <a class="card" href="field-op-census.html">
+      <div class="card-title">Field-op census</div>
+      <div class="card-body">Disc-wide field-VM opcode census: does any shipped scene issue op X, and where. Its zeros separate "no fixture drives this" from "the disc has nothing to drive it".</div>
+    </a>
     <a class="card" href="disc-coverage.html">
       <div class="card-title">Disc coverage</div>
       <div class="card-body">The same question with the denominator taken from the <em>disc</em>: byte-exact coverage of each code image by dumped functions, plus PROT format recognition by bytes.</div>
@@ -169,6 +177,22 @@
     <a class="card" href="retail-compare.html">
       <div class="card-title">Retail comparison corpus</div>
       <div class="card-body">Seed the engine from every catalogued retail save state and score scene, camera, BGM, party, flags, battle state and the frame against the state's own RAM and VRAM, worst first.</div>
+    </a>
+    <a class="card" href="cast-sequence-oracle.html">
+      <div class="card-title">Cast-sequence oracle</div>
+      <div class="card-body">The corpus's time-axis sibling: one spell, summon or monster cast recorded on both sides from cast begin to past its Done band, and scored against retail frame by frame.</div>
+    </a>
+    <a class="card" href="walk-film.html">
+      <div class="card-title">Field walk film</div>
+      <div class="card-body">One field state and one pad schedule on both sides, paired pass by pass: the player, the follow camera, the staging pose and the placements. What a single scored frame cannot show about how a walk unfolds. Reports only.</div>
+    </a>
+    <a class="card" href="capture-coverage.html">
+      <div class="card-title">Capture coverage</div>
+      <div class="card-body">The corpus's denominator from the disc: per scene, monster, enemy attack, player cast, cast module and screen, does some retail state show it - and a ranked worklist of what to capture next.</div>
+    </a>
+    <a class="card" href="host-drift.html">
+      <div class="card-title">Host drift</div>
+      <div class="card-body">The port ships three hosts on one engine (native window, browser play page, browser minigames), so a feature wired into one is invisible in a diff. The ladder of gates that catches it.</div>
     </a>
     <a class="card" href="full-game-ladder.html">
       <div class="card-title">Full-game ladder</div>
@@ -216,18 +240,6 @@
   <h2>More tooling docs (on GitHub)</h2>
   <p>These live in <code>docs/tooling/</code> only: the parity and playthrough instruments, the CI gates that keep a measurement honest, and the per-row triage ledgers behind the port catalog.</p>
   <div class="card-grid">
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">
-      <div class="card-title">Cast-sequence oracle</div>
-      <div class="card-body">The corpus's time-axis sibling: one spell, summon or monster cast recorded on both sides from cast begin to past its Done band, and scored against retail frame by frame.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/walk-film.md" target="_blank" rel="noopener">
-      <div class="card-title">Field walk film</div>
-      <div class="card-body">One field state and one pad schedule on both sides, paired pass by pass: the player, the follow camera, the staging pose and the placements. What a single scored frame cannot show about how a walk unfolds. Reports only.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">
-      <div class="card-title">Field-op census</div>
-      <div class="card-body">Disc-wide field-VM opcode census: does any shipped scene issue op X, and where. Its zeros separate "no fixture drives this" from "the disc has nothing to drive it".</div>
-    </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md" target="_blank" rel="noopener">
       <div class="card-title">Worklist classification</div>
       <div class="card-body">Whether a missing-port row is a portable function entry at all (<code>REAL</code> / <code>INTERIOR</code> / <code>SHARED_TAIL</code> / <code>DUPLICATE</code> / <code>VA_ALIASED</code> / ...), so the worklist reads as work rather than addresses.</div>
@@ -259,10 +271,6 @@
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md" target="_blank" rel="noopener">
       <div class="card-title">Phantom print index</div>
       <div class="card-body">Address by address in the <code>0x801C****</code> / <code>0x801D****</code> band: which image and VA a printed address's bytes really occupy, and whether that VA is a function entry.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md" target="_blank" rel="noopener">
-      <div class="card-title">Host drift</div>
-      <div class="card-body">The port ships three hosts on one engine (native window, browser play page, browser minigames), so a feature wired into one is invisible in a diff. The ladder of gates that catches it.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener">
       <div class="card-title">Shipped-bundle freshness</div>

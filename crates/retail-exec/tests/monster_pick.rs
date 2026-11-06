@@ -41,6 +41,8 @@ struct Monster {
     tags: Vec<u8>,
     costs: Vec<u8>,
     spirit: u16,
+    /// The monster's own `+0x16E`: Numb (`0x400`) empties its pick at the tail.
+    status: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +103,7 @@ fn gen_monster(rng: &mut Rng) -> Monster {
         tags,
         costs,
         spirit: rng.below(101) as u16,
+        status: [0, 0, 0, 0x400, 0x80][rng.below(5) as usize],
     }
 }
 
@@ -185,6 +188,7 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         cpu.mem.wr16(a + 0x158, m.atk);
         cpu.mem.wr16(a + 0x168, m.int);
         cpu.mem.wr16(a + 0x170, m.spirit);
+        cpu.mem.wr16(a + 0x16E, m.status);
         let r = RECORD + i * 0x400;
         for b in 0..0x400 {
             cpu.mem.wr8(r + b, 0);
@@ -258,6 +262,7 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.agl = m.gauge;
         a.battle.agl_base = m.gauge.max(1);
         a.battle.spirit_gauge = m.spirit;
+        a.battle.field_flags = m.status;
         a.battle.liveness = 1;
         a.battle_monster_id = Some(key);
     }
@@ -306,13 +311,10 @@ fn a_monster_picks_what_retail_picks() {
         } else {
             0
         };
-        // A walk that matched nothing stores no category: the seat's stale `0`,
-        // which the engine's turn plays as the strike it is.
-        let retail = (
-            if retail_cat == 0 { 3 } else { retail_cat },
-            retail_spell,
-            state.get(),
-        );
+        // The stored byte itself: a walk that matched nothing stores no
+        // category, and the seat's stale `0` is what the turn picker's
+        // redirect and Counterattack roll read next.
+        let retail = (retail_cat, retail_spell, state.get());
         // `0xB4`'s arms store a spell and leave the category to the forced magic
         // arm, which a generated record with no cast entry never sets.
         if p.monsters[usize::from(p.caster)].id == 0xB4 && retail_cat != 2 {
@@ -321,11 +323,11 @@ fn a_monster_picks_what_retail_picks() {
         seed_port(&mut w, &p);
         let seat = p.party + p.caster;
         let action = w.pick_monster_action(seat);
-        let (cat, spell) = match action {
-            MonsterAction::Cast { spell_id, .. } => (2, spell_id),
-            MonsterAction::Physical { .. } => (3, 0),
-            MonsterAction::Flee => (5, 0),
-            MonsterAction::Wait => (3, 0),
+
+        let cat = w.actors[usize::from(seat)].battle.action_category;
+        let spell = match action {
+            MonsterAction::Cast { spell_id, .. } if cat == 2 => spell_id,
+            _ => 0,
         };
         casts += u32::from(cat == 2);
         swings += u32::from(cat == 3);

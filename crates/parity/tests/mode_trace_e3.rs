@@ -45,6 +45,10 @@ use legaia_ram_image::ScenarioManifest;
 /// to keep the test fast.
 const FRAMES: u64 = 60;
 
+/// Idle ticks before a menu scenario's Start press: the post-load hold
+/// (`0x28`) and one more.
+const POST_LOAD_HOLD_TICKS: usize = 0x29;
+
 /// PSX pad Start bit (`PadButton::Start`), threaded into the pad stream of
 /// `phase = "menu"` scenarios so the session opens the pause menu.
 const START_MASK: u16 = legaia_engine_system::input::PadButton::Start as u16;
@@ -180,16 +184,20 @@ fn mode_trace_e3_all_scenarios_converge() {
         // same active scene + game_mode 0x17 (compared whenever both sides
         // emit the byte).
         let menu_scenario = phase.as_deref() == Some("menu");
-        let pad_stream: &[u16] = if menu_scenario {
-            // pad_stream[i] lands before tick i+1: tick 1 idles (pad 0),
-            // tick 2 sees the Start edge and opens the menu, the remaining
-            // frames hold it open at pad 0.
-            &[0, START_MASK]
+        let pad_stream: Vec<u16> = if menu_scenario {
+            // pad_stream[i] lands before tick i+1. The scene load leaves the
+            // post-load pad hold (`FUN_8003ADAC`, `0x28` vsyncs), under which
+            // the frame pump keeps the menu accept off, so the stream idles
+            // through it, then the Start edge opens the menu and the
+            // remaining frames hold it open at pad 0.
+            let mut v = vec![0; POST_LOAD_HOLD_TICKS];
+            v.push(START_MASK);
+            v
         } else {
-            &[]
+            Vec::new()
         };
         let trace =
-            build_engine_mode_trace_field_live(scene_name, &extracted, None, FRAMES, pad_stream)
+            build_engine_mode_trace_field_live(scene_name, &extracted, None, FRAMES, &pad_stream)
                 .unwrap_or_else(|e| panic!("scenario {label:?}: build engine mode-trace: {e:#}"));
         let retail = load_runtime_mode_trace_from_save(save_path)
             .unwrap_or_else(|e| panic!("scenario {label:?}: load retail snapshot: {e:#}"));
