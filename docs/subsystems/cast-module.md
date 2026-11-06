@@ -2998,6 +2998,15 @@ sky over the same `0x50` passes, and on its gate the hit lands with the victim t
 caster. Arm 6 follows the victim's body through the knockdown. Arms 3 to 5 write both saved
 seat pairs back every pass, holding off the clips' root motion.
 
+**The last arm drains twice a pass.** Bloody Horns' arm 6, Scythe Wind's arm 5 (PROT 0951
+`0x5B`) and Rolling Flare's arm 4 (PROT 0950 `0x5A`) each take `scalar * delta` off the
+countdown ahead of the shot, which aims on the drained word (`0x801F7A18..0x801F7A30`,
+`0x801F8058..0x801F806C`, `0x801F8088..0x801F8090`), and again behind it while the word is
+still positive (`blez` / `bgtz` at `0x801F7A8C`, `0x801F80C0`, `0x801F80C0`); past it each
+waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows the rate: the
+arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
+Grade `disassembly` + `capture`.
+
 ### PROT 0935 (Earthquake)
 
 The caster turns on its target and holds the shot pitch `0`, yaw `0x800 - facing`,

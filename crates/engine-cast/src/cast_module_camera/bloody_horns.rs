@@ -53,10 +53,9 @@ fn pin(st: &ModuleCamState, arm: &mut CaptureCamArm) {
 /// | 3 (`0x801F752C`) | every pass on the caster: yaw base `0x9C0`, TR z `0x700 - cd/2`, clip `0xA` next. On the gate: the caster back to full rate, the victim's flinch at rate `1` | `+= scalar << 6` |
 /// | 4 (`0x801F7678`) | every pass on the victim: yaw base `0x980`, TR z `0x800 - cd/2`, the victim rising `3 * drain`. On the gate: the height to `-0x1400` | `+= scalar * 0x50` |
 /// | 5 (`0x801F77D4`) | the same: yaw base `0x930`, TR z `0x940 - cd/2`, falling `8 * drain`. On the gate: the hit | `+= scalar * 0x60` |
-/// | 6 (`0x801F79DC`) | on the victim's body: yaw base `0x8D0`, TR z `0xAC0 - cd/2`; ends on the gate | - |
+/// | 6 (`0x801F79DC`) | on the victim's body: yaw base `0x8D0`, TR z `0xAC0 - cd/2`; ends on the gate and the victim's settle | drained twice a pass |
 ///
-/// The phase chain is [`crate::cast_module_ticks::bloody_horns_tick`]. Not
-/// ported: arm 6's wait on the victim's clip past the gate, a few vsyncs.
+/// The phase chain is [`crate::cast_module_ticks::bloody_horns_tick`].
 ///
 /// PORT: overlay_cast_bloody_horns_0952_801f7118 (PROT 0952 `0x5C`; the camera arms and the seat writes)
 pub fn bloody_horns_camera(
@@ -138,10 +137,15 @@ pub fn bloody_horns_camera(
             }
         }
         6 => {
-            let held = st.countdown.drain_above(0);
+            // Two drains a pass, as Scythe Wind's last arm: one ahead of the
+            // shot, one behind it while the word stays positive
+            // (`0x801F7A84..0x801F7AB0`), then the wait on the victim's
+            // clip.
+            st.countdown.drain();
+            let cd = st.countdown.0;
             let on = st.victim_body.unwrap_or(v);
-            arm.shot = Some(sweep(focus_on(on), c.facing, st.countdown.0, 0x8D0, 0xAC0));
-            arm.hold = held;
+            arm.shot = Some(sweep(focus_on(on), c.facing, cd, 0x8D0, 0xAC0));
+            arm.hold = (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled;
         }
         _ => {}
     }

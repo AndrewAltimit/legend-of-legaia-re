@@ -44,7 +44,7 @@ fn sweep(on: [i16; 3], facing: u16, cd: i32, base: i32, far: i32) -> ModuleShot 
 /// | 2 (`0x801F7B58`) | both seats' rate `1`; on the caster: pitch `0x40`, yaw `0xA00 - facing`, TR `(0, 0x500, 0x600)`, `0xC` frames | seed `scalar << 5` |
 /// | 3 (`0x801F7C04`) | every pass on the caster: yaw base `0x9E0`, TR z `0x700 - cd`. On its pass, the wind's record on the victim and the caster's rate back | `+= scalar << 7` |
 /// | 4 (`0x801F7D30`) | every pass on the victim: yaw base `0x960`, TR z `0xB00 - cd`; below `scalar << 6`, four scattered records a pass. On its pass, the hit and the victim's rate back | `+= scalar * 0x60` |
-/// | 5 (`0x801F8008`) | every pass on the victim's body: yaw base `0x900`, TR z `0xE00 - cd`; then the victim's settle | - |
+/// | 5 (`0x801F801C`) | every pass on the victim's body: yaw base `0x900`, TR z `0xE00 - cd`; then the victim's settle | drained twice a pass |
 ///
 /// The phase chain is the arm table's
 /// ([`crate::cast_module_ticks::SCYTHE_WIND_TICK`]); this director owns the
@@ -111,7 +111,12 @@ pub fn scythe_wind_camera(
             }
         }
         5 => {
+            // The arm drains the word twice a pass: once ahead of the shot,
+            // which aims on the drained value (`0x801F8058..0x801F806C`), and
+            // again behind it while it is still positive
+            // (`0x801F80B8..0x801F80E4`).
             let body = st.victim_body.unwrap_or(v);
+            st.countdown.drain();
             let cd = st.countdown.0;
             arm.shot = Some(sweep(focus_on(body), c.facing, cd, 0x900, 0xE00));
             if (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled {
@@ -195,5 +200,25 @@ mod tests {
         let a = scythe_wind_camera(&mut st, 4, seats());
         assert_eq!(a.scatter, Some((SCATTER_RECORD, 4)));
         assert!(a.folds_hit && !a.hold);
+    }
+
+    /// Arm 5 drains the word twice a pass and aims on the first drain
+    /// (`0x801F8058..0x801F80E4`).
+    #[test]
+    fn the_last_arm_drains_twice_a_pass() {
+        let mut st = ModuleCamState {
+            victim_settled: true,
+            ..Default::default()
+        };
+        st.countdown.0 = 4 * super::super::MODULE_DRAIN_PER_TICK;
+        let a = scythe_wind_camera(&mut st, 5, seats());
+        assert!(a.hold);
+        assert_eq!(st.countdown.0, 2 * super::super::MODULE_DRAIN_PER_TICK);
+        let shot = a.shot.unwrap();
+        assert_eq!(
+            shot.tr[2],
+            (0xE00 - 3 * super::super::MODULE_DRAIN_PER_TICK) as i16
+        );
+        assert!(!scythe_wind_camera(&mut st, 5, seats()).hold);
     }
 }
