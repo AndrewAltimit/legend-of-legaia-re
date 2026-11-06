@@ -84,8 +84,11 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
         if world.presentation.fade.is_some() && world.screen_fade_draw().is_none() {
             fade_delay_seen = true;
         }
+        // The fixture's cast clip ends before the flash-in's ramp lands, so
+        // the white is the flash-out's: it starts there and steps on its
+        // spawn pass (`spawn_screen_fade`), one pass under full white.
         if let Some((rgb, abr, ot)) = world.screen_fade_draw()
-            && rgb == 0xFF_FFFF
+            && rgb & 0xF0_F0F0 == 0xF0_F0F0
         {
             fade_white_seen = true;
             assert_eq!(abr, 1, "additive flash");
@@ -115,7 +118,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
         fade_delay_seen,
         "the flash-in's 0x14-frame start delay draws nothing"
     );
-    assert!(fade_white_seen, "the flash-in lands on white");
+    assert!(fade_white_seen, "the band's flash draws white");
     for s in [
         ActionState::MagicCastBegin,
         ActionState::MagicPreCastWait,

@@ -547,6 +547,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and runs the loader on its `+0x7C` block; the engine's
     /// [`legaia_engine_system::fade::FadeState`] is that block.
     ///
+    /// The spawned actor ticks on its spawn pass: retail's action SM runs
+    /// ahead of the pool's tick passes, and the new fade is in the pool by
+    /// then. On `battle_kor_spoon_strike`'s Zenoir film the flash-in's block
+    /// on the first `0x34` row already holds delay `17` (`20` less the step-`3`
+    /// pass), and six passes later its colour has run three vsyncs of ramp.
+    /// The world tick steps its fades ahead of the battle tick, so the
+    /// engine's fade stood one pass behind retail's.
+    ///
     /// REF: FUN_80024E80 (ported as [`legaia_engine_system::fade::spawn_fade`], which
     /// stamps `id` into the template's last word)
     fn spawn_screen_fade(
@@ -565,6 +573,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             },
             id,
         );
+        let pass = self.world.battle.anim_pass_vsyncs;
+        if pass > 0
+            && let Some(fade) = &mut self.world.presentation.fade
+            && !fade.step_vsyncs(pass)
+            && !fade.holds_at_end()
+        {
+            self.world.presentation.fade = None;
+        }
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.module_pass(World::summon_stager_tick)
