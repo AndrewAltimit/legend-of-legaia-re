@@ -228,7 +228,8 @@ impl PlayWindowApp {
         self.session.host.world.minigame_caption(&ms::StatusHost {
             slot_machine_drawn: self.slot_gpu.is_some(),
             fishing_keys: ms::FishingKeys {
-                cast: "Circle",
+                cast: "Cross",
+                back: "Circle",
                 reel_a: "Cross",
                 reel_b: "Square",
                 menu: "Triangle",

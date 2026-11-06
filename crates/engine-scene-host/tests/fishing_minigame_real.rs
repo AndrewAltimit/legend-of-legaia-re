@@ -28,11 +28,11 @@ fn phase(world: &World) -> PondPhase {
 
 fn cast(world: &mut World) {
     frame(world, 0);
-    frame(world, PadButton::Circle.mask());
+    frame(world, PadButton::Cross.mask());
     for _ in 0..WINDUP_FRAMES + 112 {
         frame(world, 0);
     }
-    frame(world, PadButton::Circle.mask());
+    frame(world, PadButton::Cross.mask());
     while phase(world) == PondPhase::Flight {
         frame(world, 0);
     }

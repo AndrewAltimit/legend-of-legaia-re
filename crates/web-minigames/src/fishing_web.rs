@@ -485,8 +485,8 @@ impl LegaiaMinigames {
 
     /// Advance the pond one frame. `reel_mask` carries the held pad bits
     /// (`0x40` Cross / reel A, `0x80` Square / reel B, and the D-pad's `0x2000`
-    /// right / `0x4000` down / `0x8000` left the rod actor reads), `cast_edge` the cast /
-    /// confirm press, `pressed_mask` the **packed** retail newly-pressed word
+    /// right / `0x4000` down / `0x8000` left the rod actor reads), `cast_edge` the page's
+    /// cast button (a reel press casts as well, as in retail), `pressed_mask` the **packed** retail newly-pressed word
     /// this frame (`_DAT_8007B874` layout: `0x8000` D-pad left, `0x2000`
     /// D-pad right, `0x40` / `0x80` the reel buttons). The strike credit's pad
     /// nudge is counted from it by the shared kernel
@@ -540,7 +540,10 @@ impl LegaiaMinigames {
         p.tick(
             PondInput {
                 reel_mask,
-                cast_edge,
+                // Retail's cast edge is the reel pair's press (`& 0xC0`); the
+                // page's cast button is one more source of it.
+                cast_edge: cast_edge || pressed_mask & 0xC0 != 0,
+                leave_edge: pressed_mask & 0x21 != 0,
                 edge_bonus,
                 reel_edge: pressed_mask & 0xC0,
             },

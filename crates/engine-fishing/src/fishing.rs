@@ -89,6 +89,9 @@ pub const CAST_POWER_MAX: i32 = 0x1000;
 /// The meter's step per frame-step (`sll v0,v0,5` at `0x801CFB44`).
 pub const CAST_POWER_STEP: i32 = 0x20;
 
+/// The cast power the run-loop init seeds (`DAT_801D9274 = 0x40`, state `10`).
+pub const CAST_POWER_SEED: i32 = 0x40;
+
 /// Persistent fishing-point cap (`FUN_801d5298`: `_DAT_8008444c` clamped to
 /// `999999`). The HUD row clamps to the same literal, one copy per crate -
 /// `legaia_engine_ui::fishing::hud::HUD_POINT_CAP`.

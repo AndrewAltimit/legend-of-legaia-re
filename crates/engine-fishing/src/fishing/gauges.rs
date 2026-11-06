@@ -72,6 +72,23 @@ impl CastPower {
         }
     }
 
+    /// The meter as the run-loop init leaves it for a cast: state `10` stores
+    /// `0x40` to `DAT_801D9274` and `1` to its direction `DAT_801D9278`. The
+    /// wind-up (state `0xD`) falls through into the meter body, so the meter
+    /// runs from here until the wind-up's exit zeroes it.
+    pub fn seeded() -> Self {
+        Self {
+            power: CAST_POWER_SEED,
+            dir: 1,
+            locked: false,
+        }
+    }
+
+    /// Zero the meter, as the wind-up's exit does (`sw zero` at `0x801CFA60`).
+    pub fn zero(&mut self) {
+        self.power = 0;
+    }
+
     /// Current meter value.
     pub fn value(&self) -> i32 {
         self.power

@@ -118,7 +118,7 @@ stateDiagram-v2
 | `10` (`0xa`) | Run-loop init: zeroes the per-cast working set - tension `DAT_801d9168`, depth `DAT_801d9298`, cast power `DAT_801d9274` (seeded `0x40`) and its direction `DAT_801d9278`, the spawn latch `DAT_801d9294`. |
 | `0xb` | Fade-in: ramps the fade level `DAT_801d905c` down to 0, then advances - or jumps to `0x96` when `FUN_801d712c` reports no lure owned. |
 | `0xc` | Idle shore. The packed pad edge `_DAT_8007B874 & 0xC0` (Cross / Square, `0x801CF99C`) starts the cast. `& 0x110` (Triangle / Select, `0x801CF9EC`) raises SFX `0x21`, zeroes the menu cursor `0x801D912C` and opens the [hub menu](#the-hub-menu) at `0x64`. |
-| `0xd` | Cast wind-up: dollies the camera in over the water ([The fishing camera](#the-fishing-camera)) and adds the frame step to `DAT_801d9054`; once it passes `0xC` (thirteen frames at step `1`) it jumps to `0x14` and falls through into that state's first frame. |
+| `0xd` | Cast wind-up: dollies the camera in over the water ([The fishing camera](#the-fishing-camera)) and adds the frame step to `DAT_801d9054`; once it passes `0xC` (thirteen frames at step `1`) it stores `0x14` and zeroes the power (`0x801CFA60`). The case has no `break`: every wind-up frame falls through into `0x14`'s body, so the meter runs from state `10`'s `0x40` seed and a lock edge during the wind-up throws the cast. |
 | `0x14` | Power meter: bounces `DAT_801d9274` between `0x20` and `0x1000`, `0x20` per frame-step. On the `& 0xC0` edge (`0x801CFBA4`) it locks the power, clears the line-break latch `DAT_801d91a4`, spawns the rod, lure and line actors, computes the lure spawn point from the locked power and advances to `0x15`. |
 | `0x15` | No case of its own: the lure is in flight. The lure tick moves the state to `0x19` when the flown lure's power countdown reaches zero, raising cue `0x204` and bumping the cast counter. |
 | `0x19` | Lure in water (sets the allow-leave flag only). The lure tick ends it - see [Fight exits](#fight-exits). |
@@ -137,7 +137,7 @@ The tail at `LAB_801d01a4` runs every frame after the switch:
 - services three one-shot timers `DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0` through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` ([banners](#banners)). Each is idle at `0`, seeded to `1` by its event, passed to its animator as the frame count, advanced by the frame step `DAT_1f800393` while the animator reports active, and zeroed when it expires. While the `FUN_801d75dc` timer runs, the tail forces the `FUN_801d78ec` timer to zero;
 - applies the screen fade and draws the persistent HUD (`FUN_801d13f0`) and, while a fish is hooked (`DAT_801d9058`), the catch HUD (`FUN_801d1580`);
 - runs the scene floor pass `FUN_801d6bbc`;
-- honours the abandon edge: Circle or L2 (`_DAT_8007B874 & 0x21` at `0x801D0318`), gated on the allow-leave flag (`s7`), drops the session back to state `10`.
+- honours the abandon edge: Circle or L2 (`_DAT_8007B874 & 0x21` at `0x801D0318`), gated on the allow-leave flag (`s7`), drops the session back to state `10`. The switch opens `s7` in the wind-up and power meter (`li s7,1` at `0x801CFB68`, cleared again by the lock arm) and the lure in the water, state `0x19` (`0x801CFD2C`), fish on or not; states `0x21` / `0x22` load the result plate's accept word `DAT_801d90bc` into it (`0x801CFED8`). The shore, the flight and the line-break wait leave it shut, and a running catch banner `DAT_801d915c` shuts it whatever the state (`clear s7` at `0x801D01F8`).
 
 ### The hub menu
 
@@ -202,7 +202,7 @@ On a full match it resets the ring through `FUN_801d746c` and returns the templa
 
 Port: `ReelInput::from_pad_mask`, `ReelCadence`. The templates are decoded from the user's disc by `legaia_minigame_formats::fishing_species::parse_cadence_templates`.
 
-The port's cast input differs from retail by choice: **Circle (`0x20`) casts and locks the meter**, Cross reels (reel A), Square reels harder (reel B).
+Port: `PondInput::from_engine_pad` takes the cast edge off a new Cross / Square press and the leave edge off a new Circle / L2 press, as retail does; `PondSession::tick` opens the leave gate where `s7` is open. All three hosts read the one build: the play hosts through `World::tick_fishing`, the minigames page through `fishing_pond_tick`'s packed newly-pressed word (its on-screen cast button is one more source of the cast edge). Pinned by `fishing::tests::the_wind_up_runs_the_meter_and_takes_the_lock` and `the_leave_edge_gives_up_a_cast_only_where_retail_opens_the_gate`.
 
 ## Species selection and the band-4 gate
 
@@ -478,7 +478,7 @@ Rank ladder (`0x801D5448..0x801D54B4`):
 
 When `lift` reaches `0x100` the best-catch update runs and `DAT_801d90bc` is raised; the driver reads that word as its next-state accept.
 
-Port: `FishingRecord` (award credit, cap, best catch). The plate is drawn on all three hosts through one builder, `legaia_engine_ui::catch_result_draws`, fed by `PondSession::catch_result`. The engine does not model the fish's lift, so its counter starts on the landing frame and the `0x180` lead-in is the only delay before the plate fades up; it does not gate the recast on `DAT_801d90bc`.
+Port: `FishingRecord` (award credit, cap, best catch). The plate is drawn on all three hosts through one builder, `legaia_engine_ui::catch_result_draws`, fed by `PondSession::catch_result`. The engine does not model the fish's lift, so its counter starts on the landing frame and the `0x180` lead-in is the only delay before the plate fades up. The accept word is the leave gate: Circle puts the catch away once the counter reaches `0x280` (`RESULT_ACCEPT_RAMP`) and the catch banner has stopped, two hundred frames from the catch at step `1` (`fishing::tests::the_catch_plate_waits_for_its_accept_word_and_the_banner`).
 
 ## Point exchange (prize shop)
 
@@ -562,7 +562,7 @@ A hooked rod bent past its cap with the countdown `_DAT_801D90C4` spent raises t
 
 Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_render_kernels::gte::divide`) and `fishing_line` (the clip and the packet).
 
-`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::fishing::line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
+`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::fishing::line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The flight reaches the lure tick's tail too (`0x801D2920` branches there on every frame the power lasts, and the tail builds the packet unconditionally), so the line follows the lure out from the lock as well as while waiting and hooked.
 
 ### The rod model
 
@@ -1008,7 +1008,7 @@ The cast releases at the power meter's lock (`FUN_801CF3BC` state `0x14`): the l
 
 The retail tables, kernels and screens above are pinned. What remains is the glue `PondSession` reconstructs, each marked at its call site:
 
-- **Line break.** The ceiling roll and the lure it spends are ported ([Port fight model](#port-fight-model)); the break seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner (`FishingBanners::on_snapped`). So is the far-record strain. The off-screen latch (`3`) is not ported - it tests the line packet's screen `x` - and neither is the no-lure screen a spent last lure leads to.
-- **Result plate.** The landed fish's lift is modelled only as far as the camera reads it ([The fishing camera](#the-fishing-camera)); the fish model's own rise and the `DAT_801d90bc` recast gate are not.
+- **Line break.** The ceiling roll and the lure it spends are ported ([Port fight model](#port-fight-model)); the break seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner (`FishingBanners::on_snapped`) - and the session waits out the pair as state `0x28` does, returning to the shore the frame it ends (`fishing::tests::a_broken_line_returns_to_the_shore_when_its_banner_ends`). So is the far-record strain. The off-screen latch (`3`) is not ported - it tests the line packet's screen `x` - and neither is the no-lure screen a spent last lure leads to.
+- **Result plate.** The landed fish's lift is modelled only as far as the camera reads it ([The fishing camera](#the-fishing-camera)); the fish model's own rise is not, so the plate's counter (and with it the `DAT_801d90bc` accept gate) starts on the landing frame rather than at the end of the lift.
 - **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.
 - **Mode states `0`, `0xb`, `0x96`, `200`.** The tackle grant, the fade ramps, the no-lure screen and the exit fade are not session phases; the hosts' leave affordance replaces the exit.

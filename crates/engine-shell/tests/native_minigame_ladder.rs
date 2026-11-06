@@ -312,15 +312,15 @@ fn rung(
 /// Fishing: the venue actors (wander / floor solve / camera publish / line),
 /// the persistent + catch HUD rows and the venue chrome.
 ///
-/// `L` opens it, Circle starts the cast and locks the power meter, and Cross
-/// reels. The cast is pad input, which is exactly why both scripts are
+/// `L` opens it, Cross starts the cast and locks the power meter (retail's
+/// `& 0xC0` edge), and Cross reels. The cast is pad input, which is exactly why both scripts are
 /// needed: neither channel alone reaches this frame.
 #[test]
 fn rung1_fishing_opens_and_paints_its_hud() {
     rung(
         "fishing",
         "40:L",
-        Some("80:Circle,120:Circle,160-200:Cross"),
+        Some("80:Cross,120:Cross,160-200:Cross"),
         "fishing: started",
         0.001,
         SHOT_TICK,
@@ -562,7 +562,7 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
         return;
     };
     let dev = [("LEGAIA_DEV_MENU", "1")];
-    let cast = "80:Circle,120:Circle";
+    let cast = "80:Cross,120:Cross";
     // Every frame this window draws is opaque, so a capture holding a
     // non-opaque pixel was damaged on its way out of the GPU, not drawn that
     // way. The shared CI runner has twice returned one with a 16-pixel run of

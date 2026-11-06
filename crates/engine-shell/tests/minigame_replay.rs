@@ -433,12 +433,12 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     phase(host)
                 ));
             }
-            // Circle starts the wind-up, the power meter sweeps, a second
-            // Circle locks it, and the lure flies out and lands.
+            // Cross starts the wind-up, the power meter sweeps, a second
+            // Cross locks it, and the lure flies out and lands.
             // A weak throw lands inside `LAND_RECORD` and retail reels it
             // straight back to the shore, so wait for a real charge the way a
             // player would, then for the lure to land.
-            tap(host, PadButton::Circle);
+            tap(host, PadButton::Cross);
             for _ in 0..600 {
                 let charged = host
                     .world
@@ -451,7 +451,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 }
                 hold(host, 0, 1);
             }
-            tap(host, PadButton::Circle);
+            tap(host, PadButton::Cross);
             for _ in 0..600 {
                 if phase(host) != Some(PondPhase::Flight) {
                     break;
