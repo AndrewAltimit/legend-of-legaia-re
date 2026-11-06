@@ -152,6 +152,23 @@ pub(super) struct MoveVmHostImpl<'a> {
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
+    /// Op `0x21` - one row of the deformation table `0x8007BE60`
+    /// (`0x8002377C..0x800237D4`: `row = 0x8007BE60 + id*0xC`, the four
+    /// halfwords `op[2..=5]` at `+0..+6`, the sign-extended `op[6]` at `+8`).
+    /// The table is global in retail, so the row lands where the field VM's
+    /// op `43 07` writes too and every shatter draw reads it
+    /// ([`crate::world::World::shatter_row`]). The VM has already pointed the
+    /// part's `+0x6D` at it.
+    fn face_rotation_setup(&mut self, face_id: u8, params: [u16; 4], target: i32) {
+        self.world.npcs.face_rows.insert(
+            face_id,
+            crate::world::FieldFaceRow {
+                offset: params.map(|v| v as i16),
+                flags: target as u32,
+            },
+        );
+    }
+
     /// Op `0x40` - libgpu `MoveImage` (`FUN_80058490`), the animated-texture
     /// strip primitive: `conc`'s `P`-record cycles, `deroa`, `bubu1`,
     /// `edretoin`. It lands on the VRAM queue both hosts drain each frame, the

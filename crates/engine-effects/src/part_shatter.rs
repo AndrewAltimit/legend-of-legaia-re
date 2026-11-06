@@ -23,10 +23,15 @@
 //! built without the bank-3 quad split, which only the prim dispatcher
 //! applies.
 //!
-//! The row is taken as zero: the battle rows read zero in every capture
-//! ([`legaia_render_kernels::shatter::ShatterRow`]), so a battle part's
-//! burst centre is its own origin and its flags are the default spin and
-//! push.
+//! The row is the deformation table `0x8007BE60`'s, and a caller that holds
+//! the table passes it ([`shatter_part_mesh_row`]): move-VM op `0x21` writes
+//! a row and points the part's `+0x6D` at it (`0x8002377C..0x800237D4`), and
+//! the field carriers set a burst offset and the shrink flag that way
+//! (`rikuroa` / `rikuroa2` records `56` / `57`, `jagaroom` records `20` /
+//! `21`). The battle rows read zero in every capture
+//! ([`legaia_render_kernels::shatter::ShatterRow`]), so a battle part drawn
+//! with [`shatter_part_mesh`] bursts from its own origin with the default
+//! spin and push.
 //!
 //! REF: FUN_8001ADA4 (`0x8001B45C..0x8001B568`), FUN_80029888
 
@@ -38,7 +43,14 @@ use legaia_tmd::mesh::VramMesh;
 /// whole. One object: a part's model is drawn unposed, so every triangle
 /// shares the object's burst centre.
 pub fn shatter_part_mesh(mesh: &VramMesh, value: i16) -> Option<VramMesh> {
-    let input = ShatterInput::new(value, ShatterRow::default())?;
+    shatter_part_mesh_row(mesh, value, ShatterRow::default())
+}
+
+/// [`shatter_part_mesh`] under deformation-table row `row`, the row the
+/// part's `+0x6D` names (`0x8001B538..0x8001B564` reads it for the draw
+/// word's flag half; the renderer adds its offset to every vertex).
+pub fn shatter_part_mesh_row(mesh: &VramMesh, value: i16, row: ShatterRow) -> Option<VramMesh> {
+    let input = ShatterInput::new(value, row)?;
     let ids = vec![0u32; mesh.positions.len()];
     Some(shatter_vram_mesh(mesh, &ids, &input, &[], false, |_| {
         SweepFrame::MODEL
@@ -58,7 +70,12 @@ pub fn part_shatter_word(s: &legaia_engine_vm::move_vm::ActorState) -> i16 {
 
 /// Replace `mesh` with its shattered copy when `value` is non-zero.
 pub fn apply_part_shatter(mesh: &mut VramMesh, value: i16) {
-    if let Some(m) = shatter_part_mesh(mesh, value) {
+    apply_part_shatter_row(mesh, value, ShatterRow::default());
+}
+
+/// [`apply_part_shatter`] under deformation-table row `row`.
+pub fn apply_part_shatter_row(mesh: &mut VramMesh, value: i16, row: ShatterRow) {
+    if let Some(m) = shatter_part_mesh_row(mesh, value, row) {
         *mesh = m;
     }
 }
