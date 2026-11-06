@@ -26,7 +26,8 @@
 //! [`SceneHost::arm_picker_entry_seat`], then
 //! [`SceneHost::enter_field_scene`], or
 //! [`SceneHost::enter_world_map_scene`] for a kingdom map), stepped by
-//! [`SceneHost::tick`], and read through the same kernels the play hosts
+//! [`SceneHost::tick`] between the camera's two halves of the frame the play
+//! hosts run around it ([`legaia_engine_field::frame_step`]), and read through the same kernels the play hosts
 //! call - [`FloorWave`] for the terrain / decoration cells (the live rungs)
 //! and [`legaia_engine_core::world::World::placed_floor_offsets`] for placed objects (the
 //! ladder their actors spawned on),
@@ -72,6 +73,7 @@ use std::sync::Arc;
 use legaia_engine_field::field_actor_timers::FloorTierBob;
 
 use crate::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_field::camera::Camera;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::field_env::{EnvDraw, FloorWave, PlacedWindowKey, PropPoseKey};
 use legaia_engine_scene::scene::ProtIndex;
@@ -122,6 +124,15 @@ pub struct LiveScene {
     rooms: Vec<RoomLadder>,
     restarts: u32,
     halted: bool,
+    /// The field camera the play hosts tick around the world
+    /// ([`legaia_engine_field::frame_step::camera_before_world_tick`] /
+    /// [`legaia_engine_field::frame_step::camera_after_world_tick`]). The
+    /// world reads what it publishes: the actor visibility cull
+    /// (`FUN_801D79E8`) that holds a culled placement's height, the
+    /// visible-tile window, the stored focus. Without it the preview's
+    /// actors never cull, and one the play page holds (the off-map hide box
+    /// on `map01`) stands on a different height.
+    camera: Camera,
 }
 
 impl LiveScene {
@@ -131,7 +142,8 @@ impl LiveScene {
     pub fn enter(index: Arc<ProtIndex>, name: &str) -> Result<Self, String> {
         let world_map = legaia_engine_scene::scene::is_world_map_scene(name);
         let mut host = SceneHost::new(index.clone());
-        Self::enter_host(&mut host, name, world_map)?;
+        let mut camera = Self::new_camera();
+        Self::enter_host(&mut host, &mut camera, name, world_map)?;
         let scene_lut = host
             .scene
             .as_ref()
@@ -150,10 +162,38 @@ impl LiveScene {
             rooms,
             restarts: 0,
             halted: false,
+            camera,
         })
     }
 
-    fn enter_host(host: &mut SceneHost, name: &str, world_map: bool) -> Result<(), String> {
+    /// The camera both play hosts build: the retail field framing bias at
+    /// the default follow distance.
+    fn new_camera() -> Camera {
+        let mut c = Camera::new();
+        c.render_yaw_bias = legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
+        c
+    }
+
+    /// One frame as the play hosts run it (`BootSession::tick`): the
+    /// camera's half before the world tick, [`SceneHost::tick`], the
+    /// camera's half after it.
+    fn step(host: &mut SceneHost, camera: &mut Camera) -> anyhow::Result<SceneTickEvent> {
+        legaia_engine_field::frame_step::camera_before_world_tick(camera, &mut host.world, None);
+        let event = host.tick();
+        legaia_engine_field::frame_step::camera_after_world_tick(
+            camera,
+            &mut host.world,
+            matches!(event, Ok(SceneTickEvent::SceneEntered { .. })),
+        );
+        event
+    }
+
+    fn enter_host(
+        host: &mut SceneHost,
+        camera: &mut Camera,
+        name: &str,
+        world_map: bool,
+    ) -> Result<(), String> {
         // The scene picker's free-roam staging, the one rule both play hosts
         // apply to a picker entry.
         host.world.stage_picker_entry(name, false);
@@ -167,6 +207,9 @@ impl LiveScene {
         } else {
             host.enter_field_scene(name, 0)
         };
+        // A direct entry is no `SceneEntered` tick event, so the camera-side
+        // reset that event drives runs here, as the play hosts' entries do.
+        camera.reset_for_scene_entry();
         entered.map_err(|e| format!("enter {name}: {e:#}"))
     }
 
@@ -206,7 +249,7 @@ impl LiveScene {
         if self.halted {
             return false;
         }
-        let event = self.host.tick();
+        let event = Self::step(&mut self.host, &mut self.camera);
         let left = match &event {
             Err(_) => true,
             Ok(SceneTickEvent::SceneEntered { .. }) => true,
@@ -219,7 +262,8 @@ impl LiveScene {
             self.restarts += 1;
             let name = self.name.clone();
             if self.restarts > MAX_RESTARTS
-                || Self::enter_host(&mut self.host, &name, self.world_map).is_err()
+                || Self::enter_host(&mut self.host, &mut self.camera, &name, self.world_map)
+                    .is_err()
             {
                 self.halted = true;
                 return false;
@@ -450,12 +494,13 @@ fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>
         return (masks, Vec::new());
     }
     let mut probe = SceneHost::new(index);
-    if LiveScene::enter_host(&mut probe, name, false).is_err() {
+    let mut cam = LiveScene::new_camera();
+    if LiveScene::enter_host(&mut probe, &mut cam, name, false).is_err() {
         return (masks, Vec::new());
     }
-    let settled = |p: &mut SceneHost, ticks: u32| -> bool {
+    let settled = |p: &mut SceneHost, cam: &mut Camera, ticks: u32| -> bool {
         for _ in 0..ticks {
-            let left = match p.tick() {
+            let left = match LiveScene::step(p, cam) {
                 Err(_) | Ok(SceneTickEvent::SceneEntered { .. }) => true,
                 Ok(_) => {
                     p.world.mode != SceneMode::Field
@@ -468,7 +513,7 @@ fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>
         }
         true
     };
-    if !settled(&mut probe, PROBE_SETTLE_TICKS) {
+    if !settled(&mut probe, &mut cam, PROBE_SETTLE_TICKS) {
         return (masks, Vec::new());
     }
     // Each room is probed from the entry room: a room whose mask the script
@@ -484,20 +529,20 @@ fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>
     for (mask, (x, z)) in seats {
         if let Some((ex, ez)) = entry_seat
             && probe.debug_seat_standing(ex, ez)
-            && !settled(&mut probe, PROBE_ROOM_TICKS)
-            && (LiveScene::enter_host(&mut probe, name, false).is_err()
-                || !settled(&mut probe, PROBE_SETTLE_TICKS))
+            && !settled(&mut probe, &mut cam, PROBE_ROOM_TICKS)
+            && (LiveScene::enter_host(&mut probe, &mut cam, name, false).is_err()
+                || !settled(&mut probe, &mut cam, PROBE_SETTLE_TICKS))
         {
             break;
         }
         if !probe.debug_seat_standing(x, z) {
             continue;
         }
-        if !settled(&mut probe, PROBE_ROOM_TICKS) {
+        if !settled(&mut probe, &mut cam, PROBE_ROOM_TICKS) {
             // The seat left the scene (a scripted exit); start the probe over
             // for the remaining rooms.
-            if LiveScene::enter_host(&mut probe, name, false).is_err()
-                || !settled(&mut probe, PROBE_SETTLE_TICKS)
+            if LiveScene::enter_host(&mut probe, &mut cam, name, false).is_err()
+                || !settled(&mut probe, &mut cam, PROBE_SETTLE_TICKS)
             {
                 break;
             }
