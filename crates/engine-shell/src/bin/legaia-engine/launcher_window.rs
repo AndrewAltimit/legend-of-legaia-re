@@ -1513,18 +1513,7 @@ impl LauncherApp {
                 .unwrap_or_else(|| line.clone());
             c.text(tx, card.y + 20, &c.ellipsize_left(&name, inner), INK);
             if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
-                // The last two folders are what a person recognises; the
-                // full path is in the help for *Change disc*.
-                let parts: Vec<String> = dir
-                    .components()
-                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                    .collect();
-                let tail = parts[parts.len().saturating_sub(2)..].join("/");
-                let folder = if parts.len() > 2 {
-                    format!(".../{tail}")
-                } else {
-                    dir.display().to_string()
-                };
+                let folder = short_folder(dir);
                 let shown = format!("in {}", c.ellipsize_left(&folder, inner - c.width("in ")));
                 c.text(tx, card.y + 32, &shown, FAINT);
             }
@@ -2426,7 +2415,7 @@ const CARD_FIX: &str = "Choose a .mcr, .mcd, .gme or .mcs card (Shift+Enter), or
 fn data_folder_help(card: Option<&Result<launcher::CardInfo, String>>) -> String {
     let mut s = String::from("Open the folder your saves and settings live in. ");
     match card {
-        None => s.push_str("Shift+Enter: use an emulator memory card as card 2."),
+        None => s.push_str("Right-click or Shift+Enter: use an emulator memory card as card 2."),
         Some(Ok(info)) => {
             s.push_str(&card_summary(info));
             s.push_str(" Delete removes it.");
@@ -2492,7 +2481,28 @@ fn file_name_of(p: &Path) -> String {
 
 /// The line that offers a remembered disc back.
 fn recent_offer_line(offer: &DiscInfo) -> String {
-    format!("Shift+Enter: {}, chosen before.", file_name_of(&offer.path))
+    format!(
+        "Right-click or Shift+Enter: {}, used before.",
+        file_name_of(&offer.path)
+    )
+}
+
+/// The disc card's folder line: the last two folders, which are what a
+/// person recognises (the full path is in the help for *Change disc*), with
+/// `...` only when folders were left out. A root or drive prefix is not a
+/// folder: `/media/usb` shows whole.
+fn short_folder(dir: &Path) -> String {
+    use std::path::Component;
+    let names: Vec<String> = dir
+        .components()
+        .filter(|c| matches!(c, Component::Normal(_)))
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if names.len() > 2 {
+        format!(".../{}", names[names.len() - 2..].join("/"))
+    } else {
+        dir.display().to_string()
+    }
 }
 
 /// *Change disc*'s help while another remembered disc is on offer: the disc
@@ -2816,6 +2826,16 @@ fn same_file(a: &Path, b: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_line_elides_only_when_folders_were_left_out() {
+        assert_eq!(short_folder(Path::new("/media/usb")), "/media/usb");
+        assert_eq!(
+            short_folder(Path::new("/home/me/Downloads/Legaia")),
+            ".../Downloads/Legaia"
+        );
+        assert_eq!(short_folder(Path::new("discs")), "discs");
+    }
 
     fn canvas(font: &legaia_font::Font) -> Canvas<'_> {
         Canvas {
