@@ -552,7 +552,9 @@ pre-pass knows a draw is an actor by the draw watermark the occlusion fade
 already reads (`Renderer::set_occlusion_env_draws`, `MeshUniforms.flags[2]
 == 0`): the player, NPCs, tile actors and spawned meshes on the field and
 on expansion maps, the leader on the world map, every body after the
-backdrop in battle. The play window restarts the watermark each frame at
+stage in battle - the stage being the backdrop shell, the ground grid and
+the backdrop's slot-1 ribbon, so the floor under a fighter takes the same
+AO a field floor does. The play window restarts the watermark each frame at
 "all environment" and lowers it where each mode's actors begin. An actor
 fragment writes its depth with a zero normal (`ssao_is_actor`), so it
 still occludes - the ground under a character's feet keeps its contact
@@ -562,6 +564,16 @@ shading and contact shadow - while the AO pass leaves its own pixels at
 pixels untouched. Static world geometry and props keep their AO. The
 browser twin marks the same draws by its `noOccl` placements
 (`u_occl_allow == 0`).
+
+**Where it runs.** The field, expansion maps, the world map and a battle:
+the frames drawn through the scene camera with that actor split. A
+minigame venue owns its frame instead - the Baka duel, the Muscle Dome and
+the fishing pond under cameras of their own, the dance hall as one baked
+mesh with its dancers in it, the slot machine as screen primitives - and
+marks no actor draws, so the pass would shade fighters and dancers as
+walls and reconstruct view space through the wrong camera. Both hosts ask
+`legaia_engine_session::ssao_scope::ssao_applies` before staging the
+camera, and stage none there.
 
 **Normals.** The TMDs author normals only on their lit rows, so every
 fragment takes the flat face normal: the cross product of the screen
