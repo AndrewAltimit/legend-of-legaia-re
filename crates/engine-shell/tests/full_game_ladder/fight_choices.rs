@@ -284,6 +284,10 @@ pub(super) fn wanted_item(
 /// three attack arms, and the stance is all the member has left. `jouinc`'s F18
 /// (monster 152) rots all three members this way, and a hand that only stood in the
 /// stance with five Medicine in the bag ran out the battle cap.
+///
+/// A member down at 0 HP is passed over even when its word still shows every
+/// limb rotted: the target window refuses a cure on it, and a hand that kept
+/// pressing Cross there held `concnow`'s F6 (monsters 121 and 130) to the cap.
 pub(super) fn wanted_cure_item(
     w: &legaia_engine_core::world::World,
     ids: impl Iterator<Item = u8>,
@@ -310,7 +314,10 @@ pub(super) fn wanted_cure_item(
         )
         .filter_map(|(actor, _)| ITEM_TARGET.with(|t| t.borrow()[actor]).map(usize::from))
         .collect();
-    let target = (0..n).find(|&i| out_of_it(i) && !coming.contains(&i))?;
+    // A fallen member keeps its status word, Rot included, and the item
+    // window refuses a cure on it: the cure is for a member still standing.
+    let standing = |i: usize| w.actors.get(i).is_some_and(|a| a.battle.hp > 0);
+    let target = (0..n).find(|&i| standing(i) && out_of_it(i) && !coming.contains(&i))?;
     let aoe = AOE_HIT.with(std::cell::Cell::get);
     let hp = projected_hp(w);
     if (0..n).any(|i| !out_of_it(i) && hp[i] > 0 && hp[i] <= aoe + aoe / 8) {
@@ -1487,4 +1494,11 @@ fn a_fully_rotted_member_gets_the_cure_in_any_fight() {
     // One limb left: the member still swings.
     w.actors[1].battle.field_flags = 0x18;
     assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), None);
+    // Down at 0 HP with every limb still rotted: the window refuses the
+    // cure, so the hand asks for none (and the next rotted member gets it).
+    w.actors[1].battle.field_flags = 0x38;
+    w.actors[1].battle.hp = 0;
+    assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), None);
+    w.actors[2].battle.field_flags = 0x38;
+    assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), Some((0x7F, 2)));
 }
