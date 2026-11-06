@@ -150,6 +150,19 @@ impl Run {
     }
 
     fn tick(&mut self, pad: u16) {
+        // The auto party's swing is retail's AI-seat arm (`FUN_801EED1C`'s
+        // no-input queue): a target whose record `+0x1E` reads `2` takes one
+        // low swing `0x0E`, whose power byte is the equipped boots' (`0x13`
+        // on the starting set) - the class the limb-vs-height law
+        // (`0x801EC488..0x801EC554`) misses on that same target. Reading
+        // every seated record as class `0` gives the auto party its two arm
+        // swings, which connect with every class; the pack's chain, not the
+        // limb law, is under test here.
+        if self.s.host.world.mode == SceneMode::Battle {
+            for def in self.s.host.world.tables.monster_catalog.by_id.values_mut() {
+                def.swing_class = 0;
+            }
+        }
         self.s.host.world.set_pad(pad);
         self.s.tick().expect("tick");
         let w = &self.s.host.world;
