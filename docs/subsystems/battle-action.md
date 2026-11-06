@@ -381,6 +381,8 @@ The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), a
 
 `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`; its case `0x12` also arms the summon cast close-up camera (see [below](#the-summon-cast-close-up-camera)). When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor.
 
+The new actor ticks on its spawn pass (the pool's tick passes run after the action SM): the first `0x34` row of a step-`3` cast already holds delay `17`, so the port steps a fade it spawns here by the pass (`spawn_screen_fade`).
+
 **Next:** `0x34`.
 
 #### State `0x34` - Summon - actor freeze
