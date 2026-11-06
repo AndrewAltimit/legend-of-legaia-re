@@ -473,9 +473,18 @@ pub(super) fn losing_race(w: &legaia_engine_core::world::World) -> bool {
 /// body (Xain's Bull Charge) before the party-wide hit it sets up. See
 /// [`wants_guard`].
 pub(super) fn foe_charged(w: &legaia_engine_core::world::World) -> bool {
+    /// The `+0x16E` word's Confuse group.
+    const CONFUSE_GROUP: u16 = 0x0380;
     let n = w.party.party_count.clamp(1, 3) as usize;
     (n..w.actors.len()).any(|i| {
         w.actors[i].battle.hp > 0
+            // A confused foe's charge is no wind-up against the party: its
+            // strikes land where its confusion sends them, and the group
+            // lasts until a hit strips it (`andi 0xf07f` at `0x801EDA5C`). A
+            // party that guarded on its latch dealt no hit, so `chitei2`'s
+            // monster `0x97` struck itself under Confuse, kept its latch and
+            // held all three members in the stance to the battle cap.
+            && w.raw_status_word(i as u8) & CONFUSE_GROUP == 0
             && w.battle
                 .monster_ai_state
                 .dat
