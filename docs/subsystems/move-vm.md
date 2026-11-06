@@ -647,6 +647,14 @@ scale `+0x72` and colour word `+0x74` / `+0x78` every frame, until the part
 halts (`0x8`) or a script raises `0x2`. The global index is the record's
 own `model_sel`, so the scene-pack slot is `model_sel - 5`.
 
+Both hosts resolve that slot against the scene's environment pack
+(`engine-scene::field_env::env_pack_tmd_indices`, the TMD-count vote the
+placements use), not against the entry the scene bundle names. In `rikuroa`,
+`taiku`, `doman`, `balden`, `nilboa` and seventeen other scenes the pack
+streams from an entry the bundle does not name, or the bundle entry holds no
+TMD, so a bundle-keyed list is empty there and every field-effect part goes
+undrawn.
+
 `opdeene`'s light cone over the Seru in the opening narration is one: record
 `0x394` of the scene's stager bundle, `model_sel 0x4C` (pack slot `71`, an
 additive `GT4` fan on texture page `0x37`), word `0xC9000000`. That word's
