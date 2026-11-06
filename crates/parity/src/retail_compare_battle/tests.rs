@@ -222,16 +222,18 @@ fn a_loading_fight_names_its_reason() {
 }
 
 #[test]
-fn combatant_score_skips_a_missing_engine_max_mp() {
+fn combatant_score_counts_a_zero_max_mp() {
     let r = Combatant {
         hp: 10,
         hp_max: 20,
-        mp: 5,
-        mp_max: 9,
+        mp: 0,
+        mp_max: 0,
     };
-    let e = Combatant { mp_max: 0, ..r };
-    let (s, _) = combatant_score(&[Some(r)], &[e], "m", &[]);
+    let (s, _) = combatant_score(&[Some(r)], &[r], "p", &[]);
     assert_eq!(s, 1.0);
+    let e = Combatant { mp_max: 602, ..r };
+    let (s, d) = combatant_score(&[Some(r)], &[e], "p", &[]);
+    assert_eq!(s, 0.75, "{d}");
     let (s, d) = combatant_score(&[Some(r)], &[], "p", &[]);
     assert_eq!(s, 0.0, "{d}");
 }

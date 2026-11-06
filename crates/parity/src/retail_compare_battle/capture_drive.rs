@@ -1541,6 +1541,20 @@ impl RetailBattle {
             .then_some(RAISED_POOL)
     }
 
+    /// The maximum MP engine slot `slot` stands on when the capture's seat
+    /// word `+0x152` holds what its character record's `+0x108` does not.
+    /// Battle init copies the record's (`FUN_80053CB8`, `0x80053E58`), and
+    /// from there the seat's is the fight's own: Lapis Wave zeroes it
+    /// (`0x801F6D1C`) and Fatal Decision halves or zeroes it, neither touching
+    /// the record. A replay seeded past such a cast never runs it, so the
+    /// seat takes the capture's word (`battle_deene_lapis_strike`: `0` on
+    /// every seat against records of `602` / `509` / `660`).
+    pub fn party_seat_mp_max_off_record(&self, slot: usize, seat: &Combatant) -> Option<u16> {
+        let record = *self.record_mp_max.get(slot)?;
+        (slot < usize::from(self.party_count.clamp(1, 3)) && record != 0 && seat.mp_max != record)
+            .then_some(seat.mp_max)
+    }
+
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
     /// (`ActionSteer::walk_clock`).
     pub fn walk_clock_capture(&self) -> bool {

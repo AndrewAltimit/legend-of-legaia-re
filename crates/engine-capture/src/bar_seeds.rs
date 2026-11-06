@@ -21,6 +21,10 @@ pub struct BarSeed {
     /// (`LEGAIA_TOUGH=2`), which the fight reads and the HUD shows but the
     /// record never saw. `None` keeps the maximum the record gave the engine.
     pub hp_max: Option<u16>,
+    /// A party seat's maximum MP `+0x152` where the capture's word stands off
+    /// its character record's: a battle-local write the replay never ran
+    /// (Lapis Wave zeroes it). `None` keeps the maximum the record gave.
+    pub mp_max: Option<u16>,
     pub ground: Option<[i16; 2]>,
     /// The heading `+0x46` that goes with [`Self::ground`].
     pub facing: Option<u16>,
@@ -110,6 +114,9 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         if let Some(m) = s.hp_max {
             a.battle.max_hp = m;
         }
+        if let Some(m) = s.mp_max {
+            a.battle.mp_max = m;
+        }
         a.battle.hp = s.hp;
         a.battle.liveness = a.battle.hp;
         if a.battle.hp_display.is_some() {
@@ -183,6 +190,10 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 Some(m) => format!("{head}:m{m}"),
                 None => head,
             };
+            let head = match s.mp_max {
+                Some(m) => format!("{head}:n{m}"),
+                None => head,
+            };
             let head = match s.gauge {
                 Some(g) => format!("{head}:g{g}"),
                 None => head,
@@ -208,6 +219,10 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
             };
             let (e, gauge) = match e.rsplit_once(":g") {
                 Some((head, g)) => (head, Some(g.parse().ok()?)),
+                None => (e, None),
+            };
+            let (e, mp_max) = match e.rsplit_once(":n") {
+                Some((head, m)) => (head, Some(m.parse().ok()?)),
                 None => (e, None),
             };
             let (e, hp_max) = match e.rsplit_once(":m") {
@@ -244,6 +259,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 hp,
                 mp,
                 hp_max,
+                mp_max,
                 ground,
                 facing,
                 defeat_lanes,

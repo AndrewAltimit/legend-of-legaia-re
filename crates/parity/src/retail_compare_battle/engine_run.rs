@@ -611,6 +611,7 @@ pub fn run_engine_battle(
                     hp,
                     mp: c.mp,
                     hp_max: battle.party_seat_pool_raised(slot, c),
+                    mp_max: battle.party_seat_mp_max_off_record(slot, c),
                     ground: ground.get(slot).copied().flatten(),
                     facing: facing.get(slot).copied().flatten(),
                     defeat_lanes: (hp == 0)
@@ -1213,35 +1214,18 @@ pub(super) fn combat_snapshot(
     field_track: Option<u16>,
 ) -> CombatSnapshot {
     let pc = world.party.party_count.clamp(1, 3) as usize;
-    // Battle ordinal `s` holds roster record `party_roster_slot(s)` (the
-    // present-party list): a solo duel's Gala is ordinal 0 but record 2, and
-    // retail's battle init copies the max from *that* record (`+0x108`,
-    // `FUN_80053CB8` at `0x80053E50`).
-    let roster = world.save_full().party;
-    let party_maxes: Vec<(u16, u16)> = (0..pc)
-        .map(|s| {
-            roster
-                .members
-                .get(world.party_roster_slot(s))
-                .map_or((0, 0), |m| {
-                    let v = m.hp_mp_sp();
-                    (v.hp_max, v.mp_max)
-                })
-        })
-        .collect();
-    let comb = |a: &legaia_engine_core::world::Actor, mp_max: u16| Combatant {
+    // Every seat's max MP is its own `+0x152`: battle init copies it from the
+    // ordinal's roster record (`FUN_80053CB8`, `0x80053E50`) or the monster
+    // record (`FUN_80054CB0`, `0x8005518C`), and Lapis Wave / Fatal Decision
+    // move it without touching either record.
+    let comb = |a: &legaia_engine_core::world::Actor| Combatant {
         hp: a.battle.hp,
         hp_max: a.battle.max_hp,
         mp: a.battle.mp,
-        mp_max,
+        mp_max: a.battle.mp_max,
     };
     let party = (0..pc)
-        .filter_map(|s| {
-            world
-                .actors
-                .get(s)
-                .map(|a| comb(a, party_maxes.get(s).map_or(0, |m| m.1)))
-        })
+        .filter_map(|s| world.actors.get(s).map(comb))
         .collect();
     let mcount = world
         .battle
@@ -1252,14 +1236,7 @@ pub(super) fn combat_snapshot(
         .map(|m| world.actors.get(pc + m).and_then(|a| a.battle_monster_id))
         .collect();
     let monsters = (0..mcount)
-        .filter_map(|m| {
-            let a = world.actors.get(pc + m)?;
-            let mp_max = a
-                .battle_monster_id
-                .and_then(|id| world.tables.monster_catalog.get(id))
-                .map_or(0, |d| d.mp);
-            Some(comb(a, mp_max))
-        })
+        .filter_map(|m| world.actors.get(pc + m).map(comb))
         .collect();
     CombatSnapshot {
         mode: world.mode,

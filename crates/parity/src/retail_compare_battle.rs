@@ -383,6 +383,10 @@ pub struct RetailBattle {
     /// (char - 1) * 0x414 + 0x104`), against which a seat's own word `+0x14E`
     /// shows a probe's raise ([`Self::party_seat_pool_raised`]).
     pub record_hp_max: Vec<u16>,
+    /// Each party seat's character record's maximum MP (`+0x108`), against
+    /// which a seat's own word `+0x152` shows a battle-local write
+    /// ([`Self::party_seat_mp_max_off_record`]).
+    pub record_mp_max: Vec<u16>,
     /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).
     /// For the seats a menu capture's member follows, this round's commit.
     pub party_categories: Vec<u8>,

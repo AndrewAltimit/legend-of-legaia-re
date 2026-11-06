@@ -558,6 +558,10 @@ pub fn rescaled_yaw_counter(counter: i32, drift: i32, engine_step: u8, retail_st
     counter - drift + scaled
 }
 
+/// The Spirit band's wait (`0x3D`): it holds until the caster's staged clip
+/// commits, then hands on to the fire state `0x3E`.
+const SPIRIT_WAIT_STATE: u8 = 0x3D;
+
 /// The action SM's Done arm and the fade-down it hands to.
 const ACTION_DONE_STATE: u8 = 0x50;
 const ACTION_DONE_FADE_STATE: u8 = 0x51;
@@ -1469,7 +1473,21 @@ impl BattleDrive {
                 let done_entry = matches!(end, SpanGate::DoneHold { .. })
                     && want == ACTION_DONE_FADE_STATE
                     && state == ACTION_DONE_STATE;
-                if (state == want || done_entry) && !matches!(end, SpanGate::CaptureFade { .. }) {
+                // A Spirit-band capture whose wait `0x3D` hands the engine
+                // straight onto its gate: the clip commit that ends the
+                // wait zeroes the accumulator, so an [`SpanGate::Age`] gate
+                // can be met on the very pass that enters the capture's
+                // state, and the drive stops before steering there. The
+                // wait's length is the caster's idle phase, which the replay
+                // does not share, so the counter is pinned through the wait
+                // instead - each pass lands it on retail's word
+                // (`battle_garmel_vera_v2_heal_mid_cast`: retail `2060`, the
+                // replay's wait `36` passes longer).
+                let stage_lead = steer.rung == Some(SEED_YAW_RUNG as u16)
+                    && (SPIRIT_WAIT_STATE..want).contains(&state);
+                if (state == want || done_entry || stage_lead)
+                    && !matches!(end, SpanGate::CaptureFade { .. })
+                {
                     let near = |c: i32| {
                         let d = (c - i32::from(yaw)).rem_euclid(0x1000);
                         d.min(0x1000 - d) <= YAW_CLOCK_SLACK
@@ -1493,7 +1511,7 @@ impl BattleDrive {
                         && !steer.arrival
                         && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
                     if !clock_held
-                        && ((state == want
+                        && (((state == want || stage_lead)
                             && (steer.park || steer.arrival || near(cam.action_yaw_base())))
                             || rescaled
                             || same_rung)

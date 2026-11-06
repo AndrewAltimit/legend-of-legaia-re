@@ -2483,7 +2483,7 @@ is one fight's reading, and `zeto_big_wave_mid_cast` ran arm 5 at `2` where the 
 | Channel | Score |
 |---|---|
 | `enemies` | fraction of retail monster seats whose id the engine seated in the same order |
-| `enemy_hp` / `battle_party` | fraction of equal HP, max HP, MP and max MP fields over the retail combatants (max MP left out where the engine carries none) |
+| `enemy_hp` / `battle_party` | fraction of equal HP, max HP, MP and max MP fields over the retail combatants; max MP is each seat's own `+0x152` on both sides |
 | `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band - and, for a replayed or driven action, the same action-SM state on the same seat; for a driven menu, the same member |
 | `bgm` | retail's track word against the field track the engine will resume ([below](#the-track-word-in-battle)) |
 
@@ -2509,6 +2509,13 @@ both values listed in the detail:
   `_0x91_midcast` (`autorun_evolved_cast.lua`) grant `999` MP into Vahn's record
   (`+0x108` / `+0x10A` / `+0x11E`) over an actor whose `+0x152` still reads `27`,
   and the engine, seeded from the record, reads `999`.
+- **A party seat's maximum MP off its record** is the fight's own: battle init
+  copies the record's `+0x108` into `+0x152` once, and Lapis Wave (`0x801F6D1C`)
+  or Fatal Decision moves the seat's alone. A replay seeded past such a cast
+  never runs it, so the seed stands the seat on the capture's word
+  (`RetailBattle::party_seat_mp_max_off_record`, the bar seed's `mp_max`):
+  `battle_deene_lapis_strike` holds `0` on every seat over records of `602`,
+  `509` and `660`.
 
 ### Driving to the phase
 
@@ -2841,6 +2848,10 @@ reach (`battle_deene_garnet_heal_mid_cast`: retail `0x500`, the replay on `0x800
 The yaw counter runs through the same wait with no store of its own, so the band takes retail's word on the seed's
 `0x800` rung however far the replay's has drifted (`ActionSteer::rung`; `battle_bubu2_spoon_heal_mid_cast`: retail
 `2064`, the replay `2136`, `image` `.70` to `.996`).
+The pin holds through the wait `0x3D` too, not only in the capture's own state: the clip commit that ends the
+wait zeroes the accumulator an `Age` gate counts, so the replay can meet its gate on the very pass that enters
+the capture's state, and the drive stops before steering there (`battle_garmel_vera_v2_heal_mid_cast`: retail
+`2060`, the replay's wait `36` passes longer, `camera` `.875` to `1.000`).
 That capture's `image` reads `.414` to `.805` on the RAM's word and `.986` on
 the displayed one.
 

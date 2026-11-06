@@ -72,6 +72,7 @@ impl RetailBattle {
                     hp: 0,
                     mp: 0,
                     hp_max: None,
+                    mp_max: None,
                     ground: Some(ground),
                     facing: None,
                     defeat_lanes: None,

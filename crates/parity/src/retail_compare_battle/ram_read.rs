@@ -953,6 +953,15 @@ impl RetailBattle {
                         })
                 })
                 .collect(),
+            record_mp_max: (0..u32::from(party_count))
+                .map(|s| {
+                    u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s))
+                        .checked_sub(1)
+                        .map_or(0, |i| {
+                            game_anchors::u16_at(ram, 0x8008_4708 + i * 0x414 + 0x108)
+                        })
+                })
+                .collect(),
             party_categories: (0..u32::from(party_count))
                 .map(|s| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
