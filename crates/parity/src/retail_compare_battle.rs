@@ -610,6 +610,11 @@ pub struct RetailBattle {
     /// it only when no stream reaches the phase on the picks the replay drew
     /// itself, so every state a stream reaches keeps its own fight.
     pub strike_stream_steer: bool,
+    /// A monster strike's physical turns aimed at the capture's target
+    /// (`ActionSteer::strike_aim`). Not a capture fact: the battle search
+    /// raises it only once no stream reached the phase on the targets the
+    /// replay picked itself.
+    pub strike_aim_steer: bool,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts

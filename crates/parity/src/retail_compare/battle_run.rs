@@ -260,6 +260,49 @@ pub(super) fn run_battle(
     } else {
         battle
     };
+    // A monster strike no stream reached on the targets the replay picked:
+    // the streams again, the striker's physical turns aimed at the
+    // capture's party seat (`RetailBattle::strike_aim_steer`), the rescue
+    // the image child otherwise takes only once its own run has missed.
+    // Its strike stream stays the capture's when the search above stood it
+    // there. `battle_balden_verial_strike`'s replay aims at Gala where
+    // retail's Verial walked to Noa.
+    let aimed;
+    let battle = if reached.is_none() && battle.strike_aim_steerable() {
+        let mut b = battle.clone();
+        b.strike_aim_steer = true;
+        for &seed in &seeds {
+            let run = crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                &b,
+                seed,
+                false,
+            );
+            if seed_trace()
+                && let Ok(e) = &run
+            {
+                eprintln!(
+                    "[seed] {} strike-aim seed={seed:#010X} driven={:?}",
+                    entry.label, e.driven
+                );
+            }
+            if let Ok(e) = run
+                && e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                && e.prompt_tick.is_some()
+                && !e.surprise_opening
+                && e.driven.is_some_and(|d| d.is_some())
+            {
+                reached = Some(e);
+                reached_victims = false;
+                break;
+            }
+        }
+        aimed = b;
+        &aimed
+    } else {
+        battle
+    };
     // A party Attack's Done-band capture walked from where its seed's
     // recentre stood it, and the replay, seated near its end-of-string pair,
     // barely walks: with the string measured on the first run, the same

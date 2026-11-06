@@ -1238,6 +1238,13 @@ gate, which cost `battle_jou_gola_gola_v3_strike`'s camera `1.000` to `.873`. If
 the rescue misses too, the child drops to the default step, unaimed and then
 aimed.
 
+The headless search takes the same aim once no stream reached the phase on the
+targets the replay picked itself (`RetailBattle::strike_aim_steer`, carried on the
+drive as `ActionSteer::strike_aim`), so a strike the replay only ever aims at another
+member is scored at all: `battle_balden_verial_strike`'s replay aimed at Gala where
+retail's Verial walked to Noa, and `battle_ropeway_curry_devil_strike`'s at Noa
+for Vahn.
+
 A prompt capture's child runs past the seed's sample on purpose. The seed
 samples sixty ticks after the first prompt (`BATTLE_SETTLE_TICKS`), while
 the intro's enemy-name banner is still up; retail's prompt frame is a
@@ -1534,6 +1541,7 @@ So a monster-melee capture also places the walk's start (`BattleState::capture_a
 Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
 
 Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
+A walk-clip capture saved on the arrival itself, the cursor `ctx[+0x15]` still `0`, is the exception (`ActionSteer::arrival`): the poll `0x19` has just stored `0x1E` with idle staged, and a one-swing stream's first loop pass stages its byte and leaves for `0x1F` together (`0x801E3734`, `0x801E3998`), so the state lasts one pass. A replay whose walk was shorter arrives with its counter short of retail's and is past the state before the clock is due, so the gate is that pass and the counter is pinned to retail's word there (`battle_nilboa_lucifer_strike` arrives at `532` against retail's `568`).
 The counter's reading comes off the tween table, since the accumulator counts from the walk's last loop re-commit and says nothing of the arrival. Case 7 aims `0x700` under the approach's case 6 and re-arms `ceil(gap / 0xC)` every pass, so the increments fall on one ladder (`150`, then by the step) and the table's increment names how many passes have run (`strike_passes_off_table`): `battle_nilboa_warfish_strike` sits on the first at accumulator `288`, `battle_map02_poisonous_worm_strike` on the second at `384`.
 The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
 The image child stands such a walker on the displayed frame's ring pair and seats its walk cursor at the displayed frame, as it does a struck body: the walk carries it `speed * scale / 8` a vsync, two game frames of which separate the screen from the RAM (`battle_korb2_warhalf_strike` `image` `.812` to `.824`, `battle_tunnelb_warman_strike` `.759` to `.801`).
@@ -2299,6 +2307,19 @@ frame shows no "level increased" line or banner.
   opening round, and a surprise opening hands one side a round of swings
   between the HP / MP the seed wrote and the replayed action, which reads as an
   HP miss.
+  A scripted back attack (`formation_ambush_scripted`, `FUN_80051D84`'s two override
+  arms: monster `0xA7` Lapis anywhere, `0x3D..=0x3F` on maps `0x0C` / `0x15`) is not
+  a draw. Retail's fight opened on the same round, every stream takes it, and
+  passing them all over scored the first stream at the ambush's prompt. It does
+  not count as a surprise; the party instead stands back on its seeded HP and MP
+  at the first prompt (`battle_deene_lapis_strike`: Vahn `5420` against the
+  capture's `9999`).
+- **The harvest probe's restores.** A capture whose party maximum the probe raised
+  (`LEGAIA_TOUGH=2`, `RetailBattle::party_seat_pool_raised`) carries the probe's HP,
+  restored at every round prompt. A drive that runs rounds ahead of the capture's own
+  makes the same writes at its round prompts (`ActionSteer::tough`,
+  `tough_round_restore`), or the monsters' swings in those rounds stand on the
+  capture's party.
 
 A capture can also stand inside the ambush round the entry rolled: a monster on its action
 with `ctx[+0x291]` latched and every party key the zero the round's seeder left

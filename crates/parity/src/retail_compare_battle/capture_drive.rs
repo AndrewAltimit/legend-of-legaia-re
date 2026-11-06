@@ -1509,6 +1509,22 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
+    /// A [`Self::walk_clock_capture`] saved on the arrival pass itself, no
+    /// strike-loop pass run yet (`ctx[+0x15] == 0`; `ActionSteer::arrival`).
+    pub fn walk_clock_arrival(&self) -> bool {
+        self.walk_clock_capture() && self.strike_cursor == 0
+    }
+
+    /// Whether the search may aim the striker's physical turns at the
+    /// capture's target (`ActionSteer::strike_aim`): a monster strike whose
+    /// target is a party seat.
+    pub fn strike_aim_steerable(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && self.queued_category == 3
+            && self.target_code < 3
+            && matches!(self.span_gate, SpanGate::Age { .. })
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
@@ -1705,6 +1721,12 @@ impl RetailBattle {
                     // stream whose kill rolls no steal shows another frame.
                     spoils: seat < 3 && self.spoils_caption,
                     walk_clock: self.walk_clock_capture(),
+                    arrival: self.walk_clock_arrival(),
+                    strike_aim: self.strike_aim_steer,
+                    tough: self.party.iter().enumerate().any(|(i, c)| {
+                        c.as_ref()
+                            .is_some_and(|c| self.party_seat_pool_raised(i, c).is_some())
+                    }),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {

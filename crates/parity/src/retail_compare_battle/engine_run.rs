@@ -551,10 +551,24 @@ pub fn run_engine_battle(
     }
     // Read on the latch as well: the entry's own round-one Begin may have
     // run already and moved `+0x290` into `+0x291`.
+    //
+    // A scripted back attack (`formation_ambush_scripted`: Lapis, and the
+    // two maps' `0x3D..=0x3F`) is not a draw: retail's fight opened on the
+    // same round, so the capture's history holds it and every stream takes
+    // it. Counting it as a surprise rejected every stream of
+    // `battle_deene_lapis_strike` and scored the first, read at the ambush's
+    // prompt (Vahn `5420` against the capture's `9999`).
     let surprise_opening = {
         let w = &session.host.world;
         let none = legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None;
-        w.battle_formation() != none || w.battle_formation_latched() != none
+        let scripted = legaia_engine_battle_vm::battle_formulas::formation_ambush_scripted(
+            &legaia_engine_battle_vm::battle_formulas::FormationInputs {
+                ability_bits: 0,
+                monster_id: battle.monster_ids.first().copied().unwrap_or(0),
+                map_id: w.battle.map_id as u16,
+            },
+        );
+        !scripted && (w.battle_formation() != none || w.battle_formation_latched() != none)
     };
     // Reconstruct the mid-fight HP / MP (the engine seeds full bars).
     //
@@ -779,6 +793,27 @@ pub fn run_engine_battle(
         }
         (SeedPlan::Menu { .. } | SeedPlan::Action { .. }, _) if prompt_tick.is_some() => {
             if let Some(drive) = battle.battle_drive() {
+                // A scripted ambush's opening round (`formation_ambush_scripted`)
+                // has struck the party between the seed and this prompt; the
+                // capture's bars are a later round's, so the party stands back
+                // on its seeded HP and MP here. Any other opening reaches the prompt
+                // untouched, and this writes what is already there.
+                {
+                    let pc = session.host.world.party.party_count.clamp(1, 3);
+                    for sd in hp_seed.iter().filter(|sd| sd.slot < pc) {
+                        if let Some(a) = session.host.world.actors.get_mut(usize::from(sd.slot))
+                            && a.battle.hp != 0
+                            && sd.hp != 0
+                        {
+                            a.battle.hp = sd.hp;
+                            a.battle.liveness = sd.hp;
+                            a.battle.mp = sd.mp;
+                            if a.battle.hp_display.is_some() {
+                                a.battle.hp_display = Some(sd.hp);
+                            }
+                        }
+                    }
+                }
                 let track = session.host.bgm_track_word.or(director.last);
                 let mut snap = combat_snapshot(&mut session.host.world, track);
                 // The bars were seeded ahead of the action's landed hits

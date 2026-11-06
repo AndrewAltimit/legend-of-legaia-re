@@ -275,6 +275,29 @@ pub struct ActionSteer {
     /// `yaw` places the capture instead: met once the engine's counter has
     /// run to retail's, and not pinned to it before.
     pub walk_clock: bool,
+    /// A [`Self::walk_clock`] capture saved on the arrival itself: the poll
+    /// `0x19` has just stored `0x1E` with idle staged and `+0x1DC` bit 0 cut
+    /// (`0x801E35B4..0x801E35C8`), and no strike-loop pass has run yet - the
+    /// cursor `ctx[+0x15]` is still `0`. A one-swing stream's first loop
+    /// pass stages its byte and leaves for `0x1F` together
+    /// (`0x801E3734`, `0x801E3998`), so the state lasts one pass and the
+    /// yaw clock cannot wait for it: a replay whose walk was shorter arrives
+    /// with its counter short of retail's and is past the state before the
+    /// clock is due. The arrival is the event the capture names, so the gate
+    /// is that pass, and the counter is pinned to retail's word there.
+    pub arrival: bool,
+    /// A monster strike's aim, as [`strike_aim_rescue`] takes it, carried on
+    /// the drive: raised by the retail-compare search only once no stream
+    /// reached the capture on the targets the replay picked itself.
+    pub strike_aim: bool,
+    /// The capture's harvest probe restored the party's HP at every round
+    /// prompt and raised the maximum to `9999` (`autorun_battle_harvest.lua`
+    /// `LEGAIA_TOUGH=2`, kept in the state): its live HP is the probe's, not
+    /// the rounds'. A replay that runs rounds ahead of the capture's own takes
+    /// the monsters' swings with nothing restoring them, so the drive makes
+    /// the same writes at its round prompts - every standing party seat back
+    /// to its maximum, readout and pending total with it.
+    pub tough: bool,
     /// The rung of the per-action yaw ladder retail's counter `yaw` climbed
     /// from, when the capture pins it: an Attack's `0x200`
     /// (`0x801E2F20`) with no swing re-seed possible since - a monster seat
@@ -855,6 +878,15 @@ impl BattleDrive {
                 if steer.walk_clock {
                     s.push_str(",w");
                 }
+                if steer.arrival {
+                    s.push_str(",v");
+                }
+                if steer.strike_aim {
+                    s.push_str(",x");
+                }
+                if steer.tough {
+                    s.push_str(",z");
+                }
                 if let Some(n) = steer.rung {
                     s.push_str(&format!(",n{n}"));
                 }
@@ -936,6 +968,12 @@ impl BattleDrive {
                 steer.park = true;
             } else if last == "w" {
                 steer.walk_clock = true;
+            } else if last == "v" {
+                steer.arrival = true;
+            } else if last == "x" {
+                steer.strike_aim = true;
+            } else if last == "z" {
+                steer.tough = true;
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(n) = last.strip_prefix('n') {
@@ -1299,7 +1337,12 @@ impl BattleDrive {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
                         SpanGate::Age { accum } => {
-                            (if steer.walk_clock {
+                            (if steer.walk_clock && steer.arrival {
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(seat, pc)))
+                                    .is_some_and(|a| a.battle.strike_index == 0)
+                            } else if steer.walk_clock {
                                 walk_clock_due(world, steer.yaw)
                             } else {
                                 active_close_up_accum(world) >= u32::from(accum)
@@ -1446,10 +1489,12 @@ impl BattleDrive {
                         cam.action_yaw_base() - cam.action_yaw_drift() == rung
                             && i32::from(yaw) >= rung
                     });
-                    let clock_held =
-                        steer.walk_clock && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
+                    let clock_held = steer.walk_clock
+                        && !steer.arrival
+                        && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
                     if !clock_held
-                        && ((state == want && (steer.park || near(cam.action_yaw_base())))
+                        && ((state == want
+                            && (steer.park || steer.arrival || near(cam.action_yaw_base())))
                             || rescaled
                             || same_rung)
                     {
@@ -1481,6 +1526,10 @@ impl BattleDrive {
             world.battle_ctx.track_coin = coin & 1;
         }
         let pc = world.party.party_count.clamp(1, 3);
+        // The harvest probe's round-prompt writes ([`ActionSteer::tough`]).
+        if steer.tough {
+            tough_round_restore(world);
+        }
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
@@ -1511,7 +1560,7 @@ impl BattleDrive {
         if seat >= 3
             && ours
             && category == 3
-            && strike_aim_rescue()
+            && (strike_aim_rescue() || steer.strike_aim)
             && (0x0C..0x14).contains(&state)
             && let Some(t) = steer.target.map(|t| engine_seat(t, pc)).filter(|&t| t < pc)
             && world
@@ -2065,6 +2114,27 @@ pub(crate) fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id:
 
 #[cfg(test)]
 mod tests;
+
+/// The harvest probe's `LEGAIA_TOUGH` writes at a round prompt
+/// ([`ActionSteer::tough`]): every standing party seat's HP back to its
+/// maximum, with its readout and its pending total. Nothing outside the
+/// round prompt.
+pub fn tough_round_restore(world: &mut legaia_engine_core::world::World) {
+    if world.mode != SceneMode::Battle || world.battle.flow != BattleFlowState::TurnPrompt {
+        return;
+    }
+    let pc = usize::from(world.party.party_count.clamp(1, 3));
+    for a in world.actors.iter_mut().take(pc) {
+        if a.battle.hp > 0 && a.battle.max_hp > 0 {
+            a.battle.hp = a.battle.max_hp;
+            a.battle.liveness = a.battle.hp;
+            if a.battle.hp_display.is_some() {
+                a.battle.hp_display = Some(a.battle.hp);
+            }
+            a.battle.damage_accum = 0;
+        }
+    }
+}
 
 /// Whether this run is a strike-aim rescue (`LEGAIA_BATTLE_STRIKE_AIM=1`,
 /// set by the retail-compare image child's retry once a run missed its gate).

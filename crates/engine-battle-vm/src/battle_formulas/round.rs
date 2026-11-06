@@ -390,6 +390,17 @@ pub fn formation_roll_special_word(word: u32, inputs: &FormationInputs) -> u32 {
     }
 }
 
+/// Whether the formation is one of the two scripted back attacks
+/// [`roll_formation_advantage`] takes regardless of the scores: monster ids
+/// `0x3D..=0x3F` on maps `0x0C` / `0x15`, or monster id `0xA7` (Lapis)
+/// anywhere. Every such fight opens on the monsters' round.
+///
+/// PORT: FUN_80051D84 (the two override arms)
+pub fn formation_ambush_scripted(inputs: &FormationInputs) -> bool {
+    (matches!(inputs.map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&inputs.monster_id))
+        || inputs.monster_id == 0xA7
+}
+
 /// Roll the battle's formation advantage (`FUN_80051D84`).
 ///
 /// Both sides' **average** SPD is compared, each blurred by a random spread, and
@@ -427,9 +438,7 @@ pub fn roll_formation_advantage(
     rand: &mut dyn FnMut() -> u32,
 ) -> FormationAdvantage {
     // Scripted back attacks bypass the score comparison entirely.
-    let scripted_ambush = (matches!(inputs.map_id, 0x0C | 0x15)
-        && (0x3D..=0x3F).contains(&inputs.monster_id))
-        || inputs.monster_id == 0xA7;
+    let scripted_ambush = formation_ambush_scripted(inputs);
 
     if party_spd.is_empty() || enemy_spd.is_empty() {
         return if scripted_ambush {
