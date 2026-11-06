@@ -67,6 +67,18 @@ pub(super) fn swap_leader(session: &mut NativeSession) -> bool {
     if !armed(session) || !released(session) {
         return false;
     }
+    // The gate refuses the press while the pad hold `_DAT_8007B6B4` runs - a
+    // conversation's release leaves `0x10` of it (`FUN_80039B7C`) - so stand
+    // it out first, as a player whose press did nothing would press again.
+    for _ in 0..0x40 {
+        if session.host.world.field_warp_words().1 == 0 {
+            break;
+        }
+        session.host.world.set_pad(0);
+        if session.tick().is_err() {
+            break;
+        }
+    }
     let before = session.host.world.party.party_leader_slot;
     tap_pad(session, PadButton::Square.mask());
     for _ in 0..240 {

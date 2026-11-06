@@ -42,9 +42,11 @@ impl World {
     ///   [`Self::set_pad`], so none of them needs a binding of its own and
     ///   there is no second key table to drift from the engine's. The retail
     ///   suppressor pair `_DAT_8007B6B4` / `_DAT_8007B6B0` is the warp's
-    ///   hold and timer, so no switch arms through a scene's post-load hold
-    ///   or a kind-0 warp; "a dialogue owns the pad" stands in for the
-    ///   hold's unported script-runner writer, so none arms under a box.
+    ///   hold and timer, so no switch arms through a scene's post-load hold,
+    ///   a kind-0 warp, or the `0x10` frames after a conversation's last box
+    ///   ([`Self::tick_script_release_hold`]); and while the player's engaged
+    ///   bit is up (a box, a talk, a stepped script context) the arm reads the
+    ///   leader's presence flag rather than the press.
     ///
     ///   The port latches its field **run** modifier off the same pad word
     ///   ([`crate::world::FieldLocomotion::run_button_held`], mask
@@ -99,23 +101,31 @@ impl World {
         let swap_world = LeaderSwapWorld {
             leader,
             // The suppressor pair is the warp's: `_DAT_8007B6B4`, the
-            // post-warp / post-load hold, and `_DAT_8007B6B0`, the kind-0
-            // warp timer (`World::field_warp_words`). The hold's third
-            // writer, the script runner's `0x10` after a context ends
-            // (`FUN_80039B7C`, `0x80039D60`), is not ported; an open
-            // dialogue stands in for it, so no switch arms under a box.
-            suppress_a: if self.locomotion.warp.hold != 0 {
-                self.locomotion.warp.hold
-            } else {
-                i32::from(self.dialogue_owns_input())
-            },
+            // post-warp / post-load / post-conversation hold, and
+            // `_DAT_8007B6B0`, the kind-0 warp timer (`0x801D28A4..0x801D28C0`).
+            suppress_a: self.locomotion.warp.hold,
             suppress_b: self.locomotion.warp.timer,
-            // The engine models no second controller that could hold the
-            // camera-busy bit at state 0, and no `_DAT_1F800394` pad-word
-            // mirror: both alternate arm routes read clear, leaving the
-            // request-byte route.
-            camera_flags: 0,
-            pad: 0,
+            // The arm route (`0x801D294C..0x801D29A8`): `lw v0,-0x3c9c` is
+            // `_DAT_8007C364`, the **player** object, and its `+0x10 &
+            // 0x80000` is the engaged bit - raised under a box, a talk or any
+            // stepped script context. With it (or the scratchpad system lock
+            // `_DAT_1F800394 & 0x400`) up, the arm reads the leader's presence
+            // flag instead of the Square edge, so a press under an open box
+            // does not swap; a script that raises the flag does. A retail
+            // capture of `town01_tetsu_topic_prompt` holds the Square edge in
+            // `_DAT_8007B874` under the waiting pager with `_DAT_8007B6B4 = 0`:
+            // this route, not the suppressor, is what refuses it.
+            camera_flags: if self.dialogue_owns_input()
+                || self
+                    .player_actor_slot
+                    .and_then(|s| self.actors.get(usize::from(s)))
+                    .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0)
+            {
+                legaia_engine_field::leader_swap::CAMERA_BUSY_BIT
+            } else {
+                0
+            },
+            pad: self.flags.story_flags & legaia_engine_field::leader_swap::LEADER_SWAP_PAD_BIT,
             request_byte: if request { LEADER_SWAP_REQUEST_BIT } else { 0 },
         };
         let step = self.clock.frame_step.max(1);

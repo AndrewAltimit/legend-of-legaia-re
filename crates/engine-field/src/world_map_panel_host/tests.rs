@@ -536,33 +536,33 @@ fn the_short_idle_marker_shortens_the_entry_arm_until_a_non_entry_pass() {
     let pos = Some((100, 200));
     let mut hud = FieldPartyHud::new();
     // The first tick adopts the world's count without raising anything.
-    hud.tick_marked(false, 0, 0, pos, 1, None, 7, true);
+    hud.tick_marked(false, 0, 0, pos, 1, None, 7, true, 0);
     assert!(!hud.short_idle());
     // A raise lands while the routine is not resident (the fight): kept.
     for _ in 0..10 {
-        hud.tick_marked(true, 0, 0, pos, 1, None, 8, false);
+        hud.tick_marked(true, 0, 0, pos, 1, None, 8, false, 0);
         assert!(hud.short_idle(), "a non-resident frame keeps the marker");
     }
     // The field-back load: the entry arm holds while the post-load hold
     // drains, arming `0` each frame, and keeps the marker.
     for _ in 0..5 {
         hud.rearm();
-        let d = hud.tick_marked(false, 0, 0, pos, 1, None, 8, true);
+        let d = hud.tick_marked(false, 0, 0, pos, 1, None, 8, true, 0);
         assert_eq!(d, HudDecision::Rearmed { timer: 0 });
         assert!(hud.short_idle());
     }
     // The hold drains: the first stationary pass draws at once and clears it.
-    let d = hud.tick_marked(false, 0, 0, pos, 1, None, 8, true);
+    let d = hud.tick_marked(false, 0, 0, pos, 1, None, 8, true, 0);
     assert!(matches!(d, HudDecision::Draw { .. }), "{d:?}");
     assert!(!hud.short_idle(), "the position compare clears the marker");
 
     // Gradual arms `0x50` under the marker; a suppressed pass clears it.
     let mut hud = FieldPartyHud::new();
-    hud.tick_marked(false, 1, 0, pos, 1, None, 0, true);
-    hud.tick_marked(true, 1, 0, pos, 1, None, 1, false);
+    hud.tick_marked(false, 1, 0, pos, 1, None, 0, true, 0);
+    hud.tick_marked(true, 1, 0, pos, 1, None, 1, false, 0);
     hud.rearm();
     assert_eq!(
-        hud.tick_marked(false, 1, 0, pos, 1, None, 1, true),
+        hud.tick_marked(false, 1, 0, pos, 1, None, 1, true, 0),
         HudDecision::Rearmed { timer: 0x50 }
     );
     let d = hud.tick_marked(
@@ -574,7 +574,28 @@ fn the_short_idle_marker_shortens_the_entry_arm_until_a_non_entry_pass() {
         None,
         1,
         true,
+        0,
     );
     assert_eq!(d, HudDecision::Suppressed);
     assert!(!hud.short_idle(), "the suppress exit clears the marker");
+}
+
+/// The scratchpad word's menu lock `0x0800_0000` suppresses the readout the
+/// way the D-pad does (`0x801D0D98..0x801D0DAC`); without it the same frame
+/// draws.
+#[test]
+fn the_menu_lock_bit_suppresses_the_readout() {
+    let pos = Some((100, 200));
+    let mut hud = FieldPartyHud::new();
+    for _ in 0..0x30 {
+        hud.tick_marked(false, 0, 0, pos, 1, None, 0, true, 0);
+    }
+    assert!(matches!(hud.decision(), Some(HudDecision::Draw { .. })));
+    let d = hud.tick_marked(false, 0, 0, pos, 1, None, 0, true, HUD_SCRATCH_SUPPRESS_BIT);
+    assert_eq!(d, HudDecision::Suppressed);
+    let d = hud.tick_marked(false, 0, 0, pos, 1, None, 0, true, HUD_SCRATCH_REARM_BIT);
+    assert!(
+        matches!(d, HudDecision::Draw { .. }),
+        "the rearm bit is the host's term"
+    );
 }

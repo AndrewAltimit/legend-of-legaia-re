@@ -19,8 +19,11 @@ pub const LEADER_SLOTS: u8 = 3;
 /// fade template's duration and the `+0x9E` counter's bound.
 pub const LEADER_SWAP_FADE_FRAMES: u16 = 0x20;
 
-/// Bit the controller raises on the camera object's flag word `+0x10` while a
-/// swap is in flight, and lowers again in the final state.
+/// `+0x10 & 0x80000` of `_DAT_8007C364` - the **player** object, which the
+/// controller's camera re-anchor follows. It is the player's engaged bit: the
+/// controller raises it while a swap is in flight and lowers it in the final
+/// state, and every talk, box and stepped script context raises it too, which
+/// is why the state-0 arm reads it (`0x801D294C..0x801D2960`).
 pub const CAMERA_BUSY_BIT: u32 = 0x0008_0000;
 
 /// Pad-word bit (`_DAT_1F800394 & 0x400`) that, like the camera busy bit,

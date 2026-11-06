@@ -67,6 +67,13 @@ impl World {
         self.move_vm.begin_strip_tick();
         self.refresh_bag_window();
         let outcome = self.tick_modes();
+        // The script runner's release: a conversation that showed a box and
+        // has just let the player go leaves the pad hold
+        // (`World::tick_script_release_hold`). Field-run modes only - the
+        // runner is the field's.
+        if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
+            self.tick_script_release_hold();
+        }
         // An active expansion pack's per-tick step (pack-line resolve, quest
         // state re-test); the identity with none.
         self.tick_expansion();

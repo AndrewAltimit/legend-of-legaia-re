@@ -165,6 +165,7 @@ A row settles the way any audit row does, from the disassembly:
 | `select_attack_automatic` | option `0x800846C4` | on Automatic, the Hyper Arts lesson could not be passed |
 | `BannerInputs::ctx_override_slot` | `ctx[+0x24B]`, `0x801E6E30` | a group cast on one monster raised the group banner |
 | `HudInput::short_idle` | `_DAT_8007B5F4`, `0x801DA704` | after a fight the party readout waited its full idle instead of coming up with the pad |
+| `HudInput::scratch_suppress` | `_DAT_1F800394 & 0x0800_0000`, `0x801D0DA4` | the party readout drew in the scenes whose script raises the menu lock (`2E 1B`) |
 
 The short-idle marker was not partial once its missing terms were read off
 the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
@@ -194,6 +195,8 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `RecordsScreenView::treasure_*` | the dev menu's records page only |
 | `WorldMapController::scene_base` | the kingdom falls back to the scene label, so a real base changes nothing |
 | `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
+| `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
+| `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
 
 ### Open rows
 

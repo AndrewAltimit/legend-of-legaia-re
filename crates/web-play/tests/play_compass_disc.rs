@@ -102,9 +102,10 @@ struct Hold {
     right_axis: f32,
 }
 
-/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
-/// `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the pad controller and
-/// its menu accept off until it drains.
+/// Stand through the pad hold `_DAT_8007B6B4` - a scene load's `0x28`
+/// (`FUN_8003ADAC`) or a conversation's release `0x10` (`FUN_80039B7C`): the
+/// field frame pump keeps the pad controller and its menu accept off until it
+/// drains.
 fn wait_out_load_hold(rt: &mut LegaiaRuntime) {
     for _ in 0..0x40 {
         let held = rt
@@ -246,6 +247,9 @@ fn the_compass_is_right_from_the_first_free_roam_frame_after_the_opening() {
         !rt.debug_timeline_active(),
         "the opening never handed back control"
     );
+    // The opening's last box leaves the script runner's release hold
+    // (`FUN_80039B7C`, `0x10`) on the pad.
+    wait_out_load_hold(&mut rt);
 
     for orbit in [0.0, FRAC_PI_2] {
         rt.play_camera_set_orbit(orbit);

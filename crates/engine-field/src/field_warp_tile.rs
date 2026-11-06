@@ -57,6 +57,12 @@ pub const WARP_LANDED_SENTINEL: i32 = -1000;
 /// how many frames the player tick keeps the pad controller off.
 pub const POST_WARP_HOLD_FRAMES: i32 = 0x28;
 
+/// `_DAT_8007B6B4` after a script context that yielded is released at modal
+/// depth `0` (`li v0,0x10` at `0x80039D50` / `0x80039F28`, the two release
+/// arms of the script runner `FUN_80039B7C`): the pad stays off this long
+/// after a conversation's last box closes.
+pub const SCRIPT_RELEASE_HOLD_FRAMES: i32 = 0x10;
+
 /// The crossed cell's object-index bits both walk-on arms need
 /// (`andi v0, v0, 0x600` at `0x801D2140`).
 pub const WALK_ON_CELL_MASK: u16 = 0x600;

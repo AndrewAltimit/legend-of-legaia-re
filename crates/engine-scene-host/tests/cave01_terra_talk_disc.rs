@@ -110,6 +110,72 @@ fn talk_to_terra(flags: &[usize], frames: usize) -> Option<SceneHost> {
     Some(host)
 }
 
+/// The script runner's release (`FUN_80039B7C`): the tick a conversation
+/// that showed a box lets the player go leaves `_DAT_8007B6B4 = 0x10`, and
+/// the pad does not walk the player until it drains. A retail capture of
+/// `town01_npc16_dialogue_first_page` paged with Cross reads the same: `16`
+/// on the release frame, the yielded latch `DAT_80073F02` cleared with it,
+/// draining by the frame delta, and the next talk only after it is `0`.
+#[test]
+fn a_conversations_release_leaves_the_runner_pad_hold() {
+    let flags: Vec<usize> = (0x158..=0x15E).collect();
+    let Some(mut host) = talk_to_terra(&flags, 0) else {
+        return;
+    };
+    let mut released = None;
+    for i in 0..900 {
+        let talking = host.world.dialogue_owns_input();
+        host.world
+            .set_pad(if talking && i % 20 == 10 { 0x4000 } else { 0 });
+        let _ = host.world.tick();
+        if talking && !host.world.dialogue_owns_input() {
+            released = Some(host.world.field_warp_words().1);
+            break;
+        }
+    }
+    assert_eq!(
+        released,
+        Some(legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES),
+        "the release tick leaves the hold"
+    );
+    let slot = usize::from(host.world.player_actor_slot.expect("player"));
+    let at = |h: &SceneHost| {
+        let m = &h.world.actors[slot].move_state;
+        (m.world_x, m.world_z)
+    };
+    let start = at(&host);
+    // The player tick drains before it tests (`0x801D1618` ahead of
+    // `0x801D16C8`), so the tick that takes the hold to `0` walks: fifteen
+    // held ticks, then the pad.
+    let mut held_ticks = 0;
+    while host.world.field_warp_words().1 > 1 {
+        host.world
+            .set_pad(legaia_engine_system::input::PadButton::Up.mask());
+        let _ = host.world.tick();
+        held_ticks += 1;
+        assert!(held_ticks <= 0x10, "the hold never drained");
+    }
+    assert_eq!(at(&host), start, "the pad walked the player under the hold");
+    // Control: once it drains, the pad walks the player again.
+    use legaia_engine_system::input::PadButton;
+    let moved = [
+        PadButton::Up,
+        PadButton::Down,
+        PadButton::Left,
+        PadButton::Right,
+    ]
+    .into_iter()
+    .any(|b| {
+        for _ in 0..8 {
+            host.world.set_pad(b.mask());
+            let _ = host.world.tick();
+        }
+        at(&host) != start
+    });
+    assert!(moved, "the pad walks once the hold has drained");
+    eprintln!("[ok] the release hold held the pad {held_ticks} ticks");
+}
+
 #[test]
 fn cave01_terra_stage_15c_hand_off_seats_her_on_her_next_spot() {
     let mut flags: Vec<usize> = (0x158..=0x15C).collect();

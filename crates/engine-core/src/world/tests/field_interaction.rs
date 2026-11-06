@@ -1022,10 +1022,12 @@ fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
     );
 }
 
-/// The suppressor gate: while a dialogue owns the pad, a latched request
-/// does not arm (engine stand-in for retail's `_DAT_8007B6B4` suppressor).
+/// The suppressor gate is `_DAT_8007B6B4`: a conversation that showed a box
+/// leaves `0x10` of it on its release (`FUN_80039B7C`), and no switch arms
+/// until it drains. An open box alone holds nothing (retail reads
+/// `_DAT_8007B6B4 = 0` under a waiting pager).
 #[test]
-fn three_actor_talk_switch_suppressed_under_dialogue() {
+fn three_actor_talk_switch_suppressed_by_the_release_hold() {
     let mut world = talk_world_with_participants();
     world.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
@@ -1034,13 +1036,27 @@ fn three_actor_talk_switch_suppressed_under_dialogue() {
         world_z: 0,
         depth_id: 0,
     });
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, 0, "no hold under the box");
+    // The box closes: the release leaves the hold.
+    world.dialog.current = None;
+    world.tick_script_release_hold();
+    assert_eq!(
+        world.field_warp_words().1,
+        legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES
+    );
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
     assert_eq!(
         world.dialog.three_actor_talk.unwrap().swap.phase,
         0,
-        "no switch arms under an open text box"
+        "no switch arms through the release hold"
     );
+    // A second release with no box shown leaves nothing.
+    world.release_post_load_hold();
+    world.dialog.script_engaged_prev = true;
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, 0, "the latch was spent");
 }
 
 /// The **player's** request route: a Square press, through `World::set_pad`.

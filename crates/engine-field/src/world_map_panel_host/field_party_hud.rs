@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// `_DAT_1F800394` bit `0x0800_0000`, the menu lock: the HUD's second suppress
+/// gate (`0x801D0DA4`, `lui v0,0x800`).
+pub const HUD_SCRATCH_SUPPRESS_BIT: u32 = 0x0800_0000;
+
+/// `_DAT_1F800394` bit `0x400`, the system lock: a scene-entry rearm term
+/// (`andi v0,a0,0x400` at `0x801D0DE0`).
+pub const HUD_SCRATCH_REARM_BIT: u32 = 0x400;
+
 /// One member's row of the field party HUD, as the hosts draw it.
 ///
 /// Plain data so it crosses into the renderer-agnostic UI crate (which this
@@ -141,8 +149,14 @@ impl FieldPartyHud {
     /// marker - which is how the marker survives from the encounter to the
     /// first field frame after the fight.
     ///
+    /// `scratch` is the scratchpad word `_DAT_1F800394` (the engine's
+    /// `StoryFlagState::story_flags`): its bit `0x0800_0000`, the menu lock, is
+    /// the routine's second suppress gate (`lw a0,0x80(t1)` off
+    /// `t1 = 0x1F800314`, `and` with `lui 0x800` at `0x801D0D98..0x801D0DAC`).
+    ///
     /// PORT: FUN_801d0d38 (`_DAT_8007B5F4`: the `0x801D0E30..0x801D0E70`
-    /// reads, the `0x801D0DBC` / `0x801D0EAC` clears)
+    /// reads, the `0x801D0DBC` / `0x801D0EAC` clears; the `0x801D0DA0` menu-lock
+    /// suppress)
     #[allow(clippy::too_many_arguments)]
     pub fn tick_marked(
         &mut self,
@@ -154,6 +168,7 @@ impl FieldPartyHud {
         projected_y: Option<i16>,
         marker_raises: u32,
         resident: bool,
+        scratch: u32,
     ) -> HudDecision {
         match self.marker_raises_seen {
             Some(seen) if seen != marker_raises => self.short_idle = true,
@@ -161,13 +176,14 @@ impl FieldPartyHud {
         }
         self.marker_raises_seen = Some(marker_raises);
         let rearm_arm = self.cached.is_none() && !hud_disabled;
-        let decision = self.tick_inner(
+        let decision = self.tick_inner_with(
             hud_disabled,
             view_mode,
             pad_held,
             player_pos,
             timer_delta,
             projected_y,
+            scratch & HUD_SCRATCH_SUPPRESS_BIT != 0,
         );
         let took_entry_arm = rearm_arm && matches!(decision, HudDecision::Rearmed { .. });
         if resident && !took_entry_arm {
@@ -190,6 +206,28 @@ impl FieldPartyHud {
         timer_delta: i16,
         projected_y: Option<i16>,
     ) -> HudDecision {
+        self.tick_inner_with(
+            hud_disabled,
+            view_mode,
+            pad_held,
+            player_pos,
+            timer_delta,
+            projected_y,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_inner_with(
+        &mut self,
+        hud_disabled: bool,
+        view_mode: i32,
+        pad_held: u16,
+        player_pos: Option<(i16, i16)>,
+        timer_delta: i16,
+        projected_y: Option<i16>,
+        scratch_suppress: bool,
+    ) -> HudDecision {
         let rearm = self.cached.is_none();
         let stationary = match (self.cached, player_pos) {
             (Some(a), Some(b)) => a == b,
@@ -199,7 +237,7 @@ impl FieldPartyHud {
             hud_disabled,
             view_mode,
             pad: u32::from(pad_held),
-            scratch_suppress: false,
+            scratch_suppress,
             rearm,
             short_idle: self.short_idle,
             timer: self.timer,

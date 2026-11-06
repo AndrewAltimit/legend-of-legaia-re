@@ -823,7 +823,11 @@ from the field-back load, the marker at `1` and the countdown at `0` through the
 drain, the marker cleared on the frame the hold reaches `0`. Port:
 `world_map_panel_host::field_hud_warp_rearm` (the two words) and
 `FieldPartyHud::tick_marked` (the marker, raised from
-`EncounterState::hud_short_idle_raises`).
+`EncounterState::hud_short_idle_raises`). The scratchpad word's two terms are
+the engine's `story_flags`: the menu lock `0x0800_0000` suppresses the readout
+(`0x801D0D98..0x801D0DAC`), so the scenes whose script raises it (`2E 1B`,
+`town0e` and `urudre1`) show none, and the system lock `0x400` holds the entry
+arm (`0x801D0DE0`).
 
 **Slot residency.** The routine lives in slot A, so it draws nothing while
 another image holds the slot. The field-to-battle transition overlay (PROT

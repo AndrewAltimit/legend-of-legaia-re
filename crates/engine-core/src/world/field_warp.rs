@@ -210,31 +210,112 @@ impl World {
         self.locomotion.player_rig_bound = Some(self.player_rig_source());
     }
 
-    /// The post-load pad hold every map install leaves: `FUN_8003ADAC`, the
-    /// one call at the tail of the MAN installer `FUN_8003AEB0`
-    /// (`jal 0x8003adac` at `0x8003BAE0`, reached on both of the installer's
-    /// player-seat arms), stores `_DAT_8007B6B4 = 0x28`
-    /// (`li v0,0x28; sw v0,-0x494c(v1)` at `0x8003ADF8..0x8003ADFC`) and clears
-    /// the player's `+0x10 & 0x80000` bit. That is the hold a kind-0 warp's
-    /// landing writes too ([`warp_tile::POST_WARP_HOLD_FRAMES`]), and the
-    /// field frame pump `FUN_801D1344` treats it the same way: the pad
-    /// controller stays off until it drains, the region reader rolls no
-    /// encounter (`0x801DA14C`), and the party HUD stays in its rearm arm
-    /// (`0x801D0DEC`).
+    /// The tail of every map install: `FUN_8003ADAC`, the one call at the
+    /// end of the MAN installer `FUN_8003AEB0` (`jal 0x8003adac` at
+    /// `0x8003BAE0`, reached on both of the installer's player-seat arms).
     ///
-    /// Every scene load runs the installer, a return from battle included:
-    /// a retail capture of a `vell` random encounter escaped by Run reads
-    /// `_DAT_8007B6B4 = 0x28` on the field-back load (game mode `2`) and
-    /// draining by the frame delta from the first field frame.
+    /// - **The post-load pad hold.** It clears the player's `+0x10 & 0x80000`
+    ///   bit and stores `_DAT_8007B6B4 = 0x28` (`li v0,0x28; sw v0,-0x494c(v1)`
+    ///   at `0x8003ADF8..0x8003ADFC`) - the hold a kind-0 warp's landing writes
+    ///   too ([`warp_tile::POST_WARP_HOLD_FRAMES`]). The field frame pump
+    ///   `FUN_801D1344` keeps the pad controller off until it drains, the
+    ///   region reader rolls no encounter (`0x801DA14C`) and the party HUD
+    ///   stays in its entry arm (`0x801D0DEC`).
+    /// - **The entry fade pair.** Two fade actors through `FUN_80024E80`
+    ///   with id `1` (`li a1,0x1`): a [`MAP_INSTALL_FADE_FRAMES`]-frame ramp
+    ///   from white to black, then an [`MAP_INSTALL_BLACK_FRAMES`]-frame white
+    ///   held at white, each holding `1` frame
+    ///   (`0x8003AE20..0x8003AE94`, see [`map_install_fade_templates`]). The
+    ///   kind is the blend: `2` (`B - F`) normally, so the scene comes up out
+    ///   of black, or `1` (`B + F`, out of white) once, when bit `0x10` of
+    ///   `0x8008575B` - system flag `0x1B` - is set; the routine clears it
+    ///   (`0x8003AE00..0x8003AE1C`).
     ///
-    /// PORT: FUN_8003ADAC (the `_DAT_8007B6B4` store and the player-bit clear;
-    /// its two `FUN_80024E80` fades are not seated here)
-    pub fn seat_map_install_hold(&mut self) {
+    /// Every scene load runs the installer, a return from battle included. A
+    /// retail capture of a `vell` random encounter left by Run reads
+    /// `_DAT_8007B6B4 = 0x28` on the field-back load (game mode `2`) and the
+    /// screen black for the first `12` field vsyncs, then rising to the
+    /// scene's own level by vsync `33` - the `0x1E`-frame subtractive ramp
+    /// over a scene whose brightest texels sit under its first values.
+    ///
+    /// PORT: FUN_8003ADAC
+    pub fn seat_map_install_tail(&mut self) {
         self.locomotion.warp.hold = warp_tile::POST_WARP_HOLD_FRAMES;
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(slot as usize)
         {
             actor.move_state.flags &= !warp_tile::MOVEMENT_LOCK;
+        }
+        // A scene load tears the old scene's contexts down without their
+        // release arm: no release edge carries across it.
+        self.dialog.script_engaged_prev = false;
+        let from_white = self.system_flag_test(MAP_INSTALL_WHITE_FLAG);
+        if from_white {
+            self.system_flag_clear(MAP_INSTALL_WHITE_FLAG);
+        }
+        for t in map_install_fade_templates(from_white) {
+            let mut seat = None;
+            legaia_engine_system::fade::spawn_fade(&mut seat, &t, MAP_INSTALL_FADE_ID);
+            self.presentation.module_fades.extend(seat);
+        }
+    }
+
+    /// Whether a script context shows a text box this tick - the engine's
+    /// reading of retail's yield: the script runner parks a context on a
+    /// sub-`0x20` op, which is a text segment, and that is when it raises
+    /// `DAT_80073F02` (`0x80039FCC..0x80039FE4`).
+    fn script_box_shown(&self) -> bool {
+        self.dialog.current.is_some()
+            || self
+                .dialog
+                .inline
+                .as_ref()
+                .is_some_and(|id| id.panel.is_some())
+            || self
+                .cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|tl| tl.dialog.is_some())
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.dialog.is_some())
+    }
+
+    /// The script runner's release hold, once a tick after the field frame.
+    ///
+    /// `FUN_80039B7C` tears a context down on its `0x21` (or on the
+    /// structural advance `FUN_80038050` reporting the end) and subtracts the
+    /// context's share from the modal depth `_DAT_801C6EA4+0xA`. When the
+    /// depth reaches `0` the player is released: the engaged bit cleared,
+    /// the control block's `+0x60` zeroed, and - if the yielded latch
+    /// `DAT_80073F02` is up - the latch cleared and `_DAT_8007B6B4 = 0x10`
+    /// (`0x80039D24..0x80039D60`, and the same arm at `0x80039EF8..0x80039F34`).
+    /// So the pad stays off for [`warp_tile::SCRIPT_RELEASE_HOLD_FRAMES`]
+    /// after a conversation's last box, and the player cannot walk, talk or
+    /// open the menu on the frame the box closes.
+    ///
+    /// The engine has no single modal depth; its release is the frame
+    /// [`Self::dialogue_owns_input`] falls - the conversation the capture
+    /// measured. The wider [`Self::script_context_engages_player`] (cutscene
+    /// timelines, door holds, helper records) is not part of it: with it the
+    /// edge also fired on a scripted arrival's end, and the full-game ladder's
+    /// pad tier stopped reaching `sol_tower` from `station`. Whether retail's
+    /// release follows those contexts at depth `0` is not captured.
+    ///
+    /// PORT: FUN_80039B7C (`0x80039D44..0x80039D60`, `0x80039F1C..0x80039F34`
+    /// the release hold, and `0x80039FE4` the yielded latch)
+    pub(crate) fn tick_script_release_hold(&mut self) {
+        if self.script_box_shown() {
+            self.dialog.script_yield_latch = true;
+        }
+        let engaged = self.dialogue_owns_input();
+        let released = self.dialog.script_engaged_prev && !engaged;
+        self.dialog.script_engaged_prev = engaged;
+        if released && self.dialog.script_yield_latch {
+            self.dialog.script_yield_latch = false;
+            self.locomotion.warp.hold = warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
         }
     }
 
@@ -252,6 +333,42 @@ impl World {
     pub fn field_warp_words(&self) -> (i32, i32) {
         (self.locomotion.warp.timer, self.locomotion.warp.hold)
     }
+}
+
+/// `FUN_8003ADAC`'s ramp length (`li v0,0x1e` at `0x8003AE28`).
+pub const MAP_INSTALL_FADE_FRAMES: i16 = 0x1E;
+
+/// `FUN_8003ADAC`'s held-white length (`li v0,0x8` at `0x8003AE68`).
+pub const MAP_INSTALL_BLACK_FRAMES: i16 = 8;
+
+/// The id `FUN_8003ADAC` hands the fade spawner (`li a1,0x1`), which is the
+/// fade's ordering-table bucket.
+pub const MAP_INSTALL_FADE_ID: i16 = 1;
+
+/// System flag `0x1B` - bit `0x10` of `0x8008575B` (`lbu a0,0x1618(a2)` off
+/// `a2 = 0x80084143`, `andi v0,a0,0x10`): the next map install fades in from
+/// white instead of black, once.
+pub const MAP_INSTALL_WHITE_FLAG: u16 = 0x1B;
+
+/// The two 13-halfword templates `FUN_8003ADAC` builds on its stack
+/// (`sp+0x10..`): `[0]` kind (`s2`), `[1]` duration, `[3..=5]` start and
+/// `[7..=9]` end RGB, `[10]` delay `0`, `[11]` hold `1` (`s1`). The first
+/// ramps white to black; the second holds white for its whole length.
+pub fn map_install_fade_templates(
+    from_white: bool,
+) -> [legaia_engine_system::fade::FadeTemplate; 2] {
+    let kind = if from_white { 1 } else { 2 };
+    let t = |duration: i16, end: i16| legaia_engine_system::fade::FadeTemplate {
+        kind,
+        duration,
+        start_rgb: [0xFF; 3],
+        end_rgb: [end; 3],
+        mode: [0, 1, 0],
+    };
+    [
+        t(MAP_INSTALL_FADE_FRAMES, 0),
+        t(MAP_INSTALL_BLACK_FRAMES, 0xFF),
+    ]
 }
 
 #[cfg(test)]
@@ -274,7 +391,10 @@ mod tests {
         let slot = w.player_actor_slot.unwrap() as usize;
         assert!(!w.encounter_roll_held());
         w.actors[slot].move_state.flags |= warp_tile::MOVEMENT_LOCK;
-        w.seat_map_install_hold();
+        w.seat_map_install_tail();
+        // The entry pair: both subtractive, both full white on the first frame.
+        assert_eq!(w.presentation.module_fades.len(), 2);
+        assert_eq!(w.screen_fade_draws(), vec![(0xFF_FFFF, 2, 1); 2]);
         assert_eq!(w.field_warp_words(), (0, warp_tile::POST_WARP_HOLD_FRAMES));
         assert_eq!(
             w.actors[slot].move_state.flags & warp_tile::MOVEMENT_LOCK,
@@ -297,6 +417,28 @@ mod tests {
             "one per tick at ratio 1"
         );
         assert!(!w.encounter_roll_held());
+    }
+
+    /// System flag `0x1B` turns the pair additive, once: the install clears it.
+    #[test]
+    fn the_white_flag_turns_the_entry_pair_additive_once() {
+        let mut w = world_with_player();
+        w.system_flag_set(MAP_INSTALL_WHITE_FLAG);
+        w.seat_map_install_tail();
+        assert!(!w.system_flag_test(MAP_INSTALL_WHITE_FLAG), "consumed");
+        assert!(w.screen_fade_draws().iter().all(|&(_, abr, _)| abr == 1));
+        w.presentation.module_fades.clear();
+        w.seat_map_install_tail();
+        assert!(w.screen_fade_draws().iter().all(|&(_, abr, _)| abr == 2));
+        // The ramp lands after its 0x1E frames and one held frame; the held
+        // white is gone after its 8 and one.
+        let mut lit = Vec::new();
+        for _ in 0..40 {
+            w.lead_screen_fades(1);
+            lit.push(w.screen_fade_draws().len());
+        }
+        assert_eq!(lit.iter().position(|&n| n < 2), Some(8));
+        assert_eq!(lit.iter().position(|&n| n == 0), Some(30));
     }
 
     #[test]

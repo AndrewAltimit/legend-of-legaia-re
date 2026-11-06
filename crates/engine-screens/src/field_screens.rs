@@ -262,6 +262,14 @@ pub fn field_party_hud_rearm(
     if legaia_engine_world_views::world_map_panel_host::field_hud_warp_rearm(&host.world) {
         hud.rearm();
     }
+    // The system lock `_DAT_1F800394 & 0x400`, the arm's second term
+    // (`andi v0,a0,0x400` / `bne` at `0x801D0DE0..0x801D0DE4`).
+    if host.world.flags.story_flags
+        & legaia_engine_field::world_map_panel_host::HUD_SCRATCH_REARM_BIT
+        != 0
+    {
+        hud.rearm();
+    }
 }
 
 /// One frame of the field party HUD's decision kernel, the second half of
@@ -293,6 +301,7 @@ pub fn field_party_hud_tick(
         projected_y,
         world.encounters.hud_short_idle_raises,
         legaia_engine_world_views::world_map_panel_host::field_hud_resident(world),
+        world.flags.story_flags,
     );
 }
 
