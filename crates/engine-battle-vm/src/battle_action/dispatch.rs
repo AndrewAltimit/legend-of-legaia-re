@@ -1032,7 +1032,15 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // Capture harness: a replay that knows the variant retail's seed rolled
     // lands it over the engine's own roll, after every draw above was made
     // (`BattleActionCtx::camera_variant_pin`). Nothing in play sets it.
+    // The pin is retail's byte after the category arm; where the arm left
+    // the roll standing (`Attack`, `Spirit`, `Run`, ...) that byte is also the
+    // roll the seed's own framing read, so the seed pass frames on it too.
+    // Where the arm narrowed it, retail's roll is not in the capture and the
+    // seed keeps the engine's.
     if let Some(pin) = ctx.camera_variant_pin {
+        if ctx.camera_variant == ctx.seed_camera_variant {
+            ctx.seed_camera_variant = pin;
+        }
         ctx.camera_variant = pin;
     }
     transition(ctx, next)
