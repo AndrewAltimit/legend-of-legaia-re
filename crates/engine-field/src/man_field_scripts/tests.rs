@@ -1088,6 +1088,22 @@ fn battle_record_flag_sets_skip_a_record_the_entry_spawns() {
     assert_eq!(walk_battle_record_flag_sets(&mf, &man).len(), 1);
 }
 
+/// `koin1`'s course pick: `55 09`, the course flag up, the other two down,
+/// then the dome door `3E 69`. A jump ends the run, so the SET ahead of it
+/// is not the door's.
+#[test]
+fn minigame_door_flag_sets_take_the_run_into_the_door() {
+    let (mf, man) = man_with_placement_script(&[
+        0x55, 0x99, 0x26, 0x02, 0x00, // SET 0x599, JmpRel +2 (ends the run)
+        0x55, 0x09, 0x55, 0x36, 0x65, 0x37, 0x65, 0x38, 0x4A, 0x1E, 0x00, // the arm
+        0x3E, 0x69, 0x00, 0x00, 0x00, 0x00, 0x21,
+    ]);
+    assert_eq!(
+        walk_minigame_door_flag_sets(&mf, &man),
+        vec![(0x69, 0x509), (0x69, 0x536)]
+    );
+}
+
 // ---- developer flag-menu arms (`debug_flag_menu_arm`) ----
 
 /// The shipped two-option toggle: the picker's last label, the `0x21` stop,

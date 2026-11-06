@@ -841,6 +841,62 @@ pub fn walk_battle_record_flag_sets(man_file: &ManFile, man: &[u8]) -> Vec<Battl
     out
 }
 
+/// The system flags each minigame door raises on its way out: for every
+/// door form of op `0x3E` (`op0 >= 100`, the mode-24 sub-id `op0 - 100`),
+/// the flags whose last write in the straight-line run ending at the op (from
+/// the record's previous unconditional jump) is a SET, as `(op0, flag)`.
+///
+/// `koin1`'s reception `P1[9]` opens a Muscle Dome course on three arms, each
+/// `55 09` (the dome-return marker), its own course flag set and the other
+/// two cleared, then `3E 69`. The entry script reads `0x509` up as the return
+/// from the dome (`75 09` / `65 09` at `+0x181`, then the result records), so
+/// a capture of a leg holds a flag retail raised after its entry had run.
+pub fn walk_minigame_door_flag_sets(man_file: &ManFile, man: &[u8]) -> Vec<(u8, u16)> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut run: BTreeMap<u16, bool> = BTreeMap::new();
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::JmpRel { .. } => run.clear(),
+                    InsnInfo::SystemFlag { kind, idx, .. } => match kind {
+                        FlagKind::Set => {
+                            run.insert(idx, true);
+                        }
+                        FlagKind::Clear => {
+                            run.insert(idx, false);
+                        }
+                        FlagKind::Test => {}
+                    },
+                    InsnInfo::WarpOrInteract {
+                        op0, is_warp: true, ..
+                    } => {
+                        out.extend(run.iter().filter(|(_, s)| **s).map(|(f, _)| (op0, *f)));
+                        run.clear();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
 /// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
 /// entry) in record `index` of `partition` names, in linear decode order.

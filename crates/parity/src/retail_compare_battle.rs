@@ -124,6 +124,9 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
     legaia_engine_battle::battle_tutorial::BATTLE_REPORT_FLAG,
     legaia_engine_battle::battle_tutorial::BATTLE_ENTRY_CLEARED_FLAG,
 ];
+/// The map id a Muscle Dome leg's fight start `FUN_801D1510` stores in
+/// `0x80084540` (`other6`, [`RetailBattle::map_define`]).
+pub(crate) const DOME_LEG_MAP_DEFINE: u16 = 0x4C6;
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// The options screen's Select Attack config word.
@@ -796,6 +799,12 @@ impl RetailBattle {
             ids: self.monster_ids.clone(),
             scripted: self.scripted,
         }
+    }
+
+    /// A Muscle Dome leg: battle init's map id is the arena's
+    /// ([`DOME_LEG_MAP_DEFINE`]) while the field under it stays `koin1`.
+    pub fn dome_leg(&self) -> bool {
+        self.map_define == DOME_LEG_MAP_DEFINE
     }
 }
 

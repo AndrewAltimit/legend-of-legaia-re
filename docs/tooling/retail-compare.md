@@ -4484,6 +4484,17 @@ behind the box (`0x528` down). Two more rules follow from the same tail:
   through theirs. The seed's forced entry is the field's, so on such a capture
   the three flags the tail wrote go back to the capture's own
   (`RetailBattle::battle_id`, `BATTLE_ENTRY_TAIL_FLAGS`).
+- **Nor did a Muscle Dome leg.** The arena's fight start (`FUN_801D1510`,
+  battle-init map id `0x4C6`) enters the leg, so a later leg's capture holds
+  the victory latch the leg before it raised, and the tail flags go back to
+  the capture's here as well (`RetailBattle::dome_leg`). The leg has no
+  formation row to key arms on; its latches are the flags the reception's
+  course pick raises on its way through the dome door instead
+  (`man_field_scripts::walk_minigame_door_flag_sets`). `koin1`'s `P1[9]` arms
+  each read `55 09`, a course flag, then `3E 69`, and the entry script reads
+  `0x509` as the return from the dome (`75 09` · `65 09` at `+0x181`), so a
+  landing with it up ran the return and cleared it. The leg captures read
+  `flags` `1.0` against `.996`.
 - **The victory latch is read at the phase.** The results sequencer raises
   `0x35` on the results frame (`FUN_8004E568`, `0x8004EECC`). Flags are
   otherwise read at the first prompt, before the drive; on a drive that

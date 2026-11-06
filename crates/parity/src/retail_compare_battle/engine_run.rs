@@ -204,6 +204,33 @@ pub fn entry_latches(
         ..Default::default()
     };
     let _landing = session.resume_save(save, &retail.scene, &opts);
+    let man = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+        .and_then(|man| Some((legaia_scene_formats::man_section::parse(&man).ok()?, man)));
+    // A Muscle Dome leg is entered by the arena, not a formation row: its
+    // latches are the flags the reception's course pick raises on its way
+    // through the dome door ([`walk_minigame_door_flag_sets`]), `koin1`'s
+    // dome-return marker `0x509` among them.
+    //
+    // [`walk_minigame_door_flag_sets`]: legaia_engine_field::man_field_scripts::walk_minigame_door_flag_sets
+    if battle.dome_leg() {
+        let dome = legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.op0();
+        let mut raise: Vec<u16> = man
+            .iter()
+            .flat_map(|(mf, man)| {
+                legaia_engine_field::man_field_scripts::walk_minigame_door_flag_sets(mf, man)
+            })
+            .filter(|&(op0, f)| op0 == dome && held.contains(&f))
+            .map(|(_, f)| f)
+            .chain(tail)
+            .collect();
+        raise.sort_unstable();
+        raise.dedup();
+        return (raise, Vec::new());
+    }
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
         return (tail, Vec::new(), None);
@@ -220,22 +247,14 @@ pub fn entry_latches(
     // The record's earlier SETs, where the entry does not start that record
     // ([`legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets`]):
     // `korb3`'s Gaza record raises `0x41D` a cutscene ahead of its entry op.
-    let record_sets: Vec<u16> = session
-        .host
-        .scene
-        .as_ref()
-        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
-        .and_then(|man| {
-            let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
-            Some(
-                legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets(&mf, &man)
-                    .into_iter()
-                    .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
-                    .map(|a| a.flag)
-                    .collect(),
-            )
+    let record_sets: Vec<u16> = man
+        .iter()
+        .flat_map(|(mf, man)| {
+            legaia_engine_field::man_field_scripts::walk_battle_record_flag_sets(mf, man)
         })
-        .unwrap_or_default();
+        .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
+        .map(|a| a.flag)
+        .collect();
     let mut raise: Vec<u16> = arms
         .clone()
         .filter(|a| !a.clears && held.contains(&a.flag))
@@ -508,7 +527,10 @@ pub fn run_engine_battle(
     // never ran the SM's entry tail: the flags the forced entry's tail just
     // wrote go back to the capture's own (the `jou` boss casts hold the
     // victory latch of an earlier fight right through theirs).
-    if battle.battle_id != 0 {
+    // A Muscle Dome leg is the arena's fight start (`FUN_801D1510`), not the
+    // entity SM's either: a capture of a later leg holds the victory latch
+    // `0x35` the leg before it raised.
+    if battle.battle_id != 0 || battle.dome_leg() {
         let held = retail
             .save
             .as_ref()
