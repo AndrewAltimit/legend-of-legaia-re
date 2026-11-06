@@ -157,3 +157,51 @@ fn town01_catalog_matches_engine_ground_truth() {
         "town01: expected >= 5 actors with inline-dialog labels, got {labelled}"
     );
 }
+
+/// The page poses an actor through `player_anm_record_dims` /
+/// `player_anm_record_pose_frames` on the PROT entry the catalog names, so
+/// that decode has to open the same bank the catalog resolved. Scenes whose
+/// bank is only a DATA_FIELD stream chunk (`doman`, `kor`, `taiku`,
+/// `rikuroa`) are the case the decode once missed: the catalog listed their
+/// actors, the clip came back empty, and every part drew at its TMD-local
+/// origin - heads inside torsos.
+#[test]
+fn every_catalogued_clip_opens_in_the_pose_decode() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let Some(index) = index() else {
+        return;
+    };
+    let mut viewer = legaia_web_viewer::LegaiaViewer::new_headless();
+    viewer
+        .load_disc(fs::read(&disc_path).expect("disc image"))
+        .expect("viewer loads the disc");
+    for name in ["town01", "doman", "kor", "taiku", "rikuroa"] {
+        let pack = build_field_scene(&index, name)
+            .unwrap_or_else(|e| panic!("{name}: build_field_scene failed: {e}"));
+        let npcs = build_npc_catalog(&index, name, &pack)
+            .unwrap_or_else(|e| panic!("{name}: build_npc_catalog failed: {e}"));
+        let mut posed = 0;
+        for e in npcs.entries.iter().filter(|e| e.nobj > 1) {
+            let prot = npcs.anm_prot.expect("a multi-object actor has a bank");
+            let rec = u32::from(e.placement.anim_id) - 1;
+            let dims = viewer.player_anm_record_dims(prot, rec);
+            assert!(
+                dims[1] > 0,
+                "{name}: actor {} clip {rec} of PROT {prot} decodes to no frames",
+                e.placement.index
+            );
+            let parts = e.nobj.max(dims[0]) as usize;
+            let frames = viewer.player_anm_record_pose_frames(prot, rec, e.nobj);
+            assert!(
+                frames.len() >= dims[1] as usize * parts * 6,
+                "{name}: actor {} clip {rec} pose frames are short",
+                e.placement.index
+            );
+            posed += 1;
+        }
+        assert!(posed > 0, "{name}: no multi-object actor to pose");
+    }
+}
