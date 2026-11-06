@@ -2312,11 +2312,13 @@ image's phase switch (a `beq` on the register holding `1` counted as phase
 
 | Arm | Modules |
 |---|---|
-| 0 | 0923 Gilium (after its arm-0 drain) |
-| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0925, 0927, 0928, 0929, 0933 |
+| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0923, 0925, 0927, 0928, 0929, 0933 |
 | 2 | 0903, 0905, 0906, 0907, 0908, 0914, 0915, 0918, 0930, 0931, 0932, 0934 |
 
-(0924 has no dump; 0926 is the null image.) In retail the byte is up from
+(0924 has no dump; 0926 is the null image.) PROT 0923's arm 1 drains its countdown
+`0x801FA4F8` ahead of the poll (`0x801F6BEC..0x801F6C2C`) and seeks `FUN_8003EAE4(0, 0xD)` after it, so
+the word keeps draining while the byte holds the arm: `gilium_summon_mid_cast` stands on arm 1 with the
+word at `456`, `56` under the `0x200` arm 0 stored. In retail the byte is up from
 state `0x32` until the applier has read the cast's last slot, about `30`
 vsyncs a slot ([cast-sequence oracle](../tooling/cast-sequence-oracle.md#waits-the-engine-does-not-run)),
 so the arm holds for whatever of that the band head did not cover. The

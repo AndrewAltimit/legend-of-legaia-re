@@ -466,17 +466,17 @@ beside the same tones in `mei_house_inside`.
 *Status:* partial (measured)
 
 The drive's two seeks ahead of the head cue are modelled
-([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)): Orb's voice
-now lands `64` ms after retail's where it was `0.99` s early, Swordie's `6` ms where it was `0.71` s, both at
-retail's level. Two parts are not: the side-band read that precedes the selector's seek (`ctx[+0x276]`,
-`cmd 6` reads in the `summon.dat` region on every frame-stepped summon state, `24` vsyncs on Orb's), which the
-port's resident side-band skips, and the game loop's freeze inside the seek arm's `CdlSetloc`, which the port
-models for the audio frame only (the battle's actors and camera keep ticking). `theeder_summon_mid_cast` and
-`nighto_summon_mid_cast` still start `0.23` and `0.16` s early, behind waits that are not the drive's: Theeder
-reaches arm 1 `86` vsyncs after its state behind the side-band read, and its arm 2 polls the selector's latch
-`0x8007BDB0`, which the port reads as ready. Gilium's voice, behind its arm-2 countdown, is `0.30` s early, the
-arm `40` vsyncs long in the port against `55` in retail. What closes it: `drive-timeline.py` across those arms
-beside the engine's cast-sequence `meta.csv`, the side-band read's sectors per action, and the latch's writers.
+([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)), and so is
+their order against the side-band read: the selector seeks once the stage `ctx[+0x276]` drops, and the
+module's seek arm polls the stage before its own seek
+([the selector seeks when the side-band drops](../subsystems/audio.md#the-selector-seeks-when-the-side-band-drops)).
+With those, every summon state's voice lands `8..13` vsyncs after mednafen's, inside the cast channel's seek
+window. What is not modelled is the band ahead of the module: the stage's drop against arm 1 is `8` vsyncs
+in on Theeder, about `7` on Gilium, `4` on Swordie and `0` on Orb, where the port's stand-in for the read
+(`30` vsyncs a slot and a first-slot seek) lands it within `5` of each. Theeder's arm 2 also polls the
+selector's latch `0x8007BDB0`, which the port reads as ready, and its `+2.3` dB is unexplained. What closes
+it: the `0x32..0x34` band's own length per cast against retail (the transfer SM's request lag and the
+applier's consume passes, `FUN_801F17F8` / `FUN_801F12D0`), and the latch's writers.
 
 ## Title / boot / overlays
 

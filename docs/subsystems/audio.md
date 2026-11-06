@@ -3506,7 +3506,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `nighto_summon_mid_cast` | `0.973` | `+0.10` dB | `-274` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.994` | `+0.02` dB | `+246` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-243` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
-| `gilium_summon_mid_cast` | `0.226` | `+0.02` dB | `+723` | the voice `0.30` s early, and lifted to full CD volume under a duck that has settled in retail by its start ([below](#the-drive-holds-a-summons-voice)) |
+| `gilium_summon_mid_cast` | `0.852` | `+0.02` dB | `-376` | the voice `8.5` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 
@@ -3538,7 +3538,8 @@ arm holds `27` vsyncs behind the selector's `XA27` seek with the audio level fro
 nothing else in RAM moving, then the `XA13` seek runs `29` vsyncs under the poll arm while the frame loop
 runs. Every seek of the five summon states fits one law, `0.3` s plus a full-disc traverse a second, plus
 two vsyncs of logical seek ([`battle_cd_drive`](../../crates/engine-battle-vm/src/battle_cd_drive.rs)). The
-port runs that drive: the selector's seek as the module arms, the module's own on its seek arm, both arms
+port runs that drive: the selector's seek once the side-band stage drops
+([below](#the-selector-seeks-when-the-side-band-drops)), the module's own on its seek arm, both arms
 held while it is busy, the head cue not called on a busy pass, and the whole frame held while the seek arm
 blocks (`World::cast_drive_blocks_frame`): `World::tick` steps only the drive, and the audio frame (the duck,
 the cue ring), the camera, the actors and the display-frame clock they count on stand still. Advancing that
@@ -3563,11 +3564,11 @@ the first three seconds, at any shift from the engine's whole wait earlier (a dr
 to `max(8, wait / 2)` vsyncs later (`pcm_retail::fit_cast_offset_after_wait`, the margin shared with the
 [cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
-never silent. On the five summon states with a wait: Theeder `0.722` to `0.904` (voice `-9.9` vsyncs),
-Nighto `0.326` to `0.973` (`-13.1`), Orb `0.935` to `0.994` (`-5.2`), Swordie `0.903` to `0.988`
-(`-1.1`), Gilium `0.219` to `0.226` (`+5.1`); the casts with no drive wait are unchanged. Theeder's and
-Nighto's shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of
-the port's drive on those two casts that the window covers, not emulator variance.
+never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
+the applier, not the drive. On the five summon states with a wait the voice lands `-11.0` vsyncs from the
+cast's offset on Theeder, `-13.1` on Nighto, `-8.4` on Orb, `-10.0` on Swordie and `-8.5` on Gilium. These
+shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
+drive and of the band ahead of the module that the window covers, not emulator variance.
 
 **A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
 `bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue
@@ -3575,15 +3576,32 @@ as soon as the drive was idle, while the countdown still held the arm, and the v
 - under a duck still ramping, so the level step lifted it to full CD volume where retail's plays at the cue
 level. That is the `-1.35` dB the row read. `head_cue_waits_arm_gate` reads the shape off the image (a branch
 to the poll's busy return ahead of the poll, within the arm); of the band only PROT 0923 has it, and its cue
-now lands on the pass the arm's hold lets through: `0.30` s early, the rest of the arm's length
-(`55` vsyncs from its seek in retail, `40` in the port) unexplained.
+now lands on the pass the arm's hold lets through.
+
+<a id="the-selector-seeks-when-the-side-band-drops"></a>
+**The selector seeks when the side-band drops.** Frame-stepped, every summon state shows the same order:
+the module's seek arm (Gilium's arm 1, `0x801F6BEC`) first returns busy on the side-band stage
+`ctx[+0x276]` while the cast's last `summon.dat` slot is still being consumed; on the vsync the stage reads
+`0`, the selector writes its latch `0x8007BDB0` (`-1` to clip `7` on Theeder) and seeks the drive to the
+caster's clip file, and the arm's own `CdlSetloc` then holds the loop behind that seek. The stage drops `8`
+vsyncs into Theeder's arm 1, about `7` into Gilium's, `4` into Swordie's and at Orb's entry. The port issued
+the selector's seek as the cast armed and stepped the drive only on the module's passes, so the seek ran
+from the arm's entry and the loop froze there, with the side-band wait ahead of it gone. Gilium's arm drains
+its countdown on those passes (`gilium_summon_mid_cast` stands on arm 1 with the word at `456`, the stage
+`0`, the drive finishing the selector's seek), and its state is a frame inside the freeze: the replay's gate,
+on the fade's age, opened only after the port's freeze and stood the engine `17` vsyncs nearer the voice.
+Now the drive steps every vsync (`World::tick_cast_drive`), the selector's seek waits for the stage
+(`CastFxState::selector_seek`), the seek arm polls the stage before its seek (PROT 0923 included,
+`sideband_wait_arm`), and the stage's stand-in carries the first slot's seek in from the clip band
+(`SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`, a mednafen measurement). Gilium reads `0.226` to `0.852`; the other four
+summon rows hold their correlations.
 
 Theeder's and Nighto's voices are not held by the drive: their selector seeks and their own seeks both
-land on `XA8`, so the module's seek is a few vsyncs. The port still holds their seek arms `24` and `23` frames
-behind the selector's seek it issues as the module arms, and the cast channel's voice fit places their voices
-`9.9` and `13.1` vsyncs after mednafen's: retail's selector seek may already be done by then.
-Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86` vsyncs after the state, behind the side-band
-read (`cmd 6` reads in the `summon.dat` region, `41347..41446` in three chunks), and arm 2 runs past the
+land on `XA8`, so the module's seek is a few vsyncs, and the cast channel's voice fit places their voices
+`11.0` and `13.1` vsyncs after mednafen's. Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86`
+vsyncs after the state, behind the side-band read (`cmd 6` reads in the `summon.dat` region,
+`41347..41446` in three chunks, `30` vsyncs a slot after a first of `46`), holds the arm `8` vsyncs on the
+stage, then `23` on the selector's `XA8` seek, and arm 2 runs past the
 end of the log at `+187` where the port's countdown leaves it at `+213`; arm 2 also polls the selector's
 latch `0x8007BDB0` for the creature stream (`seru.rs`), which the port reads as ready. Theeder's `+2.30` dB
 (retail louder) is not explained: its duck and the engine's both start ramping near `+118`

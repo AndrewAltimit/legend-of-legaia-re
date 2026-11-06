@@ -1484,11 +1484,14 @@ pub const fn creature_poll_arm(prot_entry: u32) -> Option<u8> {
 /// (`0x801F6D58..0x801F6D60`), and PROT 0931's arm 2
 /// (`0x801F6D18..0x801F6D20`): `jedo_summon_mid_cast` holds that arm one
 /// pass into the sustain with the byte at `8`. Every summon image makes this
-/// read once ([the table](../../docs/subsystems/cast-module.md#the-side-band-poll-arm));
-/// PROT 0923's sits behind its arm-0 drain and is its director's.
+/// read once ([the table](../../docs/subsystems/cast-module.md#the-side-band-poll-arm)).
+/// PROT 0923's sits on arm 1 behind that arm's drain (`lbu v0,0x276(v0)` /
+/// `bne v0,zero` at `0x801F6C38..0x801F6C40`, then its seek
+/// `FUN_8003EAE4(0, 0xD)`): `gilium_summon_mid_cast` stands there with the
+/// word drained `56` past the `0x200` arm 0 stored.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
-        904 | 909..=913 | 916 | 917 | 919..=922 | 925 | 927..=929 | 933 => Some(1),
+        904 | 909..=913 | 916 | 917 | 919..=923 | 925 | 927..=929 | 933 => Some(1),
         903 | 905..=908 | 914 | 915 | 918 | 930..=932 | 934 => Some(2),
         _ => None,
     }

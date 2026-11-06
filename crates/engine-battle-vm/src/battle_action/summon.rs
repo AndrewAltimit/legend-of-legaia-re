@@ -209,10 +209,32 @@ pub fn sideband_slot_count(base: u8) -> u8 {
     }
 }
 
+/// The vsyncs a summon's `summon.dat` read costs past
+/// [`SIDEBAND_SLOT_READ_VSYNCS`] a slot on mednafen's drive, the emulator the
+/// real-PCM cast channel and [`crate::battle_cd_drive`] are fitted to: its
+/// first slot seeks in from where the battle's seek-ahead selector parked the
+/// head, on the caster's clip file in the `XA*.XA` band. Frame-stepped
+/// (`scripts/mednafen/drive-timeline.py`), `theeder_summon_mid_cast` holds a
+/// seek into `summon.dat` with `6.67M` cycles still to run ten vsyncs into
+/// `0x33`, and its stage reaches `3` `46` vsyncs into the band against `30`
+/// and `29` for the two slots after it. Where the stage drops against the
+/// module's arm 1 fixes the value: `8` vsyncs in on Theeder, about `7` on
+/// Gilium, `4` on Swordie and at the arm's entry on Orb, which this value
+/// meets to within `5` on all four (the band ahead of the module is not
+/// the same length in every cast).
+pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 9;
+
 /// The vsyncs the applier's stage byte stays up after a seed of `base`:
-/// [`sideband_slot_count`] reads of [`SIDEBAND_SLOT_READ_VSYNCS`] each.
+/// [`sideband_slot_count`] reads of [`SIDEBAND_SLOT_READ_VSYNCS`] each, and
+/// for a `summon.dat` base the first read's seek in from the clip band
+/// ([`SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`]).
 pub fn sideband_token_vsyncs(base: u8) -> u16 {
-    u16::from(sideband_slot_count(base)) * SIDEBAND_SLOT_READ_VSYNCS
+    let seek = if base & 0x80 != 0 {
+        SIDEBAND_FIRST_SLOT_SEEK_VSYNCS
+    } else {
+        0
+    };
+    u16::from(sideband_slot_count(base)) * SIDEBAND_SLOT_READ_VSYNCS + seek
 }
 
 /// State `0x33`: sustain clip `0x12` on the caster and wait for the anim cue
@@ -439,7 +461,11 @@ mod tests {
         assert_eq!(sideband_slot_count(0xCA), 3);
         // Mule, spell 0x9B: 0x9B * 4 + 99 = 0x2CF, byte 0xCF.
         assert_eq!(sideband_slot_count(0xCF), 4);
-        assert_eq!(sideband_token_vsyncs(0xCF), 4 * SIDEBAND_SLOT_READ_VSYNCS);
+        assert_eq!(
+            sideband_token_vsyncs(0xCF),
+            4 * SIDEBAND_SLOT_READ_VSYNCS + SIDEBAND_FIRST_SLOT_SEEK_VSYNCS
+        );
+        assert_eq!(sideband_token_vsyncs(0x12), 2 * SIDEBAND_SLOT_READ_VSYNCS);
     }
 
     #[test]
