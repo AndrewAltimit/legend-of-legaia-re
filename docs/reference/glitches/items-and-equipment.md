@@ -721,8 +721,8 @@ copy costs the coins, is added, and is trimmed off again - the report exactly.
 
 The USA build added two things in front of that. The prize list draws a row dimmed when 99 are held, and the confirm
 step asks "fewer than 99 held?" and buzzes when the answer is no. The French build carries both. The commit and the
-trimming add behind them are unchanged in every build, which is why the same hole is still open in one other place:
-equipment bought "to the bag" in an ordinary gold shop.
+trimming add behind them are unchanged in every build. The ordinary gold shop's buy paths lack the same test, but on
+the USA build its list refuses a row built at 99 before either runs ([scope](#scope-3)).
 
 Both the Japanese and the USA code are read from the instructions; the Japanese result on screen has not been
 captured.
@@ -822,16 +822,23 @@ The French build has both USA additions: the front check at `0x801DCEF8..0x801DC
 Every giver on the disc goes through the same trimming add, so a chest, a battle drop or a prize at 99 is discarded
 without a message.
 
-Every build has a sibling of the reported fault in the gold shop, for both kinds of item. The buy-list confirm
-`FUN_801DB21C` tests only gold before routing on the item kind. Equipment goes to the recipient picker, whose "to the
-bag" row runs `jal 0x800421d4` at `0x801DB490` and then debits gold with no held-count read for the item between them.
-Stackable items go to the quantity stepper `FUN_801DB7F4`, whose bound is `min(gold / price, 99, 99 - held)`
-(`jal 0x80042ee0` at `0x801DB8B0` on USA, `0x801DDEF8..0x801DDF5C` on the Japanese disc). The bound only stops the
-number climbing: the list seeds the number at `1` (`sw t0,0x46b4` at `0x801DB2B4`) and the stepper's confirm buys it
-whatever the bound, so at 99 held the bound is `0` and the one copy is still bought. Either way a hundredth copy takes
-the gold and leaves 99. The stackable case is run in the retail differential (`shop_quantity`); the equipment case is
-read from the instructions of the USA and Japanese builds, and the French build is the USA code relocated. The port's
-shop refuses both buys and keeps the gold.
+The gold shop's buy path past the list carries no held-count test of its own, for either kind of item. The
+buy-list confirm `FUN_801DB21C` tests only gold before routing on the item kind. Equipment goes to the recipient
+picker, whose "to the bag" row runs `jal 0x800421d4` at `0x801DB490` and then debits gold with no held-count read for
+the item between them. Stackable items go to the quantity stepper `FUN_801DB7F4`, whose bound is
+`min(gold / price, 99, 99 - held)` (`jal 0x80042ee0` at `0x801DB8B0` on USA, `0x801DDEF8..0x801DDF5C` on the Japanese
+disc). The bound only stops the number climbing: the list seeds the number at `1` (`sw t0,0x46b4` at `0x801DB2B4`) and
+the stepper's confirm buys it whatever the bound, so a stepper opened at 99 held buys the one copy and takes its gold.
+The stepper case is run in the retail differential (`shop_quantity`).
+
+On the USA build the gate sits one step earlier, in the list. The row builder (`FUN_80030628` case `0x0B`) marks a
+row whose held count is not below `0x63` with `0x800` (`sltiu v0,v0,0x63` at `0x80030F0C`, `ori s0,s0,0x800` at
+`0x80030F18`), and the list kernel buzzes on a marked row before the sub-screen's confirm runs; a capture confirms a
+row built at 99 neither opens the stepper nor buys ([shop.md](../../subsystems/shop.md#screen-composition)). So a
+stack that is at 99 when the list is built is safe, and the missing tests past the list are latent. Two things are not
+read: whether the list's rows are rebuilt when a purchase inside one visit brings a stack to 99 (if not, the next
+confirm on that row reaches the stepper at bound `0` and buys a hundredth copy), and whether the Japanese build's list
+builder carries the same gate. The port's shop refuses the buy at the grant either way.
 
 ### Verifying it
 

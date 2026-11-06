@@ -83,12 +83,13 @@ the cheapest place to look for a claim that is still wrong.
   `0x8003D9F4`; a scan for `117` loaded just before a call missed it, and the
   audio page's open item said the port mixed every line at unity while the
   port already mixed cues at that level ([settled](re-settled-threads/audio.md)).
-- **The gold shop's quantity screen does not stop a hundredth copy.** The
-  glitch page read the stackable path as capped by `min(gold / price, 99, 99 - held)`;
-  run off the disc, the stepper `FUN_801DB7F4` opens at 99 held with that bound at
-  `0`, still buys the one copy the list seeded (`0x801DB2B4`) and takes its gold
-  ([glitches](glitches/items-and-equipment.md),
-  [method](../tooling/retail-kernel-differential.md)).
+- **The gold shop's 99 cap lives in the list, not the stepper.** The glitch
+  page read the stackable path as capped by the stepper's `min(gold / price, 99, 99 - held)`;
+  run off the disc, the stepper `FUN_801DB7F4` opened at 99 held still buys the
+  copy the list seeded (`0x801DB2B4`). Its "every build has a reachable sibling"
+  reading overstated it: the USA list builder marks a row built at 99
+  (`0x80030F0C`) and the list refuses it before either buy path runs
+  ([glitches](glitches/items-and-equipment.md), [shop](../subsystems/shop.md#screen-composition)).
 - **The port's text widths were the draw layout's, not `FUN_80035F04`'s.** The
   balloon spawner and the world-map labels carried `FUN_80035F04`'s tag over
   `Font::layout`, which draws author and `0xCE` escapes with other advances;

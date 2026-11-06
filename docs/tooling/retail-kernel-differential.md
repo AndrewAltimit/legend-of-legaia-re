@@ -345,7 +345,8 @@ the whole word, and a tracked ailment whose bits a module clears leaves the trac
 The shop's quantity steppers, buy `FUN_801DB7F4` and sell `FUN_801DBD94`, match the port's sessions and the
 runtime's purse and bag writes over generated pad scripts, bounds and stacks. One arm differs by choice: at 99
 held retail opens the buy stepper with a bound of `0`, buys the one copy it starts on and takes the gold for a
-copy the add then trims, where the port's runtime refuses the buy.
+copy the add then trims, where the port's runtime refuses the buy. In play the list refuses a row built at 99 before
+the stepper opens ([shop.md](../subsystems/shop.md#screen-composition)), so the arm is latent.
 
 The field interact probe `FUN_801CF9F4`, run over crowds of actors around the probe point, confirms the port's
 box and finds the pick differ: every hit overwrites the caller's `+0x98` link, so the last actor in list order
