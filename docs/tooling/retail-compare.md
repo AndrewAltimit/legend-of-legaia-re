@@ -5862,6 +5862,17 @@ every pass, so it moves with the phase of both clips):
   step (`nighto_summon_mid_cast`, delay `-1`, duration `14`: `24` vsyncs);
   the per-vsync replay keeps the smallest step the overshoot allows (`25`),
   the reading its gates are matched on (`summon_fade_on`).
+  The reading counts the spawn pass's step, which the engine's fade now
+  takes too (the actor ticks on its spawn pass), so the gate holds one pass
+  sooner than it did while the engine's fade ran a pass late. Two states
+  read that pass against them: `zenoir_summon_mid_cast`'s camera (the
+  module's dolly `178` short, one step-`2` pass) and `mule_summon_mid_cast`'s
+  image (the invoke's ray fan still up). On the `battle_kor_spoon_strike`
+  Zenoir film the dolly against the flash-out's age matches retail exactly
+  (TR z `11238` at age `24`, `10704` at `30`, `8034` at `60` on both sides),
+  so the dolly keeps the fade's clock; what one instant cannot say is how
+  long its own CD seek held the module, which sets where the dolly stands
+  at a given age.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass (`0x801E4984`) and holds until the summon archive read

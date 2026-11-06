@@ -15,7 +15,9 @@ sprite packet against the state's own VRAM, at the GPU's 5-bit depth:
 - quads split `(v0, v1, v2)` + `(v1, v2, v3)`, UVs affine, prims wider than
   1023 or taller than 511 rejected as the GPU rejects them.
 
-No dither and no mask bit; the canvas is the 320x224 draw area at offset
+No mask bit, and no dither unless `--rule` names one (`console`: the GPU's
+`-4..3` matrix on shaded and texture-blended draws; `pcsx`: PCSX-Redux's
+`0..7` table on Gouraud draws only). The canvas is the 320x224 draw area at offset
 `(0, 0)`. The point is a second renderer that shares no code with the engine:
 an engine frame seated on the inputs a table was built from should match its
 raster exactly, so a residual against the **displayed** frame that survives
@@ -49,10 +51,13 @@ DOUBLE_BUFFER_STRIDE = 0x74
 DOUBLE_BUFFER_OT = 0x70
 OT_BUCKETS = 4096
 W, H = 320, 224
+CONSOLE_DITHER = np.array([[-4, 0, -3, 1], [2, -2, 3, -1], [-3, 1, -4, 0], [3, -1, 2, -2]])
+PCSX_DITHER = 7 - np.array([[7, 0, 6, 1], [2, 5, 3, 4], [1, 6, 0, 7], [4, 3, 5, 2]])
 
 
 class Raster:
-    def __init__(self, ram: bytes, vram: np.ndarray):
+    def __init__(self, ram: bytes, vram: np.ndarray, rule: str = "floor"):
+        self.rule = rule
         self.ram = ram
         self.vram = vram
         self.fb = np.zeros((H, W, 3), dtype=np.int32)
@@ -93,14 +98,28 @@ class Raster:
             src = np.where(semi[:, None], mix, src)
         self.fb[ys, xs] = np.clip(src, 0, 31)
 
+    def cut(self, c8, ys, xs, dithered):
+        """An 8-bit channel to 5 bits under the rule: `floor` truncates,
+        `console` adds the GPU's `-4..3` matrix, `pcsx` rounds up on
+        PCSX-Redux's `0..7` table (`applyDither`); undithered draws truncate."""
+        if not dithered or self.rule == "floor":
+            return np.minimum(c8 >> 3, 31)
+        d = (CONSOLE_DITHER if self.rule == "console" else PCSX_DITHER)[ys & 3, xs & 3]
+        return np.minimum(np.clip(c8 + d, 0, 255) >> 3, 31)
+
     def shade(self, ys, xs, cols, uvs, bary, tex, tpage, clut, semi, raw, gour):
         l0, l1, l2 = bary
         if gour:
             c = [l0 * cols[0][k] + l1 * cols[1][k] + l2 * cols[2][k] for k in range(3)]
         else:
             c = [np.full(l0.shape, cols[0][k], dtype=float) for k in range(3)]
+        # Which draws dither: the console's shaded and texture-blended ones,
+        # PCSX-Redux's Gouraud ones only.
+        dithered = gour if self.rule == "pcsx" else (gour or (tex and not raw))
         if not tex:
-            src = np.stack([c[k].astype(np.int32) >> 3 for k in range(3)], -1)
+            src = np.stack(
+                [self.cut(c[k].astype(np.int32), ys, xs, dithered) for k in range(3)], -1
+            )
             sm = np.ones(len(ys), bool) if semi else None
             self.blend(ys, xs, src, sm, (self.tpage >> 5) & 3)
             return
@@ -109,7 +128,12 @@ class Raster:
         r, g, b, stp, transparent = self.texel(tpage, clut, u, v)
         t = [r, g, b]
         if not raw:
-            t = [np.minimum((t[k] * c[k].astype(np.int32)) >> 7, 31) for k in range(3)]
+            # The 8-bit modulate `(t5 * c8) >> 4`; the console floors a blend
+            # foreground, PCSX-Redux dithers its blended sum (taken here as
+            # the foreground rounded on its table).
+            m8 = [np.minimum((t[k] * c[k].astype(np.int32)) >> 4, 255) for k in range(3)]
+            fg = dithered and not (semi and self.rule == "console")
+            t = [self.cut(m8[k], ys, xs, fg) for k in range(3)]
         keep = ~transparent
         src = np.stack([t[k][keep] for k in range(3)], -1)
         sm = stp[keep].astype(bool) if semi else None
@@ -278,6 +302,10 @@ def main() -> int:
     ap.add_argument("--clut", help="draw only textured packets on these CLUT words")
     ap.add_argument("--skip-clut", help="leave out textured packets on these CLUT words")
     ap.add_argument("--list", action="store_true", help="print every drawn packet")
+    ap.add_argument(
+        "--rule", choices=("floor", "console", "pcsx"), default="floor",
+        help="5-bit cut: truncate (default), the console's dither, PCSX-Redux's",
+    )
     args = ap.parse_args()
 
     ram = open(args.ram, "rb").read()
@@ -293,7 +321,7 @@ def main() -> int:
             return not only
         return clut not in skip and (not only or clut in only)
 
-    r = Raster(ram, vram)
+    r = Raster(ram, vram, args.rule)
     log = []
     walk(r, args.record, wanted, log)
     # The console's 5-to-8-bit expansion, as the VRAM dumps present it.
