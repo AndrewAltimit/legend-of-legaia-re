@@ -1419,6 +1419,23 @@ the counter at `0x212` (nine step-`2` passes), bar and plaque retired at
 `14` with both tables at rest, and the screen shows them six and five pixels
 short of their seats (`0.865` to `0.988`).
 
+A Spirit / Item band and the capture-class band time their plaques off the
+backdrop weight instead (`spirit_band_glide_seats`). The band's pre-arm (or the
+capture route's cast begin) raises the action latch `ctx[+0x243]`, and from
+that pass the depth-cue pass `FUN_80050120` adds `step << 6` to the backdrop
+pair's `+0x78` while the plaques rise over the same vsyncs:
+`battle_jou_vera_v3_heal_mid_cast` holds both plaques in flight at `15` beside
+weight `960`, fifteen vsyncs. `battle_deene_garnet_heal_mid_cast` is the case
+the tables cannot place: both plaques retired at `13`, both tables drawing them
+at rest, weight `0x500` (twenty vsyncs: the `13`, its step-`3` landing pass and
+the step-`4` pass the capture froze in). The weight less the display lag is the
+rise's age on screen, and a weight on a ceiling seats nothing. The captures it
+moves: `battle_deene_garnet_heal_mid_cast` `.941` to `.990`,
+`battle_jou_spoon_v3_hyper_heal_mid_cast` `.948` to `.988`,
+`battle_bubu2_wailing_bird_power_up_mid_cast` `.940` to `.997`. It is a
+harness seat: the replay's own `0x3D` waits out a longer idle than retail's, so
+its plaques have landed.
+
 A Spirit turn's AP bar and AP plate are seated by value as well as by glide
 (`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
 width off its widget's `+0x0E` (taken back across the display lag while the
@@ -5331,6 +5348,16 @@ Before that fix the replay stood a pass behind retail at that accumulator,
 cursor `216`, and so a pass closer to the displayed `208`, which is the whole of
 what the `.982` it scored rested on. On the ring's slot the two Tail Fire frames
 read `.985` and `.979`, and Gimard's tail lands on retail's.
+
+A monster's Spirit / Item band is the same clock. A class-`0` Heal or Hyper
+Heal commits its cast clip at `0x3D` and plays it through `0x3E` on the
+gate's accumulator, so the frame carries the RAM's keyframe there too:
+`battle_ropeway_orb_heal_mid_cast`'s cursor ring reads `40, 24, 12`, and the
+screen shows the Orb on `12`, still facing the camera, where the RAM's `40`
+has turned it and raised its arms. Seated on the ring's slot, the band's
+captures read `battle_ropeway_orb_heal_mid_cast` `.922` to `.970`,
+`battle_balden_orb_v2_hyper_heal_mid_cast` `.935` to `.992` and
+`battle_jou_vera_v3_heal_mid_cast` `.939` to `.977`.
 
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's

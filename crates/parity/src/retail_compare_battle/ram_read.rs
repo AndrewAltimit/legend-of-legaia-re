@@ -1124,6 +1124,7 @@ impl RetailBattle {
                 }
                 for seat in attack_arm_glide_seats(ram, ctx)
                     .into_iter()
+                    .chain(spirit_band_glide_seats(ram, ctx, displayed_lag_vsyncs(ram)))
                     .chain(landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)))
                 {
                     if !seats.iter().any(|s| s.target == seat.target) {

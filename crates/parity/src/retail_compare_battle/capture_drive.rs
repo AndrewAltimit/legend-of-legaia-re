@@ -865,7 +865,19 @@ impl RetailBattle {
         // carries the clip the RAM's accumulator pairs with, two passes past
         // the keyframe the screen shows, and the cast clip is a one-shot the
         // cursor seat leaves alone.
-        let magic_band = self.monster_magic_band_age();
+        //
+        // A monster's Spirit / Item band (a class-0 Heal or Hyper Heal,
+        // `0x3D..=0x40`) is the same clock: its cast clip commits at `0x3D`
+        // and plays through `0x3E` on the gate's accumulator, so the RAM's
+        // cursor is the display lag past the keyframe on screen
+        // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
+        // frame shows `12`).
+        let spirit_band = matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 2
+            && super::SPIRIT_STAGE_STATES.contains(&self.action_state);
+        let magic_band = self.monster_magic_band_age() || spirit_band;
         if pool < 3 || !(strike || walked_cast || magic_band) {
             return None;
         }
