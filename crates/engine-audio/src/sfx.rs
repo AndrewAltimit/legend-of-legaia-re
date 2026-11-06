@@ -323,11 +323,26 @@ impl SfxBank {
     /// it, whose rows a field scene carries in its own prescript record 0
     /// (`docs/formats/sfx-table.md`). A runtime row has no id in this bank's
     /// `u8` space, so a host that resolved one hands the row here directly.
-    /// Returns the first voice keyed, as [`Self::play_one_shot`] does; a row
-    /// with a zero voice count keys nothing, matching the drainer's skip.
+    /// Returns the first voice keyed, as [`Self::play_one_shot`] does. A row
+    /// with a zero voice count keys nothing; a sustained one still releases the
+    /// held run first, as the drainer does.
     // REF: FUN_80016B6C
     pub fn play_descriptor(&self, row: &[u8; 8], spu: &mut Spu, vab: &VabBank) -> Option<u8> {
         if row[3] & 0x1F == 0 {
+            // A sustained row releases the held run before it tests its own
+            // count (`0x80016DC4..0x80016DF8`, then `beq s4,zero` at
+            // `0x80016E00`), and the held count is only stored inside the
+            // key-on loop, so it stays. A one-shot row is skipped whole.
+            if row[3] & 0x20 != 0 {
+                let held = self.voices.get().held;
+                for i in 0..held {
+                    let v = (SUSTAINED_BASE_VOICE + i) as usize;
+                    if let Some(voice) = spu.voices.get_mut(v) {
+                        voice.key_off();
+                        spu.record_key_off(v);
+                    }
+                }
+            }
             return None;
         }
         let entry = SfxEntry::from_descriptor(0, row[0], row[1], row[2], row[3]);
@@ -1529,6 +1544,37 @@ mod tests {
             spu.voices[23].adsr.phase,
             Phase::Attack,
             "one-shot untouched"
+        );
+    }
+
+    /// A sustained runtime row with no voices still releases the held run
+    /// (`0x80016DC4..0x80016DF8` run ahead of the count test at `0x80016E00`)
+    /// and leaves the held count, which only the key-on loop stores.
+    #[test]
+    fn a_zero_count_sustained_row_releases_the_held_run() {
+        use crate::spu::adsr::Phase;
+        let vab = one_tone_bank();
+        let mut spu = crate::spu::Spu::new();
+        let bank = SfxBank::new();
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x22, 0, 0, 0, 0], &mut spu, &vab),
+            Some(7)
+        );
+        assert_eq!(bank.held_sustained(), 2);
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x20, 0, 0, 0, 0], &mut spu, &vab),
+            None
+        );
+        assert!((7..9).all(|v| spu.voices[v].adsr.phase == Phase::Release));
+        assert_eq!(
+            bank.held_sustained(),
+            2,
+            "the count is stored in the key-on loop"
+        );
+        // A zero-count one-shot row touches nothing.
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x00, 0, 0, 0, 0], &mut spu, &vab),
+            None
         );
     }
 
