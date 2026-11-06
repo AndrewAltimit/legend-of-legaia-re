@@ -229,7 +229,7 @@ pub fn entry_latches(
             .collect();
         raise.sort_unstable();
         raise.dedup();
-        return (raise, Vec::new());
+        return (raise, Vec::new(), None);
     }
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
