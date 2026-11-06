@@ -7315,3 +7315,30 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "map01"
 topics = ["battle", "enemy attack", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_balden_verial_strike"
+backup_fingerprint = "d8029612c818a27f0acb205c6783d3163b029029b88864c1544abcc1bb018f8f"
+description = "balden battle, formation [47, 117]: monster id 117 mid physical attack: category 3, action state 0x1E. RETAIL disc: balden_field_route_walk played forward (saved 830 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_lucifer_strike"
+backup_fingerprint = "9cfc3089af5bc4851dd2ed2da856c3027eb7cb669d1b1ae5a733ddaf0782188c"
+description = "nilboa battle, formation [118]: monster id 118 mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward (saved 550 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_curry_devil_strike"
+backup_fingerprint = "2996884e11618acc8724e7dca77bd6642ef2259e57c6b3d61a236ae3cc9af453"
+description = "ropeway battle, formation [62, 116]: monster id 116 mid physical attack: category 3, action state 0x1E. RETAIL disc: ropeway_field_route_walk played forward (saved 2955 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy attack", "ropeway", "harvest"]
