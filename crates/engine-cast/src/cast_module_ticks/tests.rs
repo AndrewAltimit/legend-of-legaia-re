@@ -330,6 +330,10 @@ fn every_damage_shape_names_a_band_entry_and_at_least_one_power() {
         None,
         "Plasma Strike's is the shape's"
     );
+    // PROT 0947 bakes one power per action: V-Windhash's `0x7B` rides the
+    // branch's delay slot, Neo Windhash loads `0xEA` after its Slow roll.
+    assert_eq!(capture_site_power(947, 0x57), Some(0x7B), "V-Windhash");
+    assert_eq!(capture_site_power(947, 0xA7), Some(0xEA), "Neo Windhash");
     // Megaton Press: three bypass-wrapper sites, `0x80 / 0x80 / 0x30`,
     // the first being the seed a single-hit fold uses.
     assert_eq!(baked_power_for(959), Some(0x80));

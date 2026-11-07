@@ -3035,6 +3035,13 @@ rays are seated, so the trail's density follows the frame step, and retail's
 recording runs these arms at step `4` ([the capture table](battle-stage-camera.md#what-the-arm-step-table-is)). Arm 3's shot closes on the
 victim as the countdown falls.
 
+Arm 3's hit bakes one power per action. The `bne` on `+0x1DF != 0xA7` at `0x801F73D8`
+carries `li a0,0x7b` in its delay slot and lands on the `jal 0x801DD4B0` at `0x801F7414`, so
+V-Windhash (`0x57`) rolls at `0x7B`. Neo Windhash falls through, rolls its 1-in-4 Slow
+(`rand() & 3`, `+0x16E |= 0x1000`) and loads `0xEA` at `0x801F7410`. `CAPTURE_SITE_POWERS`
+keys the two by action; the module-wide `0xEA` it held before dealt a Spirit-stance Vahn
+`120` to `133` where `battle_tower_guardian_v_windhash_mid_cast` takes `61`.
+
 ### PROT 0943, 0945, 0949 and 0956: a director, the arm tables and a stager
 
 These enemy bodies share one shape. The camera arms and the seat writes live in the body,
