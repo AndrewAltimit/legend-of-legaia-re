@@ -324,6 +324,8 @@ pub struct RetailBattle {
     /// The newest passes' common step and how many passes ran at it
     /// ([`newest_step_run`]).
     pub step_run: (u8, usize),
+    /// The frame-cost ring the capture holds ([`frame_cost_ring`]).
+    pub cost_ring: Option<([u16; 16], u8)>,
     /// Where a run shorter than the history began, on the acting body: its
     /// playing clip `+0x1D9` and its anim-cursor history `+0x17A` at the
     /// pass before the run, when the run stays inside that clip (the

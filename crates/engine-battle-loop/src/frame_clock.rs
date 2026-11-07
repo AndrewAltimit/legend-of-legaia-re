@@ -41,6 +41,28 @@ pub struct FrameCostRing {
 }
 
 impl FrameCostRing {
+    /// A ring holding these sixteen entries with the write cursor at
+    /// `cursor` (`gp+0x440`, the slot the next pass stores to), as a retail
+    /// capture's `0x80084098` holds them.
+    pub fn from_entries(entries: [u16; 16], cursor: u8) -> Self {
+        Self {
+            entries,
+            cursor: cursor & 0xF,
+        }
+    }
+
+    /// The step the ring's entries read now, before another push: what the
+    /// pass that last stored here left for the next one. A newest entry on
+    /// the clamp `0x2BC` stands for a raw duration of `0x2D0` or more, which
+    /// read step `4` (`0x800170F8..0x80017104`).
+    pub fn step(&self) -> u8 {
+        let newest = self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)];
+        if newest == 0x2BC {
+            return 4;
+        }
+        step_of_cost(self.entries.iter().copied().max().unwrap_or(0))
+    }
+
     /// Store one frame's cost (`li s0,0x2bc` clamps a frame of `0x2D0` or
     /// more) and read the step the next frame runs on.
     pub fn push(&mut self, cost: u16) -> u8 {

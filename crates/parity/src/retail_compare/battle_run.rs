@@ -958,6 +958,17 @@ pub(super) fn battle_image(
     if battle.replay_keeps_default_step() {
         env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
     }
+    // The capture's frame-cost ring, for a film that runs on from the gate
+    // (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`): the child stands the engine's ring
+    // there once the gate opens and runs the frames after it on the ring,
+    // whatever step the walk up to it was pinned to.
+    if let Some((entries, cursor)) = battle.cost_ring {
+        let list: Vec<String> = entries.iter().map(u16::to_string).collect();
+        env.push((
+            "LEGAIA_BATTLE_COST_RING",
+            format!("{};{cursor}", list.join(",")),
+        ));
+    }
     if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
         env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));

@@ -573,6 +573,13 @@ impl PlayWindowApp {
                 let world = &mut self.session.host.world;
                 world.battle.prev_action_cleared = true;
                 world.audio.sound_bank_ready = true;
+                // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
+                // `entries;cursor`): the frames after the gate run on the
+                // ring from where retail's stood, not on the step the walk
+                // up to the gate was pinned to.
+                if let Some((entries, cursor)) = env_cost_ring() {
+                    world.seed_frame_cost_ring(entries, cursor);
+                }
             }
         }
         match self.screenshot.as_ref() {
@@ -816,4 +823,18 @@ fn attract_fmv_id(title: &legaia_engine_title::title::TitleSession) -> Option<i1
         legaia_engine_title::title::TitlePhase::Attract { fmv_id, .. } => Some(fmv_id),
         _ => None,
     }
+}
+
+/// `LEGAIA_BATTLE_COST_RING=e0,..,e15;cursor` (the cast-sequence film's seat,
+/// from `legaia-parity`'s `frame_cost_ring`): a retail capture's frame-cost
+/// ring `0x80084098` and its cursor `gp+0x440`.
+fn env_cost_ring() -> Option<([u16; 16], u8)> {
+    let v = std::env::var("LEGAIA_BATTLE_COST_RING").ok()?;
+    let (list, cursor) = v.split_once(';')?;
+    let parsed: Vec<u16> = list
+        .split(',')
+        .map(|e| e.trim().parse::<u16>().ok())
+        .collect::<Option<_>>()?;
+    let entries: [u16; 16] = parsed.try_into().ok()?;
+    Some((entries, cursor.trim().parse().ok()?))
 }

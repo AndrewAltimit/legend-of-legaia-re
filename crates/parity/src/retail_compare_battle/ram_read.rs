@@ -1028,6 +1028,7 @@ impl RetailBattle {
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
             step_run: newest_step_run(ram),
+            cost_ring: frame_cost_ring(ram),
             step_run_start: active.and_then(|p| {
                 let (_, n) = newest_step_run(ram);
                 let n = n as u32;
