@@ -874,6 +874,11 @@ alone. The corpus's `*_summon_mid_cast` states are mednafen captures that
 PCSX-Redux cannot load, but their child commands seed the cast. That is
 enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
+- **A cast that wipes the party has no Done band.** Koru's Dead End Crisis
+  (`0xA1`) from `nilboa_koru_pre_dead_end_crisis`, whose party is Vahn alone,
+  runs its module phases `0..6` and then leaves for `0x22` and the game-over
+  flow `0x3C`, so the probe reports a park and there is nothing to pair. A film
+  of it needs a state whose party outlives the cast.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
 - **A cast longer than `LEGAIA_MAX_SHOTS` (default `1500` grabs) is cut.** At
