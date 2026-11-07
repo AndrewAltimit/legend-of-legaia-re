@@ -763,6 +763,12 @@ adds its reaction-channel entry). What the recordings on
   clip cue `0x80` (ring `0x21C`, the router from `FUN_800508DC`) sounds on arm
   10's first pass. The engine lands it on the same pass
   (`World::apply_summon_pre_hits`).
+- **Zenoir's splash on a seat out of reach.** The kill phase's three extras on
+  `battle_kor_spoon_strike` and `battle_tower_swordie_strike` were the second
+  monster's reaction: the port read the module's victim off the caster's
+  `+0x1DD`, which arm 8 turns to `9`, where retail reads the word arm 0 latched
+  ([PROT 0908](../subsystems/cast-module.md#prot-0908-zenoir)). The film's HP
+  columns showed it first: retail's seat `4` holds its HP through arm 12.
 - **Theeder's reaction.** The module's sweep stages the victim's reaction when
   the ray reaches the seat, about 33 ticks into arm 12 (`0x801F7D38`). The fold
   lands on that tick's hit, so the reaction and its cues start there.
