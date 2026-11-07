@@ -633,6 +633,16 @@ pub struct Actor {
     /// Written by [`crate::world::World::tick_battle_animations`].
     pub battle_juggle_window: bool,
 
+    /// Whether the render node's colour word `+0x74` read zero (low 24 bits)
+    /// at the body's last draw, the word the node tick's skip tests
+    /// (`0x800474D4..0x800474E0`). Only the draw tick `FUN_800480D8` refreshes
+    /// it, through the tint pass, and the render dispatcher reaches the draw
+    /// tick only for a node at view depth `0xA1` or deeper, so a body the
+    /// camera leaves behind keeps the word it last drew with. `None` before
+    /// the first latched draw. Written by
+    /// [`crate::world::World::latch_battle_node_colours`].
+    pub battle_node_colour_zero: Option<bool>,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`

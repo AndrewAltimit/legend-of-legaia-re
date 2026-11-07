@@ -354,7 +354,9 @@ impl World {
             // PORT: FUN_80047430 (`0x800474D4..0x800474E0`, the zero-colour skip)
             if (self.actors[i].battle_monster_id.is_some()
                 || self.casting.summon_actor_slot == Some(i as u8))
-                && self.battle_body_hidden(i)
+                && self.actors[i]
+                    .battle_node_colour_zero
+                    .unwrap_or_else(|| self.battle_body_hidden(i))
             {
                 continue;
             }
@@ -565,6 +567,16 @@ impl World {
                 // The natural-end re-commit re-seeds the window
                 // (`0x8004BDEC..0x8004BE0C` sits on every commit's path).
                 if recommit {
+                    // The commit zeroes the node cursor (`sh zero,0x68` at
+                    // `0x8004B068`, on every path through `FUN_8004AD80`), so
+                    // the advance's overshoot past the clip's end is dropped
+                    // and the next cycle starts its next pass on keyframe 0.
+                    // `tunnelc_freed_water_crystals_mid_cast`'s Vahn wraps his
+                    // rate-7 idle from `138` to `0`; carried over, the engine's
+                    // stood `10` ahead and its knockdown ran ahead with it.
+                    // PORT: FUN_8004AD80 (`0x8004B068`, the cursor zero on the
+                    // natural-end re-commit)
+                    player.rewind();
                     player.reseed_loop_window();
                     if mirrors_loop {
                         actor.battle.hit_count_bound = player.entry_loop_count();
@@ -679,6 +691,7 @@ impl World {
         if !commit_after {
             self.tick_battle_cast_drive(vsyncs);
         }
+        self.latch_battle_node_colours();
         self.actors
             .iter()
             .enumerate()
@@ -689,6 +702,40 @@ impl World {
                 moved > foreign.get(k).copied().unwrap_or(0)
             })
             .collect()
+    }
+
+    /// The render half of the pass for each battle body's node colour word:
+    /// the dispatcher `FUN_8001ADA4` calls the draw tick `FUN_800480D8` only
+    /// for a node at view depth `0xA1` or deeper (`slti v0,v0,0xa1` at
+    /// `0x8001AE9C` / `0x8001AEE8`), and only the draw tick runs the tint pass
+    /// that writes `+0x74`. A body the camera leaves behind keeps the word it
+    /// last drew with, so a monster a module hides there ticks on. Water
+    /// Crystals' arm 2 hides Freed (`+0x04 = 0`, `+0x21C = 0xFF`) under a cut
+    /// to the victim; a retail recording's watch on Freed's node holds its
+    /// last `+0x74` store from arm 1 to arm 5's show, and its idle cursor
+    /// walks on throughout, where the hide alone froze the engine's body.
+    // PORT: FUN_8001ADA4 (`0x8001AE94..0x8001AEF4`, the near reject ahead of the draw tick)
+    // REF: FUN_800480D8 (the draw tick whose tint pass writes `+0x74`)
+    pub(in crate::world) fn latch_battle_node_colours(&mut self) {
+        if self.mode != SceneMode::Battle {
+            return;
+        }
+        let pose = (self.battle.camera.is_some() || self.battle.stage_camera.is_some())
+            .then(|| self.battle_cam_pose());
+        for i in 0..self.actors.len() {
+            let drawn_deep = self
+                .battle_actor_draw_plan(
+                    i,
+                    pose.as_ref(),
+                    legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                    false,
+                )
+                .map(|p| p.view_z >= legaia_engine_battle_vm::battle_actor_tick::NEAR_REJECT_DEPTH);
+            if drawn_deep == Some(true) {
+                let zero = self.battle_body_hidden(i);
+                self.actors[i].battle_node_colour_zero = Some(zero);
+            }
+        }
     }
 
     /// The tail of actor `i`'s slice of the anim walk on retail's cadence:
