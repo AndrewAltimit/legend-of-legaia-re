@@ -362,6 +362,11 @@ pub struct RetailBattle {
     /// image child seats over the replay's part of the same record on the
     /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
     pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// Every live part of the cast module's records as `(record, +0x54)`,
+    /// in actor-list order: the part list's age on the RAM's pass, which a
+    /// capture-band retake counts its display lag back from
+    /// (`LEGAIA_CAPTURE_PART_AGES`, [`retail_part_ages`](ram_read::retail_part_ages)).
+    pub part_ages: Vec<(u32, i16)>,
     /// The state's turning effect-script table parts (`FUN_80021DF4` nodes
     /// whose record lies in the battle overlay's prototype band), each as
     /// its displayed rotation trio, which the image child seats over the

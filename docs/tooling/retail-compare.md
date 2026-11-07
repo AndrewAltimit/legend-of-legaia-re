@@ -4163,6 +4163,34 @@ The monster strike loop and Scythe Wind's arms `3..=5` stand on the walked-back 
 outright instead (`RetailBattle::stand_on_displayed_pose`,
 `LEGAIA_BATTLE_CAM_STAND_DISPLAYED`).
 
+#### A capture-band retake counts from the RAM's pass
+
+A monster's capture on the capture band's module tick (`0x70`) gates on the
+module's countdown (`SpanGate::CaptureFade`), which can open a pass after the
+replay pass whose parts are the RAM's: `battle_nilboa_neo_grude_power_up_mid_cast`'s
+emitter `0x801F81B8` and its three rings `0x801F81D0` read waits `88` / `24`,
+`120`, `216` in the RAM and on child ticks `989..992`, and the countdown's
+gate opens on `992`, where the next pass has run. Counted back from the gate
+the retake lands a pass too new. The parent hands the child the RAM's live
+module parts as `(record, wait)` (`RetailBattle::part_ages`,
+`LEGAIA_CAPTURE_PART_AGES`); the child notes the latest run of ticks its own
+parts held that multiset, and when the gate opens on that run or within a
+pass past it, counts the lag back from the run's first tick (`image` `.904` to
+`.996`). A harness seat. A capture whose parts never hold the RAM's multiset
+keeps the gate tick (`cort_evolved_ultra_charge_mid_cast`, whose rings the
+replay stands on its own clock).
+
+The same captures' image step: a monster's `0x70` capture past arm 0, with
+the module's parts live and fifteen or sixteen newest passes on one other
+step, runs the image child on that step (`RetailBattle::image_frame_step_seed`).
+With the [mid-walk seat](../subsystems/move-vm.md#a-part-seated-during-the-walk)
+a part takes its first tick on its seat's own pass, and on the child's default
+step `2` that pass is half of retail's: Ultra Charge's rings stood `16` off
+the RAM's wait phase until the child ran retail's `4` (`image` `.988` to
+`.997`). The headless seed keeps the default, since its camera read `.998`
+seeded; an arm-0 capture keeps it too, where seeded twenty frames parted on
+the camera.
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass

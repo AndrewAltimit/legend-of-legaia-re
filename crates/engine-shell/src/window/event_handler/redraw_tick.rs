@@ -690,6 +690,17 @@ impl PlayWindowApp {
                 0
             };
             sc.battle_drive_held.set(held);
+            if let Some(ages) = sc.part_ages.as_ref()
+                && drive.in_action_state(&self.session.host.world)
+                && part_ages_match(&self.session.host.world, ages)
+            {
+                let t = self.tick_no;
+                let first = match sc.part_age_run.get() {
+                    Some((first, last)) if last + 1 == t => first,
+                    _ => t,
+                };
+                sc.part_age_run.set(Some((first, t)));
+            }
             if sc.display_lag > 0 {
                 let world = &self.session.host.world;
                 sc.state_since.set(
@@ -837,4 +848,22 @@ fn env_cost_ring() -> Option<([u16; 16], u8)> {
         .collect::<Option<_>>()?;
     let entries: [u16; 16] = parsed.try_into().ok()?;
     Some((entries, cursor.trim().parse().ok()?))
+}
+
+/// Whether the cast scene's live parts hold the RAM's `(record, wait)`
+/// multiset (`ScreenshotConfig::part_ages`).
+fn part_ages_match(world: &legaia_engine_core::world::World, ages: &[(u32, i16)]) -> bool {
+    let Some(scene) = world.casting.active_summon.as_ref() else {
+        return false;
+    };
+    let mut live: Vec<(u32, i16)> = scene
+        .parts
+        .iter()
+        .filter(|p| !p.finished)
+        .filter_map(|p| Some((p.tag?, p.state.wait_timer)))
+        .collect();
+    let mut want = ages.to_vec();
+    live.sort_unstable();
+    want.sort_unstable();
+    live == want
 }

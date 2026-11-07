@@ -36,6 +36,28 @@ const SLOT_B: std::ops::Range<u32> = 0x801F_69D8..0x8020_0000;
 /// `FUN_80021DF4`, the part tick a move-VM node carries at `+0x0C`.
 const PART_TICK: u32 = 0x8002_1DF4;
 
+/// Every live part whose record lies in the slot-B module image, as its
+/// record `+0x48` and wait `+0x54`, in actor-list order; a node whose kill
+/// bit (`+0x10 & 8`) is up is left out. The waits are the parts' ages on the
+/// RAM's pass: a replay pass whose parts hold the same `(record, wait)`
+/// multiset stands on that pass, whatever the module's countdown reads.
+pub(crate) fn retail_part_ages(ram: &[u8]) -> Vec<(u32, i16)> {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && SLOT_B.contains(&game_anchors::u32_at(ram, n + 0x48))
+        })
+        .map(|n| {
+            (
+                game_anchors::u32_at(ram, n + 0x48),
+                game_anchors::u16_at(ram, n + 0x54) as i16,
+            )
+        })
+        .collect()
+}
+
 /// Every live part of a record a slot-B cast module seats on every pass
 /// ([`per_pass_spawn_records`](legaia_engine_cast::cast_module_camera::per_pass_spawn_records)),
 /// in actor-list order, as a
@@ -967,6 +989,7 @@ impl RetailBattle {
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
+            part_ages: retail_part_ages(ram),
             action_fx_parts: retail_action_fx_parts(ram),
             effect_children: retail_effect_children(ram),
             ghost_ring: retail_ghost_ring(ram, party_count),

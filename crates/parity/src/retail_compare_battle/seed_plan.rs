@@ -70,6 +70,43 @@ impl RetailBattle {
                 .all(|s| self.init_keys.get(s).copied().flatten() == Some(0))
     }
 
+    /// The image child's step seed past [`Self::frame_step_seed`]'s: the
+    /// frame the child draws seats its parts on the passes it runs, so a
+    /// capture whose drawn streams need retail's pass length runs on it while
+    /// the headless seed, whose channels are the camera's and the logic
+    /// words', keeps the default (seeded, `cort_evolved_ultra_charge_mid_cast`'s
+    /// camera read `.998`). A harness seat.
+    pub fn image_frame_step_seed(&self) -> Option<FrameStepSeed> {
+        if let Some(seed) = self.frame_step_seed() {
+            return Some(seed);
+        }
+        let default = self.child_ordinary_step();
+        // A monster's capture on the capture band's module tick whose
+        // history ran one other step all along stands on that step: a part a
+        // module part seats mid-walk takes its first tick on the seat's own
+        // pass (`SummonScene::seat_walk`), and on the child's default step
+        // that pass is half of retail's, so every seated stream stood half
+        // a pass young. `cort_evolved_ultra_charge_mid_cast` ran sixteen
+        // step-`4` passes: its rings' waits sat `16` off the RAM's phase on
+        // step `2` and match it on `4` (`image` `.988` to `.997`). The
+        // history's oldest entry is a floor, so fifteen passes on the step
+        // are the whole ring (`battle_nilboa_neo_grude_power_up_mid_cast`).
+        // Only past arm 0 with the module's parts live: an arm-0 capture's
+        // framing is the walk-in's, which `frame_step_seed` places, and
+        // seeded there twenty of them parted on the camera.
+        if matches!(self.span_gate, SpanGate::CaptureFade { .. })
+            && matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && self.action_state == 0x70
+            && self.module_phase > 0
+            && !self.part_ages.is_empty()
+            && self.step_run.0 != default
+            && self.step_run.1 >= 15
+        {
+            return Some((self.step_run.0, self.action_state, None, None));
+        }
+        None
+    }
+
     /// The battle frame step a replay of this capture runs its capture state
     /// on, and that state: the step the capture's own frame ran at, applied
     /// while the engine sits in the capture's action state

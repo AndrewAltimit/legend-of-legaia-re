@@ -1097,8 +1097,19 @@ impl PlayWindowApp {
         let (Some(path), Some(since)) = (sc.path.as_ref(), sc.state_since.get()) else {
             return;
         };
-        if let Some(want) = self
-            .tick_no
+        // The RAM holds a pass's result and the display the result two
+        // passes before it, so the retake counts back from the pass whose
+        // parts are the RAM's when the gate opens on it or within a pass
+        // past it: the module countdown's gate can open a pass late
+        // (`battle_nilboa_neo_grude_power_up_mid_cast`, the gate's pass a
+        // pass past the RAM's parts). A harness seat.
+        let pass = u64::from(self.session.host.world.battle.frame_clock.step.max(1));
+        let base = sc
+            .part_age_run
+            .get()
+            .filter(|&(_, last)| last <= self.tick_no && self.tick_no - last <= pass)
+            .map_or(self.tick_no, |(first, _)| first);
+        if let Some(want) = base
             .checked_sub(sc.display_lag)
             .filter(|&t| t >= since || sc.retake_shot_only || sc.retake_across_entry)
         {
