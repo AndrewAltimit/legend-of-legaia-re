@@ -882,6 +882,11 @@ impl World {
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
                 self.step_field_frame_slice();
+                // The op-`0x43` scripted arcs a world-map record starts fly on
+                // the same field-overlay pool actors as the field's (arc
+                // helper `FUN_801D5C08` + release watcher `FUN_801D5D60`).
+                // REF: FUN_801d5d60
+                self.tick_field_script_arcs();
                 // Cross-context walk legs a world-map record starts
                 // (`C7 <id> ..`) run on the same per-actor walk kernel as the
                 // field's (`FUN_8003774C`, from the actor driver every mode-3

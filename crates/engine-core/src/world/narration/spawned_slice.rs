@@ -665,9 +665,11 @@ impl World {
                 // arced actor. `eddoman` P2[7] arcs placement `0x16` over 36
                 // frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it
                 // with `B3 16 0A`: holding there is what keeps its white flash
-                // up as long as the retail film does.
+                // up as long as the retail film does. The halt clear
+                // `32 <id> 0A` is exempt (`0x801DE8E0..0x801DE904`).
                 // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_801D5D60
                 if let Some((_, ci)) = target
+                    && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && !channels[ci].object_bind
                     && let Ok(slot) = u8::try_from(channels[ci].placement_index)
                     && host.world.script_arc_live(
