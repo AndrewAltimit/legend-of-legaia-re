@@ -93,6 +93,7 @@
 <section class="doc-section" id="blend">
   <h2>Semi-transparency is two passes</h2>
   <p>Whether a texel blends is decided <em>per texel</em>: bit 15 of the palette entry picks blend or opaque inside one semi-transparent primitive. So the opaque pass draws everything and discards those texels, and a blend pass re-draws only the semi-transparent triangles, keeping only them.</p>
+  <p>A whole draw can be made semi-transparent too. Retail reads the top byte of an actor's colour word as primitive flags and ORs them into every packet, so one byte turns every primitive of the actor into a blended one. The port carries that byte per draw: the opaque pass treats every primitive of the draw as semi-transparent, and the blend pass re-draws the whole mesh in the forced mode. Underground Octam's corridor pillars use it (field-VM <code>4C D6</code>).</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Mode</th><th>Equation</th></tr></thead>

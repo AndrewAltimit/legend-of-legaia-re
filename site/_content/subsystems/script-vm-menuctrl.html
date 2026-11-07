@@ -191,6 +191,7 @@
       <tr><td><code>4C D0 x y</code></td><td>press-a-button prompt: a blinking cursor at <code>(x, y)</code> holds the script until confirm or cancel is pressed (Tetsu's lessons)</td></tr>
       <tr><td><code>4C D3</code></td><td>timed-flag scheduler (14 bytes)</td></tr>
       <tr><td><code>4C D4</code> / <code>D5</code></td><td>set / clear the VRAM semi-transparency bit over a rectangle</td></tr>
+      <tr><td><code>4C D6 mode</code></td><td>make an actor's whole draw semi-transparent in blend <code>mode</code> (<code>4</code> turns it off): the top byte of its colour word, which the primitive dispatcher ORs into every packet. Only Underground Octam (<code>chitei2</code>) uses it, fading the pillars between the camera and a corridor while the party walks it</td></tr>
       <tr><td><code>4C D8</code></td><td>synchronous morph-actor spawn (9 bytes)</td></tr>
     </tbody>
   </table>
