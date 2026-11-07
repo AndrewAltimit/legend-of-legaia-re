@@ -235,12 +235,70 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     ),
     // stone_circle
     (0xB9, &[(1, 4), (2, 4), (3, 4), (4, 3)]),
+    // The enemy cast films (`battle_*_mid_cast`, `--physical`, the step each
+    // arm of `0x70` spends the most vsyncs on, merged over the films).
+    // glare
+    (0x3C, &[(1, 4), (2, 4), (3, 4)]),
+    // hyper_crush
+    (
+        0x4B,
+        &[
+            (1, 4),
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (8, 3),
+        ],
+    ),
+    // hyper_lightning
+    (
+        0x4C,
+        &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4), (7, 3)],
+    ),
+    // divide
+    (0x50, &[(1, 4), (2, 4), (3, 3)]),
+    // steal: the thief's dash and the item flash draw next to nothing
+    (0x51, &[(1, 3), (2, 3), (3, 3)]),
+    // water_column
+    (0x54, &[(1, 4), (2, 4), (4, 4), (5, 4), (6, 4), (7, 3)]),
+    // water_crystals
+    (0x59, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    // white_shield
+    (0x60, &[(1, 4), (2, 4), (3, 3)]),
+    // power_charge
+    (0x72, &[(1, 4), (2, 4), (3, 4)]),
+    // paralyzing_wave
+    (0x75, &[(1, 4), (2, 4), (3, 4)]),
+    // death_game: retail runs the dice arms at `1` and `3` (arm 1 `4`, arms
+    // 2..3 `3`, 4..8 `1`, 9 and 11 `3`), but the port's arms 3 and 5 score
+    // `.94` to `.79` and `.99` to `.78` on those steps against the ordinary
+    // one, so the module's bodies still count something per pass that retail
+    // counts per vsync. Held at the ordinary step until they do.
+    (0x76, &[]),
+    // dark_typhoon
+    (0xAA, &[(1, 4), (2, 4), (3, 4), (4, 3), (5, 4), (6, 4)]),
 ];
 
-/// The step retail ran module phase `phase` of the capture cast `spell` at.
+/// The step the arms of a capture cast no recording names run at: past the
+/// module's setup (`ctx[+0x279]` from `1`) an enemy cast draws a whole-screen
+/// effect, and over the enemy cast films `.62` of those arms' vsyncs run at
+/// `4`, against `.22` at `3`. Held out by film, reading an unrecorded cast's
+/// arms at `4` rather than on the ordinary step lifts the step read right
+/// from `.40` to `.61` and from `.48` to `.72`. A recorded cast's gaps are
+/// arms too short to read and keep the ordinary step.
+pub const UNNAMED_CAPTURE_ARM_STEP: u8 = 4;
+
+/// The step retail ran module phase `phase` of the capture cast `spell` at:
+/// the table's reading for a recorded cast, [`UNNAMED_CAPTURE_ARM_STEP`] for
+/// an unrecorded cast's arms past the setup, else `None` (the ordinary step).
 pub fn capture_arm_frame_step(spell: u8, phase: u8) -> Option<u8> {
-    let (_, steps) = CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell)?;
-    steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s)
+    match CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell) {
+        Some((_, steps)) => steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s),
+        None => (phase >= 1).then_some(UNNAMED_CAPTURE_ARM_STEP),
+    }
 }
 
 #[cfg(test)]
@@ -260,7 +318,15 @@ mod tests {
         // V-Windhash's blade arms: a trail seated per pass seats half as many
         // at `4` as at the default `2`.
         assert_eq!(capture_arm_frame_step(0x57, 3), Some(4));
+        assert_eq!(capture_arm_frame_step(0x57, 0), None);
         assert_eq!(capture_arm_frame_step(0x57, 200), None);
-        assert_eq!(capture_arm_frame_step(0x01, 1), None);
+        assert_eq!(capture_arm_frame_step(0x76, 5), None);
+        // Steal draws next to nothing; an arm no recording names reads `4`.
+        assert_eq!(capture_arm_frame_step(0x51, 2), Some(3));
+        assert_eq!(
+            capture_arm_frame_step(0x01, 1),
+            Some(UNNAMED_CAPTURE_ARM_STEP)
+        );
+        assert_eq!(capture_arm_frame_step(0x01, 0), None);
     }
 }
