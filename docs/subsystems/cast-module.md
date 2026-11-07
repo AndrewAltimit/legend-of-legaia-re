@@ -1828,6 +1828,16 @@ The director `cast_module_camera::zenoir_direct` carries every arm's gate:
 | 11 | the creature's `+0x36` falls to `-0x12B` (`0x801F7BA8`) | the finisher; `scalar * 192` |
 | 12 | countdown (`0x801F8294`) | `0xFF` directly |
 
+The victim every arm names is the one arm 0 latched: the prologue reads the
+caster's `+0x1DD` on arm 0 alone and stores it into the module word
+`0x801F8BA8` (`0x801F6B6C..0x801F6B74`), and every later arm reads it back
+from there (`0x801F6A5C`). Arm 8 turns the caster's `+0x1DD` to the enemy-row
+code `9`, so a live read past it names no seat. The port reads the latch
+(`World::run_cast_module_code`); read live, arm 10's reach stood on an empty
+slot's pair and arm 11 struck the victim with the splash's two thirds and a
+monster out of reach with the rest (`battle_kor_spoon_strike`, Dead Bone
+`999` to `776` where retail leaves it whole, its cues the film's three extras).
+
 Arms 9..12 move the creature's height themselves (`8 * scalar * delta` a
 pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
 shot of their own: arm 10 cuts to the victim at the band's depth

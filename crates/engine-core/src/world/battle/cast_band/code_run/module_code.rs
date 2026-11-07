@@ -34,11 +34,23 @@ impl World {
         // steps it (PROT 0909's arm 0 is its stager's).
         let phase_entry = ctx.phase;
         let caster_slot = self.battle_ctx.active_actor;
-        let victim_slot = self
+        let live_victim = self
             .actors
             .get(caster_slot as usize)
             .map(|a| a.battle.active_target)
             .unwrap_or(0);
+        // PROT 0908's prologue takes its victim from the caster's `+0x1DD`
+        // on arm 0 alone, which latches it into the module word `0x801F8BA8`
+        // (`0x801F6B6C..0x801F6B74`); every later arm reads it back from
+        // there (`lw s3,-0x7458(v0)` at `0x801F6A5C`). Arm 8 then turns the
+        // caster's `+0x1DD` to the enemy-row code `9`, so a live read from
+        // arm 9 on named no seat: arm 10 tested reach from an empty slot's
+        // pair and arm 11 lost its finisher to the splash.
+        let victim_slot = if entry == 908 && phase_entry != ticks_a::ZENOIR_LATCH_ARM {
+            self.casting.module_cam.victim_slot.unwrap_or(live_victim)
+        } else {
+            live_victim
+        };
         let seat_slot = self.casting.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
 
         // The kernels index a retail-shaped seat row (`seat_map`): these
