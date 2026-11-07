@@ -137,7 +137,10 @@ A one-swing monster sits in the strike loop `0x1E` for a single pass: the loop s
 its last byte and leaves for `0x1F` together
 ([battle-action](../subsystems/battle-action.md#attack-chain---strike-loop-0x1e)), so the
 default `LEGAIA_HOLD` of 8 vsyncs never sees it held and the attack stays uncovered however
-often the monster swings. `LEGAIA_HOLD=1` saves it on the pass after the band opens.
+often the monster swings. `LEGAIA_HOLD=1` saves it on the pass after the band opens
+(`battle_map01_hornet_strike`). The sparring tutorial's prompts take Attack and refuse
+Spirit, so its fight wants `LEGAIA_SPIRIT_ROUNDS=0` (`battle_town01_tetsu_strike`, from
+`s5_tetsu_battle`).
 
 `LEGAIA_WANT` points every region at the row but keeps each region's tile box, so a
 scene whose live [condition group](../formats/encounter.md#the-condition-array-story-flag-gated-region-groups)

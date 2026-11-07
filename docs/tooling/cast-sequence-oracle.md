@@ -495,6 +495,10 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   may replay rounds until its target and clip match, and a recording started on
   an earlier one reads as a strike that "lands nothing".
 
+A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
+`0x3E`), which the probe also takes as the recording's start: before it did, a
+`*_heal_mid_cast` recording waited for the next actor's strike and filmed that.
+
 On the retail side the same switch starts on a state held on `0x2B` or `0x70`, with
 `--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the
 fast core, where the `--monster-pick` run is an interpreter's.
