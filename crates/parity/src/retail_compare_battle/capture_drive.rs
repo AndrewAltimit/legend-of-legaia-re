@@ -745,6 +745,53 @@ impl RetailBattle {
         self.ground_snaps(false, false, false)
     }
 
+    /// Whether the capture sits on a monster strike's arrival pass: `0x1E`
+    /// just stored by the poll `0x19`, no strike-loop pass run (cursor
+    /// `ctx[+0x15] == 0`), on the walk clip ([`Self::walk_clock_arrival`])
+    /// or with the staged idle already committed (accumulator `0`). The
+    /// table is the poll's case-6 arm and the counter the walk's last
+    /// reading.
+    pub fn arrival_pass(&self) -> bool {
+        self.walk_clock_arrival()
+            || matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x1E } if seat >= 3)
+                && self.queued_category == 3
+                && self.strike_cursor == 0
+                && self.span_gate == SpanGate::Age { accum: 0 }
+    }
+
+    /// [`Self::engine_ground_snaps`] with the acting seat on the pair its
+    /// pass began on ([`Self::arm_ground`]), for the framing endpoint an
+    /// [`Self::arrival_pass`] capture's table was armed against. The poll's
+    /// case 6 frames the attacker's live pair before the pass's anim tick
+    /// steps it back off the arrival (the walk clip's cut, `0x80047950`):
+    /// `battle_geremi_spikefish_strike`'s table ends on `(-188, 321)`, its
+    /// ring slot `1`, where the RAM holds `(-219, 417)`. `None` elsewhere.
+    pub fn arrival_arm_snaps(&self) -> Option<Vec<legaia_engine_capture::ground_snap::GroundSnap>> {
+        if !self.arrival_pass() {
+            return None;
+        }
+        let pool = usize::from(self.active_actor);
+        let arm = self.arm_ground?;
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let slot = u8::try_from(pc + pool.checked_sub(3)?).ok()?;
+        let mut snaps = self.engine_ground_snaps();
+        let s = snaps.iter_mut().find(|s| s.slot == slot)?;
+        s.x = arm[0];
+        s.z = arm[1];
+        // Case 6 frames the live pair itself, so no body-pair seat.
+        s.body = None;
+        // The arm also read the heading the pass before left: the pass
+        // re-faces the attacker after its framing call, so `+0x46` already
+        // holds the new bearing. Case 6's yaw is `counter - heading`, plus
+        // the half turn on style bit 0, so the table and the counter name
+        // the heading it read (`battle_dolk_gimard_strike` `1950` where the
+        // RAM holds `2019`).
+        let half = if self.cam_style & 1 != 0 { 0x800 } else { 0 };
+        let read = (i32::from(self.walk_yaw_base) + half - self.cam_tween.1.yaw as i32) & 0xFFF;
+        s.facing = u16::try_from(read).ok();
+        Some(snaps)
+    }
+
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
     /// **displayed** one. On the action seed's own pass - `0x14` with the
     /// yaw counter still on the seed's `0x200` rung ([`tween_passes_back`]) -
@@ -1310,7 +1357,7 @@ impl RetailBattle {
         // loop's framing (case 7, `0x801E36E8`) re-arms every pass, so the
         // table's yaw increment says how many passes have run
         // ([`strike_passes_off_table`]).
-        let passes = if self.walk_clock_arrival() {
+        let passes = if self.arrival_pass() {
             // Saved on the arrival pass itself: the poll `0x19` stored `0x1E`
             // and armed case 6 there (`0x801E35B4..0x801E35C8`), so the
             // table is the approach's, not case 7's ladder, and the counter
@@ -1318,10 +1365,6 @@ impl RetailBattle {
             0
         } else if self.walk_clock_capture() {
             strike_passes_off_table(self.cam_tween_steps[1], step)
-        } else if self.strike_cursor == 0 && accum == 0 && state == 0x1E {
-            // The same arrival pass with the idle the poll staged already
-            // committed (accumulator `0`, no loop pass run).
-            0
         } else {
             accum / (8 * u16::from(step)) + 2
         };

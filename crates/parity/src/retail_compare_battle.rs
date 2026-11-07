@@ -698,6 +698,12 @@ pub struct RetailBattle {
     /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
     /// that moved inside those two frames drew where the ring says.
     pub displayed_ground: Vec<Option<[i16; 2]>>,
+    /// The acting seat's position-ring slot `1`: the live pair the RAM's
+    /// pass began on. The action SM arms its framing before that pass's
+    /// anim tick moves the body (`FUN_801E295C` ahead of `FUN_80047430` in
+    /// the frame), so the table's endpoint was read off this pair, not off
+    /// the RAM's live pair ([`Self::arrival_arm_snaps`]).
+    pub arm_ground: Option<[i16; 2]>,
     /// Each pool slot: whether its anim node committed a clip between the
     /// displayed frame and the RAM's - the ring id `+0x1FB` changed, or the
     /// cursor ring `+0x17A` stepped back, inside the

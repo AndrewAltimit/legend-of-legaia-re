@@ -1358,6 +1358,19 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            arm_ground: {
+                let p = game_anchors::u32_at(
+                    ram,
+                    ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13)) * 4,
+                );
+                let at = p + POSITION_RING + 8;
+                in_ram(p).then(|| {
+                    [
+                        game_anchors::u32_at(ram, at) as i32 as i16,
+                        game_anchors::u32_at(ram, at + 4) as i32 as i16,
+                    ]
+                })
+            },
             displayed_strike_heading: walk_heading(ram, ctx).map(|h| h.displayed),
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))

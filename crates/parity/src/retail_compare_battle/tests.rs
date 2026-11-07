@@ -2786,10 +2786,23 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     b.caster_clip = 0;
     b.span_gate = SpanGate::Age { accum: 0 };
     assert_eq!(b.capture_approach_yaw().map(|a| a.arrive), Some(568));
+    // Its framing endpoint was armed on the pass's starting pair (ring slot
+    // `1`) and the heading the pass before left: counter `568`, style `3`,
+    // table yaw `568` name heading `0x800`.
+    b.arm_ground = Some([0, 304]);
+    b.cam_style = 3;
+    b.cam_tween.1.yaw = 568.0;
+    b.monster_count = 1;
+    b.facing = vec![None; 8];
+    b.facing[3] = Some(2100);
+    let arm = b.arrival_arm_snaps().expect("an arm seat");
+    let s = arm.iter().find(|s| s.slot == 1).expect("the attacker");
+    assert_eq!((s.x, s.z, s.facing), (0, 304, Some(0x800)));
     b.caster_clip = 1;
     b.span_gate = SpanGate::Age { accum: 432 };
     // One strike-loop pass later the table is case 7's, read off its ladder.
     b.strike_cursor = 1;
     assert!(!b.walk_clock_arrival());
     assert!(b.capture_approach_yaw().is_none_or(|a| a.arrive < 568));
+    assert!(b.arrival_arm_snaps().is_none());
 }
