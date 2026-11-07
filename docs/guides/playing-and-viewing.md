@@ -372,7 +372,7 @@ picture outside the buttons still turns the camera.
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
 double-click puts the framing back to retail, centred on the party (the
 browser play page's **Reset camera** button does the same, and also leaves the
-`F3` debug vantage). All three are locked while a cutscene has the camera.
+`F3` debug vantage). All three, and the distance preset, sit out while a cutscene has the camera, the ending credits' vignettes included.
 
 **Window toggles.** These are the port's enhancements and conveniences; each
 enhancement has a retail-faithful off position
