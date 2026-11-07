@@ -529,17 +529,25 @@ not kept. What closes it: the frame the game ran around that key-on - a state or
 key-on watch (`autorun_kon_cycle_watch.lua`) on the battle that leads into this cast, to see whether
 the calc skipped or doubled a vsync there.
 
-### What sounds at the end of Zenoir's cast?
+### When does a ring cue sound against the frame that pushed it?
 
 *Status:* open (measured)
 
-With its cast offset anchored on the duck ([the duck names the state's tick](../subsystems/audio.md#the-duck-names-the-states-tick)),
-`zenoir_summon_mid_cast` reads `0.998`, and every second from `1` to `12` reads `0.99` or better at
-`0.00` dB. Seconds `13` and `14` read `0.25` and `0.33`, the recording `4..5` dB over the engine's
-cast with content the engine does not have, in the module's phase `0xC` (the kills). The engine
-sounds `0x19` twice and `0xDE` once there, all on seat `3`; the formation is three of monster `0xA1`.
-What closes it: retail's cue ring (`DAT_8007B6D8`) across that phase - a PCSX-Redux run of the
-state with the ring watched - against the engine's `sfx.csv` (`LEGAIA_DIAG_CAST_SEQ`).
+Frame-stepped under mednafen, a battle cue's voices key one game frame after the vsync its
+ring slot first shows the id: `zeto_big_wave_mid_cast` at step `4` (pushes at `351`, `391`,
+`399`, `407`, `419`, `483`, voices keyed at `355`, `395`, `403`, `411`, `423`, `487`) and
+`zenoir_summon_mid_cast` at step `3` (`778` to `781`); `son_field_door_hop`'s field part keys
+two vsyncs after its store at step `2`. Retail's mode handler runs the ager `FUN_8001698C`, the
+frame body `FUN_80016444`, then `FUN_80016B6C`, which drains at its head and paces the vsync
+wait after (`0x8001702C..0x80017068`), so a cue keys where the frame's work ends. The port
+drains on the tick that opens the frame, which puts the cast channel's cues up to a frame step
+early (Big Wave's party reactions, the reading the [cast channel](../subsystems/audio.md#the-cast-channel)
+gave as four vsyncs). Holding the key-on `step - 1` ticks moved the cast rows' levels toward
+retail's but left every correlation where it was, and on `gilium_summon_mid_cast` it moved the
+scorer's voice fit onto a neighbouring peak (`0.991` to `0.25`), so it is not ported. What
+closes it: a sample-exact onset per cue (a key-on watch on `FUN_80065034` with the SPU sample
+counter) against the frame's first vsync, and a cast channel whose voice fit does not hang on
+the recording's first seconds.
 
 ## Title / boot / overlays
 

@@ -1350,11 +1350,18 @@ impl World {
                         904 => {
                             // Arm 12's cone gate is the host's: retail reads
                             // the ring's rim bearing and every seat's, and the
-                            // module only ever sees "in" or "out". The damage
-                            // magnitude stays the fold's, so an in-cone seat
-                            // gets a zero roll and the arm's presentation half
-                            // (render flag, reaction bits) runs.
+                            // module only ever sees "in" or "out". Each seat
+                            // the ray crosses takes the arm's own hit
+                            // (`FUN_801DD0AC(0x11, 7, seat)` at `0x801F7D38`):
+                            // a party cast rolls it here and folds nothing, so
+                            // every monster the sweep reaches is struck, as
+                            // retail's are (`theeder_summon_mid_cast`: seats 3,
+                            // 5 and 4 at vsyncs 783, 791 and 819). A monster's
+                            // cast of the id has no roll and keeps the fold.
                             let in_cone = cone_seats.clone();
+                            let party_cast = caster_slot < self.party.party_count;
+                            self.casting.module_skips_fold |= party_cast;
+                            let mut rolled: Vec<(u8, u32)> = Vec::new();
                             // Arm 4 seats the creature between the caster and
                             // the victim, facing the victim (`0x801F6EEC`).
                             // No later arm writes the seat's position, so it
@@ -1375,8 +1382,29 @@ impl World {
                                 who,
                                 geom,
                                 &mut fx,
-                                |seat| in_cone.contains(&seat).then_some(0),
+                                |seat| {
+                                    if !in_cone.contains(&seat) {
+                                        return None;
+                                    }
+                                    if !party_cast {
+                                        return Some(0);
+                                    }
+                                    let t = map.engine(seat)?;
+                                    let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                    rolled.push((t, roll));
+                                    Some(roll as i32)
+                                },
                             );
+                            for (t, amount) in rolled {
+                                self.battle.hit_fx.push(
+                                    legaia_engine_battle::battle_events::BattleHitFx {
+                                        target_slot: t,
+                                        amount: amount.min(u32::from(u16::MAX)) as u16,
+                                        is_heal: false,
+                                        is_crit: false,
+                                    },
+                                );
+                            }
                             self.casting.module_theeder = fx;
                             // Arm 7's shot is armed on the pass its clip wait
                             // lets through (`0x801F7274`).

@@ -1595,6 +1595,14 @@ the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
 `0x801F7CF0` then keeps the second centre crossing from hitting a victim that
 is still reacting.
 
+Every seat the cone reaches takes the arm's own hit (`FUN_801DD0AC(0x11, 7, seat)`,
+`0x801F7D38`), so Theeder strikes every monster in the arc although its spell record names
+one enemy: `theeder_summon_mid_cast`, frame-stepped under mednafen, takes seat 3 to `2949`,
+seat 5 to `2955` and seat 4 to `2950` at vsyncs `783`, `791` and `819`. A party cast rolls
+each hit in the host's cone callback (`World::summon_module_roll`) and skips the generic
+fold, which struck the latched victim alone; a monster's cast of the id has no roll and keeps
+the fold.
+
 The packet arms are drawn:
 
 | Arm | Routine | What it draws |
@@ -1793,7 +1801,7 @@ The director `cast_module_camera::zenoir_direct` carries every arm's gate:
 | 6 | the creature's clip `+0x1D9` leaves `0` (`0x801F7328`); the countdown drains untested | turns the creature onto the victim, `ctx[+0x6D8] = 0` |
 | 7 | the creature's clip reads `2` (`0x801F754C`) | the word climbs a frame product a pass and every pass snaps a pull-back framing off it, focused on the creature's body pair `+0x3C` / `+0x40` as arms 6 and 8 are (`0x801F755C`), which the pose carries a few hundred units off its ground pair |
 | 8 | `FUN_8004E2F0(7, victim) == 0` (`0x801F7628`) | the opening hit |
-| 10 | countdown (`0x801F797C`) | the creature moves over the victim |
+| 10 | countdown (`0x801F797C`) | the creature moves onto the victim's body pair, and every live monster seat whose ground pair lies under a Manhattan `0x400` of it is shown (`0x801F7A2C..0x801F7A9C`): the seats arm 11's splash can strike |
 | 11 | the creature's `+0x36` falls to `-0x12B` (`0x801F7BA8`) | the finisher; `scalar * 192` |
 | 12 | countdown (`0x801F8294`) | `0xFF` directly |
 

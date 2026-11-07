@@ -433,3 +433,21 @@ after its key-on, varying period to period. A second part spawns `175` vsyncs pa
 two streams `11` vsyncs apart, past the sweep's listening window. So the sweep's `ambient` miss
 on this state is the capture's `ENVX`, not the engine.
 
+### What sounds at the end of Zenoir's cast?
+
+*Status:* resolved - grade `capture` (the ring and the seats frame by frame), `disassembly` (the show loop)
+
+`zenoir_summon_mid_cast` stepped frame by frame under mednafen shows the cue ring
+`DAT_8007B6D8` take every kill-phase cue **twice** - `0x18` in slots 1 and 2 at vsync
+`778`, `0x18` in slots 0 and 3 at `814`, `0x27A` in slots 1 and 2 at `856` - and two
+seats react: arm 11 strikes the victim (seat 3, `3469 -> 3268`) and seat 4 (`3542 -> 3350`).
+Seat 4 is struck because arm 10 showed it: the arm copies the victim's body pair onto the
+creature (`(-751, 968)`) and shows every live monster seat `3..6` whose ground pair lies under
+a Manhattan `0x400` of it (`0x801F7A2C..0x801F7A9C`, `+0x04 = 0x20080200`, `+0x21C = 0`);
+seat 4 at `(0, 750)` is `969` away, seat 5 at `(600, 825)` is `1494`. The arm-11 splash skips
+a hidden seat, so the port, which showed the victim alone, struck one seat and sounded each cue
+once, `4..5` dB under the recording. It now runs the show loop
+(`zenoir_bump_in_reach`); the cast channel's level went from `+1.38` to `+0.09` dB. The cues
+land a few vsyncs later than retail's because the module's arms run on the port's frame step
+`4` where retail's alternates `3` and `4`. See
+[the cast module page](../../subsystems/cast-module.md#prot-0908-zenoir).
