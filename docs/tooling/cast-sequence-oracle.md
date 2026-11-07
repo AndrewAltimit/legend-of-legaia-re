@@ -62,7 +62,13 @@ RAM**: keep the directory out of the repo.
 
 The engine child drops the state's own capture seeds as well as its gate and
 drive, its re-seat among them: a strike state's re-seat left in stood the
-caster `3500` units from the ground retail recorded.
+caster `3500` units from the ground retail recorded. The scroller rects
+(`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
+cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
+roll. A scrolled page's phase is time since its scroller started, which a pre-cast
+state carries and the engine's fresh battle does not: the Cort states whose shield
+was raised a turn earlier start the sphere's bands where retail's stand, and
+`cort_guilty_cross` reads `.801` against `.611` without the seed.
 
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,

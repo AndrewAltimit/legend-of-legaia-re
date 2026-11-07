@@ -3777,7 +3777,17 @@ the burst `0x800786C4` on the sphere, retires it and clears the word.
 
 Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shield`
 in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
-since the cast scene is retired when the next action opens. The records are read
+since the cast scene is retired when the next action opens.
+
+The two parts are list nodes of the battle pass, so they take one part tick a
+battle frame, `step` vsyncs of it, like the cast's own parts. The scroller's
+period countdown shows why it matters: `FUN_80021DF4` drains `+0xC6` by the step
+and rolls the rect `(i16)+0xCE * step` rows on the pass the counter underflows,
+reloading the period `2`. A step-3 or step-4 pass fires every pass (one row a
+vsync); a one-vsync tick fires every third (a row every three vsyncs), and an
+engine that ticked the scene every vsync left the sphere's colour bands a third
+as fast as retail's - blue where retail's sphere stands purple. The boss-stage
+effect trees (`CastFxState::stage_fx`) run on the same pass. The records are read
 off the disc's executable (`DiscTables::scus`). The Guilty Cross and Mystic
 Circle captures hold the sphere from an earlier turn, which their seed raises
 ([retail-compare](../tooling/retail-compare.md#the-mystic-shield-a-capture-already-holds)).

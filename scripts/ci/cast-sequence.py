@@ -53,9 +53,11 @@ DROP_ENV = {
     "LEGAIA_BATTLE_INFLIGHT", "LEGAIA_BATTLE_MONSTER_CAST", "LEGAIA_DIAG_CAPTURE_TICK",
     "LEGAIA_BATTLE_CAM_ALIGN", "LEGAIA_BATTLE_FRAME_STEP", "LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM",
     "LEGAIA_SEAT_HUD_GLIDES",
-    # One capture instant's cycler and scroller state: seated for a whole run
-    # they hold the arena's palette and texels still (the Cort fight's flesh).
-    "LEGAIA_SEAT_CLUT_FX", "LEGAIA_SEAT_VRAM_RECTS",
+    # One capture instant's cycler state: seated for a whole run it holds the
+    # arena's palette still (the Cort fight's flesh). The scroller rects stay,
+    # held only until the cast's first action pass
+    # (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`).
+    "LEGAIA_SEAT_CLUT_FX",
     # A strike capture's re-seat of its own round: left in, the cast's action
     # seed recentres a fight the re-seat stood elsewhere (a caster recorded on
     # (-978, 339) cast from (1977, 2207)).
@@ -475,6 +477,8 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    if "LEGAIA_SEAT_VRAM_RECTS" in env:
+        env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:

@@ -1465,9 +1465,15 @@ fn call_wave_tints_the_caster_red_through_the_charge() {
     assert_eq!(a1.caster_write.render_flag, Some(7));
     assert!(wave_camera(&mut st, 2, seats).hold);
     st.countdown.0 = 1;
-    assert_eq!(wave_camera(&mut st, 2, seats).caster_write.render_flag, Some(0));
+    assert_eq!(
+        wave_camera(&mut st, 2, seats).caster_write.render_flag,
+        Some(0)
+    );
     st.countdown.0 = 1;
-    assert_eq!(wave_camera(&mut st, 3, seats).caster_write.render_flag, Some(0));
+    assert_eq!(
+        wave_camera(&mut st, 3, seats).caster_write.render_flag,
+        Some(0)
+    );
     seats.action = 0x56;
     for arm in [0, 4] {
         assert!(wave_camera(&mut st, arm, seats).caster_write.is_empty());
@@ -1497,7 +1503,11 @@ fn guilty_cross_cut_hides_the_caster_and_releases_its_loop() {
     );
     // A held pass writes nothing.
     st.countdown.0 = 1 << 12;
-    assert!(guilty_cross_camera(&mut st, 2, seats()).caster_write.is_empty());
+    assert!(
+        guilty_cross_camera(&mut st, 2, seats())
+            .caster_write
+            .is_empty()
+    );
 }
 
 /// Cort's two terminal arms flush past their countdown test, so the decoded

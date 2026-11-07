@@ -69,6 +69,12 @@ impl World {
         // retail state's live scroller rects, written after the engine's own
         // rotations as the field VRAM pass writes them.
         let seeded = self.apply_vram_rect_seed(vram);
+        if self.ambient.vram_rect_seed_until_action
+            && !matches!(self.battle_ctx.action_state, 0x00 | 0x0A)
+        {
+            self.ambient.vram_rect_seed.clear();
+            self.ambient.vram_rect_seed_until_action = false;
+        }
         moved || loaded || scrolled || recoloured || seeded
     }
 

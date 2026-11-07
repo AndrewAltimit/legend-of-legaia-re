@@ -125,6 +125,12 @@ pub struct AmbientFxState {
     /// these rects. Empty everywhere but the comparison's `play-window`
     /// child (`LEGAIA_SEAT_VRAM_RECTS`).
     pub vram_rect_seed: Vec<SeededVramRect>,
+    /// The battle VRAM pass drops [`Self::vram_rect_seed`] on the first pass
+    /// an action runs (`ctx[7]` past `0x0A`): a capture taken ahead of a cast
+    /// holds the scroller rects where the state stood, and from the cast on
+    /// the rects roll on their own clock as retail's do. The cast-sequence
+    /// child's form of the seed (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`).
+    pub vram_rect_seed_until_action: bool,
     /// Capture alignment for a dance hall frame: the palettes retail's hall
     /// cyclers captured (`+0xA8` / `+0xAC`), by rect. They are the walked-in
     /// scene's last paint ([`crate::world::World::carry_walked_in_cells`]), a
@@ -155,6 +161,7 @@ impl AmbientFxState {
             frame_grab: FrameGrab::default(),
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),
+            vram_rect_seed_until_action: false,
             cell_source_seed: Vec::new(),
         }
     }
