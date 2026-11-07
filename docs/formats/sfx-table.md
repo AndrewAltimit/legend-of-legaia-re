@@ -194,7 +194,15 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
 | One-shot (`flags & 0x20 == 0`) | `23 - cursor`, descending | rolling cursor `gp+0x4BC`, wrapped when it *exceeds* the limit (so the limit value is used). Limit `3`, or `1` in game modes `3` and `0x17` |
 | Sustained (`flags & 0x20`) | `7 .. 7 + count - 1`, ascending | held count `gp+0x5D0`; the previous run is released first; the cue's ring id latches into `gp+0x40C` ([the funnels drop a repeat against it](#a-held-sustained-cue-drops-its-repeat)) |
 
-- A one-shot stops each voice (`FUN_800653C8`) just before reprogramming it.
+- A one-shot stops each voice (`FUN_800653C8`) just before reprogramming it
+  (`0x80016D38`, then `FUN_80065034` at `0x80016D94`). The stop raises the voice's KOFF
+  bit and clears its pending KON (`FUN_80067480`), and nothing reaches the chip before
+  the flush, so a voice the wrapping cursor visits twice in one cue keeps only its
+  last pass - that pass's tone, or nothing but the stop when the tone does not
+  resolve. Under the field's limit of `1` a four-voice row lands on voices 23 and 22
+  twice; `jouina`'s row `0x214` (program 0, tone 9, four voices, past the program's
+  tones from the third) keys nothing in retail. The port resolves the passes first
+  and keys after (`SfxBank::play_entry`).
 - The sustained held-count write is inside the key-on loop, so a sustained cue
   with voice count zero releases the old run but leaves `gp+0x5D0` unchanged.
   The port's `SfxBank::play_descriptor` does the same for a runtime row.
