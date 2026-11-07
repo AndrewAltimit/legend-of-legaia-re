@@ -47,6 +47,7 @@ mod dome_leg_ladder;
 mod door_arrival_menu_refusal_disc;
 mod door_keep_bgm_disc;
 mod dream_return_seat_disc;
+mod edbylon_door_spin_disc;
 mod edson_aerial_shot_disc;
 mod encounter_region_groups_disc;
 mod encounter_step_counter_disc;

@@ -1546,10 +1546,18 @@ impl World {
                     )
                     && next_pc == pc
                     && target.is_some_and(|(_, ci)| {
-                        !channels[ci].object_bind
-                            && host
-                                .world
+                        if channels[ci].object_bind {
+                            // A placed object's spin waits on its prop's own
+                            // clip: `edbylon` P2[19] swings the dojo door
+                            // (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`)
+                            // and holds the shot on it with `AC 04 08` /
+                            // `AD 04 08` before the pull-back.
+                            host.world
+                                .object_prop_clip_running(channels[ci].ctx.script_id)
+                        } else {
+                            host.world
                                 .npc_clip_cursor_bound(channels[ci].placement_index as u8)
+                        }
                     });
                 // Morph end spin (`AD <id> 0B`): the record waits on the
                 // poked actor's envelope ADVANCE bit `+0x62 & 0x800`, which

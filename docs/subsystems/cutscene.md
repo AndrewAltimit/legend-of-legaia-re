@@ -2006,6 +2006,10 @@ that actor's envelope (`MORPH_ADVANCE_SPIN_TIMEOUT` bounds it). `edlast`'s lily 
 clip a `4C 51` seat names is bound at the op, as `A2` ExecMove's is, so a seat followed by
 `AD <id> 08` waits for that clip: `edkorout` `P2[0]` seats placement 9 on move `21` and waits
 about 95 vsyncs for it before move `22` ([`script-vm-menuctrl.md`](script-vm-menuctrl.md#sub-1-the-seat-binds-its-move-clip)).
+The end-latch spin on a placed object waits on that object's own clip: `edbylon` `P2[19]` swings
+the dojo door (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`) and holds the door shot with
+`AC 04 08` / `AD 04 08` for the 30-frame swing, about 60 vsyncs, before the pull-back
+(`World::object_prop_clip_running`; disc-gated `edbylon_door_spin_disc`).
 
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps

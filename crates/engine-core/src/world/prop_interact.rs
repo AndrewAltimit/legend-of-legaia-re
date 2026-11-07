@@ -172,6 +172,19 @@ impl World {
         }
     }
 
+    /// `true` while placed object `record`'s prop plays a clip that has not
+    /// latched its end (`+0x62 & 0x100`): not held (`0x2`), end latch down.
+    /// What a record's `AD <id> 08` spin on a door's swing waits for.
+    // REF: FUN_800204F8 (0x800206E4..0x8002072C)
+    pub fn object_prop_clip_running(&self, record: u16) -> bool {
+        use legaia_engine_scene::field_env::{ANIM_END, ANIM_HOLD};
+        self.props
+            .bank
+            .props
+            .values()
+            .any(|p| p.record == usize::from(record) && p.anim.flags & (ANIM_END | ANIM_HOLD) == 0)
+    }
+
     /// Capture alignment: write a placed object's clip cursor and control
     /// word over its prop's own, where the prop has that clip bound. Which
     /// frame of a door's swing is up is touch history a seat does not
