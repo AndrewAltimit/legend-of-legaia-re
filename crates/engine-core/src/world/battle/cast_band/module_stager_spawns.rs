@@ -14,7 +14,7 @@ use legaia_engine_cast::cast_module_ticks::{
     death_game_stager_spawns, doomsday_stager_spawns, enemy_cast_stager_spawns,
     freed_stager_spawns, gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns,
     nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, spoon_stager_spawns,
-    swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
+    swordie_stager_spawns, theeder_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
@@ -194,6 +194,7 @@ impl World {
                 908 => zenoir_stager_spawns(arm, caller, body, &mut rand),
                 905 => vera_stager_spawns(arm, caller, &mut rand),
                 910 => swordie_stager_spawns(arm, caller),
+                904 => theeder_stager_spawns(arm, caller),
                 911 => orb_stager_spawns(arm, caller),
                 913 => nova_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),

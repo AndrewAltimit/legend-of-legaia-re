@@ -124,6 +124,22 @@ pub fn death_game_stager_spawns(
     vec![on_caller(record, caller)]
 }
 
+/// PROT 0904's stager arm `0`'s record (`addiu a2,a2,-0x6F50` at
+/// `0x801F8EC8`).
+pub const THEEDER_STAGER_ARM0_RECORD: u32 = 0x801F_90B0;
+
+/// PROT 0904 (Theeder) - the stager `0x801F8EAC`: arm `0` seats
+/// [`THEEDER_STAGER_ARM0_RECORD`] on the caller's `+0x14` / `+0x24` at
+/// `0x1000`; any other arm returns (`bne a1,zero` at `0x801F8EB4`).
+///
+/// PORT: FUN_801F8EAC (PROT 0904's stager)
+pub fn theeder_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    match arm {
+        0 => vec![on_caller(THEEDER_STAGER_ARM0_RECORD, caller)],
+        _ => Vec::new(),
+    }
+}
+
 /// PROT 0911's stager arm `0`'s record (`addiu a2,a2,-0x7CD4` at
 /// `0x801F8018`).
 pub const ORB_STAGER_ARM0_RECORD: u32 = 0x801F_832C;

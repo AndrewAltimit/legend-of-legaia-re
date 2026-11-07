@@ -1220,7 +1220,9 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
-            stages_spawns: false,
+            // Arm 3's glow and arm 7's two mouth records, each on its pass;
+            // the stager's record on its callers' op `0x20`.
+            stages_spawns: true,
             seat_arm: module_seat_arm(904),
             director_body: false,
         }),

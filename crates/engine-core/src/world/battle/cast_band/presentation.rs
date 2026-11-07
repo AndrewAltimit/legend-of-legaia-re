@@ -56,6 +56,8 @@
 //! - Sites the decoder could not place (spawn-stager arms) or resolve.
 //! - The streak ribbon `FUN_801E1D98`: its anchor is a stack trio the arm
 //!   computes from seats and the camera, which the data decode does not fold.
+//!   The directors that draw one hand it in `ArmDirection::ribbons` (PROT
+//!   0904's bolts, PROT 0909's charge, PROT 0934's ring).
 //! - The party CLUT reload (`LoadImage` of a 240x1 row out of a RAM copy).
 //! - Modules whose fades are already carried by a hand port: PROT 0905
 //!   (Vera's director), PROT 0954 (ported whole), PROT 0966 (its one fade
@@ -180,10 +182,21 @@ impl World {
             legaia_engine_cast::cast_module_camera::summon_holds::summon_holds(entry).is_some()
                 || legaia_engine_cast::cast_module_camera::module_profile(entry)
                     .is_some_and(|p| p.director_body);
-        let paced = !holds || held > 0 || engine_paced || BODY_PACED.contains(&entry);
+        // The module's CD poll arm holds only on the drive, and the engine
+        // paces that wait through its drive model (`World::arm_module_drive`):
+        // a poll the modelled drive answers at once is one retail's drive
+        // answered inside the arm's own pass too, so its pass still fires.
+        // PROT 0904's arm 3 spawns its `(0xC0, 0xC0, 0xFF)` rise there
+        // (`0x801F6DB4`), behind the stream poll.
+        let drive_paced = self
+            .casting
+            .drive_arms
+            .is_some_and(|(a, _)| a.poll_arm == phase_in);
+        let paced =
+            !holds || held > 0 || engine_paced || drive_paced || BODY_PACED.contains(&entry);
         let first_hold = holds && !passed && held == 0;
         let first_pass = engine_paced && first && passed;
-        if holds && passed && held == 0 {
+        if holds && passed && held == 0 && !drive_paced {
             self.casting.module_pres.unpaced_arms += 1;
         }
         if !passed {

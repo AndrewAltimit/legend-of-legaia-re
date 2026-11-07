@@ -1376,6 +1376,14 @@ impl World {
                                 run.camera_shot = Some(
                                     legaia_engine_cast::cast_module_camera::theeder_attack_shot(c),
                                 );
+                                // ...and its two records at the mouth, on
+                                // the creature's angles (`0x801F727C..`).
+                                run.spawns =
+                                    &legaia_engine_cast::cast_module_camera::THEEDER_ATTACK_SPAWNS;
+                                run.arm_point = Some((
+                                    ticks_a::theeder_mouth(c.x, c.z, c.facing),
+                                    [0, c.facing as i16, 0],
+                                ));
                             }
                             tick
                         }

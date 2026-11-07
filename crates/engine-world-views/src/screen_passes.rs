@@ -394,7 +394,13 @@ pub fn cast_ribbon_prims(
     let frame = world.clock.display_frames as u32;
     let mut out = Vec::new();
     for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
-        let at = p.map(f32::from);
+        // The points are retail battle space (Y down, the stack trio the arm
+        // hands `FUN_801E1D98`); the battle view-projection takes the drawn
+        // frame, whose models carry the `scale(1,-1,1)` it cancels
+        // (`legaia_engine_camera::projection::battle_vp`), so a point off the
+        // floor is lifted by negating its height. PROT 0904's bolts at `-0x80`
+        // and PROT 0934's ring at `-0xC0` stand above the ground.
+        let at = [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])];
         let clip = *mvp * glam::Vec4::new(at[0], at[1], at[2], 1.0);
         let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
         let quads = clip_ribbon_quads(

@@ -41,6 +41,58 @@ pub fn theeder_attack_shot(creature: ModuleSeat) -> ModuleShot {
     }
 }
 
+/// PROT 0904 arm 3's spawn (`0x801F6D00..0x801F6D64`): record `0x801F8EE4`
+/// on the point half a unit short of the victim at `y = 0`, turned to `h`
+/// (`sh v0,0x22(sp)` at `0x801F6CF8`), scale `0x1000` - the glow the bolts
+/// stand in and the light column the creature comes down through.
+pub const THEEDER_RISE_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::Module(0x801F_8EE4),
+    anchor: SpawnAnchor::ArmPoint,
+}];
+
+/// PROT 0904 arm 7's two spawns on its pass (`0x801F727C..0x801F7344`):
+/// records `0x801F8F70` and `0x801F9014` at the creature's mouth
+/// (`0x5C` ahead along its facing, `y = -0x11D`), on its angle trio `+0x44`.
+/// The host seats them on the tick the body passes the arm.
+pub const THEEDER_ATTACK_SPAWNS: [ModuleSpawn; 2] = [
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_8F70),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_9014),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+];
+
+/// The streak height arm 4's holding passes hand the ribbon (`li v0,-0x80`
+/// in the delay slot at `0x801F6FB8`).
+pub const THEEDER_BOLT_HEIGHT_RISE: i16 = -0x80;
+/// The same for arm 5's holding passes (`li v0,-0x15E` at `0x801F70B8`).
+pub const THEEDER_BOLT_HEIGHT_SHOW: i16 = -0x15E;
+/// The trail id the four bolt ribbons pass (`clear a1` ahead of each
+/// `jal 0x801E1D98`, `0x801F70D8..0x801F7104`).
+pub const THEEDER_BOLT_TRAIL: u8 = 0;
+
+/// A holding pass of PROT 0904's arm 4 or 5 (`0x801F70BC..0x801F7104`): four
+/// streak ribbons (`FUN_801E1D98`, trail `0`) on one anchor, `x` / `z` the
+/// camera focus globals `0x80089118` / `0x80089120` negated back to a world
+/// point and `y` the arm's height. Arms 0 and 3 aim the focus at the point
+/// half a unit short of the victim, and nothing moves it before arm 6, so the
+/// anchor is the seat arm 4's exit puts the creature on: the lightning it
+/// rises out of. Each call draws its own run of `rand`, so the four bolts
+/// snake apart.
+fn theeder_bolt_hold(seat: ModuleSeat, height: i16) -> ArmDirection {
+    ArmDirection {
+        ribbons: Some(super::capture::CastRibbonRing {
+            points: [[seat.x, height, seat.z]; 16],
+            trail_id: THEEDER_BOLT_TRAIL,
+            count: 4,
+        }),
+        ..ArmDirection::HOLD
+    }
+}
+
 /// `sh` into the halfword `ctx[+0x6D8]` after a drain, then `bgez` on it
 /// sign-extended: `true` while the arm holds.
 fn drain_halfword(st: &mut ModuleCamState) -> bool {
@@ -59,9 +111,9 @@ fn drain_halfword(st: &mut ModuleCamState) -> bool {
 /// |---:|---|---|
 /// | 0 | - | snap: pitch `0xD2`, yaw `0x72E - h`, TR `(0, 0x200, 0x800)`, focus the point (`0x801F6C00`) |
 /// | 2 | hold while the band timer `ctx[+0x6D8]` is non-zero (`0x801F6C80`) | - |
-/// | 3 | - | pitch `0`, yaw `0x800 - h`, TR `(0, 0x400, 0x300)`, the same focus, over `0x46` frames (`0x801F6E24`); `ctx[+0x6D8] = scalar * 10` |
-/// | 4 | drain, hold while non-negative (`0x801F6E5C`) | the creature seated; `ctx[+0x6D8] = scalar * 60` |
-/// | 5 | drain, hold while non-negative (`0x801F6FE8`) | `ctx[+0x6D8] = scalar * 180` |
+/// | 3 | - | pitch `0`, yaw `0x800 - h`, TR `(0, 0x400, 0x300)`, the same focus, over `0x46` frames (`0x801F6E24`); spawns [`THEEDER_RISE_SPAWNS`]; `ctx[+0x6D8] = scalar * 10` |
+/// | 4 | drain, hold while non-negative (`0x801F6E5C`) | four bolt ribbons a holding pass ([`theeder_bolt_hold`]); the creature seated; `ctx[+0x6D8] = scalar * 60` |
+/// | 5 | drain, hold while non-negative (`0x801F6FE8`) | four bolt ribbons a holding pass, higher; `ctx[+0x6D8] = scalar * 180` |
 /// | 6 | drain, hold while non-negative (`0x801F7138`) | snap: pitch `-0x80`, yaw `0x900 - facing`, TR `(0x60, 0x480, 0x200)`, focus the creature (`0x801F71A0`) |
 /// | 7 | the body's: hold while the creature's `+0x21B` reads `0xFF` | [`theeder_attack_shot`], armed by the host |
 /// | 8 | - | pitch `0`, yaw `0x800 - facing`, TR `(0, 0x480, 0x300)`, focus the creature, over `scalar * 15` frames (`0x801F73A4`) |
@@ -112,16 +164,20 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
         2 => gate(seats.band_timer != 0),
         3 => {
             st.countdown.0 = SPEED_SCALAR * THEEDER_RISE_WAIT;
-            ArmDirection::shot(ModuleShot {
-                angles: [0, yaw_from(0x800, h), 0],
-                tr: [0, 0x400, 0x300],
-                focus: point_focus,
-                frames: 0x46,
-            })
+            ArmDirection {
+                spawns: &THEEDER_RISE_SPAWNS,
+                arm_point: Some(([seated.x, 0, seated.z], [0, h as i16, 0])),
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0, yaw_from(0x800, h), 0],
+                    tr: [0, 0x400, 0x300],
+                    focus: point_focus,
+                    frames: 0x46,
+                })
+            }
         }
         4 => {
             if drain_halfword(st) {
-                return ArmDirection::HOLD;
+                return theeder_bolt_hold(seated, THEEDER_BOLT_HEIGHT_RISE);
             }
             st.creature = Some(seated);
             st.countdown.0 = SPEED_SCALAR * THEEDER_SHOW_WAIT;
@@ -129,7 +185,7 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
         }
         5 => {
             if drain_halfword(st) {
-                return ArmDirection::HOLD;
+                return theeder_bolt_hold(seated, THEEDER_BOLT_HEIGHT_SHOW);
             }
             st.countdown.0 = SPEED_SCALAR * THEEDER_STAGE_WAIT;
             ArmDirection::PASS
@@ -538,6 +594,30 @@ mod tests {
         assert!(st.creature.is_some(), "arm 4 seats the creature");
         assert_eq!(dwell(theeder_direct, &mut st, 5, s), 61);
         assert_eq!(dwell(theeder_direct, &mut st, 6, s), 181);
+    }
+
+    #[test]
+    fn theeder_bolts_draw_on_the_holding_passes_of_arms_4_and_5() {
+        let mut st = ModuleCamState::default();
+        let s = seats(0);
+        theeder_direct(&mut st, 3, s);
+        let held = theeder_direct(&mut st, 4, s);
+        assert!(held.hold);
+        let ring = held.ribbons.expect("arm 4 holds with its bolts");
+        assert_eq!((ring.count, ring.trail_id), (4, THEEDER_BOLT_TRAIL));
+        let rise = ring.points[0];
+        // The pass seats the creature and draws no bolt.
+        let mut pass = held;
+        while pass.hold {
+            pass = theeder_direct(&mut st, 4, s);
+        }
+        assert!(pass.ribbons.is_none());
+        let seat = st.creature.expect("seated on arm 4's exit");
+        assert_eq!(rise, [seat.x, THEEDER_BOLT_HEIGHT_RISE, seat.z]);
+        let ring = theeder_direct(&mut st, 5, s)
+            .ribbons
+            .expect("arm 5's bolts");
+        assert_eq!(ring.points[3], [seat.x, THEEDER_BOLT_HEIGHT_SHOW, seat.z]);
     }
 
     #[test]

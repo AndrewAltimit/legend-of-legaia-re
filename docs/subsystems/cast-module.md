@@ -1529,6 +1529,24 @@ unit (`sin / 2`, `cos / 2`) short of the victim on the caster-victim line. No
 later arm stores to the seat's `+0x34` / `+0x38`. Port:
 `seru_magic_ticks::theeder_seat_placement`, pinned from arm 4 on.
 
+Arm 3 spawns record `0x801F8EE4` on that point at `y = 0`, turned to the
+facing (`0x801F6D64`): the glow on the ground and the light column the
+creature comes down through. On its pass it also raises a held
+`(0xC0, 0xC0, 0xFF)` additive fade over ten frames, parked at `ctx[+0x102C]`
+(`0x801F6DB4`), which arm 4's exit kills before it spawns the
+`(0x80, 0x80, 0xFF)` fall to black over `0x5A` frames (`0x801F6E80..0x801F6EBC`).
+Every holding pass of arms 4 and 5 draws four streak ribbons (`FUN_801E1D98`,
+trail `0`, `0x801F70BC..0x801F7104`) on the camera focus `0x80089118` /
+`0x80089120` negated back to a world point, at height `-0x80` (arm 4) or
+`-0x15E` (arm 5): arms 0 and 3 aim the focus at the seat-to-be, so the bolts
+stand where the creature appears. Arm 7's pass seats records `0x801F8F70` and
+`0x801F9014` at the creature's mouth (`0x5C` ahead, `y = -0x11D`) on its angle
+trio, and the module's stager `0x801F8EAC` seats `0x801F90B0` on its caller
+(arm 0 only). Ports: the director's `THEEDER_RISE_SPAWNS` and
+`theeder_bolt_hold`, the host's arm-7 pass (`THEEDER_ATTACK_SPAWNS`),
+`theeder_stager_spawns`; the two fades fire as
+[presentation calls](#presentation-calls).
+
 Arms 10 to 12 are ramps on `ctx[+0x6D8]`. Arm 10 zeroes it (`0x801F7768`).
 Arm 11 adds `(step * scalar) >> 1` a pass and holds below `0x100`
 (`0x801F778C..0x801F77BC`) before it retargets and zeroes the word. Arm 12
@@ -4659,7 +4677,11 @@ holding tick, its `Pass` calls on the pass after a hold. An arm the engine
 passes on its first tick is counted (`ModulePresentation::unpaced_arms`) and
 fires nothing. An arm that cannot hold fires as it runs. PROT 0910..0913 are
 exempt: their bodies hold every arm retail holds, so an arm they pass at once
-is a stream or CD poll the resident stream answers, and its calls fire.
+is a stream or CD poll the resident stream answers, and its calls fire. So is
+every module's CD poll arm (`module_drive_arms`): the engine paces that wait on
+its drive model, and a poll the model answers at once is one retail's drive
+answered inside the arm's own pass. PROT 0904's arm 3 raises its blue rise
+there, behind the stream poll; skipped, the screen stayed dark through arm 4.
 
 An arm's walk opens with the register the switch loaded the phase byte into
 holding that arm's phase, which is what Barra's arm 3 stores as the stage
