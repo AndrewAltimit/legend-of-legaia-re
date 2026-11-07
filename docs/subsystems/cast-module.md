@@ -1495,7 +1495,8 @@ re-arms literals. Four arms do not fit one word:
   (`0x801F86A8 += (scalar * step) << 2`) reaching `0x1000` long before its
   countdown would; the row runs the arm at the ramp's rate.
 - PROT 0937's arm 7 paces its four hits on a second word that arm 6 zeroes;
-  the row carries that cadence on the main word.
+  the row carries that cadence on the main word, and the director names each
+  hit as it lands ([split casts](#split-casts)).
 - PROT 0936's arm 4 holds on its own tick counter reaching `6` while it
   drains the word untested; the row passes it at once and carries the six
   drains forward.
@@ -1510,6 +1511,28 @@ re-arms literals. Four arms do not fit one word:
 records `0x190` ahead of the caster at height `-0x1C2` (`0x801F6C60..0x801F6E24`), stepping
 one stack yaw between calls. Each of arm 4's hits adds a camera-locked burst (`0x801F74BC` at
 `(0, 0, 0x100)`, `0x801F70C8`).
+
+<a id="split-casts"></a>
+
+**Split casts.** Two enemy bodies cut one cast into four wrapper hits on one victim, each
+rolled for real and cut to a share, and the band lands each hit itself through one path
+(`SplitHits`, `World::land_split_hit`); the fold owes the cast nothing. A hit rolls the
+body's site, pushes its share as the popup (`FUN_801F44A0` ahead of the clamp), clamps, writes
+HP and the bar, stages its reaction with `+0x1DC = 1` and turns the victim onto the caster; a
+victim already down or Stoned takes nothing.
+
+| Body | Site | Share | Clamp | Reactions | Pacing |
+|---|---|---|---|---|---|
+| 0937 `0x4C` Hyper Lightning arm 7 | `FUN_801DD4B0(0x26A)`, `0x801F76AC` | a quarter | hits 1..3 `HP - 1` (beside `sb zero,0x8007B64C`), hit 4 HP | `+0x1EF` x3, `+0x1F1` | the director's beat, `scalar << 3` apart; the arm holds until the count reads 4 (`0x801F77AC`) |
+| 0939 `0x4F` Spore Gas arm 4 | `FUN_801DD4B0(0x60)`, `0x801F70E0` | a third | HP | `+0x1EF` x2, `+0x1F0`, `+0x1F1` | `SporeGasBeat`, plus each hit's Rot roll |
+
+Folded as one, Hyper Lightning's cast landed one full roll on the arm's first pass, played one
+reaction (cue `0x62`, none of the first hit's `0x60`) and left arm 7 on it:
+`battle_retona_songi_hyper_lightning_mid_cast` read sound `.000`. Landed in quarters it
+matches retail cue for cue and arm 7 runs `147` ticks to retail's `144` vsyncs. The other
+multi-hit casts are not this shape: PROT 0959's three Megaton Press sites each bake their own
+power (`hit_site`), and Swordie's four slashes (PROT 0910) and the summons' pre-hits are
+player-summon state machines of their own.
 
 **Spore Gas's four hits** are not a fold. Arm 3's pass seeds a beat word at `scalar <<
 5`; arm 4 counts a hit each time it runs out and re-arms it at `scalar << 4`, so the hits

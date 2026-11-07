@@ -603,9 +603,10 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
 /// The camera arms, the seat hides and the records are
-/// `cast_module_camera::hyper_lightning_camera`. Not ported: the packet arms,
-/// arm 7's per-hit shots and the four-hit split (the fold lands the cast's
-/// outcome as one). Countdowns:
+/// `cast_module_camera::hyper_lightning_camera`, which also paces arm 7's
+/// hits and re-cuts to the victim on each. The four hits are the band's
+/// ([`HYPER_LIGHTNING_HITS`]; the fold owes the cast nothing). Not ported: the
+/// packet arms. Countdowns:
 /// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
 /// PORT: FUN_801F69D8 (PROT 0937; phase chain + caster staging; packet arms unported)
@@ -735,6 +736,97 @@ pub const SPORE_GAS_SHAPE: CastDamageShape = CastDamageShape {
     never_kills: false,
     powers: &[0x60],
 };
+
+/// PROT 0937's one wrapper site, `FUN_801DD4B0(0x26A)` at `0x801F76AC`, which
+/// arm 7's four hits share.
+pub const HYPER_LIGHTNING_SHAPE: CastDamageShape = CastDamageShape {
+    prot_entry: 937,
+    routine: 0x801F_69D8,
+    wrapper: CastWrapper::Respect,
+    never_kills: false,
+    powers: &[0x26A],
+};
+
+/// A capture body that splits its cast into several wrapper hits on one
+/// victim, each rolled for real and cut to a share: the band lands every hit
+/// itself ([`split_hits_for`]) and the fold owes the cast nothing. Each hit
+/// rolls the site, keeps `roll / divisor`, pushes that share as its popup
+/// (`FUN_801F44A0` ahead of the clamp), clamps it to `HP - 1` on the hits
+/// below [`Self::spares_below`] and to the live HP after, writes HP and the
+/// bar (`+0x10`), stages the hit's reaction with `+0x1DC = 1` and turns the
+/// victim onto the caster. A victim already down, or Stoned, takes nothing.
+#[derive(Debug, Clone, Copy)]
+pub struct SplitHits {
+    pub shape: &'static CastDamageShape,
+    /// The tick body the hits are in.
+    pub body: u32,
+    /// The roll's divisor.
+    pub divisor: i32,
+    /// The hit count.
+    pub hits: u8,
+    /// Hits numbered below this clamp to `HP - 1`; `1` clamps none.
+    pub spares_below: u8,
+    /// Each hit's reaction, an index into the `+0x1EF..=+0x1F1` trio
+    /// (`2` the knockdown), hit 1 first. A hit that downs the victim stages
+    /// the knockdown whatever its row says.
+    pub reactions: [usize; 4],
+}
+
+impl SplitHits {
+    /// The share of `roll` hit `hit` lands on a victim at `hp`, after the
+    /// clamp: `roll / divisor`, at most `hp - 1` on a spared hit, at most
+    /// `hp` otherwise (`0x801F76E0..0x801F7718` on PROT 0937).
+    pub fn landed(&self, hit: u8, roll: i32, hp: u16) -> i32 {
+        let share = roll.max(0) / self.divisor;
+        let cap = if hit < self.spares_below {
+            i32::from(hp) - 1
+        } else {
+            i32::from(hp)
+        };
+        share.min(cap.max(0))
+    }
+}
+
+/// PROT 0937 `0x4C` arm 7: four hits a quarter of the roll each, hits 1..3
+/// clamped to `HP - 1` (`sb zero,0x8007B64C` beside the cap,
+/// `0x801F76E0..0x801F7700`) and hit 4 to HP; hits 1..3 stage `+0x1EF`, hit 4
+/// `+0x1F1` (`0x801F7738..0x801F775C`).
+pub const HYPER_LIGHTNING_HITS: SplitHits = SplitHits {
+    shape: &HYPER_LIGHTNING_SHAPE,
+    body: 0x801F_69D8,
+    divisor: 4,
+    hits: 4,
+    spares_below: 4,
+    reactions: [0, 0, 0, 2],
+};
+
+/// PROT 0939 `0x4F` arm 4: four hits a third of the roll each, none spared,
+/// staging `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` ([`spore_gas_reaction`]).
+pub const SPORE_GAS_HITS: SplitHits = SplitHits {
+    shape: &SPORE_GAS_SHAPE,
+    body: 0x801F_69D8,
+    divisor: 3,
+    hits: 4,
+    spares_below: 1,
+    reactions: [
+        spore_gas_reaction(1),
+        spore_gas_reaction(2),
+        spore_gas_reaction(3),
+        spore_gas_reaction(4),
+    ],
+};
+
+/// The split-hit rows ([`SplitHits`]) by PROT entry and tick body; a
+/// single-body module's body may be passed as
+/// [`crate::cast_module_camera::SINGLE_BODY`].
+pub fn split_hits_for(prot_entry: u32, body: u32) -> Option<&'static SplitHits> {
+    [&HYPER_LIGHTNING_HITS, &SPORE_GAS_HITS]
+        .into_iter()
+        .find(|h| {
+            h.shape.prot_entry == prot_entry
+                && (h.body == body || body == crate::cast_module_camera::SINGLE_BODY)
+        })
+}
 
 /// PROT 0939 hit `k`'s reaction: index into the `+0x1EF..=+0x1F1` trio, hits 1
 /// and 2 the first, hit 3 the second, hit 4 the knockdown
@@ -1486,6 +1578,22 @@ mod chain_tests {
         assert_eq!(v.flags & 0x0400, 0);
         assert_eq!(v.init_key, 5);
         assert_eq!(ctx.phase, 3);
+    }
+
+    /// PROT 0937's four quarters: hits 1..3 leave the victim a point, the
+    /// fourth may down it; PROT 0939 spares no hit.
+    #[test]
+    fn split_hits_cut_and_clamp_each_share() {
+        let h = &HYPER_LIGHTNING_HITS;
+        assert_eq!(h.landed(1, 400, 9999), 100);
+        assert_eq!(h.landed(1, 400, 50), 49);
+        assert_eq!(h.landed(3, 400, 1), 0);
+        assert_eq!(h.landed(4, 400, 50), 50);
+        assert_eq!(SPORE_GAS_HITS.landed(1, 300, 50), 50);
+        assert_eq!(SPORE_GAS_HITS.landed(2, 300, 9999), 100);
+        assert_eq!(split_hits_for(937, 0x801F_69D8).map(|h| h.divisor), Some(4));
+        assert_eq!(split_hits_for(939, 0).map(|h| h.divisor), Some(3));
+        assert!(split_hits_for(936, 0x801F_69D8).is_none());
     }
 
     /// Bodies are keyed by `(entry, body)`: six images share `0x801F69D8`.

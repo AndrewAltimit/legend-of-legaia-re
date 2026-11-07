@@ -117,6 +117,10 @@ pub struct CaptureCamArm {
     /// ([`crate::cast_module_ticks::damage_shape_for`]); the module then
     /// owns the cast's outcome and the band's fold is waived.
     pub hit_site: Option<u8>,
+    /// The split hit ([`crate::cast_module_ticks::SplitHits`]) the arm lands
+    /// on this pass, numbered from `1`: the band rolls and applies it
+    /// (PROT 0937's arm 7).
+    pub split_hit: Option<u8>,
     /// The arm framed the caster through the action SM's **case 6**
     /// (`FUN_801D5854(ctx[+0x13], 6)`) on this pass: the follow framing on
     /// the live yaw ladder `ctx[+0x6DA]` and depth `ctx[+0x6D0]`.
