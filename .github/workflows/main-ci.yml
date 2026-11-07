@@ -425,14 +425,21 @@ jobs:
     # The runner is shared, so this job's wasm-pack build competes with any
     # other build on the box. 10 minutes was tight enough that contention
     # alone could fail a deploy that had nothing wrong with it. The deploy
-    # step's own poll (25 min, below) has to fit inside this too.
-    timeout-minutes: 45
+    # attempts below (up to three 10-minute polls plus back-off) have to fit
+    # inside this too.
+    timeout-minutes: 60
+    # Two main pushes in quick succession would otherwise race two Pages
+    # deployments, and the second is refused while the first is in flight.
+    # Queue them instead; never cancel a deploy half way.
+    concurrency:
+      group: github-pages-deploy
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -485,15 +492,45 @@ jobs:
         with:
           path: site/
 
+      # GitHub's side of a Pages deploy sometimes sits in `syncing_files`
+      # well past the action's status poll, which is capped at 10 minutes
+      # (a larger `timeout` is clamped to 600000 with a warning) and which
+      # cancels the deployment when it gives up. Nothing is wrong with the
+      # artifact in that case, so a fresh deployment of the same artifact
+      # after a short back-off normally goes through. Three attempts.
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy1
+        continue-on-error: true
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         with:
-          # The action's own status poll gives up after 10 minutes by default,
-          # and GitHub's side has been seen sitting in `finished_file_sync`
-          # past that on a deploy with nothing wrong in it. 25 minutes stays
-          # inside the job's own limit.
-          timeout: 1500000
+          timeout: 600000
+
+      - name: Back off before retrying the deploy
+        if: steps.deploy1.outcome == 'failure'
+        run: |
+          echo "::warning::Pages deploy attempt 1 failed; retrying in 60 s"
+          sleep 60
+
+      - name: Deploy to GitHub Pages (retry 1)
+        id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        with:
+          timeout: 600000
+
+      - name: Back off before the last deploy attempt
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: |
+          echo "::warning::Pages deploy attempt 2 failed; last try in 120 s"
+          sleep 120
+
+      - name: Deploy to GitHub Pages (retry 2)
+        id: deploy3
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        with:
+          timeout: 600000
 
   # -- CI Summary -------------------------------------------------------------
   notify:
