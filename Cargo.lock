@@ -2346,6 +2346,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-engine-camera",
+ "legaia-engine-scene",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",

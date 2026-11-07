@@ -945,9 +945,10 @@ impl Renderer {
     /// The field ground's depth rule: `None` (the default) draws a bucketed
     /// ground cell at its retail ordering-table bucket - the far slice, or
     /// two buckets behind its farthest corner; `Some(drop)` depth-tests a
-    /// flat bucketed cell as the plane `drop` units below it along each
-    /// pixel's ray (`legaia_engine_scene::field_ground::dropped_floor_w`),
-    /// leaves a sloped far-bucket cell in the far slice and a sloped sorted
+    /// far-bucket cell (flat or sloped) and a flat sorted cell as the level
+    /// plane `drop` units beyond the cell's corner farthest from the eye,
+    /// along each pixel's ray (`legaia_engine_scene::field_ground::
+    /// dropped_floor_w` / `dropped_floor_ref`), and leaves a sloped sorted
     /// cell at its own depth. Hosts pass
     /// `legaia_engine_world_views::field_view_window::field_ground_drop`.
     pub fn set_field_ground_drop(&self, drop: Option<f32>) {

@@ -22,6 +22,8 @@ mod page_glsl;
 mod shader_eval;
 mod shading_law_parity;
 mod vertex_law_parity;
+// The field ground's free-vantage drop, swept over a disc scene.
+mod field_ground_drop_sweep_disc;
 // --- end lane B ---
 // --- lane L ---
 mod bloom_parity;

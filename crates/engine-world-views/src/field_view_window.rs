@@ -39,8 +39,8 @@ pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> boo
 /// The field ground's depth rule for this frame, the word both play hosts
 /// stage for their ground shaders (`Renderer::set_field_ground_drop`, the
 /// play page's `setGroundDrop`): `None` keeps retail's ordering-table
-/// buckets, `Some(drop)` depth-tests each flat bucketed cell as the plane
-/// `drop` units below it
+/// buckets, `Some(drop)` depth-tests each bucketed cell as the level plane
+/// `drop` units beyond it
 /// ([`legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP`]).
 ///
 /// The buckets hold at retail's vantage ([`retail_vantage`]) and in every

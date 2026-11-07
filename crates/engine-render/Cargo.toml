@@ -34,3 +34,5 @@ legaia-prot.workspace = true
 # The camera-roll census LZS-decodes every scene bundle's MAN (disc-gated).
 legaia-overlay-images.workspace = true
 legaia-engine-vm.workspace = true
+# The free-vantage ground sweep loads town01's ground grid (disc-gated).
+legaia-engine-scene.workspace = true

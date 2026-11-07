@@ -202,8 +202,8 @@ pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> 
     refs
 }
 
-/// How far below a flat ground cell the hosts' depth test takes the floor
-/// while the camera stands off retail's vantage, in world units
+/// How far below a ground cell the hosts' depth test takes the floor while
+/// the camera stands off retail's vantage, in world units
 /// ([`dropped_floor_w`]).
 ///
 /// The far bucket and the sorted-cell bucket ([`flat_refs`]) reproduce
@@ -216,26 +216,65 @@ pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> 
 /// triangle buried more than eight units under the path south of the garden
 /// fence shows on the path from a swung camera.
 ///
-/// So off retail's vantage a flat bucketed cell is depth-tested as the plane
-/// this far below it, along each pixel's own ray: the floor still yields to
-/// a decal authored on or just under it (`conc`'s wall-base shadow strips,
-/// six units down), and hides what is buried deeper. A sloped far-bucket
-/// cell keeps the far slice, since the cliff faces it rises against are what
-/// hide it; a sloped sorted cell keeps its per-pixel depth.
+/// So off retail's vantage a bucketed cell is depth-tested as the level
+/// plane this far beyond it, along each pixel's own ray: the floor still
+/// yields to a decal authored on or just under it (`conc`'s wall-base shadow
+/// strips, six units down), and hides what is buried deeper.
+///
+/// A **flat** cell - far-bucket or sorted - takes the plane this far below
+/// itself. A **sloped far-bucket** cell takes the plane this far beyond the
+/// corner farthest from the eye ([`dropped_floor_ref`]): it cannot keep the
+/// far slice once the flat cells around it have left it, or every flat cell
+/// and mesh behind it paints over it - `town01`'s plateau cell `(32, 23)`,
+/// a 32-unit ramp, drew the beach 192 units below it and the beach's rock
+/// pile through the plateau as a pale quad with a dark hole wherever the
+/// camera looked past it toward the sea. The level plane also keeps what the
+/// slice was for: a cell rising a cliff's height between tiers (`(30, 38)`)
+/// is tested as its foot's floor, so the cliff face recessed behind it still
+/// paints over it. A **sloped sorted** cell keeps its per-pixel depth.
 pub const FREE_VANTAGE_FLOOR_DROP: f32 = 8.0;
 
-/// The view depth at which a pixel's ray meets the plane `drop` units below
-/// a flat floor, given the depth `w` at which it meets the floor itself and
-/// the eye's height `eye_height` above the floor (either side): the ray
-/// travels `(h + drop) / h` times as far, since the two planes are parallel.
+/// The height a ground cell's dropped plane is measured from: of its four
+/// corner heights `corners` (`[y00, y10, y01, y11]`, the frame
+/// [`render_positions`] draws in), the one farthest from the eye's height
+/// `eye_y` - the lowest corner for an eye above the cell. A flat cell's is
+/// its own height.
+pub fn dropped_floor_ref(eye_y: f32, corners: [f32; 4]) -> f32 {
+    let lo = corners.iter().copied().fold(f32::MAX, f32::min);
+    let hi = corners.iter().copied().fold(f32::MIN, f32::max);
+    if (hi - eye_y).abs() > (lo - eye_y).abs() {
+        hi
+    } else {
+        lo
+    }
+}
+
+/// The view depth at which the ray through a ground vertex meets the level
+/// plane `drop` units beyond the cell's reference height `floor_y`
+/// ([`dropped_floor_ref`]), given the depth `w` at which it meets the vertex
+/// itself, the eye's height `eye_y` and the vertex's `vertex_y`. Along the ray
+/// the height changes linearly, so the plane lies `(h + drop) / d` times as
+/// far as the vertex, `h` the eye's distance from `floor_y` and `d` the
+/// vertex's from the eye's height, toward the plane; on a flat cell `d = h`
+/// and the factor is `(h + drop) / h`. A vertex level with or past the eye's
+/// height (a ray that never descends to the plane) takes the factor at a
+/// one-unit `d`, which puts it at the back of the frame.
+///
 /// A plane is affine in `1 / w` across the screen, so a vertex stage that
-/// writes this per corner interpolates it exactly. The hosts' ground shaders
-/// are the GPU twins (`field_dropped_floor_depth` in `engine-render`,
-/// `fieldDroppedFloorW` on the play page), which recover the eye from the
-/// draw's own matrix.
-pub fn dropped_floor_w(w: f32, eye_height: f32, drop: f32) -> f32 {
-    let h = eye_height.abs();
-    w * (h + drop) / h.max(1.0)
+/// writes this per corner interpolates the plane exactly. The hosts' ground
+/// shaders are the GPU twins (`field_dropped_floor_depth` in
+/// `engine-render`, `fieldDroppedFloorScale` on the play page), which recover
+/// the eye from the draw's own matrix.
+pub fn dropped_floor_w(w: f32, eye_y: f32, vertex_y: f32, floor_y: f32, drop: f32) -> f32 {
+    let toward = if floor_y > eye_y {
+        1.0
+    } else if floor_y < eye_y {
+        -1.0
+    } else {
+        0.0
+    };
+    let h = (floor_y - eye_y).abs();
+    w * (h + drop) / (toward * (vertex_y - eye_y)).max(1.0)
 }
 
 /// Whether [`flat_refs`] marked this vertex's cell as a sloped far-bucket
@@ -414,23 +453,51 @@ mod tests {
         );
     }
 
-    /// The dropped plane is met along the same ray: a camera `h` above the
-    /// floor reaches the plane `drop` lower `(h + drop) / h` times as deep,
-    /// from either side, and a decal six units under the floor stays in
+    /// The dropped plane is met along the same ray: a camera `h` above a
+    /// flat floor reaches the plane `drop` lower `(h + drop) / h` times as
+    /// deep, from either side, and a decal six units under the floor stays in
     /// front of it.
     #[test]
     fn dropped_floor_is_the_parallel_plane_along_the_ray() {
         let w = 1000.0;
-        assert_eq!(dropped_floor_w(w, 500.0, 0.0), w);
-        assert_eq!(dropped_floor_w(w, 500.0, 50.0), 1100.0);
-        assert_eq!(dropped_floor_w(w, -500.0, 50.0), 1100.0);
+        let flat = |eye: f32, drop: f32| dropped_floor_w(w, eye, 0.0, 0.0, drop);
+        assert_eq!(flat(-500.0, 0.0), w);
+        assert_eq!(flat(-500.0, 50.0), 1100.0);
+        assert_eq!(flat(500.0, 50.0), 1100.0);
         // A decal six units under the floor, on the same ray, is nearer than
         // the dropped plane; a mesh buried twelve units is behind it.
         let drop = FREE_VANTAGE_FLOOR_DROP;
-        let at = |depth: f32| dropped_floor_w(w, 300.0, depth);
+        let at = |depth: f32| flat(-300.0, depth);
         assert!(at(6.0) < at(drop));
         assert!(at(12.0) > at(drop));
         // An eye level with the floor does not divide by zero.
-        assert!(dropped_floor_w(w, 0.0, drop).is_finite());
+        assert!(flat(0.0, drop).is_finite());
+    }
+
+    /// A sloped cell's plane hangs off the corner farthest from the eye, and
+    /// each vertex meets it along its own ray: the ray from an eye 300 above
+    /// the low corner through a vertex 32 higher descends `300 - 32` to the
+    /// vertex and `300 + 8` to the plane. A vertex above the eye never meets
+    /// it and goes to the back.
+    #[test]
+    fn a_sloped_cell_meets_the_level_plane_beyond_its_far_corner() {
+        // Retail Y-down: the eye at -300 is above a cell whose corners sit at
+        // 0 (low) and -32 (high).
+        let corners = [0.0, 0.0, -32.0, 0.0];
+        assert_eq!(dropped_floor_ref(-300.0, corners), 0.0);
+        assert_eq!(dropped_floor_ref(300.0, corners), -32.0);
+        let w = 1000.0;
+        let drop = FREE_VANTAGE_FLOOR_DROP;
+        let low = dropped_floor_w(w, -300.0, 0.0, 0.0, drop);
+        let high = dropped_floor_w(w, -300.0, -32.0, 0.0, drop);
+        assert_eq!(low, w * 308.0 / 300.0);
+        assert_eq!(high, w * 308.0 / 268.0);
+        // Over a flat cell the two rules agree.
+        assert_eq!(
+            dropped_floor_w(w, -300.0, 0.0, dropped_floor_ref(-300.0, [0.0; 4]), drop),
+            low
+        );
+        // A cliff-high vertex above the eye goes to the back.
+        assert!(dropped_floor_w(w, -300.0, -384.0, 0.0, drop) > 100.0 * w);
     }
 }

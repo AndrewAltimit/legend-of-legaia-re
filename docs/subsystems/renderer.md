@@ -953,18 +953,36 @@ preset included. Under a drop:
   The shaders recover the eye from the draw's own matrix (`eye_of_matrix` /
   `eyeOfMatrix`). `conc`'s shadow strips, six units down, still paint over the
   floor; a mesh buried deeper is hidden;
-- a **sloped** far-bucket cell keeps the far slice, since the cliff faces it
-  rises against are what hide it;
+- a **sloped** far-bucket cell is depth-tested as the level plane `8` units
+  beyond its corner farthest from the eye (`field_ground::dropped_floor_ref`):
+  the ray through each corner meets it `(h + drop) / d` times as deep, `d` the
+  corner's distance from the eye's height, and a plane is affine in `1 / w` on
+  screen, so the corners' depths again interpolate it exactly. A cell rising a
+  cliff's height between tiers (`town01`'s `(30, 38)` by the cave mouth) is
+  tested as its foot's floor, so the cliff face recessed behind it still
+  paints over it;
 - a **sloped** sorted cell keeps its own per-pixel depth.
+
+No far-bucket cell keeps the far slice under a drop. A sloped one left there
+while the flat cells around it take real depth loses to every flat cell and
+mesh behind it: `town01`'s plateau cell `(32, 23)`, a 32-unit ramp, showed
+the beach 192 units below it - its flat cell `(35, 17)` and the rock pile on
+it - as a pale quad with a dark hole beside the player whenever the camera
+looked past it toward the sea (player at `(30, 22)`, orbit `2.7`, tilt
+`-0.5`).
 
 Natively the word rides the scene-lights block (`Renderer::set_field_ground_drop`,
 `ground_drop_param` in the WGSL); the play page stages it as `u_ground_drop`
 (`play_render_ground_drop` -> `setGroundDrop`). The retail-compare corpus
 frames at retail's vantage, so its frames keep the buckets. Pins:
 `the_dropped_floor_depth_agrees_on_both_hosts` (`engine-render`
-`tests/vertex_law_parity.rs`) and `the_ground_drops_only_off_retail_vantage_on_the_field`.
+`tests/vertex_law_parity.rs`), `the_ground_drops_only_off_retail_vantage_on_the_field`,
+and the disc-gated `town01_plateau_ground_holds_against_the_beach_at_every_yaw`
+(`tests/field_ground_drop_sweep_disc.rs`), which runs the ground around that
+spot through the native vertex stage at every yaw of the follow camera and
+fails when a cell farther along a pixel's ray wins the pixel.
 The play window reproduces a swung view with `LEGAIA_CAPTURE_FIELD_KNOBS=orbit,tilt,zoom`
-on a capture run, and `LEGAIA_DIAG_NO_GROUND_DROP` stages the buckets
+(and a spot with `LEGAIA_START_TILE=x,z`) on a capture run, and `LEGAIA_DIAG_NO_GROUND_DROP` stages the buckets
 whatever the vantage.
 
 ### No draw channel is gated on object-grid bit `0x0800`
