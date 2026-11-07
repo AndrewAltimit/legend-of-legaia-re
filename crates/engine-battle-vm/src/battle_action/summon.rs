@@ -403,6 +403,9 @@ pub(super) fn summon_return<H: BattleActionHost + ?Sized>(
             a.render_flag = 0;
         }
     }
+    // `jal 0x801E70BC` in the same body: the cast's spell XP is checked
+    // against its level here, on the way out of the band.
+    host.summon_magic_level_check();
     transition(ctx, ActionState::SummonVerifyAlive)
 }
 

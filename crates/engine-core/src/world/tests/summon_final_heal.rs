@@ -460,3 +460,22 @@ fn a_quiet_fold_lands_its_hp_without_a_reaction() {
     assert!(world.actors[1].battle.hp < before);
     assert!(world.actors[1].battle_reaction_entry.is_none());
 }
+
+/// Inside the summon band the hit banks its XP but the level check waits for
+/// state `0x36` (`jal 0x801E70BC` on the band's way out), so the banner rises
+/// after the module's last arm, not on the hit's pass.
+#[test]
+fn the_band_defers_the_level_check_to_its_return() {
+    let mut world = summon_xp_world(50, 4000);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
+    world.battle_ctx.action_state = 0x35;
+    world.cast_spell_on_slots(0, &gimard_spell_def(), &[1]);
+    assert!(world.drain_magic_level_ups().is_empty());
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0);
+    world.run_summon_magic_level_check();
+    assert_eq!(world.drain_magic_level_ups(), vec![(0, 0x81, 2)]);
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0x65);
+}

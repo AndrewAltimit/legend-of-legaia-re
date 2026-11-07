@@ -108,6 +108,10 @@ pub struct CastFxState {
     /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
     /// once, with the level check, when the cast folds or its fold is waived.
     pub module_hit_xp: u32,
+    /// Spell XP a summon cast banked inside the band, waiting for the level
+    /// check `FUN_801E70BC` that state `0x36` runs on the cast's way out
+    /// (`World::run_summon_magic_level_check`): `(caster, spell id, gain)`.
+    pub pending_level_check: Option<(u8, u8, u32)>,
     /// PROT 0939 arm 4's pace, armed by arm 3's pass.
     pub spore_gas_beat: legaia_engine_cast::cast_module_ticks::SporeGasBeat,
     /// The module's hit stages no reaction (PROT 0918's): the fold lands its
@@ -515,6 +519,7 @@ impl CastFxState {
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,
+            pending_level_check: None,
             spore_gas_beat: Default::default(),
             module_fold_quiet: false,
             fatal_decision: None,

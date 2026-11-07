@@ -380,6 +380,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .get(id)
             .map_or(0, |def| def.size_class)
     }
+    fn summon_magic_level_check(&mut self) {
+        self.world.run_summon_magic_level_check();
+    }
     fn summon_band_exit(&mut self) {
         self.world.casting.module_ctx_278 = 0;
         self.world.casting.module_caption = None;
