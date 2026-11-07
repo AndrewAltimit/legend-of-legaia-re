@@ -229,6 +229,20 @@ pub fn theeder_tick(
             let tip = theeder_ray_rest_tip(mouth, geom.facing);
             let drawn = fx.trail.sample(tip);
             fx.packet = Some(TheederPacket::Sweep { mouth, tip, drawn });
+            // The same exit lights every live monster seat with the neutral
+            // word, its render flag left as the band set it
+            // (`0x801F7934..0x801F7978`: `+0x04 = 0x20080200` behind the HP
+            // test, seats `3..7`). The draw tick's tint pass then refreshes
+            // each node's colour word off it, so the hidden row's anim ticks
+            // resume through the sweep: retail's victim walks its idle from
+            // arm 12's first pass and commits its reaction on the hit pass.
+            for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
+                if let Some(v) = seats.get_mut(seat as usize)
+                    && v.hp != 0
+                {
+                    v.present_04 = THEEDER_ROW_LIT_WORD;
+                }
+            }
             for slot in [who.caster, who.summon] {
                 if let Some(s) = seats.get_mut(slot as usize) {
                     s.target_code = TARGET_CODE_ENEMY_ROW;
@@ -425,6 +439,10 @@ impl TheederFx {
 /// The `+0x04` mesh-tint word PROT 0904's ring sweep stamps on every seat it
 /// hits.
 pub const THEEDER_HIT_PRESENT_WORD: u32 = 0x03FF_0000;
+
+/// The neutral colour word arm 11's exit stores on every live monster seat
+/// (`lui a1,0x2008; ori a1,a1,0x200` at `0x801F7934` / `0x801F7940`).
+pub const THEEDER_ROW_LIT_WORD: u32 = 0x2008_0200;
 
 /// The `+0x21F` render byte the same hit writes.
 pub const THEEDER_HIT_RENDER_21F: u8 = 2;
