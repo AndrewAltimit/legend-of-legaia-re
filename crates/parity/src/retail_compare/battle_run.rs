@@ -961,8 +961,13 @@ pub(super) fn battle_image(
     // The capture's frame-cost ring, for a film that runs on from the gate
     // (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`): the child stands the engine's ring
     // there once the gate opens and runs the frames after it on the ring,
-    // whatever step the walk up to it was pinned to.
-    if let Some((entries, cursor)) = battle.cost_ring {
+    // whatever step the walk up to it was pinned to. Not for a replayed cast:
+    // its module arms run on their own step tables, and the frames between
+    // them measured worse off the pin (the Death Game films, `image` `-.05`).
+    if let Some((entries, cursor)) = battle
+        .cost_ring
+        .filter(|_| battle.seed_plan() != crate::retail_compare_battle::SeedPlan::Cast)
+    {
         let list: Vec<String> = entries.iter().map(u16::to_string).collect();
         env.push((
             "LEGAIA_BATTLE_COST_RING",

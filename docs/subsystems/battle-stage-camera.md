@@ -1452,6 +1452,27 @@ per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
 
+<a id="the-table-held-out-against-the-films"></a>
+
+**The table held out against the films.** The monster strike and cast films
+([cast-sequence oracle](../tooling/cast-sequence-oracle.md#a-monsters-physical-attack))
+log retail's step every vsync. The ring over the table, run over each film's own
+sequence of action states and pass boundaries, reads retail's step on `.91` of the
+held-out strike vsyncs (half the films, split by name). The best single step per film
+reads `.918`, so a model that only names a step per fight could gain less than one
+vsync in a hundred. What is left moves inside one action state at one load:
+- a full party's strike that drops to `2` sixteen passes into the HP-bar settle `0x51`;
+- a lone member's strike on four Killer Bees that climbs to `3` on the hit;
+- the heaviest formations' `0x1F` / `0x20` frames, which pass `0x2D0` frame by frame
+  and run step `4`.
+
+A formation term fails held out. The alive monsters' TMD face count explains more of a
+strike capture's newest ring entries than party size alone (`R^2` `.86` against `.76`),
+yet a slope fit on one half of the films is `0` and on the other `0.08` hblanks a
+face, which costs the first half a point of agreement, so the table carries no
+formation term. The
+measured cost also moves with the framing, which no `World`-side count reads.
+
 <a id="what-the-arm-step-table-is"></a>
 
 **What the arm step table is.** One recording per cast (`party_basic_attack_vs_gobu_gobu`),

@@ -263,6 +263,21 @@ second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 
+<a id="the-frames-after-the-gate-run-on-the-captures-ring"></a>
+
+The frames after the gate run on the capture's frame-cost ring. A replay whose
+history left the party's step inside its sixteen passes, or one that replays a cast,
+keeps the default step up to its gate (`LEGAIA_BATTLE_PARTY_STEP=0`,
+`RetailBattle::replay_keeps_default_step`), which is what the stills measure best on.
+The pin held for the whole film, so a full party's strike ran at `2` against retail's
+`3` from its first frame and the yaw drifted two units a pass. The seed now also hands
+the child the capture's ring `0x80084098` and cursor (`LEGAIA_BATTLE_COST_RING`,
+`frame_cost_ring`). At the gate release the child stands the engine's `FrameCostRing`
+there and lifts the pin (`World::seed_frame_cost_ring`), so the frames after it take
+the ring's step and then the measured costs
+([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds)). It is a
+harness seat: the walk up to the gate is unchanged and no play path reads it.
+
 An injected cast seats the caster's clip and cursor on its begin
 (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
 the caster stands on.
