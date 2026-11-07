@@ -81,6 +81,38 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-placement **forced blend mode** (parallel to
+    /// [`Self::field_placement_slots`]): the ABR mode (`0..=3`) a placed
+    /// object draws every prim semi-transparent with, or `-1` for its own
+    /// prims' flags - the top byte of the object's actor `+0x74` word, which
+    /// the prim dispatcher ORs into every packet (bit 31 the enable, bits
+    /// 24..=25 the mode; `FUN_80043390`, written by field-VM `4C D6`:
+    /// `chitei2`'s corridor pillars). **Empty** while no placement forces
+    /// one. The same `World::object_draw_tints` word the native play-window
+    /// stages as `DrawCue::blend`.
+    pub fn field_placement_blends(&self) -> Vec<i32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let tints = h.world.object_draw_tints();
+        let out: Vec<i32> = f
+            .placement_records
+            .iter()
+            .map(|r| {
+                r.and_then(|r| tints.get(&r))
+                    .and_then(|&(word, _)| {
+                        legaia_engine_battle::battle_body_blend::draw_colour_semi_mode(word)
+                    })
+                    .map_or(-1, i32::from)
+            })
+            .collect();
+        if out.iter().all(|&m| m < 0) {
+            Vec::new()
+        } else {
+            out
+        }
+    }
+
     /// Per-placement **live model** (parallel to
     /// [`Self::field_placement_slots`]), 16 column-major floats per placement
     /// in the page's Y-up frame: where a placed object whose actor a script

@@ -773,7 +773,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // pass - defer them. Gated on the semi-blend flag (`flags.y`, default on),
     // the same flag the CPU-side blend pass keys off; when it is off the prim
     // draws fully opaque.
-    if u.flags.y >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
+    // `flags.y >= 1.5`: the draw's colour word forces ABE on every prim.
+    if u.flags.y >= 0.5 && ((tsb & 0x8000u) != 0u || u.flags.y >= 1.5)
+        && ((word >> 15u) & 1u) == 1u {
         discard;
     }
 

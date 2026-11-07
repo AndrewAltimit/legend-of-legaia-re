@@ -159,6 +159,7 @@ class TmdRenderer {
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
+    this.locForceSemi = gl.getUniformLocation(this.program, 'u_force_semi');
     this.locFogEnable   = gl.getUniformLocation(this.program, 'u_fog_enable');
     this.locFogOrigin   = gl.getUniformLocation(this.program, 'u_fog_origin');
     this.locHazeEyeZ    = gl.getUniformLocation(this.program, 'u_haze_eye_z');

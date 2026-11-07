@@ -650,6 +650,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let nclipOn = this.nclipCull;
     /* Whether the whole-draw far bucket (`u_far_slice`) is staged. */
     let farOn = false;
+    /* Whether a placement's forced ABE (`u_force_semi`) is staged. */
+    let forceOn = 0;
     /* The opaque draws - the ground, then every placement - as one
      * closure, so the SSAO pre-pass can issue them a second time into its
      * G-buffer under the same uniforms (the trackers above carry across
@@ -716,6 +718,13 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
             meanDepth = wantMean;
           }
           eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+          /* A placement whose colour word forces ABE (`forceSemi`, the ABR
+           * mode) defers its blending texels to the blend pass. */
+          const wantForce = p.forceSemi !== undefined ? 1 : 0;
+          if (wantForce !== forceOn && this.locForceSemi) {
+            gl.uniform1i(this.locForceSemi, wantForce);
+            forceOn = wantForce;
+          }
           /* A far-bucket placement (the battle ground grid) writes its depth
            * into the far slice, behind everything else on the frame. */
           const wantFar = !!p.farBucket;
@@ -727,6 +736,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         }
       }
       if (farOn) gl.uniform1i(this.locFarSlice, 0);
+      if (forceOn) { gl.uniform1i(this.locForceSemi, 0); forceOn = 0; }
       /* Hand the frame-global cue back before the blend pass / next frame. */
       if (cueOn !== undefined && cueOn !== this.cueParams) {
         this._setCue(this.cueParams);
@@ -753,7 +763,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let blendMean = -1;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
-      if (!m || !m.semiRanges || m.indexCount === 0 || list.length === 0) continue;
+      if (!m || m.indexCount === 0 || list.length === 0) continue;
+      if (!m.semiRanges && !list.some((p) => p.forceSemi !== undefined)) continue;
       if (!blendOn) {
         gl.enable(gl.BLEND);
         gl.depthMask(false);
@@ -797,6 +808,17 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           blendMean = wantMean;
         }
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+        /* A forced placement blends its whole opaque range in its own mode
+         * (textured prims their STP texels only); its semi tail would draw
+         * those prims twice. */
+        if (p.forceSemi !== undefined) {
+          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 1);
+          this._setSemiBlend(p.forceSemi);
+          gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 0);
+          continue;
+        }
+        if (!m.semiRanges) continue;
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);

@@ -295,6 +295,9 @@ impl PlayWindowApp {
                         .world
                         .seed_player_clip(c.clip, c.cursor, c.flags, c.rate);
                 }
+                for &(record, byte) in &sc.seat_object_flags {
+                    self.session.host.world.seed_object_draw_flags(record, byte);
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host

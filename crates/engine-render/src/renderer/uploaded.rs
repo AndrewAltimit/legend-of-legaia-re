@@ -590,6 +590,13 @@ pub struct DrawCue {
     pub far_z: f32,
     /// `IR0` at `far_z`, in `1.0 = 0x1000` units. May exceed `1.0`.
     pub max_ir0: f32,
+    /// The colour word's primitive flags forcing semi-transparency: `Some(abr)`
+    /// when bit 31 of the staged word is set, `abr` its bits 24..=25. Every
+    /// prim of the draw then blends in that ABR mode (textured prims their
+    /// STP texels only, as any semi prim) - the actor draw's `+0x74` top byte
+    /// that field-VM `4C D6` writes ([`crate::psx_blend::push_forced_draw`]).
+    /// `None` leaves each prim's own ABE / ABR.
+    pub blend: Option<u8>,
 }
 
 /// An untextured, vertex-coloured mesh draw inside a [`Scene`] (the `F*`/`G*`

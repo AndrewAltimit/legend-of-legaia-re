@@ -153,7 +153,8 @@ fn fs_ssao_prepass(in: VsOut, @builtin(front_facing) front_facing: bool) -> @loc
     if bgr555_to_rgba(word).a <= 0.0 {
         discard;
     }
-    if u.flags.y >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
+    if u.flags.y >= 0.5 && ((tsb & 0x8000u) != 0u || u.flags.y >= 1.5)
+        && ((word >> 15u) & 1u) == 1u {
         discard;
     }
     return g;
@@ -175,7 +176,7 @@ fn fs_ssao_prepass(in: VsOut, @builtin(front_facing) front_facing: bool) -> @loc
     if ((in.blend & 0x4000u) != 0u && front_facing) {
         discard;
     }
-    if (u.flags.y >= 0.5 && (in.blend & 0x8000u) != 0u) {
+    if (u.flags.y >= 0.5 && ((in.blend & 0x8000u) != 0u || u.flags.y >= 1.5)) {
         discard;
     }
     if (u.flags.z > 0.5
@@ -1081,7 +1082,7 @@ mod tests {
             "effect_clipped(in.world_pos)",
             "(in.cba_tsb.x & 0x8000u) != 0u && front_facing",
             "occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)",
-            "(tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u",
+            "((tsb & 0x8000u) != 0u || u.flags.y >= 1.5)\n        && ((word >> 15u) & 1u) == 1u",
         ];
         for t in vram_tests {
             assert!(VRAM_MESH_SHADER_SRC.contains(t), "fs_main lost {t}");
@@ -1090,7 +1091,7 @@ mod tests {
         let color_tests = [
             "effect_clipped(in.world_pos)",
             "(in.blend & 0x4000u) != 0u && front_facing",
-            "(in.blend & 0x8000u) != 0u",
+            "((in.blend & 0x8000u) != 0u || u.flags.y >= 1.5)",
         ];
         for t in color_tests {
             assert!(COLOR_MESH_SHADER_SRC.contains(t), "colour fs_main lost {t}");

@@ -20,10 +20,11 @@ mod field_env;
 #[path = "redraw_draws/world_map.rs"]
 mod world_map;
 
-// An op-`4C 81` draw tint (`+0x74` colour / `+0x78` blend) as the
-// constant per-draw cue retail's actor draw stages (far colour +
-// `IR0`, `FUN_8001ADA4` -> `FUN_80043390`). One shape for placed
-// objects, NPCs and the player.
+// An actor's draw word (`+0x74`) and blend (`+0x78`) as the constant
+// per-draw cue retail's actor draw stages (far colour + `IR0`,
+// `FUN_8001ADA4` -> `FUN_80043390`), with the word's top byte as the
+// draw's primitive flags (op `4C D6`'s semi-transparency). One shape for
+// placed objects, NPCs and the player.
 fn tint_draw_cue((colour, blend): (u32, u16)) -> Option<legaia_engine_render::DrawCue> {
     let (far, max_ir0) = legaia_engine_field::object_tint::tint_cue(colour, blend);
     Some(legaia_engine_render::DrawCue {
@@ -31,6 +32,7 @@ fn tint_draw_cue((colour, blend): (u32, u16)) -> Option<legaia_engine_render::Dr
         near_z: -1.0,
         far_z: 0.0,
         max_ir0,
+        blend: legaia_engine_battle::battle_body_blend::draw_colour_semi_mode(colour),
     })
 }
 

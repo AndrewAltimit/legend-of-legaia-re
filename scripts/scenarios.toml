@@ -2792,6 +2792,26 @@ topics = ["field", "chitei2", "Karisto", "story flags", "card boot", "probe stat
 
 [[scenarios]]
 slot = 255
+label = "chitei2_corridor_pillars_before"
+backup_fingerprint = "a32aa09e809c6378ba18a306bcc1b6f56201c442a2060a6033898a5355fd1e4b"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "Underground Octam, the east corridor's west door, arrived through deroa's door record 3. RETAIL disc: chitei2_field_card_boot crossed chitei2 -> deroa -> chitei2 by player-tile pokes onto the door trigger tiles (50,18) and (43,112) (the door records ran as the disc wrote them), saved 90 field vsyncs after the arrival at (11968, 13888). The corridor pillars P0[5..11] draw opaque."
+topics = ["field", "chitei2", "4C D6", "semi-transparency", "poked position"]
+
+[[scenarios]]
+slot = 255
+label = "chitei2_corridor_pillars_lit"
+backup_fingerprint = "4bdd22844e65c7d80281d0b892170715145856c9e9bc25ad5db1da2e3582b5db"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "chitei2_corridor_pillars_before, then the player poked across walk-on tiles (100,110) (P2[1], 4C D6 04) and (101,110) (P2[0], 4C D6 03) to stand on (102,110); saved 120 vsyncs later. The pillars P0[5..11] carry +0x74 = 0xC3/0xD3808080: semi-transparent, ABR 3, the party visible through them."
+topics = ["field", "chitei2", "4C D6", "semi-transparency", "poked position"]
+
+[[scenarios]]
+slot = 255
 label = "retona_field_card_boot"
 backup_fingerprint = "cb69ed5a9435041e9dabc83d29627aa7b7111446896305e9494178ffa63fcca3"
 phase = "field"

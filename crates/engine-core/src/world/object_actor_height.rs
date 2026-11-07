@@ -324,40 +324,66 @@ impl World {
             .and_then(ActorTint::drawn)
     }
 
-    /// Flat partition-0 record index -> `(colour, blend)` for every
-    /// **object-bind channel** whose actor draws tinted (`+0x78 != 0`): the
-    /// low 24 bits of `+0x74` (`0xBBGGRR`) and `+0x78` (`0x1000` = full),
-    /// which the actor draw stages as the GTE far colour and `IR0`
-    /// (`FUN_8001ADA4` -> `FUN_80043390`). Both hosts hand each listed
-    /// record's placed draws a constant per-draw depth cue from it.
-    // REF: FUN_8001ADA4 (0x8001B46C..0x8001B474)
+    /// Flat partition-0 record index -> `(word, blend)` for every
+    /// **object-bind channel** whose actor draws tinted (`+0x78 != 0`) or
+    /// semi-transparent (`+0x74` bit 31): the whole `+0x74` word and `+0x78`
+    /// (`0x1000` = full). The actor draw hands both to the prim dispatcher
+    /// (`FUN_8001ADA4` -> `FUN_80043390`), which stages the word's low 24
+    /// bits (`0xBBGGRR`) and `+0x78` as the GTE far colour and `IR0`, and
+    /// ORs its top byte into every packet as primitive flags: bit 31 the
+    /// semi-transparency enable, bits 24..=25 the ABR mode
+    /// (`0x80043504..0x8004351C`). Field-VM `4C D6` writes that byte
+    /// (`chitei2`'s corridor pillars). Both hosts hand each listed record's
+    /// placed draws a constant per-draw cue from the pair, the blend mode
+    /// from the top byte
+    /// ([`legaia_engine_battle::battle_body_blend::draw_colour_semi_mode`]).
+    // REF: FUN_8001ADA4 (0x8001B46C..0x8001B474), FUN_80043390
     pub fn object_draw_tints(&self) -> std::collections::HashMap<usize, (u32, u16)> {
         let mut out: std::collections::HashMap<usize, (u32, u16)> = self
             .field_vm
             .channels
             .iter()
-            .filter(|c| c.object_bind && c.ctx.field_78 != 0)
-            .map(|c| {
-                (
-                    c.placement_index,
-                    (c.ctx.field_74 & 0x00FF_FFFF, c.ctx.field_78),
-                )
-            })
+            .filter(|c| c.object_bind && (c.ctx.field_78 != 0 || c.ctx.field_74 & 0x8000_0000 != 0))
+            .map(|c| (c.placement_index, (c.ctx.field_74, c.ctx.field_78)))
             .collect();
-        // A tint another script's prefixed op landed on the object.
+        // A tint another script's prefixed op landed on the object: its
+        // colour and blend, under the word's primitive-flag byte.
         for (k, t) in &self.field_vm.actor_tints {
             if let ActorTintKey::Object(r) = *k {
+                let r = usize::from(r);
+                let flags = out.get(&r).map_or(0, |&(w, _)| w & 0xFF00_0000);
                 match t.drawn() {
-                    Some(pair) => {
-                        out.insert(usize::from(r), pair);
+                    Some((colour, blend)) => {
+                        out.insert(r, ((colour & 0x00FF_FFFF) | flags, blend));
+                    }
+                    None if flags & 0x8000_0000 != 0 => {
+                        if let Some(e) = out.get_mut(&r) {
+                            e.1 = 0;
+                        }
                     }
                     None => {
-                        out.remove(&usize::from(r));
+                        out.remove(&r);
                     }
                 }
             }
         }
         out
+    }
+
+    /// Write a retail state's primitive-flag byte (bit 7 the
+    /// semi-transparency enable, bits 0..=1 the ABR mode) into the top byte
+    /// of object-bind record `record`'s `+0x74` word, as field-VM `4C D6`
+    /// would have (`0x801E2D64..0x801E2DB0`). The retail-compare image child
+    /// seats it: the walk-on record that wrote it is not replayed by a seat.
+    pub fn seed_object_draw_flags(&mut self, record: usize, byte: u8) {
+        for c in self
+            .field_vm
+            .channels
+            .iter_mut()
+            .filter(|c| c.object_bind && c.placement_index == record)
+        {
+            c.ctx.field_74 = (c.ctx.field_74 & 0x7CFF_FFFF) | (u32::from(byte & 0x83) << 24);
+        }
     }
 
     /// The object-effect clip ([`legaia_engine_effects::object_effect`]) of every field

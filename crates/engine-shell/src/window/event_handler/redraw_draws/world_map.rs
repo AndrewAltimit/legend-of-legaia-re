@@ -72,6 +72,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     near_z: -1.0,
                     far_z: 0.0,
                     max_ir0: c.ir0,
+                    blend: None,
                 })
         };
         let (deco_start, color_deco_start) = app.world_map_deco_start;

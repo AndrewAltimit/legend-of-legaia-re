@@ -103,6 +103,24 @@ pipelines re-draw their per-ABR-mode index tail
 from draw-env state (mode 0 = the PSX default); plain
 `upload_color_mesh` keeps every prim opaque.
 
+**A draw can force semi-transparency on every prim.** Retail's prim
+dispatcher `FUN_80043390` reads the actor's colour word (`+0x74`) top byte as
+primitive flags and ORs them into every packet it builds: bit 31 into the
+command's semi-transparency bit (`0x80043510..0x8004351C`), bits 24..=25 into
+each textured packet's texpage ABR (`0x80043504..0x8004350C`, OR'd at e.g.
+`0x80044D44`). Field-VM `4C D6` writes that byte
+([`script-vm-menuctrl.md`](script-vm-menuctrl.md)). The port carries it as
+`DrawCue::blend` (`Some(abr)`): the draw's uniform raises `flags.y` to `2.0`,
+which every opaque entry (and the SSAO pre-pass) reads as each prim's ABE set,
+and the blend pass draws the mesh's whole opaque index range as one run in that
+mode (`psx_blend::push_forced_draw`) in place of its own semi tail; the
+textured blend entry's STP-only rule then blends exactly the texels retail
+does. Two approximations, neither with a shipped carrier: the run is keyed at
+the mesh's bounds centre, not per prim, and a prim whose own texpage carries a
+non-zero ABR blends in the forced mode rather than the OR of the two (the one
+forced mode on the disc, `3`, absorbs any OR). The browser page does the same
+with `u_force_semi` and a placement's `forceSemi`.
+
 **Ordering mirrors the retail ordering table, at per-primitive
 granularity.** Every semi prim of every semi-carrying draw (textured and
 untextured in one shared sequence) is keyed by its model-space

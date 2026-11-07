@@ -303,6 +303,20 @@
         }
       }
       this._objectTintsLive = t.length > 0;
+      /* The word's primitive-flag byte (field-VM `4C D6`, chitei2's corridor
+       * pillars): a placed object forcing every prim semi-transparent in one
+       * ABR mode, as FUN_80043390 ORs the byte into each packet. Guarded
+       * against a cached WASM without the export. */
+      if (typeof rt.field_placement_blends !== 'function') return;
+      const b = rt.field_placement_blends();
+      if (!b.length && !this._objectBlendsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const m = d.placeIdx < b.length ? b[d.placeIdx] : -1;
+        if (m >= 0) d.forceSemi = m;
+        else if (d.forceSemi !== undefined) delete d.forceSemi;
+      }
+      this._objectBlendsLive = b.length > 0;
     }
 
     /* Object-effect clip (field-VM `4C C2` raises an actor's `+0x42`):

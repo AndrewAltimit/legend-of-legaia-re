@@ -145,6 +145,10 @@ pub struct BlendListEntry {
     pub mode: u8,
     /// First index of the prim's triangle in its mesh's semi tail.
     pub first_index: u32,
+    /// Indices the entry draws from `first_index`: `3` for one prim, the
+    /// mesh's whole opaque range for a draw whose colour word forces
+    /// semi-transparency on every prim ([`push_forced_draw`]).
+    pub count: u32,
 }
 
 /// A depth key snapped to the GTE's depth resolution: the nearest whole
@@ -187,8 +191,47 @@ pub fn push_draw_prims(
             draw_index,
             mode: p.mode,
             first_index: p.first_index,
+            count: 3,
         });
     }
+}
+
+/// Append a draw whose primitive flags force semi-transparency on every prim
+/// as one blend-list entry over the mesh's whole opaque index range
+/// (`0..index_count`), in ABR `mode`, keyed at the model-space point
+/// `centre`.
+///
+/// Retail's prim dispatcher `FUN_80043390` reads the colour word's top byte
+/// as primitive flags: bit 31 ORs the semi-transparency bit into every
+/// packet's command (`0x80043510..0x8004351C`, stored at `0x1F800034`) and
+/// bits 24..=25 OR into every textured packet's texpage ABR
+/// (`0x80043504..0x80043518`, `0x1F800030`, OR'd at e.g. `0x80044D44`). The
+/// textured blend pass already keeps only STP texels, so the main range
+/// blends exactly the texels retail blends; the prims are keyed as one
+/// (retail bins each), and a prim whose own texpage carries a non-zero ABR
+/// blends in `mode` rather than in the OR of the two (no shipped carrier: the
+/// one forced mode on the disc is `3`, which the OR leaves at `3`).
+pub fn push_forced_draw(
+    list: &mut Vec<BlendListEntry>,
+    untextured: bool,
+    draw_index: u32,
+    mvp: &glam::Mat4,
+    centre: [f32; 3],
+    mode: u8,
+    index_count: u32,
+) {
+    if index_count == 0 {
+        return;
+    }
+    list.push(BlendListEntry {
+        key: snap_depth_key(prim_depth_key(mvp, centre)),
+        seq: list.len() as u32,
+        untextured,
+        draw_index,
+        mode: mode & 3,
+        first_index: 0,
+        count: index_count,
+    });
 }
 
 /// Far-to-near (descending key) sort of the per-prim blend list, the
@@ -212,7 +255,7 @@ pub fn coalesce_sorted(list: &[BlendListEntry], mut emit: impl FnMut(&BlendListE
     while i < list.len() {
         let head = list[i];
         let start = head.first_index;
-        let mut count = 3u32;
+        let mut count = head.count;
         let mut j = i + 1;
         while j < list.len() {
             let e = &list[j];
@@ -221,7 +264,7 @@ pub fn coalesce_sorted(list: &[BlendListEntry], mut emit: impl FnMut(&BlendListE
                 && e.mode == head.mode
                 && e.first_index == start + count
             {
-                count += 3;
+                count += e.count;
                 j += 1;
             } else {
                 break;

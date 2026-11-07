@@ -390,6 +390,29 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
         .collect()
 }
 
+/// Each bind record's `(record +0x50, primitive-flag byte)` whose first field
+/// actor in list order (as [`retail_object_models`] takes them) draws with
+/// the semi-transparency enable in its `+0x74` word: the byte's bit 7 and its
+/// ABR bits 0..=1, the part of the word the prim dispatcher ORs into every
+/// packet (`FUN_80043390`). Field-VM `4C D6` writes it from a walk-on record
+/// (`chitei2`'s corridor pillars) that a seat does not replay; the image
+/// child writes it over the object's context (`World::seed_object_draw_flags`).
+pub fn retail_object_draw_flags(ram: &[u8]) -> Vec<(u16, u8)> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            if !seen.insert(record) {
+                return None;
+            }
+            let word = game_anchors::u32_at(ram, n + 0x74);
+            (word & 0x8000_0000 != 0).then_some((record, ((word >> 24) & 0x83) as u8))
+        })
+        .collect()
+}
+
 /// Every field actor with a clip bound, first in list order per record
 /// (as [`retail_object_models`] takes them). A placed object's clip is touch
 /// and walk history - a door the player has just pushed open, a lid mid

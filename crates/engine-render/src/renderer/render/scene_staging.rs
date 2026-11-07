@@ -385,6 +385,13 @@ impl Renderer {
             let tex_window = [tex_window_packed, c0, c1, c2];
             let mut flags = flags_base;
             flags[2] = if occl_allowed { 1.0 } else { 0.0 };
+            // A colour word forcing semi-transparency on every prim: the
+            // opaque pass defers what the blend pass draws (`flags.y >= 1.5`
+            // reads as every prim's ABE set; `0.0`, the blend pass off,
+            // stays off).
+            if flags[1] >= 0.5 && cue.is_some_and(|c| c.blend.is_some()) {
+                flags[1] = 2.0;
+            }
             if let Some(o) = order {
                 flags[3] = -1.0 - f32::from(o);
             }

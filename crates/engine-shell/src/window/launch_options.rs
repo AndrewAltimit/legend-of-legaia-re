@@ -366,6 +366,11 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_OBJECT_FLAGS=<record>:<byte>,..`: a retail state's drawn
+    /// actors' `+0x74` primitive-flag bytes (semi-transparency enable + ABR,
+    /// field-VM `4C D6`), written over the placed objects' contexts on the
+    /// capture frame (`World::seed_object_draw_flags`).
+    pub seat_object_flags: Vec<(usize, u8)>,
     /// `LEGAIA_SEAT_OBJECT_CLIPS=<record>:<clip>:<cursor>:<flags>:<rate>;..`:
     /// a retail state's drawn actors' clip words
     /// (`legaia_parity::retail_compare::retail_object_clips`), written over
@@ -1241,6 +1246,16 @@ impl ScreenshotConfig {
                     .first()
                     .copied()
             }),
+            seat_object_flags: std::env::var("LEGAIA_SEAT_OBJECT_FLAGS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (r, b) = e.split_once(':')?;
+                            Some((r.trim().parse().ok()?, b.trim().parse().ok()?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')

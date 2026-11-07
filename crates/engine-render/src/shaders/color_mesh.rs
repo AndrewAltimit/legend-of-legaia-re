@@ -120,7 +120,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // from the per-ABR-mode index tail. Gated on the semi-blend flag
     // (`flags.y`, default on). Mirrors the textured opaque pass discarding
     // STP texels of semi prims.
-    if (u.flags.y >= 0.5 && (in.blend & 0x8000u) != 0u) {
+    // `flags.y >= 1.5`: the draw's colour word forces ABE on every prim.
+    if (u.flags.y >= 0.5 && ((in.blend & 0x8000u) != 0u || u.flags.y >= 1.5)) {
         discard;
     }
     // Camera-occlusion fade (opt-in see-through-walls enhancement):

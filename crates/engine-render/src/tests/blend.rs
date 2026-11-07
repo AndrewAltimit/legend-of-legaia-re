@@ -130,11 +130,13 @@ fn semi_transparency_defer_is_gated_on_flags_y_not_psx_mode() {
     // The STP / ABE defer that hands blended fragments to the blend pass keys
     // off flags.y in both shaders.
     assert!(
-        VRAM_MESH_SHADER_SRC.contains("u.flags.y >= 0.5 && (tsb & 0x8000u)"),
+        VRAM_MESH_SHADER_SRC
+            .contains("u.flags.y >= 0.5 && ((tsb & 0x8000u) != 0u || u.flags.y >= 1.5)"),
         "vram shader: semi-transparency defer must gate on flags.y"
     );
     assert!(
-        COLOR_MESH_SHADER_SRC.contains("u.flags.y >= 0.5 && (in.blend & 0x8000u)"),
+        COLOR_MESH_SHADER_SRC
+            .contains("u.flags.y >= 0.5 && ((in.blend & 0x8000u) != 0u || u.flags.y >= 1.5)"),
         "color mesh shader: semi-transparency defer must gate on flags.y"
     );
     // And it must NOT ride the psx_params.z (UV-snap) flag any more - that flag
@@ -428,6 +430,7 @@ fn psx_blend_list_orders_prims_back_to_front_across_draws() {
         draw_index: 7,
         mode: 0,
         first_index: 0,
+        count: 3,
     });
     psx_blend::sort_blend_list(&mut with_nan);
     assert_eq!(with_nan[0].draw_index, 7);
@@ -512,6 +515,7 @@ fn psx_blend_coalesce_splits_on_draw_change() {
             draw_index: 0,
             mode: 0,
             first_index: 12,
+            count: 3,
         },
         psx_blend::BlendListEntry {
             key: 8.0,
@@ -520,6 +524,7 @@ fn psx_blend_coalesce_splits_on_draw_change() {
             draw_index: 1,
             mode: 0,
             first_index: 15,
+            count: 3,
         },
         psx_blend::BlendListEntry {
             key: 7.0,
@@ -528,6 +533,7 @@ fn psx_blend_coalesce_splits_on_draw_change() {
             draw_index: 1,
             mode: 0,
             first_index: 18,
+            count: 3,
         },
     ];
     let mut runs = Vec::new();
@@ -619,6 +625,7 @@ fn psx_blend_snapped_keys_share_a_bucket() {
         draw_index: seq,
         mode,
         first_index: seq * 3,
+        count: 3,
     };
     // Face (additive) first, shadow (subtractive) second, the shadow's key
     // a hair nearer.
@@ -646,4 +653,21 @@ fn hybrid_tsb_reduces_to_the_colour_mesh_blend_word() {
             psx_blend::pack_blend_word(true, 1),
         ]
     );
+}
+
+/// A draw whose colour word forces ABE blends its whole opaque range as one
+/// run in the forced mode (`FUN_80043390` ORs the word's top byte into every
+/// packet), keyed at its centre among the other semi prims.
+#[test]
+fn a_forced_draw_blends_its_whole_range_in_one_run() {
+    let mvp = glam::Mat4::IDENTITY;
+    let mut list = Vec::new();
+    psx_blend::push_forced_draw(&mut list, false, 2, &mvp, [0.0, 0.0, 5.0], 3, 36);
+    psx_blend::push_forced_draw(&mut list, true, 0, &mvp, [0.0, 0.0, 1.0], 1, 0);
+    assert_eq!(list.len(), 1, "an empty mesh pushes nothing");
+    let mut runs = Vec::new();
+    psx_blend::coalesce_sorted(&list, |head, start, count| {
+        runs.push((head.draw_index, head.mode, start, count));
+    });
+    assert_eq!(runs, vec![(2, 3, 0, 36)]);
 }

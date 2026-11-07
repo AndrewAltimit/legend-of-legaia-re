@@ -81,6 +81,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 near_z: -1.0,
                 far_z: 0.0,
                 max_ir0: w,
+                blend: None,
             });
         if backdrop_cue.is_some()
             && let Some(stage_idx) = app.battle_stage_mesh
@@ -171,6 +172,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     near_z: -1.0,
                     far_z: 0.0,
                     max_ir0: 1.0,
+                    blend: None,
                 }),
             });
         }

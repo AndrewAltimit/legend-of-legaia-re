@@ -125,7 +125,7 @@ Settled rows:
 | `first_monster_id`, `victory_stage` | Battle | Off the live path: the sequencer poses `ctx[+0x13]`, the leader ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)). |
 | `compass_heading`, op `0x38` | 5966 sites, 95 scenes | Deleted: the arm's one store is the resolved actor's `+0x26` (`0x801DEE6C..0x801DEE8C`), which `face_compass` makes; the hook was a second, unused write. |
 | `model_pool_is_world_map`, `4C 50` | 629 sites; none in mode 15 | Deleted with the `+0x60` field it gated: `FUN_80024E08`'s store to `+0x60` (`0x80024E50`) needs mode word `0xF`, and no image stores `0xF` to `_DAT_8007B83C` (mode 14's INIT `0x8002B904` stores `0`). See [the dead branch](#the-mode-15-branch-of-the-model-set). |
-| `op4c_nd_sub6_field_74_ack`, `4C D6` | `chitei2`, 24 sites | Deleted: the arm (`0x801E2D64..0x801E2DB0`) writes `+0x74` and nothing else, and the VM makes that write. Open beside it: [the blend byte it sets](#the-blend-byte-4c-d6-sets). |
+| `op4c_nd_sub6_field_74_ack`, `4C D6` | `chitei2`, 24 sites | Deleted: the arm (`0x801E2D64..0x801E2DB0`) writes `+0x74` and nothing else, and the VM makes that write. Its blend byte reaches the draw: [below](#the-blend-byte-4c-d6-sets). |
 | `set_inverted_y_mirror`, `4C 37` | 312 sites, 30 scenes | Replaced, and the arm fixed: the VM stores `+0x8E = -player.y` itself and **advances**. Both exits are `j 0x801DF098`; the decompiled `caseD_4` return had read as a yield. |
 | `assign_child_random_offset`, effect spawn | Every `flags & 1` script | Deleted: the pool keeps the offsets in `MasterSlot::child_offsets`, which its own tick reads where retail reads the rewritten record. |
 | `on_movement_step`, `on_render_loop`, `on_child_step_iter`, `on_per_bone_interp`, `on_special_effect_spawn` (`anim_vm`) | Battle | Deleted: nothing called them. Each names a routine ported as its own kernel (`FUN_80047430`, `FUN_80048A08`, `FUN_80049348`, `FUN_8004998C`, `FUN_8004E13C`). |
@@ -155,14 +155,11 @@ the branch is dead, and the port drops it.
 ### The blend byte `4C D6` sets
 
 The field actor draw passes the whole `+0x74` word to `FUN_80043390` as its
-flag word (`lw a1,0x74(s0)` at `0x8001B46C`). The low 24 bits are the colour
-and the top byte is the primitive flags: `0x80000000` semi-transparent, the next
-two bits the blend mode. `4C D6` writes the top byte, and `chitei2`'s corridor
-lights (`P2[0]`, `[1]`, `[9]`, `[10]`) are its only carrier. The VM stores the
-whole word, but `World::object_draw_tints` keeps only the low 24 bits, so the
-lights draw opaque. Wiring it means a per-draw blend mode on the placed-object
-pass of both hosts. Next step: a `chitei2` retail state with the lights lit, to
-compare against.
+flag word (`lw a1,0x74(s0)` at `0x8001B46C`); the top byte is the primitive
+flags, `0x80000000` semi-transparent and the next two bits the blend mode.
+`chitei2`'s corridor pillars are its only carrier. `World::object_draw_tints`
+returns the whole word, and both hosts draw the forced mode
+([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#4c-d6-the-draws-primitive-flags)).
 
 ### The halt acquire's first clause
 

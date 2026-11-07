@@ -789,6 +789,9 @@ uniform int u_use_flat_colors;
  * bit is set: STP=0 texels draw opaque even inside a semi-transparent prim.
  * Untextured (flat-colour) prims have no STP; the whole prim blends. */
 uniform int u_semi_pass;
+/* 1 = the draw's colour word forces ABE on every prim (FUN_80043390's
+ * primitive-flag byte, field-VM 4C D6); the blend mode is the pass's. */
+uniform int u_force_semi;
 /* Distance haze far colour over 128 (retail SetFarColor): 0x100 / 128 = 2.0
  * for the continent ground, 0xD0 / 128 for a decoration. */
 uniform float u_haze_far;
@@ -1351,7 +1354,7 @@ void main() {
 
   /* Prim semi-transparency enable: the TMD group mode byte's ABE bit, packed
    * by the mesh builders into bit 15 of the per-vertex TSB attribute. */
-  bool prim_semi = (tsb & 0x8000u) != 0u;
+  bool prim_semi = (tsb & 0x8000u) != 0u || u_force_semi != 0;
 
   /* Untextured (flat/gouraud) prim path: the prim carries no UVs, so it would
    * sample empty VRAM and discard. Take its TMD packet colour instead and

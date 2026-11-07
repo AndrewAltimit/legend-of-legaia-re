@@ -483,6 +483,14 @@ engine verdict:
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
   ([the npcs channel](#the-npcs-channel)).
+  A walk-on beat's draw flags are seated too: an object actor whose `+0x74`
+  word carries the semi-transparency bit (field-VM `4C D6`) hands its flag
+  byte to the image child (`retail_object_draw_flags`,
+  `LEGAIA_SEAT_OBJECT_FLAGS`, `World::seed_object_draw_flags`).
+  `chitei2_corridor_pillars_lit` stands inside the corridor `P2[0]` brackets,
+  its pillars blending ABR 3 (`image` `.815` to `1.000`); its twin
+  `chitei2_corridor_pillars_before` stands at the corridor's door, the pillars
+  opaque.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
