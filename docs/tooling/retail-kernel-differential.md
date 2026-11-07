@@ -433,3 +433,7 @@ the floor rung, the angles and the record. Retail spawns a script context for ev
 does not. `object_script_bind_seats` drops a second object with the same record and contact centre (`kor` keeps
 43 of its 55, fifteen scenes lose some), and `spawn_object_channels` then keeps one channel per record, so of
 `koin1`'s two door pieces bound to record 1 at one seat, only one runs the script.
+The region scan `FUN_80017FBC` under the attribute refresh `FUN_800180EC`, and the camera zone query
+`FUN_801DBA20` over the box the refresh latched (`region_scan`), match `refresh_region_attributes` and
+`zone_query` on every field scene's region table, at tiles on and around every record edge, off the grid and in
+world-map mode.

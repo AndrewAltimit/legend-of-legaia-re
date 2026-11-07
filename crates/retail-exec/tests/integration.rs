@@ -59,6 +59,7 @@ mod puera_crystals;
 mod queue_head;
 mod range_metric;
 mod record_spawn;
+mod region_scan;
 mod round_boundary;
 mod round_end;
 mod round_open;
