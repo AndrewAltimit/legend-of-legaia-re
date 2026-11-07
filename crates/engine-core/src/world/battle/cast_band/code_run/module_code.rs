@@ -1043,14 +1043,13 @@ impl World {
                 (940, Some(arms::GLARE_DIVIDE_SPLIT_TICK)) => {
                     let ext = self.cast_arm_ext_state(caster_slot);
                     let saved = self.casting.module_split_saved_target.unwrap_or(0);
-                    let roll = (ctx.phase == 2).then(|| self.next_rand());
                     let (step, split) = arms::glare_divide_split_tick(
                         &mut ctx,
                         &mut caster,
                         &ext,
                         spell_id,
                         saved,
-                        roll,
+                        || self.next_rand(),
                     );
                     if let Some(sp) = split {
                         self.casting.module_split_saved_target = Some(sp.saved_caster_target);

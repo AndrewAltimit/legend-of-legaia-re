@@ -94,7 +94,7 @@ fn the_split_allocates_the_next_monster_seat_and_burns_a_turn() {
         &CastArmExtState::default(),
         0x50,
         0,
-        None,
+        || panic!("0x50 draws no rand()"),
     );
     let split = split.expect("arm 2 splits");
     assert_eq!(step, CastTickStep::Busy);
@@ -120,9 +120,11 @@ fn the_0xae_split_can_weaken_the_caster_itself() {
         &CastArmExtState::default(),
         0xAE,
         0,
-        Some(1),
+        || 1,
     );
-    assert_eq!(split.unwrap().weakened, Some(SplitWeakened::Caster));
+    let split = split.unwrap();
+    assert_eq!(split.weakened, Some(SplitWeakened::Caster));
+    assert_eq!(split.clone_hp, 250, "the copy took the HP before the coin");
     assert_eq!(caster.hp, 1, "the coin landed on the original");
     assert_eq!(caster.atk, 1);
     assert_eq!(caster.agl, SPLIT_WEAK_AGL);
@@ -136,7 +138,7 @@ fn the_0xae_split_can_weaken_the_caster_itself() {
         &CastArmExtState::default(),
         0xAE,
         0,
-        Some(0),
+        || 0,
     );
     assert_eq!(split.unwrap().weakened, Some(SplitWeakened::Clone));
     assert_eq!(caster.hp, 250, "the coin landed on the copy");
@@ -153,7 +155,7 @@ fn the_split_latches_ff_and_restores_the_casters_target() {
         &CastArmExtState::default(),
         0x50,
         4,
-        None,
+        || 0,
     );
     assert_eq!(step, CastTickStep::Busy);
     assert_eq!(ctx.phase, LATCHED_DONE_PHASE, "arm 3 latches, not advances");
@@ -163,7 +165,7 @@ fn the_split_latches_ff_and_restores_the_casters_target() {
         &CastArmExtState::default(),
         0x50,
         4,
-        None,
+        || 0,
     );
     assert_eq!(step, CastTickStep::Done);
     assert_eq!(caster.target_code, 4);

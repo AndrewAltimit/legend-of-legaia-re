@@ -301,6 +301,13 @@ impl World {
             clone.battle.agl_base = SPLIT_WEAK_AGL;
         }
         self.actors[seat] = clone;
+        // The weakened caster's `[+0x150] = 0` (`0x801F8154`); its HP, ATK
+        // and AGL ride the caster's cast view back.
+        if split.weakened == Some(SplitWeakened::Caster)
+            && let Some(a) = self.actors.get_mut(caster_slot as usize)
+        {
+            a.battle.mp = 0;
+        }
         true
     }
 

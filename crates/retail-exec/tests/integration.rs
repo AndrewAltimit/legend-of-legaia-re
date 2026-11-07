@@ -32,6 +32,7 @@ mod field_walls;
 mod fishing_cadence;
 mod fishing_fight;
 mod floor_height;
+mod glare_divide;
 mod inn;
 mod interact_probe;
 mod intro_names;

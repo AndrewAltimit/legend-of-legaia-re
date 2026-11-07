@@ -131,8 +131,10 @@ pub struct GlareDivideSplit {
 /// `FUN_8003CA38` / `FUN_8003CA78` name edit that gives the halves their
 /// suffix, the `0x80076768`-table copy and the camera arms.
 ///
-/// `rand` is the `FUN_80056798` draw; `None` suppresses the weakening branch,
-/// which is what an id of `0x50` does anyway.
+/// `rand` is the `FUN_80056798` draw. Only `0xAE`'s branch calls it
+/// (`0x801F8134`, behind the `bne` at `0x801F80F4`), so `0x50` spends no
+/// draw. The clone's HP is copied off the caster (`0x801F8090`) before the
+/// coin is thrown, so a weakened caster leaves a clone at full HP.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -145,7 +147,7 @@ pub fn glare_divide_split_tick(
     caster_ext: &CastArmExtState,
     action_id: u8,
     saved_target: u8,
-    rand: Option<u32>,
+    mut rand: impl FnMut() -> u32,
 ) -> (CastTickStep, Option<GlareDivideSplit>) {
     let _ = caster_ext;
     let mut split = None;
@@ -159,10 +161,11 @@ pub fn glare_divide_split_tick(
             let seat = FIRST_MONSTER_SEAT.wrapping_add(c.monster_count);
             c.monster_count = c.monster_count.wrapping_add(1);
             c.turn_cursor = c.turn_cursor.wrapping_add(1);
+            let clone_hp = caster.hp;
             let saved = caster.target_code;
             caster.render_flag = 0;
             caster.target_code = crate::cast_module_ticks::TARGET_CODE_ENEMY_ROW;
-            let weakened = (action_id == 0xAE).then(|| match rand.unwrap_or(0) & 1 {
+            let weakened = (action_id == 0xAE).then(|| match rand() & 1 {
                 0 => SplitWeakened::Clone,
                 _ => SplitWeakened::Caster,
             });
@@ -174,7 +177,7 @@ pub fn glare_divide_split_tick(
             }
             split = Some(GlareDivideSplit {
                 clone_seat: seat,
-                clone_hp: caster.hp,
+                clone_hp,
                 saved_caster_target: saved,
                 weakened,
             });
