@@ -23,7 +23,7 @@ output: `legaia_engine_session::native::NativeSession`
 holds the glue around it:
 
 - [`cutscene_av`](src/cutscene_av.rs) - STR (MDEC video + interleaved XA
-  audio) windowed playback over the shared `legaia_mdec::str_av` demux (the
+  audio) windowed playback over the shared `psx_mdec::str_av` demux (the
   play page's too), paced by `engine-system::movie::cutscene::MovieClock`.
 - [`replay`](src/replay.rs) - the `j-replay-v1` record/replay format
   (pad-transition capture + deterministic playback).

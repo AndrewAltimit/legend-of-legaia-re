@@ -7,7 +7,7 @@ use crate::vram_capture::{
     FIELD_CAPTURE_PAGE, FIELD_CAPTURE_ROWS, FIELD_CAPTURE_V_OFFSET, PSX_SCREEN_HEIGHT,
     PSX_SCREEN_WIDTH, VramRect,
 };
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 // ---------------------------------------------------------------------------
 // The curtain's no-clear accumulation (FUN_801D1D9C + the per-frame wash)

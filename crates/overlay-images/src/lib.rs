@@ -11,7 +11,7 @@
 //! [`summon_overlay`] call each other.
 //!
 //! Every module reads an image handed to it as bytes and names only its
-//! siblings, `legaia-bytes` and `legaia-lzs`. A doc reference to a crate that
+//! siblings, `psx-bytes` and `psx-lzs`. A doc reference to a crate that
 //! depends on this one is a plain code span, since rustdoc cannot resolve a
 //! link upward. See the crate README for the module map.
 

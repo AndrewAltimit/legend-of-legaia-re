@@ -87,7 +87,7 @@ pub trait StreamReadSyncHost {
 /// report is returned: sectors remaining, `0` on completion, or
 /// [`STREAM_SYNC_TIMED_OUT`].
 ///
-/// REPLACED-BY: `legaia_iso`'s in-memory disc image, read synchronously
+/// REPLACED-BY: `psx_iso`'s in-memory disc image, read synchronously
 /// behind `crate::scene::ProtIndex`.
 ///
 /// Nothing implements [`StreamReadSyncHost`] and nothing can: there is no

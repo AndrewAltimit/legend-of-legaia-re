@@ -19,7 +19,7 @@
 //! capture shows, the second is driven by the pad.
 
 use legaia_engine_capture::script_gate::*;
-use legaia_ram_image::game_anchors;
+use psx_ram_image::game_anchors;
 
 /// The actor-list heads `FUN_8002519C` walks (`_DAT_8007C34C` onward).
 const ACTOR_LIST_HEADS: u32 = 0x8007_C34C;

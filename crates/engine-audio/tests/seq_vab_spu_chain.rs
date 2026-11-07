@@ -9,8 +9,8 @@
 use legaia_engine_audio::sequencer::Sequencer;
 use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};
-use legaia_seq::{SEQ_MAGIC, Seq};
-use legaia_vab::{
+use psx_seq::{SEQ_MAGIC, Seq};
+use psx_vab::{
     PROGRAMS_TABLE_SIZE, TONE_SIZE, TONES_PER_PROGRAM, VAB_HEADER_SIZE, VAB_MAGIC, VAG_BLOCK_BYTES,
     VAG_TABLE_ENTRIES, parse,
 };

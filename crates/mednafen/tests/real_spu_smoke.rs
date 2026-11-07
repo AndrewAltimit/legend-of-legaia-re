@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use legaia_mednafen::{PsxSpu, SPU_NUM_VOICES, SPU_RAM_BYTES, SaveState};
+use psx_mednafen::{PsxSpu, SPU_NUM_VOICES, SPU_RAM_BYTES, SaveState};
 
 fn mednafen_mcs_dir() -> Option<PathBuf> {
     if let Some(v) = std::env::var_os("LEGAIA_MEDNAFEN_DIR") {

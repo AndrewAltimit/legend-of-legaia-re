@@ -27,7 +27,7 @@ use legaia_engine_effects::effect_default_arm::{
     SCRATCH_OFFSET, SHADOW_SCRATCH_OFFSET, SHADOW_SEGMENTS, build, ground_shadow_src,
 };
 use legaia_engine_effects::effect_ribbon::RetailTrig;
-use legaia_mednafen::SaveState;
+use psx_mednafen::SaveState;
 use std::path::PathBuf;
 
 const RAM_MASK: u32 = 0x001F_FFFF;

@@ -19,7 +19,7 @@ pub(super) fn split_leading_clut_ext(bytes: &[u8]) -> (Option<&[u8]>, &[u8]) {
     let looks_like_ext = |b: &[u8]| -> bool {
         b.len() >= SYSTEM_UI_CLUT_EXT_TIM_SIZE
             && b[..4] == [0x10, 0, 0, 0]
-            && legaia_tim::parse(&b[..SYSTEM_UI_CLUT_EXT_TIM_SIZE])
+            && psx_tim::parse(&b[..SYSTEM_UI_CLUT_EXT_TIM_SIZE])
                 .ok()
                 .and_then(|t| t.clut.map(|c| (c.fb_x, c.fb_y)))
                 == Some((256, 511))
@@ -55,7 +55,7 @@ pub(super) fn split_leading_clut_ext(bytes: &[u8]) -> (Option<&[u8]>, &[u8]) {
 /// REF: FUN_8002c2e4
 pub(super) fn add_status_badge_sprites(
     dst: &mut [u8],
-    panel_parsed: &legaia_tim::Tim,
+    panel_parsed: &psx_tim::Tim,
     src_w: u32,
     clut_ext_tim: Option<&[u8]>,
 ) -> anyhow::Result<u16> {
@@ -63,7 +63,7 @@ pub(super) fn add_status_badge_sprites(
     // palettes - so it is grafted onto the sheet's image the same way the
     // ATR icons graft their row-500 block onto the extension strip.
     let ext_sheet = clut_ext_tim
-        .and_then(|b| legaia_tim::parse(b).ok())
+        .and_then(|b| psx_tim::parse(b).ok())
         .and_then(|ext| {
             ext.clut.map(|clut| {
                 let mut sheet = panel_parsed.clone();
@@ -85,7 +85,7 @@ pub(super) fn add_status_badge_sprites(
                 None => continue,
             }
         };
-        let rgba = legaia_tim::decode_rgba8(tim, pal).map_err(|e| {
+        let rgba = psx_tim::decode_rgba8(tim, pal).map_err(|e| {
             anyhow::anyhow!("status badge {:#04x} decode failed: {e:?}", cell.sprite)
         })?;
         debug_assert_eq!(status_badge_index(cell.sprite), Some(i));
@@ -135,11 +135,11 @@ pub(super) fn add_element_badge_sprites(
         return Ok(0);
     };
     let end = |o: usize| (o + size).min(prot_dat_bytes.len());
-    let Ok(strip) = legaia_tim::parse(&prot_dat_bytes[strip_off..end(strip_off)]) else {
+    let Ok(strip) = psx_tim::parse(&prot_dat_bytes[strip_off..end(strip_off)]) else {
         return Ok(0);
     };
     let strip_w = strip.pixel_width() as u32;
-    let row499 = legaia_tim::parse(&prot_dat_bytes[row499_off..end(row499_off)])
+    let row499 = psx_tim::parse(&prot_dat_bytes[row499_off..end(row499_off)])
         .ok()
         .and_then(|t| t.clut)
         .map(|clut| {
@@ -158,7 +158,7 @@ pub(super) fn add_element_badge_sprites(
                 None => continue,
             }
         };
-        let Ok(rgba) = legaia_tim::decode_rgba8(tim, pal) else {
+        let Ok(rgba) = psx_tim::decode_rgba8(tim, pal) else {
             continue;
         };
         copy_rect(
@@ -189,7 +189,7 @@ pub(super) fn add_element_badge_sprites(
 /// same art the field menu's tab banner already bakes.
 pub(super) fn add_battle_chrome_sprites(
     dst: &mut [u8],
-    panel_parsed: &legaia_tim::Tim,
+    panel_parsed: &psx_tim::Tim,
     src_w: u32,
 ) -> anyhow::Result<()> {
     use title_pak::{
@@ -199,7 +199,7 @@ pub(super) fn add_battle_chrome_sprites(
         OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR, OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW,
     };
 
-    let panel_rgba = legaia_tim::decode_rgba8(
+    let panel_rgba = psx_tim::decode_rgba8(
         panel_parsed,
         OVERLAY_SYSTEM_UI_BATTLE_PANEL_CLUT_ROW as usize,
     )?;
@@ -212,7 +212,7 @@ pub(super) fn add_battle_chrome_sprites(
         ATLAS_RECT_BATTLE_PANEL_BG,
     );
 
-    let plate_rgba = legaia_tim::decode_rgba8(
+    let plate_rgba = psx_tim::decode_rgba8(
         panel_parsed,
         OVERLAY_SYSTEM_UI_BATTLE_PLATE_CLUT_ROW as usize,
     )?;
@@ -233,7 +233,7 @@ pub(super) fn add_battle_chrome_sprites(
         copy_rect(dst, ATLAS_WIDTH, &plate_rgba, src_w, src, dst_rect);
     }
 
-    let sep_rgba = legaia_tim::decode_rgba8(
+    let sep_rgba = psx_tim::decode_rgba8(
         panel_parsed,
         OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW as usize,
     )?;
@@ -262,10 +262,10 @@ pub(super) fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyh
     use legaia_ui_formats::menu_glyph_atlas as mga;
 
     let tim = mga::extract_from_tim_slice(menu_glyph_tim)?;
-    let parsed = legaia_tim::parse(tim.bytes)?;
+    let parsed = psx_tim::parse(tim.bytes)?;
     let src_w = parsed.pixel_width() as u32;
     for staging in 0..NUMERAL_INK_IDS {
-        let rgba = legaia_tim::decode_rgba8(&parsed, 6 + staging as usize)?;
+        let rgba = psx_tim::decode_rgba8(&parsed, 6 + staging as usize)?;
         copy_rect(
             dst,
             ATLAS_WIDTH,
@@ -294,14 +294,14 @@ pub(super) fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyh
 /// REF: FUN_801D0748
 pub(super) fn add_arts_input_sprites(
     dst: &mut [u8],
-    panel_parsed: &legaia_tim::Tim,
+    panel_parsed: &psx_tim::Tim,
     src_w: u32,
 ) -> anyhow::Result<()> {
     use title_pak::{arts_chip_atlas_rect as chip_at, *};
 
     // Sub-palette 6: chip body + caps, and the input-bar tiles.
     let chip_rgba =
-        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW as usize)?;
+        psx_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW as usize)?;
     for src in [
         OVERLAY_SYSTEM_UI_ARTS_CHIP_BODY,
         OVERLAY_SYSTEM_UI_ARTS_CHIP_CAP_L,
@@ -319,7 +319,7 @@ pub(super) fn add_arts_input_sprites(
 
     // Sub-palette 5: the label-strip column plus the three 9x18 ends.
     let label_rgba =
-        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW as usize)?;
+        psx_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW as usize)?;
     let strip = (
         OVERLAY_SYSTEM_UI_ARTS_LABEL_U,
         0,
@@ -337,7 +337,7 @@ pub(super) fn add_arts_input_sprites(
 
     // Sub-palette 7 (the cursor's plane): the D-pad glyph.
     let dpad_rgba =
-        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_DPAD_CLUT_ROW as usize)?;
+        psx_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_DPAD_CLUT_ROW as usize)?;
     copy_rect(
         dst,
         ATLAS_WIDTH,
@@ -380,9 +380,9 @@ pub(super) fn add_atr_icon_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> any
     } else {
         return Ok(()); // slice too short; atlas-without-ATR is OK
     };
-    let mut strip = legaia_tim::parse(&prot_dat_bytes[ext_off..ext_off + size])
+    let mut strip = psx_tim::parse(&prot_dat_bytes[ext_off..ext_off + size])
         .map_err(|e| anyhow::anyhow!("ext-strip TIM parse failed: {e:?}"))?;
-    let clut_tim = legaia_tim::parse(&prot_dat_bytes[clut_off..clut_off + size])
+    let clut_tim = psx_tim::parse(&prot_dat_bytes[clut_off..clut_off + size])
         .map_err(|e| anyhow::anyhow!("ext-strip CLUT TIM parse failed: {e:?}"))?;
     // Swap in the row-500 CLUT block: the strip's own CLUT uploads to
     // row 498; the ATR ICO records point one TIM over.
@@ -394,7 +394,7 @@ pub(super) fn add_atr_icon_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> any
         .enumerate()
     {
         let pal = title_pak::OVERLAY_SYSTEM_UI_ATR_PALETTES[i];
-        let rgba = legaia_tim::decode_rgba8(&strip, pal)
+        let rgba = psx_tim::decode_rgba8(&strip, pal)
             .map_err(|e| anyhow::anyhow!("ATR icon {i} decode failed: {e:?}"))?;
         copy_rect(dst, ATLAS_WIDTH, &rgba, strip_w, *src, *dst_rect);
     }
@@ -423,11 +423,11 @@ pub(super) fn add_atr_icon_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> any
 /// modulates. Placements are `title_pak::SAVE_MENU_ATLAS_*`.
 pub(super) fn add_card_work_sprites(
     dst: &mut [u8],
-    tim: &legaia_tim::Tim,
+    tim: &psx_tim::Tim,
     src_w: u32,
 ) -> anyhow::Result<()> {
-    let digit_rgba = legaia_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_DIGIT_CLUT)?;
-    let tube_rgba = legaia_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_TUBE_CLUT)?;
+    let digit_rgba = psx_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_DIGIT_CLUT)?;
+    let tube_rgba = psx_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_TUBE_CLUT)?;
     copy_rect(
         dst,
         ATLAS_WIDTH,
@@ -479,11 +479,11 @@ pub(super) fn add_card_work_sprites(
 /// the strip skips the tiles.
 pub(super) fn add_save_grid_sprites(
     dst: &mut [u8],
-    sheet: &legaia_tim::Tim,
+    sheet: &psx_tim::Tim,
     sheet_w: u32,
     prot_0899_bytes: &[u8],
 ) -> anyhow::Result<()> {
-    let frame_rgba = legaia_tim::decode_rgba8(sheet, title_pak::OVERLAY_SAVE_UI_REC_FRAME_CLUT)?;
+    let frame_rgba = psx_tim::decode_rgba8(sheet, title_pak::OVERLAY_SAVE_UI_REC_FRAME_CLUT)?;
     copy_rect(
         dst,
         ATLAS_WIDTH,
@@ -495,11 +495,11 @@ pub(super) fn add_save_grid_sprites(
     let Ok(strip) = title_pak::extract_overlay_card_icon_tim(prot_0899_bytes) else {
         return Ok(());
     };
-    let strip = legaia_tim::parse(strip.bytes)?;
+    let strip = psx_tim::parse(strip.bytes)?;
     let strip_w = strip.pixel_width() as u32;
     for (i, &(x, y)) in ATLAS_RECT_SAVE_ICON_CELLS.iter().enumerate() {
         let tile = ATLAS_SAVE_ICON_FIRST_BAKED + i;
-        let rgba = legaia_tim::decode_rgba8(&strip, tile)?;
+        let rgba = psx_tim::decode_rgba8(&strip, tile)?;
         let src = (
             tile as u32 * ATLAS_RECT_PORTRAIT_W,
             0,
@@ -546,9 +546,9 @@ pub(super) fn add_load_slot_grid_sprites(
             break;
         }
         let tim_bytes = &prot_dat_bytes[off..off + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE];
-        let parsed = legaia_tim::parse(tim_bytes)
+        let parsed = psx_tim::parse(tim_bytes)
             .map_err(|e| anyhow::anyhow!("portrait {idx} parse failed: {e:?}"))?;
-        let rgba = legaia_tim::decode_rgba8(&parsed, 0)
+        let rgba = psx_tim::decode_rgba8(&parsed, 0)
             .map_err(|e| anyhow::anyhow!("portrait {idx} decode failed: {e:?}"))?;
         let src_w = parsed.pixel_width() as u32;
         let src_h = parsed.image.h as u32;
@@ -575,9 +575,9 @@ pub(super) fn add_load_slot_grid_sprites(
     }
     let frame_bytes =
         &prot_dat_bytes[frame_base..frame_base + title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE];
-    let parsed = legaia_tim::parse(frame_bytes)
+    let parsed = psx_tim::parse(frame_bytes)
         .map_err(|e| anyhow::anyhow!("empty-frame parse failed: {e:?}"))?;
-    let rgba = legaia_tim::decode_rgba8(&parsed, 0)
+    let rgba = psx_tim::decode_rgba8(&parsed, 0)
         .map_err(|e| anyhow::anyhow!("empty-frame decode failed: {e:?}"))?;
     let src_w = parsed.pixel_width() as u32;
     let src_h = parsed.image.h as u32;

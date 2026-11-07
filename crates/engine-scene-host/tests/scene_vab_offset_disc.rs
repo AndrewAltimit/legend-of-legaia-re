@@ -57,10 +57,10 @@ fn scene_vab_bytes_reports_a_parseable_offset() {
         with_vab += 1;
         carriers.push(format!("{name}@{vab_off:#x}"));
         assert!(
-            legaia_vab::parse(&bytes, vab_off).is_ok(),
+            psx_vab::parse(&bytes, vab_off).is_ok(),
             "scene {name}: VAB does not parse at the reported offset {vab_off:#x}"
         );
-        if legaia_vab::parse(&bytes, 0).is_err() {
+        if psx_vab::parse(&bytes, 0).is_err() {
             fails_at_zero += 1;
         }
     }

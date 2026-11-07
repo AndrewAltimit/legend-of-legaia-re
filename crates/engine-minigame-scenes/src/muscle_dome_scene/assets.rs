@@ -17,7 +17,7 @@ pub struct MuscleDomeAssets {
     /// fallback floor), appended after the two bodies.
     pub(super) statics: VramMesh,
     pub(super) statics_flat: Vec<u8>,
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
     arena: bool,
     /// The monster record's size class (`+0x1F`), which sizes the action
     /// framing's depth (`FUN_801F0348`).
@@ -66,7 +66,7 @@ impl MuscleDomeAssets {
         };
 
         let archive = read_prot(MONSTER_ARCHIVE_PROT_INDEX)?;
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         // The character's band-0 texture pool + battle palette.
         if let Ok(pack) = legaia_actor_formats::battle_data_pack::parse(raw) {
             if let Ok(uploads) = bca::character_texture_uploads(raw, &pack, &[0u8; 5], 0) {
@@ -145,7 +145,7 @@ impl MuscleDomeAssets {
         {
             for chunk in scene_tmd_stream::battle_tim_chunks(buf) {
                 if let Some(bytes) = buf.get(chunk.payload_offset..)
-                    && let Ok(tim) = legaia_tim::parse(bytes)
+                    && let Ok(tim) = psx_tim::parse(bytes)
                 {
                     vram.upload_tim(&tim);
                 }
@@ -181,7 +181,7 @@ impl MuscleDomeAssets {
     }
 
     /// The dome VRAM (character pool + palette, monster pool, arena pages).
-    pub fn vram(&self) -> &legaia_tim::Vram {
+    pub fn vram(&self) -> &psx_tim::Vram {
         &self.vram
     }
 

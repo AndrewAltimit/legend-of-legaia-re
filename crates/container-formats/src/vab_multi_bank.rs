@@ -56,7 +56,7 @@
 //! `header_len == 0x20 + 0x800 + 0x200 * programs + 0x200` - the PsyQ header
 //! part. The two halves are therefore **not contiguous**: the chunk-1 header
 //! sits between the VAG size table and the first VAG body, which is why
-//! `legaia_vab::parse(buf, bank + 4)` places every VAG body four bytes early.
+//! `psx_vab::parse(buf, bank + 4)` places every VAG body four bytes early.
 //! Use [`Bank::body_offset`] for the bodies.
 //!
 //! Everything from the end of chunk 1 to the bank's declared end is slack the
@@ -65,7 +65,7 @@
 //! zero-fill sense - banks 61 and 62 carry bank 60's bytes from the same
 //! buffer offset - and nothing reads past `fsize`.
 
-use legaia_bytes::u32_le;
+use psx_bytes::u32_le;
 
 /// The archive's addressing unit. A bank always starts on a sector.
 pub const SECTOR: usize = 0x800;

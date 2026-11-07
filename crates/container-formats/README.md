@@ -6,7 +6,7 @@ dispatcher, the descriptor, the DATA_FIELD chunk stream and the pack format.
 The game's loader (`FUN_8001F05C` in `SCUS_942.54`) takes a buffer plus one
 `u32` packing `(type << 24) | (size & 0xFFFFFF)` and dispatches to a
 type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
-[`legaia-lzs`](../lzs/README.md)) or stored raw (`FUN_8001A8B0`).
+[`psx-lzs`](../lzs/README.md)) or stored raw (`FUN_8001A8B0`).
 
 ## What lives here
 
@@ -30,7 +30,7 @@ type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
 ## Layering
 
 The bottom of the format stack. It depends on the leaf codecs
-(`legaia-lzs`, `legaia-bytes`, `legaia-anm`, `legaia-tim`, `legaia-tmd`) and
+(`psx-lzs`, `psx-bytes`, `legaia-anm`, `psx-tim`, `legaia-tmd`) and
 must not depend on any crate that describes game content: the scene, UI,
 minigame and actor format crates all sit on this one, and
 [`legaia-disc-audit`](../disc-audit/README.md) sits on all of them.

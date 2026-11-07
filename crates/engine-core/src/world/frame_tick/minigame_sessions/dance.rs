@@ -57,7 +57,7 @@ impl World {
     /// entry where the disc's palette has `(20, 15, 6)`.
     ///
     /// PORT: FUN_801cef54 (the art pack's door-entry skip)
-    pub fn carry_walked_in_cells(&self, walked_in: &legaia_tim::Vram, hall: &mut legaia_tim::Vram) {
+    pub fn carry_walked_in_cells(&self, walked_in: &psx_tim::Vram, hall: &mut psx_tim::Vram) {
         if self.ambient.venue_restore.is_some() {
             return;
         }
@@ -84,7 +84,7 @@ impl World {
     }
 
     /// Step the hall's tree against the hall's own VRAM; `true` when it wrote.
-    pub fn step_dance_ambient(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step_dance_ambient(&mut self, vram: &mut psx_tim::Vram) -> bool {
         if self.ambient.venue_restore.is_none() {
             return false;
         }

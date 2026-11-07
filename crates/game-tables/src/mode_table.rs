@@ -141,10 +141,10 @@ impl ModeTable {
         let mut entries = Vec::with_capacity(MODE_COUNT);
         for index in 0..MODE_COUNT {
             let e = base + index * ENTRY_STRIDE;
-            let name_ptr = legaia_bytes::u32_le(scus, e)?;
-            let next_word = legaia_bytes::u32_le(scus, e + 0x08)?;
-            let handler = legaia_bytes::u32_le(scus, e + 0x10)?;
-            let param = legaia_bytes::u32_le(scus, e + 0x14)?;
+            let name_ptr = psx_bytes::u32_le(scus, e)?;
+            let next_word = psx_bytes::u32_le(scus, e + 0x08)?;
+            let handler = psx_bytes::u32_le(scus, e + 0x10)?;
+            let param = psx_bytes::u32_le(scus, e + 0x14)?;
             entries.push(ModeEntry {
                 index,
                 name: read_name(scus, &map, name_ptr),

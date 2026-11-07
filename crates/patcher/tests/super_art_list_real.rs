@@ -54,9 +54,9 @@ use legaia_code_hooks::arenas::{
 };
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::item_names::file_offset_for_va;
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
+use psx_iso::iso9660::{find_file_in_image, read_file_in_image};
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -760,7 +760,7 @@ fn only_the_planned_bytes_move_and_no_other_file_does() {
         );
         // 3. Every touched sector is still EDC/ECC-valid.
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[a..a + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[a..a + SECTOR_SIZE]),
             "sector {s} must stay EDC/ECC-valid"
         );
     }

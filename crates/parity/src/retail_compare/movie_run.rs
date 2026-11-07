@@ -1,10 +1,10 @@
 //! The cutscene class: an STR movie on screen. Retail's frame comes out of the
 //! state's VRAM like any other; the engine's is the same movie frame through the
-//! port's own decode path (`legaia_mdec`), with no world and no window. A movie
+//! port's own decode path (`psx_mdec`), with no world and no window. A movie
 //! has no state to seed, so the state scores the image channel alone.
 
 use super::*;
-use legaia_mdec::str_sector::StrFrameAssembler;
+use psx_mdec::str_sector::StrFrameAssembler;
 
 /// `DAT_801CAD90`, the libcd streaming layer's current `frame_number`
 /// ([cutscene](../../../../docs/subsystems/cutscene.md)).
@@ -50,7 +50,7 @@ type DecodedFrame = (u32, Vec<u8>, usize, usize);
 /// Decode the movie's frames whose number lies in `first..=last`, as
 /// [`DecodedFrame`]s, off the extracted Form-1 file.
 fn decode_frames(path: &std::path::Path, first: u32, last: u32) -> Result<Vec<DecodedFrame>> {
-    const USER_DATA: usize = legaia_iso::raw::USER_DATA_SIZE;
+    const USER_DATA: usize = psx_iso::raw::USER_DATA_SIZE;
     let data = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let mut asm = StrFrameAssembler::new();
     let mut out = Vec::new();
@@ -64,7 +64,7 @@ fn decode_frames(path: &std::path::Path, first: u32, last: u32) -> Result<Vec<De
         if hdr.frame_number > last {
             break;
         }
-        let bits = legaia_mdec::str_av::StrFrameBits {
+        let bits = psx_mdec::str_av::StrFrameBits {
             width: u32::from(hdr.width),
             height: u32::from(hdr.height),
             frame_number: hdr.frame_number,

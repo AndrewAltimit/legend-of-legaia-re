@@ -303,7 +303,7 @@ impl PlayWindowApp {
             let tim = tims[sheet as usize];
             // A palette past the sheet's CLUT bank simply isn't baked; the
             // draw that would sample it is skipped at build time.
-            let Ok(px) = legaia_tim::decode_rgba8(tim, pal as usize) else {
+            let Ok(px) = psx_tim::decode_rgba8(tim, pal as usize) else {
                 continue;
             };
             let (tw, th) = (tim.pixel_width() as u32, tim.pixel_height() as u32);

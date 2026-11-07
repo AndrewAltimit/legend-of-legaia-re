@@ -88,11 +88,11 @@ impl LegaiaRuntime {
 impl LegaiaRuntime {
     /// Walk a disc image: note its files, and hand back `PROT.DAT` (`None` when
     /// the bytes are not a disc image at all), `CDNAME.TXT` and the executable.
-    fn read_disc_files<S: legaia_iso::iso9660::ImageSource + ?Sized>(
+    fn read_disc_files<S: psx_iso::iso9660::ImageSource + ?Sized>(
         &mut self,
         image: &S,
     ) -> Result<DiscFiles, JsValue> {
-        use legaia_iso::image::{
+        use psx_iso::image::{
             extract_cdname_txt_source, extract_prot_dat_source, extract_scus_source,
             is_mode2_2352_source, walk_iso_source,
         };
@@ -315,7 +315,7 @@ impl BlockBytes for js_sys::Uint8Array {
 }
 
 /// An image the page holds in parts, as an
-/// [`legaia_iso::iso9660::ImageSource`]. A read the blocks do not cover fails,
+/// [`psx_iso::iso9660::ImageSource`]. A read the blocks do not cover fails,
 /// and remembers what it asked for.
 struct SpanImage<B> {
     len: usize,
@@ -354,7 +354,7 @@ impl<B: BlockBytes> SpanImage<B> {
     }
 }
 
-impl<B: BlockBytes> legaia_iso::iso9660::ImageSource for SpanImage<B> {
+impl<B: BlockBytes> psx_iso::iso9660::ImageSource for SpanImage<B> {
     fn image_len(&self) -> usize {
         self.len
     }
@@ -394,7 +394,7 @@ impl<B: BlockBytes> legaia_iso::iso9660::ImageSource for SpanImage<B> {
 /// The first sectors a disc load would read that `image` lacks: the walk's own
 /// reads, then the three files it extracts, from their directory records.
 fn missing_span<B: BlockBytes>(image: &SpanImage<B>) -> Option<(usize, usize)> {
-    let files = legaia_iso::image::walk_iso_source(image);
+    let files = psx_iso::image::walk_iso_source(image);
     if image.missing.get().is_some() {
         return image.missing.get();
     }
@@ -408,7 +408,7 @@ fn missing_span<B: BlockBytes>(image: &SpanImage<B>) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_iso::image::{extract_prot_dat_source, extract_scus_source, walk_iso_source};
+    use psx_iso::image::{extract_prot_dat_source, extract_scus_source, walk_iso_source};
 
     impl BlockBytes for &[u8] {
         fn byte_len(&self) -> usize {
@@ -456,7 +456,7 @@ mod tests {
         let raw = vec![0u8; 2352 * 4];
         let image = SpanImage::new(2352 * 100, vec![(10, raw.as_slice())]);
         let mut out = Vec::new();
-        use legaia_iso::iso9660::ImageSource;
+        use psx_iso::iso9660::ImageSource;
         assert!(image.read_user_data(10, 4, &mut out));
         assert_eq!(out.len(), 2048 * 4);
         assert!(!image.read_user_data(12, 3, &mut out));

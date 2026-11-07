@@ -26,7 +26,7 @@ fn part_c_captured_scenes_are_scenes_the_engine_can_enter() {
         return;
     };
     let manifest =
-        legaia_ram_image::ScenarioManifest::from_path(&manifest_path).expect("parse manifest");
+        psx_ram_image::ScenarioManifest::from_path(&manifest_path).expect("parse manifest");
 
     let Closure { order, .. } = chapter1_closure(&host.index);
     let closure: BTreeSet<&str> = order.iter().map(String::as_str).collect();
@@ -43,15 +43,15 @@ fn part_c_captured_scenes_are_scenes_the_engine_can_enter() {
             continue;
         }
         let ram = match path.extension().and_then(|e| e.to_str()) {
-            Some("sstate") => legaia_pcsx_redux::SaveState::from_path(&path)
+            Some("sstate") => psx_pcsx_redux::SaveState::from_path(&path)
                 .ok()
                 .map(|s| s.main_ram().to_vec()),
-            _ => legaia_mednafen::SaveState::from_path(&path)
+            _ => psx_mednafen::SaveState::from_path(&path)
                 .ok()
                 .and_then(|s| s.main_ram().ok().map(<[u8]>::to_vec)),
         };
         let Some(ram) = ram else { continue };
-        let scene = legaia_ram_image::game_anchors::scene_name(&ram);
+        let scene = psx_ram_image::game_anchors::scene_name(&ram);
         if closure.contains(scene.as_str()) {
             observed.entry(scene).or_default().push(scn.label.clone());
         }

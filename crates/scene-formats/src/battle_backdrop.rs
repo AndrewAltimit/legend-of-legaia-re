@@ -449,7 +449,7 @@ pub const GROUND_UV_PROBE: [(u8, u8); 4] = [
 /// resident. Note the window: the tile occupies only the last quarter of
 /// its page in each axis, and asking about the whole page instead answers
 /// yes for entries whose page holds something else entirely.
-pub fn ground_grid_drawable(vram: &legaia_tim::Vram) -> bool {
+pub fn ground_grid_drawable(vram: &psx_tim::Vram) -> bool {
     vram.prim_has_texture_data(GROUND_CBA, GROUND_TSB, &GROUND_UV_PROBE)
 }
 

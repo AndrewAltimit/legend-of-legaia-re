@@ -17,14 +17,14 @@ and error-correction bytes every CD sector carries.
 ```mermaid
 flowchart TD
     rec["decoded record or code word"] --> kind{"where does it live?"}
-    kind -->|"LZS stream in a PROT entry"| pack["legaia_lzs::compress"]
+    kind -->|"LZS stream in a PROT entry"| pack["psx_lzs::compress"]
     kind -->|"raw bytes in a PROT entry"| entry
     kind -->|"SCUS_942.54 or another named file"| scus["DiscPatcher::patch_named_file"]
     pack --> fit{"fits the slot?"}
     fit -->|"no"| skip["skip entry, report it"]
     fit -->|"yes"| entry["DiscPatcher::patch_prot_entry"]
     entry --> logical["PROT.DAT logical offset"]
-    scus --> iso["legaia_iso::write::patch_file_logical"]
+    scus --> iso["psx_iso::write::patch_file_logical"]
     logical --> iso
     iso --> sect["2048-byte user data of each touched sector"]
     sect --> ecc["recompute EDC + P/Q ECC"]
@@ -33,8 +33,8 @@ flowchart TD
 
 | Layer | Code | Role |
 |---|---|---|
-| LZS encoder | `legaia_lzs::compress` | produces a stream the retail decoder `FUN_8001A55C` accepts |
-| Sector write-back | `legaia_iso::write` | overwrites user data, recomputes EDC and P/Q ECC |
+| LZS encoder | `psx_lzs::compress` | produces a stream the retail decoder `FUN_8001A55C` accepts |
+| Sector write-back | `psx_iso::write` | overwrites user data, recomputes EDC and P/Q ECC |
 | Disc bridge | `legaia_disc_patch::disc::DiscPatcher` ([`crates/disc-patch`](../../crates/disc-patch/README.md)) | maps a PROT-entry-relative edit to sectors; PPF writer; space ledger |
 | MIPS layer | [`crates/code-hooks`](../../crates/code-hooks/README.md) | instruction encoders, R3000 test simulator, injection arenas, hook mods |
 | Feature modules | `crates/patcher/src/*.rs` | one module per randomizer / hook, named in each section below |
@@ -49,10 +49,10 @@ dispatcher decompresses at load. Changing one is therefore
 decompress → mutate → recompress → write back, which takes three pieces the
 extraction side (which only reads the disc) does not need:
 
-1. **An LZS encoder** - `legaia_lzs::compress`. The retail game ships only a
+1. **An LZS encoder** - `psx_lzs::compress`. The retail game ships only a
    decoder (`FUN_8001A55C`); the encoder produces streams that decoder accepts.
    See [LZS compression](../formats/lzs.md).
-2. **Mode 2/2352 sector write-back** - `legaia_iso::write`. Overwriting the
+2. **Mode 2/2352 sector write-back** - `psx_iso::write`. Overwriting the
    2048-byte user payload of a CD sector also requires recomputing its 4-byte
    EDC and 276-byte P/Q ECC, or the sector reads as corrupt. See
    [PSX disc geometry](../formats/disc.md).
@@ -97,7 +97,7 @@ disc image (2352-byte sectors)
 
 so a PROT-entry-relative offset becomes the PROT.DAT-logical offset
 `start_lba[N] * 2048 + offset_in_entry`, which
-`legaia_iso::write::patch_file_logical` turns into physical-sector writes plus
+`psx_iso::write::patch_file_logical` turns into physical-sector writes plus
 EDC/ECC re-encode. `DiscPatcher::patch_prot_entry` is the generic entry point;
 `patch_monster_slot` / `monster_slot` are the `battle_data` helpers.
 

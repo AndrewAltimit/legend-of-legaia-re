@@ -5,8 +5,8 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
-use legaia_retail_exec::Stop;
 use legaia_save::Party;
+use psx_retail_exec::Stop;
 
 const BLOCK: u32 = 0x801E_5D60;
 const BLOCK_END: u32 = 0x801E_5E90;

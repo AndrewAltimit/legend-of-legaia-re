@@ -13,10 +13,10 @@
 //! are committed and CI has no disc).
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
-use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_translate::export::SceneManText;
 use legaia_translate::{import_pack, lift};
+use psx_iso::raw::SECTOR_SIZE;
+use psx_iso::write::mode2_form1_sector_is_valid;
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);

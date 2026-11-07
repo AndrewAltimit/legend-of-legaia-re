@@ -13,8 +13,8 @@
 //! the heavy validation (FLIST_BIT set, object count sane, table fits, etc.),
 //! so any false positive on the magic check will be rejected at parse time.
 
-use legaia_lzs::decompress_container;
 use legaia_tmd as tmd;
+use psx_lzs::decompress_container;
 
 /// Legaia TMD identifier - see `docs/formats/tmd.md` and `FUN_80026b4c`.
 const LEGAIA_TMD_MAGIC: u32 = 0x80000002;

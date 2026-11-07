@@ -20,7 +20,7 @@ the `legaia-patcher` CLI. Module by module, the exports are in
 
 **No engine crate.** It sits outside the engine layer beside `patcher`, so
 `scripts/ci/check-crate-layering.py` fails if it ever names one. The disc
-image is read through the format layer's `legaia_iso::image` and
+image is read through the format layer's `psx_iso::image` and
 `legaia_prot::toc_index`.
 
 ## The bundle

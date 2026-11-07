@@ -53,7 +53,7 @@ const MAX_CHUNKS: usize = 16;
 pub struct SoundPack {
     /// The reconstituted VAB bytes (type-0 header chunk + type-1 sample chunk
     /// payloads concatenated, truncated to the header's `total_size`). Parses
-    /// directly with `legaia_vab`.
+    /// directly with `psx_vab`.
     pub vab: Vec<u8>,
     /// `total_size` declared by the VAB header (`+0x0C`).
     pub vab_total_size: u32,
@@ -63,7 +63,7 @@ pub struct SoundPack {
     /// (an outlier layout); `vab` then holds whatever was present.
     pub vab_complete: bool,
     /// The type-2 terminator chunk payload, when it is a SEQ (`pQES`). Parses
-    /// with `legaia_seq`.
+    /// with `psx_seq`.
     pub seq: Option<Vec<u8>>,
 }
 

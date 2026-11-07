@@ -23,9 +23,9 @@
 //! missing.
 
 use legaia_engine_field::fog_particles::{FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogParticle};
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::prim_pool::{self, Prim};
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::prim_pool::{self, Prim};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

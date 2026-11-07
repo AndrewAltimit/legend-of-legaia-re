@@ -70,7 +70,7 @@ pub(super) use legaia_engine_session::battle_vram::BattleMemberFace;
 /// frames drain. Paced to the stream's detected frame rate (wall-clock gated),
 /// like [`StrPlayerApp`], so the movie isn't tied to the display refresh rate.
 pub(super) struct WindowedCutscene {
-    pub(super) frames: Vec<legaia_mdec::VideoFrame>,
+    pub(super) frames: Vec<psx_mdec::VideoFrame>,
     pub(super) idx: usize,
     pub(super) uploaded: Option<legaia_engine_render::UploadedTexture>,
     /// Wall-clock duration to hold each frame (from `StrTiming::frame_period`).
@@ -595,12 +595,12 @@ pub(super) struct PlayWindowApp {
     /// edits. A battle injects monster texture pools into a working copy and
     /// re-uploads; leaving battle restores this base so the field renders
     /// with clean VRAM. `None` until the first scene loads.
-    pub(super) cpu_vram_base: Option<legaia_tim::Vram>,
+    pub(super) cpu_vram_base: Option<psx_tim::Vram>,
     /// The scene VRAM as it was before a dance staged its own HUD texture
     /// page over it (`stage_dance_hud_art`). `Some` exactly while a dance
     /// owns those rects; restoring from it is what makes the field's texels
     /// byte-exact on exit instead of re-derived.
-    pub(super) dance_vram_restore: Option<legaia_tim::Vram>,
+    pub(super) dance_vram_restore: Option<psx_tim::Vram>,
     /// Scene-mode from the previous frame, used to detect Field<->Battle
     /// transitions so monster meshes are uploaded / dropped exactly once.
     pub(super) prev_scene_mode: Option<SceneMode>,
@@ -648,7 +648,7 @@ pub(super) struct PlayWindowApp {
     /// The battle VRAM (field base + injected monster textures) stashed by
     /// `enter_battle_render`, so a mid-battle player-summon spawn can inject its
     /// own creature texture into a clone and re-upload.
-    pub(super) battle_vram: Option<legaia_tim::Vram>,
+    pub(super) battle_vram: Option<psx_tim::Vram>,
     /// Upload generation (see [`legaia_engine_render::UploadedVram::generation`])
     /// of the battle VRAM currently expected to be GPU-resident. `Some` only
     /// while a battle texture is uploaded; any other upload path bumping the

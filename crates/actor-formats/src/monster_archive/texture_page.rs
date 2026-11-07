@@ -220,7 +220,7 @@ impl MonsterPage {
 
     /// Block-relative offset of the embedded TMD (record `+0x04`).
     fn tmd_offset(&self) -> usize {
-        legaia_bytes::u32_le(&self.block, 0x04).unwrap_or(0) as usize
+        psx_bytes::u32_le(&self.block, 0x04).unwrap_or(0) as usize
     }
 
     /// Decode the page the way the game colours it: every texel through the
@@ -250,7 +250,7 @@ impl MonsterPage {
         let base = self.pool_offset + p * PALETTE_BYTES;
         let mut out = [0u16; PALETTE_COLOURS];
         for (i, slot) in out.iter_mut().enumerate() {
-            *slot = legaia_bytes::u16_le(&self.block, base + i * 2)?;
+            *slot = psx_bytes::u16_le(&self.block, base + i * 2)?;
         }
         Some(out)
     }
@@ -301,13 +301,13 @@ pub fn page(entry: &[u8], id: u16) -> Result<Option<MonsterPage>> {
     let Some(record) = super::record::parse_block(id, &block) else {
         return Ok(None);
     };
-    let tmd_offset = legaia_bytes::u32_le(&block, 0x04).unwrap_or(0) as usize;
+    let tmd_offset = psx_bytes::u32_le(&block, 0x04).unwrap_or(0) as usize;
     if tmd_offset + 4 > block.len()
-        || legaia_bytes::u32_le(&block, tmd_offset) != Some(super::mesh::TMD_MAGIC)
+        || psx_bytes::u32_le(&block, tmd_offset) != Some(super::mesh::TMD_MAGIC)
     {
         return Ok(None);
     }
-    let pool_offset = legaia_bytes::u32_le(&block, 0x08).unwrap_or(0) as usize;
+    let pool_offset = psx_bytes::u32_le(&block, 0x08).unwrap_or(0) as usize;
     let mesh = MonsterMesh {
         id,
         block,

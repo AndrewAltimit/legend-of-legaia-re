@@ -77,7 +77,7 @@ use legaia_minigame_formats::minigame_art::{self, SlotHudWidget};
 use legaia_minigame_formats::minigame_sfx::{self, SfxCueBank};
 use legaia_minigame_formats::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_overlay_images::static_overlay;
-use legaia_tim::Tim;
+use psx_tim::Tim;
 
 /// The three side-games playable in the browser, plus the disc they read.
 #[wasm_bindgen]
@@ -542,10 +542,10 @@ impl LegaiaMinigames {
         let Some(tim_bytes) = self.prot.get(off..off + OVERLAY_LOAD_PORTRAIT_STRIDE) else {
             return Vec::new();
         };
-        let Ok(parsed) = legaia_tim::parse(tim_bytes) else {
+        let Ok(parsed) = psx_tim::parse(tim_bytes) else {
             return Vec::new();
         };
-        legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+        psx_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
     }
 }
 

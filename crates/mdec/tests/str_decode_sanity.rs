@@ -19,16 +19,16 @@
 //! and the CLI test's scratch files live in the system temp directory only for
 //! the duration of the test.
 
-use legaia_mdec::MdecDecoder;
-use legaia_mdec::str_player::{Bitstream, FmvSlot, PumpIdle, StrPlayer};
+use psx_mdec::MdecDecoder;
+use psx_mdec::str_player::{Bitstream, FmvSlot, PumpIdle, StrPlayer};
 
 /// Locate a movie's extent on the disc, if the env var points at one.
-fn open_movie(name: &str) -> Option<(legaia_iso::raw::RawDisc, u32, u32)> {
+fn open_movie(name: &str) -> Option<(psx_iso::raw::RawDisc, u32, u32)> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
-    let path = legaia_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
-    let mut disc = legaia_iso::raw::RawDisc::open(&path).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut disc).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
+    let path = psx_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
+    let mut disc = psx_iso::raw::RawDisc::open(&path).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut disc).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
     let (_, rec) = files
         .into_iter()
         .find(|(p, _)| p.to_ascii_uppercase().contains(name))?;
@@ -200,7 +200,7 @@ fn mdec_decode_str_cli_writes_header_sized_coherent_frames() {
     // The CLI reads the 2048-byte-sector form `legaia-extract` writes to
     // extracted/MOV/. A slice around frame 900 is enough; it never leaves the
     // temp directory.
-    let dir = std::env::temp_dir().join(format!("legaia-mdec-cli-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("psx-mdec-cli-{}", std::process::id()));
     let frames_dir = dir.join("frames");
     std::fs::create_dir_all(&frames_dir).unwrap();
     let first = 8990u32;

@@ -58,7 +58,7 @@ fn a_rotted_limb_tints_its_palette_window_through_the_host_step() {
     assert_eq!(windows[0], table.row(1), "seat 0 holds roster id 1");
 
     // Seed a colourful palette on the seat's row (the battle loader's write).
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let row = PARTY_CLUT_ROW_BASE;
     let words: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
         .map(|i| 0x8000 | ((i % 31 + 1) as u16) | ((((i / 3) % 31 + 1) as u16) << 10))

@@ -14,7 +14,7 @@
 //! ## Shape
 //!
 //! - [`engine_spu_from_retail`] translates a
-//!   [`legaia_mednafen::PsxSpu`] snapshot into a freshly-seeded
+//!   [`psx_mednafen::PsxSpu`] snapshot into a freshly-seeded
 //!   [`legaia_engine_audio::Spu`]. The 512 KiB SPU RAM blob is copied
 //!   verbatim and the per-voice static config (start_addr / loop_addr /
 //!   pitch / vol_left / vol_right) is mirrored. Voices whose retail ADSR
@@ -62,7 +62,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_engine_audio::{Spu, spu::adsr::AdsrConfig, spu::reverb::ReverbMode};
-use legaia_mednafen::{PsxSpu, SaveState};
+use psx_mednafen::{PsxSpu, SaveState};
 
 use crate::audio_trace_oracle::{
     AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, enter_scene_for_trace,
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn engine_spu_from_retail_returns_none_when_save_has_no_spu_ram() {
-        use legaia_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
+        use psx_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
         // Build a SaveState with an SPU section that doesn't carry SPURAM
         // bytes - the translator should refuse rather than ship a
         // zero-initialised mixer.
@@ -581,7 +581,7 @@ mod tests {
         // for voice 3: start_addr, pitch, ADSR phase Attack and a non-zero
         // envelope level (the audibility predicate - mednafen's phase word
         // has no `Off` member, so the level is what says "keyed").
-        use legaia_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
+        use psx_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
         // Studio C reverb register block (public PSX hardware-reference
         // preset; what retail actually installs) laid into the `Regs` shadow
         // at the reverb-register window (SPU 0x1F801DC0 = Regs[224]), with the

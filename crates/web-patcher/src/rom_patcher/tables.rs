@@ -85,7 +85,7 @@ pub fn read_equipment_table(image: Vec<u8>) -> Result<JsValue, JsValue> {
 /// location slot, which is exactly the shape this listing exposes.
 #[wasm_bindgen]
 pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
-    let scus = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54")
+    let scus = psx_iso::iso9660::read_file_in_image(&image, "SCUS_942.54")
         .ok_or_else(|| err("SCUS_942.54 not found in disc image"))?;
     let locations = legaia_patcher::location_name::list_names(&scus)
         .map_err(|e| err(format!("location-name table: {e}")))?;

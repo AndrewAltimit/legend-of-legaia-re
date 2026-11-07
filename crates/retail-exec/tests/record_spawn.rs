@@ -7,7 +7,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const DISPATCH: u32 = 0x8003_BDE0;
 const ALLOC: u32 = 0x8002_0DE0;
@@ -26,7 +26,7 @@ fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
             let start = d.data_offset as usize;
             if start < buf.len()
                 && let Ok((decoded, _)) =
-                    legaia_lzs::decompress_tracked(&buf[start..], d.size as usize)
+                    psx_lzs::decompress_tracked(&buf[start..], d.size as usize)
             {
                 out.push(decoded);
             }

@@ -691,7 +691,7 @@ mod tests {
 
     /// `[u32 size][LZS]` slot padded to `SLOT_STRIDE`, like a real archive slot.
     fn fake_slot(block: &[u8]) -> Vec<u8> {
-        let stream = legaia_lzs::compress(block);
+        let stream = psx_lzs::compress(block);
         let mut slot = Vec::with_capacity(SLOT_STRIDE);
         slot.extend_from_slice(&(block.len() as u32).to_le_bytes());
         slot.extend_from_slice(&stream);
@@ -701,7 +701,7 @@ mod tests {
 
     fn decode_block(slot: &[u8]) -> Vec<u8> {
         let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
-        legaia_lzs::decompress(&slot[4..], declared).unwrap()
+        psx_lzs::decompress(&slot[4..], declared).unwrap()
     }
 
     #[test]

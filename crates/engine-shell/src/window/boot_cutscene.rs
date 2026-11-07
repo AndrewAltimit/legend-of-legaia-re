@@ -1090,7 +1090,7 @@ impl PlayWindowApp {
         fmv_id: i16,
         rel: &str,
     ) -> Option<(
-        Vec<legaia_mdec::VideoFrame>,
+        Vec<psx_mdec::VideoFrame>,
         std::time::Duration,
         Option<crate::cutscene_av::CutsceneAudio>,
     )> {
@@ -1098,7 +1098,7 @@ impl PlayWindowApp {
         if let Some(disc_path) = self.disc_path.as_ref() {
             match resolve_iso_file(disc_path, Path::new(rel)) {
                 Ok((lba, size)) => {
-                    let total = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+                    let total = size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
                     // Narrow to the fmv_id's frame-range segment (multi-cutscene
                     // files like MV3.STR carry several fmv_ids by frame range).
                     let (lba, count) = self.fmv_segment_window(fmv_id, lba, total);
@@ -1163,7 +1163,7 @@ impl PlayWindowApp {
     fn stage_windowed_cutscene(
         &mut self,
         decoded: (
-            Vec<legaia_mdec::VideoFrame>,
+            Vec<psx_mdec::VideoFrame>,
             std::time::Duration,
             Option<crate::cutscene_av::CutsceneAudio>,
         ),

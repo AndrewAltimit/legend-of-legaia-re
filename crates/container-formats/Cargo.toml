@@ -14,15 +14,15 @@ path = "src/lib.rs"
 anyhow.workspace = true
 serde.workspace = true
 legaia-anm.workspace = true
-legaia-bytes.workspace = true
-legaia-lzs.workspace = true
-legaia-tim.workspace = true
+psx-bytes.workspace = true
+psx-lzs.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 
 [dev-dependencies]
 legaia-prot.workspace = true
-legaia-seq.workspace = true
-legaia-vab.workspace = true
+psx-seq.workspace = true
+psx-vab.workspace = true
 
 [[test]]
 name = "integration"

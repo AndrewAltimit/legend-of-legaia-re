@@ -91,8 +91,8 @@ fn a_pack_fight_is_fought_on_the_stage_it_names() {
     assert_eq!(Some(stage.stage_entry), host.battle_stage_entry());
     // The ground tile's palette row carries the tint.
     let map01 = Scene::load(&host.index, "map01").expect("map01");
-    let mut plain = legaia_tim::Vram::new();
-    let mut tinted = legaia_tim::Vram::new();
+    let mut plain = psx_tim::Vram::new();
+    let mut tinted = psx_tim::Vram::new();
     upload_battle_stage_tims_into_vram_tinted(&map01, stage.stage_entry, &mut plain, None);
     upload_battle_stage_tims_into_vram_tinted(&map01, stage.stage_entry, &mut tinted, Some(TINT));
     let row: Vec<_> = (0..16)

@@ -75,11 +75,11 @@ pub struct BakaDuelAssets {
     /// epilogue places four times.
     pub wall: Option<(legaia_tmd::Tmd, Vec<u8>)>,
     /// PROT 1203 descriptor 0's TIM pack (HUD sheets, the floor cells).
-    pub art: Vec<legaia_tim::Tim>,
+    pub art: Vec<psx_tim::Tim>,
     /// PROT 1205's party atlases.
-    pub party_atlases: Vec<legaia_tim::Tim>,
+    pub party_atlases: Vec<psx_tim::Tim>,
     /// Each ladder fighter's own atlas, by roster id.
-    pub fighter_tims: Vec<Option<legaia_tim::Tim>>,
+    pub fighter_tims: Vec<Option<psx_tim::Tim>>,
     /// Stage-pack TMD `3` - the round-start cameo's ring girl
     /// ([`legaia_engine_minigames::baka_fighter_chrome::CAMEO_SCENE_MODEL`]).
     pub cameo: Option<(legaia_tmd::Tmd, Vec<u8>)>,
@@ -147,7 +147,7 @@ impl BakaDuelAssets {
         {
             out.party_atlases = atlases
                 .iter()
-                .filter_map(|a| legaia_tim::parse(&a.tim_bytes).ok())
+                .filter_map(|a| psx_tim::parse(&a.tim_bytes).ok())
                 .collect();
         }
         for roster in 0..bo::OPPONENT_COUNT {
@@ -173,7 +173,7 @@ impl BakaDuelAssets {
                 else {
                     continue;
                 };
-                out.fighter_tims[roster] = legaia_tim::parse(&pack.tim_bytes).ok();
+                out.fighter_tims[roster] = psx_tim::parse(&pack.tim_bytes).ok();
                 if let (Ok(tmd), Ok(bank)) = (
                     legaia_tmd::parse(&pack.tmd_bytes),
                     legaia_actor_formats::player_anm::parse(&pack.anim_bytes),
@@ -193,8 +193,8 @@ impl BakaDuelAssets {
     /// The duel's VRAM with `opponent` seated: the art pages, the party
     /// atlases, then the opponent's own atlas last (the ladder packs past
     /// the first two share one page, loaded one at a time).
-    pub fn vram(&self, opponent: usize) -> legaia_tim::Vram {
-        let mut vram = legaia_tim::Vram::new();
+    pub fn vram(&self, opponent: usize) -> psx_tim::Vram {
+        let mut vram = psx_tim::Vram::new();
         for tim in self.art.iter().chain(self.party_atlases.iter()) {
             vram.upload_tim(tim);
         }
@@ -208,7 +208,7 @@ impl BakaDuelAssets {
     /// ([`legaia_engine_minigames::baka_fighter_chrome::sprite_blit`]): a `MoveImage` of the
     /// stored eye cell into the live one. `false` when the table did not
     /// decode or has no such row.
-    pub fn apply_wink(&self, vram: &mut legaia_tim::Vram, index: usize) -> bool {
+    pub fn apply_wink(&self, vram: &mut psx_tim::Vram, index: usize) -> bool {
         let Some(rect) = self.blit_rects.get(index) else {
             return false;
         };
@@ -1208,7 +1208,7 @@ impl BakaDuelSurface {
     }
 
     /// The duel VRAM for the seated opponent.
-    pub fn vram(&self) -> Option<legaia_tim::Vram> {
+    pub fn vram(&self) -> Option<psx_tim::Vram> {
         let s = self.scene.as_ref()?;
         let assets = self.assets.as_ref()?;
         let mut vram = assets.vram(if self.clear_up {

@@ -337,7 +337,7 @@ impl BoundedArray {
 /// starts elsewhere - is left alone, which is why this finds few arrays: most
 /// of the retail data segment is indexed by runtime values.
 pub fn loop_bounded_arrays(image: &[u8], base_va: u32) -> Vec<BoundedArray> {
-    let word = |o: usize| legaia_bytes::u32_le(image, o);
+    let word = |o: usize| psx_bytes::u32_le(image, o);
     let formed: std::collections::BTreeMap<usize, u32> = lui_forms(image, base_va)
         .into_iter()
         .filter(|f| f.op == 0x09 && f.index.is_none())

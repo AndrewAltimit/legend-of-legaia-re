@@ -5,7 +5,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_system::input::PadButton;
-use legaia_retail_exec::{Cpu, GP, Stop};
+use psx_retail_exec::{Cpu, GP, Stop};
 
 const WALK: u32 = 0x801D_01B0;
 const OVERLAY_BASE: u32 = 0x801C_E818;

@@ -17,7 +17,7 @@
 //!
 //! So the raw tier's magic scan cannot see them, the LZS tier's magic scan
 //! cannot see them either (they *are* LZS-compressed - the magic is simply
-//! not there to find), and `legaia_tim::parse_strict` has nothing to parse.
+//! not there to find), and `psx_tim::parse_strict` has nothing to parse.
 //! Format detail in [`legaia_actor_formats::battle_texture_catalog`] and
 //! [`docs/formats/battle-data-pack.md`](../../../docs/formats/battle-data-pack.md).
 //!
@@ -80,7 +80,7 @@ pub fn catalog(patcher: &DiscPatcher) -> Result<Vec<BattleTextureBlock>> {
         .read_named_file("PROT.DAT")
         .context("PROT.DAT not found in disc image")?;
     let spans = patcher.entry_spans();
-    let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| ItemNameTable::from_scus(&scus));
     Ok(catalog::build_from_spans_with_names(
         &prot,
@@ -233,9 +233,7 @@ fn encode_pixels(
             // `rgba8_to_bgr555` already sends alpha 0 to 0x0000 and opaque
             // black to 0x8000; the normalisation puts everything else in
             // the same frame the runtime uploads into.
-            visible(legaia_tim::encode::rgba8_to_bgr555([
-                c[0], c[1], c[2], c[3],
-            ]))
+            visible(psx_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], c[3]]))
         })
         .collect();
 
@@ -329,7 +327,7 @@ fn pixels_to_rgba(pixels: &[u8], palette: &[u16; CLUT_ENTRIES_PER_PALETTE]) -> V
     let mut out = Vec::with_capacity(pixels.len() * 8);
     for byte in pixels {
         for nib in [byte & 0x0F, byte >> 4] {
-            out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(palette[nib as usize]));
+            out.extend_from_slice(&psx_tim::bgr555_to_rgba8(palette[nib as usize]));
         }
     }
     out
@@ -471,8 +469,8 @@ fn recompress(e: &Edited) -> Result<(Vec<u8>, BattleFit)> {
     // Retail's own encoder is not ours, so try both and keep the smaller -
     // the greedy pass sometimes beats the optimal one's token choices on
     // this data, and every byte counts against the slot footprint.
-    let greedy = legaia_lzs::compress(&e.decoded);
-    let optimal = legaia_lzs::compress_optimal(&e.decoded);
+    let greedy = psx_lzs::compress(&e.decoded);
+    let optimal = psx_lzs::compress_optimal(&e.decoded);
     let stream = if greedy.len() <= optimal.len() {
         greedy
     } else {
@@ -625,7 +623,7 @@ mod tests {
     #[test]
     fn battle_encode_reuses_the_slot_a_colour_already_has() {
         let pal = base_palette();
-        let rgba = solid(legaia_tim::bgr555_to_rgba8(pal[7]), 8, 2);
+        let rgba = solid(psx_tim::bgr555_to_rgba8(pal[7]), 8, 2);
         let (palette, pixels, q) = encode_pixels(&rgba, 8, 2, &pal, false).unwrap();
         assert_eq!(q, 0);
         assert_eq!(
@@ -646,7 +644,7 @@ mod tests {
         let pal = base_palette();
         assert!(pal.iter().skip(1).all(|e| e & 0x8000 != 0));
         let rgba: Vec<u8> = (0..8 * 2)
-            .flat_map(|i| legaia_tim::bgr555_to_rgba8(pal[i % CLUT_ENTRIES_PER_PALETTE]))
+            .flat_map(|i| psx_tim::bgr555_to_rgba8(pal[i % CLUT_ENTRIES_PER_PALETTE]))
             .collect();
         let (palette, _, _) = encode_pixels(&rgba, 8, 2, &pal, false).unwrap();
         assert_eq!(&palette[..], &pal[..]);

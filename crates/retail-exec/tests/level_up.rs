@@ -7,8 +7,8 @@ use crate::common::{Rng, diff_offsets, disc, scus, scus_cpu};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_core::world::World;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::{CharacterRecord, Party};
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

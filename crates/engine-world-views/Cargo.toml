@@ -40,8 +40,8 @@ legaia-engine-vm.workspace = true
 legaia-save.workspace = true
 # Named only by the disc-gated scene-assembly tests.
 legaia-container-formats.workspace = true
-legaia-lzs.workspace = true
-legaia-tim.workspace = true
+psx-lzs.workspace = true
+psx-tim.workspace = true
 
 [[test]]
 name = "integration"

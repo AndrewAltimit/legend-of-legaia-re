@@ -530,7 +530,7 @@ steal_item_id]` per 1-based monster id, item at `+id*2+1` (see
 record. Because it's a plain executable table, an edit is the simplest of the
 four: a single same-size byte overwrite of the item, applied straight to the
 SCUS file via `DiscPatcher::patch_named_file` (the non-PROT sibling of
-`patch_prot_entry`, built on `legaia_iso::write::patch_file_logical`). No LZS
+`patch_prot_entry`, built on `psx_iso::write::patch_file_logical`). No LZS
 re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
 reassigns the item for every stealable monster (`Shuffle` redistributes the
 existing steal-item multiset, `Random` draws from the valid item pool) and
@@ -2152,7 +2152,7 @@ drop / chest / steal modes:
 ### Texture replacement
 
 Swap any texture (TIM) on the disc for a user-authored image. Three
-subcommands (`crates/patcher` `texture` module + the `legaia_tim::encode`
+subcommands (`crates/patcher` `texture` module + the `psx_tim::encode`
 encoder; format rules in [`formats/tim.md`](../formats/tim.md#encoding-png---tim-texture-replacement)):
 
 ```bash
@@ -2195,7 +2195,7 @@ map's rules: [`textures-and-fonts.md`](translation/textures-and-fonts.md#multi-p
 
 **LZS-tier fits.** A compressed texture is replaced by splicing the encoded
 TIM into the decoded section and recompressing the whole section with
-`legaia_lzs::compress_optimal`. The write happens only when the new stream
+`psx_lzs::compress_optimal`. The write happens only when the new stream
 fits the retail stream's byte footprint; otherwise the command fails with the
 exact byte counts and writes nothing. In practice there is headroom - the
 optimal re-packer beats the retail compressor on every section measured - but

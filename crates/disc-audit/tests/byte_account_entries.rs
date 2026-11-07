@@ -523,7 +523,7 @@ fn the_flag_descriptor_slot_carries_the_pochi_fill_file() {
             .find(|d| d.type_byte == FLAG_TYPE)
             .unwrap_or_else(|| panic!("PROT {idx:04} has no FLAG descriptor"));
         assert_eq!(flag.size as usize, POCHI_FILL_LEN);
-        let out = legaia_lzs::decompress(&bytes[flag.data_offset as usize..], flag.size as usize)
+        let out = psx_lzs::decompress(&bytes[flag.data_offset as usize..], flag.size as usize)
             .expect("the FLAG slot decodes");
         assert!(
             is_pochi_filler(&out),
@@ -898,7 +898,7 @@ fn the_str_overlay_data_segment_is_claimed_structurally() {
     assert_invariants(&acc);
 
     use legaia_game_tables::fmv_dispatch as fmv;
-    use legaia_mdec::strv2_table as vlc;
+    use psx_mdec::strv2_table as vlc;
     let base = fmv::STR_OVERLAY_BASE_VA;
     let src = (vlc::STRV2_PACKED_VA - base) as usize;
     let (table, consumed) = vlc::unpack_lz_tracked(&bytes[src..]).expect("the blob terminates");

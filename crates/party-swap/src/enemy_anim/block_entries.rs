@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 /// whole-figure uniform scale. Size-neutral: the vertex table is fixed
 /// 8-byte records.
 pub(super) fn scale_block_tmd_vertices(block: &mut [u8], s: f32) -> Result<()> {
-    let tmd_off = legaia_bytes::u32_le(block, 4).context("tmd offset")? as usize;
+    let tmd_off = psx_bytes::u32_le(block, 4).context("tmd offset")? as usize;
     let tmd = legaia_tmd::parse(
         block
             .get(tmd_off..)
@@ -110,7 +110,7 @@ pub(super) struct EntrySpan {
 /// Parse a block's entry table, requiring the ascending-contiguous layout
 /// (the same law `slim` and `replace_mesh_and_pool` verify).
 pub(super) fn parse_entry_table(block: &[u8]) -> Result<(Vec<EntrySpan>, usize, usize, usize)> {
-    let pool_off = legaia_bytes::u32_le(block, 8).context("pool offset")? as usize;
+    let pool_off = psx_bytes::u32_le(block, 8).context("pool offset")? as usize;
     if pool_off == 0 || pool_off > block.len() {
         bail!("texture-pool offset {pool_off:#x} out of range");
     }
@@ -123,7 +123,7 @@ pub(super) fn parse_entry_table(block: &[u8]) -> Result<(Vec<EntrySpan>, usize, 
     }
     let mut entries = Vec::with_capacity(count);
     for i in 0..count {
-        let off = legaia_bytes::u32_le(block, ARRAY_OFF + i * 4)
+        let off = psx_bytes::u32_le(block, ARRAY_OFF + i * 4)
             .with_context(|| format!("entry {i} offset"))? as usize;
         let head = block
             .get(off..off + ENTRY_STREAM_OFF + 2)
@@ -246,8 +246,8 @@ pub(crate) fn rebuild_block_entries(
     if let Some(&bad) = rewrites.keys().find(|&&i| i >= count) {
         bail!("rewrite index {bad} out of range ({count} entries)");
     }
-    let name_off = legaia_bytes::u32_le(current_block, 0).context("name offset")? as usize;
-    let tmd_off = legaia_bytes::u32_le(current_block, 4).context("tmd offset")? as usize;
+    let name_off = psx_bytes::u32_le(current_block, 0).context("name offset")? as usize;
+    let tmd_off = psx_bytes::u32_le(current_block, 4).context("tmd offset")? as usize;
     if name_off >= cur_region_start || tmd_off >= cur_region_start {
         bail!("name/TMD offsets inside the entry region - layout not understood");
     }
@@ -302,7 +302,7 @@ pub(crate) fn rebuild_block_entries(
     let mut effect_indices: BTreeSet<u32> = BTreeSet::new();
     for r in &ret {
         for at in [r.off + 4, r.off + 8] {
-            let idx = legaia_bytes::u32_le(retail_block, at).context("effect index")?;
+            let idx = psx_bytes::u32_le(retail_block, at).context("effect index")?;
             if idx != 0 {
                 if idx >= 0x100 {
                     bail!("effect index {idx:#x} is not a table index");
@@ -313,7 +313,7 @@ pub(crate) fn rebuild_block_entries(
     }
     for &idx in &effect_indices {
         let word_off = (idx as usize + count + TABLE_WORD_BIAS) * 4;
-        let val = legaia_bytes::u32_le(current_block, word_off)
+        let val = psx_bytes::u32_le(current_block, word_off)
             .with_context(|| format!("effect table word {idx}"))? as usize;
         if val >= cur_tail_start {
             out[word_off..word_off + 4]

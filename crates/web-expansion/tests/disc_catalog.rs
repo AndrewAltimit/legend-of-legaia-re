@@ -39,8 +39,8 @@ fn catalog_and_sample_pack_against_the_disc() {
 
     // The stage picker's lists: each block's stage streams as the engine's
     // own scan finds them, and the pick a fight there takes by default.
-    let prot = legaia_iso::image::extract_prot_dat(&image).unwrap();
-    let cdname = legaia_iso::image::extract_cdname_txt(&image);
+    let prot = psx_iso::image::extract_prot_dat(&image).unwrap();
+    let cdname = psx_iso::image::extract_cdname_txt(&image);
     let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, cdname.as_deref()).unwrap();
     let mut staged = 0;
     for s in scenes {

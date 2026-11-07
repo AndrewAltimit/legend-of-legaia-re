@@ -499,9 +499,9 @@ pub(super) fn author_staged_cast_rows(
                             options.keep_che_hammer && sibling == Sibling::Che,
                         ),
                         |decoded_new| {
-                            let mut c = legaia_lzs::compress(decoded_new);
+                            let mut c = psx_lzs::compress(decoded_new);
                             if c.len() > region.avail {
-                                c = legaia_lzs::compress_optimal(decoded_new);
+                                c = psx_lzs::compress_optimal(decoded_new);
                             }
                             if c.len() > region.avail {
                                 return Ok(false);

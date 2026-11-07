@@ -14,7 +14,7 @@
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_motion_vm::ambient_motion::{AmbientBlocking, AmbientMotion};
 use legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect;
-use legaia_retail_exec::{A0, A1, Stop, V0};
+use psx_retail_exec::{A0, A1, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -151,7 +151,7 @@ fn the_ambient_vm_runs_its_streams_as_retail_does() {
         for i in 0..4 {
             cpu.mem.wr16(SFX_RING + i * 2, 0);
         }
-        let gp = cpu.regs.r[legaia_retail_exec::GP];
+        let gp = cpu.regs.r[psx_retail_exec::GP];
         cpu.mem.wr16(gp + 0x158, 0);
         seed.set(rand0);
 

@@ -3,7 +3,7 @@
 use super::*;
 use crate::Spu;
 use crate::vab_bind::VabBank;
-use legaia_seq::Seq;
+use psx_seq::Seq;
 
 impl Sequencer {
     /// Build a sequencer over a parsed SEQ + an uploaded bank. Resets every

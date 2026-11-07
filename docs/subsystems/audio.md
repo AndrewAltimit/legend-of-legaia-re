@@ -2084,7 +2084,7 @@ tests named above run it over real scores.
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. Increasing phases step by the `+7..+4` (`7 - step_bits`) StepValue table; every *decreasing* phase (decay, linear/exponential release, sustain-decrease) steps by the `-8..-5` (`-8 + step_bits`) table - the two sign tables differ by one unit, so a decreasing phase driven from the increase table fades ~one step slow. The `(adsr1, adsr2)` words are read verbatim off the VAB tone metadata (a decoded tone's ADSR word equals the SPU `ADSRControl` register libspu writes at key-on - no transform). |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
 | [`spu::ram`](../../crates/engine-audio/src/spu/ram.rs) | 512 KB SPU RAM model + libspu-shaped transfer engine (`SpuRam::set_direction` / `write` / `read` + `SpuAllocator` for `SsSpuMalloc` / `SpuFree`). |
-| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch is the [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center); key-on volume and pans are the `FUN_80067550` chain ([above](#voice--mixer-audible-output-critical-path)). |
+| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `psx_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch is the [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center); key-on volume and pans are the `FUN_80067550` chain ([above](#voice--mixer-audible-output-critical-path)). |
 | [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate ([`host_resample`](../../crates/engine-audio/src/host_resample.rs)). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
 
 Decay ends on the step that takes the envelope below `(SL + 1) * 0x800`
@@ -2412,7 +2412,7 @@ unread.
 per-channel PCM matches an external lossless reference decode
 sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2
 Form 2 (read it from raw 2352-byte sectors; a 2048-byte Form-1 view truncates
-it). The demuxer (`legaia_xa::demux`) splits sectors by `(file_no, ch_no)` and
+it). The demuxer (`psx_xa::demux`) splits sectors by `(file_no, ch_no)` and
 the group decoder reconstructs each channel. See
 [`formats/xa.md`](../formats/xa.md) for the sound-group decode and [Cutscene /
 STR](cutscene.md) for the interleaved A/V path.
@@ -2466,7 +2466,7 @@ holds `0x0000` (between cues), `0x75EA` (battle states with a voice up) or
 `SsSetSerialAttr(0, SS_MIX, 1)`; see `ghidra/scripts/funcs/8003ee7c.txt`,
 `8003d764.txt`, `800643c4.txt`. The port mixes cues at
 `legaia_engine_session::audio_director::XA_CUE_GAIN` and movies at unity, and
-`legaia_mednafen::PsxSpu::cd_volume` reads the register pair out of a mednafen
+`psx_mednafen::PsxSpu::cd_volume` reads the register pair out of a mednafen
 state (`mednafen-state spu` prints it). Together with the converter, a real
 shout lands in the mix at `0.85` of its decoded RMS
 (`engine-session/tests/xa_cue_level_disc.rs`).
@@ -2514,7 +2514,7 @@ The engine wires this end-to-end:
   (`0x8004C3FC..0x8004C414`). The world reads its own formation slot 0
   (`arts_voice_cue::FORCED_SHOUT_FORMATION_ID`); the director's bank is handed
   the same id each battle frame (`AudioDirector::set_shout_first_enemy_id`).
-- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
+- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`psx_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
 - **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
 Two timing behaviours model the retail CD/XA sequencing contract: the drive's start ([`xa_start_delay`](#a-clips-start)) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
@@ -2932,7 +2932,7 @@ anything read off a captured envelope.
 The retail side has two capture shapes with one `AudioTraceFrame` JSONL wire
 format:
 
-1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb registers, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`.
+1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `psx_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb registers, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`.
 2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) inside PCSX-Redux and decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py), compared frame by frame via [`first_audio_trace_divergence_multi`](../../crates/parity/src/audio_trace_oracle.rs).
 
 PCSX-Redux's Lua API does not expose the SPU register file
@@ -3286,7 +3286,7 @@ A state reached through a door carries history a card load does not replay:
 the music a sub-op 6 door kept
 ([above](#a-door-keeps-its-music-only-behind-sub-op-6)). A manifest entry
 that names its door (`arrival = { from = "kor4", door = 13 }`,
-`legaia_ram_image::scenarios::ScenarioArrival`) is seeded through it
+`psx_ram_image::scenarios::ScenarioArrival`) is seeded through it
 instead: the card load lands in the door's scene, its entry settles,
 `SceneHost::take_door_to` stands the player on the door's walk-on tile (or
 installs a door record no tile spawns), and the session ticks until it holds
@@ -3679,7 +3679,7 @@ reads `0.9995` against `0.998`, with no term left in pitch or in the flush.
 **The key-on's start.** A note's offset against the fit was `d = 4 - 3 / p` samples for a pitch
 ratio `p` (regression `3.72 - 2.19 / p` over 523 notes of one recording): a fixed output delay
 and a lead in *source* samples. It is mednafen's key-on, which carries the field in every state
-(`Voices[n].DecodePlayDelay`, read by `legaia_mednafen::PsxSpu::voice_decoder`): a key-on takes effect
+(`Voices[n].DecodePlayDelay`, read by `psx_mednafen::PsxSpu::voice_decoder`): a key-on takes effect
 after the voice's sample in hand, holds the voice for four samples with neither envelope nor
 counter running, plays one more at envelope `0` where both take their first step, and reads its
 interpolator from the decoder's read position, whose four taps are the stream's samples `0..=3`. So

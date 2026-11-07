@@ -126,19 +126,19 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
     }
 
     // (1) Bare TMD magic at offset 4.
-    let tmd_magic = legaia_bytes::u32_le(buf, 4)?;
+    let tmd_magic = psx_bytes::u32_le(buf, 4)?;
     if tmd_magic != 0x80000002 {
         return None;
     }
 
     // (2) TMD on-disc flags must be zero (post-fixup is 1, on-disc is 0).
-    let tmd_flags = legaia_bytes::u32_le(buf, 8)?;
+    let tmd_flags = psx_bytes::u32_le(buf, 8)?;
     if tmd_flags != 0 {
         return None;
     }
 
     // (3) Object count must be a small positive number.
-    let nobj = legaia_bytes::u32_le(buf, 12)?;
+    let nobj = psx_bytes::u32_le(buf, 12)?;
     if nobj == 0 || nobj > MAX_TMD_OBJECTS {
         return None;
     }
@@ -148,7 +148,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
     //     Reject if the type byte isn't 0 - that would mean a different
     //     dispatcher fires on the leading chunk and this isn't the variant
     //     we're trying to detect.
-    let chunk0_header = legaia_bytes::u32_le(buf, 0)?;
+    let chunk0_header = psx_bytes::u32_le(buf, 0)?;
     if (chunk0_header >> 24) & 0xFF != 0 {
         return None;
     }
@@ -175,7 +175,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
     let mut terminated = false;
     let walk_cap = (cur + MAX_TAIL_WALK).min(buf.len());
     while cur + 4 <= walk_cap && tail_chunks.len() < MAX_CHUNKS {
-        let header = match legaia_bytes::u32_le(buf, cur) {
+        let header = match psx_bytes::u32_le(buf, cur) {
             Some(v) => v,
             None => break,
         };
@@ -268,7 +268,7 @@ pub fn sub_streams(buf: &[u8]) -> Vec<SubStream> {
         // Next sub-stream begins after the terminator, past the zero padding
         // that aligns it to the next sector. Skip word-aligned zeros.
         let mut next = round_up_4(end);
-        while next + 4 <= buf.len() && legaia_bytes::u32_le(buf, next) == Some(0) {
+        while next + 4 <= buf.len() && psx_bytes::u32_le(buf, next) == Some(0) {
             next += 4;
         }
         if next <= base {
@@ -373,14 +373,14 @@ pub fn battle_tim_chunks(buf: &[u8]) -> Vec<BattleTimChunk> {
     if hit_first_terminator {
         let mut off = round_up_4(stream.tail_end);
         while off + 8 <= buf.len() {
-            let header = match legaia_bytes::u32_le(buf, off) {
+            let header = match psx_bytes::u32_le(buf, off) {
                 Some(v) => v,
                 None => break,
             };
             let type_byte = ((header >> 24) & 0xFF) as u8;
             let size = (header & 0x00FF_FFFF) as usize;
             if type_byte == 0x01 && size >= 32 && off + 4 + size <= buf.len() {
-                let payload_magic = legaia_bytes::u32_le(buf, off + 4).unwrap_or(0);
+                let payload_magic = psx_bytes::u32_le(buf, off + 4).unwrap_or(0);
                 if payload_magic == 0x0000_0010 {
                     out.push(BattleTimChunk {
                         header_offset: off,
@@ -410,7 +410,7 @@ where
 {
     let mut step = 0usize;
     while step < MAX_CHUNKS && cur + 4 <= buf.len() {
-        let Some(header) = legaia_bytes::u32_le(buf, cur) else {
+        let Some(header) = psx_bytes::u32_le(buf, cur) else {
             break;
         };
         match visit(cur, header) {

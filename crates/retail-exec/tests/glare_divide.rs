@@ -5,7 +5,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_arm_ticks::{CastArmExtState, SplitWeakened, glare_divide_split_tick};
 use legaia_engine_cast::cast_module_ticks::{CastActorState, CastModuleCtx};
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -103,7 +103,7 @@ fn the_split_weakens_the_half_retail_weakens() {
             assert!(calls < 400, "round {round}: arm 2 never advanced");
         }
         let clone = cpu.mem.rd32(ACTORS + (3 + u32::from(count)) * 4);
-        let rd = |cpu: &mut legaia_retail_exec::Cpu, p: u32| {
+        let rd = |cpu: &mut psx_retail_exec::Cpu, p: u32| {
             [
                 cpu.mem.rd16(p + 0x14C),
                 cpu.mem.rd16(p + 0x150),

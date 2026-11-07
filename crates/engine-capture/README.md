@@ -55,8 +55,8 @@ Engine-side only. It sits above `engine-core` and the kernel crates and
 below the hosts: `engine-shell` reads the seeds from the environment and
 applies them in its capture path, `legaia-parity` builds them.
 
-It must not depend on a save-state reader (`legaia-mednafen`,
-`legaia-pcsx-redux`), on `legaia-ram-image`, on the renderer, or on
+It must not depend on a save-state reader (`psx-mednafen`,
+`psx-pcsx-redux`), on `psx-ram-image`, on the renderer, or on
 `legaia-parity`. Nothing here takes a RAM image: deriving a seed from retail
 RAM is `legaia-parity`'s, which is what lets a play host link this crate
 without linking the oracles.

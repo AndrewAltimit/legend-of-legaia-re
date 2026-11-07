@@ -153,7 +153,7 @@ pub fn run_engine_listening_with(
 }
 
 /// [`run_engine_listening`] for a state reached through a door
-/// ([`legaia_ram_image::scenarios::ScenarioArrival`]): the card load lands
+/// ([`psx_ram_image::scenarios::ScenarioArrival`]): the card load lands
 /// in the door's scene instead, the door is taken
 /// ([`legaia_engine_scene_host::scene_host::SceneHost::take_door_to`]) and
 /// the session ticks until the captured scene is entered, so whatever the
@@ -163,7 +163,7 @@ pub fn run_engine_listening_with(
 pub fn run_engine_listening_through_door(
     extracted: &Path,
     retail: &RetailObs,
-    door: &legaia_ram_image::scenarios::ScenarioArrival,
+    door: &psx_ram_image::scenarios::ScenarioArrival,
 ) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
     let mut audio = crate::audio_sweep::EngineAudio::default();
     let obs = seed_and_settle(
@@ -185,7 +185,7 @@ const DOOR_REPLAY_DEADLINE: u64 = 3_000;
 fn seed_through_door(
     session: &mut NativeSession,
     save: legaia_save::SaveFile,
-    door: &legaia_ram_image::scenarios::ScenarioArrival,
+    door: &psx_ram_image::scenarios::ScenarioArrival,
     retail: &RetailObs,
     opts: &FieldLiveOpts,
     director: &mut RecordingDirector,
@@ -254,7 +254,7 @@ fn seed_and_settle(
     extracted: &Path,
     retail: &RetailObs,
     order: SeedOrder,
-    door: Option<&legaia_ram_image::scenarios::ScenarioArrival>,
+    door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
     mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
 ) -> Result<EngineObs> {
     let cfg = BootConfig {

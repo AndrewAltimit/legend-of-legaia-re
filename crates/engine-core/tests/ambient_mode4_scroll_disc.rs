@@ -36,7 +36,7 @@ fn extracted_root() -> Option<PathBuf> {
 
 /// Paint `(x, y, w, h)` so every row carries a unique non-zero texel - a
 /// rotation is then readable straight off the row values.
-fn paint_rows(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
+fn paint_rows(vram: &mut psx_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
     for row in 0..h {
         let texel = 0x8000u16 | (row + 1);
         let bytes: Vec<u8> = (0..w).flat_map(|_| texel.to_le_bytes()).collect();
@@ -46,7 +46,7 @@ fn paint_rows(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
 
 /// Paint `(x, y, w, h)` so every *texel* is unique - both rotate axes are
 /// then readable off the rect.
-fn paint_cells(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
+fn paint_cells(vram: &mut psx_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
     for row in 0..h {
         let bytes: Vec<u8> = (0..w)
             .flat_map(|col| (0x8000u16 | (row * w + col + 1)).to_le_bytes())
@@ -56,7 +56,7 @@ fn paint_cells(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) {
 }
 
 /// The rect's texels in row-major order.
-fn rect_values(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
+fn rect_values(vram: &psx_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     (0..h)
         .flat_map(|row| (0..w).map(move |col| (usize::from(x + col), usize::from(y + row))))
         .map(|(px, py)| vram.pixel(px, py))
@@ -66,7 +66,7 @@ fn rect_values(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u
 /// The per-row texel values currently in `(x, y, w, h)`, one entry per row.
 /// Panics if a row is not uniform - which would mean the rotate smeared
 /// columns instead of moving whole rows.
-fn row_values(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
+fn row_values(vram: &psx_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     (0..h)
         .map(|row| {
             let first = vram.pixel(usize::from(x), usize::from(y + row));
@@ -123,7 +123,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     );
 
     // 4 rows of 8, every texel distinct, plus a guard row underneath.
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     paint_cells(&mut vram, 0x20, 0x10, 8, 4);
     paint_rows(&mut vram, 0x20, 0x14, 8, 1);
     let before = rect_values(&vram, 0x20, 0x10, 8, 4);
@@ -197,7 +197,7 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
     );
 
     let (x, y, w, h) = rect;
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     paint_rows(&mut vram, x, y, w, h);
     let before = row_values(&vram, x, y, w, h);
 

@@ -161,7 +161,7 @@ pub fn fmv_post_play_return_scene(fmv_id: i16) -> Option<&'static str> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FmvBitstream {
     /// The Legaia "Iki" bitstream - LZSS qscale/DC table plus an AC-only
-    /// entropy stream. Every retail movie. Decoder: `legaia_mdec::MdecDecoder`.
+    /// entropy stream. Every retail movie. Decoder: `psx_mdec::MdecDecoder`.
     Iki,
     /// Standard STRv2/v3 VLC with per-block DC deltas; dev slots 9/10 only.
     Strv2,

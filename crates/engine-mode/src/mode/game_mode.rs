@@ -433,7 +433,7 @@ pub const WARP_SUB_ID_ADDR: u32 = 0x8007_BA34;
 /// `Title`.
 pub fn read_warp_sub_id(main_ram: &[u8]) -> Option<i16> {
     let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;
-    legaia_bytes::i16_le(main_ram, off)
+    psx_bytes::i16_le(main_ram, off)
 }
 
 /// The 28-entry retail mode table, transcribed from SCUS `0x8007078C`. Use

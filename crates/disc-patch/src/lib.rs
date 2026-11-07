@@ -1,6 +1,6 @@
 //! The disc-patching foundation every patcher feature writes through:
 //! `disc::DiscPatcher` (same-size in-place PROT-entry edits over
-//! `legaia_iso::write`'s Mode 2/2352 sector write-back with EDC/ECC
+//! `psx_iso::write`'s Mode 2/2352 sector write-back with EDC/ECC
 //! re-encoded), the PPF 3.0 patch writer / reader, the free-space ledger
 //! of the SCUS and overlay regions the code mods claim, and the MAN
 //! re-pack budget helpers.
@@ -51,7 +51,7 @@ pub fn man_compressed_budget(
 /// optimal packer when greedy misses. `None` if even optimal overflows.
 ///
 /// Every MAN re-pack site must use this rather than bare
-/// [`legaia_lzs::compress`]: a growing pass (the Delilas Challenge, a grown
+/// [`psx_lzs::compress`]: a growing pass (the Delilas Challenge, a grown
 /// translation) can leave a MAN that only the optimal packer fits back into
 /// its zero-slack footprint, and a later same-size pass (Earth Egg price,
 /// chests, shops, doors) re-packs the whole stream - with greedy alone that
@@ -68,9 +68,9 @@ pub fn man_compressed_budget(
 /// differently) would write different bytes, and a shared seed would not
 /// reproduce one image.
 pub fn compress_within(decoded: &[u8], budget: usize) -> Option<Vec<u8>> {
-    let mut stream = legaia_lzs::compress(decoded);
+    let mut stream = psx_lzs::compress(decoded);
     if stream.len() > budget {
-        stream = legaia_lzs::compress_optimal(decoded);
+        stream = psx_lzs::compress_optimal(decoded);
         if stream.len() > budget {
             return None;
         }

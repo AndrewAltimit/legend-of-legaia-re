@@ -12,7 +12,7 @@ pivot-anchored rest-pose bake (the crate docs walk each step).
 It is a **pure transform**: decoded disc assets in, rebuilt bytes out, with
 no disc I/O. This crate depends on the parser crates only
 (`legaia-actor-formats`, `legaia-container-formats`,
-`legaia-tmd`, `legaia-tim`, `legaia-lzs`, `legaia-bytes`) and must not depend
+`legaia-tmd`, `psx-tim`, `psx-lzs`, `psx-bytes`) and must not depend
 on [`legaia-disc-patch`](../disc-patch/README.md) or any patcher crate. The
 layer that reads the inputs off a disc and writes the results back is
 [`legaia-delilas-party`](../delilas-party/README.md).

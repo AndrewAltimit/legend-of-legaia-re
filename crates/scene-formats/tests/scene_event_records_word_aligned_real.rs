@@ -195,7 +195,7 @@ fn man_actor_scripts_are_genuine_field_vm() {
             continue;
         }
         let Ok((man_bytes, _)) =
-            legaia_lzs::decompress_tracked(&bytes[start..], man_desc.size as usize)
+            psx_lzs::decompress_tracked(&bytes[start..], man_desc.size as usize)
         else {
             continue;
         };

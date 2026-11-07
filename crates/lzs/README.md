@@ -1,4 +1,4 @@
-# legaia-lzs
+# psx-lzs
 
 Legend of Legaia LZS decompressor.
 
@@ -46,7 +46,7 @@ close relatives. Three things are Legaia's: the ring starts **zero-filled**
 (the textbook decoder pre-fills spaces, `0x20`), there is no size header or end
 marker, and the `.lzs` container layout is this game's. Check a target's
 decompressor against all three before reusing the crate
-([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-lzs)).
+([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#psx-lzs)).
 
 ### The decoder holds no ring
 

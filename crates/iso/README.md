@@ -1,4 +1,4 @@
-# legaia-iso
+# psx-iso
 
 PSX disc image reader and ISO9660 walker.
 
@@ -76,7 +76,7 @@ with the env var unset they skip (and pass) so CI runs without redistributing
 Sony data.
 
 ```bash
-LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test -p legaia-iso
+LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test -p psx-iso
 ```
 
 ## See also

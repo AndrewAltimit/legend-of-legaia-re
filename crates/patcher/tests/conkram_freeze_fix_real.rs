@@ -30,8 +30,8 @@ use legaia_code_hooks::conkram_freeze_fix::{
 use legaia_code_hooks::mips::{RA, V0, jr, lui, nop, ori};
 use legaia_code_hooks::mips_sim::Cpu;
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_patcher::apply;
+use psx_iso::iso9660::{find_file_in_image, read_file_in_image};
 
 const SCUS: &str = "SCUS_942.54";
 const SECTOR_SIZE: usize = 2352;
@@ -157,7 +157,7 @@ fn fix_changes_exactly_the_planned_words() {
         assert!(scus_sectors.contains(&s), "sector {s} outside SCUS");
         let sb = s * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
             "sector {s} stays EDC/ECC-valid"
         );
     }

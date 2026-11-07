@@ -25,9 +25,9 @@ audio-webaudio = []
 [dependencies]
 anyhow.workspace = true
 log.workspace = true
-legaia-xa.workspace = true
-legaia-vab.workspace = true
-legaia-seq.workspace = true
+psx-xa.workspace = true
+psx-vab.workspace = true
+psx-seq.workspace = true
 # PROT.DAT / CDNAME reads for the `note-trace` binary only.
 legaia-prot = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }

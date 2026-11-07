@@ -7,8 +7,8 @@ use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_game_tables::item_effect::ItemEffectTable;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -344,7 +344,7 @@ fn the_point_card_discharges_what_retail_discharges() {
     };
     let popped = Rc::new(Cell::new(u32::MAX));
     let pop = popped.clone();
-    cpu.hook(POP, move |r, _| pop.set(r.r[legaia_retail_exec::A0]));
+    cpu.hook(POP, move |r, _| pop.set(r.r[psx_retail_exec::A0]));
     let table = ItemEffectTable::from_scus(&scus).expect("item effects");
     let mut w = World::new();
     w.set_item_effects(table);
@@ -443,7 +443,7 @@ fn the_stone_and_curse_arms_roll_what_retail_rolls() {
     let refunds = Rc::new(Cell::new(0u32));
     let refunded = refunds.clone();
     cpu.hook(BAG_ADD, move |r, _| {
-        assert_eq!(r.r[legaia_retail_exec::A1], 1);
+        assert_eq!(r.r[psx_retail_exec::A1], 1);
         refunded.set(refunded.get() + 1);
     });
     let mut w = World::new();

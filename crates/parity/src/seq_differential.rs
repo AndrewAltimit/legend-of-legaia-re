@@ -19,8 +19,8 @@ use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::spu::voice::PITCH_UNITY;
 use legaia_engine_audio::{Spu, spu::NUM_VOICES};
 use legaia_engine_scene_host::scene_host::{BgmDirector, SceneHost};
-use legaia_ram_image::ScenarioManifest;
-use legaia_retail_exec::{Cpu, GP, Stop};
+use psx_ram_image::ScenarioManifest;
+use psx_retail_exec::{Cpu, GP, Stop};
 
 use crate::audio_sweep::{RetailAudio, TrackBank};
 use crate::audio_trace_oracle::TraceBgmDirector;
@@ -686,11 +686,11 @@ fn excluded(label: &str) -> bool {
 
 fn state_ram(emulator: &str, path: &std::path::Path) -> Result<Vec<u8>> {
     Ok(if emulator == "mednafen" {
-        legaia_mednafen::SaveState::from_path(path)?
+        psx_mednafen::SaveState::from_path(path)?
             .main_ram()?
             .to_vec()
     } else {
-        legaia_pcsx_redux::SaveState::from_path(path)?
+        psx_pcsx_redux::SaveState::from_path(path)?
             .main_ram()
             .to_vec()
     })

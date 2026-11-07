@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Movie overlay</dt><dd>PROT 0970 at <code>0x801CE818</code>; play loop 1236 bytes; ring = 32 sectors at asset buffer <code>+0x10000</code></dd>
-    <dt>Frame decoder</dt><dd>Iki: 10-byte header, LZSS qscale/DC table, AC VLC stream; port <code>legaia_mdec::MdecDecoder</code></dd>
+    <dt>Frame decoder</dt><dd>Iki: 10-byte header, LZSS qscale/DC table, AC VLC stream; port <code>psx_mdec::MdecDecoder</code></dd>
     <dt>Opening timeline</dt><dd>Partition-2 named records in each scene MAN, run by the field VM <code>FUN_801DE840</code> as a spawned context</dd>
     <dt>Camera</dt><dd>Op <code>0x45</code>: 10 params into globals; mover actor <code>FUN_801DD310</code>; port <code>engine-camera::camera_mover</code></dd>
     <dt>Roller</dt><dd>Handler <code>FUN_80037174</code>; geometry at <code>_DAT_801C6EA4 + 0x4C..0x52</code>; port <code>CutsceneNarration</code></dd>
@@ -70,7 +70,7 @@
   <details class="disclosure">
     <summary>The STRv2/v3 path (dev slots only)</summary>
     <div class="disclosure-body">
-      <p>This decoder is a bit-prefix lookup, not a run/level VLC. A table unpacked at runtime into <code>DAT_801E0A00</code> by <code>FUN_801F1A00</code> - called once per movie even for Iki slots that never read it - stores pre-baked MDEC output codes, one to three per hit plus a bit length, in four regions: luma DC, chroma DC, AC primary, AC secondary. Only the DC coefficients (raw 10-bit in v2; size-prefixed predicted differences per channel in v3), the <code>0x7C1F</code> escape codes and the end padding are computed. Ported as <code>legaia_mdec::strv2_table</code> (unpacker, <code>mdec strv2-table &lt;overlay&gt;</code>) and <code>strv2_decode::decode_frame</code>; with no retail movie on this path there is no golden decode, so its tests pin the code paths against the disassembly.</p>
+      <p>This decoder is a bit-prefix lookup, not a run/level VLC. A table unpacked at runtime into <code>DAT_801E0A00</code> by <code>FUN_801F1A00</code> - called once per movie even for Iki slots that never read it - stores pre-baked MDEC output codes, one to three per hit plus a bit length, in four regions: luma DC, chroma DC, AC primary, AC secondary. Only the DC coefficients (raw 10-bit in v2; size-prefixed predicted differences per channel in v3), the <code>0x7C1F</code> escape codes and the end padding are computed. Ported as <code>psx_mdec::strv2_table</code> (unpacker, <code>mdec strv2-table &lt;overlay&gt;</code>) and <code>strv2_decode::decode_frame</code>; with no retail movie on this path there is no golden decode, so its tests pin the code paths against the disassembly.</p>
     </div>
   </details>
   <details class="disclosure">

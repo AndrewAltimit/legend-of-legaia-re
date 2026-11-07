@@ -102,7 +102,7 @@ image shorter than its own file table says is called incomplete, with how much
 of the disc it holds: a copy or a download that stopped early. The disc card says what is
 wrong in one line (the file moved, is not a disc image, is another region's
 disc) and the help box gives the reason and the fix. A file that is not a raw
-dump is named for what it is (`legaia_iso::sniff`): a 2048-byte `.iso` (it
+dump is named for what it is (`psx_iso::sniff`): a 2048-byte `.iso` (it
 leaves out the streamed movie and voice sectors), a compressed `.chd`, an
 EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
 was renamed - in which case the one `.bin` beside it is named.

@@ -94,31 +94,31 @@ impl PartyFormSources {
 }
 
 /// Where a battle-form build writes its band pixels, palettes and fallback
-/// atlases: a live [`legaia_tim::Vram`], or a [`VramWriteLog`] that records
+/// atlases: a live [`psx_tim::Vram`], or a [`VramWriteLog`] that records
 /// them for a renderer to replay into its own battle VRAM. The build only
 /// ever writes - it never reads VRAM back - so a log is a complete record.
 pub trait VramSink {
-    fn upload_tim(&mut self, tim: &legaia_tim::Tim);
+    fn upload_tim(&mut self, tim: &psx_tim::Tim);
     fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]);
     fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]);
 }
 
-impl VramSink for legaia_tim::Vram {
-    fn upload_tim(&mut self, tim: &legaia_tim::Tim) {
-        legaia_tim::Vram::upload_tim(self, tim);
+impl VramSink for psx_tim::Vram {
+    fn upload_tim(&mut self, tim: &psx_tim::Tim) {
+        psx_tim::Vram::upload_tim(self, tim);
     }
     fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
-        legaia_tim::Vram::write_block(self, fb_x, fb_y, w_words, h, bytes);
+        psx_tim::Vram::write_block(self, fb_x, fb_y, w_words, h, bytes);
     }
     fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
-        legaia_tim::Vram::write_clut_row(self, fb_x, fb_y, bytes);
+        psx_tim::Vram::write_clut_row(self, fb_x, fb_y, bytes);
     }
 }
 
 /// One recorded VRAM write.
 #[derive(Debug, Clone)]
 enum VramWrite {
-    Tim(legaia_tim::Tim),
+    Tim(psx_tim::Tim),
     Block {
         fb_x: u16,
         fb_y: u16,
@@ -145,7 +145,7 @@ pub struct VramWriteLog {
 
 impl VramWriteLog {
     /// Apply every recorded write to `vram`, in recording order.
-    pub fn replay(&self, vram: &mut legaia_tim::Vram) {
+    pub fn replay(&self, vram: &mut psx_tim::Vram) {
         for w in &self.writes {
             match &**w {
                 VramWrite::Tim(t) => vram.upload_tim(t),
@@ -180,7 +180,7 @@ impl VramWriteLog {
 }
 
 impl VramSink for VramWriteLog {
-    fn upload_tim(&mut self, tim: &legaia_tim::Tim) {
+    fn upload_tim(&mut self, tim: &psx_tim::Tim) {
         self.writes.push(Arc::new(VramWrite::Tim(tim.clone())));
     }
     fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
@@ -461,7 +461,7 @@ fn assemble(
     } else {
         for half in 0..2usize {
             if let Some(atlas) = sources.pack.atlases.get(cslot * 2 + half)
-                && let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes)
+                && let Ok(tim) = psx_tim::parse(&atlas.tim_bytes)
             {
                 let img = &tim.image;
                 vram.write_block(
@@ -572,7 +572,7 @@ fn fallback(
     let slot = sources.pack.slot(cslot)?;
     let tmd = legaia_tmd::parse(&slot.tmd_bytes).ok()?;
     for a in &sources.pack.atlases {
-        if let Ok(tim) = legaia_tim::parse(&a.tim_bytes) {
+        if let Ok(tim) = psx_tim::parse(&a.tim_bytes) {
             vram.upload_tim(&tim);
         }
     }

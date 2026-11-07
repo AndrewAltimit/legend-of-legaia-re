@@ -32,7 +32,7 @@ const ARENA_MAX_ROUNDS: usize = 16;
 pub(in crate::byte_account) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {
     const SLOT_A: u32 = 0x801C_E818;
     let at = |va: u32| va.checked_sub(SLOT_A).map(|o| o as usize);
-    let rd = |o: usize| legaia_bytes::u32_le(buf, o);
+    let rd = |o: usize| psx_bytes::u32_le(buf, o);
     let score_ok = ARENA_SCORE_TABLE_SITES
         .iter()
         .all(|&site| at(site).and_then(|o| lui_pair_address(buf, o)) == Some(ARENA_SCORE_TABLE_VA));
@@ -126,7 +126,7 @@ fn claim_arena_leg_tables(buf: &[u8], sink: &mut Sink) {
     const SLOT_A: u32 = 0x801C_E818;
     let at = |va: u32| (va - SLOT_A) as usize;
     let small = |o: usize, n: usize| {
-        (0..n).all(|i| legaia_bytes::u32_le(buf, o + i * 4).is_some_and(|w| (1..=100).contains(&w)))
+        (0..n).all(|i| psx_bytes::u32_le(buf, o + i * 4).is_some_and(|w| (1..=100).contains(&w)))
     };
     if lui_pair_address(buf, at(0x801D_1214)) != Some(ARENA_LEG_OUTCOME_VA)
         || !small(at(ARENA_LEG_OUTCOME_VA), ARENA_LEG_OUTCOME_ROWS)

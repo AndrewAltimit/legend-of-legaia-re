@@ -8,7 +8,7 @@ use legaia_engine_battle::region_encounter::{
     EncounterRateModifiers, EncounterRateSetting, EncounterRegion, RegionEncounterTable,
     RegionEncounterTracker, RegionGroup, RegionSetupBytes, region_battle_setup,
 };
-use legaia_retail_exec::{Cpu, Stop};
+use psx_retail_exec::{Cpu, Stop};
 use std::cell::Cell;
 use std::rc::Rc;
 

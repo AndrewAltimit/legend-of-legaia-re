@@ -27,12 +27,12 @@
 //! Skips (and passes) when the scenario manifest or the save library is
 //! missing.
 
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::prim_pool::{self, Prim};
 use legaia_render_kernels::drop_shadow::{
     SHADOW_CLUT, SHADOW_TPAGE, ShadowVertex, casts_shadow, shadow_grid, shadow_quads,
 };
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::prim_pool::{self, Prim};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -289,7 +289,7 @@ fn drop_shadow_blob_is_resident_in_the_scene_vram() {
         eprintln!("[skip] v0_1_pre_battle_tetsu state / manifest missing");
         return;
     };
-    let gpu = legaia_mednafen::gpu::PsxGpu::new(&state);
+    let gpu = psx_mednafen::gpu::PsxGpu::new(&state);
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene("town01", 0).expect("enter town01");
     let vram = &host.resources.as_ref().expect("town01 resources").vram;

@@ -3,7 +3,7 @@
 //! jPSXdec indexes PROT.DAT as one flat 2048-byte-sector stream and reports
 //! each TIM it finds (1132 items on the retail NA disc). This module
 //! reproduces that scan with the strict TIM validator
-//! ([`legaia_tim::parse_strict`]) and maps each hit back to OUR native
+//! ([`psx_tim::parse_strict`]) and maps each hit back to OUR native
 //! addressing - the owning PROT TOC entry and the byte offset within it (or
 //! the unindexed system-UI gap that precedes the first entry).
 //!
@@ -144,8 +144,8 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
     let mut id = 0u32;
     while off + 4 <= prot.len() {
         let magic = u32::from_le_bytes(prot[off..off + 4].try_into().unwrap());
-        if magic == legaia_tim::TIM_MAGIC
-            && let Ok(tim) = legaia_tim::parse_strict(&prot[off..])
+        if magic == psx_tim::TIM_MAGIC
+            && let Ok(tim) = psx_tim::parse_strict(&prot[off..])
         {
             let byte_len = tim.byte_extent();
             let abs = off as u64;
@@ -155,11 +155,11 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
                 None => abs,
             };
             let bpp = match tim.mode {
-                legaia_tim::PixelMode::Bpp4 => 4,
-                legaia_tim::PixelMode::Bpp8 => 8,
-                legaia_tim::PixelMode::Bpp16 => 16,
-                legaia_tim::PixelMode::Bpp24 => 24,
-                legaia_tim::PixelMode::Mixed => 0,
+                psx_tim::PixelMode::Bpp4 => 4,
+                psx_tim::PixelMode::Bpp8 => 8,
+                psx_tim::PixelMode::Bpp16 => 16,
+                psx_tim::PixelMode::Bpp24 => 24,
+                psx_tim::PixelMode::Mixed => 0,
             };
             let fnv1a = fnv1a64(&prot[off..off + byte_len]);
             out.push(CatalogTim {

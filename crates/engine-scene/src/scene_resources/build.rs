@@ -353,7 +353,7 @@ impl SceneResources {
                 {
                     let mut added = 0usize;
                     for tslice in &tim_slices {
-                        if legaia_tim::parse(tslice).is_ok() {
+                        if psx_tim::parse(tslice).is_ok() {
                             kingdom_tims.push(tim_bufs.len());
                             tim_bufs.push(tslice.to_vec());
                             added += 1;
@@ -405,7 +405,7 @@ impl SceneResources {
                         continue;
                     }
                     let payload = &src[hit.offset..end];
-                    if legaia_tim::parse(payload).is_ok() {
+                    if psx_tim::parse(payload).is_ok() {
                         tim_bufs.push(payload.to_vec());
                     } else {
                         *tim_parse_failures += 1;
@@ -435,7 +435,7 @@ impl SceneResources {
                                 continue;
                             }
                             let payload = &decoded.bytes[hit.offset..end];
-                            if legaia_tim::parse(payload).is_ok() {
+                            if psx_tim::parse(payload).is_ok() {
                                 tim_bufs.push(payload.to_vec());
                             } else {
                                 *tim_parse_failures += 1;
@@ -493,7 +493,7 @@ impl SceneResources {
         // quads' CLUT) kept `0x8023`, an opaque near-black, where retail's
         // VRAM holds `0x0000`, and every tree stood on a dark square.
         for &i in &kingdom_tims {
-            if let Ok(tim) = legaia_tim::parse(&tim_bufs[i]) {
+            if let Ok(tim) = psx_tim::parse(&tim_bufs[i]) {
                 vram.upload_tim_partial(&tim, false, true);
             }
         }

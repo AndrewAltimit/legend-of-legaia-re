@@ -13,7 +13,7 @@
 //! across meta events. These tests only assert the *absence of panics* on
 //! malformed bytes; they do not change that accepting behaviour.
 
-use legaia_seq::{SEQ_MAGIC, Seq, parse_header, read_vlq};
+use psx_seq::{SEQ_MAGIC, Seq, parse_header, read_vlq};
 
 /// Minimal valid PsyQ-shape header (13 bytes) with no event stream.
 fn header_only() -> Vec<u8> {
@@ -94,9 +94,7 @@ fn unknown_meta_ends_track_gracefully() {
     let seq = Seq::parse(&buf).expect("unknown meta must end the track, not error");
     assert!(matches!(
         seq.events.last().map(|e| &e.body),
-        Some(legaia_seq::EventBody::Meta(
-            legaia_seq::MetaMessage::EndOfTrack
-        ))
+        Some(psx_seq::EventBody::Meta(psx_seq::MetaMessage::EndOfTrack))
     ));
 }
 

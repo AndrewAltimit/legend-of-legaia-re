@@ -3,7 +3,7 @@
 use super::*;
 use crate::Spu;
 use crate::spu::voice::SPU_INTERNAL_RATE;
-use legaia_seq::{EventBody, MetaMessage, Seq};
+use psx_seq::{EventBody, MetaMessage, Seq};
 
 impl Sequencer {
     /// Advance the sequencer by exactly one SPU sample (1 / 44100 s). This is

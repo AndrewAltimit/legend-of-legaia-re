@@ -15,7 +15,7 @@
 //!   1. Builds the engine-side 1 MiB VRAM via the field-mode DMA-every-TIM
 //!      pre-pass (the retail field loader uploads every scene TIM, not just
 //!      the render-targeted subset).
-//!   2. Lifts each snapshot's runtime VRAM via [`legaia_mednafen::PsxGpu`] and
+//!   2. Lifts each snapshot's runtime VRAM via [`psx_mednafen::PsxGpu`] and
 //!      computes the static mask (words equal across all snapshots).
 //!   3. Asserts the engine never uploads a **wrong** texel on a static pixel
 //!      in the texpage region (`y >= 256`), excluding the runtime-managed
@@ -37,7 +37,7 @@ use legaia_parity::vram_oracle::{
     clear_world_map_clut_cycle_rows, compute_static_mask, first_static_upload_divergence,
     load_runtime_vram_from_save, refine_mask_with_shared_band,
 };
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 
 /// A scene only yields a trustworthy static mask when its captures are
 /// genuinely different same-scene states. If more than this fraction of the

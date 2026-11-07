@@ -1175,7 +1175,7 @@ impl SceneHost {
                 // differ on. Writing the pool over the build clobbered them.
                 // Same order as the native window's build (`window/run.rs`).
                 // Soft-fails (the pool just stays absent).
-                let mut effect_pool = legaia_tim::Vram::new();
+                let mut effect_pool = psx_tim::Vram::new();
                 match upload_effect_textures_into_vram(&self.index, &mut effect_pool, true) {
                     Ok(_) => res.vram.underlay(&effect_pool),
                     Err(err) => {

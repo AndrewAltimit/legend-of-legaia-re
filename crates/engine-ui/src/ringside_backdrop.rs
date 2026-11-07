@@ -314,20 +314,19 @@ pub struct HubPaletteStp {
 
 impl HubPaletteStp {
     /// Classify both pages' sub-palettes.
-    pub fn from_tims(page0: &legaia_tim::Tim, page1: &legaia_tim::Tim) -> Self {
-        let classify =
-            |t: &legaia_tim::Tim| -> Vec<legaia_render_kernels::screen_prim::PaletteStp> {
-                (0..t.palette_count())
-                    .map(|i| {
-                        t.clut
-                            .as_ref()
-                            .and_then(|c| c.palette(t.mode, i))
-                            .map_or(legaia_render_kernels::screen_prim::PaletteStp::None, |p| {
-                                legaia_render_kernels::screen_prim::palette_stp(p)
-                            })
-                    })
-                    .collect()
-            };
+    pub fn from_tims(page0: &psx_tim::Tim, page1: &psx_tim::Tim) -> Self {
+        let classify = |t: &psx_tim::Tim| -> Vec<legaia_render_kernels::screen_prim::PaletteStp> {
+            (0..t.palette_count())
+                .map(|i| {
+                    t.clut
+                        .as_ref()
+                        .and_then(|c| c.palette(t.mode, i))
+                        .map_or(legaia_render_kernels::screen_prim::PaletteStp::None, |p| {
+                            legaia_render_kernels::screen_prim::palette_stp(p)
+                        })
+                })
+                .collect()
+        };
         HubPaletteStp {
             pages: [classify(page0), classify(page1)],
         }

@@ -310,7 +310,7 @@ def main():
     if not lzs_bin.exists():
         sys.exit(
             f"lzs-decode CLI not found at {lzs_bin}.\n"
-            f"Run `cargo build --release -p legaia-lzs` first."
+            f"Run `cargo build --release -p psx-lzs` first."
         )
 
     classification = load_classification(Path(args.classification))

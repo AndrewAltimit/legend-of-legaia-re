@@ -7,7 +7,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_module_ticks::{
     CastActorState, CastModuleCtx, ELEMENT_CHANGE_ELEMENTS, element_change_tick,
 };
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

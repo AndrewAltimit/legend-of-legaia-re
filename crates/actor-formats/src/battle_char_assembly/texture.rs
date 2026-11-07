@@ -354,7 +354,7 @@ impl TextureUpload {
             for col in 0..w {
                 let byte = line[col / 2];
                 let nib = if col & 1 == 0 { byte & 0x0F } else { byte >> 4 };
-                out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(pal[nib as usize]));
+                out.extend_from_slice(&psx_tim::bgr555_to_rgba8(pal[nib as usize]));
             }
         }
         Ok(out)
@@ -438,7 +438,7 @@ pub fn record0_texture_uploads(file: &[u8], party_slot: u8) -> Result<Vec<Textur
     let stream = file
         .get(0x10..)
         .ok_or_else(|| anyhow::anyhow!("file shorter than its record[0] stream"))?;
-    let decoded = legaia_lzs::decompress(stream, budget)?;
+    let decoded = psx_lzs::decompress(stream, budget)?;
     let mut out = Vec::with_capacity(2);
     for (off, rect) in [
         (clut_a, RECORD0_TEXTURE_RECTS[0]),

@@ -7,7 +7,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::seru_magic_ticks::{
     NIGHTO_EXTRA_ROLL_CHARACTER, NightoOutcome, NightoRoll, nighto_outcome,
 };
-use legaia_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
+use psx_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

@@ -32,7 +32,7 @@ use legaia_engine_mode::sfx_residency::SharedRegionBank;
 use legaia_engine_scene_host::scene_host::BgmDirector;
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
-use legaia_seq::Seq;
+use psx_seq::Seq;
 
 mod bgm_playback;
 pub(crate) mod command_log;
@@ -529,7 +529,7 @@ mod tests {
     }
 
     /// Test stub bank - empty programs / samples. Real banks come from
-    /// `legaia_vab::parse`.
+    /// `psx_vab::parse`.
     fn empty_bank() -> VabBank {
         VabBank {
             master_vol: 127,

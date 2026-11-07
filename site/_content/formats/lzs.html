@@ -140,7 +140,7 @@ while out.len() &lt; expected_output_size {
 
 <section class="doc-section" id="encoding-re-packing">
   <h2>Encoding (re-packing)</h2>
-  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>legaia_lzs::compress</code> is an encoder written fresh for re-packing edited assets - it is what lets the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> put a modified monster, script or texture back into the same slot on the disc:</p>
+  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>psx_lzs::compress</code> is an encoder written fresh for re-packing edited assets - it is what lets the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> put a modified monster, script or texture back into the same slot on the disc:</p>
   <ul class="bullets">
     <li>An LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one) whose output the retail decoder accepts byte-for-byte - <strong>not</strong> a bit-exact clone of Sony's packer.</li>
     <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, checked by round-tripping every compressed entry on the disc.</li>

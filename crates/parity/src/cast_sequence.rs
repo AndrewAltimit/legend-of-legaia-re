@@ -469,7 +469,7 @@ pub fn retail_raw_frame(data: &[u8], w: usize, h: usize, bpp: u8) -> Result<Fram
             } else {
                 let o = (y * w + x) * 2;
                 let p = data.get(o..o + 2).context("short 16-bit buffer")?;
-                let px = legaia_mednafen::bgr555_to_rgba8(u16::from_le_bytes([p[0], p[1]]));
+                let px = psx_mednafen::bgr555_to_rgba8(u16::from_le_bytes([p[0], p[1]]));
                 rgb.extend_from_slice(&px[..3]);
             }
         }

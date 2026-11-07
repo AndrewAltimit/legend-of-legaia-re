@@ -269,7 +269,7 @@ enum TexSource {
 struct ModelView {
     key: (usize, usize),
     model: Option<Model>,
-    entry_vram: legaia_tim::Vram,
+    entry_vram: psx_tim::Vram,
     source: TexSource,
     /// The scene-cache key the view last drew with (`None` = entry VRAM).
     drawn_with: Option<String>,
@@ -711,7 +711,7 @@ impl App {
         if let Some(img) = image {
             let [w, h] = img.size;
             let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
-            match legaia_tim::write_png(&shot, w, h, &rgba) {
+            match psx_tim::write_png(&shot, w, h, &rgba) {
                 Ok(()) => log::info!("screenshot saved to {}", shot.display()),
                 Err(e) => log::error!("screenshot: {e:#}"),
             }
@@ -3329,7 +3329,7 @@ const START_MARGIN: f32 = 16.0;
 /// The texture source a model view opens on: the entry's own TIMs when they
 /// cover every textured prim of the mesh (`Model::texture_coverage`), else
 /// the scene's VRAM, where the missing pages and CLUTs are uploaded.
-fn default_tex_source(model: Option<&Model>, entry_vram: &legaia_tim::Vram) -> TexSource {
+fn default_tex_source(model: Option<&Model>, entry_vram: &psx_tim::Vram) -> TexSource {
     match model.map(|m| m.texture_coverage(entry_vram)) {
         Some((covered, textured)) if covered < textured => TexSource::Scene,
         _ => TexSource::Entry,

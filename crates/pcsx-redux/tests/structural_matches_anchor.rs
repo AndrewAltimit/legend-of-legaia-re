@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_pcsx_redux::{sstate_payload, structural_ram_offset};
+use psx_pcsx_redux::{sstate_payload, structural_ram_offset};
 
 fn find(rel: &str) -> Option<PathBuf> {
     ["", "../", "../../"]
@@ -45,7 +45,7 @@ fn structural_ram_offset_equals_the_anchor_offset_for_every_library_state() {
         let payload = sstate_payload(&raw).expect("payload");
         let structural = structural_ram_offset(&payload)
             .unwrap_or_else(|| panic!("{}: no memory submessage", p.display()));
-        match legaia_ram_image::extract::main_ram_via_anchor_with_scus(&payload, &scus) {
+        match psx_ram_image::extract::main_ram_via_anchor_with_scus(&payload, &scus) {
             Ok(ram) => {
                 let anchor = ram.as_ptr() as usize - payload.as_ptr() as usize;
                 assert_eq!(

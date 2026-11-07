@@ -31,7 +31,7 @@ band reader call each other.
 
 ## Layering
 
-Depends on `legaia-bytes` and `legaia-lzs` only (its disc-gated tests also
+Depends on `psx-bytes` and `psx-lzs` only (its disc-gated tests also
 read through `legaia-prot` and `legaia-container-formats`). It must not depend on
 `legaia-game-tables`, the container layer, or any scene, UI, minigame or
 actor format crate. Above it, [`legaia-disc-audit`](../disc-audit/README.md)

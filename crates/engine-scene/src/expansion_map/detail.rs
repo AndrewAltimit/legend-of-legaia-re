@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 use legaia_expansion_format::map::{MapDef, PropMesh};
 use legaia_expansion_format::refs::DiscRef;
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 use super::tmd_ops;
 use super::vram_alloc::{Rect, VramAlloc, cba_word, cba_xy, tsb_page, tsb_with_page};

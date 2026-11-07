@@ -44,7 +44,7 @@ legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 legaia-save.workspace = true
 legaia-scene-formats.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 anyhow.workspace = true
 log.workspace = true
@@ -64,11 +64,11 @@ legaia-engine-modes.workspace = true
 legaia-disc-audit.workspace = true
 legaia-font.workspace = true
 legaia-gamedata.workspace = true
-legaia-lzs.workspace = true
+psx-lzs.workspace = true
 legaia-mdt.workspace = true
 legaia-mes.workspace = true
-legaia-seq.workspace = true
-legaia-vab.workspace = true
+psx-seq.workspace = true
+psx-vab.workspace = true
 legaia-expansion-format.workspace = true
 # expansion_cards_disc writes the card portraits it renders to a scratch
 # directory when asked, for a person to look at.

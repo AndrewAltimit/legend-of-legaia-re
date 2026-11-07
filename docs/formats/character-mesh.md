@@ -770,7 +770,7 @@ fields `clut_a_off` / `clut_b_off` / `budget` are documented in
 
 `FUN_8001A55C`'s first argument is an **output-byte budget** (decremented per
 literal and per match-copied byte). A decoder that ignores it runs into the
-next record; `legaia_lzs::decompress(stream, budget)` honours it. At load
+next record; `psx_lzs::decompress(stream, budget)` honours it. At load
 time `FUN_80052770` stages the five sections in RAM at a `0x2000` stride.
 
 **Parsers.** There is no single "the" palette - each section ships one CLUT

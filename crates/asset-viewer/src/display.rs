@@ -278,7 +278,7 @@ pub(crate) fn display_for_prot_entry(
     // live at a non-zero offset inside a larger PROT entry - battle_data
     // and level_up entries hold theirs deep inside) and play sample 0 of
     // the first one we find.
-    let vab_offsets = legaia_vab::find_vabs(bytes);
+    let vab_offsets = psx_vab::find_vabs(bytes);
     if let Some(&off) = vab_offsets.first()
         && let Ok(pcm) = decode_vab_sample(bytes, off, 0)
     {

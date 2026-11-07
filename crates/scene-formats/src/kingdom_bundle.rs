@@ -49,7 +49,7 @@
 //! elsewhere in the disc. See `world-map-overlay.md` for the slot-4
 //! format and `world_map_overlay::parse` for the parser.
 
-use legaia_lzs as lzs;
+use psx_lzs as lzs;
 
 /// PROT entry of each kingdom's 7-asset bundle, in kingdom order: Drake
 /// (`map01`), Sebucus (`map02`), Karisto (`map03`). See the module docs for

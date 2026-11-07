@@ -26,10 +26,10 @@ use legaia_engine_field::fog_particles::{
     FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogFrameEnv, FogPool, FogQuad, FogView,
 };
 use legaia_engine_field::overworld_draw_order as order;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::prim_pool::{self, Prim};
 use legaia_render_kernels::overworld_curvature::curvature_at;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::prim_pool::{self, Prim};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 

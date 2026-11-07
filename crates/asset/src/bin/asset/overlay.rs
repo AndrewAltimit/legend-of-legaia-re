@@ -112,7 +112,7 @@ pub(crate) fn find_overlay(dir: &PathBuf, top: usize, lzs_sizes: &str) -> Result
 
         // LZS pass at file-start.
         for &out_sz in &sizes {
-            if let Ok((decoded, _consumed)) = legaia_lzs::decompress_tracked(&buf, out_sz) {
+            if let Ok((decoded, _consumed)) = psx_lzs::decompress_tracked(&buf, out_sz) {
                 let s = code_score(&decoded);
                 if s > 0.3 {
                     hits.push(Hit {
@@ -147,7 +147,7 @@ pub(crate) fn find_overlay(dir: &PathBuf, top: usize, lzs_sizes: &str) -> Result
                     }
                     let sub = &buf[off..];
                     for &out_sz in &sizes {
-                        if let Ok((decoded, _)) = legaia_lzs::decompress_tracked(sub, out_sz) {
+                        if let Ok((decoded, _)) = psx_lzs::decompress_tracked(sub, out_sz) {
                             let s = code_score(&decoded);
                             if s > 0.3 {
                                 hits.push(Hit {

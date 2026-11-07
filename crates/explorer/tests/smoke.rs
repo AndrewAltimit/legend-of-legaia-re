@@ -248,7 +248,7 @@ fn real_disc_lists_prot_entries_and_previews() {
         if tmd.is_none() && class == Class::SceneTmdStream {
             tmd = Some(pos);
         }
-        if vab.is_none() && !legaia_vab::find_vabs(&bytes).is_empty() {
+        if vab.is_none() && !psx_vab::find_vabs(&bytes).is_empty() {
             vab = Some(pos);
         }
     }
@@ -336,7 +336,7 @@ fn real_disc_battle_actors_and_scene_textures() {
         200,
     );
     assert!(drawn(&img) > 500, "{} drew textured pixels", m.label);
-    let _ = legaia_tim::write_png(&out.join("monster.png"), 200, 200, &img);
+    let _ = psx_tim::write_png(&out.join("monster.png"), 200, 200, &img);
     let glb = legaia_explorer::actors::monster_glb(&lib, rows[0].id).expect("monster glb");
     assert_eq!(&glb[..4], b"glTF");
     let glb = legaia_explorer::actors::character_glb(&lib, 0, [0; 5]).expect("character glb");
@@ -367,7 +367,7 @@ fn real_disc_battle_actors_and_scene_textures() {
             200,
         );
         assert!(drawn(&img) > 500, "{} drew textured pixels", c.name);
-        let _ = legaia_tim::write_png(&out.join(format!("{}.png", c.name)), 200, 200, &img);
+        let _ = psx_tim::write_png(&out.join(format!("{}.png", c.name)), 200, 200, &img);
     }
 
     // Scene context: town01's environment pack (entry 4) holds no TIMs of
@@ -406,7 +406,7 @@ fn real_disc_battle_actors_and_scene_textures() {
         drawn(&scene) > drawn(&own),
         "scene VRAM textures more of the mesh"
     );
-    let _ = legaia_tim::write_png(&out.join("scene.png"), 200, 200, &scene);
+    let _ = psx_tim::write_png(&out.join("scene.png"), 200, 200, &scene);
 }
 
 #[test]

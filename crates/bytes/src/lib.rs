@@ -19,7 +19,7 @@
 //! readers widen into the next larger native type (`u32` / `i32`).
 //!
 //! ```
-//! use legaia_bytes::{u16_le, u32_le};
+//! use psx_bytes::{u16_le, u32_le};
 //! let buf = [0x01, 0x02, 0x03, 0x04];
 //! assert_eq!(u16_le(&buf, 0), Some(0x0201));
 //! assert_eq!(u32_le(&buf, 0), Some(0x0403_0201));

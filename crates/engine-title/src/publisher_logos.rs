@@ -217,8 +217,8 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
     let pak = legaia_ui_formats::init_pak::parse(prot_0895_bytes)?;
     let mut tims = Vec::with_capacity(LOGO_COUNT);
     for logo in &pak.logos {
-        let tim = legaia_tim::parse(logo.bytes)?;
-        let rgba = legaia_tim::decode_rgba8(&tim, 0)?;
+        let tim = psx_tim::parse(logo.bytes)?;
+        let rgba = psx_tim::decode_rgba8(&tim, 0)?;
         let w = tim.pixel_width() as u32;
         let h = tim.image.h as u32;
         if rgba.len() != (w * h * 4) as usize {

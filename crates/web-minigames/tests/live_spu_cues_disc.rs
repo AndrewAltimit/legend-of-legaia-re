@@ -43,8 +43,8 @@ fn page(game: &str) -> Option<LegaiaMinigames> {
 /// The director as the play hosts stage it on the door warp into `mode`.
 fn native(mode: SceneMode, bundle_prot: Option<u32>) -> AudioDirector<TestAudioSink> {
     let bytes = disc().expect("disc");
-    let scus = legaia_iso::image::extract_scus(bytes).expect("SCUS");
-    let prot = legaia_iso::image::extract_prot_dat(bytes).expect("PROT");
+    let scus = psx_iso::image::extract_scus(bytes).expect("SCUS");
+    let prot = psx_iso::image::extract_prot_dat(bytes).expect("PROT");
     let entries = legaia_prot::toc_index::parse_prot_toc(&prot).expect("TOC");
     let read = |e: u32| -> Option<Vec<u8>> {
         let m = entries.get(e as usize)?;
@@ -239,7 +239,7 @@ fn a_cue_on_a_slot_this_game_closed_keys_nothing() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let scus = legaia_iso::image::extract_scus(disc().unwrap()).unwrap();
+    let scus = psx_iso::image::extract_scus(disc().unwrap()).unwrap();
     let table = SfxTable::from_scus(&scus).unwrap();
     let id = table
         .cue_slots()

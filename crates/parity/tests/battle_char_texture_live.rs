@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use legaia_actor_formats::battle_char_assembly::character_texture_uploads;
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use psx_ram_image::ScenarioManifest;
 
 /// Catalogued mid-battle captures with the party texture bands resident.
 /// (A first-battle-frame capture is deliberately excluded: before the

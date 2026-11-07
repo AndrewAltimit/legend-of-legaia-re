@@ -115,7 +115,7 @@ Some PROT entries hold several independently compressed sections behind a small 
 
 ## Encoding (re-packing)
 
-The retail game ships only the *decoder*; there is no Sony encoder to reverse. `legaia_lzs::compress` is an encoder for re-packing edited assets (the [randomizer / disc patcher](../tooling/randomizer.md) uses it):
+The retail game ships only the *decoder*; there is no Sony encoder to reverse. `psx_lzs::compress` is an encoder for re-packing edited assets (the [randomizer / disc patcher](../tooling/randomizer.md) uses it):
 
 - It is an LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one). The retail decoder accepts its output byte-for-byte; it is **not** a bit-exact clone of Sony's packer.
 - Its correctness criterion is `decompress(compress(x)) == x`, validated by a disc-gated round-trip over the real PROT corpus.

@@ -176,7 +176,7 @@ pub(super) fn npc_slot_source(
     let mut off = 0usize;
     while off + 8 <= tims_payload.len() {
         if u32::from_le_bytes(tims_payload[off..off + 4].try_into().unwrap()) == 0x10
-            && let Ok(tim) = legaia_tim::parse(&tims_payload[off..])
+            && let Ok(tim) = psx_tim::parse(&tims_payload[off..])
         {
             // Multi-row CLUT blocks flatten SIDE BY SIDE at upload: a
             // 16x2 block at (x, y) lands as two 16-colour palettes at

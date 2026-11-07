@@ -1,4 +1,4 @@
-//! Disc-gated corpus round-trip for the LZS encoder ([`legaia_lzs::compress`]).
+//! Disc-gated corpus round-trip for the LZS encoder ([`psx_lzs::compress`]).
 //!
 //! The retail game ships only an LZS *decoder*; `compress` is our re-packer for
 //! editing assets. Its correctness criterion is that every real decompressed
@@ -25,8 +25,8 @@ fn prot_dir() -> Option<std::path::PathBuf> {
 
 /// `decompress(compress(x), x.len())` must reproduce `x` exactly.
 fn lzs_roundtrips(data: &[u8]) -> bool {
-    let packed = legaia_lzs::compress(data);
-    matches!(legaia_lzs::decompress(&packed, data.len()), Ok(u) if u == data)
+    let packed = psx_lzs::compress(data);
+    matches!(psx_lzs::decompress(&packed, data.len()), Ok(u) if u == data)
 }
 
 // Drives the encoder against the decompressed monster records (PROT 867): a
@@ -52,7 +52,7 @@ fn lzs_compress_roundtrips_monster_records() {
         if declared == 0 {
             continue; // filler slot
         }
-        let Ok(decoded) = legaia_lzs::decompress(&slot[4..], declared) else {
+        let Ok(decoded) = psx_lzs::decompress(&slot[4..], declared) else {
             continue;
         };
         assert!(
@@ -61,7 +61,7 @@ fn lzs_compress_roundtrips_monster_records() {
             decoded.len()
         );
         orig_total += decoded.len();
-        packed_total += legaia_lzs::compress(&decoded).len();
+        packed_total += psx_lzs::compress(&decoded).len();
         tested += 1;
     }
     assert!(tested > 100, "expected many decoded records, got {tested}");
@@ -98,7 +98,7 @@ fn lzs_compress_roundtrips_container_sections() {
         let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
-        let Ok(decoded) = legaia_lzs::decompress_container_strict(&bytes) else {
+        let Ok(decoded) = psx_lzs::decompress_container_strict(&bytes) else {
             continue;
         };
         for sec in &decoded {

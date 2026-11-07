@@ -22,11 +22,11 @@ use super::*;
 /// untouched.
 pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -> bool {
     for target in legaia_actor_formats::befect_cluster::scan_tims(flame_atlas_entry) {
-        let Ok(tim) = legaia_tim::parse(&flame_atlas_entry[target.offset..]) else {
+        let Ok(tim) = psx_tim::parse(&flame_atlas_entry[target.offset..]) else {
             continue;
         };
         if (tim.image.fb_x, tim.image.fb_y) != CROSS_OUT_PAGE
-            || tim.mode != legaia_tim::PixelMode::Bpp4
+            || tim.mode != psx_tim::PixelMode::Bpp4
         {
             continue;
         }
@@ -64,7 +64,7 @@ pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -
 /// TIM's CLUT block does not hold that palette or the page is too small.
 fn bake_effect_page_cell(
     atlas: &mut SaveMenuAtlas,
-    tim: &legaia_tim::Tim,
+    tim: &psx_tim::Tim,
     clut: (u16, u16),
     texels: (u32, u32, u32, u32),
     cell: (u32, u32, u32, u32),
@@ -80,7 +80,7 @@ fn bake_effect_page_cell(
     if entry % 16 != 0 {
         return false;
     }
-    let Ok(rgba) = legaia_tim::decode_rgba8(tim, entry / 16) else {
+    let Ok(rgba) = psx_tim::decode_rgba8(tim, entry / 16) else {
         return false;
     };
     let src_w = tim.pixel_width() as u32;

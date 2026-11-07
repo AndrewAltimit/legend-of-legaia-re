@@ -16,7 +16,7 @@ pub(crate) fn cmd_shops(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let shops = apply::current_shops(&patcher)?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u8| {
         item_names
@@ -43,7 +43,7 @@ pub(crate) fn cmd_shops(input: &Path) -> Result<()> {
 pub(crate) fn cmd_casino(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u16| {
         item_names
@@ -77,7 +77,7 @@ pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
     let overlay = patcher
         .read_entry(legaia_patcher::fishing_price::OVERLAY_PROT_INDEX)
         .context("read fishing overlay (PROT 972)")?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u32| {
         item_names
@@ -112,7 +112,7 @@ pub(crate) fn cmd_earth_egg(input: &Path) -> Result<()> {
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     match legaia_patcher::apply::current_earth_egg(&patcher)? {
         Some(info) => {
-            let name = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            let name = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
                 .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus))
                 .and_then(|t| t.name(info.item_id).map(str::to_string))
                 .unwrap_or_else(|| "Earth Egg".to_string());
@@ -223,7 +223,7 @@ pub(crate) fn cmd_move_powers(input: &Path) -> Result<()> {
     // Tag each power-table index with the spell-table name of a move id that
     // resolves to it (the move-id space is the spell-table id space).
     let map = legaia_game_tables::move_power::parse_id_index_map(&entry);
-    let spells = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let spells = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus));
     let label = |idx: usize| -> String {
         let (Some(map), Some(spells)) = (map.as_ref(), spells.as_ref()) else {
@@ -312,7 +312,7 @@ fn equip_mask_label(mask: u8) -> String {
 pub(crate) fn cmd_equip_bonuses(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u8| {
         item_names
@@ -381,7 +381,7 @@ pub(crate) fn cmd_drops(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let drops = apply::current_drops(&patcher)?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let mut n = 0;
     for d in &drops {
@@ -440,7 +440,7 @@ pub(crate) fn cmd_house_doors(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let sites = apply::current_house_doors(&patcher)?;
-    let cdname = legaia_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
+    let cdname = psx_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
         .and_then(|b| String::from_utf8(b).ok())
         .and_then(|s| legaia_prot::cdname::parse_str(&s).ok());
     let scene_of = |idx: usize| -> String {
@@ -512,7 +512,7 @@ pub(crate) fn cmd_chests(input: &Path) -> Result<()> {
 
     // Resolve item ids -> names (SCUS table) and PROT-entry -> scene name
     // (CDNAME.TXT), both off the user's own disc. Purely for legibility.
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
@@ -521,7 +521,7 @@ pub(crate) fn cmd_chests(input: &Path) -> Result<()> {
             .unwrap_or("?")
             .to_string()
     };
-    let cdname = legaia_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
+    let cdname = psx_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
         .and_then(|b| String::from_utf8(b).ok())
         .and_then(|s| legaia_prot::cdname::parse_str(&s).ok());
     let scene_of = |entry_idx: usize| -> String {
@@ -576,7 +576,7 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
     use legaia_art::queue::Character;
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .context("read SCUS_942.54")?;
     let entries =
         legaia_art::arts_table::parse_from_scus(&scus).context("parse arts-name table")?;
@@ -699,7 +699,7 @@ pub(crate) fn cmd_steals(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let steals = apply::current_steals(&patcher)?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
@@ -732,7 +732,7 @@ pub(crate) fn cmd_starting_items(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let items = apply::current_starting_items(&patcher)?;
-    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let item_names = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
@@ -1116,7 +1116,7 @@ pub(crate) fn cmd_scus_pokes(patched: &Path, baseline: &Path) -> Result<()> {
     const HEADER: usize = 0x800; // PSX-EXE header before the loaded image
     let read_scus = |path: &Path| -> Result<Vec<u8>> {
         let image = load_image(path)?;
-        let (lba, size) = legaia_iso::iso9660::find_file_in_image(&image, "SCUS_942.54")
+        let (lba, size) = psx_iso::iso9660::find_file_in_image(&image, "SCUS_942.54")
             .ok_or_else(|| anyhow::anyhow!("{}: SCUS_942.54 not found", path.display()))?;
         let mut out = Vec::with_capacity(size as usize);
         for b in 0..size as usize {

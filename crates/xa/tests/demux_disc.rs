@@ -26,7 +26,7 @@ fn every_demuxed_channel_has_a_real_cdxa_rate() {
         panic!("LEGAIA_DISC_BIN={} does not exist", bin.display());
     }
 
-    let files = legaia_xa::demux::demux_disc_all(&bin).expect("demux all XA off the disc");
+    let files = psx_xa::demux::demux_disc_all(&bin).expect("demux all XA off the disc");
     let with_audio: Vec<_> = files.iter().filter(|f| !f.streams.is_empty()).collect();
     assert!(
         !with_audio.is_empty(),
@@ -54,7 +54,7 @@ fn every_demuxed_channel_has_a_real_cdxa_rate() {
                 s.bits_per_sample
             );
             assert!(
-                s.audio.len().is_multiple_of(legaia_xa::SOUND_GROUP_BYTES),
+                s.audio.len().is_multiple_of(psx_xa::SOUND_GROUP_BYTES),
                 "{} file{} ch{}: audio not a whole number of sound groups",
                 f.path,
                 s.file_no,

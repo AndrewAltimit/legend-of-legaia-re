@@ -12,8 +12,8 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-legaia-bytes.workspace = true
-legaia-lzs.workspace = true
+psx-bytes.workspace = true
+psx-lzs.workspace = true
 serde.workspace = true
 sha2.workspace = true
 toml.workspace = true

@@ -10,19 +10,19 @@
 //! `cpu_pc()`, `gte_state()`), plus the GPU and SPU section decoders.
 //!
 //! The emulator-neutral analysis over the main RAM it yields is
-//! `legaia-ram-image`:
+//! `psx-ram-image`:
 //!
-//! 1. `legaia_ram_image::extract::ram_slice` - slices a PSX virtual-address
+//! 1. `psx_ram_image::extract::ram_slice` - slices a PSX virtual-address
 //!    window (`0x801C0000..0x801F0000` for overlay capture, etc.) out of
 //!    main RAM.
-//! 2. `legaia_ram_image::diff` - pairwise byte/word diff between two save
+//! 2. `psx_ram_image::diff` - pairwise byte/word diff between two save
 //!    states' main RAM, surfacing addresses whose value changed (the
 //!    watchpoint-equivalent output that engine RE work needs).
-//! 3. `legaia_ram_image::scenarios` - declarative scenario manifest
+//! 3. `psx_ram_image::scenarios` - declarative scenario manifest
 //!    (`scripts/scenarios.toml`) mapping each `.mc{0..9}` to a labelled
 //!    scenario with watchpoint regions, overlay slices, and downstream
 //!    artefact paths.
-//! 4. `legaia_ram_image::bisect` - given a known-good and known-bad state,
+//! 4. `psx_ram_image::bisect` - given a known-good and known-bad state,
 //!    suggests the intermediate states that would isolate when a write
 //!    occurred.
 //!

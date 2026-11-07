@@ -140,10 +140,10 @@ impl Core {
     /// [`Self::take_disc_parts`]. The image is dropped before the copy, so
     /// the copy reuses its memory.
     pub fn open_disc_owned(&mut self, image: Vec<u8>, keep_parts: bool) -> Result<()> {
-        let prot = legaia_iso::image::extract_prot_dat(&image)
+        let prot = psx_iso::image::extract_prot_dat(&image)
             .context("PROT.DAT not found in the disc image (is it a Mode 2/2352 .bin?)")?;
-        let cdname = legaia_iso::image::extract_cdname_txt(&image);
-        let scus = legaia_iso::image::extract_scus(&image);
+        let cdname = psx_iso::image::extract_cdname_txt(&image);
+        let scus = psx_iso::image::extract_scus(&image);
         drop(image);
         self.disc_parts = keep_parts.then(|| {
             let mut out = Vec::with_capacity(prot.len() + 0x8_0000);

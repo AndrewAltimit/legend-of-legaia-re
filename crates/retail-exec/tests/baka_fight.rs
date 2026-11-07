@@ -10,7 +10,7 @@ use legaia_engine_minigames::baka_fighter::{
     BakaAttack, BakaFight, ClipHeaders, MatchPhase, StrikeState, roster_clip_headers,
 };
 use legaia_minigame_formats::baka_opponents as bo;
-use legaia_retail_exec::{Cpu, Stop, V0};
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -181,7 +181,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
     cpu.stub(0x8002_0DE0, SPARE);
     cpu.stub(0x801D_6E04, SPARE);
     let clean = cpu.mem.clone();
-    let gp = cpu.regs.r[legaia_retail_exec::GP];
+    let gp = cpu.regs.r[psx_retail_exec::GP];
 
     let mut rng = Rng(0x4241_4B41);
     let (mut rounds, mut finishers, mut chains, mut crits, mut ko_draws) = (0, 0, 0, 0, 0);
@@ -192,7 +192,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
         let density = [2, 6, 12, 25, 60][rng.below(5) as usize];
 
         cpu.mem = clean.clone();
-        cpu.regs.r[legaia_retail_exec::GP] = gp;
+        cpu.regs.r[psx_retail_exec::GP] = gp;
         seat(&mut cpu, 0, player as u32, &clips[player]);
         seat(&mut cpu, 1, opponent as u32, &clips[opponent]);
         cpu.mem.wr32(0x8007_B888, BANK[0]);

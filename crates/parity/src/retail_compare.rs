@@ -44,9 +44,9 @@ use legaia_engine_capture::field_seeds::*;
 use legaia_engine_core::world::SeededVramRect;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene_host::scene_host::BgmDirector;
-use legaia_mednafen::{PsxGpu, SaveState as MednafenState};
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::game_anchors;
+use psx_mednafen::{PsxGpu, SaveState as MednafenState};
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
 use crate::retail_compare_image::{Frame, ImageScore};
@@ -256,7 +256,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
     let mut out: Vec<CorpusEntry> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     const EMULATORS: [&str; 2] = ["mednafen", "pcsx-redux"];
-    let backups = legaia_ram_image::scenarios::LibraryIndex::open(library, &EMULATORS);
+    let backups = psx_ram_image::scenarios::LibraryIndex::open(library, &EMULATORS);
     let backup_of = |label: &str| -> Option<(&'static str, PathBuf)> {
         let fp = manifest
             .scenarios

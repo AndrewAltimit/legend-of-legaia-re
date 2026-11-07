@@ -13,7 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 legaia-engine-system.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-ui-formats.workspace = true
 
 [dev-dependencies]

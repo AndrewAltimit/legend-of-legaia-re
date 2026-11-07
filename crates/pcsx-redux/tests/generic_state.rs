@@ -1,12 +1,12 @@
 //! Not disc-gated: the reader on a synthetic, non-Legaia save state built in
-//! the test ([`legaia_pcsx_redux::fixture`]). No game bytes are involved, so
+//! the test ([`psx_pcsx_redux::fixture`]). No game bytes are involved, so
 //! this runs in CI and is the proof that main RAM, the scratchpad and the GPU
 //! snapshot are located from the emulator's layout alone.
 
-use legaia_pcsx_redux::fixture::SyntheticState;
-use legaia_pcsx_redux::gpu::PcsxGpu;
-use legaia_pcsx_redux::{RamSource, SaveState, structural_ram_offset};
-use legaia_ram_image::{GameProfile, GenericGame, PSX_RAM_SIZE};
+use psx_pcsx_redux::fixture::SyntheticState;
+use psx_pcsx_redux::gpu::PcsxGpu;
+use psx_pcsx_redux::{RamSource, SaveState, structural_ram_offset};
+use psx_ram_image::{GameProfile, GenericGame, PSX_RAM_SIZE};
 
 /// A RAM image no Legaia anchor string occurs in: a made-up "game" whose
 /// executable text starts with its own banner.

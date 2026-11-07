@@ -16,6 +16,12 @@ classes:
 | **Generic, Legaia quirks** | The format or hardware is Sony's, but the code bakes in something Legaia does. Each quirk is named below. |
 | **Legaia-only** | Describes Legaia's own containers, data or runtime. Useful as a worked example, not as a dependency. |
 
+The package name follows the class: the standalone Generic PS1 and
+Generic-with-quirks crates are named `psx-*` (lib `psx_*`), everything else
+`legaia-*`. The two engine crates with a generic core (`legaia-engine-audio`,
+`legaia-render-kernels`) keep the engine's prefix. The directory under
+`crates/` carries no prefix either way.
+
 ## Depending on a crate
 
 Nothing here is published to crates.io. Take a crate as a git dependency, and
@@ -24,8 +30,8 @@ and for some crates other Legaia crates) stay out of your build:
 
 ```toml
 [dependencies]
-legaia-tim = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }
-legaia-iso = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }
+psx-tim = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }
+psx-iso = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }
 ```
 
 Every crate is `MIT OR Unlicense`. The CLI binaries build with
@@ -37,18 +43,18 @@ unless noted.
 
 | Crate | Class | Entry point | CLI (`cli` feature) |
 |---|---|---|---|
-| [`legaia-iso`](../../crates/iso/README.md) | Generic PS1 | `raw::RawDisc::open`, `iso9660::{read_volume, walk_files}`, `image::walk_iso_files`, `write::encode_mode2_form1_sector` | `disc-extract list` / `extract` |
-| [`legaia-xa`](../../crates/xa/README.md) | Generic PS1 | `demux::demux_raw_sectors`, `decode`, `StreamingDecoder`, `write_wav` | `xa` |
-| [`legaia-bytes`](../../crates/bytes/README.md) | Generic PS1 | `u16_le` / `u32_le` / ... returning `Option` | - |
-| [`legaia-tim`](../../crates/tim/README.md) | Generic, Legaia quirks | `parse`, `parse_strict`, `decode_rgba8`, `encode::encode_replacement`, `vram::Vram` | `tim info` / `convert` / `convert-dir` |
-| [`legaia-vab`](../../crates/vab/README.md) | Generic, Legaia quirks | `parse`, `find_vabs`, `decode_vag`, `write_wav` | `vab list` / `extract` |
-| [`legaia-seq`](../../crates/seq/README.md) | Generic, Legaia quirks | `Seq::parse`, `parse_header_with_len`, `read_vlq` | `seq info` / `events` / `json` / `find` |
-| [`legaia-lzs`](../../crates/lzs/README.md) | Generic, Legaia quirks | `decompress`, `compress`, `compress_optimal` | `lzs-decode raw` / `scan` / ... |
-| [`legaia-mdec`](../../crates/mdec/README.md) | Generic, Legaia quirks | `MdecDecoder::decode_frame`, `str_sector::StrFrameAssembler`, `str_av::demux_str_av` | `mdec scan-str` / `decode-str` / ... |
-| [`legaia-mednafen`](../../crates/mednafen/README.md) | Generic, Legaia quirks | `SaveState::from_path`, `main_ram`, `gpu::PsxGpu`, `spu::PsxSpu` | `mednafen-state` |
-| [`legaia-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `SaveState::from_path_structural`, `gpu::PcsxGpu::from_path`, `fixture::SyntheticState` | `pcsxr-state --game generic` |
-| [`legaia-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice`, `GameProfile` | - |
-| [`legaia-retail-exec`](../../crates/retail-exec/README.md) | Generic PS1 | `Cpu::call`, `Cpu::hook`, `Cpu::calls`; the Legaia comparisons are its tests alone ([method](retail-kernel-differential.md)) | - |
+| [`psx-iso`](../../crates/iso/README.md) | Generic PS1 | `raw::RawDisc::open`, `iso9660::{read_volume, walk_files}`, `image::walk_iso_files`, `write::encode_mode2_form1_sector` | `disc-extract list` / `extract` |
+| [`psx-xa`](../../crates/xa/README.md) | Generic PS1 | `demux::demux_raw_sectors`, `decode`, `StreamingDecoder`, `write_wav` | `xa` |
+| [`psx-bytes`](../../crates/bytes/README.md) | Generic PS1 | `u16_le` / `u32_le` / ... returning `Option` | - |
+| [`psx-tim`](../../crates/tim/README.md) | Generic, Legaia quirks | `parse`, `parse_strict`, `decode_rgba8`, `encode::encode_replacement`, `vram::Vram` | `tim info` / `convert` / `convert-dir` |
+| [`psx-vab`](../../crates/vab/README.md) | Generic, Legaia quirks | `parse`, `find_vabs`, `decode_vag`, `write_wav` | `vab list` / `extract` |
+| [`psx-seq`](../../crates/seq/README.md) | Generic, Legaia quirks | `Seq::parse`, `parse_header_with_len`, `read_vlq` | `seq info` / `events` / `json` / `find` |
+| [`psx-lzs`](../../crates/lzs/README.md) | Generic, Legaia quirks | `decompress`, `compress`, `compress_optimal` | `lzs-decode raw` / `scan` / ... |
+| [`psx-mdec`](../../crates/mdec/README.md) | Generic, Legaia quirks | `MdecDecoder::decode_frame`, `str_sector::StrFrameAssembler`, `str_av::demux_str_av` | `mdec scan-str` / `decode-str` / ... |
+| [`psx-mednafen`](../../crates/mednafen/README.md) | Generic, Legaia quirks | `SaveState::from_path`, `main_ram`, `gpu::PsxGpu`, `spu::PsxSpu` | `mednafen-state` |
+| [`psx-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `SaveState::from_path_structural`, `gpu::PcsxGpu::from_path`, `fixture::SyntheticState` | `pcsxr-state --game generic` |
+| [`psx-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice`, `GameProfile` | - |
+| [`psx-retail-exec`](../../crates/retail-exec/README.md) | Generic PS1 | `Cpu::call`, `Cpu::hook`, `Cpu::calls`; the Legaia comparisons are its tests alone ([method](retail-kernel-differential.md)) | - |
 | [`legaia-engine-audio`](../../crates/engine-audio/README.md) | Generic, Legaia quirks | `spu::Spu`, `Sequencer::new(seq, bank)`, `vab_bind::VabBank::upload` | `note-trace` |
 | [`legaia-render-kernels`](../../crates/render-kernels/README.md) | Generic module in a Legaia crate | `gte::Gte`, `gte::Camera`, `gte::gte_divide`, `vram_capture` | - |
 | [`legaia-tmd`](../../crates/tmd/README.md) | Legaia-only | `parse` (Legaia variant only) | `tmd` |
@@ -66,7 +72,7 @@ crate.
 
 ## Generic PS1 crates
 
-### `legaia-iso`
+### `psx-iso`
 
 A raw Mode 2/2352 `.bin` (or its `.cue`) reader, an ISO9660 walker that
 resolves names the way the console does (case-insensitive, `;1` stripped), and
@@ -92,7 +98,7 @@ Four things name Legaia and are easy to step around:
   executable for the LBAs first.
 - `grow_prot_dat_by_name` looks up `PROT.DAT` by name.
 
-### `legaia-xa`
+### `psx-xa`
 
 CD-XA ADPCM: the 128-byte sound group, 4- and 8-bit units, mono and stereo,
 37.8 / 18.9 kHz, decoded bit-identically to jPSXdec's reference decode.
@@ -103,13 +109,13 @@ end in `.XA`; a game that interleaves its XA inside `.STR` files or a big
 archive should feed `demux_raw_sectors` or `demux_disc_range` the raw sectors
 itself.
 
-### `legaia-bytes`
+### `psx-bytes`
 
 Bounds-checked little-endian readers that return `Option`. No dependencies.
 
 ## Generic crates with Legaia quirks
 
-### `legaia-tim`
+### `psx-tim`
 
 The TIM parser, PNG export and PNG-to-TIM encoder are Sony's format end to end.
 `parse_strict` reproduces jPSXdec's TIM detector, which makes it a good carving
@@ -125,7 +131,7 @@ filter for any disc. One Legaia behaviour lives in the software VRAM model:
   because Legaia parks NPC palettes at the framebuffer's bottom edge. That only
   makes the filter more permissive.
 
-### `legaia-vab`
+### `psx-vab`
 
 `parse(buf, offset)` reads a standard, contiguous VAB (`pBAV`, version 7,
 128 program slots, 16 tones per program, the 1-indexed VAG size table) and its
@@ -137,7 +143,7 @@ stream, with a 4-byte chunk header between the header part and the bodies.
 signal to keep `parse`'s spans. A game that ships separate `.VH` / `.VB` files
 needs them concatenated first ([`vab.md`](../formats/vab.md)).
 
-### `legaia-seq`
+### `psx-seq`
 
 SEQ is libsnd's sequence format. Two behaviours differ from the shape the
 public PsyQ notes describe, and both break a MIDI-minded parser:
@@ -156,7 +162,7 @@ does carry SMF-style length bytes would read its `03` as the first tempo byte;
 check one tempo event by hand before trusting a parse
 ([`seq.md`](../formats/seq.md)).
 
-### `legaia-lzs`
+### `psx-lzs`
 
 The decompressor is the classic LZSS family (4096-byte ring, 18-byte maximum
 match, threshold 2, write cursor starting at `0xFEE`, LSB-first flag bits, a
@@ -175,7 +181,7 @@ crate. Because the zero ring turns most random input into plausible output,
 ([`lzs.md`](../formats/lzs.md)). `compress` / `compress_optimal` emit streams
 any decoder with these parameters accepts.
 
-### `legaia-mdec`
+### `psx-mdec`
 
 `str_sector` parses the standard STR video-sector header (`0x0160` / `0x8001`)
 and assembles multi-sector frames; `str_av::demux_str_av` pairs the frames with
@@ -195,7 +201,7 @@ sector stride at the 2x CD rate. Those carry to any STR. The decoder does not:
 - `st_ring` / `str_player` model how Legaia drives the `St` streaming library
   (ring size, segment windows of `MV3.STR`).
 
-### Emulator save states: `legaia-mednafen`, `legaia-pcsx-redux`, `legaia-ram-image`
+### Emulator save states: `psx-mednafen`, `psx-pcsx-redux`, `psx-ram-image`
 
 The three crates split into a generic reader and a Legaia anchor layer.
 
@@ -222,7 +228,7 @@ The three crates split into a generic reader and a Legaia anchor layer.
   `SaveState::from_sstate_bytes_with_anchors(bytes, exe, profile)` is that
   fallback for another game. The scene / mode / player accessors read
   Legaia's globals; `identity_with(profile)` asks a different profile.
-- **`legaia-ram-image`.** `diff::diff_ram` (the watchpoint-equivalent diff of
+- **`psx-ram-image`.** `diff::diff_ram` (the watchpoint-equivalent diff of
   two RAM images), `bisect::bisect_first_bad`, `ram_slice` and
   `prim_pool::decode` / `chain_walk` (the libgpu primitive pool and ordering
   table) take any 2 MiB image. What a reader needs to know about the game is
@@ -247,12 +253,12 @@ mastered as Mode 2/2352 sectors with `write::encode_mode2_form1_sector` and
 read back by both the in-memory walker and `RawDisc`; and a made-up game's
 PCSX-Redux and mednafen states, opened structurally, diffed with `diff_ram`
 and bisected for the capture where a value changed. `cargo run -p
-legaia-pcsx-redux --example bring_your_own_game -- <out_dir>` writes the PNG
+psx-pcsx-redux --example bring_your_own_game -- <out_dir>` writes the PNG
 and the `.bin`; the image lists and extracts under `xorriso` once its user
 data is pulled out, so it is a real ISO9660 volume, not one only this reader
 accepts. The test `tests/bring_your_own_game.rs` runs the same code in CI.
 
-The SEQ step is the one to read closely. It builds the shape `legaia-seq`
+The SEQ step is the one to read closely. It builds the shape `psx-seq`
 parses (a 13-byte header with a `u16` version, meta events without a length
 byte), which is what libsnd's reader in Legaia's executable consumes. No
 other title's SEQ file is tested in this repository, so the step is not
@@ -288,7 +294,7 @@ the FLAG bits, per-command cycle costs, and the Unsigned Newton-Raphson
 perspective divide (`gte::divide`) the hardware really runs. `psx_sin` /
 `psx_cos` reproduce the q3.12 trig values without the lookup table the executable carries.
 `vram_capture` quantises an RGBA8 frame to BGR555 and blits it into a
-`legaia_tim::Vram` rect.
+`psx_tim::Vram` rect.
 
 The module is generic; the crate is not. `render-kernels` depends on Legaia's
 camera, VM and format crates, and `gte::camera_relative` uses Legaia's camera.

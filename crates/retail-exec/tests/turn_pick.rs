@@ -9,8 +9,8 @@ use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_core::world::{MonsterAction, World};
 use legaia_engine_menus::pause_screens::MenuTextTables;
 use legaia_game_tables::spell_names::SPELL_COUNT;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

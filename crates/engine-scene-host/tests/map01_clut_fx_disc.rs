@@ -141,10 +141,10 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
     for (dt, expect_game_ticks) in [(3u8, 43u32), (2, 64)] {
         let mut world = World::new();
         world.clock.frame_step = dt;
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         // Seed distinct A / B rows: park cell = a red ramp, strip cell = a
         // blue ramp.
-        let seed_row = |vram: &mut legaia_tim::Vram, x: u16, y: u16, f: &dyn Fn(u16) -> u16| {
+        let seed_row = |vram: &mut psx_tim::Vram, x: u16, y: u16, f: &dyn Fn(u16) -> u16| {
             let mut bytes = [0u8; 32];
             for i in 0..16u16 {
                 bytes[i as usize * 2..i as usize * 2 + 2].copy_from_slice(&f(i).to_le_bytes());
@@ -219,7 +219,7 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
 
     let mut world = World::new();
     world.clock.frame_step = 3;
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let mut bytes = [0u8; 32];
     for i in 0..16u16 {
         bytes[i as usize * 2..i as usize * 2 + 2].copy_from_slice(&(0x7C00 | i).to_le_bytes());

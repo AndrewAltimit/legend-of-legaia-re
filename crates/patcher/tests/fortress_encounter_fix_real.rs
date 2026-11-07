@@ -24,8 +24,6 @@
 use std::collections::BTreeSet;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
-use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::apply;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::fortress_encounter_fix::{
@@ -33,6 +31,8 @@ use legaia_patcher::fortress_encounter_fix::{
 };
 use legaia_randomizer::drops::DropMode;
 use legaia_scene_formats::man_section;
+use psx_iso::raw::SECTOR_SIZE;
+use psx_iso::write::mode2_form1_sector_is_valid;
 
 /// `deroa`'s third gated group ("Gate of Hell vanished").
 const GATE_FLAG: u16 = 0x046D;

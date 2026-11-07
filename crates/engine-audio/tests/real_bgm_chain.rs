@@ -12,8 +12,8 @@ use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
-use legaia_seq::Seq;
-use legaia_vab::parse as parse_vab;
+use psx_seq::Seq;
+use psx_vab::parse as parse_vab;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -99,7 +99,7 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
     // phantom length would drop the override and pin playback at the
     // placeholder rate (the constant-wrong-BPM bug). Confirm the override is
     // decoded and lands in a sane musical range.
-    use legaia_seq::{EventBody, MetaMessage};
+    use psx_seq::{EventBody, MetaMessage};
     let first_tempo = seq.events.iter().find_map(|e| match e.body {
         EventBody::Meta(MetaMessage::SetTempo { us_per_qn }) => Some(us_per_qn),
         _ => None,

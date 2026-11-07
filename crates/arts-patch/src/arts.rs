@@ -88,7 +88,7 @@ impl ArtsEdits {
     /// Locate + decode the arts table from a whole disc image. `None` when
     /// `SCUS_942.54` isn't present or isn't a parseable PSX-EXE.
     pub fn locate(image: &[u8]) -> Option<Self> {
-        let scus = legaia_iso::iso9660::read_file_in_image(image, SCUS_NAME)?;
+        let scus = psx_iso::iso9660::read_file_in_image(image, SCUS_NAME)?;
         Self::from_scus(&scus)
     }
 
@@ -280,7 +280,7 @@ pub fn player_record0_decoded(entry: &[u8]) -> Option<Vec<u8>> {
     if !(0x400..=0x40000).contains(&budget) {
         return None;
     }
-    legaia_lzs::decompress(entry.get(ro + 0x10..)?, budget).ok()
+    psx_lzs::decompress(entry.get(ro + 0x10..)?, budget).ok()
 }
 
 /// `true` if `combo` (in `1=L,2=R,3=D,4=U` bytes) appears as a matcher art
@@ -383,7 +383,7 @@ pub fn patch_player_record0_full(
     let region = record0_lzs_region(entry)?;
     let lzs_off = region.lzs_off;
     let avail = region.avail;
-    let mut decoded = legaia_lzs::decompress(entry.get(lzs_off..)?, region.budget).ok()?;
+    let mut decoded = psx_lzs::decompress(entry.get(lzs_off..)?, region.budget).ok()?;
     let mut changed = apply_record_edits(&mut decoded, edits);
     for &(off, byte) in offset_edits {
         let b = decoded.get_mut(off)?;
@@ -395,7 +395,7 @@ pub fn patch_player_record0_full(
     if changed == 0 {
         return None;
     }
-    let mut recompressed = legaia_lzs::compress(&decoded);
+    let mut recompressed = psx_lzs::compress(&decoded);
     if recompressed.len() > avail {
         // The greedy encoder overshot the footprint. Retry with the
         // optimal one before giving up: it is slower but never larger,
@@ -405,7 +405,7 @@ pub fn patch_player_record0_full(
         // failing. Edits that grow the block (a rebuilt animation stream
         // is far less compressible than the one it replaces) sit close
         // enough to the ceiling for this to matter.
-        recompressed = legaia_lzs::compress_optimal(&decoded);
+        recompressed = psx_lzs::compress_optimal(&decoded);
     }
     if recompressed.len() > avail {
         return None;

@@ -8,15 +8,15 @@
 //!   bytes 2..15: 14 bytes = 28 nibble-pair samples (low nibble first)
 //! ```
 //!
-//! Identical algorithm to the one in `legaia-vab` (and to the XA decoder's
+//! Identical algorithm to the one in `psx-vab` (and to the XA decoder's
 //! filter constants), but kept stateful here so a long-playing voice can be
 //! advanced one block at a time without re-walking the body.
 //!
 //! No Sony bytes - the algorithm is the standard PSX SPU formula
-//! (see `docs/formats/vab.md` and the `legaia-xa` filter table).
+//! (see `docs/formats/vab.md` and the `psx-xa` filter table).
 
-const F0: [i32; 5] = legaia_xa::F0;
-const F1: [i32; 5] = legaia_xa::F1;
+const F0: [i32; 5] = psx_xa::F0;
+const F1: [i32; 5] = psx_xa::F1;
 
 /// Bytes in one ADPCM block.
 pub const BLOCK_BYTES: usize = 16;

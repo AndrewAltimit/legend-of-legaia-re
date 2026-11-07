@@ -11,8 +11,8 @@
 
 use super::*;
 use legaia_engine_core::world::EffectChildSeed;
-use legaia_ram_image::extract::PSX_RAM_KSEG0;
-use legaia_ram_image::prim_pool::{self, Prim};
+use psx_ram_image::extract::PSX_RAM_KSEG0;
+use psx_ram_image::prim_pool::{self, Prim};
 
 /// `_DAT_8007BD30` - the effect pool's base pointer (`FUN_801E0080`).
 const EFFECT_POOL_PTR: u32 = 0x8007_BD30;

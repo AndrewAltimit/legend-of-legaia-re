@@ -120,7 +120,7 @@ pub(in crate::window) fn build_window_scene_resources(
     // underlay order `SceneResources` uses for the system-UI bundle.
     // Without it the fog quads sampled all-zero texels and the shader
     // discarded every fragment. See `docs/subsystems/field-ambient-fx.md`.
-    let mut effect_pool = legaia_tim::Vram::new();
+    let mut effect_pool = psx_tim::Vram::new();
     match legaia_engine_scene::scene::upload_effect_textures_into_vram(
         &session.host.index,
         &mut effect_pool,

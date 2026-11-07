@@ -24,8 +24,8 @@
 use std::collections::HashSet;
 
 use super::*;
-use legaia_ram_image::extract::PSX_RAM_KSEG0;
-use legaia_ram_image::prim_pool::{self, Prim};
+use psx_ram_image::extract::PSX_RAM_KSEG0;
+use psx_ram_image::prim_pool::{self, Prim};
 
 /// The handle table `FUN_801D9BBC` writes a record's seat through
 /// (`ctx[+0x1074 + slot * 4]`, `0x801D9BF0`); a slot with no widget is

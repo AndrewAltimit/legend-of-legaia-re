@@ -43,7 +43,7 @@ project keeps immutable copies under a fingerprint name and a manifest that
 maps a human label to the fingerprint, the scene it shows, how it was made and
 anything done to it
 ([save-state library](pcsx-redux-automation.md#save-state-library-immutable-backups),
-the manifest schema in `legaia_ram_image::scenarios`).
+the manifest schema in `psx_ram_image::scenarios`).
 
 **Record what was done to the machine.** A state made after a debugger poke,
 or on a patched disc, is not the original's behaviour. The manifest names the

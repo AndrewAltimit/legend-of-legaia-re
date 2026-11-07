@@ -38,7 +38,7 @@ pub(crate) fn load_man_bytes(
             buf.len()
         );
     }
-    let (decoded, _) = legaia_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
+    let (decoded, _) = psx_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
     Ok((decoded, man))
 }
 
@@ -66,7 +66,7 @@ pub(crate) fn parse_cdname_text(text: &str) -> std::collections::HashMap<u32, St
 
 /// Encode an RGBA8 buffer (`width * height * 4` bytes) to a PNG file.
 pub(crate) fn write_rgba_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
-    legaia_tim::write_png(path, width as usize, height as usize, rgba)
+    psx_tim::write_png(path, width as usize, height as usize, rgba)
 }
 
 /// Build a display label for a PROT entry: `<index>_<cdname-block>` if we

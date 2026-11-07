@@ -234,7 +234,7 @@ fn hud_sync_status_pulls_from_tracker() {
 fn stone_reaches_the_party_clut_row_through_sync_status() {
     use crate::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let row = PARTY_CLUT_ROW_BASE + 1;
     // A resident party palette: STP-set, deliberately not grey.
     let base: Vec<u16> = (0..PARTY_CLUT_ENTRIES)

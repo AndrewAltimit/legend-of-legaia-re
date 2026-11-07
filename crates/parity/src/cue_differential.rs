@@ -14,8 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result};
 use legaia_engine_audio::AudioSink;
 use legaia_engine_session::session::BootSession;
-use legaia_ram_image::ScenarioManifest;
-use legaia_retail_exec::{Cpu, GP, RA, RETURN_SENTINEL, Stop};
+use psx_ram_image::ScenarioManifest;
+use psx_retail_exec::{Cpu, GP, RA, RETURN_SENTINEL, Stop};
 
 use crate::audio_sweep::{EngineAudio, excluded_state};
 use crate::retail_compare::{StateClass, enumerate_corpus, read_retail, run_engine_listening_with};
@@ -97,7 +97,7 @@ pub fn probe<S: AudioSink>(session: &mut BootSession<S>, audio: &mut EngineAudio
 /// Retail's drainer over a state's RAM.
 pub struct RetailDrainer {
     cpu: Cpu,
-    snapshot: legaia_retail_exec::Memory,
+    snapshot: psx_retail_exec::Memory,
 }
 
 impl RetailDrainer {
@@ -214,11 +214,11 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
             continue;
         }
         let ram = if entry.emulator == "mednafen" {
-            legaia_mednafen::SaveState::from_path(&entry.path)?
+            psx_mednafen::SaveState::from_path(&entry.path)?
                 .main_ram()?
                 .to_vec()
         } else {
-            let (st, _) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, &scus)?;
+            let (st, _) = psx_pcsx_redux::gpu::load_with_scus(&entry.path, &scus)?;
             st.main_ram().to_vec()
         };
         let formation: Vec<u8> = ram[0x7B_D0C..0x7B_D10].to_vec();

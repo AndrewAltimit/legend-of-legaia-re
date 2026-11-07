@@ -204,7 +204,7 @@
 
 <section class="doc-section" id="movie" data-doc="movie-states">
   <h2>Movie states</h2>
-  <p>An STR movie (modes <code>0x1A</code> / <code>0x1B</code>) has nothing to seed: the frame on screen is the file&rsquo;s, whatever the story, so a movie-class state scores the image channel alone. Retail&rsquo;s frame reads 24-bit when the dispatch slot&rsquo;s <code>+0x04</code> colour flag says so. The engine&rsquo;s is the frame the stream word <code>DAT_801CAD90</code> names, through <code>legaia_mdec</code>, centred in the 240-line display. The word runs ahead of the buffer on screen by at most three frames; the best is taken and named in the detail.</p>
+  <p>An STR movie (modes <code>0x1A</code> / <code>0x1B</code>) has nothing to seed: the frame on screen is the file&rsquo;s, whatever the story, so a movie-class state scores the image channel alone. Retail&rsquo;s frame reads 24-bit when the dispatch slot&rsquo;s <code>+0x04</code> colour flag says so. The engine&rsquo;s is the frame the stream word <code>DAT_801CAD90</code> names, through <code>psx_mdec</code>, centred in the 240-line display. The word runs ahead of the buffer on screen by at most three frames; the best is taken and named in the detail.</p>
 </section>
 
 <section class="doc-section" id="minigame" data-doc="minigame-states">

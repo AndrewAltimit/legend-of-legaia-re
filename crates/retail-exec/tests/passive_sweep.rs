@@ -7,8 +7,8 @@
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_core::world::World;
-use legaia_retail_exec::Stop;
 use legaia_save::Party;
+use psx_retail_exec::Stop;
 
 const ENTRY: u32 = 0x8004_CE2C;
 /// The first instruction past the party walk.

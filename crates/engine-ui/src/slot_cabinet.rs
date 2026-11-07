@@ -76,7 +76,7 @@ pub struct SlotCabinetAssets {
     pub scene: legaia_minigame_formats::minigame_slot_scene::SlotScene,
     pub cabinet: Option<legaia_minigame_formats::minigame_slot_scene::SlotCabinetMesh>,
     pub hud: Vec<legaia_minigame_formats::minigame_art::SlotHudWidget>,
-    pub vram: legaia_tim::Vram,
+    pub vram: psx_tim::Vram,
     /// The two rules pages' text and chart order (the overlay's own rodata).
     pub rules: Option<legaia_minigame_formats::minigame_slot_scene::SlotRules>,
     /// The per-symbol line payouts the second rules page charts
@@ -109,7 +109,7 @@ impl SlotCabinetAssets {
         let payouts = legaia_minigame_formats::slot_payout::parse(&overlay)
             .map(|t| t.payouts)
             .unwrap_or_default();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         for t in &tims {
             vram.upload_tim(t);
         }
@@ -131,7 +131,7 @@ impl SlotCabinetAssets {
     /// border tiles from it. `prot_head` is `PROT.DAT` from that offset; a
     /// head that does not parse leaves the box borderless.
     pub fn with_system_ui(mut self, prot_head: &[u8]) -> Self {
-        if let Ok(tim) = legaia_tim::parse(prot_head) {
+        if let Ok(tim) = psx_tim::parse(prot_head) {
             self.vram.upload_tim(&tim);
             self.system_ui = true;
         }
@@ -1006,7 +1006,7 @@ mod tests {
             scene: scene(),
             cabinet: None,
             hud: Vec::new(),
-            vram: legaia_tim::Vram::new(),
+            vram: psx_tim::Vram::new(),
             rules: Some(sc::SlotRules {
                 chart: [3, 4, 5, 6, 7, 0, 1, 2, 8, 9],
                 ..Default::default()

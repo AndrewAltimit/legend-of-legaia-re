@@ -106,7 +106,7 @@ fn item_alone_cuts_carry_no_skin_and_keep_the_item() {
                 .expect("bare assembly");
             bca::relocate_tsb_cba(&mut bare.tmd, loadout::VIEW_BAND).expect("relocate");
             let bare_tmd = legaia_tmd::parse(&bare.tmd).expect("bare TMD");
-            let mut v = legaia_tim::Vram::new();
+            let mut v = psx_tim::Vram::new();
             for u in &bca::character_texture_uploads(
                 &raw,
                 &pack,
@@ -246,7 +246,7 @@ fn item_alone_cuts_carry_no_skin_and_keep_the_item() {
                     );
                     let render = |mesh: &legaia_tmd::mesh::VramMesh,
                                   ids: &[u32],
-                                  vram: &legaia_tim::Vram,
+                                  vram: &psx_tim::Vram,
                                   yaw: f32| {
                         let opts = RasterOptions {
                             width: size,
@@ -298,7 +298,7 @@ fn item_alone_cuts_carry_no_skin_and_keep_the_item() {
 /// of triangles (at least four texels) that are mostly skin.
 fn skin_share(
     mesh: &legaia_tmd::mesh::VramMesh,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     own: &std::collections::HashSet<u16>,
 ) -> (f32, usize) {
     use legaia_actor_formats::battle_char_assembly::equip_skin_mask::{
@@ -362,7 +362,7 @@ fn write_sheet(path: &Path, cells: &[Cell], size: usize) {
         }
         draw_label(&mut img, w, x + 2, y + 2, &c.label);
     }
-    legaia_tim::write_png(path, w, h, &img).unwrap();
+    psx_tim::write_png(path, w, h, &img).unwrap();
 }
 
 /// 3x5 pixel glyphs for the sheet labels.

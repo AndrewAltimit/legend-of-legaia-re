@@ -155,7 +155,7 @@ winit = "0.30"
 # Workspace crates. Those carrying a command-line binary are listed with
 # default features off: their default `cli` feature exists only for their own
 # binary, and a library dependent never needs it.
-legaia-bytes = { path = "crates/bytes" }
+psx-bytes = { path = "crates/bytes" }
 legaia-app-theme = { path = "crates/app-theme" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
@@ -214,12 +214,12 @@ legaia-engine-vm = { path = "crates/engine-vm" }
 legaia-extract = { path = "crates/extract", default-features = false }
 legaia-font = { path = "crates/font", default-features = false }
 legaia-gamedata = { path = "crates/gamedata", default-features = false }
-legaia-iso = { path = "crates/iso", default-features = false }
-legaia-lzs = { path = "crates/lzs", default-features = false }
-legaia-mdec = { path = "crates/mdec", default-features = false }
+psx-iso = { path = "crates/iso", default-features = false }
+psx-lzs = { path = "crates/lzs", default-features = false }
+psx-mdec = { path = "crates/mdec", default-features = false }
 legaia-mdt = { path = "crates/mdt", default-features = false }
-legaia-ram-image = { path = "crates/ram-image" }
-legaia-mednafen = { path = "crates/mednafen", default-features = false }
+psx-ram-image = { path = "crates/ram-image" }
+psx-mednafen = { path = "crates/mednafen", default-features = false }
 legaia-mes = { path = "crates/mes", default-features = false }
 legaia-disc-patch = { path = "crates/disc-patch" }
 legaia-randomizer = { path = "crates/randomizer" }
@@ -231,20 +231,20 @@ legaia-delilas-party = { path = "crates/delilas-party" }
 legaia-delilas-challenge = { path = "crates/delilas-challenge" }
 legaia-texture-replace = { path = "crates/texture-replace" }
 legaia-patcher = { path = "crates/patcher", default-features = false }
-legaia-pcsx-redux = { path = "crates/pcsx-redux", default-features = false }
+psx-pcsx-redux = { path = "crates/pcsx-redux", default-features = false }
 legaia-prot = { path = "crates/prot", default-features = false }
 legaia-save = { path = "crates/save", default-features = false }
-legaia-seq = { path = "crates/seq", default-features = false }
-legaia-retail-exec = { path = "crates/retail-exec", default-features = false }
-legaia-tim = { path = "crates/tim", default-features = false }
+psx-seq = { path = "crates/seq", default-features = false }
+psx-retail-exec = { path = "crates/retail-exec", default-features = false }
+psx-tim = { path = "crates/tim", default-features = false }
 legaia-tmd = { path = "crates/tmd", default-features = false }
-legaia-vab = { path = "crates/vab", default-features = false }
+psx-vab = { path = "crates/vab", default-features = false }
 legaia-web-expansion = { path = "crates/web-expansion" }
 legaia-web-minigames = { path = "crates/web-minigames" }
 legaia-web-patcher = { path = "crates/web-patcher" }
 legaia-web-play = { path = "crates/web-play" }
 legaia-web-viewer = { path = "crates/web-viewer" }
-legaia-xa = { path = "crates/xa", default-features = false }
+psx-xa = { path = "crates/xa", default-features = false }
 
 [profile.release]
 lto = "thin"

@@ -12,14 +12,14 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-legaia-bytes.workspace = true
+psx-bytes.workspace = true
 legaia-art.workspace = true
 legaia-container-formats.workspace = true
 legaia-font.workspace = true
 legaia-game-tables.workspace = true
-legaia-lzs.workspace = true
+psx-lzs.workspace = true
 legaia-prot.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 png.workspace = true
 serde.workspace = true
@@ -31,4 +31,4 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dev-dependencies]
-legaia-iso.workspace = true
+psx-iso.workspace = true

@@ -30,7 +30,7 @@
 use std::path::PathBuf;
 
 use legaia_prot::archive::Archive;
-use legaia_seq::{EventBody, MetaMessage, Seq, Termination};
+use psx_seq::{EventBody, MetaMessage, Seq, Termination};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

@@ -24,7 +24,7 @@ pub(super) fn walk_monster_archive(buf: &[u8], sink: &mut Sink, opts: &AccountOp
             format!("slot {id} fill past the block"),
         );
         fill_slots += usize::from(sink.claims.len() > before);
-        let Some(dec_size) = legaia_bytes::u32_le(buf, slot).map(|v| v as usize) else {
+        let Some(dec_size) = psx_bytes::u32_le(buf, slot).map(|v| v as usize) else {
             continue;
         };
         // The archive's trailing slots do not hold a `[u32 dec_size][LZS]`
@@ -83,7 +83,7 @@ pub(super) const MONSTER_ANIM_PART_STRIDE: usize = 9;
 
 pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
     sink.claim(0, 0x4C, OWNER_RECORD, "stat record head");
-    if let Some(name_off) = legaia_bytes::u32_le(block, 0).map(|v| v as usize)
+    if let Some(name_off) = psx_bytes::u32_le(block, 0).map(|v| v as usize)
         && let Some(rest) = block.get(name_off..)
     {
         let n = rest.iter().take_while(|&&b| b != 0).count();
@@ -92,8 +92,8 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
         }
     }
     // TMD + texture pool: record `+0x04` / `+0x08`.
-    let tmd_off = legaia_bytes::u32_le(block, 0x04).unwrap_or(0) as usize;
-    if legaia_bytes::u32_le(block, tmd_off) == Some(0x8000_0002) {
+    let tmd_off = psx_bytes::u32_le(block, 0x04).unwrap_or(0) as usize;
+    if psx_bytes::u32_le(block, tmd_off) == Some(0x8000_0002) {
         let len = legaia_container_formats::tmd_scan::scan_buffer(block)
             .into_iter()
             .find(|h| h.offset == tmd_off)
@@ -103,7 +103,7 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
             None => sink.note("TMD magic at +0x04 but tmd_scan did not size it"),
         }
     }
-    let pool = legaia_bytes::u32_le(block, 0x08).unwrap_or(0) as usize;
+    let pool = psx_bytes::u32_le(block, 0x08).unwrap_or(0) as usize;
     if pool > 0 && pool < block.len() {
         // `MonsterMesh::texture` reads `pool = &block[pool_off..]` whole: the
         // CLUT region then a 4bpp page filling the rest of the block.
@@ -126,7 +126,7 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
     let eff_base = (count + 0x13) * 4;
     let mut eff_max = 0usize;
     for i in 0..count {
-        let Some(off) = legaia_bytes::u32_le(block, 0x4C + i * 4).map(|v| v as usize) else {
+        let Some(off) = psx_bytes::u32_le(block, 0x4C + i * 4).map(|v| v as usize) else {
             continue;
         };
         if off == 0 || off >= block.len() {
@@ -135,7 +135,7 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
         let head_end = (off + MONSTER_ANIM_STREAM_OFFSET).min(block.len());
         sink.claim(off, head_end, OWNER_RECORD, format!("action entry {i}"));
         for f in [0x04usize, 0x08] {
-            let idx = legaia_bytes::u32_le(block, off + f).unwrap_or(0) as usize;
+            let idx = psx_bytes::u32_le(block, off + f).unwrap_or(0) as usize;
             eff_max = eff_max.max(idx);
         }
         // `[u8 part_count][u8 frame_count][frames * parts * 9]`
@@ -385,7 +385,7 @@ pub(super) fn walk_battle_data_pack(buf: &[u8], sink: &mut Sink, opts: &AccountO
     };
     sink.claim(0, 0x10, OWNER_HEADER, "desc_off + CLUT offsets + budget");
     // record[0] is an LZS stream between the header and the table.
-    if let Some(dec) = legaia_bytes::u32_le(buf, 12).map(|v| v as usize)
+    if let Some(dec) = psx_bytes::u32_le(buf, 12).map(|v| v as usize)
         && take_lzs(sink, buf, 0x10, dec, "record[0] (art records)").is_none()
     {
         sink.note("record[0] LZS decode failed");
@@ -427,7 +427,7 @@ pub(super) fn walk_battle_data_pack(buf: &[u8], sink: &mut Sink, opts: &AccountO
     for (i, r) in pack.records.iter().enumerate() {
         let off = pack.data_base + r.data_offset as usize;
         sink.claim(off, off + 4, OWNER_HEADER, format!("slot {i} dec_size"));
-        let Some(dec) = legaia_bytes::u32_le(buf, off).map(|v| v as usize) else {
+        let Some(dec) = psx_bytes::u32_le(buf, off).map(|v| v as usize) else {
             continue;
         };
         let detail = format!("equip slot {i} (id {:#x})", r.id);

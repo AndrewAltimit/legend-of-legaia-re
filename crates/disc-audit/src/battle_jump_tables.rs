@@ -238,7 +238,7 @@ pub const HEAD_STRINGS: [HeadString; 7] = [
 
 fn word(image: &[u8], va: u32) -> Option<u32> {
     let off = va.checked_sub(OVERLAY_BASE_VA)? as usize;
-    legaia_bytes::u32_le(image, off)
+    psx_bytes::u32_le(image, off)
 }
 
 /// `lui` / `addiu` halves of `va` as the assembler emits them: the `addiu`

@@ -35,13 +35,13 @@ legaia-disc-patch.workspace = true
 legaia-randomizer.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
-legaia-lzs.workspace = true
-legaia-bytes.workspace = true
-legaia-tim.workspace = true
+psx-lzs.workspace = true
+psx-bytes.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-prot.workspace = true
-legaia-iso.workspace = true
+psx-iso.workspace = true
 legaia-gamedata.workspace = true
 legaia-actor-formats.workspace = true
 legaia-container-formats.workspace = true
@@ -60,8 +60,8 @@ libc = { workspace = true, optional = true }
 legaia-disc-audit.workspace = true
 legaia-font.workspace = true
 legaia-mes.workspace = true
-legaia-vab.workspace = true
-legaia-xa.workspace = true
+psx-vab.workspace = true
+psx-xa.workspace = true
 # equip_transplant_real writes PNG renders of the transplanted meshes.
 png.workspace = true
 

@@ -1,11 +1,11 @@
 [package]
-name = "legaia-ram-image"
+name = "psx-ram-image"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "legaia_ram_image"
+name = "psx_ram_image"
 path = "src/lib.rs"
 
 [dependencies]

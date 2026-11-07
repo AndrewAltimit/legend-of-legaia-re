@@ -13,7 +13,7 @@
 //! (CC7 folded into the velocity, the sequence volume, three pan stages, the
 //! square taper), libsnd's mono fold and the per-tone reverb send - against
 //! retail's register values (mednafen's sweep `Current` halved; see
-//! `legaia_mednafen::spu`).
+//! `psx_mednafen::spu`).
 //!
 //! Everything the engine needs is read off the state, not off the scenario's
 //! scene label:
@@ -49,11 +49,11 @@ use legaia_engine_audio::duck::ducked_master_vol;
 use legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::BootConfig;
-use legaia_mednafen::SaveState;
 use legaia_parity::audio_trace_oracle::{
     build_pinned_track_trace, load_runtime_audio_trace_from_save,
 };
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 fn first_dir(cands: &[&str], probe: &str) -> Option<PathBuf> {
     cands

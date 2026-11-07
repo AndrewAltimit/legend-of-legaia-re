@@ -33,7 +33,7 @@ pub fn luma_scale(color: [f32; 3], scene_luma: f32) -> f32 {
 /// meshes (the field scene's pool at entry, the battle stage dome at
 /// battle entry).
 pub fn scene_luminance<'a>(
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     meshes: impl IntoIterator<Item = &'a legaia_tmd::mesh::VramMesh>,
 ) -> Option<f32> {
     let (mut sum, mut weight) = (0.0f64, 0.0f64);
@@ -85,7 +85,7 @@ pub fn scene_luminance<'a>(
 /// and store in [`FogVolume::battle_luma`]; the shell's second copy repeats
 /// the first, so it is not measured twice.
 pub fn stage_luminance(
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
     objects: &[usize],
@@ -97,13 +97,13 @@ pub fn stage_luminance(
 
 /// The 15-bit word a textured prim samples at `(u, v)`, through its CLUT
 /// for the indexed depths; `None` for the transparent zero word.
-fn texel_word(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> Option<u16> {
+fn texel_word(vram: &psx_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> Option<u16> {
     let cx = usize::from(cba & 0x3F) * 16;
     let cy = usize::from((cba >> 6) & 0x1FF);
     let tx = usize::from(tsb & 0xF) * 64;
     let ty = usize::from((tsb >> 4) & 1) * 256;
     let px = |x: usize, y: usize| -> u16 {
-        if x >= legaia_tim::VRAM_WIDTH || y >= legaia_tim::VRAM_HEIGHT {
+        if x >= psx_tim::VRAM_WIDTH || y >= psx_tim::VRAM_HEIGHT {
             0
         } else {
             vram.pixel(x, y)

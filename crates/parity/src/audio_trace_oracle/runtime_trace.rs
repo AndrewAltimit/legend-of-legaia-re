@@ -25,14 +25,14 @@ pub fn load_runtime_audio_trace_jsonl(path: &Path) -> Result<Vec<AudioTraceFrame
 }
 
 /// Lift a single audio-trace sample out of a mednafen `.mc{slot}` save.
-/// Reads the SPU section via [`legaia_mednafen::PsxSpu`].
+/// Reads the SPU section via [`psx_mednafen::PsxSpu`].
 ///
 /// Returns a `frame = 0` record with voice/master/reverb populated from
 /// the save state. `sequencer_playhead_ticks` / `sequencer_finished` are
 /// `None` because the SPU section doesn't carry sequencer (CPU-side
 /// libsnd) state.
 pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame> {
-    use legaia_mednafen::{PsxSpu, SaveState};
+    use psx_mednafen::{PsxSpu, SaveState};
 
     let state = SaveState::from_path(save)
         .with_context(|| format!("load mednafen save {}", save.display()))?;

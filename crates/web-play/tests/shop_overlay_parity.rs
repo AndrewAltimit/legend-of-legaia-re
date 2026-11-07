@@ -143,7 +143,7 @@ fn shop_opens_renders_and_releases_the_field_vm() {
 fn disc_window_table() -> Option<legaia_game_tables::menu_windows::MenuWindowTable> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
     let bytes = std::fs::read(&disc).ok()?;
-    let prot = legaia_iso::image::extract_prot_dat(&bytes)?;
+    let prot = psx_iso::image::extract_prot_dat(&bytes)?;
     let entries = legaia_prot::toc_index::parse_prot_toc(&prot)?;
     let idx = legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32;
     let e = entries.iter().find(|x| x.index == idx)?;

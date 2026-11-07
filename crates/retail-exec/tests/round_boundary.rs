@@ -5,8 +5,8 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::battle_round::BattleRound;
 use legaia_engine_core::world::World;
-use legaia_retail_exec::Stop;
 use legaia_save::Party;
+use psx_retail_exec::Stop;
 
 const SWEEP: u32 = 0x801D_88CC;
 const OVERLAY_BASE: u32 = 0x801C_E818;

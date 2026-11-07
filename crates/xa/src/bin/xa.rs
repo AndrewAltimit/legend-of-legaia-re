@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
-use legaia_xa::{Channels, DecodeOptions};
+use psx_xa::{Channels, DecodeOptions};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -123,11 +123,11 @@ enum BitsArg {
     Eight,
 }
 
-impl From<BitsArg> for legaia_xa::BitsPerSample {
+impl From<BitsArg> for psx_xa::BitsPerSample {
     fn from(a: BitsArg) -> Self {
         match a {
-            BitsArg::Four => legaia_xa::BitsPerSample::Four,
-            BitsArg::Eight => legaia_xa::BitsPerSample::Eight,
+            BitsArg::Four => psx_xa::BitsPerSample::Four,
+            BitsArg::Eight => psx_xa::BitsPerSample::Eight,
         }
     }
 }
@@ -192,10 +192,10 @@ fn main() -> Result<()> {
 /// `bits_per_sample` (4 or 8) to the decoder width. Streams of any other width
 /// are skipped with a warning rather than mis-decoded; returns `false` when
 /// skipped.
-fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result<bool> {
+fn write_channel_wav(s: &psx_xa::demux::ChannelStream, path: &Path) -> Result<bool> {
     let bits = match s.bits_per_sample {
-        4 => legaia_xa::BitsPerSample::Four,
-        8 => legaia_xa::BitsPerSample::Eight,
+        4 => psx_xa::BitsPerSample::Four,
+        8 => psx_xa::BitsPerSample::Eight,
         other => {
             eprintln!(
                 "  file={:<3} ch={:<3} SKIPPED: {other}-bit ADPCM unsupported (4-bit / 8-bit only)",
@@ -213,8 +213,8 @@ fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result
         sample_rate: s.sample_rate,
         bits,
     };
-    let (samples, report) = legaia_xa::decode(&s.audio, opts)?;
-    legaia_xa::write_wav(path, &samples, opts.channels, opts.sample_rate)?;
+    let (samples, report) = psx_xa::decode(&s.audio, opts)?;
+    psx_xa::write_wav(path, &samples, opts.channels, opts.sample_rate)?;
     let dur = samples.len() as f64 / opts.sample_rate as f64 / opts.channels.n() as f64;
     println!(
         "  file={:<3} ch={:<3} {:>4} sectors {:>5} groups ({} skip) {:>5}Hz {:<6} {:.2}s -> {}",
@@ -232,7 +232,7 @@ fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result
 }
 
 fn demux_disc_all(bin: &Path, out_dir: &Path) -> Result<()> {
-    let files = legaia_xa::demux::demux_disc_all(bin)
+    let files = psx_xa::demux::demux_disc_all(bin)
         .with_context(|| format!("demux all XA on {}", bin.display()))?;
     if files.is_empty() {
         bail!(
@@ -274,7 +274,7 @@ fn demux_disc_all(bin: &Path, out_dir: &Path) -> Result<()> {
 }
 
 fn demux_disc(bin: &Path, lba: u32, size: u32, out_dir: &Path, prefix: Option<&str>) -> Result<()> {
-    let streams = legaia_xa::demux::demux_file(bin, lba, size)
+    let streams = psx_xa::demux::demux_file(bin, lba, size)
         .with_context(|| format!("demux {} @ LBA {} size {}", bin.display(), lba, size))?;
     if streams.is_empty() {
         bail!(
@@ -298,20 +298,20 @@ fn info(
     path: &Path,
     channels: Channels,
     sample_rate: u32,
-    bits: legaia_xa::BitsPerSample,
+    bits: psx_xa::BitsPerSample,
 ) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    if buf.len() % legaia_xa::SOUND_GROUP_BYTES != 0 {
+    if buf.len() % psx_xa::SOUND_GROUP_BYTES != 0 {
         bail!(
             "{}: size {} is not a multiple of 128 (XA sound group)",
             path.display(),
             buf.len()
         );
     }
-    let n_groups = buf.len() / legaia_xa::SOUND_GROUP_BYTES;
+    let n_groups = buf.len() / psx_xa::SOUND_GROUP_BYTES;
     // SUs/group depends on the sample width (8 for 4-bit, 4 for 8-bit);
     // per-channel sample count = total / channels.
-    let total_samples = n_groups * bits.units_per_group() * legaia_xa::SAMPLES_PER_UNIT;
+    let total_samples = n_groups * bits.units_per_group() * psx_xa::SAMPLES_PER_UNIT;
     let per_channel = total_samples / channels.n() as usize;
     let dur_sec = per_channel as f64 / sample_rate as f64;
     println!("file:        {}", path.display());
@@ -335,7 +335,7 @@ fn convert(
     out: Option<&Path>,
     channels: Channels,
     sample_rate: u32,
-    bits: legaia_xa::BitsPerSample,
+    bits: psx_xa::BitsPerSample,
 ) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let opts = DecodeOptions {
@@ -343,14 +343,14 @@ fn convert(
         sample_rate,
         bits,
     };
-    let (samples, report) = legaia_xa::decode(&buf, opts)?;
+    let (samples, report) = psx_xa::decode(&buf, opts)?;
     let target: PathBuf = out
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| path.with_extension("wav"));
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    legaia_xa::write_wav(&target, &samples, channels, sample_rate)?;
+    psx_xa::write_wav(&target, &samples, channels, sample_rate)?;
     println!(
         "{} -> {} ({} groups, {} skipped as invalid, {} samples)",
         path.display(),
@@ -367,7 +367,7 @@ fn convert_dir(
     out: Option<&Path>,
     channels: Channels,
     sample_rate: u32,
-    bits: legaia_xa::BitsPerSample,
+    bits: psx_xa::BitsPerSample,
 ) -> Result<()> {
     let dir = dir
         .canonicalize()

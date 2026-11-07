@@ -215,7 +215,7 @@ fn index_for(
             return Ok((i, false));
         }
     }
-    let want = legaia_tim::encode::rgba8_to_bgr555(texel) & 0x7FFF;
+    let want = psx_tim::encode::rgba8_to_bgr555(texel) & 0x7FFF;
     if texel[3] != 0 && incumbent.and_then(matchable) == Some(want) {
         return Ok((current as usize, false));
     }
@@ -357,7 +357,7 @@ fn edit_page(
 fn retail_stream_len(page: &MonsterPage, patcher: &DiscPatcher) -> Result<usize> {
     let slot = patcher.monster_slot(page.id)?;
     let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
-    let (_, consumed) = legaia_lzs::decompress_tracked(&slot[4..], declared)
+    let (_, consumed) = psx_lzs::decompress_tracked(&slot[4..], declared)
         .with_context(|| format!("measure monster id {}'s retail stream", page.id))?;
     Ok(consumed)
 }
@@ -377,8 +377,8 @@ fn recompress(e: &Edited, retail: usize) -> Result<(Vec<u8>, MonsterFit)> {
         ));
     }
     // Retail's encoder is not ours, so try both and keep the smaller.
-    let greedy = legaia_lzs::compress(&e.block);
-    let optimal = legaia_lzs::compress_optimal(&e.block);
+    let greedy = psx_lzs::compress(&e.block);
+    let optimal = psx_lzs::compress_optimal(&e.block);
     let stream = if greedy.len() <= optimal.len() {
         greedy
     } else {
@@ -490,9 +490,9 @@ mod tests {
     fn an_exact_colour_keeps_the_slot_it_already_has() {
         // 0 transparent, then red, green, blue in BGR555.
         let p = palette(&[0, 0x001F, 0x03E0, 0x7C00]);
-        let red = legaia_tim::bgr555_to_rgba8(0x001F);
+        let red = psx_tim::bgr555_to_rgba8(0x001F);
         assert_eq!(index_for(&p, 0, red, false), Ok((1, false)));
-        let green = legaia_tim::bgr555_to_rgba8(0x03E0);
+        let green = psx_tim::bgr555_to_rgba8(0x03E0);
         assert_eq!(index_for(&p, 0, green, false), Ok((2, false)));
     }
 
@@ -520,7 +520,7 @@ mod tests {
         // RGBA image; it must still match, because this writer may not
         // rewrite the entry to clear the bit.
         let p = palette(&[0, 0x801F]);
-        let red = legaia_tim::bgr555_to_rgba8(0x001F);
+        let red = psx_tim::bgr555_to_rgba8(0x001F);
         assert_eq!(index_for(&p, 0, red, false), Ok((1, false)));
     }
 

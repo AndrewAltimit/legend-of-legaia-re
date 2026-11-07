@@ -7,7 +7,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_motion_vm::ambient_motion::{
     ZoneRamp, ZoneRampTick, ZoneRampWidth, zone_ramp_tick,
 };
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const TICK: u32 = 0x8003_7018;
 const PLAYER_PTR: u32 = 0x8007_C364;

@@ -29,7 +29,7 @@ legaia-overlay-images.workspace = true
 legaia-scene-formats.workspace = true
 
 [dev-dependencies]
-legaia-lzs.workspace = true
+psx-lzs.workspace = true
 
 [[test]]
 name = "integration"

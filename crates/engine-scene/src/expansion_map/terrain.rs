@@ -102,7 +102,7 @@ const SIDE_MAP_SLOPE: f32 = 0.8;
 /// ground palette carries none. Returns original CBA word to copy's.
 pub fn stp_palettes(
     s: &TerrainSurface,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     alloc: &mut VramAlloc,
     patches: &mut Vec<VramPatch>,
 ) -> Result<std::collections::BTreeMap<u16, u16>> {
@@ -159,7 +159,7 @@ pub fn tile_meshes(
     s: &TerrainSurface,
     foam: Option<&FoamSheet>,
     stp: &std::collections::BTreeMap<u16, u16>,
-    vram: Option<&legaia_tim::Vram>,
+    vram: Option<&psx_tim::Vram>,
 ) -> Result<Vec<([u16; 2], Vec<u8>)>> {
     let f = &s.field;
     let (res, skirt) = (f.res, f.skirt);
@@ -215,7 +215,7 @@ fn tile_mesh(
     centre: [i32; 2],
     foam: Option<&FoamSheet>,
     stp: &std::collections::BTreeMap<u16, u16>,
-    vram: Option<&legaia_tim::Vram>,
+    vram: Option<&psx_tim::Vram>,
 ) -> Result<Option<Vec<u8>>> {
     let f = &s.field;
     let res = f.res;

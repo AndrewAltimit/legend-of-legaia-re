@@ -8,7 +8,7 @@
 //! `legaia_actor_formats::scene_gltf`) uses. UVs interpolate affinely, as the
 //! PSX GPU does.
 
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// A triangulated TMD ready to draw.
 pub struct Model {
@@ -142,9 +142,9 @@ impl Model {
 
     /// How many textured triangles `vram` can draw: their CLUT entries and
     /// the texels under their UV box are populated
-    /// (`legaia_tim::Vram::prim_texture_status`, the test the asset viewer
+    /// (`psx_tim::Vram::prim_texture_status`, the test the asset viewer
     /// drops prims by). `(covered, textured)`.
-    pub fn texture_coverage(&self, vram: &legaia_tim::Vram) -> (usize, usize) {
+    pub fn texture_coverage(&self, vram: &psx_tim::Vram) -> (usize, usize) {
         let mut covered = 0;
         let mut textured = 0;
         for tri in self.indices.as_chunks::<3>().0 {
@@ -512,7 +512,7 @@ mod tests {
             center: [0.0; 3],
             radius: 1.0,
         };
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         assert_eq!(m.texture_coverage(&vram), (0, 1), "nothing uploaded");
         vram.write_clut_row(0, 480, &[0x11; 32]);
         assert_eq!(m.texture_coverage(&vram), (0, 1), "palette, no texels");
@@ -523,7 +523,7 @@ mod tests {
             textured: vec![0; 3],
             ..m
         };
-        assert_eq!(flat.texture_coverage(&legaia_tim::Vram::new()), (0, 0));
+        assert_eq!(flat.texture_coverage(&psx_tim::Vram::new()), (0, 0));
     }
 
     /// The default pose looks down on the model from above: on a floor

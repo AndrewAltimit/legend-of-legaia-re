@@ -20,7 +20,7 @@ impl World {
 
     /// Drain the queued `4C 60` stamps into `vram` (the host's software
     /// VRAM: play-window's `cpu_vram_base`, a test's scratch
-    /// [`legaia_tim::Vram`]). Returns `true` when anything was copied (the
+    /// [`psx_tim::Vram`]). Returns `true` when anything was copied (the
     /// host re-uploads its GPU copy).
     ///
     /// Retail hands the literal operands to libgpu unchecked, but no retail
@@ -29,7 +29,7 @@ impl World {
     ///
     /// REF: FUN_80058490 (the sub-0x60 consumer: `jal` at 0x801E1B84 in the
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
-    pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn apply_script_vram_moves(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let moves = std::mem::take(&mut self.ambient.script_vram_moves);
         let mut wrote = apply_vram_moves(moves, vram);
         for (x, y, set) in std::mem::take(&mut self.ambient.script_vram_stp) {
@@ -42,7 +42,7 @@ impl World {
     /// ([`legaia_engine_battle_loop::battle_state::BattleState::vram_moves`]) to the host's battle VRAM,
     /// in order. Both hosts call it once per battle frame; returns `true`
     /// when any texel moved (the host re-uploads).
-    pub fn apply_battle_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn apply_battle_vram_moves(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let loads = std::mem::take(&mut self.battle.vram_loads);
         let loaded = !loads.is_empty();
         loads.replay(vram);
@@ -82,7 +82,7 @@ impl World {
     ///
     /// PORT: FUN_80019D50 (on the battle effect lists; the texel kernel is
     /// `legaia_engine_field::clut_cell_fx::apply_hsv_cell`)
-    fn apply_battle_cell_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    fn apply_battle_cell_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         use super::super::ambient::{read_rect, write_rect};
         let mut wrote = false;
         for mut f in std::mem::take(&mut self.battle.cell_fx) {
@@ -203,7 +203,7 @@ impl World {
 /// PORT: FUN_801DE840 (`4C D4` / `4C D5` arm; `StoreImage` / `LoadImage`)
 /// REF: FUN_8005842C (`StoreImage`), FUN_800583C8 (`LoadImage`) - libgpu
 /// wrappers this replays against the port's VRAM model
-fn apply_vram_stp(vram: &mut legaia_tim::Vram, x: u16, y: u16, set: bool) -> bool {
+fn apply_vram_stp(vram: &mut psx_tim::Vram, x: u16, y: u16, set: bool) -> bool {
     if usize::from(x) + 16 > 1024 || usize::from(y) >= 512 {
         return false;
     }
@@ -228,7 +228,7 @@ fn apply_vram_stp(vram: &mut legaia_tim::Vram, x: u16, y: u16, set: bool) -> boo
 }
 
 /// The shared `MoveImage` kernel behind the field and battle queues.
-fn apply_vram_moves(moves: Vec<ScriptVramMove>, vram: &mut legaia_tim::Vram) -> bool {
+fn apply_vram_moves(moves: Vec<ScriptVramMove>, vram: &mut psx_tim::Vram) -> bool {
     let mut wrote = false;
     for mv in moves {
         let (sx, sy) = mv.src;

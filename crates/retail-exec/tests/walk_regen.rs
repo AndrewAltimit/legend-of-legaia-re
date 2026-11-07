@@ -5,7 +5,7 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::walk_regen::{WalkGauge, WalkRegenMember, tick_walk_regen};
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const TICK: u32 = 0x801D_0B90;
 const OVERLAY_BASE: u32 = 0x801C_E818;

@@ -18,7 +18,7 @@ fn record(x: u16, y: u16, rgb: [u8; 3], frac: u16, duration: u16) -> [u8; 12] {
     r
 }
 
-fn put_row(vram: &mut legaia_tim::Vram, x: u16, y: u16, row: &[u16; 16]) {
+fn put_row(vram: &mut psx_tim::Vram, x: u16, y: u16, row: &[u16; 16]) {
     let mut bytes = [0u8; 32];
     for (i, v) in row.iter().enumerate() {
         bytes[i * 2..i * 2 + 2].copy_from_slice(&v.to_le_bytes());
@@ -26,7 +26,7 @@ fn put_row(vram: &mut legaia_tim::Vram, x: u16, y: u16, row: &[u16; 16]) {
     vram.write_clut_row(x, y, &bytes);
 }
 
-fn get_row(vram: &legaia_tim::Vram, x: u16, y: u16) -> [u16; 16] {
+fn get_row(vram: &psx_tim::Vram, x: u16, y: u16) -> [u16; 16] {
     std::array::from_fn(|i| vram.pixel(x as usize + i, y as usize))
 }
 
@@ -34,7 +34,7 @@ fn get_row(vram: &legaia_tim::Vram, x: u16, y: u16) -> [u16; 16] {
 fn zero_duration_record_lands_the_endpoint_on_the_first_game_tick() {
     let bytes = record(0x20, 0x1F6, [0x1E, 0x14, 0x5A], 0x04B0, 0);
     let src: [u16; 16] = std::array::from_fn(|i| 0x7FFF - i as u16 * 0x0421);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     put_row(&mut vram, 0x20, 0x1F6, &src);
 
     let mut expect = ClutBlendFade::new(&src, &FadeRecord::from_bytes(&bytes));
@@ -58,7 +58,7 @@ fn zero_duration_record_lands_the_endpoint_on_the_first_game_tick() {
 fn a_timed_fade_steps_per_game_tick_and_retires_at_its_duration() {
     let bytes = record(0x40, 0x1F0, [0xF8, 0, 0], 0x1000, 8);
     let src = [0u16; 16];
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     put_row(&mut vram, 0x40, 0x1F0, &src);
 
     let mut world = World::new();

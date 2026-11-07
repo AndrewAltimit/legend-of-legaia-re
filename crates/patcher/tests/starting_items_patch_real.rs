@@ -13,13 +13,13 @@ use legaia_game_tables::new_game::{
     region_unlocks_all_warps, scus_unlocks_all_warps, starting_inv_seed_file_offset,
     warp_seed_file_offset,
 };
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::starting_items::{
     GOOD_LUCK_BELL_ID, INV_REGION_SLOTS, MAX_STARTING_ITEMS, SPEED_CHAIN_ID, STARTING_ITEM_POOL,
     StartingSeedOptions, plan_seed,
 };
+use psx_iso::iso9660::{find_file_in_image, read_file_in_image};
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -115,7 +115,7 @@ fn randomize_starting_items_round_trips_on_disc() {
     let seed_sector = scus_lba as usize + off / USER_DATA_SIZE;
     let sb = seed_sector * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
         "patched seed-region sector must be EDC/ECC-valid"
     );
 
@@ -240,7 +240,7 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
         let sector = scus_lba as usize + region_off / USER_DATA_SIZE;
         let sb = sector * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
             "patched sector must be EDC/ECC-valid"
         );
     }
@@ -309,7 +309,7 @@ fn incense_round_trips_on_disc() {
     let sector = scus_lba as usize + inv_off / USER_DATA_SIZE;
     let sb = sector * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
         "patched sector must be EDC/ECC-valid"
     );
 
@@ -373,7 +373,7 @@ fn accessories_round_trip_on_disc() {
     let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
     let sb = (scus_lba as usize + inv_off / USER_DATA_SIZE) * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
         "patched sector must be EDC/ECC-valid"
     );
 
@@ -480,7 +480,7 @@ fn convenience_plus_random_overflow_round_trips_on_disc() {
     for region_off in [inv_off, warp_off] {
         let sb = (scus_lba as usize + region_off / USER_DATA_SIZE) * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
             "patched sector must be EDC/ECC-valid"
         );
     }
@@ -560,7 +560,7 @@ fn explicit_start_with_items_round_trip_on_disc() {
     let seed_sector = scus_lba as usize + off / USER_DATA_SIZE;
     let sb = seed_sector * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
         "patched seed-region sector must be EDC/ECC-valid"
     );
 

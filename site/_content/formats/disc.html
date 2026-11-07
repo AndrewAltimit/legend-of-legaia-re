@@ -123,7 +123,7 @@ const USER_DATA_SIZE: usize = 2048;</code></pre>
 
 <section class="doc-section" id="full-iso-relayout">
   <h2>Full-ISO relayout</h2>
-  <p>Growing a file by whole sectors - <code>PROT.DAT</code>, which the official PAL discs grew at mastering to fit longer localized dialogue - moves every file after it, so every on-disc reference to those files has to be rewritten. Legaia's disc makes this a small, well-bounded edit. Implementation: <code>legaia_iso::relayout</code> (generic ISO9660 + ECMA-130; embeds no game bytes).</p>
+  <p>Growing a file by whole sectors - <code>PROT.DAT</code>, which the official PAL discs grew at mastering to fit longer localized dialogue - moves every file after it, so every on-disc reference to those files has to be rewritten. Legaia's disc makes this a small, well-bounded edit. Implementation: <code>psx_iso::relayout</code> (generic ISO9660 + ECMA-130; embeds no game bytes).</p>
 
   <h3 id="the-lba-reference-graph">The LBA reference graph</h3>
   <p>Two facts make the relayout safe (<a href="#how-we-know">how we know</a>):</p>

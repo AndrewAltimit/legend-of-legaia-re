@@ -55,10 +55,10 @@ fn boot_clut_fates_and_sheet_palette_map() {
     eprintln!("[ran] tim_palette_context_real");
     let ctx = BootClutVram::from_prot_dat(&prot).expect("boot bundle");
 
-    let sheet = legaia_tim::parse(&prot[SHEET_OFFSET as usize..]).unwrap();
+    let sheet = psx_tim::parse(&prot[SHEET_OFFSET as usize..]).unwrap();
     assert_eq!(ctx.clut_fate(SHEET_OFFSET, &sheet), ClutFate::Survives);
 
-    let font = legaia_tim::parse(&prot[BATTLE_FONT_OFFSET as usize..]).unwrap();
+    let font = psx_tim::parse(&prot[BATTLE_FONT_OFFSET as usize..]).unwrap();
     match ctx.clut_fate(BATTLE_FONT_OFFSET, &font) {
         ClutFate::Overwritten {
             palettes,
@@ -113,7 +113,7 @@ fn boot_clut_fates_and_sheet_palette_map() {
     );
     // Local eyeballing only (decoded pixels - never commit the output).
     if let Some(out) = std::env::var_os("LEGAIA_DUMP_SHEET_COMPOSITE") {
-        legaia_tim::write_png(
+        psx_tim::write_png(
             std::path::Path::new(&out),
             sheet.pixel_width(),
             sheet.pixel_height(),

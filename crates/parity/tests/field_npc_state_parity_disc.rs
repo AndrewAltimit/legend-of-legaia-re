@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 
 use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
 use legaia_engine_scene_host::scene_host::SceneHost;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::scenarios::library_backup_for;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::scenarios::library_backup_for;
 
 const RAM_MASK: u32 = 0x001F_FFFF;
 /// Field-actor list sentinel head (the `FUN_8003BC08` tick class).
@@ -564,11 +564,11 @@ fn capture_from_ram(label: &str, ram: &[u8]) -> RetailCapture {
 fn load_backup_ram(path: &Path) -> Option<Vec<u8>> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("sstate") => {
-            let st = legaia_pcsx_redux::SaveState::from_path(path).ok()?;
+            let st = psx_pcsx_redux::SaveState::from_path(path).ok()?;
             Some(st.main_ram().to_vec())
         }
         _ => {
-            let st = legaia_mednafen::SaveState::from_path(path).ok()?;
+            let st = psx_mednafen::SaveState::from_path(path).ok()?;
             let ram = st.main_ram().ok()?;
             Some(ram.to_vec())
         }

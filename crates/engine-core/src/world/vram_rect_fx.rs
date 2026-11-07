@@ -11,7 +11,7 @@
 //! This module is that seat, built the same way the sibling `4C 60`
 //! `MoveImage` family is ([`legaia_engine_field::script_vram_move::ScriptVramMove`]): the hook
 //! *queues*, and a host drains the queue against its own
-//! [`legaia_tim::Vram`] on the frame it redraws. Keeping `World` free of a
+//! [`psx_tim::Vram`] on the frame it redraws. Keeping `World` free of a
 //! renderer is why the two halves are split; both hosts already call the
 //! sibling drain at the same point, so this one sits beside it.
 //!
@@ -83,11 +83,7 @@ impl World {
     ///
     /// PORT: FUN_800468a4 (the consumer seat: `FieldScreenHost::queue_vram_rect_copies`
     /// through `legaia_engine_vm::vram_rect_copy::enqueue`)
-    pub fn apply_vram_rect_copies(
-        &mut self,
-        vram: &mut legaia_tim::Vram,
-        back_buffer: bool,
-    ) -> bool {
+    pub fn apply_vram_rect_copies(&mut self, vram: &mut psx_tim::Vram, back_buffer: bool) -> bool {
         let mut wrote = false;
         let grab = self.ambient.frame_grab;
         let hold = grab.enabled && !grab.landed;
@@ -218,14 +214,14 @@ mod tests {
         }
     }
 
-    fn stamp(vram: &mut legaia_tim::Vram, x: u16, y: u16, v: u16) {
+    fn stamp(vram: &mut psx_tim::Vram, x: u16, y: u16, v: u16) {
         vram.write_block(x, y, 1, 1, &v.to_le_bytes());
     }
 
     #[test]
     fn a_queued_copy_moves_the_rect() {
         let mut w = World::new();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         stamp(&mut vram, 10, 20, 0xBEEF);
         w.queue_vram_rect_copies(&[call((10, 20), (1, 1), (300, 40))]);
         assert!(w.apply_vram_rect_copies(&mut vram, false));
@@ -237,7 +233,7 @@ mod tests {
     #[test]
     fn the_back_buffer_flag_biases_the_source_only() {
         let mut w = World::new();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         // Same source X, one display page down.
         let bias = legaia_engine_vm::vram_rect_copy::BACK_BUFFER_Y_BIAS as u16;
         stamp(&mut vram, 10, 20 + bias, 0x1234);
@@ -249,7 +245,7 @@ mod tests {
     #[test]
     fn an_out_of_range_ordering_slot_copies_nothing() {
         let mut w = World::new();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         stamp(&mut vram, 10, 20, 0xAAAA);
         let mut c = call((10, 20), (1, 1), (300, 42));
         c.ot_slot = 0; // retail rejects slot 0 along with anything past the end
@@ -261,7 +257,7 @@ mod tests {
     #[test]
     fn a_zero_extent_copy_writes_nothing() {
         let mut w = World::new();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         stamp(&mut vram, 10, 20, 0x5555);
         w.queue_vram_rect_copies(&[call((10, 20), (0, 4), (300, 43))]);
         assert!(!w.apply_vram_rect_copies(&mut vram, false));
@@ -275,7 +271,7 @@ mod tests {
     fn a_framebuffer_copy_waits_for_the_landed_frame() {
         let mut w = World::new();
         w.enable_frame_grab(true);
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         stamp(&mut vram, 600, 300, 0x0F0F);
         w.queue_vram_rect_copies(&[
             call((0, 0), (1, 1), (512, 0)),
@@ -316,7 +312,7 @@ mod tests {
     #[test]
     fn both_calls_of_a_wide_split_land() {
         let mut w = World::new();
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         stamp(&mut vram, 5, 6, 0x0101);
         stamp(&mut vram, 7, 8, 0x0202);
         w.queue_vram_rect_copies(&[

@@ -93,7 +93,7 @@ impl LegaiaViewer {
             // Keep the CDNAME text: `self.disc` only retains the extracted
             // PROT.DAT, but the full-scene assembler needs the scene-name ->
             // block map to resolve CDNAME labels.
-            self.cdname_text = legaia_iso::image::extract_cdname_txt(&bytes);
+            self.cdname_text = psx_iso::image::extract_cdname_txt(&bytes);
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
                 bytes.len() / 1024 / 1024,
@@ -170,7 +170,7 @@ impl LegaiaViewer {
         } else if parse_prot_toc(&bytes).is_some() {
             console_log("Loading bytes as raw PROT.DAT");
             bytes
-        } else if let Ok(tim) = legaia_tim::parse(&bytes) {
+        } else if let Ok(tim) = psx_tim::parse(&bytes) {
             console_log(&format!(
                 "Loading standalone TIM ({:?}, {}x{})",
                 tim.mode,
@@ -297,7 +297,7 @@ impl LegaiaViewer {
                         }
                     };
                     if let Some(b) = bytes_for_parse
-                        && legaia_tim::parse(b).is_ok()
+                        && psx_tim::parse(b).is_ok()
                     {
                         let ts = match source {
                             tim_scan::Source::Raw => TimSource::Raw(hit.offset),

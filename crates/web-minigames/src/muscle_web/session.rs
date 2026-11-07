@@ -356,8 +356,8 @@ impl LegaiaMinigames {
         }
         let bank_prot = sfx_table::prot_index_for_slot(desc.vab_slot())?;
         let entry = entry_bytes(&self.prot, &self.entries, bank_prot)?;
-        let off = *legaia_vab::find_vabs(entry).first()?;
-        let report = legaia_vab::parse(entry, off).ok()?;
+        let off = *psx_vab::find_vabs(entry).first()?;
+        let report = psx_vab::parse(entry, off).ok()?;
         // Multi-voice cues span consecutive tone regions (`sfx-table.md`:
         // "the per-voice loop adds the voice index").
         let atr = report
@@ -369,7 +369,7 @@ impl LegaiaMinigames {
         }
         let span = report.vag_samples.get(atr.vag as usize - 1)?;
         let body = entry.get(span.byte_offset..span.byte_offset + span.size)?;
-        let pcm = legaia_vab::decode_vag_aligned(body).ok()?;
+        let pcm = psx_vab::decode_vag_aligned(body).ok()?;
         let semitones = desc.note as f64 - atr.center as f64;
         let rate = (44100.0 * 2f64.powf(semitones / 12.0)).round();
         Some((pcm, rate.clamp(4000.0, 96_000.0) as u32))

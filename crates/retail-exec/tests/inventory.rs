@@ -5,8 +5,8 @@
 //! The whole 256-slot array has to match after every operation.
 
 use crate::common::{Rng, scus_cpu};
-use legaia_retail_exec::{Cpu, GP, Stop, V0};
 use legaia_save::retail_inventory::{AddOutcome, ItemWindow, RetailInventory};
+use psx_retail_exec::{Cpu, GP, Stop, V0};
 
 const BAG: u32 = 0x8008_5958;
 const SLOTS: usize = 256;
@@ -159,7 +159,7 @@ fn a_held_direction_repeats_when_retail_repeats() {
     const HELD: u32 = 0x8007_B850;
     const EDGE: u32 = 0x8007_B874;
     const MODE: u32 = 0x8007_B83C;
-    let gp = cpu.regs.r[legaia_retail_exec::GP];
+    let gp = cpu.regs.r[psx_retail_exec::GP];
     let mut rng = Rng(0x5245_5054);
     for battle in [false, true] {
         let mut port = MenuRepeat::default();
@@ -184,11 +184,8 @@ fn a_held_direction_repeats_when_retail_repeats() {
             cpu.mem.wr32(HELD, u32::from(held));
             cpu.mem.wr32(EDGE, edge);
             cpu.mem.wr8(0x1F80_0393, dt as u8);
-            cpu.regs.r[legaia_retail_exec::GP] = gp;
-            assert_eq!(
-                cpu.call(0x8003_5C24, &[]),
-                legaia_retail_exec::Stop::Returned
-            );
+            cpu.regs.r[psx_retail_exec::GP] = gp;
+            assert_eq!(cpu.call(0x8003_5C24, &[]), psx_retail_exec::Stop::Returned);
             let retail = cpu.mem.rd32(gp + 0x86C);
             let bits = port.step(held, mask, dt);
             assert_eq!(

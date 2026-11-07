@@ -37,10 +37,10 @@ flowchart TD
 
 | Layer | What it is | Page | Crate |
 |---|---|---|---|
-| Disc | Raw 2352-byte sectors, ISO9660 directory | [`disc.md`](disc.md) | `legaia-iso` |
+| Disc | Raw 2352-byte sectors, ISO9660 directory | [`disc.md`](disc.md) | `psx-iso` |
 | Archive | `PROT.DAT` table of contents (TOC): start sector + size per entry | [`prot.md`](prot.md) | `legaia-prot` |
 | Names | `CDNAME.TXT` block labels for PROT entries | [`cdname.md`](cdname.md) | `legaia-prot` |
-| Compression | Legaia LZS, applied per payload | [`lzs.md`](lzs.md) | `legaia-lzs` |
+| Compression | Legaia LZS, applied per payload | [`lzs.md`](lzs.md) | `psx-lzs` |
 | Chunk stream | `[type << 24 \| size][data]` chunks up to a zero-size terminator | [`data-field.md`](data-field.md) | `legaia-container-formats` |
 | Dispatch | 8-bit type byte selects the handler (TIM = 0, TMD = 2, MES = 4, ...) | [`asset-type.md`](asset-type.md) | `legaia-container-formats` |
 | Pack | `u32 count`, `u32 word_offsets[count]`, members back to back | [`pack.md`](pack.md) | `legaia-container-formats` |

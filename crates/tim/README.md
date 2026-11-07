@@ -1,4 +1,4 @@
-# legaia-tim
+# psx-tim
 
 PSX TIM (texture image) parser, PNG exporter, and PNG->TIM encoder (for
 same-size texture replacement), plus a software model of the PSX VRAM frame

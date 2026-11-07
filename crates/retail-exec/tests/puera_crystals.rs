@@ -4,7 +4,7 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_module_camera::puera_crystal_seats;
-use legaia_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
+use psx_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -67,7 +67,7 @@ fn the_crystals_land_where_retail_lands_them() {
         assert_eq!(draws.get(), n, "draws: round {round}");
         for (i, seat) in seats.iter().enumerate() {
             let p = PARTS + i as u32 * 0x100;
-            let rd = |cpu: &mut legaia_retail_exec::Cpu, o: u32| cpu.mem.rd16(p + o) as i16;
+            let rd = |cpu: &mut psx_retail_exec::Cpu, o: u32| cpu.mem.rd16(p + o) as i16;
             let retail = (
                 [rd(&mut cpu, 0x14), rd(&mut cpu, 0x16), rd(&mut cpu, 0x18)],
                 [rd(&mut cpu, 0x24), rd(&mut cpu, 0x26), rd(&mut cpu, 0x28)],

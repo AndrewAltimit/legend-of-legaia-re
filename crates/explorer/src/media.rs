@@ -4,18 +4,18 @@
 //! Both are read as raw 2352-byte Mode 2 sectors, which only a disc image
 //! has: a Form 1 copy in an extracted folder has lost the Form 2 audio and
 //! the per-sector subheaders (`crates/xa/README.md`). XA files are
-//! demultiplexed per `(file, channel)` with `legaia_xa::demux` and decoded
-//! with `legaia_xa::decode`; movies go through `legaia_mdec`'s
+//! demultiplexed per `(file, channel)` with `psx_xa::demux` and decoded
+//! with `psx_xa::decode`; movies go through `psx_mdec`'s
 //! `StrAvDemuxer` (frame bitstreams, the sector-stride frame rate and the
 //! dominant XA track) and decode one frame at a time with the Iki decoder.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
-use legaia_mdec::str_av::{StrAudio, StrAv, StrAvDemuxer};
-use legaia_xa::demux::ChannelStream;
-use legaia_xa::{BitsPerSample, Channels, DecodeOptions};
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
+use psx_mdec::str_av::{StrAudio, StrAv, StrAvDemuxer};
+use psx_xa::demux::ChannelStream;
+use psx_xa::{BitsPerSample, Channels, DecodeOptions};
 
 use crate::library::IsoFile;
 
@@ -72,7 +72,7 @@ impl XaTrack {
 /// Demultiplex the XA file `f` of disc image `bin` into its channels.
 pub fn xa_channels(bin: &Path, f: &IsoFile) -> Result<Vec<ChannelStream>> {
     let mut disc = RawDisc::open(bin)?;
-    legaia_xa::demux::demux_disc_range(&mut disc, f.lba, sectors(f))
+    psx_xa::demux::demux_disc_range(&mut disc, f.lba, sectors(f))
         .with_context(|| format!("demultiplexing {}", f.path))
 }
 
@@ -89,7 +89,7 @@ pub fn decode_channel(ch: &ChannelStream) -> Result<XaTrack> {
     } else {
         BitsPerSample::Four
     };
-    let (pcm, _) = legaia_xa::decode(
+    let (pcm, _) = psx_xa::decode(
         &ch.audio,
         DecodeOptions {
             channels,
@@ -131,7 +131,7 @@ pub fn soundtrack_from(audio: &StrAudio, secs: f64) -> Vec<i16> {
 
 /// Write `pcm` as a 16-bit WAV.
 pub fn write_wav(path: &Path, pcm: &[i16], channels: Channels, rate: u32) -> Result<()> {
-    legaia_xa::write_wav(path, pcm, channels, rate)
+    psx_xa::write_wav(path, pcm, channels, rate)
 }
 
 #[cfg(test)]

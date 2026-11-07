@@ -34,7 +34,7 @@
 //! this module only resolves and validates the byte streams.
 
 use anyhow::{Result, bail};
-use legaia_bytes::u32_le;
+use psx_bytes::u32_le;
 
 use crate::menu_windows::{MENU_OVERLAY_BASE_VA, MENU_WINDOW_COUNT};
 

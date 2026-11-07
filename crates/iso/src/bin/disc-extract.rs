@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use legaia_iso::iso9660;
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
-use legaia_iso::region;
+use psx_iso::iso9660;
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
+use psx_iso::region;
 use sha2::{Digest, Sha256};
 
 /// Known-good SHA-256 hashes for supported disc images.

@@ -18,7 +18,7 @@ use legaia_engine_battle::battle_status_clut::StatusClutState;
 use legaia_engine_battle_vm::battle_action::BattleEndCause;
 use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// One party member's facial-animation state for the current fight.
 #[derive(Debug, Clone)]

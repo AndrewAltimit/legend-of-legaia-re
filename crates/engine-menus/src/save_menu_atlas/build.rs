@@ -29,7 +29,7 @@ pub fn build_atlas(
     let (clut_ext_tim, prot_dat_bytes) = split_leading_clut_ext(prot_dat_bytes);
     // --- Slot pills from PROT 0899 ---
     let pill_tim = title_pak::extract_overlay_save_menu_tim(prot_0899_bytes)?;
-    let pill_parsed = legaia_tim::parse(pill_tim.bytes)?;
+    let pill_parsed = psx_tim::parse(pill_tim.bytes)?;
     let pill_w = pill_parsed.pixel_width() as u32;
     let pill_h = pill_parsed.image.h as u32;
     if pill_w != ATLAS_WIDTH || pill_h != ATLAS_HEIGHT {
@@ -41,7 +41,7 @@ pub fn build_atlas(
             ATLAS_HEIGHT
         );
     }
-    let pill_rgba = legaia_tim::decode_rgba8(&pill_parsed, PILL_CLUT)?;
+    let pill_rgba = psx_tim::decode_rgba8(&pill_parsed, PILL_CLUT)?;
 
     // --- Panel chrome from PROT.DAT[0x018E0] ---
     // `prot_dat_bytes` is a slice that already starts at the TIM
@@ -49,7 +49,7 @@ pub fn build_atlas(
     // `prot_dat_raw_bytes(OVERLAY_SYSTEM_UI_TIM_OFFSET, …)`), so use
     // the slice-relative parser to avoid double-applying the offset.
     let panel_tim = title_pak::extract_overlay_system_ui_tim_from_slice(prot_dat_bytes)?;
-    let panel_parsed = legaia_tim::parse(panel_tim.bytes)?;
+    let panel_parsed = psx_tim::parse(panel_tim.bytes)?;
     let panel_src_w = panel_parsed.pixel_width() as u32;
     let panel_src_h = panel_parsed.image.h as u32;
     if panel_src_w != 256 || panel_src_h != 192 {
@@ -59,9 +59,9 @@ pub fn build_atlas(
             panel_src_h
         );
     }
-    let panel_rgba = legaia_tim::decode_rgba8(&panel_parsed, PANEL_CLUT_ROW)?;
+    let panel_rgba = psx_tim::decode_rgba8(&panel_parsed, PANEL_CLUT_ROW)?;
     // Cursor decoded with a different CLUT row of the same TIM.
-    let cursor_rgba = legaia_tim::decode_rgba8(&panel_parsed, CURSOR_CLUT_ROW)?;
+    let cursor_rgba = psx_tim::decode_rgba8(&panel_parsed, CURSOR_CLUT_ROW)?;
 
     // --- Compose into single 256x256 atlas ---
     let mut out = vec![0u8; (ATLAS_WIDTH * ATLAS_BAKED_HEIGHT * 4) as usize];
@@ -111,7 +111,7 @@ pub fn build_atlas(
     // The dark class-0 skin (widget record 0x43): the same nine cells one
     // skin row down, through sub-palette 3. The fill stays raw - the frame
     // builder shades it row by row, as `FUN_8002BDC4`'s vertex greys do.
-    let dark_rgba = legaia_tim::decode_rgba8(&panel_parsed, CLASS0_DARK_CLUT_ROW)?;
+    let dark_rgba = psx_tim::decode_rgba8(&panel_parsed, CLASS0_DARK_CLUT_ROW)?;
     for cell in ATLAS_RECTS_CLASS0_DARK {
         copy_rect(&mut out, ATLAS_WIDTH, &dark_rgba, panel_src_w, cell, cell);
     }
@@ -157,7 +157,7 @@ pub fn build_atlas(
 
     // Tab-banner plaque pieces - CLUT row 12 (carved brown ramp; the
     // scan_panel_prims pin over the menu_status_town capture).
-    let tab_rgba = legaia_tim::decode_rgba8(
+    let tab_rgba = psx_tim::decode_rgba8(
         &panel_parsed,
         title_pak::OVERLAY_SYSTEM_UI_TAB_CLUT_ROW as usize,
     )?;
@@ -218,7 +218,7 @@ pub fn build_atlas(
     // (the `0x800732a4` icon-record palette; pixel-exact vs the golden
     // menu_status_town capture). The status page draws these as sprites
     // in place of ASCII glyphs.
-    let label_rgba = legaia_tim::decode_rgba8(
+    let label_rgba = psx_tim::decode_rgba8(
         &panel_parsed,
         title_pak::OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW as usize,
     )?;
@@ -247,7 +247,7 @@ pub fn build_atlas(
     // Status-page AP gauge pieces + red value digits - same sheet, CLUT
     // row 4 (the status gauge palette; pixel-exact vs the golden
     // menu_status_town capture at the FUN_801D33D8 bar anchor).
-    let gauge_rgba = legaia_tim::decode_rgba8(
+    let gauge_rgba = psx_tim::decode_rgba8(
         &panel_parsed,
         title_pak::OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW as usize,
     )?;
@@ -297,7 +297,7 @@ pub fn build_atlas(
     // Equipment pictograms - same sheet, CLUT row 8 (the gold icon
     // ramp; the `0x800732a4` UV/CLUT table records for icon codes
     // 0x24/0x22/0x23/0x25/0x46).
-    let icon_rgba = legaia_tim::decode_rgba8(
+    let icon_rgba = psx_tim::decode_rgba8(
         &panel_parsed,
         title_pak::OVERLAY_SYSTEM_UI_ICON_CLUT_ROW as usize,
     )?;
@@ -413,11 +413,11 @@ pub fn menu_font_cells(
     let mut cells = Vec::new();
     if let Some(tim) = menu_glyph_tim
         .and_then(|t| legaia_ui_formats::menu_glyph_atlas::extract_from_tim_slice(t).ok())
-        .and_then(|t| legaia_tim::parse(t.bytes).ok())
+        .and_then(|t| psx_tim::parse(t.bytes).ok())
     {
         let w = tim.pixel_width() as u32;
         if let Ok(rgba) =
-            legaia_tim::decode_rgba8(&tim, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)
+            psx_tim::decode_rgba8(&tim, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)
         {
             for d in 0..10u32 {
                 cells.push(SpriteCellSrc {
@@ -444,7 +444,7 @@ pub fn menu_font_cells(
         // at `0x80034C80`, `addiu v1,v1,0x7f86` at `0x8003C260`) - a tier is
         // a CLUT pick, so each ink brings its own outline and mid-tone.
         for staging in 0..NUMERAL_INK_IDS {
-            let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 6 + staging as usize) else {
+            let Ok(rgba) = psx_tim::decode_rgba8(&tim, 6 + staging as usize) else {
                 continue;
             };
             for d in 0..10u32 {
@@ -480,11 +480,11 @@ pub fn menu_font_cells(
     let (_, sheet) = split_leading_clut_ext(system_ui);
     if let Some(tim) = title_pak::extract_overlay_system_ui_tim_from_slice(sheet)
         .ok()
-        .and_then(|t| legaia_tim::parse(t.bytes).ok())
+        .and_then(|t| psx_tim::parse(t.bytes).ok())
     {
         let w = tim.pixel_width() as u32;
         let mut push = |id: u16, clut: usize, rect: (u32, u32, u32, u32)| {
-            if let Ok(rgba) = legaia_tim::decode_rgba8(&tim, clut) {
+            if let Ok(rgba) = psx_tim::decode_rgba8(&tim, clut) {
                 cells.push(SpriteCellSrc {
                     id,
                     w: rect.2,

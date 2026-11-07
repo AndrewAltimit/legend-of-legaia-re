@@ -69,18 +69,18 @@ impl Vfs for DirVfs {
 }
 
 /// Vfs backed by a PSX `.bin` disc image. Reads files directly from the
-/// ISO9660 filesystem using `legaia-iso`.
+/// ISO9660 filesystem using `psx-iso`.
 ///
 /// Names are normalised to forward-slash, case-insensitive. Both
 /// `"PROT.DAT"` and `"prot.dat"` resolve to the same entry.
 ///
-/// `legaia-iso` is `cfg(not(target_arch = "wasm32"))` only - DiscVfs is
+/// `psx-iso` is `cfg(not(target_arch = "wasm32"))` only - DiscVfs is
 /// only available on native targets. WASM builds keep `MemoryVfs`.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct DiscVfs {
-    raw: Mutex<legaia_iso::raw::RawDisc>,
+    raw: Mutex<psx_iso::raw::RawDisc>,
     /// Normalised lowercase forward-slash path → directory record.
-    files: HashMap<String, legaia_iso::iso9660::DirectoryRecord>,
+    files: HashMap<String, psx_iso::iso9660::DirectoryRecord>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -90,11 +90,11 @@ impl DiscVfs {
     /// Subsequent reads are O(1) lookups into the file map plus a sector
     /// fetch from the disc.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let mut raw = legaia_iso::raw::RawDisc::open(path.as_ref())
+        let mut raw = psx_iso::raw::RawDisc::open(path.as_ref())
             .with_context(|| format!("open disc image {}", path.as_ref().display()))?;
-        let volume = legaia_iso::iso9660::read_volume(&mut raw).context("read ISO9660 volume")?;
+        let volume = psx_iso::iso9660::read_volume(&mut raw).context("read ISO9660 volume")?;
         let walked =
-            legaia_iso::iso9660::walk_files(&mut raw, &volume.root).context("walk ISO9660 tree")?;
+            psx_iso::iso9660::walk_files(&mut raw, &volume.root).context("walk ISO9660 tree")?;
         let mut files = HashMap::with_capacity(walked.len());
         for (path_in_iso, rec) in walked {
             let key = normalise_disc_name(&path_in_iso);
@@ -118,8 +118,8 @@ impl DiscVfs {
     }
 
     /// Read raw bytes for a logical file name.
-    fn read_record(&self, rec: &legaia_iso::iso9660::DirectoryRecord) -> Result<Vec<u8>> {
-        let sector_count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+    fn read_record(&self, rec: &psx_iso::iso9660::DirectoryRecord) -> Result<Vec<u8>> {
+        let sector_count = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
         let mut buf = Vec::with_capacity(rec.size as usize);
         lock_poison_tolerant(&self.raw)
             .read_user_data(rec.lba, sector_count, &mut buf)

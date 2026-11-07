@@ -3,7 +3,7 @@
 //! Each `tests/<name>.rs` is a module here rather than its own binary
 //! (`autotests = false` in Cargo.toml): one compile and one link instead of
 //! one per file. Run a single file's tests with
-//! `cargo test -p legaia-mdec --test integration <name>::`.
+//! `cargo test -p psx-mdec --test integration <name>::`.
 
 mod fmv_ladder;
 mod mdec_robustness_fuzz;

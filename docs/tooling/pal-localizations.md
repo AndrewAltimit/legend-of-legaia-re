@@ -518,7 +518,7 @@ tables (the `MOV`/`XA` directory extents live after `PROT.DAT`); the root +
 pure relocation needs no ECC recompute; EDC/ECC are recomputed only for sectors
 whose user data changes.
 
-**Layers.** The disc-level relayout is `legaia_iso::relayout::grow_prot_dat`
+**Layers.** The disc-level relayout is `psx_iso::relayout::grow_prot_dat`
 (generic ISO9660 + ECMA-130; embeds no game bytes) driven by
 `DiscPatcher::grow_prot_entries` (rebuilds `PROT.DAT` with the PROT-relative TOC
 shift). Above it, the importer builds each grown scene-bundle payload: because a

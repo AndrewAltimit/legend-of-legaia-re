@@ -65,8 +65,8 @@ impl Backdrop {
 
     /// The entry's own VRAM, built the way a viewer builds it: every TIM the
     /// entry carries, uploaded to the framebuffer slot its header names.
-    fn vram(&self) -> legaia_tim::Vram {
-        let mut vram = legaia_tim::Vram::new();
+    fn vram(&self) -> psx_tim::Vram {
+        let mut vram = psx_tim::Vram::new();
         let scan = legaia_container_formats::tim_scan::scan_entry(&self.raw);
         for (source, hit) in &scan.hits {
             let buf: Option<&[u8]> = match source {
@@ -76,7 +76,7 @@ impl Backdrop {
                 }
             };
             if let Some(b) = buf
-                && let Ok(tim) = legaia_tim::parse(b)
+                && let Ok(tim) = psx_tim::parse(b)
             {
                 vram.upload_tim(&tim);
             }

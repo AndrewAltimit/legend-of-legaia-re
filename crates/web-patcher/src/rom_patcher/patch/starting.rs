@@ -38,7 +38,7 @@ pub(super) fn starting_items(run: &mut PatchRun<'_>) -> StepResult {
                 rep.items_set
             ));
         } else {
-            let names = legaia_iso::iso9660::read_file_in_image(run.patcher.image(), "SCUS_942.54")
+            let names = psx_iso::iso9660::read_file_in_image(run.patcher.image(), "SCUS_942.54")
                 .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
             let list: Vec<String> = rep
                 .items

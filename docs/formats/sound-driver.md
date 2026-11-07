@@ -74,8 +74,8 @@ layout. The chunk payloads, pinned from the disc:
 The decisive invariant: **type-0 + type-1 reconstitute one contiguous VAB**
 whose header `total_size` (`+0x0C`) equals `chunk[0].size + chunk[1].size`.
 Byte-verified across `0877`..=`0885` (e.g. `0877`: `0x2820 + 0x1BA90 ==
-0x1E2B0`); the reconstituted VAB parses with `legaia_vab` and the terminator
-SEQ with `legaia_seq`.
+0x1E2B0`); the reconstituted VAB parses with `psx_vab` and the terminator
+SEQ with `psx_seq`.
 
 The **type-1 chunk payload** is the VAB's sample pool. On the *graphics*
 battle-init walk, `FUN_8001FE70`'s type-1 handler is the TIM/CLUT upload

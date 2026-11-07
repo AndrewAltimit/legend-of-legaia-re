@@ -231,7 +231,7 @@ struct BattleActorRender {
 pub(crate) struct BattleRender {
     /// Battle VRAM (stage + flame atlas + monster/party texture bands). The
     /// page uploads this for the fight and restores the field VRAM after.
-    pub(crate) vram: legaia_tim::Vram,
+    pub(crate) vram: psx_tim::Vram,
     backdrop: Option<BattleMesh>,
     /// The backdrop's drawn slot 1, one copy ([`stage_slot_mesh`]): the
     /// object the backdrop draw spins, on a keeping stage the horizon mist
@@ -302,7 +302,7 @@ impl BattleRender {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_summon_actor(
         &mut self,
-        vram: legaia_tim::Vram,
+        vram: psx_tim::Vram,
         tex_slot: u8,
         actor_idx: usize,
         mesh: legaia_tmd::mesh::VramMesh,
@@ -331,7 +331,7 @@ impl BattleRender {
     /// the VRAM its texture was injected into and replace whatever mesh the
     /// seat drew (the downed monster it takes over from). The caller bumps
     /// the generation so the page re-uploads the battle scene.
-    fn push_wave_monster(&mut self, vram: legaia_tim::Vram, render: BattleActorRender) {
+    fn push_wave_monster(&mut self, vram: psx_tim::Vram, render: BattleActorRender) {
         self.vram = vram;
         self.actors.retain(|a| a.actor_idx != render.actor_idx);
         self.actors.push(render);

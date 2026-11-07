@@ -6,7 +6,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_arm_ticks::water_hazard_tick;
 use legaia_engine_cast::cast_module_ticks::{CastActorState, CastModuleCtx};
-use legaia_retail_exec::{A0, Stop, V0};
+use psx_retail_exec::{A0, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

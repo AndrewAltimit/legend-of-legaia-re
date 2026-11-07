@@ -3,7 +3,7 @@
 //! Each `tests/<name>.rs` is a module here rather than its own binary
 //! (`autotests = false` in Cargo.toml): one compile and one link instead of
 //! one per file. Run a single file's tests with
-//! `cargo test -p legaia-mednafen --test integration <name>::`.
+//! `cargo test -p psx-mednafen --test integration <name>::`.
 
 mod dispatch_table;
 mod gte_projection_real;

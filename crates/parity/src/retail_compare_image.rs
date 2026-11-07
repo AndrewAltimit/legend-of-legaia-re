@@ -149,7 +149,7 @@ impl Frame {
             for x in 0..FRAME_W {
                 let px = |dx: usize| {
                     let o = (vy * 1024 + x0 as usize + 2 * x + dx) * 2;
-                    legaia_mednafen::bgr555_to_rgba8(u16::from_le_bytes([vram[o], vram[o + 1]]))
+                    psx_mednafen::bgr555_to_rgba8(u16::from_le_bytes([vram[o], vram[o + 1]]))
                 };
                 let (a, b) = (px(0), px(1));
                 rgb.extend((0..3).map(|c| (u16::from(a[c]) + u16::from(b[c])).div_ceil(2) as u8));
@@ -171,8 +171,7 @@ impl Frame {
             }
             for x in 0..FRAME_W {
                 let o = (vy * 1024 + x0 as usize + x) * 2;
-                let px =
-                    legaia_mednafen::bgr555_to_rgba8(u16::from_le_bytes([vram[o], vram[o + 1]]));
+                let px = psx_mednafen::bgr555_to_rgba8(u16::from_le_bytes([vram[o], vram[o + 1]]));
                 rgb.extend_from_slice(&px[..3]);
             }
         }

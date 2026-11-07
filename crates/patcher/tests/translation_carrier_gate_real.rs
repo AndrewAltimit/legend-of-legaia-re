@@ -25,10 +25,10 @@
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::export::SceneManText;
 use legaia_translate::pack::Entry;
 use legaia_translate::{ImportPhase, import_pack_phase, segments};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -132,7 +132,7 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     // SCUS lives at a fixed early-disc extent; find it by name via the ISO walk.
     // (The importer only writes it through `patch_named_file`.)
     let (scus_lba, scus_size) =
-        legaia_iso::iso9660::find_file_in_image(&original, "SCUS_942.54").expect("SCUS in image");
+        psx_iso::iso9660::find_file_in_image(&original, "SCUS_942.54").expect("SCUS in image");
     for s in 0..scus_size.div_ceil(2048) {
         allowed.insert(scus_lba + s);
     }
@@ -210,7 +210,7 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
              - a binary asset bank was corrupted"
         );
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(b),
+            psx_iso::write::mode2_form1_sector_is_valid(b),
             "touched sector {i} invalid after language import"
         );
     }

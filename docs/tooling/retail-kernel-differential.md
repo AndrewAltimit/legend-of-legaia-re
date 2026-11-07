@@ -14,7 +14,7 @@ hand reading between the two sides. No Sony bytes are committed; without
 `LEGAIA_DISC_BIN` the tests skip.
 
 ```bash
-cargo test -p legaia-retail-exec --profile dev-fast --test integration
+cargo test -p psx-retail-exec --profile dev-fast --test integration
 ```
 
 ## What it can run

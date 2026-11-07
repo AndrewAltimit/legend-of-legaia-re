@@ -67,7 +67,7 @@ impl FieldSceneAnim {
 
     /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
     /// `vram`. Returns `true` when texels changed.
-    pub fn tick(&mut self, vsyncs: u32, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn tick(&mut self, vsyncs: u32, vram: &mut psx_tim::Vram) -> bool {
         let dt = u32::from(self.frame_step.max(1));
         let mut game_ticks = 0u32;
         for _ in 0..vsyncs.min(64) {

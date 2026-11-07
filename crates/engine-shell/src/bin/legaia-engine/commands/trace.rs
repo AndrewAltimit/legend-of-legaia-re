@@ -438,7 +438,7 @@ struct ResolvedModeTrace {
 
 #[cfg(feature = "oracles")]
 fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTrace> {
-    use legaia_ram_image::ScenarioManifest;
+    use psx_ram_image::ScenarioManifest;
 
     match (args.scenario, args.scene) {
         (Some(label), _) => {
@@ -605,7 +605,7 @@ struct ResolvedAudioTrace {
 
 #[cfg(feature = "oracles")]
 fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudioTrace> {
-    use legaia_ram_image::ScenarioManifest;
+    use psx_ram_image::ScenarioManifest;
 
     // The retail-JSONL path is the multi-frame mode; it doesn't require a
     // scenario lookup because the JSONL is self-contained.
@@ -856,7 +856,7 @@ struct ResolvedPcmTrace {
 
 #[cfg(feature = "oracles")]
 fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace> {
-    use legaia_ram_image::ScenarioManifest;
+    use psx_ram_image::ScenarioManifest;
 
     // Explicit `--retail-save` always wins; needs `--scene` to know what
     // to boot.

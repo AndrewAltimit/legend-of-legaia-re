@@ -437,7 +437,7 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     }
 
     let mut resources = host.resources.take().expect("scene resources built");
-    let read_row = |vram: &legaia_tim::Vram, (x, y): (i16, i16)| -> Vec<u16> {
+    let read_row = |vram: &psx_tim::Vram, (x, y): (i16, i16)| -> Vec<u16> {
         (0..16)
             .map(|i| vram.pixel(x as usize + i, y as usize))
             .collect()

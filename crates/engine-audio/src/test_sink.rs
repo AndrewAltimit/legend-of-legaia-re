@@ -165,7 +165,7 @@ mod tests {
         block[1] = 0x07; // loop start | repeat | end
         spu.ram.set_direction(TransferDirection::CpuToSpu);
         assert_eq!(spu.ram.write_at(SPU_ADDR, &block), block.len());
-        let tone = legaia_vab::VagAtr {
+        let tone = psx_vab::VagAtr {
             prior: 0,
             // Reverb-flagged (`mode & 4`): the key-on routes the voice into
             // the Studio C send, as most retail BGM tones are.
@@ -203,15 +203,15 @@ mod tests {
                 mvol: 127,
                 mpan: 64,
                 tones: vec![tone],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         }
     }
 
     /// A SEQ (ppqn 480, 120 BPM) holding one note for 2400 ticks = 2.5 s.
-    fn held_note_seq() -> legaia_seq::Seq {
+    fn held_note_seq() -> psx_seq::Seq {
         let mut buf = Vec::new();
-        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&psx_seq::SEQ_MAGIC);
         buf.extend_from_slice(&[0x00, 0x01]); // version
         buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
         buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo 500000 us/qn
@@ -221,7 +221,7 @@ mod tests {
         buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
         buf.extend_from_slice(&[0x92, 0x60, 60, 0]); // +2400: note off
         buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
-        legaia_seq::Seq::parse(&buf).unwrap()
+        psx_seq::Seq::parse(&buf).unwrap()
     }
 
     /// Closing the sequencer gate keys off what is sounding - retail's
@@ -495,7 +495,7 @@ mod tests {
             sink.play_xa(
                 vec![12_000i16; 2_000],
                 crate::SPU_INTERNAL_RATE,
-                legaia_xa::Channels::Mono,
+                psx_xa::Channels::Mono,
                 false,
                 0x4000,
             );
@@ -544,7 +544,7 @@ mod tests {
         sink.play_xa(
             pcm,
             crate::SPU_INTERNAL_RATE,
-            legaia_xa::Channels::Stereo,
+            psx_xa::Channels::Stereo,
             false,
             0x4000,
         );
@@ -592,7 +592,7 @@ mod tests {
             sink.play_xa(
                 pcm,
                 crate::SPU_INTERNAL_RATE,
-                legaia_xa::Channels::Stereo,
+                psx_xa::Channels::Stereo,
                 false,
                 0x4000,
             );

@@ -19,7 +19,7 @@ This script tries three search strategies in order:
    as `LzsContainer` or `Pochi*` filler (most common font carriers in
    the disc layout), LZS-decompress and re-run the slice search against
    the decoded bytes. Requires the `lzs-decode` binary on `PATH` (built
-   via `cargo build -p legaia-lzs --release`).
+   via `cargo build -p psx-lzs --release`).
 
 Run from the repo root:
     python3 scripts/asset-investigation/find-font-carrier.py
@@ -166,7 +166,7 @@ def main() -> int:
 
     # LZS pass - best-effort, requires lzs-decode on PATH.
     if not shutil.which("lzs-decode"):
-        print("\nskipping LZS pass: `lzs-decode` not on PATH (build via `cargo build -p legaia-lzs --release` and add target/release to PATH)")
+        print("\nskipping LZS pass: `lzs-decode` not on PATH (build via `cargo build -p psx-lzs --release` and add target/release to PATH)")
         return 0 if raw_hits else 1
 
     print("\nLZS pass on candidate entries...")

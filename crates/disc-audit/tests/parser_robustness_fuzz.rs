@@ -6,7 +6,7 @@
 //! The end-user model is "ship the engine, the user supplies their own disc
 //! image" - so any parser reachable from raw disc bytes must degrade to an
 //! error on a bad dump, a foreign-region disc, or a corrupted save, never a
-//! panic. These parsers already route reads through `legaia-bytes` checked
+//! panic. These parsers already route reads through `psx-bytes` checked
 //! readers and bounds-check before slicing; this test is the standing guard
 //! that keeps it that way. Deterministic (seeded) and disc-free, so it runs
 //! in the normal `cargo test` set.
@@ -91,20 +91,20 @@ fn parsers_never_panic_on_malformed_input() {
     });
     // TIM: magic 0x00000010.
     total += run("tim::parse", &[0x10, 0x00, 0x00, 0x00], |b| {
-        let _ = legaia_tim::parse(b);
+        let _ = psx_tim::parse(b);
     });
     total += run("tim::parse_strict", &[0x10, 0x00, 0x00, 0x00], |b| {
-        let _ = legaia_tim::parse_strict(b);
+        let _ = psx_tim::parse_strict(b);
     });
     // VAB: magic 'pBAV'.
     total += run("vab::parse", &[0x70, 0x42, 0x41, 0x56], |b| {
-        let _ = legaia_vab::parse(b, 0);
+        let _ = psx_vab::parse(b, 0);
     });
     total += run("vab::parse_header", &[0x70, 0x42, 0x41, 0x56], |b| {
-        let _ = legaia_vab::parse_header(b, 0);
+        let _ = psx_vab::parse_header(b, 0);
     });
     total += run("vab::decode_vag", &[], |b| {
-        let _ = legaia_vab::decode_vag(b);
+        let _ = psx_vab::decode_vag(b);
     });
     // ANM: no hard magic - a leading count word drives the table walk.
     total += run("anm::parse", &[], |b| {
@@ -116,11 +116,11 @@ fn parsers_never_panic_on_malformed_input() {
     });
     // LZS container + raw decompress across a range of declared output sizes.
     total += run("lzs::parse_container", &[], |b| {
-        let _ = legaia_lzs::parse_container(b);
+        let _ = psx_lzs::parse_container(b);
     });
     total += run("lzs::decompress", &[], |b| {
         for sz in [0usize, 1, 64, 4096, 65536] {
-            let _ = legaia_lzs::decompress(b, sz);
+            let _ = psx_lzs::decompress(b, sz);
         }
     });
     // MDT record table.
@@ -129,7 +129,7 @@ fn parsers_never_panic_on_malformed_input() {
     });
     // SEQ.
     total += run("seq::parse_header", &[], |b| {
-        let _ = legaia_seq::parse_header(b);
+        let _ = psx_seq::parse_header(b);
     });
     // Save formats (engine-owned, but loading a corrupted / foreign save
     // must not panic either).

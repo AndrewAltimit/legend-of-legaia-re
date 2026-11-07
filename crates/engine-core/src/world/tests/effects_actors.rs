@@ -348,7 +348,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
     );
 
     // Seed a recognisable source rect and apply the queued stamp.
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let mut bytes = Vec::new();
     for row in 0..16u16 {
         for col in 0..6u16 {
@@ -377,7 +377,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
 #[test]
 fn script_vram_move_rejects_degenerate_rects() {
     let mut world = World::new();
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     assert!(!world.apply_script_vram_moves(&mut vram), "empty queue");
     world.queue_script_vram_move([10, 10, 0, 4, 20, 20]); // w == 0
     world.queue_script_vram_move([10, 10, 4, -1, 20, 20]); // h < 0
@@ -404,7 +404,7 @@ fn op_4c_d4_d5_set_and_clear_the_mask_bit() {
         other => panic!("4C D4 should advance 6 bytes, got {other:?}"),
     }
     assert_eq!(world.ambient.script_vram_stp, vec![(176, 507, true)]);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let mut row = Vec::new();
     for w in [0u16, 0x0DA6, 0x8000, 0x1524] {
         row.extend_from_slice(&w.to_le_bytes());
@@ -471,7 +471,7 @@ fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
     }];
     world.queue_battle_part_scrolls(&mut parts);
     assert_eq!(world.battle.vram_scrolls.len(), 1);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     // Row y holds the value y in every halfword of the rect.
     for y in 0x70..0xF0u16 {
         let row: Vec<u8> = (0..8).flat_map(|_| y.to_le_bytes()).collect();

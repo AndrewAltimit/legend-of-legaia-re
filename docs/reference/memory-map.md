@@ -475,7 +475,7 @@ Neither a "title overlay at `0x801C0000`" nor a "menu overlay = PROT 0896 at `0x
 | `0x801D0E60..0x801D0E9B` |  | The **hardware-register pointer block**. Fifteen words, loaded by `FUN_801CFFDC` and its siblings: DMA channels 0-2 (`0x1F801080..0x1F8010B8`), MDEC0 / MDEC1 (`0x1F801820` / `0x1F801824` at `0x801D0E90` / `0x801D0E94`) and DPCR (`0x1F8010F0` at `0x801D0E98`). A pointer block, not a strided table. |
 | `0x801D19A0` |  | The play loop's **decode context**. `0x50` bytes, formed by `801cf10c addiu a0,v0,0x19a0` as the argument to the ring/rect init and passed to every play-loop helper. Head of the image's uninitialised data region, which its loader transfers as part of the sector extent - so the region reads as a zero hole in the extracted entry. |
 | `0x801D19F0` / `0x801D91F0` |  | The two **slice staging buffers**. `0x7800` bytes each, stored to `ctx+0x0C` / `ctx+0x10` and ping-ponged on `ctx+0x14`. |
-| `0x801E09F0` / `0x801E0A00` |  | Four globals, then the **STRv2 VLC table**. The globals include the demuxer's end-frame latch and the decoder selector; the `0x11000`-byte table destination ends flush against its unpacker `FUN_801F1A00`, whose packed source is at `0x801F1AE8` in the same image. Port: `legaia_mdec::strv2_table`. |
+| `0x801E09F0` / `0x801E0A00` |  | Four globals, then the **STRv2 VLC table**. The globals include the demuxer's end-frame latch and the decoder selector; the `0x11000`-byte table destination ends flush against its unpacker `FUN_801F1A00`, whose packed source is at `0x801F1AE8` in the same image. Port: `psx_mdec::strv2_table`. |
 
 ### Fishing (PROT 0972)
 

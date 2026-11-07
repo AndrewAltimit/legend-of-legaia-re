@@ -89,7 +89,7 @@ const ENTRY_STREAM_OFF: usize = 0x8C;
 const TABLE_WORD_BIAS: usize = 0x12;
 
 fn u32_at(b: &[u8], off: usize) -> Result<u32> {
-    legaia_bytes::u32_le(b, off).with_context(|| format!("read u32 at +{off:#x}"))
+    psx_bytes::u32_le(b, off).with_context(|| format!("read u32 at +{off:#x}"))
 }
 
 /// Castable-class ids: the entry family the AI spell menu is built from.

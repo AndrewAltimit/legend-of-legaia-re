@@ -13,7 +13,7 @@ use legaia_actor_formats::mesh_raster::{self, RasterOptions};
 use legaia_engine_scene::expansion_map::detail::field_resources;
 use legaia_engine_scene::expansion_map::footprint::{footprint, hull_extent};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// One mesh of a scene's geometry pack, measured.
 #[derive(Debug, Clone)]

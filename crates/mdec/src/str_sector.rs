@@ -1,7 +1,7 @@
 //! PSX STR video-sector parser and frame assembler.
 //!
 //! Each PSX STR file is a sequence of Mode 2 Form 1 CD-ROM sectors. After
-//! stripping the Mode 2 subheader (handled by the `legaia-iso` disc reader),
+//! stripping the Mode 2 subheader (handled by the `psx-iso` disc reader),
 //! each sector's 2048-byte data area has the canonical PSX-SPX layout:
 //!
 //! ```text

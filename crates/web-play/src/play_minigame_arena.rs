@@ -221,7 +221,7 @@ impl LegaiaRuntime {
 
     /// The two hub-page TIMs out of the dome data container (extraction
     /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`), CLUTs as uploaded.
-    fn muscle_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+    fn muscle_hub_tims(&self) -> Option<(psx_tim::Tim, psx_tim::Tim)> {
         let host = self.scene_host.host()?;
         let entry = host
             .index
@@ -1216,7 +1216,7 @@ impl LegaiaRuntime {
             if body.is_empty() {
                 return Vec::new();
             }
-            let mut vram = legaia_tim::Vram::new();
+            let mut vram = psx_tim::Vram::new();
             vram.write_block(0, 0, 1024, 512, &body);
             self.minigame_ui.dance_ambient_vram = Some(vram);
             if let Some(h) = self.scene_host.host_mut()

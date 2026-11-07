@@ -271,7 +271,7 @@ impl LegaiaViewer {
         let Ok(pack) = legaia_actor_formats::field_char_textures::parse(raw) else {
             return Vec::new();
         };
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         pack.upload_to_vram(&mut vram, false);
         vram.as_bytes().to_vec()
     }
@@ -522,9 +522,9 @@ impl LegaiaViewer {
         let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(raw) else {
             return Vec::new();
         };
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         for atlas in &atlases {
-            if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+            if let Ok(tim) = psx_tim::parse(&atlas.tim_bytes) {
                 vram.upload_tim(&tim);
             }
         }
@@ -670,7 +670,7 @@ impl LegaiaViewer {
             let Some(raw) = self.character_pack_slice() else {
                 return Vec::new();
             };
-            let mut vram = legaia_tim::Vram::new();
+            let mut vram = psx_tim::Vram::new();
             if let Ok(texpack) = legaia_actor_formats::field_char_textures::parse(raw) {
                 texpack.upload_to_vram(&mut vram, false);
             }
@@ -748,7 +748,7 @@ impl LegaiaViewer {
         if vram_bytes.is_empty() {
             return Vec::new();
         }
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         // Rebuild the Vram from the flat byte image (row-major u16 halfwords).
         vram.write_block(0, 0, 1024, 512, &vram_bytes);
         let nobj = tmd.objects.len();

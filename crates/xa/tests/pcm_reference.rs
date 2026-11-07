@@ -22,9 +22,9 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_iso::iso9660;
-use legaia_iso::raw::RawDisc;
-use legaia_xa::{Channels, DecodeOptions, decode, demux};
+use psx_iso::iso9660;
+use psx_iso::raw::RawDisc;
+use psx_xa::{Channels, DecodeOptions, decode, demux};
 
 fn disc_bin() -> Option<PathBuf> {
     let p = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from)?;
@@ -153,7 +153,7 @@ fn xa_pcm_matches_reference() {
             .iter()
             .find(|(p, _)| p.to_ascii_uppercase().ends_with(&needle))
             .unwrap_or_else(|| panic!("{} present on the disc", needle));
-        let count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let count = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
         let streams = demux::demux_disc_range(&mut disc, rec.lba, count).expect("demux movie STR");
 
         // The cutscene's audio is the dominant (most sectors) channel.
@@ -170,7 +170,7 @@ fn xa_pcm_matches_reference() {
             DecodeOptions {
                 channels: Channels::Stereo,
                 sample_rate: stream.sample_rate,
-                bits: legaia_xa::BitsPerSample::Four,
+                bits: psx_xa::BitsPerSample::Four,
             },
         )
         .expect("decode XA");

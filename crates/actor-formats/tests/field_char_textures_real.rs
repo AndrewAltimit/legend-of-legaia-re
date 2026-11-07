@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use legaia_actor_formats::field_char_textures;
 use legaia_prot::archive::Archive;
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 fn prot_dat() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

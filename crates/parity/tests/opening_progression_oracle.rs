@@ -1,7 +1,7 @@
 //! Disc-gated opening-flow oracle: the cataloged playthrough anchors (S1..S5)
 //! codify retail's opening progression, and the engine reproduces its beats.
 //!
-//! Part A loads each anchor through the [`legaia_pcsx_redux`] bridge and asserts the
+//! Part A loads each anchor through the [`psx_pcsx_redux`] bridge and asserts the
 //! scene / game-mode / player-position the capture pinned - turning the whole
 //! opening (cold boot -> prologue -> Rim Elm -> name entry -> free-roam -> door
 //! warp -> first battle) into a reproducible regression anchor:
@@ -138,7 +138,7 @@ fn opening_anchors_codify_retail_progression() {
             eprintln!("[skip] {}: no library save", s.label);
             continue;
         };
-        let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
+        let st = psx_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
         eprintln!(
             "[{}] scene={:?} mode=0x{:02X} pos={:?}",
             s.label,

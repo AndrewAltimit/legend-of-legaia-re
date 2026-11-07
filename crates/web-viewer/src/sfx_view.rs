@@ -160,7 +160,7 @@ const MAX_CUE_SAMPLES: usize = legaia_engine_audio::SPU_INTERNAL_RATE as usize *
 /// / sample doesn't resolve in this bank).
 fn render_cue(
     bank_buf: &[u8],
-    report: &legaia_vab::VabReport,
+    report: &psx_vab::VabReport,
     desc: &legaia_game_tables::sfx_table::SfxDescriptor,
     id: u8,
 ) -> Option<RenderedCue> {
@@ -225,7 +225,7 @@ struct SlotBank {
     prot: u32,
     /// The VAB body (header at offset 0 of this slice).
     body: Vec<u8>,
-    report: legaia_vab::VabReport,
+    report: psx_vab::VabReport,
 }
 
 /// Read the pinned slots' banks out of a `PROT.DAT` image, keyed by slot.
@@ -260,7 +260,7 @@ fn read_slot_banks(
             // then the VAB body (the same `+4` slice the BGM path takes).
             let Some((report, vab_off)) = [4usize, 0]
                 .into_iter()
-                .find_map(|o| legaia_vab::parse(buf, o).ok().map(|r| (r, o)))
+                .find_map(|o| psx_vab::parse(buf, o).ok().map(|r| (r, o)))
             else {
                 continue;
             };
@@ -374,11 +374,11 @@ impl LegaiaSfx {
     /// cue in an unstaged category still renders from - while each cue reports
     /// the entry it was actually rendered from.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
-        let scus = legaia_iso::image::extract_scus(&bytes)
+        let scus = psx_iso::image::extract_scus(&bytes)
             .ok_or_else(|| JsValue::from_str("sfx: SCUS_942.54 not found (needs a full .bin)"))?;
         let table = SfxTable::from_scus(&scus)
             .ok_or_else(|| JsValue::from_str("sfx: SFX descriptor table did not resolve"))?;
-        let prot = legaia_iso::image::extract_prot_dat(&bytes)
+        let prot = psx_iso::image::extract_prot_dat(&bytes)
             .ok_or_else(|| JsValue::from_str("sfx: PROT.DAT not found in this disc image"))?;
         let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("sfx: PROT.DAT TOC parse failed"))?;

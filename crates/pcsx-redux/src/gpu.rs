@@ -86,7 +86,7 @@ fn members(buf: &[u8], start: usize, end: usize) -> Option<Vec<(usize, usize)>> 
 /// already knows where its extracted disc lives should not depend on its cwd.
 /// Main RAM is located structurally first, as [`crate::SaveState`] does.
 pub fn load_with_scus(path: &Path, scus: &[u8]) -> Result<(crate::SaveState, Option<PcsxGpu>)> {
-    load_with_anchors(path, scus, &legaia_ram_image::Legaia)
+    load_with_anchors(path, scus, &psx_ram_image::Legaia)
 }
 
 /// [`load_with_scus`] for any game: structural RAM location, falling back to
@@ -94,7 +94,7 @@ pub fn load_with_scus(path: &Path, scus: &[u8]) -> Result<(crate::SaveState, Opt
 pub fn load_with_anchors(
     path: &Path,
     exe: &[u8],
-    profile: &dyn legaia_ram_image::GameProfile,
+    profile: &dyn psx_ram_image::GameProfile,
 ) -> Result<(crate::SaveState, Option<PcsxGpu>)> {
     let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let payload = crate::sstate_payload(&raw)?;
@@ -146,7 +146,7 @@ impl PcsxGpu {
     }
 
     /// Display resolution `(width, height)` decoded from `GP1(0x08)` - the
-    /// standard PSX decode, the same one `legaia_mednafen::GpuRegs` applies.
+    /// standard PSX decode, the same one `psx_mednafen::GpuRegs` applies.
     pub fn display_resolution(&self) -> (u32, u32) {
         let m = self.control[8];
         let width = if m & 0x40 != 0 {

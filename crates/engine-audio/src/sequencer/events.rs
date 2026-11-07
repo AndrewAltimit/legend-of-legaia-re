@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::Spu;
-use legaia_seq::{ChannelMessage, EventBody, MetaMessage};
+use psx_seq::{ChannelMessage, EventBody, MetaMessage};
 
 impl Sequencer {
     pub(super) fn fire(&mut self, spu: &mut Spu, idx: usize) {

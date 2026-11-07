@@ -33,9 +33,9 @@ pub fn update_field_capture<'a>(
     intro: &'a mut BattleIntro,
     renderer: &crate::Renderer,
     target: crate::RenderTarget<'_>,
-    base: &legaia_tim::Vram,
+    base: &psx_tim::Vram,
     on_capture: impl FnOnce(&crate::CaptureImage),
-) -> anyhow::Result<Option<&'a legaia_tim::Vram>> {
+) -> anyhow::Result<Option<&'a psx_tim::Vram>> {
     if intro.needs_capture() {
         let img = renderer.capture_scene_rgba(target)?;
         on_capture(&img);

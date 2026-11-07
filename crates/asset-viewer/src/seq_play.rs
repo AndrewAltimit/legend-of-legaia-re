@@ -28,7 +28,7 @@ pub(crate) fn run_seq_playback(
 ) -> Result<()> {
     use legaia_engine_audio::spu::ram::SPU_RAM_BYTES;
     use legaia_engine_audio::{Spu, SpuAllocator, VabBank};
-    use legaia_seq::Seq;
+    use psx_seq::Seq;
 
     let seq_bytes =
         std::fs::read(seq_path).with_context(|| format!("read {}", seq_path.display()))?;
@@ -52,7 +52,7 @@ pub(crate) fn run_seq_playback(
 
     let vab_bytes =
         std::fs::read(vab_path).with_context(|| format!("read {}", vab_path.display()))?;
-    let report = legaia_vab::parse(&vab_bytes, vab_offset).context("parse VAB")?;
+    let report = psx_vab::parse(&vab_bytes, vab_offset).context("parse VAB")?;
     log::info!(
         "vab: {} programs, {} samples (offset 0x{:X})",
         report.header.ps,

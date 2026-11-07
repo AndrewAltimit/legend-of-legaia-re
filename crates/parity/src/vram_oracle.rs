@@ -17,7 +17,7 @@
 //!     swaps, fog ramps) land in the snapshot.
 //!
 //! Runtime-side: `load_runtime_vram_from_save` lifts the GPU section's
-//! 1 MiB blob out of a mednafen `.mc{slot}` via `legaia-mednafen`.
+//! 1 MiB blob out of a mednafen `.mc{slot}` via `psx-mednafen`.
 
 use std::path::Path;
 
@@ -41,7 +41,7 @@ pub const VRAM_BYTES: usize = VRAM_WIDTH * VRAM_HEIGHT * 2;
 
 /// Serialise a software `Vram` into a 1 MiB little-endian BGR555 buffer
 /// matching `mednafen-state vram-dump --out-bin`.
-pub fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
+pub fn vram_to_le_bytes(vram: &psx_tim::Vram) -> Vec<u8> {
     let mut out = Vec::with_capacity(VRAM_BYTES);
     for y in 0..VRAM_HEIGHT {
         for x in 0..VRAM_WIDTH {
@@ -169,7 +169,7 @@ pub fn build_engine_vram_bytes_with_frames(
 /// Lift the runtime VRAM blob (1 MiB BGR555 LE) out of a mednafen
 /// `.mc{slot}` save. Matches `mednafen-state vram-dump --out-bin`.
 pub fn load_runtime_vram_from_save(save: &Path) -> Result<Vec<u8>> {
-    use legaia_mednafen::{PsxGpu, SaveState};
+    use psx_mednafen::{PsxGpu, SaveState};
     let state = SaveState::from_path(save)
         .with_context(|| format!("load mednafen save {}", save.display()))?;
     let gpu = PsxGpu::new(&state);

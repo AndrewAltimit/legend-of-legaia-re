@@ -72,7 +72,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
     hud.sync_status(0, &w.battle.status_effects);
     assert!(hud.status_clut.armed(), "the Stone edge arms the latch");
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let row = legaia_engine_battle::battle_status_clut::PARTY_CLUT_ROW_BASE as usize;
     // Seed a colourful palette in the party row (the battle loader's write).
     let words: Vec<u16> = (0..legaia_engine_battle::battle_status_clut::PARTY_CLUT_ENTRIES)

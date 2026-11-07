@@ -23,8 +23,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 /// Catalogued captures whose field buffer + actor table belong to the named
 /// field scene and hold at least one static collision actor.

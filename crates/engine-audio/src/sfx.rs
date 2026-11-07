@@ -1279,7 +1279,7 @@ mod tests {
     fn play_one_shot_keys_on_a_voice_through_an_uploaded_bank() {
         use crate::spu::Spu;
         use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
-        use legaia_vab::VagAtr;
+        use psx_vab::VagAtr;
 
         // Minimal one-program bank: a single tone covering every note, bound
         // to VAG #1 (1-based, so samples[0]).
@@ -1316,7 +1316,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();
@@ -1342,7 +1342,7 @@ mod tests {
     fn play_one_shot_resolves_tone_by_index_not_key_range() {
         use crate::spu::Spu;
         use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
-        use legaia_vab::VagAtr;
+        use psx_vab::VagAtr;
 
         let mk = |center: u8, min: u8, max: u8| VagAtr {
             prior: 0,
@@ -1379,7 +1379,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![mk(60, 50, 60), mk(30, 0, 40)],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let bank = SfxBank::from_descriptors([(0x1A, 0, 1, 67, 1)]);
@@ -1405,7 +1405,7 @@ mod tests {
     fn play_one_shot_multi_voice_keys_consecutive_regions() {
         use crate::spu::Spu;
         use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
-        use legaia_vab::VagAtr;
+        use psx_vab::VagAtr;
 
         let tone = |center: u8| VagAtr {
             prior: 0,
@@ -1440,7 +1440,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone(60), tone(48), tone(72)],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();
@@ -1476,7 +1476,7 @@ mod tests {
 
     fn one_tone_bank() -> crate::vab_bind::VabBank {
         use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
-        let tone = legaia_vab::VagAtr {
+        let tone = psx_vab::VagAtr {
             prior: 0,
             mode: 0,
             vol: 127,
@@ -1509,7 +1509,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone; 4],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         }
     }

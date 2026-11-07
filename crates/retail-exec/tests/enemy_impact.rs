@@ -6,8 +6,8 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle::battle_events::BattleHitFx;
 use legaia_engine_core::world::World;
-use legaia_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

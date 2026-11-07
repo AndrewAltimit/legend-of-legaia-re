@@ -211,7 +211,7 @@ pub struct XaPlayback {
     pub sample_rate: u32,
     /// Channel layout. Stereo PCM is interleaved L/R; mono is duplicated
     /// to both output channels at mix time.
-    pub channels: legaia_xa::Channels,
+    pub channels: psx_xa::Channels,
     /// Loop the buffer when playback runs off the end. Default `false`
     /// (one-shot).
     pub looping: bool,
@@ -277,7 +277,7 @@ impl XaPlayback {
             // pulled as it needs them, so the cursor advances in steps of one.
             let doubled = self.sample_rate == 18_900;
             let looping = self.looping;
-            let mono = matches!(self.channels, legaia_xa::Channels::Mono);
+            let mono = matches!(self.channels, psx_xa::Channels::Mono);
             let pcm = &self.pcm;
             let cursor = &mut self.cursor;
             let out = self.rate_conv.next(doubled, || {
@@ -304,13 +304,13 @@ impl XaPlayback {
         let i1 = (i0 + 1).min(frames.saturating_sub(1));
         let alpha = (self.cursor - i0 as f64) as f32;
         let (l, r) = match self.channels {
-            legaia_xa::Channels::Mono => {
+            psx_xa::Channels::Mono => {
                 let s0 = self.pcm[i0 * stride];
                 let s1 = self.pcm[i1 * stride];
                 let s = lerp_i16(s0, s1, alpha);
                 (s, s)
             }
-            legaia_xa::Channels::Stereo => {
+            psx_xa::Channels::Stereo => {
                 let l0 = self.pcm[i0 * stride];
                 let r0 = self.pcm[i0 * stride + 1];
                 let l1 = self.pcm[i1 * stride];
@@ -769,7 +769,7 @@ impl OfflineMixer {
         &mut self,
         pcm: Vec<i16>,
         sample_rate: u32,
-        channels: legaia_xa::Channels,
+        channels: psx_xa::Channels,
         gain: u16,
         start_delay_frames: u32,
     ) {
@@ -853,9 +853,9 @@ mod tests {
     /// A one-quarter-note SEQ (ppqn 480, 120 BPM) that ends with an
     /// end-of-track: a `set_loop_to(0)` sequencer rewinds there every 480
     /// ticks = one quarter = 0.5 s = 22 050 SPU samples.
-    fn one_quarter_seq() -> legaia_seq::Seq {
+    fn one_quarter_seq() -> psx_seq::Seq {
         let mut buf = Vec::new();
-        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&psx_seq::SEQ_MAGIC);
         buf.extend_from_slice(&[0x00, 0x01]); // version
         buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
         buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo 500000 us/qn
@@ -865,7 +865,7 @@ mod tests {
         buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
         buf.extend_from_slice(&[0x83, 0x60, 60, 0]); // +480: note off
         buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
-        legaia_seq::Seq::parse(&buf).unwrap()
+        psx_seq::Seq::parse(&buf).unwrap()
     }
 
     /// The loop-region detector reports one true SEQ period: the span between
@@ -966,7 +966,7 @@ mod tests {
         XaPlayback {
             pcm: samples,
             sample_rate: rate,
-            channels: legaia_xa::Channels::Mono,
+            channels: psx_xa::Channels::Mono,
             looping,
             gain: 0x4000,
             cursor: 0.0,
@@ -1046,7 +1046,7 @@ mod tests {
         let mut xa = XaPlayback {
             pcm: vec![100i16, 200, 0, 0],
             sample_rate: SPU_INTERNAL_RATE,
-            channels: legaia_xa::Channels::Stereo,
+            channels: psx_xa::Channels::Stereo,
             looping: false,
             gain: 0x4000,
             cursor: 0.0,
@@ -1061,13 +1061,7 @@ mod tests {
     #[test]
     fn a_level_change_lifts_the_sounding_clip_to_full_cd_volume() {
         let mut m = OfflineMixer::new(SPU_INTERNAL_RATE);
-        m.play_xa_shout(
-            vec![1000; 4000],
-            37_800,
-            legaia_xa::Channels::Mono,
-            0x3AF5,
-            0,
-        );
+        m.play_xa_shout(vec![1000; 4000], 37_800, psx_xa::Channels::Mono, 0x3AF5, 0);
         m.state.raise_cd_volume_to_full();
         assert_eq!(
             m.state.xa.as_ref().map(|x| x.gain),
@@ -1084,7 +1078,7 @@ mod tests {
         let mut xa = XaPlayback {
             pcm: vec![32000i16, 32000, 32000, 32000],
             sample_rate: SPU_INTERNAL_RATE,
-            channels: legaia_xa::Channels::Mono,
+            channels: psx_xa::Channels::Mono,
             looping: false,
             gain: 0,
             cursor: 0.0,
@@ -1286,7 +1280,7 @@ mod tests {
         r.fade_step = 0.1;
         // Construct a no-op sequencer (no samples).
         let seq = Sequencer::new(
-            legaia_seq::Seq::parse(&{
+            psx_seq::Seq::parse(&{
                 // Legaia-format SEQ: magic(4) + version=1 u32 BE(4) + ppqn u16 BE(2)
                 // + tempo u24 BE(3) + time_sig_num(1) + time_sig_denom_pow2(1) = 15 B header
                 // then delta(1) + EOT meta(3) = 4 B event stream. Total 19 B.
@@ -1321,9 +1315,9 @@ mod tests {
     /// Sibling of [`one_quarter_seq`] at a distinctly faster tempo (240 BPM =
     /// 250 000 us/qn) so the sequencer installed by a swap is identifiable by
     /// its reported BPM.
-    fn one_quarter_seq_fast() -> legaia_seq::Seq {
+    fn one_quarter_seq_fast() -> psx_seq::Seq {
         let mut buf = Vec::new();
-        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&psx_seq::SEQ_MAGIC);
         buf.extend_from_slice(&[0x00, 0x01]); // version
         buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
         buf.extend_from_slice(&[0x03, 0xD0, 0x90]); // tempo 250000 us/qn = 240 BPM
@@ -1333,7 +1327,7 @@ mod tests {
         buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
         buf.extend_from_slice(&[0x83, 0x60, 60, 0]); // +480: note off
         buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
-        legaia_seq::Seq::parse(&buf).unwrap()
+        psx_seq::Seq::parse(&buf).unwrap()
     }
 
     /// A BGM transition (swap) installs the incoming track **immediately** and

@@ -32,7 +32,7 @@ const FILES: [(&str, &str, usize); 3] = [
 
 /// Is every texel the primitive covers unwritten VRAM (or its CLUT row
 /// unwritten)? That is a primitive no host can draw.
-fn samples_nothing(p: &equip_isolate::PrimRef, vram: &legaia_tim::Vram) -> bool {
+fn samples_nothing(p: &equip_isolate::PrimRef, vram: &psx_tim::Vram) -> bool {
     let cx = usize::from(p.cba & 0x3F) * 16;
     let cy = usize::from((p.cba >> 6) & 0x1FF);
     if !(cx..cx + 16).any(|x| vram.is_written(x, cy)) {

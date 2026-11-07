@@ -52,7 +52,7 @@ fn mans(buf: &[u8]) -> Vec<Vec<u8>> {
             }
             let off = r.table_base + d.data_offset as usize;
             if let Some(src) = buf.get(off..)
-                && let Ok(m) = legaia_lzs::decompress(src, d.size as usize)
+                && let Ok(m) = psx_lzs::decompress(src, d.size as usize)
             {
                 out.push(m);
             }

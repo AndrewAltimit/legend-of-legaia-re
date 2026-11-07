@@ -622,7 +622,7 @@ pub fn quantise(rgba: &[u8], n: usize) -> (Vec<u16>, Vec<u8>) {
     palette.extend(
         colours
             .iter()
-            .map(|c| legaia_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], 255])),
+            .map(|c| psx_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], 255])),
     );
     palette.resize(n, 0x0000);
     let first = usize::from(clear);
@@ -657,7 +657,7 @@ fn place_texture(
     alloc: &mut VramAlloc,
     patches: &mut Vec<VramPatch>,
 ) -> Result<Placed> {
-    let (w, h, rgba) = legaia_tim::encode::decode_png_rgba(png).context("a PNG texture")?;
+    let (w, h, rgba) = psx_tim::encode::decode_png_rgba(png).context("a PNG texture")?;
     if w == 0 || h == 0 {
         bail!("an empty texture");
     }

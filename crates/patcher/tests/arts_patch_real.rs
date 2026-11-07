@@ -11,9 +11,9 @@
 
 use legaia_arts_patch::arts::ArtsMode;
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply::{self, ArtSite};
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -171,7 +171,7 @@ fn run(mode: ArtsMode, seed: u64) {
         .expect("at least one glyph edited");
     let sb = (scus_lba as usize + touched / USER_DATA_SIZE) * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
         "patched arts-table sector must be EDC/ECC-valid"
     );
 

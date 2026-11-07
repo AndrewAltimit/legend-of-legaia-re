@@ -25,8 +25,8 @@ use legaia_texture_replace::texture::{
     texture_catalogs,
 };
 use legaia_texture_replace::texture_palettes::texture_palettes;
-use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
-use legaia_tim::multi_palette::View;
+use psx_tim::encode::{EncodeOptions, decode_png_rgba};
+use psx_tim::multi_palette::View;
 
 use crate::cli::TimTierArg;
 use crate::disc_io::{cue_contents, load_image, note_overwrite};
@@ -256,13 +256,13 @@ pub(crate) fn cmd_tim_export(
     Ok(())
 }
 
-fn bpp_name(tim: &legaia_tim::Tim) -> u32 {
+fn bpp_name(tim: &psx_tim::Tim) -> u32 {
     match tim.mode {
-        legaia_tim::PixelMode::Bpp4 => 4,
-        legaia_tim::PixelMode::Bpp8 => 8,
-        legaia_tim::PixelMode::Bpp16 => 16,
-        legaia_tim::PixelMode::Bpp24 => 24,
-        legaia_tim::PixelMode::Mixed => 0,
+        psx_tim::PixelMode::Bpp4 => 4,
+        psx_tim::PixelMode::Bpp8 => 8,
+        psx_tim::PixelMode::Bpp16 => 16,
+        psx_tim::PixelMode::Bpp24 => 24,
+        psx_tim::PixelMode::Mixed => 0,
     }
 }
 
@@ -446,7 +446,7 @@ pub(crate) fn cmd_tim_replace(
     let before = read_texture(&DiscPatcher::open(original.clone())?, &t)?;
     let pals = texture_palettes(&patcher, &before.tim)?;
     let expected =
-        legaia_tim::multi_palette::import_png(&before.tim, &png_bytes, &pals.context, &opts)
+        psx_tim::multi_palette::import_png(&before.tim, &png_bytes, &pals.context, &opts)
             .context("re-encode for verification")?;
     if expected.encoded.bytes != after.tim_bytes {
         bail!("verification failed: the patched texture is not what the encoder produced");
@@ -496,7 +496,7 @@ fn cmd_battle_export(
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let ex = battle_texture::export_block(&patcher, &target, palette)?;
-    legaia_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
+    psx_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
     println!(
         "wrote {} - {} ({}x{}, 4 bpp, decoded through {})",
         output.display(),
@@ -601,10 +601,10 @@ fn cmd_battle_replace(
                 let stored = if p[3] == 0 {
                     0
                 } else {
-                    let e = legaia_tim::encode::rgba8_to_bgr555(*p);
+                    let e = psx_tim::encode::rgba8_to_bgr555(*p);
                     if e == 0 { 0x8000 } else { e }
                 };
-                legaia_tim::bgr555_to_rgba8(stored)
+                psx_tim::bgr555_to_rgba8(stored)
             })
             .collect();
         if got.rgba != want {
@@ -681,7 +681,7 @@ fn cmd_monster_export(input: &Path, target: MonsterTextureTarget, output: &Path)
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let ex = monster_texture::export_page(&patcher, &target)?;
-    legaia_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
+    psx_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
     println!(
         "wrote {} - {} #{} ({}x{}, 4 bpp, {} populated palette(s))",
         output.display(),

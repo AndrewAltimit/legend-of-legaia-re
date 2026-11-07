@@ -34,7 +34,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{Tim, Vram};
+use psx_tim::{Tim, Vram};
 
 /// Byte offset of the family TIM inside the retail NA `PROT.DAT` image -
 /// member 8 of the raw-TOC-entry-0 TIM-pack (entry-relative offset
@@ -73,7 +73,7 @@ pub fn read_from_prot_dat(path: &std::path::Path) -> Result<Tim> {
 /// [`IMAGE_RECT`].
 pub fn find_in_entry(bytes: &[u8]) -> Result<Tim> {
     for hit in legaia_container_formats::tim_scan::scan_buffer(bytes) {
-        let Ok(tim) = legaia_tim::parse(&bytes[hit.offset..]) else {
+        let Ok(tim) = psx_tim::parse(&bytes[hit.offset..]) else {
             continue;
         };
         let Some(clut) = tim.clut.as_ref() else {

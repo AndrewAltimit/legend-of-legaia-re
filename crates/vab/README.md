@@ -1,4 +1,4 @@
-# legaia-vab
+# psx-vab
 
 Sony VAB instrument-bank parser and VAG sample extractor.
 
@@ -68,10 +68,10 @@ byte 1:  flag                      (1 = loop end+jump, 2 = sustain, 4 = start)
 bytes 2..16: 14 nibble pairs, low nibble first = 28 4-bit samples
 ```
 
-The F0/F1 filter constants (`ADPCM_F0` / `ADPCM_F1`) equal [`legaia-xa`]'s -
+The F0/F1 filter constants (`ADPCM_F0` / `ADPCM_F1`) equal [`psx-xa`]'s -
 the algorithm is identical to XA-ADPCM, only the block packaging differs. The
 crate keeps its own copy, pinned equal by a test, so it does not link the
-disc reader `legaia-xa` depends on.
+disc reader `psx-xa` depends on.
 
 ## CLI
 

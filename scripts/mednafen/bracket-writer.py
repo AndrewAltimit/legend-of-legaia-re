@@ -25,7 +25,7 @@ configurable on the CLI so the same harness can drive:
 - XP table loads (`--ram 80070000 80080000 --needle <table-bytes>`).
 
 Run from the repo root with the `mednafen-state` binary built
-(`cargo build --release -p legaia-mednafen`):
+(`cargo build --release -p psx-mednafen`):
 
     python3 scripts/mednafen/bracket-writer.py \\
         --before ~/.mednafen/mcs/<game>.mcA \\

@@ -9,7 +9,7 @@ use legaia_engine_battle::arts_command_input::{
     ArtsCommandInputSession, ArtsCommandPad, ArtsInputPhase, rot_blocks,
 };
 use legaia_engine_battle::target_picker::SlotState;
-use legaia_retail_exec::{Cpu, Stop};
+use psx_retail_exec::{Cpu, Stop};
 
 const STATE_MACHINE: u32 = 0x801D_0748;
 const OVERLAY_BASE: u32 = 0x801C_E818;

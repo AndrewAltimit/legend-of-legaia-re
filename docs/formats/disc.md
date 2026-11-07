@@ -75,7 +75,7 @@ The XA files need the raw 2352-byte sectors: an extraction that keeps only the 2
 Growing a file (specifically `PROT.DAT`) by whole sectors - what the official PAL
 discs do to fit longer localized dialog - requires
 shifting every file after it and rewriting each on-disc LBA reference. Implemented
-in [`legaia_iso::relayout`](../../crates/iso/src/relayout.rs) (generic ISO9660 +
+in [`psx_iso::relayout`](../../crates/iso/src/relayout.rs) (generic ISO9660 +
 ECMA-130; embeds no game bytes).
 
 ### The LBA reference graph

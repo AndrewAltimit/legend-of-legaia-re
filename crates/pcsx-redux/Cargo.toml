@@ -1,5 +1,5 @@
 [package]
-name = "legaia-pcsx-redux"
+name = "psx-pcsx-redux"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 autotests = false
 
 [lib]
-name = "legaia_pcsx_redux"
+name = "psx_pcsx_redux"
 path = "src/lib.rs"
 
 [[bin]]
@@ -27,17 +27,17 @@ cli = ["dep:clap"]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 flate2.workspace = true
-legaia-ram-image.workspace = true
+psx-ram-image.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 # The mednafen reader is a dev-dependency for the cross-emulator tests; tim,
 # iso and seq for the `bring_your_own_game` example, which runs the generic
 # crates on inputs built in code.
-legaia-iso.workspace = true
-legaia-mednafen.workspace = true
-legaia-seq.workspace = true
-legaia-tim.workspace = true
+psx-iso.workspace = true
+psx-mednafen.workspace = true
+psx-seq.workspace = true
+psx-tim.workspace = true
 
 [[test]]
 name = "integration"

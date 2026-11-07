@@ -107,7 +107,7 @@ fn every_player_summon_resolves_a_drawable_spawn_body() {
         assert_eq!(a.creature_id.is_some(), spell <= 0x95, "{spell:#04x}");
         let tmd = legaia_tmd::parse(a.mesh.tmd_bytes()).expect("parse body TMD");
         assert!(!tmd.objects.is_empty(), "{spell:#04x}: empty TMD");
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let vmesh = a
             .mesh
             .battle_render_mesh(0, &mut vram)

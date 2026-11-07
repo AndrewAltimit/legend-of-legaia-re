@@ -53,7 +53,7 @@ pub struct PublisherLogoTim<'a> {
     /// Total byte length of the TIM (header + CLUT block + pixel block).
     pub byte_len: usize,
     /// Slice of the input buffer pointing at the TIM blob; parse with
-    /// [`legaia_tim::parse_tim`] or similar.
+    /// [`psx_tim::parse_tim`] or similar.
     pub bytes: &'a [u8],
     /// PSX VRAM target rect for the pixel block - `(fb_x, fb_y, w, h)`.
     /// The CLUT block goes into `clut_rect`.

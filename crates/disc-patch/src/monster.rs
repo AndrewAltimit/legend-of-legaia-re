@@ -4,7 +4,7 @@
 //! laid out as `[u32 decompressed_size][Legaia LZS stream]` (see
 //! [`legaia_actor_formats::monster_archive`]). To change a value in the decoded record
 //! - e.g. the item drop the randomizer shuffles - we decompress the slot, edit
-//!   the decoded block in place, recompress with [`legaia_lzs::compress`], and
+//!   the decoded block in place, recompress with [`psx_lzs::compress`], and
 //!   rebuild `[u32 size][stream]` zero-padded back to the original slot size.
 //!
 //! The decoded length is unchanged, so the slot size and therefore every other
@@ -39,9 +39,9 @@ pub fn repack_slot(slot_bytes: &[u8], mutate: impl FnOnce(&mut [u8])) -> Result<
     if declared == 0 {
         bail!("empty/filler monster slot (declared size 0)");
     }
-    let mut block = legaia_lzs::decompress(&slot_bytes[4..], declared)?;
+    let mut block = psx_lzs::decompress(&slot_bytes[4..], declared)?;
     mutate(&mut block);
-    let stream = legaia_lzs::compress(&block);
+    let stream = psx_lzs::compress(&block);
     if 4 + stream.len() > SLOT_STRIDE {
         bail!(
             "re-packed stream does not fit slot: 4 + {} > {}",
@@ -72,7 +72,7 @@ mod tests {
     /// Build a synthetic monster slot from a decoded block: `[u32 size][LZS]`
     /// padded to `SLOT_STRIDE`.
     fn fake_slot(block: &[u8]) -> Vec<u8> {
-        let stream = legaia_lzs::compress(block);
+        let stream = psx_lzs::compress(block);
         assert!(
             4 + stream.len() <= SLOT_STRIDE,
             "test block too large for a slot"
@@ -86,7 +86,7 @@ mod tests {
 
     fn decode_slot(slot: &[u8]) -> Vec<u8> {
         let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
-        legaia_lzs::decompress(&slot[4..], declared).unwrap()
+        psx_lzs::decompress(&slot[4..], declared).unwrap()
     }
 
     #[test]

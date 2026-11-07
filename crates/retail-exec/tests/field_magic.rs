@@ -20,8 +20,8 @@ use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_menus::spell_menu::{SpellMenuInput, SpellMenuPhase};
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::item_effect::ItemEffectTable;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::{CharacterRecord, Party};
+use psx_retail_exec::{Stop, V0};
 
 const RECORDS: u32 = 0x8008_4708;
 const STRIDE: u32 = 0x414;
@@ -222,7 +222,7 @@ fn a_menu_cast_writes_the_records_retail_writes() {
 
 /// Every record, retail against the port; the first differing one fails.
 fn compare(
-    cpu: &mut legaia_retail_exec::Cpu,
+    cpu: &mut psx_retail_exec::Cpu,
     world: &World,
     failures: &mut Vec<String>,
     what: impl Fn() -> String,

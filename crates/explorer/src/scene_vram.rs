@@ -27,7 +27,7 @@ pub struct SceneVram {
     /// The CDNAME block that was loaded (the retail block of the entry).
     pub scene: String,
     pub kind: SceneLoadKind,
-    pub vram: legaia_tim::Vram,
+    pub vram: psx_tim::Vram,
     /// TIMs uploaded, scene-local and shared.
     pub tims: usize,
     pub shared_tims: usize,
@@ -101,7 +101,7 @@ pub fn build(lib: &Library, index: u32, class: Class) -> Result<SceneVram> {
 pub fn add_host_layers(
     lib: &Library,
     kind: SceneLoadKind,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
 ) -> Vec<String> {
     use legaia_actor_formats::field_char_textures as fct;
     let mut layers = Vec::new();
@@ -122,7 +122,7 @@ pub fn add_host_layers(
             Err(e) => layers.push(format!("field-character atlas skipped: {e:#}")),
         }
     }
-    let mut pool = legaia_tim::Vram::new();
+    let mut pool = psx_tim::Vram::new();
     match legaia_engine_scene::scene::upload_effect_textures_into_vram(&lib.index, &mut pool, true)
     {
         Ok(n) => {

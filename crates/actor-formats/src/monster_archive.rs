@@ -248,7 +248,7 @@ pub fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
         return Ok(None);
     }
     let slot = (id as usize - 1) * SLOT_STRIDE;
-    let Some(dec_size) = legaia_bytes::u32_le(entry, slot) else {
+    let Some(dec_size) = psx_bytes::u32_le(entry, slot) else {
         return Ok(None);
     };
     let dec_size = dec_size as usize;
@@ -260,7 +260,7 @@ pub fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     // Hand the decoder a generous source slice (the LZS stream can spill past
     // its own slot, like every other Legaia LZS container).
     let src = &entry[slot + 4..];
-    let block = legaia_lzs::decompress(src, dec_size)?;
+    let block = psx_lzs::decompress(src, dec_size)?;
     if block.len() != dec_size {
         bail!(
             "monster id {id}: LZS decoded {} bytes, expected {dec_size}",
@@ -277,9 +277,9 @@ pub fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 pub fn encode_slot(block: &[u8]) -> Result<Vec<u8>> {
     // Greedy first; when it misses the slot, pay for the optimal parse
     // (the same greedy -> optimal fallback every MAN repack site uses).
-    let mut stream = legaia_lzs::compress(block);
+    let mut stream = psx_lzs::compress(block);
     if 4 + stream.len() > SLOT_STRIDE {
-        stream = legaia_lzs::compress_optimal(block);
+        stream = psx_lzs::compress_optimal(block);
     }
     if 4 + stream.len() > SLOT_STRIDE {
         bail!(
@@ -303,7 +303,7 @@ mod slot_tests {
         assert_eq!(slot.len(), super::SLOT_STRIDE);
         let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
         assert_eq!(declared, block.len());
-        let decoded = legaia_lzs::decompress(&slot[4..], declared).unwrap();
+        let decoded = psx_lzs::decompress(&slot[4..], declared).unwrap();
         assert_eq!(decoded, block);
     }
 }

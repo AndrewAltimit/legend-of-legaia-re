@@ -160,20 +160,20 @@ pub(super) const HUD_TEXT_SUB_PALETTE: usize = 13;
 impl LegaiaMinigames {
     /// Parse a plain TIM out of the raw `PROT.DAT` image at `offset`
     /// (the boot-gap system TIMs are not PROT entries).
-    pub(super) fn hud_gap_tim(&self, offset: usize) -> Option<legaia_tim::Tim> {
-        legaia_tim::parse(self.prot.get(offset..)?).ok()
+    pub(super) fn hud_gap_tim(&self, offset: usize) -> Option<psx_tim::Tim> {
+        psx_tim::parse(self.prot.get(offset..)?).ok()
     }
 
     /// The `etim` banner TIM (third TIM of PROT 0870).
-    pub(super) fn hud_banner_tim(&self) -> Option<legaia_tim::Tim> {
+    pub(super) fn hud_banner_tim(&self) -> Option<psx_tim::Tim> {
         let entry = entry_bytes(&self.prot, &self.entries, HUD_ETIM_PROT_INDEX)?;
-        legaia_tim::parse(entry.get(HUD_BANNER_TIM_OFFSET..)?).ok()
+        psx_tim::parse(entry.get(HUD_BANNER_TIM_OFFSET..)?).ok()
     }
 
     /// The two dome-hub page TIMs out of the extraction-1220 LZS container
     /// (section 0 = `[u32 tag][u32 count][u32 size]` + TIM at `0xC` + TIM
     /// immediately after).
-    pub(super) fn hud_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+    pub(super) fn hud_hub_tims(&self) -> Option<(psx_tim::Tim, psx_tim::Tim)> {
         // The shared decoder applies the arena's upload STP, so the CLUT
         // words here are the VRAM ones the variant passes blend against.
         let entry = entry_bytes(&self.prot, &self.entries, HUD_HUB_CONTAINER_PROT_INDEX)?;
@@ -182,7 +182,7 @@ impl LegaiaMinigames {
 
     /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8
     /// (a texel whose CLUT word is `0x0000` is transparent, everything else opaque).
-    pub(super) fn hud_tim_rgba(tim: &legaia_tim::Tim, pal: &[u16]) -> Vec<u8> {
+    pub(super) fn hud_tim_rgba(tim: &psx_tim::Tim, pal: &[u16]) -> Vec<u8> {
         let w = tim.pixel_width();
         let h = tim.pixel_height();
         let mut out = vec![0u8; w * h * 4];
@@ -200,7 +200,7 @@ impl LegaiaMinigames {
                 if word == 0 {
                     continue;
                 }
-                let c = legaia_tim::bgr555_to_rgba8(word);
+                let c = psx_tim::bgr555_to_rgba8(word);
                 let o = (y * w + x) * 4;
                 out[o..o + 3].copy_from_slice(&c[..3]);
                 out[o + 3] = 255;
@@ -847,7 +847,7 @@ impl LegaiaMinigames {
         if widget.is_none() || font.is_none() || atlas.is_none() {
             return r#"{"ok":false}"#.to_string();
         }
-        let dims = |t: &Option<legaia_tim::Tim>| {
+        let dims = |t: &Option<psx_tim::Tim>| {
             t.as_ref()
                 .map(|t| serde_json::json!([t.pixel_width(), t.pixel_height()]))
                 .unwrap_or(serde_json::Value::Null)

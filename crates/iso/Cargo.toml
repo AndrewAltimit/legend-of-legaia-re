@@ -1,5 +1,5 @@
 [package]
-name = "legaia-iso"
+name = "psx-iso"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 autotests = false
 
 [lib]
-name = "legaia_iso"
+name = "psx_iso"
 path = "src/lib.rs"
 
 [[bin]]

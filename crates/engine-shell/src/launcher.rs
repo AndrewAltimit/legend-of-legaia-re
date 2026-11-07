@@ -213,7 +213,7 @@ pub enum DiscProblem {
     Moved(PathBuf),
     /// The file exists but is not a readable Mode2/2352 PlayStation image.
     /// `fix` says what to choose instead when the file was recognised (a
-    /// 2048-byte `.iso`, a `.chd`, an archive: `legaia_iso::sniff`).
+    /// 2048-byte `.iso`, a `.chd`, an archive: `psx_iso::sniff`).
     Unreadable {
         path: PathBuf,
         reason: String,
@@ -290,14 +290,14 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     // .iso, a .chd, a zip, a .cue whose .bin was renamed) rather than with
     // the reader's terminal message, which repeats the path and talks
     // sector layouts.
-    if let Some(d) = legaia_iso::sniff::diagnose_path(path) {
+    if let Some(d) = psx_iso::sniff::diagnose_path(path) {
         return Err(DiscProblem::Unreadable {
             path: path.to_path_buf(),
             reason: d.what,
             fix: Some(d.fix),
         });
     }
-    let bin = legaia_iso::raw::resolve_disc_path(path).map_err(|e| unreadable(e.to_string()))?;
+    let bin = psx_iso::raw::resolve_disc_path(path).map_err(|e| unreadable(e.to_string()))?;
     if let Some(reason) = image_cut_short(&bin) {
         return Err(DiscProblem::Unreadable {
             path: path.to_path_buf(),
@@ -310,7 +310,7 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     let cnf = vfs
         .read("SYSTEM.CNF")
         .map_err(|_| wrong("no SYSTEM.CNF - not a PlayStation game disc".into()))?;
-    let detected = legaia_iso::region::parse(&cnf).map_err(|e| wrong(format!("{e:#}")))?;
+    let detected = psx_iso::region::parse(&cnf).map_err(|e| wrong(format!("{e:#}")))?;
     if !detected.executable.eq_ignore_ascii_case(USA_EXECUTABLE) {
         return Err(wrong(format!(
             "it is the {} release ({}); the engine runs the USA disc ({USA_EXECUTABLE})",
@@ -341,14 +341,14 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
 /// reader that follows reports it.
 fn image_cut_short(bin: &Path) -> Option<String> {
     use legaia_app_theme::disc_text;
-    use legaia_iso::iso9660;
+    use psx_iso::iso9660;
 
     let cut = |e: anyhow::Error| {
         e.chain()
             .any(disc_text::is_short_read)
             .then(|| disc_text::CUT_SHORT.to_string())
     };
-    let mut disc = legaia_iso::raw::RawDisc::open(bin).ok()?;
+    let mut disc = psx_iso::raw::RawDisc::open(bin).ok()?;
     let vol = match iso9660::read_volume(&mut disc) {
         Ok(v) => v,
         Err(e) => return cut(e),
@@ -1614,9 +1614,9 @@ impl OptionRow {
 /// makes). `None` when either is unreachable; the launcher then keeps its
 /// built-in font. Read at runtime from the user's disc; nothing is written.
 pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
-    let mut raw = legaia_iso::raw::RawDisc::open(bin).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let mut raw = psx_iso::raw::RawDisc::open(bin).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
     let find = |name: &str| {
         files
             .iter()
@@ -1629,7 +1629,7 @@ pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
     };
     let prot = find("PROT.DAT")?;
     let scus_rec = find(USA_EXECUTABLE)?;
-    let sector = legaia_iso::raw::USER_DATA_SIZE as u64;
+    let sector = psx_iso::raw::USER_DATA_SIZE as u64;
     let mut scus = Vec::new();
     raw.read_user_data(
         scus_rec.lba,

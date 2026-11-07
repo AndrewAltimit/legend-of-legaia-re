@@ -5,7 +5,7 @@
 //! toolbar lines.
 
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 use crate::raster::{self, Camera, Model, Shading};
 

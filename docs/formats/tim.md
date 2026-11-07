@@ -85,7 +85,7 @@ asset tim-catalog extracted/PROT.DAT --rollup            # count + digest
 
 A magic-only scan over arbitrary bytes turns up many spurious matches - a
 coincidental `0x00000010` word inside another TIM's pixel data, blocks with
-trailing padding, or `Mixed`/garbage pixel modes. `legaia_tim::parse_strict`
+trailing padding, or `Mixed`/garbage pixel modes. `psx_tim::parse_strict`
 applies the extra checks that separate real, VRAM-ready TIMs from noise:
 
 - **No reserved flag bits.** Only bits 0..3 (pixel mode + CLUT-present) may be
@@ -129,7 +129,7 @@ disc.
 Under this rule a flat scan of the retail NA `PROT.DAT` recovers the same TIM
 set an independent reference decoder reports, cross-checked item-for-item
 (identical offsets, dimensions, bit depths, and palette counts). The lenient
-`legaia_tim::parse` is retained for callers decoding bytes already known to be
+`psx_tim::parse` is retained for callers decoding bytes already known to be
 a TIM (web-viewer thumbnails, sub-asset extraction), where the extra
 rejections would only get in the way.
 
@@ -147,7 +147,7 @@ The flat catalog - like the reference decoder - scans only **raw** bytes, so
 any TIM stored inside an [LZS-compressed](lzs.md) `PROT.DAT` section is
 invisible to it, and most character and scene textures are compressed.
 `legaia_disc_audit::tim_deep_catalog` recovers them as a **separate tier**: it walks
-every PROT entry, LZS-decompresses it with `legaia_lzs::decompress_container`
+every PROT entry, LZS-decompresses it with `psx_lzs::decompress_container`
 (the same decode path [`tim_scan`](../../crates/container-formats/src/tim_scan.rs) uses),
 and strict-parses every TIM in each decoded section.
 
@@ -214,7 +214,7 @@ data and stay local - only the resulting fingerprint→label table is committed.
 
 ## Encoding: PNG -> TIM (texture replacement)
 
-`legaia_tim::encode` is the write side of the parser: it builds a TIM whose
+`psx_tim::encode` is the write side of the parser: it builds a TIM whose
 **structure is copied verbatim from an original** - pixel mode, image and CLUT
 dimensions, and every `fb_x`/`fb_y` VRAM placement field (image *and* CLUT
 blocks; the game depends on those coordinates, e.g. the
@@ -260,7 +260,7 @@ The game picks a palette per sprite, so a multi-palette TIM is several
 colourings of one set of indices, and copying the edited palette over the
 others would recolour every region drawn through them. Editing several
 palettes at once - per-region views, the palette strip, the composite, the
-indexed PNG - is `legaia_tim::multi_palette`; the workflow is in
+indexed PNG - is `psx_tim::multi_palette`; the workflow is in
 [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md#multi-palette-textures).
 
 ## Why an exported palette can look wrong

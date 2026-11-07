@@ -5,8 +5,8 @@
 use super::*;
 use legaia_actor_formats::gltf_color::glb_probe;
 use legaia_engine_scene::field_env::{EnvDraw, FloorAnchor};
-use legaia_tim::Vram;
 use legaia_tmd::mesh::VramMesh;
+use psx_tim::Vram;
 
 const VERTS: [[f32; 3]; 4] = [
     [30.0, -12.0, 5.0],

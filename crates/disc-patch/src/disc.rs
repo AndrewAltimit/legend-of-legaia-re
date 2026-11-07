@@ -1,7 +1,7 @@
 //! Disc bridge: apply same-size asset edits to a real disc image.
 //!
 //! Ties the editing primitives (e.g. `crate::monster::set_drop`) to the
-//! sector-level write-back in [`legaia_iso::write`]. The chain a PROT-entry edit
+//! sector-level write-back in [`psx_iso::write`]. The chain a PROT-entry edit
 //! travels:
 //!
 //! ```text
@@ -13,7 +13,7 @@
 //!
 //! so a PROT-entry-relative byte offset maps to the PROT.DAT-logical offset
 //! `start_lba[N] * 2048 + offset_in_entry`, which
-//! [`legaia_iso::write::patch_file_logical`] turns into physical-sector writes
+//! [`psx_iso::write::patch_file_logical`] turns into physical-sector writes
 //! plus EDC/ECC re-encode. Every edit is **same-size** - it overwrites bytes in
 //! place and never moves an LBA, so no TOC or directory needs rewriting.
 //!
@@ -25,9 +25,9 @@ use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{Context, Result, bail};
 use legaia_actor_formats::monster_archive::SLOT_STRIDE;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_prot::archive::Archive as ProtArchive;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 /// PROT entry index of the monster `battle_data` archive.
 pub const MONSTER_ARCHIVE_ENTRY: usize = 867;
@@ -238,7 +238,7 @@ impl DiscPatcher {
 
     /// Grow a set of PROT entries by whole sectors, cascading every downstream
     /// disc LBA reference (a **full-ISO relayout**; see
-    /// [`legaia_iso::relayout`]).
+    /// [`psx_iso::relayout`]).
     ///
     /// `new_payloads[index]` is entry `index`'s new full-footprint payload; its
     /// length must be a whole 2048-byte-sector multiple `>=` the entry's current
@@ -326,7 +326,7 @@ impl DiscPatcher {
         }
 
         // Disc-level relayout: grow PROT.DAT + cascade every LBA reference.
-        let new_image = legaia_iso::relayout::grow_prot_dat(
+        let new_image = psx_iso::relayout::grow_prot_dat(
             &self.image,
             self.prot_lba,
             self.prot_sectors,
@@ -391,7 +391,7 @@ impl DiscPatcher {
         // so overlapping old/new spans never read stale bytes).
         for (idx, start, _) in &new_starts {
             let logical_off = *start as u64 * sector as u64;
-            legaia_iso::write::patch_file_logical(
+            psx_iso::write::patch_file_logical(
                 &mut self.image,
                 self.prot_lba,
                 logical_off,
@@ -406,7 +406,7 @@ impl DiscPatcher {
                 continue;
             }
             let off = 8 + (idx + 2) * 4;
-            legaia_iso::write::patch_file_logical(
+            psx_iso::write::patch_file_logical(
                 &mut self.image,
                 self.prot_lba,
                 off as u64,
@@ -445,7 +445,7 @@ impl DiscPatcher {
             );
         }
         let logical_off = span.start_lba as u64 * USER_DATA_SIZE as u64 + offset_in_entry;
-        legaia_iso::write::patch_file_logical(&mut self.image, self.prot_lba, logical_off, bytes)
+        psx_iso::write::patch_file_logical(&mut self.image, self.prot_lba, logical_off, bytes)
     }
 
     /// Silence a Mode 2 Form 2 XA audio file in place: zero the ADPCM
@@ -470,7 +470,7 @@ impl DiscPatcher {
     /// Every distinct channel number present among a Mode 2 Form 2 XA
     /// file's sectors, ascending.
     pub fn xa_channels(&self, name: &str) -> Result<Vec<u8>> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
         let mut seen = std::collections::BTreeSet::new();
@@ -479,7 +479,7 @@ impl DiscPatcher {
             let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if legaia_iso::write::is_form2(sector) {
+            if psx_iso::write::is_form2(sector) {
                 seen.insert(sector[0x11]);
             }
         }
@@ -490,7 +490,7 @@ impl DiscPatcher {
     /// Form 2 sector: bits 0-1 = mono/stereo, 2-3 = sample rate
     /// (0 = 37800 Hz, 1 = 18900 Hz), 4-5 = bits per sample.
     pub fn xa_channel_coding(&self, name: &str, chan: u8) -> Result<u8> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
         for i in 0..sectors {
@@ -498,7 +498,7 @@ impl DiscPatcher {
             let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if legaia_iso::write::is_form2(sector) && sector[0x11] == chan {
+            if psx_iso::write::is_form2(sector) && sector[0x11] == chan {
                 return Ok(sector[0x13]);
             }
         }
@@ -513,7 +513,7 @@ impl DiscPatcher {
     pub fn write_xa_channel(&mut self, name: &str, chan: u8, groups: &[u8]) -> Result<usize> {
         const GROUPS_PER_SECTOR: usize = 18;
         const GROUP_BYTES: usize = 128;
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
         let mut cursor = 0usize;
@@ -523,7 +523,7 @@ impl DiscPatcher {
             let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if !legaia_iso::write::is_form2(sector) || sector[0x11] != chan {
+            if !psx_iso::write::is_form2(sector) || sector[0x11] != chan {
                 continue;
             }
             sector[0x18..0x92C].fill(0);
@@ -533,7 +533,7 @@ impl DiscPatcher {
                 cursor += take;
                 written += 1;
             }
-            legaia_iso::write::encode_mode2_form2_sector(sector)?;
+            psx_iso::write::encode_mode2_form2_sector(sector)?;
         }
         if written == 0 {
             bail!("{name}: channel {chan} has no Form 2 sectors");
@@ -545,7 +545,7 @@ impl DiscPatcher {
     /// file, in stream order (2304 bytes = 18 groups per audio sector),
     /// plus the channel's coding byte.
     pub fn read_xa_channel_payload(&self, name: &str, chan: u8) -> Result<(Vec<u8>, u8)> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
         let mut payload = Vec::new();
@@ -555,9 +555,7 @@ impl DiscPatcher {
             let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if legaia_iso::write::is_form2(sector)
-                && sector[0x12] & 0x04 != 0
-                && sector[0x11] == chan
+            if psx_iso::write::is_form2(sector) && sector[0x12] & 0x04 != 0 && sector[0x11] == chan
             {
                 coding.get_or_insert(sector[0x13]);
                 payload.extend_from_slice(&sector[0x18..0x18 + 2304]);
@@ -584,7 +582,7 @@ impl DiscPatcher {
             bail!("span payload must be a whole number of 2304-byte sectors");
         }
         let want = payload.len() / 2304;
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
         let mut ordinal = 0usize;
@@ -594,16 +592,14 @@ impl DiscPatcher {
             let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if !legaia_iso::write::is_form2(sector)
-                || sector[0x12] & 0x04 == 0
-                || sector[0x11] != chan
+            if !psx_iso::write::is_form2(sector) || sector[0x12] & 0x04 == 0 || sector[0x11] != chan
             {
                 continue;
             }
             if ordinal >= first && ordinal < first + want {
                 let src = (ordinal - first) * 2304;
                 sector[0x18..0x18 + 2304].copy_from_slice(&payload[src..src + 2304]);
-                legaia_iso::write::encode_mode2_form2_sector(sector)?;
+                psx_iso::write::encode_mode2_form2_sector(sector)?;
                 written += 1;
             }
             ordinal += 1;
@@ -615,7 +611,7 @@ impl DiscPatcher {
     }
 
     fn silence_xa(&mut self, name: &str, channels: Option<&[u8]>) -> Result<usize> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         // The mastering records Form 2 extents with 2048-unit sizes (the
         // XA/ files' LBA gaps equal size/2048 exactly).
@@ -626,14 +622,14 @@ impl DiscPatcher {
             let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
                 break;
             };
-            if !legaia_iso::write::is_form2(sector) {
+            if !psx_iso::write::is_form2(sector) {
                 continue;
             }
             if channels.is_some_and(|set| !set.contains(&sector[0x11])) {
                 continue;
             }
             sector[0x18..0x92C].fill(0);
-            legaia_iso::write::encode_mode2_form2_sector(sector)?;
+            psx_iso::write::encode_mode2_form2_sector(sector)?;
             silenced += 1;
         }
         if silenced == 0 {
@@ -695,7 +691,7 @@ impl DiscPatcher {
     /// patched) image. Used for static tables that live outside `PROT.DAT` -
     /// e.g. the steal table in `SCUS_942.54`.
     pub fn read_named_file(&self, name: &str) -> Option<Vec<u8>> {
-        legaia_iso::iso9660::read_file_in_image(&self.image, name)
+        psx_iso::iso9660::read_file_in_image(&self.image, name)
     }
 
     /// Overwrite `bytes` at `logical_off` bytes into an arbitrary ISO 9660 file
@@ -713,7 +709,7 @@ impl DiscPatcher {
                 bytes.len()
             );
         }
-        legaia_iso::write::patch_file_logical(&mut self.image, lba, logical_off, bytes)
+        psx_iso::write::patch_file_logical(&mut self.image, lba, logical_off, bytes)
     }
 
     /// Parse the disc's `CDNAME.TXT` scene-name map. Returns `None` if the file
@@ -810,7 +806,7 @@ impl DiscPatcher {
         marker[..4].copy_from_slice(ANNEX_MAGIC);
         marker[4..8].copy_from_slice(&ANNEX_VERSION.to_le_bytes());
         marker[8..12].copy_from_slice(&(used + sectors).to_le_bytes());
-        legaia_iso::write::patch_file_logical(
+        psx_iso::write::patch_file_logical(
             &mut self.image,
             dmy_lba,
             (dmy_sectors as u64 - 1) * USER_DATA_SIZE as u64,
@@ -842,7 +838,7 @@ impl DiscPatcher {
         let lba = self.annex_alloc(sectors)?;
         let mut padded = bytes.to_vec();
         padded.resize(sectors as usize * USER_DATA_SIZE, 0);
-        legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &padded)
+        psx_iso::write::patch_file_logical(&mut self.image, lba, 0, &padded)
             .context("write annexed blob")?;
         Ok((lba, sectors))
     }
@@ -920,7 +916,7 @@ impl DiscPatcher {
             legaia_actor_formats::player_file_annex::split(file, PLAYER_FILE_DATA_BASE, base)?;
         self.patch_prot_entry(index, 0, &header)
             .with_context(|| format!("write annexed header of PROT entry {index}"))?;
-        legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &region)
+        psx_iso::write::patch_file_logical(&mut self.image, lba, 0, &region)
             .with_context(|| format!("write annexed records of PROT entry {index}"))?;
         Ok(AnnexPlacement { lba, sectors, base })
     }
@@ -951,7 +947,7 @@ impl DiscPatcher {
                 bytes.len()
             );
         }
-        legaia_iso::write::patch_file_logical(&mut self.image, place.lba, offset - db, bytes)
+        psx_iso::write::patch_file_logical(&mut self.image, place.lba, offset - db, bytes)
             .with_context(|| format!("write annexed records of PROT entry {index}"))
     }
 }
@@ -999,7 +995,7 @@ pub mod synth {
                 let take = USER_DATA_SIZE.min(data.len() - off);
                 image[base + USER_DATA_OFFSET..base + USER_DATA_OFFSET + take]
                     .copy_from_slice(&data[off..off + take]);
-                legaia_iso::write::encode_mode2_form1_sector(&mut image[base..base + SECTOR_SIZE])
+                psx_iso::write::encode_mode2_form1_sector(&mut image[base..base + SECTOR_SIZE])
                     .unwrap();
                 off += take;
                 sec += 1;
@@ -1181,7 +1177,7 @@ mod tests {
 
         // The patched PROT.DAT sector is still EDC/ECC-valid.
         let prot_sector_base = (18 + 2) * SECTOR_SIZE; // PROT_LBA + entry1 lba (2)
-        assert!(legaia_iso::write::mode2_form1_sector_is_valid(
+        assert!(psx_iso::write::mode2_form1_sector_is_valid(
             &patcher.image()[prot_sector_base..prot_sector_base + SECTOR_SIZE]
         ));
     }

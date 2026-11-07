@@ -42,7 +42,7 @@ use legaia_engine_audio::{
 };
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
-use legaia_seq::Seq;
+use psx_seq::Seq;
 
 /// SPU RAM the BGM bank uploads into (the native boot's reserved floor).
 const BGM_SPU_BASE: u32 = 0x1000;
@@ -108,7 +108,7 @@ fn first_bgm_entry(archive: &mut Archive, extracted: &Path) -> Option<BgmEntry> 
 /// Stage a real BGM track onto `sink`: upload its VAB into the sink's SPU and
 /// attach a sequencer over its SEQ. Returns the uploaded bank.
 fn stage_bgm(sink: &mut TestAudioSink, entry: &BgmEntry) -> VabBank {
-    let report = legaia_vab::parse(&entry.bytes, entry.vab_off).expect("parse real VAB");
+    let report = psx_vab::parse(&entry.bytes, entry.vab_off).expect("parse real VAB");
     let mut alloc = SpuAllocator::new(BGM_SPU_BASE, SPU_RAM_BYTES as u32 - SFX_SPU_BYTES);
     let bank = sink.with_spu(|spu: &mut Spu| {
         VabBank::upload(spu, &mut alloc, &report, &entry.bytes[entry.vab_off..])
@@ -364,7 +364,7 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
         .expect("read SFX bank entry");
     let Some((report, vab_off)) = [4usize, 0]
         .into_iter()
-        .find_map(|o| legaia_vab::parse(&bank_bytes, o).ok().map(|r| (r, o)))
+        .find_map(|o| psx_vab::parse(&bank_bytes, o).ok().map(|r| (r, o)))
     else {
         eprintln!("[skip] no VAB header at +4 or +0 in PROT {prot}");
         return;
@@ -503,7 +503,7 @@ fn the_retail_transport_tier_agrees_with_the_port_parser() {
     // Retail-record seeding, the SEQ-open shape (`FUN_80062410`): resolution
     // and tempo off the header, the body's leading delta consumed before the
     // first frame, cursor published as the track start.
-    let (header, header_len) = legaia_seq::parse_header_with_len(raw).expect("SEQ header");
+    let (header, header_len) = psx_seq::parse_header_with_len(raw).expect("SEQ header");
     let body = &raw[header_len..];
     let bpm = 60_000_000u32
         .checked_div(header.tempo_us_per_qn)

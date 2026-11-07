@@ -16,14 +16,14 @@
 use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_game_tables::item_names::ItemNameTable;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 use legaia_patcher::items::valid_item_pool;
 use legaia_patcher::unused::{self, UNUSED_ENEMY_IDS, UNUSED_ITEM_IDS};
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -270,7 +270,7 @@ fn seru_bell_name_injection_names_only_the_accessory() {
         let sector = scus_lba as usize + byte_off / USER_DATA_SIZE;
         let sb = sector * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
             "patched SCUS sector at byte {byte_off:#x} must be EDC/ECC-valid"
         );
     }

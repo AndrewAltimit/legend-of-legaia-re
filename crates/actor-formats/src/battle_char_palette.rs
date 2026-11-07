@@ -1,7 +1,7 @@
 //! Battle party-character **palette** (the in-battle Vahn / Noa / Gala CLUTs).
 //!
 //! PORT: FUN_80052FA0  (decode + sub-record assembly)
-//! REF:  FUN_8001A55C  (LZS, via [`legaia_lzs::decompress`])
+//! REF:  FUN_8001A55C  (LZS, via [`psx_lzs::decompress`])
 //! REF:  FUN_80053B9C  (CLUT-to-VRAM upload; the STP bit-15 transform)
 //! REF:  FUN_80052770  (player-file loader / disc index `char + 0x360`)
 //!
@@ -19,7 +19,7 @@
 //! decremented once per literal and once per match-copied byte, and the loop
 //! runs `while budget > 0`. Decoding a record "standalone" without honoring that
 //! budget runs off the stream into the next record's bytes.
-//! [`legaia_lzs::decompress`] already models this (`while out.len() < size`), so
+//! [`psx_lzs::decompress`] already models this (`while out.len() < size`), so
 //! the port just passes each record's stored budget.
 //!
 //! ## On-disc record layout (the parser is self-describing)
@@ -217,7 +217,7 @@ pub fn parse_record(file: &[u8], rec0: usize) -> Result<BattleCharPalette> {
     // The work buffer mirrors the loader's single 0x19000 allocation: record0
     // decodes at offset 0, the sub-records overwrite from `clut_a_off` on.
     let mut work = vec![0u8; WORK_SIZE];
-    let rec0_out = legaia_lzs::decompress(stream, budget)?;
+    let rec0_out = psx_lzs::decompress(stream, budget)?;
     work[..rec0_out.len()].copy_from_slice(&rec0_out);
 
     let mut bands: Vec<PaletteBand> = Vec::new();
@@ -244,7 +244,7 @@ pub fn parse_record(file: &[u8], rec0: usize) -> Result<BattleCharPalette> {
         let sub_stream = file
             .get(p.saturating_add(4)..)
             .ok_or_else(|| anyhow::anyhow!("sub-record #{k} at 0x{p:X} stream truncated"))?;
-        let dec = legaia_lzs::decompress(sub_stream, sub_budget)?;
+        let dec = psx_lzs::decompress(sub_stream, sub_budget)?;
         work[cur..cur + dec.len()].copy_from_slice(&dec);
 
         let adv = rd_u32(&work, cur + 0x0C)? as usize;
@@ -310,7 +310,7 @@ pub fn collect_palette(file: &[u8], rec0: usize, mesh_cols: &[u16]) -> Result<Ba
     let stream = file
         .get(rec0 + 0x10..)
         .ok_or_else(|| anyhow::anyhow!("file truncated before record0 stream"))?;
-    let rec0_out = legaia_lzs::decompress(stream, budget)?;
+    let rec0_out = psx_lzs::decompress(stream, budget)?;
 
     let mut bands: Vec<PaletteBand> = Vec::new();
     let keep = |bands: &mut Vec<PaletteBand>, band: PaletteBand| {
@@ -349,7 +349,7 @@ pub fn collect_palette(file: &[u8], rec0: usize, mesh_cols: &[u16]) -> Result<Ba
         if !(0x400..=0x20000).contains(&blen) {
             continue;
         }
-        let Ok(dec) = legaia_lzs::decompress(stream, blen) else {
+        let Ok(dec) = psx_lzs::decompress(stream, blen) else {
             continue;
         };
         if dec.len() < 0x14 {

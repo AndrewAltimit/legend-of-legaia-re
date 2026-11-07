@@ -88,7 +88,7 @@ pub fn decode_record0(file: &[u8]) -> Result<Vec<u8>> {
             && (0x1000..=0x4_0000).contains(&budget)
             && (0x10..budget).contains(&clut_a)
             && (0x10..budget).contains(&clut_b);
-        if plausible && let Ok(decoded) = legaia_lzs::decompress(&file[o + 0x10..], budget) {
+        if plausible && let Ok(decoded) = psx_lzs::decompress(&file[o + 0x10..], budget) {
             return Ok(decoded);
         }
         o += 4;

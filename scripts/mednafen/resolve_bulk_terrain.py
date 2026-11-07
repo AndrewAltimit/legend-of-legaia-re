@@ -42,7 +42,7 @@ USAGE
 
 Requires:
   * ``target/release/mednafen-state`` built
-    (``cargo build --release -p legaia-mednafen``)
+    (``cargo build --release -p psx-mednafen``)
   * ``target/release/lzs-decode`` built
   * ``extracted/`` populated by ``legaia-extract``
 """
@@ -711,12 +711,12 @@ def main() -> int:
     if not args.mednafen_state_bin.exists():
         sys.exit(
             f"mednafen-state CLI not found at {args.mednafen_state_bin}.\n"
-            f"Build it first: cargo build --release -p legaia-mednafen"
+            f"Build it first: cargo build --release -p psx-mednafen"
         )
     if not args.lzs_bin.exists():
         sys.exit(
             f"lzs-decode CLI not found at {args.lzs_bin}.\n"
-            f"Build it first: cargo build --release -p legaia-lzs"
+            f"Build it first: cargo build --release -p psx-lzs"
         )
 
     if args.bundles:

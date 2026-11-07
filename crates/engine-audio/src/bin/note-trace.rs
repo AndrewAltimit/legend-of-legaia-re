@@ -44,8 +44,8 @@ use legaia_engine_audio::{
 };
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
-use legaia_seq::Seq;
-use legaia_vab::parse as parse_vab;
+use psx_seq::Seq;
+use psx_vab::parse as parse_vab;
 
 #[derive(Parser, Debug)]
 #[command(about = "Note-level BGM trace through the engine sequencer")]
@@ -138,8 +138,7 @@ fn find_tracks(extracted: &Path) -> Result<Vec<Track>> {
 /// makes of the same bytes.
 fn seq_calc_trace(track: &Track, frames: u64, divisor: u32) -> Result<()> {
     let raw = &track.bytes[track.seq_off..];
-    let (header, header_len) =
-        legaia_seq::parse_header_with_len(raw).context("parse SEQ header")?;
+    let (header, header_len) = psx_seq::parse_header_with_len(raw).context("parse SEQ header")?;
     let body = &raw[header_len..];
 
     // The meta handler's own divide (`FUN_80061954` at `800619d4`) traps on a

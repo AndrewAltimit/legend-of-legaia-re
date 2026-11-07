@@ -313,14 +313,14 @@ pub(in crate::byte_account) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 
 /// instruction (within four words) that addresses through the same register:
 /// an `addiu`, a load or a store. `None` when the word is not a `lui`.
 pub(in crate::byte_account) fn lui_pair_address(buf: &[u8], at: usize) -> Option<u32> {
-    let w = legaia_bytes::u32_le(buf, at)?;
+    let w = psx_bytes::u32_le(buf, at)?;
     if w >> 26 != 0x0F {
         return None;
     }
     let reg = (w >> 16) & 0x1F;
     let hi = (w & 0xFFFF) << 16;
     for k in 1..=4 {
-        let x = legaia_bytes::u32_le(buf, at + 4 * k)?;
+        let x = psx_bytes::u32_le(buf, at + 4 * k)?;
         let (op, rs) = (x >> 26, (x >> 21) & 0x1F);
         if rs == reg && matches!(op, 0x09 | 0x20..=0x26 | 0x28..=0x2B) {
             return Some(hi.wrapping_add((x & 0xFFFF) as i16 as i32 as u32));
@@ -349,13 +349,13 @@ pub(in crate::byte_account) fn claim_consumer_pinned_tables(
             .iter()
             .all(|&(site, va)| lui_pair_address(buf, at(site)) == Some(va));
         let count_ok = match t.count_from {
-            PinnedCount::Loop { site } => legaia_bytes::u32_le(buf, at(site)).is_some_and(|w| {
+            PinnedCount::Loop { site } => psx_bytes::u32_le(buf, at(site)).is_some_and(|w| {
                 matches!(w >> 26, 0x09..=0x0B) && (w & 0xFFFF) as usize == t.count
             }),
             PinnedCount::Domain { .. } => true,
             PinnedCount::Range { first, bound } => {
                 let imm = |site: u32, ops: &[u32]| {
-                    legaia_bytes::u32_le(buf, at(site))
+                    psx_bytes::u32_le(buf, at(site))
                         .filter(|w| ops.contains(&(w >> 26)))
                         .map(|w| (w & 0xFFFF) as usize)
                 };

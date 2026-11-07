@@ -48,7 +48,7 @@ pub fn boss_effect_page(archive: &[u8], id: u16) -> Option<(Vec<u8>, &[u8])> {
     }
     let at = usize::from(id) * SLOT_STRIDE + BOSS_PAGE_SEEK;
     let slot = archive.get(at..)?;
-    if legaia_bytes::u32_le(slot, 0)? != 0x10 {
+    if psx_bytes::u32_le(slot, 0)? != 0x10 {
         return None;
     }
     let mut clut = slot.get(CLUT_AT..CLUT_AT + CLUT_ENTRIES * 2)?.to_vec();
@@ -66,7 +66,7 @@ pub fn boss_effect_page(archive: &[u8], id: u16) -> Option<(Vec<u8>, &[u8])> {
 
 /// Stage monster `id`'s boss effect page into `vram` the way
 /// `FUN_800542C8` does after the block upload. Returns whether it wrote.
-pub fn write_boss_effect_page(archive: &[u8], id: u16, vram: &mut legaia_tim::Vram) -> bool {
+pub fn write_boss_effect_page(archive: &[u8], id: u16, vram: &mut psx_tim::Vram) -> bool {
     let Some((clut, pixels)) = boss_effect_page(archive, id) else {
         return false;
     };

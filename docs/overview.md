@@ -77,7 +77,7 @@ Choose by what you are trying to do:
 
 ## Workspace
 
-The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. `asset` is the exception: it is only the `asset` binary. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
+The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo` for the game-specific crates, and `psx-foo` / `psx_foo` for the generic PS1 crates listed in [`reusing-for-other-ps1-games.md`](tooling/reusing-for-other-ps1-games.md); one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. `asset` is the exception: it is only the `asset` binary. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
 ```mermaid
 flowchart TD

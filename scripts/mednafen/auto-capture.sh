@@ -39,7 +39,7 @@ done
 CLI="target/release/mednafen-state"
 if [[ ! -x "$CLI" ]]; then
     echo "[info] building mednafen-state..."
-    cargo build --release -p legaia-mednafen >/dev/null
+    cargo build --release -p psx-mednafen >/dev/null
 fi
 
 mapfile -t LABELS < <("$CLI" scenarios --manifest "$MANIFEST" 2>/dev/null \

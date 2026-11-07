@@ -30,8 +30,8 @@ fn stage_music01_seq(
 )> {
     let split = legaia_engine_system::chunk_install::owned_bank_offsets(buf)?;
     let vab_off = split.vab;
-    let vab_report = legaia_vab::parse(buf, vab_off).ok()?;
-    let seq = legaia_seq::Seq::parse(buf.get(split.seq..)?).ok()?;
+    let vab_report = psx_vab::parse(buf, vab_off).ok()?;
+    let seq = psx_seq::Seq::parse(buf.get(split.seq..)?).ok()?;
     // The same global reverb every live host's mixer runs
     // (`StreamResampler`): Studio C at the retail depth, each voice's send
     // set per keyed tone. A bare `Spu::new()` renders the minigame pages'

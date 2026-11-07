@@ -13,7 +13,7 @@ runtime, and writes only into folders the user chooses.
 
 | Area | What the user gets |
 |---|---|
-| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does, in a centred column that narrows with the window (`start_column`). A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, a file that is not a raw dump is named for what it is (`legaia_iso::sniff`), and one shorter than its file table says is called incomplete (`legaia_app_theme::disc_text`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
+| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does, in a centred column that narrows with the window (`start_column`). A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, a file that is not a raw dump is named for what it is (`psx_iso::sniff`), and one shorter than its file table says is called incomplete (`legaia_app_theme::disc_text`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
 | Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its kind in plain words and size; a search whose every term must match the retail block, the place name, the filename label, the kind, the category or the index (`Explorer::entry_matches`), plus a *Show* filter over the kinds with each one's count, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. The next start reopens the selected entry. |
 | Overview | The pane's heading names the entry's retail block as the tree does; the file name, which can name a neighbour, is on its hover. Where an entry opens when it has nothing for the chosen preview tab; such a tab is greyed out without a count (`tab_label`), and a pane narrower than `TAB_COUNTS_MIN_WIDTH` shows no counts at all, which keeps the tab row to one line at the minimum window width. PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, size, the sub-assets found (only the kinds present), the DATA_FIELD chunk list, raw `.BIN` export. A value wider than the panel ends in an ellipsis and shows whole on hover. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. The list takes at most half the pane (`tim_list_width`), so the sliders keep their room at the minimum window width; a row too long for it ends in an ellipsis and shows whole on hover. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
@@ -87,8 +87,8 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   the root `Ui`. egui draws text through skrifa, with hinting.
 - **No format logic of its own.** `analyze` finds sub-assets with the format
   crates' scanners, `export` calls the existing writers
-  (`legaia_tim::write_png`, `legaia_actor_formats::scene_gltf`,
-  `legaia_vab::write_wav`), and extraction is `legaia-extract`'s library.
+  (`psx_tim::write_png`, `legaia_actor_formats::scene_gltf`,
+  `psx_vab::write_wav`), and extraction is `legaia-extract`'s library.
 - **Scene textures.** Most scene meshes sample pages and CLUTs another
   entry of their CDNAME block uploads, so a model can be drawn against the
   VRAM the engine builds for its scene: `SceneResources` built the way the
@@ -117,7 +117,7 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   per second (retail: `rate / 8` per 60 Hz tick).
 - **Model preview** is a small CPU rasteriser (`raster`) over
   `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid`, sampling a
-  `legaia_tim::Vram` with the page / CLUT addressing the site viewer's shader
+  `psx_tim::Vram` with the page / CLUT addressing the site viewer's shader
   uses; the wgpu renderer is not reachable from a glow context.
 - **Meshes baked black.** Some meshes draw near black with retail shading
   although their textures resolve: `town01`'s dark-sky shell (PROT 6) has an
@@ -131,8 +131,8 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   executable the way `legaia_translate::build::detect` does (Latin with the
   high accented cells on every Latin build but the USA one).
 - **Streamed media** (`media`) reads raw 2352-byte sectors:
-  `legaia_xa::demux` + `legaia_xa::decode` for the XA files, and
-  `legaia_mdec::str_av::StrAvDemuxer` for a movie. Sound goes out on the
+  `psx_xa::demux` + `psx_xa::decode` for the XA files, and
+  `psx_mdec::str_av::StrAvDemuxer` for a movie. Sound goes out on the
   mixer's XA voice (`AudioSink::play_xa`), whose cursor is the clock the
   movie preview paces its frames by.
 - **Play is the launcher's Play.** *Play* runs `legaia-engine launch --disc

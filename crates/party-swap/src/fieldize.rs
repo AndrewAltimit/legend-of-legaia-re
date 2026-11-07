@@ -363,7 +363,7 @@ fn fieldize_pack_at(
             .collect()
     };
     let sec1_raw = if sec1_scaled {
-        legaia_lzs::compress(&sec1_decoded)
+        psx_lzs::compress(&sec1_decoded)
     } else {
         prot_0874
             .get(spans[1].0..spans[1].1.min(prot_0874.len()))
@@ -373,15 +373,15 @@ fn fieldize_pack_at(
 
     // Reassemble the container: header + pairs + section data. Greedy
     // LZS first; the optimal parse only when the entry budget misses.
-    let mut s0 = legaia_lzs::compress(&sec0_new);
-    let mut s2 = legaia_lzs::compress(&sec2_new);
+    let mut s0 = psx_lzs::compress(&sec0_new);
+    let mut s2 = psx_lzs::compress(&sec2_new);
     let mut sec1_raw = sec1_raw;
     let header_and_slack = 0x20 + 8;
     if header_and_slack + s0.len() + sec1_raw.len() + s2.len() > entry_len {
-        s0 = legaia_lzs::compress_optimal(&sec0_new);
-        s2 = legaia_lzs::compress_optimal(&sec2_new);
+        s0 = psx_lzs::compress_optimal(&sec0_new);
+        s2 = psx_lzs::compress_optimal(&sec2_new);
         if sec1_scaled {
-            sec1_raw = legaia_lzs::compress_optimal(&sec1_decoded);
+            sec1_raw = psx_lzs::compress_optimal(&sec1_decoded);
         }
     }
     if std::env::var("LEGAIA_FIELDIZE_DEBUG").is_ok() {

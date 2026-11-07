@@ -19,12 +19,12 @@
 
 use legaia_actor_formats::battle_data_pack;
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply::{
     self, CostTarget, EquipOwnerEdit, EquipmentEdits, FallThrough, SwingCostEdit, SwingRecord,
     SwingSection,
 };
 use legaia_patcher::weapon_specialty::{PLAYERS, arm_cost_offset, up_cost_offset};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -74,7 +74,7 @@ fn changed_sectors_valid(orig: &[u8], patched: &[u8]) -> usize {
         let b = a + SECTOR_SIZE;
         if orig[a..b] != patched[a..b] {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(&patched[a..b]),
+                psx_iso::write::mode2_form1_sector_is_valid(&patched[a..b]),
                 "sector {s} invalid after patch"
             );
             checked += 1;
@@ -538,7 +538,7 @@ fn every_owner_lands_in_the_dmy_annex_without_a_relayout() {
         "{rep:?}"
     );
     let (dmy_lba, dmy_size) =
-        legaia_iso::iso9660::find_file_in_image(&orig, "DMY.DAT").expect("DMY.DAT");
+        psx_iso::iso9660::find_file_in_image(&orig, "DMY.DAT").expect("DMY.DAT");
     let dmy_end = dmy_lba + dmy_size.div_ceil(2048);
     for (who, lba, sectors) in &rep.models_annexed {
         assert!(

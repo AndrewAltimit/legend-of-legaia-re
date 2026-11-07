@@ -43,7 +43,7 @@ pub struct ClutBlendFx {
 
 /// Read one 16x1 CLUT cell out of software VRAM (the `StoreImage`
 /// equivalent).
-fn read_cell(vram: &legaia_tim::Vram, x: i16, y: i16) -> [u16; CLUT_CELL_ENTRIES] {
+fn read_cell(vram: &psx_tim::Vram, x: i16, y: i16) -> [u16; CLUT_CELL_ENTRIES] {
     let mut row = [0u16; CLUT_CELL_ENTRIES];
     for (i, r) in row.iter_mut().enumerate() {
         *r = vram.pixel(x as usize + i, y as usize);
@@ -52,7 +52,7 @@ fn read_cell(vram: &legaia_tim::Vram, x: i16, y: i16) -> [u16; CLUT_CELL_ENTRIES
 }
 
 /// Write one 16x1 CLUT cell into software VRAM (the `LoadImage` equivalent).
-fn write_cell(vram: &mut legaia_tim::Vram, x: i16, y: i16, row: &[u16; CLUT_CELL_ENTRIES]) {
+fn write_cell(vram: &mut psx_tim::Vram, x: i16, y: i16, row: &[u16; CLUT_CELL_ENTRIES]) {
     let mut bytes = [0u8; CLUT_CELL_ENTRIES * 2];
     for (i, v) in row.iter().enumerate() {
         bytes[i * 2..i * 2 + 2].copy_from_slice(&v.to_le_bytes());
@@ -63,7 +63,7 @@ fn write_cell(vram: &mut legaia_tim::Vram, x: i16, y: i16, row: &[u16; CLUT_CELL
 /// Apply the shared completion / one-shot write: `MoveImage` cell B onto the
 /// destination, or flat-fill the destination with `B.x` when `B.y == 0`
 /// (both `FUN_801E4C58`'s inline path and `FUN_801E4794`'s completion arm).
-fn apply_cell_write(vram: &mut legaia_tim::Vram, op: &ClutCellFxOp) {
+fn apply_cell_write(vram: &mut psx_tim::Vram, op: &ClutCellFxOp) {
     let row = if op.b_is_flat() {
         [op.b.0 as u16; CLUT_CELL_ENTRIES]
     } else {
@@ -111,7 +111,7 @@ impl World {
 
     /// Drive the live scripted CLUT-cell effects against `vram` (the host's
     /// software VRAM - play-window's `cpu_vram_base`, a test's scratch
-    /// [`legaia_tim::Vram`]). One-shots apply immediately; fades consume the
+    /// [`psx_tim::Vram`]). One-shots apply immediately; fades consume the
     /// retail game ticks [`World::tick`] accumulated since the last call,
     /// each advancing the fade by [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs (the retail
     /// `counter += DAT_1F800393` cadence) and writing the interpolated row to
@@ -125,7 +125,7 @@ impl World {
     /// live.
     ///
     /// PORT: FUN_801E4794
-    pub fn step_clut_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step_clut_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.clut_pending_game_ticks);
         if self.ambient.clut_fx.is_empty() && self.ambient.clut_blend_fx.is_empty() {
             return false;
@@ -195,7 +195,7 @@ impl World {
     /// written and the fade retires (retail sets `+0x10 |= 8`).
     ///
     /// REF: FUN_801E4D8C (the per-tick handler the kernel ports)
-    fn step_clut_blend_fx(&mut self, vram: &mut legaia_tim::Vram, ticks: u32, dt: u8) -> bool {
+    fn step_clut_blend_fx(&mut self, vram: &mut psx_tim::Vram, ticks: u32, dt: u8) -> bool {
         use legaia_engine_field::clut_fade_actor::{ClutBlendFade, FadeStep};
         let mut wrote = false;
         let mut still = Vec::new();

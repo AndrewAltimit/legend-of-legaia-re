@@ -22,12 +22,12 @@
 //! lives only in memory.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::spirit_ap::{
     BATTLE_ACTION_OVERLAY_PROT_INDEX, GRANT_VA, OVERLAY_BASE_VA, RETAIL_SPIRIT_AP, WIDGET_BASE_VA,
     WIDGET_BOOST1_VA, WIDGET_BOOST2_VA, current, plan,
 };
+use psx_iso::iso9660::read_file_in_image;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

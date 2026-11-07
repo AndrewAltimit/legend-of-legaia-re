@@ -58,7 +58,7 @@ CANONICAL_LADDERS = [
     # Both are exported WITHOUT `--release`, and that is not a detail: see the
     # module docstring's "a release export loses executed code". These two
     # ladders are where that was measured.
-    ("fmv_ladder", "legaia-mdec"),
+    ("fmv_ladder", "psx-mdec"),
     ("narration_ladder", "legaia-engine-scene-host"),
     # --- lane W1-C ---
     ("battle_render_ladder", "legaia-web-play"),

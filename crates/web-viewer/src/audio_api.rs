@@ -23,7 +23,7 @@ impl LegaiaAudio {
     /// both slices for later VAB / BGM / XA queries. Returns the PROT entry
     /// count for the JS UI.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<u32, JsValue> {
-        let prot = legaia_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
+        let prot = psx_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
             JsValue::from_str(
                 "audio: not a Mode2/2352 disc image (the audio page requires a full .bin)",
             )
@@ -315,9 +315,9 @@ impl LegaiaAudio {
             .get(off..end)
             .ok_or_else(|| JsValue::from_str("start_bgm: entry slice OOB"))?;
 
-        let vab_report = legaia_vab::parse(buf, vab_offset as usize)
+        let vab_report = psx_vab::parse(buf, vab_offset as usize)
             .map_err(|e| JsValue::from_str(&format!("VAB parse: {e}")))?;
-        let seq = legaia_seq::Seq::parse(&buf[seq_offset as usize..])
+        let seq = psx_seq::Seq::parse(&buf[seq_offset as usize..])
             .map_err(|e| JsValue::from_str(&format!("SEQ parse: {e}")))?;
 
         // Lazy WebAudio open. Browser autoplay policy requires this to run
@@ -435,10 +435,10 @@ impl LegaiaAudio {
         let Some(buf) = self.prot.get(off..end) else {
             return Vec::new();
         };
-        let Ok(vab_report) = legaia_vab::parse(buf, vab_offset as usize) else {
+        let Ok(vab_report) = psx_vab::parse(buf, vab_offset as usize) else {
             return Vec::new();
         };
-        let Ok(seq) = legaia_seq::Seq::parse(&buf[seq_offset as usize..]) else {
+        let Ok(seq) = psx_seq::Seq::parse(&buf[seq_offset as usize..]) else {
             return Vec::new();
         };
         // Wet, as every live host's mixer runs it (`StreamResampler`).

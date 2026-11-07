@@ -177,7 +177,7 @@ fn content_hash(raw: &[u8]) -> u64 {
 /// grid over its UV bounding box and decoded through its CLUT exactly as the
 /// shaders do. Transparent texels are skipped; `None` when there are none.
 pub fn prim_mean_texel(
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     cba: u16,
     tsb: u16,
     uvs: &[[u8; 2]],
@@ -198,7 +198,7 @@ pub fn prim_mean_texel(
         v1 = v1.max(uv[1]);
     }
     let px = |x: usize, y: usize| -> u16 {
-        if x >= legaia_tim::VRAM_WIDTH || y >= legaia_tim::VRAM_HEIGHT {
+        if x >= psx_tim::VRAM_WIDTH || y >= psx_tim::VRAM_HEIGHT {
             0
         } else {
             vram.pixel(x, y)
@@ -247,7 +247,7 @@ pub fn texels_green(mean: [f32; 3]) -> bool {
 fn curated_prim_glows(
     rule: CuratedTexels,
     color: [u8; 3],
-    textured: Option<(&legaia_tim::Vram, u16, u16, &[[u8; 2]])>,
+    textured: Option<(&psx_tim::Vram, u16, u16, &[[u8; 2]])>,
 ) -> bool {
     match rule {
         CuratedTexels::All => true,
@@ -316,7 +316,7 @@ pub fn tag_emissive_vram(
     colors: &[[u8; 3]],
     uvs: &[[u8; 2]],
     indices: &[u32],
-    curated: Option<(&EmissiveMesh, &legaia_tim::Vram)>,
+    curated: Option<(&EmissiveMesh, &psx_tim::Vram)>,
 ) -> (usize, Option<[f32; 3]>) {
     let mut n = 0;
     let mut bounds = Bounds::default();
@@ -388,7 +388,7 @@ pub fn tag_emissive_meshes(
     raw: &[u8],
     vmesh: &mut legaia_tmd::mesh::VramMesh,
     cmesh: &mut legaia_tmd::mesh::ColorMesh,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) -> Option<CuratedHit> {
     let curated = curated_emissive(raw);
     let (_, vc) = tag_emissive_vram(
@@ -421,7 +421,7 @@ pub fn tag_emissive_meshes(
 pub fn tag_emissive_vram_mesh(
     raw: &[u8],
     vmesh: &mut legaia_tmd::mesh::VramMesh,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) {
     let curated = curated_emissive(raw);
     tag_emissive_vram(
@@ -459,7 +459,7 @@ pub fn tag_emissive_hybrid(
     raw: &[u8],
     mesh: &mut legaia_tmd::mesh::VramMesh,
     flat: &[u8],
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) -> Option<CuratedHit> {
     let curated = curated_emissive(raw);
     let mut bounds = Bounds::default();

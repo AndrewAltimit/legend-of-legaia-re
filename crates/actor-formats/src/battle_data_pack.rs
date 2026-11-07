@@ -124,7 +124,7 @@ pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
     }
     // Header word 0 = desc_off. It doubles as a type-0 streaming chunk
     // header ((0x00 << 24) | size), so the high byte must be zero.
-    let desc_off_word = legaia_bytes::u32_le(buf, 0)?;
+    let desc_off_word = psx_bytes::u32_le(buf, 0)?;
     if (desc_off_word >> 24) != 0 {
         return None;
     }
@@ -136,9 +136,9 @@ pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
     }
     // Header words 1..3: record[0]'s CLUT offsets + decoded-size budget.
     // All four retail files order them clut_a < clut_b < budget.
-    let clut_a = legaia_bytes::u32_le(buf, 4)?;
-    let clut_b = legaia_bytes::u32_le(buf, 8)?;
-    let budget = legaia_bytes::u32_le(buf, 12)?;
+    let clut_a = psx_bytes::u32_le(buf, 4)?;
+    let clut_b = psx_bytes::u32_le(buf, 8)?;
+    let budget = psx_bytes::u32_le(buf, 12)?;
     if clut_a == 0 || clut_a >= clut_b || clut_b >= budget {
         return None;
     }
@@ -151,9 +151,9 @@ pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
     let mut terminated = false;
     let mut p = table_offset;
     while p + 12 <= buf.len() && records.len() < MAX_RECORDS {
-        let id = legaia_bytes::u32_le(buf, p)?;
-        let offset = legaia_bytes::u32_le(buf, p + 4)?;
-        let size = legaia_bytes::u32_le(buf, p + 8)?;
+        let id = psx_bytes::u32_le(buf, p)?;
+        let offset = psx_bytes::u32_le(buf, p + 4)?;
+        let size = psx_bytes::u32_le(buf, p + 8)?;
         if size == 0 {
             // Only the canonical all-zero terminator is accepted; a
             // zero-size entry with a residual id/offset is a shape
@@ -198,7 +198,7 @@ pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
                 all_ok = false;
                 break;
             }
-            let Some(dec_size) = legaia_bytes::u32_le(buf, start) else {
+            let Some(dec_size) = psx_bytes::u32_le(buf, start) else {
                 all_ok = false;
                 break;
             };
@@ -239,7 +239,7 @@ pub fn decode_record(buf: &[u8], pack: &BattleDataPack, idx: usize) -> Result<De
     if file_off + 4 > buf.len() {
         bail!("record {} dec_size prefix past buffer end", idx);
     }
-    let dec_size = legaia_bytes::u32_le(buf, file_off)
+    let dec_size = psx_bytes::u32_le(buf, file_off)
         .ok_or_else(|| anyhow::anyhow!("dec_size read failed"))? as usize;
     if dec_size == 0 || dec_size > 0x40_0000 {
         bail!("record {} has implausible dec_size 0x{:x}", idx, dec_size);
@@ -250,7 +250,7 @@ pub fn decode_record(buf: &[u8], pack: &BattleDataPack, idx: usize) -> Result<De
     // everything from the dec_size prefix to the end of file - it
     // stops based on output count, not input count.
     let lzs_input = &buf[file_off + 4..];
-    let bytes = legaia_lzs::decompress(lzs_input, dec_size)?;
+    let bytes = psx_lzs::decompress(lzs_input, dec_size)?;
     let tmd_range = locate_embedded_tmd(&bytes);
     Ok(DecodedEntry {
         record,
@@ -305,20 +305,20 @@ fn try_tmd_at(
     header_body_end_offset: Option<usize>,
 ) -> Option<std::ops::Range<usize>> {
     const TMD_MAGIC: u32 = 0x8000_0002;
-    let magic = legaia_bytes::u32_le(decoded, tmd_offset)?;
+    let magic = psx_bytes::u32_le(decoded, tmd_offset)?;
     if magic != TMD_MAGIC {
         return None;
     }
-    let flags = legaia_bytes::u32_le(decoded, tmd_offset + 4)?;
+    let flags = psx_bytes::u32_le(decoded, tmd_offset + 4)?;
     if flags != 0 {
         return None;
     }
-    let nobj = legaia_bytes::u32_le(decoded, tmd_offset + 8)?;
+    let nobj = psx_bytes::u32_le(decoded, tmd_offset + 8)?;
     if nobj == 0 || nobj > 64 {
         return None;
     }
     if let Some(off) = header_body_end_offset {
-        let tmd_end = legaia_bytes::u32_le(decoded, off)? as usize;
+        let tmd_end = psx_bytes::u32_le(decoded, off)? as usize;
         if tmd_end > tmd_offset && tmd_end <= decoded.len() {
             return Some(tmd_offset..tmd_end);
         }
@@ -376,7 +376,7 @@ fn looks_clut_like(bytes: &[u8]) -> bool {
 }
 
 /// VRAM width in pixels (= halfword units) used by `find_clut_in_vram`.
-/// Matches `legaia_tim::Vram::WIDTH` and `legaia_mednafen::gpu::VRAM_WIDTH`
+/// Matches `psx_tim::Vram::WIDTH` and `psx_mednafen::gpu::VRAM_WIDTH`
 /// without taking a runtime dep.
 pub const VRAM_WIDTH: usize = 1024;
 /// VRAM height in pixels.

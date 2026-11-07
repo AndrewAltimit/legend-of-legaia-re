@@ -35,7 +35,7 @@ fn prot_entries() -> Option<Vec<PathBuf>> {
 
 /// One decode, on both decoders. The decoded result, for the follow-up cases.
 fn compare(input: &[u8], size: usize, origin: &str) -> Option<(Vec<u8>, usize)> {
-    let new = legaia_lzs::decompress_tracked(input, size).map_err(|e| e.to_string());
+    let new = psx_lzs::decompress_tracked(input, size).map_err(|e| e.to_string());
     let old = reference_decoder::decode(input, size);
     if new != old {
         let first = match (&new, &old) {
@@ -123,7 +123,7 @@ fn decoders_agree_on_every_lzs_stream_on_the_disc() {
         };
         account(&bytes, &opts);
         // Beyond what the walkers recognise: the same decode a detector tries.
-        if let Ok(container) = legaia_lzs::parse_container(&bytes) {
+        if let Ok(container) = psx_lzs::parse_container(&bytes) {
             for s in &container.sections {
                 let input = &bytes[s.byte_offset as usize..];
                 compare_family(input, s.size as usize, &name, &mut tried);
@@ -212,7 +212,7 @@ fn report_ratio(what: &str, streams: &[Request]) {
     let new = |s: &[Request]| {
         let start = std::time::Instant::now();
         for (input, size) in s {
-            let _ = std::hint::black_box(legaia_lzs::decompress_tracked(input, *size));
+            let _ = std::hint::black_box(psx_lzs::decompress_tracked(input, *size));
         }
         start.elapsed().as_secs_f64()
     };

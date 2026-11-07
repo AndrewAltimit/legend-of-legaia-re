@@ -162,7 +162,7 @@ pub fn insert_record(
 pub fn packed_len(records: &[(u32, Vec<u8>)]) -> usize {
     records
         .iter()
-        .map(|(_, d)| (4 + legaia_lzs::compress_optimal(d).len() + 0x7FF) & !0x7FF)
+        .map(|(_, d)| (4 + psx_lzs::compress_optimal(d).len() + 0x7FF) & !0x7FF)
         .sum()
 }
 
@@ -205,7 +205,7 @@ fn frame_bones(decoded: &[u8]) -> Result<(usize, Vec<u8>)> {
 }
 
 fn u32_at(b: &[u8], o: usize) -> Result<u32> {
-    legaia_bytes::u32_le(b, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
+    psx_bytes::u32_le(b, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
 }
 
 /// A record's pool, split: `(clut_x, CLUT run, pixel bytes)`.

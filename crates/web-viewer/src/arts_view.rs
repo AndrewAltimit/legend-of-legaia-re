@@ -129,7 +129,7 @@ struct LoadedCharacter {
     part_count: usize,
     mesh: legaia_tmd::mesh::VramMesh,
     object_ids: Vec<u32>,
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
     /// Idle loop (record[0] slot 0), expanded per object.
     idle: Option<MonsterAnimation>,
     /// The full battle action bank (record[0] slots incl. the idle) plus the
@@ -414,7 +414,7 @@ fn build_character(
     }
 
     // ---- VRAM: band-0 pixels + the character's decoded battle palette ----
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     match bca::character_texture_uploads(raw, &pack, &equipped, 0) {
         Ok(uploads) => {
             for u in &uploads {
@@ -573,14 +573,14 @@ impl LegaiaArts {
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         let mut voice_files = Vec::new();
         let mut voice_table = None;
-        let prot = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
+        let prot = if psx_iso::image::is_mode2_2352_disc(&bytes) {
             voice_files = extract_voice_files(&bytes);
             // Arts-voice cue tables (art action constant -> voice channel) live
             // in SCUS_942.54; parse them so each art maps to its real channel.
-            voice_table = legaia_iso::image::extract_scus(&bytes)
+            voice_table = psx_iso::image::extract_scus(&bytes)
                 .as_deref()
                 .and_then(ArtsVoiceTable::parse_from_scus);
-            legaia_iso::image::extract_prot_dat(&bytes)
+            psx_iso::image::extract_prot_dat(&bytes)
                 .ok_or_else(|| JsValue::from_str("arts: PROT.DAT not found in this disc image"))?
         } else {
             bytes

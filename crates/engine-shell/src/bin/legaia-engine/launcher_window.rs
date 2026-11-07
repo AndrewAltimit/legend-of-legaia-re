@@ -3350,7 +3350,7 @@ mod tests {
             ));
         }
         // Every reason the disc sniffer gives.
-        let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
+        let mut iso = vec![0u8; psx_iso::sniff::SNIFF_LEN];
         iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");
         for (ext, head) in [
             ("chd", &b"MComprHD"[..]),
@@ -3364,7 +3364,7 @@ mod tests {
             ("bin", &[1u8; 8]),
             ("bin", &[1u8; 4096]),
         ] {
-            let d = legaia_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
+            let d = psx_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
             let p = DiscProblem::Unreadable {
                 path: path.clone(),
                 reason: d.what,

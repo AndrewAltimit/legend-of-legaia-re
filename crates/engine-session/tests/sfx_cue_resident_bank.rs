@@ -51,11 +51,11 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 /// Read one PROT entry's VAB, tolerating the `+4` chunk-header prefix.
-fn read_vab(host: &SceneHost, idx: u32) -> Option<(legaia_vab::VabReport, Vec<u8>)> {
+fn read_vab(host: &SceneHost, idx: u32) -> Option<(psx_vab::VabReport, Vec<u8>)> {
     let bytes = host.index.entry_bytes_extended(idx).ok()?;
     let (report, off) = [4usize, 0]
         .into_iter()
-        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))?;
+        .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))?;
     Some((report, bytes[off..].to_vec()))
 }
 

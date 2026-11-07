@@ -11,7 +11,7 @@
     <dt>Modes</dt><dd><em>Shuffle</em> permutes what the disc already has (totals preserved); <em>Random</em> draws each slot from the valid pool; <em>none</em> leaves it alone. Sliders and manual edits are seedless.</dd>
     <dt>Editing rule</dt><dd>Same-size in place - the disc layout never moves. Only door retargets and place renames resize a record, through the <a href="../formats/man-relocation.html">MAN relocation engine</a>. Anything that cannot re-pack into its footprint is skipped and reported.</dd>
     <dt>Disc</dt><dd>USA only (<code>SCUS-94254</code>); a PAL disc is refused rather than hybridised.</dd>
-    <dt>Crate</dt><dd><code>crates/patcher</code> (<code>legaia_patcher</code>), built on <code>legaia_lzs::compress</code>, <code>legaia_iso::write</code> and <code>DiscPatcher</code>. Internals: <a href="randomizer-internals.html">randomizer internals</a>.</dd>
+    <dt>Crate</dt><dd><code>crates/patcher</code> (<code>legaia_patcher</code>), built on <code>psx_lzs::compress</code>, <code>psx_iso::write</code> and <code>DiscPatcher</code>. Internals: <a href="randomizer-internals.html">randomizer internals</a>.</dd>
     <dt>Sony bytes</dt><dd>None ship. A PPF carries only the deltas between your disc and the patched one.</dd>
     <dt>Engine</dt><dd>Never involved - the disc is edited and retail (or the port) plays it. Exception: <a href="#seru-trade">Seru trading</a>, whose vendor UI the port draws.</dd>
   </dl>
@@ -835,7 +835,7 @@
   <table class="layout">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td>LZS decoder</td><td><code>FUN_8001A55C</code></td><td>The stream shape <code>legaia_lzs::compress</code> must produce.</td></tr>
+      <tr><td>LZS decoder</td><td><code>FUN_8001A55C</code></td><td>The stream shape <code>psx_lzs::compress</code> must produce.</td></tr>
       <tr><td>PROT entry size</td><td><code>FUN_8003E68C</code></td><td>Entry span = gap to the next TOC entry; the re-pack budget.</td></tr>
       <tr><td>Battle-end reward</td><td><code>FUN_8004E568</code>, join <code>0x8004F610</code></td><td>Where the normal drop is granted; the equipment-drop hook site; the integer <code>rand() % 100</code> roll.</td></tr>
       <tr><td>Battle RNG</td><td><code>FUN_80056798</code></td><td>The roll every hook reuses.</td></tr>

@@ -17,8 +17,8 @@
 use std::io::Read;
 use std::path::PathBuf;
 
-use legaia_iso::iso9660;
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
+use psx_iso::iso9660;
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
 use sha2::{Digest, Sha256};
 
 const KNOWN_BIN_SHA256: &str = "e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c";

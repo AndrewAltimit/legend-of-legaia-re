@@ -216,7 +216,7 @@ pub const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
 /// selects (`clut + 1`, e.g. 7 under 6, 9 under 8) are STP-clear on the disc,
 /// and drawn from the file they would be opaque white plates instead of the
 /// subtractive (`B - F`) under-layer retail draws.
-pub fn apply_upload_stp(tim: &mut legaia_tim::Tim) {
+pub fn apply_upload_stp(tim: &mut psx_tim::Tim) {
     if let Some(clut) = tim.clut.as_mut() {
         for e in clut.entries.iter_mut() {
             if *e != 0 {
@@ -230,11 +230,11 @@ pub fn apply_upload_stp(tim: &mut legaia_tim::Tim) {
 /// [`HUB_CONTAINER_PROT_INDEX`] bytes), with the arena's upload STP applied
 /// ([`apply_upload_stp`]) - the CLUT words as they sit in VRAM, which is
 /// what every host must classify and decode the hub quads against.
-pub fn hub_page_tims(container: &[u8]) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
-    let sections = legaia_lzs::decompress_container(container).ok()?;
+pub fn hub_page_tims(container: &[u8]) -> Option<(psx_tim::Tim, psx_tim::Tim)> {
+    let sections = psx_lzs::decompress_container(container).ok()?;
     let blob = sections.first()?;
-    let mut t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
-    let mut t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
+    let mut t0 = psx_tim::parse(blob.get(0xC..)?).ok()?;
+    let mut t1 = psx_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
     apply_upload_stp(&mut t0);
     apply_upload_stp(&mut t1);
     Some((t0, t1))
@@ -246,17 +246,17 @@ mod tests {
 
     #[test]
     fn upload_stp_sets_bit_15_on_non_zero_entries_only() {
-        let mut tim = legaia_tim::Tim {
+        let mut tim = psx_tim::Tim {
             flags: 0x8,
-            mode: legaia_tim::PixelMode::Bpp4,
-            clut: Some(legaia_tim::Clut {
+            mode: psx_tim::PixelMode::Bpp4,
+            clut: Some(psx_tim::Clut {
                 fb_x: 0,
                 fb_y: 502,
                 w: 4,
                 h: 1,
                 entries: vec![0x0000, 0x7FFF, 0x9C84, 0x1086],
             }),
-            image: legaia_tim::Image {
+            image: psx_tim::Image {
                 fb_x: 320,
                 fb_y: 0,
                 fb_w: 1,

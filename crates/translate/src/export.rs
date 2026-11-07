@@ -74,7 +74,7 @@ impl SceneManText {
         }
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, consumed) = psx_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }
@@ -111,11 +111,11 @@ impl SceneManText {
     /// [`Self::repack`], saying by how much it missed: `Err(n)` = the
     /// optimal-parse stream is `n` bytes past the footprint.
     pub fn repack_measured(&self) -> Result<Vec<u8>, usize> {
-        let stream = legaia_lzs::compress(&self.decoded);
+        let stream = psx_lzs::compress(&self.decoded);
         if stream.len() <= self.compressed_budget {
             return Ok(stream);
         }
-        let stream = legaia_lzs::compress_optimal(&self.decoded);
+        let stream = psx_lzs::compress_optimal(&self.decoded);
         if stream.len() <= self.compressed_budget {
             Ok(stream)
         } else {

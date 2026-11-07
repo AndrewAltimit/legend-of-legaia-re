@@ -7,7 +7,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
 use legaia_engine_battle_vm::battle_separation::{SepActor, push_apart};
 use legaia_engine_system::trig::trig12;
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const PAIR: u32 = 0x8005_0BB8;
 const ACTORS: u32 = 0x801C_9370;

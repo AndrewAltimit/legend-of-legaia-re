@@ -90,8 +90,8 @@ pub fn build_atlas_from_prot_888(
     tim_offset: usize,
 ) -> anyhow::Result<TitleScreenAtlas> {
     let tim = title_pak::extract_title_tim(prot_bytes, tim_offset)?;
-    let parsed = legaia_tim::parse(tim.bytes)?;
-    let rgba = legaia_tim::decode_rgba8(&parsed, 0)?;
+    let parsed = psx_tim::parse(tim.bytes)?;
+    let rgba = psx_tim::decode_rgba8(&parsed, 0)?;
     let width = parsed.pixel_width() as u32;
     let height = parsed.image.h as u32;
     if rgba.len() != (width * height * 4) as usize {

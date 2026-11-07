@@ -172,7 +172,7 @@ pub fn scene_mans(entry: &[u8]) -> Vec<Vec<u8>> {
             let start = man.data_offset as usize;
             if start < entry.len()
                 && let Ok((decoded, _)) =
-                    legaia_lzs::decompress_tracked(&entry[start..], man.size as usize)
+                    psx_lzs::decompress_tracked(&entry[start..], man.size as usize)
             {
                 out.push(decoded);
             }

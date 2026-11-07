@@ -8,10 +8,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_iso::image::{extract_cdname_txt, extract_prot_dat};
 use legaia_web_viewer::field_npc::build_npc_catalog;
 use legaia_web_viewer::field_scene::build_field_scene;
 use legaia_web_viewer::shop_vendors::scene_shop_vendors;
+use psx_iso::image::{extract_cdname_txt, extract_prot_dat};
 use std::env;
 use std::fs;
 

@@ -134,7 +134,7 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
 
     // The VRAM step writes texels: seed the captured rows with a non-zero
     // ramp so the HSV rewrite has something to act on.
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     for (x, y) in [(0u16, 0x1F6u16), (0x70, 0x1F8)] {
         let row: Vec<u8> = (0..256u16)
             .flat_map(|i| (0x0421u16.wrapping_mul(i % 31 + 1)).to_le_bytes())

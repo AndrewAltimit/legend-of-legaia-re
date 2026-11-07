@@ -6,7 +6,7 @@
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle_vm::battle_formulas::packed3_approach_target;
 use legaia_engine_battle_vm::battle_impact_fx::ease_actor_state;
-use legaia_retail_exec::{SP, Stop, V0};
+use psx_retail_exec::{SP, Stop, V0};
 
 const EASE: u32 = 0x8005_0F30;
 const FRAME_STEP: u32 = 0x1F80_0393;

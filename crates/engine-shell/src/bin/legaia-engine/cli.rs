@@ -267,7 +267,7 @@ pub(crate) enum Cmd {
     ///   - **Scenario**: pass `--scenario <label>` to resolve both from
     ///     `scripts/scenarios.toml`. The scene comes from
     ///     `expected_active_scene`, the VRAM is read live from the
-    ///     scenario's `.mc{slot}` save via `legaia-mednafen`'s GPU
+    ///     scenario's `.mc{slot}` save via `psx-mednafen`'s GPU
     ///     section parser. Optional `--frames N` boots a `NativeSession`
     ///     and ticks the engine before sampling, so dynamic VRAM
     ///     uploads land before the diff. `--strict` asserts byte-exact

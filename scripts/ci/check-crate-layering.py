@@ -48,10 +48,14 @@ def is_engine_layer(crate: str) -> bool:
 
 def manifest_deps(manifest: dict) -> tuple[set[str], set[str]]:
     """Workspace crates a manifest names: `(normal + build, dev)`, as
-    directory names (`legaia-foo` -> `foo`). Target-specific tables count."""
+    directory names (`legaia-foo` / `psx-foo` -> `foo`). Target-specific tables count."""
 
     def names(table: dict) -> set[str]:
-        return {k.removeprefix("legaia-") for k in table if k.startswith("legaia-")}
+        return {
+            k.removeprefix("legaia-").removeprefix("psx-")
+            for k in table
+            if k.startswith(("legaia-", "psx-"))
+        }
 
     normal: set[str] = set()
     dev: set[str] = set()

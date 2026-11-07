@@ -780,7 +780,7 @@ sample pixels the GPU drew moments earlier. The renderer only ever pushed
 the software page *to* the GPU; [`vram_capture`](../../crates/render-kernels/src/vram_capture.rs)
 (wgpu-free, in `legaia-render-kernels`) is the
 missing direction. `blit_rgba_into_vram` quantises an RGBA8 readback to
-BGR555 and writes it into a `legaia_tim::Vram` rect, and
+BGR555 and writes it into a `psx_tim::Vram` rect, and
 `Renderer::capture_into_vram` wires that to `capture_rgba`. The write lands
 in the CPU-side page, so the capture is equally visible to `move_image`,
 `region_has_data` and the VRAM parity oracle.

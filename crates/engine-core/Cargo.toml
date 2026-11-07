@@ -45,7 +45,7 @@ legaia-engine-modes.workspace = true
 legaia-expansion-format.workspace = true
 legaia-mes.workspace = true
 legaia-prot.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-anm.workspace = true
 legaia-art.workspace = true
@@ -66,5 +66,5 @@ legaia-engine-fishing.workspace = true
 anyhow.workspace = true
 # Named only by tests: format crates the disc-gated chains walk directly.
 legaia-container-formats.workspace = true
-legaia-lzs.workspace = true
+psx-lzs.workspace = true
 

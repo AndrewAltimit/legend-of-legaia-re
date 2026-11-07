@@ -21,7 +21,7 @@
 //! - the sound containers, which are chunk streams and descriptor banks
 //!   around audio data: [`sound_pack`], [`scene_vab_stream`],
 //!   [`vab_multi_bank`] and [`bse_bank`]. They find and bound the banks;
-//!   decoding a VAB or a SEQ is `legaia-vab` / `legaia-seq`.
+//!   decoding a VAB or a SEQ is `psx-vab` / `psx-seq`.
 //!
 //! It is the bottom of the format stack: every scene, UI, minigame and
 //! actor format crate sits on it, and it names none of them.
@@ -159,7 +159,7 @@ pub fn decode(buffer: &[u8], desc: &Descriptor, mode: DecodeMode) -> Result<Vec<
     }
     let body = &buffer[start..];
     match mode {
-        DecodeMode::Lzs => legaia_lzs::decompress(body, desc.size as usize),
+        DecodeMode::Lzs => psx_lzs::decompress(body, desc.size as usize),
         DecodeMode::Raw => {
             let n = desc.size as usize;
             if n > body.len() {

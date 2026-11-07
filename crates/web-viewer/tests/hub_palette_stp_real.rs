@@ -37,13 +37,13 @@ fn hub() -> Option<(Vec<u8>, Vec<u8>)> {
     Some((arena, container))
 }
 
-fn classes(t: &legaia_tim::Tim) -> Vec<PaletteStp> {
+fn classes(t: &psx_tim::Tim) -> Vec<PaletteStp> {
     (0..t.palette_count())
         .map(|i| palette_stp(t.clut.as_ref().unwrap().palette(t.mode, i).unwrap()))
         .collect()
 }
 
-fn is_empty_palette(t: &legaia_tim::Tim, i: usize) -> bool {
+fn is_empty_palette(t: &psx_tim::Tim, i: usize) -> bool {
     t.clut
         .as_ref()
         .unwrap()
@@ -62,9 +62,9 @@ fn hub_clut_stp_is_the_uploads_and_variant_two_passes_subtract() {
     eprintln!("[ran] hub palette STP");
 
     // The file: STP on row 502's palettes 0 / 2 / 6 / 8 only.
-    let sections = legaia_lzs::decompress_container(&container).unwrap();
+    let sections = psx_lzs::decompress_container(&container).unwrap();
     let blob = &sections[0];
-    let f0 = legaia_tim::parse(&blob[0xC..]).unwrap();
+    let f0 = psx_tim::parse(&blob[0xC..]).unwrap();
     let file_all: Vec<usize> = classes(&f0)
         .iter()
         .enumerate()

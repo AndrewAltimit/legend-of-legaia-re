@@ -1,4 +1,4 @@
-# legaia-mdec
+# psx-mdec
 
 PSX MDEC from-scratch decoder (Iki bitstream variant) and PSX STR video-sector parser.
 
@@ -35,7 +35,7 @@ reject one - it reads the version field as the LZSS size and returns a blank or
 garbage frame with no error. Check `frame[6..8]` (2 or 3 is STRv2/v3) first.
 `strv2_decode` decodes those, but against the VLC table `strv2_table` unpacks
 from Legaia's STR overlay. See
-[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-mdec).
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#psx-mdec).
 
 ## STR sector format
 

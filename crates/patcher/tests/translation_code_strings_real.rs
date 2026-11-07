@@ -17,12 +17,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_disc_patch::space_ledger::{self, Image, Owner};
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::code_refs::{self, RETAIL_GP};
 use legaia_translate::code_strings::{self, CodeStrings};
 use legaia_translate::markup::{self, Target};
 use legaia_translate::ui;
 use legaia_translate::{LanguagePack, export_pack, import_pack};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -86,7 +86,7 @@ fn check_sectors(original: &[u8], patched: &[u8]) {
     {
         if a != b && a.len() == SECTOR_SIZE {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid"
             );
         }

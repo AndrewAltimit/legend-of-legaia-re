@@ -7,7 +7,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::slot_machine::{SlotMachine, SlotSeat, feature_roll};
 use legaia_engine_system::rand::BiosRand;
 use legaia_minigame_formats::slot_payout;
-use legaia_retail_exec::{Cpu, Stop, V0};
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

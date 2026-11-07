@@ -111,7 +111,7 @@ pub(super) fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness
 }
 
 /// The whole-VRAM variant: a full 1024x512 `R16Uint` page seeded from a real
-/// [`legaia_tim::Vram`], and a caller-chosen colour target.
+/// [`psx_tim::Vram`], and a caller-chosen colour target.
 ///
 /// [`build_harness`]'s 64x64 stand-in cannot hold a captured frame - the
 /// transition styles sample texture pages at VRAM x >= 320 - so a test that
@@ -119,7 +119,7 @@ pub(super) fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness
 pub(super) fn build_harness_vram(
     device: wgpu::Device,
     queue: wgpu::Queue,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     target: (u32, u32),
 ) -> Harness {
     let mut h = build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, 0x001F);
@@ -130,11 +130,8 @@ pub(super) fn build_harness_vram(
 
 impl Harness {
     /// Replace the bound VRAM texture with the full 1024x512 software page.
-    fn rebuild_vram(&mut self, vram: &legaia_tim::Vram) {
-        let (w, h) = (
-            legaia_tim::VRAM_WIDTH as u32,
-            legaia_tim::VRAM_HEIGHT as u32,
-        );
+    fn rebuild_vram(&mut self, vram: &psx_tim::Vram) {
+        let (w, h) = (psx_tim::VRAM_WIDTH as u32, psx_tim::VRAM_HEIGHT as u32);
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("test full vram"),
             size: wgpu::Extent3d {

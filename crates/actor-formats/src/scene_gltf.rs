@@ -70,7 +70,7 @@
 
 use crate::gltf_color;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, pack_glb, rgba_to_png};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 

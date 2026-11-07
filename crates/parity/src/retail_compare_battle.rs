@@ -44,7 +44,7 @@ use legaia_engine_capture::battle_drive::*;
 use legaia_engine_capture::hud_glide::*;
 use legaia_engine_capture::phase_gate::*;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_ram_image::game_anchors;
+use psx_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
 use crate::retail_compare::{CameraObs, RetailObs};

@@ -809,13 +809,13 @@ fn cast_clip_morphs(
     let max_index = part_offsets
         .iter()
         .flat_map(|&e| [e as usize + 4, e as usize + 8])
-        .filter_map(|o| legaia_bytes::u32_le(part_pool, o))
+        .filter_map(|o| psx_bytes::u32_le(part_pool, o))
         .filter(|&ix| ix < 0x100)
         .max()
         .unwrap_or(0);
     (1..=max_index as usize)
         .map(|ix| {
-            let off = legaia_bytes::u32_le(actor, (ix + part_offsets.len() + 0x12) * 4)?;
+            let off = psx_bytes::u32_le(actor, (ix + part_offsets.len() + 0x12) * 4)?;
             (off != 0)
                 .then(|| crate::monster_archive::parse_clip_morph(actor, off))
                 .flatten()
@@ -899,7 +899,7 @@ pub fn decode_texture_slot(slot: &[u8], t: &TextureSlot, clut_sub: u8) -> Option
             let raw = slot
                 .get(off..off + 2)
                 .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
-            legaia_tim::bgr555_to_rgba8(raw)
+            psx_tim::bgr555_to_rgba8(raw)
         })
         .collect();
     let page = slot.get(t.texture_offset..t.texture_offset + width * height / 2)?;

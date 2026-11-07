@@ -74,7 +74,7 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
 
     for t in &raw {
         // A catalog row that no longer strict-parses emitted no grid row.
-        let Ok(_tim) = legaia_tim::parse_strict(&prot[t.abs_offset as usize..]) else {
+        let Ok(_tim) = psx_tim::parse_strict(&prot[t.abs_offset as usize..]) else {
             continue;
         };
         out.push(Row {
@@ -195,7 +195,7 @@ fn registry_rows_with_scus(
 }
 
 fn prot_and_spans(image: &[u8]) -> (Vec<u8>, Vec<(u64, u64, u32)>) {
-    let prot = legaia_iso::iso9660::read_file_in_image(image, "PROT.DAT").expect("PROT.DAT");
+    let prot = psx_iso::iso9660::read_file_in_image(image, "PROT.DAT").expect("PROT.DAT");
     let archive = legaia_prot::archive::Archive::from_bytes(prot.clone()).expect("TOC");
     let spans = archive
         .entries
@@ -387,7 +387,7 @@ fn battle_equipment_labels_carry_the_equipment_name() {
         return;
     };
     let (prot, spans) = prot_and_spans(&image);
-    let scus = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54");
+    let scus = psx_iso::iso9660::read_file_in_image(&image, "SCUS_942.54");
     drop(image);
     let scus = scus.expect("the disc's executable");
 
@@ -459,9 +459,9 @@ fn battle_equipment_labels_carry_the_equipment_name() {
 /// actually uses.
 ///
 /// [`battle_equipment_labels_carry_the_equipment_name`] hands the scan an
-/// executable it read with `legaia_iso` - the CLI's ISO walker. The WASM
+/// executable it read with `psx_iso` - the CLI's ISO walker. The WASM
 /// binding reaches the disc through the browser's entry point
-/// (`legaia_iso::image::extract_scus`, which adds the Mode2/2352 image check)
+/// (`psx_iso::image::extract_scus`, which adds the Mode2/2352 image check)
 /// and hands the result to `ScanCtx::with_scus`. Both entry points share one
 /// in-memory directory walk and one name rule, but only one of them was
 /// measured - so a browser that silently found no executable would have shown
@@ -477,8 +477,8 @@ fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
     // The two readers, side by side. They must agree byte for byte: the page
     // and the CLI label the same block from the same table or they are two
     // catalogs wearing one name.
-    let browser = legaia_iso::image::extract_scus(&image).expect("browser ISO walk");
-    let cli = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
+    let browser = psx_iso::image::extract_scus(&image).expect("browser ISO walk");
+    let cli = psx_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
     drop(image);
     assert_eq!(browser, cli, "the two hosts must read the same executable");
 

@@ -28,9 +28,9 @@ use std::path::PathBuf;
 
 use legaia_engine_effects::summon::summon_stager_prot_entry;
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_mednafen::SaveState;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_ram_image::{ScenarioManifest, extract::ram_slice};
+use psx_mednafen::SaveState;
+use psx_ram_image::{ScenarioManifest, extract::ram_slice};
 
 /// `(scenario label, loader-B id, extraction entry, spell id, creature)` for the
 /// base player-summon casts `0x82..=0x8B` (Gimard `0x81` is PCSX-only).

@@ -6,7 +6,7 @@ Top-level pipeline driver. One binary: `legaia-extract`.
 
 ```text
 disc.bin / disc.cue                // input (a .cue resolves its BINARY track)
-   │  legaia-iso         verify SHA-256, walk ISO9660
+   │  psx-iso         verify SHA-256, walk ISO9660
    ▼
 ISO9660 files                     // PROT.DAT, DMY.DAT, SCUS_942.54, MOV/, XA/, ...
    │  legaia-prot        TOC math, name from CDNAME.TXT
@@ -15,8 +15,8 @@ PROT entries                      // 0865_battle_data.BIN, 0972_move_program_no.
    │  legaia-disc-audit  categorize; legaia-container-formats: streaming sub-asset extract
    ▼
 Sub-assets                        // TIM, TMD, VAB, MES, ANM, stage-geom, scene bundles
-   │  legaia-tim         TIM → PNG (--skip-png skips)
-   │  legaia-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
+   │  psx-tim         TIM → PNG (--skip-png skips)
+   │  psx-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
    │  legaia-disc-audit  TIM catalog → TSV inventory (--skip-catalog skips)
    │  legaia-font        dialog font atlas + widths (--skip-font skips)
    ▼

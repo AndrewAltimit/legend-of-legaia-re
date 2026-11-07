@@ -155,7 +155,7 @@ pub(super) fn hero_slot_source(prot_0874: &[u8], slot: usize) -> Result<HeroSour
     .context("PROT 0874 atlas section")?;
     let mut vram = vec![0u16; 1024 * 512];
     for bytes in legaia_container_formats::pack::extract_pack(&sec2)? {
-        let Ok(tim) = legaia_tim::parse(bytes) else {
+        let Ok(tim) = psx_tim::parse(bytes) else {
             continue;
         };
         if let Some(c) = tim.clut.as_ref() {
@@ -371,7 +371,7 @@ pub(super) fn npc_target_at(
     let mut off = 0usize;
     while off + 8 <= sec0_tims.len() {
         if u32::from_le_bytes(sec0_tims[off..off + 4].try_into().unwrap()) == 0x10
-            && let Ok(tim) = legaia_tim::parse(&sec0_tims[off..])
+            && let Ok(tim) = psx_tim::parse(&sec0_tims[off..])
             && let Some(c) = tim.clut.as_ref()
             && c.fb_x == clut_col * 16
             && c.fb_y == clut_row
@@ -831,9 +831,9 @@ fn rebuild_bundle(npc_bundle: &[u8], sec0: &[u8]) -> Result<Vec<u8>> {
     }
     let span0_start = d0.data_offset as usize;
     let span0_end = container.descriptors[1].data_offset as usize;
-    let mut s0 = legaia_lzs::compress(sec0);
+    let mut s0 = psx_lzs::compress(sec0);
     if span0_start + s0.len() > span0_end {
-        s0 = legaia_lzs::compress_optimal(sec0);
+        s0 = psx_lzs::compress_optimal(sec0);
     }
     if span0_start + s0.len() <= span0_end {
         let mut out = npc_bundle.to_vec();

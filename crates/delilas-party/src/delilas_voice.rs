@@ -59,7 +59,7 @@ struct VabView {
 }
 
 fn view(buf: &[u8], offset: usize) -> Result<VabView> {
-    let report = legaia_vab::parse(buf, offset).context("parse VAB")?;
+    let report = psx_vab::parse(buf, offset).context("parse VAB")?;
     // Tone pages appear in populated-program order; each page's first
     // tone names its program slot. Fall back to the populated-slot scan
     // when a page's `prog` field is unhelpful.
@@ -122,9 +122,9 @@ impl VabView {
     /// Byte offset of tone `t` of tone page `page`.
     fn tone_offset(&self, page: usize, t: usize) -> usize {
         self.header_offset
-            + legaia_vab::VAB_HEADER_SIZE
-            + legaia_vab::PROGRAMS_TABLE_SIZE
-            + (page * legaia_vab::TONES_PER_PROGRAM + t) * legaia_vab::TONE_SIZE
+            + psx_vab::VAB_HEADER_SIZE
+            + psx_vab::PROGRAMS_TABLE_SIZE
+            + (page * psx_vab::TONES_PER_PROGRAM + t) * psx_vab::TONE_SIZE
     }
 
     /// The 1-based VAG index tone `t` of `page` points at.
@@ -156,8 +156,7 @@ pub(crate) fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
     // The slot leads with one u32; the VAB follows.
     for probe in [base + 4, base] {
         if snd.len() > probe + 4
-            && u32::from_le_bytes(snd[probe..probe + 4].try_into().unwrap())
-                == legaia_vab::VAB_MAGIC
+            && u32::from_le_bytes(snd[probe..probe + 4].try_into().unwrap()) == psx_vab::VAB_MAGIC
         {
             return Ok(probe);
         }
@@ -273,7 +272,7 @@ pub fn splice_party_voices(
         .read_entry(MONSTER_SND_ENTRY)
         .context("read monster.snd (PROT 0891)")?;
 
-    let bank_off = *legaia_vab::find_vabs(&bank)
+    let bank_off = *psx_vab::find_vabs(&bank)
         .first()
         .ok_or_else(|| anyhow::anyhow!("PROT 0869 carries no VAB"))?;
     let bank_view = view(&bank, bank_off)?;

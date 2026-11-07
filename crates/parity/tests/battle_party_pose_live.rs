@@ -37,8 +37,8 @@ use std::path::PathBuf;
 
 use legaia_actor_formats::battle_char_assembly;
 use legaia_actor_formats::monster_archive::MonsterAnimation;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 const PLAYER_FILES: [&str; 3] = [
     "0863_edstati3.BIN",

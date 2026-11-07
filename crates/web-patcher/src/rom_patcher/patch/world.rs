@@ -255,7 +255,7 @@ pub(super) fn chests(run: &mut PatchRun<'_>) -> StepResult {
             // set as the CLI), so the in-browser patcher behaves identically: no
             // quest item is moved out of its chest or dropped into another.
             let keep_static: std::collections::BTreeSet<u8> =
-                match legaia_iso::iso9660::read_file_in_image(run.patcher.image(), "SCUS_942.54") {
+                match psx_iso::iso9660::read_file_in_image(run.patcher.image(), "SCUS_942.54") {
                     Some(scus) => legaia_patcher::items::default_static_chest_items(&scus),
                     None => legaia_patcher::items::DEFAULT_STATIC_CHEST_ITEMS
                         .iter()

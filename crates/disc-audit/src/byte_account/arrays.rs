@@ -46,7 +46,7 @@ const MAX_STRIDE: i64 = 0x2000;
 const MAX_COUNT: usize = 0x1000;
 
 fn word(buf: &[u8], o: usize) -> Option<u32> {
-    legaia_bytes::u32_le(buf, o)
+    psx_bytes::u32_le(buf, o)
 }
 
 fn simm(w: u32) -> i64 {
@@ -779,7 +779,7 @@ pub(super) fn claim_indexed_arrays(
             let mut count = (end - off) / stride;
             // A table of code or data pointers ends at its last in-image word.
             let is_ptr = |j: usize| {
-                legaia_bytes::u32_le(buf, off + 4 * j).is_some_and(|w| {
+                psx_bytes::u32_le(buf, off + 4 * j).is_some_and(|w| {
                     w.is_multiple_of(4) && w >= base && ((w - base) as usize) < own_end
                 })
             };

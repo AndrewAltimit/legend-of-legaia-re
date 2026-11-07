@@ -54,7 +54,7 @@ fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
             .monster_slot(src)
             .with_context(|| format!("read monster slot {src}"))?;
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
-        let block = legaia_lzs::decompress(&slot[4..], size)
+        let block = psx_lzs::decompress(&slot[4..], size)
             .with_context(|| format!("decode monster block {src}"))?;
         let (protected, extra_drop) = legaia_delilas_challenge::dome::slim_policy(src);
         let slim = monster_archive::slim_castables(&block, protected, extra_drop)

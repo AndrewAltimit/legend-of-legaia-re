@@ -27,8 +27,8 @@ use std::path::PathBuf;
 
 use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_mednafen::{PsxSpu, SaveState};
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::{PsxSpu, SaveState};
+use psx_ram_image::ScenarioManifest;
 
 fn first_dir(cands: &[&str], probe: &str) -> Option<PathBuf> {
     cands

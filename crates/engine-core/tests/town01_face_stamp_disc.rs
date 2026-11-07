@@ -124,7 +124,7 @@ fn town01_opening_record_face_stamps_pinned_and_stamp_lands_in_vram() {
     // `vram_move_image` host hook's target) and apply them against a
     // scratch software VRAM seeded with distinct source-rect content.
     let mut world = World::new();
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     for (k, (_, words)) in PINNED.iter().enumerate() {
         let [sx, sy, w, h, ..] = *words;
         let mut bytes = Vec::new();

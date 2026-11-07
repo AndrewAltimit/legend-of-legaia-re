@@ -111,7 +111,7 @@ fn the_widget_table_and_the_hall_pack_name_the_same_page() {
     );
     let mut at_page = 0usize;
     for m in &members {
-        let Ok(tim) = legaia_tim::parse(m) else {
+        let Ok(tim) = psx_tim::parse(m) else {
             continue;
         };
         if (tim.image.fb_x, tim.image.fb_y) == pages[0] {
@@ -146,7 +146,7 @@ fn the_widget_table_and_the_hall_pack_name_the_same_page() {
     for other in &others {
         let n = members
             .iter()
-            .filter_map(|m| legaia_tim::parse(m).ok())
+            .filter_map(|m| psx_tim::parse(m).ok())
             .filter(|t| (t.image.fb_x, t.image.fb_y) == *other)
             .count();
         assert_eq!(n, 0, "the hall pack does not carry page {other:?}");
@@ -171,7 +171,7 @@ fn staging_lands_the_hud_page_and_only_it() {
     let clut_row = (widgets[0].0.clut >> 6) & 0x1FF;
     let rects = vec![(page, (0u16, clut_row))];
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let n = stage_dance_hud_vram(&index, &rects, &mut vram);
     assert_eq!(n, 1, "one member covers the HUD page");
 
@@ -204,7 +204,7 @@ fn staging_lands_the_hud_page_and_only_it() {
     );
 
     // Non-vacuity: a page nothing in the pack owns stages nothing.
-    let mut empty = legaia_tim::Vram::new();
+    let mut empty = psx_tim::Vram::new();
     assert_eq!(
         stage_dance_hud_vram(&index, &[((960, 496), (0, 496))], &mut empty),
         0,

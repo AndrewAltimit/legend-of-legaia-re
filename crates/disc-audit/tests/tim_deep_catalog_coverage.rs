@@ -11,7 +11,7 @@
 //! external oracle - the reference decoder that pins the flat catalog reads
 //! only RAW bytes and never decompresses. So this guards two things instead:
 //! the decode path (LZS container parse + decompress) and the validity gate
-//! (`legaia_tim::parse_strict` + decode-to-RGBA on the decompressed bytes). A
+//! (`psx_tim::parse_strict` + decode-to-RGBA on the decompressed bytes). A
 //! drift in the LZS decoder, the strict TIM validator, or the scan would move
 //! the digest and fail here. No decompressed Sony bytes (or TIM pixel data)
 //! are committed; the reference holds only derived metadata + FNV fingerprints
@@ -118,23 +118,22 @@ fn deep_catalog_tims_all_decode() {
     let mut decoded = 0usize;
     for entry in &entries {
         archive.read_entry(entry, &mut buf).expect("read entry");
-        let Ok(sections) = legaia_lzs::decompress_container(&buf) else {
+        let Ok(sections) = psx_lzs::decompress_container(&buf) else {
             continue;
         };
         for section in &sections {
             let mut off = 0usize;
             while off + 4 <= section.len() {
                 let magic = u32::from_le_bytes(section[off..off + 4].try_into().unwrap());
-                if magic == legaia_tim::TIM_MAGIC
-                    && let Ok(tim) = legaia_tim::parse_strict(&section[off..])
+                if magic == psx_tim::TIM_MAGIC
+                    && let Ok(tim) = psx_tim::parse_strict(&section[off..])
                     && tim.pixel_width() > 0
                     && tim.pixel_height() > 0
                 {
                     // Decode every palette, not just palette 0, so a bad CLUT
                     // row in any variant is caught.
                     for clut in 0..tim.palette_count().max(1) {
-                        legaia_tim::decode_rgba8(&tim, clut)
-                            .expect("cataloged deep TIM must decode");
+                        psx_tim::decode_rgba8(&tim, clut).expect("cataloged deep TIM must decode");
                     }
                     decoded += 1;
                 }

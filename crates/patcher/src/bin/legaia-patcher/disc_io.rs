@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 pub(crate) fn load_image(path: &Path) -> Result<Vec<u8>> {
     // A `.cue` sheet is a text index, not the disc data - resolve it to the
     // `.bin` it references so users can pass either.
-    let resolved = legaia_iso::raw::resolve_disc_path(path)
+    let resolved = psx_iso::raw::resolve_disc_path(path)
         .with_context(|| format!("resolve disc image {}", path.display()))?;
     if resolved != path {
         println!(
@@ -42,8 +42,8 @@ pub(crate) fn describe_exe(exe: &str) -> String {
 /// Detect the disc's primary executable via its `SYSTEM.CNF` `BOOT=` line
 /// (ISO9660 walk; works on any Mode 2/2352 PSX image).
 pub(crate) fn detect_exe(image: &[u8]) -> Option<String> {
-    let cnf = legaia_iso::iso9660::read_file_in_image(image, "SYSTEM.CNF")?;
-    legaia_iso::region::parse(&cnf).ok().map(|d| d.executable)
+    let cnf = psx_iso::iso9660::read_file_in_image(image, "SYSTEM.CNF")?;
+    psx_iso::region::parse(&cnf).ok().map(|d| d.executable)
 }
 
 /// Region guard: `action` is patched with USA-disc offsets, so hard-error on

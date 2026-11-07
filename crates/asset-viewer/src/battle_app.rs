@@ -14,7 +14,7 @@ use legaia_engine_render::{
 use legaia_engine_system::input::{InputState, PadButton};
 use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
-use legaia_tim::Vram;
+use psx_tim::Vram;
 use std::path::{Path, PathBuf};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};

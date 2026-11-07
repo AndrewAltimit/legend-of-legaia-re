@@ -49,7 +49,7 @@ use legaia_engine_audio::spu::VoiceBus;
 use legaia_engine_audio::{AudioSink, SPU_INTERNAL_RATE};
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_session::BootSession;
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 use serde::{Deserialize, Serialize};
 
 use crate::retail_compare::{CorpusEntry, StateClass, enumerate_corpus};
@@ -256,15 +256,13 @@ impl TrackBank {
         };
         let Some(seq) = entry
             .get(split.seq..)
-            .and_then(|b| legaia_seq::Seq::parse(b).ok())
+            .and_then(|b| psx_seq::Seq::parse(b).ok())
         else {
             return out;
         };
         out.insert(libsnd_bpm(seq.header.tempo_us_per_qn));
         for e in &seq.events {
-            if let legaia_seq::EventBody::Meta(legaia_seq::MetaMessage::SetTempo { us_per_qn }) =
-                e.body
-            {
+            if let psx_seq::EventBody::Meta(psx_seq::MetaMessage::SetTempo { us_per_qn }) = e.body {
                 out.insert(libsnd_bpm(us_per_qn));
             }
         }
@@ -561,16 +559,16 @@ pub fn score_battle(retail: &RetailAudio) -> (BTreeMap<String, f64>, BTreeMap<St
 /// Read a corpus state's RAM (and, for mednafen, the SPU envelopes).
 fn read_state(entry: &CorpusEntry, scus: &[u8]) -> Result<(Vec<u8>, Option<[u16; 24]>)> {
     if entry.emulator == "mednafen" {
-        let st = legaia_mednafen::SaveState::from_path(&entry.path)?;
+        let st = psx_mednafen::SaveState::from_path(&entry.path)?;
         let ram = st.main_ram()?.to_vec();
-        let spu = legaia_mednafen::PsxSpu::new(&st);
+        let spu = psx_mednafen::PsxSpu::new(&st);
         let mut env = [0u16; 24];
         for (i, v) in spu.voices().iter().enumerate() {
             env[i] = v.adsr_env_level.unwrap_or(0);
         }
         Ok((ram, Some(env)))
     } else {
-        let (st, _) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
+        let (st, _) = psx_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
         Ok((st.main_ram().to_vec(), None))
     }
 }

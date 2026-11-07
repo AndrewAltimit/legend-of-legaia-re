@@ -171,7 +171,7 @@ depends on this crate for the draw types it uploads. The GPU-resident batch wrap
 
 Depends only on `legaia-game-tables`, `legaia-ui-formats`,
 `legaia-minigame-formats`, `legaia-engine-battle-vm`, `legaia-engine-modes`,
-`legaia-engine-expansion`, `legaia-expansion-format`, `legaia-render-kernels`, `legaia-font`, `legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
+`legaia-engine-expansion`, `legaia-expansion-format`, `legaia-render-kernels`, `legaia-font`, `psx-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
 no wgpu, no winit, and not `legaia-engine-core` - so it links into the lean
 WASM play build. The projection from live `engine-core` state into these
 builders, where it would otherwise be written once per host, lives in

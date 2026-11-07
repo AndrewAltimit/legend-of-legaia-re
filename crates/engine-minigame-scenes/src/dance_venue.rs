@@ -37,7 +37,7 @@ use legaia_engine_scene::field_env::{self, EnvDraw};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_minigame_formats::dance_art::{self, FaceRig};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// The world scale retail folds into the camera rotation under game mode 24:
 /// the mode initialiser `FUN_8001DCF8` loads `0x6000` into the diagonal of

@@ -39,7 +39,7 @@ fn the_interval_tally_cues_key_the_arena_side_bank() {
         .expect("arena side bank");
     let vab = [4usize, 0]
         .into_iter()
-        .find_map(|o| legaia_vab::parse(&bank, o).ok())
+        .find_map(|o| psx_vab::parse(&bank, o).ok())
         .expect("the side bank is a VAB");
 
     let w = &mut host.world;

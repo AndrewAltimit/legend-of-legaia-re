@@ -32,7 +32,7 @@
 //! Everything here reads the disc (the boot bundle out of `PROT.DAT`, the
 //! widget table out of `SCUS_942.54`) - no capture, no hand-kept list.
 
-use legaia_tim::{PixelMode, Tim, Vram};
+use psx_tim::{PixelMode, Tim, Vram};
 
 use crate::system_ui_bundle::SystemUiBundle;
 use crate::ui_widgets::{self, ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST, WidgetTable};
@@ -374,7 +374,7 @@ pub fn on_sheet_page(tim: &Tim) -> bool {
 /// Parse the button-glyph TIM ([`ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET`])
 /// out of bytes starting at it, checking it is the row-511 sprite set.
 pub fn parse_button_glyph_tim(bytes: &[u8]) -> Option<Tim> {
-    legaia_tim::parse_strict(bytes)
+    psx_tim::parse_strict(bytes)
         .ok()
         .filter(|t| on_sheet_page(t) && t.clut.as_ref().is_some_and(|c| c.fb_y == 511))
 }
@@ -383,7 +383,7 @@ pub fn parse_button_glyph_tim(bytes: &[u8]) -> Option<Tim> {
 /// ([`ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET`]) out of bytes starting at
 /// it, checking its CLUT lands on `(256, 511)`.
 pub fn parse_subpalette_ext_tim(bytes: &[u8]) -> Option<Tim> {
-    legaia_tim::parse_strict(bytes).ok().filter(|t| {
+    psx_tim::parse_strict(bytes).ok().filter(|t| {
         t.clut
             .as_ref()
             .is_some_and(|c| (c.fb_x, c.fb_y) == (SUBPALETTE_EXT_FIRST * 16, 511))
@@ -511,14 +511,14 @@ pub fn composite_rgba(
                 && let (Some(pal), Some((cx, cy)), Some(c)) = (&cover_pal, cover_at(x, y), cover)
             {
                 let nib = nibble(c, cx, cy)?;
-                rgba.extend_from_slice(&legaia_tim::bgr555_to_rgba8(pal[nib]));
+                rgba.extend_from_slice(&psx_tim::bgr555_to_rgba8(pal[nib]));
                 continue;
             }
             let nib = nibble(tim, x, y)?;
             let px = match texels.owner[y * w + x] {
-                Some(ri) => legaia_tim::bgr555_to_rgba8(palettes[ri as usize][nib]),
+                Some(ri) => psx_tim::bgr555_to_rgba8(palettes[ri as usize][nib]),
                 None => {
-                    let mut p = legaia_tim::bgr555_to_rgba8(fallback[nib]);
+                    let mut p = psx_tim::bgr555_to_rgba8(fallback[nib]);
                     p[3] /= 2;
                     p
                 }
@@ -532,7 +532,7 @@ pub fn composite_rgba(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_tim::{Clut, Image};
+    use psx_tim::{Clut, Image};
 
     fn tim4(fb: (u16, u16), fb_w: u16, h: u16, clut_fb: (u16, u16), pals: &[[u16; 16]]) -> Tim {
         Tim {

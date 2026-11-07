@@ -158,7 +158,7 @@ fn borrowed_terrain_cells_copy_the_source_scenes_vram() {
     let mut vram = field_resources(&host.index, &base).unwrap().vram;
     legaia_engine_scene::expansion_map::detail::apply_vram_patches(&mut vram, &lib.vram_patches);
     let src = def.terrain.as_ref().unwrap();
-    let texel = |v: &legaia_tim::Vram, tpage: u8, clut: u16, tile: u8, u: usize, w: usize| {
+    let texel = |v: &psx_tim::Vram, tpage: u8, clut: u16, tile: u8, u: usize, w: usize| {
         let (px, py) = (
             (usize::from(tpage) & 0xF) * 64,
             (usize::from(tpage) >> 4 & 1) * 256,

@@ -108,13 +108,13 @@ pub const LIT_WINDOWS: &[WindowArt] = &[
 
 /// One decoded 15-bit texel word of a page under a CLUT (`0` outside VRAM),
 /// exactly as the shaders decode it.
-pub fn page_texel(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> u16 {
+pub fn page_texel(vram: &psx_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> u16 {
     let cx = ((cba & 0x3F) * 16) as usize;
     let cy = ((cba >> 6) & 0x1FF) as usize;
     let tx = ((tsb & 0xF) * 64) as usize;
     let ty = (((tsb >> 4) & 1) * 256) as usize;
     let px = |x: usize, y: usize| -> u16 {
-        if x >= legaia_tim::VRAM_WIDTH || y >= legaia_tim::VRAM_HEIGHT {
+        if x >= psx_tim::VRAM_WIDTH || y >= psx_tim::VRAM_HEIGHT {
             0
         } else {
             vram.pixel(x, y)
@@ -135,7 +135,7 @@ pub fn page_texel(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usiz
 
 /// FNV-1a 64 over the decoded texel words of `rect` (row-major) - the
 /// [`WindowArt::hash`] key.
-pub fn window_art_hash(vram: &legaia_tim::Vram, cba: u16, tpage: u16, rect: [u8; 4]) -> u64 {
+pub fn window_art_hash(vram: &psx_tim::Vram, cba: u16, tpage: u16, rect: [u8; 4]) -> u64 {
     let mut h = SIGNATURE_BASIS;
     for v in rect[1]..=rect[3] {
         for u in rect[0]..=rect[2] {
@@ -152,7 +152,7 @@ pub fn window_art_hash(vram: &legaia_tim::Vram, cba: u16, tpage: u16, rect: [u8;
 /// page, its UV box inside the art's rectangle, and the rectangle's texels
 /// hashing to the entry's key in this VRAM.
 pub fn prim_window_art(
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     cba: u16,
     tsb: u16,
     uvs: &[[u8; 2]],
@@ -166,7 +166,7 @@ pub fn prim_window_art(
 /// this VRAM - the [`prim_window_art`] test for one entry.
 pub fn prim_samples_art(
     art: &WindowArt,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     cba: u16,
     tsb: u16,
     uvs: &[[u8; 2]],
@@ -188,7 +188,7 @@ pub(super) fn tag_windows(
     cba_tsb: &mut [[u16; 2]],
     uvs: &[[u8; 2]],
     indices: &[u32],
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     untextured: impl Fn(usize) -> bool,
 ) -> usize {
     let mut n = 0;

@@ -16,7 +16,7 @@
 //!
 //! Skips when the save library is absent.
 
-use legaia_mednafen::container::SaveState;
+use psx_mednafen::container::SaveState;
 use std::path::PathBuf;
 
 /// Screen-space x centre added after the perspective divide, in 16.16.

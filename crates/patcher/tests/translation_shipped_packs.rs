@@ -20,10 +20,10 @@
 use std::path::{Path, PathBuf};
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_randomizer::drops::DropMode;
 use legaia_translate::markup::{self, Target};
 use legaia_translate::{LanguagePack, import_pack};
+use psx_iso::raw::SECTOR_SIZE;
 
 /// Every language pack the repo ships.
 fn shipped_packs() -> Vec<(String, LanguagePack)> {
@@ -287,7 +287,7 @@ fn shipped_packs_apply_to_a_real_disc() {
             if a != b && a.len() == SECTOR_SIZE {
                 touched += 1;
                 assert!(
-                    legaia_iso::write::mode2_form1_sector_is_valid(b),
+                    psx_iso::write::mode2_form1_sector_is_valid(b),
                     "{name}: sector {i} invalid after import"
                 );
             }
@@ -297,7 +297,7 @@ fn shipped_packs_apply_to_a_real_disc() {
         // The engine-facing parser sees the translated names: at least one item
         // name on the patched disc must equal a `scus:str` translation, and none
         // may be empty (an over-long write would have eaten a neighbour).
-        let scus = legaia_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
+        let scus = psx_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
         let items = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
             .expect("item name table");
         let translated: std::collections::BTreeSet<&str> = pack
@@ -355,8 +355,7 @@ fn translated_then_randomized_composes_and_stays_valid() {
     assert!(report.applied > 500);
 
     // 2. Then the randomizer, over the translated image.
-    let scus =
-        legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("scus");
+    let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("scus");
     let pool = legaia_patcher::items::valid_item_pool(&scus).expect("item pool");
     // The name-keyed passes only ask whether an item is *named*, which a
     // translation preserves - so the pool is still the full one.
@@ -377,7 +376,7 @@ fn translated_then_randomized_composes_and_stays_valid() {
     // the randomizer's writes.
     let check = DiscPatcher::open(both.clone()).expect("re-parse composed image");
     let _ = legaia_patcher::apply::current_drops(&check).expect("drops still readable");
-    let scus2 = legaia_iso::iso9660::read_file_in_image(&both, "SCUS_942.54").expect("scus");
+    let scus2 = psx_iso::iso9660::read_file_in_image(&both, "SCUS_942.54").expect("scus");
     let items =
         legaia_game_tables::item_names::ItemNameTable::from_scus(&scus2).expect("item table");
     let translated: std::collections::BTreeSet<&str> = pack
@@ -403,7 +402,7 @@ fn translated_then_randomized_composes_and_stays_valid() {
     {
         if a != b && a.len() == SECTOR_SIZE {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid after translate+randomize"
             );
         }

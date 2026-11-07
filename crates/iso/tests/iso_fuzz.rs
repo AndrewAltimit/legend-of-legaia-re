@@ -9,8 +9,8 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use legaia_iso::iso9660::{self, DirectoryRecord};
-use legaia_iso::raw::{RawDisc, SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
+use psx_iso::iso9660::{self, DirectoryRecord};
+use psx_iso::raw::{RawDisc, SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 /// A growable in-memory disc image laid out as 2352-byte Mode2/2352 sectors.
 /// User data (2048 bytes) lives at offset 24 within each sector.
@@ -24,7 +24,7 @@ impl DiscBuilder {
         // pass `RawDisc::open`'s "is this really a raw 2352 dump?" precheck -
         // these tests target the ISO9660 walker, not the sync detector.
         let mut sector = [0u8; SECTOR_SIZE];
-        sector[..12].copy_from_slice(&legaia_iso::raw::SECTOR_SYNC);
+        sector[..12].copy_from_slice(&psx_iso::raw::SECTOR_SYNC);
         Self {
             sectors: vec![sector; num_sectors],
         }
@@ -271,7 +271,7 @@ fn the_in_memory_readers_share_one_walk_and_one_name_rule() {
     disc.user_data(31, b"exe");
     let image = disc.bytes();
 
-    use legaia_iso::image;
+    use psx_iso::image;
     assert_eq!(
         iso9660::find_file_in_image(&image, "PROT.DAT"),
         Some((30, 5))

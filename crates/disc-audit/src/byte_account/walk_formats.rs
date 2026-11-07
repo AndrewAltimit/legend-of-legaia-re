@@ -177,10 +177,10 @@ pub(super) fn walk_efect_dat(buf: &[u8], sink: &mut Sink) {
             format!("pack {pack}: {count} absolute offsets"),
         );
         for i in 0..count {
-            let Some(start) = legaia_bytes::u32_le(buf, at + 4 + 4 * i).map(|v| v as usize) else {
+            let Some(start) = psx_bytes::u32_le(buf, at + 4 + 4 * i).map(|v| v as usize) else {
                 break;
             };
-            let end = legaia_bytes::u32_le(buf, at + 8 + 4 * i)
+            let end = psx_bytes::u32_le(buf, at + 8 + 4 * i)
                 .map(|v| v as usize)
                 .filter(|_| i + 1 < count)
                 .unwrap_or(limit)
@@ -310,7 +310,7 @@ pub(super) fn walk_pack(buf: &[u8], sink: &mut Sink) {
 
 /// Owner for a pack member, from its own leading magic.
 pub(super) fn member_owner(buf: &[u8], start: usize) -> &'static str {
-    match legaia_bytes::u32_le(buf, start) {
+    match psx_bytes::u32_le(buf, start) {
         Some(0x0000_0010) => OWNER_TIM,
         Some(0x8000_0002) => OWNER_TMD,
         _ => OWNER_RECORD,
@@ -331,7 +331,7 @@ pub(super) fn walk_offset_pack(
     owner: &'static str,
     what: &str,
 ) -> Vec<std::ops::Range<usize>> {
-    let Some(count) = legaia_bytes::u32_le(buf, 0) else {
+    let Some(count) = psx_bytes::u32_le(buf, 0) else {
         sink.note("buffer too small for an offset-pack header");
         return Vec::new();
     };
@@ -354,7 +354,7 @@ pub(super) fn walk_offset_pack(
     }
     let mut offsets = Vec::with_capacity(count);
     for i in 0..count {
-        let Some(off) = legaia_bytes::u32_le(buf, 4 + i * 4) else {
+        let Some(off) = psx_bytes::u32_le(buf, 4 + i * 4) else {
             sink.note("offset table truncated");
             return Vec::new();
         };
@@ -492,12 +492,12 @@ pub(super) fn walk_tmd(buf: &[u8], sink: &mut Sink) {
 }
 
 pub(super) fn walk_vab(buf: &[u8], sink: &mut Sink) {
-    match legaia_vab::parse(buf, 0) {
+    match psx_vab::parse(buf, 0) {
         Ok(r) => {
-            let body = legaia_vab::VAB_HEADER_SIZE
-                + legaia_vab::PROGRAMS_TABLE_SIZE
-                + r.programs.len() * legaia_vab::TONES_PER_PROGRAM * legaia_vab::TONE_SIZE
-                + legaia_vab::VAG_TABLE_ENTRIES * 2;
+            let body = psx_vab::VAB_HEADER_SIZE
+                + psx_vab::PROGRAMS_TABLE_SIZE
+                + r.programs.len() * psx_vab::TONES_PER_PROGRAM * psx_vab::TONE_SIZE
+                + psx_vab::VAG_TABLE_ENTRIES * 2;
             sink.claim(0, body.min(buf.len()), OWNER_TOC, "VAB header + tables");
             for s in &r.vag_samples {
                 sink.claim(
@@ -515,7 +515,7 @@ pub(super) fn walk_vab(buf: &[u8], sink: &mut Sink) {
 
 /// Walk a Legaia SEQ from `off` and claim `[off, end_of_track)`.
 ///
-/// Re-derived from `docs/formats/seq.md` rather than taken from `legaia-seq`,
+/// Re-derived from `docs/formats/seq.md` rather than taken from `psx-seq`,
 /// which is a dev-dependency of this crate. Two Legaia-specific divergences
 /// from PsyQ matter: the version field is a `u32` BE (header is 15 bytes, not
 /// 13), and a meta event carries **no** MIDI variable-length `length` byte -
@@ -638,7 +638,7 @@ pub(super) fn walk_vab_multi_bank(buf: &[u8], sink: &mut Sink) {
         // previous contents behind it, which nothing reads - both chunk
         // lengths and `fsize` end before it.
         let end = b.offset() + b.span();
-        if legaia_bytes::u32_le(buf, b.content_end()) == Some(0) {
+        if psx_bytes::u32_le(buf, b.content_end()) == Some(0) {
             sink.claim(
                 b.content_end(),
                 b.content_end() + 4,

@@ -823,7 +823,7 @@ struct PcmTraceArgs<'a> {
 /// number of MDEC video frames that decode cleanly. Shared by the `play`
 /// pre-decode pass and the in-flow cutscene driver.
 fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
-    use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
+    use psx_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
     let data = std::fs::read(str_path)?;
     let n_sectors = data.len() / 2048;
     let mut asm = StrFrameAssembler::new();

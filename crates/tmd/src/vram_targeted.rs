@@ -22,7 +22,7 @@
 
 use std::path::Path;
 
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 use crate::Tmd;
 
@@ -151,7 +151,7 @@ pub fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, VramU
     // Materialise once - we need two passes (images, then CLUTs) for
     // the same dual-use-row reason documented on
     // `build_vram_targeted_from_buffers`.
-    let mut tims: Vec<legaia_tim::Tim> = Vec::new();
+    let mut tims: Vec<psx_tim::Tim> = Vec::new();
     let mut total = 0usize;
     for dir in dirs {
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -166,7 +166,7 @@ pub fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, VramU
                 continue;
             };
             total += 1;
-            if let Ok(tim) = legaia_tim::parse(&buf) {
+            if let Ok(tim) = psx_tim::parse(&buf) {
                 tims.push(tim);
             }
         }
@@ -294,7 +294,7 @@ where
         // semantics as `build_vram_from_dirs`'s fallback path.
         for buf in tim_bufs {
             stats.total_tims += 1;
-            let Ok(tim) = legaia_tim::parse(buf) else {
+            let Ok(tim) = psx_tim::parse(buf) else {
                 continue;
             };
             vram.upload_tim(&tim);
@@ -307,12 +307,12 @@ where
     // Materialise once so we can do two passes over the same set. Each TIM
     // keeps whether it belongs to the lower layer (its position among the
     // input buffers, counted before parse failures drop any).
-    let (parsed, upper): (Vec<legaia_tim::Tim>, Vec<bool>) = tim_bufs
+    let (parsed, upper): (Vec<psx_tim::Tim>, Vec<bool>) = tim_bufs
         .into_iter()
         .enumerate()
         .filter_map(|(i, buf)| {
             stats.total_tims += 1;
-            legaia_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
+            psx_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
         })
         .unzip();
 
@@ -409,12 +409,12 @@ where
 {
     let mut vram = Vram::new();
     let mut stats = VramUploadStats::default();
-    let (parsed, upper): (Vec<legaia_tim::Tim>, Vec<bool>) = tim_bufs
+    let (parsed, upper): (Vec<psx_tim::Tim>, Vec<bool>) = tim_bufs
         .into_iter()
         .enumerate()
         .filter_map(|(i, buf)| {
             stats.total_tims += 1;
-            legaia_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
+            psx_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
         })
         .unzip();
     let mut layer = LayerMask::new();
@@ -479,18 +479,16 @@ const OWNER_IMAGE: u32 = 1;
 
 impl LayerMask {
     fn new() -> Self {
-        Self(vec![OWNER_NONE; legaia_tim::VRAM_PIXELS])
+        Self(vec![OWNER_NONE; psx_tim::VRAM_PIXELS])
     }
 
-    fn mark_image(&mut self, tim: &legaia_tim::Tim) {
+    fn mark_image(&mut self, tim: &psx_tim::Tim) {
         let img = &tim.image;
-        for y in
-            img.fb_y as usize..(img.fb_y as usize + img.h as usize).min(legaia_tim::VRAM_HEIGHT)
-        {
-            for x in img.fb_x as usize
-                ..(img.fb_x as usize + img.fb_w as usize).min(legaia_tim::VRAM_WIDTH)
+        for y in img.fb_y as usize..(img.fb_y as usize + img.h as usize).min(psx_tim::VRAM_HEIGHT) {
+            for x in
+                img.fb_x as usize..(img.fb_x as usize + img.fb_w as usize).min(psx_tim::VRAM_WIDTH)
             {
-                self.0[y * legaia_tim::VRAM_WIDTH + x] = OWNER_IMAGE;
+                self.0[y * psx_tim::VRAM_WIDTH + x] = OWNER_IMAGE;
             }
         }
     }
@@ -498,7 +496,7 @@ impl LayerMask {
 
 /// A CLUT block's [`LayerMask`] owner key: its origin and run length, never
 /// [`OWNER_NONE`] or [`OWNER_IMAGE`].
-fn clut_owner(clut: &legaia_tim::Clut) -> u32 {
+fn clut_owner(clut: &psx_tim::Clut) -> u32 {
     let run = u32::from(clut.w.saturating_mul(clut.h)) & 0x7FF;
     let key = (u32::from(clut.fb_x) & 0x3FF) | ((u32::from(clut.fb_y) & 0x1FF) << 10) | (run << 19);
     key.max(OWNER_IMAGE + 1)
@@ -507,7 +505,7 @@ fn clut_owner(clut: &legaia_tim::Clut) -> u32 {
 /// Write one TIM's CLUT block as a linear run along its row (the layout
 /// [`Vram::upload_tim_partial_opts`] documents), with the layer rule of
 /// [`LayerMask`]. `upper` is whether the TIM belongs to the scene layer.
-fn upload_clut_layered(vram: &mut Vram, tim: &legaia_tim::Tim, upper: bool, layer: &mut LayerMask) {
+fn upload_clut_layered(vram: &mut Vram, tim: &psx_tim::Tim, upper: bool, layer: &mut LayerMask) {
     if !upper {
         vram.upload_tim_partial_opts(tim, false, true, true);
         return;
@@ -516,7 +514,7 @@ fn upload_clut_layered(vram: &mut Vram, tim: &legaia_tim::Tim, upper: bool, laye
         return;
     };
     let y = clut.fb_y as usize;
-    if y >= legaia_tim::VRAM_HEIGHT {
+    if y >= psx_tim::VRAM_HEIGHT {
         return;
     }
     let owner = clut_owner(clut);
@@ -524,10 +522,10 @@ fn upload_clut_layered(vram: &mut Vram, tim: &legaia_tim::Tim, upper: bool, laye
     let entries = &clut.entries[..run];
     for (i, &val) in entries.iter().enumerate() {
         let x = clut.fb_x as usize + i;
-        if x >= legaia_tim::VRAM_WIDTH {
+        if x >= psx_tim::VRAM_WIDTH {
             break;
         }
-        let cell = y * legaia_tim::VRAM_WIDTH + x;
+        let cell = y * psx_tim::VRAM_WIDTH + x;
         if val == 0 {
             let held = layer.0[cell];
             let palette = &entries[i - i % 16..(i - i % 16 + 16).min(run)];
@@ -560,7 +558,7 @@ fn build_vram_unfiltered(dirs: &[&Path]) -> (Vram, usize, usize) {
             let Ok(buf) = std::fs::read(&p) else {
                 continue;
             };
-            let Ok(tim) = legaia_tim::parse(&buf) else {
+            let Ok(tim) = psx_tim::parse(&buf) else {
                 continue;
             };
             total += 1;

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use legaia_pcsx_redux::SaveState;
+use psx_pcsx_redux::SaveState;
 
 #[derive(Parser)]
 #[command(
@@ -53,8 +53,8 @@ fn load(game: Game, path: &std::path::Path) -> Result<SaveState> {
 
 fn source_label(st: &SaveState) -> &'static str {
     match st.ram_source() {
-        legaia_pcsx_redux::RamSource::Structural => "structural",
-        legaia_pcsx_redux::RamSource::Anchor => "anchor",
+        psx_pcsx_redux::RamSource::Structural => "structural",
+        psx_pcsx_redux::RamSource::Anchor => "anchor",
     }
 }
 
@@ -156,7 +156,7 @@ fn main() -> Result<()> {
                     }
                     Ok(st) => {
                         let id = st.identity();
-                        let label = legaia_ram_image::game_anchors::game_mode_label(id.game_mode);
+                        let label = psx_ram_image::game_anchors::game_mode_label(id.game_mode);
                         if json {
                             println!(
                                 "{}",
@@ -246,7 +246,7 @@ fn main() -> Result<()> {
             out,
             display_crop,
         } => {
-            let gpu = legaia_pcsx_redux::gpu::PcsxGpu::from_path(&save)?;
+            let gpu = psx_pcsx_redux::gpu::PcsxGpu::from_path(&save)?;
             let (x, y, w, h) = if display_crop {
                 gpu.display_crop_rect()
             } else {

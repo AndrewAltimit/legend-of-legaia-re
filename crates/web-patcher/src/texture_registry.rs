@@ -241,7 +241,7 @@ impl<'a> ScanCtx<'a> {
         if slot.as_ref().map(|(e, _)| *e) != Some(entry) {
             let sections = self
                 .entry_bytes(entry)
-                .and_then(|b| legaia_lzs::decompress_container(b).ok());
+                .and_then(|b| psx_lzs::decompress_container(b).ok());
             *slot = Some((entry, sections));
         }
         f(slot.as_ref().and_then(|(_, s)| s.as_deref()))
@@ -385,7 +385,7 @@ pub fn scan_all(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Re
 }
 
 /// The VRAM placement a parsed TIM declares.
-fn tim_vram(tim: &legaia_tim::Tim) -> (Option<VramRect>, Option<VramPoint>) {
+fn tim_vram(tim: &psx_tim::Tim) -> (Option<VramRect>, Option<VramPoint>) {
     let img = &tim.image;
     (
         Some((img.fb_x, img.fb_y, img.fb_w, img.h)),
@@ -394,8 +394,8 @@ fn tim_vram(tim: &legaia_tim::Tim) -> (Option<VramRect>, Option<VramPoint>) {
 }
 
 /// Decode a TIM's first palette, or `None` if it does not decode.
-fn tim_rgba(tim: &legaia_tim::Tim) -> Option<Rgba> {
-    legaia_tim::decode_rgba8(tim, 0).ok().map(|data| Rgba {
+fn tim_rgba(tim: &psx_tim::Tim) -> Option<Rgba> {
+    psx_tim::decode_rgba8(tim, 0).ok().map(|data| Rgba {
         w: tim.pixel_width(),
         h: tim.pixel_height(),
         data,
@@ -411,7 +411,7 @@ fn scan_raw(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result
         let Some(bytes) = ctx.prot.get(t.abs_offset as usize..) else {
             continue;
         };
-        let Ok(tim) = legaia_tim::parse_strict(bytes) else {
+        let Ok(tim) = psx_tim::parse_strict(bytes) else {
             continue;
         };
         let (vram, clut_vram) = tim_vram(&tim);
@@ -449,7 +449,7 @@ fn scan_lzs(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result
             let tim = sections.and_then(|s| {
                 s.get(t.lzs_section as usize)
                     .and_then(|sec| sec.get(t.offset_in_section as usize..))
-                    .and_then(|at| legaia_tim::parse_strict(at).ok())
+                    .and_then(|at| psx_tim::parse_strict(at).ok())
             });
             let (vram, clut_vram) = match tim.as_ref() {
                 Some(tim) => tim_vram(tim),
@@ -617,7 +617,7 @@ fn summon_rgba(entry_bytes: &[u8], p: &SummonPage, clut_sub: usize) -> Option<Rg
         .map(|i| {
             let o = clut_base + i * 2;
             let w = u16::from_le_bytes([*entry_bytes.get(o)?, *entry_bytes.get(o + 1)?]);
-            Some(legaia_tim::bgr555_to_rgba8(w))
+            Some(psx_tim::bgr555_to_rgba8(w))
         })
         .collect::<Option<_>>()?;
     let page = entry_bytes.get(p.page_offset..p.page_offset + p.page_bytes)?;
@@ -975,7 +975,7 @@ fn read_tim(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
                     s.get(c.section as usize)
                         .and_then(|sec| sec.get(c.offset as usize..))
                         .ok_or_else(|| "offset past the decoded section".to_string())
-                        .and_then(|at| legaia_tim::parse_strict(at).map_err(|e| e.to_string()))
+                        .and_then(|at| psx_tim::parse_strict(at).map_err(|e| e.to_string()))
                 })
         })?,
         // Raw tier, inside an entry.
@@ -986,7 +986,7 @@ fn read_tim(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
             let at = bytes
                 .get(c.offset as usize..)
                 .ok_or_else(|| "offset past the entry".to_string())?;
-            legaia_tim::parse_strict(at).map_err(|e| e.to_string())?
+            psx_tim::parse_strict(at).map_err(|e| e.to_string())?
         }
         // Raw tier, in the unindexed gap.
         (false, _) => {
@@ -994,7 +994,7 @@ fn read_tim(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
                 .prot
                 .get(c.offset as usize..)
                 .ok_or_else(|| "offset past PROT.DAT".to_string())?;
-            legaia_tim::parse_strict(at).map_err(|e| e.to_string())?
+            psx_tim::parse_strict(at).map_err(|e| e.to_string())?
         }
     };
     tim_rgba(&tim).ok_or_else(|| "texture does not decode".to_string())

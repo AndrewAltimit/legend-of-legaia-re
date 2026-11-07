@@ -113,7 +113,7 @@ pub fn victory_cycle(
     };
     let mut found = None;
     for i in 0..magic_count as usize {
-        let Some(off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         // `+0x8c` is the stream head (`[parts][frames]`); `+0x84..+0x87`

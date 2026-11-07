@@ -464,8 +464,8 @@ pub(crate) fn tim_render_distinct_cmd(prot: &Path, out: &Path, tier: RenderTier)
                 count: 1,
             },
         );
-        if let Ok(tim) = legaia_tim::parse(bytes)
-            && let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 0)
+        if let Ok(tim) = psx_tim::parse(bytes)
+            && let Ok(rgba) = psx_tim::decode_rgba8(&tim, 0)
         {
             let pw = tim.pixel_width() as u32;
             let ph = tim.image.h as u32;
@@ -509,7 +509,7 @@ pub(crate) fn tim_render_distinct_cmd(prot: &Path, out: &Path, tier: RenderTier)
                 continue;
             };
             archive.read_entry(entry, &mut buf)?;
-            let Ok(sections) = legaia_lzs::decompress_container(&buf) else {
+            let Ok(sections) = psx_lzs::decompress_container(&buf) else {
                 continue;
             };
             for t in hits {

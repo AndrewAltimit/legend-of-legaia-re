@@ -1,4 +1,4 @@
-# legaia-pcsx-redux
+# psx-pcsx-redux
 
 PCSX-Redux save-state (`.sstate`) main-RAM reader - the bridge that lets the
 cataloged PCSX-Redux **playthrough anchors** (`s1_newgame_field` ..
@@ -27,19 +27,19 @@ executable: `SaveState::from_path_structural` never looks further, and
 
 The older Legaia route - match a string known to live in `SCUS_942.54`'s loaded
 region (e.g. `h:\prot\cdname.dat`) in both the executable and the payload
-([`legaia_ram_image::extract::main_ram_via_anchor`]) - is now the fallback
+([`psx_ram_image::extract::main_ram_via_anchor`]) - is now the fallback
 `SaveState::from_path` takes for a payload the walk does not recognise; it
 reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 `from_sstate_bytes_with_anchors(bytes, exe, profile)` and
 `gpu::load_with_anchors` are the same fallback with another game's executable
-and `legaia_ram_image::GameProfile`. `SaveState::ram_source()` says which
+and `psx_ram_image::GameProfile`. `SaveState::ram_source()` says which
 route a state took. For the captured anchors the RAM starts at payload offset
 `0x27`, and `tests/structural_matches_anchor.rs` checks, for every state in
 the save library, that the structural offset equals the anchor offset
-([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image)).
+([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-psx-mednafen-psx-pcsx-redux-psx-ram-image)).
 
 ```rust
-let st = legaia_pcsx_redux::SaveState::from_path(path)?;       // gunzip + structural RAM
+let st = psx_pcsx_redux::SaveState::from_path(path)?;       // gunzip + structural RAM
 assert_eq!(st.scene_name(), "town01");
 assert_eq!(st.game_mode(), 0x03);                          // 0x03 field, 0x15 battle
 let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 as i16
@@ -48,7 +48,7 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 `SaveState` exposes `main_ram()` + KSEG0 virtual-address readers
 (`u8_at`/`u16_at`/`i16_at`/`u32_at`) plus the convenience accessors above. The
 scene / mode / player accessors read Legaia's globals, which live in
-`legaia_ram_image::game_anchors`, shared with the mednafen reader so both
+`psx_ram_image::game_anchors`, shared with the mednafen reader so both
 emulators answer "which scene is this state in?" identically; this crate
 delegates to them. `identity_with(profile)` asks another game's profile
 instead. The position
@@ -96,7 +96,7 @@ but it lets a test exercise the readers with no game bytes at all:
 both emulators' state readers, RAM diff and bisect) on inputs built in code:
 
 ```bash
-cargo run -p legaia-pcsx-redux --example bring_your_own_game -- <out_dir>
+cargo run -p psx-pcsx-redux --example bring_your_own_game -- <out_dir>
 ```
 
 `tests/bring_your_own_game.rs` runs the same code, so the example stays true
@@ -118,7 +118,7 @@ reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 - `crates/pcsx-redux/tests/structural_matches_anchor.rs` - the structural and
   anchor RAM routes agree on every library state.
 
-Depends only on `legaia-ram-image` (the anchor search and the profile trait), `flate2` and
+Depends only on `psx-ram-image` (the anchor search and the profile trait), `flate2` and
 `serde_json` (plus `clap` behind the default `cli` feature); never on
 `legaia-engine-core`, so the dev-only oracle edges stay acyclic. No Sony bytes are
 committed - the `.sstate` files are gitignored, local-only under `saves/library/`.

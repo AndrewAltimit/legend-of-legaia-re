@@ -33,13 +33,13 @@ fn xa_decode_never_panics_on_malformed_input() {
         inputs.push(rng.bytes(n));
     }
     for input in inputs {
-        for ch in [legaia_xa::Channels::Mono, legaia_xa::Channels::Stereo] {
-            let opts = legaia_xa::DecodeOptions {
+        for ch in [psx_xa::Channels::Mono, psx_xa::Channels::Stereo] {
+            let opts = psx_xa::DecodeOptions {
                 channels: ch,
                 ..Default::default()
             };
             if catch_unwind(AssertUnwindSafe(|| {
-                let _ = legaia_xa::decode(&input, opts);
+                let _ = psx_xa::decode(&input, opts);
             }))
             .is_err()
             {

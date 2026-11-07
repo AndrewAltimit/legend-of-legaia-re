@@ -5,8 +5,8 @@
 
 use crate::common::{Rng, disc, scus, scus_cpu};
 use legaia_engine_battle::magic_xp::accrue_and_level;
-use legaia_retail_exec::Stop;
 use legaia_save::CharacterRecord;
+use psx_retail_exec::Stop;
 
 const CHECK: u32 = 0x801E_70BC;
 const OVERLAY_BASE: u32 = 0x801C_E818;

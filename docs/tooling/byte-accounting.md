@@ -560,7 +560,7 @@ the rule is supposed to give.
 The rest of `0970`'s residue was its second-largest run, 3597 `mixed` bytes at
 file `0x232D0` - and `mixed` is what a compressed stream looks like to a shape
 test. It is the source the VLC table above is unpacked from, which
-[`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) already
+[`psx_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) already
 walks; the accounting measures the extent with that walk rather than
 re-implementing it, so `unpack_lz_tracked` reports what the control-byte walk
 **consumed** the way `decompress_tracked` does for an LZS span.
@@ -1392,7 +1392,7 @@ every claim comes from one binary asking the parsers what spans they consume.
 Whether anything in the engine then *slices those bytes at the right origin* is
 outside the question entirely.
 
-The VAB carriers are the worked case. `legaia_vab::parse` claims the same spans
+The VAB carriers are the worked case. `psx_vab::parse` claims the same spans
 whichever offset its callers hand it, so correcting a call site - the boot
 stager, the audio and PCM oracles, the browser runtime, the dialogue path, the
 minigame SFX resolver, the patcher - moves nothing here. The figure was right

@@ -92,7 +92,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
     };
 
     // Item names purely for legible output (no Sony bytes are asserted).
-    let names = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54")
+    let names = psx_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54")
         .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| {
         names

@@ -496,7 +496,7 @@ impl MuscleDomeSurface {
     }
 
     /// The seated dome's VRAM.
-    pub fn vram(&self) -> Option<&legaia_tim::Vram> {
+    pub fn vram(&self) -> Option<&psx_tim::Vram> {
         self.scene.as_ref()?;
         Some(self.assets.as_ref()?.vram())
     }

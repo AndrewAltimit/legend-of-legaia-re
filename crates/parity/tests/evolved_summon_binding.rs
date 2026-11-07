@@ -33,9 +33,9 @@ use std::path::PathBuf;
 
 use legaia_engine_effects::summon::summon_stager_prot_entry;
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_mednafen::SaveState;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_ram_image::{ScenarioManifest, extract::ram_slice};
+use psx_mednafen::SaveState;
+use psx_ram_image::{ScenarioManifest, extract::ram_slice};
 
 /// `(scenario label, loader-B id, extraction entry, spell id)` for the
 /// catalogued evolved-Seru player casts backed by **mednafen** states (eight of
@@ -245,8 +245,7 @@ fn evolved_seru_0x90_0x91_injected_casts_byte_pin_their_predicted_stager() {
             eprintln!("[skip] {label}: no backup fingerprint");
             continue;
         };
-        let Some(save_path) =
-            legaia_ram_image::scenarios::library_backup_for("pcsx-redux", &lib, fp)
+        let Some(save_path) = psx_ram_image::scenarios::library_backup_for("pcsx-redux", &lib, fp)
         else {
             eprintln!("[skip] {label}: no pcsx-redux library backup");
             continue;
@@ -265,7 +264,7 @@ fn evolved_seru_0x90_0x91_injected_casts_byte_pin_their_predicted_stager() {
         } else {
             raw
         };
-        let ram = legaia_ram_image::extract::main_ram_via_anchor_with_scus(&payload, &scus)
+        let ram = psx_ram_image::extract::main_ram_via_anchor_with_scus(&payload, &scus)
             .expect("locate main RAM (anchor search)");
         check_leg(ram, &index, label, loader_b, extraction, spell_id);
         pinned += 1;

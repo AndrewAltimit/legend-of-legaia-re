@@ -291,7 +291,7 @@ attack is *Burning Attack*, → PROT 903), which supplies the summon's spawn
 logic.
 
 - **Primitives.** In a mid-cast capture (decoded with
-  `legaia_ram_image::prim_pool`) the flame is about 15 Gouraud-textured
+  `psx_ram_image::prim_pool`) the flame is about 15 Gouraud-textured
   primitives (`POLY_GT3` / `POLY_GT4`) in a ~40×50 px region. All sample page
   `(832,256)` at 4bpp with CLUT **row 478**, across columns 0 / 16 / 32 at
   once - the `player_data` §2 band, not the 0870 pages. The `cba` / `tsb` are

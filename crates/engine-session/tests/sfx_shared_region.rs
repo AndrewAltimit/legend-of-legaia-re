@@ -33,19 +33,19 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn read_vab(host: &SceneHost, idx: u32) -> (legaia_vab::VabReport, Vec<u8>) {
+fn read_vab(host: &SceneHost, idx: u32) -> (psx_vab::VabReport, Vec<u8>) {
     let bytes = host
         .index
         .entry_bytes_extended(idx)
         .unwrap_or_else(|e| panic!("read PROT {idx}: {e}"));
     let (report, off) = [4usize, 0]
         .into_iter()
-        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))
         .unwrap_or_else(|| panic!("PROT {idx} has a VAB"));
     (report, bytes[off..].to_vec())
 }
 
-fn body_bytes(report: &legaia_vab::VabReport) -> u32 {
+fn body_bytes(report: &psx_vab::VabReport) -> u32 {
     report.vag_samples.iter().map(|v| v.size as u32).sum()
 }
 

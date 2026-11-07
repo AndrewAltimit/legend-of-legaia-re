@@ -1,4 +1,4 @@
-# legaia-seq
+# psx-seq
 
 PsyQ **SEQ** sequence-file parser. SEQ is the file format Sony's `libsnd`
 SsAPI sequencer (`SsSeqOpen`/`SsSeqPlay`) consumes - a thin MIDI variant

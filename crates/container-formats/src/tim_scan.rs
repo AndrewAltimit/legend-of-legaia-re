@@ -1,6 +1,6 @@
 //! Find PSX TIMs embedded in arbitrary buffers.
 //!
-//! Mirrors [`crate::tmd_scan`] but for `legaia-tim`. PSX TIM magic is the
+//! Mirrors [`crate::tmd_scan`] but for `psx-tim`. PSX TIM magic is the
 //! u32 `0x10` (`version=1`, `kind=0` packed into a single word). The TIM
 //! parser does the heavy validation (CLUT block length sanity, image block
 //! length sanity, w/h fit), so the scanner just hands every magic match to
@@ -10,8 +10,8 @@
 //! companion to `tmd-scan`. Most character-mesh PROT entries (battle_data,
 //! level_up, monster_se) host TIMs co-located with the TMDs they texture.
 
-use legaia_lzs::decompress_container;
-use legaia_tim as tim;
+use psx_lzs::decompress_container;
+use psx_tim as tim;
 
 /// One TIM found inside a source buffer.
 #[derive(Debug, Clone)]

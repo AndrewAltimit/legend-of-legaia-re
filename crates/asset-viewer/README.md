@@ -150,10 +150,10 @@ what real scenes do.
 The viewer composes Track 1 (asset crates) with Track 2 (engine crates):
 
 ```text
-legaia-iso ─┐                                      ┌─ winit  (input)
-legaia-prot ┼─ format crates ┬─ legaia-tim ──────┐  │
+psx-iso ─┐                                      ┌─ winit  (input)
+legaia-prot ┼─ format crates ┬─ psx-tim ──────┐  │
             │                ├─ legaia-tmd ──────┼──┴─ legaia-engine-render
-            │                └─ legaia-vab ──────┐
+            │                └─ psx-vab ──────┐
             │                                    └─── legaia-engine-audio
             └─ asset-viewer (this crate)
 ```

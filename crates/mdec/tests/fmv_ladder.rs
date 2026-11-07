@@ -2,7 +2,7 @@
 //!
 //! This is the reach-report ladder the `mdec` crate never had. The existing
 //! oracles each drive one layer - `st_ring_real_str` the demuxer, `av_decode_oracle`
-//! the [`StrFrameAssembler`](legaia_mdec::str_sector::StrFrameAssembler) +
+//! the [`StrFrameAssembler`](psx_mdec::str_sector::StrFrameAssembler) +
 //! [`MdecDecoder`] pair, `str_player_segment` the play loop over synthetic
 //! sectors - and none of them drives the whole chain the way a player reaches
 //! it: dispatch slot -> file seek -> [`StrPlayer`] -> [`MdecDecoder`] -> pad
@@ -34,9 +34,9 @@
 //! Disc-gated throughout: skip-passes when `LEGAIA_DISC_BIN` is unset, per the
 //! repo convention. Nothing here writes disc bytes anywhere.
 
-use legaia_mdec::MdecDecoder;
-use legaia_mdec::st_ring::StStatus;
-use legaia_mdec::str_player::{
+use psx_mdec::MdecDecoder;
+use psx_mdec::st_ring::StStatus;
+use psx_mdec::str_player::{
     Bitstream, FmvSlot, PumpIdle, SECTORS_PER_FRAME, SKIP_PAD_MASK, StrPlayer, skip_requested,
 };
 
@@ -136,12 +136,12 @@ fn retail_segments(overlay: &[u8]) -> Vec<Segment> {
 type Extent = (String, u32, u32);
 
 /// Movie extents on the user's disc, keyed by bare filename.
-fn movie_extents() -> Option<(legaia_iso::raw::RawDisc, Vec<Extent>)> {
+fn movie_extents() -> Option<(psx_iso::raw::RawDisc, Vec<Extent>)> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
-    let path = legaia_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
-    let mut disc = legaia_iso::raw::RawDisc::open(&path).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut disc).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
+    let path = psx_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
+    let mut disc = psx_iso::raw::RawDisc::open(&path).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut disc).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
     let mut out = Vec::new();
     for (p, rec) in files {
         let upper = p.to_ascii_uppercase();
@@ -176,7 +176,7 @@ struct Played {
 /// into the file, feed the ring, pump frames, decode the first `decode_budget`
 /// of them, and stop at `sector_budget` sectors or at the segment end.
 fn play_segment(
-    disc: &mut legaia_iso::raw::RawDisc,
+    disc: &mut psx_iso::raw::RawDisc,
     lba: u32,
     size: u32,
     slot: FmvSlot,
@@ -317,7 +317,7 @@ fn every_retail_fmv_id_plays_from_its_dispatch_slot() {
 }
 
 /// Rung 1b: every retail `fmv_id`'s whole segment demuxes through
-/// [`legaia_mdec::str_av`] - the kernel both play hosts open a movie through -
+/// [`psx_mdec::str_av`] - the kernel both play hosts open a movie through -
 /// with a soundtrack that is present, audible, and as long as the picture.
 ///
 /// The window is the one `legaia_game_tables::fmv_dispatch::fmv_segment_window` hands each host:
@@ -328,7 +328,7 @@ fn every_retail_fmv_id_plays_from_its_dispatch_slot() {
 /// drift a viewer hears at the end of a cutscene.
 #[test]
 fn every_retail_fmv_id_demuxes_with_a_soundtrack_as_long_as_its_picture() {
-    use legaia_mdec::str_av::StrAvDemuxer;
+    use psx_mdec::str_av::StrAvDemuxer;
     if !disc_set() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;

@@ -36,7 +36,7 @@ so a randomized drop is always an item the game has a name and handler for.
 Re-pack a monster slot in the `battle_data` archive (PROT 867).
 
 - `repack_slot` decompresses the `0x14000`-byte slot, hands the decoded record to
-  an in-place mutator, recompresses with `legaia_lzs::compress`, and zero-pads back
+  an in-place mutator, recompresses with `psx_lzs::compress`, and zero-pads back
   to the original slot size so no offset moves.
 - `set_drop` is the drop-id + chance wrapper.
 - CLI: `legaia-patcher monster-block --dump/--write` exposes the same loop for
@@ -46,7 +46,7 @@ Re-pack a monster slot in the `battle_data` archive (PROT 867).
 
 `DiscPatcher`: own a mutable disc image, locate PROT.DAT + read its TOC, and apply
 same-size PROT-entry edits via the Mode 2/2352 sector write-back in
-`legaia_iso::write`.
+`psx_iso::write`.
 
 - `patch_monster_slot` / `monster_slot` are the `battle_data` helpers.
 - `patch_prot_entry` is the generic form.
@@ -1302,7 +1302,7 @@ duels field Vahn / Noa / Gala. One orchestrator plus support modules, including 
 | `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. `DelilasPartyOptions::keep_che_hammer` (`--delilas-che-hammer`) keeps Che's welded hammer on the mesh, skips his weapon fusion, and flips the kept hand to the sibling's natural wrist relation (`retarget_clip_wrist`) so the hammer holds Che's own model-space attitude - `delilas-verify` detects the state, `delilas-audit` needs `--allow-kept-hammer`. |
 | `delilas_voice` | Battle grunt voices resampled from the sibling SPU banks in place. |
 | `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `original`; `adjusted` is the pitch/formant re-voice). |
-| `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `legaia_iso::write`). |
+| `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `psx_iso::write`). |
 | `delilas_signature_attack` | Hero Hyper -> sibling signature: stage-chain retarget, event-frame replace, `name_field` renames in both id spaces. |
 | `delilas_effects` | Signature effect-prototype transplant into the spare prototype-table ids (the 88-byte cave). |
 | `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../subsystems/cast-module.md)), plus the un-folded stage caves: staging stores `jal` into SCUS-resident repoint code so the player caster walks the FULL retail clip chain (folded two-row fallback when the LZS budget refuses); the hosted-clip timing laws live in the cast-route section of [randomizer.md](randomizer.md). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
@@ -1329,11 +1329,11 @@ catalogs know:
 
 - **raw** (`tim_catalog` coordinates: `(entry, offset)`, or a flat `PROT.DAT`
   offset for the unindexed gap before entry 0) - always a same-size in-place
-  write, since the `legaia_tim::encode` encoder copies the original's mode /
+  write, since the `psx_tim::encode` encoder copies the original's mode /
   dimensions / CLUT layout / VRAM placement.
 - **lzs** (`tim_deep_catalog` coordinates: `(entry, section, offset in the
   decoded section)`) - the encoded TIM is spliced into the decoded section and
-  the whole section recompressed with `legaia_lzs::compress_optimal`; the
+  the whole section recompressed with `psx_lzs::compress_optimal`; the
   write happens only when the new stream fits the retail stream's byte
   footprint (`decompress_tracked`'s consumed count), else a clear size error
   and nothing is written.
@@ -1459,7 +1459,7 @@ typed. Disc-gated oracle `crates/patcher/tests/translation_accent_font_real.rs`;
 overruns USA's zero-slack sectors) closes the residual: a scene MAN whose
 full-length dialog won't fit its compressed footprint gains `+N` whole sectors via
 a **full-ISO relayout** (`DiscPatcher::grow_prot_entries` ->
-`legaia_iso::relayout`), so the dialog imports byte-faithfully instead of being
+`psx_iso::relayout`), so the dialog imports byte-faithfully instead of being
 abbreviated. It grows the PROT entry (shifting the later sub-assets + rewriting
 their `scene_asset_table` descriptor offsets), shifts the PROT-relative internal
 TOC, and cascades every ISO9660 / PVD LBA reference - preserving the PROT index
@@ -1821,7 +1821,7 @@ in the same `LEGAIA_POKES` form.
 
 A PROT-entry-relative offset maps to the PROT.DAT-logical offset
 `start_lba[entry] * 2048 + offset_in_entry`, which
-`legaia_iso::write::patch_file_logical` turns into physical-sector writes plus
+`psx_iso::write::patch_file_logical` turns into physical-sector writes plus
 EDC/ECC re-encode. Every edit is same-size and in place - no LBA, TOC, or
 directory record moves - except under `--allow-relayout` (`randomize` with
 `--equip-owner`, `translate import`), which grows entries by whole sectors,

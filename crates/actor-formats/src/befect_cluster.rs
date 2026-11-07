@@ -124,19 +124,19 @@ pub fn scan_tims(b: &[u8]) -> Vec<TimTarget> {
         // Reject parses with implausible VRAM coords (the magic word recurs
         // in pixel data, so guard tightly).
         if u32_at(b, o) == Some(TIM_MAGIC)
-            && let Ok(tim) = legaia_tim::parse(&b[o..])
-            && tim.image.fb_x < legaia_tim::VRAM_WIDTH as u16
-            && tim.image.fb_y < legaia_tim::VRAM_HEIGHT as u16
+            && let Ok(tim) = psx_tim::parse(&b[o..])
+            && tim.image.fb_x < psx_tim::VRAM_WIDTH as u16
+            && tim.image.fb_y < psx_tim::VRAM_HEIGHT as u16
             && tim.image.fb_w > 0
             && tim.image.h > 0
         {
             let img = &tim.image;
             let bpp = match tim.mode {
-                legaia_tim::PixelMode::Bpp4 => 4,
-                legaia_tim::PixelMode::Bpp8 => 8,
-                legaia_tim::PixelMode::Bpp16 => 16,
-                legaia_tim::PixelMode::Bpp24 => 24,
-                legaia_tim::PixelMode::Mixed => 0,
+                psx_tim::PixelMode::Bpp4 => 4,
+                psx_tim::PixelMode::Bpp8 => 8,
+                psx_tim::PixelMode::Bpp16 => 16,
+                psx_tim::PixelMode::Bpp24 => 24,
+                psx_tim::PixelMode::Mixed => 0,
             };
             out.push(TimTarget {
                 offset: o,
@@ -246,7 +246,7 @@ pub fn extract(archive: &mut Archive, cdname: &IndexMap) -> Result<BefectCluster
         // LZS container? Use the strict decoder (rejects offset-pack false
         // positives) and require a section to magic-check, so a flat pack
         // never decompresses to synthesised garbage.
-        if let Ok(sections) = legaia_lzs::decompress_container_strict(&buf) {
+        if let Ok(sections) = psx_lzs::decompress_container_strict(&buf) {
             let real = sections
                 .iter()
                 .any(|s| tmd_magic_count(s) > 0 || !scan_tims(s).is_empty());

@@ -12,8 +12,8 @@
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::{LanguagePack, export_pack, import_pack};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -115,7 +115,7 @@ fn ui_menu_section_populates_and_round_trips() {
         if a != b && a.len() == SECTOR_SIZE {
             touched += 1;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid after UI patch"
             );
         }

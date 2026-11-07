@@ -120,7 +120,7 @@ pub fn vram_mesh_emitters(
     cba_tsb: &[[u16; 2]],
     colors: &[[u8; 3]],
     indices: &[u32],
-    texels: Option<(&legaia_tim::Vram, &[[u8; 2]])>,
+    texels: Option<(&psx_tim::Vram, &[[u8; 2]])>,
 ) -> Vec<EmitterSample> {
     let mut out = Vec::new();
     for tri in indices.as_chunks::<3>().0 {
@@ -198,7 +198,7 @@ pub fn hybrid_mesh_emitters(
     colors: &[[u8; 3]],
     flat: &[u8],
     indices: &[u32],
-    texels: Option<(&legaia_tim::Vram, &[[u8; 2]])>,
+    texels: Option<(&psx_tim::Vram, &[[u8; 2]])>,
 ) -> Vec<EmitterSample> {
     let mut out = Vec::new();
     for tri in indices.as_chunks::<3>().0 {

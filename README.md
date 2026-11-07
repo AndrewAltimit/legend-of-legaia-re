@@ -277,7 +277,7 @@ A scene takes one path through the stack on every host: [`iso`](crates/iso/READM
 
 ## Reusable for other PS1 games
 
-Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay), which [the retail-oracle method](docs/tooling/retail-oracle-method.md) writes up engine-neutral. A worked example runs the generic crates on a made-up game built in code: `cargo run -p legaia-pcsx-redux --example bring_your_own_game`.
+Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay), which [the retail-oracle method](docs/tooling/retail-oracle-method.md) writes up engine-neutral. A worked example runs the generic crates on a made-up game built in code: `cargo run -p psx-pcsx-redux --example bring_your_own_game`.
 
 | Crate | What it does | Generic? | Entry point |
 |---|---|---|---|

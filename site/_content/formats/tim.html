@@ -126,7 +126,7 @@
 
 <section class="doc-section" id="encoding">
   <h2>Encoding: PNG to TIM (texture replacement)</h2>
-  <p>A replacement texture only works if it is the <em>same size</em> as the original, so it drops into the same slot on the disc. <code>legaia_tim::encode</code> copies the original's structure verbatim - pixel mode, block dimensions, every VRAM placement field - and takes pixels from caller-supplied RGBA. It backs <code>legaia-patcher tim-replace</code> and the <a href="../tooling/rom-patcher.html">ROM patcher</a>'s texture panel.</p>
+  <p>A replacement texture only works if it is the <em>same size</em> as the original, so it drops into the same slot on the disc. <code>psx_tim::encode</code> copies the original's structure verbatim - pixel mode, block dimensions, every VRAM placement field - and takes pixels from caller-supplied RGBA. It backs <code>legaia-patcher tim-replace</code> and the <a href="../tooling/rom-patcher.html">ROM patcher</a>'s texture panel.</p>
   <h3 id="alpha-stp">Alpha to STP mapping</h3>
   <p>PSX texels carry a 1-bit semi-transparency flag (STP), not an alpha channel:</p>
   <table class="layout">

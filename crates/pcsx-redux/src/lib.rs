@@ -13,7 +13,7 @@
 //!
 //! The older Legaia-specific route, matching a string from `SCUS_942.54` in
 //! both the executable and the payload
-//! ([`legaia_ram_image::extract::main_ram_via_anchor`]), stays as the fallback
+//! ([`psx_ram_image::extract::main_ram_via_anchor`]), stays as the fallback
 //! for a payload the walk does not recognise, and a disc-gated test checks
 //! that both routes land on the same offset for every library state.
 //! [`SaveState::from_sstate_bytes_with_anchors`] is the same fallback with
@@ -30,7 +30,7 @@
 //! probe.
 //!
 //! The scene / mode / player accessors read Legaia's globals
-//! ([`legaia_ram_image::game_anchors`]); [`SaveState::identity_with`] takes
+//! ([`psx_ram_image::game_anchors`]); [`SaveState::identity_with`] takes
 //! another game's profile.
 
 pub mod fixture;
@@ -43,9 +43,9 @@ use anyhow::{Context, Result};
 
 // The Legaia RAM anchors are shared with the mednafen reader - both land on the
 // same KSEG0-addressed 2 MiB image, so "which scene is this state in?" has one
-// implementation, in `legaia_ram_image::game_anchors`.
-use legaia_ram_image::GameProfile;
-use legaia_ram_image::game_anchors::StateIdentity;
+// implementation, in `psx_ram_image::game_anchors`.
+use psx_ram_image::GameProfile;
+use psx_ram_image::game_anchors::StateIdentity;
 
 /// PSX scratchpad base address (`0x1F800000`), the "fast RAM" the field and
 /// battle code keep their hot globals in.
@@ -161,7 +161,7 @@ fn find_hardware(payload: &[u8]) -> Option<&[u8]> {
 /// parallel-port ROM and the 64 KiB hardware region, in that order. Its RAM
 /// member is the emulator's whole RAM allocation (8 MiB, which covers the
 /// debug-unit expansion); the console's 2 MiB is its first
-/// [`legaia_ram_image::PSX_RAM_SIZE`] bytes. The parallel-port member can be
+/// [`psx_ram_image::PSX_RAM_SIZE`] bytes. The parallel-port member can be
 /// as large, which is why the rule takes the first such member and not any.
 ///
 /// Works for any game's state; `None` when the payload carries no memory
@@ -195,7 +195,7 @@ pub enum RamSource {
     /// ([`structural_ram_offset`]); game-agnostic.
     Structural,
     /// Matched by an executable anchor string
-    /// ([`legaia_ram_image::extract::main_ram_via_exe_anchors`]).
+    /// ([`psx_ram_image::extract::main_ram_via_exe_anchors`]).
     Anchor,
 }
 
@@ -234,7 +234,7 @@ impl SaveState {
         if let Some(st) = Self::structural(&payload) {
             return Ok(st);
         }
-        let ram = legaia_ram_image::extract::main_ram_via_anchor(&payload)
+        let ram = psx_ram_image::extract::main_ram_via_anchor(&payload)
             .context("locate main RAM in PCSX-Redux payload (anchor search)")?
             .to_vec();
         Ok(Self::with_ram(ram, &payload, RamSource::Anchor))
@@ -269,7 +269,7 @@ impl SaveState {
         if let Some(st) = Self::structural(payload) {
             return Ok(st);
         }
-        let ram = legaia_ram_image::extract::main_ram_via_profile(payload, exe, profile)
+        let ram = psx_ram_image::extract::main_ram_via_profile(payload, exe, profile)
             .with_context(|| {
                 format!(
                     "locate main RAM in PCSX-Redux payload (anchor search, profile {})",
@@ -282,9 +282,7 @@ impl SaveState {
 
     fn structural(payload: &[u8]) -> Option<Self> {
         let at = structural_ram_offset(payload)?;
-        let ram = payload
-            .get(at..at + legaia_ram_image::PSX_RAM_SIZE)?
-            .to_vec();
+        let ram = payload.get(at..at + psx_ram_image::PSX_RAM_SIZE)?.to_vec();
         Some(Self::with_ram(ram, payload, RamSource::Structural))
     }
 
@@ -317,39 +315,39 @@ impl SaveState {
     }
 
     pub fn u8_at(&self, va: u32) -> u8 {
-        legaia_ram_image::game_anchors::u8_at(&self.ram, va)
+        psx_ram_image::game_anchors::u8_at(&self.ram, va)
     }
     pub fn u16_at(&self, va: u32) -> u16 {
-        legaia_ram_image::game_anchors::u16_at(&self.ram, va)
+        psx_ram_image::game_anchors::u16_at(&self.ram, va)
     }
     pub fn i16_at(&self, va: u32) -> i16 {
-        legaia_ram_image::game_anchors::i16_at(&self.ram, va)
+        psx_ram_image::game_anchors::i16_at(&self.ram, va)
     }
     pub fn u32_at(&self, va: u32) -> u32 {
-        legaia_ram_image::game_anchors::u32_at(&self.ram, va)
+        psx_ram_image::game_anchors::u32_at(&self.ram, va)
     }
 
     /// Active CDNAME scene label (e.g. `"town01"`), trimmed at the first NUL /
     /// non-printable byte.
     pub fn scene_name(&self) -> String {
-        legaia_ram_image::game_anchors::scene_name(&self.ram)
+        psx_ram_image::game_anchors::scene_name(&self.ram)
     }
 
     /// Next game-mode index (`0x03` = field-run, `0x15` = battle, ...).
     pub fn game_mode(&self) -> u8 {
-        legaia_ram_image::game_anchors::game_mode(&self.ram)
+        psx_ram_image::game_anchors::game_mode(&self.ram)
     }
 
     /// The player actor struct pointer (`*0x8007C364`), or `None` if it is not a
     /// plausible KSEG0 main-RAM pointer.
     pub fn player_ptr(&self) -> Option<u32> {
-        legaia_ram_image::game_anchors::player_ptr(&self.ram)
+        psx_ram_image::game_anchors::player_ptr(&self.ram)
     }
 
     /// Player world position `(x, z)` read as 16-bit signed from the player
     /// struct, or `None` if the struct pointer is implausible.
     pub fn player_pos(&self) -> Option<(i16, i16)> {
-        legaia_ram_image::game_anchors::player_pos(&self.ram)
+        psx_ram_image::game_anchors::player_pos(&self.ram)
     }
 
     /// The state's 64 KiB `hardware` blob (`psxH`), or `None` when the payload
@@ -381,6 +379,6 @@ impl SaveState {
 
     /// Scene + mode + player position in one record.
     pub fn identity(&self) -> StateIdentity {
-        legaia_ram_image::game_anchors::identify(&self.ram)
+        psx_ram_image::game_anchors::identify(&self.ram)
     }
 }

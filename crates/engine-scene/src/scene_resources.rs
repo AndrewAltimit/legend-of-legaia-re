@@ -50,7 +50,7 @@ use legaia_actor_formats::battle_data_pack;
 use legaia_container_formats::{anm_detect, pack, tim_scan, tmd_scan};
 use legaia_disc_audit::categorize::Class;
 use legaia_scene_formats::{kingdom_bundle, scene_tmd_stream, world_map_overlay};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 use crate::scene::{Scene, SceneEntry};
 

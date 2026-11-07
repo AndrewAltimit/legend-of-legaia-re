@@ -6,8 +6,8 @@
 
 use crate::common::{disc, scus_cpu};
 use legaia_engine_vm::field::*;
-use legaia_retail_exec::{GP, Stop};
 use legaia_scene_formats::field_disasm::{LinearWalker, man_script_spans, op_key};
+use psx_retail_exec::{GP, Stop};
 use std::collections::{BTreeMap, BTreeSet};
 
 const VM: u32 = 0x801D_E840;
@@ -89,7 +89,7 @@ fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
             let start = d.data_offset as usize;
             if start < buf.len()
                 && let Ok((decoded, _)) =
-                    legaia_lzs::decompress_tracked(&buf[start..], d.size as usize)
+                    psx_lzs::decompress_tracked(&buf[start..], d.size as usize)
             {
                 out.push(decoded);
             }

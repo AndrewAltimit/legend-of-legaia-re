@@ -255,7 +255,7 @@ fn sample_engine_frame(session: &NativeSession) -> ModeTraceFrame {
 }
 
 /// Lift a single mode-trace sample out of a mednafen `.mc{slot}` save.
-/// Reads main RAM via [`legaia_mednafen::SaveState::main_ram`] and
+/// Reads main RAM via [`psx_mednafen::SaveState::main_ram`] and
 /// pulls:
 ///
 /// - `game_mode` from `_DAT_8007B83C`
@@ -275,7 +275,7 @@ fn sample_engine_frame(session: &NativeSession) -> ModeTraceFrame {
 /// behaving engine - the oracle manufactured the failure out of its own `_ =>`
 /// arm rather than observing one.
 pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> {
-    use legaia_mednafen::SaveState;
+    use psx_mednafen::SaveState;
 
     let state = SaveState::from_path(save)
         .with_context(|| format!("load mednafen save {}", save.display()))?;
@@ -326,7 +326,7 @@ pub const RAM_FINGERPRINT_BYTES: usize = 0x10000;
 /// against the catalogued fingerprint to detect that it has been overwritten
 /// and no longer holds the documented scenario.
 pub fn save_ram_fingerprint(save: &Path) -> Result<String> {
-    use legaia_mednafen::SaveState;
+    use psx_mednafen::SaveState;
     use sha2::{Digest, Sha256};
 
     let state = SaveState::from_path(save)

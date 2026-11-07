@@ -8,7 +8,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::dance::{DanceDir, DanceGame, DanceMode};
 use legaia_minigame_formats::dance_cast as dc;
-use legaia_retail_exec::{Cpu, GP, Stop, V0};
+use psx_retail_exec::{Cpu, GP, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

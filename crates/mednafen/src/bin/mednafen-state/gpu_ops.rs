@@ -2,7 +2,7 @@
 //! `mednafen-state`.
 
 use anyhow::{Context, Result};
-use legaia_mednafen::{
+use psx_mednafen::{
     PsxGpu, PsxSpu, SaveState, VRAM_HEIGHT, VRAM_WIDTH,
     gpu::{crop_rgba, nonzero_rows, vram_to_rgba8},
 };
@@ -261,7 +261,7 @@ pub fn cmd_spu(save: &Path, all: bool) -> Result<()> {
         None => println!("  voice reverb mask (EON)      : <not captured>"),
     }
     if let Some(m) = reverb_mask {
-        let reverbed: Vec<usize> = (0..legaia_mednafen::SPU_NUM_VOICES)
+        let reverbed: Vec<usize> = (0..psx_mednafen::SPU_NUM_VOICES)
             .filter(|i| m & (1 << i) != 0)
             .collect();
         println!("  reverb-routed voices         : {reverbed:?}");

@@ -1016,7 +1016,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             Ok(obs)
         }
         _ => {
-            let (st, gpu) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
+            let (st, gpu) = psx_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
             let frame = gpu
                 .as_ref()
                 .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));

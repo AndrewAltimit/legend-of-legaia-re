@@ -93,7 +93,7 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     let manifest_path = args.manifest.or(m).context("no scripts/scenarios.toml")?;
     let library = args.library.or(l).context("no save library")?;
     let extracted = args.extracted_root.or(e).context("no extracted disc")?;
-    let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest_path)?;
+    let manifest = psx_ram_image::ScenarioManifest::from_path(&manifest_path)?;
     if let Some(p) = &args.census {
         let c = crate::retail_coverage::census(
             &extracted,

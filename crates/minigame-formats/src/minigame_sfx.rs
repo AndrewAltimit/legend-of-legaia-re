@@ -45,7 +45,7 @@
 //! the static id `0x09`, sampled from the VAB at extraction 0869.
 
 use anyhow::{Context, Result, bail};
-use legaia_vab::VabReport;
+use psx_vab::VabReport;
 
 /// Cue ids at or above this use the runtime bank rather than the SCUS table.
 pub const RUNTIME_CUE_BASE: u16 = 0x200;
@@ -180,10 +180,10 @@ impl SfxCueBank {
     pub fn new(bank_entry: &[u8], vab_entry: &[u8]) -> Result<Self> {
         // Retail wraps the bank as `[u32 size][VABp ...]`; find the header
         // rather than assuming the prefix.
-        let off = *legaia_vab::find_vabs(vab_entry)
+        let off = *psx_vab::find_vabs(vab_entry)
             .first()
             .context("no VAB header in the sample entry")?;
-        let vab = legaia_vab::parse(vab_entry, off).context("parsing the minigame SFX VAB")?;
+        let vab = psx_vab::parse(vab_entry, off).context("parsing the minigame SFX VAB")?;
         let cues = parse_cues(bank_entry, &vab)?;
         Ok(Self {
             cues,
@@ -235,14 +235,14 @@ impl SfxCueBank {
         // `parse`'s spans name the body chunk's 4-byte header rather than the
         // first ADPCM block (`docs/formats/vab.md`), which is what
         // `decode_vag_aligned`'s `{0, 4}` probe is for. The general resolver
-        // (`legaia_vab::vag_body_origin_at`) is only needed where another
+        // (`psx_vab::vag_body_origin_at`) is only needed where another
         // chunk sits between the header part and the bodies; this entry is not
         // one of those, so the probe already lands on the real grid.
         let body = self
             .vab_bytes
             .get(span.byte_offset..span.byte_offset + span.size)
             .context("VAG sample span past the entry")?;
-        let pcm = legaia_vab::decode_vag_aligned(body).context("decoding the VAG")?;
+        let pcm = psx_vab::decode_vag_aligned(body).context("decoding the VAG")?;
         let semitones = note as f64 - atr.center as f64;
         let rate = (VAG_BASE_RATE * 2f64.powf(semitones / 12.0)).round();
         Ok((pcm, rate.clamp(4000.0, 96_000.0) as u32))

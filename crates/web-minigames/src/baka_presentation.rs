@@ -45,7 +45,7 @@ impl LegaiaMinigames {
     }
 
     /// The 9-TIM HUD art pack (PROT 1203 descriptor 0).
-    fn baka_art(&self) -> Option<Vec<legaia_tim::Tim>> {
+    fn baka_art(&self) -> Option<Vec<psx_tim::Tim>> {
         let entry = self.baka_entry(baka::BAKA_HUD_ART_PROT_INDEX)?;
         minigame_art::parse_art_pack(entry).ok()
     }
@@ -542,7 +542,7 @@ impl LegaiaMinigames {
     /// opponent's atlas last (roster 4's pack shares the `(512, 256)` page +
     /// row-497 CLUT with party atlas 6; retail loads them one at a time too).
     pub fn baka_duel_vram(&self, opponent: u32) -> Vec<u8> {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         if let Some(art) = self.baka_art() {
             for tim in &art {
                 vram.upload_tim(tim);
@@ -553,7 +553,7 @@ impl LegaiaMinigames {
             && let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(raw)
         {
             for atlas in &atlases {
-                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+                if let Ok(tim) = psx_tim::parse(&atlas.tim_bytes) {
                     vram.upload_tim(&tim);
                 }
             }
@@ -561,7 +561,7 @@ impl LegaiaMinigames {
         if let Some(prot_index) = baka::fighter_pack_prot_index(opponent as usize)
             && let Some(entry) = self.baka_entry(prot_index)
             && let Some(pack) = baka::parse_fighter_pack(entry)
-            && let Ok(tim) = legaia_tim::parse(&pack.tim_bytes)
+            && let Ok(tim) = psx_tim::parse(&pack.tim_bytes)
         {
             vram.upload_tim(&tim);
         }
@@ -959,11 +959,11 @@ fn announcer_cues() -> Vec<legaia_engine_minigames::baka_fighter_chrome::XaCue> 
 /// or channel is missing is left out and plays silent.
 pub(crate) fn stage_baka_announcer(image: &[u8]) -> legaia_engine_audio::XaClipBank {
     use legaia_engine_audio::xa_clip_bank::{decode_channel_span, read_span_sectors};
-    const RAW: usize = legaia_xa::demux::RAW_SECTOR_BYTES;
+    const RAW: usize = psx_xa::demux::RAW_SECTOR_BYTES;
     let mut bank = legaia_engine_audio::XaClipBank::new();
     for cue in announcer_cues() {
         let path = format!("XA/XA{}.XA", u32::from(cue.clip) + 1);
-        let Some((lba, size)) = legaia_iso::iso9660::find_path_in_image(image, &path) else {
+        let Some((lba, size)) = psx_iso::iso9660::find_path_in_image(image, &path) else {
             continue;
         };
         let sectors = read_span_sectors(u32::from(cue.dur)).min(size.div_ceil(2048));
@@ -1000,9 +1000,9 @@ impl LegaiaMinigames {
             // (`SPUCNT` bit 2; `World::cd_input_reverb` on the play hosts).
             d.set_cd_reverb(true);
             let channels = if pcm.stereo {
-                legaia_xa::Channels::Stereo
+                psx_xa::Channels::Stereo
             } else {
-                legaia_xa::Channels::Mono
+                psx_xa::Channels::Mono
             };
             d.audio().play_xa_shout(
                 pcm.pcm,

@@ -55,7 +55,7 @@
 //! Parser scope: this module owns the strip in PROT entry 899.
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{PixelMode, Tim};
+use psx_tim::{PixelMode, Tim};
 
 /// PROT extraction entry that carries the sheet (the menu overlay).
 pub const PROT_ENTRY: usize = 899;
@@ -144,10 +144,10 @@ impl SaveIconSheet {
     ///
     /// Uses the **lenient** TIM reader: both menu-overlay TIMs ship with
     /// flag word `0x00010008`, and bit 16 is a reserved bit
-    /// [`legaia_tim::parse_strict`] rejects. The rect fingerprint that
+    /// [`psx_tim::parse_strict`] rejects. The rect fingerprint that
     /// [`Self::validate`] applies is the stricter check here anyway.
     pub fn parse(bytes: &[u8], entry_offset: usize) -> Result<Self> {
-        let tim = legaia_tim::parse(bytes).context("save-icon sheet is not a valid TIM")?;
+        let tim = psx_tim::parse(bytes).context("save-icon sheet is not a valid TIM")?;
         let sheet = Self { entry_offset, tim };
         sheet.validate()?;
         Ok(sheet)
@@ -275,7 +275,7 @@ impl SaveIconSheet {
         let mut out = Vec::with_capacity(TILE_SIZE * TILE_SIZE * 4);
         for byte in px.iter() {
             for nib in [byte & 0x0F, byte >> 4] {
-                out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(clut[nib as usize]));
+                out.extend_from_slice(&psx_tim::bgr555_to_rgba8(clut[nib as usize]));
             }
         }
         Ok(out)
@@ -350,7 +350,7 @@ pub fn find_in_entry(entry: &[u8]) -> Option<usize> {
             && entry[off + 1] == 0
             && entry[off + 2] == 0
             && entry[off + 3] == 0
-            && let Ok(tim) = legaia_tim::parse(&entry[off..])
+            && let Ok(tim) = psx_tim::parse(&entry[off..])
             && tim.mode == PixelMode::Bpp4
             && (tim.image.fb_x, tim.image.fb_y, tim.image.fb_w, tim.image.h) == IMAGE_RECT
             && tim

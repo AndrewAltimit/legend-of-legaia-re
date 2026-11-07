@@ -82,7 +82,9 @@ pub(super) fn install_panic_hook() {
             let frames: Vec<&str> = bt
                 .lines()
                 .map(str::trim)
-                .filter(|l| l.contains("legaia_") && !l.contains("soak_harness"))
+                .filter(|l| {
+                    (l.contains("legaia_") || l.contains("psx_")) && !l.contains("soak_harness")
+                })
                 .take(6)
                 .collect();
             LAST_PANIC.with(|p| {

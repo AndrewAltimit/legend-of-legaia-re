@@ -15,13 +15,13 @@
 use std::collections::BTreeMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply::{self, EncounterScope};
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::kingdom::{Kingdom, KingdomMap};
 use legaia_prot::cdname::{self, RAW_TOC_INDEX_OFFSET};
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 const SEED: u64 = 0x0BAD_F00D_DEAD_BEEF;
 
@@ -361,7 +361,7 @@ fn world_shuffle_preserves_global_multiset_and_bosses() {
     let disc_sector = prot_lba as usize + archive.entries[changed].start_lba as usize;
     let sb = disc_sector * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
         "patched scene {changed} first sector must be EDC/ECC-valid"
     );
 

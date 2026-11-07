@@ -41,7 +41,7 @@ use legaia_parity::audio_trace_oracle::AudioTraceBuildOptions;
 use legaia_parity::pcm_oracle::{
     SPU_SAMPLE_RATE, build_engine_pcm_trace, pcm_stats, retail_reference_pcm,
 };
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 
 /// How many engine frames to tick before sampling. One retail second at
 /// 60 Hz, matching the audio-trace oracle's window.

@@ -14,11 +14,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_disc_audit::categorize::{self, Class};
-use legaia_iso::iso9660::{self, DirectoryRecord};
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
 use legaia_overlay_images::static_overlay::overlay_map;
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
+use psx_iso::iso9660::{self, DirectoryRecord};
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
 use serde::Serialize;
 
 /// Bumped when a consumer would misread the old shape.

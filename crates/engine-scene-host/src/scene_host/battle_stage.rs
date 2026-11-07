@@ -24,7 +24,7 @@ pub struct BattleStageResources {
     /// The PROT entry of the stage stream the fight's region names.
     pub stage_entry: u32,
     /// Scene + stage-dome textures resident - becomes the battle VRAM base.
-    pub vram: legaia_tim::Vram,
+    pub vram: psx_tim::Vram,
     /// The backdrop shell TMD plus the raw bytes it was parsed from.
     pub dome: (legaia_tmd::Tmd, Vec<u8>),
     /// How many stage TIMs the stage stream re-uploaded over its siblings.

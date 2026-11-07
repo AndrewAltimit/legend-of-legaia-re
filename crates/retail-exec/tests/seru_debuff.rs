@@ -7,8 +7,8 @@ use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_core::world::World;
 use legaia_game_tables::element_affinity;
 use legaia_game_tables::seru_side_effect::SeruSideEffectTable;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

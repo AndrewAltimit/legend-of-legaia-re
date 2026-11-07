@@ -1,4 +1,4 @@
-//! The retail play loop over the sector ring ([`legaia_mdec::str_player`]).
+//! The retail play loop over the sector ring ([`psx_mdec::str_player`]).
 //!
 //! The point of the port is that a *segment* of a movie is playable: one
 //! `MVn.STR` can carry several cutscenes as abutting frame ranges (`MV3.STR`
@@ -10,7 +10,7 @@
 //! The disc-gated tail unpacks the real STRv2 VLC table out of the user's own
 //! STR/MDEC overlay and skips (passing) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_mdec::str_player::{Bitstream, FmvSlot, PumpIdle, StrPlayer, seek_sector_offset};
+use psx_mdec::str_player::{Bitstream, FmvSlot, PumpIdle, StrPlayer, seek_sector_offset};
 
 /// Build one 2048-byte STR video sector.
 fn video_sector(frame_number: u32, chunk: u16, chunks: u16, payload_byte: u8) -> Vec<u8> {
@@ -207,7 +207,7 @@ fn str_overlay() -> Option<Vec<u8>> {
 
 #[test]
 fn strv2_vlc_table_unpacks_to_its_exact_footprint() {
-    use legaia_mdec::strv2_table;
+    use psx_mdec::strv2_table;
     let Some(overlay) = str_overlay() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;

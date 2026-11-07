@@ -72,9 +72,9 @@
 //! compensations too.
 //!
 //! The [`ADPCM_F0`] / [`ADPCM_F1`] filter constants are the same five-entry
-//! tables XA-ADPCM uses (`legaia_xa::F0` / `F1`) - the algorithm is identical,
+//! tables XA-ADPCM uses (`psx_xa::F0` / `F1`) - the algorithm is identical,
 //! only the block packaging differs. This crate carries its own copy so a
-//! sound-bank reader does not link the disc reader `legaia-xa` sits on; a
+//! sound-bank reader does not link the disc reader `psx-xa` sits on; a
 //! test pins the two copies equal.
 
 use anyhow::{Context, Result, bail};
@@ -91,10 +91,10 @@ pub const VAG_TABLE_ENTRIES: usize = 256;
 pub const VAG_BLOCK_BYTES: usize = 16;
 pub const SAMPLES_PER_BLOCK: usize = 28;
 /// SPU-ADPCM prediction filter, first coefficient (x/64), by filter index.
-/// Identical to `legaia_xa::F0`.
+/// Identical to `psx_xa::F0`.
 pub const ADPCM_F0: [i32; 5] = [0, 60, 115, 98, 122];
 /// SPU-ADPCM prediction filter, second coefficient (x/64), by filter index.
-/// Identical to `legaia_xa::F1`.
+/// Identical to `psx_xa::F1`.
 pub const ADPCM_F1: [i32; 5] = [0, 0, -52, -55, -60];
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -698,8 +698,8 @@ mod tests {
     /// The filter tables are a copy of the XA decoder's; they must not drift.
     #[test]
     fn adpcm_filter_tables_match_xa() {
-        assert_eq!(super::ADPCM_F0, legaia_xa::F0);
-        assert_eq!(super::ADPCM_F1, legaia_xa::F1);
+        assert_eq!(super::ADPCM_F0, psx_xa::F0);
+        assert_eq!(super::ADPCM_F1, psx_xa::F1);
     }
 
     use super::*;

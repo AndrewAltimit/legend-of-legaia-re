@@ -360,7 +360,7 @@ fn delilas_challenge_keeps_touched_sectors_valid() {
         if a != b {
             touched += 1;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid after patch"
             );
         }

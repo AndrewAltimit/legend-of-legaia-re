@@ -9,8 +9,8 @@ use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 use legaia_engine_core::world::World;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
-use legaia_retail_exec::{Cpu, GP, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Cpu, GP, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

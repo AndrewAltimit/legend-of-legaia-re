@@ -1787,7 +1787,7 @@ block and the CLUT block are decided **independently** against the
 prim-target rectangles of the current TMD, so a TIM can contribute one
 block, both, or neither.
 
-`legaia_tim::vram::Vram::prim_texture_status` then classifies each prim's
+`psx_tim::vram::Vram::prim_texture_status` then classifies each prim's
 `(cba, tsb, uv)` lookup as `Ok` / `MissingClut` / `MissingTexturePage`. The
 viewer drops bad prims at mesh-build time; the CLI can say why. The same
 filter runs in engine scene loads through
@@ -2076,7 +2076,7 @@ and 320 column strips, each an ordinary textured quad whose texture page is
 the capture.
 
 The port draws through wgpu into a colour attachment unrelated to
-`legaia_tim::Vram`: `Renderer::upload_vram` pushes the software page to the
+`psx_tim::Vram`: `Renderer::upload_vram` pushes the software page to the
 GPU and nothing comes back. The shared `vram_capture` kernel
 (`crates/render-kernels`) adds the missing direction, and
 `Renderer::capture_into_vram` is `capture_rgba` plus that blit.

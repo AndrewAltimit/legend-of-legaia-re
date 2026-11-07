@@ -138,7 +138,7 @@ fn append_boss_page(tex: &mut MonsterTexture, clut: &[u8], pixels: &[u8]) {
     for p in 0..BOSS_PALETTES {
         let mut pal = [[0u8; 4]; 16];
         for (c, slot) in pal.iter_mut().enumerate() {
-            let raw = legaia_bytes::u16_le(clut, (p * 16 + c) * 2).unwrap_or(0);
+            let raw = psx_bytes::u16_le(clut, (p * 16 + c) * 2).unwrap_or(0);
             *slot = bgr555_to_rgba(raw);
         }
         tex.palettes.push(pal);

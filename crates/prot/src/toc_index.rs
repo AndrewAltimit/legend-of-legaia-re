@@ -6,7 +6,7 @@
 //! [`crate::runtime_toc`].
 //!
 //! The `PROT.DAT` bytes themselves come off an in-memory disc image through
-//! `legaia_iso::image::extract_prot_dat`.
+//! `psx_iso::image::extract_prot_dat`.
 
 const SECTOR: u32 = 0x800;
 

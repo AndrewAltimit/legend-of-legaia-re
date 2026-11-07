@@ -271,8 +271,8 @@ mod tests {
             return;
         };
         let disc = std::fs::read(path).expect("disc");
-        let prot = legaia_iso::image::extract_prot_dat(&disc).expect("PROT.DAT");
-        let cdname = legaia_iso::image::extract_cdname_txt(&disc);
+        let prot = psx_iso::image::extract_prot_dat(&disc).expect("PROT.DAT");
+        let cdname = psx_iso::image::extract_cdname_txt(&disc);
         let index = ProtIndex::from_bytes(prot, cdname.as_deref()).expect("index");
         let fast = ArrivalCatalog::build(&index);
         let whole = ArrivalCatalog::build_with(&index, |index, name| {

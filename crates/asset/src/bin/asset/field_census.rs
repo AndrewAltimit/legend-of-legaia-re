@@ -246,8 +246,7 @@ fn man_payloads(buf: &[u8]) -> Vec<(&'static str, Vec<u8>)> {
             if start >= buf.len() {
                 continue;
             }
-            if let Ok((decoded, _)) = legaia_lzs::decompress_tracked(&buf[start..], d.size as usize)
-            {
+            if let Ok((decoded, _)) = psx_lzs::decompress_tracked(&buf[start..], d.size as usize) {
                 out.push(("bundle", decoded));
             }
         }

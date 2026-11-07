@@ -29,7 +29,7 @@
 //! ## What this gives us
 //!
 //! - A pure-Rust parser for the captured table so engines can compare a
-//!   captured snapshot against `legaia_iso`'s ISO9660 walk and surface
+//!   captured snapshot against `psx_iso`'s ISO9660 walk and surface
 //!   any drift between the two representations.
 //! - The MSF↔LBA conversion needed to look up the same files via the disc
 //!   reader without going back through the directory.

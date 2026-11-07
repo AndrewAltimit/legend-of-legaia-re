@@ -7,7 +7,7 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const SAMPLER: u32 = 0x8001_9278;
 const OVERLAY_BASE: u32 = 0x801C_E818;

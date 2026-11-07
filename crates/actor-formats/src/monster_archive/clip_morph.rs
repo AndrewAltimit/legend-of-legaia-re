@@ -68,13 +68,13 @@ pub fn parse_clip_morph(block: &[u8], offset: u32) -> Option<ClipMorph> {
     let o = offset as usize;
     let head = block.get(o..o + 8)?;
     let keys = [head[1], head[2], head[3], head[4]];
-    let count = legaia_bytes::u32_le(block, o + 8)?;
+    let count = psx_bytes::u32_le(block, o + 8)?;
     let mut at = o + 0xC;
     let mut records = Vec::new();
     for _ in 0..count {
-        let object = legaia_bytes::u32_le(block, at)?;
-        let first_vertex = legaia_bytes::u32_le(block, at + 4)?;
-        let n = legaia_bytes::u32_le(block, at + 8)? as usize;
+        let object = psx_bytes::u32_le(block, at)?;
+        let first_vertex = psx_bytes::u32_le(block, at + 4)?;
+        let n = psx_bytes::u32_le(block, at + 8)? as usize;
         let body = at + 0xC;
         let end = body.checked_add(n.checked_mul(8)?)?;
         let bytes = block.get(body..end)?;
@@ -117,11 +117,11 @@ pub fn clip_morph_table(entry: &[u8], id: u16) -> anyhow::Result<Option<Vec<Opti
     let mc = block[0x4a] as usize;
     let mut max_index = 0u32;
     for i in 0..mc {
-        let Some(e) = legaia_bytes::u32_le(&block, 0x4c + i * 4) else {
+        let Some(e) = psx_bytes::u32_le(&block, 0x4c + i * 4) else {
             break;
         };
         for lane in [4, 8] {
-            if let Some(ix) = legaia_bytes::u32_le(&block, e as usize + lane)
+            if let Some(ix) = psx_bytes::u32_le(&block, e as usize + lane)
                 && ix < 0x100
             {
                 max_index = max_index.max(ix);
@@ -130,7 +130,7 @@ pub fn clip_morph_table(entry: &[u8], id: u16) -> anyhow::Result<Option<Vec<Opti
     }
     let table = (1..=max_index as usize)
         .map(|ix| {
-            let off = legaia_bytes::u32_le(&block, (ix + mc + 0x12) * 4)?;
+            let off = psx_bytes::u32_le(&block, (ix + mc + 0x12) * 4)?;
             (off != 0).then(|| parse_clip_morph(&block, off)).flatten()
         })
         .collect();

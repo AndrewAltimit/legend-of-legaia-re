@@ -58,7 +58,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{Tim, Vram};
+use psx_tim::{Tim, Vram};
 
 /// Byte offset of the first TOC sector word inside `PROT.DAT` (after the
 /// two file-header words). Raw TOC entry `n` spans sectors
@@ -337,7 +337,7 @@ pub fn parse_entries(entry0: &[u8], entry1: &[u8]) -> Result<SystemUiBundle> {
                 continue;
             }
             let off = off as usize;
-            match legaia_tim::parse(&bytes[off..]) {
+            match psx_tim::parse(&bytes[off..]) {
                 Ok(tim) => tims.push(SystemUiTim {
                     raw_entry: raw_entry as u8,
                     member,

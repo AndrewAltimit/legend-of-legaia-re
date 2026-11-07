@@ -19,7 +19,7 @@ legaia-render-kernels.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
 legaia-font.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-ui-formats.workspace = true
@@ -31,8 +31,8 @@ legaia-engine-camera.workspace = true
 legaia-engine-field.workspace = true
 # `tests/camera_relative_retail_oracle.rs` reads retail save states (skips
 # and passes without the library).
-legaia-mednafen.workspace = true
-legaia-ram-image.workspace = true
+psx-mednafen.workspace = true
+psx-ram-image.workspace = true
 
 [[test]]
 name = "integration"

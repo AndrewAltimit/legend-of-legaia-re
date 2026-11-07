@@ -214,7 +214,7 @@ const MAX_PACK_MEMBERS: u32 = 8192;
 /// what makes the two forms distinguishable: reading a chunk-headered carrier
 /// as bare puts the header word in `count`.
 pub fn scene_pack(buf: &[u8]) -> Option<ScenePack> {
-    if let Some(header) = legaia_bytes::u32_le(buf, 0) {
+    if let Some(header) = psx_bytes::u32_le(buf, 0) {
         let type_byte = ((header >> 24) & 0xFF) as u8;
         let size = header & 0x00FF_FFFF;
         let legal_type = !matches!(AssetType::from_byte(type_byte), AssetType::Unknown(_));
@@ -240,7 +240,7 @@ pub fn scene_pack(buf: &[u8]) -> Option<ScenePack> {
 /// Parse `[u32 count][u32 word_offset[count]]` at `base`, returning absolute
 /// member ranges. Word offsets are relative to `base`.
 fn read_pack_at(buf: &[u8], base: usize) -> Option<Vec<std::ops::Range<usize>>> {
-    let count = legaia_bytes::u32_le(buf, base)?;
+    let count = psx_bytes::u32_le(buf, base)?;
     if count == 0 || count > MAX_PACK_MEMBERS {
         return None;
     }
@@ -252,7 +252,7 @@ fn read_pack_at(buf: &[u8], base: usize) -> Option<Vec<std::ops::Range<usize>>> 
     let mut byte_offsets = Vec::with_capacity(count);
     let mut prev: Option<usize> = None;
     for i in 0..count {
-        let word = legaia_bytes::u32_le(buf, base + 4 + i * 4)? as usize;
+        let word = psx_bytes::u32_le(buf, base + 4 + i * 4)? as usize;
         let off = word.checked_mul(4)?;
         if let Some(p) = prev
             && off <= p

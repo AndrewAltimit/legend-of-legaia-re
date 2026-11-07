@@ -20,7 +20,7 @@
 
 use legaia_art::arts_voice::{ArtsVoiceTable, clip_file};
 use legaia_engine_audio::{ArtsShoutBank, ShoutClip, XaClip, XaClipBank};
-use legaia_xa::demux::ChannelStream;
+use psx_xa::demux::ChannelStream;
 
 /// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`.
 /// The animation cue tracks' party voice band (`0xC8..=0xFF` re-based
@@ -115,16 +115,16 @@ fn decode_stream(s: &ChannelStream) -> Option<Vec<i16>> {
         return None;
     }
     let channels = if s.stereo {
-        legaia_xa::Channels::Stereo
+        psx_xa::Channels::Stereo
     } else {
-        legaia_xa::Channels::Mono
+        psx_xa::Channels::Mono
     };
-    let (pcm, _) = legaia_xa::decode(
+    let (pcm, _) = psx_xa::decode(
         &s.audio,
-        legaia_xa::DecodeOptions {
+        psx_xa::DecodeOptions {
             channels,
             sample_rate: s.sample_rate,
-            bits: legaia_xa::BitsPerSample::Four,
+            bits: psx_xa::BitsPerSample::Four,
         },
     )
     .ok()?;
@@ -218,7 +218,7 @@ pub fn install_clip_file(bank: &mut XaClipBank, slot: u8, streams: &[ChannelStre
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_xa::demux::{
+    use psx_xa::demux::{
         AUDIO_BYTES_PER_SECTOR, RAW_SECTOR_BYTES, SUBHEADER_OFFSET, USER_DATA_OFFSET,
         demux_raw_sectors,
     };

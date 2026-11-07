@@ -38,7 +38,7 @@ fn etim_effect_textures_upload_into_vram() {
         return;
     };
     let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let n = upload_effect_textures_into_vram(&index, &mut vram, true).expect("seed etim VRAM");
     assert!(n >= 5, "expected >=5 etim TIMs uploaded, got {n}");
     assert!(
@@ -79,7 +79,7 @@ fn flame_atlas_uploads_three_effect_pages_at_y0() {
         return;
     };
     let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let n = upload_flame_atlas_into_vram(&index, &mut vram, true).expect("seed flame-atlas VRAM");
     assert_eq!(n, 3, "expected exactly 3 flame-atlas TIMs, got {n}");
     for (fb_x, fb_y) in [(320usize, 0usize), (384, 0), (448, 0)] {

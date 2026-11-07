@@ -96,7 +96,7 @@ fn an_equipped_low_encounter_accessory_raises_the_badge_column() {
         return;
     };
     let bytes = std::fs::read(&disc).expect("read disc");
-    let scus = legaia_iso::iso9660::read_file_in_image(&bytes, "SCUS_942.54").expect("SCUS");
+    let scus = psx_iso::iso9660::read_file_in_image(&bytes, "SCUS_942.54").expect("SCUS");
     let table = legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(&scus)
         .expect("table");
     // Every item that grants one of the six bits, in id order; the first one

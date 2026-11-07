@@ -193,7 +193,7 @@ impl LegaiaMinigames {
         }
         let span = report.vag_samples.get(atr.vag as usize - 1)?;
         let body = bytes.get(span.byte_offset..span.byte_offset + span.size)?;
-        let pcm = legaia_vab::decode_vag_aligned(body).ok()?;
+        let pcm = psx_vab::decode_vag_aligned(body).ok()?;
         let semitones = voice.note as f64 - atr.center as f64;
         let rate = (44100.0 * 2f64.powf(semitones / 12.0)).round();
         Some((pcm, rate.clamp(4000.0, 96_000.0) as u32))

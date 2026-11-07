@@ -269,7 +269,7 @@ impl SceneModelBank {
                         let Some(body) = bytes.get(start..) else {
                             continue;
                         };
-                        let Ok(decoded) = legaia_lzs::decompress(body, d.size as usize) else {
+                        let Ok(decoded) = psx_lzs::decompress(body, d.size as usize) else {
                             continue;
                         };
                         let Ok(entries) = legaia_container_formats::pack::parse_pack(&decoded)
@@ -425,7 +425,7 @@ impl SceneModelBank {
                 let d = bundle.descriptors()[descriptor];
                 let start = bundle.table_offset().saturating_add(d.data_offset as usize);
                 let decoded =
-                    legaia_lzs::decompress(bundle.bytes().get(start..)?, d.size as usize).ok()?;
+                    psx_lzs::decompress(bundle.bytes().get(start..)?, d.size as usize).ok()?;
                 let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
                 let e = entries.get(member)?;
                 decoded
@@ -436,7 +436,7 @@ impl SceneModelBank {
                 let bundle = find_bundle(scene)?;
                 let d = bundle.descriptors()[descriptor];
                 let start = bundle.table_offset().saturating_add(d.data_offset as usize);
-                legaia_lzs::decompress(bundle.bytes().get(start..)?, d.size as usize).ok()
+                psx_lzs::decompress(bundle.bytes().get(start..)?, d.size as usize).ok()
             }
             ModelSource::StreamPack {
                 entry_idx,
@@ -475,7 +475,7 @@ fn walked_pack(
     d: &legaia_scene_formats::scene_asset_table::DescriptorRecord,
 ) -> Option<Vec<(usize, usize)>> {
     let decoded =
-        legaia_lzs::decompress(entry.get(d.data_offset as usize..)?, d.size as usize).ok()?;
+        psx_lzs::decompress(entry.get(d.data_offset as usize..)?, d.size as usize).ok()?;
     let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
     Some(entries.iter().map(|e| (e.byte_offset, e.size)).collect())
 }
@@ -491,7 +491,7 @@ fn walked_member(
     let descs = legaia_scene_formats::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
     let d = descs.get(descriptor)?;
     let decoded =
-        legaia_lzs::decompress(entry.bytes.get(d.data_offset as usize..)?, d.size as usize).ok()?;
+        psx_lzs::decompress(entry.bytes.get(d.data_offset as usize..)?, d.size as usize).ok()?;
     let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
     let e = entries.get(member)?;
     decoded
@@ -529,8 +529,7 @@ impl SceneModelBank {
                         let d = b.descriptors()[descriptor];
                         let start = b.table_offset().saturating_add(d.data_offset as usize);
                         let decoded =
-                            legaia_lzs::decompress(b.bytes().get(start..)?, d.size as usize)
-                                .ok()?;
+                            psx_lzs::decompress(b.bytes().get(start..)?, d.size as usize).ok()?;
                         slot.insert(decoded);
                     }
                     member(packs.get(&key)?, m)
@@ -557,7 +556,7 @@ impl SceneModelBank {
                                 &entry.bytes,
                             )?;
                         let d = descs.get(descriptor)?;
-                        let decoded = legaia_lzs::decompress(
+                        let decoded = psx_lzs::decompress(
                             entry.bytes.get(d.data_offset as usize..)?,
                             d.size as usize,
                         )

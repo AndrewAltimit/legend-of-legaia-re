@@ -22,7 +22,7 @@ use legaia_engine_audio::spu::voice::VoiceResume;
 use legaia_engine_audio::{OfflineMixer, Spu};
 use legaia_engine_scene_host::scene_host::BgmDirector;
 use legaia_engine_scene_host::scene_host::SceneHost;
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 
 use crate::audio_sweep::{RetailAudio, TrackBank};
 use crate::audio_trace_oracle::TraceBgmDirector;
@@ -161,7 +161,7 @@ pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<Ret
         .position(|w| w == needle)
         .context("score start not in the track's entry")?;
     let off = base + (cursor.wrapping_sub(start)) as usize;
-    let offsets = legaia_seq::event_stream_offsets(score)?;
+    let offsets = psx_seq::event_stream_offsets(score)?;
     let event = offsets
         .iter()
         .position(|&o| o == off)
@@ -401,7 +401,7 @@ fn render_xa(xa: &Path, start: usize, samples: usize) -> Result<Vec<i16>> {
     mix.play_xa_shout(
         source.get(start..).unwrap_or_default().to_vec(),
         rate,
-        legaia_xa::Channels::Mono,
+        psx_xa::Channels::Mono,
         legaia_engine_session::audio_director::XA_CUE_GAIN,
         0,
     );
@@ -418,7 +418,7 @@ fn render_xa(xa: &Path, start: usize, samples: usize) -> Result<Vec<i16>> {
 /// with no CD input, takes the voices out, and what is left is the CD input
 /// (and any cue the game keys in the window, so the window is the caller's to pick).
 fn score_xa(
-    state: &legaia_mednafen::SaveState,
+    state: &psx_mednafen::SaveState,
     retail: &[i16],
     xa: &Path,
     start: usize,
@@ -490,8 +490,8 @@ fn score_xa(
 }
 
 /// An engine [`Spu`] standing exactly where a mednafen state's SPU stands.
-pub fn spu_resumed_from_retail(st: &legaia_mednafen::SaveState) -> Result<Spu> {
-    let psx = legaia_mednafen::PsxSpu::new(st);
+pub fn spu_resumed_from_retail(st: &psx_mednafen::SaveState) -> Result<Spu> {
+    let psx = psx_mednafen::PsxSpu::new(st);
     let ram = psx.spu_ram_bytes().context("state carries no SPU RAM")?;
     let mut spu = crate::pcm_oracle::engine_spu_from_retail(&psx).context("seed")?;
     let halfword = |a: u32| {
@@ -499,7 +499,7 @@ pub fn spu_resumed_from_retail(st: &legaia_mednafen::SaveState) -> Result<Spu> {
         u16::from_le_bytes([ram[i], ram[i + 1]])
     };
     let ram_copy: SpuRam = spu.ram.clone();
-    for i in 0..legaia_mednafen::spu::NUM_VOICES {
+    for i in 0..psx_mednafen::spu::NUM_VOICES {
         let (Some(v), Some(d)) = (psx.voice_state(i), psx.voice_decoder(i)) else {
             continue;
         };
@@ -594,7 +594,7 @@ const CUE_OWNER: u16 = 0x21;
 /// The state's cue voices alone, from its first sample on: every other voice
 /// is stood down, while the reverb tank keeps the tails already in it. The
 /// track render starts on an empty tank, so the two tails sum to the state's.
-fn render_cue_voices(st: &legaia_mednafen::SaveState, samples: usize) -> Result<Vec<i16>> {
+fn render_cue_voices(st: &psx_mednafen::SaveState, samples: usize) -> Result<Vec<i16>> {
     let ram = st.main_ram()?;
     let mut spu = spu_resumed_from_retail(st)?;
     for (v, voice) in spu.voices.iter_mut().enumerate() {
@@ -805,7 +805,7 @@ fn mix_at_lag(pcm: &mut [i16], add: &[i16], lag: i64) {
 pub fn run(args: PcmRetailArgs) -> Result<()> {
     let mut cast_drive: Option<serde_json::Value> = None;
     let (pcm, label) = if let Some(state) = &args.resume_state {
-        let st = legaia_mednafen::SaveState::from_path(state)?;
+        let st = psx_mednafen::SaveState::from_path(state)?;
         let mut spu = spu_resumed_from_retail(&st)?;
         let mut pcm = vec![0i16; args.samples * 2];
         if let Some(xa) = &args.xa_wav {
@@ -851,8 +851,8 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
         let (pos, track_bytes) = read_position(&path, &extracted)?;
         if args.verbose {
             println!("{}: {pos:?}", args.label);
-            let st = legaia_mednafen::SaveState::from_path(&path)?;
-            let psx = legaia_mednafen::PsxSpu::new(&st);
+            let st = psx_mednafen::SaveState::from_path(&path)?;
+            let psx = psx_mednafen::PsxSpu::new(&st);
             for (i, v) in psx
                 .voices()
                 .iter()
@@ -884,7 +884,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
         if args.cue_voices {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
             let lag = score_window(&retail, &pcm).lag;
-            let st = legaia_mednafen::SaveState::from_path(&path)?;
+            let st = psx_mednafen::SaveState::from_path(&path)?;
             let cues = render_cue_voices(&st, args.samples)?;
             mix_at_lag(&mut pcm, &cues, lag);
         }
@@ -895,7 +895,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             // tick by tick: the state's own volume holds for none of a summon.
             if let Ok(text) = std::fs::read_to_string(cast_path.with_extension("duck")) {
                 let levels: Vec<u8> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
-                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let st = psx_mednafen::SaveState::from_path(&path)?;
                 let ram = st.main_ram()?;
                 let start =
                     i32::from_le_bytes(ram[0x7_B910..0x7_B914].try_into()?).clamp(0, 255) as u8;
@@ -932,7 +932,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             // reach and the one-vsync reach are both mixed and the better
             // scoring kept - one alignment parameter, chosen on the score.
             let step = {
-                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let st = psx_mednafen::SaveState::from_path(&path)?;
                 crate::retail_compare_battle::frame_step(st.main_ram()?)
             };
             let track = pcm;
@@ -945,7 +945,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             // recording: the tick the engine's applied level passes the
             // state's ([`duck_anchor_tick`]).
             let applied = {
-                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let st = psx_mednafen::SaveState::from_path(&path)?;
                 let ram = st.main_ram()?;
                 i32::from_le_bytes(ram[0x7_B6EC..0x7_B6F0].try_into()?).clamp(0, 255) as u8
             };
@@ -1208,7 +1208,7 @@ pub fn score_window(retail: &[i16], engine: &[i16]) -> PcmScore {
 fn read_position(state: &Path, extracted: &Path) -> Result<(RetailSeqPosition, Vec<u8>)> {
     let host = SceneHost::open_extracted(extracted)?;
     let bank = TrackBank::load(&host);
-    let st = legaia_mednafen::SaveState::from_path(state)?;
+    let st = psx_mednafen::SaveState::from_path(state)?;
     let ram = st.main_ram()?.to_vec();
     let audio = RetailAudio::from_ram(&ram, &bank, None);
     let slot = audio.music_slot().context("no open sequence")?;

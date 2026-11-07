@@ -236,7 +236,7 @@ impl StatusClutState {
 
     /// The pristine palette for `slot`, snapshotted off VRAM on first use.
     /// `None` while the row is still blank (not resident yet).
-    fn pristine_row(&mut self, vram: &legaia_tim::Vram, slot: usize) -> Option<&Vec<u16>> {
+    fn pristine_row(&mut self, vram: &psx_tim::Vram, slot: usize) -> Option<&Vec<u16>> {
         if self.pristine[slot].is_none() {
             let row = PARTY_CLUT_ROW_BASE + slot as u16;
             let words: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
@@ -267,7 +267,7 @@ impl StatusClutState {
     /// the loader has written the row would snapshot blank. An all-zero row
     /// therefore leaves the latch set and retries next frame instead of
     /// caching a blank pristine.
-    pub fn step(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let mut wrote = false;
         for slot in 0..PARTY_CLUT_SLOTS {
             let row = PARTY_CLUT_ROW_BASE + slot as u16;
@@ -335,7 +335,7 @@ mod tests {
     use super::*;
 
     /// A palette with a distinct, non-grey colour per entry.
-    fn seed_row(vram: &mut legaia_tim::Vram, row: u16) -> Vec<u16> {
+    fn seed_row(vram: &mut psx_tim::Vram, row: u16) -> Vec<u16> {
         let words: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
             .map(|i| {
                 let r = (i % 31 + 1) as u16;
@@ -349,7 +349,7 @@ mod tests {
         words
     }
 
-    fn read_row(vram: &legaia_tim::Vram, row: u16) -> Vec<u16> {
+    fn read_row(vram: &psx_tim::Vram, row: u16) -> Vec<u16> {
         (0..PARTY_CLUT_ENTRIES)
             .map(|x| vram.pixel(x, row as usize))
             .collect()
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn stone_edge_greys_the_slot_row_once() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE + 1);
         let mut st = StatusClutState::default();
 
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn a_cure_puts_the_pristine_row_back_and_re_arms() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let row = PARTY_CLUT_ROW_BASE;
         let original = seed_row(&mut vram, row);
         let mut st = StatusClutState::default();
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn a_second_fire_re_greys_the_original_not_the_grey() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE);
         let mut st = StatusClutState::default();
         st.arm(0, true);
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn a_blank_row_holds_the_latch_instead_of_caching_blank() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let mut st = StatusClutState::default();
         st.arm(2, true);
         assert!(!st.step(&mut vram), "nothing resident -> nothing written");
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn a_rot_limb_tints_only_its_window_blue_once() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE);
         let mut st = StatusClutState::default();
         st.set_rot_windows([Some(WINDOWS), None, None]);
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn stone_then_rot_leaves_a_grey_row_with_a_blue_limb() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE + 2);
         let mut st = StatusClutState::default();
         st.set_rot_windows([None, None, Some(WINDOWS)]);
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn a_rot_latch_waits_for_its_window() {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE + 1);
         let mut st = StatusClutState::default();
         st.arm_rot(1, 0x0020);

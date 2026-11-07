@@ -129,8 +129,8 @@ impl ResolvedTmd {
         legaia_tmd::mesh::FilterStatsByReason,
     ) {
         legaia_tmd::mesh::tmd_to_vram_mesh_status_stats(&self.tmd, &self.raw, |cba, tsb, uvs| {
-            use legaia_tim::vram::PrimTextureStatus;
             use legaia_tmd::mesh::PrimDecision;
+            use psx_tim::vram::PrimTextureStatus;
             match vram.prim_texture_status(cba, tsb, uvs) {
                 PrimTextureStatus::Ok => PrimDecision::Keep,
                 PrimTextureStatus::MissingClut { .. } => PrimDecision::MissingClut,

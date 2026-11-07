@@ -1,7 +1,7 @@
 //! An inn stay's script ops through the field VM `FUN_801DE840`: the gold gate
 //! the debit `3A` and the restore `4C 82 slot`.
 use crate::common::{disc, scus_cpu};
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const VM: u32 = 0x801D_E840;
 const SCRIPT: u32 = 0x8011_0000;
@@ -9,7 +9,7 @@ const CTX: u32 = 0x8012_0000;
 const RECORDS: u32 = 0x8008_4708;
 
 /// `(HP, MP, SP)` currents of a record.
-fn currents(cpu: &mut legaia_retail_exec::Cpu, slot: u32) -> [u16; 3] {
+fn currents(cpu: &mut psx_retail_exec::Cpu, slot: u32) -> [u16; 3] {
     let r = RECORDS + slot * 0x414;
     [
         cpu.mem.rd16(r + 0x106),

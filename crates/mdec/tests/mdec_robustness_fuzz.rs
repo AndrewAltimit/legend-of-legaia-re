@@ -57,15 +57,15 @@ fn run<F: Fn(&[u8])>(name: &str, f: F) -> usize {
 fn mdec_never_panics_on_malformed_input() {
     let mut total = 0;
     total += run("mdec::parse_video_sector", |b| {
-        let _ = legaia_mdec::str_sector::parse_video_sector(b);
+        let _ = psx_mdec::str_sector::parse_video_sector(b);
     });
     total += run("mdec::analyze_str_timing", |b| {
-        let _ = legaia_mdec::str_sector::analyze_str_timing(b);
+        let _ = psx_mdec::str_sector::analyze_str_timing(b);
     });
     // decode_frame across a few dimensions (must be multiple of 16).
     total += run("mdec::decode_frame", |b| {
         for (w, h) in [(16u32, 16u32), (320, 240), (32, 48)] {
-            let _ = legaia_mdec::MdecDecoder::new(w, h).decode_frame(b);
+            let _ = psx_mdec::MdecDecoder::new(w, h).decode_frame(b);
         }
     });
     assert_eq!(total, 0, "{total} mdec inputs panicked");

@@ -8,8 +8,8 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_arm_ticks::{StealOutcome, steal_caption, steal_party_draw};
 use legaia_engine_menus::item_bag::ItemBag;
-use legaia_retail_exec::{GP, Stop};
 use legaia_save::retail_inventory::ItemWindow;
+use psx_retail_exec::{GP, Stop};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -37,7 +37,7 @@ fn lcg(s: u32) -> u32 {
 
 /// A string as the text helpers walk it: a `0xC0..=0xCF` byte takes the next
 /// byte with it, zero or not (a name escape such as the hero's).
-fn cstr(cpu: &mut legaia_retail_exec::Cpu, mut a: u32) -> Vec<u8> {
+fn cstr(cpu: &mut psx_retail_exec::Cpu, mut a: u32) -> Vec<u8> {
     let mut out = Vec::new();
     loop {
         let b = cpu.mem.rd8(a);
@@ -72,7 +72,7 @@ fn the_steal_takes_what_retail_takes() {
             let next = lcg(stream.get());
             stream.set(next);
             draws.set(draws.get() + 1);
-            r.r[legaia_retail_exec::V0] = (next >> 16) & 0x7FFF;
+            r.r[psx_retail_exec::V0] = (next >> 16) & 0x7FFF;
         });
     }
     // The walk's arrival test: arrived on the loop's own call.
@@ -82,7 +82,7 @@ fn the_steal_takes_what_retail_takes() {
         cpu.hook(0x8004_E2F0, move |r, _| {
             let n = arrivals.get();
             arrivals.set(n + 1);
-            r.r[legaia_retail_exec::V0] = u32::from(n % 2 == 1);
+            r.r[psx_retail_exec::V0] = u32::from(n % 2 == 1);
         });
     }
     for va in [0x801D_5854, 0x8004_FE5C, 0x801D_8DE8, 0x8005_0E2C] {

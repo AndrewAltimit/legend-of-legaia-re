@@ -1,6 +1,6 @@
 //! Export the selected sub-asset through the existing writers: PNG
-//! (`legaia_tim::write_png`), glTF binary (`legaia_actor_formats::scene_gltf`),
-//! WAV (`legaia_vab::write_wav`), OBJ (positions + faces off
+//! (`psx_tim::write_png`), glTF binary (`legaia_actor_formats::scene_gltf`),
+//! WAV (`psx_vab::write_wav`), OBJ (positions + faces off
 //! `legaia_tmd::mesh::tmd_to_mesh`), and the raw bytes.
 
 use std::path::Path;
@@ -15,27 +15,27 @@ use crate::analyze::{Analysis, TimRef, TmdRef, VabRef};
 /// upload's VRAM cell) decodes through [`grey_ramp`], so it previews and
 /// exports as its index image rather than failing.
 pub fn tim_rgba(a: &Analysis, t: &TimRef, clut: usize) -> Result<(usize, usize, Vec<u8>)> {
-    let tim = legaia_tim::parse(a.tim_bytes(t)).context("TIM parse")?;
+    let tim = psx_tim::parse(a.tim_bytes(t)).context("TIM parse")?;
     let rgba = if needs_grey_ramp(&tim) {
-        legaia_tim::decode_rgba8_with_palette(&tim, &grey_ramp(&tim))
+        psx_tim::decode_rgba8_with_palette(&tim, &grey_ramp(&tim))
     } else {
         let clut = clut.min(tim.palette_count().saturating_sub(1));
-        legaia_tim::decode_rgba8(&tim, clut)
+        psx_tim::decode_rgba8(&tim, clut)
     }
     .context("TIM decode")?;
     Ok((tim.pixel_width(), tim.pixel_height(), rgba))
 }
 
 /// Whether `tim` is indexed but carries no CLUT.
-pub fn needs_grey_ramp(tim: &legaia_tim::Tim) -> bool {
-    use legaia_tim::PixelMode;
+pub fn needs_grey_ramp(tim: &psx_tim::Tim) -> bool {
+    use psx_tim::PixelMode;
     matches!(tim.mode, PixelMode::Bpp4 | PixelMode::Bpp8) && tim.clut.is_none()
 }
 
 /// An opaque black-to-white BGR555 ramp as long as `tim`'s index range
 /// (STP set, so index 0 is not read as transparent black).
-pub fn grey_ramp(tim: &legaia_tim::Tim) -> Vec<u16> {
-    let n: u16 = if tim.mode == legaia_tim::PixelMode::Bpp4 {
+pub fn grey_ramp(tim: &psx_tim::Tim) -> Vec<u16> {
+    let n: u16 = if tim.mode == psx_tim::PixelMode::Bpp4 {
         16
     } else {
         256
@@ -53,7 +53,7 @@ pub fn tim_png(a: &Analysis, t: &TimRef, clut: usize, out: &Path) -> Result<()> 
     if w == 0 || h == 0 {
         bail!("empty TIM ({w}x{h})");
     }
-    legaia_tim::write_png(out, w, h, &rgba)
+    psx_tim::write_png(out, w, h, &rgba)
 }
 
 /// Wavefront OBJ of the mesh, in raw PSX units (Y down), faces triangulated
@@ -81,12 +81,7 @@ pub fn tmd_obj(a: &Analysis, t: &TmdRef, out: &Path) -> Result<()> {
 /// Textured `.glb`: the mesh plus an atlas baked from `vram` - the scene's
 /// VRAM image when given, else the entry's own TIMs. 1 PSX unit exports as
 /// 1 cm.
-pub fn tmd_glb(
-    a: &Analysis,
-    t: &TmdRef,
-    vram: Option<&legaia_tim::Vram>,
-    out: &Path,
-) -> Result<()> {
+pub fn tmd_glb(a: &Analysis, t: &TmdRef, vram: Option<&psx_tim::Vram>, out: &Path) -> Result<()> {
     use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
     let bytes = a.tmd_bytes(t);
     let tmd = legaia_tmd::parse(bytes).context("TMD parse")?;
@@ -145,7 +140,7 @@ pub fn vag_pcm(a: &Analysis, v: &VabRef, sample: usize) -> Result<Vec<i16>> {
     if body.is_empty() {
         bail!("empty sample");
     }
-    legaia_vab::decode_vag(body)
+    psx_vab::decode_vag(body)
 }
 
 /// The width of a sample's waveform in the Audio tab.
@@ -173,7 +168,7 @@ pub fn wave_peaks(pcm: &[i16]) -> Vec<u8> {
 pub fn vag_wav(a: &Analysis, v: &VabRef, sample: usize, out: &Path) -> Result<()> {
     let pcm = vag_pcm(a, v, sample)?;
     let f = std::fs::File::create(out).with_context(|| format!("create {}", out.display()))?;
-    legaia_vab::write_wav(
+    psx_vab::write_wav(
         std::io::BufWriter::new(f),
         &pcm,
         legaia_engine_audio::vab_bind::VAB_SAMPLE_RATE,
@@ -216,11 +211,11 @@ mod tests {
 
     #[test]
     fn grey_ramp_spans_black_to_white_and_is_opaque() {
-        let mut tim = legaia_tim::Tim {
+        let mut tim = psx_tim::Tim {
             flags: 0,
-            mode: legaia_tim::PixelMode::Bpp4,
+            mode: psx_tim::PixelMode::Bpp4,
             clut: None,
-            image: legaia_tim::Image {
+            image: psx_tim::Image {
                 fb_x: 0,
                 fb_y: 0,
                 fb_w: 1,
@@ -233,12 +228,12 @@ mod tests {
         assert_eq!(ramp.len(), 16);
         assert_eq!(ramp[0], 0x8000);
         assert_eq!(ramp[15], 0xFFFF);
-        let rgba = legaia_tim::decode_rgba8_with_palette(&tim, &ramp).unwrap();
+        let rgba = psx_tim::decode_rgba8_with_palette(&tim, &ramp).unwrap();
         // Index 0 is opaque black, not transparent.
         assert_eq!(&rgba[0..4], &[0, 0, 0, 255]);
-        tim.mode = legaia_tim::PixelMode::Bpp8;
+        tim.mode = psx_tim::PixelMode::Bpp8;
         assert_eq!(grey_ramp(&tim).len(), 256);
-        tim.mode = legaia_tim::PixelMode::Bpp16;
+        tim.mode = psx_tim::PixelMode::Bpp16;
         assert!(!needs_grey_ramp(&tim));
     }
 }

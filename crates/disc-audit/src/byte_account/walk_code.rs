@@ -274,7 +274,7 @@ pub(super) fn reg_source(
     const WINDOW: usize = 64;
     let mut o = from;
     for _ in 0..WINDOW {
-        let w = legaia_bytes::u32_le(buf, o)?;
+        let w = psx_bytes::u32_le(buf, o)?;
         if w >> 16 == 0x27BD && w & 0x8000 != 0 {
             return (4..=7)
                 .contains(&reg)
@@ -338,7 +338,7 @@ pub(super) fn arg_values_at_call(
             out.extend(reg_before(buf, base, j + 4, forms, reg, Some(j)));
         }
         let Some(prev) = t.checked_sub(4) else { break };
-        let w = legaia_bytes::u32_le(buf, prev).unwrap_or(0);
+        let w = psx_bytes::u32_le(buf, prev).unwrap_or(0);
         if defines(w) == Some(reg) || !matches!(Flow::of(w, prev, base), Flow::None) {
             break;
         }
@@ -376,7 +376,7 @@ pub(super) fn imm_before(
     const WINDOW: usize = 64;
     let mut o = from;
     for _ in 0..WINDOW {
-        let w = legaia_bytes::u32_le(buf, o)?;
+        let w = psx_bytes::u32_le(buf, o)?;
         if w >> 16 == 0x27BD && w & 0x8000 != 0 {
             return None;
         }
@@ -457,7 +457,7 @@ pub(super) fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: 
     let forms = lui_forms(&buf[..own_end], base);
     let mut jumps_to: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
     for o in (0..own_end.saturating_sub(3)).step_by(4) {
-        let w = legaia_bytes::u32_le(buf, o).unwrap_or(0);
+        let w = psx_bytes::u32_le(buf, o).unwrap_or(0);
         if let Flow::Jump(t) = Flow::of(w, o, base)
             && w >> 26 == 0x02
         {
@@ -478,7 +478,7 @@ pub(super) fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: 
         }
         let target = jal(callee);
         for o in (0..own_end.saturating_sub(3)).step_by(4) {
-            if legaia_bytes::u32_le(buf, o) != Some(target) || !in_code(o) {
+            if psx_bytes::u32_le(buf, o) != Some(target) || !in_code(o) {
                 continue;
             }
             if let Some(RegSource::Arg { reg: arg, entry }) =
@@ -500,7 +500,7 @@ pub(super) fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: 
         let mut sites = 0usize;
         let mut o = 0usize;
         while o + 4 <= own_end {
-            if legaia_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
+            if psx_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
                 sites += 1;
                 let count = match extent {
                     ArgExtent::Counted { count_reg, .. } => {
@@ -647,7 +647,7 @@ pub(super) fn claim_widget_scripts(buf: &[u8], sink: &mut Sink, base: u32, opts:
     let forms = lui_forms(&buf[..own_end], base);
     let mut jumps_to: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
     for o in (0..own_end.saturating_sub(3)).step_by(4) {
-        let w = legaia_bytes::u32_le(buf, o).unwrap_or(0);
+        let w = psx_bytes::u32_le(buf, o).unwrap_or(0);
         if let Flow::Jump(t) = Flow::of(w, o, base)
             && w >> 26 == 0x02
         {
@@ -658,7 +658,7 @@ pub(super) fn claim_widget_scripts(buf: &[u8], sink: &mut Sink, base: u32, opts:
     let mut vas: std::collections::BTreeSet<u32> = Default::default();
     let mut sites = 0usize;
     for o in (0..own_end.saturating_sub(3)).step_by(4) {
-        if legaia_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
+        if psx_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
             sites += 1;
             vas.extend(arg_values_at_call(
                 &buf[..own_end],
@@ -1144,7 +1144,7 @@ pub(super) fn claim_formed_strings(buf: &[u8], sink: &mut Sink, base: u32) {
         }
         let mut k = off;
         let mut named: Vec<(usize, usize)> = Vec::new();
-        while let Some(w) = legaia_bytes::u32_le(buf, k) {
+        while let Some(w) = psx_bytes::u32_le(buf, k) {
             let Some(s) = to_off(w) else { break };
             // Inside a table an entry may be empty or one glyph byte (the
             // options screen's button-glyph choice): the neighbours already
@@ -1276,7 +1276,7 @@ pub(super) fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOp
 /// The mapped overlays get the same cut from [`claim_inherited_tail`], where
 /// the own-content end is itself a measurement the cut feeds back into. Every
 /// other entry has a parser whose claims already *are* the content end - a
-/// scene bundle's last descriptor stops where `legaia_lzs::decompress_tracked`
+/// scene bundle's last descriptor stops where `psx_lzs::decompress_tracked`
 /// stopped consuming - so the slack above the highest claim is tested whole
 /// against [`crate::inherited_tail::buffer_run`]: the nearest earlier entry
 /// reaching each offset must hold the same byte there. All or nothing; a run

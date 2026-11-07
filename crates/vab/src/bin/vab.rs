@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_vab::{decode_vag, find_vabs, parse, write_wav};
+use psx_vab::{decode_vag, find_vabs, parse, write_wav};
 
 #[derive(Parser)]
 #[command(

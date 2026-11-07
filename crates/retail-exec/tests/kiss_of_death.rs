@@ -5,7 +5,7 @@
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_cast::cast_module_ticks::{CastActorState, CastModuleCtx, kiss_of_death_tick};
-use legaia_retail_exec::{A0, Stop, V0};
+use psx_retail_exec::{A0, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

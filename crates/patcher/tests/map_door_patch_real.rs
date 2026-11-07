@@ -15,11 +15,11 @@
 use std::collections::BTreeMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
-use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::apply;
 use legaia_patcher::map_door::MapDoorClass;
 use legaia_randomizer::drops::DropMode;
+use psx_iso::raw::SECTOR_SIZE;
+use psx_iso::write::mode2_form1_sector_is_valid;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

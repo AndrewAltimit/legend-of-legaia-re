@@ -6,7 +6,7 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle::region_encounter::encounter_counter_scene_entry_top_up;
-use legaia_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
+use psx_retail_exec::{RA, RETURN_SENTINEL, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

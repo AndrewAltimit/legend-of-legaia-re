@@ -21,7 +21,7 @@ Layout, sub-mode table and provenance: [`docs/subsystems/boot.md`](../../docs/su
 ## The split line
 
 These modules name each other, `legaia-engine-system` (the mode-entry
-words and the cutscene-trigger constants), `legaia-tim` and `legaia-ui-formats` -
+words and the cutscene-trigger constants), `psx-tim` and `legaia-ui-formats` -
 no other engine crate. No menu module names them either: the title tick and
 the pause / shop / save screens share no state. The save-slot screen the
 title's Continue opens is `legaia-engine-menus`' `save_select`, which the

@@ -122,7 +122,7 @@ pub trait AudioSink {
         &self,
         pcm: Vec<i16>,
         sample_rate: u32,
-        channels: legaia_xa::Channels,
+        channels: psx_xa::Channels,
         looping: bool,
         gain: u16,
     ) {
@@ -153,7 +153,7 @@ pub trait AudioSink {
         &self,
         pcm: Vec<i16>,
         sample_rate: u32,
-        channels: legaia_xa::Channels,
+        channels: psx_xa::Channels,
         gain: u16,
         start_delay_frames: u32,
     ) {
@@ -171,20 +171,20 @@ pub trait AudioSink {
     }
 
     /// Decode a buffer of raw XA-ADPCM sound-group bytes (128-byte aligned)
-    /// through [`legaia_xa::StreamingDecoder`] and stage the PCM as an XA
+    /// through [`psx_xa::StreamingDecoder`] and stage the PCM as an XA
     /// stream ([`Self::play_xa`]).
     fn play_xa_streaming(
         &self,
         raw_bytes: &[u8],
         sample_rate: u32,
-        channels: legaia_xa::Channels,
+        channels: psx_xa::Channels,
         looping: bool,
         gain: u16,
     ) -> Result<()> {
-        let mut decoder = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
+        let mut decoder = psx_xa::StreamingDecoder::new(psx_xa::DecodeOptions {
             channels,
             sample_rate,
-            bits: legaia_xa::BitsPerSample::Four,
+            bits: psx_xa::BitsPerSample::Four,
         });
         let mut pcm = Vec::with_capacity(raw_bytes.len() / 128 * 224);
         decoder.feed(raw_bytes, &mut pcm)?;

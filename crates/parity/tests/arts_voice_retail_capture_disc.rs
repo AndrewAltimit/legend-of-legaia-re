@@ -160,7 +160,7 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     let path = library
         .join("pcsx-redux")
         .join(format!("{STATE_FP}.sstate"));
-    let state = match legaia_pcsx_redux::SaveState::from_path(&path) {
+    let state = match psx_pcsx_redux::SaveState::from_path(&path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[skip] state {STATE_FP} not readable from the library: {e}");

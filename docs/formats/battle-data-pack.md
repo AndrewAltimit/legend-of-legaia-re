@@ -1000,7 +1000,7 @@ non-neutral in-range mouth frames, some held to end `0xFF` - the win-quote mouth
 
 Both play hosts (the native play-window and the browser play page) register each assembled
 member's tracks and re-stamp the current eye/mouth frame per tick through
-`legaia_tim::Vram::move_image` (the `MoveImage` port), keyed by the playing clip's `action_id` and
+`psx_tim::Vram::move_image` (the `MoveImage` port), keyed by the playing clip's `action_id` and
 keyframe cursor. A staged id `>= 0x10` selects the art-bank record's embedded tracks, every other
 id its action slot's. The override window opens on gate 1 (the world's `battle_end` latch mirrors
 the `0xFE` signal) while a member still plays a dynamic-art-slot clip, and clocks a per-member
@@ -1252,7 +1252,7 @@ Two traps follow:
 
 - **TIM scans cannot find these.** The raw TIM catalog scans for the TIM magic; the deep TIM
   catalog LZS-decompresses first and then scans for the same magic. The deep tier reaches the
-  right bytes, but there is no magic there and `legaia_tim::parse_strict` has nothing to parse.
+  right bytes, but there is no magic there and `psx_tim::parse_strict` has nothing to parse.
   Both TIM catalogs contribute **zero** rows from entries 863..866
   (`crates/disc-audit/tests/battle_texture_catalog_real.rs`).
 - **`clut_n` is commonly 32 or 48** - two or three 16-colour palettes in one run, with a mesh

@@ -1,9 +1,9 @@
 [package]
-name = "legaia-bytes"
+name = "psx-bytes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "legaia_bytes"
+name = "psx_bytes"
 path = "src/lib.rs"

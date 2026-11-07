@@ -210,8 +210,8 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
         (index.entry_bytes(vab_entry).ok()?, seq)
     };
     let vab_off = vab_carrier.windows(4).position(|w| w == b"pBAV")?;
-    let report = legaia_vab::parse(&vab_carrier, vab_off).ok()?;
-    let seq = legaia_seq::Seq::parse(&seq_bytes).ok()?;
+    let report = psx_vab::parse(&vab_carrier, vab_off).ok()?;
+    let seq = psx_seq::Seq::parse(&seq_bytes).ok()?;
 
     // Wet, as every live host's mixer runs it (`StreamResampler`).
     let mut spu = legaia_engine_audio::Spu::new();
@@ -252,10 +252,10 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
     let music_dir = dir.join("music");
     std::fs::create_dir_all(&music_dir).ok()?;
     let file = format!("music/bgm_{bgm_id}.wav");
-    legaia_xa::write_wav(
+    psx_xa::write_wav(
         &music_dir.join(format!("bgm_{bgm_id}.wav")),
         pcm,
-        legaia_xa::Channels::Stereo,
+        psx_xa::Channels::Stereo,
         SPU_INTERNAL_RATE,
     )
     .ok()?;

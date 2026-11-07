@@ -16,7 +16,7 @@
     <dt>Where on disc</dt><dd>Tail of each scene's <a href="scene-bundles.html">scene_tmd_stream</a> PROT entries (town01: entries 0006..0009, one row-479 TIM each)</dd>
     <dt>Uploaded</dt><dd>At battle init only, by the <a href="#how-we-know">battle-init TIM walker</a>; a freshly loaded town has the row empty</dd>
     <dt>Sampled via</dt><dd>CBA cells <code>0x77C0..0x77CF</code> (sixteen 16-colour slots across the row)</dd>
-    <dt>Parser / engine</dt><dd><code>legaia_scene_formats::scene_tmd_stream::battle_tim_chunks</code>, <code>legaia_tim::vram</code>, <code>legaia_tmd::vram_targeted</code></dd>
+    <dt>Parser / engine</dt><dd><code>legaia_scene_formats::scene_tmd_stream::battle_tim_chunks</code>, <code>psx_tim::vram</code>, <code>legaia_tmd::vram_targeted</code></dd>
     <dt>Confidence</dt><dd>Confirmed - uploader chain traced; row contents byte-matched against emulator VRAM dumps before and after battle</dd>
     <dt>Used by</dt><dd><a href="../subsystems/renderer.html">Renderer</a>, <a href="../npcs.html">NPC browser</a></dd>
   </dl>

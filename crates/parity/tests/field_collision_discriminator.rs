@@ -44,8 +44,8 @@ use legaia_engine_core::world::World;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 const PLAYER_PTR_ADDR: u32 = 0x8007C364;
 const FIELD_BUFFER_PTR_SCRATCH_OFF: usize = 0x3EC;

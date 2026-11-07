@@ -9,7 +9,7 @@ use legaia_engine_battle_vm::battle_action::{
     FormationPos, PoolActor, clear_pool_flag_words, first_selectable_target, next_selectable_actor,
     normalize_formation_span, seed_formation_recentre,
 };
-use legaia_retail_exec::{Cpu, Stop, V0};
+use psx_retail_exec::{Cpu, Stop, V0};
 
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX_PTR: u32 = 0x8007_BD24;

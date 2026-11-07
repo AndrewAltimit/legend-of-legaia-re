@@ -61,7 +61,7 @@ impl LegaiaViewer {
     /// collisions (last-write-wins clobbers a CLUT row with image data
     /// from an unrelated TIM) which the paletted decode then renders as
     /// rainbow noise.
-    pub(crate) fn build_current_vram(&self) -> Option<legaia_tim::Vram> {
+    pub(crate) fn build_current_vram(&self) -> Option<psx_tim::Vram> {
         let entry = self.viewable.get(self.current)?;
         let off = entry.meta.byte_offset as usize;
         let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
@@ -82,7 +82,7 @@ impl LegaiaViewer {
                 page: legaia_scene_formats::battle_backdrop::ground_page_rect(),
             });
         }
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let scan = tim_scan::scan_entry(buf);
         for (source, hit) in &scan.hits {
             let tim_buf: Option<&[u8]> = match source {
@@ -90,7 +90,7 @@ impl LegaiaViewer {
                 tim_scan::Source::Lzs(idx) => scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..]),
             };
             if let Some(b) = tim_buf
-                && let Ok(tim) = legaia_tim::parse(b)
+                && let Ok(tim) = psx_tim::parse(b)
             {
                 if needs.is_empty() {
                     vram.upload_tim(&tim);
@@ -341,20 +341,20 @@ impl LegaiaViewer {
         let tim_src = table
             .get(slot0_off..)
             .ok_or_else(|| format!("slot 0 offset 0x{slot0_off:X} out of range"))?;
-        let tim_decoded = legaia_lzs::decompress(tim_src, slot0_size)
+        let tim_decoded = psx_lzs::decompress(tim_src, slot0_size)
             .map_err(|e| format!("slot 0 LZS decode failed: {e}"))?;
 
         let pack_src = table
             .get(slot1_off..)
             .ok_or_else(|| format!("slot 1 offset 0x{slot1_off:X} out of range"))?;
-        let pack = legaia_lzs::decompress(pack_src, slot1_size)
+        let pack = psx_lzs::decompress(pack_src, slot1_size)
             .map_err(|e| format!("slot 1 LZS decode failed: {e}"))?;
 
         // Build VRAM by walking every TIM the TIM_LIST decompresses to.
         // TIM_LIST format is `[u32 count][u32 word_offsets[count]][TIMs]`
         // (same shape as the TMD pack but with TIM bodies). Mirror the
         // pointer math from `FUN_8001F05C case 1` -> byte_offset = word * 4.
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         if tim_decoded.len() >= 4 {
             let count = u32::from_le_bytes(tim_decoded[0..4].try_into().unwrap()) as usize;
             let table_bytes = 4 + count * 4;
@@ -367,7 +367,7 @@ impl LegaiaViewer {
                     if bo >= tim_decoded.len() {
                         continue;
                     }
-                    if let Ok(tim) = legaia_tim::parse(&tim_decoded[bo..]) {
+                    if let Ok(tim) = psx_tim::parse(&tim_decoded[bo..]) {
                         vram.upload_tim(&tim);
                     }
                 }
@@ -546,9 +546,9 @@ impl LegaiaViewer {
         label: &str,
     ) -> Result<(), JsValue> {
         let buf = &src[offset..];
-        let tim = legaia_tim::parse(buf)
+        let tim = psx_tim::parse(buf)
             .map_err(|e| JsValue::from_str(&format!("{label}: TIM parse: {e}")))?;
-        let rgba = legaia_tim::decode_rgba8(&tim, self.clut_idx)
+        let rgba = psx_tim::decode_rgba8(&tim, self.clut_idx)
             .map_err(|e| JsValue::from_str(&format!("{label}: decode: {e}")))?;
 
         let w = tim.pixel_width() as u32;

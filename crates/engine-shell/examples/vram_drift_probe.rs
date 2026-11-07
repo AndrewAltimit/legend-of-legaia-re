@@ -14,14 +14,14 @@ use legaia_parity::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
     compute_static_mask, load_runtime_vram_from_save,
 };
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 
 fn word(buf: &[u8], x: usize, y: usize) -> u16 {
     let off = (y * VRAM_WIDTH + x) * 2;
     u16::from_le_bytes([buf[off], buf[off + 1]])
 }
 
-fn vram_to_words_at(vram: &legaia_tim::Vram, x: usize, y: usize) -> u16 {
+fn vram_to_words_at(vram: &psx_tim::Vram, x: usize, y: usize) -> u16 {
     let bytes = legaia_parity::vram_oracle::vram_to_le_bytes(vram);
     word(&bytes, x, y)
 }
@@ -141,7 +141,7 @@ fn main() -> anyhow::Result<()> {
             for entry in &s.entries {
                 let bytes: &[u8] = &entry.bytes;
                 let report = |tag: &str, payload: &[u8], off: usize| {
-                    if let Ok(tim) = legaia_tim::parse(payload) {
+                    if let Ok(tim) = psx_tim::parse(payload) {
                         let img = &tim.image;
                         let img_cov = (img.fb_x as usize..img.fb_x as usize + img.fb_w as usize)
                             .contains(&qx)
@@ -253,7 +253,7 @@ fn main() -> anyhow::Result<()> {
             legaia_container_formats::DecodeMode::Lzs,
         )?;
         for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
-            if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
+            if let Ok(tim) = psx_tim::parse(&decoded[target.offset..]) {
                 let img = &tim.image;
                 let covers = (img.fb_x as usize..img.fb_x as usize + img.fb_w as usize)
                     .contains(&dx)

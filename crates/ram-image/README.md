@@ -1,4 +1,4 @@
-# legaia-ram-image
+# psx-ram-image
 
 Emulator-neutral analysis of a PSX main-RAM image taken from a save state.
 Every function takes the 2 MiB of main RAM as a byte slice (index `0` is
@@ -38,12 +38,12 @@ The three places game knowledge enters are parameters:
   before.
 
 `prim_dispatch` and `source_hunt` stay Legaia's; see
-[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image).
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-psx-mednafen-psx-pcsx-redux-psx-ram-image).
 
 ## Layering
 
 A leaf: `anyhow`, `serde` and `toml` only. The two container readers,
-[`legaia-mednafen`](../mednafen/README.md) (`.mc*` states) and
-[`legaia-pcsx-redux`](../pcsx-redux/README.md) (PCSX-Redux `.sstate`), sit on this crate
+[`psx-mednafen`](../mednafen/README.md) (`.mc*` states) and
+[`psx-pcsx-redux`](../pcsx-redux/README.md) (PCSX-Redux `.sstate`), sit on this crate
 and hand it the RAM they unwrap. It must not depend on either of them, nor on
 any format or engine crate.

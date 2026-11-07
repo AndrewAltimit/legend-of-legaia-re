@@ -45,7 +45,7 @@
 //! [`legaia_actor_formats::field_char_textures`]); dancers 1..3 use the pack's strips.
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{PixelMode, Tim, decode_rgba8};
+use psx_tim::{PixelMode, Tim, decode_rgba8};
 
 use crate::minigame_art::Sprite;
 
@@ -207,7 +207,7 @@ pub fn parse_art_pack(entry: &[u8]) -> Result<Vec<Tim>> {
     let items = legaia_prot::timpack::unpack(entry);
     let tims: Vec<Tim> = items
         .iter()
-        .filter_map(|b| legaia_tim::parse(b).ok())
+        .filter_map(|b| psx_tim::parse(b).ok())
         .collect();
     if tims.len() < 28 {
         bail!("dance art pack decoded only {} TIMs", tims.len());

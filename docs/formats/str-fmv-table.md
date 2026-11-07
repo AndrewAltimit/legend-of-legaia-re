@@ -101,7 +101,7 @@ reads all eight words itself, and each one is traceable to the instruction that 
 | `+0x18` | `801cf28c` | the `DISPENV` width |
 | `+0x1C` | `801cf168`, `801cf2c8` | the sibling rect at `fb_y + height`, and the display rect's `h = height * 2` |
 
-`FmvEntry` keeps six of the eight; `fb_x` / `fb_y` land in `legaia_mdec::str_player::FmvSlot`,
+`FmvEntry` keeps six of the eight; `fb_x` / `fb_y` land in `psx_mdec::str_player::FmvSlot`,
 which builds the two decode rects from them. So the record **is** playback-only, on disassembly
 rather than on inference.
 

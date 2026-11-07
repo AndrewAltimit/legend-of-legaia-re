@@ -99,7 +99,7 @@ pub(super) fn take_lzs(
             observe(src, dec_size);
         }
     });
-    match legaia_lzs::decompress_tracked(src, dec_size) {
+    match psx_lzs::decompress_tracked(src, dec_size) {
         Ok((out, consumed)) => {
             sink.claim(off, off + consumed, OWNER_LZS, detail.to_string());
             Some(out)
@@ -212,7 +212,7 @@ pub(super) fn walk_scene_asset_table(
 /// The claims are the same three kinds the scene-bundle walker makes, and the
 /// payload extents are **measured** rather than inferred: a descriptor states
 /// only the decompressed size, so the compressed span's end comes from what
-/// `legaia_lzs::decompress_tracked` consumed.
+/// `psx_lzs::decompress_tracked` consumed.
 pub(super) fn walk_descriptor_bundle(
     buf: &[u8],
     sink: &mut Sink,
@@ -263,13 +263,13 @@ pub(super) fn walk_descriptor_bundle(
 /// the identity exactly. That equality is the whole test, and it is why the
 /// predicate can be used as a fallback without guessing.
 pub(super) fn has_offset_pack_anchor(buf: &[u8]) -> bool {
-    let Some(count) = legaia_bytes::u32_le(buf, 0).map(|c| c as usize) else {
+    let Some(count) = psx_bytes::u32_le(buf, 0).map(|c| c as usize) else {
         return false;
     };
     if count == 0 || 4 + count * 4 > buf.len() {
         return false;
     }
-    legaia_bytes::u32_le(buf, 4).is_some_and(|off| off as usize == 4 + count * 4)
+    psx_bytes::u32_le(buf, 4).is_some_and(|off| off as usize == 4 + count * 4)
 }
 
 /// Three `lzs_container` entries are not descriptor bundles at all, because
@@ -297,7 +297,7 @@ pub(super) fn walk_lzs_container_orphan(
     // `prot::timpack` reads past for a `TIM_LIST` chunk
     // (`docs/formats/tim-pack.md`). The header's own length word has to agree
     // with the entry for the offset to mean anything.
-    let header = legaia_bytes::u32_le(buf, 0).unwrap_or(0);
+    let header = psx_bytes::u32_le(buf, 0).unwrap_or(0);
     let payload_len = (header & 0x00FF_FFFF) as usize;
     if payload_len >= 8
         && 4 + payload_len <= buf.len()
@@ -513,7 +513,7 @@ pub(super) fn payload_owner(t: AssetType) -> &'static str {
 /// and label `tmd`. The type byte selects the runtime's handler; the magic
 /// says what the bytes are, and an owner names what the bytes are.
 pub(super) fn payload_owner_of(t: AssetType, payload: &[u8]) -> &'static str {
-    match legaia_bytes::u32_le(payload, 0) {
+    match psx_bytes::u32_le(payload, 0) {
         Some(0x0000_0010) => OWNER_TIM,
         Some(0x8000_0002) => OWNER_TMD,
         Some(0x5641_4270) => OWNER_VAB,
@@ -524,7 +524,7 @@ pub(super) fn payload_owner_of(t: AssetType, payload: &[u8]) -> &'static str {
 
 /// Pick a walker for a payload from its own magic.
 pub(super) fn walker_for_payload(buf: &[u8]) -> Walker {
-    match legaia_bytes::u32_le(buf, 0) {
+    match psx_bytes::u32_le(buf, 0) {
         Some(0x0000_0010) => Walker::Tim,
         Some(0x8000_0002) => Walker::Tmd,
         Some(0x5641_4270) => Walker::Vab,

@@ -7,7 +7,7 @@
 use crate::common::{Rng, disc, scus, scus_cpu};
 use legaia_engine_battle::target_picker::{DEDUP_SUFFIX, enemy_menu_rows, layout_enemy_menu_rows};
 use legaia_font::{Font, MeasureOptions};
-use legaia_retail_exec::{A0, A1, A2, A3, SP, Stop};
+use psx_retail_exec::{A0, A1, A2, A3, SP, Stop};
 use std::cell::RefCell;
 use std::rc::Rc;
 

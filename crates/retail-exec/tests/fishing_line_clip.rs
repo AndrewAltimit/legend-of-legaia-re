@@ -5,7 +5,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_fishing::fishing_actors::{ClipRect, LINE_CLIP_RECT, clip_segment_2d};
 use legaia_minigame_formats::fishing_species as fs;
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const CLIP: u32 = 0x801D_56E4;
 /// The rectangle's four halfwords, `x_min, y_min, x_max, y_max`
@@ -55,7 +55,7 @@ fn the_line_is_clipped_as_retail_clips_it() {
         assert_eq!(cpu.call(CLIP, &[P, Q]), Stop::Returned, "case {case}");
         let (p0, q0) = (p, q);
         clip_segment_2d(&mut p, &mut q, rect);
-        let rd = |cpu: &mut legaia_retail_exec::Cpu, a: u32| {
+        let rd = |cpu: &mut psx_retail_exec::Cpu, a: u32| {
             (cpu.mem.rd16(a) as i16, cpu.mem.rd16(a + 2) as i16)
         };
         let retail = (rd(&mut cpu, P), rd(&mut cpu, Q));

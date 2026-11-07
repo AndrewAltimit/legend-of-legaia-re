@@ -172,7 +172,7 @@ def fingerprint_mednafen(save_path: Path) -> str:
         else:
             raise RuntimeError(
                 f"mednafen-state not built: {MEDNAFEN_BIN} missing. "
-                f"Run: cargo build --release -p legaia-mednafen"
+                f"Run: cargo build --release -p psx-mednafen"
             )
     else:
         tool = MEDNAFEN_BIN

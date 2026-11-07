@@ -19,10 +19,10 @@
 
 use std::path::PathBuf;
 
-use legaia_iso::iso9660::{DirectoryRecord, list_directory, read_volume};
-use legaia_iso::raw::RawDisc;
-use legaia_mdec::str_sector::StrFrameAssembler;
-use legaia_mdec::{MdecDecoder, VideoFrame};
+use psx_iso::iso9660::{DirectoryRecord, list_directory, read_volume};
+use psx_iso::raw::RawDisc;
+use psx_mdec::str_sector::StrFrameAssembler;
+use psx_mdec::{MdecDecoder, VideoFrame};
 
 fn disc_bin() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from)
@@ -146,8 +146,8 @@ fn fmv_table_lbas_match_iso_walk_when_overlay_resident() {
         eprintln!("[skip] LEGAIA_MEDNAFEN_DIR unset");
         return;
     };
-    use legaia_mednafen::SaveState;
     use legaia_parity::capture_observations::str_fmv_overlay;
+    use psx_mednafen::SaveState;
 
     // Probe every .mc{0..9} for the FMV-overlay residency signature.
     // Skip-pass if no save in the user's directory has it.

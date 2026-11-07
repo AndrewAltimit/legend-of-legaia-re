@@ -99,7 +99,7 @@ impl<S: AudioSink> AudioDirector<S> {
     pub(super) fn park_tail_bank(&mut self, slot: u8, entry_bytes: &[u8]) -> Option<TailBorrow> {
         let (report, vab_off) = [4usize, 0]
             .into_iter()
-            .find_map(|o| legaia_vab::parse(entry_bytes, o).ok().map(|r| (r, o)))?;
+            .find_map(|o| psx_vab::parse(entry_bytes, o).ok().map(|r| (r, o)))?;
         self.observe_track();
         self.sfx_vabs.remove(&slot);
         let base = self.tail.place_report(slot, &report)?;
@@ -237,7 +237,7 @@ impl<S: AudioSink> AudioDirector<S> {
         };
         let Some((report, vab_off)) = [4usize, 0]
             .into_iter()
-            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+            .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))
         else {
             return false;
         };
@@ -272,7 +272,7 @@ impl<S: AudioSink> AudioDirector<S> {
     fn stage_shared_spilled(
         &mut self,
         want: SharedRegionBank,
-        report: &legaia_vab::VabReport,
+        report: &psx_vab::VabReport,
         body: &[u8],
     ) -> bool {
         self.observe_track();
@@ -316,7 +316,7 @@ impl<S: AudioSink> AudioDirector<S> {
     pub fn stage_resident_slot0(&mut self, bytes: Vec<u8>) -> bool {
         let Some((report, vab_off)) = [4usize, 0]
             .into_iter()
-            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+            .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))
         else {
             return false;
         };

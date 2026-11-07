@@ -59,7 +59,7 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
     let n = 4;
 
     // --- Baseline: a New Game off the UNPATCHED disc seeds Healing Leaf x5. ---
-    let scus = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
+    let scus = psx_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
     let vanilla = StartingInventory::from_scus(&scus).expect("decode vanilla seed");
     assert_eq!(
         vanilla.items(),
@@ -86,7 +86,7 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
     // --- Re-decode the seed off the PATCHED image (what a fresh New Game runs)
     //     and seed a fresh world's bag from it. ---
     let patched_scus =
-        legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+        psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
     let patched = StartingInventory::from_scus(&patched_scus).expect("decode patched seed");
     assert_eq!(
         patched.items(),
@@ -142,7 +142,7 @@ fn forced_door_of_wind_seeds_the_bag_at_runtime() {
     use legaia_patcher::starting_items::{DOOR_OF_WIND_COUNT, StartingSeedOptions};
 
     // Baseline: a vanilla New Game has no Door of Wind in the bag.
-    let scus = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
+    let scus = psx_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
     let vanilla = StartingInventory::from_scus(&scus).expect("decode vanilla seed");
     let vanilla_bag = seed_bag(&vanilla);
     assert_eq!(
@@ -161,7 +161,7 @@ fn forced_door_of_wind_seeds_the_bag_at_runtime() {
     assert!(!report.all_warps);
 
     let patched_scus =
-        legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+        psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
     let patched = StartingInventory::from_scus(&patched_scus).expect("decode patched seed");
     let bag = seed_bag(&patched);
 

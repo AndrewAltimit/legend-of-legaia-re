@@ -65,7 +65,7 @@ pub struct EquippedCharacter {
     pub diff_class: Vec<u8>,
     /// Whether the cached mesh was built with the diff highlight on.
     pub diff: bool,
-    pub vram: legaia_tim::Vram,
+    pub vram: psx_tim::Vram,
     /// The character's battle action bank + the equipment-spliced swings +
     /// its Tactical Arts, labeled and expanded per assembled object.
     pub clips: Vec<EquippedClip>,
@@ -263,7 +263,7 @@ impl ItemAloneMesh {
         tmd: &legaia_tmd::Tmd,
         blob: &[u8],
         iso: &equip_isolate::IsolatedItem,
-        vram: &mut legaia_tim::Vram,
+        vram: &mut psx_tim::Vram,
         face: &std::collections::HashSet<u16>,
     ) -> Self {
         let (mut mesh, mut object_ids, prims) = equip_isolate::item_mesh_with_prims(tmd, blob, iso);
@@ -579,7 +579,7 @@ pub fn build(
     }
 
     // ---- VRAM: the whole band for this loadout ----
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     match bca::character_texture_uploads(raw, &pack, &equipped, VIEW_BAND) {
         Ok(uploads) => {
             for u in &uploads {
@@ -664,7 +664,7 @@ pub fn build(
         if let Some(partition) = equip_item::item_partition(s, &w, &w_tmd, &asm, &tmd) {
             // The item-alone cut compares texels, so it needs the stripped
             // loadout's VRAM band too (its own texture pool + CLUT run).
-            let mut w_vram = legaia_tim::Vram::new();
+            let mut w_vram = psx_tim::Vram::new();
             match bca::character_texture_uploads(raw, &pack, &without, VIEW_BAND) {
                 Ok(uploads) => {
                     for u in &uploads {

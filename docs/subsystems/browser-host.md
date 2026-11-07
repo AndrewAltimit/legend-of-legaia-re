@@ -6,7 +6,7 @@ What the site's wasm bundle exports, one section per module family: the play run
 
 The browser side is five crates:
 
-- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
+- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `psx_iso::image` and `legaia_prot::toc_index`.
 - [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and `LegaiaModes`, whose pack loader lists the game-modes page's instances.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
 - [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
@@ -218,7 +218,7 @@ A line nothing listed is deferred: it plays when its row is served, a read and a
 a frame after the request. Neither path reaches the simulation, which never reads the XA
 lane back.
 
-**A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `legaia_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds, and `SYSTEM.CNF` for another region's disc, which the desktop programs also refuse.
+**A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `psx_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds, and `SYSTEM.CNF` for another region's disc, which the desktop programs also refuse.
 
 A file with no `PROT.DAT` in its root is asked before it is read whole, so an archive of several gigabytes is refused without reading it; an image whose `PROT.DAT` is whole but whose later files are missing is asked after that first read. A refused file leaves the disc cache (the `{ rejected: true }` an `onLoad` may answer in `RomCache.attach`), so the next visit does not fail on it again with nothing picked. A bare `PROT.DAT` is still taken.
 
@@ -277,7 +277,7 @@ shared with the native `cutscene_av` - `MV3.STR` carries several ids), the
 page takes those raw sectors off its disc image
 (`window.__playDisc`, [The disc image](#the-disc-image), so the runtime never
 keeps a second copy of the image), `play_fmv_install` demuxes the video and
-decodes the XA track through `legaia_mdec::str_av` - the native window's
+decodes the XA track through `psx_mdec::str_av` - the native window's
 kernel, so both hosts agree on the frame list, frame rate and soundtrack -
 and
 `site/js/play-fmv.js` puts the XA track on the engine mixer's XA lane

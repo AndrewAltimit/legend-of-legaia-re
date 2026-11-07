@@ -57,7 +57,7 @@
 //! and the per-frame stamp selection ([`FaceFrameTables::stamps`] /
 //! [`FaceFrameTables::stamps_with_art_window`]); the engine applies the
 //! returned [`FaceStamp`]s as VRAM-to-VRAM copies
-//! (`legaia_tim::Vram::move_image`).
+//! (`psx_tim::Vram::move_image`).
 
 use anyhow::{Result, bail};
 

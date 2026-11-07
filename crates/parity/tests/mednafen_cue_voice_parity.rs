@@ -30,9 +30,9 @@ use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::vab_bind::VabBank;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_vm::sfx_emitter::{EmitterListener, emitter_volume};
-use legaia_mednafen::SaveState;
 use legaia_parity::audio_trace_oracle::load_runtime_audio_trace_from_save;
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 fn first_dir(cands: &[&str], probe: &str) -> Option<PathBuf> {
     cands
@@ -182,7 +182,7 @@ fn retail_cue_voices_match_the_engine_register_for_register() {
                 .entry((e, off))
                 .or_insert_with(|| {
                     let b = index.entry_bytes(e).ok()?;
-                    let report = legaia_vab::parse(&b, off).ok()?;
+                    let report = psx_vab::parse(&b, off).ok()?;
                     let mut spu = Spu::new();
                     let mut alloc = SpuAllocator::new(0x1010, 0x7_0000);
                     let bank = VabBank::upload(&mut spu, &mut alloc, &report, &b);

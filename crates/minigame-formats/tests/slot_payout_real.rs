@@ -251,7 +251,7 @@ fn the_bonus_reels_carry_ten_distinct_numerals_on_their_own_art_page() {
     // draw nothing at all. So `1..=10` is the whole numeral space the strip can
     // address, and the `1..=1000` payout bound follows from the art too.
     for value in 0x1Bu8..=0x1E {
-        let pal = legaia_tim::decode_rgba8(page, (value & 0xF) as usize).expect("page 1 decodes");
+        let pal = psx_tim::decode_rgba8(page, (value & 0xF) as usize).expect("page 1 decodes");
         let (u, v) = ((value & 3) as usize * 0x40, (value & 0x0C) as usize * 0x10);
         let opaque = (0..64)
             .flat_map(|row| (0..64).map(move |col| (row, col)))

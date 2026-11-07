@@ -46,7 +46,7 @@ fn kingdom_atlas_cluts_overwrite_the_boot_rows() {
         // Last write wins: the expected word at each CLUT cell is the last
         // atlas member's that covers it.
         let mut expect = std::collections::BTreeMap::new();
-        for t in tims.iter().filter_map(|t| legaia_tim::parse(t).ok()) {
+        for t in tims.iter().filter_map(|t| psx_tim::parse(t).ok()) {
             let Some(c) = t.clut else { continue };
             let run = usize::from(c.w) * usize::from(c.h);
             for (k, &w) in c.entries.iter().take(run).enumerate() {

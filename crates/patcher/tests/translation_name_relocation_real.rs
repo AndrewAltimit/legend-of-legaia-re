@@ -16,11 +16,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::item_names;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::export::name_table_refs;
 use legaia_translate::markup::{self, Target};
 use legaia_translate::name_pool::NamePool;
 use legaia_translate::{LanguagePack, export_pack, import_pack};
+use psx_iso::raw::SECTOR_SIZE;
 
 const SECTIONS: [&str; 5] = [
     "items",
@@ -113,7 +113,7 @@ fn check_sectors(original: &[u8], patched: &[u8]) {
     {
         if a != b && a.len() == SECTOR_SIZE {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid"
             );
         }

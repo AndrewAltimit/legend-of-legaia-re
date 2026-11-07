@@ -11,8 +11,8 @@
 use legaia_art::queue::{Character, Command};
 use legaia_arts_patch::arts_power::{self, labeled_art_powers, parse_combo, player_entry_index};
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -20,7 +20,7 @@ fn load_disc() -> Option<Vec<u8>> {
 }
 
 fn scus(patcher: &DiscPatcher) -> Vec<u8> {
-    legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS")
+    psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS")
 }
 
 fn power_of(patcher: &DiscPatcher, ch: Character, combo: &[Command]) -> Vec<u8> {
@@ -116,7 +116,7 @@ fn power_edit_is_surgical_edc_valid_and_reparses() {
     for s in 0..sectors {
         let sb = (lba + s) * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
             "player-file sector {s} must stay EDC/ECC-valid after the power edit"
         );
     }

@@ -53,7 +53,7 @@
 //! 0..191 (Vahn 0..63, Noa 64..127, Gala 128..191).
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{Tim, Vram, parse as parse_tim};
+use psx_tim::{Tim, Vram, parse as parse_tim};
 
 use legaia_container_formats::{DecodeMode, decode, parse_player_lzs};
 

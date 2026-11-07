@@ -33,7 +33,7 @@ use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_mon
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
-use legaia_mednafen::SaveState;
+use psx_mednafen::SaveState;
 use std::path::PathBuf;
 
 /// `v0_1_battle_start_tetsu` (backup fingerprint prefix) - in the fight.

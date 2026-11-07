@@ -12,8 +12,8 @@
 //! thumbnail aid, not retail (retail applies no light source to these
 //! meshes - see the project's shading policy).
 
-use legaia_tim::Vram;
 use legaia_tmd::mesh::VramMesh;
+use psx_tim::Vram;
 
 /// One object's rigid placement: `v_world = rot · v + trans`.
 #[derive(Debug, Clone, Copy, PartialEq)]

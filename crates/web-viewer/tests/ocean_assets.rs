@@ -6,11 +6,11 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::extract_prot_dat;
 use legaia_prot::toc_index::parse_prot_toc;
 use legaia_scene_formats::ocean::{
     OCEAN_ANIM_FRAME_COUNT, OCEAN_ANIM_FRAME0_HEAD, find_ocean_assets,
 };
+use psx_iso::image::extract_prot_dat;
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
@@ -69,7 +69,7 @@ fn ocean_assets_extract_from_every_world_map_kingdom() {
         let slot0_ts = u32::from_le_bytes(table[8..12].try_into().unwrap());
         let slot0_off = u32::from_le_bytes(table[12..16].try_into().unwrap()) as usize;
         let slot0_size = (slot0_ts & 0x00FF_FFFF) as usize;
-        let slot0 = legaia_lzs::decompress(&table[slot0_off..], slot0_size)
+        let slot0 = psx_lzs::decompress(&table[slot0_off..], slot0_size)
             .unwrap_or_else(|e| panic!("PROT {prot_index} slot 0 LZS: {e}"));
 
         let ocean = find_ocean_assets(&slot0)

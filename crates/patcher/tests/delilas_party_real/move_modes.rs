@@ -415,8 +415,7 @@ fn delilas_mode_reanimates_the_kit_and_keeps_the_supers_reachable() {
         // The menu reads as the sibling's list: every performable art
         // other than the signature is named after its clip.
         let label_stem = siblings[slot].display_name();
-        let scus =
-            legaia_iso::iso9660::read_file_in_image(del.image(), "SCUS_942.54").expect("SCUS");
+        let scus = psx_iso::iso9660::read_file_in_image(del.image(), "SCUS_942.54").expect("SCUS");
         let recs = legaia_art::arts_table::raw_records_from_scus(&scus).expect("arts table");
         let mut renamed = 0usize;
         for r in recs.iter().filter(|r| r.character == ch && !r.is_miracle) {
@@ -443,12 +442,12 @@ fn delilas_mode_reanimates_the_kit_and_keeps_the_supers_reachable() {
     for entry in [863usize, 864, 865, 894] {
         let lba = reopened.entry_disc_lba(entry).unwrap() as usize;
         let sectors = (reopened.entry_footprint(entry).unwrap() as usize)
-            .div_ceil(legaia_iso::raw::USER_DATA_SIZE);
+            .div_ceil(psx_iso::raw::USER_DATA_SIZE);
         for s in 0..sectors {
-            let sb = (lba + s) * legaia_iso::raw::SECTOR_SIZE;
+            let sb = (lba + s) * psx_iso::raw::SECTOR_SIZE;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(
-                    &patched[sb..sb + legaia_iso::raw::SECTOR_SIZE]
+                psx_iso::write::mode2_form1_sector_is_valid(
+                    &patched[sb..sb + psx_iso::raw::SECTOR_SIZE]
                 ),
                 "PROT {entry} sector {s} lost EDC/ECC under the Delilas moveset"
             );

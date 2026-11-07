@@ -1,4 +1,4 @@
-# legaia-bytes
+# psx-bytes
 
 Checked little-endian byte readers shared across the Legaia parser crates.
 

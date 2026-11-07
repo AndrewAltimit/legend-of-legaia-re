@@ -9,7 +9,7 @@
 use crate::common::{Rng, scus, scus_cpu};
 use legaia_art::arts_voice::ArtsVoiceSelectorTables;
 use legaia_engine_battle::arts_voice_cue::{ArtsVoiceCall, ArtsVoiceEmit, select_arts_voice};
-use legaia_retail_exec::{A0, A1, A2, Stop, V0};
+use psx_retail_exec::{A0, A1, A2, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
 
