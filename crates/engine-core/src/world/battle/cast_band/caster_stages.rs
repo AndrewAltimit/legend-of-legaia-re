@@ -324,7 +324,11 @@ impl World {
                 // under the same numbers and flush nothing.
                 let death_game = run.prot_entry == 957 && self.casting.capture_spell == Some(0x76);
                 if cmc::capture_arm_flushes_pool_for(run.prot_entry, arm, spell_id) && !death_game {
-                    self.casting.flush_module_part_pool();
+                    self.casting
+                        .flush_module_part_pool_sparing(cmc::capture_arm_flush_spares(
+                            run.prot_entry,
+                            arm,
+                        ));
                 }
                 self.apply_capture_arm_part_writes(run.prot_entry, arm);
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {

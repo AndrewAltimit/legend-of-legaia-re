@@ -3901,6 +3901,14 @@ three units). The bodies without that store keep the half turn
   animation rate `+0x21D` beside its stage store (`0x801F6BFC..0x801F6C08`;
   `zeto_big_wave_mid_cast` holds Zeto at `4`), so Zeto sways at half speed
   until the Done arm's restore; the port halves it on the same store.
+  Arm 6's halt walk (`0x801F7174..0x801F71A8`) sets the halt bit on the 32 words of
+  the handle table `0x801F7F30` only, and arm 5 keeps the handles of seven of its nine
+  calls (`+0x44..+0x5C`, each stored in the next call's delay slot): the eighth's
+  `0x801F7AA8` is overwritten by the ninth's call and the ninth's `0x801F7B0C` is never
+  stored. Both run on into arm 7, and `0x801F7B0C` is the floor-wide water sheet (radius
+  `4096` on the caster) the party stands in through the hit
+  (`capture_arm_flush_spares`); halted with the rest, the engine's arm 7 showed the
+  dark arena floor.
   Arm 7's way out is the party's hit (`0x801F7398..0x801F74A8`): the fold lands
   there, each struck seat's rate halved and its heading `caster[+0x46] + 0x800`.
   The restore of the stage byte `ctx[+0x278]` (`0x801F7638`) sits behind that same

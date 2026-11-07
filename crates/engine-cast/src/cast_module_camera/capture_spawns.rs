@@ -1022,8 +1022,8 @@ pub fn capture_arm_moves_to_victim(prot_entry: u32, phase: u8) -> Option<u32> {
 ///
 /// PROT 0946's arm 6 is the same reach by another route: it sets the halt
 /// bit on every word of its handle table `0x801F7F30` (`0x801F7174..
-/// 0x801F71A8`), which holds the stager's waves, the wave caller and arm 5's
-/// nine records - every part a Big Wave cast has seated.
+/// 0x801F71A8`), which holds the stager's waves, the wave caller and seven of
+/// arm 5's nine records ([`capture_arm_flush_spares`] names the two it misses).
 pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     matches!(
         (prot_entry, phase),
@@ -1040,6 +1040,22 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (943, 2)
             | (966, 10 | 26 | 27)
     )
+}
+
+/// The records a flushing arm's halt walk does not reach, because the module
+/// never kept their handles: PROT 0946's arm 6 sets the halt bit on the 32
+/// words of its handle table `0x801F7F30` only, and arm 5 stores the handles of
+/// seven of its nine calls (`sw v0` into `+0x44..+0x5C` in each next call's
+/// delay slot, `0x801F6FB8..0x801F7060`) - the eighth's `0x801F7AA8` is
+/// overwritten by the ninth's call, whose delay slot is `li a3`, and the
+/// ninth's `0x801F7B0C` is never stored. Both run on into arm 7: the floor-wide
+/// water sheet `0x801F7B0C` (radius `4096` on the caster) holds through the
+/// party's hit and halts on its own program (`WAIT 0x19F`, a fade, `HALT`).
+pub fn capture_arm_flush_spares(prot_entry: u32, phase: u8) -> &'static [u32] {
+    match (prot_entry, phase) {
+        (946, 6) => &[0x801F_7AA8, 0x801F_7B0C],
+        _ => &[],
+    }
 }
 
 /// [`capture_arm_flushes_pool`] for the action the cast runs: PROT 0940's

@@ -269,9 +269,17 @@ impl CastFxState {
     ///
     /// REF: FUN_80050E74
     pub fn flush_module_part_pool(&mut self) {
+        self.flush_module_part_pool_sparing(&[]);
+    }
+
+    /// [`Self::flush_module_part_pool`] for a halt walk that does not reach
+    /// every part: those seated from a record in `spare` run on.
+    pub fn flush_module_part_pool_sparing(&mut self, spare: &[u32]) {
         if let Some(scene) = self.active_summon.as_mut() {
             for part in &mut scene.parts {
-                part.finished = true;
+                if !part.tag.is_some_and(|t| spare.contains(&t)) {
+                    part.finished = true;
+                }
             }
         }
     }

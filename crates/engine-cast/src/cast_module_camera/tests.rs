@@ -1518,3 +1518,13 @@ fn cort_terminal_flushes_sit_past_their_gates() {
     assert!(0x801F_7220 > super::summon_holds::gate_va(938, 4).unwrap());
     assert!(0x801F_7870 > super::summon_holds::gate_va(940, 7).unwrap());
 }
+
+/// Big Wave's arm-6 halt walk misses the two arm-5 records whose handles the
+/// module never kept, the floor-wide water sheet among them.
+#[test]
+fn big_wave_arm_six_spares_the_unkept_water_sheet() {
+    assert!(capture_arm_flushes_pool(946, 6));
+    assert_eq!(capture_arm_flush_spares(946, 6), &[0x801F_7AA8, 0x801F_7B0C]);
+    assert!(capture_arm_flush_spares(946, 5).is_empty());
+    assert!(capture_arm_flush_spares(938, 2).is_empty());
+}
