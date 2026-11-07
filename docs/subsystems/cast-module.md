@@ -2546,12 +2546,12 @@ folds the cast's outcome once the phase passes the hit arm:
 | 0921 Iota | `10` | the living row |
 | 0923 Gilium | `0x15` | the living row |
 | 0928 Palma | `0x13` | the living row; arm `0xF` sweeps it once with a pre-hit first |
-| 0929 Mule | `18` | the living row (arm 16's per-pass wave hits are not carried) |
+| 0929 Mule | `18` | the living row; arm 16's wave strikes each monster it passes first |
 | 0930 Horn | `0xA` | the party's full heal and status clear (no damage call) |
 | 0931 Jedo | `29` | a scripted fight's row hit; any other fight's kill of every living monster at arm 30's exit |
 | 0932 Meta | `0x15` | the row; arm `0x12` sweeps it with a pre-hit first |
 | 0933 Terra | `0x13` | the row; arm `0xC` sweeps it with a pre-hit first |
-| 0934 Ozma | `0x18` | the row (the hit ladder's three earlier hits are not carried) |
+| 0934 Ozma | `0x18` | the row; the hit ladder strikes it three times first |
 
 The stores Meta, Terra and Ozma make on other seats are
 `World::apply_meta_writes`, `apply_terra_writes` and `apply_ozma_writes`, tabled
@@ -2569,7 +2569,10 @@ Ozma's arm `0x18` hits four times on its way down: the word falling to a thresho
 that arm `0x17` leaves at `0x60` and each hit lowers by `0x20` hits every living,
 targetable monster for a quartered roll plus `0x40 + rand() % 0x40`, clamped to
 `HP - 1`, with a flinch and a `0x10`-frame flash; the fourth, at threshold `0`, is
-the band's fold. Its arm `0x19` flushes the pool only when its countdown runs out
+the band's fold. Every pass of arms `0x15..0x18` first draws the spray's six offsets
+(`rand() % 0x101 - 0x80`, x then y for each of three records, `0x801F8B74..0x801F8CD4`
+on arm `0x18`), so a hit pass rolls its ladder after them; the band seats the records
+after the module's tick, so `World::draw_ozma_spray` takes the draws ahead of it. Its arm `0x19` flushes the pool only when its countdown runs out
 (`0x801F91D0`), so the rays stay up through the closing fade
 (`summon_holds::gate_va`).
 Gola Gola's closing arms tint the creature (`+0x21C = 7`, arm `0xB`), blank the row
@@ -2632,8 +2635,14 @@ until arm `0xC`'s pass raises it, which opens the [value rows](battle-hud.md). P
 (`0x801F7D2C..0x801F7D3C`), and PROT 0928's stages a flinch at rate `0`
 (`0x801F81C8`) whose cues arm `0xF`'s pass then skips, running the row's cue cursor
 `+0x1F6` off its eight-slot track (`0x801F8360`), so neither sounds a cue before
-the kill. Not carried: the `0x10` / `0x12` mode the wrapper is called with, and
-Mule's and Ozma's per-pass ladders.
+the kill. The `0x10` / `0x12` mode the wrapper is called with is read only on
+the monster branch, so a summon roll ignores it.
+
+Every one of these rolls is a whole `FUN_801DD0AC`, which calls the finisher
+`FUN_801DDB30` on the way out (`0x801DD478`): the spell XP tail and the victim's
+spirit gauge run on the raw roll, whatever the module then lands. The pre-hits,
+Mule's wave and Ozma's ladder all roll through `World::summon_module_roll`, and
+the band's fold banks their XP beside its own hits'.
 
 The fades are the presentation hook's, fired off the image's decoded sites
 on the arm timing the director paces ([Presentation calls](#presentation-calls)).

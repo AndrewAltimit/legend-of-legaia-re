@@ -400,3 +400,11 @@ that leg. PROT 0915's Mushura chase trades its target with `rand() % 4 + 3` redr
 monster seats, where the port drew once from the other living seats. PROT 0907's Nighto skips the resist throw
 for an immune target (`0x801F6C20`), where the host drew it anyway. PROT 0922's crystal deal and PROT 0955's
 Void Accessories and PROT 0957's Death Game deals match (the first by test, the other two by their disassembly).
+
+PROT 0934's Ozma, arm `0x18` run pass by pass against `World::summon_stager_tick` with `FUN_801DD0AC`
+live beneath both sides (`ozma_ladder`), found the arm drawing its spray's six `rand()`s at its head
+where the port seated the spray after the module's tick, so every ladder hit rolled off different draws;
+and each ladder roll going without the finisher's spell XP and spirit, where every `FUN_801DD0AC` call
+runs `FUN_801DDB30`. The same bare roll sat in Mule's wave, and the fold threw away what the pre-hits had
+banked: it took `module_hit_xp` and then overwrote it with the inline grant. Kiss of Death's arm 4
+(`kiss_of_death`) matches `kiss_of_death_tick` on both legs, the refund and a Stoned victim's skip.
