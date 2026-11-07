@@ -128,6 +128,10 @@ impl World {
             reaction_gate: map[3],
             combo_total: a.battle.damage_accum,
             shatter: a.battle.shatter,
+            // Numb Guard / Master Guard, accessory passives `0x1B` / `0x1C`
+            // of the character record's `+0xF4` word (party seats only).
+            numb_guard: (slot < self.party.party_count)
+                && self.party_ability_word(usize::from(slot)) & (1 << 0x1B | 1 << 0x1C) != 0,
             loop_count: a.battle.hit_count_bound,
             loop_timer: a.battle_animation.as_ref().map_or(0, |p| p.loop_timer()),
             hits_pending: a.battle_staged_anim.is_some()

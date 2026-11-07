@@ -408,7 +408,9 @@ pub fn run_chain_body(
         ctx.ctx_0d = 0;
     }
     match arm.effect {
-        Some(ChainEffect::MarkAndStealTurn { flag, .. }) if victim.hp != 0 => {
+        Some(ChainEffect::MarkAndStealTurn { flag, .. })
+            if victim.hp != 0 && !victim.numb_guard =>
+        {
             victim.flags |= flag;
             out.refund = steal_turn(ctx, victim);
         }
@@ -888,14 +890,15 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// Arm 3 ramps `0x801F86A8` and stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`,
 /// restores every live seat and returns zero.
 ///
-/// The port runs the mark and the steal on a live victim, read after the
-/// fold has landed the hit as retail reads it. It cannot see the record's
-/// two immunity bits.
+/// The port runs the mark and the steal on a live victim without either
+/// immunity bit ([`CastActorState::numb_guard`]), read after the fold has
+/// landed the hit as retail reads it. The marked victim's caption (its
+/// character's line into `0x800774AC`, then `FUN_801D8DE8(0x5B, 0)`,
+/// `0x801F6FC8..0x801F7050`) is `World`'s.
 ///
 /// The camera arms, the seat hides and the records are
-/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms,
-/// the per-character effect pointer (`0x800774AC`) and
-/// `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
+/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms.
+/// Countdowns:
 /// `capture_countdown::PARALYZING_WAVE`; arm 3's settle:
 /// [`ChainSettle::Victim`].
 ///
@@ -1460,6 +1463,28 @@ mod chain_tests {
         assert_eq!(v.flags & 0x0400, 0x0400);
         assert_eq!(v.init_key, 0);
         assert_eq!(ctx.turn_cursor, 1);
+        assert_eq!(ctx.phase, 3);
+    }
+
+    /// ... but not one carrying Numb Guard or Master Guard
+    /// (`0x801F6F80..0x801F6F98`): `battle_jou_iota_v3_paralyzing_wave_mid_cast`'s
+    /// party all wear `0x10000000`, and retail marks no one.
+    #[test]
+    fn water_hazard_75_spares_a_guarded_victim() {
+        let mut ctx = CastModuleCtx {
+            phase: 2,
+            ..Default::default()
+        };
+        let (mut c, mut s) = (actor(), actor());
+        let mut v = CastActorState {
+            init_key: 5,
+            numb_guard: true,
+            ..actor()
+        };
+        let t = run_chain_body(&WATER_HAZARD_75_CHAIN, &mut ctx, &mut c, &mut v, &mut s, 0);
+        assert_eq!(t.refund, None);
+        assert_eq!(v.flags & 0x0400, 0);
+        assert_eq!(v.init_key, 5);
         assert_eq!(ctx.phase, 3);
     }
 

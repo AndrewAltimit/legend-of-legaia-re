@@ -93,10 +93,23 @@ const MESSAGE_BARS_PORTED_BY_HAND: [u32; 3] = [940, 941, 954];
 /// Module bodies whose message-bar raise a hand port makes because the
 /// decode cannot see the branch it sits on: PROT 0955's Kiss of Death raises
 /// its line on the roll's miss leg only, and both legs leave arm 4 for arm 5.
-const MESSAGE_BAR_BODIES_PORTED_BY_HAND: [(u32, u32); 1] = [(
-    955,
-    legaia_engine_cast::cast_module_ticks::KISS_OF_DEATH_TICK,
-)];
+///
+/// PROT 0956's Paralyzing Wave picks its line by the victim's character id
+/// on the marking leg only (`World::raise_paralyzing_wave_caption`); the
+/// decode resolves one of the three stores and raised Vahn's line for any
+/// victim, a guarded one included.
+const MESSAGE_BAR_BODIES_PORTED_BY_HAND: [(u32, u32); 2] = [
+    (
+        955,
+        legaia_engine_cast::cast_module_ticks::KISS_OF_DEATH_TICK,
+    ),
+    (956, PARALYZING_WAVE_TICK),
+];
+
+/// PROT 0956's `0x75` tick body.
+pub(in crate::world::battle::cast_band) const PARALYZING_WAVE_TICK: u32 = 0x801F_69D8;
+/// The `+0x16E` bit PROT 0956's arm 2 marks its victim with (`0x801F6FC0`).
+pub(in crate::world::battle::cast_band) const PARALYZING_WAVE_MARK: u16 = 0x0400;
 /// Modules whose CLUT copy a hand port already issues.
 const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// Modules whose tick ports (or chain-body tables) store the stage byte
@@ -624,6 +637,27 @@ impl World {
     /// run time, which this does not model; nothing is raised for it.
     ///
     /// PORT: FUN_801D8DE8 (element `0x5B` raised by a cast module arm, mode `0`)
+    /// PROT 0956's arm-2 caption on the victim it marks
+    /// (`0x801F6FC8..0x801F7050`): the victim's character id
+    /// `0x8007BD10[seat]` picks Vahn's line `0x801F8664`, Noa's `0x801F8678`
+    /// or Gala's `0x801F868C` into `0x800774AC`, then `FUN_801D8DE8(0x5B, 0)`
+    /// and `ctx[+0x18] = 0x5B`. Any other id raises the bar on whatever line
+    /// the word already held, which the port leaves down. A victim the arm
+    /// does not mark (downed, or carrying Numb Guard / Master Guard) is
+    /// staged with its reaction instead and gets no caption.
+    pub(in crate::world::battle::cast_band) fn raise_paralyzing_wave_caption(
+        &mut self,
+        victim: u8,
+    ) {
+        const LINES: [u32; 3] = [0x801F_8664, 0x801F_8678, 0x801F_868C];
+        if victim >= self.party.party_count {
+            return;
+        }
+        if let Some(&va) = LINES.get(self.party_roster_slot(usize::from(victim))) {
+            self.raise_module_message_bar(956, va);
+        }
+    }
+
     pub(crate) fn raise_module_message_bar(&mut self, entry: u32, va: u32) {
         let Some(raw) = self
             .casting

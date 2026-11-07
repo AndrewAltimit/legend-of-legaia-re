@@ -2985,6 +2985,15 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   `capture_arm_moves_to_victim`. The parts film shows both.
 - PROT 0943's arm 2 seats two records on each party seat (`0x801F6C9C..0x801F6D30`),
   `capture_arm_party_records`. Its gate drains the bare step, its seeds are literals.
+- PROT 0956's `0x75` (Paralyzing Wave) arm 2 marks a live victim `+0x16E |= 0x400` and
+  steals its turn only when its character record's `+0xF4` word carries neither Numb
+  Guard nor Master Guard (`0x08000000` / `0x10000000` through `+0x6BC`,
+  `0x801F6F80..0x801F6F98`); a guarded or downed victim is staged with its reaction
+  instead. The marking leg alone raises the caption, the line picked by the victim's
+  character id (`0x801F8664` / `0x801F8678` / `0x801F868C`), `World::raise_paralyzing_wave_caption`.
+  Raised by the decode, every victim read "Vahn is paralyzed.", and
+  `battle_jou_iota_v3_paralyzing_wave_mid_cast`'s Master-Guarded Noa was marked where
+  retail marks no one.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 

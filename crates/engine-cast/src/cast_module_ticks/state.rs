@@ -129,6 +129,12 @@ pub struct CastActorState {
     /// ([`BattleActor::shatter`](legaia_engine_battle_vm::battle_action::BattleActor::shatter)):
     /// Zenoir and Jedo raise it on monsters, six summons on their creature.
     pub shatter: u16,
+    /// Read-only: a party seat whose character record's `+0xF4` ability word
+    /// carries Numb Guard or Master Guard (`0x08000000` / `0x10000000`,
+    /// accessory passives `0x1B` / `0x1C`), the two bits PROT 0956's arm 2
+    /// tests through `0x80084140 + (id - 1) * 0x414 + 0x6BC` before it marks
+    /// the victim (`0x801F6F80..0x801F6F98`).
+    pub numb_guard: bool,
 }
 
 impl CastActorState {

@@ -1490,7 +1490,7 @@ impl World {
 
     /// A party member's ability word - the character record's `+0xF4` u32,
     /// the bitfield `FUN_801EC3E4` reads as `0x80084140 + id*0x414 + 0x6BC`.
-    pub(super) fn party_ability_word(&self, member: usize) -> u32 {
+    pub(in crate::world) fn party_ability_word(&self, member: usize) -> u32 {
         self.party
             .roster
             .members

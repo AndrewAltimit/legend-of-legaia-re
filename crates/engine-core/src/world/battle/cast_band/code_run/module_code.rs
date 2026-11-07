@@ -1240,6 +1240,8 @@ impl World {
                     } else {
                         0
                     };
+                    use super::super::presentation::{PARALYZING_WAVE_MARK, PARALYZING_WAVE_TICK};
+                    let marked_before = victim.flags & PARALYZING_WAVE_MARK != 0;
                     let t = ticks::run_chain_body(
                         chain,
                         &mut ctx,
@@ -1249,6 +1251,12 @@ impl World {
                         selector,
                     );
                     run.item_refund = t.refund;
+                    if (e, b) == (956, PARALYZING_WAVE_TICK)
+                        && !marked_before
+                        && victim.flags & PARALYZING_WAVE_MARK != 0
+                    {
+                        self.raise_paralyzing_wave_caption(victim_slot);
+                    }
                     Some(t.step)
                 }
                 // Every ported trampoline arm the band names. An arm whose
