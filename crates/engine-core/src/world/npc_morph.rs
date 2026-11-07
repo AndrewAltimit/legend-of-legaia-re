@@ -128,6 +128,29 @@ impl World {
         self.mark_morph_dirty(owner);
     }
 
+    /// Whether `channel`'s actor carries a morph the world runs the ramp
+    /// envelope for: armed lanes and the `+0x10 & 0x1000` gate up. The record
+    /// spin on the envelope's ADVANCE bit holds only then.
+    pub(crate) fn channel_morph_envelope_live(
+        &self,
+        channel: &legaia_engine_field::field_channels::FieldChannel,
+    ) -> bool {
+        let owner = if channel.object_bind {
+            MorphOwner::Object(channel.ctx.script_id)
+        } else {
+            match u8::try_from(channel.placement_index) {
+                Ok(s) => MorphOwner::Placement(s),
+                Err(_) => return false,
+            }
+        };
+        channel.ctx.flags & STATUS_FLAG_ENVELOPE_ACTIVE != 0
+            && self
+                .npcs
+                .morphs
+                .get(&owner)
+                .is_some_and(|st| st.keyframe_count > 0)
+    }
+
     /// The channel context that owns `owner` (its `+0x10` / `+0x62` words).
     fn morph_channel(&self, owner: MorphOwner) -> Option<usize> {
         self.field_vm.channels.iter().position(|c| match owner {

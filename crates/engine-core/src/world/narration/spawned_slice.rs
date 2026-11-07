@@ -1521,6 +1521,33 @@ impl World {
                                 .world
                                 .npc_clip_cursor_bound(channels[ci].placement_index as u8)
                     });
+                // Morph end spin (`AD <id> 0B`): the record waits on the
+                // poked actor's envelope ADVANCE bit `+0x62 & 0x800`, which
+                // the ramp envelope `FUN_80020740` raises when its lanes have
+                // drained (or, under HOLD, peaked). `edlast`'s lily closes on
+                // it: `AC 00 0A` drops HOLD, `AB 00 0D` re-primes the lanes,
+                // `AC 00 0B` clears the bit and `AD 00 0B` holds the shot on
+                // the flower while the seven lanes unwind - about 520 frames
+                // in the retail film, where a step-past cut to the pull-back
+                // at once. Held only while the world runs that actor's
+                // envelope, bounded like the clip spin.
+                // REF: FUN_80020740, FUN_801DE840 (op 0x2D)
+                let morph_spin = op == 0x2D
+                    && opcode_byte & 0x80 != 0
+                    && tl.bytecode.get(pc + 2) == Some(&11)
+                    && matches!(
+                        kind,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                    )
+                    && next_pc == pc
+                    && target.is_some_and(|(_, ci)| {
+                        host.world.channel_morph_envelope_live(&channels[ci])
+                    });
+                if morph_spin && tl.npc_clip_spin_frames < MORPH_ADVANCE_SPIN_TIMEOUT {
+                    tl.npc_clip_spin_frames += 1;
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 if npc_clip_spin && tl.npc_clip_spin_frames < NPC_CLIP_SPIN_TIMEOUT {
                     tl.npc_clip_spin_frames += 1;
                     tl.frames = tl.frames.saturating_sub(1);
