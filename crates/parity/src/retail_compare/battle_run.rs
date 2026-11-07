@@ -17,9 +17,10 @@ pub(super) fn is_shiny_seru_patch(resident_patch: Option<&str>) -> bool {
 const SHINY_BOOST_NUM: u32 = 135;
 const SHINY_BOOST_DEN: u32 = 100;
 
-/// The idle orbit's turn a camera pass (`-4` yaw units,
-/// `BattleCamera::align_orbit_yaw`), taken back over the display lag.
-const ORBIT_YAW_PER_PASS: i32 = 4;
+/// The idle orbit's turn a vsync of a pass's frame step: the battle tick's
+/// prologue store takes `yaw -= step * 2` a pass (`0x801D07B8..0x801D07CC`),
+/// `-4` a pass at the default step and `-6` at step `3`.
+const ORBIT_YAW_PER_VSYNC: i32 = 2;
 
 /// `LEGAIA_RC_SEED_TRACE=1`: one stderr line per stream the search tried
 /// (what it reached, and the ground drift it measured) and one for the
@@ -753,12 +754,23 @@ pub(super) fn battle_image(
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
-    // The frame on screen is two passes older, and the orbit turns `-4` a
-    // pass (`v0_1_battle_command_menu`: the RAM's yaw reads `.976`, eight
-    // units back `1.000`).
+    // The frame on screen is two passes older. Where the battle tick's
+    // store turns it, the orbit turns `2 * step` a pass, each of the lag's
+    // passes on its own step (`v0_1_battle_command_menu`, step `2`: the
+    // RAM's yaw reads `.976`, eight units back `1.000`;
+    // `gaza2_card_first_menu`, step `3`: eight units back `.969`, twelve
+    // `.995`). A landed pre-seed capture (flow `0xFF`, action `0x0A`) keeps
+    // the default step's eight: there the RAM's yaw stands eight short of
+    // the yaw counter `ctx[+0x6DA]` whatever the step
+    // (`nilboa_lava_face_pre_fissure` at step `3`: eight back `.999`,
+    // twelve `.841`), and no orbit store dates it.
     if battle.orbit_owns_yaw() {
-        let back = i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES);
-        let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
+        let back = if crate::retail_compare_battle::ORBIT_FLOWS.contains(&battle.flow) {
+            i32::from(battle.display_pass_lag)
+        } else {
+            2 * i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES)
+        };
+        let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_VSYNC * back).rem_euclid(4096);
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
     }
     // The effect palette an earlier action's cue group left swapped in.

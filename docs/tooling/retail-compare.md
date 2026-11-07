@@ -2453,11 +2453,16 @@ landed keeps the engine's walk: pitch reaches `32` at `3` a frame well ahead of
 the translation, and the table no longer says when. `gaza2_card_first_menu`
 `.944` to `.963`, `cort_evolved_card_first_menu` `.932` to `.944`.
 
-The evolved-Cort prompt's residual does not move with its cycler seat: removing
-`LEGAIA_SEAT_CLUT_FX` or moving its hue through `12..44` leaves the frame's score
-and error as they were, where dropping the rect file `LEGAIA_SEAT_VRAM_RECTS`
-takes the frame to `.404`. Which of the two writes the row that frame samples is
-not settled.
+The evolved-Cort prompt's residual does not move with its cycler or scroller
+seats: removing `LEGAIA_SEAT_CLUT_FX` or `LEGAIA_SEAT_VRAM_RECTS`, or moving the
+hue add anywhere through `0..128`, leaves the frame's score and error as they
+were, so the flesh shell's palette is not on that close-up. Nor does the
+leader's idle (the frame's party all hold clip `0`; their displayed cursors
+are the seated ones, and a keyframe either way scores lower). What is left is
+geometry: the arrival column's lower ring a few rows off on the left, and the
+floor edge at the lower right three or four rows low, with the camera pose
+itself on its optimum (a quarter of one frame's increment in any component scores
+lower).
 
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns
@@ -3254,7 +3259,7 @@ Known image differences on a mid-cast frame: the caster's name plate draws over
 retail's flash where the engine's flash covers it, and the engine captions the
 spell name over the caster.
 
-**The idle orbit.** The orbit's yaw is a clock (`-4` per camera step from
+**The idle orbit.** The orbit's yaw is a clock (`-2 * step` a pass from
 whatever azimuth the field left), so an unaligned prompt sample reads the
 capture instant, not the scene. When retail's command-flow byte is one the
 battle tick's orbit runs on (`0x1E` / `0x32` / `0x6E` / `0xFE`, `FUN_801D0748`
@@ -4033,8 +4038,16 @@ every command-menu drive, whose close-up is usually still easing in
 `.904` to `.945`, `evil_medallion_rage_battle` `.972` to `.992`, the four
 `overworld_battle_bg_angle_*` frames to `.999`-`1.000`; no menu capture
 fell). The idle orbit that owns the yaw on the round prompt is the same
-clock: it turns `-4` a pass, and the child seats it the two passes back
-(`v0_1_battle_command_menu` `.976` to `1.000`).
+clock: the battle tick takes `yaw -= step * 2` a pass (`0x801D07B8..0x801D07CC`),
+and the child seats it the two passes back, each on its own step
+(`display_pass_steps`). At the default step that is eight units
+(`v0_1_battle_command_menu` `.976` to `1.000`); the PCSX-Redux boss prompts run
+at step `3`, twelve units, where a fixed eight left the close-up on the
+leader's back a few pixels round (`gaza2_card_first_menu` `.969` to `.995`,
+`cort_evolved_card_first_menu` `.958` to `.986`). A landed pre-seed capture
+(flow `0xFF`, action `0x0A`) has no orbit store to date its yaw, which stands
+eight units short of the yaw counter `ctx[+0x6DA]` at any step; it keeps the
+eight (`nilboa_lava_face_pre_fissure` at step `3`: eight `.999`, twelve `.841`).
 
 **Each pass on its own step.** The two passes the walk-back undoes need not
 share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in
