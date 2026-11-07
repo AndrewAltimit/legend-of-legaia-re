@@ -57,6 +57,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
       <tr><td><code>--physical</code></td><td>Film the strike a harvested state already holds instead of injecting a cast; <code>--strike-deal</code> stands the engine on retail's hand.</td></tr>
       <tr><td><code>--retail-steps</code></td><td>Run the engine on the recording's own frame steps, a disclosed harness seat that takes the frame's cost out of what is left.</td></tr>
       <tr><td><code>--rand-at &lt;state&gt;:&lt;phase&gt;</code></td><td>Hold the engine's <code>rand()</code> stream on retail's seed word under one cast key.</td></tr>
+      <tr><td><code>--rand-track</code></td><td>Seat every module-band pass on the <code>rand()</code> word retail's frame before it ended on, for an arm that draws on every pass.</td></tr>
       <tr><td><code>--retail-parts</code></td><td>Log every live move-VM part per vsync on the retail side, to read beside the engine's <code>parts.csv</code>.</td></tr>
       <tr><td><code>--recapture</code> / <code>--reseed</code> / <code>--rerecord</code></td><td>Redo one cached stage.</td></tr>
     </tbody>
@@ -109,6 +110,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
 <section class="doc-section" id="rand" data-doc="the-rand-stream">
   <h2>The <code>rand()</code> stream</h2>
   <p>Retail draws every <code>rand()</code> from one seed word. The engine's world stream is the same generator, but it reaches a cast's arms after another number of draws, so an arm whose look is its draws plays another pattern: Gigaton Press picks each of its sixteen falling rocks by <code>rand() % 4</code>. <code>--rand-at</code> sets the engine's stream to the word retail held on the last vsync under one key, so the pass that leaves the key draws as retail's did; on a Gigaton Press capture the rocks' arm scores <code>.770</code> with it and <code>.649</code> without.</p>
+  <p>One held word deals one pass. Earthquake bursts a rock pair every frame off <code>rand()</code>, and retail's other passes draw tens of times where the engine draws a few, so <code>--rand-track</code> holds every band pass on the word retail's frame before it ended on. Van Saryu's Earthquake film goes from <code>.808</code> to <code>.943</code> and Scale Lizard's from <code>.748</code> to <code>.910</code>; Death Game's cues from <code>.800</code> to <code>.970</code>. It is a harness seat: a pass that draws in another order than retail's still parts (Fatal Decision drops <code>.841</code> to <code>.830</code>).</p>
 </section>
 
 <section class="doc-section" id="physical" data-doc="a-monsters-physical-attack">
@@ -157,7 +159,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
   <ul class="bullets">
     <li><strong>The fight is the state's.</strong> A state the corpus cannot image has no engine side.</li>
     <li><strong>The cast starts from the first prompt.</strong> Ground pairs and facings carry over (an earlier actor leaves its seat turned, and the range law measures a target by its turned body point: unturned, Gala stood out of Xain&rsquo;s reach and Bloody Horns skipped its walk-in); status, HP already lost and the camera history an earlier action left do not, so the frames before the module owns the camera can part on framing alone.</li>
-    <li><strong>Damage and <code>rand()</code> are not aligned</strong> unless <code>--rand-at</code> holds the stream on one key, so popups and HP readouts can differ.</li>
+    <li><strong>Damage and <code>rand()</code> are not aligned</strong> unless <code>--rand-at</code> holds the stream on one key or <code>--rand-track</code> on every band pass, so popups and HP readouts can differ.</li>
     <li><strong>The target has to suit the spell.</strong> A heal aimed at a monster parks the module; the probe quits on a park and the driver reports it.</li>
     <li><strong>An item cast (the flutes) is not injectable</strong>, and a cast longer than the grab cap is cut unless the cap is raised.</li>
   </ul>

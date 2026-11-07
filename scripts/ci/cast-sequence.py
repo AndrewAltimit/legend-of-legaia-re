@@ -365,6 +365,32 @@ def retail_step_track(out: Path) -> str:
     return "".join(lines)
 
 
+def retail_rand_track(out: Path) -> str:
+    """`state phase word` per retail frame inside the module bands, for
+    `LEGAIA_CAST_RAND_TRACK`: the BIOS rand() seed word on the frame's last
+    row, which the next frame's pass draws from, keyed as the step track keys
+    a frame. The key the recording opens on is left out: the capture's
+    instant falls inside it, so its first frames are not the band's."""
+    lines, last, first_key = [], None, None
+    with open(out / "retail" / "meta.csv") as f:
+        rows = list(csv.DictReader(f))
+    if not rows or not rows[0].get("rand"):
+        return ""
+    for r in rows + [None]:
+        if last is not None and (r is None or r["frame"] != last["frame"]):
+            st7 = int(last["st7"])
+            if st7 in (0x35, 0x36, 0x70):
+                key = (st7, int(last["phase"]))
+                if first_key is None:
+                    first_key = key
+                if key != first_key:
+                    lines.append(f"{key[0]} {key[1]} {int(last['rand'])}\n")
+        if r is not None and first_key is None and int(r["st7"]) not in (0x35, 0x36, 0x70):
+            first_key = (-1, -1)
+        last = r
+    return "".join(lines)
+
+
 def _step_row(r: dict) -> str:
     st7 = int(r["st7"])
     phase = int(r["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
@@ -494,6 +520,14 @@ def run_engine(a, out: Path) -> bool:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
             return False
         env["LEGAIA_CAST_RAND_SEED"] = seed
+    if a.rand_track:
+        track = out / "retail-rand.txt"
+        text = retail_rand_track(out)
+        if not text:
+            print("[engine] --rand-track: the retail recording has no rand words inside a module band")
+            return False
+        track.write_text(text)
+        env["LEGAIA_CAST_RAND_TRACK"] = str(track)
     if a.retail_steps:
         track = out / "retail-steps.txt"
         track.write_text(retail_step_track(out))
@@ -629,6 +663,10 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--rand-track", action="store_true",
+                    help="engine: seat every module-band pass on the rand() word retail's frame before it "
+                         "ended on (a harness seat: an arm that draws each pass, such as Earthquake's "
+                         "rocks, plays retail's draws)")
     ap.add_argument("--retail-steps", action="store_true",
                     help="engine: run on the recording's own frame steps (a harness seat: it takes the "
                          "frame's cost out of what the film scores, so a law residual reads alone)")

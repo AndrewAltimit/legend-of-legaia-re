@@ -91,6 +91,7 @@ Flags worth knowing:
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
+| `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
@@ -98,6 +99,13 @@ Flags worth knowing:
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
+
+The engine recorder also writes `rates.csv` (no header), per tick and per retail seat the
+animation rate `+0x21D` and the node cursor `+0x68`, the engine half of the probe's file,
+and a `guard` column in `meta.csv`, the party seats in the Spirit stance. A reaction's pace
+reads off the first: on Water Crystals both sides now walk Vahn's knockdown through the same
+cursors (`0, 8, .. 32, 44, 54, 62, 68, 72, 74`), the engine one step-`4` pass ahead, which
+is the pairing rule's offset.
 
 `LEGAIA_DIAG_CAST_PARTS=1` beside the engine recorder (`--engine-env`) adds
 `parts.csv`: every live part of the cast's scene graph each tick - record
@@ -409,6 +417,29 @@ cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
 happened.", the engine's stripped the accessory and played the victim's knockdown
 and its three cues. With `--rand-at 0x70:3` both sides miss, the cues score
 `1.000` and the frames `.773` against `.756`.
+
+A `--rand-at` word deals one pass. An arm that draws on every pass outruns it: PROT
+0935's Earthquake bursts a rock pair a frame off `rand()`, and retail's other passes
+draw tens of times a frame where the engine draws a few, so from the second pair on the
+rocks fall on the engine's own stream. `--rand-track` holds every pass instead. The driver
+writes `retail-rand.txt`, one `state phase word` line per retail frame inside a module
+band, the word the frame's last row holds, keyed as the step track keys a frame. The
+engine child (`RetailRandTrack`) seats the word for the pass that opens under the same
+key, ahead of the frame driver's discarded draw, counting each key's passes from the
+band's entry. The key the recording opens on is left out, because the capture's instant
+falls inside it. Measured with it:
+
+| Film | Own stream | `--rand-track` |
+|---|---|---|
+| `battle_jagaroom_van_saryu_earthquake_mid_cast` | `.808` | `.943` |
+| `battle_map03_scale_lizard_earthquake_mid_cast` | `.748` | `.910` |
+| `battle_taiku_puera_death_game_mid_cast` | `.806` (cues `.800`) | `.839` (cues `.970`) |
+| `battle_korb2_mage_void_accessories_mid_cast` | `.823` (cues `0`) | `.841` (cues `1.000`) |
+| `battle_retockin_evil_shadow_fatal_decision_mid_cast` | `.841` | `.830` |
+
+It does not help every film. The words are retail's frame ends, so an engine pass that
+draws in another order than retail's inside the frame still parts: Fatal Decision gains
+five extra cues. Read it as a harness seat that takes the stream out, not as a score.
 
 ## The game clock
 

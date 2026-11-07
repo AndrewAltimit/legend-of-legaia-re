@@ -389,6 +389,15 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             Some(legaia_engine_battle_loop::frame_clock::RetailStepTrack::parse(&text));
     }
 
+    // `LEGAIA_CAST_RAND_TRACK=<file>` (the cast-sequence oracle's
+    // `--rand-track`): seat each band pass on retail's `rand()` word.
+    if let Some(text) =
+        std::env::var_os("LEGAIA_CAST_RAND_TRACK").and_then(|p| std::fs::read_to_string(p).ok())
+    {
+        world.battle.retail_rand_track =
+            Some(legaia_engine_battle_loop::frame_clock::RetailRandTrack::parse(&text));
+    }
+
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast

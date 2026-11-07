@@ -298,9 +298,93 @@ impl RetailStepTrack {
     }
 }
 
+/// A retail recording's `rand()` seed word going into each battle frame, per
+/// action-SM key, for a film whose arms draw on every pass (`--rand-track` in
+/// `scripts/ci/cast-sequence.py`). PROT 0935's Earthquake bursts a rock pair
+/// a frame off `rand()`, and retail's other passes make tens of draws the
+/// engine does not, so one held seed (`LEGAIA_CAST_RAND_SEED`) deals the first
+/// pair and leaves the rest on the engine's own stream. The track hands the
+/// frame driver's pass, ahead of its discarded draw (`0x80046D2C`), the word
+/// retail's generator held at the end of the frame before. A harness seat: no
+/// play path installs one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RetailRandTrack {
+    /// `(action state, module phase)` to the word each retail frame under it
+    /// ended on, in film order.
+    words: std::collections::BTreeMap<(u8, u8), Vec<u32>>,
+    /// Passes the engine has opened under each key since the band began.
+    passes: std::collections::BTreeMap<(u8, u8), usize>,
+    /// Whether the last pass stood in a module band.
+    in_band: bool,
+}
+
+impl RetailRandTrack {
+    /// Parse `state phase word` lines, one retail frame each, in film order.
+    pub fn parse(text: &str) -> Self {
+        let mut track = Self::default();
+        for line in text.lines() {
+            let f: Vec<u32> = line
+                .split_whitespace()
+                .filter_map(|w| w.parse().ok())
+                .collect();
+            if let [state, phase, word] = f[..]
+                && let (Ok(state), Ok(phase)) = (u8::try_from(state), u8::try_from(phase))
+            {
+                track.words.entry((state, phase)).or_default().push(word);
+            }
+        }
+        track
+    }
+
+    /// The word to seat for the pass that opens under this key: retail's
+    /// frame of the same ordinal under it, `None` past the recording's last
+    /// or for a key it never saw (the engine's own stream runs on).
+    pub fn next_word(&mut self, state: u8, phase: u8) -> Option<u32> {
+        let words = self.words.get(&(state, phase))?;
+        let n = self.passes.entry((state, phase)).or_default();
+        let word = words.get(*n).copied();
+        *n += 1;
+        word
+    }
+
+    /// Start every key's count again: a new cast band opened, and the
+    /// recording's frames are the last band's.
+    pub fn restart(&mut self) {
+        self.passes.clear();
+    }
+
+    /// The word for a pass opening under `(state, phase)`, the phase counted
+    /// only inside a module band. The track covers the bands alone: a drive
+    /// that replays rounds passes through other states the recording never
+    /// held, and a band entered afresh restarts the counts.
+    pub fn pass_word(&mut self, state: u8, phase: u8, band: bool) -> Option<u32> {
+        if band && !self.in_band {
+            self.restart();
+        }
+        self.in_band = band;
+        band.then(|| self.next_word(state, phase)).flatten()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_rand_track_hands_out_each_keys_words_in_order() {
+        let mut t = RetailRandTrack::parse("112 4 10\n112 4 11\n112 5 20\nbad line\n");
+        assert_eq!(t.next_word(112, 4), Some(10));
+        assert_eq!(t.next_word(112, 5), Some(20));
+        assert_eq!(t.next_word(112, 4), Some(11));
+        assert_eq!(t.next_word(112, 4), None);
+        assert_eq!(t.next_word(112, 3), None);
+        t.restart();
+        assert_eq!(t.next_word(112, 4), Some(10));
+        // Outside a band nothing is seated; a band entered afresh counts again.
+        assert_eq!(t.pass_word(0x51, 0, false), None);
+        assert_eq!(t.pass_word(112, 4, true), Some(10));
+        assert_eq!(t.pass_word(112, 4, true), Some(11));
+    }
 
     #[test]
     fn ticks_into_frame_counts_from_the_step_origin() {

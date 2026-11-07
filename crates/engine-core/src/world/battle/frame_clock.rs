@@ -316,7 +316,29 @@ impl World {
             return;
         }
         self.battle.pass_draw_frame = Some(frame);
+        self.seat_retail_rand_word();
         let _discarded = self.next_rand();
+    }
+
+    /// A film's retail `rand()` word for the pass opening here
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailRandTrack`]), keyed as
+    /// the pairing keys a frame: the action state, and the module phase inside
+    /// the bands. A harness seat; with no track the stream runs on.
+    fn seat_retail_rand_word(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte()
+            || state == S::SummonReturn.as_byte()
+            || state == S::MagicCapturePhase2.as_byte();
+        let phase = if band { self.casting.module_phase } else { 0 };
+        if let Some(word) = self
+            .battle
+            .retail_rand_track
+            .as_mut()
+            .and_then(|t| t.pass_word(state, phase, band))
+        {
+            self.rng_state = word;
+        }
     }
 
     /// The kept object 1's spin: on every pass `FUN_80046A20` adds half the
