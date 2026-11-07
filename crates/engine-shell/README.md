@@ -196,7 +196,8 @@ with the headless subcommands. The binary is split into modules under
   tested without a display or a disc; the user-facing description is
   [`playing-and-viewing.md`](../../docs/guides/playing-and-viewing.md#0-the-launcher).
   On a Wayland session the picker opens through XWayland (winit has no
-  Wayland drag-and-drop); on Windows a double-clicked engine frees the console
+  Wayland drag-and-drop; `legaia_app_theme::drop_backend`, which Explorer
+  shares); on Windows a double-clicked engine frees the console
   Explorer gave it.
 
 A second binary, `legaia-launch` (`src/bin/legaia-launch.rs`), is the

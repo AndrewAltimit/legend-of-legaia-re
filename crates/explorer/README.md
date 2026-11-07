@@ -141,6 +141,12 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   (`launch::play_args`). A game started from either program is the same game,
   and a switch added to the launcher needs nothing here. The enhancement
   options live in the game's `legaia-options.toml`, which both starts read.
+- **Dropped files on Wayland.** winit 0.30 has no Wayland drag-and-drop, so
+  on a Wayland session that also offers XWayland Explorer opens as an X11
+  client, as the launcher does (`legaia_app_theme::drop_backend`), and a disc
+  dropped from a Wayland file manager arrives. `LEGAIA_EXPLORER_WAYLAND=1`
+  keeps the window native, where only the dialogs and the typed path open a
+  disc.
 - **UI-free model.** `Explorer` (loading, selection, background classification
   and analysis), `ExtractJob`, `media` and the exporters have no egui
   dependency, so `tests/smoke.rs` drives them headlessly.

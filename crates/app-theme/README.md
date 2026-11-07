@@ -26,10 +26,12 @@ from a short list of flat shapes and writes the SVG, the 256 px PNG, the
 |---|---|
 | `icons` | The PNGs as bytes (`GAME_PNG`, `EXPLORER_PNG`) for the window icons, and the `.ico` paths for build scripts. |
 | `win_icon` | `embed_in_bins`, for a build script: compiles a one-icon resource with the toolchain's resource compiler (`<arch>-w64-mingw32-windres`, `windres`, `llvm-windres`, `rc.exe`, or `$LEGAIA_WINDRES`) and links it into the package's binaries, on a Windows target only. |
+| `drop_backend` | `prefer_x11_for_drop_from_env`: on a Wayland session with XWayland on offer, the launcher and Explorer open as X11 clients, because winit 0.30 has no Wayland drag-and-drop; each has its own opt-out (`LEGAIA_LAUNCHER_WAYLAND`, `LEGAIA_EXPLORER_WAYLAND`). |
 | `release_layout` | `find_engine`: the release archive keeps every command-line program in `command-line-tools/` below the two double-click programs, and this finds `legaia-engine` there, beside the program (a `cargo build`), or inside `Legend of Legaia.app`. The `legaia-launch` stub and Explorer's Play button both use it. |
 
-`win_icon` and `release_layout` need `std` (processes, paths); the palette
-does not. None of the three adds a dependency.
+`win_icon`, `release_layout` and `drop_backend` need `std` (processes,
+paths, the environment); the palette does not. None of them adds a
+dependency.
 
 ## The palette
 

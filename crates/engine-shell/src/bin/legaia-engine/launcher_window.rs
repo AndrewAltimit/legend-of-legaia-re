@@ -257,22 +257,17 @@ mod console {
 
 /// Build the launcher's event loop.
 ///
-/// winit 0.30 delivers `DroppedFile` on X11, Windows and macOS but has no
-/// drag-and-drop on Wayland at all, so a disc dropped on a native Wayland
-/// window is silently ignored. The launcher is one small window that needs
-/// nothing Wayland-specific, so on a Wayland session that also offers
-/// XWayland (`DISPLAY` set) it opens as an X11 client instead: the compositor
-/// bridges a drag from a Wayland file manager into XWayland, and the drop
-/// arrives. The game itself runs in a fresh process on the default backend.
+/// On a Wayland session that also offers XWayland the launcher opens as an
+/// X11 client, because winit 0.30 has no drag-and-drop on Wayland
+/// ([`legaia_app_theme::drop_backend`]); Legaia Explorer makes the same
+/// choice. The game itself runs in a fresh process on the default backend.
 /// `LEGAIA_LAUNCHER_WAYLAND=1` keeps the launcher native (no drop; the file
 /// dialog and the typed path still work).
 fn picker_event_loop() -> Result<EventLoop<()>> {
     let mut builder = EventLoop::builder();
     #[cfg(all(unix, not(target_os = "macos")))]
-    if prefer_x11_for_drop(
-        std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()),
-        std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty()),
-        std::env::var_os("LEGAIA_LAUNCHER_WAYLAND").is_some(),
+    if legaia_app_theme::drop_backend::prefer_x11_for_drop_from_env(
+        legaia_app_theme::drop_backend::LAUNCHER_KEEP_WAYLAND,
     ) {
         use winit::platform::x11::EventLoopBuilderExtX11;
         log::info!(
@@ -281,12 +276,6 @@ fn picker_event_loop() -> Result<EventLoop<()>> {
         builder.with_x11();
     }
     builder.build().context("create event loop")
-}
-
-/// Whether the launcher should open through XWayland (see `picker_event_loop`).
-#[cfg_attr(any(not(unix), target_os = "macos"), allow(dead_code))]
-fn prefer_x11_for_drop(wayland: bool, x11: bool, keep_wayland: bool) -> bool {
-    wayland && x11 && !keep_wayland
 }
 
 // --- Palette -----------------------------------------------------------
@@ -3211,17 +3200,6 @@ mod tests {
         assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 1).min(max));
         // Every row is reachable and visible within the panel height.
         assert!(VISIBLE_LINES as i32 * ROW_PITCH + 2 * LIST_INSET <= STAGE_H - PAD - COLUMNS_Y);
-    }
-
-    #[test]
-    fn picker_uses_xwayland_only_on_a_wayland_session_with_x11() {
-        assert!(prefer_x11_for_drop(true, true, false));
-        assert!(!prefer_x11_for_drop(true, true, true), "opt-out honoured");
-        assert!(!prefer_x11_for_drop(true, false, false), "no XWayland");
-        assert!(
-            !prefer_x11_for_drop(false, true, false),
-            "plain X11 already drops"
-        );
     }
 
     #[test]

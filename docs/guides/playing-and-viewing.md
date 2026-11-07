@@ -89,7 +89,9 @@ windowing library has no Wayland drag-and-drop; the compositor carries a drag
 from a Wayland file manager across, so dropping works there too. Without
 XWayland (`DISPLAY` unset), or with `LEGAIA_LAUNCHER_WAYLAND=1`, the window is
 native Wayland and only the file dialog and the typed path take a disc. The
-game itself always opens on the desktop's default backend.
+game itself always opens on the desktop's default backend. Legaia Explorer
+opens through XWayland for the same reason; `LEGAIA_EXPLORER_WAYLAND=1` keeps
+it native.
 
 The chosen image is checked before it is accepted, through the same reader the
 game boots from: a `.cue` resolves to its `.bin`, the image must be raw

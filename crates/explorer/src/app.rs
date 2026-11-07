@@ -3090,10 +3090,11 @@ const KEYS: &[(&str, &str)] = &[
     ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
     ("F5", "play the open disc"),
     ("Ctrl+F, Esc", "search the archive, clear the search"),
-    ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
+    ("Ctrl+Tab, Ctrl+PgDn", "next preview tab"),
+    ("Ctrl+Shift+Tab, Ctrl+PgUp", "previous preview tab"),
     (
         "Up / Down, PgUp / PgDn, Home / End",
-        "walk the archive tree",
+        "walk the archive, character and movie lists",
     ),
     (
         "Space, Left / Right",

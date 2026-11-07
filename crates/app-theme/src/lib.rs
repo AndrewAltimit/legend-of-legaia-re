@@ -18,6 +18,8 @@
 //! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
 //! executable from a build script. [`release_layout`] is where the release
 //! archive puts the engine, for the two programs that start it.
+//! [`drop_backend`] is the windowing backend the launcher and Explorer open
+//! on so a dropped file reaches them.
 //!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
@@ -29,6 +31,7 @@
 extern crate std;
 
 pub mod disc_text;
+pub mod drop_backend;
 pub mod game_exit;
 pub mod icons;
 pub mod release_layout;
