@@ -3102,6 +3102,8 @@ hidden through arm 5, the miss line raised on a hit and a draw on every passing
 pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
 HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
+Retail runs the cast's arms 1 to 4 at frame step `4` (the lips and the burst records fill the frame) and arm 5, the victim alone, at `2`; the engine takes those steps from the capture band's table (`cast_module_frame_step::CAPTURE_ARM_STEPS`). With the roll held on retail's draw (`--rand-at 0x70:4`) the film reads `.859` on the ordinary step and `.886` on these (module phase 1 `.692` to `.826`, phase 2 under the pull-in `.649` to `.689`). Arm 0's table and countdown at the film's gate are the replay's, which is what keeps arm 1 a pass long. Grade `capture`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn
