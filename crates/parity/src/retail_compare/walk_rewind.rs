@@ -17,7 +17,11 @@
 //! The rewind takes each global back two ease steps against the staging
 //! target and stands the player one more walk step back. Both are
 //! **inference**: the staging target is the newest pass's, and the walk step
-//! is assumed constant over the two passes. Neither is recorded in RAM.
+//! is assumed constant over the two passes. Neither is recorded in RAM. The
+//! older step's target is recomposed on the composer's own floor under the
+//! previous pass's player where the engine's seat supplies it
+//! ([`WalkHistory::floors`]): `kor_field_route_walk`'s walk film shows that
+//! pass's staging eye Y on the floor's tier while the footing still trails.
 //!
 //! A capture saved inside the actor pass reads a still pair over a walking
 //! pad ([`mid_pass_walk_step`]). `tower_field_walk` holds `+0x14/+0x18` equal
@@ -104,6 +108,12 @@ pub struct WalkHistory {
     pub block: Option<CameraZoneConfig>,
     /// `_DAT_8007B6A8 != 0`, the composer's halved eye height.
     pub half_eye_y: bool,
+    /// The composer's floor under [`Self::cur`] and [`Self::prev`]:
+    /// `FUN_80019278` through the MAN-header ladder, as `FUN_801DAB90` reads
+    /// it (`World::sample_field_floor_height_static`). The RAM holds no
+    /// such sample, so the engine's seat supplies it
+    /// ([`Self::with_floors`]); without it the footing stands in.
+    pub floors: Option<[i32; 2]>,
 }
 
 /// The walk step of a capture saved inside the actor pass: the iterator
@@ -203,23 +213,31 @@ pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory
         eye: camera.eye,
         block,
         half_eye_y: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
+        floors: None,
     })
 }
 
 impl WalkHistory {
-    /// The composer's target for the player standing at `player`, on the
-    /// assumption that the floor under the player is its footing.
+    /// The same history with the composer's floor under both passes.
+    pub fn with_floors(mut self, floors: [i32; 2]) -> Self {
+        self.floors = Some(floors);
+        self
+    }
+
+    /// The composer's target for the player standing at `player` over
+    /// `floor` (the footing where no floor sample is carried).
     fn compose_at(
         &self,
         block: &CameraZoneConfig,
         attr_box: [u8; 4],
         player: [i16; 3],
+        floor: Option<i32>,
     ) -> CameraTarget {
         compose(
             block,
             &ComposeInputs {
                 player: player.map(i32::from),
-                floor_y: i32::from(player[1]),
+                floor_y: floor.unwrap_or(i32::from(player[1])),
                 attr_box,
                 live_pitch: self.angles[0],
                 live_yaw: self.angles[1],
@@ -239,8 +257,10 @@ impl WalkHistory {
         let prev_target = self
             .block
             .zip(attr_box)
-            .filter(|&(b, a)| self.compose_at(&b, a, self.cur) == self.staging)
-            .map(|(b, a)| self.compose_at(&b, a, self.prev))
+            .filter(|&(b, a)| {
+                self.compose_at(&b, a, self.cur, self.floors.map(|f| f[0])) == self.staging
+            })
+            .map(|(b, a)| self.compose_at(&b, a, self.prev, self.floors.map(|f| f[1])))
             .unwrap_or(self.staging);
         let code = self.code;
         let back = |live: [i32; 3], t: CameraTarget, eye: bool| -> [i32; 3] {
@@ -305,6 +325,7 @@ mod tests {
             eye: [-87, 555, 11200],
             block: None,
             half_eye_y: false,
+            floors: None,
         }
     }
 

@@ -123,6 +123,9 @@ pub struct RetailObs {
     /// A walking capture's last two passes, which
     /// [`Self::seat_walk_rewind`] turns into the rewound seat.
     pub walk: Option<super::walk_rewind::WalkHistory>,
+    /// The walk-region box (scratchpad `0x1F800384..87`) the rewind composed
+    /// against, kept for [`Self::reseat_walk_rewind_on_floors`].
+    pub walk_attr_box: Option<[u8; 4]>,
     /// The minigame a minigame-class state runs ([`super::minigame_run`]).
     pub minigame: Option<super::RetailMinigame>,
     /// The displayed frame, when the state carries VRAM + display registers.
@@ -376,6 +379,7 @@ impl RetailObs {
             ]),
             image_seat: None,
             walk: None,
+            walk_attr_box: None,
             minigame: (class == StateClass::Minigame).then(|| super::RetailMinigame::from_ram(ram)),
             frame,
             battle,
@@ -888,7 +892,28 @@ impl RetailObs {
         let attr_box = scratchpad
             .and_then(|s| s.get(0x384..0x388))
             .map(|b| [b[0], b[1], b[2], b[3]]);
+        self.walk_attr_box = attr_box;
         let r = walk.rewind(attr_box);
+        self.image_seat = Some(r.seat);
+        self.seat_eye = Some(r.eye);
+        self.seat_angles = Some(r.angles);
+    }
+
+    /// [`Self::seat_walk_rewind`] again with the composer's floor under the
+    /// walk's two passes, which the engine's seat sampled
+    /// (`EngineObs::walk_floors`). The previous pass's target sits on the
+    /// floor tier under that pass's player, which the footing reaches only
+    /// as it conforms: `kor_field_route_walk`'s player stood at footing
+    /// `-56` on the pass before the RAM's, where the composer's floor
+    /// `-64` put the eye-Y target on `768`, and retail's walk film reads
+    /// that pass's staging eye Y `768`.
+    pub fn reseat_walk_rewind_on_floors(&mut self, floors: Option<[i32; 2]>) {
+        let (Some(walk), Some(floors), Some(_), Some(_)) =
+            (self.walk, floors, self.image_seat, self.seat_eye)
+        else {
+            return;
+        };
+        let r = walk.with_floors(floors).rewind(self.walk_attr_box);
         self.image_seat = Some(r.seat);
         self.seat_eye = Some(r.eye);
         self.seat_angles = Some(r.angles);

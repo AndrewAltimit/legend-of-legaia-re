@@ -5033,8 +5033,38 @@ tier (`768`, `1024`, `1152`) from the first pass on it, while the footing
 conforms `24` a pass behind. But recomposing on the newest floor takes
 `kor3_field_route_walk` from `.991` to `.916`: its footing descends `32` a
 pass (`-192` to `-160`), and its frame stands on the older target's eye Y
-`1280`, which the footing gives. So the footing rule stays, and the second
-step's pose is history the RAM does not hold.
+`1280`, which the footing gives.
+
+<a id="the-walk-film-before-the-save"></a>
+
+A film of the passes **before** the save settles it. The route that made the
+state is deterministic under PCSX-Redux: `korb2_field_card_boot` walked by
+`autorun_walk_route.lua` (korb2's door-`0` tile, then kor toward the
+elevator, the random fights on the harvester's hand) reaches the scene
+checkpoint on the same vsync `8557` with the same RAM, and
+`LEGAIA_FILM_SCENE=kor` films every pass before it. The displayed frame is
+the RAM's pose of the pass two back, exactly: the image child seated on that
+pass's row - player `(1680, -32, 3730)` heading `1024`, yaw `1770`, eye
+`(0, 611, 4768)` - reads `1.000`.
+
+| Pass | Player `(X, footing, Z)` | Yaw / eye Y | Staging yaw / eye Y |
+|---|---|---|---|
+| displayed | `(1680, -32, 3730)` | `1770` / `611` | `1670` / `640` |
+| between | `(1656, -56, 3730)` | `1736` / `651` | `1641` / `768` |
+| RAM | `(1638, -64, 3748)` | `1702` / `681` | `1605` / `768` |
+
+Two inferences of the rewind miss it. The previous pass's target is composed
+on the composer's floor, not on the footing: `FUN_801DAB90` samples
+`FUN_80019278` through the MAN-header ladder
+(`World::sample_field_floor_height_static`), and under the pass-between player
+that floor is already on the `768` tier while the footing still reads `-56`.
+The rewind now takes that floor from the engine's seat
+(`EngineObs::walk_floors`, `RetailObs::reseat_walk_rewind_on_floors`), which
+moves the state from `.913` to `.923` and no other walking state. The rest is
+the seat: the player **turned** on the RAM's pass (`-18, +18` after `-24, 0`),
+so a constant step stands the displayed player at `(1674, 3712)`, `18` units
+off. Nothing in RAM records the older step - no copy of `(1680, 3730)` exists
+anywhere in main RAM - so that part is history the state does not hold.
 
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat

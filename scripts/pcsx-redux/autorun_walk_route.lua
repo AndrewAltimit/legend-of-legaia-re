@@ -77,6 +77,12 @@
 -- (default "route"), LEGAIA_FRAMES (default 6000), LEGAIA_TOL, LEGAIA_SHOTS,
 -- LEGAIA_MASH, LEGAIA_MASH_BTN (default CROSS; a comma list takes turns),
 -- LEGAIA_SCENE_SETTLE, LEGAIA_FIGHT, LEGAIA_ACT_FACE, LEGAIA_ACT_SHOT_EVERY.
+--
+-- LEGAIA_FILM_SCENE=<label> also writes walk_film.csv (the columns of
+-- autorun_field_walk_film.lua, vsync counted from the run's start) on every
+-- field vsync while that scene is loaded, and LEGAIA_FILM_SHOT_EVERY=N saves
+-- _film_v<vsync> every N field vsyncs there: the passes before a scene
+-- checkpoint, which a film started from the checkpoint cannot see.
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
@@ -103,6 +109,8 @@ local PLAY_ONLY = probe.getenv_num("LEGAIA_PLAY_ONLY", 0) == 1
 local ACT_FACE = probe.getenv_num("LEGAIA_ACT_FACE", 2)
 local ACT_SHOT_EVERY = probe.getenv_num("LEGAIA_ACT_SHOT_EVERY", 0)
 local MASH_FROM = probe.getenv_num("LEGAIA_MASH_FROM", -1)
+local FILM_SCENE = probe.getenv("LEGAIA_FILM_SCENE", "")
+local FILM_SHOT_EVERY = probe.getenv_num("LEGAIA_FILM_SHOT_EVERY", 0)
 local WATCH = nil
 do
     local a, v, d = string.match(probe.getenv("LEGAIA_WATCH", ""), "(0x%x+):(%d+):?(%d*)")
@@ -214,6 +222,34 @@ local function ring_dir(dx, dz)
     return math.floor(a / (math.pi / 4) + 0.5) % 8
 end
 
+-- The walk film's row (autorun_field_walk_film.lua's columns).
+local film_fh = nil
+local function film_row(vsync, p)
+    if film_fh == nil then
+        film_fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
+        film_fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
+            "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record\n")
+    end
+    local function s32(a)
+        local v = probe.read_u32(a) or 0
+        if v >= 0x80000000 then v = v - 0x100000000 end
+        return v
+    end
+    local ST = 0x801F3580
+    film_fh:write(string.format(
+        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+        vsync, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
+        s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
+        s16(0x8007B790), s16(0x8007B792), s16(0x8007B6F4),
+        s32(0x800840B8), s32(0x800840BC), s32(0x800840C0),
+        s32(0x80089118), s32(0x80089120),
+        s16(ST + 0x02), s16(ST + 0x06), s16(ST + 0x26),
+        s16(ST + 0x0E), s16(ST + 0x12), s16(ST + 0x16),
+        s16(0x8007BCAC), s16(p + 0x68), s16(p + 0x6A), s16(p + 0x5E)))
+    film_fh:flush()
+end
+local film_n = 0
+
 local wi = 1
 local last_mode, last_scene = nil, nil
 local scene_seen, scene_since, scene_start_pos, scene_walked = {}, 0, nil, false
@@ -323,6 +359,14 @@ probe.run({
         local pp = probe.read_u32(PLAYER_PTR)
         if not ok_ptr(pp) then return end
         local px, pz = s16(pp + 0x14), s16(pp + 0x18)
+
+        if FILM_SCENE ~= "" and label == FILM_SCENE then
+            film_row(vsync, pp)
+            film_n = film_n + 1
+            if FILM_SHOT_EVERY > 0 and film_n % FILM_SHOT_EVERY == 0 then
+                save_checkpoint(string.format("%s_film_v%d", PREFIX, vsync), vsync)
+            end
+        end
 
         -- Scene checkpoint.
         if scene_start_pos == nil then scene_start_pos = { px, pz } end
