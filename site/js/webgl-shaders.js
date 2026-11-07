@@ -1344,7 +1344,17 @@ void main() {
     flat_lit = grade_near(flat_lit);
     /* An untextured prim's colour is shading arithmetic in both passes, so
      * it dithers in both (native COLOR_MESH fs_main and blend_pass_color). */
-    emit(vec4(psx_dither(mix(flat_lit, dyn_far(u_cue_far), cue_ir0(v_view_z))), 1.0));
+    float flat_ir0 = cue_ir0(v_view_z);
+    vec3 flat_cued = mix(flat_lit, dyn_far(u_cue_far), flat_ir0);
+    if (u_psx.w >= 0.5 && flat_ir0 > 0.0) {
+      /* The GTE's own precision, twin of engine-render's psx_fill_cue_gte. */
+      vec3 c = floor(flat_lit * 255.0 + 0.5);
+      vec3 f = floor(clamp(dyn_far(u_cue_far), 0.0, 1.0) * 255.0 + 0.5);
+      float w = floor(flat_ir0 * 4096.0 + 0.5);
+      vec3 inner = floor((f - c) * 16.0 * w / 4096.0);
+      flat_cued = clamp(floor((c * 16.0 + inner) / 16.0) / 255.0, 0.0, 1.0);
+    }
+    emit(vec4(psx_dither(flat_cued), 1.0));
     return;
   }
 

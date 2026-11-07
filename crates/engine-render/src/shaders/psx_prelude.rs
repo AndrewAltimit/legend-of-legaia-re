@@ -352,6 +352,18 @@ fn psx_cue_colour_gte(prim: vec3<f32>, far_bytes: vec3<f32>, ir0: f32) -> vec3<f
     return clamp(floor((c * 16.0 + inner) / 16.0), vec3<f32>(0.0), vec3<f32>(255.0));
 }
 
+// `psx_cue_colour_gte` for an untextured prim's fill, in display units:
+// the colour word is the fill, so the cue's floor reaches the framebuffer
+// directly. The near term is not clamped first (an enhancement grade may lift
+// it past a byte), so the two hosts agree with the continuous blend's clamp.
+fn psx_fill_cue_gte(rgb: vec3<f32>, far_rgb: vec3<f32>, ir0: f32) -> vec3<f32> {
+    let c = floor(rgb * 255.0 + 0.5);
+    let f = round(clamp(far_rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0);
+    let w = round(max(ir0, 0.0) * 4096.0);
+    let inner = floor((f - c) * 16.0 * w / 4096.0);
+    return clamp(floor((c * 16.0 + inner) / 16.0) / 255.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 // View-depth-driven IR0 - the prologue's per-render-node depth-cue pull.
 //
 // Retail stages the DPCS far colour + IR0 PER RENDER NODE (`+0x74` / `+0x78`,
