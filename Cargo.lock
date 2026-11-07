@@ -2719,6 +2719,7 @@ dependencies = [
  "legaia-anm",
  "legaia-game-tables",
  "legaia-minigame-formats",
+ "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
 ]

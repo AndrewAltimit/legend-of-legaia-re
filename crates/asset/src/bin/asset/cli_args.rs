@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::field_disasm_cli;
+use crate::move_disasm_cli;
 
 /// Grouped index of the subcommand catalogue plus a copy-paste pipeline
 /// example - the flat `--help` list is ~50 entries and unreadable without it.
@@ -24,7 +25,8 @@ SUBCOMMAND GROUPS:
     field-pack, field-pack-scan, effect-bundle, effect-bundle-scan,
     battle-data-pack, battle-data-pack-scan, player-anm, player-anm-scan,
     scene-v12, scene-v12-scan, man, man-scan, kingdom-slot, slot4-png,
-    befect-cluster, find-overlay, summon-overlay, summon-readef, overlay
+    befect-cluster, find-overlay, summon-overlay, summon-readef, overlay,
+    move-disasm
   Expansion packs (the port's modder content, no disc needed):
     expansion validate | bundle | unbundle | info
 
@@ -1013,6 +1015,15 @@ pub(super) enum Cmd {
     FieldDisasm {
         #[command(subcommand)]
         cmd: field_disasm_cli::FieldDisasmCmd,
+    },
+    /// Walk **move-VM** programs (`FUN_80023070`'s u16 bytecode, `0x2F`
+    /// overlay sub-ops included) and print each instruction with its width
+    /// and the actor fields it writes: one program or record in a raw
+    /// buffer (`file`), every spawn record of a slot-B cast / summon module
+    /// (`slot-b`), or a scene prescript stager table (`prescript`).
+    MoveDisasm {
+        #[command(subcommand)]
+        cmd: move_disasm_cli::MoveDisasmCmd,
     },
     /// A field scene's **navigation facts** as JSON, for an offline route
     /// planner (`scripts/pcsx-redux/plan_walk_route.py`): the `.MAP`

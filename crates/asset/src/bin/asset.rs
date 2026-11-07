@@ -27,6 +27,8 @@ mod field_census;
 mod field_disasm_cli;
 #[path = "asset/minigame.rs"]
 mod minigame;
+#[path = "asset/move_disasm_cli.rs"]
+mod move_disasm_cli;
 #[path = "asset/overlay.rs"]
 mod overlay;
 #[path = "asset/packs.rs"]
@@ -342,6 +344,7 @@ fn main() -> Result<()> {
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
         Cmd::FieldDisasm { cmd } => field_disasm_cli::field_disasm(cmd),
+        Cmd::MoveDisasm { cmd } => move_disasm_cli::move_disasm(cmd),
         Cmd::SceneNav {
             prot,
             cdname,

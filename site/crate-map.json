@@ -2968,6 +2968,7 @@
    ],
    "dev_deps": [
     "game-tables",
+    "overlay-images",
     "prot"
    ],
    "bins": [],
@@ -3684,6 +3685,7 @@
     "cast_effect_pool",
     "cast_presentation",
     "mips_overlay",
+    "move_disasm",
     "overlay_ptr_table",
     "slot_b_module",
     "static_overlay",
