@@ -128,10 +128,20 @@ fn follow_view_with_knobs(
             // a degenerate shot never puts the lens inside the player; the
             // floor is `FIELD_CAM_DEPTH / 8`, which is closer than any
             // composed shot and still in front of the mesh.
+            //
+            // A script's op-`0x45` shot is the exception: its trio is the
+            // GTE `TR` as staged, sign and all (`FUN_800172C0`), as the
+            // cutscene arm reads it. `edkorout`'s window shot glides the
+            // depth through zero and past it - the lens passes through the
+            // wall to the sky - and the magnitude held it in the room.
             [
                 g[3] as f32 / s,
                 g[4] as f32 / s,
-                ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * depth_scale,
+                if world.scripted_shot_holds_camera() {
+                    g[5] as f32 / s
+                } else {
+                    ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * depth_scale
+                },
             ],
         )
     } else {
@@ -619,6 +629,12 @@ mod tests {
         assert!(!cam.follow_knobs_live(&w));
         assert_eq!(field_follow_view(&cam, &w).unwrap(), retail);
         assert!(crate::field_view_window::retail_framing(&w, &cam));
+        // The scripted trio keeps its sign: a depth glided past zero puts
+        // the lens beyond the focus, as GTE `TR` does.
+        cam.globals.0[5] = -600;
+        let past = field_follow_view(&cam, &w).unwrap();
+        assert!((past.tr_eye[2] - -600.0 / CUTSCENE_WORLD_SCALE).abs() < 1e-3);
+        cam.globals.0[5] = 10389;
         w.field_vm.helper_contexts.clear();
         assert_eq!(field_follow_view(&cam, &w).unwrap(), free);
     }
