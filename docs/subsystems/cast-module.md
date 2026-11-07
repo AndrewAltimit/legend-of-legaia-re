@@ -3057,7 +3057,13 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   `0x801F7024..0x801F713C`), not the pool: the backdrop `0x801F76BC` has no handle there and
   `0x801F7720` keeps running, carried onto the victim's ground through the handle at
   `0x801F8210` (`0x801F6F48..0x801F6F64`). `capture_arm_halts_records`,
-  `capture_arm_moves_to_victim`. The parts film shows both.
+  `capture_arm_moves_to_victim`. The parts film shows both. Set against a
+  `--retail-parts` recording of `battle_tunnelc_freed_water_crystals_mid_cast`, the ice
+  shell's sixteen arm-2 parts match retail's at each paired frame field for field (colour
+  word, level and `+0x7A` ramps, radius and height channels, UV / tpage / CLUT, the `+0x26`
+  spin), and the shell's texture page `0x88` and CLUT rows `488` / `490` match the
+  state's VRAM byte for byte. What the film still parts on is the shell's texture phase
+  and the backdrop's star field, not the cast's parts.
 - PROT 0943's arm 2 seats two records on each party seat (`0x801F6C9C..0x801F6D30`),
   `capture_arm_party_records`. Its gate drains the bare step, its seeds are literals.
 - PROT 0956's `0x75` (Paralyzing Wave) arm 2 marks a live victim `+0x16E |= 0x400` and
