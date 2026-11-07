@@ -186,8 +186,8 @@
   /* The first visit's backdrop shade (FUN_801D1610): an untextured Gouraud
    * quad drawn with ABR 2 (tpage 0x46, `B - F`), applied to what is already
    * down on `g`. Per canvas row F is the ramp at that row's logical y
-   * (`q.top` -> `q.bottom` over `q.dh`, rounded) and every channel drops by
-   * F, clamped at 0. `sx` / `sy` map logical 320x240 pixels to canvas
+   * (`q.top` -> `q.bottom` over `q.dh`, truncated, low 3 bits dropped) and
+   * every channel drops by F, clamped at 0. `sx` / `sy` map logical 320x240 pixels to canvas
    * pixels.
    *
    * A 2D canvas has no subtractive composite, but `max(0, B - F)` is
@@ -225,8 +225,12 @@
     for (var r = 0; r <= h; r++) {
       var f = 0;
       if (r < h) {
-        var ly = (y0 + r + 0.5) / sy - q.y;
-        f = Math.max(0, Math.min(255, Math.round(q.top + (q.bottom - q.top) * (ly / q.dh))));
+        /* The Gouraud value of the logical row, truncated as the window's
+         * row draws take it, then on the framebuffer's 5 bits: the GPU drops
+         * F's low 3 bits before `B - F` (draw mode 0x46, no dither). */
+        var ly = Math.floor((y0 + r + 0.5) / sy - q.y);
+        f = Math.trunc(q.top + (q.bottom - q.top) * ly / q.dh);
+        f = Math.max(0, Math.min(255, f)) & ~7;
       }
       if (r === h || f !== bandF) {
         if (bandF > 0 && r > bandY) {
