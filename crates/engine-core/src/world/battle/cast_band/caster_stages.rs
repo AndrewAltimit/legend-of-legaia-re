@@ -323,7 +323,7 @@ impl World {
                 // PROT 0957's table is Thunder Storm's arms: Death Game's stand
                 // under the same numbers and flush nothing.
                 let death_game = run.prot_entry == 957 && self.casting.capture_spell == Some(0x76);
-                if cmc::capture_arm_flushes_pool(run.prot_entry, arm) && !death_game {
+                if cmc::capture_arm_flushes_pool_for(run.prot_entry, arm, spell_id) && !death_game {
                     self.casting.flush_module_part_pool();
                 }
                 self.apply_capture_arm_part_writes(run.prot_entry, arm);

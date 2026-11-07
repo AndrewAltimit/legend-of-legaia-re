@@ -382,6 +382,13 @@ makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
 
+A cast whose outcome is a roll parts on the deal the same way, and the sound
+channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a
+cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
+happened.", the engine's stripped the accessory and played the victim's knockdown
+and its three cues. With `--rand-at 0x70:3` both sides miss, the cues score
+`1.000` and the frames `.773` against `.756`.
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`

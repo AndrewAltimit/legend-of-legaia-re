@@ -513,6 +513,18 @@ const E940_2_COUNTED: [ModuleSpawn; 1] = [spawn(0x801F8370, CASTER)];
 // 0x801F7628 / 0x801F778C: arms 4 and 5, every eighth pass.
 const E940_45_COUNTED: [ModuleSpawn; 1] = [spawn(0x801F84EC, CASTER)];
 
+// PROT 0940's `0x3C` body `FUN_801F69F8` (Glare). Arm 0 seats its sphere
+// through the pool wrapper on the shot it just built: `a0 = sp+0x20`, the
+// negated caster focus, `a1 = sp+0x10`, the shot angles, scale `0x1000`
+// (`0x801F6C58..0x801F6C6C`). Arm 1's pass flushes the pool
+// (`jal 0x80050E74` at `0x801F6DE4`), which ends it.
+// See `ghidra/scripts/funcs/overlay_cast_glare_divide_0940_801f69f8.txt`.
+/// Glare's action id, the one PROT 0940's trampoline sends to `0x801F69F8`.
+pub const GLARE_ACTION: u8 = 0x3C;
+/// The record Glare's arm 0 seats (`0x8020 - 0x7A74`).
+pub const GLARE_SPHERE_RECORD: u32 = 0x801F_858C;
+const E940_GLARE_0: [ModuleSpawn; 1] = [spawn(GLARE_SPHERE_RECORD, SpawnAnchor::ShotFocus)];
+
 // PROT 0946's one tick body `FUN_801F69FC` (Zeto's Call Wave `0x55` and Big
 // Wave `0x56`; [`super::wave_camera`] has the arms). Big Wave's calls sit on
 // the caster's `+0x34` / `+0x44`, Call Wave's one on its `+0x3C` / `+0x44`.
@@ -906,7 +918,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         935..=937 | 939 | 953 => true,
         964 => true,
         938 => body == Some(0x801F_69EC),
-        940 => body == Some(0x801F_7240),
+        940 => matches!(body, Some(0x801F_7240 | super::GLARE_BODY)),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=949 => true,
         945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
@@ -1030,6 +1042,16 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     )
 }
 
+/// [`capture_arm_flushes_pool`] for the action the cast runs: PROT 0940's
+/// table is Mystic Shield's arm 7, and Glare (`0x3C`) flushes on its arm 1
+/// instead (`jal 0x80050E74` at `0x801F6DE4`, behind the countdown gate).
+pub fn capture_arm_flushes_pool_for(prot_entry: u32, phase: u8, action: u8) -> bool {
+    match prot_entry {
+        940 if action == GLARE_ACTION => phase == 1,
+        _ => capture_arm_flushes_pool(prot_entry, phase),
+    }
+}
+
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
 /// **every** pass it runs, held or not; empty for an arm that makes none.
 /// PROT 0962's arm 1 (Ultra Charge's rays).
@@ -1051,6 +1073,10 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0940's per-arm tables are Mystic Shield's; Glare seats its
+        // sphere on arm 0 alone.
+        (940, 0) if action == GLARE_ACTION => &E940_GLARE_0,
+        (940, _) if action == GLARE_ACTION => &[],
         // PROT 0943's per-arm tables are Lapis Wave's.
         (943, _) if action != 0xB5 => &[],
         // PROT 0956's per-arm tables are Water Hazard's.

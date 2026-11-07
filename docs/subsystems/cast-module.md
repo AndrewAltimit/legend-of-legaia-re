@@ -1357,8 +1357,20 @@ Notes on individual arms:
 - **PROT 0941 `0x51` (enemy Steal) seats no record.** Its caster walks into
   reach on arm 1 (halving `ctx[+0x6D0]` from arm 0 until the steal), turns its
   back, and each of arms 1 and 2 rings a voice through `FUN_8004FE5C` by the
-  caster's monster id. Arm 1 also backs the caster off along that heading until
-  it leaves reach, which the port does not carry (`steal_camera`).
+  caster's monster id. Arm 0 is one pass: it stages the walk entry
+  (`FUN_80050E2C(table, 1, count)` at `0x801F7564`) and bumps the phase
+  (`0x801F7578..0x801F7584`), so the walk runs on phase `1`, where arm 1 turns
+  the caster onto the victim and holds while `FUN_8004E2F0` reads non-zero
+  (`0x801F75EC`). The band runs no approach leg ahead of it
+  (`capture_module_walks`): a leg held the module on phase `0` for the whole
+  walk and left arm 1 a two-tick pass, which paired every walk frame against
+  one engine tick and missed both voice cues by up to 51 ticks.
+- **The Steal's way out of reach.** On arrival arm 1 turns the caster to
+  `FUN_80019B28(victim, caster)`, its back to the victim, and steps it along
+  that heading by its playing clip's stride (`*(+0x22C)+0x4C` entry `+0xC`, the
+  entry the root-motion term `FUN_80047430` reads) x the frame step x `+0x21D`,
+  `>> 15` per axis, until the range poll reads it out of reach - a step, then
+  the poll, in one pass (`0x801F7620..0x801F76E4`; `World::steal_back_off`).
 - **PROT 0941 `0x51` (enemy Steal) reaches no damage wrapper.** Its ten
   distinct `jal` targets are `0x80019B28`, `0x8003CA78`, `0x8003CAC4`,
   `0x80042310`, `0x8004E2F0`, `0x8004FE5C`, `0x80050E2C`, `0x80056798`,
@@ -3553,6 +3565,7 @@ cell's other bodies' records off the screen:
 | 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
 | 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
 | 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
+| 0940 Glare (`0x3C`), `0x801F69F8` | arm 0 the sphere `0x801F858C` on the shot it built (the negated caster focus and the shot angles, scale `0x1000`, `0x801F6C58..0x801F6C6C`); arm 1's pass flushes the pool (`0x801F6DE4`), which ends the sphere and the two held fades arm 0 parked in the pool's tail words `0x801C92E8` / `0x801C92EC` (`capture_arm_spawns_for`, `capture_arm_flushes_pool_for` key both on the action) | shares Mystic Shield's |
 | 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
 | 0959 Megaton Press (`0x7A`), `0x801F69F0` | arm 0 `0x801F884C` on the caster; arm 8 ten records on the caster; arm `0xB` five on the caster mid-jump, after a pool flush; arm `0xD` five on the victim's body point turned to the caster; arm `0xE` eleven on the victim's body point at floor height (scales `0xC00` / `0x800` / `0x1000`), after a flush; arms 4 and `0xF` flush | `FUN_801F8250`: arms 1 and 4 two rings of twelve rocks around the origin, rolled off `rand()`; arm 3 four rolled records and a held white parked at `ctx[+0x102C]`; arm 2 a flush, the kill of that white and a `0x40`-frame fade-out ([below](#prot-0959-megaton-press)) |
@@ -4709,7 +4722,10 @@ PROT 0913's body runs its 21 arms in 21 ticks, while `nova_summon_mid_cast`
 holds retail's arm 2 through the band's whole flash-out. Firing there stacked
 seconds of ramps into a few frames and turned that state's frame solid white.
 So the decoder also marks the arms that **can hold** (a phase write on one
-path, a return without one on another), and on such an arm the hook fires only
+path, a return without one on another, walked from the arm's own code: from a
+chain's last `beq` the walk would also take the not-taken edge, the switch's
+default exit, which no pass of that phase value reaches, and Glare's arm 0 read
+as able to hold and dropped its two fades), and on such an arm the hook fires only
 once the engine has held it a tick: its `Every` / `Hold` calls on the first
 holding tick, its `Pass` calls on the pass after a hold. An arm the engine
 passes on its first tick is counted (`ModulePresentation::unpaced_arms`) and
