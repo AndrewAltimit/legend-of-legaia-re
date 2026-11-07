@@ -2370,6 +2370,14 @@ neighbour's box and blinks it out. Both hosts solve "wall between lens and
 player" per fragment with the
 [camera-occlusion fade](#camera-occlusion-fade-see-through-walls-opt-in-enhancement).
 
+### A cutscene scene's stub meshes
+
+A scene that only ever plays a cutscene can ship a map whose rooms have nothing to draw.
+`taiku2` reuses `taiku`'s whole `.MAP` (the same object grid, terrain cells and teleports, the save statue at tile `(76, 12)` included), but its own pack (PROT 426) replaces 78 of the 123 room meshes `taiku`'s pack carries with a three-vertex, `32`-unit stub - the rooms its arrival beat never frames. The tower round the save room is pack slots `48..=51` in `taiku` and stubs in `taiku2`; the throne room the beat plays in keeps its meshes.
+
+The port draws what the disc holds, so a free roam in `taiku2` shows the rooms' floors (the ground layer, which comes from the walk grid) with no walls, and `taiku` draws the same room whole.
+Retail never shows those rooms in `taiku2`: the scene is a [pass-through](engine.md#pass-through-scenes), and the scene picker now plays it as one. A retail capture of the save room (`taiku_field_card_walk`, the player poked onto the `(71, 34)` teleport into it) matches the port's `taiku` frame.
+
 ### The field pass culls back faces
 
 Retail rejects the back faces of every field mesh. Each per-prim handler

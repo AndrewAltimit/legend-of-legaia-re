@@ -479,21 +479,30 @@ impl SceneHost {
         let picker_arrival = match (operand, picker_arrivals.as_deref()) {
             (None, Some(ranked)) if !ranked.is_empty() => {
                 let spots: Vec<(i16, i16)> = ranked.iter().map(|a| a.world_xz()).collect();
-                // Never seat a picker visit on a tile the first tick's
-                // stale-tile compare would fire: a kind-0 pad or a gate-1
-                // walk-on trigger (an exit, or the arrival's cutscene beat).
-                let mut avoid = teleport_tiles.clone();
-                avoid.extend(
-                    self.field_triggers
-                        .0
-                        .iter()
-                        .chain(self.field_triggers.1.iter())
-                        .filter(|t| t.gate == 1)
-                        .map(|t| (t.tile_x, t.tile_z)),
-                );
-                self.world
-                    .picker_arrival_seat(&spots, &avoid)
-                    .map(|(i, seat)| (ranked[i].clone(), seat, i))
+                if self.picker_pass_through(ranked) {
+                    // A pass-through scene's arrival is seated as the door
+                    // seats it: on its trigger tile, unrescued, so the first
+                    // tick spawns the beat retail plays there
+                    // (`Self::picker_pass_through`).
+                    Some((ranked[0].clone(), spots[0], 0))
+                } else {
+                    // Never seat a picker visit on a tile the first tick's
+                    // stale-tile compare would fire: a kind-0 pad or a gate-1
+                    // walk-on trigger (an exit, or the arrival's cutscene
+                    // beat).
+                    let mut avoid = teleport_tiles.clone();
+                    avoid.extend(
+                        self.field_triggers
+                            .0
+                            .iter()
+                            .chain(self.field_triggers.1.iter())
+                            .filter(|t| t.gate == 1)
+                            .map(|t| (t.tile_x, t.tile_z)),
+                    );
+                    self.world
+                        .picker_arrival_seat(&spots, &avoid)
+                        .map(|(i, seat)| (ranked[i].clone(), seat, i))
+                }
             }
             _ => None,
         };

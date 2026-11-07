@@ -401,6 +401,14 @@ A few scenes defeat the ranked rule, and `PICKER_SEAT_OVERRIDES` (`engine-scene-
 
 The failures the rows answer come in four shapes. A door that lands behind a closed grille (`conc`) passes the grid's tests, because the grille is a prop body, not a wall bit. An arrival on its own gate-1 trigger is stepped off by the ranked rule, sometimes across a warp or exit row (`geremi`), sometimes skipping the arrival beat the door plays (`rugi`, which the override seats on the door so the first tick fires it). A room whose doorway opens onto the unwalled map edge fails the enclosure test (`koin1b`). And a placeholder or hide-box arrival leaves only the cold seat (`urudre2`, `urudre3`, `garmel`). The sweep checks every row seats its scene on a standable tile that is not walled in, at its floor height, and stays there.
 
+### Pass-through scenes
+
+A scene can be a passage rather than a place: every arrival lands on a gate-1 walk-on trigger whose partition-2 record carries a `0x3F` out of the scene. Retail hands the player no control there. The first post-arrival frame's stale-tile compare (`FUN_801D1EC4` -> `FUN_8003BDE0`) spawns the beat, and the beat ends in the scene change. `SceneHost::picker_pass_through` recognises the shape from the disc, and a picker visit to such a scene seats on the first arrival as the door seats it, unrescued and on its trigger, so the first tick plays the beat.
+
+`taiku2` (Zora's Floating Castle, second form) is the disc's one pass-through. Its only inbound `0x3F` is Sol Tower's door (`korout` `P2[2]`, entry tile `(0x2F, 0x15)`), which is the trigger for `P2[0]`: the castle banner, the throne-room scene with Songi and Zora, then `0x3F` to `MAP03`. The retail `taiku2_field_door_hop` state runs exactly that from the arrival. The scene reuses `taiku`'s map, but its pack replaces every room mesh the beat never frames with a three-vertex stub ([renderer.md](renderer.md#a-cutscene-scenes-stub-meshes)), so the ranked rule's step off the trigger used to leave a picked `taiku2` walking floors with no walls.
+
+Pinned by `crates/engine-scene-host/tests/picker_pass_through_disc.rs`: the seat is the arrival, `P2[0]` installs on the first tick, and the paged beat leaves for `MAP03`.
+
 A relocated picker seat is snapped onto its floor after the scene's floor-height ladder is installed, not before: sampled earlier, the grid's tier nibbles read through no ladder and a seat on a raised tier landed at the wrong height, gliding onto the floor over its first frames.
 
 ## Fidelity and enhancements

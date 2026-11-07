@@ -181,6 +181,7 @@
   <div class="cli"><code>./legaia-engine play-window --disc "/path/to/disc.bin" --scene town01</code></div>
   <p><code>list-scenes</code> prints every scene name the game's file map exposes with the PROT entry range each covers - the same names feed <code>--scene</code>, and a range start is where that scene's files land in <code>extracted/PROT/</code>.</p>
   <p>A scene entered this way - <code>--scene</code> with no save, or a scene picked on the browser play page - starts with the <strong>full party</strong>: Vahn, Noa and Gala at level 1, each from their own row of the executable's starting-party template, wearing the weakest gear the disc's equipment table lets them wear in each slot. That is an engine convenience, not retail: a true New Game (the title screen's NEW GAME, or <code>--seed-party</code>) starts with Vahn alone.</p>
+  <p>A picked scene that the game itself only ever passes through plays that passage. Zora's Floating Castle's second form (<code>taiku2</code>) is one: arriving from Sol Tower plays the throne-room scene with Songi and Zora, which ends on the overworld. The disc has no walkable version of it - its rooms other than the throne room ship as bare floors - so the castle to explore is <code>taiku</code>.</p>
 
   <h3 id="battle-on-purpose">Getting into a battle on purpose</h3>
   <p>Waiting for a step roll is fine for playing and useless for <em>checking</em> something on the battle screen: the retail counter takes several hundred steps to drain. <code>--battle</code> names the fight instead:</p>

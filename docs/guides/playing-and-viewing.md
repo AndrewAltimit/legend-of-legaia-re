@@ -572,6 +572,13 @@ choice, not retail's: a true New Game starts with Vahn alone and still does
 (the title screen's NEW GAME, and `--seed-party`, reseed retail's roster).
 Both hosts reach the same seed, `World::seed_picker_party`.
 
+A picked scene that the game itself only ever passes through plays that
+passage. Zora's Floating Castle's second form (`taiku2`) is one: arriving from
+Sol Tower plays the throne-room scene with Songi and Zora, which ends on the
+overworld. The disc has no walkable version of it - its rooms other than the
+throne room are drawn as bare floors - so the castle to explore is `taiku`
+([why](../subsystems/engine.md#pass-through-scenes)).
+
 ### Cheats
 
 Both hosts carry the same cheats, all written by `legaia_engine_cheats::cheats`

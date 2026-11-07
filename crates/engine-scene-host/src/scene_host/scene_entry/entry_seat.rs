@@ -319,6 +319,51 @@ impl SceneHost {
         true
     }
 
+    /// Whether the entered scene is a **pass-through**: every one of its
+    /// `ranked` arrivals lands on a gate-1 walk-on trigger whose
+    /// partition-2 record carries a `0x3F` scene change - the arrival's own
+    /// beat takes the party out of the scene again. Retail hands the player
+    /// no control in such a scene: the first post-arrival frame's stale-tile
+    /// compare (`FUN_801D1EC4` -> `FUN_8003BDE0`) spawns the beat, and the
+    /// beat ends in the scene change. So a picker visit there seats on the
+    /// arrival and lets the beat run, instead of stepping off it into a free
+    /// roam the disc never stages.
+    ///
+    /// `taiku2` is the case the disc carries: its one arrival (korout's
+    /// `0x3F` at tile `(0x2F, 0x15)`) is the trigger for `P2[0]`, the scene's
+    /// whole visit, which ends in `0x3F` to `MAP03`. The scene reuses
+    /// `taiku`'s map, but its own pack replaces every room mesh the beat
+    /// never frames with a three-vertex stub, so a free roam there walks
+    /// floors with no walls ([`renderer.md`](../../../../../docs/subsystems/renderer.md#a-cutscene-scenes-stub-meshes)).
+    // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
+    pub(super) fn picker_pass_through(&self, ranked: &[SceneArrival]) -> bool {
+        if ranked.is_empty() {
+            return false;
+        }
+        let Some(Ok(Some(man))) = self
+            .scene
+            .as_ref()
+            .map(|s| s.field_man_payload(&self.index))
+        else {
+            return false;
+        };
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+            return false;
+        };
+        ranked.iter().all(|a| {
+            let (x, z) = a.world_xz();
+            let tile = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
+            legaia_engine_field::field_regions::lookup_tile_trigger(
+                &self.field_triggers.0,
+                &self.field_triggers.1,
+                tile.0,
+                tile.1,
+            )
+            .filter(|t| t.gate == 1)
+            .is_some_and(|t| Self::p2_record_is_portal(&man_file, &man, t.record as usize))
+        })
+    }
+
     /// Resolve an override row against the disc's arrivals; `None` when an
     /// [`PickerSeatRule::Arrival`] row names an arrival the disc does not
     /// carry (the ranked rule then seats the entry).

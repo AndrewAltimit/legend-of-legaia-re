@@ -93,7 +93,7 @@ impl SceneHost {
     /// records to the entity SM and spawn only beat records. A clean
     /// fall-through walk from the record's true `pc0`; `false` on a bad span.
     // REF: FUN_8003BDE0
-    fn p2_record_is_portal(
+    pub(super) fn p2_record_is_portal(
         man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record: usize,

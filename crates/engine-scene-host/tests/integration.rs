@@ -170,6 +170,7 @@ mod overworld_portal_branches_disc;
 mod overworld_race_disc;
 mod picker_door_arrival_disc;
 mod picker_park_bgm_disc;
+mod picker_pass_through_disc;
 mod place_name_banner_disc;
 mod prize_exchange_disc;
 mod prop_ride_player_walk_disc;
