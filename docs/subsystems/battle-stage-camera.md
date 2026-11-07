@@ -1380,7 +1380,9 @@ The capture band reads a second table of the same measurement
 off harvest-state casts: its arms read `3` or `4` on the emulator's cost model where the
 default is `2`, and an arm that seats a record every pass seats half as many at `4`
 (V-Windhash's blade trail; [cast-module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)).
-An action no recording reached keeps the default.
+The enemy cast films add the casts the harvest states never reached, and a cast no
+recording names runs its arms past the setup at `4`
+([the capture band against the films](#the-capture-band-against-the-films)).
 A replay that knows retail's step installs it
 while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
@@ -1476,6 +1478,36 @@ yet a slope fit on one half of the films is `0` and on the other `0.08` hblanks 
 face, which costs the first half a point of agreement, so the table carries no
 formation term. The
 measured cost also moves with the framing, which no `World`-side count reads.
+
+<a id="the-capture-band-against-the-films"></a>
+
+**The capture band against the films.** An enemy cast's module runs in `0x70`, and the
+enemy cast films log retail's step and `ctx[+0x279]` every vsync. Read against them, the
+harvest-state table named five of the eighteen casts; every other arm ran the ordinary
+step (`2` under a replay's pin, `3` for a full party in play) where retail runs `4` on
+`.62` of those vsyncs and `3` on `.22`. A row per recorded cast (the step each arm
+spends the most vsyncs on) and `4` for every arm past the setup of a cast no recording
+names (`UNNAMED_CAPTURE_ARM_STEP`) fit on half the films reads the other half's step
+right on `.71` and `.91` of band vsyncs, against `.40` and `.48` for the old table. Steal
+is the light one: its dash and item flash run `3`. A recorded cast's gaps are arms too
+short to read and keep the ordinary step.
+
+Feeding each arm's step through the ring as a cost instead of installing it, so a cheap
+arm after a dear one reads `3` until the ring empties, scores the same within a
+thousandth on both the enemy films and the Seru films; the installed step stays. The
+Seru table, one fight's reading, holds across fights: over 44 Seru films on
+three stages it reads retail's step on `.90` of band vsyncs, and a refit from half of them
+gains nothing on the other half.
+
+Run over all 36 films the rows lift the step read right from `.40` to `.74` and leave
+the mean `within` where it was (`.820` to `.821`). Three casts score lower on the new
+steps: Glare's arm 1 (`.815` to `.783`), Power Charge's arm 1 and Hyper Crush. Run on
+retail's own steps (`--retail-steps`) they score as the table does (`.787`, `.957`,
+`.665`), so the step is retail's and those bodies are what fall short.
+
+Death Game is held at the ordinary step. Retail runs its dice arms at `1` and `3`, but on
+those steps the port's arms 3 and 5 score `.94` to `.79` and `.99` to `.78`, so its
+bodies still count per pass something retail counts per vsync.
 
 <a id="what-the-arm-step-table-is"></a>
 
