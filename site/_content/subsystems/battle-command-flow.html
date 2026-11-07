@@ -153,6 +153,7 @@
   <h2>The sparring tutorial (overlay 967)</h2>
   <p>The &ldquo;how to fight&rdquo; boxes of the Tetsu sparring fight come from one stage overlay. Its hook <code>FUN_801F6B70</code> is indexed by <code>ctx[+0x06]</code>, and its nine live table slots are exactly the command-flow states above <strong>minus the magic window</strong> - the spar teaches attacks, items, Spirit and Hyper Arts, never magic. The hook table and every prompt string are resident in the overlay; the battle script, the MES text and the battle overlay carry none of them. The machine exists in exactly one place on the disc.</p>
   <p>Retail has no party override for the spar: it is Vahn against Tetsu only because the story's party is Vahn alone at that point. The port makes that a rule and seats Vahn alone whenever the fight is the spar, whatever the field party holds. The fight ends on a countdown the hook arms in <code>ctx[+0x6B4]</code>, not on a wipe.</p>
+  <p>The opening caption is a timed hold the side-band tick raises before the first prompt. Its skip reads the press <em>or</em> the pad pump&rsquo;s 32-vsync held window (<code>_DAT_8007B938</code>, tested at <code>0x80056384..0x80056398</code>), so a button held through the caption cuts it as a press does. The same window is what the failed-run message and the level-up banner skips of the action state machine read.</p>
 </section>
 
 <section class="doc-section" id="boss-stage">

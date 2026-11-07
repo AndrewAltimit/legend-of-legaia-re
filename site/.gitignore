@@ -136,6 +136,7 @@
 /subsystems/boot.html
 /subsystems/browser-host.html
 /subsystems/cast-module.html
+/subsystems/cast-pipeline.html
 /subsystems/cutscene-internals.html
 /subsystems/cutscene.html
 /subsystems/effect-vm.html
@@ -192,6 +193,7 @@
 /tooling/ghidra.html
 /tooling/host-drift.html
 /tooling/index.html
+/tooling/measuring-parity.html
 /tooling/mednafen-automation.html
 /tooling/overlay-capture.html
 /tooling/pal-localizations.html

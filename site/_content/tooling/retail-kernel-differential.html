@@ -88,13 +88,14 @@
     </tbody>
   </table>
   </div>
-  <p>Several routines matched on their first run, which is a finding too: the Magic list's probe <code>FUN_8003053C</code> (it greys a spell row and refuses its cast), the menu stat block the Status page, the Equip compare and the shop preview draw (<code>FUN_801CF5D0</code> / <code>FUN_801CF650</code>), the scene record dispatcher <code>FUN_8003BDE0</code> over every such record of every scene on the disc, and the camera zone ramp <code>FUN_80037018</code>. The death arm of <code>FUN_8004AD80</code> and the MP-cost leaf <code>FUN_80035394</code> match. The death arm's table test leaves out row <code>0xBF</code>, which holds the neighbouring table's <code>[9, 0]</code>: retail would add item <code>0</code> there and the port refuses it, and a second test holds that no shipped monster reaches such a row.</p>
+  <p>Several routines matched on their first run, which is a finding too: the Magic list's probe <code>FUN_8003053C</code> (it greys a spell row and refuses its cast), the menu stat block behind the Status page, the Equip compare and the shop preview draw (<code>FUN_801CF5D0</code> / <code>FUN_801CF650</code>), the scene record dispatcher <code>FUN_8003BDE0</code> over every such record of every scene on the disc, the camera zone ramp <code>FUN_80037018</code>, and the field walk-regen tick <code>FUN_801D0B90</code> (the step counter, the HP / MP / AP Walk bumps with their clamps, a fallen member&rsquo;s bump, and the Incense window&rsquo;s wear-off edge). The death arm of <code>FUN_8004AD80</code> and the MP-cost leaf <code>FUN_80035394</code> match. The death arm's table test leaves out row <code>0xBF</code>, which holds the neighbouring table's <code>[9, 0]</code>: retail would add item <code>0</code> there and the port refuses it, and a second test holds that no shipped monster reaches such a row.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="measuring-parity.html">Measuring against retail</a>
     <a href="retail-compare.html">Retail comparison corpus</a>
     <a href="recomp-differential.html">Recomp differential</a>
     <a href="port-catalog.html">Port catalog</a>

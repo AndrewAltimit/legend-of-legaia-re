@@ -1,0 +1,156 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; a cast, end to end</div>
+  <h1>A cast, end to end</h1>
+  <p class="lede">One Seru spell crosses four pieces of the battle code before its damage lands: the command flow that asks what to do, the action queue that records the answer, the action state machine that plays it out, and a small cast module paged off the disc for the summon itself. Each has its own page. This one follows a single cast through all four, so the hand-offs between them are in one place.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Asks</dt><dd>Command flow <code>FUN_801D0748</code>, state byte <code>ctx[+0x06]</code> (<a href="battle-command-flow.html">command flow</a>)</dd>
+    <dt>Records</dt><dd>The acting seat's action bytes: category <code>+0x1DE</code>, spell id <code>+0x1DF</code>, target <code>+0x1DD</code> (<a href="battle-action-queue.html">action queue</a>)</dd>
+    <dt>Plays out</dt><dd>Action state machine <code>FUN_801E295C</code>, state byte <code>ctx[+0x07]</code> (<a href="battle-action.html">action state machine</a>)</dd>
+    <dt>Choreographs</dt><dd>One of 64 cast modules, PROT <code>0903..=0966</code>, paged into slot B at <code>0x801F69D8</code>, phase byte <code>ctx[+0x279]</code> (<a href="cast-module.html">cast modules</a>)</dd>
+    <dt>Ends</dt><dd>The Done band: the HP-bar settle gate in <code>0x51</code>, then the end-of-action gate <code>0x5A</code> (<a href="battle-action-exit-gates.html">exit gates</a>)</dd>
+    <dt>Port</dt><dd><code>engine-battle-menus</code> (command flow), <code>engine-battle-vm::battle_action</code> (one enum value per retail state byte), <code>engine-cast</code> (module ticks, cameras, the cast-arm kernels)</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="the-path">
+  <h2>The path</h2>
+  <p>Three bands leave the cast's opening states. Which one a cast takes is decided by the spell, not by who casts it: a party Seru spell carries the summon flag and enters the summon band, a capture-class spell (its record's first byte is <code>'c'</code>) enters the capture band, and every other cast - most monster spells - runs the plain effect-driver band. The two module bands are the only states that hand control to code outside the battle overlay.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cast's path. The command flow's ring, magic window, target cursor and commit log write the action bytes. The action state machine's seed state 0x0C dispatches to cast begin 0x28, which debits MP, and pre-cast 0x29, which runs the party cast trigger. From there the cast takes one of three bands: the effect-driver cast 0x2A to 0x2E, the summon band 0x32 to 0x38, or the capture band 0x6E to 0x71. The summon and capture bands tick a cast module paged into slot B every frame until it returns zero. All three bands meet at the Done band: cleanup 0x50, the fade-down and HP-bar settle gate 0x51, and the end-of-action gate 0x5A, which hands over to the next actor or ends the round.">
+      <defs><marker id="cp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+
+      <text class="dg-sub dg-start" x="20" y="18">command flow  ctx[+0x06]</text>
+      <rect class="dg-node" x="20" y="26" width="185" height="50" rx="4"/>
+      <text class="dg-label" x="112" y="47">Ring: magic arm</text><text class="dg-sub" x="112" y="64">state 0x28</text>
+      <rect class="dg-node" x="245" y="26" width="185" height="50" rx="4"/>
+      <text class="dg-label" x="337" y="47">Magic window</text><text class="dg-sub" x="337" y="64">state 0x46</text>
+      <rect class="dg-node" x="470" y="26" width="185" height="50" rx="4"/>
+      <text class="dg-label" x="562" y="47">Target sub-cursor</text><text class="dg-sub" x="562" y="64">0x64..0x67</text>
+      <rect class="dg-node-accent" x="695" y="26" width="165" height="50" rx="4"/>
+      <text class="dg-label" x="777" y="47">Commit + confirm</text><text class="dg-sub" x="777" y="64">writes the bytes</text>
+      <path class="dg-edge" d="M205 51 L243 51" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M430 51 L468 51" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M655 51 L693 51" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M777 76 L777 96 L112 96 L112 124" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="230" y="90">+0x1DE = 2 (magic), +0x1DF = spell id, +0x1DD = target</text>
+
+      <text class="dg-sub dg-start" x="126" y="118">action state machine  ctx[+0x07]</text>
+      <rect class="dg-node" x="20" y="126" width="185" height="56" rx="4"/>
+      <text class="dg-label" x="112" y="148">0x0C Action seed</text><text class="dg-sub" x="112" y="166">dispatch on +0x1DE</text>
+      <rect class="dg-node" x="245" y="126" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="370" y="148">0x28 Cast begin</text><text class="dg-sub" x="370" y="166">face target, debit MP</text>
+      <rect class="dg-node" x="535" y="126" width="325" height="56" rx="4"/>
+      <text class="dg-label" x="697" y="148">0x29 Pre-cast wait</text><text class="dg-sub" x="697" y="166">party cast trigger, first clip</text>
+      <path class="dg-edge" d="M205 154 L243 154" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M495 154 L533 154" marker-end="url(#cp-arrow)"/>
+
+      <rect class="dg-node" x="20" y="250" width="240" height="72" rx="4"/>
+      <text class="dg-label" x="140" y="272">0x2A..0x2E</text><text class="dg-sub" x="140" y="290">effect-driver cast</text><text class="dg-sub" x="140" y="306">clip chain, hit frames</text>
+      <rect class="dg-node-accent" x="300" y="250" width="270" height="72" rx="4"/>
+      <text class="dg-label" x="435" y="272">0x32..0x38 Summon band</text><text class="dg-sub" x="435" y="290">invoke, fade in, freeze,</text><text class="dg-sub" x="435" y="306">sustain, return, verify</text>
+      <rect class="dg-node-accent" x="610" y="250" width="250" height="72" rx="4"/>
+      <text class="dg-label" x="735" y="272">0x6E..0x71 Capture band</text><text class="dg-sub" x="735" y="290">load, fade, run,</text><text class="dg-sub" x="735" y="306">finalize</text>
+      <path class="dg-edge" d="M600 182 L170 248" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="190" y="214">no summon flag</text>
+      <path class="dg-edge" d="M697 182 L470 248" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="520" y="230">+0x1E0 == 9</text>
+      <path class="dg-edge" d="M420 182 L420 200 L760 200 L760 248" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="752" y="230" text-anchor="end">'c' spell, from 0x28</text>
+
+      <rect class="dg-group" x="300" y="350" width="560" height="74" rx="6"/>
+      <rect class="dg-node-warn" x="320" y="360" width="520" height="54" rx="4"/>
+      <text class="dg-label" x="580" y="381">Cast module in slot B 0x801F69D8 (one of PROT 0903..0966)</text>
+      <text class="dg-sub" x="580" y="400">phase ctx[+0x279] · camera · spawns · CD-XA voice · damage rolls</text>
+      <path class="dg-edge-dim" d="M435 322 L435 358" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge-dim" d="M735 322 L735 358" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="444" y="344">ticked every frame</text>
+      <text class="dg-edge-label" x="744" y="344">ticked every frame</text>
+
+      <rect class="dg-node" x="20" y="450" width="240" height="56" rx="4"/>
+      <text class="dg-label" x="140" y="472">0x50 Done cleanup</text><text class="dg-sub" x="140" y="490">revive, re-order, pose</text>
+      <rect class="dg-node-ok" x="300" y="450" width="270" height="56" rx="4"/>
+      <text class="dg-label" x="435" y="472">0x51 Fade-down</text><text class="dg-sub" x="435" y="490">HP-bar settle gate</text>
+      <rect class="dg-node" x="610" y="450" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="735" y="472">0x5A End-of-action gate</text><text class="dg-sub" x="735" y="490">next actor, or round 0xFF</text>
+      <path class="dg-edge" d="M140 322 L140 448" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M330 414 L180 448" marker-end="url(#cp-arrow)"/>
+      <text class="dg-edge-label" x="196" y="436">returns 0</text>
+      <path class="dg-edge" d="M260 478 L298 478" marker-end="url(#cp-arrow)"/>
+      <path class="dg-edge" d="M570 478 L608 478" marker-end="url(#cp-arrow)"/>
+    </svg>
+    <figcaption>Only the summon and capture bands leave the battle overlay: the module ticks every frame and the band moves on when it returns zero. A Seru absorbed by the killing blow detours <code>0x51</code> through the <code>0x52</code> banner hold. Not drawn: the applier band <code>0x3C..0x40</code>, which items and the low elemental spell records take from the seed, and Spirit (<code>0x46..0x48</code>).</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="asking">
+  <h2>1. Asking: the command flow</h2>
+  <p>The round prompt and the D-pad command ring are one state byte, <code>ctx[+0x06]</code>. Right on the ring is the Ra-Seru magic arm, which opens the magic window; the window commits through its own target sub-cursor, and the commit log at the screen's edge records the choice until the last party member has one and the player confirms. Nothing has been cast at this point. What the flow leaves behind is three bytes on the acting seat: the action category <code>+0x1DE</code> (<code>2</code> for magic), the spell id <code>+0x1DF</code> and the target <code>+0x1DD</code>, where <code>8</code> and <code>9</code> are group codes (the whole party, every monster).</p>
+  <p>A monster reaches the same three bytes from its AI pick instead of a menu, which is why everything below is shared: the action state machine never asks who filled the bytes in.</p>
+</section>
+
+<section class="doc-section" id="opening">
+  <h2>2. Opening the cast: <code>0x0C</code>, <code>0x28</code>, <code>0x29</code></h2>
+  <ul class="bullets">
+    <li><strong><code>0x0C</code>, the seed,</strong> dispatches on the category. A magic action goes to <code>0x28</code>, except a low-class, low-id spell record (class byte below <code>0x14</code> and id below <code>0x65</code>), which takes the applier band <code>0x3C</code> and is charged there just the same; the player Seru block <code>0x81..=0x8B</code> always fails the id test. An attack goes to the strike band, an item to the applier band, Spirit and Run to their own.</li>
+    <li><strong><code>0x28</code>, cast begin,</strong> turns the caster to face its target and sets a <code>0x14</code>-frame timer. A group target degenerates onto the last one standing (the census's sole-survivor latches). A monster caster raises its spell-name label. MP comes off here, from the spell record's <code>+3</code> byte, halved or quartered by the MP-saving passives. A capture-class spell leaves for <code>0x6E</code> at once and queues its module's load.</li>
+    <li><strong><code>0x29</code>, pre-cast,</strong> counts the timer down, then runs the party cast trigger, which stages the caster's animation stream (not the outcome). A summon flag (<code>+0x1E0 == 9</code>) sends it to <code>0x32</code>, and this is where a party summon's module is paged: loader argument <code>id - 0x79</code>, so Gimard (<code>0x81</code>) is PROT 0903.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="bands">
+  <h2>3. The three bands</h2>
+  <h3 id="effect-driver">Effect-driver cast, <code>0x2A..0x2E</code></h3>
+  <p>The ordinary monster spell. The action machine walks <code>(clip, shot)</code> pairs off the queue, runs the cast-effect driver until the clip latch counts down, lands hits on the clip's hit frames, waits for any live effect child and snaps a pitched camera back. Its effects are effect-VM spawns resolved from UI-element ids; nothing is paged from the disc.</p>
+  <h3 id="summon-band">Summon band, <code>0x32..0x38</code></h3>
+  <ol class="steps steps-vertical">
+    <li><b><code>0x32</code> invoke</b><span>Waits for the drive while the framing keeps walking, then stages clip <code>9</code> on the caster.</span></li>
+    <li><b><code>0x33</code> fade in</b><span>The summon close-up camera; on the clip's first effect record, the white flash-in and cue <code>0x63</code>.</span></li>
+    <li><b><code>0x34</code> freeze</b><span>Hides the party and the living monsters and calls the summon dispatch <code>FUN_801F1ED4</code>, whose phase 0 seats the creature in seat 7.</span></li>
+    <li><b><code>0x35</code> sustain</b><span>Drains a band word, ducks the music to 75% (50% for the high spells), and calls the module every frame. It re-reads the word after the call, so a module that keeps re-seeding it holds the band: Theeder, Nighto and Zenoir leave on an arm of their own, not after the word's <code>0x78</code> frames.</span></li>
+    <li><b><code>0x36</code> return</b><span>Holds while the module returns busy, un-hides the actors, and runs the Seru-magic level check.</span></li>
+    <li><b><code>0x37</code>, <code>0x38</code></b><span>Wait for every actor to settle, write the fade sentinel, kill the fade primitive.</span></li>
+  </ol>
+  <h3 id="capture-band">Capture band, <code>0x6E..0x71</code></h3>
+  <p>Seru capture, the capture item and the boss cinematic specials. <code>0x6E</code> waits for the drive and pages the module, <code>0x6F</code> ducks the audio and waits for the load, <code>0x70</code> ticks the module every frame until it returns zero, and <code>0x71</code> waits for the targeted seat to settle. The dispatch is <code>FUN_801F2160</code>, its row the spell record's sub-id.</p>
+</section>
+
+<section class="doc-section" id="module">
+  <h2>4. Inside the module</h2>
+  <p>A cast module is a library with two entry points, a tick and a stager, both named by tables in the battle overlay. The tick is a dispatcher over the phase byte <code>ctx[+0x279]</code>: its arms stage clips, spawn effect parts through the stager (move-VM opcode <code>0x20</code>), move the camera, roll damage and write stats, and it returns busy until a terminal arm clears the result. A phase past the last arm returns busy forever, which is why a port that steps one arm too far parks the battle.</p>
+  <ul class="bullets">
+    <li><strong>The camera is the module's.</strong> No framing case of the action machine runs inside the bands; the module builds shots and drifts on the battle camera's own pose globals.</li>
+    <li><strong>The voice waits on the drive.</strong> A spoken line is CD-XA streamed off the disc, so a seek arm points the drive at it and a poll arm waits for the seek before the head cue starts the line - after the seek the battle had already queued for the caster's fanfare.</li>
+    <li><strong>Damage is baked in.</strong> Each hit calls a roll wrapper with a power constant from the module image, then clamps against the victim's HP and accumulates into the damage-popup word as it writes HP. A cast never reads the move-power table.</li>
+  </ul>
+  <p>The phase table, the clamp shapes, the seat-0 hardcode in the boss cinematics and the colour wash are on <a href="cast-module.html">cast modules</a>.</p>
+</section>
+
+<section class="doc-section" id="done">
+  <h2>5. Done: <code>0x50</code>, <code>0x51</code>, <code>0x5A</code></h2>
+  <p>Every band ends in the same three states. <code>0x50</code> runs the final Heal revive, re-orders the round and stands the caster in its end pose. <code>0x51</code> restores the audio level and waits for every HP readout to reach the HP it shows, with no timeout: the module's paired write of HP and the popup word is what lets the readout close, and a write that skips the pair is one of the two retail softlock classes (<a href="battle-action-exit-gates.html">exit gates</a>). A killing blow that absorbed a Seru holds the &ldquo;acquired the power of&rdquo; banner in <code>0x52</code>. <code>0x5A</code> clears the per-actor flags, tests for a wipe, and moves the turn cursor to the next actor or to the round boundary <code>0xFF</code>, which hands the battle back to the command flow.</p>
+</section>
+
+<section class="doc-section" id="measured">
+  <h2>How the port is held to it</h2>
+  <p>A cast lasts hundreds of vsyncs and a save state holds one, so a cast is measured as a film: the <a href="../tooling/cast-sequence-oracle.html">cast-sequence oracle</a> records one cast on both sides and pairs frames on the action state, switching to the module phase <code>ctx[+0x279]</code> inside the module bands - the same two clocks this page follows. Its sound is scored against the emulator's own output by the <a href="audio-internals.html#real-pcm">real-PCM cast channel</a>, and the routines it calls without a module - the item applier, the MP-cost leaf, the melee resolver - by the <a href="../tooling/retail-kernel-differential.html">retail kernel differential</a>. <a href="../tooling/measuring-parity.html">Measuring against retail</a> puts the instruments side by side.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle overview</a>
+    <a href="battle-command-flow.html">Command flow</a>
+    <a href="battle-action-queue.html">Action queue</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="cast-module.html">Cast modules</a>
+    <a href="battle-action-exit-gates.html">Exit gates</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="../formats/spell-table.html">Spell table</a>
+    <a href="../magic.html">Magic browser</a>
+  </div>
+</section>

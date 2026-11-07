@@ -1,0 +1,143 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; measuring against retail</div>
+  <h1>Measuring against retail</h1>
+  <p class="lede">The port claims to play like the original, and every such claim is a number someone can re-run. Four instruments produce those numbers, each at its own grain: one routine, one instant, a stretch of time, and sound. This page puts them side by side - what each holds fixed, what it reads off retail, what it scores - and says which question each one cannot answer.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Grain</th><th>Instrument</th><th>Retail's side</th><th>Scores</th></tr></thead>
+    <tbody>
+      <tr><td>One routine</td><td><a href="retail-kernel-differential.html">Retail kernel differential</a></td><td>The routine's own bytes, run off the disc in an R3000 interpreter</td><td>Every byte the routine wrote, against the Rust kernel</td></tr>
+      <tr><td>One instant</td><td><a href="retail-compare.html">Retail comparison corpus</a></td><td>A library save state's RAM and VRAM, read offline</td><td>Channels in <code>0..1</code>: scene, camera, party, flags, battle, the frame</td></tr>
+      <tr><td>A stretch of time</td><td><a href="cast-sequence-oracle.html">Cast-sequence oracle</a>, <a href="walk-film.html">walk film</a></td><td>An emulator recording from a state, one row a vsync</td><td>Frame by frame, paired on the game's own clock</td></tr>
+      <tr><td>Sound</td><td><a href="../subsystems/audio-internals.html">Audio oracles</a>, real PCM</td><td>libsnd and SPU state from RAM; the emulator's own audio output</td><td>Voice registers, keyed notes, waveform correlation and level</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Around them sit the checks that are not about retail's numbers but about keeping the port honest as a program: the <a href="full-game-ladder.html">full-game ladder</a> (New Game to credits on pad input alone), the <a href="soak-harness.html">soak harness</a> (seeded random play looking for panics and softlocks), <a href="host-drift.html">host drift</a> and the <a href="frame-hash.html">browser frame hash</a> (the window and the page running one engine the same way), and <a href="determinism-replay.html">record / replay</a> (the same input twice gives the same bytes).</p>
+</section>
+
+<section class="doc-section" id="the-picture">
+  <h2>Where each one takes retail from</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four instruments and their sources. The user's disc feeds the retail kernel differential: a routine's bytes run in an R3000 interpreter beside the Rust kernel, and the regions each wrote are compared. A library save state feeds the other three. The comparison corpus reads its RAM and VRAM offline, seeds the engine into the same situation and scores one frame. The film oracles resume the state in PCSX-Redux, record every vsync, run the seeded engine on the same input and pair frames on the action state and module phase. The PCM oracle resumes the state in mednafen, records its audio, stands the engine's SPU where the state's stands, and compares waveforms.">
+      <defs><marker id="mp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub" x="95" y="18">source</text>
+      <text class="dg-sub" x="330" y="18">retail's side</text>
+      <text class="dg-sub" x="560" y="18">engine's side</text>
+      <text class="dg-sub" x="770" y="18">scored</text>
+
+      <rect class="dg-node-accent" x="20" y="30" width="150" height="70" rx="4"/>
+      <text class="dg-label" x="95" y="60">The user's disc</text><text class="dg-sub" x="95" y="78">SCUS + overlays</text>
+      <rect class="dg-node" x="230" y="30" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="330" y="56">Routine in R3000</text><text class="dg-sub" x="330" y="74">interpreter, seeded</text><text class="dg-sub" x="330" y="90">inputs, rand() hooked</text>
+      <rect class="dg-node" x="460" y="30" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="560" y="60">Rust kernel</text><text class="dg-sub" x="560" y="78">same inputs</text>
+      <rect class="dg-node-ok" x="690" y="30" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="775" y="60">Written regions</text><text class="dg-sub" x="775" y="78">byte for byte</text>
+      <path class="dg-edge" d="M170 65 L228 65" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M430 65 L458 65" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M660 65 L688 65" marker-end="url(#mp-arrow)"/>
+
+      <rect class="dg-node-accent" x="20" y="200" width="150" height="90" rx="4"/>
+      <text class="dg-label" x="95" y="232">Library save state</text><text class="dg-sub" x="95" y="250">retail disc only</text><text class="dg-sub" x="95" y="266">RAM · VRAM · SPU</text>
+
+      <rect class="dg-node" x="230" y="130" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="330" y="156">Read offline</text><text class="dg-sub" x="330" y="174">RAM observables,</text><text class="dg-sub" x="330" y="190">displayed VRAM crop</text>
+      <rect class="dg-node" x="460" y="130" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="560" y="156">Seed + settle</text><text class="dg-sub" x="560" y="174">PSX mode, native</text><text class="dg-sub" x="560" y="190">320 x 240, --retail</text>
+      <rect class="dg-node-ok" x="690" y="130" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="775" y="160">Corpus channels</text><text class="dg-sub" x="775" y="178">one instant</text>
+
+      <rect class="dg-node" x="230" y="230" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="330" y="256">PCSX-Redux run</text><text class="dg-sub" x="330" y="274">cast injected or pad</text><text class="dg-sub" x="330" y="290">schedule, every vsync</text>
+      <rect class="dg-node" x="460" y="230" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="560" y="256">Seeded play-window</text><text class="dg-sub" x="560" y="274">same input,</text><text class="dg-sub" x="560" y="290">every tick</text>
+      <rect class="dg-node-ok" x="690" y="230" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="775" y="256">Film pairs</text><text class="dg-sub" x="775" y="274">action state /</text><text class="dg-sub" x="775" y="290">module phase</text>
+
+      <rect class="dg-node" x="230" y="330" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="330" y="356">Mednafen run</text><text class="dg-sub" x="330" y="374">its own audio output</text><text class="dg-sub" x="330" y="390">recorded as WAV</text>
+      <rect class="dg-node" x="460" y="330" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="560" y="356">SPU stood where</text><text class="dg-sub" x="560" y="374">the state's stands;</text><text class="dg-sub" x="560" y="390">track, cues, cast</text>
+      <rect class="dg-node-ok" x="690" y="330" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="775" y="356">Waveforms</text><text class="dg-sub" x="775" y="374">correlation, level,</text><text class="dg-sub" x="775" y="390">residual</text>
+
+      <path class="dg-edge" d="M170 225 L228 168" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M170 250 L228 262" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M170 275 L228 360" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M430 165 L458 165" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M430 265 L458 265" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M430 365 L458 365" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M660 165 L688 165" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M660 265 L688 265" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M660 365 L688 365" marker-end="url(#mp-arrow)"/>
+    </svg>
+    <figcaption>Only the kernel differential needs no save state, and only the corpus runs no emulator: a state's memory already holds every observable it scores. The film and PCM oracles resume a state in an emulator because they need what happens after its instant. Every recording is Sony-derived and stays under the gitignored <code>captures/</code>; only scores are committed.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="routine">
+  <h2>One routine: the kernel differential</h2>
+  <p><code>crates/retail-exec</code> is a user-mode R3000 interpreter. A disc-gated test loads the executable and the overlay a routine lives in off the user's disc, seeds RAM with generated inputs in the shapes the game reaches (caps and empty cases included), runs the routine, and compares whole regions of what it wrote with what the Rust kernel produces. <code>rand()</code> is hooked so both sides draw one stream, and the run asserts it reached the arms it claims to test.</p>
+  <p>Nothing about a save state or a screenshot is involved, so it is the sharpest of the four: a write the port never knew about shows up as a byte. What it cannot see is whether the port calls the kernel at the right moment - a matching routine wired a frame late passes here and fails in a film. Its findings include a level-up applier that never drew retail's spread, field Magic heals that restored a catalog placeholder instead of the applier's level-scaled amount, and an SFX drainer that let a sustained run keep sounding.</p>
+</section>
+
+<section class="doc-section" id="instant">
+  <h2>One instant: the comparison corpus</h2>
+  <p>For every retail save state in the library the engine can be put into, the corpus seeds the engine into the same situation through its own load path, lets it settle, and scores channels in <code>0..1</code> against what the state's RAM says: scene, mode, position, camera, facing, placements, BGM track word, visible-tile window, party, story flags, bag, and in a battle the enemies, HP and the action phase. The <strong>image</strong> channel renders the frame the way the GPU does - <code>--retail --psx-render</code> on the native <code>320 x 240</code> target - and scores the fraction of <code>8 x 8</code> blocks within tolerance of the displayed VRAM crop.</p>
+  <p>Scores are ratcheted: a committed baseline holds each state's channels, and a run fails when any channel falls below it. A rise is folded in by a reviewed bless; a deliberate fall needs a ledger entry (<code>check-baseline-loosening.py</code>).</p>
+  <div class="callout callout-trap">
+    <div class="callout-title">A harness seat is not a game fix</div>
+    <p>The seed has to stand the engine where retail stood, and some of what retail stood on is history a save state does not record: how far an idle animation had run, which arm of a region selector last fired, how long a monster walked before its strike. Restoring that from the state is a <em>harness seat</em> - it changes what the comparison stands on, not the game - and the corpus page labels each one as such. A seat that lifts a score says the engine was measured unfairly; only a change to the engine's own code says the engine was wrong.</p>
+  </div>
+  <p>A still cannot see a cast. A summon runs for hundreds of vsyncs, and the one a state holds is often the white flash, under which the metric sees nothing. A high image score on a mid-cast state says that frame matches and nothing about the order, timing or length of the cast around it.</p>
+</section>
+
+<section class="doc-section" id="time">
+  <h2>A stretch of time: the films</h2>
+  <p>The <strong>cast-sequence oracle</strong> records one spell, summon or monster cast on both sides, from cast begin to past its Done band: a PCSX-Redux probe injects the cast into a retail state and dumps the displayed frame and per-vsync metadata, and the seeded <code>play-window</code> writes the same per tick. The <strong>walk film</strong> does the same for a field walk under a fixed pad schedule: player, follow camera, staging pose and placements, pass by pass.</p>
+  <p>Frames never pair on wall time. A cast's rows fold into runs of one key - the <a href="../subsystems/battle-action.html">action state</a>, or inside a cast module the module's own phase byte - and the two key lists align by longest common subsequence, so an arm one side skips shows as a one-sided row instead of shifting everything after it. A retail grab shows the frame built two game frames earlier, so it is keyed two counter bumps back, further on a frame that overran its step. <a href="../subsystems/cast-pipeline.html">A cast, end to end</a> follows the same two clocks through the battle code.</p>
+  <p>Two retail recordings of one cast are not byte-identical, so a residual smaller than two retail runs differ from each other is noise, not a finding.</p>
+</section>
+
+<section class="doc-section" id="sound">
+  <h2>Sound</h2>
+  <p>Sound is measured on a ladder, each rung stricter than the one before:</p>
+  <ul class="bullets">
+    <li><strong>Registers.</strong> The audio trace compares what the SPU voices are doing; per-voice programming (pitch, envelope words, volume, reverb send) is exact per library state, and the key-on census counts every note a score keys.</li>
+    <li><strong>State.</strong> The audio sweep reads libsnd's own records out of each state's RAM and asks whether the seeded engine is playing the same sequence, from the same place.</li>
+    <li><strong>Whole scores and cues.</strong> The keying differential runs retail's sequencer off a state's RAM in the R3000 interpreter beside the port's, comparing every sounding voice at every vsync; the cue differential keys every sound-effect row both ways in one state per scene.</li>
+    <li><strong>Waveforms.</strong> Real retail PCM: mednafen's own audio output, recorded while it plays on from a state, against the engine's mix of the same bars. Its channels are the SPU model alone (<code>core</code>), sequencer and SPU (<code>track</code>), the state's own ambient cue voices (<code>emitter</code>), and a mid-cast state's voice, cue ring and reaction cues rendered by the engine itself (<code>cast</code>). The state's Monaural option is seated on the engine side, and a cast's offset is fitted within the fight's frame step, because a game frame boundary can sit two or three vsyncs from the state's instant. No listening is involved: every statement is a number off the two waveforms.</li>
+  </ul>
+  <p>Detail, tables and the per-state readings are on <a href="../subsystems/audio-internals.html">audio internals</a>.</p>
+</section>
+
+<section class="doc-section" id="choosing">
+  <h2>Which one to reach for</h2>
+  <ol class="steps steps-vertical">
+    <li><b>Reproduce the gap first.</b><span>Run the instrument that shows the symptom, with a filter to the one state or cast, and keep the number. Theorising before a measurement is how a plausible reading ends up on the falsified register.</span></li>
+    <li><b>Narrow to a routine.</b><span>If the gap points at one piece of arithmetic, put the routine in the kernel differential: it answers in seconds and leaves no doubt about who is wrong.</span></li>
+    <li><b>Check the time axis.</b><span>If one frame agrees and the play-through looks wrong, record a film: a late arm and a missing camera move live between the frames a state holds.</span></li>
+    <li><b>Re-measure the same way.</b><span>A fix is reported as before and after on the same command, with a game change and a harness seat kept apart.</span></li>
+  </ol>
+  <p>The engine-neutral form of all this - states, seeding, channels, the ratchet and its ledger, evidence grades, disc denominators - is <a href="retail-oracle-method.html">the retail-oracle method</a>. What the corpus does not yet cover, counted against the disc, is <a href="capture-coverage.html">capture coverage</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Instruments</span>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
+    <a href="walk-film.html">Field walk film</a>
+    <a href="../subsystems/audio-internals.html">Audio internals</a>
+    <a href="recomp-differential.html">Recomp differential</a>
+    <a href="capture-coverage.html">Capture coverage</a>
+    <a href="retail-oracle-method.html">The retail-oracle method</a>
+  </div>
+</section>

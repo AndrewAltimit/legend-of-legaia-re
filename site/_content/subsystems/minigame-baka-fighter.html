@@ -123,7 +123,7 @@
   <h3>Front end</h3>
   <ul class="bullets">
     <li><strong>Attract.</strong> The title card animates on a clock of its own while PRESS START blinks. Start, Cross or L1 leaves it.</li>
-    <li><strong>Player select.</strong> Vahn, Noa and Gala stand in the walled arena; left / right moves the cursor (wrapping both ways) and the two fighters not under it dim halfway toward black. Confirm is Cross or L1.</li>
+    <li><strong>Player select.</strong> Vahn, Noa and Gala stand in the walled arena; left / right moves the cursor (wrapping both ways) and the two fighters not under it dim halfway toward black. The Left / Right test reads the press <em>or</em> the pad pump&rsquo;s 32-vsync held window (<code>_DAT_8007B938</code>), so a direction held that long steps the cursor every frame, with a cue each step. Confirm is Cross or L1, and reads the press alone.</li>
     <li><strong>The pick is a roster record, not a skin.</strong> The chosen party member brings their own stats, action table, strike clips and special camera into the duel.</li>
   </ul>
   <h3>NEXT GAME / PAY OUT</h3>
