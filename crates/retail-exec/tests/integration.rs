@@ -25,6 +25,7 @@ mod death_spoils;
 mod dialog_pager;
 mod element_change;
 mod encounter_roll;
+mod encounter_top_up;
 mod enemy_impact;
 mod escape;
 mod field_magic;
