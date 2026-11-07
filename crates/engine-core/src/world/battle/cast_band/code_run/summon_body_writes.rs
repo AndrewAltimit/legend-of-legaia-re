@@ -959,6 +959,28 @@ impl World {
                         a.battle.render_flag = RENDER_FLAG_HIDDEN;
                     }
                 }
+                // The same exit puts the creature into the defeat fade
+                // (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)` with `v0 = 2`,
+                // `0x801F7CA4..0x801F7CB0`): it fades out over arm `0x12`'s
+                // `96 * scalar`, whose exit zeroes its word (`sw zero,0x4(s4)`
+                // at `0x801F7D70`).
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_flag = 2;
+                    a.battle.capture_state = 2;
+                }
+            }
+            (0x12, true) => {
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_color = 0;
+                }
             }
             (0x13, true) => {
                 let creature = self

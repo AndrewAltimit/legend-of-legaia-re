@@ -2882,6 +2882,12 @@ pass zeroes the word (`0x801F7D04..0x801F7D10`). Palma's monster-row visibility 
 `0x801F6CFC..0x801F6D48`, ahead of the side-band token gate), so
 `palma_summon_mid_cast` frames the row standing while the stream fills, and
 arm 4's pass hides it (`0x801F73BC..0x801F73FC`) as it seats the creature.
+Arm `0x11`'s exit puts the creature into the defeat fade (`+0x21C = 2`,
+`+0x225 = 2`, `0x801F7CA4..0x801F7CB0`) and seeds arm `0x12`'s `96 * scalar`,
+whose exit zeroes the creature's word (`sw zero,0x4(s4)` at `0x801F7D70`): the
+creature is gone by the time the meteors fall. Until the creature's pool sat in
+retail's texture slot 2 the port drew it on a slot of zeroes and the missing
+fade did not show.
 The rest of the row's choreography is carried too, on seats 3..6. Arm 0
 parks each living seat's ground trio and facing (`0x801FA0A8` /
 `0x801FA0C8`) and pulls its ground pair to an eighth (`sra 3` into

@@ -257,7 +257,23 @@ impl World {
                 .pending_level_check
                 .unwrap_or((caster, spell_id, 0));
             if (c, s) == (caster, spell_id) {
-                self.casting.pending_level_check = Some((c, s, g.saturating_add(gain)));
+                // The XP itself lands now, as the finisher's tail stores it;
+                // a pack spell's XP waits with the check.
+                let banked = !self.expansion_casting_pack(caster, spell_id) && {
+                    let char_slot = self.party_roster_slot(caster as usize);
+                    self.party
+                        .roster
+                        .members
+                        .get_mut(char_slot)
+                        .is_some_and(|r| {
+                            let slot = legaia_engine_battle::magic_xp::spell_slot(r, spell_id)
+                                .unwrap_or(legaia_engine_battle::magic_xp::SPELL_SEARCH_BOUND);
+                            legaia_engine_battle::magic_xp::add_spell_xp(r, slot, gain);
+                            true
+                        })
+                };
+                let held = if banked { g } else { g.saturating_add(gain) };
+                self.casting.pending_level_check = Some((c, s, held));
                 return;
             }
         }

@@ -234,6 +234,18 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
             w.casting.pending_cast.is_none(),
             "cast {casts} never folded"
         );
+        // The level check runs on the band's way out (`0x36`'s
+        // `jal 0x801E70BC`), after the fold: run the band out.
+        for _ in 0..0x400 {
+            if !(0x32..=0x36).contains(&w.battle_ctx.action_state) {
+                break;
+            }
+            w.set_pad(0);
+            let _ = w.tick();
+            if let Some(b) = &w.battle.message_banner {
+                seen_banner = Some(b.clone());
+            }
+        }
         leveled.extend(w.drain_magic_level_ups());
         if !leveled.is_empty() {
             break;
