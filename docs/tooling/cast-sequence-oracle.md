@@ -393,6 +393,16 @@ makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
 
+Seeded at the cast's begin (`--rand-at 0x28:0`), the stream is also a probe of
+the engine's frame pacing: the battle frame driver draws once a pass
+(`FUN_80046A20`), so the first word the engine reaches early or late names the
+pass where its frames part from retail's. On the lone-caster
+`party_basic_attack_vs_gobu_gobu` films that is how the summon close-up's
+step drop and the ring's one-pass lag were found
+([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds));
+with both in, the draws hold word for word through `0x34` and part at the
+module's CD-seek hold.
+
 A cast whose outcome is a roll parts on the deal the same way, and the sound
 channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a
 cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
