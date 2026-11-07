@@ -989,22 +989,19 @@ impl World {
                 (964, Some(ticks::ELEMENT_CHANGE_TICK)) => {
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
                     let last_roll = self.cast_element_change_last_roll();
-                    let mut rolls: Vec<u32> = Vec::new();
-                    if ctx.phase == 0 {
-                        for _ in 0..=ticks::ELEMENT_CHANGE_MAX_REROLLS {
-                            rolls.push(self.next_rand());
+                    // Arm 0 draws on demand, once and again while the draw
+                    // repeats the last one (`0x801F89F0` / `0x801F8A3C`); a
+                    // capture past arm 0 names the roll its arm accepted.
+                    let (step, outcome) = match self.battle.element_roll_seed.take() {
+                        Some(roll) if ctx.phase == 0 => {
+                            ticks::element_change_tick(&mut ctx, &mut seats, u8::MAX, || {
+                                u32::from(roll)
+                            })
                         }
-                    }
-                    // A capture past arm 0 names the roll its arm accepted.
-                    let (rolls, last_roll) = match self.battle.element_roll_seed.take() {
-                        Some(roll) if ctx.phase == 0 => (vec![u32::from(roll)], u8::MAX),
-                        _ => (rolls, last_roll),
+                        _ => ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {
+                            self.next_rand()
+                        }),
                     };
-                    let mut cursor = rolls.into_iter();
-                    let (step, outcome) =
-                        ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {
-                            cursor.next().unwrap_or(0)
-                        });
                     self.write_cast_seat_row(&seats);
                     if let Some(out) = outcome {
                         self.battle

@@ -23,6 +23,7 @@ mod confuse;
 mod dance_floor;
 mod death_spoils;
 mod dialog_pager;
+mod element_change;
 mod encounter_roll;
 mod enemy_impact;
 mod escape;
