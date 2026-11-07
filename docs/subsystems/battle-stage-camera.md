@@ -1486,11 +1486,14 @@ enemy cast films log retail's step and `ctx[+0x279]` every vsync. Read against t
 harvest-state table named five of the eighteen casts; every other arm ran the ordinary
 step (`2` under a replay's pin, `3` for a full party in play) where retail runs `4` on
 `.62` of those vsyncs and `3` on `.22`. A row per recorded cast (the step each arm
-spends the most vsyncs on) and `4` for every arm past the setup of a cast no recording
-names (`UNNAMED_CAPTURE_ARM_STEP`) fit on half the films reads the other half's step
+spends the most vsyncs on), with `4` for every arm past the setup of a cast no recording
+names, fit on half the films reads the other half's step
 right on `.71` and `.91` of band vsyncs, against `.40` and `.48` for the old table. Steal
 is the light one: its dash and item flash run `3`. A recorded cast's gaps are arms too
-short to read and keep the ordinary step.
+short to read and keep the ordinary step. The port carries the rows but not the `4`
+for unrecorded casts: a still whose gate counts passes lands on another pass at `4`
+(`gaza2_card_neo_star_slash_mid_cast` `.999` to `.739`), so an unrecorded cast keeps the
+ordinary step until a film of it reads its arms.
 
 Feeding each arm's step through the ring as a cost instead of installing it, so a cheap
 arm after a dear one reads `3` until the ring empties, scores the same within a

@@ -282,23 +282,16 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0xAA, &[(1, 4), (2, 4), (3, 4), (4, 3), (5, 4), (6, 4)]),
 ];
 
-/// The step the arms of a capture cast no recording names run at: past the
-/// module's setup (`ctx[+0x279]` from `1`) an enemy cast draws a whole-screen
-/// effect, and over the enemy cast films `.62` of those arms' vsyncs run at
-/// `4`, against `.22` at `3`. Held out by film, reading an unrecorded cast's
-/// arms at `4` rather than on the ordinary step lifts the step read right
-/// from `.40` to `.61` and from `.48` to `.72`. A recorded cast's gaps are
-/// arms too short to read and keep the ordinary step.
-pub const UNNAMED_CAPTURE_ARM_STEP: u8 = 4;
-
 /// The step retail ran module phase `phase` of the capture cast `spell` at:
-/// the table's reading for a recorded cast, [`UNNAMED_CAPTURE_ARM_STEP`] for
-/// an unrecorded cast's arms past the setup, else `None` (the ordinary step).
+/// the table's reading for a recorded cast, else `None` (the ordinary step).
+/// A cast no film records keeps the ordinary step too. Over the enemy cast
+/// films `.62` of such arms' vsyncs run at `4`, but a still whose gate
+/// counts passes moves onto another pass at `4` (the boss card casts from
+/// `0xA6`, `gaza2_card_neo_star_slash_mid_cast` `.999` to `.739`), so the
+/// step waits for a recording of each.
 pub fn capture_arm_frame_step(spell: u8, phase: u8) -> Option<u8> {
-    match CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell) {
-        Some((_, steps)) => steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s),
-        None => (phase >= 1).then_some(UNNAMED_CAPTURE_ARM_STEP),
-    }
+    let (_, steps) = CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell)?;
+    steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s)
 }
 
 #[cfg(test)]
@@ -321,12 +314,9 @@ mod tests {
         assert_eq!(capture_arm_frame_step(0x57, 0), None);
         assert_eq!(capture_arm_frame_step(0x57, 200), None);
         assert_eq!(capture_arm_frame_step(0x76, 5), None);
-        // Steal draws next to nothing; an arm no recording names reads `4`.
+        // Steal draws next to nothing; a cast no film records keeps the default.
         assert_eq!(capture_arm_frame_step(0x51, 2), Some(3));
-        assert_eq!(
-            capture_arm_frame_step(0x01, 1),
-            Some(UNNAMED_CAPTURE_ARM_STEP)
-        );
+        assert_eq!(capture_arm_frame_step(0x01, 1), None);
         assert_eq!(capture_arm_frame_step(0x01, 0), None);
     }
 }
