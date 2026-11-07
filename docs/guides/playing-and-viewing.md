@@ -63,15 +63,21 @@ falling to 1x.
 | Key / mouse | Does |
 |---|---|
 | Up / Down | move between every control |
-| Tab, Right on a button | jump between the buttons and the option list |
+| Tab, Right on a button | jump between the buttons and the option list, back to where you were in the other column |
 | Left / Right on an option | change it (a switch flips, a list steps, a volume moves by one) |
 | Enter, Space, click | press the focused button, or step an option forward |
-| Right-click an option | step it back |
+| Shift+Enter, right-click | the second action: step an option back, or switch to the next remembered disc / pack / card |
+| Page Up / Page Down, Home / End | move through the option list a page at a time, or to its ends |
 | Delete (Backspace with nothing typed), middle-click an option | put it back on its default |
 | Enter, click on a *Controls* row | wait for the key that button goes on (Esc or a click calls it off) |
 | Ctrl+O | open the file dialog |
-| typing | enter a disc path (Enter uses it, Esc clears it) |
+| typing, Ctrl+V | enter or paste a disc path (Enter uses it, Esc clears it) |
+| Ctrl+C | copy the report of a game that stopped with an error, for a bug report |
 | Esc | leave the controls page, or quit |
+
+While a file is dragged over the window, the help box says what dropping it
+will do: use it as the disc, play with it as an expansion pack, or load the
+saves on it as a memory card.
 
 If the launcher's window cannot open at all (usually a graphics driver with
 nothing the game can draw through, or a remote desktop session), a message box
@@ -100,9 +106,12 @@ it native.
 The chosen image is checked before it is accepted, through the same reader the
 game boots from: a `.cue` resolves to its `.bin`, the image must be raw
 Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
-present. A PAL or Japanese disc is refused with the executable it boots; a
-randomized or translated USA disc is accepted, since it still boots the USA
-executable. The check reads the file table and a few sectors, not the whole
+present. A PAL or Japanese disc is refused with the executable it boots, and
+the help box adds that a randomized or translated USA disc is accepted, since
+it still boots the USA executable. A disc that is not a PlayStation game at all
+(no `SYSTEM.CNF`) is named as such, and an image whose `PROT.DAT` is missing or
+whose `SCUS_942.54` is damaged is called a damaged or partial dump, with the
+advice to dump the disc again. The check reads the file table and a few sectors, not the whole
 image - it is not the SHA-256 fingerprint `disc-extract verify` computes. An
 image shorter than its own file table says is called incomplete, with how much
 of the disc it holds: a copy or a download that stopped early. The disc card says what is
@@ -118,6 +127,16 @@ directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
 Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
 start shows it ready, with *Play* focused, so `Enter` starts the game.
 *Change disc...* picks another one.
+
+A `launcher.toml` that does not parse (a hand edit gone wrong, a write cut off
+by a crash) is never overwritten with the defaults: the launcher renames it to
+`launcher.toml.broken` (`.broken-2`, ... when an older one is still there),
+says so on the disc card and in the help box, and starts as on a first run.
+Its discs, switches and card are in the renamed file, to copy back by hand.
+Every write of the file goes to a temporary file first and replaces the old
+one in one step, so a crash mid-save leaves the previous file whole. Legaia
+Explorer treats its `settings.json` the same way and says so on its error
+banner.
 
 The launcher keeps the last few discs that passed (`recent_discs` in the same
 file, newest first), so a retail disc and a randomized or translated copy are
@@ -276,6 +295,13 @@ subcommands behave normally in a terminal; double-clicked directly, it closes
 the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
 and run from a command prompt it keeps printing its log there.
 
+When `Legend of Legaia` itself cannot start the engine (the
+`command-line-tools` folder was left behind when the program was moved, or a
+file in it is missing), it says so in a message box, on Linux too when it was
+double-clicked rather than run from a terminal. When the engine ends with an
+error it did not already report, the box gives how it ended in the launcher's
+own words, the reason from the engine's output, and `Ctrl+C` copies the text.
+
 A launcher start runs the game from the per-user data directory
 (`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
 Windows and macOS), so key bindings (`legaia-input.toml`), options
@@ -373,7 +399,7 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens the panel; a controller opens it with `Select` + `Start`,
+`F12` (or `?`, wherever your keyboard layout puts it) opens the panel; a controller opens it with `Select` + `Start`,
 which with `L1` and `R1` also held stays the original game's soft reset. The
 game holds still under it. Its first page, **Settings**, lists what the game
 reads live: every launcher row but *Look and feel* and the window size, in the

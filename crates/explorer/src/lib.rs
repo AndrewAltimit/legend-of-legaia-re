@@ -60,6 +60,25 @@ pub const KINDS: [&str; 12] = [
     "Unidentified",
 ];
 
+/// Which of several dropped paths the window opens: the first that can be
+/// a source (a disc image, a `.cue`, an extracted folder) rather than an
+/// expansion pack or a memory card ([`library::not_a_source`]), else the
+/// first, so its own message says what it is. A `.bin` dropped with its
+/// `.cue` opens the `.cue`, which names the `.bin`.
+pub fn pick_drop(dropped: &[PathBuf]) -> Option<&PathBuf> {
+    let is_cue = |p: &PathBuf| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("cue"));
+    let sources: Vec<&PathBuf> = dropped
+        .iter()
+        .filter(|p| library::not_a_source(p).is_none())
+        .collect();
+    sources
+        .iter()
+        .copied()
+        .find(|p| is_cue(p))
+        .or(sources.first().copied())
+        .or(dropped.first())
+}
+
 /// What a `legaia_disc_audit` category holds, in the words of someone who has
 /// not read the format pages. A disc-wide classification by what the entry
 /// mostly is: a scene's model stream carries textures too, which its tabs

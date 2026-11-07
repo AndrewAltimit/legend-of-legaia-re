@@ -512,6 +512,62 @@ impl App {
             .unwrap_or(default)
     }
 
+    /// While files are dragged over the window, a frame round it and a
+    /// line saying what a drop opens: without it nothing on screen shows
+    /// that the window takes a drop until it has happened.
+    fn drop_overlay(&self, ui: &egui::Ui) {
+        let hovered: Vec<PathBuf> = ui.input(|i| {
+            i.raw
+                .hovered_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
+        if ui.input(|i| i.raw.hovered_files.is_empty()) {
+            return;
+        }
+        let text = match crate::pick_drop(&hovered) {
+            Some(p) => match crate::library::not_a_source(p) {
+                Some(_) => "Legaia Explorer opens disc images and extracted folders; \
+                            drop this on the Legend of Legaia window instead."
+                    .to_string(),
+                None => format!(
+                    "Drop to open {}",
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.display().to_string())
+                ),
+            },
+            // Some platforms do not name the files until the drop.
+            None => "Drop to open the disc image or extracted folder".to_string(),
+        };
+        let pal = crate::theme::palette(ui);
+        let painter = ui.ctx().layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("drop-overlay"),
+        ));
+        let screen = ui.ctx().content_rect();
+        let ground = crate::theme::c(pal.ground);
+        painter.rect_filled(
+            screen,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(ground.r(), ground.g(), ground.b(), 200),
+        );
+        painter.rect_stroke(
+            screen.shrink(6.0),
+            8.0,
+            egui::Stroke::new(3.0, crate::theme::c(pal.accent)),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            screen.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::proportional(20.0),
+            crate::theme::c(pal.ink),
+        );
+    }
+
     fn open_path(&mut self, p: &Path) {
         self.path_text = p.display().to_string();
         self.player.stop();
@@ -2874,8 +2930,17 @@ impl eframe::App for App {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
-        if let Some(p) = dropped.first() {
+        self.drop_overlay(ui);
+        if let Some(p) = crate::pick_drop(&dropped) {
             self.open_path(p);
+            if dropped.len() > 1 {
+                self.explorer.status = Some(format!(
+                    "Opening {}. Legaia Explorer opens one disc at a time; the other {} \
+                     dropped item(s) were left alone.",
+                    p.display(),
+                    dropped.len() - 1
+                ));
+            }
         }
         self.run_automation(ui);
         self.shortcuts(ui);

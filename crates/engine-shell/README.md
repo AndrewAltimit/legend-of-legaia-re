@@ -198,7 +198,9 @@ with the headless subcommands. The binary is split into modules under
   On a Wayland session the picker opens through XWayland (winit has no
   Wayland drag-and-drop; `legaia_app_theme::drop_backend`, which Explorer
   shares); on Windows a double-clicked engine frees the console
-  Explorer gave it.
+  Explorer gave it. A `launcher.toml` that does not parse is set aside as
+  `launcher.toml.broken` before anything is saved (`launcher::open_settings`,
+  over `legaia_app_theme::settings_file`), and the disc card names it.
 
 A second binary, `legaia-launch` (`src/bin/legaia-launch.rs`), is the
 double-click entry the release archive ships as `Legend of Legaia` (Linux)
@@ -210,7 +212,12 @@ console window; [`releases.md`](../../docs/tooling/releases.md#windows-the-conso
 says why it is a stub rather than a subsystem switch on the engine. A lone
 file argument (what "Open with" or a drop on the icon passes) goes to the
 launcher as the hidden `--open <file>`, which takes it as a drop on its
-window; any other arguments pass through unchanged.
+window; any other arguments pass through unchanged. A failure of its own (no
+engine found, the engine would not start) goes to a message box, on Linux too
+when standard error is not a terminal; on Windows, where it runs the engine as
+a child, a failure the engine did not report itself is told in
+`legaia_app_theme::game_exit`'s words with the reason from the engine's
+standard error.
 
 `build.rs` embeds the game icon into both Windows executables
 (`legaia_app_theme::win_icon`), and `legaia-engine` gives every window it

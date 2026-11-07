@@ -469,6 +469,10 @@ struct LauncherApp {
     settings_file: Option<PathBuf>,
     options: OptionsState,
     focus: Item,
+    /// Where Tab left each column ([`Self::switch_column`]): the button,
+    /// and the option or key row, focused when the other column was
+    /// entered, so Tab back returns to the same place.
+    left_at: (Item, Option<Item>),
     panel: Panel,
     /// The option list's first visible line (see [`option_lines`]).
     opt_scroll: usize,
@@ -477,6 +481,9 @@ struct LauncherApp {
     /// The typed path was tried and failed: the next character or paste
     /// starts over rather than adding to it.
     typed_tried: bool,
+    /// The help-box text a file dragged over the window replaced
+    /// ([`drop_hint`]), put back if the drag leaves without a drop.
+    hover_saved: Option<Option<Vec<Message>>>,
     /// The last failed game's report, for Ctrl+C.
     failure_report: Option<String>,
     /// Held once used: on X11 the copied text lives in this process, and the
@@ -544,10 +551,12 @@ impl LauncherApp {
             settings_file,
             options,
             focus,
+            left_at: (focus, None),
             panel,
             opt_scroll: 0,
             status: None,
             typed_tried: false,
+            hover_saved: None,
             failure_report: None,
             clipboard: None,
             typed: String::new(),
@@ -1118,7 +1127,19 @@ impl LauncherApp {
     }
 
     fn open_data_folder(&mut self) {
-        let dir = std::env::current_dir().unwrap_or_default();
+        // The game runs in the launcher's working directory (the data
+        // directory, or where the launcher started when that could not be
+        // made), so that is where its saves are.
+        let dir = match std::env::current_dir() {
+            Ok(d) => d,
+            Err(e) => {
+                self.status = Some(vec![(
+                    format!("Could not tell which folder the saves are in: {e}"),
+                    WARN,
+                )]);
+                return;
+            }
+        };
         // The path either way: a file manager may open behind this window,
         // or not at all on a desktop with none set.
         self.status = Some(vec![match open_folder(&dir) {
@@ -1403,12 +1424,31 @@ impl LauncherApp {
         self.opt_scroll = (self.opt_scroll as i32 + lines).clamp(0, max) as usize;
     }
 
-    /// Tab: jump between the button column and the option rows.
+    /// Tab: jump between the button column and the option rows, back to
+    /// where the focus was in that column when it last left it (the first
+    /// option or key row, and *Play*, before then).
     fn switch_column(&mut self) {
+        let order = self.order();
+        let usable = |i: &Item| order.contains(i);
         self.focus = match self.focus {
-            Item::Opt(_) | Item::Bind(_) | Item::BindReset => Item::Play,
-            _ if self.panel == Panel::Options => Item::Opt(OPTION_ROWS[0].1),
-            _ => Item::Bind(0),
+            right @ (Item::Opt(_) | Item::Bind(_) | Item::BindReset) => {
+                self.left_at.1 = Some(right);
+                Some(self.left_at.0)
+                    .filter(usable)
+                    .or_else(|| order.iter().copied().find(|i| BUTTONS.contains(i)))
+                    .unwrap_or(Item::Play)
+            }
+            button => {
+                self.left_at.0 = button;
+                let first = if self.panel == Panel::Options {
+                    Item::Opt(OPTION_ROWS[0].1)
+                } else {
+                    Item::Bind(0)
+                };
+                // A row of the other page (the panel switched since) or one
+                // that is gone does not count.
+                self.left_at.1.filter(usable).unwrap_or(first)
+            }
         };
         self.reveal_focus();
     }
@@ -1927,7 +1967,25 @@ impl ApplicationHandler for LauncherApp {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.win.request_redraw(),
             WindowEvent::RedrawRequested => self.redraw(evl),
-            WindowEvent::DroppedFile(p) => self.open_path(&p),
+            // While a file is dragged over the window, the help box says
+            // what a drop will do with it; leaving puts the old text back.
+            WindowEvent::HoveredFile(p) => {
+                if self.hover_saved.is_none() {
+                    self.hover_saved = Some(self.status.take());
+                }
+                self.status = Some(vec![(drop_hint(&p), GOOD)]);
+                self.win.request_redraw();
+            }
+            WindowEvent::HoveredFileCancelled => {
+                if let Some(old) = self.hover_saved.take() {
+                    self.status = old;
+                }
+                self.win.request_redraw();
+            }
+            WindowEvent::DroppedFile(p) => {
+                self.hover_saved = None;
+                self.open_path(&p);
+            }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             // A scripted capture shows the scripted focus, not whatever row
             // the display's resting pointer happens to sit over.
@@ -2614,6 +2672,19 @@ fn short_folder(dir: &Path) -> String {
     }
 }
 
+/// What dropping `path` on the window will do, shown while it is dragged
+/// over: the routing [`LauncherApp::open_path`] applies to the drop.
+fn drop_hint(path: &Path) -> String {
+    let name = file_name_of(path);
+    if launcher::expansion_pack_path(path).is_some() {
+        format!("Drop to play with the expansion pack {name}.")
+    } else if launcher::is_card_file(path) {
+        format!("Drop to load the saves on the memory card {name}.")
+    } else {
+        format!("Drop to use {name} as the disc.")
+    }
+}
+
 /// *Change disc*'s help while another remembered disc is on offer: the disc
 /// card already shows the current one.
 fn change_disc_help(offer: &DiscInfo) -> String {
@@ -3099,7 +3170,45 @@ mod tests {
         app.switch_column();
         assert_eq!(app.focus, Item::Opt(OPTION_ROWS[0].1));
         app.switch_column();
-        assert_eq!(app.focus, Item::Play);
+        assert_eq!(app.focus, start, "Tab back returns to the button it left");
+    }
+
+    /// A file dragged over the window is named with what a drop does, by
+    /// the same routing the drop takes.
+    #[test]
+    fn drop_hint_follows_the_drop_routing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            drop_hint(Path::new("/g/Legend of Legaia (USA).cue")),
+            "Drop to use Legend of Legaia (USA).cue as the disc."
+        );
+        assert!(drop_hint(Path::new("/g/story.lxpack")).contains("expansion pack story.lxpack"));
+        assert!(drop_hint(Path::new("/g/epsxe.mcr")).contains("memory card epsxe.mcr"));
+        std::fs::write(dir.path().join("pack.toml"), "").unwrap();
+        assert!(drop_hint(dir.path()).contains("expansion pack"));
+    }
+
+    /// Tab keeps the player's place in each column: an option row walked to
+    /// and a button walked to both come back on the next Tab.
+    #[test]
+    fn tab_returns_to_where_each_column_was_left() {
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.focus = Item::Expansion;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Opt(OPTION_ROWS[0].1));
+        let row = Item::Opt(OPTION_ROWS[5].1);
+        app.focus = row;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Expansion);
+        app.focus = Item::Panel;
+        app.switch_column();
+        assert_eq!(app.focus, row);
+        app.switch_column();
+        assert_eq!(app.focus, Item::Panel);
+        // On the Controls page an option row is not a place to return to.
+        app.panel = Panel::Controls;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Bind(0));
     }
 
     #[test]
@@ -3318,6 +3427,23 @@ mod tests {
                          (SCUS_942.54)"
                     .into(),
                 fix: Some("A randomized or translated copy of the USA disc works too.".into()),
+            },
+            DiscProblem::WrongDisc {
+                path: path.clone(),
+                reason: "it is not a PlayStation game disc (it has no SYSTEM.CNF boot file)".into(),
+                fix: Some("Choose the image of the Legend of Legaia (USA) game disc.".into()),
+            },
+            DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: "PROT.DAT, the file that holds the game's data, is missing from it".into(),
+                fix: Some(legaia_app_theme::disc_text::DAMAGED_FIX.into()),
+            },
+            DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: "its game program SCUS_942.54 is damaged (it is not a PlayStation \
+                         program)"
+                    .into(),
+                fix: Some(legaia_app_theme::disc_text::DAMAGED_FIX.into()),
             },
         ];
         // A remembered disc offered back, under each problem and in the

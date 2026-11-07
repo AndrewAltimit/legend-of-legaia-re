@@ -340,6 +340,9 @@ impl fmt::Display for DiscProblem {
             ),
             DiscProblem::Unreadable { path, reason, fix } => {
                 write!(f, "{} is not a usable disc image: {reason}", path.display())?;
+                if fix.is_some() && !reason.trim_end().ends_with(['.', '!', '?']) {
+                    f.write_str(".")?;
+                }
                 match fix {
                     Some(fix) => write!(f, " {fix}"),
                     None => Ok(()),
@@ -351,6 +354,9 @@ impl fmt::Display for DiscProblem {
                     "{} is not Legend of Legaia (USA): {reason}",
                     path.display()
                 )?;
+                if fix.is_some() && !reason.trim_end().ends_with(['.', '!', '?']) {
+                    f.write_str(".")?;
+                }
                 match fix {
                     Some(fix) => write!(f, " {fix}"),
                     None => Ok(()),

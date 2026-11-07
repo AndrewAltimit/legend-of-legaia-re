@@ -1621,14 +1621,18 @@ mod key_script_tests {
     /// comparison at all.
     #[test]
     fn every_handler_key_is_nameable() {
-        // The handler is `handle_key` plus its arms, one file per key family.
-        let src = [
+        // The handler is `handle_key` plus its arms, one file per key family;
+        // each file's test module (keys named to test a predicate, not
+        // handled) is left out.
+        let src: String = [
             include_str!("event_handler/keyboard.rs"),
             include_str!("event_handler/keyboard/debug_spawn_keys.rs"),
             include_str!("event_handler/keyboard/minigame_keys.rs"),
             include_str!("event_handler/keyboard/option_keys.rs"),
         ]
-        .concat();
+        .iter()
+        .map(|f| f.split("#[cfg(test)]").next().unwrap_or(f))
+        .collect();
         let mut names: Vec<String> = ["Up", "Down", "Left", "Right", "Enter", "Space", "RShift"]
             .iter()
             .map(|s| s.to_string())

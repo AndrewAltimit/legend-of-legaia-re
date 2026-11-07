@@ -58,6 +58,42 @@ pub struct Library {
 /// Check that `path` is something [`Library::open`] can read, without
 /// loading it: a directory with a `PROT.DAT`, or a Mode2/2352 image (or a
 /// `.cue` naming one) whose ISO9660 tree has `PROT.DAT`.
+/// Memory-card containers, by extension: the set the game's launcher mounts
+/// (`legaia_engine_shell::launcher::CARD_EXTENSIONS`, repeated here because
+/// Explorer does not link the engine).
+pub const CARD_EXTENSIONS: [&str; 5] = ["mcr", "mcd", "srm", "gme", "mcs"];
+
+/// Why `path` is something other than a disc image or an extracted folder
+/// that a player may well drop on the window: an expansion pack or a memory
+/// card. Both belong to the game's launcher, which says so.
+pub fn not_a_source(path: &Path) -> Option<String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let is_pack = ext.as_deref() == Some("lxpack")
+        || name.eq_ignore_ascii_case("pack.toml")
+        || (path.is_dir() && path.join("pack.toml").is_file());
+    if is_pack {
+        return Some(format!(
+            "{name} is an expansion pack. Legaia Explorer reads the disc itself; play the pack \
+             from the game (drop it on the Legend of Legaia window, or its Expansion pack... \
+             button), or edit it in the site's expansion workbench."
+        ));
+    }
+    if ext.is_some_and(|e| CARD_EXTENSIONS.contains(&e.as_str())) {
+        return Some(format!(
+            "{name} is a memory card. Legaia Explorer reads the disc itself; drop the card on \
+             the Legend of Legaia window to load its saves in the game."
+        ));
+    }
+    None
+}
+
 pub fn validate(path: &Path) -> Result<Source> {
     // Said plainly: the OS error ("No such file or directory (os error 2)")
     // reads as a fault in the program rather than a path to correct.
@@ -67,6 +103,11 @@ pub fn validate(path: &Path) -> Result<Source> {
              your .bin / .cue",
             path.display()
         );
+    }
+    // Files the game's launcher takes but this program does not read: said
+    // for what they are rather than refused as a broken disc image.
+    if let Some(why) = not_a_source(path) {
+        bail!("{why}");
     }
     if path.is_dir() {
         if !path.join("PROT.DAT").is_file() {

@@ -25,8 +25,7 @@ pub const INCOMPLETE_FIX: &str = "It was probably cut short while copying or dow
      Copy or dump it again, then choose the whole .bin.";
 
 /// What to do about an image whose own files are damaged or missing.
-pub const DAMAGED_FIX: &str = "The image is damaged or is not a whole dump of the disc. \
-     Dump the disc again (raw .bin with its .cue), then choose the new .bin.";
+pub const DAMAGED_FIX: &str = "The image is damaged or only part of the disc: dump it again.";
 
 /// Whether `e` is a read that ran off the end of the file.
 pub fn is_short_read(e: &(dyn Error + 'static)) -> bool {
