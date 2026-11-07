@@ -154,6 +154,17 @@ same with its canvases: PSX rasterisation gives the GL canvas and the overlay
 canvas a `320 x 240` backing store and lets the browser magnify them with
 `image-rendering: pixelated`.
 
+Off PSX mode the same target serves one presentation case
+(`fill_target_for`): a window just short of a whole step of the stage - at
+least `FILL_MIN_RATIO` (0.95) of the next one, as a 960x720 window that a
+768-pixel-tall screen clamps to 960x699 - draws the whole frame at that step
+(960x720) and the blit's fit branch shrinks it onto the window. Text and
+sprites keep their whole-step grid and stay lined up with the 3D, where the
+window-sized frame would fall a whole step (640x480) with black around it.
+Retail's persisting battle frames (`set_frame_persist`) stay a PSX-mode
+behaviour: the clean mode's fill target clears every frame as its window
+frame does.
+
 The page's context has MSAA, which cannot change after creation and which WebGL
 cannot turn off on the canvas's framebuffer. So a PSX frame on the page draws into
 a single-sample framebuffer of its own

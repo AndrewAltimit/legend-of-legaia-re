@@ -1293,7 +1293,7 @@ table; a switch with no page twin is a host difference, not a world default.
 
 | Native switch | Page twin |
 |---|---|
-| `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes. `--retail` and `--psx-render` are also live rows of the window's `F12` panel (*Original game only*, *PlayStation pixel look*), which write `launcher.toml` as the boxes write `legaia.switches` |
+| `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes. `--retail` and `--psx-render` are also live rows of the window's `F12` panel (*Original game only*, *PlayStation pixel look*), which write `launcher.toml` as the boxes write `legaia.switches`; so are the entry pulse, smarter monsters, the saved-chain Arts list and every gameplay tweak and battle-tuning switch below |
 | `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime |
 | `--cheat-*`, `--cheat-file`, `--cheat-strict` | `cheat_*`, `cheat_apply_codes` (its `strict` argument is the Strict box) |
 | `--battle-bgm` | `set_battle_bgm` |
@@ -1337,7 +1337,7 @@ so a switch added there is remembered on both hosts or on neither:
 | Remembered | Where each host keeps it |
 |---|---|
 | `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
-| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file (which `play-window`'s `F12` panel also writes, for its two live rows); `localStorage["legaia.switches"]` |
+| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file (which `play-window`'s `F12` panel also writes, one field per change, for its live switch rows); `localStorage["legaia.switches"]` |
 | key bindings | `legaia-input.toml`; the page's pad-bindings store |
 | the output level | the launcher's Master volume row (`OptionsState::master_volume`, percent of the full mix); the page's slider under `localStorage["legaia.play-volume"]`, in its own units, since its `1x` is a different gain (see [open differences](#open-differences)) |
 | nothing (session only) | the world-map markers and the battle cadence (diagnostic environment switches natively), the cheats, the dev menu |

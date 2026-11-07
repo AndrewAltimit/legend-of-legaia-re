@@ -370,18 +370,20 @@ around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a 
 `F12` (or `?`) opens the panel; a controller opens it with `Select` + `Start`,
 which with `L1` and `R1` also held stays the original game's soft reset. The
 game holds still under it. Its first page, **Settings**, lists what the game
-reads live: fullscreen, camera distance, the PlayStation pixel look, reduce
-flashing, the lighting and shadow rows, fog, see-through walls, free-angle
-movement, the volumes and *Original game only*, in the launcher's words and
-writing the same `legaia-options.toml`. Up / Down pick a row and Left / Right
-(Cross, or `Enter`) change it, `Delete` puts it back on its default as on the
-launcher, with the row's help underneath; a change takes
-effect behind the panel at once, and the list scrolls when it is longer than
-the plate. The PlayStation pixel look and *Original game only* are launcher
-rows too: changed here, they are written to `launcher.toml`, so the next Play
-starts the way this game ended, as the play page's two boxes are remembered.
-While *Original game only* is on, the rows it holds read *Original* and do not
-change, as on the launcher. `L1` / `R1` (`Tab`)
+reads live: every launcher row but *Look and feel* and the window size, in the
+launcher's order and words - the display and enhancement rows, the play rows,
+the gameplay tweaks, the battle tuning, the volumes and *Original game only*.
+The heading names the launcher group the focused row is in (*Settings: Battle
+tuning*). Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
+`Delete` puts it back on its default as on the launcher, with the row's help
+underneath; a change takes effect behind the panel at once, and the list
+scrolls under the plate. Options go to `legaia-options.toml`; the launcher's
+own rows (the PlayStation pixel look, the living ground pulse, action
+movement, smarter monsters, the saved-chain Arts list, the tweaks and tuning,
+*Original game only*) go to `launcher.toml`, the one field a change moved and
+nothing else, so the next Play starts the way this game ended, as the play
+page remembers its boxes. While *Original game only* is on, the rows it holds
+read *Original* and do not change, as on the launcher. `L1` / `R1` (`Tab`)
 flip to the **Cheats** page ([below](#cheats)), then to the **Keys** page: every toggle key with its current state (`F11`
 fullscreen among them), the key each pad button is on (Cross, Circle, Start,
 ...), read from the live Key Config table, and the mouse's camera controls.
@@ -404,7 +406,11 @@ capture's panel does not hold the game, whose frame it is counting ticks to.
 `window_scale` with the fullscreen state in `legaia-options.toml`; the
 launcher's *Window size* row edits it. Both are window chrome: the frame is
 drawn the same at any surface, and a `--screenshot` run ignores the stored
-pair so a capture never depends on what a player last chose.
+pair so a capture never depends on what a player last chose. The picture
+keeps whole steps of 320x240 so text and sprites stay sharp; a window a
+little short of a step (a 960x720 window a 768-pixel-tall screen hands back
+about 960x699) draws the frame at that step and shows it shrunk by a few
+percent to fit, rather than dropping to the step below with black around it.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`

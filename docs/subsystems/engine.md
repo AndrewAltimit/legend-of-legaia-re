@@ -427,7 +427,8 @@ session switch set both hosts share
 browser's retail mode calls too). Both hosts also take it live: the page's
 Retail-faithful box and the window's `F12` *Original game only* row pin or
 release the options and re-apply the launch's switch set with `retail`
-flipped. Released, the set gives back what the pin lowered - the launch
+flipped; the page's tweak boxes and the window's tweak rows re-apply it with
+the switch changed. Released, the set gives back what the pin lowered - the launch
 switches their launch values, the two port guards no switch carries (the hop
 landing guard, the off-axis battle entry) the engine default
 (`retail_released_returns_every_switch_it_lowered`). The window logs
