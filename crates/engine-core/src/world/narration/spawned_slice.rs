@@ -1338,7 +1338,7 @@ impl World {
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
                     host.world.field_vm.executing_object = channels[ci]
                         .object_bind
-                        .then_some(channels[ci].ctx.script_id);
+                        .then_some(channels[ci].placement_index as u16);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
                     // drives them beat by beat. A poke from the owner is the
@@ -1384,9 +1384,10 @@ impl World {
                     // A poke at a placed object's clip words reaches the
                     // clip it already plays - no `A2` needs to follow.
                     if channels[ci].object_bind {
+                        let key = channels[ci].placement_index;
                         let c = &channels[ci].ctx;
                         host.world.poke_object_prop_words(
-                            c.script_id,
+                            key,
                             (clip_words.0, c.local_flags),
                             (clip_words.1, c.field_6a),
                         );

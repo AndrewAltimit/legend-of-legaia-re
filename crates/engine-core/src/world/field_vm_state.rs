@@ -97,10 +97,12 @@ pub struct FieldVmState {
     /// (animate, move) can attribute the side-effect to that placement's NPC.
     /// `None` outside a channel-targeted step.
     pub executing_channel: Option<u8>,
-    /// The flat MAN record of the `.MAP` object-bind context currently
-    /// executing (its bind-time prologue, or the target of a cross-context
-    /// poke) - the object twin of [`Self::executing_channel`], which never
-    /// names an object bind. `None` outside such a step.
+    /// The key ([`legaia_engine_field::field_channels::object_channel_keys`])
+    /// of the `.MAP` object-bind context currently executing (its bind-time
+    /// prologue, or the target of a cross-context poke) - the object twin of
+    /// [`Self::executing_channel`], which never names an object bind. The
+    /// flat record for the first object a record binds, a per-object key for
+    /// the rest. `None` outside such a step.
     pub(crate) executing_object: Option<u16>,
     /// Placement indices whose context a cross-context `CFLAG_SET` bit 8
     /// (`B1 <id> 08`, `+0x10 |= 0x100`) engaged: retail's per-actor tick
@@ -147,20 +149,28 @@ pub struct FieldVmState {
     /// the lowest stamp among the helper contexts holding text owns the box
     /// (retail's runner claims it first come, first served).
     pub(crate) dialog_claims: u64,
-    /// The scene's `.MAP` object script binds
-    /// (`(flat_record_index, contact_centre)`, retail `FUN_8003A55C`),
-    /// stored at scene entry so a cutscene-timeline install that has to
-    /// respawn the channel set can re-append the object-bind channels
-    /// ([`legaia_engine_field::field_channels::spawn_object_channels`]).
-    pub(crate) object_channel_binds: Vec<(usize, (i16, i16))>,
-    /// Bind-time rotation of each object-bind context, by flat record
-    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]): the `.MAP`
+    /// The scene's `.MAP` object script binds, one per bound object (retail
+    /// `FUN_8003A55C`), stored at scene entry so a cutscene-timeline install
+    /// that has to respawn the channel set can re-append the object-bind
+    /// channels ([`legaia_engine_field::field_channels::spawn_object_channels`]).
+    pub(crate) object_channel_binds: Vec<legaia_engine_field::man_field_scripts::ObjectScriptBind>,
+    /// [`Self::object_channel_binds`] by channel key
+    /// ([`legaia_engine_field::field_channels::object_channel_keys`]).
+    pub(crate) object_binds_by_key:
+        std::collections::HashMap<usize, legaia_engine_field::man_field_scripts::ObjectScriptBind>,
+    /// Keys of the object-bind contexts a `31 03` / `B1 <id> 03` retired:
+    /// `FUN_8002519C` unlinks the actor, so `FUN_8003C83C` stops answering
+    /// it and it stops drawing. The channel leaves the set; the key stays
+    /// here for the draw.
+    pub(crate) retired_objects: std::collections::HashSet<usize>,
+    /// Bind-time rotation of each object-bind context, by channel key
+    /// ([`legaia_engine_field::man_field_scripts::ObjectScriptBind::rot`]): the `.MAP`
     /// angles `FUN_8003A55C` seeds the actor's `+0x24 / +0x26 / +0x28` with.
     /// [`crate::world::World::object_draw_turns`] measures a script's turn
     /// against it.
     pub(crate) object_channel_rots: std::collections::HashMap<usize, [u16; 3]>,
-    /// Bind-time Y of each object-bind context, by flat record
-    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_heights`]):
+    /// Bind-time Y of each object-bind context, by channel key
+    /// ([`legaia_engine_field::man_field_scripts::ObjectScriptBind::seat_y`]):
     /// the `ladder[nibble] + y_off` `FUN_8003A55C` seats the actor's `+0x16`
     /// at. [`crate::world::World::object_draw_displacements`] measures a
     /// script's height write against it.
@@ -253,6 +263,8 @@ impl FieldVmState {
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
+            object_binds_by_key: Default::default(),
+            retired_objects: Default::default(),
             object_channel_rots: Default::default(),
             object_channel_heights: Default::default(),
             object_slot_ramps: Vec::new(),

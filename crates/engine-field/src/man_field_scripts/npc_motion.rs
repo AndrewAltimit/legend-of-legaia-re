@@ -1002,9 +1002,10 @@ pub fn object_walk_touch_binds(
 /// Vahn's-house door object bound to flat record 1.
 ///
 /// [`object_walk_touch_binds`] is the door-classified subset (records
-/// carrying a player teleport); this one feeds
-/// `crate::field_channels::spawn_object_channels`. Duplicate
-/// `(record, contact)` pairs collapse to one bind.
+/// carrying a player teleport); this one feeds the overworld's object-bound
+/// portals, which sit on the contact centre. Duplicate `(record, contact)`
+/// pairs collapse to one bind: a portal per place, not per actor - the
+/// script contexts are [`object_script_bind_objects`]', one per object.
 // REF: FUN_8003A55C
 pub fn object_script_binds(
     map: &[u8],
@@ -1027,92 +1028,93 @@ pub fn object_script_binds(
     out
 }
 
-/// [`object_script_binds`] with each bind's **actor seat** in place of its
-/// contact centre: the object's own world position
+/// One `.MAP` object the scene-init sweep `FUN_8003A55C` binds to a MAN
+/// record - one retail actor, one script context.
+///
+/// Retail spawns an actor for **every** bound object, in the sweep's
+/// row-major object-grid order, and each runs the record's script on its own
+/// context: two objects bound to one record are two contexts with one script
+/// id. `koin1`'s two door pieces on record 1 at one seat are two, and so are
+/// the 46 props `rikuroa`'s record 0 binds - the summit beat retires six of
+/// them one at a time with six `B1 00 03`, each resolving the first context
+/// still linked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectScriptBind {
+    /// Flat MAN record index the key tile's trigger names: the actor's
+    /// script and its script id (`actor[+0x50] = trigger[2]`).
+    pub record: usize,
+    /// The object's own `.MAP` tile ([`crate::field_regions::MapObject::tile`]):
+    /// one object per tile, so this names the actor.
+    pub tile: (u8, u8),
+    /// The trigger key tile the bind resolved through (the prop bank's and
+    /// the draw's anchor).
+    pub key_tile: (u8, u8),
+    /// The actor's seat, `+0x14 / +0x18`
+    /// ([`crate::field_regions::MapObject::world`]).
+    pub seat: (i16, i16),
+    /// The bind-time angles, `+0x24 / +0x26 / +0x28`.
+    pub rot: [u16; 3],
+    /// The bind-time height, `+0x16` (`ladder[nibble] + y_off`).
+    pub seat_y: i16,
+}
+
+impl ObjectScriptBind {
+    /// A bind seated at `seat` on tile `seat >> 7`, unturned, at height 0 -
+    /// the shape a scene with no readable `.MAP` object layer falls back to
+    /// (one bind per gate-0 trigger tile).
+    pub fn at(record: usize, seat: (i16, i16)) -> Self {
+        let tile = ((seat.0 >> 7) as u8, (seat.1 >> 7) as u8);
+        Self {
+            record,
+            tile,
+            key_tile: tile,
+            seat,
+            rot: [0; 3],
+            seat_y: 0,
+        }
+    }
+}
+
+/// Every object the scene-init sweep binds, one entry per object in the
+/// sweep's order, duplicates kept: walk the object layer, resolve each
+/// spawnable object's key tile against the kind-1 trigger tables, and seat
+/// the bind on the object's own world position
 /// ([`crate::field_regions::MapObject::world`], `tile * 128 + 0x40` plus the
-/// descriptor's fine offsets), which `FUN_8003A55C` stores in the actor's
-/// `+0x14 / +0x18`. The contact box sits off it by the key-tile and touch
-/// offsets the touch test adds (`FUN_801CFC40`), so a context seated there
-/// stood up to a few tiles from the object it scripts: `map01`'s Rim Elm
-/// landmark (record 8) is keyed two tiles north of where it stands, and the
-/// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
-/// as a 256-unit move. This is what the object-bind script contexts are
-/// seated on (`crate::field_channels::spawn_object_channels`); the portal
-/// and walk-touch layers keep the contact centre.
+/// descriptor's fine offsets), angles and seat height
+/// ([`crate::field_regions::MapObject::seat_y`]) - the `+0x14 / +0x18`,
+/// `+0x24..+0x28` and `+0x16` `FUN_8003A55C` stores.
+///
+/// The seat is not the contact centre: that box sits off it by the key-tile
+/// and touch offsets the touch test adds (`FUN_801CFC40`), so a context
+/// seated there stood up to a few tiles from the object it scripts -
+/// `map01`'s Rim Elm landmark (record 8) is keyed two tiles north of where it
+/// stands. The portal and walk-touch layers keep the contact centre.
+///
+/// `runtime_ladder` is the negated ladder at `0x1F80035C`
+/// (`World::terrain.floor_height_lut`). The `object_spawn` retail-exec
+/// differential holds this list against the sweep itself.
 // REF: FUN_8003A55C
-pub fn object_script_bind_seats(
-    map: &[u8],
-    triggers: &[crate::field_regions::TileTrigger],
-) -> Vec<(usize, (i16, i16))> {
-    let mut seen: Vec<(usize, (i16, i16))> = Vec::new();
-    let mut out: Vec<(usize, (i16, i16))> = Vec::new();
-    for obj in crate::field_regions::parse_map_objects(map) {
-        let Some(t) = triggers
-            .iter()
-            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
-        else {
-            continue;
-        };
-        let record = usize::from(t.record);
-        if seen.contains(&(record, obj.contact)) {
-            continue;
-        }
-        seen.push((record, obj.contact));
-        out.push((record, obj.world));
-    }
-    out
-}
-
-/// The bind-time rotation of each object-bind script context, keyed by flat
-/// record: the authored `.MAP` angles of the **first** object that binds the
-/// record ([`crate::field_regions::MapObject::rot`]), the same object whose
-/// world position seats the context ([`object_script_bind_seats`]).
-/// `FUN_8003A55C` copies them into the actor's `+0x24 / +0x26 / +0x28`, so a
-/// context's heading starts at the object's own yaw rather than `0`.
-// REF: FUN_8003A55C
-pub fn object_script_bind_rots(
-    map: &[u8],
-    triggers: &[crate::field_regions::TileTrigger],
-) -> std::collections::HashMap<usize, [u16; 3]> {
-    let mut out = std::collections::HashMap::new();
-    for obj in crate::field_regions::parse_map_objects(map) {
-        if let Some(t) = triggers
-            .iter()
-            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
-        {
-            out.entry(usize::from(t.record)).or_insert(obj.rot);
-        }
-    }
-    out
-}
-
-/// The bind-time **height** of each object-bind script context, keyed by
-/// flat record: the seat Y of the **first** object that binds the record
-/// ([`crate::field_regions::MapObject::seat_y`], `ladder[nibble] + y_off`),
-/// the same object [`object_script_bind_seats`] and
-/// [`object_script_bind_rots`] seat the context from. `FUN_8003A55C` stores it
-/// in the actor's `+0x16`, so the actor's Y is absolute from the start: a
-/// script that later writes `+0x16` (op `4C 42`'s `world_y = -value` mirror,
-/// the actor tick's `-(+0x8E)` law) sets where the mesh is drawn, not how far
-/// it moves. `runtime_ladder` is the negated ladder at `0x1F80035C`
-/// (`World::terrain.floor_height_lut`).
-// REF: FUN_8003A55C
-pub fn object_script_bind_heights(
+pub fn object_script_bind_objects(
     map: &[u8],
     triggers: &[crate::field_regions::TileTrigger],
     runtime_ladder: &[i16; 16],
-) -> std::collections::HashMap<usize, i16> {
-    let mut out = std::collections::HashMap::new();
-    for obj in crate::field_regions::parse_map_objects(map) {
-        if let Some(t) = triggers
-            .iter()
-            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
-        {
-            out.entry(usize::from(t.record))
-                .or_insert(obj.seat_y(runtime_ladder));
-        }
-    }
-    out
+) -> Vec<ObjectScriptBind> {
+    crate::field_regions::parse_map_objects(map)
+        .into_iter()
+        .filter_map(|obj| {
+            let t = triggers
+                .iter()
+                .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)?;
+            Some(ObjectScriptBind {
+                record: usize::from(t.record),
+                tile: obj.tile,
+                key_tile: obj.key_tile,
+                seat: obj.world,
+                rot: obj.rot,
+                seat_y: obj.seat_y(runtime_ladder),
+            })
+        })
+        .collect()
 }
 
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first

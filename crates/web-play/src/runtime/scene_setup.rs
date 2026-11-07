@@ -234,7 +234,7 @@ impl LegaiaRuntime {
                 .iter()
                 .cloned()
                 .zip(fr.placement_scales.iter().copied())
-                .zip(&fr.placement_records)
+                .zip(&fr.placement_keys)
                 .filter(|(_, r)| !r.is_some_and(|r| hidden.contains(&r)))
                 .map(|(p, _)| p)
                 .unzip();

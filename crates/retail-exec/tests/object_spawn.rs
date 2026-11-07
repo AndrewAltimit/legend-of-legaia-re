@@ -2,14 +2,18 @@
 //! `.MAP` and fallback window: which objects spawn an actor bound to a
 //! script, where each is seated, its angles and the record it runs. Held
 //! against `parse_map_objects` joined with the kind-1 lookup, the decode the
-//! port's bind seats, walk-touch binds and object channels are built from.
+//! port's bind seats, walk-touch binds and object channels are built from -
+//! and the port's own bind list and context set: one script context per
+//! object retail spawns, two objects bound to one record included.
 
 use crate::common::{Rng, disc, scus_cpu};
 use crate::walk_on::{index, map_image};
+use legaia_engine_core::world::World;
 use legaia_engine_field::field_regions::{
     MAP_REGION_BLOCK_OFFSET, MAP_TRIGGER_FALLBACK_OFFSET, lookup_tile_trigger, parse_map_objects,
     parse_tile_triggers,
 };
+use legaia_engine_field::man_field_scripts::object_script_bind_objects;
 use legaia_engine_scene::scene::Scene;
 use psx_retail_exec::{A0, Stop, V0};
 use std::cell::RefCell;
@@ -61,7 +65,7 @@ fn the_object_sweep_binds_what_retail_binds() {
     cpu.mem.load(MAN, &man);
     cpu.mem.wr32(MAN_PTR, MAN);
     let mut rng = Rng(0x4F42_4A53);
-    let (mut scenes, mut binds, mut failures) = (0, 0, Vec::new());
+    let (mut scenes, mut binds, mut shared, mut failures) = (0, 0, 0, Vec::new());
     for name in index.cdname_scene_names() {
         let Ok(scene) = Scene::load(&index, &name) else {
             continue;
@@ -132,6 +136,46 @@ fn the_object_sweep_binds_what_retail_binds() {
             })
             .collect();
         binds += retail.len();
+        // The port's bind list and the contexts the world spawns from it:
+        // one per object, in the sweep's order, with retail's seat, height,
+        // angles and script id.
+        let triggers: Vec<_> = k1p.iter().chain(&k1f).cloned().collect();
+        let objects = object_script_bind_objects(&image, &triggers, &ladder);
+        let port_binds: Vec<_> = objects
+            .iter()
+            .map(|b| (b.seat, b.seat_y as u16, b.rot, b.record as u16))
+            .collect();
+        let retail_binds: Vec<_> = retail
+            .iter()
+            .map(|s| ((s.2.0 as i16, s.2.2 as i16), s.2.1, s.3, s.4))
+            .collect();
+        if port_binds != retail_binds && failures.len() < 12 {
+            failures.push(format!(
+                "{name}: object_script_bind_objects differs from the sweep"
+            ));
+        }
+        let distinct: std::collections::BTreeSet<u16> = retail.iter().map(|s| s.4).collect();
+        shared += retail.len() - distinct.len();
+        if let Ok(Some(man_bytes)) = scene.field_man_payload(&index)
+            && let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes)
+        {
+            let mut world = World::default();
+            world.seed_field_channels(&man_file, &man_bytes);
+            world.seed_object_channels(&man_file, &man_bytes, &objects);
+            let ids: Vec<u16> = world
+                .field_vm
+                .channels
+                .iter()
+                .filter(|c| c.object_bind)
+                .map(|c| c.ctx.script_id)
+                .collect();
+            let want: Vec<u16> = retail.iter().map(|s| s.4).collect();
+            if ids != want && failures.len() < 12 {
+                failures.push(format!(
+                    "{name}: object context ids {ids:?}, retail spawns {want:?}"
+                ));
+            }
+        }
         if retail != port && failures.len() < 12 {
             let only_r: Vec<_> = retail
                 .iter()
@@ -151,6 +195,8 @@ fn the_object_sweep_binds_what_retail_binds() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    eprintln!("{scenes} scenes, {binds} object binds");
+    eprintln!(
+        "{scenes} scenes, {binds} object binds, {shared} on a record an earlier object binds"
+    );
     assert!(scenes > 100 && binds > 500, "{scenes} {binds}");
 }

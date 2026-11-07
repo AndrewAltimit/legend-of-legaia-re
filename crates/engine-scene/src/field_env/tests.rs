@@ -167,10 +167,13 @@ fn floor_following_records_drop_their_lift() {
     let env_tmds = vec![10, 11, 12];
     let mut lut = [0i16; 16];
     lut[15] = 480;
+    // One object per cell: each placement on its own tile.
     let mut follows = placement(Some(1), Some(15), 2080);
     follows.anchor_col = 7;
+    follows.col = 7;
     let mut keeps = placement(Some(2), Some(15), -56);
     keeps.anchor_col = 8;
+    keeps.col = 8;
     let free = placement(Some(0), Some(15), 300);
     let mut binds = HashMap::new();
     binds.insert(
@@ -193,7 +196,11 @@ fn floor_following_records_drop_their_lift() {
         draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
         [1600, -536, -180]
     );
-    follow_floor_placed_draws(&mut draws, &binds, |r, _, _| (r == 0).then_some(-480));
+    // The world answers per object: the floor follower is the first draw's.
+    let follower = placed_object_key(&draws[0], Some(&binds)).expect("bound");
+    follow_floor_placed_draws(&mut draws, &binds, |k, _, _| {
+        (k == follower).then_some(-480)
+    });
     assert_eq!(
         draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
         [-480, -536, -180]

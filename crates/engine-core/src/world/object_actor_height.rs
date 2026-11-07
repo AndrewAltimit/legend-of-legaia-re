@@ -34,7 +34,8 @@ use super::*;
 const ACTOR_Y_FROM_8E: u32 = 0x2000_0000;
 
 impl World {
-    /// Schedule a tween on object-bind actor `record`'s `slot` from `start`
+    /// Schedule a tween on object-bind actor `record`'s `slot` (`record` is
+    /// the channel key, [`legaia_engine_field::field_channels::object_channel_keys`]) from `start`
     /// to `end` over `ticks` frames. A later tween of the same word replaces
     /// the earlier one.
     pub(crate) fn schedule_object_ramp(
@@ -70,7 +71,7 @@ impl World {
                 .field_vm
                 .channels
                 .iter_mut()
-                .find(|c| c.object_bind && c.ctx.script_id == r.record)
+                .find(|c| c.object_bind && c.placement_index == usize::from(r.record))
             {
                 match r.slot {
                     ObjectRampSlot::Height8E => c.ctx.field_8e = v as i16,
@@ -138,7 +139,7 @@ impl World {
                 .field_vm
                 .channels
                 .iter_mut()
-                .find(|c| c.object_bind && c.ctx.script_id == record)
+                .find(|c| c.object_bind && c.placement_index == usize::from(record))
             else {
                 continue;
             };
@@ -196,6 +197,7 @@ impl World {
     ) {
         let colour = colour & 0x00FF_FFFF;
         let record = self.field_vm.executing_object;
+        let own_record = record.map(|k| self.object_key_record(k));
         let key = match target {
             Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
             // An object's record naming its own id (`CC <own> 81 ..`):
@@ -205,9 +207,14 @@ impl World {
             // port's channel table does not hold the channel until its
             // prologue has run. `rayman`'s sinking set pieces (`P0[5]`,
             // `P0[6]`, `P0[8]`, `P0[9]`) black themselves out this way once
-            // their collapse flag is up.
-            Some(t) if record == Some(u16::from(t)) => {
-                return self.set_object_tint(ctx, u16::from(t), colour, blend, ticks);
+            // their collapse flag is up. The walk answers the record's
+            // first actor, so a later object on the same record naming its
+            // own id tints the first.
+            Some(t) if own_record == Some(u16::from(t)) => {
+                if record == Some(u16::from(t)) {
+                    return self.set_object_tint(ctx, u16::from(t), colour, blend, ticks);
+                }
+                ActorTintKey::Object(u16::from(t))
             }
             Some(t) => {
                 let view = self.channel_view();
@@ -218,7 +225,7 @@ impl World {
                 };
                 let ch = &view[ci];
                 if ch.object_bind {
-                    let r = ch.ctx.script_id;
+                    let r = ch.placement_index as u16;
                     if record == Some(r) {
                         return self.set_object_tint(ctx, r, colour, blend, ticks);
                     }
@@ -324,7 +331,7 @@ impl World {
             .and_then(ActorTint::drawn)
     }
 
-    /// Flat partition-0 record index -> `(word, blend)` for every
+    /// Object key ([`Self::object_draw_keys`]) -> `(word, blend)` for every
     /// **object-bind channel** whose actor draws tinted (`+0x78 != 0`) or
     /// semi-transparent (`+0x74` bit 31): the whole `+0x74` word and `+0x78`
     /// (`0x1000` = full). The actor draw hands both to the prim dispatcher
@@ -367,7 +374,9 @@ impl World {
                 }
             }
         }
-        out
+        out.into_iter()
+            .flat_map(|(k, t)| self.object_draw_keys(k).map(move |k| (k, t)))
+            .collect()
     }
 
     /// Write a retail state's primitive-flag byte (bit 7 the
@@ -428,17 +437,20 @@ impl World {
                             &self.sin_lut,
                             &self.cos_lut,
                         )?;
-                        let key = if c.object_bind {
-                            ActorTintKey::Object(c.placement_index as u16)
+                        let keys: Vec<ActorTintKey> = if c.object_bind {
+                            self.object_draw_keys(c.placement_index)
+                                .map(|k| ActorTintKey::Object(k as u16))
+                                .collect()
                         } else {
-                            ActorTintKey::Npc(c.placement_index)
+                            vec![ActorTintKey::Npc(c.placement_index)]
                         };
                         let scale = match c.ctx.field_72 {
                             0 => 1.0,
                             s => f32::from(s) / 4096.0,
                         };
-                        Some((key, clip, scale))
-                    }),
+                        Some(keys.into_iter().map(move |k| (k, clip, scale)))
+                    })
+                    .flatten(),
             )
             .collect()
     }
@@ -511,7 +523,8 @@ mod tests {
     #[test]
     fn a_prefixed_tint_lands_on_the_named_actor() {
         let mut w = World::default();
-        w.field_vm.channels = vec![channel(3, 0x46, false), channel(9, 0x12, true)];
+        // An object channel's key is its record (the first object bound).
+        w.field_vm.channels = vec![channel(3, 0x46, false), channel(0x12, 0x12, true)];
         let mut caller = legaia_engine_vm::field::FieldCtx::default();
         w.set_actor_tint(&mut caller, Some(0xF8), false, 0x4040FF, 0x100, 0);
         assert_eq!(w.player_draw_tint(), Some((0x4040FF, 0x100)));

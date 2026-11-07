@@ -275,7 +275,11 @@ fn object_channels_seed_without_partition1_placements() {
         world.field_vm.channels.is_empty(),
         "no placements -> no placement channels"
     );
-    world.seed_object_channels(&man_file, &man, &[(0usize, (100i16, 200i16))]);
+    world.seed_object_channels(
+        &man_file,
+        &man,
+        &[legaia_engine_field::man_field_scripts::ObjectScriptBind::at(0, (100, 200))],
+    );
     let obj = world
         .field_vm
         .channels
@@ -318,8 +322,14 @@ fn an_object_bind_prologue_turn_reaches_the_draw() {
 
     let mut world = World::default();
     world.seed_field_channels(&man_file, &man);
-    world.set_object_bind_rots([(0usize, [0u16, 320, 0])].into_iter().collect());
-    world.seed_object_channels(&man_file, &man, &[(0usize, (100i16, 200i16))]);
+    world.seed_object_channels(
+        &man_file,
+        &man,
+        &[legaia_engine_field::man_field_scripts::ObjectScriptBind {
+            rot: [0, 320, 0],
+            ..legaia_engine_field::man_field_scripts::ObjectScriptBind::at(0, (100, 200))
+        }],
+    );
     let turns = world.object_draw_turns();
     assert_eq!(turns.get(&0), Some(&[0, 0x600, 0]));
 

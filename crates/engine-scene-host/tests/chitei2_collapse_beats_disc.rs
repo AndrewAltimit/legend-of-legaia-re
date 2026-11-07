@@ -231,6 +231,8 @@ fn the_corridor_pillars_turn_translucent_on_the_walk_on_or_skip() {
             .into_iter()
             .filter(|&(_, (word, _))| word >> 24 == 0x83)
             .map(|(r, _)| r)
+            // The record keys; each also answers under its object's key.
+            .filter(|&r| r < legaia_engine_field::field_channels::OBJECT_INSTANCE_KEY_BASE)
             .collect();
         v.sort_unstable();
         v

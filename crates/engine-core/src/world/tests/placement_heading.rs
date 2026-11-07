@@ -288,7 +288,8 @@ fn a_player_height_tween_lifts_the_player() {
 fn a_ramped_roll_write_turns_a_placed_object() {
     let mut w = world_with_placement();
     w.field_vm.executing_channel = None;
-    w.field_vm.executing_object = Some(0x12);
+    // The executing object is named by its channel key.
+    w.field_vm.executing_object = Some(9);
     let mut c = plank_channel(9);
     c.object_bind = true;
     c.ctx.script_id = 0x12;

@@ -50,6 +50,9 @@ pub(crate) struct PosedPropDraw {
     /// The placement's footprint-anchor tile - its key into
     /// `PlayWindowApp::field_prop_anims`.
     pub anchor: (u8, u8),
+    /// The placement's own cell: with its record, the key its actor's state
+    /// is found under (`field_env::placed_object_key_of`).
+    pub cell: (u8, u8),
     /// The clip id the prop's bind names (ANM record `anim_id - 1`).
     pub anim_id: u8,
     /// World model matrix.
@@ -533,6 +536,12 @@ pub(super) struct PlayWindowApp {
     /// its op-`4C 81` draw tint (`World::object_draw_tints`).
     pub(super) world_map_terrain_records: Vec<Option<usize>>,
     pub(super) world_map_terrain_color_records: Vec<Option<usize>>,
+    /// Each world-map terrain draw's object key
+    /// (`field_env::placed_object_key_of`), parallel to the draws: the key
+    /// its actor's live seat, turn and tint are read by.
+    pub(super) world_map_terrain_keys: Vec<Option<usize>>,
+    /// [`Self::world_map_terrain_keys`] for the colour bridge.
+    pub(super) world_map_terrain_color_keys: Vec<Option<usize>>,
     /// Where the decoration layer starts in `world_map_terrain_draws` /
     /// `world_map_terrain_color_draws` (landmarks first): the draws from here
     /// on carry retail's per-object decoration depth cue

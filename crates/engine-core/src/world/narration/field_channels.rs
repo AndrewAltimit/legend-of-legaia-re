@@ -71,8 +71,52 @@ impl World {
                     || c.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
             })
             .map(|c| c.placement_index)
+            .chain(self.field_vm.retired_objects.iter().copied())
+            .flat_map(|k| self.object_draw_keys(k))
             .chain(self.pack_mode_hidden_prop_records())
             .collect()
+    }
+
+    /// The keys a host finds object `key`'s actor state under: the channel
+    /// key itself and, when that is the flat record (the first object the
+    /// record binds), the object's per-object key too
+    /// ([`legaia_engine_field::field_channels::object_instance_key`]). A
+    /// host looks a bound placed draw up by the per-object key of its own
+    /// cell ([`legaia_engine_scene::field_env::placed_object_keys`]), so
+    /// every object reads its own actor; the record key is the id
+    /// `FUN_8003C83C` answers with that first object.
+    pub(crate) fn object_draw_keys(&self, key: usize) -> impl Iterator<Item = usize> + use<> {
+        let instance = self
+            .field_vm
+            .object_binds_by_key
+            .get(&key)
+            .map(|b| legaia_engine_field::field_channels::object_instance_key(b.tile))
+            .filter(|&i| i != key);
+        std::iter::once(key).chain(instance)
+    }
+
+    /// The flat record (script id) object-bind channel `key` runs:
+    /// the key itself for the first object a record binds.
+    pub(crate) fn object_key_record(&self, key: u16) -> u16 {
+        self.field_vm
+            .object_binds_by_key
+            .get(&usize::from(key))
+            .map_or(key, |b| b.record as u16)
+    }
+
+    /// The prop-bank anchor (the bind's key tile) of object-bind channel
+    /// `key`. With no binds installed (a prop run ahead of the channels) the
+    /// key is a record, and the first of its props answers.
+    pub(crate) fn object_key_anchor(&self, key: usize) -> Option<(u8, u8)> {
+        if let Some(b) = self.field_vm.object_binds_by_key.get(&key) {
+            return Some(b.key_tile);
+        }
+        self.props
+            .bank
+            .props
+            .iter()
+            .find(|(_, p)| p.record == key)
+            .map(|(&a, _)| a)
     }
 
     /// The flat partition-0 records whose bound actor carries a bit of
@@ -84,7 +128,7 @@ impl World {
             .channels
             .iter()
             .filter(|c| c.object_bind && c.ctx.flags & 0x8080_0000 != 0)
-            .map(|c| c.placement_index)
+            .flat_map(|c| self.object_draw_keys(c.placement_index))
             .collect()
     }
 
@@ -130,7 +174,10 @@ impl World {
             .channels
             .iter()
             .filter(|c| c.object_bind && c.ctx.field_72 != 0 && c.ctx.field_72 != 0x1000)
-            .map(|c| (c.placement_index, c.ctx.field_72))
+            .flat_map(|c| {
+                self.object_draw_keys(c.placement_index)
+                    .map(move |k| (k, c.ctx.field_72))
+            })
             .collect()
     }
 
@@ -158,7 +205,7 @@ impl World {
             .filter(|c| {
                 c.object_bind && c.ctx.flags & 0x2000_0000 == 0 && c.ctx.flags & 0x0002_0200 != 0
             })
-            .map(|c| c.placement_index)
+            .flat_map(|c| self.object_draw_keys(c.placement_index))
             .collect()
     }
 
@@ -214,18 +261,16 @@ impl World {
     pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
         let follow = self.object_floor_follow_records();
-        // A record bound at several tiles seats its one channel at the first
-        // bind (`spawn_object_channels` skips the repeats).
-        let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
-        for &(record, pos) in &self.field_vm.object_channel_binds {
-            seeds.entry(record).or_insert(pos);
-        }
         self.field_vm
             .channels
             .iter()
             .filter(|c| c.object_bind && !(c.ctx.world_x == hide && c.ctx.world_z == hide))
             .filter_map(|c| {
-                let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let (sx, sz) = self
+                    .field_vm
+                    .object_binds_by_key
+                    .get(&c.placement_index)?
+                    .seat;
                 let sy = self
                     .field_vm
                     .object_channel_heights
@@ -249,6 +294,7 @@ impl World {
                 let d = [lx - i32::from(sx), dy, lz - i32::from(sz)];
                 (d != [0, 0, 0]).then_some((c.placement_index, d))
             })
+            .flat_map(|(k, d)| self.object_draw_keys(k).map(move |k| (k, d)))
             // A pack map's animated props, under their own record keys.
             .chain(self.expansion_prop_moves())
             .collect()
@@ -317,6 +363,7 @@ impl World {
                 let turned = live.iter().zip(seed).any(|(&l, s)| (l ^ s) & 0x0FFF != 0);
                 turned.then_some((c.placement_index, live))
             })
+            .flat_map(|(k, live)| self.object_draw_keys(k).map(move |k| (k, live)))
             .collect()
     }
 
@@ -476,22 +523,34 @@ impl World {
     ///
     /// The channel leaves the set, so `FUN_8003C83C` lookups miss it, and the
     /// slot parks in the hide box, which every placement surface (draw, shadow,
-    /// talk probe, collision, lights) already reads as "not here". Object-bind
-    /// contexts stay in the set for [`Self::hidden_object_records`]: nothing
-    /// re-seats one.
+    /// talk probe, collision, lights) already reads as "not here". A retired
+    /// object-bind context leaves the set too, its key kept for
+    /// [`Self::hidden_object_records`]: nothing re-seats one.
     fn retire_killed_field_channels(&mut self) {
         use legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
         // A killed object drops out of the collision and touch lists with its
-        // draw; a cross-context `B1 <obj> 03` reached only the channel.
-        for c in &self.field_vm.channels {
-            if c.object_bind && c.ctx.flags & CONTEXT_RETIRE_BIT != 0 {
-                for prop in self.props.bank.props.values_mut() {
-                    if prop.record == c.placement_index {
-                        prop.cflags |= CONTEXT_RETIRE_BIT;
-                    }
-                }
+        // draw; a cross-context `B1 <obj> 03` reached only the channel. The
+        // actor leaves the list (`FUN_8002519C` unlinks it), so the next
+        // `B1 <obj> 03` reaches the record's next object: `rikuroa`'s summit
+        // beat retires six of record 0's props, eight frames apart.
+        let killed_objects: Vec<usize> = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && c.ctx.flags & CONTEXT_RETIRE_BIT != 0)
+            .map(|c| c.placement_index)
+            .collect();
+        for key in killed_objects {
+            if let Some(anchor) = self.object_key_anchor(key)
+                && let Some(prop) = self.props.bank.props.get_mut(&anchor)
+            {
+                prop.cflags |= CONTEXT_RETIRE_BIT;
             }
+            self.field_vm.retired_objects.insert(key);
         }
+        self.field_vm
+            .channels
+            .retain(|c| !c.object_bind || c.ctx.flags & CONTEXT_RETIRE_BIT == 0);
         let killed: Vec<usize> = self
             .field_vm
             .channels
@@ -672,7 +731,7 @@ impl World {
                 });
                 self.field_vm.executing_object = target
                     .filter(|&ci| channels[ci].object_bind)
-                    .map(|ci| channels[ci].ctx.script_id);
+                    .map(|ci| channels[ci].placement_index as u16);
                 self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
@@ -740,12 +799,9 @@ impl World {
                 // A poke at a placed object's clip words reaches the clip it
                 // already plays (`World::poke_object_prop_words`).
                 if let Some((ci, flags, rate)) = object_words {
+                    let key = channels[ci].placement_index;
                     let c = &channels[ci].ctx;
-                    self.poke_object_prop_words(
-                        c.script_id,
-                        (flags, c.local_flags),
-                        (rate, c.field_6a),
-                    );
+                    self.poke_object_prop_words(key, (flags, c.local_flags), (rate, c.field_6a));
                 }
                 match result {
                     FieldStepResult::Advance { next_pc } => {
@@ -796,7 +852,7 @@ impl World {
                             && let Some(leg) = compass_walk_operands(&man[record_offset..], pc)
                         {
                             channels[ci].ctx.flags |= 0x400;
-                            self.arm_object_glide_leg(channels[ci].ctx.script_id, leg);
+                            self.arm_object_glide_leg(channels[ci].placement_index as u16, leg);
                         }
                         let stalled = resume_pc == pc;
                         channels[i].pc = resume_pc;
@@ -885,6 +941,8 @@ impl World {
         // A new scene's binds are installed by `seed_object_channels` after
         // the trigger tables resolve; drop the previous scene's.
         self.field_vm.object_channel_binds.clear();
+        self.field_vm.object_binds_by_key.clear();
+        self.field_vm.retired_objects.clear();
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
         self.npcs.clip_cursors.clear();
@@ -896,8 +954,10 @@ impl World {
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
-    /// `FUN_8003A55C`): one context per bound object, script id = the gate-0
-    /// trigger's **flat** MAN record index (`actor[+0x50] = trigger[2]`).
+    /// `FUN_8003A55C`): one context per bound object - two objects bound to
+    /// one record are two contexts - script id = the gate-0 trigger's
+    /// **flat** MAN record index (`actor[+0x50] = trigger[2]`), seated on
+    /// the object's own position, angles and height.
     /// This is what makes partition-0 records resolvable cross-context
     /// targets through the `FUN_8003C83C` walk - the `town01` Mei walk-on
     /// beat pokes the Vahn's-house door object as channel `0x01`.
@@ -917,9 +977,9 @@ impl World {
         &mut self,
         man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
-        binds: &[(usize, (i16, i16))],
+        binds: &[legaia_engine_field::man_field_scripts::ObjectScriptBind],
     ) {
-        self.field_vm.object_channel_binds = binds.to_vec();
+        self.install_object_binds(binds);
         let same_man = self
             .field_vm
             .channels_man
@@ -933,6 +993,30 @@ impl World {
         self.seat_object_channel_rots(&mut obj);
         self.pre_run_object_channel_prologues(&mut obj, man);
         self.field_vm.channels.extend(obj);
+    }
+
+    /// Record the scene's object binds ([`Self::seed_object_channels`]):
+    /// the list, its channel keys, and each object's own angles and seat
+    /// height under every key a host looks its draw up by
+    /// ([`Self::object_draw_keys`]).
+    pub(crate) fn install_object_binds(
+        &mut self,
+        binds: &[legaia_engine_field::man_field_scripts::ObjectScriptBind],
+    ) {
+        self.field_vm.object_channel_binds = binds.to_vec();
+        self.field_vm.retired_objects.clear();
+        self.field_vm.object_binds_by_key =
+            legaia_engine_field::field_channels::object_channel_keys(binds)
+                .into_iter()
+                .zip(binds.iter().copied())
+                .collect();
+        for (&key, b) in &self.field_vm.object_binds_by_key {
+            let instance = legaia_engine_field::field_channels::object_instance_key(b.tile);
+            for k in [key, instance] {
+                self.field_vm.object_channel_rots.insert(k, b.rot);
+                self.field_vm.object_channel_heights.insert(k, b.seat_y);
+            }
+        }
     }
 
     /// The `FUN_8003A55C` bind-time prologue pre-run: for each object-bind
@@ -969,7 +1053,7 @@ impl World {
                 }
                 // The bind's own context is the one executing: an op-`0x4B`
                 // here arms the bound object's morph lanes.
-                self.field_vm.executing_object = Some(c.ctx.script_id);
+                self.field_vm.executing_object = Some(c.placement_index as u16);
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     field_step_routed(&mut host, &mut c.ctx, bc, pc)
@@ -991,7 +1075,7 @@ impl World {
                         // REF: FUN_8003BC08, FUN_8003774C
                         if let Some(leg) = compass_walk_operands(bc, pc).filter(|_| op & 0x80 == 0)
                         {
-                            self.arm_object_glide_leg(c.ctx.script_id, leg);
+                            self.arm_object_glide_leg(c.placement_index as u16, leg);
                         }
                         c.pc = resume_pc;
                         break;

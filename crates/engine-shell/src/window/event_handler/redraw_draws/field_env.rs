@@ -305,7 +305,13 @@ impl<'m> DrawCtx<'_, 'm> {
             // no-op unless retail windowing is on).
             let static_window = &app.session.host.world.terrain.static_window;
             for (di, (mesh_idx, model)) in app.field_placement_draws.iter().enumerate() {
-                let record = app.field_placement_records.get(di).copied().flatten();
+                // The draw's own actor (`field_env::placed_object_key_of`).
+                let record = legaia_engine_scene::field_env::placed_object_key_of(
+                    app.field_placement_records.get(di).copied().flatten(),
+                    app.field_placement_cell_keys
+                        .get(di)
+                        .map_or((0, 0), |k| k.cell),
+                );
                 if parked(record) {
                     continue;
                 }
@@ -431,7 +437,12 @@ impl<'m> DrawCtx<'_, 'm> {
         if layer_on("cplace") {
             let static_window = &app.session.host.world.terrain.static_window;
             for (di, (mesh_idx, model)) in app.field_placement_color_draws.iter().enumerate() {
-                let record = app.field_placement_color_records.get(di).copied().flatten();
+                let record = legaia_engine_scene::field_env::placed_object_key_of(
+                    app.field_placement_color_records.get(di).copied().flatten(),
+                    app.field_placement_color_cell_keys
+                        .get(di)
+                        .map_or((0, 0), |k| k.cell),
+                );
                 if parked(record) {
                     continue;
                 }

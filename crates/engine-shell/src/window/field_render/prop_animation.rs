@@ -156,8 +156,8 @@ impl PlayWindowApp {
     ) {
         // A script can move a posed prop's actor (`A3` seat, a `4C 42` lift)
         // like any placed object's; retail draws it at the actor
-        // (`World::object_draw_displacements`). The bind record also keys
-        // the prop's draw tint for the caller.
+        // (`World::object_draw_displacements`). The object key also keys
+        // the prop's draw tint for the caller: one actor per bound object.
         let moves = self.session.host.world.object_draw_displacements();
         let turns = self.session.host.world.object_draw_turn_matrices();
         let parked = self.session.host.world.hidden_object_records();
@@ -187,6 +187,7 @@ impl PlayWindowApp {
                 .props
                 .get(&p.anchor)
                 .map(|s| s.record);
+            let record = legaia_engine_scene::field_env::placed_object_key_of(record, p.cell);
             if record.is_some_and(|r| parked.contains(&r)) {
                 continue;
             }

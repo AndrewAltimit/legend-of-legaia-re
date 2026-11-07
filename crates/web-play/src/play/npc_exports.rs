@@ -252,7 +252,7 @@ impl LegaiaRuntime {
                 let Some(r) = self
                     .field
                     .as_ref()
-                    .and_then(|f| f.placement_records.get(key as usize).copied().flatten())
+                    .and_then(|f| f.placement_keys.get(key as usize).copied().flatten())
                 else {
                     return Vec::new();
                 };

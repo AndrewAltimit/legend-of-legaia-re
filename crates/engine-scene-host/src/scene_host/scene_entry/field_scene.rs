@@ -987,22 +987,28 @@ impl SceneHost {
                     // (`actor[+0x50] = trigger[2]`), making partition-0
                     // records resolvable cross-context targets - the town01
                     // Mei walk-on beat pokes the Vahn's-house door object as
-                    // channel `0x01`. Spawn one poke-target channel per bind
-                    // (bind-time `0x24`/`0x25` prologues pre-run inside).
-                    // Falls back to the gate-0 trigger tiles when the scene
-                    // has no readable `.MAP` object layer.
+                    // channel `0x01`. Spawn one channel per bound object -
+                    // two objects on one record are two contexts - seated on
+                    // the object's own position, angles and height against
+                    // the ladder the scene installed above (bind-time
+                    // `0x24`/`0x25` prologues pre-run inside). Falls back to
+                    // the gate-0 trigger tiles when the scene has no
+                    // readable `.MAP` object layer.
                     // REF: FUN_8003A55C, FUN_8003C83C
-                    let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
+                    let ladder = self.world.terrain.floor_height_lut;
+                    let object_binds: Vec<
+                        legaia_engine_field::man_field_scripts::ObjectScriptBind,
+                    > = match map_bytes.as_deref() {
                         Some(map) => {
-                            legaia_engine_field::man_field_scripts::object_script_bind_seats(
-                                map, &triggers,
+                            legaia_engine_field::man_field_scripts::object_script_bind_objects(
+                                map, &triggers, &ladder,
                             )
                         }
                         None => triggers
                             .iter()
                             .filter(|t| t.gate == 0)
                             .map(|t| {
-                                (
+                                legaia_engine_field::man_field_scripts::ObjectScriptBind::at(
                                     t.record as usize,
                                     (
                                         i16::from(t.tile_x) * 128 + 0x40,
@@ -1028,31 +1034,6 @@ impl SceneHost {
                             ),
                         );
                     }
-                    self.world.set_object_bind_rots(
-                        map_bytes
-                            .as_deref()
-                            .map(|map| {
-                                legaia_engine_field::man_field_scripts::object_script_bind_rots(
-                                    map, &triggers,
-                                )
-                            })
-                            .unwrap_or_default(),
-                    );
-                    // Each bind's seat Y (`ladder[nibble] + y_off`), against
-                    // the ladder the scene installed above: a height write
-                    // on the actor is absolute, and the draw measures it
-                    // from here (`World::object_draw_displacements`).
-                    let ladder = self.world.terrain.floor_height_lut;
-                    self.world.set_object_bind_heights(
-                        map_bytes
-                            .as_deref()
-                            .map(|map| {
-                                legaia_engine_field::man_field_scripts::object_script_bind_heights(
-                                    map, &triggers, &ladder,
-                                )
-                            })
-                            .unwrap_or_default(),
-                    );
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

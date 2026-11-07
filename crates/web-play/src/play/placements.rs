@@ -96,7 +96,7 @@ impl LegaiaRuntime {
         };
         let tints = h.world.object_draw_tints();
         let out: Vec<i32> = f
-            .placement_records
+            .placement_keys
             .iter()
             .map(|r| {
                 r.and_then(|r| tints.get(&r))
@@ -140,7 +140,7 @@ impl LegaiaRuntime {
         let turns = h.world.object_draw_turn_matrices();
         let live =
             |r: &Option<usize>| r.is_some_and(|r| turns.contains_key(&r) || moves.contains_key(&r));
-        if !f.placement_records.iter().any(live) {
+        if !f.placement_keys.iter().any(live) {
             return Vec::new();
         }
         let floor = h.world.placed_floor_offsets(
@@ -149,7 +149,7 @@ impl LegaiaRuntime {
             &f.window_keys,
         );
         let mut out = Vec::with_capacity(f.placements.len() * 16);
-        for (i, (d, record)) in f.placements.iter().zip(&f.placement_records).enumerate() {
+        for (i, (d, record)) in f.placements.iter().zip(&f.placement_keys).enumerate() {
             if !live(record) {
                 out.extend_from_slice(&[0.0; 16]);
                 continue;
@@ -181,7 +181,7 @@ impl LegaiaRuntime {
         let near = h.world.near_bucket_object_records();
         f.placements
             .iter()
-            .zip(&f.placement_records)
+            .zip(&f.placement_keys)
             .map(|(d, r)| {
                 u8::from(d.far_corner_order) + 2 * u8::from(r.is_some_and(|r| near.contains(&r)))
             })
@@ -230,7 +230,7 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         let mask: Vec<u8> = f
-            .placement_records
+            .placement_keys
             .iter()
             .map(|r| u8::from(r.is_some_and(|r| parked.contains(&r))))
             .collect();
@@ -257,8 +257,8 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         let mut any = false;
-        let mut out = Vec::with_capacity(f.placement_records.len() * 4);
-        for r in &f.placement_records {
+        let mut out = Vec::with_capacity(f.placement_keys.len() * 4);
+        for r in &f.placement_keys {
             match r.and_then(|r| tints.get(&r)) {
                 Some(&(colour, blend)) => {
                     let (far, ir0) = legaia_engine_field::object_tint::tint_cue(colour, blend);
@@ -330,7 +330,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let moves = h.world.object_draw_displacements();
-        let per = field_env::placed_draw_displacements(&f.placement_records, &moves);
+        let per = field_env::placed_draw_displacements(&f.placement_keys, &moves);
         f.placements
             .iter()
             .zip(per)
