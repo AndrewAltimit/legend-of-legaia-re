@@ -26,6 +26,9 @@ const SET_DELAY: u32 = 0x8003_5BAC;
 const REPLACE: u32 = 0x8003_5BD0;
 const KEY_OFF: u32 = 0x8006_53C8;
 const KEY_ON: u32 = 0x8006_5034;
+/// The ring loop's head, once per slot: the back-edge at `0x80016E9C` lands
+/// here, and the slot's first instruction is `lui v0,0x8008`.
+const DRAIN_SLOT: u32 = 0x8001_6BFC;
 
 const GP: u32 = 0x8007_B318;
 const RING_IDS: u32 = 0x8007_B6D8;
@@ -37,6 +40,8 @@ const STACK_TOP: u32 = 0x801F_FF00;
 /// One libsnd call the drainer made, or one SPU event the port's bank made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Ev {
+    /// The drainer starts on a ring slot (`0x80016BF8`, the loop head).
+    Cue,
     Off(u8),
     /// `(voice, program, tone)`.
     On(u8, u8, u8),
@@ -100,6 +105,15 @@ fn rig(log: &Rc<RefCell<Vec<Ev>>>) -> Option<Cpu> {
         l.borrow_mut().push(Ev::Off(r.r[A0] as u8))
     });
     let l = log.clone();
+    // A hook stands in for a routine and returns through `ra`, so this one runs
+    // the slot's first instruction itself and resumes after it. The drainer
+    // saved its own `ra` on entry (`0x80016B80`) and restores it from there.
+    cpu.hook(DRAIN_SLOT, move |r, _| {
+        l.borrow_mut().push(Ev::Cue);
+        r.r[legaia_retail_exec::V0] = 0x8008_0000;
+        r.r[legaia_retail_exec::RA] = DRAIN_SLOT + 4;
+    });
+    let l = log.clone();
     // The routine goes on past the ring loop into the frame's vsync pacing,
     // which rewrites the frame step; the differential stops at the loop's exit.
     cpu.hook(DRAIN_LOOP_EXIT, |r, _| {
@@ -112,22 +126,37 @@ fn rig(log: &Rc<RefCell<Vec<Ev>>>) -> Option<Cpu> {
     Some(cpu)
 }
 
-/// Retail's one-shot arm keys each voice off right before it keys it on; the
-/// port's key-on restarts the voice, so the pair reads as the one key-on. (A
-/// sustained run's release of voice 7 ahead of its own key-on stays: the port
-/// keys that off too.)
+/// Retail's one-shot arm keys each voice off right before it keys it on, and
+/// nothing reaches the chip before the frame's flush: the key-off clears the
+/// voice's pending key-on (`FUN_80067480`), so of a cue's passes over one voice
+/// only the last keys it. The port's bank resolves a cue's passes that way and
+/// its key-on restarts the voice, so the pair reads as the one key-on and an
+/// earlier pass of the same cue on that voice drops out. (A sustained run's
+/// release of voice 7 ahead of its own key-on stays: the port keys that off
+/// too.) Across two cues of one drain the later key-on restarts the voice on
+/// both sides, so the cancel is folded inside a cue only.
 fn fold_rekeys(evs: &[Ev]) -> Vec<Ev> {
-    let mut out = Vec::new();
+    let mut out: Vec<Ev> = Vec::new();
+    let mut cue_start = 0;
     let mut i = 0;
     while i < evs.len() {
-        if let (Ev::Off(v), Some(Ev::On(w, _, _))) = (evs[i], evs.get(i + 1))
-            && v == *w
-            && v >= 0x10
-        {
-            i += 1;
-            continue;
+        match evs[i] {
+            Ev::Cue => cue_start = out.len(),
+            Ev::Off(v) if v >= 0x10 => {
+                let mut k = cue_start;
+                while k < out.len() {
+                    if matches!(out[k], Ev::On(w, ..) if w == v) {
+                        out.remove(k);
+                    } else {
+                        k += 1;
+                    }
+                }
+                if !matches!(evs.get(i + 1), Some(Ev::On(w, _, _)) if *w == v) {
+                    out.push(evs[i]);
+                }
+            }
+            e => out.push(e),
         }
-        out.push(evs[i]);
         i += 1;
     }
     out
@@ -201,7 +230,7 @@ fn the_ring_drains_and_keys_as_retail_does() {
     let table = legaia_game_tables::sfx_table::SfxTable::from_scus(&scus).expect("sfx table");
     let static_ids = table.entries().len() as u32;
     let vab = tagged_bank();
-    let mut reached = [0u32; 4]; // one-shot, sustained, runtime, wrapped cursor
+    let mut reached = [0u32; 5]; // one-shot, sustained, runtime, wrapped cursor, a pass cancelled
     for seed in 0..60u64 {
         let mut rng = Rng(seed);
         log.borrow_mut().clear();
@@ -309,7 +338,12 @@ fn the_ring_drains_and_keys_as_retail_does() {
                     reached[2] += 1;
                 }
             }
-            let retail = fold_rekeys(&std::mem::take(&mut *log.borrow_mut()));
+            let raw = std::mem::take(&mut *log.borrow_mut());
+            let retail = fold_rekeys(&raw);
+            let ons = |e: &[Ev]| e.iter().filter(|e| matches!(e, Ev::On(..))).count();
+            if ons(&raw) > ons(&retail) {
+                reached[4] += 1;
+            }
             let port = port_events(&mut spu);
             if retail
                 .iter()
