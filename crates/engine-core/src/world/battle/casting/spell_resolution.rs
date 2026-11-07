@@ -131,9 +131,13 @@ impl World {
             def.target,
             legaia_engine_battle::spells::SpellTarget::AllEnemies
         );
+        // What the module's own rolls already earned (its pre-hits, Ozma's
+        // ladder): each ran the finisher's XP tail when it rolled, so the fold
+        // adds to it rather than starting over.
         let mut summon_xp_gain: u32 = std::mem::take(&mut self.casting.module_hit_xp);
         if trains_spell_xp {
-            summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
+            summon_xp_gain =
+                summon_xp_gain.saturating_add(self.inline_module_spell_xp(def.id, jedo_banish));
         }
         // The Seru-magic **side-effect stager** (`FUN_801F3D3C`). Retail's
         // summon module calls it once as the cast commits, before any hit, and

@@ -431,6 +431,23 @@ fn a_waived_fold_banks_the_xp_its_modules_rolls_earned() {
     assert_eq!(world.casting.module_hit_xp, 0, "banked once");
 }
 
+/// A fold that is not waived adds to what the module's own rolls earned: Meta's,
+/// Terra's and Palma's pre-hits and Ozma's ladder each ran the finisher's XP
+/// tail (`FUN_801DD0AC` calls `FUN_801DDB30` on every roll, `0x801DD478`), so
+/// the fold's own hits bank on top of them, not in their place.
+#[test]
+fn a_folded_cast_banks_its_modules_rolls_beside_its_own() {
+    for id in [0x81u8, 0x9E, 0xA0] {
+        let (mut plain, def) = summon_xp_world_for(id, 4000, 4000);
+        let (mut pre, _) = summon_xp_world_for(id, 4000, 4000);
+        plain.cast_spell_on_slots(0, &def, &[1]);
+        pre.casting.module_hit_xp = 7;
+        pre.cast_spell_on_slots(0, &def, &[1]);
+        assert_eq!(xp_of(&pre, id), xp_of(&plain, id) + 7, "spell {id:#04X}");
+        assert_eq!(pre.casting.module_hit_xp, 0, "banked once");
+    }
+}
+
 /// PROT 0918's hit stages no clip: the fold lands its HP and leaves the
 /// victim's reaction channel alone.
 #[test]
