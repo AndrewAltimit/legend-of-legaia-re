@@ -279,8 +279,8 @@ the ring's step and then the measured costs
 harness seat: the walk up to the gate is unchanged and no play path reads it. Over the
 81 strike films it lifts step agreement with retail from `.80` to `.90` and the mean
 `within` from `.838` to `.842`, Cort 181's strike from `.763` to `.860` (yaw error `86`
-to `5`). A replayed cast keeps its pin past the gate: its module arms run on their
-own step tables, and the Death Game films lost `.05` of `image` off the pin while
+to `5`). Only a capture in the strike loop `0x1E..=0x20` takes the ring; a cast keeps its
+pin past the gate: its module arms run on their own step tables, and the Death Game films lost `.05` of `image` off the pin while
 their yaw closed.
 
 An injected cast seats the caster's clip and cursor on its begin
