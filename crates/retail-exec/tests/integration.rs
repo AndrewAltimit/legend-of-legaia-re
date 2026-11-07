@@ -68,6 +68,7 @@ mod slot_machine;
 mod spirit_cleanup;
 mod spoils;
 mod stat_aggregator;
+mod summon_roll_sites;
 mod text_width;
 mod tint_ease;
 mod turn_pick;

@@ -725,6 +725,7 @@ impl World {
     ///
     /// Not carried: the damage tallies the quartered part is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target).
+    /// REF: FUN_801DD0AC (each ladder roll, through [`Self::summon_module_roll`])
     fn ozma_hit_ladder(&mut self, passed: bool, monster_count: u8, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         for (e, _) in self.ra_seru_row(monster_count) {

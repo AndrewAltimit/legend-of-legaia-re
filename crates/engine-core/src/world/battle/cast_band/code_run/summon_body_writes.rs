@@ -261,8 +261,8 @@ impl World {
 
     /// The non-lethal pre-hits five summon modules land before the
     /// band's fold, on the pass that makes them: each target's roll is the
-    /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
-    /// clamped to `HP - 1`
+    /// summon branch of `FUN_801DD0AC` with its finisher
+    /// ([`Self::summon_module_roll`]), clamped to `HP - 1`
     /// ([`legaia_engine_cast::seru_magic_ticks::summon_pre_hit`]).
     ///
     /// - PROT 0915 arm 7's pass: the latched victim, the roll quartered and
@@ -277,10 +277,10 @@ impl World {
     ///   `4`.
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
-    /// quartered roll is checked against, the first argument's `0x10` /
-    /// `0x12` mode (the predamage port has one summon branch), and PROT 0934
-    /// arm `0x18`'s per-pass ladder. PROT 0929 arm 16's is
-    /// [`Self::mule_wave_hit`].
+    /// quartered roll is checked against. The first argument's `0x10` /
+    /// `0x12` mode is read only on the kernel's monster branch. PROT 0929 arm
+    /// 16's wave is [`Self::mule_wave_hit`], PROT 0934 arm `0x18`'s ladder
+    /// `ozma_hit_ladder`.
     pub(in crate::world::battle::cast_band) fn apply_summon_pre_hits(
         &mut self,
         entry: u32,
@@ -730,6 +730,8 @@ impl World {
     /// Not carried: the damage tallies the roll is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target), and
     /// the byte `0x8007B64C` the hit clears.
+    /// REF: FUN_801DD0AC (each wave roll, through [`Self::summon_module_roll`])
+    /// REF: FUN_801F44A0 (the popup push, `World::battle.hit_fx`)
     fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let s = slot as u8;
