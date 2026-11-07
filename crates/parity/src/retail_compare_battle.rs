@@ -717,6 +717,11 @@ pub struct RetailBattle {
     /// hold). It differs from the RAM's clip where the anim node committed
     /// inside the display lag, which the walk back cannot see.
     pub displayed_clips: Vec<Option<(u8, u16)>>,
+    /// Each pool slot: the `+0x77` byte of the clip entry its displayed frame
+    /// played (`0` for a party seat or an entry the ring does not name) -
+    /// the spell id a monster clip's commit names its move by
+    /// (`FUN_8004AD80`, `0x8004AF08..0x8004AF88`).
+    pub displayed_move_labels: Vec<u8>,
     /// The attacker's heading on the displayed frame, where that frame is its
     /// walk's last pass ([`camera_align::walk_heading`]).
     pub displayed_strike_heading: Option<u16>,

@@ -199,7 +199,10 @@ clip that named it. A physical attack shows its move's name this way with no spe
 the films of `battle_vell_nighto_49_strike` and `battle_rugi_caruban_3_strike` hold
 `Propeller`, `Flap` and `Bite` at the label's seat for their clips. Port:
 `BattleState::monster_move_label`, set in `World::commit_staged_battle_anim_at_boundary` and
-read by `legaia_engine_battle_hud::battle_move_name`.
+read by `legaia_engine_battle_hud::battle_move_name`. A still saved on the pass a swing
+committed (`battle_map02_hell_s_trigger_strike`, cursor `0`) holds the label in its RAM and
+not on its frame, which lags two passes; the retail comparison seats the label closed there
+(`RetailBattle::move_label_unseen`, from the clip the history ring shows displayed).
 
 ### A special attack can be a chain of entries
 

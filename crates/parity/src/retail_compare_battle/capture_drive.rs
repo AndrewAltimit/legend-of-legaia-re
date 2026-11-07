@@ -1400,7 +1400,28 @@ impl RetailBattle {
     /// a vsync since. `minigame_muscle_dome_retail_skeleton_hyper_arts`
     /// holds the Hyper Art `0x1E` at accumulator `0`: its frame shows no
     /// label.
+    ///
+    /// A monster's swing opens the same label off its clip entry's `+0x77`
+    /// (`0x8004AF08..0x8004AF88`): when its node committed inside the display
+    /// lag (`displayed_recommit`) and the clip the displayed frame played
+    /// names no move, that frame shows none either.
+    /// `battle_map02_hell_s_trigger_strike` stands on its first swing's commit
+    /// (cursor `0`): its RAM holds `Beak Slam` in records 76 / 77, its frame
+    /// no label.
     pub fn move_label_unseen(&self) -> bool {
+        if let SeedPlan::Action { seat, .. } = self.seed_plan()
+            && seat >= 3
+        {
+            let s = usize::from(seat);
+            return self.queued_category == 3
+                && self.displayed_recommit.get(s).copied().unwrap_or(false)
+                && self.displayed_move_labels.get(s) == Some(&0);
+        }
+        self.art_label_unseen()
+    }
+
+    /// [`Self::move_label_unseen`]'s party half: the art-name label.
+    fn art_label_unseen(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3)
             && self.queued_category == 3
             && self.caster_latched >= 0x1B
@@ -1415,7 +1436,7 @@ impl RetailBattle {
     /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: TR z `1945` where
     /// the art's own arm reads `1817`).
     pub fn camera_behind_commit(&self) -> bool {
-        self.move_label_unseen() && self.cam_accum == 0
+        self.art_label_unseen() && self.cam_accum == 0
     }
 
     /// The live pose the image child stands a [`Self::camera_behind_commit`]

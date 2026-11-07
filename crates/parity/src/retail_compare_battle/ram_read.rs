@@ -1338,6 +1338,18 @@ impl RetailBattle {
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))
                 .collect(),
+            displayed_move_labels: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    let shown =
+                        game_anchors::u32_at(ram, p + RING_RECORD + DISPLAYED_FRAMES_BACK * 4);
+                    if slot < 3 || !in_ram(p) || !in_ram(shown) {
+                        0
+                    } else {
+                        game_anchors::u8_at(ram, shown + 0x77)
+                    }
+                })
+                .collect(),
             displayed_recommit: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

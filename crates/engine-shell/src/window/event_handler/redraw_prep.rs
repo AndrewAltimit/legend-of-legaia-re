@@ -199,6 +199,7 @@ impl PlayWindowApp {
             }
             if due && sc.seat_move_label_unseen {
                 self.session.host.world.battle.move_label_closed = true;
+                self.session.host.world.battle.monster_move_label = None;
             }
             if due && let Some((actor, member)) = sc.seat_hud_close {
                 let targets: Vec<[i16; 2]> = sc.seat_hud_glides.iter().map(|g| g.target).collect();
