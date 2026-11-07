@@ -205,12 +205,16 @@ const SUMMON_RECORD_SIZE_CLASS: usize = 0x1F;
 pub struct SummonSeat {
     /// The high actor slot the creature holds.
     pub slot: usize,
-    /// The battle texture slot its texture pool goes to: the first one past
-    /// the monsters' ([`legaia_engine_battle::battle_party_form::monster_tex_slots_used`]).
+    /// The battle texture slot its texture pool goes to:
+    /// [`SUMMON_CREATURE_TEX_SLOT`].
     pub tex_slot: u8,
     /// The body (mesh, idle clip, archive-order clips).
     pub asset: legaia_engine_effects::summon::SummonSpawnAsset,
 }
+
+/// The battle texture slot a summon creature's pool is uploaded into
+/// (`FUN_801F19EC`'s `FUN_80055468(.., 2)`, `0x801F1D14`).
+pub const SUMMON_CREATURE_TEX_SLOT: u8 = 2;
 
 /// Seat a player Seru-magic cast's creature on the world: the cast's own
 /// body (`summon::summon_spawn_asset` - the namesake `battle_data` creature
@@ -281,19 +285,14 @@ pub fn seat_summon_creature(
         .map(|size| i16::from(size) << 5);
     let world = &mut host.world;
     world.casting.summon_body_radius = body_radius;
-    let monster_slots: Vec<u8> = world
-        .battle_monster_slots()
-        .into_iter()
-        .filter(|(actor, _, _)| {
-            world
-                .actors
-                .get(*actor)
-                .is_some_and(|a| a.battle_tex_slot.is_some())
-        })
-        .map(|(_, _, slot)| slot)
-        .collect();
-    let tex_slot =
-        legaia_engine_battle::battle_party_form::monster_tex_slots_used(monster_slots).min(4);
+    // The seat installer uploads the creature's texture pool into battle
+    // texture slot 2 whatever the formation holds (`jal 0x80055468` with
+    // `li a3,0x2` in its delay slot, `0x801F1D10..0x801F1D14`): CLUT row
+    // `486`, page `(448, 256)`. The cast's own parts address that row by
+    // value - PROT 0916's arm-4 CLUT cyclers recolour `(0..0x50, 486)` to
+    // whiten the creature as it re-forms - so a creature uploaded past the
+    // monsters' slots drew them nothing.
+    let tex_slot = SUMMON_CREATURE_TEX_SLOT;
     let slot = seat.unwrap_or(8 + world.party.party_count as usize);
     if let Some(a) = world.actors.get_mut(slot) {
         a.active = true;

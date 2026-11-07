@@ -2237,10 +2237,17 @@ of arms 4..6 the seat exists on (`World::apply_aluru_seat_writes`); ahead of
 the seat the installer's reset would undo them. Measured on
 `party_basic_attack_vs_gobu_gobu` `0x8E`: arms 5 and 6 read `.684` / `.682`
 with the default row (the shards strewn over the screen) and `.701` / `.731`
-with row 1. The retail frames stand nearer white than the port's: the
-port's lanes at `0x3FF` double the texel, retail's shards read near
-`(247, 238, 218)` where the port's read `(167, 104, 63)` over the same
-body, and the doubling cannot reach that from the creature's texels.
+with row 1. The white past the colour word's doubling is the creature's own
+palette: arm 4's four spawn records (`0x801F8F4C..0x801F8FC4`) are mode-3 CLUT
+cyclers over `(0..0x50, 486)` with saturation `-181` and value `+181` (retail
+`parts.csv`), and a retail RAM / VRAM read on arm 5 holds that row near white
+(`(208..248)` grey ramps where arm 6's end reads `(104..152)`). Row `486` is
+the creature's because the seat installer always uploads its pool into battle
+texture slot 2 (`li a3,0x2` in `jal 0x80055468`'s delay slot, `0x801F1D14`;
+[summon-readef](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group)).
+The port seated the creature in the first slot past the monsters', so the
+cyclers whitened an empty row; seated in slot 2, arms 5 and 6 read `.753` /
+`.811`.
 
 The kill path's arm `0x11` pass rewrites that row as offset `(0, 0, -0x200)`
 with the same front and flags and points the victim's node at it
