@@ -61,6 +61,19 @@ pub(super) const ARM4_HALTS: [u32; 2] = [0x801F_8734, 0x801F_877C];
 /// `FUN_80021B04`, which the pool flush does not reach (`0x801F7C30..0x801F7C58`).
 pub(super) const ARM6_HALTS: [u32; 3] = VORTEX;
 
+/// The caster's clip arm 0 stages (`+0x1DA = 9`, `0x801F6B4C`) and the loop
+/// window it writes into that clip's action entry: count `0xFF`, frames
+/// `13..=14`.
+const CAST_CLIP: u8 = 9;
+const CAST_CLIP_PARK: [u8; 3] = [0xFF, 0x0D, 0x0E];
+
+/// The tint state `FUN_80050120` eases to `(0xFF, 0xFF, 0x00)`.
+const TINT_YELLOW: u8 = 9;
+
+/// Arm 3's store into the vortex's two packed colours (`lui a0,0x80` /
+/// `ori a0,a0,0x60c0`, `sw` into `+0xA0` / `+0xA4`).
+const VORTEX_ARM3_COLOUR: u32 = 0x0080_60C0;
+
 /// The three vortex records arm 0 seats through `FUN_80021B04` (handles
 /// `0x801F88E4..0x801F88EC`).
 const VORTEX: [u32; 3] = [0x801F_8324, 0x801F_821C, 0x801F_82A0];
@@ -137,6 +150,13 @@ pub fn dark_typhoon_camera(
         0 => {
             st.countdown.0 = SPEED_SCALAR * 0x180;
             arm.shot = Some(shot(0, 0x800, [0, 0x500, 0x600], 0xC));
+            // The caster's tint state `9`, the yellow (`sb t0,0x21c(s4)` with
+            // `t0 = 9` at `0x801F6B54`), held until arm 4's passing pass.
+            arm.caster_write.render_flag = Some(TINT_YELLOW);
+            arm.caster_write.rate = Some(4);
+            // Clip 9's entry parks on frames 13..14 with a full budget
+            // (`0x801F6C08..0x801F6C98`) until arm 1's pass releases it.
+            arm.caster_clip_window = Some((CAST_CLIP, CAST_CLIP_PARK));
         }
         1..=6 => {
             arm.drift = Some(match phase {
@@ -149,12 +169,19 @@ pub fn dark_typhoon_camera(
             });
             if phase == 1 {
                 // `0x801F6CDC..0x801F6D20`, ahead of the gate: every party
-                // seat's colour word cleared and `+0x21C = 0xFF`.
+                // seat's colour word cleared and `+0x21C = 0xFF`; the
+                // caster's rate `4` (`0x801F6D30`).
                 arm.party_write = CaptureSeatWrite {
                     colour: Some(0),
                     render_flag: Some(0xFF),
                     ..Default::default()
                 };
+                arm.caster_write.rate = Some(4);
+            }
+            if phase == 5 {
+                // Every party seat's rate `4` on each pass, beside the
+                // swirl's let-down (`0x801F7AF4`).
+                arm.party_write.rate = Some(4);
             }
             // Arms 2 and 3 walk the vortex's position halfwords on every pass
             // (`0x801F6EE0..0x801F6FEC`: `-2 s` on both; `0x801F71C0..
@@ -178,11 +205,41 @@ pub fn dark_typhoon_camera(
                 return arm;
             }
             match phase {
+                3 => {
+                    // The vortex recoloured and its spin quadrupled
+                    // (`0x801F7300..0x801F7338`), on the pass that seats the
+                    // arm's five records.
+                    arm.part_write = Some(CapturePartWrite {
+                        colours: Some(VORTEX_ARM3_COLOUR),
+                        spin_84_shl: 2,
+                        ..arm.part_write.unwrap_or_default()
+                    });
+                }
+                4 => {
+                    // The vortex's depth-cue rate `+0x90 = 0x200`
+                    // (`0x801F78C8..0x801F78E8`), and the caster's tint back
+                    // to `0` after the ring (`0x801F7A28`).
+                    arm.part_write = Some(CapturePartWrite {
+                        records: &VORTEX,
+                        level_rate: Some(0x200),
+                        ..Default::default()
+                    });
+                    arm.caster_write.render_flag = Some(0);
+                }
+                // Clip 9's entry back to no window (`0x801F7C8C..0x801F7D00`).
+                6 => arm.caster_clip_window = Some((CAST_CLIP, [0; 3])),
+                _ => {}
+            }
+            match phase {
                 1 => {
                     // The pool flush at `0x801F6D5C` is the presentation
                     // decode's (`PresentationCall::PoolFlush`): it halts the
                     // pool's records and leaves the three vortex parts.
                     arm.shot = Some(shot(0x40, 0x900, [-0xC0, 0x900, 0x200], 1));
+                    // The park arm 0 wrote released (`sb zero,0x21b(s4)` /
+                    // `sh zero,0x176(s4)` at `0x801F6DE4`).
+                    arm.caster_write.loop_release = true;
+                    arm.caster_write.rate = Some(2);
                     // The vortex stood at `(0x200, 0x140)` (`0x801F6DF0..0x801F6E34`).
                     arm.part_write = Some(CapturePartWrite {
                         records: &VORTEX,
@@ -201,6 +258,7 @@ pub fn dark_typhoon_camera(
                         dy: -2 * s,
                         x: Some(0),
                         y: Some(0x300),
+                        ..Default::default()
                     });
                     arm.party_write = CaptureSeatWrite {
                         colour: Some(0x2008_0200),

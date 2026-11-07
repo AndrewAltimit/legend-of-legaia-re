@@ -586,6 +586,10 @@ pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
         // fork on the last roll, and the flush and white past the countdown
         // test. Flushed on the first tick, the fork's rays ended as they spawned.
         (964, 1) => 0x801F_6E2C,
+        // Dark Typhoon's last arm: its pool flush sits past the countdown's
+        // `bgtz` (`0x801F7C20`). Flushed on the arm's first tick, it took the
+        // arm-4 ring's columns down for the whole closing pull-out.
+        (942, 6) => 0x801F_7C20,
         _ => return None,
     })
 }

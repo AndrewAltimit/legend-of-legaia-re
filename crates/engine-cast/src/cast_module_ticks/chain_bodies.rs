@@ -769,13 +769,14 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
 /// its own reaction. Arm 6 is terminal: `ctx[+0x0D] = 0`, busy cleared at
 /// `0x801F7CFC`.
 ///
-/// Rates left out under the module's rate rule: the caster ends at `2`
-/// (`+0x21D = 4` at `0x801F6B50`, `2` at `0x801F6DEC`) with no restore in the
-/// body. The camera arms, the vortex's position stores and the per-arm records
-/// are `cast_module_camera::dark_typhoon_camera` and its spawn tables, the
-/// party-row moves `World::dark_typhoon_party_swirl`. Not ported: the packet
-/// arms, the colour stores into the arm-3 records and the monster-AI block
-/// bytes `+0x84..+0x86`. Countdowns: `capture_countdown::POWER_UP_AA`.
+/// The caster's rates (`+0x21D = 4` at `0x801F6B50` and on every arm-1 pass,
+/// `2` at `0x801F6DEC`, no restore in the body: the Done band's
+/// `FUN_801E93C8` puts it back), its tint, its clip-9 park window
+/// (`+0x84..+0x86` of the action entry) and the vortex's arm-3 / arm-4 stores
+/// are `cast_module_camera::dark_typhoon_camera`, beside the camera arms, the
+/// vortex's position stores and the per-arm records; the party-row moves are
+/// `World::dark_typhoon_party_swirl`. Not ported: the packet arms.
+/// Countdowns: `capture_countdown::POWER_UP_AA`.
 ///
 /// PORT: FUN_801F69F4 (PROT 0942; the `0xAA` arm's phase chain + caster staging; packet arms unported)
 pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
@@ -791,7 +792,8 @@ pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
         arm(3, 0x801F_715C, Advance).stages(&[stage(Caster, Keep, Bump, 0x801F_7348)]),
         arm(4, 0x801F_73F8, Advance)
             .stages(&[reaction(Bump, 0x801F_77EC)])
-            .hit(0x801F_774C),
+            .hit(0x801F_774C)
+            .hit_rate(4), // `0x801F7810`
         arm(5, 0x801F_7A2C, Advance),
         arm(6, 0x801F_7BAC, Finish).clears_0d(),
     ],

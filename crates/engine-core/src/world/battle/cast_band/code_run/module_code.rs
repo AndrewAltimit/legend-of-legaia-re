@@ -409,6 +409,9 @@ impl World {
             if let Some(v) = arm.ctx_278 {
                 ctx.ctx_278 = v;
             }
+            if let Some((clip, window)) = arm.caster_clip_window {
+                self.write_clip_loop_window(caster_slot, clip, window);
+            }
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
@@ -1825,6 +1828,17 @@ impl World {
                     let y = w.y.unwrap_or(part.state.world_y.wrapping_add(w.dy));
                     part.poke(0x14, x as u16);
                     part.poke(0x16, y as u16);
+                    if let Some(c) = w.colours {
+                        part.state.set_actor_u32(0xA0, c);
+                        part.state.set_actor_u32(0xA4, c);
+                    }
+                    if w.spin_84_shl != 0 {
+                        part.state.anim_84 =
+                            part.state.anim_84.wrapping_shl(u32::from(w.spin_84_shl));
+                    }
+                    if let Some(r) = w.level_rate {
+                        part.state.tween_src_x = r;
+                    }
                 }
             }
             if arm.hides_creature {
