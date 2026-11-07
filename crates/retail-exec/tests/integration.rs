@@ -39,6 +39,7 @@ mod inn;
 mod interact_probe;
 mod intro_names;
 mod inventory;
+mod kiss_of_death;
 mod item_apply;
 mod item_probe;
 mod level_up;
