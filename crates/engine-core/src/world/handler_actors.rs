@@ -532,6 +532,17 @@ impl World {
         self.presentation.cinematic_bars = None;
         self.presentation.cinematic_bar = 0;
         self.presentation.screen_frames.clear();
+        // The ending's screen-effect widgets (mask, image panel, credit
+        // sprites, letterbox) are nodes on the same list 0
+        // (`FUN_80020DE0(.., _DAT_8007C34C)` at `0x801F891C` and its three
+        // siblings), and a scene load frees every scene node on it: the
+        // `ending_panel_corner` state holds mask + panel + two sprites in
+        // `edteien`, the `ending_scene_load_gap` state after it holds none,
+        // and `ending_vignette_biron` holds only the mask `edbylon`'s own
+        // script spawned. Kept, a vignette's corner panel would draw the
+        // next scene's VRAM at `(512, 0)` over it.
+        self.presentation.fx.clear();
+        self.presentation.fx_frame = Default::default();
         self.field_vm.eased_moves.clear();
         // The MAN loader resets the live audio level `_DAT_8007B910` to the
         // configured one, so a field script's duck (`4C 4D`) ends at the door.
@@ -715,6 +726,30 @@ mod tests {
             w.actors[i].handler = *h;
         }
         w
+    }
+
+    /// The ending's screen-effect widgets are list-0 nodes, and a scene load
+    /// frees them: `ending_panel_corner` holds mask + panel + two credit
+    /// sprites in `edteien`, `ending_scene_load_gap` (the load into
+    /// `edbylon`) holds none. A corner panel kept across the load drew the
+    /// next scene's VRAM at `(512, 0)` over its vignette.
+    #[test]
+    fn a_scene_load_drops_the_screen_effect_widgets() {
+        let mut w = World::default();
+        // `43 11` mask to black, `43 13` the fullscreen photo panel.
+        w.presentation.fx.mask_rect([0x20, 0x20, 0x20, 0x20, 0]);
+        let mut panel = vec![0x13u8];
+        for v in [0i16, 0, 0x140, 0xE0, 0x200, 0] {
+            panel.extend_from_slice(&v.to_le_bytes());
+        }
+        w.presentation.fx.panel_spawn(&panel);
+        w.presentation.fx.panel_move([16, 112, 0x700, 0]);
+        w.presentation.fx_frame = w.presentation.fx.tick(1, |_| false);
+        assert!(w.presentation.fx.is_active());
+        assert!(!w.presentation.fx_frame.is_empty());
+        w.man_load_actor_reset();
+        assert!(!w.presentation.fx.is_active(), "every widget freed");
+        assert!(w.presentation.fx_frame.is_empty(), "nothing left to draw");
     }
 
     #[test]
