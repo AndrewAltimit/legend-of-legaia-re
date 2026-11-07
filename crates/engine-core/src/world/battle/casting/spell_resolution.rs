@@ -212,6 +212,29 @@ impl World {
                     }
                 }
             }
+            // A cast whose spell record names an applier HP heal (class `0`
+            // one seat, `1` the side) never reads its MP: state `0x3F` hands
+            // the record's class and tier to `FUN_800402F4`
+            // (`0x801E4108..0x801E4138`), whose HP arms restore
+            // `min(max - hp, 0x8007655C[tier])`, the compare signed. Hyper
+            // Heal (`0x2F`, tier `1`) restores up to `800` where the catalog's
+            // MP-scaled placeholder gave `400`.
+            if let legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } = &mut outcome
+                && matches!(self.spell_table_class(def.id), Some(0 | 1))
+                && let Some(tier) = self.spell_table_sub_class(def.id)
+                && let Some(cap) = self
+                    .tables
+                    .item_effects
+                    .as_ref()
+                    .map(|t| t.heal_amounts().hp[usize::from(tier.min(2))])
+            {
+                let deficit = snap.target_hp_max.wrapping_sub(snap.target_hp);
+                *amount = if deficit as i16 > cap as i16 {
+                    cap
+                } else {
+                    deficit
+                };
+            }
             // The three **ally-side** player Seru casts do not roll a spell
             // magnitude at all in retail: their module's own tick arm computes
             // the restore from the caster's magic level and stores it. The
