@@ -427,6 +427,25 @@ step drop and the ring's one-pass lag were found
 with both in, the draws hold word for word through `0x34` and part at the
 module's CD-seek hold.
 
+Unseeded, the logged words still count draws: the LCG steps between one vsync's
+word and the next are the draws made in between, on either side. Counted per key
+on the lone-caster films, Odd Dimension (`0x93`, PROT 0921) and Ozma (`0xA0`, PROT
+0934) part in two ways once the module's CD-seek hold is past:
+
+| Cast | Key | Retail draws / vsyncs | Engine draws / ticks |
+|---|---|---|---|
+| `0x93` | arm 1 (the seek) | `1` / `1` | `6` / `31` |
+| `0x93` | arms 5..8 | `724` / `773` | `724` / `724` |
+| `0x93` | arm 9 | `81` / `166` | `36` / `132` |
+| `0xA0` | arm 16 | `5820` / `240` | `60` / `240` |
+| `0xA0` | arm 18 | `14095` / `508` | `1918` / `512` |
+
+Odd Dimension's arm 9 runs about one pass every two vsyncs in retail and one
+every four in the engine (its frame-step row); Ozma's sparks and bolts
+(arms 1..3's `0x801F9E28` / `0x801F9F2C` records, then the arms past 15) draw
+two dozen words a vsync in retail and almost none from the engine's world
+stream, so their deal cannot meet retail's whatever the seed.
+
 A cast whose outcome is a roll parts on the deal the same way, and the sound
 channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a
 cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
