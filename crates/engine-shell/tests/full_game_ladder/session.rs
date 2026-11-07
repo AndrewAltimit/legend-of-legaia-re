@@ -165,8 +165,11 @@ pub(super) fn released(session: &NativeSession) -> bool {
     let w = &session.host.world;
     // A scene change parked behind the streaming actor's countdown has not
     // released anything: the door is mid-flight.
+    // Nor has a field MAIN INIT hold (the credits' load, `field_init_hold`):
+    // the destination's entry records have not had a frame yet.
     walking(session)
         && w.scene_transition_hold.is_none()
+        && w.field_init_hold == 0
         && !w.cutscene_timeline_active()
         && !w.dialogue_owns_input()
         && w.field_vm.helper_contexts.is_empty()

@@ -1818,6 +1818,28 @@ locomotion while the bit is up (`0x801D1694..0x801D16A0`, PROT 0897). The engine
 lock reproduces this, and the chapter-1 ladder's ending scenes score no walk rung for that
 reason.
 
+#### The credits hold for each scene load
+
+Between two vignettes retail spends a field MAIN INIT on a black screen. A
+per-vsync PCSX-Redux film of the whole chain reads each scene change the same
+way: the scene-change packet, the streaming actor's `0x46`-frame hand-off
+(72 vsyncs; 92 into `eddoman`), then game mode `0x02` for exactly `130`
+vsyncs at all eight changes, whatever the destination block's size (240 KB
+to 680 KB). The init `FUN_801D6704` is one synchronous call - its reads and
+decodes, then a loop running the BGM poller `FUN_800243F0` until requested
+and loaded indices agree (`0x801D72D4..0x801D731C`) - and stores mode `3` at
+`0x801D7484` only after it; no frame count bounds it.
+
+The port loads at once. In the credits that is not invisible: the ending
+theme plays across every load (the credits latch `_DAT_8007B9B8`), and the
+eight skipped holds put the last vignette about 17 seconds ahead of the
+score. So under the latch (`AudioState::credits_latch`, raised by the
+theme's start) a named scene change arms `World::field_init_hold` for
+`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`, the measured length - a figure,
+not a disassembled count): `SceneHost::tick` runs none of the scene and both
+hosts draw the frame black (`screen_layers`). Everywhere else the load stays
+instant.
+
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
 `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait.
 The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped

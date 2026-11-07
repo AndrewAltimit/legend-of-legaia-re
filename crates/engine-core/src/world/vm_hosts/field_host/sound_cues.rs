@@ -36,6 +36,11 @@ impl FieldHostImpl<'_> {
         // the id, the slot keeps what it holds, and no commit is owed (the
         // load never runs, so a sub-op 9's bit 0 never meets a settle).
         if matches!(sub_op, 1 | 9)
+            && u32::from(text_id) == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID
+        {
+            self.world.audio.credits_latch = true;
+        }
+        if matches!(sub_op, 1 | 9)
             && (self.world.audio.keep_audio_across_field_init || self.world.audio.bgm_entry_latch)
         {
             self.world.audio.bgm_script_paused = false;

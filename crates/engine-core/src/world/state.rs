@@ -134,6 +134,13 @@ pub struct World {
     pub scene_transition_hold:
         Option<legaia_engine_field::scene_transition_actor::SceneTransitionHold>,
 
+    /// Vsyncs left of a field MAIN INIT hold after a committed scene change:
+    /// the scene is loaded, nothing of it runs, and the frame stays black.
+    /// Armed only under the credits latch
+    /// ([`crate::world::AudioState::credits_latch`]); see
+    /// [`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`].
+    pub field_init_hold: u16,
+
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
 
@@ -434,6 +441,7 @@ impl World {
             pending_scene_transition: None,
             pending_named_scene_transition: None,
             scene_transition_hold: None,
+            field_init_hold: 0,
             encounters: EncounterState::new(),
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
@@ -615,6 +623,10 @@ impl World {
     pub fn begin_new_game(&mut self) {
         // A New Game started over a live battle leaves that battle first.
         self.abandon_live_battle();
+        // The credits latch goes with the executable reload a new game
+        // follows.
+        self.audio.credits_latch = false;
+        self.field_init_hold = 0;
         // The staged run's rules take over (retail when nothing is staged).
         self.begin_run_new_game();
         self.flags.story_flags = 0;

@@ -224,6 +224,14 @@ pub struct AudioState {
     /// clock. Raised by [`crate::world::World::release_field_init_voices`],
     /// ended with [`Self::bgm_entry_latch`].
     pub(crate) bgm_field_init_open: bool,
+    /// The credits latch `_DAT_8007B9B8`: raised once the ending theme
+    /// ([`legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID`]) has
+    /// been started (retail's field init sets it as it stages the two-part
+    /// load, `0x801D71CC`); a new game clears it, as the executable reload
+    /// behind the credits' soft reset does. While it is up a scene change
+    /// holds for the field init's load
+    /// ([`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`]).
+    pub credits_latch: bool,
     /// The swap poller `FUN_800243F0`'s clock between a mid-scene start and
     /// its install ([`legaia_engine_system::sound_state::BgmSwapPoller`]):
     /// armed by an op-`0x35` sub-op `1` / `9` that changes the track word
@@ -364,6 +372,7 @@ impl AudioState {
             keep_audio_across_field_init: false,
             bgm_entry_latch: false,
             bgm_field_init_open: false,
+            credits_latch: false,
             bgm_swap: legaia_engine_system::sound_state::BgmSwapPoller::default(),
             bgm_install_due: false,
             sound_arm: None,
