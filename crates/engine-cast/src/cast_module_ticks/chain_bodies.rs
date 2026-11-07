@@ -600,8 +600,10 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// and the victim settles the arm stores `0xFF`; `0xFF` clears the busy
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
-/// Not ported: the packet and camera arms and the
-/// four-hit split (the fold lands the cast's outcome as one). Countdowns:
+/// The camera arms, the seat hides and the records are
+/// `cast_module_camera::hyper_lightning_camera`. Not ported: the packet arms,
+/// arm 7's per-hit shots and the four-hit split (the fold lands the cast's
+/// outcome as one). Countdowns:
 /// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
 /// PORT: FUN_801F69D8 (PROT 0937; phase chain + caster staging; packet arms unported)

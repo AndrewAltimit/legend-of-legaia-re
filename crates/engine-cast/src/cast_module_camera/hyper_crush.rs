@@ -40,7 +40,7 @@ fn scaled(t: i16, k: i32) -> i32 {
 /// `0x8007B7F8` on `z`, each read at the facing and at the facing plus
 /// `0x400`: `x + fore sin - side cos`, `z + fore cos + side sin`, each term
 /// rounded toward zero.
-fn ahead(c: ModuleSeat, fore: i32, side: i32) -> (i16, i16) {
+pub(super) fn ahead(c: ModuleSeat, fore: i32, side: i32) -> (i16, i16) {
     let (sin, cos) = trig12(c.facing & 0xFFF);
     let (sin_q, cos_q) = trig12(c.facing.wrapping_add(0x400) & 0xFFF);
     (

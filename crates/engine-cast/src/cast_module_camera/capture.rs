@@ -301,6 +301,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (942, super::DARK_TYPHOON_BODY) => Some(super::dark_typhoon_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (936, SINGLE_BODY) => Some(super::hyper_crush_camera),
+        (937, SINGLE_BODY) => Some(super::hyper_lightning_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
