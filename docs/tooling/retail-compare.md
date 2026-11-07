@@ -2334,7 +2334,13 @@ frame shows no "level increased" line or banner.
   passing them all over scored the first stream at the ambush's prompt. It does
   not count as a surprise; the party instead stands back on its seeded HP and MP
   at the first prompt (`battle_deene_lapis_strike`: Vahn `5420` against the
-  capture's `9999`).
+  capture's `9999`). The capture's initiative keys are a later round's
+  remainder, so they stay off the party for that round: the side lockout
+  (`FUN_801DA780`, `0x801DAA40`) zeroes the party's keys, and the capture's
+  live ones seeded over it gave each member a no-input swing retail's ambush
+  never runs (Vahn's took Lapis `144` below the capture's `64800`, `enemy_hp`
+  `.750`). Unless the capture stands inside the ambush round, the party's keys
+  are seeded `0`.
 - **The harvest probe's restores.** A capture whose party maximum the probe raised
   (`LEGAIA_TOUGH=2`, `RetailBattle::party_seat_pool_raised`) carries the probe's HP,
   restored at every round prompt. A drive that runs rounds ahead of the capture's own
@@ -4787,7 +4793,13 @@ lowers both (`4C 31`, `60 1F` at `+0x1FC`). `rikuroa_post_genesis_tree` was
 taken after that beat in the same visit, so retail holds both down, and no
 record is running. A card load of that save runs the entry script again and
 raises both, which is what the engine's seed does: the divergence is history
-the save does not carry.
+the save does not carry. Nothing in the save can derive it. The raise stands
+on the entry record's straight-line head, ahead of its first branch; the
+beat is the scene's only other `4C 30` / `4C 31` and its only flag-`0x1F` writer,
+and `P1[0]` spawns it (`44 60` at `+0xF7`) only while system flag `0x2C9` is
+up, which the beat clears as its first op. The gate word `0x8007B854` sits
+outside the save window at `0x80084140`, so a load of the post-beat save has
+the flag down, skips the beat and keeps the raise.
 
 The Genesis tree in `rikuroa_post_caruban` is the same history from the other
 side. The tree's three objects (`P0[2..4]`) arm their withered vertex morph
@@ -5549,6 +5561,17 @@ two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
 `.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
 target on its knockdown or get-up (case 8 on the held passes too), a framing
 style `2` / `3` and a monster's pull-in keep the one-pass pose.
+
+The three `koru_pre_*` states are one frame: each is the same Done-arm pass of
+Gala's Lightning Storm, saved a vsync after the monster-pick probe rewrote
+Koru's queue, so they score alike to the block. Sweeping the walked-back pose
+through `LEGAIA_RC_ENV_OVERRIDE` (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`) puts the
+best yaw on the walk's own `3595` (`.906`; `25` either side `.84` / `.85`), and
+the best depth near `6125` against the walk's `5998`, a rise to `.921` and no
+further: the focus Y and `TR.y` are sharp at the walk's values. What the
+sweep leaves is the ice crystals behind Koru and the mist band, both standing
+a few rows higher in the engine than Koru does, so the rest of that pass's
+pose is not one component the RAM still holds.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and
