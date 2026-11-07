@@ -560,8 +560,10 @@ pub fn party_rate_sweep(entry: u32, body: Option<u32>, phase: u8) -> Option<u8> 
 /// with its own reaction. Arm 8 waits for the row to settle and stores
 /// `0xFF`; `0xFF` only clears the busy register.
 ///
-/// Not ported: the packet and camera arms and arm 4's tick-counter hold.
-/// Countdowns: `capture_countdown::HYPER_CRUSH`; arm 8's settle:
+/// The camera arms, the records and arm 4's six-pass hold are
+/// `cast_module_camera::hyper_crush_camera`. Not ported: the packet arms,
+/// the ribbons and the ambient stores. Countdowns:
+/// `capture_countdown::HYPER_CRUSH`; arm 8's settle:
 /// [`ChainSettle::PartyRow`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0936; phase chain + caster staging; packet arms unported)
@@ -886,8 +888,10 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// fold has landed the hit as retail reads it. It cannot see the record's
 /// two immunity bits.
 ///
-/// Not ported: the packet arms, the per-character effect pointer
-/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
+/// The camera arms, the seat hides and the records are
+/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms,
+/// the per-character effect pointer (`0x800774AC`) and
+/// `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
 /// `capture_countdown::PARALYZING_WAVE`; arm 3's settle:
 /// [`ChainSettle::Victim`].
 ///

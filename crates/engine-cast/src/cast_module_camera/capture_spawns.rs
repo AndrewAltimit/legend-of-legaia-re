@@ -866,7 +866,10 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         949 => true,
         945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
-        956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
+        956 => matches!(
+            body,
+            Some(crate::cast_arm_ticks::WATER_HAZARD_TICK | super::PARALYZING_WAVE_BODY)
+        ),
         951 => matches!(
             body,
             Some(super::SCYTHE_WIND_BODY | super::CHAOS_FLARE_BODY)
@@ -908,7 +911,10 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         946..=949 => true,
         945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
-        956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
+        956 => matches!(
+            body,
+            Some(crate::cast_arm_ticks::WATER_HAZARD_TICK | super::PARALYZING_WAVE_BODY)
+        ),
         955 => matches!(
             body,
             Some(

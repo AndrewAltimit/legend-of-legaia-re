@@ -1018,7 +1018,6 @@ mod creature_spawns;
 mod cross_beam;
 mod curse_all;
 mod dark_typhoon;
-mod hyper_crush;
 mod death_game;
 mod doomsday;
 mod earthquake;
@@ -1027,6 +1026,7 @@ mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
 mod gola_mushura_barra;
+mod hyper_crush;
 mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
@@ -1038,6 +1038,7 @@ mod meta_terra_ozma;
 mod nighto;
 mod nova;
 mod orb;
+mod paralyzing_wave;
 mod plasma_strike;
 mod power_charge;
 mod power_up;
@@ -1082,7 +1083,6 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
-pub use hyper_crush::hyper_crush_camera;
 pub use dark_typhoon::{DARK_TYPHOON_BODY, dark_typhoon_camera, dark_typhoon_ring};
 pub use death_game::{
     CARD_BACK_RECORD, CARD_RECORDS, CARD_REVEAL_RECORDS, DEATH_GAME_BODY, DEATH_GAME_PROT,
@@ -1103,6 +1103,7 @@ pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;
 pub use gola_mushura_barra::*;
+pub use hyper_crush::hyper_crush_camera;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
@@ -1119,6 +1120,7 @@ pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
+pub use paralyzing_wave::{PARALYZING_WAVE_BODY, paralyzing_wave_camera};
 pub use plasma_strike::{
     NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,

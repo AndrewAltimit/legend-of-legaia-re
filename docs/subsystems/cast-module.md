@@ -3660,6 +3660,8 @@ three units). The bodies without that store keep the half turn
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
 | 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown, the records and the tints ([below](#prot-0955-kiss-of-death)) |
 | 0942 `0xAA` Dark Typhoon, `0x801F69F4` | arm 0's `0xC`-frame shot on the caster (TR `(0, 0x500, 0x600)`), arm 1's cut (pitch `0x40`, yaw `0x900 - facing`, TR `(-0xC0, 0x900, 0x200)`), arm 2's cut (pitch `0xC0`, TR `(0, 0x600, 0x400)`); drifts on every arm past 0 and the vortex records ([below](#prot-0942-dark-typhoon)) | `0x801F88B4`, seeded `scalar * 0x180`; the chain is ported (`POWER_UP_AA_CHAIN`), so the director carries the countdown. Without the director the cast's camera stood still and its parts were the whole-set placement, all run out before arm 1 |
+| 0936 `0x4B` Hyper Crush, `0x801F69D8` (`SINGLE_BODY`) | arm 0's `0x40`-frame shot (pitch `-0x40`, TR `(-0x100, 0x500, 0x400)`); arm 1 re-issues a `0x40`-frame shot every pass off the module word `w` (yaw `+ scalar * 32 - w / 4`, TR y `scalar << 7 - (w - 0x500)`, TR z `w / 4 + 0x300`); arm 2's cut (pitch `0xC0`, yaw `0xF00 - facing`, TR `(0x800, 0x500, 0x800)`); arm 4's TR y shake (`0x580` odd passes, `0x500` even); arm 5's cut on the point ahead of the caster; TR z drifts `4s` / `2s` / `s` on arms 6..8 | `0x801F8174`; the chain carries the phase. Arm 4 leaves on its sixth pass (`0x801F817C`), which the director holds; arms 1 and 3 seat three and eight records on points `(104, 88)` and `(449, 134)` off the caster's facing |
+| 0956 `0x75` Paralyzing Wave, `0x801F69D8` | arm 0's cut on the caster's display pair (TR `(0, 0x280, ctx[+0x6D0] / 2)`), every seat hidden but the caster, four records on the shot; arm 1's cut on the victim (TR `(0, 0x380, 0x600)`), the victim shown and the caster hidden, three records after the pool flush; TR z `+s / 2` on arms 1..3; arm 3 raises the pooled parts' level to `0x1000`, which ends the cast | `0x801F86A0`, seeded `scalar << 8`; the chain (`WATER_HAZARD_75_CHAIN`) carries the phase |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 
 - <a id="prot-0942-dark-typhoon"></a>**0942 `0xAA`**: the drifts, with
@@ -4686,7 +4688,11 @@ Paralyzing Wave flushes at the end of arm 1 (`jal 0x80050E74` at `0x801F6D0C`): 
 retail recording holds every live part halted (`+0x10 |= 0x8`) on that pass, its
 rings' radius word `+0xB6` stopped at `255`, `510` and `765`. Left untagged, the
 engine's rings grew one unit a tick for the rest of the cast and whited out the screen
-through the Done band. The last arm has no phase write, so its
+through the Done band. A whole-set placement still seats every record at once, ahead
+of the arm that spawns it, so a flush can also halt a record its own arm has yet to
+seat: Paralyzing Wave's arm-1 records were halted by the same pass that should have
+seated them, until its director seated them per arm (`paralyzing_wave_camera`). The
+last arm has no phase write, so its
 sites read as `Every`; its countdown gate (`summon_holds::gate_va`,
 `0x801F7CAC`) keeps the flush on the pass that ends the module.
 
