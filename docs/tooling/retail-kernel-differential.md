@@ -408,3 +408,11 @@ and each ladder roll going without the finisher's spell XP and spirit, where eve
 runs `FUN_801DDB30`. The same bare roll sat in Mule's wave, and the fold threw away what the pre-hits had
 banked: it took `module_hit_xp` and then overwrote it with the inline grant. Kiss of Death's arm 4
 (`kiss_of_death`) matches `kiss_of_death_tick` on both legs, the refund and a Stoned victim's skip.
+
+Mule's arm 16 against the same seat (`mule_wave`) found the wave walking every monster seat to `ctx[+1]` and
+testing HP inside the loop (`0x801F7DEC`), so a fallen seat takes the skip path, losing its staged clip
+(`0x801F80A0`) and riding the lift; the port walked the living row only. Its draws and rolls match. A sweep of
+the slot-B images (`summon_roll_sites`) finds every `jal FUN_801DD0AC` in `0903..0966`, thirty-two in the
+images' own code and two in inherited tails, and holds each to the port routine that rolls it through the
+finisher. The encounter counter's scene-entry top-up (`0x8003AC78..0x8003ACB4`, `encounter_top_up`) matches.
+

@@ -2936,7 +2936,7 @@ arm 0 re-seats the row on the alternate-family seat at half `x` and half
 (`World::mule_row_seat`); arm 16 lifts each monster its wave front has
 passed to `+0x36 = -0x100` and rolls it `16 * step * scalar` a pass about
 its forward axis (`+0x48`, which both hosts draw as `BattleActor::render_roll`),
-and strikes each idle one it has passed on every pass: a third of the
+and strikes each idle one it has passed on every pass (the walk covers every monster seat, so a fallen one, like any seat the wave skips, has its staged clip `+0x1DA` cleared): a third of the
 summon roll (`rand() % 16 + 16` when that is zero) plus `rand() % (hit / 8 +
 1)`, clamped to `HP - 1`, its popup up and its reaction staged, with the
 readout flag `0x8007B64C` cleared so the combo cluster stays shut
