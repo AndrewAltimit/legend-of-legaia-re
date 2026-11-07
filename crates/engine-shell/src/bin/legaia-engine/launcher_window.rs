@@ -1402,14 +1402,14 @@ impl LauncherApp {
     fn layout(&self, c: &mut Canvas, hits: &mut Vec<(Item, Rect)>) {
         // Header band.
         c.fill_surface(BODY);
-        // The header band and its rule run edge to edge: the stage scales
-        // by whole steps, so a large window centres it with margins, and a
-        // band drawn only across the stage stopped short of them.
-        // A squeezed stage starts `sq` rows down its own top edge (those
-        // rows sit above the surface), so the header keeps its rows below
-        // that and its text moves down half as far as the band shrinks.
+        // The header band runs edge to edge and up to the window's top: the
+        // stage scales by whole steps, so a large window centres it with
+        // margins, and a band drawn only across the stage stopped short of
+        // them (and floated under a dark strip above). A squeezed stage
+        // starts `sq` rows above the surface, so the title moves down half
+        // as far as the band shrinks.
         let sq = c.stage.squeeze;
-        c.full_width(sq, HEADER_H - sq, BAND);
+        c.band_to_top(HEADER_H, BAND);
         c.full_width(HEADER_H, 1, RULE);
         c.text_scaled(PAD, 7 + sq / 2, "Legend of Legaia", GOLD, 2);
         let sub = format!("engine port {}", env!("CARGO_PKG_VERSION"));
@@ -2202,6 +2202,18 @@ impl Canvas<'_> {
                 self.stage.surface.0,
                 (bottom - top.max(0)).max(0) as u32,
             ),
+            src: self.solid,
+            color,
+        });
+    }
+
+    /// A band from the surface's top edge down to stage row `bottom`,
+    /// across the whole surface: the header in a window taller than the
+    /// stage reaches the top instead of floating under a dark margin.
+    fn band_to_top(&mut self, bottom: i32, color: [f32; 4]) {
+        let h = self.stage.origin.1 + bottom * self.stage.scale;
+        self.draws.push(TextDraw {
+            dst: (0, 0, self.stage.surface.0, h.max(0) as u32),
             src: self.solid,
             color,
         });
