@@ -416,3 +416,12 @@ the slot-B images (`summon_roll_sites`) finds every `jal FUN_801DD0AC` in `0903.
 images' own code and two in inherited tails, and holds each to the port routine that rolls it through the
 finisher. The encounter counter's scene-entry top-up (`0x8003AC78..0x8003ACB4`, `encounter_top_up`) matches.
 
+
+The walk-on dispatcher `FUN_801D1EC4`, idle half, over every field scene's real `.MAP` and fallback window
+with the grid-mark refresh `FUN_80017BEC` run first (`walk_on`), found the map init's fallback stamp
+(`FUN_8003AEB0`, `0x8003AFA8..0x8003B018`) with no port: it ORs `0x400` into every `.PCH` kind-1 tile, 2317
+cells over the disc that the `.MAP` and the refresh leave clear, and the sub-area window sweep reads that bit as
+"owned by the init sweep". The port's dispatch had skipped the `cell & 0x600` filter in its place, which only
+held while those cells went unstamped. The kind-1 arm spawns on any non-zero gate (`0x8003BDF0`), where the port
+spawned on gate `1` only, and resets the clip base on every hit, gate `0` included. The crossing and re-poll
+arms now run as `walk_on_crossing` / `walk_on_repoll` and match over every trigger tile in both lock states.

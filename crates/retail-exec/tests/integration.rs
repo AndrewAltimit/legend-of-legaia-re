@@ -75,6 +75,7 @@ mod tint_ease;
 mod turn_pick;
 mod unequip;
 mod validator;
+mod walk_on;
 mod walk_regen;
 mod walk_step;
 mod water_hazard;

@@ -416,6 +416,17 @@ impl SceneHost {
                 // `0x3000` in a live capture and not on the disc.
                 // PORT: FUN_80017BEC (scene-load call site)
                 legaia_engine_field::field_regions::refresh_object_grid_marks(&mut bytes);
+                // The map init stamps the fallback window's kind-1 tiles too,
+                // or the walk-on dispatch's cell filter would refuse every
+                // `.PCH` record. The window is the one the trigger lookup reads.
+                // PORT: FUN_8003AEB0 (fallback-window stamp call site)
+                if let Some(scene) = self.scene.as_ref()
+                    && let Ok((_, fallback)) = scene.field_tile_triggers(&self.index)
+                {
+                    legaia_engine_field::field_regions::stamp_fallback_walk_on_cells(
+                        &mut bytes, &fallback,
+                    );
+                }
                 // The object-descriptor region (`+0x0000..0x4000`) stays
                 // resident: the sub-area window sweep indexes it on every
                 // camera re-centre, not just at load.
