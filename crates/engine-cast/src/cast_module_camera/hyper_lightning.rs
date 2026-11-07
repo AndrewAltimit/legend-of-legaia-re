@@ -48,6 +48,7 @@ const ARM5_RECORDS: [u32; 2] = [0x801F_7FE0, 0x801F_8038];
 /// | 4 (`0x801F7090`) | TR z `+4 s` | on the gate five records `600` ahead | `+= scalar << 7` |
 /// | 5 (`0x801F7314`) | TR z `+4 s`; on the gate the victim turned to the caster and a cut on it: pitch `-0x20`, yaw `0xA80 - facing`, TR `(0, 0x480, 0x500)` | the victim shown, the caster hidden, two records on the victim | `+= scalar * 0x60` |
 /// | 6 (`0x801F7500`) | TR z `+s` | - | the hit words cleared |
+/// | 7 (`0x801F757C`) | TR z `+s` until the first hit, then a `0xC`-frame cut on the victim's display pair every pass (pitch `-0x20`, yaw `0xA80 - facing`, TR `(0, 0x480, 0x800)`) | each of the four hits flashes the victim and turns it to the caster | the hit word re-arms `scalar << 3` |
 /// | `0xFF` (`0x801F77F8`) | - | the caster shown, `+0x21B` / `+0x176` cleared | - |
 ///
 /// PORT: FUN_801F69D8 (PROT 0937 `0x4C`; the camera arms, the seat writes and the records)
@@ -143,6 +144,47 @@ pub fn hyper_lightning_camera(
         6 => {
             arm.drift = Some(push(s));
             arm.hold = st.countdown.drain_above(0);
+            if !arm.hold {
+                // `0x801F7548..0x801F7558`: the hit word and the hit count.
+                st.module_words = [0, 0];
+            }
+        }
+        7 => {
+            // `0x801F757C..0x801F77A0`. Once a hit has landed every pass
+            // re-cuts to the victim's display pair; before it the arm only
+            // pushes TR z.
+            let hits = st.module_words[0];
+            if hits != 0 {
+                let body = st.victim_body.unwrap_or(v);
+                arm.shot = Some(ModuleShot {
+                    angles: [-0x20, yaw_from(0xA80, v.facing), 0],
+                    tr: [0, 0x480, 0x800],
+                    focus: focus_on(body),
+                    frames: 0xC,
+                });
+            } else {
+                arm.drift = Some(push(s));
+            }
+            if hits < 4 {
+                st.module_words[1] -= SPEED_SCALAR;
+                if st.module_words[1] <= 0 {
+                    st.module_words[0] += 1;
+                    st.module_words[1] += SPEED_SCALAR << 3;
+                    // Each hit flashes the victim (`+0x04 = 0x200FFE00`,
+                    // `+0x0C = 0x1000`) and turns it to the caster.
+                    let facing = (bearing12(
+                        i32::from(v.z) - i32::from(c.z),
+                        i32::from(v.x) - i32::from(c.x),
+                    ) + 0x800)
+                        & 0xFFF;
+                    arm.victim_write = CaptureSeatWrite {
+                        colour: Some(0x200F_FE00),
+                        blend: Some(0x1000),
+                        facing: Some(facing),
+                        ..Default::default()
+                    };
+                }
+            }
         }
         // `0x801F77F8..0x801F7818`: the caster shown again, its clip's park
         // released.

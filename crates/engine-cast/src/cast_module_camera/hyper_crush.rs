@@ -5,6 +5,7 @@
 //!
 //! See `ghidra/scripts/funcs/overlay_cast_hyper_crush_0936_801f69d8.txt`.
 
+use super::capture::CastRibbonRing;
 use super::v_windhash::seat;
 use super::{
     CaptureCamArm, CaptureDrift, CapturePoseSet, ModuleCamSeats, ModuleCamState, ModuleSeat,
@@ -49,6 +50,33 @@ pub(super) fn ahead(c: ModuleSeat, fore: i32, side: i32) -> (i16, i16) {
     )
 }
 
+/// The streak-ribbon trail id arms 5 and 6 hand `FUN_801E1D98` (`li a1,0x4`).
+const RING_TRAIL: u8 = 4;
+
+/// Arms 5 and 6's sixteen streak ribbons round the point ahead of the caster
+/// (`0x801F7440..0x801F74F0`, `0x801F7790..0x801F7840`): point `i` at table
+/// angle `(i << 8) + ((w / 4) & 0xFF)`, `x + sin * w >> 11` and `z + cos * w
+/// >> 11` (each toward zero, `addiu 0x7FF`), on the floor; `w` the ring word
+/// `0x801F8178`.
+fn ring(c: ModuleSeat, w: i32) -> CastRibbonRing {
+    let (x0, z0) = ahead(c, 449, 134);
+    let mut points = [[0i16; 3]; 16];
+    let turn = ((w / 4) & 0xFF) as u16;
+    for (i, p) in points.iter_mut().enumerate() {
+        let (sin, cos) = trig12(((i as u16) << 8).wrapping_add(turn) & 0xFFF);
+        *p = [
+            (i32::from(x0) + i32::from(sin) * w / 2048) as i16,
+            0,
+            (i32::from(z0) + i32::from(cos) * w / 2048) as i16,
+        ];
+    }
+    CastRibbonRing {
+        points,
+        trail_id: RING_TRAIL,
+        count: 16,
+    }
+}
+
 /// **Hyper Crush** (a `beq` / `slti` tree over `0..=8` and `0xFF`; caster
 /// `actor_table[ctx + 0x13]`, module word `0x801F8174`):
 ///
@@ -59,7 +87,7 @@ pub(super) fn ahead(c: ModuleSeat, fore: i32, side: i32) -> (i16, i16) {
 /// | 2 (`0x801F6E70`) | on the gate: pitch `0xC0`, yaw `0xF00 - facing`, TR `(0x800, 0x500, 0x800)`, `0x18` frames | - | `+= scalar * 0x18` |
 /// | 3 (`0x801F6F30`) | - | on the gate, eight on the point `(449, 134)` off the caster, on its facing | `+= scalar << 6` |
 /// | 4 (`0x801F7228`) | TR y `0x580` on odd passes, `0x500` on even | - | drained untested; the arm leaves on its sixth pass |
-/// | 5 (`0x801F72F8`) | on the gate: pitch `0x80`, yaw `-facing`, TR `(0, 0x400, 0x800)` on the arm-3 point, `a3 = 1` | - | `+= scalar * 0xC0` |
+/// | 5 (`0x801F72F8`) | sixteen streak ribbons round the arm-3 point every pass; on the gate: pitch `0x80`, yaw `-facing`, TR `(0, 0x400, 0x800)` on the arm-3 point, `a3 = 1` | - | `+= scalar * 0xC0` |
 /// | 6 (`0x801F7614`) | TR z `+4 s` a pass | - | `+= scalar << 6` |
 /// | 7 (`0x801F7A54`) | TR z `+2 s`, pitch `-s / 4` | - | - |
 /// | 8 (`0x801F7AE4`) | TR z `+s` | - | - |
@@ -149,8 +177,14 @@ pub fn hyper_crush_camera(
                 ..Default::default()
             });
             arm.hold = n != ARM4_PASSES;
+            if !arm.hold {
+                st.module_words[1] = 0;
+            }
         }
         5 => {
+            // The ring, then the word's `step * rate` (`0x801F7510..0x801F7528`).
+            arm.ribbons = Some(ring(c, st.module_words[1]));
+            st.module_words[1] += SPEED_SCALAR;
             arm.hold = st.countdown.drain_above(0);
             if !arm.hold {
                 let (x, z) = ahead(c, 449, 134);
@@ -164,6 +198,12 @@ pub fn hyper_crush_camera(
             }
         }
         6..=8 => {
+            if phase == 6 {
+                // The ring again, the word now `step * rate / 4` a pass
+                // (`0x801F7848..0x801F7894`).
+                arm.ribbons = Some(ring(c, st.module_words[1]));
+                st.module_words[1] += SPEED_SCALAR / 4;
+            }
             arm.drift = Some(match phase {
                 6 => tr_z(4 * s, 0),
                 7 => tr_z(2 * s, -(s >> 2)),
