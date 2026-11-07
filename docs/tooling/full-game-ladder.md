@@ -2260,3 +2260,7 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   clock wrong, the hand steps out onto it first, and training outings head
   there rather than toward the talk. `station` P1[15] wants `0x467` up; the
   cart lands in a little over a thousand frames of standing on `map02`.
+  The segmented pad tier waits and steps out the same way: its run from
+  Jette's fortress toward Noaru reaches `station` with the cart wherever the
+  fights' rand draws left it, and any change to a fight's draw count re-deals
+  that.
