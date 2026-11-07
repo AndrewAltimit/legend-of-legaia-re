@@ -120,6 +120,9 @@ pub struct BattleHud {
     /// that lands the target's accumulated total opens it
     /// ([`Self::land_combo_total`]).
     combo_melee: bool,
+    /// A landed melee total waiting for the next battle frame to open the
+    /// cluster ([`Self::defer_combo_total`]): `(attacker, frame it landed on)`.
+    pending_land: Option<(u8, u64)>,
 }
 
 /// The value window `0x801F6980` a cast aimed at the whole monster row keeps
@@ -218,6 +221,7 @@ impl BattleHud {
             combo_held: false,
             multi_readout: None,
             combo_melee: false,
+            pending_land: None,
         }
     }
 
@@ -459,6 +463,32 @@ impl BattleHud {
         if let Some(c) = self.combo.as_mut() {
             c.hidden = false;
             c.age = 0;
+        }
+    }
+
+    /// The melee total landed on battle frame `frame`: open the cluster on
+    /// the next frame's pass ([`Self::release_combo_total`]).
+    ///
+    /// The flag the kernel raises in the anim tick (`0x801EEA64`) is read by
+    /// the action SM's prologue (`FUN_801E805C` from `0x801E2A70`), and the
+    /// frame driver runs the SM ahead of the actor-list walk that ticks the
+    /// anims (`FUN_80046A20`'s `jal 0x801E295C` at `0x80047048` comes before
+    /// the battle nodes' `FUN_80047430`): a total landed on one frame opens
+    /// the cluster on the next. `map03_speed_wolf_strike`'s film shows retail's
+    /// cluster at `x = 274` twelve vsyncs past the bank on the displayed frame,
+    /// where the same-tick open put the engine's there in eight.
+    pub fn defer_combo_total(&mut self, attacker: u8, frame: u64) {
+        self.pending_land = Some((attacker, frame));
+    }
+
+    /// Open a deferred total ([`Self::defer_combo_total`]) once the battle
+    /// has moved past the frame it landed on.
+    pub fn release_combo_total(&mut self, frame: u64) {
+        if let Some((attacker, landed)) = self.pending_land
+            && frame > landed
+        {
+            self.pending_land = None;
+            self.land_combo_total(attacker);
         }
     }
 

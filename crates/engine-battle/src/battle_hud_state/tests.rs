@@ -659,6 +659,23 @@ fn a_one_hit_melee_reads_damage_and_a_second_hit_reads_hit_total() {
     assert_eq!(h.combo.unwrap().style, ComboStyle::HitTotal);
 }
 
+/// A total landed on one battle frame opens the cluster on the next: the
+/// SM's readout pass (`FUN_801E805C`) runs ahead of the anim tick that raised
+/// the flag.
+#[test]
+fn a_landed_total_opens_the_cluster_on_the_next_frame() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::HitTotal), 3);
+    h.push_damage(1, 39);
+    h.defer_combo_total(3, 10);
+    h.release_combo_total(10);
+    assert!(h.combo.unwrap().hidden, "same frame: still shut");
+    h.release_combo_total(11);
+    let c = h.combo.unwrap();
+    assert!(!c.hidden);
+    assert_eq!(c.age, 0);
+}
+
 #[test]
 fn subdraw_decoder_reads_a_synthetic_table() {
     let base = 0x801F_0000u32;

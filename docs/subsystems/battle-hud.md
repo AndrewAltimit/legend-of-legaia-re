@@ -756,8 +756,13 @@ Somersault's parked last beat landed the string, and the cluster reads `3 HIT`
 swings' `430` sit in the Skeleton's bank at full HP, `DAT_8007BD14` reads `0`,
 and no cluster is up as the Hyper Art commits. Port: `BattleHud::push_popup`
 counts a melee hit hidden and `BattleHud::land_combo_total` opens (or
-restarts) the cluster on the hit event whose `applied` is set; a cast's hit
-opens it as it lands (below).
+restarts) the cluster on the next battle frame after the hit event whose
+`applied` is set (`BattleHud::defer_combo_total`): the frame driver runs the
+action SM, and with it the readout pass, ahead of the actor-list walk whose
+anim tick raised the flag, so the flag waits a frame. On
+`map03_speed_wolf_strike`'s film retail's cluster stands at `x = 274` twelve
+vsyncs past the bank on the displayed frame, where a same-tick open put the
+engine's there in eight. A cast's hit opens it as it lands (below).
 
 **A hit that clears the flag counts without opening.** PROT 0959's wrapper
 hits store `0` into `DAT_8007B64C` beside each HP write

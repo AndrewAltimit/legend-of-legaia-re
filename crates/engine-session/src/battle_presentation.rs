@@ -137,9 +137,12 @@ impl<S: AudioSink> BootSession<S> {
         }
         let hit_events = world.drain_battle_hit_events();
         // A melee hit that landed its target's total opens the cluster the
-        // hits above counted (`BattleHud::land_combo_total`).
+        // hits above counted on the next battle frame
+        // (`BattleHud::defer_combo_total`).
+        let frame = world.battle_frame_id();
+        hud.release_combo_total(frame);
         for e in hit_events.iter().filter(|e| e.applied) {
-            hud.land_combo_total(e.attacker_slot);
+            hud.defer_combo_total(e.attacker_slot, frame);
         }
         let routed_effect_spawns = world.route_battle_effect_spawns();
         sync_battle_hud(hud, world);
