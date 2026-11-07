@@ -347,13 +347,27 @@ impl App {
         let mut stop = false;
         let mut export = false;
         ui.horizontal(|ui| {
+            let key = super::transport_key(ui);
             let label = if st.playing { "Pause" } else { "Play" };
-            if ui.button(label).clicked() {
+            if ui.button(label).on_hover_text("Space").clicked()
+                || key == Some(super::Transport::PlayPause)
+            {
                 if st.playing {
                     stop = true;
                 } else {
                     start = Some(st.frame);
                 }
+            }
+            match key {
+                Some(super::Transport::Back) => {
+                    stop = true;
+                    st.frame = st.frame.saturating_sub(1);
+                }
+                Some(super::Transport::Forward) => {
+                    stop = true;
+                    st.frame = (st.frame + 1).min(n - 1);
+                }
+                _ => {}
             }
             if ui
                 .add(egui::Slider::new(&mut st.frame, 0..=n - 1).text("frame"))

@@ -352,12 +352,31 @@ impl App {
                         v.since = Instant::now();
                         changed = true;
                     }
-                    let label = if v.playing { "Pause" } else { "Play" };
-                    if ui.button(label).clicked() {
-                        v.playing = !v.playing;
-                        v.since = Instant::now();
-                    }
                     let n = a.clips[v.clip].frames.len();
+                    let key = super::transport_key(ui);
+                    let label = if v.playing { "Pause" } else { "Play" };
+                    if ui.button(label).on_hover_text("Space").clicked()
+                        || key == Some(super::Transport::PlayPause)
+                    {
+                        v.playing = !v.playing;
+                        // Play resumes at the frame on screen: the clock is
+                        // set back by the frames already shown.
+                        let fps = a.clips[v.clip].fps.max(f32::EPSILON);
+                        v.since = Instant::now()
+                            .checked_sub(std::time::Duration::from_secs_f32(v.frame as f32 / fps))
+                            .unwrap_or_else(Instant::now);
+                    }
+                    if let Some(step @ (super::Transport::Back | super::Transport::Forward)) = key
+                        && n > 0
+                    {
+                        v.playing = false;
+                        v.frame = if step == super::Transport::Back {
+                            (v.frame + n - 1) % n
+                        } else {
+                            (v.frame + 1) % n
+                        };
+                        changed = true;
+                    }
                     // egui's 100-point default left a long clip's frames a
                     // pixel apart; the slider takes the row's spare width,
                     // less its value box and label.
