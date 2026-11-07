@@ -70,9 +70,9 @@ export const SCENES = {
   battle: { scene: 'map01', ticks: 900, every: 30, battle: 30, taps: every(300, 890, 40, 'Cross') },
   results: { scene: 'map01', ticks: 3600, every: 60, battle: 30, taps: every(300, 3590, 20, 'Cross') },
   cast: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3] },
-  /* Each command-ring direction confirmed and backed out of in turn: the Item and Magic
-   * windows (engine-screens' battle window models) among them. */
-  battle_menus: { scene: 'map01', ticks: 760, every: 15, battle: 30, taps: ['Up', 'Down', 'Left', 'Right'].flatMap((d, i) => [[300 + i * 110, d], [315 + i * 110, 'Cross'], [345 + i * 110, 'Down'], [375 + i * 110, 'Circle'], [390 + i * 110, 'Circle']]) },
+  /* The round prompt's Begin, then the command ring's Item window (Up), its cursor,
+   * back out, the Magic direction, and an item picked: engine-screens' battle windows. */
+  battle_menus: { scene: 'map01', ticks: 640, every: 10, battle: 30, taps: [[380, 'Cross'], [420, 'Up'], [450, 'Down'], [470, 'Down'], [500, 'Circle'], [530, 'Right'], [560, 'Circle'], [590, 'Up'], [620, 'Cross']] },
   /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
   arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
   /* The retock innkeeper (placement 26, the 240 G stay): the field-VM inn record's prompt,
