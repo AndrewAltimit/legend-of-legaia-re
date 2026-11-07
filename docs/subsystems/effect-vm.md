@@ -415,6 +415,18 @@ emitters off the separate flag halfword `actor[+0x9E]`:
 | `0x2000` | `FUN_801CFA48` (battle overlay) | random-walk **ribbon**: lightning bolts, beams, whips | `0x42` (arm `0x80023F94`) |
 | `& 0x6000 == 0` | `FUN_80028158` (SCUS) | ring / disc / fan family | `0x13` |
 
+The ring builder's jittered shapes `4` and `5` draw three `rand()` words a
+column (`0x800289F4`, `0x80028A78`, `0x80028AA4`) every time the render pass
+reaches the node, on the game's one stream: a retail watch of the seed word
+`0x80009010` through Ozma's closing arms counts thousands of them an arm
+(`5820` on arm 16, `14097` on arm 18). The port deals those words in the battle
+frame's draw (`World::deal_battle_draw_rands`): each such part keeps the stream's
+word as its seed (`ActorState::draw_rand_seed`), the stream steps past its draws,
+and the draw replays them, so the spikes change frame to frame and later deals
+stand where retail's do. The same watch puts arms 5..9's words in the streak
+ribbon `FUN_801E1D98` (`0x801E1E9C`, `0x801E213C..0x801E2220`), whose host draw
+still seeds a private generator a frame.
+
 The dispatcher hands the emitter `src = actor + 0x9C`, so the emitter's
 "record" is the actor. The selector and the draw kind are written by the
 **move VM**: op `0x42` sets `actor[+0x56] = 4`, `+0x5A = 2` and
