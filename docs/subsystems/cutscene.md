@@ -314,7 +314,7 @@ Who uses which demuxer:
 
 | Demuxer | Used by | Why |
 |---|---|---|
-| `StRing` | [`str_player::StrPlayer`](#engine-port---legaia_mdecstr_player), and through it `mdec decode-str` | back-pressure-aware; makes a *segment* of a movie playable off the CLI |
+| `StRing` | [`str_player::StrPlayer`](#engine-port---psx_mdecstr_player), and through it `mdec decode-str` | back-pressure-aware; makes a *segment* of a movie playable off the CLI |
 | [`StrFrameAssembler`](../../crates/mdec/src/str_sector.rs) | the play hosts (via `cutscene_av` / `StrAvDemuxer`), `legaia-engine play-str`, offline extraction | no ring exists to overrun |
 
 The disc-gated `st_ring_real_str` test streams a real `MV1.STR` through both and asserts they
@@ -473,7 +473,7 @@ Four more overlay helpers sit on the same boundary and carry no port site:
 The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays *inside* the port: it loops
 `StGetNext` (up to 2000 spins), sets the inclusive end-frame latch `DAT_801E09F8`, and
 re-programs the decode rects from the sector header's dimensions - both ported in
-[`str_player`](#engine-port---legaia_mdecstr_player). It also builds a stack `RECT` of
+[`str_player`](#engine-port---psx_mdecstr_player). It also builds a stack `RECT` of
 `(0, 0, slot_width * 3/2, slot_height * 2)` whenever the cached dimensions change; nothing in the
 body consumes it, so the port does not reproduce it.
 `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` / `overlay_str_fmv_0x801CF740.txt`.

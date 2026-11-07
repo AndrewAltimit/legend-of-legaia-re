@@ -109,7 +109,7 @@ The `+0x18` / `+0x1C` pair is the one place the record can be **overruled**. It 
 rects once, at `FUN_801CF8B0`; from the first demuxed frame onward `FUN_801CF740` overwrites those
 rects' width and height from the STR **sector header**'s own `+0x10` / `+0x12` (cached in
 `DAT_801D0D50` / `DAT_801D0D54`). A slot whose dimensions disagree with the movie loses. See
-[`cutscene.md`](../subsystems/cutscene.md#engine-port---legaia_mdecstr_player).
+[`cutscene.md`](../subsystems/cutscene.md#engine-port---psx_mdecstr_player).
 
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_game_tables::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`).
 
