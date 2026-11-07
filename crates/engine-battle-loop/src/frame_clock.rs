@@ -99,6 +99,14 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// model of a frame's work: Mednafen reads a full party's action about `100` lower,
 /// with the GPU wait in it, and no real hardware has been measured.
 ///
+/// The strike states `0x1E..=0x20` of a lone member and a full party are the
+/// monster strike recordings' frames with no effect part live (the probe's
+/// `cost` column, the ring's newest entry): what a strike's own spark burst
+/// and a special clip's ghosts add is [`frame_load_cost`]'s. The library's
+/// full-party medians (`700` in `0x1F`, `667` in `0x20`) held that load in
+/// the base, where a monster strike on a full party with no part live reads
+/// `596`.
+///
 /// The summon close-up `0x33` and the flash `0x34` are read off the step
 /// rather than a ring entry: on every PCSX-Redux summon film of a lone caster
 /// the step drops from `2` to `1` sixteen frames after the close-up's first few
@@ -115,9 +123,9 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         0x0C => [354, 463, 608],
         0x14 => [329, 453, 593],
         0x19 => [379, 483, 594],
-        0x1E => [373, 479, 612],
-        0x1F => [382, 453, 700],
-        0x20 => [383, 540, 667],
+        0x1E => [393, 479, 622],
+        0x1F => [389, 453, 596],
+        0x20 => [386, 540, 596],
         0x29 => [284, 411, 500],
         0x2B => [354, 387, 534],
         0x2E => [354, 494, 560],
@@ -159,6 +167,30 @@ pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u
     } else {
         cost
     }
+}
+
+/// Hblanks one after-image ghost adds to a frame: the draw tick's walk
+/// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
+/// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two
+/// ghosts raise a lone member's `0x20` frame by `37` and `35` on the frames
+/// they appear, before any effect part is live.
+pub const GHOST_DRAW_COST: u16 = 36;
+
+/// Hblanks one live move-VM effect part adds to a frame (its tick
+/// `FUN_80021DF4` and its sprite or mesh draw). Read off the lone-member strike
+/// recordings: each hit's spark burst of about sixteen parts raises
+/// `battle_dolk_drake_ghost_strike`'s frames from `390` to `424`, and the
+/// cost falls back as the burst's parts retire.
+pub const EFFECT_PART_COST: u16 = 2;
+
+/// What a frame's draw load adds over [`measured_frame_cost`]: `parts` live
+/// effect parts and `ghosts` after-image ghosts. The base rows of the strike
+/// states `0x1E..=0x20` are the recordings' frames with no part live, so a
+/// strike's burst and a special clip's ghosts are what lift its frames.
+pub const fn frame_load_cost(parts: u16, ghosts: u16) -> u16 {
+    parts
+        .saturating_mul(EFFECT_PART_COST)
+        .saturating_add(ghosts.saturating_mul(GHOST_DRAW_COST))
 }
 
 /// The cost a frame an arm table names its step for leaves in the ring, so the

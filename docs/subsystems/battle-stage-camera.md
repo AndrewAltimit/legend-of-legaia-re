@@ -1407,10 +1407,15 @@ the breath its frames reach the `0x2BC` clamp and the step goes to `4`
 (`battle_rugi_caruban_3_fire_breath_mid_cast` and its recording). On a lone
 Vahn the same breath costs about `505`, under `0x1FF`, and stays at `2`
 (`battle_rikuroa_caruban_fire_breath_mid_cast`). `FrameCostRing::push` keeps
-this order: it stores a pass's cost and returns the step of the next one, and
-`World::apply_cast_arm_frame_step` spans the pass's own frame with the step the
-ring read before the push. Spanning it with the step the push returned shortened
-every ring-driven step change by a pass.
+this order: it stores a pass's cost and returns the step of the next one, and the
+engine installs that step when the next pass opens its frame
+(`BattleState::pending_frame_step`, taken by `World::battle_sm_pass_due` and the
+per-pass claims beside it), so the pass that raised it is still waited out on the step
+it ran at. An arm table's step is the arm's own frames' and installs on the arm's
+first pass. Spanning a pass's own frame with the step its push returned shortened
+every ring-driven step change by a pass, and spanning it with the step read before
+the push (with the pass's timers still on the older step) left the pass's drain a
+step behind its frame.
 
 <a id="what-the-ring-holds"></a>
 
@@ -1464,6 +1469,33 @@ the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes
 table was read off these same fights, so that is a fit, and no held-out score. The
 Vahn and Noa fight stands on a state reached by a door-tile poke from
 `rikuroa_post_genesis_tree`, since the library holds no fight of two.
+
+<a id="a-frames-draw-load"></a>
+
+**A frame's draw load.** The table's rows are a state's typical frame, and what lifts
+one frame of a state over another is what it draws. The cast-sequence probe logs the
+ring's newest entry every vsync (`meta.csv`'s `cost`), and beside `--retail-parts`'
+live move-VM parts it reads two loads:
+
+- **Effect parts.** Each live part (tick `FUN_80021DF4` and its sprite or mesh) costs
+  about `2` hblanks: each hit's spark burst of some sixteen parts lifts
+  `battle_dolk_drake_ghost_strike`'s lone-member frames from `390` to `424`, and the
+  cost falls back as the burst's parts retire.
+- **After-image ghosts.** The draw tick's walk `FUN_80049348` re-runs the body's whole
+  draw per ghost. `battle_vell_nighto_49_strike`'s special clip raises its frames by
+  `37` and `35` on the two frames its ghosts appear, before any part is live.
+
+The engine adds both to the ring's push (`frame_load_cost`, over
+`World::battle_frame_load`: the unfinished parts of every effect scene and the ghosts
+`battle_afterimage::plan_ghosts` plans, the plan both hosts draw). The strike rows
+`0x1E..=0x20` of a lone member and a full party are the strike recordings' frames with
+no part live (`393` / `389` / `386` and `622` / `596` / `596`); the library's
+full-party `700` and `667` held a party strike's load in the base. Nighto's strike is
+the case the load decides: two ghosts and a four-hit burst lift a lone Vahn's `0x20`
+frames from `392` to `579` in retail, its step goes from `2` to `3` thirty-odd vsyncs
+in, and the yaw counter gains `4` a pass from there. On the base rows alone the
+engine's ran at `2` throughout and its yaw fell `16` units behind; with the load the
+film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 
 A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its curve
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`

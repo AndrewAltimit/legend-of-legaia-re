@@ -751,6 +751,11 @@ pub struct BattleState {
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
+    /// The step the last pass left for the next one, installed when that
+    /// pass opens its frame (`World::battle_sm_pass_due`): retail waits a
+    /// pass's frame out on the step the pass ran at and only then copies the
+    /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
+    pub pending_frame_step: Option<u8>,
     /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
     /// outranks the arm table and the default.
     pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
@@ -1421,6 +1426,7 @@ impl BattleState {
             frame_cost_ring: Default::default(),
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             frame_cost_state: None,
+            pending_frame_step: None,
             retail_step_track: None,
             retail_rand_track: None,
             capture_read_until: 0,
