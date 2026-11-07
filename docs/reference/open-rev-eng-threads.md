@@ -543,12 +543,15 @@ frame body `FUN_80016444`, then `FUN_80016B6C`, which drains at its head and pac
 wait after (`0x8001702C..0x80017068`), so a cue keys where the frame's work ends. The port
 drains on the tick that opens the frame, which puts the cast channel's cues up to a frame step
 early (Big Wave's party reactions, the reading the [cast channel](../subsystems/audio.md#the-cast-channel)
-gave as four vsyncs). Holding the key-on `step - 1` ticks moved the cast rows' levels toward
-retail's but left every correlation where it was, and on `gilium_summon_mid_cast` it moved the
-scorer's voice fit onto a neighbouring peak (`0.991` to `0.25`), so it is not ported. What
-closes it: a sample-exact onset per cue (a key-on watch on `FUN_80065034` with the SPU sample
-counter) against the frame's first vsync, and a cast channel whose voice fit does not hang on
-the recording's first seconds.
+gave as four vsyncs). The recordings put the onset a whole frame step after the push (Big
+Wave's first cue `3.9` vsyncs after the engine's, which pushes on retail's vsync), so the lag is
+the step, not `step - 1`. Holding the key-on a battle frame step leaves every cast row's median
+correlation where it was and lowers the tenth percentile on Swordie (`0.77` to `0.33`), Zenoir
+(`0.68` to `0.33`), Theeder and Guilty Cross, raising it only on Big Wave (`0.48` to `0.52`):
+the port's battle step is its cost model's, `2` through Big Wave's reactions where retail runs
+`4`, and `4` through Zenoir's kill phase where retail alternates `3` and `4`, so a lag on the
+port's step moves half the cues the wrong way. It is not ported. What closes it: the battle
+frame step itself on those arms (the cost ring's table), after which the lag is the step.
 
 ## Title / boot / overlays
 

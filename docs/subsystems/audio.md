@@ -3603,7 +3603,10 @@ each recorded tick (`<wav>.drive`, `World::cast_drive_waiting`). Where it did, t
 wait's end mixes on the cast's own offset, and the part after it (the voice) is fitted on its own over
 the first three seconds, at any shift from the engine's whole wait earlier (a drive that answered at once)
 to `max(8, wait / 2)` vsyncs later (`pcm_retail::fit_cast_offset_after_wait`, the margin shared with the
-[cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). `audio-pcm.py` prints each
+[cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). The search runs on loudness first
+(256-sample blocks) and on the waveform only inside one block of that: a voice's waveform
+correlation repeats at its pitch period, and a grid over it once moved Gilium's voice a period
+on a cue tail `29` dB under it. `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
 never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
 the applier, not the drive. On the five summon states with a wait the voice lands `-10.0` vsyncs from the
