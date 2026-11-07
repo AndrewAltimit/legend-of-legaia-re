@@ -1998,7 +1998,7 @@ worked case: once system flag `0x141` is up their bind prologues run
 `38 83 00` / `38 87 00` and seat them at tiles `(22, 46)` / `(27, 45)`, so a
 retail state holds them at yaw `0x600` / `0xE00` where the `.MAP` authored
 `320` / `4000`. The port seeds each object-bind context's angles from its
-object (`man_field_scripts::object_script_bind_rots`), lets op `0x38` and
+object (`man_field_scripts::object_script_bind_objects`), lets op `0x38` and
 `4C 48` move them, and both hosts turn a placed draw about its origin by the
 difference (`World::object_draw_turn_matrices`,
 `field_env::turn_placed_model`) before the scripted displacement
@@ -2030,8 +2030,8 @@ so every later write to `+0x16` replaces it: op `4C 42`'s immediate mirror
 stores `-(+0x8E)` ahead of both floor arms (`0x8003BC50..0x8003BC64`) and
 leaves a law object whose script never writes `+0x8E` at `Y = 0` (the bind
 clears the slot, `0x8003A8D4`). The port seats each object-bind context's Y
-from its first object (`man_field_scripts::object_script_bind_heights`,
-`World::set_object_bind_heights`), and `World::object_draw_displacements`
+from its own object (`man_field_scripts::object_script_bind_objects`), and
+`World::object_draw_displacements`
 reports the actor's Y **less that seat**, since both hosts add the
 displacement to a draw that already stands on it. `suimon`'s water is the
 case: partition-0 records 5..9 raise `31 1D` and park `+0x8E` at

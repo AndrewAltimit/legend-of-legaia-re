@@ -429,10 +429,11 @@ arms now run as `walk_on_crossing` / `walk_on_repoll` and match over every trigg
 
 The scene-init object sweep `FUN_8003A55C` (`object_spawn`), over the same scenes with the kind-1 lookup live
 beneath it, matches `parse_map_objects` joined with the lookup on all 2291 binds: which objects spawn, the seat,
-the floor rung, the angles and the record. Retail spawns a script context for every bound object; the port
-does not. `object_script_bind_seats` drops a second object with the same record and contact centre (`kor` keeps
-43 of its 55, fifteen scenes lose some), and `spawn_object_channels` then keeps one channel per record, so of
-`koin1`'s two door pieces bound to record 1 at one seat, only one runs the script.
+the floor rung, the angles and the record. It also holds the port's own bind list
+(`object_script_bind_objects`: seat, height, angles, record) and the object contexts `World::seed_object_channels`
+spawns from it over the scene's real MAN against the sweep, in order: one context per bound object, script id
+`+0x50`, 855 of them on a record an earlier object binds, and the five `edbalden` objects whose record lies past
+the MAN's count on the default record (see [one context per object](../subsystems/field-locomotion.md#one-context-per-object)).
 The region scan `FUN_80017FBC` under the attribute refresh `FUN_800180EC`, and the camera zone query
 `FUN_801DBA20` over the box the refresh latched (`region_scan`), match `refresh_region_attributes` and
 `zone_query` on every field scene's region table, at tiles on and around every record edge, off the grid and in

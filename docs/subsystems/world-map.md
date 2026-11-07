@@ -2408,7 +2408,7 @@ stands at the object's own position (`tile * 128 + 0x40` plus the descriptor's
 fine offsets), not on the key tile its record lookup uses - `map01`'s Rim Elm
 (record 8) is keyed two tiles north of where it stands - so the port seats
 each object-bind context on that position
-(`man_field_scripts::object_script_bind_seats`; the portal and walk-touch
+(`man_field_scripts::object_script_bind_objects`; the portal and walk-touch
 layers keep the contact centre). A record that seats the actor (`A3 <id> ..`)
 or swaps its model (`CC <id> 50 ..`, `FUN_80024E08`) changes what the
 overworld draws: the credits walk (`map01` `P2[40]`) runs `A3 08 60 17` and

@@ -51,12 +51,7 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> (
-        Vec<(usize, Mat4)>,
-        usize,
-        Vec<Option<usize>>,
-        Vec<Option<usize>>,
-    ) {
+    ) -> super::WorldMapDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return (Vec::new(), 0, Vec::new(), Vec::new());
         };

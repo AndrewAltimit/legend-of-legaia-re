@@ -14,15 +14,7 @@ pub(super) struct FieldDraws {
     pub(super) terrain_color: TerrainDrawList,
 }
 
-/// One world-map terrain stamp list: the draws, where the decoration run
-/// starts, each draw's record and each draw's object key
-/// (`field_env::placed_object_key_of`).
-pub(super) type WorldMapDrawList = (
-    Vec<(usize, Mat4)>,
-    usize,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-);
+pub(super) use super::super::field_render::WorldMapDrawList;
 
 /// The world-map terrain stamps on both bridges.
 pub(super) struct WorldMapDraws {
