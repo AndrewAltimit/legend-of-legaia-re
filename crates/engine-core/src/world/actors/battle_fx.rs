@@ -710,11 +710,15 @@ impl World {
     /// `None` when `FUN_80050120` has taken the pair off the draw (a weight
     /// of exactly `0x1000` switches `+0x56` to `0`, `0x80050850..0x80050880`).
     /// The pull is toward black: the records' colour word `+0x74` is `0`.
-    /// Both battle hosts cue their backdrop draw with it.
+    /// Both battle hosts cue their backdrop draw with it. The weight is the
+    /// prims' `IR0` with its low bit raised
+    /// (`battle_ground_grid::backdrop_draw_ir0`), so a pair at rest reads
+    /// `1 / 4096`, never `0`.
     pub fn battle_backdrop_cue(&self) -> Option<f32> {
         let w = self.battle.backdrop_cue;
-        (w != legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL)
-            .then(|| f32::from(w) / 4096.0)
+        (w != legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL).then(|| {
+            f32::from(legaia_engine_battle_vm::battle_ground_grid::backdrop_draw_ir0(w)) / 4096.0
+        })
     }
 
     /// Capture alignment (never in play): stand the backdrop pair's

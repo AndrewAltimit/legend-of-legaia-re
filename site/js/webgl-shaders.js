@@ -1440,7 +1440,17 @@ void main() {
    * (grade_near would double-grade), carries the global screen tint
    * whole-pixel, and holds the cue ramp inert. */
   float ir0 = palette_on ? 0.0 : cue_ir0(v_view_z);
-  if (ir0 > 0.0) {
+  if (ir0 > 0.0 && u_psx.w >= 0.5) {
+    /* The GTE's own precision (twin of engine-render's psx_cue_colour_gte):
+     * DPCS floors its sum, so any IR0 toward a darker far colour takes a
+     * whole unit off - the battle backdrop's IR0 = 1 hands the GPU 0x7F for
+     * its baked 0x80 words. */
+    vec3 c = floor(clamp(grade_near(prim_color), 0.0, 1.0) * 255.0 + 0.5);
+    vec3 f = floor(clamp(u_cue_far, 0.0, 1.0) * 255.0 + 0.5);
+    float w = floor(ir0 * 4096.0 + 0.5);
+    vec3 inner = floor((f - c) * 16.0 * w / 4096.0);
+    prim_color = clamp(floor((c * 16.0 + inner) / 16.0), 0.0, 255.0) / 255.0;
+  } else if (ir0 > 0.0) {
     prim_color = clamp(mix(grade_near(prim_color), u_cue_far, ir0), vec3(0.0), vec3(1.0));
   }
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),

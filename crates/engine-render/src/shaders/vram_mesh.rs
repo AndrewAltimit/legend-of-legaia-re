@@ -749,7 +749,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
     let cue_first = !palette_on && ir0 > 0.0;
-    if cue_first {
+    if cue_first && u.psx_params.w >= 0.5 {
+        prim = psx_cue_colour_gte(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    } else if cue_first {
         prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
     }
     // A dithered draw (PSX mode) blends at the GPU's precision, an 8-bit
@@ -861,7 +863,9 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
     let cue_first = !palette_on && ir0 > 0.0;
-    if cue_first {
+    if cue_first && u.psx_params.w >= 0.5 {
+        prim = psx_cue_colour_gte(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    } else if cue_first {
         prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
     }
     let lit = psx_modulate(color.rgb, prim);

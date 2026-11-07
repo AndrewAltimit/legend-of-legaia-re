@@ -318,6 +318,10 @@ that by storing `2` or `3` into `ctx+0x278` (PROT 0903's arms 4 and 6), so
 Gimard's attack plays inside its fire tunnel with nothing of the stage behind
 it (`gimard_burning_attack` reads both records at `+0x78 = 0x1000`).
 
+**At rest the cue is not zero.** The backdrop arm hands `FUN_80043390` the colour word with `0x40` or `0x48` in its top byte, and the dispatcher raises the low bit of the weight whenever that byte is non-zero (`ori a2,a2,0x1` at `0x800433CC`) before storing it as the leaves' `IR0` (`0x800433F0`, the flat-textured leaf's `lwc2` / `DPCS` at `0x80044F5C..0x80044F74`). The `DPCS` floors its sum, so `IR0 = 1` toward the black far colour takes one unit off every channel: the `map02` sky's `POLY_FT4` packets carry `0x7F7F7F` over TMD words of `0x808080` (PROT 0247 object 0, group flags `0x23`), its mountains `0x777F7F` over `0x788080`.
+Under the GPU's modulate `(t5 * 0x7F) >> 7` that is a whole 5-bit step under the texel: a retail sky pixel reads the texel less `7.4` per channel (median over the packets of one table, against the state's VRAM).
+The port cues the backdrop at `weight | 1` (`battle_ground_grid::backdrop_draw_ir0`) and, in PSX mode, runs the cue at the GTE's precision (`psx_cue_colour_gte`, the play page's twin), where the continuous blend read the words as `0x80` and every overworld battle's sky drew about `7` per channel too bright (`battle_map02_poisonous_worm_strike` `image` `.867` to `.949`).
+
 #### Viewers
 
 The asset-viewer PROT browser and the browser entry viewer both draw the grid

@@ -336,6 +336,22 @@ fn psx_cue_colour(prim: vec3<f32>, far_bytes: vec3<f32>, ir0: f32) -> vec3<f32> 
     return clamp(mix(prim, far_bytes, ir0), vec3<f32>(0.0), vec3<f32>(255.0));
 }
 
+// `psx_cue_colour` at the GTE's own precision, for a PSX-mode draw. `DPCS`
+// with `sf = 1` (`cop2 0x780010`) forms `IR = (FC << 4) - (C << 4)`, adds
+// `IR * IR0 >> 12` to `C << 4` with an arithmetic (flooring) shift, and the
+// colour FIFO takes that over 16, floored again. So any `IR0 > 0` toward a
+// darker far colour takes a whole unit off the channel: the battle backdrop,
+// cued at `IR0 = 1` (`FUN_80043390`'s low-bit raise), hands the GPU `0x7F`
+// for its baked `0x80` words, a full 5-bit step under the texel after the
+// modulate. The continuous blend read those words as `0x80`.
+fn psx_cue_colour_gte(prim: vec3<f32>, far_bytes: vec3<f32>, ir0: f32) -> vec3<f32> {
+    let c = round(clamp(prim, vec3<f32>(0.0), vec3<f32>(255.0)));
+    let f = round(clamp(far_bytes, vec3<f32>(0.0), vec3<f32>(255.0)));
+    let w = round(max(ir0, 0.0) * 4096.0);
+    let inner = floor((f - c) * 16.0 * w / 4096.0);
+    return clamp(floor((c * 16.0 + inner) / 16.0), vec3<f32>(0.0), vec3<f32>(255.0));
+}
+
 // View-depth-driven IR0 - the prologue's per-render-node depth-cue pull.
 //
 // Retail stages the DPCS far colour + IR0 PER RENDER NODE (`+0x74` / `+0x78`,
