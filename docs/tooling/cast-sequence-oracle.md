@@ -165,7 +165,8 @@ seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 token a module's stream-wait arm polls) and the words the read-span poll
 `FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
 `cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`), the BIOS `rand()` seed word
-`0x80009010` (`rand`) and which ordering table links a screen fade's quad
+`0x80009010` (`rand`), the frame-cost ring's newest entry (`cost`: `0x80084098`
+at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and which ordering table links a screen fade's quad
 (`fade_back`: `2` the current record, `1` only the other, `0` none; see
 [the pairing rule](#the-pairing-rule)). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
