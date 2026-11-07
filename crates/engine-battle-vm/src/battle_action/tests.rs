@@ -58,6 +58,7 @@ struct RecHost {
     rng_seq: Vec<u32>,
     rng_pos: RefCell<usize>,
     pad_word: u16,
+    pad_held_32: u16,
     party_count: u8,
     size_classes: std::collections::HashMap<u8, u8>,
     slot_count: u8,
@@ -178,6 +179,9 @@ impl BattleActionHost for RecHost {
     }
     fn pad_word(&self) -> u16 {
         self.pad_word
+    }
+    fn pad_held_32(&self) -> u16 {
+        self.pad_held_32
     }
     fn rng(&mut self) -> u32 {
         let mut p = self.rng_pos.borrow_mut();

@@ -466,6 +466,8 @@ fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
         tag: None,
         seat_pokes: Vec::new(),
         seat_halve_speed: false,
+        halted_walks: 0,
+        walk_reached: false,
     }];
     world.queue_battle_part_scrolls(&mut parts);
     assert_eq!(world.battle.vram_scrolls.len(), 1);

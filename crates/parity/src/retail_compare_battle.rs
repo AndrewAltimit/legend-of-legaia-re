@@ -129,6 +129,8 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
 pub(crate) const DOME_LEG_MAP_DEFINE: u16 = 0x4C6;
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
+/// The options screen's Sound config word (Stereo `0` / Monaural `1`).
+const SOUND_OPTION: u32 = 0x8008_46BC;
 /// The options screen's Select Attack config word.
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
@@ -322,6 +324,8 @@ pub struct RetailBattle {
     /// The newest passes' common step and how many passes ran at it
     /// ([`newest_step_run`]).
     pub step_run: (u8, usize),
+    /// The frame-cost ring the capture holds ([`frame_cost_ring`]).
+    pub cost_ring: Option<([u16; 16], u8)>,
     /// Where a run shorter than the history began, on the acting body: its
     /// playing clip `+0x1D9` and its anim-cursor history `+0x17A` at the
     /// pass before the run, when the run stays inside that clip (the
@@ -358,6 +362,11 @@ pub struct RetailBattle {
     /// image child seats over the replay's part of the same record on the
     /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
     pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// Every live part of the cast module's records as `(record, +0x54)`,
+    /// in actor-list order: the part list's age on the RAM's pass, which a
+    /// capture-band retake counts its display lag back from
+    /// (`LEGAIA_CAPTURE_PART_AGES`, [`retail_part_ages`](ram_read::retail_part_ages)).
+    pub part_ages: Vec<(u32, i16)>,
     /// The state's turning effect-script table parts (`FUN_80021DF4` nodes
     /// whose record lies in the battle overlay's prototype band), each as
     /// its displayed rotation trio, which the image child seats over the
@@ -543,6 +552,11 @@ pub struct RetailBattle {
     /// saved game-state window, but the save lift does not carry options,
     /// so the seed stamps it (`World::toggles.battle_camera`).
     pub camera_option: u8,
+    /// The options screen's Sound word `0x800846BC` (Stereo `0` / Monaural
+    /// `1`), which libsnd's `SsSetMono` flag follows. Nothing on screen reads
+    /// it; the cast channel's recording does (`audio.md`, "Real retail PCM"),
+    /// so the seed stamps it like the Battle Camera word.
+    pub sound_option: u8,
     /// No HUD widget glide is in flight: every tracked record
     /// `ctx[+0x11B4 + slot * 0xC]` reads `total == 0`, which is what
     /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
@@ -691,6 +705,12 @@ pub struct RetailBattle {
     /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
     /// that moved inside those two frames drew where the ring says.
     pub displayed_ground: Vec<Option<[i16; 2]>>,
+    /// The acting seat's position-ring slot `1`: the live pair the RAM's
+    /// pass began on. The action SM arms its framing before that pass's
+    /// anim tick moves the body (`FUN_801E295C` ahead of `FUN_80047430` in
+    /// the frame), so the table's endpoint was read off this pair, not off
+    /// the RAM's live pair ([`Self::arrival_arm_snaps`]).
+    pub arm_ground: Option<[i16; 2]>,
     /// Each pool slot: whether its anim node committed a clip between the
     /// displayed frame and the RAM's - the ring id `+0x1FB` changed, or the
     /// cursor ring `+0x17A` stepped back, inside the
@@ -710,6 +730,11 @@ pub struct RetailBattle {
     /// hold). It differs from the RAM's clip where the anim node committed
     /// inside the display lag, which the walk back cannot see.
     pub displayed_clips: Vec<Option<(u8, u16)>>,
+    /// Each pool slot: the `+0x77` byte of the clip entry its displayed frame
+    /// played (`0` for a party seat or an entry the ring does not name) -
+    /// the spell id a monster clip's commit names its move by
+    /// (`FUN_8004AD80`, `0x8004AF08..0x8004AF88`).
+    pub displayed_move_labels: Vec<u8>,
     /// The attacker's heading on the displayed frame, where that frame is its
     /// walk's last pass ([`camera_align::walk_heading`]).
     pub displayed_strike_heading: Option<u16>,

@@ -317,6 +317,14 @@ const KEY: [f32; 4] = legaia_app_theme::chrome::KEY.to_f32();
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.
 const STAGE_W: i32 = 480;
 const STAGE_H: i32 = 360;
+/// How many stage rows the header band may give up so a window a little
+/// short of a whole step keeps it ([`header_squeeze`]). A 960x720 window
+/// on a 768-pixel-tall screen comes back about 700 tall once the window
+/// manager's title bar and panel are paid for; without the give it fell to
+/// 1x, a quarter of the window.
+const HEADER_GIVE: i32 = 11;
+/// The header band's height on an unsqueezed stage.
+const HEADER_H: i32 = 44;
 const PAD: i32 = 14;
 /// The two columns.
 const LEFT_X: i32 = PAD;
@@ -369,6 +377,10 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
     };
     s.min(max)
 }
+
+/// The help box while a disc path is typed or pasted into the window.
+const TYPED_PATH_HELP: &str = "Enter checks the typed path and uses the disc there. \
+     Backspace edits it, Esc clears it, Ctrl+V pastes.";
 
 /// The disc card's line with no disc chosen. The card holds two lines of it;
 /// that no game data ships is on the *Choose disc* help.
@@ -946,7 +958,7 @@ impl LauncherApp {
         if let Some(w) = self.win.window.as_deref() {
             w.set_min_inner_size(Some(winit::dpi::LogicalSize::new(
                 STAGE_W as f64,
-                STAGE_H as f64,
+                (STAGE_H - HEADER_GIVE) as f64,
             )));
         }
         self.atlas = None;
@@ -1055,6 +1067,18 @@ impl LauncherApp {
                     disc_problem.as_ref(),
                 );
                 self.failure_report = Some(failure_report(&status, log_text.as_deref()));
+                // The game writes both files while it runs (its `F12`
+                // panel: the options, the PlayStation pixel look): show what
+                // it left, and do not write the values it had at Play back
+                // over them on the next change here.
+                self.options = OptionsState::load_or_default(Path::new(launcher::OPTIONS_FILE));
+                if let Some(stored) = self
+                    .settings_file
+                    .as_deref()
+                    .and_then(|f| LauncherSettings::load(f).ok())
+                {
+                    self.settings.switches = stored.switches;
+                }
                 if let Some(p) = disc_problem {
                     log::info!("launcher: after the failed start, {p}");
                     self.disc = None;
@@ -1371,32 +1395,26 @@ impl LauncherApp {
     // --- Drawing --------------------------------------------------------
 
     fn stage(&self) -> Stage {
-        let (w, h) = self.win.surface_size();
-        let scale = ((w as i32 / STAGE_W).min(h as i32 / STAGE_H)).max(1);
-        let origin = (
-            (w as i32 - STAGE_W * scale) / 2,
-            (h as i32 - STAGE_H * scale) / 2,
-        );
-        Stage {
-            scale,
-            origin,
-            surface: (w, h),
-        }
+        stage_for(self.win.surface_size())
     }
 
     /// Lay the screen out; `hits` gets each control's stage rectangle.
     fn layout(&self, c: &mut Canvas, hits: &mut Vec<(Item, Rect)>) {
         // Header band.
         c.fill_surface(BODY);
-        // The header band and its rule run edge to edge: the stage scales
-        // by whole steps, so a large window centres it with margins, and a
-        // band drawn only across the stage stopped short of them.
-        c.full_width(0, 44, BAND);
-        c.full_width(44, 1, RULE);
-        c.text_scaled(PAD, 7, "Legend of Legaia", GOLD, 2);
+        // The header band runs edge to edge and up to the window's top: the
+        // stage scales by whole steps, so a large window centres it with
+        // margins, and a band drawn only across the stage stopped short of
+        // them (and floated under a dark strip above). A squeezed stage
+        // starts `sq` rows above the surface, so the title moves down half
+        // as far as the band shrinks.
+        let sq = c.stage.squeeze;
+        c.band_to_top(HEADER_H, BAND);
+        c.full_width(HEADER_H, 1, RULE);
+        c.text_scaled(PAD, 7 + sq / 2, "Legend of Legaia", GOLD, 2);
         let sub = format!("engine port {}", env!("CARGO_PKG_VERSION"));
         let w = c.width(&sub);
-        c.text(STAGE_W - PAD - w, 20, &sub, FAINT);
+        c.text(STAGE_W - PAD - w, 20 + sq / 2, &sub, FAINT);
 
         self.disc_card(c);
 
@@ -1784,6 +1802,11 @@ impl LauncherApp {
         if let Some(s) = &self.status {
             return s.clone();
         }
+        // A path being typed: the card shows it, the box says what the keys
+        // do with it (the focused button's help would not).
+        if !self.typed.is_empty() {
+            return vec![(TYPED_PATH_HELP.into(), DIM)];
+        }
         let mut lines = vec![(self.help_text(), DIM)];
         if let Item::Opt(row) = self.focus
             && self.panel == Panel::Options
@@ -2119,6 +2142,31 @@ struct Stage {
     scale: i32,
     origin: (i32, i32),
     surface: (u32, u32),
+    /// Stage rows the header band gives up ([`HEADER_GIVE`] at most): the
+    /// stage's top `squeeze` rows sit above the surface.
+    squeeze: i32,
+}
+
+/// The largest whole-step stage that fits a `(w, h)` surface, centred. A
+/// surface up to [`HEADER_GIVE`] stage rows short of a step still takes it,
+/// with the header band that much shorter ([`Stage::squeeze`]); everything
+/// under the header keeps its size, so every fit the layout tests measure
+/// holds at any squeeze.
+fn stage_for((w, h): (u32, u32)) -> Stage {
+    let (w, h) = (w as i32, h as i32);
+    let scale = (w / STAGE_W).min(h / (STAGE_H - HEADER_GIVE)).max(1);
+    let squeeze = (STAGE_H - h / scale).clamp(0, HEADER_GIVE);
+    let shown = STAGE_H - squeeze;
+    let origin = (
+        (w - STAGE_W * scale) / 2,
+        (h - shown * scale) / 2 - squeeze * scale,
+    );
+    Stage {
+        scale,
+        origin,
+        surface: (w as u32, h as u32),
+        squeeze,
+    }
 }
 
 /// Quads in stage coordinates, emitted in surface pixels.
@@ -2145,13 +2193,27 @@ impl Canvas<'_> {
     /// surface (the margins beside the stage included).
     fn full_width(&mut self, y: i32, h: i32, color: [f32; 4]) {
         let s = self.stage.scale;
+        let top = self.stage.origin.1 + y * s;
+        let bottom = top + h.max(0) * s;
         self.draws.push(TextDraw {
             dst: (
                 0,
-                (self.stage.origin.1 + y * s).max(0),
+                top.max(0),
                 self.stage.surface.0,
-                (h.max(0) * s) as u32,
+                (bottom - top.max(0)).max(0) as u32,
             ),
+            src: self.solid,
+            color,
+        });
+    }
+
+    /// A band from the surface's top edge down to stage row `bottom`,
+    /// across the whole surface: the header in a window taller than the
+    /// stage reaches the top instead of floating under a dark margin.
+    fn band_to_top(&mut self, bottom: i32, color: [f32; 4]) {
+        let h = self.stage.origin.1 + bottom * self.stage.scale;
+        self.draws.push(TextDraw {
+            dst: (0, 0, self.stage.surface.0, h.max(0) as u32),
             src: self.solid,
             color,
         });
@@ -2879,9 +2941,38 @@ mod tests {
                 scale: 2,
                 origin: (0, 0),
                 surface: (960, 720),
+                squeeze: 0,
             },
             draws: Vec::new(),
         }
+    }
+
+    /// A window a few rows short of a whole step keeps the step: the header
+    /// band gives up the rows and the stage under it is unchanged and on
+    /// the surface.
+    #[test]
+    fn a_window_a_little_short_keeps_its_scale() {
+        let full = stage_for((960, 720));
+        assert_eq!((full.scale, full.squeeze, full.origin), (2, 0, (0, 0)));
+        // A 960x720 window clamped by a 768-pixel screen's panels.
+        let short = stage_for((960, 699));
+        assert_eq!((short.scale, short.squeeze), (2, 11));
+        assert_eq!(short.origin.1 + short.squeeze * short.scale, 0);
+        assert!(short.origin.1 + STAGE_H * short.scale <= 699);
+        assert_eq!(stage_for((1920, 1080)).scale, 3);
+        assert_eq!(stage_for((1366, 705)).scale, 2);
+        // Too short for the give: the step below.
+        let small = stage_for((960, 690));
+        assert_eq!((small.scale, small.squeeze), (1, 0));
+        // The minimum window.
+        let min = stage_for((STAGE_W as u32, (STAGE_H - HEADER_GIVE) as u32));
+        assert_eq!(
+            (min.scale, min.squeeze, min.origin),
+            (1, HEADER_GIVE, (0, -HEADER_GIVE))
+        );
+        // The squeezed header still holds the title: 24 rows of it.
+        let title_y = 7 + HEADER_GIVE / 2;
+        assert!(title_y >= HEADER_GIVE && title_y + 24 <= HEADER_H);
     }
 
     #[test]
@@ -3295,6 +3386,7 @@ mod tests {
             ),
         };
         out.push(("renamed cue".into(), problem_message(&renamed)));
+        out.push(("typed path".into(), vec![(TYPED_PATH_HELP.into(), DIM)]));
         // The Controls page's lines.
         out.push(("unbindable key".into(), vec![(UNBINDABLE_KEY.into(), WARN)]));
         for b in ["Cross", "Up"] {

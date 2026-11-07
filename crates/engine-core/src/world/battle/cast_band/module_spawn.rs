@@ -320,12 +320,18 @@ impl World {
         } else {
             module.parts.clone()
         };
-        self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
-            &parts,
-            &module.bytes,
-            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
-            origin,
-        ));
+        // Each part carries its record, as an arm-seated one does: the pool
+        // flush `FUN_80050E74` halts the parts of the records the image
+        // seats through `FUN_80050ED4` (`PresentationCall::PoolFlush`).
+        self.casting.active_summon = Some(
+            legaia_engine_effects::summon::SummonScene::spawn_parts_tagged(
+                &parts,
+                &module.bytes,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
+                origin,
+                legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
+            ),
+        );
         true
     }
 
@@ -387,12 +393,19 @@ impl World {
         if rest.is_empty() {
             return;
         }
-        self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
-            &rest,
-            &module.bytes,
-            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
-            origin,
-        ));
+        // Tagged by record: retail's stager seats these through the pool
+        // wrapper, so the arm-1 flush of PROT 0956's Paralyzing Wave
+        // (`jal 0x80050E74` at `0x801F6D0C`) halts its rings; untagged, they
+        // grew on through the rest of the cast into a white screen.
+        self.casting.active_summon = Some(
+            legaia_engine_effects::summon::SummonScene::spawn_parts_tagged(
+                &rest,
+                &module.bytes,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
+                origin,
+                LINK_BASE,
+            ),
+        );
     }
 
     /// Seat the spawn calls one module arm made this pass, each on its own

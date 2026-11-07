@@ -2719,6 +2719,7 @@ dependencies = [
  "legaia-anm",
  "legaia-game-tables",
  "legaia-minigame-formats",
+ "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
 ]
@@ -3178,6 +3179,7 @@ dependencies = [
  "legaia-art",
  "legaia-container-formats",
  "legaia-disc-patch",
+ "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-loop",
@@ -3202,6 +3204,7 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
+ "legaia-vab",
 ]
 
 [[package]]

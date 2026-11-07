@@ -136,6 +136,7 @@ fn hook(p: &mut PondSession, fish: (i16, i16)) {
                     reel_mask: if held { REEL_A } else { 0 },
                     cast_edge: false,
                     leave_edge: false,
+                    face_edge: false,
                     edge_bonus: i32::from(f % HOLD == 0),
                 },
             );

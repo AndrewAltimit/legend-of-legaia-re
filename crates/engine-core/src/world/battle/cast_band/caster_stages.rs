@@ -323,7 +323,7 @@ impl World {
                 // PROT 0957's table is Thunder Storm's arms: Death Game's stand
                 // under the same numbers and flush nothing.
                 let death_game = run.prot_entry == 957 && self.casting.capture_spell == Some(0x76);
-                if cmc::capture_arm_flushes_pool(run.prot_entry, arm) && !death_game {
+                if cmc::capture_arm_flushes_pool_for(run.prot_entry, arm, spell_id) && !death_game {
                     self.casting.flush_module_part_pool();
                 }
                 self.apply_capture_arm_part_writes(run.prot_entry, arm);
@@ -350,6 +350,19 @@ impl World {
                 );
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
+                }
+                // Dark Typhoon's ring follows the arm's two calls.
+                if run.prot_entry == 942
+                    && arm == 4
+                    && spell_id == 0xAA
+                    && let Some(c) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let ring = cmc::dark_typhoon_ring(
+                        (c.move_state.world_x, c.move_state.world_z),
+                        (c.battle.facing_angle & 0xFFF) as i16,
+                        [0, (c.battle.facing_angle & 0xFFF) as i16, 0],
+                    );
+                    self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
                 }
                 let on_party = cmc::capture_arm_party_records(run.prot_entry, arm, spell_id);
                 if !on_party.is_empty() {
@@ -442,7 +455,7 @@ impl World {
                     ],
                     height: None,
                 };
-                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
+                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, f.style.unwrap_or(style));
             }
             if run.camera_end_frame {
                 cam.arm_module_end_frame();
@@ -508,10 +521,13 @@ impl World {
         let actor = self.actors.get(usize::from(slot))?;
         let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
         let installed = actor.battle_action_clips.as_ref()?;
+        // A body whose arm 1 is the walk (`capture_module_walks`) walks on
+        // its own phase `1`; the band's leg would hold it on phase `0`.
         let approach =
-            legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
-                .then_some(actor.battle.active_target)
-                .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
+            (legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
+                && !legaia_engine_cast::cast_module_ticks::capture_module_walks(entry, spell_id))
+            .then_some(actor.battle.active_target)
+            .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
         let staged = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,

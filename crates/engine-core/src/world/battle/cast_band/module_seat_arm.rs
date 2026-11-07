@@ -33,16 +33,18 @@ impl World {
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
-        let resolve = |c: SeatCoord, cur: i16, victim: Option<i16>| match c {
+        let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle & 0xFFF);
+        let resolve = |c: SeatCoord, cur: i16, victim: Option<i16>, table: i16| match c {
             Keep => cur,
             Lit(v) => v,
             SeatPlus(d) => cur.wrapping_add(d),
             VictimPlus(d) => victim.map_or(cur, |v| v.wrapping_add(d)),
+            SeatCoord::AlongFacing(div) => cur.wrapping_add(table / div),
         };
         let ms = &mut a.move_state;
-        ms.world_x = resolve(w.x, ms.world_x, victim_pos.map(|p| p.0));
-        ms.world_y = resolve(w.y, ms.world_y, None);
-        ms.world_z = resolve(w.z, ms.world_z, victim_pos.map(|p| p.1));
+        ms.world_x = resolve(w.x, ms.world_x, victim_pos.map(|p| p.0), sin);
+        ms.world_y = resolve(w.y, ms.world_y, None, 0);
+        ms.world_z = resolve(w.z, ms.world_z, victim_pos.map(|p| p.1), cos);
         if let Some(f) = w.facing {
             a.battle.facing_angle = f;
         }

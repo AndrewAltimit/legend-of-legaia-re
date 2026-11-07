@@ -421,7 +421,7 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
         // below `0x5B`, so the banner always gets its first
         // `DONE_LEVELUP_BANNER_FRAMES - DONE_BANNER_SKIP_BELOW` frames.
         if ctx.levelup_banner_element != 0
-            && host.pad_word() != 0
+            && host.pad_word() | host.pad_held_32() != 0
             && ctx.frame_timer < DONE_BANNER_SKIP_BELOW
         {
             ctx.frame_timer = -1;

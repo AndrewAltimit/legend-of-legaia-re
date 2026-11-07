@@ -323,11 +323,26 @@ impl SfxBank {
     /// it, whose rows a field scene carries in its own prescript record 0
     /// (`docs/formats/sfx-table.md`). A runtime row has no id in this bank's
     /// `u8` space, so a host that resolved one hands the row here directly.
-    /// Returns the first voice keyed, as [`Self::play_one_shot`] does; a row
-    /// with a zero voice count keys nothing, matching the drainer's skip.
+    /// Returns the first voice keyed, as [`Self::play_one_shot`] does. A row
+    /// with a zero voice count keys nothing; a sustained one still releases the
+    /// held run first, as the drainer does.
     // REF: FUN_80016B6C
     pub fn play_descriptor(&self, row: &[u8; 8], spu: &mut Spu, vab: &VabBank) -> Option<u8> {
         if row[3] & 0x1F == 0 {
+            // A sustained row releases the held run before it tests its own
+            // count (`0x80016DC4..0x80016DF8`, then `beq s4,zero` at
+            // `0x80016E00`), and the held count is only stored inside the
+            // key-on loop, so it stays. A one-shot row is skipped whole.
+            if row[3] & 0x20 != 0 {
+                let held = self.voices.get().held;
+                for i in 0..held {
+                    let v = (SUSTAINED_BASE_VOICE + i) as usize;
+                    if let Some(voice) = spu.voices.get_mut(v) {
+                        voice.key_off();
+                        spu.record_key_off(v);
+                    }
+                }
+            }
             return None;
         }
         let entry = SfxEntry::from_descriptor(0, row[0], row[1], row[2], row[3]);
@@ -397,8 +412,8 @@ impl SfxBank {
     fn play_entry(&self, entry: &SfxEntry, spu: &mut Spu, vab: &VabBank) -> Option<u8> {
         let voices = entry.voices.max(1);
         let mut first_voice: Option<u8> = None;
-        let mut key = |voice: usize, i: u8, spu: &mut Spu| {
-            if voice < crate::spu::NUM_VOICES
+        let mut key = |voice: usize, i: u8, spu: &mut Spu| -> bool {
+            let keyed = voice < crate::spu::NUM_VOICES
                 && vab.play_tone(
                     spu,
                     voice,
@@ -406,10 +421,11 @@ impl SfxBank {
                     entry.tone as usize + i as usize,
                     entry.key,
                     entry.vel,
-                )
-            {
+                );
+            if keyed {
                 first_voice.get_or_insert(voice as u8);
             }
+            keyed
         };
         if let Some(v) = entry.voice_pref {
             for i in 0..voices {
@@ -433,14 +449,32 @@ impl SfxBank {
                 key((SUSTAINED_BASE_VOICE + i) as usize, i, spu);
             }
         } else {
+            // Each pass stops its voice (`jal 0x800653C8` at `0x80016D38`)
+            // before it programs the tone (`jal 0x80065034` at `0x80016D94`).
+            // The stop raises the voice's KOFF bit and clears its pending KON
+            // (`FUN_80067480`: `or` into the KOFF shadow `0x801CE248`, `nor` /
+            // `and` out of the KON word `0x801CDB48`), and nothing reaches the
+            // chip before the flush. So a voice the wrapping cursor visits twice
+            // keeps only its last pass: the tone that pass keys, or, when that
+            // tone does not resolve, nothing but the stop. Resolved first, keyed
+            // after, as the flush sees it.
+            let mut last: Vec<(usize, u8)> = Vec::new();
             for i in 0..voices {
                 if st.one_shot > st.limit {
                     st.one_shot = 0;
                 }
-                // Retail stops the voice and re-keys it in the same flush:
-                // the key-on restarts it, whatever it was playing.
-                key((ONE_SHOT_TOP_VOICE - st.one_shot) as usize, i, spu);
+                let v = (ONE_SHOT_TOP_VOICE - st.one_shot) as usize;
+                last.retain(|&(w, _)| w != v);
+                last.push((v, i));
                 st.one_shot += 1;
+            }
+            for &(v, i) in &last {
+                if !key(v, i, spu)
+                    && let Some(voice) = spu.voices.get_mut(v)
+                {
+                    voice.key_off();
+                    spu.record_key_off(v);
+                }
             }
         }
         self.voices.set(st);
@@ -1503,6 +1537,40 @@ mod tests {
         assert_eq!(seq, [23, 22, 23, 22]);
     }
 
+    /// A one-shot pass stops its voice before it programs the tone, and the
+    /// stop clears the voice's pending key-on (`0x80016D38`, `FUN_80067480`).
+    /// Under the field's limit a four-voice cue visits voices 23 and 22 twice:
+    /// its last two tones do not resolve in a four-tone program, so retail keys
+    /// nothing and releases both, which `cue-differential` reads on `jouina`'s
+    /// row `0x214` (program 0, tone 9, four voices).
+    #[test]
+    fn a_one_shot_voice_visited_twice_keeps_only_its_last_pass() {
+        use crate::spu::adsr::Phase;
+        let vab = one_tone_bank();
+        let mut spu = crate::spu::Spu::new();
+        let bank = SfxBank::from_descriptors([(0x1A, 0, 0, 60, 2), (0x1B, 0, 2, 60, 4)]);
+        bank.set_field_family(true);
+        assert_eq!(bank.play_one_shot(0x1A, &mut spu, &vab), Some(23));
+        let held = [spu.voices[22].key_on_count(), spu.voices[23].key_on_count()];
+        assert_eq!(bank.play_one_shot(0x1B, &mut spu, &vab), None);
+        assert_eq!(
+            [spu.voices[22].key_on_count(), spu.voices[23].key_on_count()],
+            held,
+            "nothing keyed"
+        );
+        assert!(
+            [22, 23]
+                .iter()
+                .all(|&v| spu.voices[v].adsr.phase == Phase::Release)
+        );
+        // Inside the program, the last pass's tone keys each voice once.
+        let bank = SfxBank::from_descriptors([(0x1C, 0, 0, 60, 4)]);
+        bank.set_field_family(true);
+        let before = spu.voices[23].key_on_count();
+        assert!(bank.play_one_shot(0x1C, &mut spu, &vab).is_some());
+        assert_eq!(spu.voices[23].key_on_count(), before + 1);
+    }
+
     /// A sustained cue (`+3 & 0x20`) keys `7..7 + n` and releases the
     /// previous sustained run first; it does not move the one-shot cursor.
     #[test]
@@ -1529,6 +1597,37 @@ mod tests {
             spu.voices[23].adsr.phase,
             Phase::Attack,
             "one-shot untouched"
+        );
+    }
+
+    /// A sustained runtime row with no voices still releases the held run
+    /// (`0x80016DC4..0x80016DF8` run ahead of the count test at `0x80016E00`)
+    /// and leaves the held count, which only the key-on loop stores.
+    #[test]
+    fn a_zero_count_sustained_row_releases_the_held_run() {
+        use crate::spu::adsr::Phase;
+        let vab = one_tone_bank();
+        let mut spu = crate::spu::Spu::new();
+        let bank = SfxBank::new();
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x22, 0, 0, 0, 0], &mut spu, &vab),
+            Some(7)
+        );
+        assert_eq!(bank.held_sustained(), 2);
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x20, 0, 0, 0, 0], &mut spu, &vab),
+            None
+        );
+        assert!((7..9).all(|v| spu.voices[v].adsr.phase == Phase::Release));
+        assert_eq!(
+            bank.held_sustained(),
+            2,
+            "the count is stored in the key-on loop"
+        );
+        // A zero-count one-shot row touches nothing.
+        assert_eq!(
+            bank.play_descriptor(&[0, 0, 60, 0x00, 0, 0, 0, 0], &mut spu, &vab),
+            None
         );
     }
 

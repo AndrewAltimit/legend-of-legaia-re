@@ -460,40 +460,9 @@ fn a2_values(bytes: &[u8], link_base: u32, site: usize, own: &dyn Fn(usize) -> b
 // The move-VM program walk
 // ---------------------------------------------------------------------------
 
-/// Width in **halfwords** of every move-VM opcode `0x00..=0x46`, as the
-/// dispatcher `FUN_80023070` sets its per-arm `param_3`. `0` marks the five
-/// opcodes whose width is not a constant of the opcode alone, handled by name
-/// in [`move_program_end`]: `0x08` (`HALT`, no advance), `0x0A`
-/// (`3 + 3*count`), `0x0B` (the default break, no advance), `0x2F`
-/// (`OVERLAY_EXT`, the sub-op's width), `0x3C` (`2 + count*6`) and `0x3D`
-/// (`3 + count*6`).
-///
-/// Mirrors the widths in [`move-vm.md`](https://andrewaltimit.github.io/legend-of-legaia-re/subsystems/move-vm.html).
-const MOVE_OP_HALFWORDS: [u8; 0x47] = [
-    4, 4, 2, 2, 4, 4, 2, 4, // 0x00
-    0, 2, 0, 0, 6, 2, 2, 2, // 0x08
-    2, 2, 2, 16, 5, 2, 2, 2, // 0x10
-    2, 1, 2, 1, 2, 2, 8, 8, // 0x18
-    3, 7, 1, 13, 3, 2, 5, 3, // 0x20
-    2, 2, 2, 4, 5, 4, 4, 0, // 0x28
-    1, 2, 2, 1, 9, 3, 3, 3, // 0x30
-    2, 4, 1, 1, 0, 0, 2, 2, // 0x38
-    7, 2, 15, 1, 4, 8, 4, // 0x40
-];
-
-/// Width in halfwords of each `0x2F` `OVERLAY_EXT` sub-opcode `0x00..=0x3C`,
-/// from the extension dispatcher's jump table (`FUN_801D362C`, JT
-/// `0x801CE868`). Mirrors `move-vm-overlay-ext.md`.
-const MOVE_EXT_HALFWORDS: [u8; 0x3D] = [
-    16, 2, 2, 2, 3, 5, 7, 7, // 0x00
-    2, 2, 3, 3, 3, 3, 11, 2, // 0x08
-    2, 2, 8, 4, 4, 2, 2, 8, // 0x10
-    5, 8, 8, 5, 3, 3, 4, 5, // 0x18
-    5, 5, 5, 6, 8, 3, 3, 3, // 0x20
-    5, 5, 8, 6, 7, 6, 13, 3, // 0x28
-    5, 3, 3, 6, 3, 3, 4, 4, // 0x30
-    4, 4, 3, 4, 6, // 0x38
-];
+// The width tables are the disassembler's ([`crate::move_disasm`]): one
+// reading of `FUN_80023070`'s `param_3` and `FUN_801D362C`'s `li s2, N`.
+use crate::move_disasm::{MOVE_EXT_HALFWORDS, MOVE_OP_HALFWORDS};
 
 /// `HALT`.
 const MOVE_OP_HALT: u16 = 0x08;
@@ -666,13 +635,8 @@ pub fn move_program_visit(
 /// `0x06` / `0x07` (base 7), `op[2]` on `0x0A` / `0x0B` (base 3), `op[3]` on
 /// `0x13` / `0x14` and `0x36..=0x39` (base 4).
 fn ext_branch_target(pc: usize, sub: u16, arg: &dyn Fn(usize) -> u16) -> Option<usize> {
-    let (base, delta) = match sub {
-        0x06 | 0x07 => (7, arg(6)),
-        0x0A | 0x0B => (3, arg(2)),
-        0x13 | 0x14 | 0x36..=0x39 => (4, arg(3)),
-        _ => return None,
-    };
-    let delta = delta as i16;
+    let (base, di) = crate::move_disasm::ext_branch(sub)?;
+    let delta = arg(di) as i16;
     (delta > 0).then(|| pc + (base + delta as usize) * 2)
 }
 

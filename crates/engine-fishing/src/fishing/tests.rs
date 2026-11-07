@@ -830,10 +830,25 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     assert!(p.last_award() > 0);
     let events = p.take_events();
     assert!(events.iter().any(|e| matches!(e, PondEvent::Landed(_))));
-    // The result plate: on the landing frame, counter 0, the award and the
-    // species the fight hooked; it climbs `4` per frame step and holds at
-    // `0x1000` (`FUN_801D5298`).
-    let r = p.catch_result().expect("a landed catch shows its plate");
+    // The result plate waits out the landed fish's lift: no result actor
+    // until the line actor's `+0x22` passes `0xD2` (`FUN_801D4948` sub-state
+    // `4`), which at step `1` is frame `0xD4` counting the landing as the
+    // first; the actor spawned off it counts from the next frame.
+    assert!(p.catch_result().is_none(), "no plate on the landing frame");
+    for f in 2..=LIFT_SEAT_FRAMES + 1 {
+        p.tick(PondInput::default(), 1, 0x80);
+        assert!(
+            p.catch_result().is_none(),
+            "plate during the lift, frame {f}"
+        );
+    }
+    // The seat frame leaves the counter at 0 with the award and the species
+    // the fight hooked; from the next frame it climbs `4` per frame step and
+    // holds at `0x1000` (`FUN_801D5298`).
+    p.tick(PondInput::default(), 1, 0x80);
+    let r = p
+        .catch_result()
+        .expect("the seated result actor shows its plate");
     assert_eq!((r.ramp, r.points, r.species), (0, p.last_award(), id));
     p.tick(PondInput::default(), 3, 0x80);
     assert_eq!(p.catch_result().unwrap().ramp, 12);
@@ -1354,6 +1369,47 @@ fn the_catch_plate_waits_for_its_accept_word_and_the_banner() {
     assert_eq!(p.phase(), PondPhase::Landed);
     p.tick(press(false, true), 1, CAST_POWER_STEP);
     assert_eq!(p.phase(), PondPhase::Idle);
+}
+
+/// Back at the shore, state `0xB`'s lure gate (`FUN_801D712C`) re-points a
+/// spent lure at one still held, and with none held parks state `0x96`, which
+/// leaves the venue on a face-button edge (state `200`).
+#[test]
+fn the_shore_gate_repoints_the_lure_or_parks_the_no_lure_screen() {
+    let mut p = pond();
+    p.lure = 1;
+    // Lure 1 spent, lure 2 still held: re-pointed, the cast loop runs on.
+    assert!(p.shore_lure_gate(|id| i32::from(id == lure_item_id(2))));
+    assert_eq!((p.phase(), p.persist().lure), (PondPhase::Idle, 2));
+    // A cast press on the parked screen casts nothing.
+    assert!(!p.shore_lure_gate(|_| 0));
+    assert_eq!(p.phase(), PondPhase::NoLure);
+    assert!(!p.catch_hud().visible);
+    let cast = PondInput {
+        cast_edge: true,
+        ..Default::default()
+    };
+    p.tick(cast, 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::NoLure);
+    assert!(
+        !p.take_exit_request(),
+        "no face edge in the cast press alone"
+    );
+    p.tick(
+        PondInput {
+            face_edge: true,
+            ..Default::default()
+        },
+        1,
+        CAST_POWER_STEP,
+    );
+    assert!(p.take_exit_request());
+    assert!(!p.take_exit_request(), "drained");
+    // The gate leaves a session away from the shore alone.
+    let mut p = pond();
+    p.phase = PondPhase::Hooked;
+    assert!(p.shore_lure_gate(|_| 0));
+    assert_eq!(p.phase(), PondPhase::Hooked);
 }
 
 /// A broken line parks state `0x28` on the converging pair and returns to

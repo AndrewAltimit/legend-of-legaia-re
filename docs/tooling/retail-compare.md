@@ -1554,7 +1554,11 @@ So a monster-melee capture also places the walk's start (`BattleState::capture_a
 Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
 
 Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
-A walk-clip capture saved on the arrival itself, the cursor `ctx[+0x15]` still `0`, is the exception (`ActionSteer::arrival`): the poll `0x19` has just stored `0x1E` with idle staged, and a one-swing stream's first loop pass stages its byte and leaves for `0x1F` together (`0x801E3734`, `0x801E3998`), so the state lasts one pass. A replay whose walk was shorter arrives with its counter short of retail's and is past the state before the clock is due, so the gate is that pass and the counter is pinned to retail's word there (`battle_nilboa_lucifer_strike` arrives at `532` against retail's `568`).
+A walk-clip capture saved on the arrival itself, the cursor `ctx[+0x15]` still `0`, is the exception (`ActionSteer::arrival`): the poll `0x19` has just stored `0x1E` with idle staged, and a one-swing stream's first loop pass stages its byte and leaves for `0x1F` together (`0x801E3734`, `0x801E3998`), so the state lasts one pass. A replay whose walk was shorter arrives with its counter short of retail's and is past the state before the clock is due, so the gate is that pass and the counter is pinned to retail's word there.
+Its walk start takes the RAM's counter as the arrival reading: the table on that pass is the approach's case 6, which `0x19` armed on its way out, not case 7's ladder, so `strike_passes_off_table` reads no pass count off it. Read off the ladder, `battle_nilboa_lucifer_strike`'s arrival came out `530`, the replay walked four passes from `z = 600` and reached the gate mid-glide from the earlier actor's framing (`camera` `.845`); retail's position ring `+0x4C` shows a 27-pass walk at `48` units a pass from `z = 1600`, the ring jumping `800` units back from its seat at the clip boundary before it (the cursor ring falls from `112` to `0` on that slot). Seated on the counter `568`, the replay's walk runs to retail's arrival reading and its camera lands on retail's (`camera` `.845` to `1.000`).
+A capture on the same arrival pass whose staged idle has already committed (cursor `0`, accumulator `0`, clip `0`) is not a walk-clock capture, but its counter is the walk's last reading too, where the accumulator rule adds the arrival pass and the loop's first (`RetailBattle::arrival_pass`).
+On that pass the table was armed before the body moved: the poll's case 6 runs ahead of the pass's anim tick, which cuts the walk clip and steps the attacker back off the arrival, and ahead of the pass's re-face. So the endpoint frames the attacker's position-ring slot `1`, not the RAM's live pair, on the heading the pass before left, which the table names (`counter - yaw`, plus the half turn on style bit 0): `battle_geremi_spikefish_strike`'s table ends on `(-188, 321)`, its ring slot `1`, where the RAM holds `(-219, 417)`.
+The headless framing endpoint is read with the attacker seated there (`RetailBattle::arrival_arm_snaps`), then the bodies stand on the RAM's ground. Placing the walk on the counter alone cost the states whose endpoint the step-back moved furthest (`battle_tunnela_mad_bird_strike` `.996` to `.981`, `battle_geremi_spikefish_strike` `.999` to `.989`); with the arm seat every arrival-pass strike in the corpus reads `camera` `1.000` (`battle_garmel_zeto_strike` `.988` to `1.000`). Case 6 frames the live pair itself, so the seat moves no body pair: seated through the body pair the replay's pose centroid put Gimard's endpoint `43` units off retail's.
 The counter's reading comes off the tween table, since the accumulator counts from the walk's last loop re-commit and says nothing of the arrival. Case 7 aims `0x700` under the approach's case 6 and re-arms `ceil(gap / 0xC)` every pass, so the increments fall on one ladder (`150`, then by the step) and the table's increment names how many passes have run (`strike_passes_off_table`): `battle_nilboa_warfish_strike` sits on the first at accumulator `288`, `battle_map02_poisonous_worm_strike` on the second at `384`.
 The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
 The image child stands such a walker on the displayed frame's ring pair and seats its walk cursor at the displayed frame, as it does a struck body: the walk carries it `speed * scale / 8` a vsync, two game frames of which separate the screen from the RAM (`battle_korb2_warhalf_strike` `image` `.812` to `.824`, `battle_tunnelb_warman_strike` `.759` to `.801`).
@@ -2830,6 +2834,30 @@ shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.886`;
 `zeto_call_wave_mid_cast` (PROT 0946 arm 2, on arm 1's `0x100`-frame pan)
 reads `.998` to `.996` on the table's walk.
 
+An arm that builds its shot on **every** pass, ahead of its countdown gate,
+is the exception: the table the RAM holds was built on the RAM's own pass, so
+each pass before it stood the re-arm's wider share back, as a framing re-armed
+every pass does (`capture_shot_rearms_every_pass`: Scythe Wind's arms 3 to 5,
+Bloody Horns' 3 to 6, each with its `FUN_801D829C` call ahead of the hold;
+[cast-module](../subsystems/cast-module.md#prot-0951-scythe-wind)).
+`battle_dohaty_nova_v2_scythe_wind_mid_cast` sits in arm 4 at step `4`, TR z
+`2940` with `80` to go at `10` a unit: two passes back on the table's own
+increments it stands at `2860`, on the re-arm's share at `2840`, and the image
+reads `.860` and `.982`. A scan of the displayed pose along the table puts
+the best frame there (`.997` at ten units back, `.860` at eight). Grade
+`disassembly` + `capture`.
+
+`battle_map01_lippian_kiss_of_death_mid_cast` is the open case of the other
+kind. Arm 0's twelve-frame shot (TR z `301` a unit, `3005` to go) was built
+two units before the RAM, so the display, two passes back, predates the shot
+and stands on the table `0x6F` armed before it; the walk back on the shot's
+increments carries it six units (`image` `.903`). Scanned along the same line
+the frame reads best four units back (`.945`, TR z `5812`, yaw `3670`), one
+pass past the shot's origin. The RAM no longer holds the earlier table, and
+the newest history entry (`0x2BC`, the clamp) cannot be the step of the pass
+that walked two units, so the pass steps are a second unknown. A retail film
+of the band's entry across arm 0 would place both.
+
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'
 `+0x78` by `step << 6` a pass while `ctx[+0x243]` is up, and the cast begin's
@@ -2862,6 +2890,16 @@ A monster's magic band seats the same word: the clip commit raises the latch
 the RAM holds after a clip's first passes drew both a display lag earlier
 (`RetailBattle::displayed_ambient_base`, `LEGAIA_BATTLE_AMBIENT_BASE`). This is
 what the ice stage's `battle_noaru_*` casts were reading darker than retail.
+
+A monster's Spirit / Item band (a class-0 Heal routed to `0x3C`) seats the ambient
+base the same way. State `0x3C` raises the latch (`0x801E3B68`) and `0x3D` holds
+until the caster's idle reaches its natural end, so how far the base has dimmed
+by the gate is the caster's idle phase at the seed, which the replay's own rounds
+decide: a harness seat, not a ramp the engine runs wrong.
+`battle_garmel_vera_v2_heal_mid_cast` holds base `0x38` (nine vsyncs of dim, its
+backdrop weight `576` agreeing), where the replay, its wait `36` passes longer,
+had sat on the floor `0x20` and drew the ground at half retail's brightness
+(`image` `.703` to `1.000`).
 
 A capture past the band's start read its counter that many ticks into `0x70`
 too, so for a `0x70` gate the hold stands short of retail's counter by the
@@ -4125,6 +4163,34 @@ The monster strike loop and Scythe Wind's arms `3..=5` stand on the walked-back 
 outright instead (`RetailBattle::stand_on_displayed_pose`,
 `LEGAIA_BATTLE_CAM_STAND_DISPLAYED`).
 
+#### A capture-band retake counts from the RAM's pass
+
+A monster's capture on the capture band's module tick (`0x70`) gates on the
+module's countdown (`SpanGate::CaptureFade`), which can open a pass after the
+replay pass whose parts are the RAM's: `battle_nilboa_neo_grude_power_up_mid_cast`'s
+emitter `0x801F81B8` and its three rings `0x801F81D0` read waits `88` / `24`,
+`120`, `216` in the RAM and on child ticks `989..992`, and the countdown's
+gate opens on `992`, where the next pass has run. Counted back from the gate
+the retake lands a pass too new. The parent hands the child the RAM's live
+module parts as `(record, wait)` (`RetailBattle::part_ages`,
+`LEGAIA_CAPTURE_PART_AGES`); the child notes the latest run of ticks its own
+parts held that multiset, and when the gate opens on that run or within a
+pass past it, counts the lag back from the run's first tick (`image` `.904` to
+`.996`). A harness seat. A capture whose parts never hold the RAM's multiset
+keeps the gate tick (`cort_evolved_ultra_charge_mid_cast`, whose rings the
+replay stands on its own clock).
+
+The same captures' image step: a monster's `0x70` capture past arm 0, with
+the module's parts live and fifteen or sixteen newest passes on one other
+step, runs the image child on that step (`RetailBattle::image_frame_step_seed`).
+With the [mid-walk seat](../subsystems/move-vm.md#a-part-seated-during-the-walk)
+a part takes its first tick on its seat's own pass, and on the child's default
+step `2` that pass is half of retail's: Ultra Charge's rings stood `16` off
+the RAM's wait phase until the child ran retail's `4` (`image` `.988` to
+`.997`). The headless seed keeps the default, since its camera read `.998`
+seeded; an arm-0 capture keeps it too, where seeded twenty frames parted on
+the camera.
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass
@@ -4192,6 +4258,19 @@ pose is law from what the RAM still holds
   `ctx[+0x6D0]`, focus the caster.
 - **The start** is the earlier actor's framing, or the prompt's far framing on a
   round's first actor (`walk_start`).
+
+**The terminator pass in the RAM.** A capture on `0x2B` at accumulator `0`
+holds the terminator pass itself: it stored `0x2B` and armed nothing, so the
+RAM's tween table is the one the `0x2A` pass before it armed, and both passes of
+the display lag moved `increment * step` on it rather than the widening share a
+re-armed walk takes (`chain_terminator_pass`, walked by
+`displayed_module_cam_live`). The table says so: its largest increment is not
+what a re-arm on the RAM's pass stores and is what one a pass earlier stores.
+`battle_garmel_zenoir_fire_claw_mid_cast` holds yaw `3311` on increment `12`
+with `70` to go at step `3` (a re-arm there would store `9`); its frame draws at
+yaw `3239`, TR z `5493`, where the re-arm walk had put `3209` / `5448`
+(`image` `.797` to `.995`). The camera channel reads the RAM's pose and was
+`1.000` throughout.
 
 One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
 armed pass, with the terminator still to come (`case6_walk_passes`'s
@@ -4264,7 +4343,7 @@ Shapes the corpus separates, each with what it indicates:
 | camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
-| `view_window` at `0` beside that selector pair (`cort_evolved_approach_cutscene`) | the same pass: each selector arm applies its own op `0x46` window ([below](#the-region-selector-band-and-the-entry-order)) |
+| `view_window` at `0` beside that selector pair | the same pass: each selector arm applies its own op `0x46` window, which the band hold now lands with the bit ([below](#the-region-selector-band-and-the-entry-order)) |
 | a room or selector bit down in the engine only, the system script's PC never moving off its loop head | the system context halted, or a record holding the player from the landing: a pre-fight flag ([below](#a-pre-fight-flag-runs-the-entrys-post-battle-branch)), or a halt nothing clears |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
@@ -4468,8 +4547,7 @@ slice into the load frame closes this bit but runs the entry's BGM cue and fog
 op before the seed's flags exist, and the corpus `bgm` channel fell by a
 fifth (by a tenth even with `--flags-first`), so the order stands, and the
 seed lands the save's bit back over the band once the settle has run
-([below](#the-band-is-held)). The `0x46` window the settle's arm wrote stays
-the engine's. The opening legs are pre-run already, and there the run
+([below](#the-band-is-held)), with the window of the arm that bit names. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
 
@@ -4482,12 +4560,11 @@ its own op `0x46`. `jouind`'s entry `P1[0]` carries nine of them:
 | `3` | `0x19E` | `+0x214` | `46 24 F6 FA 0A 0D` = `(-10, -6, 10, 13)` |
 | `4` | `0x19F` | `+0x267` | `46 24 F9 F9 08 27` = `(-7, -7, 8, 39)` |
 
-`cort_evolved_approach_cutscene` reads `(-7, -7, 8, 39)` against the engine's
-`(-10, -6, 10, 13)`: the window of the `0x19F` arm retail took at the arrival
-tile against the window of the `0x19E` arm the seed takes at the seat, all
-four bytes apart. It is the same one pass, scored twice - there is no second
-divergence in the window bytes, and none in the op `0x46` handler, which
-every other field state in the corpus agrees on.
+`cort_evolved_approach_cutscene` holds `(-7, -7, 8, 39)`, the window of the
+`0x19F` arm retail took at the arrival tile, where the settle's `0x19E` arm at
+the seat writes `(-10, -6, 10, 13)`, all four bytes apart. It is the same one
+pass as the bit, so the hold lands the window with it
+([below](#the-band-is-held)).
 
 The band need not be keyed on the region type. `nilboa` and `garmel` select
 a room bit in `0x528..0x52E` by `CD F8` tile boxes instead, tested in a fixed
@@ -4513,8 +4590,12 @@ the set of one of them, and once the settle has run - at the record's
 resume tick on a mid-script state, before the forced entry on a battle
 state - each band bit is landed back on the save's. The settle is seeding,
 not game time, as the battle seed's hold of the script counters at
-`0x801C6460` already says. The selector arm the settle took still ran, so a band arm
-that writes the view window or the camera region shows in those channels.
+`0x801C6460` already says. The selector arm the settle took still ran. Its op `0x46` is undone with
+the bit: where the save's bit is one the settle did not raise, the zone
+camera takes the long-form window that bit's own arm applies after its set
+(`held_selector_window`, read off the same bytecode as the bands), so
+`cort_evolved_approach_cutscene` reads `view_window` `1.000` (from `0`). No
+other field state's channels move. A band arm's camera region is not held.
 The eight `nilboa` states read `flags` `1.000` (from `.997`), and so do
 `nivora_duel_mid_blazing_slash`, `chapter2_garmel_pre_zeto` and
 `cort_evolved_approach_cutscene`.
@@ -4982,8 +5063,38 @@ tier (`768`, `1024`, `1152`) from the first pass on it, while the footing
 conforms `24` a pass behind. But recomposing on the newest floor takes
 `kor3_field_route_walk` from `.991` to `.916`: its footing descends `32` a
 pass (`-192` to `-160`), and its frame stands on the older target's eye Y
-`1280`, which the footing gives. So the footing rule stays, and the second
-step's pose is history the RAM does not hold.
+`1280`, which the footing gives.
+
+<a id="the-walk-film-before-the-save"></a>
+
+A film of the passes **before** the save settles it. The route that made the
+state is deterministic under PCSX-Redux: `korb2_field_card_boot` walked by
+`autorun_walk_route.lua` (korb2's door-`0` tile, then kor toward the
+elevator, the random fights on the harvester's hand) reaches the scene
+checkpoint on the same vsync `8557` with the same RAM, and
+`LEGAIA_FILM_SCENE=kor` films every pass before it. The displayed frame is
+the RAM's pose of the pass two back, exactly: the image child seated on that
+pass's row - player `(1680, -32, 3730)` heading `1024`, yaw `1770`, eye
+`(0, 611, 4768)` - reads `1.000`.
+
+| Pass | Player `(X, footing, Z)` | Yaw / eye Y | Staging yaw / eye Y |
+|---|---|---|---|
+| displayed | `(1680, -32, 3730)` | `1770` / `611` | `1670` / `640` |
+| between | `(1656, -56, 3730)` | `1736` / `651` | `1641` / `768` |
+| RAM | `(1638, -64, 3748)` | `1702` / `681` | `1605` / `768` |
+
+Two inferences of the rewind miss it. The previous pass's target is composed
+on the composer's floor, not on the footing: `FUN_801DAB90` samples
+`FUN_80019278` through the MAN-header ladder
+(`World::sample_field_floor_height_static`), and under the pass-between player
+that floor is already on the `768` tier while the footing still reads `-56`.
+The rewind now takes that floor from the engine's seat
+(`EngineObs::walk_floors`, `RetailObs::reseat_walk_rewind_on_floors`), which
+moves the state from `.913` to `.923` and no other walking state. The rest is
+the seat: the player **turned** on the RAM's pass (`-18, +18` after `-24, 0`),
+so a constant step stands the displayed player at `(1674, 3712)`, `18` units
+off. Nothing in RAM records the older step - no copy of `(1680, 3730)` exists
+anywhere in main RAM - so that part is history the state does not hold.
 
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat
@@ -5529,7 +5640,28 @@ keeps the gate's frame (`RetailBattle::walk_in_shot_aligned`): the three Koru
 mid-casts hold the wind-up entry (`5` / `6` / `7`) at cursor `0` on the live
 slot and the run entry `1` at `136` on the displayed one, the run clip the
 walk-in played, with the gold ground ring around it (`image` `.943` to
-`.976` each).
+`.976` each). The walk itself is the fourth case
+(`RetailBattle::walk_arm_follow_aligned`): arm 0 of a walking body queues the
+walk clip with the `+0x1DC` bump (PROT 0952 at `0x801F72C4..0x801F72D0`), which
+commits it mid-clip on the next anim tick, so a capture one pass into the walk
+arm holds the walk on the live slot and the idle on the displayed one, at the
+ring's pair. `battle_tunnelc_xain_bloody_horns_mid_cast`'s rings read the idle
+at `0` and `(590, 202)` there and the walk `1` at `16` and `(502, 192)` live;
+posed on them Xain reads `.845` against `.796` on the replay's idle at `176`.
+
+Past the walk, a monster's capture-band module arm takes the seat with no
+commit in the window, as the magic band's accumulator gate does. The retake
+runs `2 * frame_step` vsyncs back (`display_lag_vsyncs`), and
+on passes the history stores as the clamp `0x2BC` the frame step reads `3`
+where the passes ran `4`, so the replay's frame stands short of the screen
+while the rings name the keyframe it showed. `cort_evolved_card_doomsday_mid_cast`
+holds Cort's clip `7` on a cursor ring of `128, 96, 64`, `32` a pass, which is
+`8` a vsync over four-vsync passes; the retake drew `80`, and the ring's `64`
+reads `image` `.894` to `.997`. Across the corpus's cast states the seat also
+lifts `battle_teien_berserker_stone_circle_mid_cast` (`.945` to `.964`),
+`battle_nilboa_neo_grude_power_up_mid_cast` and
+`battle_taiku_thermo_void_accessories_mid_cast`, and moves no state down by
+more than `.002`. Grade `capture`.
 
 A monster cast's accumulator gate takes the same seat, commit or no commit. The
 gate stops where the replay's accumulator reads the RAM's, so its frame carries

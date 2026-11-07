@@ -1399,6 +1399,18 @@ Casting a heal from the menu trains the spell with the same counter the battle
 path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
 `800402f4.txt`), whose HP-heal arms carry an inline accrue-and-test loop:
 
+- **Heal**: the spell record's `(+0, +1)` pair picks the arm (class `0` one
+  target, class `1` the party; sub-class `3` / `4` / `5`). The cap is
+  `0x100` / `0x200` / `0x400` plus `(level - 1) << 5` / `6` / `7`, the level
+  being the caster's byte for Vera (`0x83`), Orb (`0x89`) or Spoon (`0x91`);
+  the one-target arm of sub-class `5` reads Orb's level (`li v1,0x89` at
+  `0x800406FC`), the party arm Spoon's (`0x80040B70`). A caster without that
+  spell scales by `0`. The heal is the member's missing HP, read as a signed
+  halfword, clipped to the cap; a fallen member (current HP `0`) is passed by.
+  The party arm walks records `0..3` (the applier's out-of-battle pointer
+  arrays, `0x800403BC..0x80040440`), not the present-party list, and runs the
+  level test after each member, so a level gained on one raises the next
+  member's cap.
 - **Accumulator**: the u32 at `0x80084140 + char*0x414 + slot*4 + 0x5D0`,
   which is the character record's per-spell XP array at `+0x8` - the array the
   battle finisher `FUN_801ddb30` trains.
@@ -1432,9 +1444,14 @@ the group flow via `spell_targets_group` over
 `engine-ui::magic_screen_draws_for` / `magic_screen_sprites_for`. Greying and
 confirm refusal use `engine-menu-runtime::menu_validator::spell_affects_anyone` and
 the discounted cost; `field_menu_dispatch::apply_spell_outcome` debits the
-discounted cost once, applies every grant of a group cast
-(`SpellOutcome::MultiHeal`), and runs the leveling arm through the shared
-kernel `magic_xp::accrue_and_level` with `magic_xp::menu_heal_xp_gain`. Both
+discounted cost once and applies a retail heal through the applier's arm
+(`apply_menu_heal_arm` over `magic_xp::menu_heal_arm`), banking each grant
+through the shared kernel `magic_xp::accrue_and_level` with
+`magic_xp::menu_heal_xp_gain`. The single-target confirm asks first whether the
+picked member would take the cast, as retail's validator call at `0x801D96C0`
+does, and a refusal buzzes with nothing charged. The differential
+`crates/retail-exec/tests/field_magic.rs` holds both flows to the applier over
+seeded parties, records whole. Both
 writes land in the `legaia_save::CharacterRecord`, so they round-trip through
 saves. `MenuRuntime::arm_spell_level_notice` holds the window-7 beat, drawn by
 `char_prompt_draws_for` at the disc-parsed rect. Its line is the overlay's own

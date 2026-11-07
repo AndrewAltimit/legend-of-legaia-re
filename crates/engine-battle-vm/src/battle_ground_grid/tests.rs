@@ -345,3 +345,14 @@ fn masked_indices_keep_whole_cells_in_order() {
     // An empty mask keeps every cell.
     assert_eq!(masked_indices(&indices, &[]), indices);
 }
+
+/// The backdrop's colour word carries `0x40` / `0x48` in its top byte, so the
+/// dispatcher raises the weight's low bit (`0x800433CC`): a pair at rest is
+/// cued at `IR0 = 1`, and a ramped one keeps its own odd or even step.
+#[test]
+fn the_backdrop_is_cued_with_the_low_bit_raised() {
+    assert_eq!(backdrop_draw_ir0(0), 1);
+    assert_eq!(backdrop_draw_ir0(0x40), 0x41);
+    assert_eq!(backdrop_draw_ir0(0x41), 0x41);
+    assert_eq!(backdrop_draw_ir0(0xC00), 0xC01);
+}

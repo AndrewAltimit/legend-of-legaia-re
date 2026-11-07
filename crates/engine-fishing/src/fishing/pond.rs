@@ -44,6 +44,9 @@ impl PondSession {
             fish_scale: 0,
             last_award: 0,
             result_ramp: 0,
+            lift_timer: None,
+            exit_requested: false,
+            lure_gate_armed: true,
             catch_banner: 0,
             break_banner: 0,
             events: Vec::new(),
@@ -558,6 +561,9 @@ impl PondSession {
                     self.record.credit(sp.index, award);
                     self.last_award = award;
                     self.result_ramp = 0;
+                    // The landing frame is the lift's first: the line actor's
+                    // sub-state `4` runs this frame from a zero timer.
+                    self.lift_timer = Some(fs);
                     // The from-right banner (`DAT_801D915C = 1`).
                     self.catch_banner = 1;
                     self.events.push(PondEvent::Landed(award));
@@ -569,13 +575,29 @@ impl PondSession {
                 }
             }
             PondPhase::Landed => {
-                // `FUN_801D5298`: `+0x1A += frame_step * 4`
-                // (`0x801D52F4..0x801D5314`), held at `0x1000`
-                // (`0x801D54B8..0x801D54CC`).
-                self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
+                // PORT: FUN_801d4948 (sub-state 4: the lift's `+0x22` seat gate)
+                // The lift runs first: the frame whose starting `+0x22` is
+                // past `0xD2` raises `DAT_801D9294` (`0x801D513C..0x801D5208`),
+                // and the result actor the lead's tick spawns off it counts
+                // from the next frame.
+                if let Some(t) = self.lift_timer {
+                    self.lift_timer = (t <= LIFT_SEAT_FRAMES).then_some(t + fs);
+                } else {
+                    // `FUN_801D5298`: `+0x1A += frame_step * 4`
+                    // (`0x801D52F4..0x801D5314`), held at `0x1000`
+                    // (`0x801D54B8..0x801D54CC`).
+                    self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
+                }
                 // States `0x21` / `0x22` load the plate's accept word
                 // `DAT_801D90BC` as the leave gate (`0x801CFED8`).
                 may_leave = self.result_ramp >= RESULT_ACCEPT_RAMP;
+            }
+            PondPhase::NoLure => {
+                // PORT: FUN_801cf3bc (case 0x96: the no-lure screen's exit edge)
+                // `_DAT_8007B874 & 0xF0` moves to state `200`, the exit fade.
+                if input.face_edge {
+                    self.exit_requested = true;
+                }
             }
             PondPhase::Snapped => {
                 // State `0x28`: back to the shore once the line-break pair
@@ -611,6 +633,40 @@ impl PondSession {
         }
     }
 
+    /// The lure gate state `0xB` runs as its fade-in ends on every return
+    /// to the shore (`jal 0x801D712C` at `0x801CF978`): re-point the
+    /// equipped lure at one the bag still holds, or park the session on the
+    /// no-lure screen ([`PondPhase::NoLure`]) when it holds none. A host calls
+    /// it after a frame that raised [`PondEvent::Recast`], once that frame's
+    /// spent lures are out of the bag; `count_of` is the live bag count of an
+    /// item id. Returns `false` when the session parked.
+    // PORT: FUN_801cf3bc (case 0xb: the gate after the fade, and the jump to 0x96)
+    pub fn shore_lure_gate(&mut self, count_of: impl FnMut(u32) -> i32) -> bool {
+        if self.phase != PondPhase::Idle {
+            return true;
+        }
+        if super::select_owned_rod(&mut self.lure, count_of) || !self.lure_gate_armed {
+            return true;
+        }
+        self.phase = PondPhase::NoLure;
+        false
+    }
+
+    /// Leave the shore's lure gate unable to park the session: for a host
+    /// launcher that enters the venue with no lure in the bag. Retail cannot
+    /// get there (the signboard's record refuses the warp without a lure,
+    /// `4C DC` over `0x9D..0x9F`), so a disarmed gate is a port affordance; it
+    /// still re-points the equipped lure.
+    pub fn disarm_lure_gate(&mut self) {
+        self.lure_gate_armed = false;
+    }
+
+    /// Whether the no-lure screen took its exit edge since the last call
+    /// (state `200`): the host leaves the venue as its own quit does.
+    pub fn take_exit_request(&mut self) -> bool {
+        std::mem::take(&mut self.exit_requested)
+    }
+
     /// Back to the cast loop (state `10`): the working set of the cast goes,
     /// and the hosts hear [`PondEvent::Recast`].
     fn return_to_shore(&mut self) {
@@ -619,6 +675,7 @@ impl PondSession {
         self.depth = 0;
         self.lure_actor = None;
         self.rod_actor = None;
+        self.lift_timer = None;
         self.events.push(PondEvent::Recast);
         self.phase = PondPhase::Idle;
     }
@@ -809,7 +866,9 @@ impl PondSession {
     /// `DAT_801d927c`, which is what this returns.
     pub fn catch_hud(&self) -> PondCatchHud {
         PondCatchHud {
-            visible: self.phase != PondPhase::Idle,
+            // State `10` clears the HUD word `DAT_801D9058`, so neither the
+            // shore nor the no-lure screen draws it.
+            visible: !matches!(self.phase, PondPhase::Idle | PondPhase::NoLure),
             record: self.line_record,
             cast_power: self.cast.value(),
             depth: self.depth,
@@ -823,14 +882,14 @@ impl PondSession {
     /// otherwise. One derivation for all three hosts, which pass it to
     /// `legaia_engine_ui::fishing::hud::catch_result_draws`.
     ///
-    /// The counter starts on the landing. Retail seats the result actor at
-    /// the end of the landed fish's lift (`FUN_801D4948`, which raises
-    /// `DAT_801D9294` at `0x801D5208`), a beat the engine does not model, so
-    /// the plate's `0x180`-unit dark lead-in is the only delay before it
-    /// fades up.
+    /// `None` through the landed fish's lift as well: retail spawns the
+    /// result actor only once the lift (`FUN_801D4948` sub-state `4`) raises
+    /// `DAT_801D9294` at `0x801D5208` ([`LIFT_SEAT_FRAMES`]), and its counter
+    /// starts on that actor's first tick, ahead of the plate's `0x180`-unit
+    /// dark lead-in.
     // REF: FUN_801d5298 (the `+0x1A` counter), FUN_801d4948 (the lift that seats it)
     pub fn catch_result(&self) -> Option<PondCatchResult> {
-        if self.phase != PondPhase::Landed {
+        if self.phase != PondPhase::Landed || self.lift_timer.is_some() {
             return None;
         }
         let species = self.fight_species?;
@@ -872,6 +931,7 @@ impl PondSession {
                 self.last_award
             ),
             PondPhase::Snapped => "FISHING  the line snapped!".to_string(),
+            PondPhase::NoLure => format!("FISHING  no lure left  ({cast} = leave)"),
         };
         let hint = match self.phase {
             PondPhase::Waiting | PondPhase::Hooked => {

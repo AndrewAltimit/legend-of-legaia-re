@@ -587,3 +587,17 @@ fn seat_unrun_runs_the_seat_step_without_a_part_tick() {
     let mesh = scene.parts.iter().find(|p| p.model_sel == 0).unwrap();
     assert_eq!(mesh.state.pc, pc);
 }
+
+/// A whole-set placement tags each part with its record's address, the handle
+/// a later pool flush `FUN_80050E74` halts it by.
+#[test]
+fn tagged_spawn_tags_each_part_with_its_record() {
+    let (bytes, ov) = synthetic();
+    let scene = SummonScene::spawn_parts_tagged(&ov.parts, &bytes, 26, [0, 0, 0], 0x801F_69D8);
+    assert_eq!(scene.parts.len(), ov.parts.len());
+    for (part, rec) in scene.parts.iter().zip(&ov.parts) {
+        assert_eq!(part.tag, Some(0x801F_69D8 + rec.record_off as u32));
+    }
+    let plain = SummonScene::spawn(&ov, &bytes, 26, [0, 0, 0]);
+    assert!(plain.parts.iter().all(|p| p.tag.is_none()));
+}

@@ -318,6 +318,10 @@ that by storing `2` or `3` into `ctx+0x278` (PROT 0903's arms 4 and 6), so
 Gimard's attack plays inside its fire tunnel with nothing of the stage behind
 it (`gimard_burning_attack` reads both records at `+0x78 = 0x1000`).
 
+**At rest the cue is not zero.** The backdrop arm hands `FUN_80043390` the colour word with `0x40` or `0x48` in its top byte, and the dispatcher raises the low bit of the weight whenever that byte is non-zero (`ori a2,a2,0x1` at `0x800433CC`) before storing it as the leaves' `IR0` (`0x800433F0`, the flat-textured leaf's `lwc2` / `DPCS` at `0x80044F5C..0x80044F74`). The `DPCS` floors its sum, so `IR0 = 1` toward the black far colour takes one unit off every channel: the `map02` sky's `POLY_FT4` packets carry `0x7F7F7F` over TMD words of `0x808080` (PROT 0247 object 0, group flags `0x23`), its mountains `0x777F7F` over `0x788080`.
+Under the GPU's modulate `(t5 * 0x7F) >> 7` that is a whole 5-bit step under the texel: a retail sky pixel reads the texel less `7.4` per channel (median over the packets of one table, against the state's VRAM).
+The port cues the backdrop at `weight | 1` (`battle_ground_grid::backdrop_draw_ir0`) and, in PSX mode, runs the cue at the GTE's precision on the textured and the untextured paths alike (`psx_cue_colour_gte` / `psx_fill_cue_gte`, each with the play page's twin), where the continuous blend read the words as `0x80` and every overworld battle's sky drew about `7` per channel too bright (`battle_map02_poisonous_worm_strike` `image` `.867` to `.949`).
+
 #### Viewers
 
 The asset-viewer PROT browser and the browser entry viewer both draw the grid
@@ -1376,7 +1380,9 @@ The capture band reads a second table of the same measurement
 off harvest-state casts: its arms read `3` or `4` on the emulator's cost model where the
 default is `2`, and an arm that seats a record every pass seats half as many at `4`
 (V-Windhash's blade trail; [cast-module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)).
-An action no recording reached keeps the default.
+The enemy cast films add the casts the harvest states never reached, and a cast no
+recording names runs its arms past the setup at `4`
+([the capture band against the films](#the-capture-band-against-the-films)).
 A replay that knows retail's step installs it
 while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
@@ -1422,7 +1428,13 @@ holds for the sixteen frames after it, as retail's does. The packet bytes the fr
 built (`_DAT_1F8003A0` less the buffer's base) explain no more of the cost than the
 party's size does (`R^2` `.46` against `.49`, the step read right on `.84` of the
 states either way; both together `.69`), and only the hosts hold the draw lists, so
-the table stands in for the frame's work. It measures one emulated machine: Mednafen
+the table stands in for the frame's work. The summon close-up `0x33` and flash `0x34`
+have no ring entry in the library and are read off the step instead: every PCSX-Redux
+summon film of a lone caster drops from step `2` to `1` sixteen frames after the
+close-up's first few frames (an entry under `0xF1`), and a full party's from `3` to `2`
+on `0x34`'s entry (under `0x1FF`). On the step-`2` table the flash-in's white rise ran
+at two vsyncs a step where retail's ran at one, and the `0x34` segment of those films
+scored `.47`; on the read-off entries it scores `.95`. It measures one emulated machine: Mednafen
 reads a full party's action near `490` hblanks, under the `511` that makes step `3`,
 where PCSX-Redux reads `594`, and no real hardware has been measured.
 
@@ -1445,6 +1457,60 @@ A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
+
+<a id="the-table-held-out-against-the-films"></a>
+
+**The table held out against the films.** The monster strike and cast films
+([cast-sequence oracle](../tooling/cast-sequence-oracle.md#a-monsters-physical-attack))
+log retail's step every vsync. The ring over the table, run over each film's own
+sequence of action states and pass boundaries, reads retail's step on `.91` of the
+held-out strike vsyncs (half the films, split by name). The best single step per film
+reads `.918`, so a model that only names a step per fight could gain less than one
+vsync in a hundred. What is left moves inside one action state at one load:
+- a full party's strike that drops to `2` sixteen passes into the HP-bar settle `0x51`;
+- a lone member's strike on four Killer Bees that climbs to `3` on the hit;
+- the heaviest formations' `0x1F` / `0x20` frames, which pass `0x2D0` frame by frame
+  and run step `4`.
+
+A formation term fails held out. The alive monsters' TMD face count explains more of a
+strike capture's newest ring entries than party size alone (`R^2` `.86` against `.76`),
+yet a slope fit on one half of the films is `0` and on the other `0.08` hblanks a
+face, which costs the first half a point of agreement, so the table carries no
+formation term. The
+measured cost also moves with the framing, which no `World`-side count reads.
+
+<a id="the-capture-band-against-the-films"></a>
+
+**The capture band against the films.** An enemy cast's module runs in `0x70`, and the
+enemy cast films log retail's step and `ctx[+0x279]` every vsync. Read against them, the
+harvest-state table named five of the eighteen casts; every other arm ran the ordinary
+step (`2` under a replay's pin, `3` for a full party in play) where retail runs `4` on
+`.62` of those vsyncs and `3` on `.22`. A row per recorded cast (the step each arm
+spends the most vsyncs on), with `4` for every arm past the setup of a cast no recording
+names, fit on half the films reads the other half's step
+right on `.71` and `.91` of band vsyncs, against `.40` and `.48` for the old table. Steal
+is the light one: its dash and item flash run `3`. A recorded cast's gaps are arms too
+short to read and keep the ordinary step. The port carries the rows but not the `4`
+for unrecorded casts: a still whose gate counts passes lands on another pass at `4`
+(`gaza2_card_neo_star_slash_mid_cast` `.999` to `.739`), so an unrecorded cast keeps the
+ordinary step until a film of it reads its arms.
+
+Feeding each arm's step through the ring as a cost instead of installing it, so a cheap
+arm after a dear one reads `3` until the ring empties, scores the same within a
+thousandth on both the enemy films and the Seru films; the installed step stays. The
+Seru table, one fight's reading, holds across fights: over 44 Seru films on
+three stages it reads retail's step on `.90` of band vsyncs, and a refit from half of them
+gains nothing on the other half.
+
+Run over all 36 films the rows lift the step read right from `.40` to `.74` and leave
+the mean `within` where it was (`.820` to `.821`). Three casts score lower on the new
+steps: Glare's arm 1 (`.815` to `.783`), Power Charge's arm 1 and Hyper Crush. Run on
+retail's own steps (`--retail-steps`) they score as the table does (`.787`, `.957`,
+`.665`), so the step is retail's and those bodies are what fall short.
+
+Death Game is held at the ordinary step. Retail runs its dice arms at `1` and `3`, but on
+those steps the port's arms 3 and 5 score `.94` to `.79` and `.99` to `.78`, so its
+bodies still count per pass something retail counts per vsync.
 
 <a id="what-the-arm-step-table-is"></a>
 

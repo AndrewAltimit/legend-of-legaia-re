@@ -788,6 +788,58 @@ pub(super) fn module_shot_walking(ram: &[u8], ctx: u32) -> bool {
     })
 }
 
+/// Whether a magic-band capture holds the animation chain's **terminator
+/// pass**: the `0x2A` pass that meets the queue's `0xFF` stores `0x2B` and
+/// calls neither `FUN_801DC0A0` nor `FUN_801D5854` (`0x801E4774..0x801E479C`),
+/// so it re-arms no framing while the walker `FUN_8002149C` still steps the
+/// table the pass before armed. Both passes of the display lag therefore
+/// moved `increment * step` on the one table the RAM holds, not the widening
+/// share [`displayed_cam_live_steps`] walks for a table re-armed every pass.
+///
+/// The RAM says which pass it is through its own table: the largest moving
+/// increment `inc` is not what a re-arm on the RAM's pass would have stored
+/// (`ceil((gap + step * inc) / 0xC) != inc`), and is what one stored a pass
+/// earlier (`ceil((gap + 2 * step * inc) / 0xC) == inc`).
+/// `battle_garmel_zenoir_fire_claw_mid_cast` holds yaw `3311` on increment
+/// `12` with `70` to go at step `3`: a re-arm there stores `9`, one a pass
+/// back stores `12`. Walked back on the table the frame draws at yaw `3239`
+/// (`image` `.995`); the re-arm law's `3209` reads `.797`.
+pub(super) fn chain_terminator_pass(ram: &[u8], ctx: u32, action_state: u8, step: u8) -> bool {
+    if action_state != 0x2B {
+        return false;
+    }
+    let raw_live = [
+        i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
+        i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16),
+        0,
+        game_anchors::u32_at(ram, 0x8008_40B8) as i32,
+        game_anchors::u32_at(ram, 0x8008_40BC) as i32,
+        game_anchors::u32_at(ram, 0x8008_40C0) as i32,
+        game_anchors::u32_at(ram, 0x8008_9118) as i32,
+        game_anchors::u32_at(ram, 0x8008_911C) as i32,
+        game_anchors::u32_at(ram, 0x8008_9120) as i32,
+    ];
+    let Some((inc, gap)) = (0..9u32)
+        .filter(|&k| k != 2)
+        .map(|k| {
+            let at = ctx + TWEEN_TABLE + k * 4;
+            let inc = i32::from(game_anchors::u16_at(ram, at) as i16).abs();
+            let end = game_anchors::u16_at(ram, at + 2) as i16;
+            (
+                inc,
+                i32::from(end.wrapping_sub(raw_live[k as usize] as i16)).abs(),
+            )
+        })
+        .filter(|&(inc, gap)| inc > 0 && gap > 0)
+        .max_by_key(|&(inc, _)| inc)
+    else {
+        return false;
+    };
+    let fs = i32::from(step.max(1));
+    let rearm = |before: i32| (before + SHOT_TWEEN_DIVISOR - 1) / SHOT_TWEEN_DIVISOR;
+    rearm(gap + fs * inc) != inc && rearm(gap + 2 * fs * inc) == inc
+}
+
 /// The tween length of the module shot a `0x70` capture's table holds, where
 /// a module arm built one shot of a known length: PROT 0962's charge bodies
 /// (`0xA2..=0xA4`) waiting in arm 3, whose table is the wind-up shot arm 2

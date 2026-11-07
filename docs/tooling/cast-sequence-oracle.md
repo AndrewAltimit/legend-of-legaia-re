@@ -113,6 +113,18 @@ children (tick, slot, frame count, cursor, position, anim id). It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
+`LEGAIA_DIAG_CAST_HIDE=<va>,..` (also through `--engine-env`) leaves the cast
+scene's parts seated from those record addresses out of the draw lists while
+their programs run on: a film whose frame shows something no retail frame
+holds is re-recorded with candidate records hidden until the shape goes, or
+stays. Aluru's arm-11 dark triangle stayed with every arm-11 record hidden,
+which put it on the creature rather than the cast. The record addresses come
+off `parts.csv` and read with `asset move-disasm slot-b`
+([move VM](../subsystems/move-vm.md#reading-a-program-asset-move-disasm)).
+Retail `parts.csv` recordings older than the probe's `s16` position columns
+hold `s32(+0x14)`, `s32(+0x18)`, `s32(+0x1C)` under `x`, `y`, `z`: their `y`
+is `+0x18`.
+
 Set against a retail recording made with `--retail-parts`, the file reads a mechanism
 off directly: Spoon's fans stood at scale `0x400` beside retail's `0x666`, Barra's cone
 at `z = 0` beside `456`, the Rogue's ray emitter on the floor beside retail's
@@ -248,7 +260,11 @@ recorder. It keeps the capture's re-seat (`PHYSICAL_KEEP_ENV`), which stands the
 on the capture's ground; it lets go of the drive at its gate
 (`ScreenshotConfig::battle_drive_released`), because the drive's steer pins the yaw
 counter for as long as the state lasts and leaves the camera short by what the state
-would have drifted; and the score keeps the recording's first action only
+would have drifted, and the release also answers the two capture-band polls the drive
+held (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`), which nothing
+else answers once the drive stops: a state saved inside `0x6F`
+(`battle_map01_gomboo_steal_mid_cast`) otherwise parks the band there for the whole
+run; and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
 capture that starts inside the strike loop. The first action is the one the first
@@ -258,6 +274,26 @@ that turn's Done band before any frame, and the cut does not count it. A strike'
 second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
+
+<a id="the-frames-after-the-gate-run-on-the-captures-ring"></a>
+
+The frames after the gate run on the capture's frame-cost ring. A replay whose
+history left the party's step inside its sixteen passes, or one that replays a cast,
+keeps the default step up to its gate (`LEGAIA_BATTLE_PARTY_STEP=0`,
+`RetailBattle::replay_keeps_default_step`), which is what the stills measure best on.
+The pin held for the whole film, so a full party's strike ran at `2` against retail's
+`3` from its first frame and the yaw drifted two units a pass. The seed now also hands
+the child the capture's ring `0x80084098` and cursor (`LEGAIA_BATTLE_COST_RING`,
+`frame_cost_ring`). At the gate release the child stands the engine's `FrameCostRing`
+there and lifts the pin (`World::seed_frame_cost_ring`), so the frames after it take
+the ring's step and then the measured costs
+([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds)). It is a
+harness seat: the walk up to the gate is unchanged and no play path reads it. Over the
+81 strike films it lifts step agreement with retail from `.80` to `.90` and the mean
+`within` from `.838` to `.842`, Cort 181's strike from `.763` to `.860` (yaw error `86`
+to `5`). Only a capture in the strike loop `0x1E..=0x20` takes the ring; a cast keeps its
+pin past the gate: its module arms run on their own step tables, and the Death Game films lost `.05` of `image` off the pin while
+their yaw closed.
 
 An injected cast seats the caster's clip and cursor on its begin
 (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
@@ -345,6 +381,13 @@ retail's did. In a `koru_strip_forced` capture the word on arm 3's last vsync
 makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
+
+A cast whose outcome is a roll parts on the deal the same way, and the sound
+channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a
+cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
+happened.", the engine's stripped the accessory and played the victim's knockdown
+and its three cues. With `--rand-at 0x70:3` both sides miss, the cues score
+`1.000` and the frames `.773` against `.756`.
 
 ## The game clock
 
@@ -490,6 +533,10 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   child's frame past the recording. A first `0x1E` is not that round: the drive
   may replay rounds until its target and clip match, and a recording started on
   an earlier one reads as a strike that "lands nothing".
+
+A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
+`0x3E`), which the probe also takes as the recording's start: before it did, a
+`*_heal_mid_cast` recording waited for the next actor's strike and filmed that.
 
 On the retail side the same switch starts on a state held on `0x2B` or `0x70`, with
 `--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the

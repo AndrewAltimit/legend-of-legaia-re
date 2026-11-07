@@ -119,11 +119,15 @@ pub fn monster(lib: &Library, id: u16) -> Result<Actor> {
         ct[1] = monster_archive::relocate_tsb(ct[1], 0);
     }
     let model = Model::from_mesh(vmesh, ids, None).context("monster mesh has no triangles")?;
-    let clips = monster_archive::animations(&entry, id)?
-        .unwrap_or_default()
+    // The clip names the site's monster viewer and the `.glb` export give
+    // (Idle, Move, Damaged, Attack #1, ...; `Action 0xNN` for a tag the
+    // action-tag table leaves unnamed).
+    let anims = monster_archive::animations(&entry, id)?.unwrap_or_default();
+    let labels = monster_archive::action_labels(&anims);
+    let clips = anims
         .iter()
-        .enumerate()
-        .filter_map(|(i, a)| Clip::from_anim(format!("#{i} action {:#04x}", a.action_id), a))
+        .zip(labels)
+        .filter_map(|(a, label)| Clip::from_anim(label, a))
         .collect();
     let mut actor = Actor {
         label: name,

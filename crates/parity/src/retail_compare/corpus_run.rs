@@ -431,6 +431,8 @@ pub(super) fn run_one(
             return report;
         }
     };
+    // The rewound seat on the composer's own floor under the walk.
+    retail.reseat_walk_rewind_on_floors(engine.walk_floors);
     let mut panel: Option<f64> = None;
     let image = match (
         opts.engine_exe,

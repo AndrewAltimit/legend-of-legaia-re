@@ -163,7 +163,11 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    var cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    // A PSX-mode fill cues at the GTE's precision (`psx_fill_cue_gte`).
+    if u.psx_params.w >= 0.5 && ir0 > 0.0 && !palette_on {
+        cued = psx_fill_cue_gte(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    }
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }
@@ -224,7 +228,11 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    var cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    // A PSX-mode fill cues at the GTE's precision (`psx_fill_cue_gte`).
+    if u.psx_params.w >= 0.5 && ir0 > 0.0 && !palette_on {
+        cued = psx_fill_cue_gte(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
+    }
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     // Saturate before the mode-3 pre-scale (see the VRAM-mesh blend pass).
     return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * f_scale, 1.0);

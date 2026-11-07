@@ -145,7 +145,10 @@ struct LaunchToggles {
 }
 
 /// Set the host policy and the world switches of a freshly opened session.
-fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
+fn apply_launch_toggles(
+    session: &mut NativeSession,
+    toggles: LaunchToggles,
+) -> legaia_engine_session::session_switches::SessionSwitches {
     let LaunchToggles {
         entry_pulse,
         smart_monsters,
@@ -212,6 +215,7 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
+    switches
 }
 
 /// Enter the launch scene: a `--resume-save` landing through the card-load
@@ -567,7 +571,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         }
         _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
     };
-    apply_launch_toggles(
+    let launch_switches = apply_launch_toggles(
         &mut session,
         LaunchToggles {
             entry_pulse: fidelity.entry_pulse,
@@ -698,6 +702,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         disc,
     });
     app.apply_launch_options(fidelity);
+    app.launch_switches = Some(launch_switches);
     // Which fidelity toggles this session runs off retail, once the launch
     // switches and the (possibly pinned) options have both landed: empty
     // under `--retail`.

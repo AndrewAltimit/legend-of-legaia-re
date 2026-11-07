@@ -67,7 +67,10 @@ impl World {
             // The engine's scene loader is synchronous: a live battle frame
             // is always past the loader's last step, stage overlay included.
             loader_state: sb::BATTLE_RUNNING,
-            pad_edge: self.input.pad() & !self.input.pad_prev() != 0,
+            // `_DAT_8007B874 | _DAT_8007B938` (`0x80056384..0x80056398`): the
+            // press, or a button held across the pump's 32-vsync window.
+            pad_edge: self.input.pad() & !self.input.pad_prev() != 0
+                || self.input.retail_pad().held_32 & 0xFFFF != 0,
             // The opening counter `gp[+0x330]` rests at `0xFF` on every frame
             // the engine drives a live battle.
             opening_negative: true,
@@ -622,5 +625,38 @@ fn stage_camera_pose(c: &StageCamera) -> legaia_engine_camera::projection::Battl
         yaw: c.yaw as f32,
         tr: c.tr.map(|v| v as f32),
         focus: c.focus.map(|v| v as f32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_system::input::{InputState, PadButton};
+    use legaia_engine_system::retail_pad::REPEAT_WINDOW;
+
+    /// The caption skip's pad term is the press or the 32-vsync held window
+    /// (`_DAT_8007B874 | _DAT_8007B938`, `0x80056384..0x80056398`), both off
+    /// the pump `World::set_pad` feeds: the press frame reads, the frames
+    /// after it do not until the hold has filled the window.
+    #[test]
+    fn a_held_button_reads_as_side_band_pad_activity_once_the_window_fills() {
+        let mut w = World::new();
+        let square = InputState::mask_of([PadButton::Square]);
+        w.set_pad(square);
+        assert!(w.battle_sideband_inputs(None).pad_edge, "the press");
+        for _ in 1..REPEAT_WINDOW - 1 {
+            w.set_pad(square);
+            assert!(
+                !w.battle_sideband_inputs(None).pad_edge,
+                "held, window not full"
+            );
+        }
+        w.set_pad(square);
+        assert!(
+            w.battle_sideband_inputs(None).pad_edge,
+            "held for the window"
+        );
+        w.set_pad(0);
+        assert!(!w.battle_sideband_inputs(None).pad_edge, "released");
     }
 }

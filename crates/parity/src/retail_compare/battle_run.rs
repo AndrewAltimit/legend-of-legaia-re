@@ -881,6 +881,7 @@ pub(super) fn battle_image(
         "LEGAIA_BATTLE_CAMERA_OPTION",
         battle.camera_option.to_string(),
     ));
+    env.push(("LEGAIA_SOUND_OPTION", battle.sound_option.to_string()));
     // Retail's HUD glides had all landed: the frame shows every plate at its
     // rest seat whatever the replay's own seed-to-phase time was (a seat
     // seeded on its captured ground skips the approach retail spent the
@@ -957,7 +958,24 @@ pub(super) fn battle_image(
     if battle.replay_keeps_default_step() {
         env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
     }
-    if let Some((step, state, from, hold)) = battle.frame_step_seed() {
+    // The capture's frame-cost ring, for a film that runs on from the gate
+    // (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`): the child stands the engine's ring
+    // there once the gate opens and runs the frames after it on the ring,
+    // whatever step the walk up to it was pinned to. Only for a capture in the
+    // physical strike loop `0x1E..=0x20`: a cast's module arms run on their own
+    // step tables, and the frames between them measured worse off the pin (the
+    // Death Game films, `image` `-.05`).
+    if let Some((entries, cursor)) = battle
+        .cost_ring
+        .filter(|_| (0x1E..=0x20).contains(&battle.action_state))
+    {
+        let list: Vec<String> = entries.iter().map(u16::to_string).collect();
+        env.push((
+            "LEGAIA_BATTLE_COST_RING",
+            format!("{};{cursor}", list.join(",")),
+        ));
+    }
+    if let Some((step, state, from, hold)) = battle.image_frame_step_seed() {
         let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
         env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));
         if let Some(hold) = hold {
@@ -1055,6 +1073,20 @@ pub(super) fn battle_image(
         if battle.display_retake() {
             if battle.retake_across_band_entry() {
                 env.push(("LEGAIA_CAPTURE_RETAKE_ENTRY", "1".to_string()));
+                // The module countdown's gate can open a pass after the one
+                // whose parts are the RAM's: the retake counts back from the
+                // pass the part list's age names (harness).
+                if battle.action_state == 0x70 && battle.part_ages.len() >= 2 {
+                    env.push((
+                        "LEGAIA_CAPTURE_PART_AGES",
+                        battle
+                            .part_ages
+                            .iter()
+                            .map(|(r, w)| format!("{r:x}:{w}"))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ));
+                }
             }
             if battle.retake_on_shot_only() {
                 env.push((

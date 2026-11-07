@@ -41,6 +41,28 @@ pub struct FrameCostRing {
 }
 
 impl FrameCostRing {
+    /// A ring holding these sixteen entries with the write cursor at
+    /// `cursor` (`gp+0x440`, the slot the next pass stores to), as a retail
+    /// capture's `0x80084098` holds them.
+    pub fn from_entries(entries: [u16; 16], cursor: u8) -> Self {
+        Self {
+            entries,
+            cursor: cursor & 0xF,
+        }
+    }
+
+    /// The step the ring's entries read now, before another push: what the
+    /// pass that last stored here left for the next one. A newest entry on
+    /// the clamp `0x2BC` stands for a raw duration of `0x2D0` or more, which
+    /// read step `4` (`0x800170F8..0x80017104`).
+    pub fn step(&self) -> u8 {
+        let newest = self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)];
+        if newest == 0x2BC {
+            return 4;
+        }
+        step_of_cost(self.entries.iter().copied().max().unwrap_or(0))
+    }
+
     /// Store one frame's cost (`li s0,0x2bc` clamps a frame of `0x2D0` or
     /// more) and read the step the next frame runs on.
     pub fn push(&mut self, cost: u16) -> u8 {
@@ -76,8 +98,16 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// It is a measurement of one emulated machine, like the cast arm tables, and no
 /// model of a frame's work: Mednafen reads a full party's action about `100` lower,
 /// with the GPU wait in it, and no real hardware has been measured.
+///
+/// The summon close-up `0x33` and the flash `0x34` are read off the step
+/// rather than a ring entry: on every PCSX-Redux summon film of a lone caster
+/// the step drops from `2` to `1` sixteen frames after the close-up's first few
+/// frames (so those frames cost under `0xF1`), and on a full party's from `3`
+/// to `2` at `0x34`'s entry (under `0x1FF`). The two-member figure is the
+/// member step between them; no film records it.
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
+        0x33 | 0x34 => [200, 330, 460],
         0x00 => [282, 411, 545],
         0x0A => [340, 457, 527],
         0x0C => [354, 463, 608],

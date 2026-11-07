@@ -1017,6 +1017,30 @@ impl World {
                 self.battle.move_label_closed = true;
             }
         }
+        // The monster move-name label (`0x8004AEBC..0x8004AF88`), also ahead
+        // of the re-commit return: a monster seat's outgoing clip whose entry
+        // `+0x77` is non-zero destroys widget `0x21`, and an incoming clip
+        // whose `+0x77` is non-zero opens element `0x4C` on that spell id's
+        // name. Every commit runs it, the hand-off to idle included.
+        // REF: FUN_8004AD80
+        if self.actors[i].battle_monster_id.is_some() {
+            let key = |clip: u8| {
+                self.actors[i]
+                    .battle_action_clips
+                    .as_ref()
+                    .and_then(|cl| cl.get(clip as usize))
+                    .and_then(|c| c.as_ref())
+                    .map_or(0, |c| c.attach_key)
+            };
+            let outgoing = key(self.actors[i].battle.current_anim);
+            let incoming = key(q);
+            if outgoing != 0 {
+                self.battle.monster_move_label = None;
+            }
+            if incoming != 0 {
+                self.battle.monster_move_label = Some(incoming);
+            }
+        }
         let mirrors_loop = self.mirrors_loop_counter(i);
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {

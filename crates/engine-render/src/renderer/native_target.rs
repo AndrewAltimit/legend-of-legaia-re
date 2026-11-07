@@ -68,6 +68,31 @@ pub(crate) struct NativeTarget {
     pub(super) blit_bg: wgpu::BindGroup,
 }
 
+/// How close a window has to come to the next whole step of the 320x240
+/// stage before [`fill_target_for`] draws at that step and shrinks the
+/// frame onto the window: `0.95` keeps the shrink under one pixel in twenty.
+pub const FILL_MIN_RATIO: f32 = 0.95;
+
+/// The frame target a clean (non-PSX) window draws at, when not its own
+/// size: a window a little short of a whole step of the 320x240 stage (a
+/// 960x720 window a 768-pixel-tall screen hands back 699 tall) draws the
+/// whole frame at that step - 3D, text and sprites alike, so the 2D stays
+/// on its whole-step grid and lined up with the scene - and the window shows
+/// it shrunk to fit ([`native_present_rect`]'s fit branch). Without it the
+/// stage fell a whole step (640x480 in a 960x699 window) and the rest was
+/// black. `None`: the window holds a whole step, or is too far short of
+/// the next one for the shrink to stay sharp.
+pub fn fill_target_for(sw: u32, sh: u32) -> Option<(u32, u32)> {
+    let (pw, ph) = PSX_DISPLAY_SIZE;
+    let fit = (sw as f32 / pw as f32).min(sh as f32 / ph as f32);
+    let whole = fit.floor();
+    if whole < 1.0 || fit == whole {
+        return None;
+    }
+    let next = whole + 1.0;
+    (fit / next >= FILL_MIN_RATIO).then(|| (pw * next as u32, ph * next as u32))
+}
+
 /// The integer-scaled, centred rect a `(nw, nh)` frame is presented in on a
 /// `(sw, sh)` surface: the largest whole multiple that fits, or the largest
 /// aspect-preserving fit when the surface is smaller than the frame.
@@ -180,7 +205,7 @@ impl Renderer {
     /// fills the buffer eight times too fast.
     pub fn set_frame_persist(&self, on: bool) {
         let was = self.frame_persist.replace(on);
-        if on && !was {
+        if on && !was && self.psx_mode.get() {
             self.seed_frame_ring();
         }
     }
@@ -309,7 +334,22 @@ impl Renderer {
 
 #[cfg(test)]
 mod tests {
-    use super::native_present_rect;
+    use super::{fill_target_for, native_present_rect};
+
+    #[test]
+    fn a_window_just_short_of_a_step_draws_at_it() {
+        // The clamped 960x720 window: drawn at 3x, shown at 932x699.
+        assert_eq!(fill_target_for(960, 699), Some((960, 720)));
+        let (x, y, w, h) = native_present_rect(960, 699, 960, 720);
+        assert_eq!((y, h), (0.0, 699.0));
+        assert!((w - 932.0).abs() < 1.0 && x >= 0.0);
+        // A whole step, or far from the next: the window's own size.
+        assert_eq!(fill_target_for(960, 720), None);
+        assert_eq!(fill_target_for(1440, 1080), None);
+        assert_eq!(fill_target_for(1280, 800), None);
+        assert_eq!(fill_target_for(300, 200), None);
+        assert_eq!(fill_target_for(1366, 705), Some((960, 720)));
+    }
 
     #[test]
     fn the_native_frame_presents_at_the_largest_whole_scale() {

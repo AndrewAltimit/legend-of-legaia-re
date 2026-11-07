@@ -192,6 +192,16 @@ fn done_fade_down_banner_skip_needs_both_the_pad_and_the_threshold() {
     step(&mut host, &mut ctx);
     assert_eq!(ctx.frame_timer, DONE_BANNER_SKIP_BELOW - 1);
 
+    // Same frame, nothing new pressed but a button held across the pump's
+    // 32-vsync window (`_DAT_8007B938`, `or`ed in at `0x801E6098`): cut too.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    host.pad_held_32 = 0x40;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.levelup_banner_element = 0x65;
+    ctx.frame_timer = DONE_BANNER_SKIP_BELOW;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, -1);
+
     // Same frame, pad held, but no banner: the skip is banner-gated.
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     host.pad_word = 0x40;
@@ -469,6 +479,16 @@ fn seru_absorb_hold_press_clamps_the_wait_to_the_teardown() {
         DONE_SERU_ABSORB_FRAMES - 1,
         "idle pad: plain decrement"
     );
+    // A long hold is not a press here: `0x801E63A8` reads `_DAT_8007B874`
+    // alone, without the `_DAT_8007B938` the banner skip folds in.
+    host.pad_held_32 = 0x40;
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.frame_timer,
+        DONE_SERU_ABSORB_FRAMES - 2,
+        "a held button is no press"
+    );
+    host.pad_held_32 = 0;
     host.pad_word = 0x40;
     step(&mut host, &mut ctx);
     assert_eq!(ctx.frame_timer, DONE_SERU_ABSORB_TEARDOWN_BELOW - 1);

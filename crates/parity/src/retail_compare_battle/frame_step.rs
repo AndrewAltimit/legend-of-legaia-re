@@ -113,6 +113,21 @@ pub fn recent_pass_steps(ram: &[u8]) -> [u8; 16] {
     std::array::from_fn(|back| step_for(back as u32))
 }
 
+/// The frame-cost ring the capture holds: [`FRAME_HISTORY`]'s sixteen entries
+/// and the write cursor [`FRAME_HISTORY_CURSOR`], for a replay that stands the
+/// engine's `FrameCostRing` where retail's stood. `None` where the history
+/// does not set the step (a forced step, a mode other than `0x10`).
+pub fn frame_cost_ring(ram: &[u8]) -> Option<([u16; 16], u8)> {
+    if game_anchors::u32_at(ram, FORCED_STEP) != 0 || game_anchors::i16_at(ram, STEP_MODE) != 0x10 {
+        return None;
+    }
+    let entries = std::array::from_fn(|i| {
+        game_anchors::i16_at(ram, FRAME_HISTORY + i as u32 * 2).max(0) as u16
+    });
+    let cursor = (game_anchors::u32_at(ram, FRAME_HISTORY_CURSOR) & 0xF) as u8;
+    Some((entries, cursor))
+}
+
 /// How many of the capture's newest passes ran at the newest pass's step
 /// ([`recent_pass_steps`]): `(step, passes)`, `passes == 16` for a history
 /// that never left it.

@@ -43,11 +43,12 @@ impl Renderer {
             // The native target: the frame draws at the display's own size,
             // then the window magnifies it.
             Some(native) => {
-                if self.frame_persist.get() {
+                let persist = self.frame_persist.get() && self.psx_mode.get();
+                if persist {
                     self.load_persisted_frame(&native.texture);
                 }
                 self.encode_frame(target, &native.view)?;
-                if self.frame_persist.get() {
+                if persist {
                     self.store_persisted_frame();
                 }
                 self.present_native(native, &view);
@@ -283,8 +284,12 @@ impl Renderer {
             // A frame that builds on the last one ([`Self::set_frame_persist`]):
             // only the native target outlives its frame, and a scene alone
             // draws into it.
+            // PSX mode's native target alone: a clean window's fill target
+            // (`fill_target_for`) is a presentation size, not retail's
+            // never-cleared buffer.
             let persist = self.frame_persist.get()
                 && self.native.is_some()
+                && self.psx_mode.get()
                 && bloom_target.is_none()
                 && matches!(target, RenderTarget::Scene(_));
             let viewport_fill = viewport_fill.is_some() && !persist;

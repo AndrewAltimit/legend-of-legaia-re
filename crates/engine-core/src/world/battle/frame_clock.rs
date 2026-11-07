@@ -43,6 +43,19 @@ impl World {
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
     }
 
+    /// Stand the frame-cost ring where a retail capture's stood (its sixteen
+    /// `0x80084098` entries and the cursor `gp+0x440`) and run ordinary frames
+    /// on the ring from here on, the harness's pin to the default step
+    /// (`LEGAIA_BATTLE_PARTY_STEP=0`) lifted: what a replay that reached the
+    /// capture on the default step runs once it stands there. A harness seat.
+    pub fn seed_frame_cost_ring(&mut self, entries: [u16; 16], cursor: u8) {
+        use legaia_engine_battle_loop::frame_clock::FrameCostRing;
+        let ring = FrameCostRing::from_entries(entries, cursor);
+        self.battle.frame_cost_ring = ring;
+        self.battle.frame_cost_step = ring.step();
+        self.toggles.battle_party_cost_step = true;
+    }
+
     /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
     /// the action SM sits in `state`, the default everywhere else
     /// ([`legaia_engine_vm::frame_clock::FrameClock::battle_frame_step_seed`]).
@@ -933,6 +946,26 @@ mod tests {
         assert_eq!(w.ordinary_battle_frame_step(), 3);
         w.toggles.battle_party_cost_step = false;
         assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+    }
+
+    #[test]
+    fn a_seeded_cost_ring_lifts_the_default_step_pin() {
+        let mut w = World::new();
+        w.party.party_count = 3;
+        w.toggles.battle_party_cost_step = false;
+        // `battle_geremi_ogre_strike`'s ring: its oldest entry is a cheap
+        // walk-up frame, every newer one a full party's.
+        let ring = [
+            601, 602, 393, 508, 511, 530, 531, 513, 605, 612, 616, 610, 612, 605, 609, 589,
+        ];
+        w.seed_frame_cost_ring(ring, 2);
+        assert!(w.toggles.battle_party_cost_step);
+        assert_eq!(w.ordinary_battle_frame_step(), 3);
+        // A newest entry on the clamp is a step-4 pass.
+        let mut clamped = ring;
+        clamped[1] = 0x2BC;
+        w.seed_frame_cost_ring(clamped, 2);
+        assert_eq!(w.ordinary_battle_frame_step(), 4);
     }
 
     #[test]

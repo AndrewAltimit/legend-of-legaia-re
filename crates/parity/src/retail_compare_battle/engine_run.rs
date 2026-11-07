@@ -1034,10 +1034,17 @@ pub fn run_engine_battle(
         if let Some(w) = battle.capture_band_backdrop_cue() {
             world.seat_battle_backdrop_cue(w);
         }
+        // An arrival-pass capture's table was armed on the pair the pass
+        // began on (`RetailBattle::arrival_arm_snaps`): its endpoint is read
+        // there, and the bodies then stand on the RAM's ground.
+        let arm_target = battle
+            .arrival_arm_snaps()
+            .and_then(|arm| legaia_engine_capture::ground_snap::snap_battle_ground(world, &arm));
         let target = legaia_engine_capture::ground_snap::snap_battle_ground(
             world,
             &battle.engine_ground_snaps(),
         )
+        .map(|t| arm_target.unwrap_or(t))
         .map(|t| {
             legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
         });

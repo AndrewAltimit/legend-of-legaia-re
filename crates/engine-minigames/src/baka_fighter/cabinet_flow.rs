@@ -66,7 +66,9 @@ impl BakaFight {
                     edge
                 }
             },
-            pad_edge_alt: 0,
+            // `_DAT_8007B938`, the 32-vsync AND window; only the player
+            // select reads it (`0x801CFA6C`).
+            pad_edge_alt: self.cabinet_hold.held_32 as u16,
             pad_held: 0,
             dev_menu_enabled: false,
             player_round_wins: self.f[0].round_wins,

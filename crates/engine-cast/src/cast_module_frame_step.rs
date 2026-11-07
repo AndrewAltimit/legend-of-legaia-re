@@ -235,9 +235,60 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     ),
     // stone_circle
     (0xB9, &[(1, 4), (2, 4), (3, 4), (4, 3)]),
+    // The enemy cast films (`battle_*_mid_cast`, `--physical`, the step each
+    // arm of `0x70` spends the most vsyncs on, merged over the films).
+    // glare
+    (0x3C, &[(1, 4), (2, 4), (3, 4)]),
+    // hyper_crush
+    (
+        0x4B,
+        &[
+            (1, 4),
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (8, 3),
+        ],
+    ),
+    // hyper_lightning
+    (
+        0x4C,
+        &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4), (7, 3)],
+    ),
+    // divide
+    (0x50, &[(1, 4), (2, 4), (3, 3)]),
+    // steal: the thief's dash and the item flash draw next to nothing
+    (0x51, &[(1, 3), (2, 3), (3, 3)]),
+    // water_column
+    (0x54, &[(1, 4), (2, 4), (4, 4), (5, 4), (6, 4), (7, 3)]),
+    // water_crystals
+    (0x59, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    // white_shield
+    (0x60, &[(1, 4), (2, 4), (3, 3)]),
+    // power_charge
+    (0x72, &[(1, 4), (2, 4), (3, 4)]),
+    // paralyzing_wave
+    (0x75, &[(1, 4), (2, 4), (3, 4)]),
+    // death_game: retail runs the dice arms at `1` and `3` (arm 1 `4`, arms
+    // 2..3 `3`, 4..8 `1`, 9 and 11 `3`), but the port's arms 3 and 5 score
+    // `.94` to `.79` and `.99` to `.78` on those steps against the ordinary
+    // one, so the module's bodies still count something per pass that retail
+    // counts per vsync. Held at the ordinary step until they do.
+    (0x76, &[]),
+    // dark_typhoon
+    (0xAA, &[(1, 4), (2, 4), (3, 4), (4, 3), (5, 4), (6, 4)]),
 ];
 
-/// The step retail ran module phase `phase` of the capture cast `spell` at.
+/// The step retail ran module phase `phase` of the capture cast `spell` at:
+/// the table's reading for a recorded cast, else `None` (the ordinary step).
+/// A cast no film records keeps the ordinary step too. Over the enemy cast
+/// films `.62` of such arms' vsyncs run at `4`, but a still whose gate
+/// counts passes moves onto another pass at `4` (the boss card casts from
+/// `0xA6`, `gaza2_card_neo_star_slash_mid_cast` `.999` to `.739`), so the
+/// step waits for a recording of each.
 pub fn capture_arm_frame_step(spell: u8, phase: u8) -> Option<u8> {
     let (_, steps) = CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell)?;
     steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s)
@@ -260,7 +311,12 @@ mod tests {
         // V-Windhash's blade arms: a trail seated per pass seats half as many
         // at `4` as at the default `2`.
         assert_eq!(capture_arm_frame_step(0x57, 3), Some(4));
+        assert_eq!(capture_arm_frame_step(0x57, 0), None);
         assert_eq!(capture_arm_frame_step(0x57, 200), None);
+        assert_eq!(capture_arm_frame_step(0x76, 5), None);
+        // Steal draws next to nothing; a cast no film records keeps the default.
+        assert_eq!(capture_arm_frame_step(0x51, 2), Some(3));
         assert_eq!(capture_arm_frame_step(0x01, 1), None);
+        assert_eq!(capture_arm_frame_step(0x01, 0), None);
     }
 }

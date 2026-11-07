@@ -23,6 +23,12 @@ pub enum PondPhase {
     Landed,
     /// The fight resolved with a snapped line.
     Snapped,
+    /// State `0x96`: back at the shore with no lure left. State `0xB`'s fade
+    /// runs the lure gate `FUN_801D712C` and parks here when it reports none
+    /// (`0x801CF978..0x801CF98C`); the screen holds "lost the lure" until a
+    /// face-button edge (`_DAT_8007B874 & 0xF0`) starts the exit fade, state
+    /// `200` ([`PondSession::take_exit_request`]).
+    NoLure,
 }
 
 /// One frame of player input to [`PondSession::tick`].
@@ -51,6 +57,10 @@ pub struct PondInput {
     /// `0x80`. The session folds the auto-repeat pulse in (`_DAT_8007B93C`,
     /// `0x801CF43C`).
     pub reel_edge: u32,
+    /// Any face button newly pressed (`_DAT_8007B874 & 0xF0`: Triangle,
+    /// Circle, Cross, Square) - the edge the no-lure screen (state `0x96`)
+    /// leaves on.
+    pub face_edge: bool,
 }
 
 impl PondInput {
@@ -96,6 +106,9 @@ impl PondInput {
             reel_mask,
             cast_edge: pressed & (B::Cross.mask() | B::Square.mask()) != 0,
             leave_edge: pressed & (B::Circle.mask() | B::L2.mask()) != 0,
+            face_edge: pressed
+                & (B::Triangle.mask() | B::Circle.mask() | B::Cross.mask() | B::Square.mask())
+                != 0,
             edge_bonus: crate::fishing_actors::bite_pad_nudge(u32::from(pressed.rotate_right(8))),
         }
     }
@@ -178,10 +191,25 @@ pub struct PondSession {
     /// `FUN_801D7528` stops drawing (`0x801CFEF0..0x801CFF04`).
     pub(super) break_banner: i32,
     /// The landed catch's result-plate counter (the result actor's `+0x1A`
-    /// in `FUN_801D5298`): `0` on the landing, `+4` per frame step, held at
+    /// in `FUN_801D5298`): `0` until the lift seats it, `+4` per frame step, held at
     /// `0x1000`. [`PondSession::catch_result`] derives the plate's brightness
     /// and the name's rise from it.
     pub(super) result_ramp: i32,
+    /// The landed fish's lift ahead of the plate: the line actor's `+0x22`
+    /// timer through its sub-state `4` (`FUN_801D4948`), `Some` from the
+    /// landing until the frame it passes [`LIFT_SEAT_FRAMES`]. That frame
+    /// raises `DAT_801D9294` (`0x801D5208`); the lead's tick spawns the result
+    /// actor (record `0x801D9024`, tick `FUN_801D5298`) off it, so the plate's
+    /// counter runs only once this is `None`.
+    pub(super) lift_timer: Option<i32>,
+    /// The no-lure screen took its face-button edge: the session asks its
+    /// host to leave the venue (state `200`, the exit fade).
+    pub(super) exit_requested: bool,
+    /// Whether the shore's lure gate may park the session
+    /// ([`PondSession::shore_lure_gate`]): set unless the session was entered
+    /// with no lure at all, which retail's signboard refuses and only a host's
+    /// launcher does ([`PondSession::disarm_lure_gate`]).
+    pub(super) lure_gate_armed: bool,
     pub(super) events: Vec<PondEvent>,
     /// The venue the lure is cast into, once a host attaches one.
     pub(super) venue_map: Option<PondVenue>,
@@ -263,3 +291,10 @@ pub const BANNER_FRAMES: i32 = 0xC8;
 /// `0x100` (`FUN_801D5298`, `0x801D55DC..0x801D5614`). States `0x21` / `0x22`
 /// load the word as the leave gate.
 pub const RESULT_ACCEPT_RAMP: i32 = 0x280;
+
+/// The landed fish's lift, in frame-step units on the line actor's `+0x22`:
+/// sub-state `4` tests `+0x22 < 0xD3` as the frame starts and adds the step
+/// last (`slti v0,v0,0xd3` at `0x801D5144`, `addu` at `0x801D526C`), so the
+/// frame whose starting timer is past `0xD2` seats the result actor - frame
+/// `0xD4` of the lift at step `1`, counting the landing frame as the first.
+pub const LIFT_SEAT_FRAMES: i32 = 0xD2;

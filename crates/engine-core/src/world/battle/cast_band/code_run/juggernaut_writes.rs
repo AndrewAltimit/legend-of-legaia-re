@@ -422,6 +422,8 @@ mod tests {
                 tag: Some(tag),
                 seat_pokes: Vec::new(),
                 seat_halve_speed: false,
+                halted_walks: 0,
+                walk_reached: false,
             };
             p.state.world_x = x;
             p

@@ -274,6 +274,17 @@ impl RetailBattle {
                 .contains(&self.action_state)
     }
 
+    /// A monster's Spirit / Item band capture (a class-0 Heal or Hyper Heal,
+    /// which the action seed's class-byte discriminator routes to `0x3C`):
+    /// [`SpanGate::Age`] on a monster seat, category `2`, state `0x3D..=0x40`.
+    pub fn monster_spirit_band_age(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 2
+            && super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+    }
+
     /// The yaw the frame before a turning case `0xE` shot stood on. Case `0xE`
     /// aims the live yaw `step * 4` on from wherever it stands, every pass
     /// (`0x801DCB18`), and its accumulator counts the passes it has run, so
@@ -734,6 +745,53 @@ impl RetailBattle {
         self.ground_snaps(false, false, false)
     }
 
+    /// Whether the capture sits on a monster strike's arrival pass: `0x1E`
+    /// just stored by the poll `0x19`, no strike-loop pass run (cursor
+    /// `ctx[+0x15] == 0`), on the walk clip ([`Self::walk_clock_arrival`])
+    /// or with the staged idle already committed (accumulator `0`). The
+    /// table is the poll's case-6 arm and the counter the walk's last
+    /// reading.
+    pub fn arrival_pass(&self) -> bool {
+        self.walk_clock_arrival()
+            || matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x1E } if seat >= 3)
+                && self.queued_category == 3
+                && self.strike_cursor == 0
+                && self.span_gate == SpanGate::Age { accum: 0 }
+    }
+
+    /// [`Self::engine_ground_snaps`] with the acting seat on the pair its
+    /// pass began on ([`Self::arm_ground`]), for the framing endpoint an
+    /// [`Self::arrival_pass`] capture's table was armed against. The poll's
+    /// case 6 frames the attacker's live pair before the pass's anim tick
+    /// steps it back off the arrival (the walk clip's cut, `0x80047950`):
+    /// `battle_geremi_spikefish_strike`'s table ends on `(-188, 321)`, its
+    /// ring slot `1`, where the RAM holds `(-219, 417)`. `None` elsewhere.
+    pub fn arrival_arm_snaps(&self) -> Option<Vec<legaia_engine_capture::ground_snap::GroundSnap>> {
+        if !self.arrival_pass() {
+            return None;
+        }
+        let pool = usize::from(self.active_actor);
+        let arm = self.arm_ground?;
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let slot = u8::try_from(pc + pool.checked_sub(3)?).ok()?;
+        let mut snaps = self.engine_ground_snaps();
+        let s = snaps.iter_mut().find(|s| s.slot == slot)?;
+        s.x = arm[0];
+        s.z = arm[1];
+        // Case 6 frames the live pair itself, so no body-pair seat.
+        s.body = None;
+        // The arm also read the heading the pass before left: the pass
+        // re-faces the attacker after its framing call, so `+0x46` already
+        // holds the new bearing. Case 6's yaw is `counter - heading`, plus
+        // the half turn on style bit 0, so the table and the counter name
+        // the heading it read (`battle_dolk_gimard_strike` `1950` where the
+        // RAM holds `2019`).
+        let half = if self.cam_style & 1 != 0 { 0x800 } else { 0 };
+        let read = (i32::from(self.walk_yaw_base) + half - self.cam_tween.1.yaw as i32) & 0xFFF;
+        s.facing = u16::try_from(read).ok();
+        Some(snaps)
+    }
+
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
     /// **displayed** one. On the action seed's own pass - `0x14` with the
     /// yaw counter still on the seed's `0x200` rung ([`tween_passes_back`]) -
@@ -926,6 +984,15 @@ impl RetailBattle {
         // the arm the RAM is in, after the frame on screen was built, so
         // the display still shows the run clip the walk-in played.
         let walked_cast = self.walk_in_shot_aligned();
+        // A walk-in body one pass into its walk arm
+        // ([`Self::walk_arm_follow_aligned`]) whose walk clip committed
+        // inside the display lag: arm 0 queues the walk with the `+0x1DC`
+        // bump (PROT 0952's `sb v1,0x1da(s2)` / `sb v0,0x1dc(s2)` at
+        // `0x801F72C8..0x801F72D0`), which commits it mid-clip on the next
+        // anim tick, after the frame on screen was built, so that frame
+        // still shows the caster's idle on the ring's pair. Only a commit
+        // the rings show counts (`committed` below).
+        let walk_arm = self.walk_arm_follow_aligned();
         // A monster cast's accumulator gate: the frame the gate stops on
         // carries the clip the RAM's accumulator pairs with, two passes past
         // the keyframe the screen shows, and the cast clip is a one-shot the
@@ -937,17 +1004,26 @@ impl RetailBattle {
         // cursor is the display lag past the keyframe on screen
         // (`battle_ropeway_orb_heal_mid_cast`: cursor ring `40, 24, 12`, the
         // frame shows `12`).
-        let spirit_band = matches!(
-            (self.seed_plan(), self.span_gate),
-            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
-        ) && self.queued_category == 2
-            && super::SPIRIT_STAGE_STATES.contains(&self.action_state);
-        let magic_band = self.monster_magic_band_age() || spirit_band;
-        if pool < 3 || !(strike || walked_cast || magic_band) {
+        let magic_band = self.monster_magic_band_age() || self.monster_spirit_band_age();
+        // A monster's capture-band module arm (`0x70`, past the walk-in
+        // cases above) poses the caster on the displayed slot too: the
+        // retake's lag is `2 * frame_step` vsyncs, and on a pass the history
+        // stores as the clamp `0x2BC` the frame step reads `3` where the pass
+        // ran `4`, so the replay's frame stands a pass-share short of the
+        // screen while the rings name the keyframe it showed
+        // (`cort_evolved_card_doomsday_mid_cast`: cursor ring `128, 96, 64`
+        // on clip `7`, `32` a pass; the retake drew `80`, the ring's `64`
+        // reads `image` `.894` to `.997`).
+        let band_cast = self.action_state == 0x70 && !walk_arm && !walked_cast;
+        let magic_band = magic_band || band_cast;
+        if pool < 3 || !(strike || walked_cast || walk_arm || magic_band) {
             return None;
         }
         let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
         let committed = clip != self.caster_clip;
+        if walk_arm && !committed {
+            return None;
+        }
         if !committed && !magic_band && (walked_cast || !self.walk_clock_capture()) {
             return None;
         }
@@ -1281,7 +1357,13 @@ impl RetailBattle {
         // loop's framing (case 7, `0x801E36E8`) re-arms every pass, so the
         // table's yaw increment says how many passes have run
         // ([`strike_passes_off_table`]).
-        let passes = if self.walk_clock_capture() {
+        let passes = if self.arrival_pass() {
+            // Saved on the arrival pass itself: the poll `0x19` stored `0x1E`
+            // and armed case 6 there (`0x801E35B4..0x801E35C8`), so the
+            // table is the approach's, not case 7's ladder, and the counter
+            // is the walk's last reading.
+            0
+        } else if self.walk_clock_capture() {
             strike_passes_off_table(self.cam_tween_steps[1], step)
         } else {
             accum / (8 * u16::from(step)) + 2
@@ -1394,7 +1476,28 @@ impl RetailBattle {
     /// a vsync since. `minigame_muscle_dome_retail_skeleton_hyper_arts`
     /// holds the Hyper Art `0x1E` at accumulator `0`: its frame shows no
     /// label.
+    ///
+    /// A monster's swing opens the same label off its clip entry's `+0x77`
+    /// (`0x8004AF08..0x8004AF88`): when its node committed inside the display
+    /// lag (`displayed_recommit`) and the clip the displayed frame played
+    /// names no move, that frame shows none either.
+    /// `battle_map02_hell_s_trigger_strike` stands on its first swing's commit
+    /// (cursor `0`): its RAM holds `Beak Slam` in records 76 / 77, its frame
+    /// no label.
     pub fn move_label_unseen(&self) -> bool {
+        if let SeedPlan::Action { seat, .. } = self.seed_plan()
+            && seat >= 3
+        {
+            let s = usize::from(seat);
+            return self.queued_category == 3
+                && self.displayed_recommit.get(s).copied().unwrap_or(false)
+                && self.displayed_move_labels.get(s) == Some(&0);
+        }
+        self.art_label_unseen()
+    }
+
+    /// [`Self::move_label_unseen`]'s party half: the art-name label.
+    fn art_label_unseen(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3)
             && self.queued_category == 3
             && self.caster_latched >= 0x1B
@@ -1409,7 +1512,7 @@ impl RetailBattle {
     /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: TR z `1945` where
     /// the art's own arm reads `1817`).
     pub fn camera_behind_commit(&self) -> bool {
-        self.move_label_unseen() && self.cam_accum == 0
+        self.art_label_unseen() && self.cam_accum == 0
     }
 
     /// The live pose the image child stands a [`Self::camera_behind_commit`]
@@ -1500,8 +1603,18 @@ impl RetailBattle {
     /// `0x80`. A base on the floor `0x20` may have sat there for those vsyncs, so
     /// it stays as read, the way a weight on a ceiling does
     /// ([`Self::displayed_backdrop_cue`]).
+    ///
+    /// A monster's Spirit / Item band capture takes the same seat. State
+    /// `0x3C` raises the latch (`sb v0,0x243(v1)` at `0x801E3B68`) and `0x3D`
+    /// then holds until the caster's idle reaches its natural end, so how far
+    /// the base has dimmed by the gate is the caster's idle phase at the
+    /// seed, which the replay's own rounds decide: a harness seat, not a
+    /// ramp the engine gets wrong. `battle_garmel_vera_v2_heal_mid_cast`
+    /// holds base `0x38` (nine vsyncs of dim, the backdrop weight's `576`
+    /// agreeing) where the replay, its wait `36` passes longer, sat on the
+    /// floor `0x20` and drew the ground at half retail's brightness.
     pub fn displayed_ambient_base(&self) -> Option<u8> {
-        if !self.monster_magic_band_age() {
+        if !(self.monster_magic_band_age() || self.monster_spirit_band_age()) {
             return None;
         }
         let base = u16::from(self.ambient_word).checked_sub(0x40)?;

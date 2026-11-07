@@ -18,7 +18,7 @@ pub const STEAL_BODY: u32 = crate::cast_arm_ticks::STEAL_TICK;
 /// |---|---|---|
 /// | 0 (`0x801F7400`) | heading onto the victim; the run clip | `= scalar << 5` |
 /// | 1 (`0x801F759C`) | heading onto the victim; holds until `FUN_8004E2F0` reads it in reach; then its back to the victim, and the steal | - |
-/// | 2 (`0x801F7B44`) | back to the victim through the gate; then onto the victim, clip `0` | `+= scalar << 6` |
+/// | 2 (`0x801F7B44`) | framing style `ctx[+0xD] = 0`; back to the victim through the gate; then onto the victim, clip `0` | `+= scalar << 6` |
 /// | 3 (`0x801F7CB0`) | - | gate, to `0xFF` |
 ///
 /// Arm 1's way out also steps the caster back along that heading until it
@@ -55,6 +55,10 @@ pub fn steal_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
         }
         2 => {
+            // `sb zero,0xd(s2)` ahead of the arm's case 6 (`0x801F7B44`) on
+            // every pass; the passing one stores the `1` back after it
+            // (`0x801F7BF8`).
+            arm.follow_style = Some(0);
             if st.countdown.drain_above(0) {
                 arm.caster_write = facing(bearing);
                 arm.hold = true;

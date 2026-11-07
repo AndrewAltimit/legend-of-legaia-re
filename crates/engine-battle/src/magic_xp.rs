@@ -277,6 +277,53 @@ pub fn menu_heal_xp_gain(group_cast: bool, full_power: bool) -> u32 {
     }
 }
 
+/// One HP-heal arm of the applier `FUN_800402F4` a spell record's `+0x01` byte
+/// selects (`3`, `4`, `5`): which spell's level scales the cap, and the cap at
+/// level 1 with its per-level shift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuHealArm {
+    /// The id the arm scans the caster's spell list for (`li v1,0x83` and
+    /// friends). Its slot's level scales the cap, and its slot banks the XP.
+    pub level_spell: u8,
+    /// The cap at level 1.
+    pub base: i32,
+    /// `cap = base + (level - 1) << shift`.
+    pub shift: u32,
+}
+
+/// The menu heal arm for `sub_class` on the single-target (class `0`,
+/// `0x80040520..0x800407B4`) or group (class `1`, `0x80040A08..0x80040C14`)
+/// side. The single arm of sub-class `5` scans for Orb (`0x89`, `li v1,0x89`
+/// at `0x800406FC`) where the group arm scans for Spoon (`0x91`, `0x80040B70`).
+/// `None` for a sub-class with no level-scaled arm.
+///
+/// PORT: FUN_800402F4 (the HP-heal arms' cap)
+pub fn menu_heal_arm(group_cast: bool, sub_class: u8) -> Option<MenuHealArm> {
+    let (level_spell, base, shift) = match sub_class {
+        3 => (0x83, 0x100, 5),
+        4 => (0x89, 0x200, 6),
+        5 => (if group_cast { 0x91 } else { 0x89 }, 0x400, 7),
+        _ => return None,
+    };
+    Some(MenuHealArm {
+        level_spell,
+        base,
+        shift,
+    })
+}
+
+impl MenuHealArm {
+    /// The arm's cap for the caster: the level byte of the first of the
+    /// caster's [`SPELL_SEARCH_BOUND`] list slots holding
+    /// [`Self::level_spell`], minus one and taken as a byte; a caster without
+    /// the spell scales by `0`. Returns the slot too, which banks the XP.
+    pub fn cap(&self, caster: &CharacterRecord) -> (i32, Option<usize>) {
+        let slot = spell_slot(caster, self.level_spell);
+        let step = slot.map_or(0, |s| caster.spell_list().levels[s].wrapping_sub(1));
+        (self.base + (i32::from(step) << self.shift), slot)
+    }
+}
+
 /// A spell level-up resolved by [`accrue_and_level`]: the spell-list slot
 /// that leveled and the level byte now in the record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -176,10 +176,27 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     shot([pitch, yaw_from(k, vf)], tr, focus_on(v), frames)
                 };
                 match arm {
-                    2 => ArmDirection {
-                        spawns: &NOVA_VORTEX_SPAWNS,
-                        ..shot([0x80, yaw_from(0x900, f)], [0, 0x300, 0x800], c, 0x40)
-                    },
+                    // `lhu t3,0x38(sp)` / `sh t3,0x42(v0)` on
+                    // `creature[+0x22C]` (`0x801F6D68..0x801F6D70`), the busy
+                    // word `1` the prologue stores (`0x801F6A5C`): the
+                    // creature is drawn clipped at the floor for the rest of
+                    // the cast, so it rises out of the vortex. The shot is
+                    // built off the seat the installer stood on the caster,
+                    // before the arm steps the creature a twenty-fourth of a
+                    // unit along its facing (`0x801F6D74..0x801F6E5C`): the
+                    // focus stays on the caster until arm 4's pass reframes.
+                    2 => {
+                        st.creature_floor_clip = true;
+                        ArmDirection {
+                            spawns: &NOVA_VORTEX_SPAWNS,
+                            ..shot(
+                                [0x80, yaw_from(0x900, caster.facing)],
+                                [0, 0x300, 0x800],
+                                focus_on(caster),
+                                0x40,
+                            )
+                        }
+                    }
                     0x0A => ArmDirection {
                         spawns: &NOVA_CLOUD_SPAWNS,
                         ..ArmDirection::PASS
@@ -314,6 +331,34 @@ mod tests {
             .shot
             .expect("arm 0x11's cut");
         assert_eq!(s.angles[1], yaw_from(0, 0x345));
+    }
+
+    /// Arm 2's pass frames the caster's seat, which the installer stood the
+    /// creature on before the arm steps it forward, and raises the floor clip.
+    #[test]
+    fn nova_arm2_frames_the_installed_seat_and_clips_the_floor() {
+        let mut st = ModuleCamState {
+            creature_live: Some(ModuleSeat {
+                x: 66,
+                y: 0,
+                z: -421,
+                facing: 13,
+            }),
+            ..Default::default()
+        };
+        let seats = ModuleCamSeats {
+            caster: ModuleSeat {
+                x: 63,
+                y: 0,
+                z: -591,
+                facing: 13,
+            },
+            ..Default::default()
+        };
+        nova_direct(&mut st, 2, seats);
+        let s = nova_direct(&mut st, 3, seats).shot.expect("arm 2's shot");
+        assert_eq!(s.focus, focus_on(seats.caster));
+        assert!(st.creature_floor_clip);
     }
 
     /// Nova reports its spawn calls on the arms that make them, each on the

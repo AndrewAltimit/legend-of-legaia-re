@@ -309,6 +309,34 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_garmel_zenoir_fire_claw_mid_cast`: the animation chain's
+/// terminator pass armed no framing, so the RAM's yaw increment `12` with
+/// `70` to go at step `3` is the pass before's re-arm (`ceil(142 / 12)`), not
+/// this pass's (`ceil(106 / 12) = 9`), and both lag passes walked it.
+#[test]
+fn the_chain_terminator_pass_walks_back_on_the_table_it_found() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 3311);
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(1) + 2, 3381);
+    put32(&mut ram, 0x8008_40C0, 5619);
+    put16(&mut ram, rec(5), 21);
+    put16(&mut ram, rec(5) + 2, 5734);
+    assert!(camera_align::chain_terminator_pass(&ram, ctx, 0x2B, 3));
+    // Not outside `0x2B`, and not where this pass's own re-arm fits.
+    assert!(!camera_align::chain_terminator_pass(&ram, ctx, 0x2A, 3));
+    put16(&mut ram, rec(1), 9);
+    put16(&mut ram, rec(5), 10);
+    assert!(!camera_align::chain_terminator_pass(&ram, ctx, 0x2B, 3));
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(5), 21);
+    let p = camera_align::displayed_module_cam_live(&ram, ctx, &[3, 3]);
+    assert_eq!(p.yaw, 3239.0);
+    assert_eq!(p.tr[2], 5493.0);
+}
+
 /// `battle_map01_frog_strike`: one pass past the strike commit its eye walks
 /// the pull-in's first table, so the frame on screen still stands on the depth
 /// the shot had landed on (`4915`), and walks no further back than that.
@@ -1950,6 +1978,44 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         );
     }
 
+    // A walk-in body one pass into its walk arm whose walk clip committed
+    // inside the lag (`battle_tunnelc_xain_bloody_horns_mid_cast`: the rings
+    // hold the idle at `0` on the displayed slot, the walk `1` at `16` live).
+    {
+        let mut c = b.clone();
+        c.action_state = 0x70;
+        c.module_phase = 1;
+        c.cam_landed = false;
+        c.queued_action = 0x5C;
+        c.queued_category = 2;
+        c.span_gate = SpanGate::None;
+        c.caster_clip = 1;
+        assert!(c.walk_arm_follow_aligned());
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "the idle before the walk's commit");
+        assert_eq!((clips[0].clip, clips[0].cursor), (0, 0));
+        let seats = c.engine_image_displayed_seats();
+        assert_eq!(seats.len(), 1);
+        assert_eq!((seats[0].x, seats[0].z), (-39, 291), "the ring's pair");
+        c.caster_clip = 0;
+        assert!(
+            c.engine_image_displayed_clips().is_empty(),
+            "no commit in the window"
+        );
+        // Past the walk, a module arm poses the caster on the displayed slot
+        // with no commit in the window (`cort_evolved_card_doomsday_mid_cast`).
+        c.module_phase = 4;
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "a capture-band module arm");
+        assert_eq!((clips[0].clip, clips[0].cursor), (0, 0));
+        let seats = c.engine_image_displayed_seats();
+        assert_eq!(
+            (seats[0].x, seats[0].z),
+            (-39, 291),
+            "on the ring's pair, as a magic band's caster"
+        );
+    }
+
     // The strike's target still idles: its loop is seated, as no hit has
     // staged its reaction yet; a cast's target keeps the replay's clock.
     b.span_gate = SpanGate::Age { accum: 0 };
@@ -2675,4 +2741,68 @@ fn a_magic_band_accumulator_reads_the_older_steps_where_they_add_up() {
     put32(&mut ram, ctx + 0x87C, 48);
     put8(&mut ram, ctx + 7, 0x70);
     assert_eq!(frame_step::magic_band_older_steps(&ram), None);
+}
+
+/// A monster strike saved on its arrival pass (`0x1E` just stored by the
+/// poll `0x19`, cursor `ctx[+0x15]` still `0`, the walk clip on) holds the
+/// approach's case-6 table, not case 7's ladder: its walk ended on the RAM's
+/// counter, so the approach start reads that counter as the arrival
+/// (`battle_nilboa_lucifer_strike`, `568`; read off the ladder it was `530`
+/// and the replay walked four passes where retail's ring shows 27).
+#[test]
+fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 3;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.caster_clip = 1;
+    b.strike_cursor = 0;
+    b.target_code = 0;
+    b.party_count = 1;
+    b.span_gate = SpanGate::Age { accum: 432 };
+    b.step_run = (2, 16);
+    b.walk_yaw_base = 568;
+    // The case-6 table the arrival armed: the yaw has landed.
+    b.cam_tween_steps = [0; 9];
+    b.captured = vec![None; 8];
+    b.captured[0] = Some(([0, 0], [0, 0], 0, 0));
+    b.captured[3] = Some(([0, 312], [0, 0], 0, 0));
+    assert!(b.walk_clock_arrival());
+    let app = b.capture_approach_yaw().expect("a walk to place");
+    assert_eq!(app.arrive, 568);
+    assert_eq!((app.strike, app.target_ground), ([0, 312], [0, 0]));
+    // The same pass with the staged idle committed (clip `0`, accumulator
+    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`).
+    b.caster_clip = 0;
+    b.span_gate = SpanGate::Age { accum: 0 };
+    assert_eq!(b.capture_approach_yaw().map(|a| a.arrive), Some(568));
+    // Its framing endpoint was armed on the pass's starting pair (ring slot
+    // `1`) and the heading the pass before left: counter `568`, style `3`,
+    // table yaw `568` name heading `0x800`.
+    b.arm_ground = Some([0, 304]);
+    b.cam_style = 3;
+    b.cam_tween.1.yaw = 568.0;
+    b.monster_count = 1;
+    b.facing = vec![None; 8];
+    b.facing[3] = Some(2100);
+    let arm = b.arrival_arm_snaps().expect("an arm seat");
+    let s = arm.iter().find(|s| s.slot == 1).expect("the attacker");
+    assert_eq!((s.x, s.z, s.facing), (0, 304, Some(0x800)));
+    b.caster_clip = 1;
+    b.span_gate = SpanGate::Age { accum: 432 };
+    // One strike-loop pass later the table is case 7's, read off its ladder.
+    b.strike_cursor = 1;
+    assert!(!b.walk_clock_arrival());
+    assert!(b.capture_approach_yaw().is_none_or(|a| a.arrive < 568));
+    assert!(b.arrival_arm_snaps().is_none());
 }

@@ -11,6 +11,10 @@ pub struct EngineObs {
     pub player: Option<[i16; 3]>,
     /// The engine's floor sample under retail's own `(X, Z)`.
     pub floor_at_retail: Option<i32>,
+    /// The camera composer's floor (`World::sample_field_floor_height_static`)
+    /// under a walking capture's player now and on the previous pass
+    /// ([`super::walk_rewind::WalkHistory::floors`]).
+    pub walk_floors: Option<[i32; 2]>,
     pub camera: CameraObs,
     /// The engine's track-select word after the settle window
     /// ([`legaia_engine_scene_host::scene_host::SceneHost::bgm_track_word`]), else the
@@ -426,7 +430,13 @@ fn seed_and_settle(
                 // So is the region-selector band: the settle's passes ran at
                 // the seat, where the record holds the player, not where
                 // retail's last pass stood ([`hold_selector_bands`]).
+                // The arm's op `0x46` window goes with its bit
+                // ([`held_selector_window`]).
                 if let Some(save) = retail.save.as_ref() {
+                    let before = raised_band_bits(&session.host.world);
+                    if let Some(w) = held_selector_window(&session.host.world, save, &before) {
+                        session.camera.zone.view_window = w;
+                    }
                     hold_selector_bands(&mut session.host.world, save);
                 }
             }
@@ -551,6 +561,11 @@ pub(super) fn sample_engine(
     let floor_at_retail = retail
         .player
         .map(|[x, _, z]| world.sample_field_floor_height(i32::from(x), i32::from(z)));
+    let walk_floors = retail.walk.map(|w| {
+        let at =
+            |p: [i16; 3]| world.sample_field_floor_height_static(i32::from(p[0]), i32::from(p[2]));
+        [at(w.cur), at(w.prev)]
+    });
     let g = &session.camera.globals.0;
     let camera = CameraObs {
         pitch: g[0] as i16,
@@ -642,6 +657,7 @@ pub(super) fn sample_engine(
         mode,
         player,
         floor_at_retail,
+        walk_floors,
         camera,
         bgm_id,
         bgm_held: director.held,

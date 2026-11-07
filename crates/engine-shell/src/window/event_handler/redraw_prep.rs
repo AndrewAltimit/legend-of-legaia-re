@@ -37,6 +37,15 @@ impl PlayWindowApp {
     /// HUD glides, clear colour, panel, object models, walkers and morphs;
     /// and the battle idle orbit's phase alignment.
     pub(super) fn seat_capture_frame(&mut self) {
+        // `LEGAIA_DIAG_CAST_HIDE=<va>,..`: the cast recorder's per-part draw
+        // toggle - parts seated from these records stay out of the draw
+        // lists (their simulation runs on), to name the part a frame shows.
+        if let Some(hide) = diag_cast_hide()
+            && let Some(scene) = self.session.host.world.casting.active_summon.as_mut()
+            && scene.diag_hidden != *hide
+        {
+            scene.diag_hidden = hide.clone();
+        }
         // Capture harness: on the frame the capture is taken, the fog pool
         // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`). The tick
         // has already stepped the engine's own pool, so the frame's fog draw
@@ -199,6 +208,7 @@ impl PlayWindowApp {
             }
             if due && sc.seat_move_label_unseen {
                 self.session.host.world.battle.move_label_closed = true;
+                self.session.host.world.battle.monster_move_label = None;
             }
             if due && let Some((actor, member)) = sc.seat_hud_close {
                 let targets: Vec<[i16; 2]> = sc.seat_hud_glides.iter().map(|g| g.target).collect();
@@ -898,4 +908,23 @@ impl PlayWindowApp {
             slot_prims,
         }
     }
+}
+
+/// The record VAs `LEGAIA_DIAG_CAST_HIDE` names (comma list, hex with or
+/// without `0x`), parsed once; `None` when it is unset.
+fn diag_cast_hide() -> Option<&'static Vec<u32>> {
+    static HIDE: std::sync::OnceLock<Option<Vec<u32>>> = std::sync::OnceLock::new();
+    HIDE.get_or_init(|| {
+        let v = std::env::var("LEGAIA_DIAG_CAST_HIDE").ok()?;
+        Some(
+            v.split(',')
+                .filter_map(|t| {
+                    let t = t.trim();
+                    let t = t.strip_prefix("0x").or(t.strip_prefix("0X")).unwrap_or(t);
+                    u32::from_str_radix(t, 16).ok()
+                })
+                .collect(),
+        )
+    })
+    .as_ref()
 }

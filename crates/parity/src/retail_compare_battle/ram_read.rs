@@ -36,6 +36,28 @@ const SLOT_B: std::ops::Range<u32> = 0x801F_69D8..0x8020_0000;
 /// `FUN_80021DF4`, the part tick a move-VM node carries at `+0x0C`.
 const PART_TICK: u32 = 0x8002_1DF4;
 
+/// Every live part whose record lies in the slot-B module image, as its
+/// record `+0x48` and wait `+0x54`, in actor-list order; a node whose kill
+/// bit (`+0x10 & 8`) is up is left out. The waits are the parts' ages on the
+/// RAM's pass: a replay pass whose parts hold the same `(record, wait)`
+/// multiset stands on that pass, whatever the module's countdown reads.
+pub(crate) fn retail_part_ages(ram: &[u8]) -> Vec<(u32, i16)> {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && SLOT_B.contains(&game_anchors::u32_at(ram, n + 0x48))
+        })
+        .map(|n| {
+            (
+                game_anchors::u32_at(ram, n + 0x48),
+                game_anchors::u16_at(ram, n + 0x54) as i16,
+            )
+        })
+        .collect()
+}
+
 /// Every live part of a record a slot-B cast module seats on every pass
 /// ([`per_pass_spawn_records`](legaia_engine_cast::cast_module_camera::per_pass_spawn_records)),
 /// in actor-list order, as a
@@ -843,6 +865,27 @@ impl RetailBattle {
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);
+            // ... unless the arm re-arms its shot every pass
+            // (`capture_shot_rearms_every_pass`: Scythe Wind's arms 3..=5,
+            // Bloody Horns' 3..=6), which walks back on the re-arm's widening
+            // share as a framing re-armed every pass does
+            // (`battle_dohaty_nova_v2_scythe_wind_mid_cast`, arm 4 at step 4:
+            // TR z `2940` stood `2840` two passes back, not the once-built
+            // table's `2860`; `image` `.860` to `.997`).
+            let module_rearms = module_shot
+                && active.is_some_and(|actor| {
+                    legaia_engine_cast::cast_module_ticks::capture_body_for_action(
+                        game_anchors::u8_at(ram, actor + 0x1DF),
+                    )
+                    .is_some_and(|(entry, body)| {
+                        legaia_engine_cast::cast_module_camera::capture_shot_rearms_every_pass(
+                            entry,
+                            body,
+                            game_anchors::u8_at(ram, ctx + 0x279),
+                        )
+                    })
+                });
+            let module_shot = module_shot && !module_rearms;
             // The setup states ahead of the seed arm no framing either
             // (`0x00` / `0x0A` / `0x0B`): the finished actor's table walks on
             // at its own increment (`jou_nova_v3_pre_scythe_wind`: yaw `2251`
@@ -861,8 +904,19 @@ impl RetailBattle {
                         capture_fade_end_shift(ram, ctx, steps),
                         false,
                     )
-                } else if module_shot || unarmed_setup {
+                } else if module_shot
+                    || unarmed_setup
+                    || chain_terminator_pass(
+                        ram,
+                        ctx,
+                        action_state,
+                        steps.first().copied().unwrap_or(1),
+                    )
+                {
                     displayed_module_cam_live(ram, ctx, steps)
+                } else if module_rearms {
+                    // The arm's shot divisor is the builder's `0xC`.
+                    displayed_cam_live_steps(ram, ctx, steps, true, [None; 9], [0; 9], false)
                 } else {
                     let walk_arm = walk_arm_prior_end(ram, ctx);
                     displayed_cam_live_steps(
@@ -935,6 +989,7 @@ impl RetailBattle {
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
+            part_ages: retail_part_ages(ram),
             action_fx_parts: retail_action_fx_parts(ram),
             effect_children: retail_effect_children(ram),
             ghost_ring: retail_ghost_ring(ram, party_count),
@@ -996,6 +1051,7 @@ impl RetailBattle {
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
             step_run: newest_step_run(ram),
+            cost_ring: frame_cost_ring(ram),
             step_run_start: active.and_then(|p| {
                 let (_, n) = newest_step_run(ram);
                 let n = n as u32;
@@ -1104,6 +1160,7 @@ impl RetailBattle {
                 pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            sound_option: game_anchors::u8_at(ram, SOUND_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             ai_counter: game_anchors::u32_at(ram, 0x801C_8FE4),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
@@ -1325,9 +1382,34 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            arm_ground: {
+                let p = game_anchors::u32_at(
+                    ram,
+                    ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13)) * 4,
+                );
+                let at = p + POSITION_RING + 8;
+                in_ram(p).then(|| {
+                    [
+                        game_anchors::u32_at(ram, at) as i32 as i16,
+                        game_anchors::u32_at(ram, at + 4) as i32 as i16,
+                    ]
+                })
+            },
             displayed_strike_heading: walk_heading(ram, ctx).map(|h| h.displayed),
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))
+                .collect(),
+            displayed_move_labels: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    let shown =
+                        game_anchors::u32_at(ram, p + RING_RECORD + DISPLAYED_FRAMES_BACK * 4);
+                    if slot < 3 || !in_ram(p) || !in_ram(shown) {
+                        0
+                    } else {
+                        game_anchors::u8_at(ram, shown + 0x77)
+                    }
+                })
                 .collect(),
             displayed_recommit: (0..8u32)
                 .map(|slot| {

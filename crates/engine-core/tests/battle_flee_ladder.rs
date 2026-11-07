@@ -247,3 +247,47 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
         "a failed roll is no escape on the records"
     );
 }
+
+/// The failed run's message skip reads the pad pump's 32-vsync held window
+/// with the press (`_DAT_8007B874 | _DAT_8007B938`, `0x801E5978..0x801E5990`):
+/// a button held through the band cuts the message once the window fills,
+/// where an idle pad waits it out. Driven through `World::set_pad`, the pump
+/// both play hosts feed.
+#[test]
+fn a_button_held_through_a_failed_run_cuts_its_message() {
+    fn run_wait_ticks(hold: u16) -> usize {
+        let mut w = build_world();
+        enter_battle(&mut w);
+        wait_for_prompt(&mut w);
+        for i in 0..3 {
+            w.battle.speed[i] = 0;
+            w.actors[i].battle.hp = w.actors[i].battle.max_hp;
+        }
+        let monster_slot = w.party.party_count as usize;
+        w.battle.speed[monster_slot] = 20000;
+        w.rng_state = 0xDEAD_BEEF;
+        let mut trace: Vec<u8> = Vec::new();
+        press(&mut w, PadButton::Right, &mut trace);
+        press(&mut w, PadButton::Left, &mut trace);
+        for _ in 0..0x200 {
+            w.set_pad(hold);
+            let _ = w.tick();
+            trace.push(w.battle_ctx.action_state);
+        }
+        assert!(
+            trace.contains(&ActionState::DoneCleanup.as_byte()),
+            "the failed run reached the Done band; trace = {trace:02X?}"
+        );
+        trace
+            .iter()
+            .filter(|&&s| s == ActionState::RunWait.as_byte())
+            .count()
+    }
+    let idle = run_wait_ticks(0);
+    let held = run_wait_ticks(InputState::mask_of([PadButton::Square]));
+    assert!(idle > 0, "the band waited in RunWait");
+    assert!(
+        held < idle,
+        "a held button cuts the failed run's message ({held} vs {idle} ticks)"
+    );
+}

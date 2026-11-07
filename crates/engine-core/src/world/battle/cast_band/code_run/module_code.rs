@@ -628,6 +628,19 @@ impl World {
             }
             if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
                 self.casting.module_hit_arm = Some(hit_arm);
+                // PROT 0945's Water Column draws its Venom ahead of the hit:
+                // `rand() & 7 == 0` ORs bit `1` into the victim's `+0x16E`
+                // (`0x801F7460..0x801F7480`), then the arm calls
+                // `FUN_801DD4B0(0x30)`, so the damage rolls one draw later.
+                if entry == 945
+                    && body == Some(ticks::WATER_COLUMN_TICK)
+                    && self.next_rand() & 7 == 0
+                {
+                    self.battle.status_effects.apply(
+                        victim_slot,
+                        legaia_engine_battle_vm::status_effects::StatusKind::Venom,
+                    );
+                }
                 self.fold_pending_cast();
                 // PROT 0951 `0x36`'s strike stores the victim's rate `2`
                 // (`li v1,2; sb v1,0x21d(s1)` at `0x801F7494`), and the
@@ -713,6 +726,7 @@ impl World {
                     seat: seats.caster,
                     yaw_base: st.yaw_base,
                     depth_raw: seats.depth_raw,
+                    style: arm.follow_style,
                 });
             }
         }
@@ -1376,6 +1390,14 @@ impl World {
                                 run.camera_shot = Some(
                                     legaia_engine_cast::cast_module_camera::theeder_attack_shot(c),
                                 );
+                                // ...and its two records at the mouth, on
+                                // the creature's angles (`0x801F727C..`).
+                                run.spawns =
+                                    &legaia_engine_cast::cast_module_camera::THEEDER_ATTACK_SPAWNS;
+                                run.arm_point = Some((
+                                    ticks_a::theeder_mouth(c.x, c.z, c.facing),
+                                    [0, c.facing as i16, 0],
+                                ));
                             }
                             tick
                         }
@@ -1655,6 +1677,9 @@ impl World {
                 let category = self.retail_actor_category(caster_slot);
                 self.route_battle_cue(cue, category);
             }
+            if phase_entry == 1 {
+                self.steal_back_off(caster_slot, victim_slot);
+            }
         }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
             let depth = match (entry, phase_entry) {
@@ -1773,6 +1798,10 @@ impl World {
             );
             self.casting.flush_module_part_pool();
         }
+        // PROT 0942 `0xAA`'s party swirl, every pass of its arms 2..=5.
+        if entry == 942 && spell_id == 0xAA && capture_arm.is_some() {
+            self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
+        }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
         self.battle.cast_ribbons = capture_arm
@@ -1796,6 +1825,20 @@ impl World {
             }
             if arm.flushes_pool {
                 self.casting.flush_module_part_pool();
+            }
+            if let Some(w) = arm.part_write
+                && let Some(scene) = self.casting.active_summon.as_mut()
+            {
+                for part in scene
+                    .parts
+                    .iter_mut()
+                    .filter(|p| !p.finished && p.tag.is_some_and(|t| w.records.contains(&t)))
+                {
+                    let x = w.x.unwrap_or(part.state.world_x.wrapping_add(w.dx));
+                    let y = w.y.unwrap_or(part.state.world_y.wrapping_add(w.dy));
+                    part.poke(0x14, x as u16);
+                    part.poke(0x16, y as u16);
+                }
             }
             if arm.hides_creature {
                 self.despawn_summon_actor();
@@ -2180,6 +2223,51 @@ impl World {
 }
 
 impl World {
+    /// PROT 0941 Steal's arm-1 way out (`0x801F75F4..0x801F76E4`): the caster
+    /// turned to `FUN_80019B28(victim, caster)` - its back to the victim -
+    /// and stepped along that heading by its playing clip's stride
+    /// (`*(+0x22C)+0x4C` entry `+0xC`) x the frame step `0x1F800393` x
+    /// `+0x21D`, `>> 15` per axis (`+0x34` on the sine table `0x8007B81C`,
+    /// `+0x38` on the cosine one `0x8007B7F8`), until the range poll
+    /// `FUN_8004E2F0` reads it out of reach. One pass, however many steps; a step comes ahead of each poll.
+    // PORT: FUN_801F730C (PROT 0941 `0x51` arm 1's back-off, `0x801F75F4..0x801F76E4`)
+    fn steal_back_off(&mut self, caster_slot: u8, victim_slot: u8) {
+        /// Steps before giving up on a stride that never leaves reach.
+        const MAX_STEPS: u32 = 0x400;
+        let (c, v) = (usize::from(caster_slot), usize::from(victim_slot));
+        if c >= self.actors.len() || v >= self.actors.len() {
+            return;
+        }
+        let (vx, vz) = self.battle_seat_of(v);
+        let (cx, cz) = (
+            self.actors[c].move_state.world_x,
+            self.actors[c].move_state.world_z,
+        );
+        let heading =
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(vz, vx, cz, cx) & 0xFFF;
+        self.actors[c].battle.facing_angle = heading;
+        let Some((speed, scale)) = self.battle_playing_root_motion(c) else {
+            return;
+        };
+        let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+        let (dx, dz) = legaia_engine_battle_vm::battle_action::motion::root_motion_step(
+            sin,
+            cos,
+            speed,
+            self.battle_frame_step().max(1),
+            scale,
+        );
+        // A step, then the poll (`beq v0,zero,0x801F7620` at `0x801F76E4`).
+        for _ in 0..MAX_STEPS {
+            let ms = &mut self.actors[c].move_state;
+            ms.world_x = ms.world_x.wrapping_add(dx as i16);
+            ms.world_z = ms.world_z.wrapping_add(dz as i16);
+            if self.battle_range_metric(caster_slot, victim_slot) != 0 {
+                break;
+            }
+        }
+    }
+
     /// One of PROT 0939's four hits, `hit` counting from `1`
     /// (`0x801F70B0..0x801F7400`): skipped on a dead or Stoned victim (the count
     /// still moved), else `FUN_801DD4B0(0x60)` cut to a third and clamped, the

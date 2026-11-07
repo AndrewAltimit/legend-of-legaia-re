@@ -17,6 +17,7 @@ legaia-scene-formats.workspace = true
 
 [dev-dependencies]
 legaia-game-tables.workspace = true
+legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 
 [[test]]

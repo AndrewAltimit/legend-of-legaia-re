@@ -404,7 +404,8 @@ impl VenueCameraDriver {
         let step = f.step.max(1);
         let entered = self.prev != Some(f.phase);
         match f.phase {
-            P::Idle => {
+            // The no-lure screen is state `10`'s shore with the gate parked.
+            P::Idle | P::NoLure => {
                 if entered {
                     self.camera.reset();
                     self.catch = Catch::None;

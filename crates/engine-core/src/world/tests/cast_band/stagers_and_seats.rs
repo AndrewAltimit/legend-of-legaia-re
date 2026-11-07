@@ -265,6 +265,8 @@ fn freed_arm_4_turns_then_kills_the_crystals() {
                     tag: Some(record),
                     seat_pokes: Vec::new(),
                     seat_halve_speed: false,
+                    halted_walks: 0,
+                    walk_reached: false,
                 });
         }
     }

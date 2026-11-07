@@ -932,3 +932,69 @@ reason = "Gap wave 30 adds retail behaviour to the play bundle: the seat's own m
 changes = [
   ["counts/bundle/play_gzip_bytes", 4897802, 4904603],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle backdrop is cued at IR0 = weight | 1 (FUN_80043390 ori at 0x800433CC, store 0x800433F0) and the GTE's depth-cue op floors, so a baked 0x80 colour reaches the GPU as 0x7F; retail's packets carry 0x7F7F7F over the TMD's 0x808080 (PROT 0247). The port now cues at that precision in PSX mode on both hosts, which takes the map01-03 skies off a +7 per channel offset (map02 poisonous worm .867 -> .949, about 148 states up corpus-wide). Each of these drops is one 8x8 block that was already 10-25 darker than retail for other reasons (floor ambient mid-dim on the displayed frame, horizon mist edge) and the one-unit dimming tips over the tolerance. A/B with the cue reverted puts the non-strike ones back on baseline. Patched-disc states included."
+changes = [
+  ["states/arts_bar_offclass_gala_nail/image", 0.999, 0.997],
+  ["states/battle_balden_orb_v2_jewel_beam_mid_cast/image", 0.955, 0.954],
+  ["states/battle_bubu2_wailing_bird_strike/image", 0.999, 0.998],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/image", 0.99, 0.989],
+  ["states/battle_garmel_songi_strike/image", 0.999, 0.998],
+  ["states/battle_gaza2_park_0x19/image", 0.999, 0.998],
+  ["states/battle_geremi_spikefish_strike/image", 0.968, 0.967],
+  ["states/battle_gimard_tail_fire_a/image", 0.984, 0.982],
+  ["states/battle_jou_aluru_v3_strike/image", 1.0, 0.999],
+  ["states/battle_jou_freed_v3_strike/image", 0.994, 0.993],
+  ["states/battle_jou_theeder_v3_thunder_blast_mid_cast/image", 1.0, 0.999],
+  ["states/battle_jou_vera_v3_heal_mid_cast/image", 0.954, 0.949],
+  ["states/battle_jou_viguro_v3_strike/image", 0.988, 0.987],
+  ["states/battle_kor_dead_bone_curse_all_mid_cast/image", 0.998, 0.997],
+  ["states/battle_map01_green_slime_divide_mid_cast/image", 0.984, 0.982],
+  ["states/battle_noa_miracle_art_combo/image", 0.977, 0.976],
+  ["states/battle_noaru_barra_v2_multi_cutter_mid_cast/image", 0.952, 0.95],
+  ["states/battle_noaru_slippery_v2_strike/image", 0.986, 0.983],
+  ["states/battle_noaru_songi_chaos_flare_mid_cast/image", 0.995, 0.994],
+  ["states/battle_noaru_songi_strike/image", 0.967, 0.966],
+  ["states/battle_retona_mushura_strike/image", 0.998, 0.997],
+  ["states/battle_retona_viguro_lv2_thunder_break_mid_cast/image", 0.989, 0.988],
+  ["states/battle_ropeway_orb_jewel_beam_mid_cast/image", 0.952, 0.949],
+  ["states/battle_rugi_rogue_rogue_flame_mid_cast/image", 0.998, 0.996],
+  ["states/battle_rugi_rogue_rogue_thunder_mid_cast/image", 0.98, 0.978],
+  ["states/battle_stone_gizam_v2_water_column_mid_cast/image", 0.993, 0.992],
+  ["states/battle_taiku_puera_strike/image", 0.997, 0.996],
+  ["states/battle_taiku_terror_face_strike/image", 0.994, 0.993],
+  ["states/battle_taiku_topaz_hyper_heal_mid_cast/image", 0.992, 0.99],
+  ["states/battle_tunnelb_stone_lizard_strike/image", 0.993, 0.992],
+  ["states/cort_guilty_cross_mid_cast/image", 0.972, 0.971],
+  ["states/delilas_gi_hand_gap_v3/image", 0.985, 0.984],
+  ["states/delilas_gi_move_hand_gap_v2/image", 0.999, 0.998],
+  ["states/gimard_burning_attack/image", 0.928, 0.927],
+  ["states/minigame_muscle_dome_retail_tornado_flame/image", 0.996, 0.995],
+  ["states/ropeway_orb_pre_jewel_beam/image", 0.994, 0.993],
+  ["states/taiku_terror_face_pre_fissure/image", 0.999, 0.998],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Enemy-cast module arms now run the frame step retail's films record per arm (engine-cast cast_module_frame_step rows for 11 casts read off 36 retail enemy cast films; held-out step agreement .37 -> .74, and the casts that score lower score the same on --retail-steps). Divide's measured row changes an earlier slime split in these strikes' replays; A/B with the rows reverted reads .999 and 1.000."
+changes = [
+  ["states/battle_map02_oak_slime_strike/image", 0.999, 0.994],
+  ["states/battle_map03_acid_slime_strike/image", 1.0, 0.995],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 31 adds real engine code both bundles carry: eleven enemy cast modules' camera arms and records (Dark Typhoon, Hyper Crush, Hyper Lightning, Paralyzing Wave, Glare, Steal), Theeder and Nova arms, the steal back-off, the GTE-precision backdrop cue in the page shader, the fishing lure gate, held-button skips and the per-arm frame-step table: about +0.25% gzip on the play bundle. Battle wasm bytes per frame +47 (0.04%) is the cue path's extra uniform and arm-step lookups."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125228, 125275],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124431, 124478],
+  ["counts/bundle/gzip_bytes", 7028645, 7050522],
+  ["counts/bundle/play_gzip_bytes", 4904603, 4916953],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1403.7, 1405.8],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4650.2, 4650.3],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1351.5, 1353.4],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1608.6, 1608.7],
+  ["counts/native/town01/retail/allocs_per_frame", 1226.8, 1226.9],
+]

@@ -100,11 +100,24 @@ def struct_fields(srcs):
     return fields, home
 
 
-def literal_keys(body, impl_type, known_structs):
+USE_ALIAS = re.compile(r"\b([A-Z]\w*)\s+as\s+([A-Z]\w*)\b")
+
+
+def type_aliases(src):
+    """`{alias: type}` for every `use ...::Type as Alias` in one file."""
+    out = {}
+    for use in re.finditer(r"\buse\b[^;]*;", src):
+        for m in USE_ALIAS.finditer(use.group(0)):
+            out[m.group(2)] = m.group(1)
+    return out
+
+
+def literal_keys(body, impl_type, known_structs, aliases=None):
     """Keys a struct literal gives a value other than the type's zero."""
     out = set()
+    aliases = aliases or {}
     for m in re.finditer(r"\b([A-Z]\w*)\s*\{", body):
-        name = impl_type if m.group(1) == "Self" else m.group(1)
+        name = impl_type if m.group(1) == "Self" else aliases.get(m.group(1), m.group(1))
         if name not in known_structs:
             continue
         end = match_brace(body, m.end() - 1)
@@ -142,7 +155,7 @@ def mutating_methods(fns, srcs):
     return out
 
 
-def scan_fn(f, srcs, mutators, known_structs):
+def scan_fn(f, srcs, mutators, known_structs, aliases):
     body = srcs[f.path].stripped[f.body_start : f.body_end]
     writes = set()
     spans = []
@@ -153,7 +166,9 @@ def scan_fn(f, srcs, mutators, known_structs):
     for m in CHAIN_METHOD.finditer(body):
         if m.group(2) in mutators:
             writes.update(FIELD_NAME.findall(m.group(1)))
-    writes |= literal_keys(body, f.impl_type, known_structs)
+    # A literal through an import alias (`use ...::CasterSlot as SpellCasterSlot`)
+    # names the aliased struct's fields.
+    writes |= literal_keys(body, f.impl_type, known_structs, aliases)
     masked = list(body)
     for a, b in spans:
         masked[a:b] = " " * (b - a)
@@ -210,13 +225,18 @@ def main():
     fields, structs = struct_fields(srcs)
     mutators = mutating_methods(fns, srcs)
 
+    # One map for the workspace: a child module's `use super::*` inherits its
+    # parent's aliases, and an alias name is rarely reused for another type.
+    aliases = {}
+    for src in srcs.values():
+        aliases.update(type_aliases(src.stripped))
     writers = defaultdict(list)
     readers = defaultdict(list)
     per_fn_writes = {}
     for f in fns:
         if f.is_test:
             continue
-        w, r = scan_fn(f, srcs, mutators, structs)
+        w, r = scan_fn(f, srcs, mutators, structs, aliases)
         per_fn_writes[f.uid] = w
         for name in w:
             writers[name].append(f)
@@ -225,13 +245,25 @@ def main():
 
     # A literal in a `const` / `static` table sits in no `fn`: it is data, and any
     # value it gives is a setup, zero included.
+    # So is a `const fn` builder such a table calls (`arm(..).clears_0d()`): the
+    # table is evaluated at compile time, so the builder's writes are setup too.
     const_set = set()
+    const_calls = set()
     for src in srcs.values():
         for m in ITEM_TABLE.finditer(src.stripped):
             start = m.end()
             end = src.stripped.find(";\n", start)
             if end > 0:
-                const_set |= set(CONST_KEY.findall(src.stripped[start:end]))
+                item = src.stripped[start:end]
+                const_set |= set(CONST_KEY.findall(item))
+                const_calls |= set(re.findall(r"\b([a-z_]\w*)\s*\(", item))
+    for f in fns:
+        if f.is_test or f.name not in const_calls:
+            continue
+        src = srcs[f.path].stripped
+        head = src[max(0, src.rfind("\n", 0, f.def_pos)) : f.body_start]
+        if re.search(r"\bconst\s+fn\b", head):
+            const_set |= per_fn_writes.get(f.uid, set())
 
     def fmt(f):
         owner = f"{f.impl_type}::" if f.impl_type else ""

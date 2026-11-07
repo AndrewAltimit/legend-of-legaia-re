@@ -62,6 +62,16 @@ pub const HELP_LINE_COUNTS: [usize; 2] = [14, 15];
 /// The per-page footer strings (`0x801D7324` / `0x801D7374`).
 pub const HELP_FOOTER_VAS: [u32; 2] = [0x801C_F048, 0x801C_F050];
 
+/// The no-lure screen's line (state `0x96`: `lui a0,0x801D` + `addiu
+/// a0,a0,-0x1444` at `0x801D0098`), drawn through `FUN_801D73B8` centred on
+/// [`NO_LURE_LINE_AT`].
+pub const NO_LURE_LINE_VA: u32 = 0x801C_EBBC;
+
+/// The centre `x` and the `y` state `0x96` hands `FUN_801D73B8` and its panel
+/// `FUN_801D74B0(0xA0, 0x68, glyphs * 13, 13)` (`0x801D00A0..0x801D00C8`).
+// REF: FUN_801d74b0 (the panel the line sits on; not drawn by the port)
+pub const NO_LURE_LINE_AT: (i16, i16) = (0xA0, 0x68);
+
 /// Where states `0x65` / `0x66` put the help panel (`a0 = 0x14`, `a1 = 0x10`
 /// at `0x801CFFA0` / `0x801CFFE4`).
 pub const HELP_PANEL_ORIGIN: (i16, i16) = (0x14, 0x10);
@@ -97,6 +107,9 @@ pub struct FishingHubText {
     pub help: [Vec<Vec<u8>>; 2],
     /// The per-page footers.
     pub footers: [Vec<u8>; 2],
+    /// The no-lure screen's line ([`NO_LURE_LINE_VA`]); empty when the image
+    /// does not hold it.
+    pub no_lure: Vec<u8>,
 }
 
 /// The NUL-terminated string at `va` in an image loaded at
@@ -140,6 +153,7 @@ impl FishingHubText {
             menu_rows,
             help,
             footers,
+            no_lure: c_string_at(image, NO_LURE_LINE_VA).unwrap_or_default(),
         })
     }
 }
@@ -465,11 +479,32 @@ impl crate::fishing::PondSession {
         text: &FishingHubText,
         tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
     ) -> Vec<HubLine> {
+        if self.phase() == crate::fishing::PondPhase::NoLure {
+            return no_lure_lines(text);
+        }
         self.hub
             .as_ref()
             .map(|h| h.lines(text, self.lure, self.rod, tackle_row))
             .unwrap_or_default()
     }
+}
+
+/// The no-lure screen's line: `FUN_801D73B8(text, 0xA0, 0x68)`, which
+/// centres by `13 * (len - 1) / 4` and draws `7` px below the `y` it is
+/// given (the same caption routine the result plate's species name takes).
+// PORT: FUN_801cf3bc (case 0x96: the no-lure line through FUN_801d73b8)
+fn no_lure_lines(text: &FishingHubText) -> Vec<HubLine> {
+    if text.no_lure.is_empty() {
+        return Vec::new();
+    }
+    let (cx, y) = NO_LURE_LINE_AT;
+    let half = (13 * (text.no_lure.len() as i32 - 1)) / 4;
+    vec![HubLine {
+        text: text.no_lure.clone(),
+        x: cx - half as i16,
+        y: y + 7,
+        marked: false,
+    }]
 }
 
 #[cfg(test)]
@@ -509,6 +544,20 @@ mod tests {
         assert_eq!(t.help[1].len(), 15);
         assert_eq!(t.help[1][14], b"p1l14");
         assert_eq!(t.footers[1], b"f1");
+    }
+
+    #[test]
+    fn the_no_lure_line_centres_on_0xa0_by_its_13_unit_pitch() {
+        let mut img = image();
+        let o = (NO_LURE_LINE_VA - FISHING_OVERLAY_BASE) as usize;
+        img[o..o + 6].copy_from_slice(b"abcde\0");
+        let t = FishingHubText::from_overlay(&img).unwrap();
+        assert_eq!(t.no_lure, b"abcde");
+        let l = no_lure_lines(&t);
+        // `13 * (5 - 1) / 4 = 13`, drawn 7 px under `0x68`.
+        assert_eq!((l[0].x, l[0].y), (0xA0 - 13, 0x68 + 7));
+        // An image without the line draws nothing rather than a blank row.
+        assert!(no_lure_lines(&FishingHubText::from_overlay(&image()).unwrap()).is_empty());
     }
 
     #[test]

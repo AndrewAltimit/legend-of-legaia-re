@@ -538,10 +538,10 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <summary>Open: what the port still reconstructs</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Line break.</strong> The ceiling roll, the spent lure and the far-record strain are ported; the off-screen latch and the no-lure screen after the last lure are not.</li>
+        <li><strong>Line break.</strong> The ceiling roll, the spent lure, the far-record strain and the no-lure screen after the last lure are ported; the off-screen latch is not.</li>
         <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
-        <li><strong>Result plate.</strong> The landed fish&rsquo;s lift is modelled only as the camera reads it; the fish model&rsquo;s own rise and the recast gate on the plate&rsquo;s accept word are not.</li>
+        <li><strong>Result plate.</strong> The plate waits out the landed fish&rsquo;s lift, which seats it on the lift&rsquo;s frame <code>0xD4</code>; the fish model&rsquo;s own rise is not modelled.</li>
         <li><strong>State <code>0x2D</code></strong> has no writer anywhere on the disc; every store to the state word resolves to another value.</li>
       </ul>
     </div>
@@ -552,6 +552,12 @@ power % = power * 100 &gt;&gt; 12</code></pre>
   <h2>The cast and the line</h2>
   <p>The cast releases at the power meter's lock: the lure spawns 200 units behind the angler's facing, and that spawn point stays as the line's anchor. The line record is the lure's distance from it, measured every frame, so a stronger cast really is a longer line.</p>
   <p>In flight the lure travels on the locked power until the power is spent. In the water it moves by a pull that presses set: Cross and Square set different strengths, and the pull fades each frame until it drops out. A line reeled in below the landing distance returns the angler to the shore with nothing, which is why a weak throw comes straight back.</p>
+</section>
+
+<section class="doc-section" id="no-lure" data-doc="the-no-lure-screen">
+  <h2>Running out of lures</h2>
+  <p>Every time the angler comes back to the shore, the game checks the tackle: if the equipped lure is gone it switches to one the bag still holds. Only a broken line spends a lure, so the check only bites after the last one snaps. With nothing left it shows the &ldquo;lost the lure&rdquo; line, and any face button leaves the venue.</p>
+  <p>The port runs the same check on the native window, the play page and the minigames page. The line is drawn as a hub line; the panel behind it is not drawn yet.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

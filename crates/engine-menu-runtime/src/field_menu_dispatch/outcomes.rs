@@ -272,6 +272,30 @@ pub fn apply_spell_outcome(
     // (`World::mirror_roster_hp_mp`): a battle seats from that copy and
     // `save_party` writes it back, so a record-only write is undone.
     world.mirror_roster_hp_mp(caster_slot as usize);
+    // A retail heal spell takes the applier's own arm, which scales its cap
+    // by the caster's level in the spell and banks the XP per member.
+    let group_cast = matches!(
+        outcome,
+        legaia_engine_battle::spells::SpellOutcome::MultiHeal { .. }
+    );
+    let single_heal = matches!(
+        outcome,
+        legaia_engine_battle::spells::SpellOutcome::Heal { .. }
+    );
+    let arm = def
+        .as_ref()
+        .filter(|_| (group_cast || single_heal) && world.expansion_pack_spell(spell_id).is_none())
+        .and_then(|d| legaia_engine_battle::magic_xp::menu_heal_arm(group_cast, d.effect_class));
+    if let Some(arm) = arm {
+        let up = apply_menu_heal_arm(world, arm, caster_slot, target_slot, group_cast)?;
+        return Some(spell_level_notice(
+            world,
+            def,
+            caster_slot,
+            arm.level_spell,
+            up,
+        ));
+    }
     // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
     // (FUN_800402F4's revive / cure / MP arms carry no `+0x5D0` code).
     //
@@ -334,6 +358,17 @@ pub fn apply_spell_outcome(
         gain,
         thresholds.as_ref().map(|t| t.as_slice()),
     )?;
+    Some(spell_level_notice(world, def, caster_slot, spell_id, up))
+}
+
+/// The window-7 notice for a menu cast that leveled `spell_id`.
+fn spell_level_notice(
+    world: &World,
+    def: Option<legaia_engine_battle::spells::SpellDef>,
+    caster_slot: u8,
+    spell_id: u8,
+    up: legaia_engine_battle::magic_xp::SpellLevelUp,
+) -> SpellLevelNotice {
     // Window 7's own sentence off the disc (`FUN_801DCCB4`), its `0xC3`
     // token spliced with the raw spell name - element plate included - the
     // way the string primitive expands it; the battle-banner sentence when
@@ -352,18 +387,90 @@ pub fn apply_spell_outcome(
         }
         None => {
             let spell_name = def
+                .filter(|d| d.id == spell_id)
                 .map(|d| d.name)
                 .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
             legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name).into_bytes()
         }
     };
-    Some(SpellLevelNotice {
+    SpellLevelNotice {
         caster_slot,
         spell_index: up.spell_slot as u8,
         spell_id,
         new_level: up.new_level,
         line,
-    })
+    }
+}
+
+/// The applier's HP-heal arms on a menu cast (`FUN_800402F4`, class `0` at
+/// `0x80040470` for one target, class `1` at `0x80040908` for the party),
+/// over the roster records. Returns the last level-up, the one window 7 shows
+/// (each one calls the setter `FUN_80035C00`, and the last call stands).
+///
+/// Per member: a fallen one (current HP `0`) is passed by. The cap is the
+/// arm's level-scaled amount ([`legaia_engine_battle::magic_xp::MenuHealArm`]),
+/// the heal is the missing HP read as a signed halfword, clipped to the cap,
+/// and the XP lands on the caster's slot for the arm's spell: `+0xC` / `+4` for
+/// one target (full / clipped), `+3` / `+1` per member for the party, where a
+/// member missing nothing banks nothing. The threshold test runs after each
+/// member, so a level gained on one raises the next member's cap.
+///
+/// The party arm walks records `0..3`, as the applier's pointer arrays do out
+/// of battle (`0x800403BC..0x80040440`), not the present-party list.
+///
+/// PORT: FUN_800402F4 (the HP-heal arms, field path)
+fn apply_menu_heal_arm(
+    world: &mut World,
+    arm: legaia_engine_battle::magic_xp::MenuHealArm,
+    caster_slot: u8,
+    target_slot: u8,
+    group_cast: bool,
+) -> Option<legaia_engine_battle::magic_xp::SpellLevelUp> {
+    let thresholds = world.tables.magic_xp_thresholds;
+    let caster = usize::from(caster_slot);
+    let members: Vec<usize> = if group_cast {
+        (0..3).collect()
+    } else {
+        vec![usize::from(target_slot)]
+    };
+    let mut last_up = None;
+    for m in members {
+        let cap = match world.party.roster.members.get(caster) {
+            Some(rec) => arm.cap(rec),
+            None => return last_up,
+        };
+        let Some(target) = world.party.roster.members.get_mut(m) else {
+            continue;
+        };
+        let mut hms = target.hp_mp_sp();
+        if hms.hp_cur == 0 {
+            continue;
+        }
+        let missing = i32::from(hms.hp_max.wrapping_sub(hms.hp_cur) as i16);
+        let full = missing >= cap.0;
+        let heal = if full { cap.0 } else { missing };
+        hms.hp_cur = hms.hp_cur.wrapping_add(heal as u16);
+        target.set_hp_mp_sp(hms);
+        world.mirror_roster_hp_mp(m);
+        let gain = match (group_cast, full) {
+            (_, true) => legaia_engine_battle::magic_xp::menu_heal_xp_gain(group_cast, true),
+            (true, false) if heal == 0 => 0,
+            (_, false) => legaia_engine_battle::magic_xp::menu_heal_xp_gain(group_cast, false),
+        };
+        if cap.1.is_none() {
+            continue;
+        }
+        let rec = world.party.roster.members.get_mut(caster)?;
+        if let Some(up) = legaia_engine_battle::magic_xp::accrue_and_level(
+            rec,
+            arm.level_spell,
+            gain,
+            thresholds.as_ref().map(|t| t.as_slice()),
+        ) {
+            last_up = Some(up);
+        }
+    }
+    last_up
 }
 
 /// Apply a finished [`ChainEditor`] outcome to a [`ChainLibrary`].

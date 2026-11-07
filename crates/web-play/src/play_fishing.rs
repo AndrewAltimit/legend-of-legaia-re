@@ -62,6 +62,7 @@ pub(crate) fn pond_phase_name(p: PondPhase) -> &'static str {
         PondPhase::Hooked => "hooked",
         PondPhase::Landed => "landed",
         PondPhase::Snapped => "snapped",
+        PondPhase::NoLure => "no_lure",
     }
 }
 

@@ -140,7 +140,9 @@ reads that nothing writes beyond its zero value.
 It prints and asserts nothing, because it cannot be precise. Fields match by name
 and receivers are untyped, so a field name two structs share is skipped unless
 `--shared` asks for it, and a kernel input struct filled by a literal `0` reads as
-tier C by design. `--soft` judges writers on the receiver-gated graph, which
+tier C by design. A literal written through a `use ... as` alias counts for the
+aliased struct, and a `const fn` builder that a `const` table calls counts as
+setup, like the table's own keys. `--soft` judges writers on the receiver-gated graph, which
 finds more and invents some; `--loose-readers` counts readers on parked kernels.
 
 A row settles the way any audit row does, from the disassembly:
@@ -166,6 +168,9 @@ A row settles the way any audit row does, from the disassembly:
 | `BannerInputs::ctx_override_slot` | `ctx[+0x24B]`, `0x801E6E30` | a group cast on one monster raised the group banner |
 | `HudInput::short_idle` | `_DAT_8007B5F4`, `0x801DA704` | after a fight the party readout waited its full idle instead of coming up with the pad |
 | `HudInput::scratch_suppress` | `_DAT_1F800394 & 0x0800_0000`, `0x801D0DA4` | the party readout drew in the scenes whose script raises the menu lock (`2E 1B`) |
+| `BattleActionHost::pad_held_32` | `_DAT_8007B938`, `0x801E5978` / `0x801E6090` | a button held through a failed run's message or a level-up banner waited it out |
+| `CabinetInput::pad_edge_alt` | `_DAT_8007B938`, `0x801CFA6C` | a direction held on the Baka Fighter player select stepped the cursor once |
+| `BattleSidebandInputs::pad_edge` | `_DAT_8007B938`, `0x8005638C` | a button held through the sparring fight's opening caption waited it out |
 
 The short-idle marker was not partial once its missing terms were read off
 the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
@@ -174,6 +179,14 @@ holds the arm after a fight is `_DAT_8007B6B4`, the post-load hold every map
 install leaves (`FUN_8003ADAC`, `0x28`). Seating that hold also fed the pad
 controller and the encounter roll their retail gate
 ([`world-map.md`](../subsystems/world-map.md#fun_801d0d38---the-field-party-hud)).
+
+`_DAT_8007B938` is the pad pump's AND over its 32-vsync ring of held words
+(`0x80018594..0x800185BC`), which the engine has always computed
+(`RetailPadState::held_32`) and no reader took. The three rows above are the
+readers that `or` it into the press for a skip or a cursor step. Three more read
+it and stay open: the command flow's `s2` (`0x801D0804`, `0x801D0B18`), whose
+port reads the edge alone through `battle_command_pad_edges`; the Muscle Dome
+hub's skip snapshot (`0x801CF8B4`); and the Fatal Decision module (`0x801F76D0`).
 
 The two options were misnamed: `0x801F6C60` is `lw v0,0x46c8` off `lui v0,0x8008`,
 which is `0x800846C8`, not a `0x801D46C8` overlay word that "clears on the first
@@ -198,6 +211,18 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
 | `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
 | `slot_machine::roll_to_row` | the frame-free `stop_reel`'s collapsed roll-in, which no host calls; the per-frame port of `FUN_801d0554` is `SlotMachine::roll_reels`, so the helper carries `REF`, not `PORT` |
+| `LevelUpTracker::with_stat_gain`, `_gains` | scene entry installs `with_growth_tables` (`World::retail_progression`); the flat rate feeds only the fourth slot, which `DAT_800769CC` has no record for (`GROWTH_CHAR_COUNT = 3`) |
+| `EncounterEntry::with_min_gate` | the generic tracker's own rule; the live roll is `RegionEncounterTracker` (`FUN_801DA51C`), which has no minimum-step word |
+| `SfxEntry::with_voice` | retail picks a cue's voices by the drainer's cursor (`FUN_80016B6C`); a pinned first voice has no retail source |
+| `EmitterListener::release_all`, `ListenerState::mute_and_release` | `_DAT_8007B9EC`'s one store is the transition actor's hand-off (`0x80021AE0`), the tick it writes mode `2` (`0x80021AEC`); the field entry's `release_field_init_voices` keys the emitters off on that beat |
+| `SceneTransitionInput::start_gate`, `stream_busy` | `_DAT_8007BC20` and `FUN_8003DE7C(1)` are CD-stream busy words (writers `0x8003D65C`, `0x8003EB78`); the port reads whole entries synchronously |
+| `WorldMapController::horizon_alt_band` | `_DAT_8007B74C` is the back-buffer page flag the frame flip toggles (`0x80017284`, `0x800176D8`); the port composes one frame, so the first band is the right one |
+| `HubEnv::progress_a`, `progress_b` | `_DAT_8007B868` is the dual-mode word (`dual_mode_gate` above) and `_DAT_8007B98C` the debug-mode word ([`boot.md`](../subsystems/boot.md)); a retail boot leaves both clear |
+| `BattleTutorial::box_up` | the engine parks the whole battle tick while a box is up, so the dispatcher never runs under one (`tutorial_flow::set_battle_flow`) |
+| `RecipientWindowRects::party_compare` | the picker script `0x801E4E84` opens window 36 alone; window 41 is the whole buy flow's and draws through `shop_screen_draws` |
+| `SubScreenInput::sellable_items_available`, `spinner_result` | the shop's mode select runs in the shop session (`shop_cues::shop_root_labels` greys Sell on the same bag scan); the save screen machine opens only the card contexts |
+| `StatusModifiers::immobilised_eva_mult`, `FieldLocomotion::action_params` | tuning defaults written by `Default`, which the tool reads as a zero; the values are the intended ones |
+| `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 ### Open rows
 
@@ -206,7 +231,16 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   than the host's actor layer is unsettled.
 - `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
   nibble; the hub's equipment panel stays on its no-candidate arm until the list
-  machinery publishes it.
+  machinery publishes it. The panel sits under the entry-list painter, and no
+  production frame paints that record yet
+  ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)),
+  so the row waits on the descriptor-to-record map, not on the word.
+- `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
+  the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
+  which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
+  ramped its lanes to zero and the grey gate draws it. Whether that frame is
+  darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
+  fade frame before anything is carried across frames.
 
 ## Analysis defects this triage found
 

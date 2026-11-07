@@ -274,6 +274,8 @@ The cabinet reads the **packed** Legaia pad word, not the raw PSX layout (the `P
 
 In the third row `-1` as a `u32` is `0xFFFFFFFF`, which both `3` and `5` divide exactly, so stepping up off row `0` folds back to row `0`. Ports: `baka_cabinet::{cursor_step, cursor_step_mod}`. **Confirmed** (the `0xAAAAAAAB` / `0xCCCCCCCD` reciprocal multiplies are in the disassembly).
 
+The player select's Left / Right tests read the edge `_DAT_8007B874` **or**ed with `_DAT_8007B938` (`or a2,a3,v0` at `0x801CFA74`), the pad pump's AND over its 32-vsync ring of held words. A direction pressed once steps the cursor once; held for the whole window it steps it on every frame after, with a cursor cue each step. Confirm reads the edge alone (`andi v0,a3,0x44`). The port keeps the pump beside the fight (`BakaFight::frame` runs `RetailPadState::pump_packed` on the held word every frame, front end included) and hands its window to the cabinet as `CabinetInput::pad_edge_alt`, so the play hosts and the minigames page share it. **Confirmed** (disassembly).
+
 <a id="the-ladder---which-roster-id-each-round-serves"></a>
 ### The ladder
 

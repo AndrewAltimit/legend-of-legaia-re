@@ -248,7 +248,7 @@ impl World {
                 ],
                 height: None,
             };
-            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
+            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, f.style.unwrap_or(style));
         }
         if run.as_ref().is_some_and(|r| r.camera_end_frame)
             && let Some(cam) = self.battle.camera.as_mut()

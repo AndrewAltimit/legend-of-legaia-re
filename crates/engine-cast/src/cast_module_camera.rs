@@ -336,6 +336,10 @@ pub struct ModuleFollow {
     pub yaw_base: i32,
     /// `ctx[+0x6D0]` - the raw eye depth.
     pub depth_raw: i32,
+    /// The framing style `ctx[+0xD]` the arm stored ahead of its case 6,
+    /// when it is not the band's own (PROT 0941's Steal arm 2 zeroes it,
+    /// `sb zero,0xd(s2)` at `0x801F7B44`); `None` frames on the band's.
+    pub style: Option<u8>,
 }
 
 /// A module's countdown word.
@@ -465,6 +469,10 @@ pub enum SpawnAnchor {
     /// way is camera-relative (`+0x52 & 0x780`), so its program's own
     /// `WORLD_SET` places it and the anchor is only its seed.
     ShotFocus,
+    /// [`Self::ShotFocus`] at the scale `a3`: PROT 0942 `0xAA`'s arm 0 seats
+    /// its vortex records on the shot's trios at `0xA00`, `0x400` and
+    /// `0x1000` (`0x801F6AF4..0x801F6C04`).
+    ShotFocusScaled { scale: u16 },
     /// The arm's shot focus turned back into a world point - the stack trio
     /// `sp+0x30` / `sp+0x34` negated again (`subu v0,zero,v0`) - at the
     /// literal height `y` stored over `sp+0x32`, with the shot's yaw zeroed
@@ -770,7 +778,7 @@ pub fn spawn_anchor_point_with(
         SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
-        SpawnAnchor::ShotFocus => {
+        SpawnAnchor::ShotFocus | SpawnAnchor::ShotFocusScaled { .. } => {
             let s = shot?;
             (s.focus, s.angles)
         }
@@ -868,6 +876,7 @@ pub fn spawn_anchor_scale(
             .filter(|&z| z > 0)
             .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
+        SpawnAnchor::ShotFocusScaled { scale } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
         SpawnAnchor::VictimBodyGround { scale } => scale,
         _ => 0x1000,
@@ -1012,6 +1021,7 @@ pub mod creature;
 mod creature_spawns;
 mod cross_beam;
 mod curse_all;
+mod dark_typhoon;
 mod death_game;
 mod doomsday;
 mod earthquake;
@@ -1020,6 +1030,8 @@ mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
 mod gola_mushura_barra;
+mod hyper_crush;
+mod hyper_lightning;
 mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
@@ -1031,6 +1043,7 @@ mod meta_terra_ozma;
 mod nighto;
 mod nova;
 mod orb;
+mod paralyzing_wave;
 mod plasma_strike;
 mod power_charge;
 mod power_up;
@@ -1075,6 +1088,7 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
+pub use dark_typhoon::{DARK_TYPHOON_BODY, dark_typhoon_camera, dark_typhoon_ring};
 pub use death_game::{
     CARD_BACK_RECORD, CARD_RECORDS, CARD_REVEAL_RECORDS, DEATH_GAME_BODY, DEATH_GAME_PROT,
     DeathGame, DeathGameLabel, DeathGameOutcome, DeathGamePad, DeathGameSprite,
@@ -1094,6 +1108,8 @@ pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;
 pub use gola_mushura_barra::*;
+pub use hyper_crush::hyper_crush_camera;
+pub use hyper_lightning::hyper_lightning_camera;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
@@ -1110,6 +1126,7 @@ pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
+pub use paralyzing_wave::{PARALYZING_WAVE_BODY, paralyzing_wave_camera};
 pub use plasma_strike::{
     NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
@@ -1220,7 +1237,9 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
-            stages_spawns: false,
+            // Arm 3's glow and arm 7's two mouth records, each on its pass;
+            // the stager's record on its callers' op `0x20`.
+            stages_spawns: true,
             seat_arm: module_seat_arm(904),
             director_body: false,
         }),

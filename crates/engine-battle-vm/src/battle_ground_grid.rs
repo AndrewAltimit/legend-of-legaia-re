@@ -418,6 +418,23 @@ pub fn ambient_base_step(base: u32, dimming: bool, dt: u8) -> u32 {
 /// `0x1000` (`0x80050850..0x80050880`), `+0x56 = 3` otherwise.
 pub const BACKDROP_CUE_FULL: u16 = 0x1000;
 
+/// The `IR0` the backdrop's prims are cued with for a pair weight `+0x78`.
+///
+/// The backdrop arm of `FUN_8001ADA4` hands the dispatcher the node's colour
+/// word ORed with `0x40000000` (copy A, `lui a1,0x4000` at `0x8001B014`) or
+/// `0x48000000` (a mirrored copy, `0x8001AFFC`), and `FUN_80043390` raises the
+/// low bit of the weight whenever that top byte is non-zero (`srl s7,a1,0x18`
+/// / `ori a2,a2,0x1` at `0x800433C0..0x800433CC`) before storing it as the
+/// leaves' `IR0` (`sw a2,-0x2dc(t2)` at `0x800433F0`, read back by the leaf's
+/// `lwc2` ahead of its `DPCS`, `0x80044F5C..0x80044F74`). So a backdrop at
+/// rest is cued by `IR0 = 1`, not `0`: the `DPCS` floors its sum, and every
+/// baked `0x80` word reaches the GPU as `0x7F` (the `map02` sky's `POLY_FT4`
+/// packets carry `0x7F7F7F`, its mountains' `0x788080` words `0x777F7F`), one
+/// 5-bit step under the texel once the GPU modulates.
+pub fn backdrop_draw_ir0(weight: u16) -> u16 {
+    weight | 1
+}
+
 /// The ceiling `FUN_80050120` clamps the backdrop pair's rising `+0x78` to
 /// (`0x800505B4..0x800505F4`): `0x800` indoors, `0xC00` on an outdoor stage
 /// (the `DAT_80078C1C` table byte `0x8007BDA8`), and the full

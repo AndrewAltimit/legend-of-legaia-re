@@ -30,6 +30,10 @@ pub struct StagerCaller {
     pub scale: u16,
     /// `+0x3C..+0x40`, the trio PROT 0934's arm 0 seats on.
     pub disp: [i16; 3],
+    /// Whether the frame's part-list walk had a node behind the caller when
+    /// it reached it, so what this call seats is ticked on the same walk
+    /// (`legaia_engine_vm::move_vm::ActorState::walk_successor`).
+    pub walk_successor: bool,
 }
 
 /// One `FUN_80021B04(pos, rot, record, 0x1000)` call out of a stager arm.
@@ -546,6 +550,7 @@ mod tests {
             arg: 0,
             scale: 0x1000,
             disp: [0; 3],
+            walk_successor: false,
         };
         let mut r = counter();
         let s = nighto_stager_spawns(0, caller, &mut r);
@@ -598,6 +603,7 @@ mod tests {
             arg: 0,
             scale: 0x1000,
             disp: [0; 3],
+            walk_successor: false,
         };
         let body = [10, -20, 30];
         let s = zenoir_stager_spawns(1, caller, body, &mut counter());
@@ -629,6 +635,7 @@ mod tests {
             arg: 2,
             scale: 0x1000,
             disp: [0; 3],
+            walk_successor: false,
         };
         let mut draws = [129 + 0x40, 65 + 0x20].into_iter();
         let b = gizam_stager_spawns(3, caller, [7; 3], &mut || draws.next().unwrap());
@@ -669,6 +676,7 @@ mod tests {
             arg: 0,
             scale: 0x1000,
             disp: [0; 3],
+            walk_successor: false,
         };
         let mut n = 0u32;
         let shards = freed_stager_spawns(3, caller, &mut || {

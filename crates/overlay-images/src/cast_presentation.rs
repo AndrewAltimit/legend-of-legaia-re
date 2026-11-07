@@ -1795,6 +1795,22 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                 .iter()
                 .any(|&v| img.ins(v).is_some_and(|i| is_phase_store(&i, &alias)));
             let (hold_reach, _, exits) = reach_from(&img, entry, &reach, &alias, lo, hi);
+            // Whether the arm holds is read from its own code: from a chain's
+            // last `beq` the walk also takes the not-taken edge, the switch's
+            // default exit, which no pass of this phase value reaches. PROT
+            // 0940's Glare arm 0 (`beq v1,zero,0x801F6ACC` at `0x801F6AA4`,
+            // falling through to `j 0x801F720C`) runs straight to the shared
+            // bump at `0x801F71A0` and read as able to hold, which skipped
+            // its fades and its sphere as an unpaced pass.
+            let exact = d
+                .exact_arms
+                .get(&phase)
+                .copied()
+                .filter(|e| *e != entry && reach.contains(e));
+            let exits = match exact {
+                Some(e) => reach_from(&img, e, &reach, &alias, lo, hi).2,
+                None => exits,
+            };
             if has_bump && exits {
                 holding.insert(phase);
             }

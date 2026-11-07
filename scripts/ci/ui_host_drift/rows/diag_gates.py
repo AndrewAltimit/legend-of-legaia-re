@@ -64,6 +64,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_CAST_SEQ_EVERY", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ frame cadence; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_MAX", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ frame cap; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_PARTS", "additive": False, "note": "beside LEGAIA_DIAG_CAST_SEQ, write every live part of the cast scene to parts.csv; draws nothing"},
+    {"env": "LEGAIA_DIAG_CAST_HIDE", "additive": False, "note": "leave the cast scene's parts seated from these record VAs out of the draw lists, to name the part a film frame shows; draws less, never more"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR", "additive": False, "note": "cast film: seat the caster's clip and cursor on the cast begin; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_SEAT", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ caster seat filter; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_TAIL", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ ticks past the Done band; draws nothing"},

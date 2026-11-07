@@ -521,6 +521,15 @@ pub struct ScreenshotConfig {
     /// retail's walked-back pose (`RetailBattle::retake_across_band_entry` in
     /// `legaia-parity`).
     pub retake_across_entry: bool,
+    /// `LEGAIA_CAPTURE_PART_AGES=<record hex>:<wait>,..`: the RAM's live
+    /// cast-module parts and their waits `+0x54`, the age of the part list on
+    /// the pass the RAM was saved on (`RetailBattle::part_ages` in
+    /// `legaia-parity`). A harness seat.
+    pub part_ages: Option<Vec<(u32, i16)>>,
+    /// The latest run of ticks the drive's state held [`Self::part_ages`]
+    /// on, as `(first, last)`: when the gate opens on or a pass past its
+    /// last tick, the display-lag retake counts back from its first.
+    pub part_age_run: std::cell::Cell<Option<(u64, u64)>>,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
     /// The framing the battle camera's law armed on the gate tick, kept for
@@ -1287,6 +1296,18 @@ impl ScreenshotConfig {
             ),
             retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
+            part_ages: std::env::var("LEGAIA_CAPTURE_PART_AGES")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (r, w) = e.trim().split_once(':')?;
+                            Some((u32::from_str_radix(r, 16).ok()?, w.parse().ok()?))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .filter(|a| a.len() >= 2),
+            part_age_run: std::cell::Cell::new(None),
             state_since: std::cell::Cell::new(None),
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
                 .ok()
@@ -1408,6 +1429,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F12" => KeyCode::F12,
         // The pack reload (`window::pack_reload`).
         "END" => KeyCode::End,
+        // The settings page's row reset (`option_keys::panel_key`).
+        "DELETE" | "DEL" => KeyCode::Delete,
+        "BACKSPACE" => KeyCode::Backspace,
         "/" | "?" | "SLASH" => KeyCode::Slash,
         // The multiplayer room screen (`window::netplay`).
         "TAB" => KeyCode::Tab,
@@ -1603,6 +1627,8 @@ mod key_script_tests {
         names.push("Tab".to_string());
         names.push("End".to_string());
         names.push("Home".to_string());
+        names.push("Delete".to_string());
+        names.push("Backspace".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names

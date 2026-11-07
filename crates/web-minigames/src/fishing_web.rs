@@ -546,6 +546,7 @@ impl LegaiaMinigames {
                 leave_edge: pressed_mask & 0x21 != 0,
                 edge_bonus,
                 reel_edge: pressed_mask & 0xC0,
+                face_edge: pressed_mask & 0xF0 != 0,
             },
             1,
             fishing::CAST_POWER_STEP,
@@ -581,6 +582,20 @@ impl LegaiaMinigames {
             {
                 *n = (*n - 1).max(0);
             }
+        }
+        // Back at the shore, the lure gate over the same stock
+        // (`PondSession::shore_lure_gate`, as `World::tick_fishing` runs it):
+        // a spent last lure parks the no-lure screen, whose exit edge leaves
+        // the venue the way the hub's Leave row does.
+        if events.iter().any(|e| matches!(e, PondEvent::Recast)) {
+            let lures = self.fishing_lures_held;
+            p.shore_lure_gate(|id| match id {
+                0x9D..=0x9F => lures[(id - 0x9D) as usize],
+                _ => MINIGAMES_TACKLE_HELD,
+            });
+        }
+        if p.take_exit_request() {
+            hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
         }
         let mut out = hub_events;
         // The hook and catch cues, through the kernel `World::tick` queues
@@ -690,6 +705,7 @@ impl LegaiaMinigames {
             PondPhase::Hooked => "hooked",
             PondPhase::Landed => "landed",
             PondPhase::Snapped => "snapped",
+            PondPhase::NoLure => "no_lure",
         };
         let fish = match p.hooked() {
             Some(sp) => format!(

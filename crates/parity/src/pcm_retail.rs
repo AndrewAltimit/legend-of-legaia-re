@@ -121,7 +121,16 @@ pub struct RetailSeqPosition {
     pub event: usize,
     /// `+0x90`, tenths of a tick left to wait.
     pub wait: i64,
+    /// libsnd's monaural flag `_DAT_801CE330 == 1` (`SsSetMono`, the options
+    /// screen's Sound row): every voice volume the key-on and the re-volume
+    /// walk build is folded to the larger side (`0x800682B8..0x800682E8` in
+    /// `FUN_80067E9C`). A state saved in Monaural is rendered that way.
+    pub mono: bool,
 }
+
+/// libsnd's monaural flag (`SsSetMono`), read as a halfword against `1` by
+/// the voice-volume chain (`lh v1,-0x1cd0(v1)` at `0x800682BC`).
+pub const LIBSND_MONO: u32 = 0x801C_E330;
 
 /// Read the playing sequence's position off a state's main RAM.
 pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<RetailSeqPosition> {
@@ -157,11 +166,15 @@ pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<Ret
         .iter()
         .position(|&o| o == off)
         .with_context(|| format!("cursor +{off:#x} is on no event (base {base:#x})"))?;
+    let mono = ram
+        .get(at(LIBSND_MONO)..at(LIBSND_MONO) + 2)
+        .is_some_and(|b| i16::from_le_bytes([b[0], b[1]]) == 1);
     Ok(RetailSeqPosition {
         track,
         seq_vol: slot.vol.0 as u8,
         event,
         wait,
+        mono,
     })
 }
 
@@ -182,6 +195,7 @@ pub fn render_aligned(
     let mut d = TraceBgmDirector::new();
     d.master_vol = pos.seq_vol;
     d.start_owned_vab(pos.track, entry);
+    d.spu_mut().mono = pos.mono;
     let step = |d: &mut TraceBgmDirector, carry: &mut f64, out: Option<&mut Vec<i16>>| {
         let spu: *mut Spu = d.spu_mut();
         if let Some(s) = d.sequencer_mut() {
@@ -597,10 +611,26 @@ fn render_cue_voices(st: &legaia_mednafen::SaveState, samples: usize) -> Result<
 
 /// How far the engine's cast recording `cast` (sample `0` its seed's gate)
 /// sits from the state's instant (the retail recording's sample `0`): the shift
-/// within one vsync either way whose cast best fits what is left of `retail`
-/// once the aligned track `track` (`lag` as [`score_window`] reads it) is taken
-/// out. Positive delays the cast.
-pub fn fit_cast_offset(retail: &[i16], track: &[i16], cast: &[i16], lag: i64) -> i64 {
+/// within `reach_vsyncs` either way of `center` whose cast best fits what is left of
+/// `retail` once the aligned track `track` (`lag` as [`score_window`] reads it)
+/// is taken out. Positive delays the cast.
+///
+/// The reach is the state's battle frame step
+/// ([`crate::retail_compare_battle::frame_step`]), not one vsync: the gate is
+/// a game-frame boundary, and on a step-`3` fight the state's instant can lie
+/// up to three vsyncs from the nearest one. Measured on the recordings,
+/// `cort_guilty_cross_mid_cast` (step `3`) fits its cast `1.89` vsyncs before the gate puts it,
+/// `cort_mystic_shield_mid_cast` and `gilium_summon_mid_cast` (step `2`) `1.45`
+/// and `1.86`: all past the one vsync this window used to reach, and each a
+/// single shift that holds for every second of the cast.
+pub fn fit_cast_offset(
+    retail: &[i16],
+    track: &[i16],
+    cast: &[i16],
+    lag: i64,
+    center: i64,
+    reach_vsyncs: u8,
+) -> i64 {
     let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
         usize::try_from(t)
             .ok()
@@ -623,14 +653,31 @@ pub fn fit_cast_offset(retail: &[i16], track: &[i16], cast: &[i16], lag: i64) ->
         }
         dot / ee.max(1.0).sqrt()
     };
-    let reach = RETAIL_VSYNC_SAMPLES as i64;
-    let coarse = (-reach..=reach)
+    let reach = (f64::from(reach_vsyncs.max(1)) * RETAIL_VSYNC_SAMPLES) as i64;
+    let coarse = (center - reach..=center + reach)
         .step_by(8)
         .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
         .unwrap_or(0);
     (coarse - 8..=coarse + 8)
         .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
         .unwrap_or(0)
+}
+
+/// The tick of the engine's cast recording that stands where the state does,
+/// read off the summon duck: the one tick whose applied level (`<cast>.duck`)
+/// is the state's applied level `DAT_8007B6EC` while the ramp moves through it.
+/// A level the ramp rests on, or reaches more than once, names no tick.
+/// `zenoir_summon_mid_cast` stands at `195`, which the engine's ramp passes on
+/// tick `5`: its sounds fit `5.5` vsyncs early, past any frame step.
+pub fn duck_anchor_tick(levels: &[u8], applied: u8) -> Option<usize> {
+    let moving = |k: usize| {
+        levels[k] == applied
+            && levels.get(k + 1).is_some_and(|&n| n != applied)
+            && (k == 0 || levels[k - 1] != applied)
+    };
+    let mut hits = (0..levels.len()).filter(|&k| levels[k] == applied);
+    let k = hits.next()?;
+    (hits.next().is_none() && moving(k)).then_some(k)
 }
 
 /// A cast's CD-seek wait in the engine's cast recording, read off its
@@ -828,42 +875,90 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             }
             let lag = score_window(&retail, &pcm).lag;
             let cast = read_wav(cast_path)?;
-            // The child's gate tick stands within a vsync of the state's
-            // instant, not on its sample: the cast's own offset is fitted
-            // against what the track leaves of the recording, and reported.
-            let offset = fit_cast_offset(&retail, &pcm, &cast, lag);
-            println!("{}: cast offset {offset:+} samples", args.label);
             // A CD-seek wait in the cast: the voice past it may start anywhere
             // in the seek window, and is aligned there on its own.
             let wait = std::fs::read_to_string(cast_path.with_extension("drive"))
                 .ok()
                 .and_then(|t| cast_drive_wait(&t));
-            match wait {
-                Some((start, held)) => {
-                    let split =
-                        (((start + held) as f64 * args.vsync_samples) as usize).min(cast.len() / 2);
-                    let (after, window) =
-                        fit_cast_offset_after_wait(&retail, &pcm, &cast, lag, offset, split, held);
-                    println!(
-                        "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
-                         samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
-                        args.label,
-                        (after - offset) as f64 / args.vsync_samples,
-                        window.0,
-                        window.1
-                    );
-                    mix_at_lag(&mut pcm, &cast[..split * 2], lag + offset);
-                    mix_at_lag(&mut pcm, &cast[split * 2..], lag + after + split as i64);
-                    cast_drive = Some(serde_json::json!({
-                        "wait_start_tick": start,
-                        "held_ticks": held,
-                        "offset": offset,
-                        "voice_offset": after,
-                        "window": [window.0, window.1],
-                    }));
-                }
-                None => mix_at_lag(&mut pcm, &cast, lag + offset),
+            let split = wait.map(|(start, held)| {
+                (((start + held) as f64 * args.vsync_samples) as usize).min(cast.len() / 2)
+            });
+            // The child's gate tick stands near the state's instant, not on its
+            // sample: the cast's own offset is fitted against what the track
+            // leaves of the recording, and reported. The gate is a game-frame
+            // boundary, so the state's instant can lie up to a frame step off
+            // it ([`fit_cast_offset`]); a fit that reaches that far can also
+            // lock a misplaced voice onto a louder stretch, so the frame-step
+            // reach and the one-vsync reach are both mixed and the better
+            // scoring kept - one alignment parameter, chosen on the score.
+            let step = {
+                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                crate::retail_compare_battle::frame_step(st.main_ram()?)
+            };
+            let track = pcm;
+            let mut best: Option<(f64, Vec<i16>, Option<serde_json::Value>)> = None;
+            let mut reaches = vec![(0i64, 1u8)];
+            if step > 1 {
+                reaches.push((0, step));
             }
+            // A state taken mid-ramp names its own instant on the engine's
+            // recording: the tick the engine's applied level passes the
+            // state's ([`duck_anchor_tick`]).
+            let applied = {
+                let st = legaia_mednafen::SaveState::from_path(&path)?;
+                let ram = st.main_ram()?;
+                i32::from_le_bytes(ram[0x7_B6EC..0x7_B6F0].try_into()?).clamp(0, 255) as u8
+            };
+            let levels: Vec<u8> = std::fs::read_to_string(cast_path.with_extension("duck"))
+                .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
+                .unwrap_or_default();
+            if let Some(k) = duck_anchor_tick(&levels, applied) {
+                reaches.push((-((k as f64 * args.vsync_samples) as i64), 1));
+            }
+            for (center, reach) in reaches {
+                let offset = fit_cast_offset(&retail, &track, &cast, lag, center, reach);
+                let mut mixed = track.clone();
+                let mut drive = None;
+                let mut notes = vec![format!(
+                    "{}: cast offset {offset:+} samples on the track's lag {lag} (reach {reach} vsyncs of {center:+})",
+                    args.label
+                )];
+                match wait.zip(split) {
+                    Some(((start, held), split)) => {
+                        let (after, window) = fit_cast_offset_after_wait(
+                            &retail, &track, &cast, lag, offset, split, held,
+                        );
+                        notes.push(format!(
+                            "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
+                             samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
+                            args.label,
+                            (after - offset) as f64 / args.vsync_samples,
+                            window.0,
+                            window.1
+                        ));
+                        mix_at_lag(&mut mixed, &cast[..split * 2], lag + offset);
+                        mix_at_lag(&mut mixed, &cast[split * 2..], lag + after + split as i64);
+                        drive = Some(serde_json::json!({
+                            "wait_start_tick": start,
+                            "held_ticks": held,
+                            "offset": offset,
+                            "voice_offset": after,
+                            "window": [window.0, window.1],
+                        }));
+                    }
+                    None => mix_at_lag(&mut mixed, &cast, lag + offset),
+                }
+                let corr = score_window(&retail, &mixed).corr_median;
+                for n in &notes {
+                    println!("{n} -> corr {corr:.4}");
+                }
+                if best.as_ref().is_none_or(|(c, _, _)| corr > *c) {
+                    best = Some((corr, mixed, drive));
+                }
+            }
+            let (_, mixed, drive) = best.expect("one reach is always tried");
+            pcm = mixed;
+            cast_drive = drive;
         }
         (pcm, args.label.clone())
     };
@@ -1152,6 +1247,65 @@ mod tests {
         assert_eq!(pcm, [0, 0, 0, 0, 1, 2], "the rest runs off the end");
     }
 
+    /// A cast whose sounds land two vsyncs ahead of the state's instant is out
+    /// of a one-vsync reach and inside a step-`3` frame's.
+    #[test]
+    fn the_duck_names_the_states_tick_only_mid_ramp() {
+        let ramp = [200, 199, 198, 197, 196, 195, 194, 193];
+        assert_eq!(duck_anchor_tick(&ramp, 195), Some(5));
+        assert_eq!(duck_anchor_tick(&ramp, 215), None, "not on the ramp");
+        let rest = [213, 212, 211, 210, 210, 210];
+        assert_eq!(
+            duck_anchor_tick(&rest, 210),
+            None,
+            "a level the ramp rests on"
+        );
+        assert_eq!(duck_anchor_tick(&rest, 212), Some(1));
+        assert_eq!(duck_anchor_tick(&[215; 8], 215), None, "no ramp");
+    }
+
+    #[test]
+    fn the_cast_offset_reaches_a_frame_step() {
+        let n = 20_000;
+        let early = 1400usize;
+        // A click train no shorter shift can mimic: sparse, irregular bursts.
+        let burst = |at: usize, len: usize| -> Vec<i16> {
+            let mut v = vec![0i16; len * 2];
+            for (k, &p) in [300usize, 2100, 4700, 7300, 9900, 12_800, 15_100]
+                .iter()
+                .enumerate()
+            {
+                for j in 0..400 {
+                    let t = p + j + at;
+                    if t < len {
+                        let x = ((j as f64) * (0.05 + k as f64 * 0.013)).sin() * 6000.0;
+                        v[t * 2] = x as i16;
+                        v[t * 2 + 1] = x as i16;
+                    }
+                }
+            }
+            v
+        };
+        // Retail hears each burst at `p`, the engine's recording has it at
+        // `p + early`: the cast sits `early` samples late, offset `-early`.
+        let retail: Vec<i16> = burst(0, n)
+            .iter()
+            .map(|&x| (f64::from(x) * MEDNAFEN_RECORD_GAIN) as i16)
+            .collect();
+        let cast = burst(early, n);
+        let track = vec![0i16; n * 2];
+        let near = fit_cast_offset(&retail, &track, &cast, 0, 0, 1);
+        let far = fit_cast_offset(&retail, &track, &cast, 0, 0, 3);
+        assert!(
+            (far + early as i64).abs() <= 1,
+            "step reach finds it: {far}"
+        );
+        assert!(
+            near.abs() <= RETAIL_VSYNC_SAMPLES as i64,
+            "one vsync stays inside: {near}"
+        );
+        assert!((near + early as i64).abs() > 100, "and misses it: {near}");
+    }
     fn tone(n: usize, gain: f64, shift: usize) -> Vec<i16> {
         (0..n)
             .flat_map(|i| {

@@ -3,6 +3,7 @@ use super::*;
 mod actor_tick;
 mod base_ops;
 mod color;
+mod disasm_widths;
 mod ext_branches;
 mod ext_widths;
 mod ext_writes;

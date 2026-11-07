@@ -556,6 +556,14 @@ fn a_live_cast_stages_its_module_records() {
                 &[],
                 &[],
             ),
+            // PROT 0904 makes one call in arm 3 (`0x801F6D64`) and two on
+            // arm 7's pass (`0x801F732C`, `0x801F7344`); its stager
+            // `0x801F8EAC` seats `0x801F90B0` for a calling part.
+            904 => (
+                vec![&cmc::THEEDER_RISE_SPAWNS, &cmc::THEEDER_ATTACK_SPAWNS],
+                &[],
+                &[0x801F_90B0],
+            ),
             905 => (
                 vec![
                     &cmc::VERA_OPEN_SPAWNS,

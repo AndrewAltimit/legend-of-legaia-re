@@ -30,6 +30,18 @@ pub struct CaptureDrift {
     pub tr_x: i16,
 }
 
+/// A capture arm's stores into the parts of `records` it holds handles to:
+/// first `dx` / `dy` added to `+0x14` / `+0x16`, then `x` / `y` stored over
+/// them. The adds run on every pass, the stores on the arm's passing one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CapturePartWrite {
+    pub records: &'static [u32],
+    pub dx: i16,
+    pub dy: i16,
+    pub x: Option<i16>,
+    pub y: Option<i16>,
+}
+
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
@@ -96,6 +108,9 @@ pub struct CaptureCamArm {
     /// (`FUN_801D5854(ctx[+0x13], 6)`) on this pass: the follow framing on
     /// the live yaw ladder `ctx[+0x6DA]` and depth `ctx[+0x6D0]`.
     pub follow_caster: bool,
+    /// The framing style `ctx[+0xD]` this pass's case 6 reads, where the arm
+    /// stores its own ahead of the call ([`super::ModuleFollow::style`]).
+    pub follow_style: Option<u8>,
     /// The arm framed the caster through the action SM's **case 8**
     /// (`FUN_801D5854(ctx[+0x13], 8)`) on this pass: the post-action
     /// framing on the caster and its target.
@@ -130,6 +145,9 @@ pub struct CaptureCamArm {
     /// The arm stores this into every live part's level `+0x78`
     /// (PROT 0957's arm 6, `0x801F78B8..0x801F78E4`).
     pub parts_level: Option<u16>,
+    /// The arm's stores into the position halfwords `+0x14` / `+0x16` of the
+    /// parts it seated through handles (PROT 0942 `0xAA`'s vortex).
+    pub part_write: Option<CapturePartWrite>,
     /// The arm's stores into every party seat and every live monster, made
     /// ahead of its [`Self::caster_write`] / [`Self::victim_write`] (PROT
     /// 0947 hides the field, then shows the caster). Waits for the band's
@@ -259,6 +277,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
         (943, crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK) => Some(super::lapis_wave_camera),
         (956, crate::cast_arm_ticks::WATER_HAZARD_TICK) => Some(super::water_hazard_camera),
+        (956, super::PARALYZING_WAVE_BODY) => Some(super::paralyzing_wave_camera),
         (949, SINGLE_BODY) => Some(super::water_crystals_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
         (939, SINGLE_BODY) => Some(super::spore_gas_camera),
@@ -282,7 +301,10 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
         (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
+        (942, super::DARK_TYPHOON_BODY) => Some(super::dark_typhoon_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
+        (936, SINGLE_BODY) => Some(super::hyper_crush_camera),
+        (937, SINGLE_BODY) => Some(super::hyper_lightning_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
@@ -296,6 +318,30 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (955, super::WHITE_SHIELD_BODY) => Some(super::white_shield_camera),
         (955, super::POWER_CHARGE_BODY) => Some(super::power_charge_camera),
         _ => None,
+    }
+}
+
+/// Whether a capture body's arm `phase` re-arms its shot on **every pass**,
+/// ahead of the arm's countdown gate, so the tween table the RAM holds was
+/// built on the pass the RAM is in, off the gap that pass saw, and each pass
+/// before it stood the re-arm's wider share back - not a table built once and
+/// walked since. Each listed arm calls the builder `FUN_801D829C` (`a3 =
+/// 0xC`) before its `bgtz` / `blez` hold:
+///
+/// | PROT | body | arms | builder calls |
+/// |---|---|---|---|
+/// | 0951 | `0x801F77E8` (`0x5B` Scythe Wind) | 3..=5 | `0x801F7CD4`, `0x801F7E08`, `0x801F80B0` |
+/// | 0952 | `0x801F7118` (`0x5C` Bloody Horns) | 3..=6 | `0x801F7624`, `0x801F7798`, `0x801F78EC`, `0x801F7A7C` |
+///
+/// The first shot of each (arm 2, `0x801F7BCC` / `0x801F74F4`) is built
+/// once. Kiss of Death (PROT 0955) builds every shot once: arm 0 at
+/// `0x801F883C`, and arms 1 and 3 behind their gates (`0x801F8A10` past the
+/// `bgtz` at `0x801F89A0`, `0x801F8C1C` past `0x801F8BAC`).
+pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool {
+    match (entry, body) {
+        (951, super::SCYTHE_WIND_BODY) => (3..=5).contains(&phase),
+        (952, super::BLOODY_HORNS_BODY) => (3..=6).contains(&phase),
+        _ => false,
     }
 }
 
@@ -354,9 +400,12 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// `ctx[+0x0D]` that state `0x70` stores `1` on every pass. PROT 0935, 0936,
 /// 0937, 0939 and 0962 hold no `sb zero,0xd`, so their Done band's case 6 frames
 /// from half a turn round (`teien_berserker__spore_gas`'s `0x51` endpoint reads
-/// `ctx[+0x6DA] - facing + 0x800`).
-pub fn capture_exit_clears_style(entry: u32) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+/// `ctx[+0x6DA] - facing + 0x800`). PROT 0941's Steal (`0x51`) zeroes it
+/// only through its arm 2 (`0x801F7B44`) and stores the `1` back on that arm's
+/// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
+/// body clears it on its last arm (`0x801F72CC`).
+pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
+    !matches!(entry, 935 | 936 | 937 | 939 | 962) && !(entry == 941 && action == 0x51)
 }
 
 /// The module-resident countdown word a directed capture body gates its arms

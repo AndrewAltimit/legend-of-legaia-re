@@ -21,6 +21,7 @@ pub mod boot_overlay;
 pub mod cast_effect_pool;
 pub mod cast_presentation;
 pub mod mips_overlay;
+pub mod move_disasm;
 pub mod overlay_ptr_table;
 pub mod slot_b_module;
 pub mod static_overlay;

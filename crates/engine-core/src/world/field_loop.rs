@@ -679,6 +679,7 @@ impl World {
         self.battle.steal = legaia_engine_battle::battle_steal::StealBand::default();
         self.battle.steal_caption = None;
         self.battle.move_label_closed = false;
+        self.battle.monster_move_label = None;
         // Seed the turn-order initiative keys for this battle. When real SPD is
         // present the next-actor selector runs the initiative scheme from the
         // very first turn (see the opener pick below). A no-SPD battle leaves

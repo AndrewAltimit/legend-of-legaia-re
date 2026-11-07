@@ -369,8 +369,10 @@ impl SessionSwitches {
     /// retail kernels (the damage finisher, the battle pass's RNG draw), so
     /// [`WorldToggles::retail_deviations`] comes back empty once the options
     /// (pinned by the host's own retail mode) have been applied. Released,
-    /// the guard `pin_retail` lowered returns to the engine default; the
-    /// kernels it restored are already their defaults.
+    /// the two port-only switches `pin_retail` lowers that no launch switch
+    /// carries (the hop landing guard, the off-axis battle entry) return to
+    /// the engine default; the kernels it restored are already their
+    /// defaults.
     pub fn apply(&self, toggles: &mut WorldToggles) {
         let port = !self.retail;
         toggles.smarter_monster_targeting = self.smart_monsters && port;
@@ -384,7 +386,9 @@ impl SessionSwitches {
         if self.retail {
             toggles.pin_retail();
         } else {
-            toggles.hop_landing_guard = WorldToggles::new().hop_landing_guard;
+            let engine = WorldToggles::new();
+            toggles.hop_landing_guard = engine.hop_landing_guard;
+            toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }
 }
@@ -561,5 +565,45 @@ mod tests {
         assert!(!t.hop_landing_guard);
         all_on(false).apply(&mut t);
         assert_eq!(t.hop_landing_guard, WorldToggles::new().hop_landing_guard);
+        assert_eq!(
+            t.battle_entry_off_axis,
+            WorldToggles::new().battle_entry_off_axis
+        );
+    }
+
+    /// Retail on and off again over the engine's defaults leaves the world
+    /// where it started, once the options are back: a host's Retail box (the
+    /// play page's, the window's settings row) is a round trip. Every field
+    /// still off is one the options drive (`apply_option_knobs`).
+    #[test]
+    fn retail_released_returns_every_switch_it_lowered() {
+        let launch = SessionSwitches {
+            smart_monsters: false,
+            world_map_markers: false,
+            entry_pulse: WorldToggles::new().entry_pulse_enabled,
+            battle_frame_cadence: WorldToggles::new().battle_sm_frame_cadence,
+            arts_saved_list: false,
+            tweaks: GameplayTweaks::default(),
+            retail: false,
+        };
+        let mut before = WorldToggles::new();
+        launch.apply(&mut before);
+        let mut t = WorldToggles::new();
+        launch.apply(&mut t);
+        SessionSwitches {
+            retail: true,
+            ..launch
+        }
+        .apply(&mut t);
+        launch.apply(&mut t);
+        // The option-driven ones come back through the options, not here.
+        let by_options = ["reduce_flashing", "view_window_crop", "volumetric_fog"];
+        let port = |w: &WorldToggles| {
+            let mut v = w.retail_deviations();
+            v.retain(|n| !by_options.contains(n));
+            v
+        };
+        assert!(!port(&before).is_empty());
+        assert_eq!(port(&t), port(&before));
     }
 }

@@ -76,7 +76,7 @@ impl World {
         self.resolve_fishing_entry_rod();
         let bag = &self.party.inventory;
         let mut lure = self.minigames.fishing_lure;
-        legaia_engine_fishing::fishing::select_owned_rod(&mut lure, |id| {
+        let lure_owned = legaia_engine_fishing::fishing::select_owned_rod(&mut lure, |id| {
             i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
         });
         self.minigames.fishing_lure = lure;
@@ -89,6 +89,10 @@ impl World {
         );
         if let Some(v) = venue_map {
             session.attach_venue(v);
+        }
+        if !lure_owned {
+            // Only a host launcher enters with no lure; the door refuses it.
+            session.disarm_lure_gate();
         }
         self.enter_fishing(session);
     }
@@ -226,9 +230,10 @@ impl World {
     /// lure flight, then the pre-hook band roll and the hooked fight, which
     /// retail runs from the fish actor's handler `FUN_801d26cc` into
     /// `FUN_801d4004` rather than from the mode switch. Not covered here:
-    /// the rod/type select (state `0`), the fade ramps, the no-lure end
-    /// screen (`0x96`) and the exit fade (`200`) - the hosts' Start-to-leave
-    /// affordance replaces the last - and the driver tail's HUD, banner
+    /// the rod/type select (state `0`), the fade ramps and the exit fade
+    /// (`200`) - the hosts' Start-to-leave affordance replaces the last, and
+    /// the no-lure screen (`0x96`) leaves through the same exit - and the
+    /// driver tail's HUD, banner
     /// timers and sub-screen, which the hosts compose. The point-exchange
     /// branch (`0x64..0x7a`) is [`World::fishing_exchange_input`].
     pub(in crate::world::frame_tick) fn tick_fishing(&mut self) {
@@ -284,6 +289,28 @@ impl World {
             if let Ok(id) = u8::try_from(id) {
                 let _ = self.party.inventory.consume_returning_slot(id, 1);
             }
+        }
+        // Back at the shore, state `0xB` runs the lure gate over the bag the
+        // break just spent from: the equipped lure re-points at one still
+        // held, or the session parks on the no-lure screen (state `0x96`).
+        if events.iter().any(|e| matches!(e, PondEvent::Recast)) {
+            let bag = &self.party.inventory;
+            if let Some(s) = self.minigames.fishing.as_mut() {
+                s.shore_lure_gate(|id| i32::from(bag.get(&(id as u8)).copied().unwrap_or(0)));
+                self.minigames.fishing_lure = s.persist().lure;
+            }
+        }
+        // The no-lure screen's exit edge (state `200`): leave the venue as the
+        // hub's Leave row does.
+        if self
+            .minigames
+            .fishing
+            .as_mut()
+            .is_some_and(|s| s.take_exit_request())
+        {
+            self.exit_fishing();
+            self.close_minigame_round_trip();
+            return;
         }
         // The lure landing: the arm of the lure tick that bumps the
         // persistent cast counter stores cue `0x204` straight into ring

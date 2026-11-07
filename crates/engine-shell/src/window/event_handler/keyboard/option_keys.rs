@@ -156,6 +156,13 @@ impl PlayWindowApp {
                 }
                 true
             }
+            KeyCode::Delete | KeyCode::Backspace if self.panel_holds_game() => {
+                use super::super::super::settings_panel::PanelPage;
+                if self.panel_page() == PanelPage::Settings {
+                    self.reset_setting();
+                }
+                true
+            }
             _ => false,
         }
     }

@@ -564,7 +564,23 @@ impl PlayWindowApp {
             && self.capture_gate_met()
             && let Some(sc) = self.screenshot.as_ref()
         {
-            sc.battle_drive_released.set(true);
+            // The drive holds the capture band's two polls while it steers
+            // (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`);
+            // once it lets go nothing would answer them, and a gate that
+            // opens inside `0x6F` (`battle_map01_gomboo_steal_mid_cast`)
+            // parked the band there for the rest of the run.
+            if !sc.battle_drive_released.replace(true) {
+                let world = &mut self.session.host.world;
+                world.battle.prev_action_cleared = true;
+                world.audio.sound_bank_ready = true;
+                // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
+                // `entries;cursor`): the frames after the gate run on the
+                // ring from where retail's stood, not on the step the walk
+                // up to the gate was pinned to.
+                if let Some((entries, cursor)) = env_cost_ring() {
+                    world.seed_frame_cost_ring(entries, cursor);
+                }
+            }
         }
         match self.screenshot.as_ref() {
             Some(sc) if sc.battle_drive_released.get() => field_pad,
@@ -674,6 +690,17 @@ impl PlayWindowApp {
                 0
             };
             sc.battle_drive_held.set(held);
+            if let Some(ages) = sc.part_ages.as_ref()
+                && drive.in_action_state(&self.session.host.world)
+                && part_ages_match(&self.session.host.world, ages)
+            {
+                let t = self.tick_no;
+                let first = match sc.part_age_run.get() {
+                    Some((first, last)) if last + 1 == t => first,
+                    _ => t,
+                };
+                sc.part_age_run.set(Some((first, t)));
+            }
             if sc.display_lag > 0 {
                 let world = &self.session.host.world;
                 sc.state_since.set(
@@ -807,4 +834,36 @@ fn attract_fmv_id(title: &legaia_engine_title::title::TitleSession) -> Option<i1
         legaia_engine_title::title::TitlePhase::Attract { fmv_id, .. } => Some(fmv_id),
         _ => None,
     }
+}
+
+/// `LEGAIA_BATTLE_COST_RING=e0,..,e15;cursor` (the cast-sequence film's seat,
+/// from `legaia-parity`'s `frame_cost_ring`): a retail capture's frame-cost
+/// ring `0x80084098` and its cursor `gp+0x440`.
+fn env_cost_ring() -> Option<([u16; 16], u8)> {
+    let v = std::env::var("LEGAIA_BATTLE_COST_RING").ok()?;
+    let (list, cursor) = v.split_once(';')?;
+    let parsed: Vec<u16> = list
+        .split(',')
+        .map(|e| e.trim().parse::<u16>().ok())
+        .collect::<Option<_>>()?;
+    let entries: [u16; 16] = parsed.try_into().ok()?;
+    Some((entries, cursor.trim().parse().ok()?))
+}
+
+/// Whether the cast scene's live parts hold the RAM's `(record, wait)`
+/// multiset (`ScreenshotConfig::part_ages`).
+fn part_ages_match(world: &legaia_engine_core::world::World, ages: &[(u32, i16)]) -> bool {
+    let Some(scene) = world.casting.active_summon.as_ref() else {
+        return false;
+    };
+    let mut live: Vec<(u32, i16)> = scene
+        .parts
+        .iter()
+        .filter(|p| !p.finished)
+        .filter_map(|p| Some((p.tag?, p.state.wait_timer)))
+        .collect();
+    let mut want = ages.to_vec();
+    live.sort_unstable();
+    want.sort_unstable();
+    live == want
 }

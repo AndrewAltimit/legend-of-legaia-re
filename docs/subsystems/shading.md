@@ -229,6 +229,11 @@ unchanged). Scenes that do use it:
   ([`world-map.md`](world-map.md#ground-texturing)).
 - **Battles** cue the procedural ground grid and every actor
   (next section).
+- **The battle backdrop** is cued at `IR0 = 1` even at rest, and the op's
+  floor turns its `0x80` words into `0x7F`, a 5-bit step under the texel
+  ([`battle-stage-camera.md`](battle-stage-camera.md#the-grids-near-colour-and-cue-depth)).
+  The cue is integer arithmetic: `C' = floor((16C + floor((16FC - 16C) * IR0 / 4096)) / 16)`,
+  so any `IR0 > 0` toward a darker far colour takes a whole unit off.
 
 Because the cue runs on the colour word and the multiply comes after, a
 textured primitive's far colour is `texel * FC / 128`, not `FC`. The order also

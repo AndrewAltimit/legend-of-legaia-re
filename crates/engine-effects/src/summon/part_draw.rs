@@ -112,9 +112,26 @@ pub struct SummonPartRuntime {
     /// Halve the part's speed `+0x98` after the seat run (PROT 0908's
     /// stager arm 2, `0x801F84E0..0x801F8500`).
     pub seat_halve_speed: bool,
+    /// Walks begun since the part halted (`0` while it runs and on the walk
+    /// it halts on). Retail's walk `FUN_8002519C` keeps a halted node linked
+    /// for two more walks - the first ORs `0x2000000` into `+0x10`, the
+    /// second unlinks it (`FUN_800204A4`) - so it still stands behind the
+    /// parts before it until then ([`SummonScene::tick`]).
+    pub halted_walks: u8,
+    /// Seated during this frame's walk by a part that had a node behind it
+    /// ([`ActorState::walk_successor`]): retail's walk reaches it and gives
+    /// it the part tick on the frame it was seated
+    /// ([`SummonScene::seat_walk`]).
+    pub walk_reached: bool,
 }
 
 impl SummonPartRuntime {
+    /// Whether retail's walk still holds this part's node: a running part,
+    /// or a halted one fewer than three walks on ([`Self::halted_walks`]).
+    pub fn walk_linked(&self) -> bool {
+        !self.finished || self.halted_walks <= 2
+    }
+
     /// Store halfword `value` at actor offset `off` - the offsets a stager
     /// arm writes into a part it seated: `+0x14..+0x18` (position), `+0x28`
     /// (roll), `+0x3C..+0x40` (velocity), `+0x42`, `+0x54` (wait), `+0x72`

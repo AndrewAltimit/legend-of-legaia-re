@@ -56,6 +56,7 @@ impl ApplicationHandler for PlayWindowApp {
             }
             log::info!("play-window: PSX-faithful render mode enabled (native 320x240)");
         }
+        self.fit_frame_target();
         // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the
         // `I` key at runtime): soft warm directional light + screen-centred
         // light pool over the baked shading. Off by default - retail has no
@@ -125,7 +126,10 @@ impl ApplicationHandler for PlayWindowApp {
                 }
                 evl.exit();
             }
-            WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
+            WindowEvent::Resized(size) => {
+                self.win.handle_resize(size.width, size.height);
+                self.fit_frame_target();
+            }
             // Losing focus drops every held key, as the browser page's `blur`
             // handler does: the release of a key held while the window lost
             // focus never arrives here, so the player kept walking into a

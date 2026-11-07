@@ -162,6 +162,15 @@ pub struct ActorState {
     /// [`crate::move_vm::keyframe_pose_entries`] is the render tail that
     /// blends it into the per-part poses the animated renderer draws.
     pub keyframe_pose: Vec<[i16; 12]>,
+    /// Engine-side, not an actor word: whether the frame's part-list walk
+    /// had a node after this part when it reached it. The walk
+    /// `FUN_8002519C` reads `next` before it calls the node's tick
+    /// (`lw s1,0x0(s1)` at `0x800251D8`) and the allocator appends a new
+    /// node at the list's tail (`FUN_80020454`: `sw v0,0x0(v1)` on the old
+    /// tail, `sw v0,0xc(a0)` the new tail), so a part this one seats during
+    /// its own tick (op `0x20`) is reached on the same walk exactly when
+    /// this is set. The host that runs the parts keeps it current.
+    pub walk_successor: bool,
 }
 
 impl ActorState {

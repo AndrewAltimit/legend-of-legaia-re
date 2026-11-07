@@ -141,6 +141,8 @@ const MONSTER_CAST_BEGIN_STATE: u8 = 0x28;
 ///   table's `+8` name pointer into both records before
 ///   `FUN_801D8DE8(0x4C, 0)` (`0x801E4430..0x801E4458`), behind a seat test
 ///   that skips the block for a party caster;
+/// * a **monster's** swing names the move its clip entry's `+0x77` byte
+///   holds, a spell-table id (`FUN_8004AD80` `0x8004AF08..0x8004AF88`);
 /// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
 pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<String> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
@@ -155,7 +157,19 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
     let pc = party_count(world) as u8;
     let cat = actor.battle.action_category;
     if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
-        if a >= pc || world.battle.move_label_closed {
+        if a >= pc {
+            // A monster's swing names its move off the clip entry's `+0x77`
+            // spell id (`FUN_8004AD80`'s monster arm,
+            // `BattleState::monster_move_label`).
+            let id = world.battle.monster_move_label?;
+            return world
+                .menu
+                .text
+                .as_ref()
+                .and_then(|t| t.spell_name(id))
+                .map(str::to_string);
+        }
+        if world.battle.move_label_closed {
             return None;
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());

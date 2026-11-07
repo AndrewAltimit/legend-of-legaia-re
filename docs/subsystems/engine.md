@@ -424,7 +424,14 @@ one that reads back what is off it:
 writing nothing back: the options pin, and the world pin through the
 session switch set both hosts share
 (`legaia_engine_session::session_switches::SessionSwitches::apply`, which the
-browser's retail mode calls too). The window logs
+browser's retail mode calls too). Both hosts also take it live: the page's
+Retail-faithful box and the window's `F12` *Original game only* row pin or
+release the options and re-apply the launch's switch set with `retail`
+flipped; the page's tweak boxes and the window's tweak rows re-apply it with
+the switch changed. Released, the set gives back what the pin lowered - the launch
+switches their launch values, the two port guards no switch carries (the hop
+landing guard, the off-axis battle entry) the engine default
+(`retail_released_returns_every_switch_it_lowered`). The window logs
 `WorldToggles::retail_deviations` once the launch has landed, and under
 `--retail` the list is empty. It is what the retail-compare image child
 runs under, so a new enhancement that is added to `LaunchFidelity::retail`
@@ -481,7 +488,7 @@ options is safe by default. A headless comparison against retail calls
 | Battle tuning: `World::toggles.enemy_stat_permille`, `enemy_attack_permille`, `spirit_ap`, `damage_ap`, `seru_catch_pct` (`--enemy-stat-scale`, `--enemy-attack-count`, `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`; the launcher's Battle tuning group; the play page's Battle tuning panel) | retail (`1x`, `1x`, `32`, `100`, each Seru's own), held there by `pin_retail` | Each is one scale at its reader with the patcher's arithmetic for the same flag ([gameplay tweaks](gameplay-tweaks.md#battle-tuning)). |
 | `OptionsState::retail_static_window` -> `StaticObjectWindow::retail_windowing` | **on** | Retail's windowed static-object list (`FUN_801D7B50`): a `.MAP` placement the sub-area window sweep owns draws only while the camera's latched region box holds it. On because it is retail, and because the props it leaves out are other rooms' scenery. Off draws every placement for the whole map ([field-locomotion](field-locomotion.md)). |
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-scene/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
-| `Renderer::set_psx_mode` + `set_native_resolution` (`--psx-render` / `LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation at the display's own 320x240, magnified nearest-neighbour - see below. |
+| `Renderer::set_psx_mode` + `set_native_resolution` (`--psx-render` / `LEGAIA_PSX_RENDER=1`; the window's `F12` *PlayStation pixel look* row; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation at the display's own 320x240, magnified nearest-neighbour - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
 | `World::toggles.battle_entry_off_axis` | **on** (off under `pin_retail` / `--retail`) | A fight's battle camera opens on the field camera's azimuth, moved out of the window where the two seat rows overlap on screen, where retail's battle init zeroes the yaw and opens every fight down the seat axis ([battle-stage-camera](battle-stage-camera.md#idle-orbit-and-resting-yaw)). Framing only. |
 | `CameraDistance` (`T`) / debug orbit camera (`F3`) | `Far` / off | Framing only; never feeds the simulation. Both hosts carry both knobs: the default camera on each is the engine's ([`camera_view`](../../crates/engine-world-views/src/camera_view.rs)) - the retail zone-driven follow camera, whose pitch / yaw / `H` come from the scene's MAN section-3 camera-region record through the retail composer and ease ([`camera_zone`](../../crates/engine-field/src/camera_zone.rs), [encounter.md](../formats/encounter.md#man-section-3-the-camera-region-table)) - and `F3` swaps in that host's own wide vantage. |

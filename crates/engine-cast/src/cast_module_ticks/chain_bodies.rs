@@ -560,8 +560,10 @@ pub fn party_rate_sweep(entry: u32, body: Option<u32>, phase: u8) -> Option<u8> 
 /// with its own reaction. Arm 8 waits for the row to settle and stores
 /// `0xFF`; `0xFF` only clears the busy register.
 ///
-/// Not ported: the packet and camera arms and arm 4's tick-counter hold.
-/// Countdowns: `capture_countdown::HYPER_CRUSH`; arm 8's settle:
+/// The camera arms, the records and arm 4's six-pass hold are
+/// `cast_module_camera::hyper_crush_camera`. Not ported: the packet arms,
+/// the ribbons and the ambient stores. Countdowns:
+/// `capture_countdown::HYPER_CRUSH`; arm 8's settle:
 /// [`ChainSettle::PartyRow`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0936; phase chain + caster staging; packet arms unported)
@@ -598,8 +600,10 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// and the victim settles the arm stores `0xFF`; `0xFF` clears the busy
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
-/// Not ported: the packet and camera arms and the
-/// four-hit split (the fold lands the cast's outcome as one). Countdowns:
+/// The camera arms, the seat hides and the records are
+/// `cast_module_camera::hyper_lightning_camera`. Not ported: the packet arms,
+/// arm 7's per-hit shots and the four-hit split (the fold lands the cast's
+/// outcome as one). Countdowns:
 /// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
 /// PORT: FUN_801F69D8 (PROT 0937; phase chain + caster staging; packet arms unported)
@@ -767,9 +771,11 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
 ///
 /// Rates left out under the module's rate rule: the caster ends at `2`
 /// (`+0x21D = 4` at `0x801F6B50`, `2` at `0x801F6DEC`) with no restore in the
-/// body. Not ported: the packet arms, the party-row moves and presentation
-/// stores and the monster-AI block bytes `+0x84..+0x86`. Countdowns:
-/// `capture_countdown::POWER_UP_AA`.
+/// body. The camera arms, the vortex's position stores and the per-arm records
+/// are `cast_module_camera::dark_typhoon_camera` and its spawn tables, the
+/// party-row moves `World::dark_typhoon_party_swirl`. Not ported: the packet
+/// arms, the colour stores into the arm-3 records and the monster-AI block
+/// bytes `+0x84..+0x86`. Countdowns: `capture_countdown::POWER_UP_AA`.
 ///
 /// PORT: FUN_801F69F4 (PROT 0942; the `0xAA` arm's phase chain + caster staging; packet arms unported)
 pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
@@ -884,8 +890,10 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// fold has landed the hit as retail reads it. It cannot see the record's
 /// two immunity bits.
 ///
-/// Not ported: the packet arms, the per-character effect pointer
-/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
+/// The camera arms, the seat hides and the records are
+/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms,
+/// the per-character effect pointer (`0x800774AC`) and
+/// `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
 /// `capture_countdown::PARALYZING_WAVE`; arm 3's settle:
 /// [`ChainSettle::Victim`].
 ///

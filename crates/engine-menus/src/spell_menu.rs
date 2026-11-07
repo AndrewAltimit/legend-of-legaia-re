@@ -750,6 +750,21 @@ impl SpellMenuSession {
                         ..Default::default()
                     };
                     let outcome = legaia_engine_battle::spells::cast_spell(def, target_slot, &snap);
+                    // Retail asks the validator about the picked member before
+                    // it charges anything (`jal 0x8003fb10` at `0x801D96C0`)
+                    // and buzzes `0x23` on a refusal (`0x801D96E0`): a heal on
+                    // a member already at full HP spends no MP.
+                    if let legaia_engine_battle::spells::SpellOutcome::Failed { reason } = outcome {
+                        use legaia_engine_battle::spells::SpellFailReason as F;
+                        events.push(SpellMenuEvent::InvalidConfirm {
+                            reason: match reason {
+                                F::NotEnoughMp => InvalidReason::NotEnoughMp,
+                                F::DeadTarget => InvalidReason::DeadTarget,
+                                _ => InvalidReason::InvalidTarget,
+                            },
+                        });
+                        return events;
+                    }
                     let resolved = SpellMenuOutcome::Cast {
                         caster_slot: c.slot,
                         spell_id,
