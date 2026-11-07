@@ -237,11 +237,18 @@ in the driver): `cam.csv`'s pitch, yaw and eye with `body.csv`'s focus. This is 
 seat of the harness and moves no game state. Without it `0x28` and `0x29` score
 wherever the child's camera happened to stand; with it their framing tracks retail's to
 a couple of units, and the opening's error is the frame's own. A `--physical` film opens
-on the state's own instant, mid-glide wherever the state sat, so it takes the recording's
-first row instead and seats it on the gate's tick: its drive plays the round through the
-cast's own `0x28` first, which would take the seat there. On
-`battle_map01_lippian_kiss_of_death_mid_cast` the first row stands at TR z `3404`, where the
-child's glide stood at `4204`.
+on the state's own instant, mid-glide wherever the state sat, so it seats on the gate's tick
+the camera the state's own RAM holds, as the retail-compare seed read it (`rc/report.json`'s
+camera detail, `state_camera_pose`): its drive plays the round through the cast's own `0x28`
+first, which would take the seat there. The recording's first row is not that instant: the
+probe writes it once the first vsync has run, and on a capture-band state that vsync can
+hold a module's pass. `battle_map02_lip_kid_kiss_of_death_mid_cast` sits in `0x70` ahead of
+PROT 0955's arm 0 at TR z `4729`; the first row stands at `3943`, one step-`3` pass into arm
+0's twelve-frame shot (increment `262`). Seated on that row, the engine's arm 0 built its
+shot again from `3943`, on an increment of `197`. Seated on the state, it builds retail's
+`262`. The state seat lifts the `battle_map01_lippian_kiss_of_death_mid_cast` film from
+`.885` to `.905` (arm 1's pull-in `.689` to `.762`) and the Lip Kid film's arm 0 from `.677`
+to `.716`; a recording older than the report falls back on the first row.
 
 **The ground carries the facing.** An earlier actor of retail's round leaves its seat
 turned, and the range law measures a target by its body pair, the pose centroid turned by

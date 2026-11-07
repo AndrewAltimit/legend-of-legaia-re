@@ -3140,6 +3140,16 @@ HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
 Retail runs the cast's arms 1 to 4 at frame step `4` (the lips and the burst records fill the frame) and arm 5, the victim alone, at `2`; the engine takes those steps from the capture band's table (`cast_module_frame_step::CAPTURE_ARM_STEPS`). With the roll held on retail's draw (`--rand-at 0x70:4`) the film reads `.859` on the ordinary step and `.886` on these (module phase 1 `.692` to `.826`, phase 2 under the pull-in `.649` to `.689`). Arm 0's table and countdown at the film's gate are the replay's, which is what keeps arm 1 a pass long. Grade `capture`.
 
+The roll decides the cast's sound as well as its outcome. Only the hit leg cues: a
+`--physical` film of `battle_map02_lip_kid_kiss_of_death_mid_cast` records no cue on
+retail's side, where the miss left every HP as it was, and the engine's own stream rolled a
+hit (`9999` to `9998` on the victim) and played three (`0x5C`, then `0x17` twice, from arm 5's
+first pass). Held on retail's word (`--rand-at 0x70:4`: the arm-4 draw reads `7791`, odd,
+the miss) the engine plays none, and arm 5 reads `.809` to `.914`, the Done tail `.804` to
+`.902`. The `battle_map01_lippian_kiss_of_death_mid_cast` film is the hit: five cues on each
+side, matched. The difference was the replay's `rand()` stream, a seat of the harness, not
+the cast. Grade `capture`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn

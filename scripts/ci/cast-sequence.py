@@ -31,6 +31,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -213,6 +214,33 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def state_camera_pose(out: Path) -> str | None:
+    """The state's own live camera, as the retail-compare seed read it from
+    the save's RAM (`rc/report.json`'s camera detail): pitch, yaw, eye and
+    focus. A `--physical` film's gate tick is the state's instant, so this is
+    the pose the engine stands on there. The recording's first row is not:
+    the probe writes it after the first vsync has run, which on a capture-band
+    state can be the pass that builds a module's shot (Lip Kid's Kiss of Death:
+    the state holds TR z `4729` ahead of arm 0, the first row `3943` one step
+    into arm 0's twelve-frame shot), and seated on the gate the engine built
+    that shot again from the later pose, on a smaller increment and a pass
+    longer."""
+    try:
+        with open(out / "rc" / "report.json") as f:
+            states = json.load(f)["states"]
+    except (OSError, ValueError, KeyError):
+        return None
+    detail = next((s.get("detail", {}).get("camera", "") for s in states), "")
+    m = re.match(
+        r"retail pitch/yaw/H=(-?\d+)/(-?\d+)/\d+ eye=\[(-?\d+), (-?\d+), (-?\d+)\] "
+        r"focus=\[(-?\d+), (-?\d+)\]", detail)
+    if not m:
+        return None
+    pitch, yaw, ex, ey, ez, fx, fz = (int(v) for v in m.groups())
+    pitch = pitch - 4096 if pitch >= 2048 else pitch
+    return ",".join(str(v) for v in (pitch, yaw, ex, ey, ez, fx, 0, fz))
+
+
 def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
     """The camera pose on retail's cast begin (`0x28`, or a heal's `0x3C`), as
     `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`: `cam.csv`'s pitch, yaw and eye with
@@ -222,6 +250,8 @@ def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
     (`first_row`) opens on the state's own instant, mid-glide wherever the
     state sat, so it takes the recording's first row; the child seats it on
     the gate's tick."""
+    if first_row and (pose := state_camera_pose(out)):
+        return pose
     begin = (0x28, 0x3C)
     keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
