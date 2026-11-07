@@ -34,33 +34,33 @@ const ACTOR_STRIDE: u32 = 0x400;
 const MONSTER: u32 = 0x8015_0000;
 
 #[derive(Debug, Clone, Default)]
-struct Seat {
-    hp: u16,
-    max_hp: u16,
-    int: u16,
-    atk: u16,
-    udf: u16,
-    ldf: u16,
-    status: u16,
-    spirit: u16,
-    guarding: bool,
+pub(crate) struct Seat {
+    pub(crate) hp: u16,
+    pub(crate) max_hp: u16,
+    pub(crate) int: u16,
+    pub(crate) atk: u16,
+    pub(crate) udf: u16,
+    pub(crate) ldf: u16,
+    pub(crate) status: u16,
+    pub(crate) spirit: u16,
+    pub(crate) guarding: bool,
 }
 
 #[derive(Debug, Clone)]
-struct Cast {
-    seats: [Seat; 8],
-    attacker: u8,
-    target: u8,
-    ability: [[u32; 2]; 3],
-    elements: [u8; 5],
-    mystic: bool,
-    seed: u32,
+pub(crate) struct Cast {
+    pub(crate) seats: [Seat; 8],
+    pub(crate) attacker: u8,
+    pub(crate) target: u8,
+    pub(crate) ability: [[u32; 2]; 3],
+    pub(crate) elements: [u8; 5],
+    pub(crate) mystic: bool,
+    pub(crate) seed: u32,
     // The summon branch.
-    caster: u8,
-    spell: u8,
-    level: u8,
-    group: bool,
-    special: bool,
+    pub(crate) caster: u8,
+    pub(crate) spell: u8,
+    pub(crate) level: u8,
+    pub(crate) group: bool,
+    pub(crate) special: bool,
 }
 
 fn stat(rng: &mut Rng, top: u32) -> u16 {
@@ -72,7 +72,7 @@ fn stat(rng: &mut Rng, top: u32) -> u16 {
     }
 }
 
-fn gen_cast(rng: &mut Rng) -> Cast {
+pub(crate) fn gen_cast(rng: &mut Rng) -> Cast {
     let top = [60, 200, 600, 2000, 9999][rng.below(5) as usize];
     let mut seats: [Seat; 8] = Default::default();
     for s in &mut seats {
@@ -123,11 +123,11 @@ fn gen_cast(rng: &mut Rng) -> Cast {
     }
 }
 
-fn actor(slot: u8) -> u32 {
+pub(crate) fn actor(slot: u8) -> u32 {
     ACTOR + u32::from(slot) * ACTOR_STRIDE
 }
 
-fn seed_retail(cpu: &mut Cpu, c: &Cast) {
+pub(crate) fn seed_retail(cpu: &mut Cpu, c: &Cast) {
     cpu.mem.wr32(CTX_PTR, CTX);
     for b in 0..0x900 {
         cpu.mem.wr8(CTX + b, 0);
@@ -184,7 +184,7 @@ fn seed_retail(cpu: &mut Cpu, c: &Cast) {
     }
 }
 
-fn seed_port(w: &mut World, c: &Cast) {
+pub(crate) fn seed_port(w: &mut World, c: &Cast) {
     let mut party = Party::zeroed(3);
     for m in 0..3 {
         let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
@@ -242,7 +242,7 @@ struct Outcome {
 }
 
 /// The CPU and a World with the same disc tables, sharing nothing else.
-fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, World)> {
+pub(crate) fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, World)> {
     let (mut cpu, disc) = (scus_cpu()?, disc()?);
     let overlay = disc.read_entry(898).expect("PROT 0898");
     cpu.mem.load(OVERLAY_BASE, &overlay);

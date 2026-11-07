@@ -256,6 +256,10 @@ pub struct CastFxState {
     pub module_ozma_word: i32,
     /// PROT 0934's hit threshold `0x801FA408` on arm `0x18`.
     pub module_ozma_ladder: i32,
+    /// PROT 0934's spray offsets for this pass, drawn at the arm's head
+    /// (`rand() % 0x101 - 0x80`, x then y for each of its three records) and
+    /// stored last first, so the ladder's rolls draw after them.
+    pub module_ozma_spray: Vec<i16>,
     /// PROT 0915's spin word `0x801F8150`.
     pub module_mushura_spin: i32,
     /// The top of PROT 0919's clip row, `0x8008401E`.
@@ -550,6 +554,7 @@ impl CastFxState {
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
             module_ozma_ladder: 0,
+            module_ozma_spray: Vec::new(),
             module_mushura_spin: 0,
             module_spoon_clip: 0,
             module_mushura_target: 0,

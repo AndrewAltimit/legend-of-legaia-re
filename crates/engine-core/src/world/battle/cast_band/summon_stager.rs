@@ -79,6 +79,27 @@ impl World {
         self.emit_cast_module_voice(spell_id);
     }
 
+    /// PROT 0934's spray arms (`0x15..=0x18`) draw their three records'
+    /// points at the arm's head, every pass (`0x801F8B74..0x801F8CD4` on arm
+    /// `0x18`), before anything else the arm rolls: arm `0x18`'s hit ladder
+    /// draws after them. The band seats the records after the module's tick,
+    /// so the draws are taken here, ahead of the tick, and the seat consumes
+    /// them.
+    fn draw_ozma_spray(&mut self, spell_id: u8, arm: u8) {
+        self.casting.module_ozma_spray.clear();
+        if self.cast_module_for(spell_id) != Some(934)
+            || !(0x15..=0x18).contains(&arm)
+            || self.casting.module_pass_repeat
+        {
+            return;
+        }
+        let mut drawn: Vec<i16> = (0..6)
+            .map(|_| (self.next_rand() % 0x101) as i16 - 0x80)
+            .collect();
+        drawn.reverse();
+        self.casting.module_ozma_spray = drawn;
+    }
+
     /// One stager tick - the engine body behind
     /// `BattleActionHost::summon_stager_tick`. Returns `true` while the
     /// choreography is still running (retail: the stager's non-zero return
@@ -120,6 +141,7 @@ impl World {
         self.casting.module_cam.creature_arrived = st.walked;
         self.feed_module_creature(st.caster);
         let placed_before = self.casting.module_cam.creature.is_some();
+        self.draw_ozma_spray(st.spell_id, module_arm);
         let run = self.run_cast_module_code(st.spell_id, module_arm);
         // PROT 0920's rain routine, which the draw tick calls after the
         // module's pass while the module's budget word is set.

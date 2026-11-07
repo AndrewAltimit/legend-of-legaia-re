@@ -521,3 +521,49 @@ fn ozma_walks_its_hit_threshold_down_arm_0x18() {
     }
     assert_eq!(seen, [0x60, 0x40, 0x20, 0]);
 }
+
+/// Each of PROT 0934's ladder rolls is a whole `FUN_801DD0AC(0x10, 7, seat)`,
+/// and that kernel runs the finisher on every roll (`0x801DD478`): the ladder
+/// trains Ozma before the fold does and fills the victim's spirit gauge, and
+/// the hit it lands is the quartered roll plus `0x40 + rand() % 0x40`.
+#[test]
+fn ozmas_ladder_rolls_train_the_spell() {
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    roster_with_spell(&mut world, OZMA, 1);
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 9000;
+    world.actors[1].battle.max_hp = 9000;
+    world.actors[0].battle.active_target = 1;
+    for i in 2..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    let mut body = legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Ozma", 900, 10);
+    body.intel = 400;
+    world.tables.summon_creatures.insert(OZMA, body);
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let mut hits = 0;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let before = world.actors[1].battle.hp;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        if phase == 0x18 && world.actors[1].battle.hp != before {
+            hits += 1;
+            assert!(before - world.actors[1].battle.hp >= 0x40);
+        }
+        if !run.busy || world.casting.module_phase > 0x18 {
+            break;
+        }
+    }
+    assert_eq!(hits, 3, "three ladder hits ahead of the fold");
+    assert!(
+        world.casting.module_hit_xp > 0,
+        "the ladder's rolls ran the finisher's XP tail"
+    );
+}

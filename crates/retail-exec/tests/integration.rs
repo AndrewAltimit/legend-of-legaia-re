@@ -49,6 +49,7 @@ mod monster_pick;
 mod motion_vm;
 mod muscle_contest;
 mod nighto_roll;
+mod ozma_ladder;
 mod passive_sweep;
 mod puera_crystals;
 mod queue_head;

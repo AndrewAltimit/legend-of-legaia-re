@@ -525,8 +525,14 @@ impl World {
                     SpawnRecord::Module(0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
                 )
             {
-                pos[0] = (self.next_rand() % 0x101) as i16 - 0x80;
-                pos[1] = (self.next_rand() % 0x101) as i16 - 0x80;
+                // Drawn at the arm's head when the band pre-drew them
+                // (`World::draw_ozma_spray`).
+                for p in &mut pos[..2] {
+                    *p = match self.casting.module_ozma_spray.pop() {
+                        Some(v) => v,
+                        None => (self.next_rand() % 0x101) as i16 - 0x80,
+                    };
+                }
             }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {
