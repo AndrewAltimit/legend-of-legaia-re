@@ -628,6 +628,19 @@ impl World {
             }
             if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
                 self.casting.module_hit_arm = Some(hit_arm);
+                // PROT 0945's Water Column draws its Venom ahead of the hit:
+                // `rand() & 7 == 0` ORs bit `1` into the victim's `+0x16E`
+                // (`0x801F7460..0x801F7480`), then the arm calls
+                // `FUN_801DD4B0(0x30)`, so the damage rolls one draw later.
+                if entry == 945
+                    && body == Some(ticks::WATER_COLUMN_TICK)
+                    && self.next_rand() & 7 == 0
+                {
+                    self.battle.status_effects.apply(
+                        victim_slot,
+                        legaia_engine_battle_vm::status_effects::StatusKind::Venom,
+                    );
+                }
                 self.fold_pending_cast();
                 // PROT 0951 `0x36`'s strike stores the victim's rate `2`
                 // (`li v1,2; sb v1,0x21d(s1)` at `0x801F7494`), and the
