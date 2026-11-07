@@ -3499,6 +3499,16 @@ also lock a voice the drive model misplaces onto a louder stretch (Zenoir's whol
 `+2.4` vsyncs and scores `0.45`), so both reaches are mixed and the one that scores better is kept:
 one alignment parameter, chosen on the score, and printed with the reach it came from.
 
+<a id="the-duck-names-the-states-tick"></a>
+**The duck names the state's tick.** A state taken while the summon duck ramps carries its own
+instant on the engine's clock: the applied level `DAT_8007B6EC` steps one unit a vsync, and the
+engine's recording writes the level it applied each tick (`<cast>.duck`). The tick where the
+engine's ramp passes the state's level is the state's instant, and the fit takes a third candidate,
+one vsync either side of it (`pcm_retail::duck_anchor_tick`; a level the ramp rests on or passes
+twice names none). `zenoir_summon_mid_cast` stands at `195`, which the engine passes on tick `5`: its
+cast fits `5.5` vsyncs from the gate, past any frame step, and reads `0.836` to `0.998`. Its gate is a
+black frame, which holds still for many vsyncs, so the image corpus cannot place it closer.
+
 <a id="the-monaural-states"></a>
 **Five summon states were saved in Monaural.** `theeder`, `zenoir`, `nighto`, `orb` and
 `swordie_summon_mid_cast` carry the options screen's Sound word `0x800846BC = 1` and libsnd's mono
@@ -3527,7 +3537,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `cort_mystic_shield_mid_cast` | `0.995` | `+0.00` dB | `-1070` | the cast fits `1.45` vsyncs before its gate ([a frame step](#the-cast-offset-reaches-a-frame-step)) |
 | `cort_guilty_cross_mid_cast` | `0.981` | `-0.01` dB | `-1392` | the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
 | `theeder_summon_mid_cast` | `0.712` | `-0.43` dB | `-1100` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)) |
-| `zenoir_summon_mid_cast` | `0.836` | `+1.43` dB | `-288` | the voice within `0.08` s of retail's; [Monaural](#the-monaural-states) |
+| `zenoir_summon_mid_cast` | `0.998` | `+1.38` dB | `-4031` | the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); the level is seconds `13..14` ([open](../reference/open-rev-eng-threads.md#what-sounds-at-the-end-of-zenoirs-cast)) |
 | `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |

@@ -485,14 +485,38 @@ first passes after its commit against retail's (the caster's `+0x68` cursor besi
 
 `theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
 with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
-to a frame step. What is left is the score, not the cast: fitted window by window as `a * track +
-b * cast`, `b` is `1.0` wherever the cast sounds (the flash cue `0x63` at `0.55` s matches the
-recording's residual band for band above `400` Hz) while `a` holds at `0.5..0.8` everywhere, and the
-residual keeps the score's whole low end (`100..400` Hz, `~25` dB over the engine's cast there). The
-track alone over the first four seconds reads `0.62..0.64` on every pass. The voices the state holds
-pair with the engine's at its stand point, pitch, ADSR and volume. Next: the track's stems
-(`pcm-retail --stems`, `audio-note-fit.py`) on this state's first four seconds, against the same
-track (`2013`) on a stereo state, to name the note or the voice the low end misses.
+to a frame step. What is left is the score's held notes, not its keying and not its sound:
+
+- The score keys alike from its top: `seq-differential` on track `2013` reads `3354` of `3354`
+  key-ons with `key 0`.
+- Band by band (30 Hz to 22 kHz, octaves) the track render's level is the recording's within `1` dB
+  over the first four seconds, so no part of the spectrum is missing.
+- Split note by note (`audio-note-fit.py`), every note keyed after the state fits at offset `0`, and
+  the gain of each falls from `1.0` to `0.55` from `2.1` to `2.9` s - the duck's `161 / 215` through
+  the square taper. Two notes held from before the state, on tone `0x8008`, are what the whole-mix
+  correlation loses: re-phasing those two alone lifts the first four seconds from `0.61` to `0.88`.
+- At the state's own instant the port's voice for one of them (pitch `0x3AB`) stands six ADPCM blocks
+  past the state's - one vsync at its pitch, `91` vsyncs after its key-on - while two others on the
+  same tone keyed `151` and `69` vsyncs back stand where retail's do.
+
+So retail keyed one note of that score a vsync later than a run from the top does. Standing the held
+notes on the state's SPU instead (decoder, pitch counter, envelope, one vsync short of the match for
+the port's KON lead) moved the cast row to `0.79` but cost the clean track rows a little, and it was
+not kept. What closes it: the frame the game ran around that key-on - a state or a PCSX-Redux
+key-on watch (`autorun_kon_cycle_watch.lua`) on the battle that leads into this cast, to see whether
+the calc skipped or doubled a vsync there.
+
+### What sounds at the end of Zenoir's cast?
+
+*Status:* open (measured)
+
+With its cast offset anchored on the duck ([the duck names the state's tick](../subsystems/audio.md#the-duck-names-the-states-tick)),
+`zenoir_summon_mid_cast` reads `0.998`, and every second from `1` to `12` reads `0.99` or better at
+`0.00` dB. Seconds `13` and `14` read `0.25` and `0.33`, the recording `4..5` dB over the engine's
+cast with content the engine does not have, in the module's phase `0xC` (the kills). The engine
+sounds `0x19` twice and `0xDE` once there, all on seat `3`; the formation is three of monster `0xA1`.
+What closes it: retail's cue ring (`DAT_8007B6D8`) across that phase - a PCSX-Redux run of the
+state with the ring watched - against the engine's `sfx.csv` (`LEGAIA_DIAG_CAST_SEQ`).
 
 ## Title / boot / overlays
 
