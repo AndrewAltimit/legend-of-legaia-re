@@ -1,5 +1,5 @@
 //! PROT 0956's Water Hazard sweep (`FUN_801F7298`, action `0x71`, arm 2) off
-//! the disc against `water_hazard_tick` on its low leg: each hit seat's
+//! the disc against `water_hazard_tick` on both legs: each hit seat's
 //! damage wrapper (`FUN_801DD4B0`, answered alike on both sides with two
 //! `rand()` draws) and its 1-in-8 Venom draw, seat by seat in retail's order.
 
@@ -74,7 +74,7 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
     cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C + 0x800);
     cpu.mem.wr32(CTX_PTR, CTX);
     let mut rng = Rng(0x5741_5452);
-    let (mut venom, mut hits, mut skipped) = (0, 0, 0);
+    let (mut venom, mut hits, mut skipped, mut monster_leg) = (0, 0, 0, 0);
     for round in 0..1500 {
         cpu.mem.load(MODULE_BASE, &module);
         let party = 1 + rng.below(3) as u8;
@@ -102,15 +102,17 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
                 };
             }
         }
-        let code = if rng.below(2) == 0 {
-            8u8
-        } else {
-            rng.below(u32::from(party)) as u8
+        let monsters = 1 + rng.below(4) as u8;
+        let code = match rng.below(4) {
+            0 => 8u8,
+            1 => rng.below(u32::from(party)) as u8,
+            2 => 3 + rng.below(4) as u8,
+            _ => 9,
         };
         cpu.mem
             .wr8(ACTOR + u32::from(caster_slot) * STRIDE + 0x1DD, code);
         cpu.mem.wr8(CTX, party);
-        cpu.mem.wr8(CTX + 1, 2);
+        cpu.mem.wr8(CTX + 1, monsters);
         cpu.mem.wr8(CTX + 0x13, caster_slot);
         cpu.mem.wr8(CTX + 0x279, 2);
         cpu.mem.wr32(0x801F_86A0, 0);
@@ -127,7 +129,7 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
 
         let mut ctx = CastModuleCtx {
             party_count: party,
-            monster_count: 2,
+            monster_count: monsters,
             caster_seat: caster_slot,
             phase: 2,
             ..CastModuleCtx::default()
@@ -147,7 +149,13 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
             });
         let ctx = format!("round {round} party {party} code {code}");
         assert_eq!(retail_draws, n, "draws: {ctx}");
-        for (seat, s) in seats.iter().enumerate().take(usize::from(party)) {
+        let low = code == 8 || code < 3;
+        let row = if low {
+            0..usize::from(party)
+        } else {
+            3..3 + usize::from(monsters)
+        };
+        for (seat, s) in seats.iter().enumerate().take(row.end).skip(row.start) {
             let a = ACTOR + seat as u32 * STRIDE;
             assert_eq!(cpu.mem.rd16(a + 0x14C), s.hp, "hp {seat}: {ctx}");
             assert_eq!(
@@ -158,10 +166,11 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
             venom += u32::from(s.flags & 1 != 0);
         }
         hits += port_hits.len();
-        skipped += usize::from(party) - port_hits.len();
+        skipped += row.len() - port_hits.len();
+        monster_leg += usize::from(!low);
     }
     assert!(
-        venom > 100 && hits > 1000 && skipped > 200,
-        "{venom} {hits} {skipped}"
+        venom > 100 && hits > 1000 && skipped > 200 && monster_leg > 500,
+        "{venom} {hits} {skipped} {monster_leg}"
     );
 }

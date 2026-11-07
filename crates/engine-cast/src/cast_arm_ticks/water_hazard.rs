@@ -18,8 +18,8 @@ use super::*;
 ///
 /// * the **low** leg (`caster[+0x1DD] < 3` or `== 8`) sweeps `0 .. ctx[+0]`,
 ///   staging `+0x1DA = +0x1F1` with `+0x1DC = 1`;
-/// * the **monster** leg sweeps `3 .. 3 + ctx[+1]`, **skipping the caster's
-///   own seat**, and picks the reaction clip the way the rest of the band
+/// * the **monster** leg (any other code, a single monster seat included)
+///   sweeps `3 .. 3 + ctx[+1]`, **skipping the caster's own seat**, and picks the reaction clip the way the rest of the band
 ///   does - `+0x1F1` with `+0x1DC = 1` when the seat died or `+0x1F2 != 0`,
 ///   else `+0x1EF` with `+0x1DC = 5`.
 ///
@@ -58,7 +58,14 @@ pub fn water_hazard_tick(
         2 => {
             let low_leg = caster_target_code == TARGET_CODE_LOW_ROW
                 || caster_target_code < FIRST_MONSTER_SEAT;
-            for seat in arm_target_seats(c, caster_target_code, true) {
+            // The monster leg is the whole row whatever monster seat the code
+            // names (`0x801F79D0..0x801F7B6C` runs `3 .. 3 + ctx[+1]`).
+            let row: Vec<u8> = if low_leg {
+                (0..c.party_count).collect()
+            } else {
+                (FIRST_MONSTER_SEAT..FIRST_MONSTER_SEAT.saturating_add(c.monster_count)).collect()
+            };
+            for seat in row {
                 if !low_leg && seat == caster_seat {
                     continue;
                 }

@@ -1162,10 +1162,10 @@ impl World {
                     let code = caster.target_code;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
                     // Each hit seat's damage and then its status draw, seat by
-                    // seat, as retail's sweep draws them; the rows the sweep
-                    // rolls are the low leg's `0 .. ctx[+0]`.
+                    // seat, as retail's sweep draws them, on either leg. The
+                    // kernel names retail seats; the roll takes engine slots.
                     let shape = arms::arm_damage_shape_for(956, arms::WATER_HAZARD_TICK);
-                    let low = ctx.party_count;
+                    let map = self.cast_seat_map();
                     let (step, hits) = arms::water_hazard_tick(
                         &mut ctx,
                         r_caster as u8,
@@ -1173,11 +1173,10 @@ impl World {
                         &mut caster,
                         &mut seats,
                         |seat| {
-                            if seat >= low {
-                                return (0, 1);
-                            }
-                            let damage = shape
-                                .and_then(|sh| self.capture_module_roll(sh, caster_slot, seat))
+                            let damage = map
+                                .engine(seat)
+                                .zip(shape)
+                                .and_then(|(e, sh)| self.capture_module_roll(sh, caster_slot, e))
                                 .unwrap_or(0);
                             (damage, self.next_rand())
                         },
