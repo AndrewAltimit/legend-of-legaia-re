@@ -1018,6 +1018,7 @@ mod creature_spawns;
 mod cross_beam;
 mod curse_all;
 mod dark_typhoon;
+mod hyper_crush;
 mod death_game;
 mod doomsday;
 mod earthquake;
@@ -1081,6 +1082,7 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
+pub use hyper_crush::hyper_crush_camera;
 pub use dark_typhoon::{DARK_TYPHOON_BODY, dark_typhoon_camera, dark_typhoon_ring};
 pub use death_game::{
     CARD_BACK_RECORD, CARD_RECORDS, CARD_REVEAL_RECORDS, DEATH_GAME_BODY, DEATH_GAME_PROT,
