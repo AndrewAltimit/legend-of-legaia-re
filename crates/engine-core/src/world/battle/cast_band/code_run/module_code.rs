@@ -1425,21 +1425,48 @@ impl World {
                             let finishing = ctx.phase == ticks_a::ZENOIR_FINISH_ARM
                                 && caster_slot < self.party.party_count;
                             self.casting.module_skips_fold |= caster_slot < self.party.party_count;
+                            // Arm 10's show loop: the seats within reach of
+                            // the creature, which stands on the victim's body
+                            // pair (`0x801F79E8..0x801F7A7C`), each seat's
+                            // ground pair against it.
+                            let reach: Vec<u8> = if ctx.phase == ticks_a::ZENOIR_BUMP_ARM {
+                                let creature = map
+                                    .engine(who.victim)
+                                    .and_then(|v| self.live_body_pair(usize::from(v)));
+                                (ticks::FIRST_MONSTER_SEAT..ticks_a::MONSTER_ROW_END)
+                                    .filter(|&r| {
+                                        let ground = map.engine(r).and_then(|t| {
+                                            let a = self.actors.get(usize::from(t))?;
+                                            Some((a.move_state.world_x, a.move_state.world_z))
+                                        });
+                                        matches!((creature, ground), (Some(c), Some(g))
+                                            if ticks_a::zenoir_bump_in_reach(c, g))
+                                    })
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            };
                             let mut rolled: Vec<(u8, u32)> = Vec::new();
-                            let out = ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |r| {
-                                if !finishing {
-                                    return None;
-                                }
-                                let t = map.engine(r)?;
-                                let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
-                                let site = if r == who.victim {
-                                    ticks_a::SERU_HIT_SITES[4]
-                                } else {
-                                    ticks_a::SERU_HIT_SITES[5]
-                                };
-                                rolled.push((t, roll * site.scale_num / site.scale_den));
-                                Some(roll as i32)
-                            });
+                            let out = ticks_a::zenoir_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                |r| reach.contains(&r),
+                                |r| {
+                                    if !finishing {
+                                        return None;
+                                    }
+                                    let t = map.engine(r)?;
+                                    let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                    let site = if r == who.victim {
+                                        ticks_a::SERU_HIT_SITES[4]
+                                    } else {
+                                        ticks_a::SERU_HIT_SITES[5]
+                                    };
+                                    rolled.push((t, roll * site.scale_num / site.scale_den));
+                                    Some(roll as i32)
+                                },
+                            );
                             for (t, amount) in rolled {
                                 self.battle.hit_fx.push(
                                     legaia_engine_battle::battle_events::BattleHitFx {
