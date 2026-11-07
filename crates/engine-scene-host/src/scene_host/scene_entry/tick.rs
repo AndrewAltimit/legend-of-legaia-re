@@ -22,6 +22,7 @@ impl SceneHost {
                 if let Some((n, x, z, d)) = self.world.pending_named_scene_transition.take() {
                     HeldTransition::Named(n, x, z, d)
                 } else if let Some((dest_index, slot)) = self.world.take_world_map_transition() {
+                    self.run_portal_exit_fade(slot);
                     HeldTransition::Portal(dest_index, slot)
                 } else {
                     return false;
@@ -66,6 +67,64 @@ impl SceneHost {
             }
         }
         false
+    }
+
+    /// The exit fade of the overworld entrance at entity `slot`, on the
+    /// crossing frame.
+    ///
+    /// Retail spawns the entrance's record on the crossing pass and the
+    /// record runs straight through to its `0x3F` in that same pass: its flag
+    /// writes, its op-`0x34` sub-0 fade (`34 05 FF FF FF 41 00` on `map01`
+    /// `P2[0]` / `P2[5]`) and the scene-change packet. A per-vsync film of a
+    /// retail `map01` -> `town0c` crossing has the tween's actor installed at
+    /// `_DAT_8007B62C` on the vsync the player lands on the trigger tile, the
+    /// screen black 33 vsyncs later and MAIN INIT 77 vsyncs after the
+    /// crossing (`scripts/pcsx-redux/autorun_entrance_film.lua`). The entity
+    /// SM keeps only the `0x3F`, so the fade is read off the record's path
+    /// here and run as the field VM's arm would run it.
+    // REF: FUN_801DE840 (op 0x34 sub-0 arm 0x801DFCD4), FUN_8003BDE0
+    fn run_portal_exit_fade(&mut self, slot: u8) {
+        let Some(
+            legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
+                record,
+                object,
+                ..
+            },
+        ) = self.world.world_map.entity_configs.get(usize::from(slot))
+        else {
+            return;
+        };
+        let (record, object) = (usize::from(*record), *object);
+        let Some(man) = self.field_man_cache.clone() else {
+            return;
+        };
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
+            return;
+        };
+        let flag = |idx| self.world.system_flag_test(idx);
+        let trace = if object {
+            legaia_engine_field::man_field_scripts::flat_record_path_trace(&mf, &man, record, &flag)
+        } else {
+            legaia_engine_field::man_field_scripts::partition2_record_path_trace(
+                &mf, &man, record, &flag,
+            )
+        };
+        let Some(trace) = trace.filter(|t| {
+            matches!(
+                t.end,
+                legaia_engine_field::man_field_scripts::RecordPathEnd::SceneChange(_)
+            )
+        }) else {
+            return;
+        };
+        // The fade the `0x3F` follows. Every simple entrance record carries
+        // exactly one (`flags, B1 F8 13, 34 .., 3F`); a story record that
+        // fades and waits along the way is not stepped here, so only the
+        // exit fade is replayed rather than its waits' worth collapsed into
+        // one frame.
+        if let Some(&(op0, rgb, intensity)) = trace.fades.last() {
+            self.world.run_screen_effect_colour(op0, rgb, intensity);
+        }
     }
 
     /// One frame: tick the world, materialize any actor-spawn requests

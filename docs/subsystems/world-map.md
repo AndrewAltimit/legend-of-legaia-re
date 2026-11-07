@@ -1367,6 +1367,40 @@ fires once per visit. NPCs and record-bearing doors are talk-to and are not
 auto-engaged. This is the port's stand-in for retail's per-tile trigger
 lookup.
 
+#### The crossing frame
+
+Retail spawns the entrance's `P2` record on the pass the player lands on the
+trigger tile, and a simple entrance record (`flags, B1 F8 13, 34 05 FF FF FF
+41 00, 3F .., 26 FF FF`) runs straight to its `0x3F` in that same pass. A
+per-vsync film of a `map01` -> `town0c` crossing
+([`autorun_entrance_film.lua`](../../scripts/pcsx-redux/autorun_entrance_film.lua),
+state `overworld_into_town_man_load`, Down held throughout) reads:
+
+| Vsync after the crossing | Retail |
+|---|---|
+| `0` | Player at `z = 3198`, the first seat inside tile `24`; engaged bit `+0x10 & 0x80000` up; the colour tween's actor at `_DAT_8007B62C`; scene label already `town0c` |
+| `3` | The streaming actor seeds its countdown (`gp+0x710 = 0x46`), down `3` a pass |
+| `12` | The subtractive white wash starts to darken the frame |
+| `33` | The frame is black |
+| `~76` | The countdown goes negative and MAIN INIT runs (game mode `2`) |
+
+The player does not move again after the crossing: the parked record keeps
+the engaged bit up, so `FUN_801D01B0` refuses every frame of the held d-pad.
+
+The port follows the same timeline. The crossing tick's SM step raises the
+transition; `SceneHost::tick` parks it behind the streaming actor and runs the
+record's exit fade (the last op-`0x34` sub-0 on the record's path,
+`RecordPathTrace::fades`, through `World::run_screen_effect_colour`) on that
+tick; and `step_world_map_locomotion` refuses while
+`World::scene_change_in_flight`. On the same state and pad the engine stands
+at `z = 3198` from the crossing tick to the commit, the wash reaches full
+`57` ticks later, and the scene commits `72` ticks after the crossing (the
+hold's countdown, without the disc stream). Pin:
+`overworld_entrance_stops_the_player_and_fades_on_the_crossing`
+(`crates/engine-scene-host/tests/scene_round_trip_disc.rs`). Without the gate
+and the fade the port walked on under the parked change and cut to the town
+with no fade.
+
 #### Talk-to: the action button
 
 The overworld frame driver `FUN_801D1344` runs the field overlay's pad

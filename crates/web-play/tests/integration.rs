@@ -60,4 +60,5 @@ mod soft_reset_records_page;
 mod status_marks_page;
 mod title_backdrop_parity;
 mod view_window_crop_page;
+mod world_map_entrance_crossing_page;
 mod world_map_sublist_sfx_page;

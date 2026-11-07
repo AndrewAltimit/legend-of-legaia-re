@@ -522,6 +522,19 @@ impl World {
         if self.cutscene_timeline_active() {
             return;
         }
+        // A scene change in flight holds the player where the crossing left
+        // it. Retail's entrance record runs to its `0x3F` on the crossing
+        // pass and parks (`26 FF FF`), and the context runner raises the
+        // player's engaged bit `+0x10 & 0x80000` on every frame it steps the
+        // parked record, so `FUN_801D01B0` walks no further: a retail
+        // `map01` -> `town0c` film has the bit up and the player standing on
+        // the first seat inside the trigger tile from the crossing vsync to
+        // MAIN INIT. The port's portal carries no record context, so the
+        // parked request is the bit.
+        // REF: FUN_801D01B0 (`0x801D01F0`), FUN_80039B7C
+        if self.scene_change_in_flight() {
+            return;
+        }
         // In the top-view debug camera the d-pad scrolls the camera
         // ([`WorldMapController::tick`]); only walk the player in walk mode.
         if self
@@ -1543,6 +1556,19 @@ impl World {
             // retires the entity on the next tick.
             ctx.state = legaia_engine_field::world_map_entity::EntityState::Transitioning as u16;
         }
+    }
+
+    /// `true` while a scene change is requested or parked behind the
+    /// streaming actor: a named `0x3F`, a map-id warp, an overworld-portal
+    /// crossing not yet drained, or the hold itself.
+    pub fn scene_change_in_flight(&self) -> bool {
+        self.scene_transition_hold.is_some()
+            || self.pending_named_scene_transition.is_some()
+            || self.pending_scene_transition.is_some()
+            || self
+                .pending_field_events
+                .iter()
+                .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. }))
     }
 
     /// Remove and return the first pending

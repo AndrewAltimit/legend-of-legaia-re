@@ -244,6 +244,80 @@ fn overworld_walks_back_into_town() {
     );
 }
 
+/// The crossing itself, frame by frame: the player stops on the first seat
+/// inside the entrance tile and the entrance record's exit fade starts there,
+/// as a retail film of the same walk shows (`map01` -> `town0c`,
+/// `scripts/pcsx-redux/autorun_entrance_film.lua` on the
+/// `overworld_into_town_man_load` state: engaged bit up and the tween's actor
+/// installed on the crossing vsync, the player still at that seat until MAIN
+/// INIT). The port used to keep walking under the parked scene change and
+/// play no fade at all.
+#[test]
+fn overworld_entrance_stops_the_player_and_fades_on_the_crossing() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_world_map_scene("map01").expect("enter map01");
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    seat(&mut host, 0x60, 0x19);
+    for _ in 0..2 {
+        host.tick().expect("tick");
+    }
+    let slot = host.world.player_actor_slot.expect("player") as usize;
+    let z = |host: &SceneHost| host.world.actors[slot].move_state.world_z;
+    let tint = |host: &SceneHost| {
+        host.world
+            .screen_tint_push_args()
+            .iter()
+            .map(|&(_, _, p)| p & 0xFF)
+            .max()
+            .unwrap_or(0)
+    };
+    // Walk Down (world Z-) until the crossing parks the scene change.
+    let mut crossing = None;
+    for t in 0..120 {
+        host.world.set_pad(PadButton::Down.mask());
+        host.tick().expect("tick");
+        if host.world.scene_change_in_flight() {
+            crossing = Some(t);
+            break;
+        }
+    }
+    assert!(crossing.is_some(), "the walk reaches the entrance tile");
+    let seat_z = z(&host);
+    assert_eq!(
+        seat_z >> 7,
+        24,
+        "the crossing lands inside the entrance tile"
+    );
+    let mut last_tint = 0;
+    let mut ticks = 0;
+    loop {
+        host.world.set_pad(PadButton::Down.mask());
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            assert_eq!(name, "town0c");
+            break;
+        }
+        ticks += 1;
+        assert!(ticks < 200, "the parked scene change commits");
+        assert_eq!(
+            z(&host),
+            seat_z,
+            "the held d-pad walks no further under the parked scene change"
+        );
+        let now = tint(&host);
+        assert!(now >= last_tint, "the exit fade only deepens");
+        last_tint = now;
+    }
+    host.world.set_pad(0);
+    assert_eq!(
+        last_tint, 0xFF,
+        "the record's white subtractive wash reaches full before MAIN INIT"
+    );
+}
+
 /// `map01` -> `cave01` -> `map01`: the cave is enterable and exitable, and
 /// each leg lands on its authored seat.
 ///
