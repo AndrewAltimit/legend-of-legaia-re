@@ -4415,7 +4415,14 @@ anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
 ahead of the call (PROT 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
 sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
 creature is seated on the arm's pass rather than as it is entered, and the
-port does so for all of them. PROT 0928's arm seats its five parts on the
+port does so for all of them. So it does where a stream poll (`FUN_8003F2B8(1)`)
+gates the call on the module's CD poll arm (PROT 0913, 0914): seated on entry,
+Nova stood in the open through the drive's whole modelled wait. PROT 0913's
+arm then seats its two vortex records and builds its shot on that seat, raises
+the floor clip `+0x42` to the busy word `1` (`0x801F6D70`), and only then steps
+the creature `sin / 24`, `cos / 24` along its facing (`0x801F6DC0..0x801F6E5C`,
+a signed divide by `24` through `0x2AAAAAAB`), so the camera stays on the caster
+until arm 4's pass reframes on the stepped seat. PROT 0928's arm seats its five parts on the
 creature at height `0` and `-0x40`, then stands it at `+0x36 = 0x300`,
 under the floor inside the planet those parts draw, and holds the red word
 `+0x04 = 0x3FF` under tint state `0xFF` at blend `0x1000`

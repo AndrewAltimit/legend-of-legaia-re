@@ -16,6 +16,11 @@ pub enum SeatCoord {
     /// The victim's value plus a delta (PROT 0915 reads the caster's target
     /// seat, `caster[+0x1DD]`).
     VictimPlus(i16),
+    /// The installer's value stepped along the seat's own facing `f` by the
+    /// SCUS table entry over `div`, truncated toward zero: `sin(f) / div` on
+    /// `+0x34`, `cos(f) / div` on `+0x38` (PROT 0913's `mult` by
+    /// `0x2AAAAAAB`, `sra 2` and sign fix-up: a signed divide by `24`).
+    AlongFacing(i16),
 }
 
 /// The stores one seat arm makes on its creature.
@@ -102,6 +107,20 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             facing: None,
             rate: None,
             loop_hold: Some((8, 0x80)),
+            colour: None,
+            render_scale: None,
+            tint: None,
+        },
+        // `0x801F6DC0..0x801F6E5C`: after the arm's two vortex records and its
+        // shot, the creature steps a twenty-fourth of a unit along the
+        // caster's facing it was installed with.
+        913 => SeatArmWrite {
+            x: SeatCoord::AlongFacing(24),
+            y: Keep,
+            z: SeatCoord::AlongFacing(24),
+            facing: None,
+            rate: None,
+            loop_hold: None,
             colour: None,
             render_scale: None,
             tint: None,
@@ -228,10 +247,18 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. The recorded
 /// `creature.csv` of each cast reads the seat's node first on the arm after.
+/// PROT 0913 (`0x801F6D14`) and 0914 (`0x801F6C98`) poll the creature stream
+/// (`FUN_8003F2B8(1)`, `bne` to the busy return) right ahead of the
+/// installer, on the arm that is also the module's CD poll, so they seat as
+/// the poll lets the arm through: seated on entry, the creature stood in the
+/// open through the drive's whole modelled wait. PROT 0912's arm 2 has the
+/// same gate (`0x801F6C24`) but seats its crystal records on the creature in
+/// the same pass, which the host stages ahead of a seat owed to the pass, so
+/// it keeps the entry seat.
 /// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
 /// pass, so it seats as it is entered and the hide lands on the seat.
-pub const SEATS_ON_PASS: [u32; 14] = [
-    904, 907, 911, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
+pub const SEATS_ON_PASS: [u32; 16] = [
+    904, 907, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
