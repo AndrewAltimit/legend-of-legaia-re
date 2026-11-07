@@ -553,6 +553,7 @@ impl FieldHostImpl<'_> {
             // legs) plays its walk clip instead of gliding in the idle.
             self.world.carry_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
+            self.bind_run_clip(ctx, slot, move_id);
             self.world.seat_npc_floor_resample(slot, ctx.flags);
             return;
         }
@@ -625,8 +626,30 @@ impl FieldHostImpl<'_> {
                 }
                 self.world.carry_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
+                self.bind_run_clip(ctx, slot, move_id);
                 self.world.seat_npc_floor_resample(slot, ctx.flags);
             }
+        }
+    }
+
+    /// The `4C 51` NPC arm's clip bind, at the op: byte `+4` into `+0x5C`
+    /// with `+0x5E = -2`, then `FUN_800204F8` (`0x801E1A8C..0x801E1AB4`) -
+    /// the same binder an `A2` ExecMove reaches, so the clip's cursor (and
+    /// the end latch `+0x62 & 0x100` a record spins on) belongs to the world
+    /// from the seat on, not from the host's next cue drain. `edkorout`'s
+    /// window shot needs it: `P2[0]` seats placement 9 on move `21`
+    /// (`CC 09 51 BB 45 05 15`), clears its end latch and spins `AD 09 08`
+    /// until that clip ends - about 95 vsyncs in a retail log of the actor's
+    /// `+0x68` cursor - before it plays move `22`; with no world cursor the
+    /// spin stepped past at once and every later beat ran 95 vsyncs early.
+    /// REF: FUN_800204F8, FUN_801DE840 (`0x801E1A68..0x801E1AB4`)
+    fn bind_run_clip(&mut self, ctx: &mut FieldCtx, slot: u8, move_id: u8) {
+        let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
+        if let Some(flags) =
+            self.world
+                .bind_npc_scene_clip(slot, move_id, party_bank, ctx.local_flags, ctx.field_6a)
+        {
+            ctx.local_flags = flags;
         }
     }
 }
