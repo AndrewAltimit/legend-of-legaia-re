@@ -91,6 +91,18 @@ pub struct EnvDraw {
     /// `0x10000000` (`FUN_801F7088` at `0x801F78B8`, `FUN_8003A55C` at
     /// `0x8003A754`), so its primitives link at their farthest corner's `SZ`.
     pub far_corner_order: bool,
+    /// The record's `+0x12 & 0x20`: retail's placed-object near reject
+    /// ([`super::PLACED_NEAR_DEPTH`]) passes over this object. The restage
+    /// `FUN_80020F88` copies the record's `+0x12 & 0x3E8` into the actor's
+    /// `+0x52` (`0x80021004..0x80021010`, under `+0x10 & 0x8000`, which every
+    /// placed object carries), and the draw-kind-5 arm of `FUN_8001ADA4`
+    /// skips a near object only when `+0x52 & 0x20` is clear
+    /// (`0x8001B1CC..0x8001B1D8`). `edkorout`'s two sky shells at
+    /// `(8512, 8000)` carry it (the `+0x52` reads `0x20` in a retail film of
+    /// the credits): their origin sits beside the window shot's eye, and
+    /// rejected they left the window black where retail shows the sky.
+    // REF: FUN_80020F88, FUN_8001ADA4
+    pub near_reject_exempt: bool,
     /// The **camera-facing** bits of a terrain / decoration cell's record
     /// flags (`+0x12 & 0x380`; `0` for a placed object). The decoration pass
     /// `FUN_801F7088` tests them at `0x801F770C..0x801F779C`: set, it rebuilds

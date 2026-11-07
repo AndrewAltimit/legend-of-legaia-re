@@ -2483,7 +2483,21 @@ Ravine walk-in (`nilboa`, the Delilas intro) parks its cutscene camera inside
 an additive mist shell (placement at `(11840, 0, 13784)`); retail holds that
 actor at view depth `-423`.
 
-Both hosts ask `field_env::placed_origin_near_culled` per placed draw with
+The `+0x52 & 0x20` exemption comes from the `.MAP` object record: the
+restage `FUN_80020F88` copies the record's `+0x12 & 0x3E8` into `+0x52`
+(`0x80021004..0x80021010`) for an actor carrying `+0x10 & 0x8000`, which
+every placed object does (the copy under `+0x10 & 0x100000` masks with
+`0x380` instead and drops the bit). The port carries it as
+`EnvDraw::near_reject_exempt` (record `+0x12 & 0x20`, placed objects only),
+and both hosts pass it through `field_env::placed_draw_near_culled` (the
+native window via each placed draw's `CellKey`, the play page by the
+draw's `placeIdx`). `edkorout`'s two sky shells at `(8512, 8000)` carry it:
+in the credits' window shot their origin sits beside the eye, and a retail
+film of that shot shows the sky through the window (`+0x52 = 0x20` on both
+in its RAM) where the port, rejecting them, drew black.
+
+Both hosts ask `field_env::placed_origin_near_culled` (through
+`placed_draw_near_culled` where the draw is known) per placed draw with
 the origin's clip `w` under the frame's camera - the native placed, colour
 and posed-prop passes, and the play page's placed draws through the
 `field_placed_near_culled` export - and only from **retail's vantage**

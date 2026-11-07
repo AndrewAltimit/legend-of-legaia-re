@@ -545,7 +545,7 @@
           && typeof rt.field_placed_near_culled === 'function') {
         const m = fieldVp;
         draws = draws.filter(d => d.placeIdx === undefined
-          || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15]));
+          || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15], d.placeIdx));
       }
 
       this._stageFieldPrimOrder(rt, draws);

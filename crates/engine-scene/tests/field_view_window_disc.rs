@@ -83,6 +83,7 @@ fn crop_scene(index: &ProtIndex, name: &str) -> Option<SceneCrop> {
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
             far_corner_order: false,
+            near_reject_exempt: false,
         })
         .collect();
     // The ground cells, from each quad's lowest vertex.

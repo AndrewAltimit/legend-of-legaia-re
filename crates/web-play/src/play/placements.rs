@@ -347,15 +347,26 @@ impl LegaiaRuntime {
     /// the native play-window's placed-object pass asks per draw. It runs
     /// only from retail's vantage (`field_view_window::retail_vantage`, the
     /// predicate the native pass asks); the page skips the call under its
-    /// own `F3` camera.
-    pub fn field_placed_near_culled(&self, origin_view_depth: f32) -> bool {
-        self.scene_host.host().is_some_and(|h| {
-            legaia_engine_world_views::field_view_window::retail_vantage(
-                &h.world,
-                self.scene_host.camera(),
-                false,
-            )
-        }) && field_env::placed_origin_near_culled(origin_view_depth)
+    /// own `F3` camera. `place_idx` is the draw's index into the placement
+    /// list (the page's `placeIdx`): a record that exempts its object
+    /// (`EnvDraw::near_reject_exempt`, `edkorout`'s sky shells) is never
+    /// rejected. Without it the plain depth test runs.
+    pub fn field_placed_near_culled(&self, origin_view_depth: f32, place_idx: Option<u32>) -> bool {
+        let exempt = place_idx.is_some_and(|i| {
+            self.field
+                .as_ref()
+                .and_then(|f| f.placements.get(i as usize))
+                .is_some_and(|d| d.near_reject_exempt)
+        });
+        !exempt
+            && self.scene_host.host().is_some_and(|h| {
+                legaia_engine_world_views::field_view_window::retail_vantage(
+                    &h.world,
+                    self.scene_host.camera(),
+                    false,
+                )
+            })
+            && field_env::placed_origin_near_culled(origin_view_depth)
     }
 
     /// A stamp that changes whenever [`Self::field_placement_live`] can: the

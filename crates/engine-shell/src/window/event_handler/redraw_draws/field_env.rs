@@ -283,10 +283,16 @@ impl<'m> DrawCtx<'_, 'm> {
             tint_draw_cue((colour, blend))
         };
         let retail_vantage = app.retail_vantage();
-        let place_near_culled = |mvp: &Mat4| {
-            retail_vantage
-                && legaia_engine_scene::field_env::placed_origin_near_culled(mvp.w_axis.w)
-        };
+        // A record whose `+0x12` carries `0x20` is exempt
+        // (`EnvDraw::near_reject_exempt`, actor `+0x52 & 0x20`): the
+        // posed-prop lists carry no key and stay subject to it.
+        let place_near_culled_key =
+            |mvp: &Mat4, key: Option<&legaia_engine_scene::field_view_window::CellKey>| {
+                retail_vantage
+                    && !key.is_some_and(|k| k.near_reject_exempt)
+                    && legaia_engine_scene::field_env::placed_origin_near_culled(mvp.w_axis.w)
+            };
+        let place_near_culled = |mvp: &Mat4| place_near_culled_key(mvp, None);
         if layer_on("place") {
             // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
             // placement-draw slots [a, b).
@@ -346,7 +352,7 @@ impl<'m> DrawCtx<'_, 'm> {
                             .or_else(|| store.meshes.get(*mesh_idx))
                     });
                 let mvp = cam * *model;
-                if place_near_culled(&mvp) {
+                if place_near_culled_key(&mvp, app.field_placement_cell_keys.get(di)) {
                     continue;
                 }
                 if let Some(mesh) = mesh {
@@ -447,7 +453,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 let mvp = cam * *model;
-                if place_near_culled(&mvp) {
+                if place_near_culled_key(&mvp, app.field_placement_color_cell_keys.get(di)) {
                     continue;
                 }
                 let color_idx = object_color_swaps

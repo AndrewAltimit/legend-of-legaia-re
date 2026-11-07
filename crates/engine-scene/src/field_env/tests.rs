@@ -19,6 +19,7 @@ fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
         cell: (0, 0),
         cull_radius: 0,
         far_corner_order: false,
+        near_reject_exempt: false,
         view_skip: 0,
     }
 }
@@ -152,6 +153,7 @@ fn draws_resolve_pack_index_and_floor_y() {
             cell: (2, 3),
             cull_radius: 0,
             far_corner_order: false,
+            near_reject_exempt: false,
             view_skip: 0,
         }]
     );
@@ -426,4 +428,16 @@ fn a_scaled_tick_is_the_frame_steps_worth_of_unit_ticks() {
         }
         assert_eq!(a.cursor, b.cursor);
     }
+}
+
+/// A record whose `+0x12` carries `0x20` is never near-rejected
+/// (`FUN_8001ADA4`, `0x8001B1CC..0x8001B1D8`); any other placed draw is.
+#[test]
+fn a_flagged_placed_record_is_exempt_from_the_near_reject() {
+    let mut d = tilted_draw(0, 0, 0);
+    assert!(placed_draw_near_culled(&d, 0.0));
+    assert!(!placed_draw_near_culled(&d, 2000.0));
+    d.near_reject_exempt = true;
+    assert!(!placed_draw_near_culled(&d, 0.0));
+    assert!(!placed_draw_near_culled(&d, -423.0));
 }

@@ -54,13 +54,13 @@ pub struct ScreenFxFrame {
 /// See `ghidra/scripts/funcs/overlay_dance_801f8a34.txt` (`+4`),
 /// `..._801f7a9c.txt` (`+0xc`), `..._801f849c.txt` (`+0x10`),
 /// `..._801f811c.txt` (`+0x1c`).
-pub const OT_LETTERBOX: u32 = 0x04 / 4;
+pub const OT_LETTERBOX: u32 = 1; // `+0x4`
 /// See [`OT_LETTERBOX`].
-pub const OT_SPRITE: u32 = 0x0C / 4;
+pub const OT_SPRITE: u32 = 3; // `+0xc`
 /// See [`OT_LETTERBOX`].
-pub const OT_PANEL: u32 = 0x10 / 4;
+pub const OT_PANEL: u32 = 4; // `+0x10`
 /// See [`OT_LETTERBOX`].
-pub const OT_MASK: u32 = 0x1C / 4;
+pub const OT_MASK: u32 = 7; // `+0x1c`
 
 /// One renderer-ready screen-space primitive of the widget family - the shape
 /// every host draws, in the retail GP0 vertex order

@@ -105,6 +105,7 @@ pub fn resolve_placed_env_draws(
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
             far_corner_order: p.flags & 0x800 != 0,
+            near_reject_exempt: p.floor_corner_nibbles.is_none() && p.flags & 0x20 != 0,
             view_skip: if p.floor_corner_nibbles.is_some() {
                 p.flags & DECORATION_VIEW_SKIP_MASK
             } else {
@@ -444,6 +445,14 @@ pub const PLACED_NEAR_DEPTH: f32 = 160.0;
 /// REF: FUN_8001ADA4
 pub fn placed_origin_near_culled(origin_view_depth: f32) -> bool {
     origin_view_depth < PLACED_NEAR_DEPTH
+}
+
+/// [`placed_origin_near_culled`] for one placed draw: never for a draw whose
+/// record exempts it ([`EnvDraw::near_reject_exempt`], actor `+0x52 & 0x20`).
+///
+/// REF: FUN_8001ADA4
+pub fn placed_draw_near_culled(draw: &EnvDraw, origin_view_depth: f32) -> bool {
+    !draw.near_reject_exempt && placed_origin_near_culled(origin_view_depth)
 }
 
 /// Which of retail's two placed-object sweeps owns a placed draw: `Some(key)`
