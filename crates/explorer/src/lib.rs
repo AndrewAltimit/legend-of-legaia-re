@@ -153,10 +153,10 @@ pub struct Explorer {
 impl Explorer {
     /// A fresh state with settings from `settings_path` (or defaults).
     pub fn new(settings_path: Option<PathBuf>) -> Self {
-        let settings = settings_path
-            .as_deref()
-            .map(Settings::load)
-            .unwrap_or_default();
+        let opened = settings_path.as_deref().map(Settings::open);
+        let notice = opened.as_ref().and_then(|o| o.notice.clone());
+        let settings_path = settings_path.filter(|_| opened.as_ref().is_none_or(|o| o.keep_file));
+        let settings = opened.map(|o| o.settings).unwrap_or_default();
         Self {
             settings,
             settings_path,
@@ -168,7 +168,7 @@ impl Explorer {
             analysis: None,
             analyzing: None,
             settings_save_failed: false,
-            error: None,
+            error: notice,
             status: None,
         }
     }

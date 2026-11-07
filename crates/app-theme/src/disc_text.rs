@@ -24,6 +24,10 @@ pub const CUT_SHORT: &str = "This disc image is incomplete: the file ends too ea
 pub const INCOMPLETE_FIX: &str = "It was probably cut short while copying or downloading. \
      Copy or dump it again, then choose the whole .bin.";
 
+/// What to do about an image whose own files are damaged or missing.
+pub const DAMAGED_FIX: &str = "The image is damaged or is not a whole dump of the disc. \
+     Dump the disc again (raw .bin with its .cue), then choose the new .bin.";
+
 /// Whether `e` is a read that ran off the end of the file.
 pub fn is_short_read(e: &(dyn Error + 'static)) -> bool {
     e.downcast_ref::<io::Error>()

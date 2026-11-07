@@ -104,9 +104,17 @@ pub(crate) fn run(opened: Option<PathBuf>) -> Result<Option<Vec<OsString>>> {
     console::detach_if_double_clicked();
     // Resolved now: the launcher moves into the data directory below.
     let opened = opened.map(|p| std::path::absolute(&p).unwrap_or(p));
-    let settings_file = launcher::settings_path();
+    let mut settings_file = launcher::settings_path();
     let loaded = match settings_file.as_deref() {
-        Some(f) => LauncherSettings::load(f),
+        Some(f) => {
+            let opened = launcher::open_settings(f);
+            if !opened.keep_file {
+                // Neither readable nor movable: run on the defaults and
+                // leave the file as it is rather than write over it.
+                settings_file = None;
+            }
+            opened.settings
+        }
         None => Ok(LauncherSettings::default()),
     };
     let settings = loaded.as_ref().cloned().unwrap_or_default();
@@ -2637,7 +2645,7 @@ fn problem_status(p: &DiscProblem, offer: Option<&DiscInfo>) -> Vec<Message> {
 fn problem_headline(p: &DiscProblem) -> &'static str {
     match p {
         DiscProblem::NotSet => "Choose your Legend of Legaia (USA) disc image",
-        DiscProblem::BadSettings(_) => "The saved settings could not be read",
+        DiscProblem::BadSettings { .. } => "The saved settings could not be read",
         DiscProblem::Missing(_) => "There is no file there",
         DiscProblem::Moved(_) => "The disc used last time is no longer there",
         DiscProblem::Unreadable { .. } => "That file is not a usable disc image",
@@ -2650,7 +2658,9 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
     match p {
         DiscProblem::Missing(p) | DiscProblem::Moved(p) => Some(p),
         DiscProblem::Unreadable { path, .. } | DiscProblem::WrongDisc { path, .. } => Some(path),
-        DiscProblem::NotSet | DiscProblem::BadSettings(_) => None,
+        // The card shows where the unreadable file now is.
+        DiscProblem::BadSettings { path, kept, .. } => Some(kept.as_deref().unwrap_or(path)),
+        DiscProblem::NotSet => None,
     }
 }
 
@@ -2658,7 +2668,18 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
 fn problem_message(p: &DiscProblem) -> Vec<Message> {
     let (why, hint): (String, String) = match p {
         DiscProblem::NotSet => return Vec::new(),
-        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again.".into()),
+        // The box is small: the file's name, not its folder (the log and
+        // the terminal line carry the whole path).
+        DiscProblem::BadSettings { why, kept, .. } => (
+            sentence(why),
+            match kept {
+                Some(k) => format!(
+                    "The old file was kept as {}. Choose the disc again.",
+                    file_name_of(k)
+                ),
+                None => "That file is left as it is. Choose the disc again.".into(),
+            },
+        ),
         DiscProblem::Missing(_) | DiscProblem::Moved(_) => (
             "It may have been moved, renamed, or be on a drive that is not connected.".into(),
             "Choose it again where it is now.".into(),
@@ -2669,9 +2690,10 @@ fn problem_message(p: &DiscProblem) -> Vec<Message> {
                 "Choose the .bin of a raw dump (2352-byte sectors), or the .cue beside it.".into()
             }),
         ),
-        DiscProblem::WrongDisc { reason, .. } => (
+        DiscProblem::WrongDisc { reason, fix, .. } => (
             sentence(reason),
-            "A randomized or translated USA disc works too.".into(),
+            fix.clone()
+                .unwrap_or_else(|| "Choose the image of the Legend of Legaia (USA) disc.".into()),
         ),
     };
     vec![(why, WARN), (hint, DIM)]
@@ -3283,7 +3305,11 @@ mod tests {
         let path = PathBuf::from("/home/player/Games/Legend of Legaia (USA).bin");
         let problems = [
             DiscProblem::NotSet,
-            DiscProblem::BadSettings("expected `=`, found newline at line 1".into()),
+            DiscProblem::BadSettings {
+                path: "/home/player/.config/legaia-engine/launcher.toml".into(),
+                why: "expected `=`, found newline, line 1".into(),
+                kept: Some("/home/player/.config/legaia-engine/launcher.toml.broken".into()),
+            },
             DiscProblem::Missing(path.clone()),
             DiscProblem::Moved(path.clone()),
             DiscProblem::WrongDisc {
@@ -3291,6 +3317,7 @@ mod tests {
                 reason: "it is the Europe release (SCES_019.44); the engine runs the USA disc \
                          (SCUS_942.54)"
                     .into(),
+                fix: Some("A randomized or translated copy of the USA disc works too.".into()),
             },
         ];
         // A remembered disc offered back, under each problem and in the
