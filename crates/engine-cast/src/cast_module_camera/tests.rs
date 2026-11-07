@@ -1524,7 +1524,10 @@ fn cort_terminal_flushes_sit_past_their_gates() {
 #[test]
 fn big_wave_arm_six_spares_the_unkept_water_sheet() {
     assert!(capture_arm_flushes_pool(946, 6));
-    assert_eq!(capture_arm_flush_spares(946, 6), &[0x801F_7AA8, 0x801F_7B0C]);
+    assert_eq!(
+        capture_arm_flush_spares(946, 6),
+        &[0x801F_7AA8, 0x801F_7B0C]
+    );
     assert!(capture_arm_flush_spares(946, 5).is_empty());
     assert!(capture_arm_flush_spares(938, 2).is_empty());
 }
