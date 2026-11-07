@@ -348,15 +348,23 @@ pub struct SpellLevelUp {
 /// threshold table is installed) bumps the `+0x161` level byte if the
 /// accrued total strictly exceeds the level's threshold (`level < 9` cap).
 /// Returns the level-up, `None` when nothing leveled. A spell the record
-/// doesn't carry accrues nothing (retail would walk past the arrays; the
-/// engine skips).
+/// doesn't carry is checked where retail's search falls out: both the
+/// finisher's accrual and the level check walk [`SPELL_SEARCH_BOUND`] ids
+/// and, finding none, index the parallel arrays at `0x20`
+/// (`slti v0,a1,0x20` at `0x801E713C`). The arrays hold `0x24` entries, so
+/// that is the list's own slot `0x20`: its XP word `+0x88` and level byte
+/// `+0x181`, normally `0`, which the level-`0` threshold
+/// ([`legaia_engine_battle_vm::battle_formulas::LEVEL_ZERO_THRESHOLD`])
+/// levels on any XP. An injected cast of an unlearned spell therefore raises
+/// the "magic level increased" banner on its first gain, as the cast-sequence
+/// films record.
 pub fn accrue_and_level(
     record: &mut CharacterRecord,
     spell_id: u8,
     gain: u32,
     thresholds: Option<&[u16]>,
 ) -> Option<SpellLevelUp> {
-    let slot = spell_slot(record, spell_id)?;
+    let slot = spell_slot(record, spell_id).unwrap_or(SPELL_SEARCH_BOUND);
     add_spell_xp(record, slot, gain);
     let table = thresholds?;
     let mut list = record.spell_list();
@@ -606,11 +614,21 @@ mod tests {
     }
 
     #[test]
-    fn accrue_and_level_skips_a_spell_the_record_lacks() {
+    fn a_spell_the_record_lacks_banks_in_slot_0x20() {
         let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
         let mut rec = record_with_spell(0x83, 1);
-        assert_eq!(accrue_and_level(&mut rec, 0x89, 100, Some(&table)), None);
+        assert_eq!(
+            accrue_and_level(&mut rec, 0x89, 4, Some(&table)),
+            Some(SpellLevelUp {
+                spell_slot: SPELL_SEARCH_BOUND,
+                new_level: 1
+            })
+        );
         assert_eq!(spell_xp(&rec, 0), 0, "nothing accrued to the wrong slot");
+        assert_eq!(spell_xp(&rec, SPELL_SEARCH_BOUND), 4);
+        // No gain on a zero word: the level-0 threshold is a strict compare.
+        let mut rec = record_with_spell(0x83, 1);
+        assert_eq!(accrue_and_level(&mut rec, 0x89, 0, Some(&table)), None);
     }
 
     #[test]

@@ -201,6 +201,13 @@ pub fn summon_spell_xp_gain(
     }
 }
 
+/// The halfword at `0x8007656A`, ahead of the threshold table, that the
+/// level check reads as level `0`'s threshold (`addiu v0,a3,-0x1` at
+/// `0x801E71E4`, then the `lhu` off `0x8007656C`): `0` in `SCUS_942.54`
+/// (`retail-exec`'s `magic_level` test reads it), so any accrued XP levels a
+/// level-`0` slot.
+pub const LEVEL_ZERO_THRESHOLD: u32 = 0;
+
 /// The six spell ids whose level-up threshold is scaled ×1.5 - the explicit
 /// `switch` cases of `FUN_801e70bc` (`iVar1 = 3` instead of `2`, halved into
 /// `(threshold * mult) >> 1`).
@@ -217,14 +224,21 @@ pub const SUMMON_XP_TRIPLE_THRESHOLD_IDS: [u8; 6] = [0x86, 0x88, 0x8D, 0x99, 0x9
 /// (so the default multiplier is the raw table value - the same compare the
 /// heal-spell inline copy in `FUN_800402F4` case-0 tier-4 uses).
 ///
+/// Level `0` reads the halfword ahead of the table, `0x8007656A`
+/// ([`LEVEL_ZERO_THRESHOLD`]): no learned spell sits at level `0`, but a
+/// spell the caster has not learned is checked in the list's slot `0x20`,
+/// whose level byte is normally `0`.
+///
 /// Returns `None` when no level-up is possible: level already at the cap
-/// (`level >= 9`, the retail pre-increment guard), level `0` (retail would
-/// read `table[-1]`; the engine guards), or `table` too short.
+/// (`level >= 9`, the retail pre-increment guard), or `table` too short.
 pub fn summon_magic_level_threshold(spell_id: u8, level: u8, table: &[u16]) -> Option<u32> {
-    if level == 0 || level >= 9 {
+    if level >= 9 {
         return None;
     }
-    let base = *table.get((level - 1) as usize)? as u32;
+    let base = match level {
+        0 => LEVEL_ZERO_THRESHOLD,
+        _ => *table.get((level - 1) as usize)? as u32,
+    };
     let mult: u32 = if SUMMON_XP_TRIPLE_THRESHOLD_IDS.contains(&spell_id) {
         3
     } else {

@@ -796,8 +796,9 @@ fn summon_magic_level_up_is_strict_greater_and_caps_at_9() {
     assert!(summon_magic_levels_up(0x81, 1, 18, &table));
     // Level cap: 9 never levels (retail pre-increment `< 9` guard).
     assert!(!summon_magic_levels_up(0x81, 9, 99999, &table));
-    // Level 0 guarded (retail would read table[-1]).
-    assert!(!summon_magic_levels_up(0x81, 0, 99999, &table));
+    // Level 0 reads the halfword ahead of the table, `0`: any XP levels it.
+    assert!(!summon_magic_levels_up(0x81, 0, 0, &table));
+    assert!(summon_magic_levels_up(0x81, 0, 1, &table));
     // Short table: level 8 needs table[7].
     assert!(!summon_magic_levels_up(0x81, 8, 99999, &table[..7]));
 }
