@@ -276,7 +276,12 @@ the child the capture's ring `0x80084098` and cursor (`LEGAIA_BATTLE_COST_RING`,
 there and lifts the pin (`World::seed_frame_cost_ring`), so the frames after it take
 the ring's step and then the measured costs
 ([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds)). It is a
-harness seat: the walk up to the gate is unchanged and no play path reads it.
+harness seat: the walk up to the gate is unchanged and no play path reads it. Over the
+81 strike films it lifts step agreement with retail from `.80` to `.90` and the mean
+`within` from `.838` to `.842`, Cort 181's strike from `.763` to `.860` (yaw error `86`
+to `5`). A replayed cast keeps its pin past the gate: its module arms run on their
+own step tables, and the Death Game films lost `.05` of `image` off the pin while
+their yaw closed.
 
 An injected cast seats the caster's clip and cursor on its begin
 (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
