@@ -1396,7 +1396,9 @@ Notes on individual arms:
   (`0x801F8090`) before `0xAE` throws its one `rand()` (`0x801F8134`; `0x50`
   draws none), so when the coin weakens the caster the clone stands at full HP.
 - **PROT 0956's Water Hazard draws seat by seat**: the `0xD0` wrapper, then the
-  1-in-8 Venom `rand()` (`0x801F78D0`, `0x801F797C`), before the next seat.
+  1-in-8 Venom `rand()` (`0x801F78D0`, `0x801F797C`), before the next seat. A
+  target code that names a single monster seat still sweeps the whole monster
+  row (`0x801F79D0..0x801F7B6C`), the caster's seat skipped.
 - **PROT 0964's Element Change draws on demand**: one `rand() % 3`, re-drawn
   only while it equals the last roll `0x801C8FE4` (`0x801F89F0`, `0x801F8A3C`).
 - **PROT 0940's `0xAC` is Cort's Mystic Shield.** It blanks
@@ -2524,7 +2526,8 @@ down the victim's lane (arms 6..8), the heading on its target and the soft-red w
 (arm 9's pass), the parked-red word with the additive mode word `+0x08 = 0x81000000`
 (arm `0xA`, cleared on arm `0xB`'s pass) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
 quartered roll and the creature closes on a target at eight units a tick, trading it
-for another once in reach. Those hits clamp to live HP and are what kills: the module
+for another once in reach: `do t = rand() % 4 + 3 while t == old` (`0x801F7ABC..0x801F7AE8`),
+over the four monster seats whether a monster stands there or not. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to

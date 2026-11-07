@@ -391,3 +391,10 @@ Element Change (`FUN_801F88EC`) re-draws only while the draw repeats the last, w
 0956's Water Hazard (`FUN_801F7298`) draws each seat's damage and then its Venom before the next seat, where the
 host rolled the whole row's damage first. The attack ring's builder `FUN_801D8A88` and step `FUN_801D8D00`
 match.
+
+A second pass over the same hosts found three more. Water Hazard's monster leg sweeps the whole monster row
+whatever single seat the code names, where the port struck the one seat and rolled neither damage nor Venom on
+that leg. PROT 0915's Mushura chase trades its target with `rand() % 4 + 3` redrawn on a repeat, over all four
+monster seats, where the port drew once from the other living seats. PROT 0907's Nighto skips the resist throw
+for an immune target (`0x801F6C20`), where the host drew it anyway. PROT 0922's crystal deal and PROT 0955's
+Void Accessories and PROT 0957's Death Game deals match (the first by test, the other two by their disassembly).

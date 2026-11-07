@@ -89,6 +89,7 @@
       <tr><td>Divide split <code>FUN_801F78B8</code> (PROT 0940)</td><td>Only <code>0xAE</code> throws the coin, where the host drew for <code>0x50</code> too; the clone takes the caster&rsquo;s HP before the coin, so a weakened caster left both halves on 1 HP in the port; the weakened caster also loses its MP.</td></tr>
       <tr><td>Element Change <code>FUN_801F88EC</code> (PROT 0964)</td><td>Retail draws once and again only while the draw repeats the last roll; the host pre-drew 33 <code>rand()</code>s every cast.</td></tr>
       <tr><td>Water Hazard <code>FUN_801F7298</code> (PROT 0956)</td><td>Retail draws each seat&rsquo;s damage and then its Venom before the next seat; the host rolled the whole row&rsquo;s damage first. The attack ring <code>FUN_801D8A88</code> / <code>FUN_801D8D00</code> matches.</td></tr>
+      <tr><td>Mushura chase (PROT 0915), Nighto (PROT 0907)</td><td>The chase trades its target with <code>rand() % 4 + 3</code> redrawn on a repeat, over all four monster seats, where the port drew once from the living ones; Nighto skips its resist throw for an immune target, where the host drew it. Water Hazard&rsquo;s monster leg sweeps the whole row; the port struck one seat and rolled nothing there.</td></tr>
     </tbody>
   </table>
   </div>
