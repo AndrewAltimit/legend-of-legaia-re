@@ -498,9 +498,7 @@ impl PlayWindowApp {
     /// The settings page's draws, in stage pixels.
     pub(super) fn settings_stage_draws(&self) -> Vec<TextDraw> {
         let heading = chrome::HEADING.to_f32();
-        let key = chrome::KEY.to_f32();
         let text = chrome::TEXT.to_f32();
-        let changed = chrome::CHANGED.to_f32();
         let faint = legaia_app_theme::DARK.ink_faint.to_f32();
         let height = plate_height(SHOWN_ROWS.min(SETTINGS_ROWS.len()), HELP_LINES);
         let mut out = Vec::new();
@@ -578,11 +576,12 @@ impl PlayWindowApp {
             } else {
                 row.value(&self.options_state, &switches)
             };
-            let ink = match row.original_value() {
-                _ if muted => faint,
-                Some(o) if o != value => changed,
-                _ if focused => key,
-                _ => text,
+            // The launcher's value inks (`chrome::option_value`), so a row
+            // reads alike in both lists.
+            let ink = if muted {
+                faint
+            } else {
+                chrome::option_value(&value, row.original_value().as_deref()).to_f32()
             };
             let shown = if focused {
                 format!("< {value} >")
