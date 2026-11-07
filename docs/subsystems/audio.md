@@ -1122,6 +1122,16 @@ last repeat - alongside `0x4` - never survives into the next frame. And because
 settle leaves both bits standing and is therefore called **twice** in one frame,
 while one that settles clears both and is called once.
 
+**Nothing in retail arms the tempo slide.** In `SCUS_942.54` the bits `0x40` /
+`0x80` are only ever cleared (`0x80064A18`, `0x80064BA8`, `0x80064BC4`, the
+slide's own settle), and the slide's step `+0x4E`, target `+0xAC` and count
+`+0xA8` are only zeroed by the two open inits (`0x80061E1C..0x80061E4C`,
+`0x800645F0..0x80064620`) and decremented by the tick (`0x800649FC`). libsnd's
+accelerando / ritardando setters are not linked. The disc's ritardandos are
+written as tempo metas ([`seq.md`](../formats/seq.md)). The ported tick
+(`seq_calc::tempo_slide_tick`) is therefore exercised by `note-trace` and the
+tests alone, and no host owes it an arming call.
+
 **The sign of a step field selects the rate mode, not the direction.** Both the
 volume slide (`+0x4C`) and the tempo slide (`+0x4E`) read a signed step and
 branch on `blez`. A **positive** step means "move one unit every `step` ticks" -

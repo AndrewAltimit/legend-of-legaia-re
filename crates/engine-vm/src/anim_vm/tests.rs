@@ -723,19 +723,6 @@ fn per_kind_default_routes_back_through_on_opaque_record() {
 }
 
 #[test]
-fn helper_methods_have_no_op_defaults() {
-    // Smoke test: NullHost's per-helper defaults do nothing, but
-    // the trait methods must still be callable (i.e. the trait
-    // compiles + dispatches without engine-side scaffolding).
-    let mut host = NullHost;
-    host.on_movement_step(0, &[], 0);
-    host.on_render_loop(0, &[]);
-    host.on_child_step_iter(0, 1);
-    host.on_per_bone_interp(0, &[], 0);
-    host.on_special_effect_spawn(0, 0);
-}
-
-#[test]
 fn staged_ids_below_0x10_resolve_direct() {
     // Idle / walk / reactions / poses / equipment swings all play
     // their action-table entry as-is.

@@ -2362,7 +2362,9 @@ per [cutscene.md § per-actor channels](cutscene.md#per-actor-channels---the-vig
   [script-vm-menuctrl § nE sub-3](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers).
 - **Player-coord copy `CC <id> 37`** (op `0x4C` n3 sub-7, asm `0x801E0FB0..0x801E1044`): copies the
   **player's** position + facing into the target context - the "materialize a parked companion at
-  the player" primitive that precedes a walk-out choreography.
+  the player" primitive that precedes a walk-out choreography. A target carrying the height law
+  `0x20000000` also takes `+0x8E = -player.y`, so it stays at the player's height; the op advances
+  on both paths (`j 0x801DF098`).
 - **Off-map park**: `A3 <id> 7F 7F` (cross-context MoveTo) or `CC <id> 51 7F 7F ..` (n5 sub-1
   run-to-tile) sends an actor to tile `(127,127)` = world `(16320,16320)`, the corner sentinel every
   cold-parked placement also rests at. Parked actors stay resident (their contexts keep ticking);

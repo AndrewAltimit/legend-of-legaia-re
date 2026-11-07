@@ -67,26 +67,22 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             }
         }
         7 => {
-            // sub-3 sub-7: copy player coords onto non-player ctx.
-            // The host gates on `ctx == player_ctx`; returning
-            // `None` means "no copy" (either the player ctx is
-            // unset OR ctx IS the player), in which case we
-            // fall through to a regular advance.
+            // sub-3 sub-7 (arm `0x801E0FB0..0x801E1044`): copy the player's
+            // `+0x14/+0x16/+0x18` and `+0x26` onto a non-player ctx. The
+            // host gates on `ctx == player_ctx`; returning `None` means "no
+            // copy" (the player ctx is unset OR ctx IS the player). A ctx
+            // carrying the height law `0x20000000` also takes
+            // `+0x8E = -player.y` (`negu` / `sh v0,0x8e(s5)` at
+            // `0x801E103C..0x801E1044`), so the height arm holds it at the
+            // player's height. Every path leaves through `0x801DF098`
+            // (`s8 += 2`): the op always advances.
             if let Some(p) = host.fetch_player_coords(ctx) {
                 ctx.world_x = p.world_x;
                 ctx.world_y = p.world_y;
                 ctx.world_z = p.world_z;
                 ctx.field_26 = p.field_26;
                 if ctx.flags & 0x2000_0000 != 0 {
-                    let inverted_y = (p.world_y as i16).wrapping_neg();
-                    host.set_inverted_y_mirror(ctx, inverted_y);
-                    // Original returns via `caseD_4()` - the
-                    // STATE_RESUME exit. We surface that as a
-                    // Yield so the host's state-resume layer
-                    // decides whether the next caller resumes.
-                    return StepResult::Yield {
-                        resume_pc: pc + header_size + 1,
-                    };
+                    ctx.field_8e = (p.world_y as i16).wrapping_neg();
                 }
             }
             StepResult::Advance {

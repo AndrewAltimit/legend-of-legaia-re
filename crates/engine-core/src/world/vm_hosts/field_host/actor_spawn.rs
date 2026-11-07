@@ -4,10 +4,9 @@ use super::*;
 
 impl FieldHostImpl<'_> {
     /// Op `4C 50` - the actor model set. The state writes are the VM
-    /// default's (`+0x64`, `+0x5C = 0`, the `0x1000` clear, the world-map
-    /// `+0x60` mirror); the re-stage `FUN_80024E08` runs through
-    /// `FUN_80020F88` - the actor starts drawing the named TMD - is the live
-    /// model id a placement carries on [`World::field_npc_live_model`],
+    /// default's (`+0x64`, `+0x5C = 0`, the `0x1000` clear); the re-stage
+    /// `FUN_80024E08` runs through `FUN_80020F88` - the actor starts
+    /// drawing the named TMD - is the live model id a placement carries on [`World::field_npc_live_model`],
     /// which both play hosts already re-bind mid-scene from (the same seat
     /// motion op `0x0E` writes). The id stays raw: the `>= 0xF0` player-bank
     /// select is [`legaia_engine_scene::model_bank::resolve_model_id`]'s, the `4C 50`
@@ -30,9 +29,6 @@ impl FieldHostImpl<'_> {
         ctx.model_id = value as u16;
         ctx.move_id = 0;
         ctx.flags &= 0xffff_efff;
-        if self.model_pool_is_world_map() {
-            ctx.model_id_high = value as u16;
-        }
         if let Some(record) = self.world.field_vm.executing_object {
             self.world
                 .npcs

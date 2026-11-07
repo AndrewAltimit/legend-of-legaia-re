@@ -115,8 +115,9 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             }
         }
         // Sub-6: 3-byte `[4C, 0xD6, b1]`. Pure ctx.field_74 bitfield
-        // mutation, then advances: the arm at `0x801E2D64` leaves through
-        // `0x801E00B8`, `addiu s8,s8,0x3`.
+        // mutation (`0x801E2D64..0x801E2DB0` reads and writes nothing else),
+        // then advances: the arm leaves through `0x801E00B8`,
+        // `addiu s8,s8,0x3`.
         6 => {
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
@@ -126,7 +127,6 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             } else {
                 ctx.field_74 = (ctx.field_74 & 0x7CFF_FFFF) | 0x8000_0000 | (u32::from(b1) << 24);
             }
-            host.op4c_nd_sub6_field_74_ack();
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }

@@ -72,7 +72,6 @@ struct TestHost {
     subtile_refresh_calls: Vec<u8>,
     // 0x4C sub-3 sub-7 (player-coord copy).
     player_coords: Option<PlayerCoords>,
-    inverted_y_writes: Vec<i16>,
     // 0x4C sub-3 sub-2 (party-state region clear).
     party_state_clears: u32,
     // 0x43 sub-7 / sub-12 + 0x4C sub-2.
@@ -157,7 +156,6 @@ struct TestHost {
     n_c_b6ac_writes: Vec<u8>,
     n_c_sub_f_broadcasts: Vec<(i16, i16)>,
     n_c_sub9_globals_differ: bool,
-    n_d_sub6_acks: u32,
     n_d_sub8_calls: Vec<(u8, [i16; 3])>,
     n_e_sub0_writes: Vec<u8>,
     n_e_sub9_clears: u32,
@@ -759,8 +757,10 @@ impl FieldActorHost for TestHost {
             .push((ctx.script_id, world_x, world_z, is_player));
     }
 
-    fn compass_heading(&self, index: u8) -> Option<u16> {
-        self.cam_cfg_table.get(index as usize).copied()
+    fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, _player: bool) {
+        if let Some(&value) = self.cam_cfg_table.get(index as usize) {
+            ctx.field_26 = value;
+        }
     }
 
     fn setup_animation(&mut self, ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
@@ -810,10 +810,6 @@ impl FieldActorHost for TestHost {
 
     fn set_actor_model(&mut self, _ctx: &mut FieldCtx, value: i16, high: bool) {
         self.n5_sub0_calls.push((value, high));
-    }
-
-    fn op4c_nd_sub6_field_74_ack(&mut self) {
-        self.n_d_sub6_acks += 1;
     }
 
     fn randomize_clip_phase(&mut self, _ctx: &mut FieldCtx) -> bool {
@@ -959,10 +955,6 @@ impl FieldPlayerHost for TestHost {
 
     fn fetch_player_coords(&self, _ctx: &FieldCtx) -> Option<PlayerCoords> {
         self.player_coords
-    }
-
-    fn set_inverted_y_mirror(&mut self, _ctx: &mut FieldCtx, inverted_y: i16) {
-        self.inverted_y_writes.push(inverted_y);
     }
 
     fn set_player_clip_override(&mut self, value: u8) {

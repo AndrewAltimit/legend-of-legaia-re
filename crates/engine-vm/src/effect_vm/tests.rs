@@ -14,11 +14,10 @@ struct RecHost {
     events: Vec<HostEvent>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum HostEvent {
     Random,
     HandleSummon(u8, [i16; 3], u16),
-    ChildOffset(usize, u8, i16, i16),
 }
 
 impl EffectHost for RecHost {
@@ -36,11 +35,6 @@ impl EffectHost for RecHost {
     fn handle_summon(&mut self, effect_id: u8, world_pos: [i16; 3], angle: u16) {
         self.events
             .push(HostEvent::HandleSummon(effect_id, world_pos, angle));
-    }
-
-    fn assign_child_random_offset(&mut self, slot: usize, child_idx: u8, dx: i16, dz: i16) {
-        self.events
-            .push(HostEvent::ChildOffset(slot, child_idx, dx, dz));
     }
 }
 
@@ -162,22 +156,18 @@ fn spawn_distributes_random_children_when_flag_set() {
         body: vec![],
     };
 
-    let _ = pool
+    let slot = pool
         .spawn(&mut host, 9, [0, 0, 0], 0, &script, &[])
         .unwrap();
 
     // Expected per-child math: modulus = 32, raw % 32 - 16.
     // child 0: (0 % 32) - 16 = -16, (8 % 32) - 16 = -8.
     // child 1: (31 % 32) - 16 = 15, (7 % 32) - 16 = -9.
-    let want: Vec<HostEvent> = vec![
-        HostEvent::Random,
-        HostEvent::Random,
-        HostEvent::ChildOffset(0, 0, -16, -8),
-        HostEvent::Random,
-        HostEvent::Random,
-        HostEvent::ChildOffset(0, 1, 15, -9),
-    ];
-    assert_eq!(host.events, want);
+    assert_eq!(host.events, vec![HostEvent::Random; 4]);
+    assert_eq!(
+        pool.master_slots[slot].child_offsets,
+        vec![(-16, -8), (15, -9)]
+    );
 }
 
 #[test]

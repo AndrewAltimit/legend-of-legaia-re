@@ -76,10 +76,9 @@ fn op_4c_n5_sub0_high_sets_flag_bit() {
 
 // A host that uses the default `FieldHost` bodies (no overrides beyond the
 // three required methods), so the default `set_actor_model`
-// (the `FUN_80024e08` port) runs and mutates `ctx` itself. `WORLD_MAP` toggles
-// the `_DAT_8007B83C == 0xF` game-mode gate that mirrors the id into +0x60.
-struct DefaultModelHost<const WORLD_MAP: bool>;
-impl<const WORLD_MAP: bool> FieldFlagsHost for DefaultModelHost<WORLD_MAP> {
+// (the `FUN_80024e08` port) runs and mutates `ctx` itself.
+struct DefaultModelHost;
+impl FieldFlagsHost for DefaultModelHost {
     fn global_flags(&self) -> u32 {
         0
     }
@@ -91,46 +90,41 @@ impl<const WORLD_MAP: bool> FieldFlagsHost for DefaultModelHost<WORLD_MAP> {
     }
 }
 
-impl<const WORLD_MAP: bool> FieldSceneHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldSceneHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldTerrainHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldTerrainHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldCameraHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldCameraHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldCameraMotionHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldCameraMotionHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldScreenHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldScreenHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldAudioHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldAudioHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldPartyInventoryHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldPartyInventoryHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldDialogMenuHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldDialogMenuHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldActorHost for DefaultModelHost<WORLD_MAP> {
-    fn model_pool_is_world_map(&self) -> bool {
-        WORLD_MAP
-    }
-}
+impl FieldActorHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldActorSpawnHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldActorSpawnHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldActorFxHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldActorFxHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldPlayerHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldPlayerHost for DefaultModelHost {}
 
-impl<const WORLD_MAP: bool> FieldHaltHost for DefaultModelHost<WORLD_MAP> {}
+impl FieldHaltHost for DefaultModelHost {}
 
 #[test]
-fn op_4c_n5_sub0_default_writes_model_state_no_world_map_mirror() {
-    // [4C, 0x50, 0x40, 0x00] → value = 0x40. Not world-map: no +0x60 mirror.
+fn op_4c_n5_sub0_default_writes_model_state() {
+    // [4C, 0x50, 0x40, 0x00] → value = 0x40.
     let bytecode = [0x4Cu8, 0x50, 0x40, 0x00];
-    let mut host = DefaultModelHost::<false>;
+    let mut host = DefaultModelHost;
     let mut ctx = FieldCtx {
-        // Draw-flag bit 0x1000 set (must be cleared); move_id and +0x60 nonzero.
+        // Draw-flag bit 0x1000 set (must be cleared); move_id nonzero.
         flags: 0x0100_0000 | 0x1000,
         move_id: 0x1234,
-        model_id_high: 0x5678,
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
@@ -143,28 +137,6 @@ fn op_4c_n5_sub0_default_writes_model_state_no_world_map_mirror() {
     // pool-record bit for the low half.
     assert_eq!(ctx.flags & 0x1000, 0);
     assert_eq!(ctx.flags & 0x0100_0000, 0);
-    // Not world-map: +0x60 keeps its prior value (no mirror).
-    assert_eq!(ctx.model_id_high, 0x5678);
-}
-
-#[test]
-fn op_4c_n5_sub0_default_world_map_mirrors_into_plus_0x60() {
-    // Same op, but the world-map game-mode gate (`_DAT_8007B83C == 0xF`) is on,
-    // so the id is mirrored into +0x60. `high` (value >= 0xF0) is unrelated to
-    // this branch - the primitive ignores it - so use a low value to prove it.
-    let bytecode = [0x4Cu8, 0x50, 0x40, 0x00];
-    let mut host = DefaultModelHost::<true>;
-    let mut ctx = FieldCtx {
-        flags: 0x1000,
-        ..FieldCtx::default()
-    };
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 4 });
-    assert_eq!(ctx.model_id, 0x40);
-    assert_eq!(ctx.move_id, 0);
-    assert_eq!(ctx.flags & 0x1000, 0);
-    // World-map mode mirrors the id into +0x60.
-    assert_eq!(ctx.model_id_high, 0x40);
 }
 
 #[test]
@@ -805,7 +777,6 @@ fn op_4c_n_d_sub_6_b1_eq_4_clears_top_bit_only() {
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
     assert_eq!(ctx.field_74, 0x7FFF_FFFF);
-    assert_eq!(host.n_d_sub6_acks, 1);
 }
 
 #[test]

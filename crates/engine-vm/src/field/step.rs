@@ -317,8 +317,9 @@ pub fn step<H: FieldHost>(
         // op1]`:
         //
         // - **Simple path** (`op1 & 0x7F == 0`): the original copies
-        //   `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx.field_26`
-        //   and returns `pc + 3`.
+        //   `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved
+        //   actor's `+0x26` (`FieldActorHost::face_compass`) and returns
+        //   `pc + 3`.
         //
         // - **Halt-acquire path** (`op1 & 0x7F != 0`): identical predicate +
         //   apply pair to op 0x43 sub-0/1/A/B (see
@@ -341,9 +342,6 @@ pub fn step<H: FieldHost>(
             if op1 & 0x7F == 0 {
                 let player = extended && bytecode.get(pc + 1) == Some(&0xF8);
                 host.face_compass(ctx, op0 & 0x0F, player);
-                if let Some(value) = host.compass_heading(op0 & 0x0F) {
-                    ctx.field_26 = value;
-                }
                 StepResult::Advance {
                     next_pc: pc + header_size + 2,
                 }
