@@ -76,8 +76,16 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// It is a measurement of one emulated machine, like the cast arm tables, and no
 /// model of a frame's work: Mednafen reads a full party's action about `100` lower,
 /// with the GPU wait in it, and no real hardware has been measured.
+///
+/// The summon close-up `0x33` and the flash `0x34` are read off the step
+/// rather than a ring entry: on every PCSX-Redux summon film of a lone caster
+/// the step drops from `2` to `1` sixteen frames after the close-up's first few
+/// frames (so those frames cost under `0xF1`), and on a full party's from `3`
+/// to `2` at `0x34`'s entry (under `0x1FF`). The two-member figure is the
+/// member step between them; no film records it.
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
+        0x33 | 0x34 => [200, 330, 460],
         0x00 => [282, 411, 545],
         0x0A => [340, 457, 527],
         0x0C => [354, 463, 608],

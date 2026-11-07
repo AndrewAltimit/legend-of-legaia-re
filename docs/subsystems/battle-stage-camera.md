@@ -1422,7 +1422,13 @@ holds for the sixteen frames after it, as retail's does. The packet bytes the fr
 built (`_DAT_1F8003A0` less the buffer's base) explain no more of the cost than the
 party's size does (`R^2` `.46` against `.49`, the step read right on `.84` of the
 states either way; both together `.69`), and only the hosts hold the draw lists, so
-the table stands in for the frame's work. It measures one emulated machine: Mednafen
+the table stands in for the frame's work. The summon close-up `0x33` and flash `0x34`
+have no ring entry in the library and are read off the step instead: every PCSX-Redux
+summon film of a lone caster drops from step `2` to `1` sixteen frames after the
+close-up's first few frames (an entry under `0xF1`), and a full party's from `3` to `2`
+on `0x34`'s entry (under `0x1FF`). On the step-`2` table the flash-in's white rise ran
+at two vsyncs a step where retail's ran at one, and the `0x34` segment of those films
+scored `.47`; on the read-off entries it scores `.95`. It measures one emulated machine: Mednafen
 reads a full party's action near `490` hblanks, under the `511` that makes step `3`,
 where PCSX-Redux reads `594`, and no real hardware has been measured.
 
