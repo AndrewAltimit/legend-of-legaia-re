@@ -4749,11 +4749,14 @@ from the jump's target, not from the next arm's code below it.
 **The band's flash-out lives in the same slot.** State `0x34` parks its
 flash-out at `ctx[+0x102C]` (`0x801E4BC0`), so a module arm that kills the
 slot before parking a fade of its own ends the band's flash; the hook clears
-the world's fade seat then. Driving every band
-module through `World::run_cast_module_code` alone, the unpaced arms carry
-every site of PROT 0906, 0912, 0913, 0945, 0949, 0951, 0957, 0958 and 0965
-and some of 0903, 0904, 0908, 0910, 0911, 0917, 0928, 0929, 0940 and 0962;
-those wait on their bodies' arm pacing. The six modules whose countdowns are
+the world's fade seat then. Which sites an unpaced arm skips is a property
+of one run, not of the image: it depends on which held arms the cast's port
+passes on their first tick. `LEGAIA_DIAG_CAST_PRES=1` prints, per module tick
+with sites, the arm, whether the decoder marks it holdable and how long the
+engine has held it, which is how Glare's arm-0 fades were found skipped. A
+one-pass arm (Glare's arm 0, Nova's `0x12`) is not holdable and fires as it
+runs; the sites still lost are those on arms that retail holds and the port
+walks in one tick, and they wait on their bodies' arm pacing. The six modules whose countdowns are
 ported ([Summon countdown holds](#summon-countdown-holds)) are paced like
 retail, so the hook fires every arm of theirs, including the ones that pass
 on their first tick (PROT 0918's ungated arm 17, whose kill of arm 15's held
