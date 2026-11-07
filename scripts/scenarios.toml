@@ -4413,6 +4413,15 @@ expected_active_scene = "map01"
 topics = ["battle", "enemy attack", "Gomboo", "map01", "harvest"]
 
 [[scenarios]]
+label = "battle_map01_hornet_strike"
+backup_fingerprint = "c841d64408149516ed79488aa3a4d30a68046716997c75aeabc52ba14df3a02e"
+description = "map01 battle, formation [0x3D, 0x05]: Hornet (seat 3, monster id 61) mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT=61+5 (the MAN region rows point at it), party HP restored at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD); LEGAIA_HOLD=1, since the Hornet's one-swing queue leaves the strike loop on its first pass; the action is the AI's own. Saved 841 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Hornet", "map01", "harvest"]
+
+[[scenarios]]
 label = "battle_map01_ostrich_strike"
 backup_fingerprint = "8102f448d3577f0f2f6884ecacc4741a1908a62124ec964a47a699c355967acf"
 description = "map01 battle, formation [0x25, 0x25]: Ostrich (seat 3, monster id 37) mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 27837 vsyncs in."
