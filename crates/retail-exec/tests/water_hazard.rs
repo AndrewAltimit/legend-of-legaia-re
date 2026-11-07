@@ -147,15 +147,15 @@ fn the_sweep_draws_damage_and_venom_seat_by_seat() {
             });
         let ctx = format!("round {round} party {party} code {code}");
         assert_eq!(retail_draws, n, "draws: {ctx}");
-        for seat in 0..usize::from(party) {
+        for (seat, s) in seats.iter().enumerate().take(usize::from(party)) {
             let a = ACTOR + seat as u32 * STRIDE;
-            assert_eq!(cpu.mem.rd16(a + 0x14C), seats[seat].hp, "hp {seat}: {ctx}");
+            assert_eq!(cpu.mem.rd16(a + 0x14C), s.hp, "hp {seat}: {ctx}");
             assert_eq!(
                 cpu.mem.rd16(a + 0x16E) & 1,
-                seats[seat].flags & 1,
+                s.flags & 1,
                 "venom {seat}: {ctx}"
             );
-            venom += u32::from(seats[seat].flags & 1 != 0);
+            venom += u32::from(s.flags & 1 != 0);
         }
         hits += port_hits.len();
         skipped += usize::from(party) - port_hits.len();
