@@ -1781,6 +1781,10 @@ impl World {
             );
             self.casting.flush_module_part_pool();
         }
+        // PROT 0942 `0xAA`'s party swirl, every pass of its arms 2..=5.
+        if entry == 942 && spell_id == 0xAA && capture_arm.is_some() {
+            self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
+        }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
         self.battle.cast_ribbons = capture_arm
@@ -1804,6 +1808,20 @@ impl World {
             }
             if arm.flushes_pool {
                 self.casting.flush_module_part_pool();
+            }
+            if let Some(w) = arm.part_write
+                && let Some(scene) = self.casting.active_summon.as_mut()
+            {
+                for part in scene
+                    .parts
+                    .iter_mut()
+                    .filter(|p| !p.finished && p.tag.is_some_and(|t| w.records.contains(&t)))
+                {
+                    let x = w.x.unwrap_or(part.state.world_x.wrapping_add(w.dx));
+                    let y = w.y.unwrap_or(part.state.world_y.wrapping_add(w.dy));
+                    part.poke(0x14, x as u16);
+                    part.poke(0x16, y as u16);
+                }
             }
             if arm.hides_creature {
                 self.despawn_summon_actor();

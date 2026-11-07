@@ -239,6 +239,11 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
     pub module_barra_counter: u16,
+    /// PROT 0942 `0xAA`'s party swirl: the words `0x801F88B8` (the pull) and
+    /// `0x801F88BC` (the spin), and each party seat's plane pair arm 2 copied
+    /// into `0x801F88C4 + 8 * seat` (`World::dark_typhoon_party_swirl`).
+    pub dark_typhoon_swirl: (i32, i32),
+    pub dark_typhoon_marks: [(i16, i16); 4],
     /// The cast module whose code ran last (`World::run_cast_module_code`),
     /// whose stager an op-`0x20` call reaches; `None` until a cast's first
     /// tick.
@@ -536,6 +541,8 @@ impl CastFxState {
             module_stager_calls: Vec::new(),
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
+            dark_typhoon_swirl: (0, 0),
+            dark_typhoon_marks: [(0, 0); 4],
             module_running_entry: None,
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,

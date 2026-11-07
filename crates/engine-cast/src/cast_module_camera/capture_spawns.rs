@@ -862,7 +862,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         935 | 939 | 953 => true,
         964 => true,
         947 | 948 => true,
-        942 => body == Some(super::POWER_UP_BODY),
+        942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
         949 => true,
         945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
@@ -929,7 +929,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
             body,
             Some(super::SCYTHE_WIND_BODY | super::CHAOS_FLARE_BODY)
         ),
-        942 => body == Some(super::POWER_UP_BODY),
+        942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,
@@ -968,6 +968,9 @@ pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
         // count `0x801F8098`) on its passing pass and halts each
         // (`0x801F728C..0x801F72B8`).
         (953, 6) => &[super::TERIO_TRAIL_RECORD],
+        // Dark Typhoon (PROT 0942 `0xAA`); Power Up's arms stop at 3.
+        (942, 4) => &super::dark_typhoon::ARM4_HALTS,
+        (942, 6) => &super::dark_typhoon::ARM6_HALTS,
         _ => &[],
     }
 }
@@ -1046,6 +1049,12 @@ pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'stati
         (943, _) if action != 0xB5 => &[],
         // PROT 0956's per-arm tables are Water Hazard's.
         (956, _) if action != 0x71 => &[],
+        // PROT 0942's per-arm tables are Dark Typhoon's; Power Up seats its
+        // charge through its director.
+        (942, 0) if action == 0xAA => &super::dark_typhoon::ARM0_SPAWNS,
+        (942, 3) if action == 0xAA => &super::dark_typhoon::ARM3_SPAWNS,
+        (942, 4) if action == 0xAA => &super::dark_typhoon::ARM4_SPAWNS,
+        (942, _) => &[],
         // PROT 0945's per-arm tables are Water Column's.
         (945, _) if action != 0x54 => &[],
         // PROT 0944's per-arm tables are Guilty Cross's; Curse All (`0x53`)

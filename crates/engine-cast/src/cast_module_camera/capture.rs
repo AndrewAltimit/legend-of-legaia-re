@@ -30,6 +30,18 @@ pub struct CaptureDrift {
     pub tr_x: i16,
 }
 
+/// A capture arm's stores into the parts of `records` it holds handles to:
+/// first `dx` / `dy` added to `+0x14` / `+0x16`, then `x` / `y` stored over
+/// them. The adds run on every pass, the stores on the arm's passing one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CapturePartWrite {
+    pub records: &'static [u32],
+    pub dx: i16,
+    pub dy: i16,
+    pub x: Option<i16>,
+    pub y: Option<i16>,
+}
+
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
@@ -130,6 +142,9 @@ pub struct CaptureCamArm {
     /// The arm stores this into every live part's level `+0x78`
     /// (PROT 0957's arm 6, `0x801F78B8..0x801F78E4`).
     pub parts_level: Option<u16>,
+    /// The arm's stores into the position halfwords `+0x14` / `+0x16` of the
+    /// parts it seated through handles (PROT 0942 `0xAA`'s vortex).
+    pub part_write: Option<CapturePartWrite>,
     /// The arm's stores into every party seat and every live monster, made
     /// ahead of its [`Self::caster_write`] / [`Self::victim_write`] (PROT
     /// 0947 hides the field, then shows the caster). Waits for the band's
@@ -282,6 +297,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
         (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
+        (942, super::DARK_TYPHOON_BODY) => Some(super::dark_typhoon_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),

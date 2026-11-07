@@ -351,6 +351,19 @@ impl World {
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }
+                // Dark Typhoon's ring follows the arm's two calls.
+                if run.prot_entry == 942
+                    && arm == 4
+                    && spell_id == 0xAA
+                    && let Some(c) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let ring = cmc::dark_typhoon_ring(
+                        (c.move_state.world_x, c.move_state.world_z),
+                        (c.battle.facing_angle & 0xFFF) as i16,
+                        [0, (c.battle.facing_angle & 0xFFF) as i16, 0],
+                    );
+                    self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
+                }
                 let on_party = cmc::capture_arm_party_records(run.prot_entry, arm, spell_id);
                 if !on_party.is_empty() {
                     let spawns: Vec<_> = (0..usize::from(self.party.party_count))

@@ -3659,8 +3659,27 @@ three units). The bodies without that store keep the half turn
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
 | 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown, the records and the tints ([below](#prot-0955-kiss-of-death)) |
+| 0942 `0xAA` Dark Typhoon, `0x801F69F4` | arm 0's `0xC`-frame shot on the caster (TR `(0, 0x500, 0x600)`), arm 1's cut (pitch `0x40`, yaw `0x900 - facing`, TR `(-0xC0, 0x900, 0x200)`), arm 2's cut (pitch `0xC0`, TR `(0, 0x600, 0x400)`); drifts on every arm past 0 and the vortex records ([below](#prot-0942-dark-typhoon)) | `0x801F88B4`, seeded `scalar * 0x180`; the chain is ported (`POWER_UP_AA_CHAIN`), so the director carries the countdown. Without the director the cast's camera stood still and its parts were the whole-set placement, all run out before arm 1 |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 
+- <a id="prot-0942-dark-typhoon"></a>**0942 `0xAA`**: the drifts, with
+  `s = scalar * delta`, are TR z `+s` (arm 1); TR z `+s`, TR x `+s/4`, TR y `-s`,
+  yaw `-s/2`, pitch `-s/8` (2); TR z `+12s`, TR y `-2s` (3); TR z `-s/2`, TR y
+  `+s/8` (4); TR z `-s/2`, TR y `-s/4` (5); TR z `-6s`, TR y `+s` (6). Arm 0
+  seats the vortex on the shot's trios: three records straight through
+  `FUN_80021B04` at `0xA00` / `0x400` / `0x1000` and four through the pool. Arms
+  1..3 walk the vortex's `+0x14` / `+0x16`, arm 6 halts it.
+- **0942 `0xAA`'s party swirl**
+  (`World::dark_typhoon_party_swirl`). Arm 2's pass copies each party seat's plane
+  pair into `0x801F88C4 + 8 * seat`. Arm 3's pass clears the pull `0x801F88B8` and
+  the spin `0x801F88BC`. Every arm-4 pass grows the pull by `2 * delta` and the spin
+  by the pull, then stands each seat with HP at the bearing from its mark to the
+  caster (`FUN_80019B28`) turned by the spin, at the mark's sin / cos weighted reach
+  less half the pull (no nearer than `0x200`), facing turned by twice the pull,
+  height minus half of it (`0x801F7488..0x801F76AC`). Arm 5 lets each seat back
+  down by `scalar * delta` a pass and its pass stands them on the floor. The engine
+  takes one tick as one pass of step 1, so its spin runs ahead of a retail run whose
+  heavy arms sit at step 3 or 4.
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
   ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).

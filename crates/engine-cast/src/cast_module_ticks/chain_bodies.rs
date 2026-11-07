@@ -767,9 +767,11 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
 ///
 /// Rates left out under the module's rate rule: the caster ends at `2`
 /// (`+0x21D = 4` at `0x801F6B50`, `2` at `0x801F6DEC`) with no restore in the
-/// body. Not ported: the packet arms, the party-row moves and presentation
-/// stores and the monster-AI block bytes `+0x84..+0x86`. Countdowns:
-/// `capture_countdown::POWER_UP_AA`.
+/// body. The camera arms, the vortex's position stores and the per-arm records
+/// are `cast_module_camera::dark_typhoon_camera` and its spawn tables, the
+/// party-row moves `World::dark_typhoon_party_swirl`. Not ported: the packet
+/// arms, the colour stores into the arm-3 records and the monster-AI block
+/// bytes `+0x84..+0x86`. Countdowns: `capture_countdown::POWER_UP_AA`.
 ///
 /// PORT: FUN_801F69F4 (PROT 0942; the `0xAA` arm's phase chain + caster staging; packet arms unported)
 pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {

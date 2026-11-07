@@ -465,6 +465,10 @@ pub enum SpawnAnchor {
     /// way is camera-relative (`+0x52 & 0x780`), so its program's own
     /// `WORLD_SET` places it and the anchor is only its seed.
     ShotFocus,
+    /// [`Self::ShotFocus`] at the scale `a3`: PROT 0942 `0xAA`'s arm 0 seats
+    /// its vortex records on the shot's trios at `0xA00`, `0x400` and
+    /// `0x1000` (`0x801F6AF4..0x801F6C04`).
+    ShotFocusScaled { scale: u16 },
     /// The arm's shot focus turned back into a world point - the stack trio
     /// `sp+0x30` / `sp+0x34` negated again (`subu v0,zero,v0`) - at the
     /// literal height `y` stored over `sp+0x32`, with the shot's yaw zeroed
@@ -770,7 +774,7 @@ pub fn spawn_anchor_point_with(
         SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
-        SpawnAnchor::ShotFocus => {
+        SpawnAnchor::ShotFocus | SpawnAnchor::ShotFocusScaled { .. } => {
             let s = shot?;
             (s.focus, s.angles)
         }
@@ -868,6 +872,7 @@ pub fn spawn_anchor_scale(
             .filter(|&z| z > 0)
             .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
+        SpawnAnchor::ShotFocusScaled { scale } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
         SpawnAnchor::VictimBodyGround { scale } => scale,
         _ => 0x1000,
@@ -1012,6 +1017,7 @@ pub mod creature;
 mod creature_spawns;
 mod cross_beam;
 mod curse_all;
+mod dark_typhoon;
 mod death_game;
 mod doomsday;
 mod earthquake;
@@ -1075,6 +1081,7 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
+pub use dark_typhoon::{DARK_TYPHOON_BODY, dark_typhoon_camera, dark_typhoon_ring};
 pub use death_game::{
     CARD_BACK_RECORD, CARD_RECORDS, CARD_REVEAL_RECORDS, DEATH_GAME_BODY, DEATH_GAME_PROT,
     DeathGame, DeathGameLabel, DeathGameOutcome, DeathGamePad, DeathGameSprite,
