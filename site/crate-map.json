@@ -360,9 +360,11 @@
    "lib": true,
    "modules": [
     "disc_text",
+    "drop_backend",
     "game_exit",
     "icons",
     "release_layout",
+    "settings_file",
     "win_icon",
     "spacing",
     "chrome"
@@ -2279,6 +2281,7 @@
     "tim"
    ],
    "dev_deps": [
+    "engine-scene",
     "engine-vm",
     "overlay-images",
     "prot"
