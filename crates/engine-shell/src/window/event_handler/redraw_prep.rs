@@ -354,6 +354,14 @@ impl PlayWindowApp {
                 self.tick_no >= sc.capture_tick
             }
         });
+        // Capture harness: a field view off retail's framing
+        // (`LEGAIA_CAPTURE_FIELD_KNOBS`), held on every field frame.
+        if let Some([orbit, tilt, zoom]) = self.screenshot.as_ref().and_then(|sc| sc.field_knobs)
+            && self.session.host.world.mode == SceneMode::Field
+        {
+            let cam = &mut self.session.camera;
+            (cam.manual_orbit, cam.manual_tilt, cam.manual_zoom) = (orbit, tilt, zoom);
+        }
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
             && self.session.host.world.mode == SceneMode::Battle
             && capture_frame

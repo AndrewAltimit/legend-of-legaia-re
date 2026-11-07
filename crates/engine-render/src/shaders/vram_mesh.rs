@@ -157,15 +157,56 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
 // A flat far-bucket cell (`fa.y > fa.w`, its z pair swapped) goes into the
 // same slice: a decal authored under the floor plane (`conc`'s shadow strips,
 // six units down) paints over it, as it does over retail's far bucket.
+// Off retail's vantage (`ground_drop_param() > 0`) a flat far-bucket cell
+// takes the dropped floor instead (`field_dropped_floor_depth`); a sloped one
+// keeps the slice.
 const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
-fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
     if (sz_scale > 0.0 || clip.w <= 0.0) {
         return clip;
+    }
+    if (fa.y > fa.w && fa.x <= fa.z && ground_drop_param() > 0.0) {
+        return field_dropped_floor_depth(clip, fb);
     }
     if (fa.x > fa.z || fa.y > fa.w) {
         return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
     }
     return clip;
+}
+
+// The eye of a projection `m`, in its object space: the point every one of
+// the clip `x`, `y` and `w` rows maps to zero. `(0, 0, 0)` for a projection
+// with no eye (an orthographic one).
+fn eye_of_matrix(m: mat4x4<f32>) -> vec3<f32> {
+    let r0 = vec4<f32>(m[0].x, m[1].x, m[2].x, m[3].x);
+    let r1 = vec4<f32>(m[0].y, m[1].y, m[2].y, m[3].y);
+    let r3 = vec4<f32>(m[0].w, m[1].w, m[2].w, m[3].w);
+    let c13 = cross(r1.xyz, r3.xyz);
+    let det = dot(r0.xyz, c13);
+    if (abs(det) < 1.0e-20) {
+        return vec3<f32>(0.0);
+    }
+    return -(r0.w * c13 + r1.w * cross(r3.xyz, r0.xyz) + r3.w * cross(r0.xyz, r1.xyz)) / det;
+}
+
+// The field ground off retail's vantage (`ground_drop_param()`, staged by
+// `Renderer::set_field_ground_drop`): a flat bucketed cell is depth-tested as
+// the plane `drop` units below it, along each pixel's own ray
+// (`legaia_engine_scene::field_ground::dropped_floor_w`) - a decal on or just
+// under the floor still paints over it, a mesh buried deeper stays hidden.
+// The ray from an eye `h` above the floor meets that plane `(h + drop) / h`
+// times as deep, a factor constant over the cell, so the corners' depths
+// interpolate exactly. `fb` holds the corners' heights; a sloped cell keeps
+// its own depth.
+fn field_dropped_floor_depth(clip: vec4<f32>, fb: vec4<f32>) -> vec4<f32> {
+    let drop = ground_drop_param();
+    if (drop <= 0.0 || clip.w <= 0.0 || fb.x != fb.y || fb.x != fb.z || fb.x != fb.w) {
+        return clip;
+    }
+    let h = abs(eye_of_matrix(u.mvp).y - fb.x);
+    let w = clip.w * (h + drop) / max(h, 1.0);
+    let ab = depth_affine(u.mvp);
+    return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / w) * clip.w, clip.w);
 }
 
 // The field ground pass's sorted cells (`legaia_engine_scene::field_ground::
@@ -179,11 +220,15 @@ fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4
 // other mesh carries zeros and keeps its per-pixel depth). The field frame's
 // `SZ` is `clip.w` times the base matrix's scale
 // (`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). Off the field
-// (`sz_scale > 0`, the overworld's key) nothing moves.
+// (`sz_scale > 0`, the overworld's key) nothing moves. Off retail's vantage
+// the bucket gives way to the dropped floor (`field_dropped_floor_depth`).
 const FIELD_SZ_PER_W: f32 = 6.0;
 fn field_sorted_cell_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
     if (sz_scale > 0.0 || clip.w <= 0.0 || fa.z <= fa.x || fa.w <= fa.y) {
         return clip;
+    }
+    if (ground_drop_param() > 0.0) {
+        return field_dropped_floor_depth(clip, fb);
     }
     let w0 = (u.mvp * vec4<f32>(fa.x, fb.x, fa.y, 1.0)).w;
     let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
@@ -237,7 +282,7 @@ fn vs_main(
     // ahead of the pixel snap - retail bends SY before the packet is written.
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
-    clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
+    clip = field_far_bucket_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
     // A ground cell carries its own bucket (the two above); only a mesh
     // primitive links at its corners.

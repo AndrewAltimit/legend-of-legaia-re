@@ -252,6 +252,25 @@ impl LegaiaRuntime {
         .to_vec()
     }
 
+    /// This frame's field ground depth rule - the drop the page hands
+    /// `TmdRenderer.setGroundDrop` (the GLSL `u_ground_drop`), from the shared
+    /// `field_view_window::field_ground_drop` the native window's
+    /// `Renderer::set_field_ground_drop` call also reads. `0` keeps retail's
+    /// ordering-table buckets (retail's vantage, and off the field);
+    /// `debug_camera` is the page's `F3` vantage.
+    pub fn play_render_ground_drop(&self, debug_camera: bool) -> f32 {
+        self.scene_host
+            .host()
+            .and_then(|h| {
+                legaia_engine_world_views::field_view_window::field_ground_drop(
+                    &h.world,
+                    self.scene_host.camera(),
+                    debug_camera,
+                )
+            })
+            .unwrap_or(0.0)
+    }
+
     /// [`prim_near_reject::prim_corner_plan`](legaia_render_kernels::prim_near_reject::prim_corner_plan),
     /// flat: five words per vertex (four corner vertices and the count), which
     /// a mesh keeps across re-poses so the page fills the stream from its

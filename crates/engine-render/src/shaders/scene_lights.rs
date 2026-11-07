@@ -60,6 +60,9 @@ struct SceneLightsU {
     // (sz_per_w, H, 0, 0). Read by the vertex stage under PSX mode; all-zero
     // (the default) leaves every corner where it projects.
     gte_sat: vec4<f32>,
+    // The field ground's depth rule (`Renderer::set_field_ground_drop`):
+    // (drop, 0, 0, 0). All-zero (the default) keeps retail's buckets.
+    ground_drop: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
@@ -71,6 +74,10 @@ fn prim_near_params() -> vec4<f32> {
 
 fn gte_sat_params() -> vec4<f32> {
     return sl.gte_sat;
+}
+
+fn ground_drop_param() -> f32 {
+    return sl.ground_drop.x;
 }
 
 // The mood's (ambient rgb, emissive gain) for `dyn_light`.
@@ -237,5 +244,10 @@ fn prim_near_params() -> vec4<f32> {
 
 fn gte_sat_params() -> vec4<f32> {
     return vec4<f32>(0.0);
+}
+
+// Field ground depth stub: the single-mesh pipelines keep retail's buckets.
+fn ground_drop_param() -> f32 {
+    return 0.0;
 }
 "#;

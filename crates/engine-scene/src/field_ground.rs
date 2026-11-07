@@ -202,6 +202,42 @@ pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> 
     refs
 }
 
+/// How far below a flat ground cell the hosts' depth test takes the floor
+/// while the camera stands off retail's vantage, in world units
+/// ([`dropped_floor_w`]).
+///
+/// The far bucket and the sorted-cell bucket ([`flat_refs`]) reproduce
+/// retail's ordering table, which is only faithful under retail's own
+/// camera. They let anything not in the bucket paint over the floor -
+/// nearer or not - and retail's scenes hide meshes below the floor plane
+/// that its steep follow camera only ever sees as slivers at their seams. A
+/// camera swung, tilted toward the horizon or pulled back sees those buried
+/// faces whole, painted over the ground: in `town01` a green-brick
+/// triangle buried more than eight units under the path south of the garden
+/// fence shows on the path from a swung camera.
+///
+/// So off retail's vantage a flat bucketed cell is depth-tested as the plane
+/// this far below it, along each pixel's own ray: the floor still yields to
+/// a decal authored on or just under it (`conc`'s wall-base shadow strips,
+/// six units down), and hides what is buried deeper. A sloped far-bucket
+/// cell keeps the far slice, since the cliff faces it rises against are what
+/// hide it; a sloped sorted cell keeps its per-pixel depth.
+pub const FREE_VANTAGE_FLOOR_DROP: f32 = 8.0;
+
+/// The view depth at which a pixel's ray meets the plane `drop` units below
+/// a flat floor, given the depth `w` at which it meets the floor itself and
+/// the eye's height `eye_height` above the floor (either side): the ray
+/// travels `(h + drop) / h` times as far, since the two planes are parallel.
+/// A plane is affine in `1 / w` across the screen, so a vertex stage that
+/// writes this per corner interpolates it exactly. The hosts' ground shaders
+/// are the GPU twins (`field_dropped_floor_depth` in `engine-render`,
+/// `fieldDroppedFloorW` on the play page), which recover the eye from the
+/// draw's own matrix.
+pub fn dropped_floor_w(w: f32, eye_height: f32, drop: f32) -> f32 {
+    let h = eye_height.abs();
+    w * (h + drop) / h.max(1.0)
+}
+
 /// Whether [`flat_refs`] marked this vertex's cell as a sloped far-bucket
 /// cell (its `x0` / `x1` pair swapped).
 pub fn is_far_bucket_ref(r: &[f32; 8]) -> bool {
@@ -376,5 +412,25 @@ mod tests {
                 .iter()
                 .all(|r| !is_flat_far_bucket_ref(r))
         );
+    }
+
+    /// The dropped plane is met along the same ray: a camera `h` above the
+    /// floor reaches the plane `drop` lower `(h + drop) / h` times as deep,
+    /// from either side, and a decal six units under the floor stays in
+    /// front of it.
+    #[test]
+    fn dropped_floor_is_the_parallel_plane_along_the_ray() {
+        let w = 1000.0;
+        assert_eq!(dropped_floor_w(w, 500.0, 0.0), w);
+        assert_eq!(dropped_floor_w(w, 500.0, 50.0), 1100.0);
+        assert_eq!(dropped_floor_w(w, -500.0, 50.0), 1100.0);
+        // A decal six units under the floor, on the same ray, is nearer than
+        // the dropped plane; a mesh buried twelve units is behind it.
+        let drop = FREE_VANTAGE_FLOOR_DROP;
+        let at = |depth: f32| dropped_floor_w(w, 300.0, depth);
+        assert!(at(6.0) < at(drop));
+        assert!(at(12.0) > at(drop));
+        // An eye level with the floor does not divide by zero.
+        assert!(dropped_floor_w(w, 0.0, drop).is_finite());
     }
 }

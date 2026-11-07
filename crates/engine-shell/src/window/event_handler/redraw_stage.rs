@@ -629,6 +629,17 @@ impl PlayWindowApp {
             retail_camera,
             self.session.camera.globals.0[9] as f32,
         ));
+        // The field ground's ordering-table buckets hold at retail's
+        // vantage; off it a flat bucketed cell is depth-tested as a floor
+        // a few units lower, so faces buried under it stay hidden.
+        r.set_field_ground_drop(
+            legaia_engine_world_views::field_view_window::field_ground_drop(
+                &self.session.host.world,
+                &self.session.camera,
+                self.field_debug_camera,
+            )
+            .filter(|_| std::env::var_os("LEGAIA_DIAG_NO_GROUND_DROP").is_none()),
+        );
         if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
             r.set_semi_blend(false);
         }

@@ -202,6 +202,13 @@ pub struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_CAPTURE_FIELD_KNOBS=<orbit>,<tilt>,<zoom>`: hold the field
+    /// follow camera's drag / tilt / zoom knobs (`Camera::manual_orbit`,
+    /// `manual_tilt`, `manual_zoom`) at these values on every field frame -
+    /// the scripted twin of a mouse drag, for capturing a view off retail's
+    /// framing (the play page's `play_camera_orbit_by` / `tilt_by` /
+    /// `zoom_by` reach the same fields).
+    pub field_knobs: Option<[f32; 3]>,
     /// `LEGAIA_BATTLE_BACKDROP_YAW=<angle>`: the backdrop draw's slot-1 Y
     /// angle the capture must show (`World::seed_battle_backdrop_slot_1_yaw`),
     /// held on every battle frame. The angle is time spent in keeping fights
@@ -1052,6 +1059,12 @@ impl ScreenshotConfig {
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            field_knobs: std::env::var("LEGAIA_CAPTURE_FIELD_KNOBS")
+                .ok()
+                .and_then(|v| {
+                    let n: Vec<f32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                    <[f32; 3]>::try_from(n).ok()
+                }),
             battle_backdrop_yaw: std::env::var("LEGAIA_BATTLE_BACKDROP_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

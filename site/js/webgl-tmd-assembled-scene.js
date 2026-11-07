@@ -174,6 +174,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * renderAssembled stages them again on the next frame. */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
     if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
+    if (this.locGroundDrop) gl.uniform1f(this.locGroundDrop, 0);
     if (this.locGteSat) gl.uniform4f(this.locGteSat, 0, 0, 0, 0);
     if (this.locNclipCull) gl.uniform1i(this.locNclipCull, 0);
     if (this.locGrade) gl.uniform4f(this.locGrade, 1, 1, 1, 0);
@@ -560,6 +561,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (this.locCurveBias) gl.uniform1f(this.locCurveBias, this.overworldCurveBias || 0);
     /* Retail's per-primitive near reject (off unless the play page staged it). */
     if (this.locPrimNear) gl.uniform4fv(this.locPrimNear, this.primNear);
+    /* The field ground's depth rule (0 = retail's buckets unless the play
+     * page staged a drop). */
+    if (this.locGroundDrop) gl.uniform1f(this.locGroundDrop, this.groundDrop || 0);
     /* The GTE's register limits (off unless the play page staged them). */
     if (this.locGteSat) gl.uniform4fv(this.locGteSat, this.gteSat);
     /* Prologue grade + depth cue (identity / off unless the play page

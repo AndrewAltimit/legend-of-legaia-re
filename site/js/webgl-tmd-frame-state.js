@@ -126,6 +126,13 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       ? [+params[0], +params[1], +params[2], +params[3]] : [0, 0, 0, 0];
   }
 
+  /* The field ground's depth rule for the assembled scene pass: the drop
+   * from the shared `field_view_window::field_ground_drop` kernel (the native
+   * renderer's `set_field_ground_drop`). 0 keeps retail's buckets. */
+  setGroundDrop(drop) {
+    this.groundDrop = drop > 0 ? +drop : 0;
+  }
+
   /* (Re)build and bind a scene mesh's primitive-corner stream into its VAO
    * (which must be bound). Without a hook, or when the hook declines, the
    * attributes stay disabled and read the generic default - count 0, never
