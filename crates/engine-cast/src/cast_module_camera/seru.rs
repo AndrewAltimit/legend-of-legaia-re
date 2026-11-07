@@ -267,6 +267,7 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 seat,
                 yaw_base: st.yaw_base,
                 depth_raw: GIMARD_WALK_DEPTH,
+                style: None,
             });
             // No creature seated (a headless host) has nothing to walk.
             if !st.creature_arrived && st.creature_live.is_some() {

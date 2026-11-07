@@ -336,6 +336,10 @@ pub struct ModuleFollow {
     pub yaw_base: i32,
     /// `ctx[+0x6D0]` - the raw eye depth.
     pub depth_raw: i32,
+    /// The framing style `ctx[+0xD]` the arm stored ahead of its case 6,
+    /// when it is not the band's own (PROT 0941's Steal arm 2 zeroes it,
+    /// `sb zero,0xd(s2)` at `0x801F7B44`); `None` frames on the band's.
+    pub style: Option<u8>,
 }
 
 /// A module's countdown word.

@@ -108,6 +108,9 @@ pub struct CaptureCamArm {
     /// (`FUN_801D5854(ctx[+0x13], 6)`) on this pass: the follow framing on
     /// the live yaw ladder `ctx[+0x6DA]` and depth `ctx[+0x6D0]`.
     pub follow_caster: bool,
+    /// The framing style `ctx[+0xD]` this pass's case 6 reads, where the arm
+    /// stores its own ahead of the call ([`super::ModuleFollow::style`]).
+    pub follow_style: Option<u8>,
     /// The arm framed the caster through the action SM's **case 8**
     /// (`FUN_801D5854(ctx[+0x13], 8)`) on this pass: the post-action
     /// framing on the caster and its target.

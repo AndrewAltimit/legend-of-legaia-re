@@ -455,7 +455,7 @@ impl World {
                     ],
                     height: None,
                 };
-                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
+                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, f.style.unwrap_or(style));
             }
             if run.camera_end_frame {
                 cam.arm_module_end_frame();

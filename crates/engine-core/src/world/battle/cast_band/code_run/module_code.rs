@@ -726,6 +726,7 @@ impl World {
                     seat: seats.caster,
                     yaw_base: st.yaw_base,
                     depth_raw: seats.depth_raw,
+                    style: arm.follow_style,
                 });
             }
         }
