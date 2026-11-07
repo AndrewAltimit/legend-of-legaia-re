@@ -741,9 +741,48 @@ pub fn fit_cast_offset_after_wait(
             .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
             .unwrap_or(offset)
     };
-    let coarse = best(offset + window.0, offset + window.1, 64);
-    let mid = best(coarse - 64, coarse + 64, 8);
-    (best(mid - 8, mid + 8, 1), window)
+    // The coarse pass reads the two sides' loudness, not their waveforms: a
+    // voice's waveform correlation repeats at its pitch period, so a 64-sample
+    // grid over it lands on whichever side lobe the grid happens to sample,
+    // and a cue tail a few dB under the voice was enough to move it a period
+    // (`gilium_summon_mid_cast`, `-5771` to `-5245`). The envelope has no such
+    // lobes; the waveform passes then refine inside one period of it.
+    let block = ENVELOPE_BLOCK as i64;
+    let env = |sample: &dyn Fn(i64) -> f64, from: i64, n: usize| -> Vec<f64> {
+        (0..n)
+            .map(|b| {
+                let t0 = from + b as i64 * block;
+                (t0..t0 + block).map(|t| sample(t).abs()).sum::<f64>() / block as f64
+            })
+            .collect()
+    };
+    let blocks = span / ENVELOPE_BLOCK;
+    let cast_env = env(&|t| mono(cast, t, 1.0), split as i64, blocks);
+    let left = |t: i64| mono(retail, t, MEDNAFEN_RECORD_GAIN) - mono(track, t + lag, 1.0);
+    let ncc = |a: &[f64], b: &[f64]| -> f64 {
+        let n = a.len().min(b.len()) as f64;
+        if n == 0.0 {
+            return f64::MIN;
+        }
+        let (ma, mb) = (a.iter().sum::<f64>() / n, b.iter().sum::<f64>() / n);
+        let (mut d, mut ea, mut eb) = (0.0, 0.0, 0.0);
+        for (x, y) in a.iter().zip(b) {
+            d += (x - ma) * (y - mb);
+            ea += (x - ma) * (x - ma);
+            eb += (y - mb) * (y - mb);
+        }
+        d / (ea * eb).sqrt().max(1e-9)
+    };
+    let coarse = (offset + window.0..=offset + window.1)
+        .step_by(ENVELOPE_BLOCK / 4)
+        .max_by(|&a, &b| {
+            let ea = env(&left, split as i64 + a, blocks);
+            let eb = env(&left, split as i64 + b, blocks);
+            ncc(&cast_env, &ea).total_cmp(&ncc(&cast_env, &eb))
+        })
+        .unwrap_or(offset);
+    let mid = best(coarse - block, coarse + block, 4);
+    (best(mid - 4, mid + 4, 1), window)
 }
 
 /// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
@@ -1062,6 +1101,9 @@ pub struct PcmScore {
 }
 
 const WINDOW: usize = 22_050;
+/// Samples per loudness block of [`fit_cast_offset_after_wait`]'s coarse
+/// pass: longer than a voice's pitch period, short against a syllable.
+const ENVELOPE_BLOCK: usize = 256;
 /// Lag search on either side of the running estimate, samples: past one vsync
 /// on the first window, then a few samples for what wanders.
 const FIRST_SEARCH: i64 = 3_000;
