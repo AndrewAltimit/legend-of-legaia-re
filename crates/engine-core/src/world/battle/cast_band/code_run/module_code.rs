@@ -1310,11 +1310,16 @@ impl World {
                     // Retail tests once a pass, four vsyncs of `0x40` apart: from
                     // `0x100` on, so the ray's first swing past the victim
                     // misses and the hit waits for the centre crossing at
-                    // `0x800`, 32 vsyncs in.
+                    // `0x800`, 32 vsyncs in. The pass ramps the word first
+                    // (`0x801F7ADC..0x801F7AF0`) and builds its ray from the
+                    // ramped word, so the test is on the word this tick's ramp
+                    // reaches: read before it, the `0x800` crossing struck a
+                    // pass late.
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
-                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8)
-                    {
+                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8.wrapping_add(
+                            ticks_a::theeder_ramp_per_tick(ticks_a::THEEDER_SWEEP_ARM),
+                        )) {
                         use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
                         };

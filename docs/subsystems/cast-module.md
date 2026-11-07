@@ -1596,7 +1596,7 @@ trio, and the module's stager `0x801F8EAC` seats `0x801F90B0` on its caller
 `theeder_stager_spawns`; the two fades fire as
 [presentation calls](#presentation-calls).
 
-Arm 11's exit lights the monster row again: every live seat `3..7` takes the neutral word `+0x04 = 0x20080200` behind its HP test (`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The draw tick's tint pass refreshes each node's colour word `+0x74` off it, so the node tick's zero-colour skip lets the row's anims run through the sweep: a retail recording walks the victim's idle from arm 12's first pass and commits its reaction clip on the hit pass, and the port, which left the row dark, held the victim frozen and rang its reaction cue a pass late.
+Arm 11's exit lights the monster row again: every live seat `3..7` takes the neutral word `+0x04 = 0x20080200` behind its HP test (`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The draw tick's tint pass refreshes each node's colour word `+0x74` off it, so the node tick's zero-colour skip lets the row's anims run through the sweep: a retail recording walks the victim's idle from arm 12's first pass and commits its reaction clip on the hit pass, and the port, which left the row dark, held the victim frozen and rang its reaction cue a pass late. Arm 12's pass ramps the word first (`0x801F7ADC..0x801F7AF0`) and builds and tests its ray from the ramped word, so the `0x800` crossing strikes on the pass that reaches it; the port's per-tick ramp tests the word its tick's ramp reaches (`theeder_pass_tested`).
 
 Arms 10 to 12 are ramps on `ctx[+0x6D8]`. Arm 10 zeroes it (`0x801F7768`).
 Arm 11 adds `(step * scalar) >> 1` a pass and holds below `0x100`

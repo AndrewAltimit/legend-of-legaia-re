@@ -73,7 +73,9 @@ pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
 /// frame step is 4 through this arm, so its word moves `0x100` a pass where the
 /// engine's moves `0x40` a tick, and only every fourth tick samples what retail's
 /// cone test sees. A test on the word's small values would hit a victim the first
-/// swing of retail's ray steps over.
+/// swing of retail's ray steps over. `ctx_6d8` is the word after this tick's
+/// ramp: retail ramps (`0x801F7ADC..0x801F7AF0`) and then tests the ray it
+/// builds from the ramped word.
 pub const fn theeder_pass_tested(ctx_6d8: u16) -> bool {
     ctx_6d8 >= 0x100 && ctx_6d8 & 0xFF == 0
 }
