@@ -353,6 +353,16 @@ pub struct BattleState {
     /// `legaia_engine_battle_hud::battle_move_name` answers `None` for a party
     /// attack while it is set.
     pub move_label_closed: bool,
+    /// The monster move-name label: the spell id whose name element `0x4C`
+    /// shows for a monster's clip. The anim commit `FUN_8004AD80` reads the
+    /// clip entry's `+0x77` byte for a monster seat (`sltiu v0,s3,0x3` at
+    /// `0x8004AEBC`): a non-zero byte on the outgoing clip `+0x1D9`
+    /// destroys widget `0x21` (`0x8004AED8..0x8004AF04`), and a non-zero
+    /// byte on the incoming clip `+0x1DA` measures the spell table's `+8`
+    /// name, centres records 76 / 77 on it and opens the label
+    /// (`0x8004AF08..0x8004AF88`). A physical attack's clip names its move
+    /// this way (Nighto's swing), with no spell queued.
+    pub monster_move_label: Option<u8>,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`legaia_engine_battle::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -1340,6 +1350,7 @@ impl BattleState {
             steal_caption: None,
             art_turn_spirit: 0,
             move_label_closed: false,
+            monster_move_label: None,
             player_driven: false,
             command: None,
             item_menu: None,

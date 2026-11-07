@@ -728,6 +728,11 @@ at `0x801E4458`), not on the seed that stores `0x28`: the films of Bloody Horns 
 Scythe Wind hold no name on the frame the seed's framing shows and the name on the
 next. The port shows it from the pass after `0x28` (`battle_move_name`).
 
+A monster's physical attack opens the same label from its clip: the anim commit
+`FUN_8004AD80` reads the incoming clip entry's `+0x77` as a spell id and opens element
+`0x4C` on that name, and the next commit takes it down
+([monster-animation](../formats/monster-animation.md#a-monster-clip-names-its-move)).
+
 The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in

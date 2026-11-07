@@ -34,7 +34,7 @@ Action entry head (offsets from the entry start). The byte at `+0x00` is read tw
 | `+0x54..+0x73` | 8 x 4 | sound-cue track | `[u16 frame][u16 cue]` ([details](#sound-cue-track-entry-0x540x73)) | Confirmed |
 | `+0x74` | 1 | AGL cost | Action cost spent from the AGL gauge | Confirmed |
 | `+0x76` | 1 | event gate | `0` enables the mid-clip event commit and the hit-event side | Confirmed |
-| `+0x77` | 1 | sub-id / attach key | Read by the equipment attach scan and the weapon-trail trigger; the after-image ring id is this byte plus `0x10` | Confirmed |
+| `+0x77` | 1 | sub-id / attach key | Read by the equipment attach scan and the weapon-trail trigger; the after-image ring id is this byte plus `0x10`. On a monster seat it is also the move-name id: the commit opens the name label on this spell-table id ([below](#a-monster-clip-names-its-move)) | Confirmed |
 | `+0x78` | 1 | playback rate | `1` or `2` in retail | Confirmed |
 | `+0x7A` | 1 | status / impact selector | Same enum as a move-power record's `+0x0A` | Confirmed |
 | `+0x84` | 1 | loop-hold seed | Seeds the actor's loop-hold counter | Confirmed |
@@ -180,6 +180,26 @@ The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id, `+0x1D9`
 There is no remap table and no special case for id 6: retail's idle id is **0**. The battle SM's `FUN_801D5854(actor, 6..9)` "pose" calls are a separate camera / presentation program space that never touches the anim fields.
 
 Party ids `>= 0x10` trigger the dynamic-slot path instead. Basic swings staged as direction bytes `0x0C..0x0F` are still table-direct; art starters `0x19`/`0x1A` and art constants `0x1B+` are not. The party's entries use the same head layout with the packed stream at entry `+0xAC` instead of `+0x8C`, and `parts` = the character's skeleton bone count. See [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
+
+### A monster clip names its move
+
+The anim commit `FUN_8004AD80` gives a monster seat a move-name label off the clip entries
+themselves (`sltiu v0,s3,0x3` at `0x8004AEBC` skips the block for a party seat). It reads the
+seat's entry table `0x801C9348 + (seat - 3) * 4`, then entry `+0x4C + clip * 4`:
+
+- the outgoing clip `+0x1D9`: a non-zero `+0x77` destroys widget `0x21`, the label
+  (`jal 0x800319A8` with `a0 = 0x21`, `0x8004AED8..0x8004AF04`);
+- the incoming clip `+0x1DA`: a non-zero `+0x77` is a [spell-table](spell-table.md) id. The
+  commit measures that record's `+8` name (`FUN_80035F04`), writes `0xA0 - width / 2` into
+  the four X fields of placement records 76 / 77, stores the string in both and opens the
+  label with `FUN_801D8DE8(0x4C, 0)` (`0x8004AF08..0x8004AF88`).
+
+Every commit runs it, the hand-off to idle included, so the label stands for exactly the
+clip that named it. A physical attack shows its move's name this way with no spell queued:
+the films of `battle_vell_nighto_49_strike` and `battle_rugi_caruban_3_strike` hold
+`Propeller`, `Flap` and `Bite` at the label's seat for their clips. Port:
+`BattleState::monster_move_label`, set in `World::commit_staged_battle_anim_at_boundary` and
+read by `legaia_engine_battle_hud::battle_move_name`.
 
 ### A special attack can be a chain of entries
 

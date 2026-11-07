@@ -1775,3 +1775,37 @@ fn a_summon_creatures_runtime_cue_keys_record_zero() {
     assert_eq!(world.battle_sound_category(7), 0);
     assert_eq!(world.battle_sound_category(0), 7);
 }
+
+/// `FUN_8004AD80`'s monster arm (`0x8004AEBC..0x8004AF88`): a monster seat's
+/// incoming clip whose entry `+0x77` is non-zero opens the move-name label on
+/// that spell id; the commit that replaces it (the hand-off to idle included)
+/// takes it down when the outgoing clip's byte is non-zero.
+#[test]
+fn a_monster_clip_names_its_move_until_it_hands_off() {
+    let mut world = pose_test_world();
+    world.actors[0].battle_monster_id = Some(49);
+    let mut swing = pose_test_clip(5, 3, 0);
+    swing.attach_key = 0x2C;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 8];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[4] = Some(pose_test_clip(4, 2, 0));
+    clips[5] = Some(swing);
+    world.actors[0].battle_action_clips = Some(std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 4;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(
+        world.battle.monster_move_label, None,
+        "a clip with no +0x77"
+    );
+    world.actors[0].battle.queued_anim = 5;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.battle.monster_move_label, Some(0x2C));
+    world.actors[0].battle.queued_anim = 0;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.battle.monster_move_label, None, "idle takes it down");
+    // A party seat's clip never touches it (`sltiu v0,s3,0x3`).
+    world.actors[0].battle_monster_id = None;
+    world.actors[0].battle.queued_anim = 5;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.battle.monster_move_label, None);
+}
