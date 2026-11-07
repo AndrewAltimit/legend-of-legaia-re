@@ -17,6 +17,7 @@ mod battle_seed;
 mod bearing;
 mod best_equipment;
 mod cast_damage;
+mod cast_steal;
 mod common;
 mod confuse;
 mod dance_floor;

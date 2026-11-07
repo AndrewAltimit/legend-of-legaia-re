@@ -198,20 +198,15 @@ impl World {
     /// (`FUN_801D8DE8(0x5B, 0)` at `0x801F7AF8`): a bag item's line composed
     /// from the module's strings at `0x801F839C` / `0x801F83B4` around the
     /// item's name, `0x801F83A0` when the bag held nothing, `0x801F83C4` on a
-    /// missed roll.
+    /// missed roll, and on a monster robbing a monster the name between
+    /// `0x801F839C` and `0x801F83E0` (`steal_caption`).
     pub(in crate::world) fn raise_cast_steal_caption(
         &mut self,
         outcome: legaia_engine_cast::cast_arm_ticks::StealOutcome,
     ) {
-        use legaia_engine_cast::cast_arm_ticks::StealOutcome;
-        let text = match outcome {
-            StealOutcome::FromBag { item } => {
-                format!("`{}' was stolen.", self.cast_item_name(item))
-            }
-            StealOutcome::BagEmpty => "Nothing was stolen.".to_string(),
-            StealOutcome::FromMonster { hit: false, .. } => "Failed to steal an item.".to_string(),
-            StealOutcome::FromMonster { .. } => return,
-        };
+        let text = legaia_engine_cast::cast_arm_ticks::steal_caption(outcome, |item| {
+            self.cast_item_name(item)
+        });
         self.raise_cast_message_bar(text);
     }
 

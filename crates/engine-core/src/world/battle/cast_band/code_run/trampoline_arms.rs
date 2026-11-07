@@ -210,10 +210,11 @@ impl World {
         // fabricate one, so the arm needs both.
         let floor = (self.party.party_count > 1 && self.party_roster_slot(1) as u8 + 1 == 4)
             .then(|| self.party.inventory.window_bounds().0.min(0xFF) as u8);
-        // One `next_rand` per rejected slot, not a pre-drawn batch: retail
-        // advances the shared cursor once per draw, so over-drawing would
-        // desynchronise every later roll in the battle.
-        let slot = legaia_engine_cast::cast_arm_ticks::steal_pick_bag_slot(
+        // The gate draw, then one `next_rand` per rejected slot, not a
+        // pre-drawn batch: retail advances the shared cursor once per draw, so
+        // a missed or extra draw would desynchronise every later roll in the
+        // battle.
+        let slot = legaia_engine_cast::cast_arm_ticks::steal_party_draw(
             &bag,
             floor,
             || self.next_rand(),

@@ -186,3 +186,106 @@ fn the_flag_scrub_matches() {
         assert_eq!(cpu.mem.rd32(ACTOR + s * STRIDE + 8), words[s as usize]);
     }
 }
+
+/// The attack ring's builder `FUN_801D8A88` against `build_attack_target_queue`,
+/// then both arms of its step `FUN_801D8D00` over the ring retail built. The
+/// seats crowd one another so ties and coincident seats come up; a sweep that
+/// finds nothing leaves its context byte stale in retail, where the port
+/// writes `0`.
+#[test]
+fn the_attack_ring_matches() {
+    use legaia_engine_battle_vm::battle_action::{
+        AttackTargetQueue, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
+        cycle_attack_target,
+    };
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5249_4E47);
+    let (mut full, mut short, mut stepped) = (0, 0, 0);
+    for round in 0..30000 {
+        let wide = rng.below(2) == 0;
+        let (pos, mut alive) = gen_pos(&mut rng, wide);
+        // Crowd a few seats onto one spot so the angle ties.
+        if rng.below(4) == 0 {
+            let s = 3 + rng.below(4) as usize;
+            let t = 3 + rng.below(4) as usize;
+            let mut p = pos.clone();
+            p[s] = p[t];
+            seat(&mut cpu, &p, &alive, 0, 0);
+        }
+        let acting = rng.below(3) as usize;
+        alive[acting] = true;
+        let target = 3 + rng.below(4) as u8;
+        let mut posv = pos.clone();
+        if rng.below(4) == 0 {
+            let s = 3 + rng.below(4) as usize;
+            let t = 3 + rng.below(4) as usize;
+            posv[s] = posv[t];
+        }
+        seat(&mut cpu, &posv, &alive, 0, 0);
+        cpu.mem.wr8(ACTOR + acting as u32 * STRIDE + 0x1DD, target);
+        cpu.mem.wr8(CTX + 0x13, acting as u8);
+        let stale = [
+            3 + rng.below(4) as u8,
+            3 + rng.below(4) as u8,
+            3 + rng.below(4) as u8,
+        ];
+        for (i, b) in stale.iter().enumerate() {
+            cpu.mem.wr8(CTX + 0x246 + i as u32, *b);
+        }
+        assert_eq!(cpu.call(0x801D_8A88, &[]), Stop::Returned);
+        let retail: Vec<u8> = (0..5).map(|i| cpu.mem.rd8(CTX + 0x244 + i)).collect();
+
+        let mut pool = [PoolActor::default(); 8];
+        for s in 0..7 {
+            pool[s] = PoolActor {
+                alive: alive[s],
+                x: posv[s].x,
+                z: posv[s].z,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        pool[acting].target_slot = target;
+        let AttackTargetQueue {
+            count,
+            wrap_slot,
+            ordered,
+        } = build_attack_target_queue(&pool, acting, bearing_12bit_approx);
+        let ctx = format!("round {round} acting {acting} target {target} alive {alive:?}");
+        assert_eq!(retail[0], count, "count: {ctx}");
+        assert_eq!(retail[1], wrap_slot, "wrap: {ctx}");
+        for i in 0..3 {
+            let want = if ordered[i] == 0 {
+                stale[i]
+            } else {
+                ordered[i]
+            };
+            assert_eq!(retail[2 + i], want, "ordered[{i}]: {ctx} retail {retail:?}");
+        }
+        if ordered.iter().all(|&o| o != 0) {
+            full += 1;
+        } else {
+            short += 1;
+        }
+        // The step, over the ring as retail left it.
+        for (arg, mode) in [(0, TargetCycle::Next), (1, TargetCycle::Prev)] {
+            if count == 0 {
+                continue;
+            }
+            assert_eq!(cpu.call(0x801D_8D00, &[arg]), Stop::Returned);
+            assert_eq!(
+                cpu.regs.r[V0] as u8,
+                cycle_attack_target(&retail, target, mode),
+                "step {mode:?}: {ctx} ring {retail:?}"
+            );
+            stepped += 1;
+        }
+    }
+    assert!(
+        full > 1000 && short > 1000 && stepped > 20000,
+        "{full} {short} {stepped}"
+    );
+}
