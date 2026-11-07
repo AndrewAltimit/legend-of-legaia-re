@@ -16,12 +16,19 @@
 //! one inherits the hidden console). On Unix it replaces itself with the
 //! engine (`exec`), so a terminal sees the engine's own output and exit.
 //!
-//! Arguments are passed through, and the engine's exit status is returned.
+//! Arguments are passed through, and the engine's exit status is returned,
+//! except one: a lone file argument is what the desktop hands a program a
+//! file was opened with ("Open with", or a file dropped on its icon), and
+//! the engine would read it as an unknown subcommand. It goes to the
+//! launcher as `--open <file>`, which takes it as if it were dropped on the
+//! launcher's window ([`engine_args`]).
 //! docs/tooling/releases.md records why this is a separate stub and not
 //! `windows_subsystem` on the engine itself.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+use std::ffi::OsString;
+use std::path::Path;
 use std::process::{Command, ExitCode};
 
 use legaia_app_theme::release_layout::{TOOLS_DIR, engine_file_name, find_engine};
@@ -105,6 +112,17 @@ fn run(mut cmd: Command, engine: &std::path::Path) -> ExitCode {
     }
 }
 
+/// The engine's arguments for this program's own: unchanged, except that a
+/// lone argument naming a file (`is_file`) becomes `--open <file>`.
+fn engine_args(args: Vec<OsString>, is_file: impl Fn(&Path) -> bool) -> Vec<OsString> {
+    match args.as_slice() {
+        [one] if !one.to_string_lossy().starts_with('-') && is_file(Path::new(one)) => {
+            vec![OsString::from("--open"), one.clone()]
+        }
+        _ => args,
+    }
+}
+
 fn main() -> ExitCode {
     let Some(engine) = std::env::current_exe().ok().and_then(|me| find_engine(&me)) else {
         report(&format!(
@@ -115,7 +133,44 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
     let mut cmd = Command::new(&engine);
-    cmd.args(std::env::args_os().skip(1));
+    cmd.args(engine_args(
+        std::env::args_os().skip(1).collect(),
+        Path::is_file,
+    ));
     configure(&mut cmd);
     run(cmd, &engine)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<OsString> {
+        v.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn a_lone_file_opens_in_the_launcher() {
+        let file = |_: &Path| true;
+        assert_eq!(
+            engine_args(args(&["/g/Legaia.bin"]), file),
+            args(&["--open", "/g/Legaia.bin"])
+        );
+    }
+
+    #[test]
+    fn everything_else_passes_through() {
+        let file = |p: &Path| p.extension().is_some();
+        // No arguments: the launcher.
+        assert!(engine_args(args(&[]), file).is_empty());
+        // A subcommand, a flag, or a word that names no file.
+        assert_eq!(engine_args(args(&["config"]), file), args(&["config"]));
+        assert_eq!(engine_args(args(&["--help"]), file), args(&["--help"]));
+        assert_eq!(
+            engine_args(args(&["play-window", "--disc", "/g/l.bin"]), file),
+            args(&["play-window", "--disc", "/g/l.bin"])
+        );
+        // A flag-looking name is never taken for a file.
+        assert_eq!(engine_args(args(&["-x.bin"]), file), args(&["-x.bin"]));
+    }
 }

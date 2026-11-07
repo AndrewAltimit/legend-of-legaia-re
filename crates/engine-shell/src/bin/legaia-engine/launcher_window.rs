@@ -96,8 +96,14 @@ const TITLE: &str = "Legend of Legaia";
 /// under [`DIRECT_ENV`] with a good remembered disc), or `None` when the
 /// launcher already finished - the user quit, or the game ran in a child
 /// process.
-pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
+///
+/// `opened` is a file the player opened the game with (`--open`, from the
+/// `Legend of Legaia` program's "Open with" or a drop on its icon): the
+/// window takes it as if it were dropped on it, once it is open.
+pub(crate) fn run(opened: Option<PathBuf>) -> Result<Option<Vec<OsString>>> {
     console::detach_if_double_clicked();
+    // Resolved now: the launcher moves into the data directory below.
+    let opened = opened.map(|p| std::path::absolute(&p).unwrap_or(p));
     let settings_file = launcher::settings_path();
     let loaded = match settings_file.as_deref() {
         Some(f) => LauncherSettings::load(f),
@@ -107,6 +113,7 @@ pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
     let decision = launcher::decide(loaded, launcher::validate_disc);
     enter_data_dir();
     if let LaunchDecision::Play(info) = &decision
+        && opened.is_none()
         && std::env::var_os(DIRECT_ENV).is_some_and(|v| !v.is_empty() && v != "0")
     {
         log::info!("launcher: booting {} directly", info.bin.display());
@@ -122,6 +129,7 @@ pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
         }
     };
     let mut app = LauncherApp::new(disc, problem, settings, settings_file);
+    app.opened = opened;
     let event_loop = match picker_event_loop() {
         Ok(l) => l,
         Err(e) => no_window(&format!("{e:#}")),
@@ -468,6 +476,9 @@ struct LauncherApp {
     clipboard: Option<arboard::Clipboard>,
     /// Path typed into the window (fallback when no file dialog is available).
     typed: String,
+    /// A file the game was opened with (`--open`), taken as a drop once the
+    /// window is open ([`Self::open_path`]).
+    opened: Option<PathBuf>,
     modifiers: ModifiersState,
     /// Last cursor position, in surface pixels.
     cursor: Option<(f64, f64)>,
@@ -532,6 +543,7 @@ impl LauncherApp {
             failure_report: None,
             clipboard: None,
             typed: String::new(),
+            opened: None,
             modifiers: ModifiersState::empty(),
             cursor: None,
             game: None,
@@ -637,6 +649,18 @@ impl LauncherApp {
             GOOD,
         )]);
         self.win.request_redraw();
+    }
+
+    /// Take a dropped (or `--open`ed) file: an expansion pack, a memory
+    /// card, else a disc image.
+    fn open_path(&mut self, path: &Path) {
+        if launcher::expansion_pack_path(path).is_some() {
+            self.try_expansion(path);
+        } else if launcher::is_card_file(path) {
+            self.try_card(path);
+        } else {
+            self.try_disc(path);
+        }
     }
 
     fn try_disc(&mut self, path: &Path) {
@@ -1874,6 +1898,11 @@ impl ApplicationHandler for LauncherApp {
         if self.game.is_none() && self.win.window.is_none() {
             self.open_window(evl);
         }
+        if self.win.window.is_some()
+            && let Some(path) = self.opened.take()
+        {
+            self.open_path(&path);
+        }
     }
 
     fn about_to_wait(&mut self, evl: &ActiveEventLoop) {
@@ -1890,15 +1919,7 @@ impl ApplicationHandler for LauncherApp {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.win.request_redraw(),
             WindowEvent::RedrawRequested => self.redraw(evl),
-            WindowEvent::DroppedFile(p) => {
-                if launcher::expansion_pack_path(&p).is_some() {
-                    self.try_expansion(&p);
-                } else if launcher::is_card_file(&p) {
-                    self.try_card(&p);
-                } else {
-                    self.try_disc(&p);
-                }
-            }
+            WindowEvent::DroppedFile(p) => self.open_path(&p),
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             // A scripted capture shows the scripted focus, not whatever row
             // the display's resting pointer happens to sit over.
@@ -3069,6 +3090,11 @@ mod tests {
                 .cmd
                 .is_none()
         );
+        // `--open` (the game program's "Open with") is the launcher's alone.
+        let opened = Cli::try_parse_from(["legaia-engine", "--open", "/g/l.bin"]).unwrap();
+        assert!(opened.cmd.is_none());
+        assert_eq!(opened.open.as_deref(), Some(Path::new("/g/l.bin")));
+        assert!(Cli::try_parse_from(["legaia-engine", "--open", "/g/l.bin", "config"]).is_err());
         let info = DiscInfo {
             path: "/g/l.cue".into(),
             bin: "/g/l.bin".into(),

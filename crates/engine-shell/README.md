@@ -207,7 +207,10 @@ the archive's `command-line-tools/` folder (or beside it, in a `cargo
 build`), so the archive's top folder holds only what a player opens. On
 Windows it is a `windows`-subsystem program and starts the engine with no
 console window; [`releases.md`](../../docs/tooling/releases.md#windows-the-console-window)
-says why it is a stub rather than a subsystem switch on the engine.
+says why it is a stub rather than a subsystem switch on the engine. A lone
+file argument (what "Open with" or a drop on the icon passes) goes to the
+launcher as the hidden `--open <file>`, which takes it as a drop on its
+window; any other arguments pass through unchanged.
 
 `build.rs` embeds the game icon into both Windows executables
 (`legaia_app_theme::win_icon`), and `legaia-engine` gives every window it

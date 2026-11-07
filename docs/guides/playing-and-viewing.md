@@ -46,6 +46,10 @@ Started with **no subcommand** - the archive's `Legend of Legaia` program
 ./legaia-engine
 ```
 
+On Linux and Windows a disc image, expansion pack or memory card opened with
+`Legend of Legaia` ("Open with", or a file dropped on the program's icon)
+arrives in the launcher as if it were dropped on its window.
+
 The launcher is one screen: a disc card at the top, the actions on the left
 (*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Controls*,
 *Expansion pack...*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
