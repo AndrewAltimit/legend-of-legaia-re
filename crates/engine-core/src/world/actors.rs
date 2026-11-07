@@ -408,7 +408,8 @@ impl World {
     ///
     /// The `4C 42` height tweens land the same way in the placement
     /// context's `+0x8E`; the height arm turns the slot into Y on the next
-    /// actor tick.
+    /// actor tick. The `4C 40` scale tweens land in the context's `+0x72`,
+    /// the render scale both hosts draw the NPC at.
     pub(crate) fn tick_npc_heading_ramps(&mut self) {
         let speed = self.move_vm.ramp_ratio.max(1);
         if self.npcs.face_ramps.active() != 0 {
@@ -431,11 +432,12 @@ impl World {
                 {
                     // `kind 2`: an `sh` into the tweened word.
                     use legaia_engine_motion_vm::ambient_motion::{
-                        RAMP_DEST_PITCH, RAMP_DEST_ROLL,
+                        RAMP_DEST_PITCH, RAMP_DEST_ROLL, RAMP_DEST_SCALE,
                     };
                     match w.dest {
                         RAMP_DEST_PITCH => c.ctx.field_24 = w.value as i16,
                         RAMP_DEST_ROLL => c.ctx.field_28 = w.value as i16,
+                        RAMP_DEST_SCALE => c.ctx.field_72 = w.value as u16,
                         _ => c.ctx.field_8e = w.value as i16,
                     }
                 }

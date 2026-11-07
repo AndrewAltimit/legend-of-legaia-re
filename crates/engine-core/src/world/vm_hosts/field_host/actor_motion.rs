@@ -177,13 +177,41 @@ impl FieldHostImpl<'_> {
             }
             return;
         }
-        if sub != 0
-            || ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
-        {
+        if sub != 0 {
             return;
         }
+        // Sub-0: the `+0x72` render scale. The arm (`0x801E118C..0x801E11A8`
+        // in PROT 0897) is the sub-2 shape on another word: `a0 = s5` (the
+        // resolved actor), `a1 = &s5+0x72`, start `lhu +0x72`, kind 2, end
+        // and ticks on the stack, then the scheduler exit `0x801E205C`
+        // (`jal 0x8003C5F0`). So any actor the op resolves grows or shrinks,
+        // not only the player: `stone` P2[6] hides Gi with `CC 13 40 00 00
+        // 00 00` and brings him in with `CC 13 40 00 10 08 00`, and a
+        // player-only ramp left him at scale 0 for the whole confrontation.
         use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
         let total = i32::from(ticks);
+        if ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) {
+            if let Some(record) = self.world.field_vm.executing_object {
+                self.world.schedule_object_ramp(
+                    record,
+                    legaia_engine_field::object_tint::ObjectRampSlot::Scale72,
+                    i32::from(ctx.field_72),
+                    i32::from(target),
+                    ticks,
+                );
+            } else if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+                self.world.npcs.slot_ramps.install(Ramp {
+                    dest: RAMP_DEST_SCALE,
+                    owner: u32::from(slot),
+                    start: i32::from(ctx.field_72),
+                    end: i32::from(target),
+                    total,
+                    remaining: total,
+                    kind: RampKind::U16,
+                });
+            }
+            return;
+        }
         self.world.locomotion.player_scale_ramps.install(Ramp {
             dest: RAMP_DEST_SCALE,
             owner: u32::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),

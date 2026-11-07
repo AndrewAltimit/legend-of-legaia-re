@@ -76,6 +76,7 @@ impl World {
                     ObjectRampSlot::Height8E => c.ctx.field_8e = v as i16,
                     ObjectRampSlot::Pitch24 => c.ctx.field_24 = v as i16,
                     ObjectRampSlot::Roll28 => c.ctx.field_28 = v as i16,
+                    ObjectRampSlot::Scale72 => c.ctx.field_72 = v as u16,
                     ObjectRampSlot::TintColour => {
                         c.ctx.field_74 = (c.ctx.field_74 & 0xFF00_0000) | (v as u32 & 0x00FF_FFFF)
                     }

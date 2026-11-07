@@ -88,6 +88,67 @@ fn a_player_aimed_scale_ramp_lerps_the_player_each_frame() {
     assert_eq!(w.locomotion.player_scale_ramps.active(), 0);
 }
 
+/// The sub-0 ramp on a placement grows that placement, not the player: the
+/// arm resolves `s5` like sub-2 does (`0x801E118C..0x801E11A8`, PROT 0897),
+/// so `stone` P2[6]'s `CC 13 40 00 10 08 00` brings Gi in from the
+/// `CC 13 40 00 00 00 00` hide. The draw pose follows the ramp: hidden at
+/// scale 0, drawn once it has grown.
+#[test]
+fn a_placement_aimed_scale_ramp_grows_the_placement() {
+    let mut w = field_world();
+    w.field_vm.executing_channel = Some(12);
+    let mut c = legaia_engine_field::field_channels::FieldChannel {
+        placement_index: 12,
+        ctx: FieldCtx {
+            script_id: 0x13,
+            world_x: 57 * 128 + 64,
+            world_z: 70 * 128 + 64,
+            ..Default::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    };
+    let mut host = FieldHostImpl { world: &mut w };
+    field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x40, 0x00, 0x00, 0x00, 0x00],
+        0,
+    );
+    assert_eq!(c.ctx.field_72, 0, "the immediate arm hides it");
+    let r = field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x40, 0x00, 0x10, 0x04, 0x00],
+        0,
+    );
+    assert!(matches!(r, FieldStepResult::Advance { next_pc: 6 }));
+    assert_eq!(c.ctx.field_72, 0, "a ramp writes nothing at install");
+    w.field_vm.executing_channel = None;
+    w.field_vm.channels.push(c);
+    let at = (57 * 128 + 64, 70 * 128 + 64);
+    assert!(
+        w.field_npc_draw_pose(12, at).is_none(),
+        "scale 0 does not draw"
+    );
+    w.move_vm.ramp_ratio = 1;
+    let mut seen = Vec::new();
+    for _ in 0..5 {
+        w.tick_npc_heading_ramps();
+        seen.push(w.field_npc_render_scale(12).unwrap());
+    }
+    assert_eq!(seen, vec![0x400, 0x800, 0xC00, 0x1000, 0x1000]);
+    assert_eq!(w.npcs.slot_ramps.active(), 0);
+    assert_eq!(w.locomotion.player_scale_ramps.active(), 0);
+    assert_eq!(
+        w.actors[0].move_state.field_72, 0x1000,
+        "the player is untouched"
+    );
+    assert_eq!(w.field_npc_draw_pose(12, at).map(|p| p.scale), Some(1.0));
+}
+
 #[test]
 fn scene_entry_drops_a_running_player_scale_ramp() {
     let mut w = field_world();
