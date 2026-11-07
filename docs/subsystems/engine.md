@@ -746,11 +746,14 @@ The project deliberately does not call this "clean-room": the same people read t
 
 ## How it is verified
 
-Open work is tracked structurally rather than as a hand-maintained list. The [port catalog](../tooling/port-catalog.md) cross-references every dumped function against its docs page and its `// PORT:` tag in `crates/`; the question-level companion is [open RE threads](../reference/open-rev-eng-threads.md).
+Nothing of the original executes in the port, so its fidelity is measured rather than inherited ([why](../porting-by-reimplementation.md#fidelity-is-measured-not-inherited)). Open work is tracked structurally rather than as a hand-maintained list. The [port catalog](../tooling/port-catalog.md) cross-references every dumped function against its docs page and its `// PORT:` tag in `crates/`; the question-level companion is [open RE threads](../reference/open-rev-eng-threads.md).
 
 | Instrument | What it measures | Page |
 |---|---|---|
 | Retail comparison corpus | Engine RAM and VRAM against every walkable and battle library state, worst first. | [retail-compare](../tooling/retail-compare.md) |
+| Cast-sequence oracle | One spell, summon or monster cast on both sides, scored frame by frame on the action-SM clock. | [cast-sequence-oracle](../tooling/cast-sequence-oracle.md) |
+| Audio sweep + real PCM | Music and cues against the emulator's state and its recorded output. | [audio](audio.md#the-audio-state-sweep) |
+| Retail kernel differential | A retail routine run off the disc in `crates/retail-exec` beside its Rust port, on generated inputs. | [retail-kernel-differential](../tooling/retail-kernel-differential.md) |
 | Record / replay | Same input file twice gives bit-identical state traces. | [determinism-replay](../tooling/determinism-replay.md) |
 | Full-game ladder | New Game to credits, per story segment. | [full-game-ladder](../tooling/full-game-ladder.md) |
 | Soak harness | Seeded random pad input over every scene and minigame, with softlock / stall detectors. | [soak-harness](../tooling/soak-harness.md) |

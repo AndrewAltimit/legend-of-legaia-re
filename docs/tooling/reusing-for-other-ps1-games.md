@@ -340,7 +340,9 @@ of plausible garbage with no error.
 ## The transferable method
 
 The parts of this project most worth taking to another game are not crates but
-practices. [The retail-oracle method](retail-oracle-method.md) writes them up
+practices, and they apply whichever route the port takes: what decompilation,
+static recompilation and reimplementation each start from and buy is laid out
+in [porting by reimplementation](../porting-by-reimplementation.md#three-ways-to-port-a-game). [The retail-oracle method](retail-oracle-method.md) writes them up
 engine-neutral, in the order to adopt them, with this project only as worked
 examples. Each is documented for Legaia; the pages below are the reference,
 and nothing in them depends on Legaia beyond the examples.
