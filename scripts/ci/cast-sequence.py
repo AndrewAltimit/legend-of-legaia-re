@@ -371,12 +371,15 @@ def _step_row(r: dict) -> str:
     return f"{st7} {phase} {r['step']}\n"
 
 
-def retail_hit_words(out: Path) -> list[int]:
+def retail_hit_words(out: Path) -> list[str]:
     """The seed word retail held going into each melee hit of a `--physical`
-    recording's first action. A hit's spark burst makes its frame draw tens of
-    times where any other frame draws once or twice, so the frame is read off
-    the distance between two rows' words on the BIOS generator. The word steps on
-    once, for the frame driver's discard (`0x80046D2C`) ahead of the hit."""
+    recording's first action, as `word@vsync`. A hit's spark burst makes its
+    frame draw tens of times where any other frame draws once or twice, so the
+    frame is read off the distance between two rows' words on the BIOS
+    generator. The word steps on once, for the frame driver's discard
+    (`0x80046D2C`) ahead of the hit. A blocked or missed swing draws no burst
+    and leaves no word, so each word carries its vsync and the engine hands it
+    to the hit nearest that time."""
     step = lambda w: (w * 0x41C64E6D + 0x3039) & 0xFFFFFFFF
     words, prev, settled = [], None, False
     with open(out / "retail" / "meta.csv") as f:
@@ -391,7 +394,7 @@ def retail_hit_words(out: Path) -> list[int]:
                 while s != w and n < 256:
                     s, n = step(s), n + 1
                 if HIT_FRAME_DRAWS <= n < 256 and not settled:
-                    words.append(step(prev))
+                    words.append(f"{step(prev)}@{r['vsync']}")
             prev = w
     return words
 
@@ -496,7 +499,7 @@ def run_engine(a, out: Path) -> bool:
         track.write_text(retail_step_track(out))
         env["LEGAIA_CAST_STEP_TRACK"] = str(track)
     if a.strike_deal:
-        env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out))
+        env["LEGAIA_STRIKE_DEAL"] = ",".join(retail_hit_words(out))
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))

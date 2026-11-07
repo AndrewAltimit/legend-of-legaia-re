@@ -575,7 +575,11 @@ on both sides, so a clip both sides played can be read cue for cue.
 - the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
   makes its frame draw tens of times where any other frame draws once, so the frames read straight
   off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
-  hit, so the word steps on once.
+  hit, so the word steps on once. A blocked or missed swing draws no burst and leaves no word,
+  so each word goes out as `word@vsync` and the engine hands it to the hit within twelve display
+  frames of that vsync (`World::dealt_hit_word`); a hit with none in reach draws on its own stream.
+  Handed out in order, `battle_rugi_caruban_3_strike`'s two words (Bite's hit and the last swing's)
+  fell on Flap's two events, whose first retail blocks and whose second draws no spark.
 
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal

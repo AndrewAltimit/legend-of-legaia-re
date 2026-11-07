@@ -1151,9 +1151,10 @@ pub struct BattleState {
     pub capture_reseat_bars: Vec<CaptureReseatBars>,
     /// The `rand()` word each coming melee hit's block roll draws from, as
     /// retail's recording of the same strike held it
-    /// (`legaia_engine_capture::strike_deal`). Empty outside that oracle: the
-    /// hit then draws on the world stream as it stands.
-    pub capture_hit_rand: std::collections::VecDeque<u32>,
+    /// (`legaia_engine_capture::strike_deal`), with the display frame the
+    /// recording read it on when the deal times it. Empty outside that
+    /// oracle: the hit then draws on the world stream as it stands.
+    pub capture_hit_rand: std::collections::VecDeque<(u32, Option<u64>)>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.

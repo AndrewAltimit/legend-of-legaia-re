@@ -18,19 +18,29 @@ use std::collections::VecDeque;
 use crate::battle_drive::{StrikeHand, engine_seat};
 use legaia_engine_core::world::World;
 
-/// The words in order, one per melee hit past the gate.
+/// The words in order, one per melee hit past the gate, each with the
+/// recording's vsync it was read on when the deal names one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StrikeDeal {
-    pub hit_words: Vec<u32>,
+    pub hit_words: Vec<(u32, Option<u32>)>,
 }
 
-/// `w1,w2,..`, each decimal. An empty list is a deal of no hits.
+/// `w1,w2,..`, each decimal, or `w@vsync` with the recording's vsync of the
+/// hit the word went into. An empty list is a deal of no hits.
 pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
     let hit_words = v
         .split(',')
         .filter(|f| !f.trim().is_empty())
-        .map(|f| f.trim().parse().ok())
-        .collect::<Option<Vec<u32>>>()?;
+        .map(|f| {
+            let mut it = f.trim().splitn(2, '@');
+            let w = it.next()?.parse().ok()?;
+            let at = match it.next() {
+                Some(t) => Some(t.parse().ok()?),
+                None => None,
+            };
+            Some((w, at))
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some(StrikeDeal { hit_words })
 }
 
@@ -50,7 +60,14 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
-    world.battle.capture_hit_rand = VecDeque::from(deal.hit_words.clone());
+    // A timed word lands on the hit nearest its vsync: the gate stands on the
+    // recording's first row, so the recording's vsync counts from it.
+    let gate = world.clock.display_frames;
+    world.battle.capture_hit_rand = deal
+        .hit_words
+        .iter()
+        .map(|&(w, at)| (w, at.map(|v| gate + u64::from(v.saturating_sub(1)))))
+        .collect::<VecDeque<_>>();
 }
 
 /// The byte the replay's strike loop already staged from its own stream,
@@ -97,10 +114,13 @@ mod tests {
     #[test]
     fn the_env_form_reads_decimal_words_in_order() {
         let d = strike_deal_from_env("1,4294967295").unwrap();
-        assert_eq!(d.hit_words, vec![1, u32::MAX]);
+        assert_eq!(d.hit_words, vec![(1, None), (u32::MAX, None)]);
+        let d = strike_deal_from_env("7@147,9@230").unwrap();
+        assert_eq!(d.hit_words, vec![(7, Some(147)), (9, Some(230))]);
+        assert!(strike_deal_from_env("7@x").is_none());
         assert_eq!(
             strike_deal_from_env("").unwrap().hit_words,
-            Vec::<u32>::new()
+            Vec::<(u32, Option<u32>)>::new()
         );
         assert!(strike_deal_from_env("x").is_none());
     }
