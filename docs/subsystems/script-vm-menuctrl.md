@@ -1041,7 +1041,9 @@ beside its tree with `4C 51 AA 30 00 2A` on its pre-fight arm (system flag
 its header clip `39`; and `korout` `P2[3]` seats Noa and Gala with walk
 clips `10` and `15` before the `C1` compass legs walk them up the bridge.
 Port: `FieldHostImpl::run_to_tile` writes the bit, the mask and `+0x5C` on
-every NPC arm and raises the clip cue on the cross-context arm, and the seat's
+every NPC arm, binds the clip at the op (`bind_npc_scene_clip`, the binder an
+`A2` ExecMove reaches, so a record's end-latch spin on the seated clip waits for
+it) and raises the clip cue on the cross-context arm, and the seat's
 floor re-sample drops any height the placement held (`World::seat_npc_floor_resample`:
 `town01` `P2[5]` seats Mei in Vahn's house after `P2[4]` left her gliding at her
 own door, and she stands on the house floor); the

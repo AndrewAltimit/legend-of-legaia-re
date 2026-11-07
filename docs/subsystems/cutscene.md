@@ -1983,6 +1983,27 @@ cross-context op. Unit-covered by
 `chapter1_hub_depth_oracle` drives the jou castle door through this path to
 `SceneEntered("jouina")`.
 
+**An arced NPC parks the next op aimed at it.** Against a placement the halt-acquire is the
+scripted arc (`World::start_field_script_arc`), and the busy gate is modelled as retail runs
+it: a cross-context op whose target placement is mid-arc holds the record at that op until the
+arc lands (`World::script_arc_live`). `eddoman` `P2[7]` arcs placement `0x16` over 36 frames
+(`C3 16 01 68 63 46 00 24 00`) and then verifies it with `B3 16 0A`; held there, its white
+flash stays up as long as the retail film's.
+
+**Two more spins hold the record.** Besides the clip end latch (`AD <id> 08`), a record spins on
+an actor's morph envelope ADVANCE bit (`AD <id> 0B`, `+0x62 & 0x800`), which the ramp envelope
+`FUN_80020740` raises when the lanes have drained; the record holds there while the world runs
+that actor's envelope (`MORPH_ADVANCE_SPIN_TIMEOUT` bounds it). `edlast`'s lily closes that way
+(`AC 00 0A`, `AB 00 0D`, `AC 00 0B`, `AD 00 0B`) and holds the shot about 520 vsyncs. And the
+clip a `4C 51` seat names is bound at the op, as `A2` ExecMove's is, so a seat followed by
+`AD <id> 08` waits for that clip: `edkorout` `P2[0]` seats placement 9 on move `21` and waits
+about 95 vsyncs for it before move `22` ([`script-vm-menuctrl.md`](script-vm-menuctrl.md#sub-1-the-seat-binds-its-move-clip)).
+
+A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
+for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
+the sign, as GTE `TR` does: the same window shot glides the depth through zero, the lens passing
+through the wall to the sky.
+
 ### The op `0x4C 0x12` tint (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
 
 Two script ops change colour over time in a cutscene, and they are easy to confuse:
