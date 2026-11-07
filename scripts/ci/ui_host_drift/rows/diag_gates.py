@@ -78,6 +78,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
     {"env": "LEGAIA_DIAG_NO_GROUND_DROP", "additive": False, "note": "keep the field ground's retail buckets off retail's vantage (A/B attribution; the browser always drops)"},
+    {"env": "LEGAIA_DIAG_NO_PRIM_ORDER", "additive": False, "note": "draw the field per pixel instead of at each primitive's link in PSX mode (A/B attribution; the browser always links)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_NO_LIT_ROWS", "additive": False, "note": "leave the light-source rows at the neutral texel (A/B attribution; the browser always shades them)"},
     {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},

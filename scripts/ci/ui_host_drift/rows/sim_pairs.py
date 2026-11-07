@@ -1201,14 +1201,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "whether a frame crops at all is a policy (knob, retail framing, field "
         "mode, no cutscene, a focus the region box holds). Both hosts ask the "
         "one `field_view_window::field_view_cells` entry with "
-        "`framing_is_retail`, so a host that cropped under its own rule would "
+        "`retail_framing` (retail's vantage, or a cutscene or helper record's "
+        "scripted shot owning the camera), so a host that cropped under its own rule would "
         "black out cells the other draws",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_view_cells", "framing_is_retail"],
+        "symbols": ["field_view_cells", "retail_framing"],
     },
     {
         "what": "visible-tile crop of the terrain list, native vs play page - "

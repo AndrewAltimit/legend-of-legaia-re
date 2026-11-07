@@ -547,6 +547,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (!haveGround && !havePlacements) return;
 
     gl.useProgram(this.program);
+    /* A mesh with no ground cells leaves a_ground_ref_xz / _y disabled and the
+     * vertex stage reads the generic value, whose GL default is (0, 0, 0, 1),
+     * not the zeros engine-render's flat_a / flat_b carry on every mesh. The
+     * shader's "not a ground cell" test is `a_ground_ref_xz == vec4(0.0)`, so
+     * under the default no mesh took its link depth (primMeanW) and PSX mode's
+     * per-primitive sort was inert on the page. Generic values are context
+     * state, not VAO state: stage the zeros every frame. */
+    if (this.locGroundRefXz >= 0) gl.vertexAttrib4f(this.locGroundRefXz, 0, 0, 0, 0);
+    if (this.locGroundRefY >= 0) gl.vertexAttrib4f(this.locGroundRefY, 0, 0, 0, 0);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
     /* Assembled VPs add the retail screen-X mirror on top of the per-model

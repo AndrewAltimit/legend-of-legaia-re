@@ -61,4 +61,14 @@ PAGE_STATE_RULES = [
         "lose the wipe on the frame the menu closes: a flash of the lit field "
         "the window, which composes at the draw, does not show",
     },
+    {
+        "what": "the scene pass stages zeros for a mesh's absent ground refs",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "gl.vertexAttrib4f(this.locGroundRefXz, 0, 0, 0, 0);",
+        "why": "a disabled attribute reads the generic value, (0, 0, 0, 1) by "
+        "default, and the vertex stage keys 'not a ground cell' on zeros: no "
+        "mesh took its link depth, so PSX mode's per-primitive sort was inert "
+        "and the sea covered town01's beach off retail's vantage",
+    },
 ]
