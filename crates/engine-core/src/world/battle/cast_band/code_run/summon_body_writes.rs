@@ -672,7 +672,12 @@ impl World {
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
                 let shield = self.battle.mystic_shield_up();
-                for &(_, e) in &slots {
+                // Every monster seat, fallen ones too: the walk tests HP inside
+                // the loop (`0x801F7DD8..0x801F8188`, bound `ctx[+1]`).
+                let row: Vec<usize> = (0..monsters)
+                    .filter_map(|i| map.engine(3 + i as u8).map(usize::from))
+                    .collect();
+                for &e in &row {
                     self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {
                         continue;
@@ -719,8 +724,8 @@ impl World {
     /// zero - plus `rand() % (hit / 8 + 1)`, its popup pushed with that
     /// amount (`FUN_801F44A0`), the HP write clamped to `HP - 1` (the wave
     /// cannot kill) and its reaction clip `+0x1EF` (else `+0x1F0`) staged with
-    /// the restage bits `5`. A living monster the wave does not hit this pass
-    /// has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
+    /// the restage bits `5`. Any monster seat the wave does not hit this pass,
+    /// a fallen one included, has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
     ///
     /// Not carried: the damage tallies the roll is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target), and
@@ -729,16 +734,16 @@ impl World {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let s = slot as u8;
         let v = self.cast_view(s);
-        if v.hp == 0 {
-            return;
-        }
         let z = self
             .actors
             .get(slot)
             .map_or(0, |a| i32::from(a.move_state.world_z));
         // `+0x1D9 == 0`: no clip playing - the engine's reaction channel
         // included, where a staged reaction plays (`battle_current_anim`).
-        let hittable = v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
+        // A fallen seat takes the same skip as the others: its staged clip is
+        // cleared (`beq v0,zero,0x801F80A0` at `0x801F7DEC`).
+        let hittable =
+            v.hp != 0 && v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
         if !hittable || z >= front || shield {
             let mut v = v;
             v.staged_anim = 0;

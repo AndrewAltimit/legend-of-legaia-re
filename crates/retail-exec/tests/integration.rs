@@ -48,6 +48,7 @@ mod melee_hit;
 mod menu_stats;
 mod monster_pick;
 mod motion_vm;
+mod mule_wave;
 mod muscle_contest;
 mod nighto_roll;
 mod ozma_ladder;
