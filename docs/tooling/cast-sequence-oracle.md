@@ -186,9 +186,15 @@ writes `pre.csv`, one row per in-battle vsync **before** the inject: the
 action state, the acting seat, the frame step, the yaw counter `ctx[+0x6DA]`,
 the strike cursor `ctx[+0x15]`, and for seats `0..3` the committed and staged
 clip, the rate `+0x21D`, the node cursor, the live pair and the per-action
-total `+0x00` (seat 3's live HP). A monster-pick run from a `*_first_menu`
+total `+0x00` (seat 3's live HP), then the battle camera: the live pitch, yaw,
+TR trio and focus trio, the depth word `ctx[+0x6D0]` and the tween table's nine
+`step:end` records. `LEGAIA_PRE_SHOTS=1` adds a frame (`pre_NNNNN.raw`, named in
+the row) on each vsync of a strike, return or Done state (`0x1E..0x20`,
+`0x50..0x5A`). A monster-pick run from a `*_first_menu`
 state therefore records every party turn on the way to the cast - the retail
-timeline of a combo the capture only holds the end of. The run uses the recompiler (`--fast`) unless a
+timeline of a combo the capture only holds the end of, and the camera through
+its Done tail (`koru_strip_forced` with `--monster-pick --retail-only` films
+Gala's Lightning Storm into the Done arm the `koru_pre_*` states hold). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
 

@@ -301,7 +301,19 @@ MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
 signed accumulator onto each a frame - `+0x10` for HP, `+0x178` for MP (the MP
 block at `0x800475A4..0x80047620`, on a party seat) - so a cast's MP counts down
 over a few frames rather than dropping, and the gauge colour (`0x80046B78`)
-reads the same `+0x174`. Port: `BattleActor::mp_display` carries `+0x174`,
+reads the same `+0x174`.
+
+The step is the head of the actor node tick (`0x800474E8..0x80047638`, ahead of
+the cursor advance), which runs once a main-loop **pass**, and nothing in it reads
+the frame step `DAT_1F800393`: a quarter a pass, not a quarter a vsync. At step
+`3` a hit's readout therefore takes three times as many vsyncs to count down as
+at step `1`, and the action SM's `0x51` settle check, which the frame driver runs
+earlier in the pass, reads the bar the previous pass left. A Blade Breath film
+reads `9582` on Vahn's bar 42 vsyncs into the damage (`17` of `434` to go); on
+the per-pass ramp and the recording's own frame steps the engine reads `15` of
+`404` to go at the same pair. Port: `World::tick_battle_anim_pass` runs
+`tick_battle_hp_bars` once a pass on retail's cadence; the per-vsync cadence
+keeps it ahead of the SM. Port: `BattleActor::mp_display` carries `+0x174`,
 `tick_mp_bar` runs `party_mp_step` beside the HP ramp, and the HUD rows draw it.
 
 When the bar takes over, the panels do not stop drawing. Retail moves the whole

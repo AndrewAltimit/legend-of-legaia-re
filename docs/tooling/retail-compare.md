@@ -5572,27 +5572,35 @@ walks of it narrowed `G` to the gap the Done arm saw, which pins `G`.
 
 The image child takes the displayed pose when the replay's endpoints agree on
 the components the walk back moved
-(`BattleCamera::glide_endpoint_matches_walked`). Case 8 on an idle monster
-holds the live pitch and `TR.y` (`0x801D6BFC`), and the replay's strike leaves
-both a few units off retail's (pitch `-23` retail, `-26` replay), so the walk
-leaves those two on the first pass back: a walked one fails the test and drops
-the whole pose. `koru_pre_*` (yaw `3445` to `3496` on case 8, then `3595` on
-case 7; depth `6730` to `5998`) read `image` `.735` one pass back and `.904`
-two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
+(`BattleCamera::glide_endpoint_matches_walked`). Case 7's pitch is `0` (the
+prologue zeroes the pose, `sh zero,0x10(sp)` at `0x801D58B4`, and the case-7
+base never writes it) and its `TR.y` is `0x500`, so the walk takes both back
+too. Case 8 on an idle monster then holds the live pitch and `TR.y`
+(`0x801D6BFC`), and the replay's strike leaves them a few units off retail's
+(pitch `-23` retail, `-26` replay): an endpoint that is the live value the arm
+found is history, not framing. So a component both tables hold
+(`BattleCamera::framing_held_components`: retail's endpoint on its live value,
+the engine's on its own pose) passes the test and is seated on the displayed
+value whatever the two holds read. `koru_pre_*` (yaw `3445` to `3496` on case
+8, then `3595` on case 7; depth `6730` to `5998`; pitch `4073` to `4061`) read
+`image` `.735` one pass back, `.906` two with the pitch held, and `.976` with it
+walked; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
 `.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
 target on its knockdown or get-up (case 8 on the held passes too), a framing
 style `2` / `3` and a monster's pull-in keep the one-pass pose.
 
-The three `koru_pre_*` states are one frame: each is the same Done-arm pass of
-Gala's Lightning Storm, saved a vsync after the monster-pick probe rewrote
-Koru's queue, so they score alike to the block. Sweeping the walked-back pose
-through `LEGAIA_RC_ENV_OVERRIDE` (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`) puts the
-best yaw on the walk's own `3595` (`.906`; `25` either side `.84` / `.85`), and
-the best depth near `6125` against the walk's `5998`, a rise to `.921` and no
-further: the focus Y and `TR.y` are sharp at the walk's values. What the
-sweep leaves is the ice crystals behind Koru and the mist band, both standing
-a few rows higher in the engine than Koru does, so the rest of that pass's
-pose is not one component the RAM still holds.
+A retail film of the tail (`koru_strip_forced`, `--monster-pick`, the probe's
+pre-trace camera columns, [cast-sequence oracle](cast-sequence-oracle.md#what-each-side-records))
+confirms the walk: the held pass reads pitch `4058`, yaw `3598`, TR
+`(-113, 1280, 5995)`, focus z `-402`, on a case-7 table `{5, 0}`, `{34, 3292}`,
+`{245, 8192}`, and the exit pass `0x50` steps it by three vsyncs of those
+increments to the Done arm's origin (`4073`, `3496`, `6730`). Each increment is
+`ceil(G / 0xC)` of the gap from the pose a pass before the arm, and
+`G - 6 * ceil(G / 12)` takes most values twice, six units of gap apart, so the
+walk recovers the increment up to that pair: it takes the smaller (pitch `4061`
+for the film's `4058`, depth `5998` for `5995`; TR x on the film's own `-113`).
+Seated on the film's pose the frame reads `.988`; the ice crystals and mist band
+that stood a few rows high in the engine were the held pitch.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and
