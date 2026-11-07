@@ -30,10 +30,22 @@ pub struct ScreenFxFrame {
     pub panels: Vec<PanelQuad>,
 }
 
-/// Retail ordering-table slots the four widget kinds link their primitives at
-/// (`func_0x8003d2c4(_DAT_1F8003F4 + slot, packet)`), read off the handler
-/// disassembly rather than inferred: a **larger** slot is farther and is drawn
-/// earlier, so the paint order back-to-front is mask, panel, sprite, letterbox.
+/// Retail ordering-table buckets the four widget kinds link their primitives
+/// at (`func_0x8003d2c4(_DAT_1F8003F4 + offset, packet)`), read off the
+/// handler disassembly rather than inferred: a **larger** bucket is farther
+/// and is drawn earlier, so the paint order back-to-front is mask, panel,
+/// sprite, letterbox.
+///
+/// The handlers add a **byte** offset to the table base - `+0x4`, `+0xc`,
+/// `+0x10`, `+0x1c` (`addiu a0,a0,0x1c` at `0x801F8344` in the mask's) - and
+/// a table entry is one word, so the buckets are those offsets over four:
+/// `1`, `3`, `4`, `7`. The constants are buckets because every other screen
+/// primitive's `ot_index` is one (the op-`0x34` wash `FUN_80024EE4` links at
+/// `OT + a0 * 4`, `sll s1,s1,2` at `0x80024FA0`) and the hosts sort the
+/// widgets in one list with them. Held as byte offsets they sorted the mask
+/// at "bucket 28", behind every wash: `eddoman`'s white flash
+/// (`34 02 FF FF FF 3C 00`, bucket `8`) then covered the vignette's black
+/// borders, which retail's frame keeps black over the white.
 ///
 /// The letterbox sitting in FRONT of the sprites is the load-bearing part: a
 /// renderer that batches its bands with the mask's borders (both are flat black
@@ -42,13 +54,13 @@ pub struct ScreenFxFrame {
 /// See `ghidra/scripts/funcs/overlay_dance_801f8a34.txt` (`+4`),
 /// `..._801f7a9c.txt` (`+0xc`), `..._801f849c.txt` (`+0x10`),
 /// `..._801f811c.txt` (`+0x1c`).
-pub const OT_LETTERBOX: u32 = 0x04;
+pub const OT_LETTERBOX: u32 = 0x04 / 4;
 /// See [`OT_LETTERBOX`].
-pub const OT_SPRITE: u32 = 0x0C;
+pub const OT_SPRITE: u32 = 0x0C / 4;
 /// See [`OT_LETTERBOX`].
-pub const OT_PANEL: u32 = 0x10;
+pub const OT_PANEL: u32 = 0x10 / 4;
 /// See [`OT_LETTERBOX`].
-pub const OT_MASK: u32 = 0x1C;
+pub const OT_MASK: u32 = 0x1C / 4;
 
 /// One renderer-ready screen-space primitive of the widget family - the shape
 /// every host draws, in the retail GP0 vertex order

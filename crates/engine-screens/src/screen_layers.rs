@@ -405,6 +405,26 @@ mod tests {
         );
     }
 
+    /// A vignette's black borders stay black over an op-`0x34` wash linked
+    /// behind them: `eddoman`'s white flash (`34 02 FF FF FF 3C 00`) pushes at
+    /// bucket `8` (`FUN_80024EE4`, `OT + a0 * 4`) and the mask widget links
+    /// its borders at `OT + 0x1c`, bucket `7`, so the borders draw after it.
+    #[test]
+    fn the_mask_borders_draw_over_a_bucket_eight_wash() {
+        let mut w = World::new();
+        w.presentation.fx.mask_rect([0, 0x10, 0x140, 0xCC, 0]);
+        w.presentation.fx_frame = w.presentation.fx.tick(1, |_| false);
+        let mut under = screen_fx_prims(&w);
+        let borders = under.len();
+        assert!(borders > 0);
+        let (wash, over) = screen_prim::screen_effect_push_prims_split(&[(8, 1, 0xFF_FFFF)]);
+        assert!(over.is_empty(), "a bucket-8 wash is under the text");
+        under.extend(wash);
+        let order = screen_prim::order_primitives(&under);
+        assert_eq!(order[0], borders, "the wash draws first");
+        assert!(order[1..].iter().all(|&i| i < borders));
+    }
+
     /// The pause wipe lands in the `over` tail, after the transition.
     #[test]
     fn pause_wipe_is_a_bucket_zero_fade_over_the_text() {
