@@ -1663,6 +1663,9 @@ impl World {
                 let category = self.retail_actor_category(caster_slot);
                 self.route_battle_cue(cue, category);
             }
+            if phase_entry == 1 {
+                self.steal_back_off(caster_slot, victim_slot);
+            }
         }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
             let depth = match (entry, phase_entry) {
@@ -2206,6 +2209,51 @@ impl World {
 }
 
 impl World {
+    /// PROT 0941 Steal's arm-1 way out (`0x801F75F4..0x801F76E4`): the caster
+    /// turned to `FUN_80019B28(victim, caster)` - its back to the victim -
+    /// and stepped along that heading by its playing clip's stride
+    /// (`*(+0x22C)+0x4C` entry `+0xC`) x the frame step `0x1F800393` x
+    /// `+0x21D`, `>> 15` per axis (`+0x34` on the sine table `0x8007B81C`,
+    /// `+0x38` on the cosine one `0x8007B7F8`), until the range poll
+    /// `FUN_8004E2F0` reads it out of reach. One pass, however many steps; a step comes ahead of each poll.
+    // PORT: FUN_801F730C (PROT 0941 `0x51` arm 1's back-off, `0x801F75F4..0x801F76E4`)
+    fn steal_back_off(&mut self, caster_slot: u8, victim_slot: u8) {
+        /// Steps before giving up on a stride that never leaves reach.
+        const MAX_STEPS: u32 = 0x400;
+        let (c, v) = (usize::from(caster_slot), usize::from(victim_slot));
+        if c >= self.actors.len() || v >= self.actors.len() {
+            return;
+        }
+        let (vx, vz) = self.battle_seat_of(v);
+        let (cx, cz) = (
+            self.actors[c].move_state.world_x,
+            self.actors[c].move_state.world_z,
+        );
+        let heading =
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(vz, vx, cz, cx) & 0xFFF;
+        self.actors[c].battle.facing_angle = heading;
+        let Some((speed, scale)) = self.battle_playing_root_motion(c) else {
+            return;
+        };
+        let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+        let (dx, dz) = legaia_engine_battle_vm::battle_action::motion::root_motion_step(
+            sin,
+            cos,
+            speed,
+            self.battle_frame_step().max(1),
+            scale,
+        );
+        // A step, then the poll (`beq v0,zero,0x801F7620` at `0x801F76E4`).
+        for _ in 0..MAX_STEPS {
+            let ms = &mut self.actors[c].move_state;
+            ms.world_x = ms.world_x.wrapping_add(dx as i16);
+            ms.world_z = ms.world_z.wrapping_add(dz as i16);
+            if self.battle_range_metric(caster_slot, victim_slot) != 0 {
+                break;
+            }
+        }
+    }
+
     /// One of PROT 0939's four hits, `hit` counting from `1`
     /// (`0x801F70B0..0x801F7400`): skipped on a dead or Stoned victim (the count
     /// still moved), else `FUN_801DD4B0(0x60)` cut to a third and clamped, the

@@ -521,10 +521,13 @@ impl World {
         let actor = self.actors.get(usize::from(slot))?;
         let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
         let installed = actor.battle_action_clips.as_ref()?;
+        // A body whose arm 1 is the walk (`capture_module_walks`) walks on
+        // its own phase `1`; the band's leg would hold it on phase `0`.
         let approach =
-            legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
-                .then_some(actor.battle.active_target)
-                .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
+            (legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
+                && !legaia_engine_cast::cast_module_ticks::capture_module_walks(entry, spell_id))
+            .then_some(actor.battle.active_target)
+            .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
         let staged = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,

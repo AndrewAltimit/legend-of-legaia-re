@@ -399,6 +399,29 @@ pub fn capture_body_approaches(prot_entry: u32, action_id: u8) -> bool {
             .any(|r| r.approach && matches(r.prot_entry, r.action_ids))
 }
 
+/// Approach bodies whose own arm `1` is the walk, ported as such: arm `0`
+/// stages the walk entry once and stores phase `1`, and the director's arm
+/// `1` turns the caster onto the victim and holds on the range poll. The
+/// band runs no approach leg ahead of them, so the walk runs on phase `1` as
+/// retail's does rather than on phase `0` before arm `0`.
+///
+/// * PROT 0941 `0x51` (Steal) - arm 0 stages `FUN_80050E2C(table, 1, count)`
+///   at `0x801F7564`, bumps the phase at `0x801F7578..0x801F7584` and leaves
+///   (`j 0x801F7D04`); arm 1 frames case 6 (`0x801F75A8`), turns onto the
+///   victim (`0x801F75D0`) and holds while `FUN_8004E2F0` reads non-zero
+///   (`bne v0,zero,0x801F7D04` at `0x801F75EC`)
+///   ([`crate::cast_module_camera::steal_camera`]).
+pub const CAPTURE_MODULE_WALK_BODIES: &[(u32, &[u8])] = &[(941, &[0x51])];
+
+/// Whether the capture-class body PROT `prot_entry` runs for `action_id`
+/// walks its caster in on its own arm `1` ([`CAPTURE_MODULE_WALK_BODIES`]),
+/// so the band owes it no approach leg.
+pub fn capture_module_walks(prot_entry: u32, action_id: u8) -> bool {
+    CAPTURE_MODULE_WALK_BODIES
+        .iter()
+        .any(|(e, ids)| *e == prot_entry && ids.contains(&action_id))
+}
+
 /// The module arm whose pass stages each of the clips
 /// [`capture_caster_stages`] returns for the same cast, where the rows place
 /// them ([`CasterStageRow::arms`]); `None` for a body whose clips replay at
@@ -479,6 +502,8 @@ mod caster_stage_tests {
         assert_eq!(capture_caster_stages(946, 0x56, 0, 0), None);
         // The approach: table rows and the ported melee bodies alike.
         assert!(capture_body_approaches(952, 0x5C));
+        assert!(capture_body_approaches(941, 0x51) && capture_module_walks(941, 0x51));
+        assert!(!capture_module_walks(941, 0xB9) && !capture_module_walks(952, 0xB8));
         assert!(capture_body_approaches(952, 0xB8));
         assert!(capture_body_approaches(962, 0xA3));
         assert!(!capture_body_approaches(962, 0xA5));
