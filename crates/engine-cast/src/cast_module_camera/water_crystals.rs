@@ -86,7 +86,7 @@ pub(super) const ARM2_SPAWNS: [ModuleSpawn; 16] = [
 /// | 0 (`0x801F6ACC`) | the caster turned on the victim and shown, everyone else hidden; pitch `0x20`, yaw `0x800 - facing`, TR `(0x140, 0x300, depth / 2)`, `0x20` frames | `= scalar << 5` |
 /// | 1 (`0x801F6E30`) | on the gate: pitch `0`, TR z `2 * depth / 3`, `0x80` frames | `+= scalar << 7` |
 /// | 2 (`0x801F6EF8`) | on the gate: the victim shown frozen, the caster hidden; a cut on the victim, pitch `0x20`, yaw `-facing - 0x80`, TR `(0, -4 * height, min(3 * radius, 0xC00))` | `+= scalar << 7` |
-/// | 3 (`0x801F72C4`) | on the gate: the hit; the victim's hold off | `+= scalar << 6` |
+/// | 3 (`0x801F72C4`) | on the gate: the hit; the victim turned onto the caster, its hold off | `+= scalar << 6` |
 /// | 4 | on the gate | `+= scalar * 12` |
 /// | 5 | on the gate: every seat shown again | - |
 ///
@@ -147,6 +147,12 @@ pub fn water_crystals_camera(
             st.countdown.add(1 << 7);
         }
         3 => {
+            // The hit turns the victim onto the caster: `FUN_80019B28(caster
+            // z, caster x, victim z, victim x) + 0x800` into `+0x46`
+            // (`0x801F737C..0x801F7394`), so its knockdown falls away from
+            // Freed rather than along the heading it stood on.
+            arm.victim_write.facing =
+                Some(bearing_12bit_approx(c.z, c.x, v.z, v.x).wrapping_add(0x800) & 0xFFF);
             arm.victim_write.render_flag = Some(0);
             st.countdown.add(1 << 6);
         }
