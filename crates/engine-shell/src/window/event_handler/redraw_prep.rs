@@ -375,8 +375,10 @@ impl PlayWindowApp {
             // retail's frame driver winds it on every frame after
             // (`World::tick_battle_backdrop_spin`), and held it stood the sky
             // still behind the whole strike.
-            if capture_frame
-                && std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+            // The gate itself, not the capture frame: a film forces its
+            // capture tick past the run (`LEGAIA_DIAG_CAPTURE_TICK`).
+            if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+                && self.capture_gate_met()
                 && let Some(sc) = self.screenshot.as_mut()
             {
                 sc.battle_backdrop_yaw = None;
