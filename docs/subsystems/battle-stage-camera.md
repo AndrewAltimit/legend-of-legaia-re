@@ -1407,7 +1407,10 @@ the breath its frames reach the `0x2BC` clamp and the step goes to `4`
 (`battle_rugi_caruban_3_fire_breath_mid_cast` and its recording). On a lone
 Vahn the same breath costs about `505`, under `0x1FF`, and stays at `2`
 (`battle_rikuroa_caruban_fire_breath_mid_cast`). `FrameCostRing::push` keeps
-this order: it stores a pass's cost and returns the step of the next one.
+this order: it stores a pass's cost and returns the step of the next one, and
+`World::apply_cast_arm_frame_step` spans the pass's own frame with the step the
+ring read before the push. Spanning it with the step the push returned shortened
+every ring-driven step change by a pass.
 
 <a id="what-the-ring-holds"></a>
 
@@ -1430,9 +1433,18 @@ party's size does (`R^2` `.46` against `.49`, the step read right on `.84` of th
 states either way; both together `.69`), and only the hosts hold the draw lists, so
 the table stands in for the frame's work. The summon close-up `0x33` and flash `0x34`
 have no ring entry in the library and are read off the step instead: every PCSX-Redux
-summon film of a lone caster drops from step `2` to `1` sixteen frames after the
-close-up's first few frames (an entry under `0xF1`), and a full party's from `3` to `2`
-on `0x34`'s entry (under `0x1FF`). On the step-`2` table the flash-in's white rise ran
+summon film of a lone caster on `party_basic_attack_vs_gobu_gobu` (thirty-nine of them)
+drops from step `2` to `1` forty-two vsyncs into `0x33`, and the six full-party films
+(`kor`, `tower`) from `3` to `2` forty-nine vsyncs in. Both place the close-up's entry
+under `0xF1` for a lone caster and under `0x1FF` for a full party, and its first six
+frames `45` hblanks dearer (`measured_frame_cost_at`): costed flat from its first frame,
+a lone caster's close-up dropped at thirty, twelve vsyncs of step-`1` frames where
+retail still ran step `2`, and the per-pass `rand()` draw ran three ahead of retail's
+by the flash (a film seeded on retail's stream at `0x28`, `--rand-at 0x28:0`, holds
+draw for draw through `0x34` only with both the opening and
+[the pass order](#a-pass-runs-on-the-step-the-frames-before-it-left)). The
+`map01` lone caster drops at fifty-four, so the opening's length is a fit to one
+arena. On the step-`2` table the flash-in's white rise ran
 at two vsyncs a step where retail's ran at one, and the `0x34` segment of those films
 scored `.47`; on the read-off entries it scores `.95`. It measures one emulated machine: Mednafen
 reads a full party's action near `490` hblanks, under the `511` that makes step `3`,
@@ -1650,7 +1662,14 @@ tick between holds:
   cast-effect driver are called from inside the state body, so a pass arms the
   shot of the state it ran (`World::battle_camera_state`). The summon band
   `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
-  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
+  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`). `0x32`'s
+  exit is the exception inside the band: its body walks case 6 (`0x801E4984`)
+  before the drive test that stores `0x33` (`0x801E4994`), so the storing pass
+  is framed by case 6 and the close-up's first shot is the next pass's, its
+  accumulator a step in. Armed on the storing pass, the close-up cut to TR z
+  `2097` where retail's films ease `2963`, `2877`, `2681`; framed as retail
+  frames it the walk matches the films value for value and the lone-caster
+  `0x33` segments read `.85` against `.75`.
 - **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
   seed's `0x800` value is no coin. A capture's yaw counter is the word its
   last pass left, after that pass's prologue drift, so ahead of a tick that

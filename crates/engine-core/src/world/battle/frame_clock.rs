@@ -35,9 +35,15 @@ impl World {
     /// One pass's push into the cost ring: the frame's measured cost, or what an
     /// arm table's step leaves there, then the step that reads.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
-        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost};
+        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost_at};
+        let state = self.battle_ctx.action_state;
+        let passes = match self.battle.frame_cost_state {
+            Some((s, n)) if s == state => n.saturating_add(1),
+            _ => 0,
+        };
+        self.battle.frame_cost_state = Some((state, passes));
         let cost = arm_step.map_or_else(
-            || measured_frame_cost(self.party.party_count, self.battle_ctx.action_state),
+            || measured_frame_cost_at(self.party.party_count, state, passes),
             cost_of_step,
         );
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
@@ -200,8 +206,16 @@ impl World {
                 self.casting.module_phase,
             )
         });
-        self.push_frame_cost(measured);
+        // `FUN_80016B6C` closes a pass by storing the step this frame's cost
+        // reads, waits `VSync` on the one the pass ran at (`0x8001719C`) and
+        // only then copies the new one across (`0x800171D8`): the frame this
+        // pass opens runs on the step the ring read before the push, and a
+        // cost pushed now first lengthens or shortens the next frame
+        // (`battle-stage-camera.md`, the frame step). An arm
+        // table's step is the length retail's frames ran under the arm, and
+        // takes effect on its own pass.
         let ordinary = self.ordinary_battle_frame_step();
+        self.push_frame_cost(measured);
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
             (None, true) => ordinary,
@@ -595,13 +609,23 @@ impl World {
     /// into the entered state's case-6 call (`0x801E4604`, `0x801E4748`), and
     /// the band's own states hand the camera to the close-up and the module.
     /// Framed one pass late there, every summon capture lost its shot
-    /// (`camera` `.3` to `.8` across the corpus).
+    /// (`camera` `.3` to `.8` across the corpus). Inside the band the rule is
+    /// the general one again for `0x32`'s exit: its body walks case 6 on the
+    /// caster (`0x801E4984`) ahead of the drive test that stores `0x33`
+    /// (`0x801E4994`), so the pass that stores it is framed by case 6 and the
+    /// close-up's first shot is the next pass's, on an accumulator that has
+    /// gained a step (`party_basic_attack_vs_gobu_gobu` films: retail's TR z
+    /// runs `2963`, `2877` on case 6, then `2681` with the accumulator at
+    /// `16`, where a close-up armed on the storing pass cut to `2097`).
     pub fn battle_camera_state(&self) -> u8 {
         let live = self.battle_ctx.action_state;
+        let ran = self.battle.sm_ran_state.unwrap_or(live);
         if matches!(live, 0x32..=0x37) {
+            if live == 0x33 && ran == 0x32 && self.toggles.battle_sm_frame_cadence {
+                return ran;
+            }
             return live;
         }
-        let ran = self.battle.sm_ran_state.unwrap_or(live);
         if self.toggles.battle_sm_frame_cadence || ran == 0x0C {
             ran
         } else {
@@ -946,6 +970,43 @@ mod tests {
         assert_eq!(w.ordinary_battle_frame_step(), 3);
         w.toggles.battle_party_cost_step = false;
         assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+    }
+
+    /// A lone caster's summon close-up, as on the PCSX-Redux films: six
+    /// opening frames over `0xF1` and the ring's sixteen-entry memory drop
+    /// the step to `1` forty-two vsyncs into `0x33`, on the pass the ring
+    /// reads it, and the pass after it opens the first one-vsync frame (at
+    /// forty-four), the `VSync` running on the step `FUN_80016B6C` stored a
+    /// pass before. The camera walks that frame on its step.
+    #[test]
+    fn a_lone_casters_close_up_drops_to_step_one_forty_two_vsyncs_in() {
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.party.party_count = 1;
+        w.battle.camera = Some(BattleCamera::new(BattleCamPhase::Menu, 0));
+        w.battle_ctx.action_state = 0x32;
+        for _ in 0..16 {
+            w.push_frame_cost(None);
+        }
+        w.battle.frame_clock.retime_frame(0, 2);
+        w.battle_ctx.action_state = 0x33;
+        let (mut cam_drop, mut frame_drop) = (None, None);
+        for t in 0..80u64 {
+            w.clock.display_frames = t;
+            if w.battle_sm_pass_due() {
+                w.apply_cast_arm_frame_step();
+                let cam = w.battle.camera.as_ref().map(|c| c.frame_step());
+                if cam_drop.is_none() && cam == Some(1) {
+                    cam_drop = Some(t);
+                }
+                if frame_drop.is_none() && w.battle_frame_step() == 1 {
+                    frame_drop = Some(t);
+                }
+            }
+        }
+        assert_eq!(cam_drop, Some(44));
+        assert_eq!(frame_drop, Some(44));
     }
 
     #[test]

@@ -103,8 +103,10 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// rather than a ring entry: on every PCSX-Redux summon film of a lone caster
 /// the step drops from `2` to `1` sixteen frames after the close-up's first few
 /// frames (so those frames cost under `0xF1`), and on a full party's from `3`
-/// to `2` at `0x34`'s entry (under `0x1FF`). The two-member figure is the
-/// member step between them; no film records it.
+/// to `2` sixteen frames after the close-up's first (under `0x1FF`). The
+/// two-member figure is the member step between them; no film records it.
+/// The close-up's opening frames cost more than the rest
+/// ([`measured_frame_cost_at`]).
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
         0x33 | 0x34 => [200, 330, 460],
@@ -129,6 +131,34 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         2 => 1,
         _ => 2,
     }]
+}
+
+/// The passes the summon close-up `0x33` opens on at a higher cost
+/// ([`measured_frame_cost_at`]).
+pub const CLOSE_UP_OPENING_PASSES: u8 = 6;
+
+/// What each of the close-up's opening passes costs over the state's own
+/// entry ([`measured_frame_cost_at`]).
+pub const CLOSE_UP_OPENING_EXTRA: u16 = 45;
+
+/// [`measured_frame_cost`] on the `passes`-th pass (from `0`) the action SM
+/// has run in `action_state`. The summon close-up `0x33` opens on
+/// [`CLOSE_UP_OPENING_PASSES`] frames that cost [`CLOSE_UP_OPENING_EXTRA`]
+/// over the rest, which is what places the step's drop on the PCSX-Redux
+/// films: thirty-nine lone-caster films of `party_basic_attack_vs_gobu_gobu`
+/// drop from `2` to `1` forty-two vsyncs into `0x33` (six opening frames
+/// over `0xF1`, then fifteen passes until the ring has none), where a close-up
+/// costed flat from its first frame dropped at thirty; the six full-party films (`kor`, `tower`)
+/// drop from `3` to `2` forty-nine vsyncs in, which the same extra keeps
+/// under `0x1FF` (`460 + 45`). Like the table it is one emulated machine's
+/// measurement: the `map01` lone caster drops at fifty-four.
+pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u8) -> u16 {
+    let cost = measured_frame_cost(party_count, action_state);
+    if action_state == 0x33 && passes < CLOSE_UP_OPENING_PASSES {
+        cost + CLOSE_UP_OPENING_EXTRA
+    } else {
+        cost
+    }
 }
 
 /// The cost a frame an arm table names its step for leaves in the ring, so the
