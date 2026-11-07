@@ -292,6 +292,9 @@ pub struct Sequencer {
     flush_pos: u64,
     /// Note layers allocated since the last flush, keyed at the next one.
     pending: Vec<PendingKey>,
+    /// A dropped layer's stray store: the staged voice-0 key-on whose ADSR2
+    /// it zeroed ([`Self::note_dropped`]).
+    voice0_adsr2_zeroed: Option<u32>,
     /// Id source for [`PendingKey::id`].
     next_pending_id: u32,
     /// The retail pump's `+0x90`: tenths of a tick still to wait before
@@ -299,6 +302,19 @@ pub struct Sequencer {
     /// outside [`Self::rewind_to`] - then it is seeded from that event's own
     /// delta, as the stream read after a seek does.
     pump_wait: Option<i64>,
+}
+
+impl Sequencer {
+    /// Stand the silent history's write index where a retail state's stands.
+    ///
+    /// The index is libsnd's, not the score's: the flush steps it once a
+    /// calc from boot, whatever plays, and the release test ANDs the fixed
+    /// words `0..15` of the ring, so where the index stands when a voice falls
+    /// silent decides whether its run of silent flushes crosses the unread
+    /// word `15`: fifteen flushes or sixteen before the voice is free again.
+    pub fn set_silent_ring_phase(&mut self, at: usize) {
+        self.silent_at = at % SILENT_RING_LEN;
+    }
 }
 
 #[cfg(test)]

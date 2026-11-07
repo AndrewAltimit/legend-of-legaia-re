@@ -45,6 +45,8 @@ const SEQ_TABLE: u32 = 0x801C_D2C0;
 const VOICE_RECORDS: u32 = 0x801C_DB50;
 const VOICE_STRIDE: u32 = 0x36;
 const SILENT_RING: u32 = 0x801C_E208;
+/// The silent history's write index (`_DAT_801CE204`).
+const SILENT_RING_INDEX: u32 = 0x801C_E204;
 /// The key-on / key-off accumulators and the sounding mask.
 const MASK_WORDS: [u32; 3] = [0x801C_DB48, 0x801C_DB4C, 0x801C_E248];
 const VOICE_FLAGS: u32 = 0x801C_E060;
@@ -345,6 +347,15 @@ impl PortSide {
         d.master_vol = seq_vol;
         d.start_owned_vab(track, entry);
         Self { d, carry: 0.0 }
+    }
+
+    /// The flush's silent-history index as the state's libsnd holds it: both
+    /// sides run their flushes from there.
+    fn seat_silent_ring_phase(&mut self, retail: &mut RetailSide) {
+        let at = retail.cpu.mem.rd32(SILENT_RING_INDEX) as usize;
+        if let Some(s) = self.d.sequencer_mut() {
+            s.set_silent_ring_phase(at);
+        }
     }
 
     fn bank_samples(&self) -> Vec<Option<u32>> {
@@ -707,6 +718,7 @@ fn run_one(
     let (vsyncs, keep) = (args.vsyncs, args.keep);
     let mut port = PortSide::new(track, entry, vol);
     let mut retail = RetailSide::new(ram, &port, slot, vol)?;
+    port.seat_silent_ring_phase(&mut retail);
     let mut rv = Vec::with_capacity(vsyncs);
     let mut pv = Vec::with_capacity(vsyncs);
     let mut rng = 0x5EED_u32 ^ u32::from(track);
