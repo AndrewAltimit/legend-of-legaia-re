@@ -514,8 +514,13 @@ def run_engine(a, out: Path) -> bool:
         # a single-target cast lands on the same seat on both sides, and the
         # victim's voice cue and the framing follow it. A recording older than
         # that field takes --target.
+        # `t` takes an engine slot too: a monster seat (a self-cast such as
+        # Ultra Charge, whose pick stores the caster's own seat) re-keys as the
+        # caster does, a group code (8 / 9) passes through.
         target = int(done.get("cast_target", "-1"))
-        target = target if 0 <= target < 3 else a.target
+        target = target if 0 <= target < 8 else a.target
+        if 3 <= target < 8:
+            target = pc + target - 3
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose

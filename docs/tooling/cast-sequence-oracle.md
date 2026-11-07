@@ -929,7 +929,12 @@ fight gave the caster (the formation row's order, which `--filter`'s report name
 `seat=`). The probe writes the target the cast began on to `done.txt`
 (`cast_target`), and the engine child lands a single-target cast there
 (`,t<slot>` on `LEGAIA_BATTLE_MONSTER_CAST`): the victim's voice cue and every
-victim shot follow it.
+victim shot follow it. The slot is the engine's, so a monster target (a self-cast:
+Koru's Ultra Charge, whose pick stores `+0x1DD = 3`) is re-keyed as the caster is,
+`party_count + seat - 3`. Left on the retail number it named no engine actor in
+a one-member party, the cast fell back to the spell's own class, and the near-camera
+ghost pass and the HUD read a party target: Vahn drew solid in front of Koru, with
+his plate up, where retail ghosts him and shows Koru's alone.
 
 A cast with a pad-driven hold needs `LEGAIA_PARK` past it: Fatal Decision's arm 6
 holds about `1200` vsyncs on an undecided party victim, which the default bound
