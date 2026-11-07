@@ -48,6 +48,7 @@ mod monster_pick;
 mod motion_vm;
 mod muscle_contest;
 mod passive_sweep;
+mod puera_crystals;
 mod queue_head;
 mod range_metric;
 mod record_spawn;
