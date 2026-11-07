@@ -370,6 +370,17 @@ impl PlayWindowApp {
             && self.session.host.world.mode == SceneMode::Battle
         {
             self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
+            // A film that runs on from the capture's gate
+            // (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`) lets go of the angle there:
+            // retail's frame driver winds it on every frame after
+            // (`World::tick_battle_backdrop_spin`), and held it stood the sky
+            // still behind the whole strike.
+            if capture_frame
+                && std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+                && let Some(sc) = self.screenshot.as_mut()
+            {
+                sc.battle_backdrop_yaw = None;
+            }
         }
         // ... and, once a cast capture's gate holds, the summon close-up's
         // accumulator (`PhaseGate::accum_align`).

@@ -202,6 +202,13 @@ one palette and one scroll where retail's keeps cycling. Their phase is then
 the engine's own: nothing aligns the hue clock with retail's across the
 fight's history.
 
+The backdrop's slot-1 angle (`LEGAIA_BATTLE_BACKDROP_YAW`,
+[battle-stage-camera](../subsystems/battle-stage-camera.md)) is kept, since
+its phase is the capture's, but a gate film lets go of it on the gate's frame:
+retail's frame driver winds it half a frame step a frame from there on, and
+held through the film it stood the horizon mist or cloud band still behind
+every strike on a stage that keeps object 1.
+
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
 already cropped and box-filtered to the compared `320 x 224`
@@ -556,7 +563,10 @@ on both sides, so a clip both sides played can be read cue for cue.
 `--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held:
 
 - the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
-  drive's gate holds only the bytes up to the cursor;
+  drive's gate holds only the bytes up to the cursor. A byte the replay's loop has staged and not
+  yet committed is re-staged from the queue too (`restage_dealt_byte`): a walking monster opens the
+  loop with its first byte over the idle, and `battle_rugi_caruban_3_strike`'s replay had staged its
+  own `07` where retail held `08`, so it played Bite alone and skipped Flap (`.690` to `.772`);
 - the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` off the state. They feed the first hit's block roll,
   and the replay walked in from elsewhere to a target facing elsewhere: `battle_rugi_barra_strike`
   holds `393` / `64`, the replay `86` / `116`;
