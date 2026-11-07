@@ -327,8 +327,7 @@ fn water_hazard_picks_its_row_off_the_target_code() {
         9,
         &mut caster,
         &mut seats,
-        |_| 100,
-        |_| 1, // never 0 mod 8: no status
+        |_| (100, 1), // 1 is never 0 mod 8: no status
     );
     assert_eq!(step, CastTickStep::Busy);
     assert_eq!(
@@ -350,8 +349,7 @@ fn water_hazard_picks_its_row_off_the_target_code() {
         8,
         &mut caster,
         &mut seats,
-        |_| 20,
-        |_| 8, // 8 & 7 == 0: the status lands
+        |_| (20, 8), // 8 & 7 == 0: the status lands
     );
     assert_eq!(hits.len(), 3);
     assert!(seats.iter().all(|s| s.hp == 30 && s.restage == 1));
@@ -387,7 +385,7 @@ fn water_hazards_monster_leg_picks_the_alternate_reaction() {
             ..Default::default()
         },
     ];
-    water_hazard_tick(&mut ctx, 9, 9, &mut caster, &mut seats, |_| 10, |_| 1);
+    water_hazard_tick(&mut ctx, 9, 9, &mut caster, &mut seats, |_| (10, 1));
     assert_eq!(seats[3].staged_anim, 0x07, "gate clear takes +0x1EF");
     assert_eq!(seats[3].restage, 5);
     assert_eq!(seats[4].staged_anim, 0x0C, "gate set takes +0x1F1");

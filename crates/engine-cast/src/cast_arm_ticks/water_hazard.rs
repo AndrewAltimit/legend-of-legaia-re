@@ -30,8 +30,11 @@ use super::*;
 /// Not ported: the twelve-step ring of `FUN_80021B04` spawns arm `2` opens
 /// with, the framing and the countdown at `0x801F86A0`.
 ///
-/// `damage` is the caller's per-seat roll; `status` is the caller's per-seat
-/// `rand()`, of which only `& 7 == 0` is read.
+/// `roll` is called once per hit seat, in sweep order, and answers that seat's
+/// damage and then its status `rand()` (only `& 7 == 0` is read). Retail draws
+/// them in that order seat by seat - the wrapper's two draws, then the status
+/// draw (`0x801F78D0` / `0x801F797C`) - so a caller must not roll the row's
+/// damage ahead of its statuses.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -43,8 +46,7 @@ pub fn water_hazard_tick(
     caster_target_code: u8,
     caster: &mut CastActorState,
     seats: &mut [CastActorState],
-    damage: impl Fn(u8) -> i32,
-    status: impl Fn(u8) -> u32,
+    mut roll: impl FnMut(u8) -> (i32, u32),
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let step = run_chain_tick(ctx, |c| match c.phase {
@@ -66,7 +68,7 @@ pub fn water_hazard_tick(
                 if !aoe_seat_is_hittable(s) {
                     continue;
                 }
-                let roll = damage(seat);
+                let (roll, status) = roll(seat);
                 let applied = if low_leg {
                     apply_arm_hit(s, roll, 1, s.anim_rate)
                 } else {
@@ -86,7 +88,7 @@ pub fn water_hazard_tick(
                     }
                     dmg
                 };
-                if status(seat) & 7 == 0 {
+                if status & 7 == 0 {
                     s.flags |= FLAG_WATER_HAZARD_STATUS;
                 }
                 hits.push(SweepHit { seat, applied });

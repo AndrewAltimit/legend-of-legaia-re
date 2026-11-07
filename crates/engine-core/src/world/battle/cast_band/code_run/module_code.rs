@@ -1157,36 +1157,27 @@ impl World {
                 }
                 (956, Some(arms::WATER_HAZARD_TICK)) => {
                     let code = caster.target_code;
-                    let rolls =
-                        self.cast_arm_sweep_rolls(&ctx, 956, arms::WATER_HAZARD_TICK, caster_slot);
-                    let status: Vec<(u8, u32)> = if ctx.phase == 2 {
-                        rolls.iter().map(|(s, _)| (*s, self.next_rand())).collect()
-                    } else {
-                        Vec::new()
-                    };
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
-                    let take = |seat: u8| {
-                        rolls
-                            .iter()
-                            .find(|(s, _)| *s == seat)
-                            .map(|(_, d)| *d)
-                            .unwrap_or(0)
-                    };
-                    let st = |seat: u8| {
-                        status
-                            .iter()
-                            .find(|(s, _)| *s == seat)
-                            .map(|(_, r)| *r)
-                            .unwrap_or(1)
-                    };
+                    // Each hit seat's damage and then its status draw, seat by
+                    // seat, as retail's sweep draws them; the rows the sweep
+                    // rolls are the low leg's `0 .. ctx[+0]`.
+                    let shape = arms::arm_damage_shape_for(956, arms::WATER_HAZARD_TICK);
+                    let low = ctx.party_count;
                     let (step, hits) = arms::water_hazard_tick(
                         &mut ctx,
                         r_caster as u8,
                         code,
                         &mut caster,
                         &mut seats,
-                        take,
-                        st,
+                        |seat| {
+                            if seat >= low {
+                                return (0, 1);
+                            }
+                            let damage = shape
+                                .and_then(|sh| self.capture_module_roll(sh, caster_slot, seat))
+                                .unwrap_or(0);
+                            (damage, self.next_rand())
+                        },
                     );
                     self.write_cast_seat_row(&seats);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {

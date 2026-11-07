@@ -69,4 +69,5 @@ mod unequip;
 mod validator;
 mod walk_regen;
 mod walk_step;
+mod water_hazard;
 mod zone_ramp;
