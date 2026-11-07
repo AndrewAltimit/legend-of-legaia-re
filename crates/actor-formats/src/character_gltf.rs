@@ -33,7 +33,7 @@ use crate::gltf_color::{self, MODULATION_NEUTRAL};
 use crate::monster_archive::MonsterAnimation;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, euler_zyx_quat, pack_glb, rgba_to_png};
 use crate::scene_gltf::{TILE, bake_tile, tile_key};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 

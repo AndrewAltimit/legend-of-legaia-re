@@ -5,7 +5,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_fishing::fishing::ReelCadence;
 use legaia_minigame_formats::fishing_species as fs;
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const RECOGNISE: u32 = 0x801D_3DB4;
 const LAST: u32 = 0x801D_9064;
@@ -130,9 +130,7 @@ fn the_waiting_lines_band_and_strike_go_as_retails_do() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    cpu.hook(CHECK_END, |r, _| {
-        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
-    });
+    cpu.hook(CHECK_END, |r, _| r.r[RA] = psx_retail_exec::RETURN_SENTINEL);
     cpu.stub(0x8005_67A8, 0); // the debug printf
     cpu.hook(0x8002_4C88, |r, _| r.r[V0] = FISH);
     for f in [
@@ -280,7 +278,7 @@ fn the_power_meter_sweeps_as_retails_does() {
     const METER: u32 = 0x801D_9274;
     const DIR: u32 = 0x801D_9278;
     cpu.hook(0x801C_FB98, |r, _| {
-        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
+        r.r[RA] = psx_retail_exec::RETURN_SENTINEL
     });
     for step in [1i32, 2, 3] {
         cpu.mem.wr32(METER, 0);
@@ -330,15 +328,15 @@ fn the_lure_flies_and_comes_in_as_retails_does() {
     cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
     cpu.mem.wr32(0x8007_B7F8, 0x8007_122C);
     drop(scus);
-    let end = |r: &mut legaia_retail_exec::Regs, _: &mut legaia_retail_exec::Memory| {
-        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
+    let end = |r: &mut psx_retail_exec::Regs, _: &mut psx_retail_exec::Memory| {
+        r.r[RA] = psx_retail_exec::RETURN_SENTINEL
     };
     for a in [0x801D_39C4, 0x801D_2F44, 0x801D_3A44, 0x801D_395C] {
         cpu.hook(a, end);
     }
     // The GTE's leading-bit count.
     cpu.hook(0x8005_BA1C, |r, _| {
-        r.r[V0] = r.r[legaia_retail_exec::A0].leading_zeros()
+        r.r[V0] = r.r[psx_retail_exec::A0].leading_zeros()
     });
     cpu.stub(0x8002_1B04, FISH);
     cpu.stub(0x8006_5034, 0);

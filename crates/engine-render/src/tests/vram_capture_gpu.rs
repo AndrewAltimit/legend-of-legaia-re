@@ -2,7 +2,7 @@
 //! software PSX VRAM and is then samplable as a texture page.
 //!
 //! The chain a transition needs is: draw -> read back -> quantise into
-//! [`legaia_tim::Vram`] -> re-upload -> sample. `Renderer::capture_into_vram`
+//! [`psx_tim::Vram`] -> re-upload -> sample. `Renderer::capture_into_vram`
 //! is `capture_rgba` plus [`legaia_render_kernels::vram_capture::blit_rgba_into_vram`], and
 //! `Renderer` cannot be built without a window - so this drives the same two
 //! halves through the headless harness instead: the real
@@ -16,7 +16,7 @@ use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 use legaia_render_kernels::vram_capture::{
     CaptureOpts, VramRect, blit_rgba_into_vram, rgb8_to_bgr555,
 };
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 fn full_quad() -> [(i16, i16); 4] {
     [

@@ -381,9 +381,9 @@ fn rebuild_bundle_sections(bundle: &[u8], updates: &BTreeMap<usize, Vec<u8>>) ->
                 d.size
             );
         }
-        let mut c = legaia_lzs::compress(decoded);
+        let mut c = psx_lzs::compress(decoded);
         if offs[i] + c.len() > span_end(i) {
-            c = legaia_lzs::compress_optimal(decoded);
+            c = psx_lzs::compress_optimal(decoded);
         }
         compressed.insert(i, c);
     }

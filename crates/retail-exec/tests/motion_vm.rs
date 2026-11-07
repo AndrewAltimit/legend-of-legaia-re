@@ -9,7 +9,7 @@
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
-use legaia_retail_exec::Stop;
+use psx_retail_exec::Stop;
 
 const ENTRY: u32 = 0x8003_774C;
 const ACTOR: u32 = 0x8013_0000;
@@ -141,7 +141,7 @@ fn the_motion_vm_walks_and_turns_as_retail_does() {
         };
         for frame in 0..MAX_FRAMES {
             assert_eq!(cpu.call(ENTRY, &[ACTOR]), Stop::Returned, "round {round}");
-            let retail_done = cpu.regs.r[legaia_retail_exec::V0] != 0;
+            let retail_done = cpu.regs.r[psx_retail_exec::V0] != 0;
             let retail = (
                 cpu.mem.rd16(ACTOR + 0x14) as i16,
                 cpu.mem.rd16(ACTOR + 0x18) as i16,

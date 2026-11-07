@@ -140,10 +140,10 @@ struct SceneFacts {
 impl DiscCatalog {
     /// Parse a Mode 2/2352 disc image.
     pub fn open(image: &[u8]) -> Result<Self> {
-        let prot = legaia_iso::image::extract_prot_dat(image)
+        let prot = psx_iso::image::extract_prot_dat(image)
             .context("PROT.DAT not found in the disc image (is it a Mode 2/2352 .bin?)")?;
-        let cdname = legaia_iso::image::extract_cdname_txt(image);
-        let scus = legaia_iso::image::extract_scus(image);
+        let cdname = psx_iso::image::extract_cdname_txt(image);
+        let scus = psx_iso::image::extract_scus(image);
         let index = ProtIndex::from_bytes(prot, cdname.as_deref()).context("PROT index")?;
         Self::from_parts(index, scus.as_deref())
     }

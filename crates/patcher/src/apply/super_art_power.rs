@@ -37,11 +37,9 @@ pub fn set_super_art_power(
     if edits.is_empty() {
         return Ok(report);
     }
-    let scus = legaia_iso::iso9660::read_file_in_image(
-        patcher.image(),
-        legaia_arts_patch::arts::SCUS_NAME,
-    )
-    .context("read SCUS_942.54 (arts-name table, needed to locate the art block)")?;
+    let scus =
+        psx_iso::iso9660::read_file_in_image(patcher.image(), legaia_arts_patch::arts::SCUS_NAME)
+            .context("read SCUS_942.54 (arts-name table, needed to locate the art block)")?;
 
     for ch in Character::all() {
         let want: Vec<(u8, u8)> = edits

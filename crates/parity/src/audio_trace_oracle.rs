@@ -34,7 +34,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use legaia_engine_audio::{Sequencer, Spu, SpuAllocator, VabBank};
 use legaia_engine_scene_host::scene_host::BgmDirector;
-use legaia_seq::Seq;
+use psx_seq::Seq;
 use serde::{Deserialize, Serialize};
 
 use legaia_engine_session::native::NativeSession;
@@ -57,7 +57,7 @@ pub use trace_director::*;
 pub use voice_allocation::*;
 
 /// Number of PSX SPU voices. Mirrors [`legaia_engine_audio::spu::NUM_VOICES`]
-/// and [`legaia_mednafen::SPU_NUM_VOICES`]. Re-exported so downstream code
+/// and [`psx_mednafen::SPU_NUM_VOICES`]. Re-exported so downstream code
 /// doesn't need to depend on engine-audio just to size an array.
 pub const NUM_VOICES: usize = 24;
 
@@ -65,7 +65,7 @@ pub const NUM_VOICES: usize = 24;
 ///
 /// Both emitters fill the same fields:
 ///   - Engine: reads its private [`legaia_engine_audio::Spu`].
-///   - Retail: reads [`legaia_mednafen::PsxSpu::voice_state`].
+///   - Retail: reads [`psx_mednafen::PsxSpu::voice_state`].
 ///
 /// Mednafen's ADSR phase enum doesn't map 1:1 onto the engine-audio model
 /// (mednafen splits Release into multiple sub-phases), so the field carries

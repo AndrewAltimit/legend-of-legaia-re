@@ -15,14 +15,14 @@ pub struct SceneEntry {
 impl SceneEntry {
     /// Parse this entry as a SEQ (PsyQ sequence). Errors if the bytes don't
     /// start with the `pQES` magic.
-    pub fn as_seq(&self) -> Result<legaia_seq::Seq> {
-        legaia_seq::Seq::parse(&self.bytes).context("parse SEQ from PROT entry bytes")
+    pub fn as_seq(&self) -> Result<psx_seq::Seq> {
+        psx_seq::Seq::parse(&self.bytes).context("parse SEQ from PROT entry bytes")
     }
 
     /// Parse a VAB header at `offset` (most common: 0 for standalone VAB,
     /// or 4 for `scene_vab_stream` containers - the chunk0 prefix is 4 bytes).
-    pub fn as_vab(&self, offset: usize) -> Result<legaia_vab::VabReport> {
-        legaia_vab::parse(&self.bytes, offset).context("parse VAB from PROT entry bytes")
+    pub fn as_vab(&self, offset: usize) -> Result<psx_vab::VabReport> {
+        psx_vab::parse(&self.bytes, offset).context("parse VAB from PROT entry bytes")
     }
 }
 

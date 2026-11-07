@@ -10,7 +10,7 @@ use legaia_engine_battle_vm::battle_action::motion::{
 };
 use legaia_engine_battle_vm::battle_approach::approach_angle;
 use legaia_engine_system::trig::trig12;
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const METRIC: u32 = 0x8004_E2F0;
 const ACTORS: u32 = 0x801C_9370;

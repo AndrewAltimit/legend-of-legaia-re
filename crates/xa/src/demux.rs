@@ -36,7 +36,7 @@
 //! - bits 4..5:    bits/sample (00 = 4-bit, 01 = 8-bit)
 
 use anyhow::{Context, Result};
-use legaia_iso::raw::{RawDisc, SECTOR_SIZE};
+use psx_iso::raw::{RawDisc, SECTOR_SIZE};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -205,7 +205,7 @@ fn push_sector(by_key: &mut BTreeMap<(u8, u8), ChannelStream>, raw: &[u8]) {
 pub fn demux_file(bin_path: &Path, start_lba: u32, byte_size: u32) -> Result<Vec<ChannelStream>> {
     let mut disc =
         RawDisc::open(bin_path).with_context(|| format!("open disc {}", bin_path.display()))?;
-    let sector_count = byte_size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+    let sector_count = byte_size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
     demux_disc_range(&mut disc, start_lba, sector_count)
 }
 
@@ -228,7 +228,7 @@ pub struct DiscXaFile {
 /// `.XA` extension) are returned with an empty `streams` vec rather than
 /// erroring, so one odd file doesn't abort a full-disc sweep.
 pub fn demux_disc_all(bin_path: &Path) -> Result<Vec<DiscXaFile>> {
-    use legaia_iso::iso9660;
+    use psx_iso::iso9660;
     let mut disc =
         RawDisc::open(bin_path).with_context(|| format!("open disc {}", bin_path.display()))?;
     let volume = iso9660::read_volume(&mut disc)?;
@@ -238,7 +238,7 @@ pub fn demux_disc_all(bin_path: &Path) -> Result<Vec<DiscXaFile>> {
         if !path.to_ascii_uppercase().ends_with(".XA") {
             continue;
         }
-        let sector_count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let sector_count = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
         let streams = demux_disc_range(&mut disc, rec.lba, sector_count)
             .with_context(|| format!("demux {} @ LBA {}", path, rec.lba))?;
         out.push(DiscXaFile {

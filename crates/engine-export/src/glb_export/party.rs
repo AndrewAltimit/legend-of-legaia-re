@@ -52,7 +52,7 @@ pub fn export_party_field_glbs(
         .entry_bytes(cp::PROT_ENTRY_INDEX)
         .map_err(|e| format!("party pack (PROT {}): {e}", cp::PROT_ENTRY_INDEX))?;
     let pack = cp::parse(&raw).map_err(|e| format!("party pack: {e}"))?;
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     match legaia_actor_formats::field_char_textures::parse(&raw) {
         Ok(tex) => tex.upload_to_vram(&mut vram, false),
         Err(e) => return Err(format!("party field textures: {e}")),

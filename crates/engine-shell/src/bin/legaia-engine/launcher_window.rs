@@ -1610,17 +1610,13 @@ impl LauncherApp {
             } else {
                 row.value(&self.options, &self.settings)
             };
-            // A value the original game has reads dim; one it does not (an
-            // enhancement, a fix or a tweak in effect) reads green. Rows
-            // with no original counterpart (window, volumes) keep the
-            // plain On / Off / value inks.
-            let vink = match (value.as_str(), row.original_value()) {
-                _ if muted => FAINT,
-                (v, Some(orig)) if v == orig => DIM,
-                (_, Some(_)) => GOOD,
-                ("On", None) => GOOD,
-                ("Off", None) => DIM,
-                _ => GOLD,
+            // The one value-ink rule the play window's settings page uses
+            // too (`chrome::option_value`).
+            let vink = if muted {
+                FAINT
+            } else {
+                legaia_app_theme::chrome::option_value(&value, row.original_value().as_deref())
+                    .to_f32()
             };
             let shown = if focused {
                 format!("< {value} >")
@@ -3354,7 +3350,7 @@ mod tests {
             ));
         }
         // Every reason the disc sniffer gives.
-        let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
+        let mut iso = vec![0u8; psx_iso::sniff::SNIFF_LEN];
         iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");
         for (ext, head) in [
             ("chd", &b"MComprHD"[..]),
@@ -3368,7 +3364,7 @@ mod tests {
             ("bin", &[1u8; 8]),
             ("bin", &[1u8; 4096]),
         ] {
-            let d = legaia_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
+            let d = psx_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
             let p = DiscProblem::Unreadable {
                 path: path.clone(),
                 reason: d.what,

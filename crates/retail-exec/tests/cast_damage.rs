@@ -9,8 +9,8 @@ use legaia_engine_battle::move_power::MovePowerCatalog;
 use legaia_engine_battle::spells::SpellOutcome;
 use legaia_engine_core::world::World;
 use legaia_game_tables::element_affinity;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -34,33 +34,33 @@ const ACTOR_STRIDE: u32 = 0x400;
 const MONSTER: u32 = 0x8015_0000;
 
 #[derive(Debug, Clone, Default)]
-struct Seat {
-    hp: u16,
-    max_hp: u16,
-    int: u16,
-    atk: u16,
-    udf: u16,
-    ldf: u16,
-    status: u16,
-    spirit: u16,
-    guarding: bool,
+pub(crate) struct Seat {
+    pub(crate) hp: u16,
+    pub(crate) max_hp: u16,
+    pub(crate) int: u16,
+    pub(crate) atk: u16,
+    pub(crate) udf: u16,
+    pub(crate) ldf: u16,
+    pub(crate) status: u16,
+    pub(crate) spirit: u16,
+    pub(crate) guarding: bool,
 }
 
 #[derive(Debug, Clone)]
-struct Cast {
-    seats: [Seat; 8],
-    attacker: u8,
-    target: u8,
-    ability: [[u32; 2]; 3],
-    elements: [u8; 5],
-    mystic: bool,
-    seed: u32,
+pub(crate) struct Cast {
+    pub(crate) seats: [Seat; 8],
+    pub(crate) attacker: u8,
+    pub(crate) target: u8,
+    pub(crate) ability: [[u32; 2]; 3],
+    pub(crate) elements: [u8; 5],
+    pub(crate) mystic: bool,
+    pub(crate) seed: u32,
     // The summon branch.
-    caster: u8,
-    spell: u8,
-    level: u8,
-    group: bool,
-    special: bool,
+    pub(crate) caster: u8,
+    pub(crate) spell: u8,
+    pub(crate) level: u8,
+    pub(crate) group: bool,
+    pub(crate) special: bool,
 }
 
 fn stat(rng: &mut Rng, top: u32) -> u16 {
@@ -72,7 +72,7 @@ fn stat(rng: &mut Rng, top: u32) -> u16 {
     }
 }
 
-fn gen_cast(rng: &mut Rng) -> Cast {
+pub(crate) fn gen_cast(rng: &mut Rng) -> Cast {
     let top = [60, 200, 600, 2000, 9999][rng.below(5) as usize];
     let mut seats: [Seat; 8] = Default::default();
     for s in &mut seats {
@@ -123,11 +123,11 @@ fn gen_cast(rng: &mut Rng) -> Cast {
     }
 }
 
-fn actor(slot: u8) -> u32 {
+pub(crate) fn actor(slot: u8) -> u32 {
     ACTOR + u32::from(slot) * ACTOR_STRIDE
 }
 
-fn seed_retail(cpu: &mut Cpu, c: &Cast) {
+pub(crate) fn seed_retail(cpu: &mut Cpu, c: &Cast) {
     cpu.mem.wr32(CTX_PTR, CTX);
     for b in 0..0x900 {
         cpu.mem.wr8(CTX + b, 0);
@@ -184,7 +184,7 @@ fn seed_retail(cpu: &mut Cpu, c: &Cast) {
     }
 }
 
-fn seed_port(w: &mut World, c: &Cast) {
+pub(crate) fn seed_port(w: &mut World, c: &Cast) {
     let mut party = Party::zeroed(3);
     for m in 0..3 {
         let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
@@ -242,7 +242,7 @@ struct Outcome {
 }
 
 /// The CPU and a World with the same disc tables, sharing nothing else.
-fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, World)> {
+pub(crate) fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, World)> {
     let (mut cpu, disc) = (scus_cpu()?, disc()?);
     let overlay = disc.read_entry(898).expect("PROT 0898");
     cpu.mem.load(OVERLAY_BASE, &overlay);
@@ -507,9 +507,12 @@ const BYPASS_WRAPPER: u32 = 0x801D_D6B4;
 
 /// What a capture-class module's damage site hands its wrapper, read off the
 /// module image itself: the `jal` at `site` (whose target names the wrapper)
-/// and the `addiu a0, zero, imm` that loads its power - the delay slot's when
-/// it writes `a0`, else the nearest one before the call.
-fn module_site(image: &[u8], site: u32) -> Option<(u32, u16)> {
+/// and every power an `addiu a0, zero, imm` loads on the way in - the call's
+/// own delay slot, then the 32 words before it. A site several actions share
+/// loads one power per action on separate paths (PROT 0947: V-Windhash's
+/// `0x7B` in a branch delay slot at `0x801F73DC`, Neo Windhash's `0xEA`
+/// nearer the call), so the nearest load alone names only one of them.
+fn module_site(image: &[u8], site: u32) -> Option<(u32, Vec<u16>)> {
     let word = |va: u32| -> Option<u32> {
         let o = va.checked_sub(SLOT_B_BASE)? as usize;
         Some(u32::from_le_bytes(image.get(o..o + 4)?.try_into().ok()?))
@@ -521,11 +524,13 @@ fn module_site(image: &[u8], site: u32) -> Option<(u32, u16)> {
     let target = 0x8000_0000 | ((jal & 0x03FF_FFFF) << 2);
     // `addiu a0, zero, imm`.
     let loads_a0 = |w: u32| w >> 16 == 0x2404;
-    let power = std::iter::once(site + 4)
+    let powers: Vec<u16> = std::iter::once(site + 4)
         .chain((1..=32).map(|k| site - 4 * k))
         .filter_map(word)
-        .find(|&w| loads_a0(w))?;
-    Some((target, power as u16))
+        .filter(|&w| loads_a0(w))
+        .map(|w| w as u16)
+        .collect();
+    (!powers.is_empty()).then_some((target, powers))
 }
 
 /// A monster's capture-class special end to end: the World's roll for the
@@ -549,13 +554,17 @@ fn a_capture_special_rolls_what_its_module_site_rolls() {
     let mut cases = Vec::new();
     for &(entry, ids, power, site) in CAPTURE_SITE_POWERS {
         let image = disc.read_entry(entry as usize).expect("module image");
-        let (wrapper, retail_power) = module_site(&image, site)
+        let (wrapper, retail_powers) = module_site(&image, site)
             .unwrap_or_else(|| panic!("PROT {entry} {site:#x}: no wrapper call"));
         assert!(
             wrapper == RESPECT_WRAPPER || wrapper == BYPASS_WRAPPER,
             "PROT {entry} {site:#x}: jal {wrapper:#x}"
         );
-        assert_eq!(retail_power, power, "PROT {entry} {site:#x}: a0");
+        assert!(
+            retail_powers.contains(&power),
+            "PROT {entry} {site:#x}: a0 {power:#x} not among {retail_powers:x?}"
+        );
+        let retail_power = power;
         for id in 1..=0xFFu8 {
             if w.cast_module_for(id) == Some(entry) && (ids.is_empty() || ids.contains(&id)) {
                 cases.push((id, entry, wrapper, retail_power));

@@ -24,8 +24,8 @@
 //! availability is scene-dependent, not a guaranteed reservation.
 
 use legaia_game_tables::sfx_table::SfxTable;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::{ScenarioManifest, extract, ram_slice};
+use psx_mednafen::SaveState;
+use psx_ram_image::{ScenarioManifest, extract, ram_slice};
 use std::path::{Path, PathBuf};
 
 /// libsnd "current sound bank" VAB-header base pointer.
@@ -58,7 +58,7 @@ fn sfx_programs_resolve_in_the_music01_bank() {
         .expect("parse SFX table");
     // The music_01 scene VAB sits at +4 (the `[u32 chunk header][VAB]` wrapper).
     let vab_bytes = std::fs::read(&vab_path).expect("read music_01 PROT entry");
-    let vab = legaia_vab::parse(&vab_bytes, 4).expect("parse music_01 VAB");
+    let vab = psx_vab::parse(&vab_bytes, 4).expect("parse music_01 VAB");
 
     let max_program = table.active().map(|(_, d)| d.program).max().unwrap();
     assert!(

@@ -47,8 +47,8 @@ fn vram_for(
     raw: &[u8],
     pack: &battle_data_pack::BattleDataPack,
     load: &[u8; bca::SECTION_COUNT],
-) -> legaia_tim::Vram {
-    let mut vram = legaia_tim::Vram::new();
+) -> psx_tim::Vram {
+    let mut vram = psx_tim::Vram::new();
     for u in &bca::character_texture_uploads(raw, pack, load, 0).expect("texture pool") {
         vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
         if !u.clut.is_empty() {
@@ -260,7 +260,7 @@ fn write_sheet(path: &Path, cells: &[Cell], size: usize) {
         mesh_raster::blit(&mut img, w, h, &panel(&c.after, size), x + size + 4, y + 12);
         draw_label(&mut img, w, x + 2, y + 2, &c.label);
     }
-    legaia_tim::write_png(path, w, h, &img).unwrap();
+    psx_tim::write_png(path, w, h, &img).unwrap();
 }
 
 /// 3x5 pixel glyphs for the sheet labels (digits, a-z, a few marks).

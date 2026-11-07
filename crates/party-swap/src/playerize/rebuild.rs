@@ -50,7 +50,7 @@ fn rebuild_player_file_inner(
     let mut new_records: Vec<(u32, Vec<u8>, Vec<u8>)> = records
         .into_iter()
         .map(|(id, rewritten)| {
-            let stream = legaia_lzs::compress(&rewritten);
+            let stream = psx_lzs::compress(&rewritten);
             let mut slot = Vec::with_capacity(4 + stream.len());
             slot.extend_from_slice(&(rewritten.len() as u32).to_le_bytes());
             slot.extend_from_slice(&stream);
@@ -75,7 +75,7 @@ fn rebuild_player_file_inner(
     if let Some(budget) = budget {
         if total(&new_records) > budget {
             for (_, slot, decoded) in new_records.iter_mut() {
-                let stream = legaia_lzs::compress_optimal(decoded);
+                let stream = psx_lzs::compress_optimal(decoded);
                 if 4 + stream.len() < slot.len() {
                     slot.truncate(4);
                     slot.extend_from_slice(&stream);

@@ -7,9 +7,9 @@ impl LegaiaViewer {
     /// bit 1 = raw texture (skip color modulation). JS computes the model-view
     /// matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
     pub fn save_state_prim_replay(&self, save_state_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
-        let save = legaia_mednafen::container::SaveState::from_compressed(&save_state_bytes)
+        let save = psx_mednafen::container::SaveState::from_compressed(&save_state_bytes)
             .map_err(|e| JsValue::from_str(&format!("parse save state: {e}")))?;
-        let gpu = legaia_mednafen::gpu::PsxGpu::new(&save);
+        let gpu = psx_mednafen::gpu::PsxGpu::new(&save);
         let vram = gpu
             .vram_bytes()
             .ok_or_else(|| JsValue::from_str("save state has no GPU/VRAM section"))?;
@@ -33,12 +33,12 @@ impl LegaiaViewer {
         let ram = save
             .main_ram()
             .map_err(|e| JsValue::from_str(&format!("read main RAM: {e}")))?;
-        let pool_start_kuseg = legaia_ram_image::prim_pool::POOL_BASE_DEFAULT;
+        let pool_start_kuseg = psx_ram_image::prim_pool::POOL_BASE_DEFAULT;
         let pool_end_kuseg = 0x80102000u32;
         let pool_lo = (pool_start_kuseg - 0x8000_0000) as usize;
         let pool_hi = (pool_end_kuseg - 0x8000_0000) as usize;
         let pool = &ram[pool_lo..pool_hi.min(ram.len())];
-        let prims = legaia_ram_image::prim_pool::decode(pool, pool_start_kuseg);
+        let prims = psx_ram_image::prim_pool::decode(pool, pool_start_kuseg);
 
         // Build vertex array. Two triangles per quad prim. Three vertices
         // for tri prims (zero-area duplicate to keep stride uniform).
@@ -74,7 +74,7 @@ impl LegaiaViewer {
         };
         for p in &prims {
             match *p {
-                legaia_ram_image::prim_pool::Prim::PolyFt4 {
+                psx_ram_image::prim_pool::Prim::PolyFt4 {
                     cmd,
                     color,
                     verts: v,
@@ -90,7 +90,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_ram_image::prim_pool::Prim::PolyGt4 {
+                psx_ram_image::prim_pool::Prim::PolyGt4 {
                     cmd,
                     colors,
                     verts: v,
@@ -106,7 +106,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_ram_image::prim_pool::Prim::PolyFt3 {
+                psx_ram_image::prim_pool::Prim::PolyFt3 {
                     cmd,
                     color,
                     verts: v,
@@ -127,7 +127,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_ram_image::prim_pool::Prim::PolyGt3 {
+                psx_ram_image::prim_pool::Prim::PolyGt3 {
                     cmd,
                     colors,
                     verts: v,
@@ -149,7 +149,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_ram_image::prim_pool::Prim::Sprt16 {
+                psx_ram_image::prim_pool::Prim::Sprt16 {
                     cmd,
                     color,
                     pos,
@@ -158,7 +158,7 @@ impl LegaiaViewer {
                 } => {
                     sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, (16, 16));
                 }
-                legaia_ram_image::prim_pool::Prim::Sprt8 {
+                psx_ram_image::prim_pool::Prim::Sprt8 {
                     cmd,
                     color,
                     pos,
@@ -170,7 +170,7 @@ impl LegaiaViewer {
                 // Free-size sprite (GP0 0x64): the window-chrome opcode. Its
                 // extent is a packet field rather than the opcode's, so it is
                 // the one sprite kind that needs the size passed through.
-                legaia_ram_image::prim_pool::Prim::Sprt {
+                psx_ram_image::prim_pool::Prim::Sprt {
                     cmd,
                     color,
                     pos,
@@ -196,10 +196,10 @@ impl LegaiaViewer {
                 // them keeps this viewer's output exactly what it was when the
                 // decoder produced textured primitives only; rendering them
                 // needs an untextured path on both sides of the buffer.
-                legaia_ram_image::prim_pool::Prim::PolyF3 { .. }
-                | legaia_ram_image::prim_pool::Prim::PolyF4 { .. }
-                | legaia_ram_image::prim_pool::Prim::PolyG3 { .. }
-                | legaia_ram_image::prim_pool::Prim::PolyG4 { .. } => {}
+                psx_ram_image::prim_pool::Prim::PolyF3 { .. }
+                | psx_ram_image::prim_pool::Prim::PolyF4 { .. }
+                | psx_ram_image::prim_pool::Prim::PolyG3 { .. }
+                | psx_ram_image::prim_pool::Prim::PolyG4 { .. } => {}
             }
         }
         let vertex_count = (verts.len() / 14) as u32;
@@ -233,9 +233,9 @@ impl LegaiaViewer {
     /// the underlying mesh / tilemap data lives in the kingdom's
     /// `scene_v12_table` at PROT base+8 - both still being characterised).
     pub fn save_state_framebuffer(&self, save_state_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
-        let save = legaia_mednafen::container::SaveState::from_compressed(&save_state_bytes)
+        let save = psx_mednafen::container::SaveState::from_compressed(&save_state_bytes)
             .map_err(|e| JsValue::from_str(&format!("parse save state: {e}")))?;
-        let gpu = legaia_mednafen::gpu::PsxGpu::new(&save);
+        let gpu = psx_mednafen::gpu::PsxGpu::new(&save);
         let vram = gpu
             .vram_bytes()
             .ok_or_else(|| JsValue::from_str("save state has no GPU/VRAM section"))?;
@@ -283,7 +283,7 @@ impl LegaiaViewer {
                 let vx = (fb_x as usize + col) & 0x3FF;
                 let off = (vy * 1024 + vx) * 2;
                 let word = u16::from_le_bytes([vram[off], vram[off + 1]]);
-                let [r, g, b, _a] = legaia_mednafen::gpu::bgr555_to_rgba8(word);
+                let [r, g, b, _a] = psx_mednafen::gpu::bgr555_to_rgba8(word);
                 out.push(r);
                 out.push(g);
                 out.push(b);
@@ -345,7 +345,7 @@ impl LegaiaViewer {
         if let Some(off) = seq_off {
             s.push_str(&format!(r#""seq_offset":{off},"#));
             // Try parsing the SEQ header for the JS-visible BPM display.
-            if let Ok(hdr) = legaia_seq::parse_header(&buf[off..]) {
+            if let Ok(hdr) = psx_seq::parse_header(&buf[off..]) {
                 s.push_str(&format!(r#""seq_ppqn":{},"#, hdr.ppqn));
                 s.push_str(&format!(r#""seq_bpm":{:.1},"#, hdr.bpm()));
             }
@@ -390,7 +390,7 @@ impl LegaiaViewer {
                 out.push(',');
             }
             // Decode TIM to get the bpp-corrected pixel dimensions.
-            let (w, h) = match legaia_tim::parse(logo.bytes) {
+            let (w, h) = match psx_tim::parse(logo.bytes) {
                 Ok(t) => (t.pixel_width() as u32, t.image.h as u32),
                 Err(_) => (logo.pixel_rect.2 as u32 * 2, logo.pixel_rect.3 as u32),
             };
@@ -416,10 +416,10 @@ impl LegaiaViewer {
         let Some(logo) = pak.logos.get(idx as usize) else {
             return Vec::new();
         };
-        let Ok(tim) = legaia_tim::parse(logo.bytes) else {
+        let Ok(tim) = psx_tim::parse(logo.bytes) else {
             return Vec::new();
         };
-        legaia_tim::decode_rgba8(&tim, 0).unwrap_or_default()
+        psx_tim::decode_rgba8(&tim, 0).unwrap_or_default()
     }
 
     /// Locate PROT 0895's byte range in the loaded disc image. Returns

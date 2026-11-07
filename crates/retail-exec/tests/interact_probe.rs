@@ -11,7 +11,7 @@
 //! spawns: in `koin1` the probe from door `P1[56]` also boxes `P1[63]`.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 #[derive(Debug, Clone, Copy)]
 struct ProbeActor {

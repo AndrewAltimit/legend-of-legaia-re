@@ -51,7 +51,7 @@
 //! `..._801d1888.txt` and `..._801d1a20.txt` - disassembly, not the C.
 //!
 //! REF: FUN_80058490 - retail `MoveImage`, ported as
-//! `legaia_tim::Vram::move_image`. The wiring note on [`build_swirl_mesh`]
+//! `psx_tim::Vram::move_image`. The wiring note on [`build_swirl_mesh`]
 //! names it as the capture primitive the engine already has.
 
 /// Bands in the swirl (`slti v0,t5,0x10`).

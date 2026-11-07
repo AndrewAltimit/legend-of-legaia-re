@@ -106,7 +106,7 @@ fn clut_origin(clut: u16) -> (usize, usize) {
 }
 
 /// Every parseable TIM in `bytes`, raw and inside its LZS sections.
-fn tims_in(bytes: &[u8]) -> Vec<legaia_tim::Tim> {
+fn tims_in(bytes: &[u8]) -> Vec<psx_tim::Tim> {
     let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
     let mut out = Vec::new();
     for (source, hit) in &scan.hits {
@@ -117,7 +117,7 @@ fn tims_in(bytes: &[u8]) -> Vec<legaia_tim::Tim> {
         let Some(payload) = src.get(hit.offset..hit.offset + hit.byte_len) else {
             continue;
         };
-        if let Ok(tim) = legaia_tim::parse(payload) {
+        if let Ok(tim) = psx_tim::parse(payload) {
             out.push(tim);
         }
     }

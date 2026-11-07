@@ -19,7 +19,7 @@ use legaia_delilas_challenge::dome::{
 };
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
+use psx_iso::iso9660::read_file_in_image;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -255,7 +255,7 @@ fn clone_slots_are_battle_unreachable_and_slims_build() {
     for (&src, &dst) in DELILAS_PAIR_IDS.iter().zip(CLONE_IDS.iter()) {
         let slot = patcher.monster_slot(src).expect("read source slot");
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
-        let block = legaia_lzs::decompress(&slot[4..], size).expect("decode block");
+        let block = psx_lzs::decompress(&slot[4..], size).expect("decode block");
         let (protected, extra_drop) = legaia_delilas_challenge::dome::slim_policy(src);
         let slim =
             legaia_actor_formats::monster_archive::slim_castables(&block, protected, extra_drop)

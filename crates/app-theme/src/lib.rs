@@ -243,11 +243,36 @@ pub mod chrome {
     /// in effect), in the help panel; the launcher draws such a value in
     /// the same green.
     pub const CHANGED: Rgb = DARK.good;
+
+    /// The ink an option row's value takes, one rule for the launcher's list
+    /// and the play window's settings page so a value reads the same in
+    /// both: the original game's own value dim, any other value of a row the
+    /// original has green (an enhancement, a fix or a tweak in effect). A row
+    /// with no original counterpart (window size, time of day, volumes) reads
+    /// green when `On`, dim when `Off`, and in the accent otherwise.
+    pub fn option_value(value: &str, original: Option<&str>) -> Rgb {
+        match (value, original) {
+            (v, Some(o)) if v == o => DARK.ink_dim,
+            (_, Some(_)) => CHANGED,
+            ("On", None) => CHANGED,
+            ("Off", None) => DARK.ink_dim,
+            _ => DARK.accent,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn option_values_read_alike_in_both_lists() {
+        assert_eq!(chrome::option_value("Off", Some("Off")), DARK.ink_dim);
+        assert_eq!(chrome::option_value("On", Some("Off")), DARK.good);
+        assert_eq!(chrome::option_value("On", None), DARK.good);
+        assert_eq!(chrome::option_value("Off", None), DARK.ink_dim);
+        assert_eq!(chrome::option_value("Auto", None), DARK.accent);
+    }
 
     /// Every role an egui or canvas surface draws text or a fill under.
     fn check(p: &Palette, name: &str) {

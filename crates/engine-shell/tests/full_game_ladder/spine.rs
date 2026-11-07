@@ -261,12 +261,11 @@ fn read_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
             let med = lib.join("mednafen").join(format!("{fingerprint}.mcr"));
             let pcsx = lib.join("pcsx-redux").join(format!("{fingerprint}.sstate"));
             let ram: Vec<u8> = if med.exists() {
-                let st =
-                    legaia_mednafen::SaveState::from_path(&med).map_err(|e| format!("{e:#}"))?;
+                let st = psx_mednafen::SaveState::from_path(&med).map_err(|e| format!("{e:#}"))?;
                 st.main_ram().map_err(|e| format!("{e:#}"))?.to_vec()
             } else if pcsx.exists() {
                 let st =
-                    legaia_pcsx_redux::SaveState::from_path(&pcsx).map_err(|e| format!("{e:#}"))?;
+                    psx_pcsx_redux::SaveState::from_path(&pcsx).map_err(|e| format!("{e:#}"))?;
                 st.main_ram().to_vec()
             } else {
                 return Err(format!(
@@ -275,10 +274,10 @@ fn read_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
             };
             let base = (SC_RAM_BASE & 0x1F_FFFF) as usize;
             let sc = ram[base..base + SC_LEN].to_vec();
-            let scene = legaia_ram_image::game_anchors::scene_name(&ram);
-            let mode = legaia_ram_image::game_anchors::game_mode(&ram);
+            let scene = psx_ram_image::game_anchors::scene_name(&ram);
+            let mode = psx_ram_image::game_anchors::game_mode(&ram);
             let seat = if mode == 0x03 {
-                legaia_ram_image::game_anchors::player_pos(&ram)
+                psx_ram_image::game_anchors::player_pos(&ram)
             } else {
                 None
             };

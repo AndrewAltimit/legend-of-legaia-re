@@ -1,7 +1,7 @@
 //! Fill the muted hero XA voice slots with the mapped siblings' REAL
 //! grunts: the siblings' `monster.snd` SPU samples decode to PCM,
 //! resample to each channel's CD-XA rate, encode through
-//! `legaia_xa::encode` and write over the silenced channels - so a
+//! `psx_xa::encode` and write over the silenced channels - so a
 //! swapped character's arts shouts, swing grunts, staged-event lines
 //! and victory barks all speak with the Delilas voice instead of
 //! silence.
@@ -68,7 +68,7 @@ fn tone_rate(center: u8, shift: u8, note: u8) -> u32 {
 const PEAK: f64 = 0.60;
 
 /// Encode mono PCM into SPU-ADPCM blocks - the exact inverse of
-/// `legaia_vab::decode_vag`'s recurrence (prediction
+/// `psx_vab::decode_vag`'s recurrence (prediction
 /// `(p1*F0 + p2*F1 + 32) >> 6`, gain `(nibble << 12) >> shift`, low
 /// nibble first): per 28-sample block an exhaustive (filter, shift)
 /// search minimizes squared error against the real decoder state.
@@ -284,12 +284,12 @@ pub fn boost_cast_bed_intro(patcher: &mut legaia_disc_patch::disc::DiscPatcher) 
     if payload.len() < need {
         bail!("cast bed channel too short for the intro remaster");
     }
-    let opts = legaia_xa::DecodeOptions {
-        channels: legaia_xa::Channels::Stereo,
+    let opts = psx_xa::DecodeOptions {
+        channels: psx_xa::Channels::Stereo,
         sample_rate: 37800,
         ..Default::default()
     };
-    let (pcm, _) = legaia_xa::decode(&payload[..need], opts).context("decode bed intro")?;
+    let (pcm, _) = psx_xa::decode(&payload[..need], opts).context("decode bed intro")?;
     let src_frames = SRC_SECTORS * FRAMES_PER_SECTOR;
     if pcm.len() < src_frames * 2 {
         bail!("bed intro decoded short");
@@ -333,7 +333,7 @@ pub fn boost_cast_bed_intro(patcher: &mut legaia_disc_patch::disc::DiscPatcher) 
         left.push(l.round().clamp(-32768.0, 32767.0) as i16);
         right.push(r.round().clamp(-32768.0, 32767.0) as i16);
     }
-    let groups = legaia_xa::encode::encode_stereo_4bit(&left, &right);
+    let groups = psx_xa::encode::encode_stereo_4bit(&left, &right);
     if groups.len() != SPAN_LEN * 2304 {
         bail!(
             "bed intro re-encode produced {} bytes, expected {}",
@@ -365,17 +365,17 @@ pub fn read_xa_channel_pcm(patcher: &DiscPatcher, name: &str, chan: u8) -> Resul
     } else {
         37800
     };
-    let opts = legaia_xa::DecodeOptions {
+    let opts = psx_xa::DecodeOptions {
         channels: if stereo {
-            legaia_xa::Channels::Stereo
+            psx_xa::Channels::Stereo
         } else {
-            legaia_xa::Channels::Mono
+            psx_xa::Channels::Mono
         },
         sample_rate: rate,
         ..Default::default()
     };
-    let (pcm, _) = legaia_xa::decode(&payload, opts)
-        .with_context(|| format!("decode {name} channel {chan}"))?;
+    let (pcm, _) =
+        psx_xa::decode(&payload, opts).with_context(|| format!("decode {name} channel {chan}"))?;
     let mono = if stereo {
         pcm.as_chunks::<2>()
             .0
@@ -464,7 +464,7 @@ fn sibling_victory_voice(
     sibling: crate::delilas_party::Sibling,
 ) -> Result<VictoryVoice> {
     let off = monster_vab_offset(snd, sibling.monster_id())?;
-    let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
+    let vab = psx_vab::parse(snd, off).context("parse sibling VAB")?;
     let pick = victory_vag_pick(sibling);
     let tone = vab
         .tones
@@ -478,7 +478,7 @@ fn sibling_victory_voice(
         .ok_or_else(|| anyhow::anyhow!("{sibling:?}: bank has no vag {pick}"))?;
     // +4: the parser's spans sit one word before the real block grid - the
     // body chunk's own 4-byte header (`docs/formats/vab.md`). Not migrated to
-    // `legaia_vab::vag_body_origin_at`, because the general resolver only pays
+    // `psx_vab::vag_body_origin_at`, because the general resolver only pays
     // off where a SEQ chunk sits between the header part and the bodies, and
     // no bank here is that shape: in all 206 banks of `monster.snd` the chunk
     // immediately after the header part is the body chunk (its payload is
@@ -527,14 +527,14 @@ fn write_victory_body(dst: &mut [u8], src: &[u8]) {
 /// (`[u32 header_size]["VABp" header + attr tables + VAG size table]
 /// [VAG bodies]`) that the results sequencer REGISTERS at victory time,
 /// so the header and every table byte stay retail - only the VAG voice
-/// bodies swap. NB `legaia_vab::parse` spans are the documented **4
+/// bodies swap. NB `psx_vab::parse` spans are the documented **4
 /// bytes before the real ADPCM grid** (the body chunk's own header,
 /// `docs/formats/vab.md`); both source and destination shift `+4` here -
 /// writing at the raw span misaligns every block, which reads as random
 /// loop/end flags on real SPU hardware and hangs the victory sequence.
 /// The constant is exact for this archive: every one of `monster.snd`'s
 /// banks puts the body chunk immediately after the header part, so
-/// `legaia_vab::vag_body_origin_at` would return this same `+4`.
+/// `psx_vab::vag_body_origin_at` would return this same `+4`.
 pub fn fill_hero_victory_clips(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -584,7 +584,7 @@ pub fn fill_hero_victory_clips(
             if snd.get(span.start + 4..span.start + 8) != Some(&b"pBAV"[..]) {
                 anyhow::bail!("clip {clip:#x}: no VABp header at clip start");
             }
-            let vab = legaia_vab::parse(&snd, span.start + 4)
+            let vab = psx_vab::parse(&snd, span.start + 4)
                 .with_context(|| format!("parse victory clip {clip:#x} mini VAB"))?;
             if vab.vag_samples.is_empty() {
                 anyhow::bail!("clip {clip:#x}: mini VAB has no VAG bodies");
@@ -615,7 +615,7 @@ pub fn fill_hero_victory_clips(
                             let out_rate =
                                 (*rate as u64 * max_samples as u64 / pcm.len() as u64) as u32;
                             (
-                                legaia_xa::encode::resample_linear(pcm, *rate, out_rate),
+                                psx_xa::encode::resample_linear(pcm, *rate, out_rate),
                                 out_rate,
                             )
                         } else {
@@ -643,9 +643,9 @@ pub fn fill_hero_victory_clips(
                 };
                 let attr_off = span.start
                     + 4
-                    + legaia_vab::VAB_HEADER_SIZE
-                    + legaia_vab::PROGRAMS_TABLE_SIZE
-                    + t * legaia_vab::TONE_SIZE;
+                    + psx_vab::VAB_HEADER_SIZE
+                    + psx_vab::PROGRAMS_TABLE_SIZE
+                    + t * psx_vab::TONE_SIZE;
                 patched[attr_off + 4] = center;
                 patched[attr_off + 5] = shift;
             }
@@ -681,7 +681,7 @@ struct Grunt {
 /// One sibling's grunt set, in bank tone order.
 fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Grunt>> {
     let off = monster_vab_offset(snd, monster_id)?;
-    let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
+    let vab = psx_vab::parse(snd, off).context("parse sibling VAB")?;
     let page = vab
         .tones
         .first()
@@ -695,7 +695,7 @@ fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Grunt>> {
         }
         let span = vab.vag_samples[vag - 1];
         let body = &snd[span.byte_offset..span.byte_offset + span.size];
-        let mut pcm = legaia_vab::decode_vag_aligned(body).context("decode sibling VAG")?;
+        let mut pcm = psx_vab::decode_vag_aligned(body).context("decode sibling VAG")?;
         // Peak-normalize: the raw sample level varies per bank and the
         // XA path plays it without the SPU's per-tone volume.
         let peak = pcm.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0);
@@ -744,12 +744,12 @@ fn write_grunt(
     } else {
         37800
     };
-    let resampled = legaia_xa::encode::resample_linear(&grunt.pcm, grunt.rate, rate);
+    let resampled = psx_xa::encode::resample_linear(&grunt.pcm, grunt.rate, rate);
     let groups = if stereo {
         // Stereo bank, mono source: dual-mono.
-        legaia_xa::encode::encode_stereo_4bit_dualmono(&resampled)
+        psx_xa::encode::encode_stereo_4bit_dualmono(&resampled)
     } else {
-        legaia_xa::encode::encode_mono_4bit(&resampled)
+        psx_xa::encode::encode_mono_4bit(&resampled)
     };
     patcher
         .write_xa_channel(file, chan, &groups)
@@ -1155,7 +1155,7 @@ mod tests {
             assert!(block[0] & 0x0F <= 12, "illegal shift");
             assert_eq!(block[1], 0, "encoder must leave flags to the caller");
         }
-        let decoded = legaia_vab::decode_vag(&body).expect("decodes");
+        let decoded = psx_vab::decode_vag(&body).expect("decodes");
         let m = pcm.len().min(decoded.len());
         assert!(m >= pcm.len() - 28);
         let (mut se, mut sp) = (0f64, 0f64);

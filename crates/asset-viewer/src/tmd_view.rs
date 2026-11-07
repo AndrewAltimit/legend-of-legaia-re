@@ -3,7 +3,7 @@
 
 use crate::scene_files::short_path;
 use anyhow::{Context, Result};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 use std::path::{Path, PathBuf};
 
 /// CPU-side payload for the VRAM-mesh path. Built by [`load_tmd_for_view`];
@@ -201,15 +201,15 @@ struct PrimDropTally {
 }
 
 impl PrimDropTally {
-    fn record(&mut self, status: legaia_tim::vram::PrimTextureStatus) {
+    fn record(&mut self, status: psx_tim::vram::PrimTextureStatus) {
         self.considered += 1;
         match status {
-            legaia_tim::vram::PrimTextureStatus::Ok => self.kept += 1,
-            legaia_tim::vram::PrimTextureStatus::MissingClut { row } => {
+            psx_tim::vram::PrimTextureStatus::Ok => self.kept += 1,
+            psx_tim::vram::PrimTextureStatus::MissingClut { row } => {
                 self.missing_clut_rows.insert(row);
                 self.missing_clut_count += 1;
             }
-            legaia_tim::vram::PrimTextureStatus::ClutDepthMismatch {
+            psx_tim::vram::PrimTextureStatus::ClutDepthMismatch {
                 row,
                 populated_width,
                 expected_width,
@@ -218,7 +218,7 @@ impl PrimDropTally {
                     .insert(row, (populated_width, expected_width));
                 self.depth_mismatch_count += 1;
             }
-            legaia_tim::vram::PrimTextureStatus::MissingTexturePage { tpage } => {
+            psx_tim::vram::PrimTextureStatus::MissingTexturePage { tpage } => {
                 self.missing_page_tpages.insert(tpage);
                 self.missing_page_count += 1;
             }

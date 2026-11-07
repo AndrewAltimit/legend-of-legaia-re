@@ -33,7 +33,7 @@ fn disc_index() -> Option<ProtIndex> {
 }
 
 /// Every parseable TIM in a scene block's entries (raw and LZS sections).
-fn block_tims(index: &ProtIndex, name: &str) -> Vec<legaia_tim::Tim> {
+fn block_tims(index: &ProtIndex, name: &str) -> Vec<psx_tim::Tim> {
     let scene = Scene::load(index, name).expect("load scene block");
     let mut out = Vec::new();
     for e in &scene.entries {
@@ -44,7 +44,7 @@ fn block_tims(index: &ProtIndex, name: &str) -> Vec<legaia_tim::Tim> {
                 tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
             };
             if let Some(b) = src.get(hit.offset..hit.offset + hit.byte_len)
-                && let Ok(t) = legaia_tim::parse(b)
+                && let Ok(t) = psx_tim::parse(b)
             {
                 out.push(t);
             }

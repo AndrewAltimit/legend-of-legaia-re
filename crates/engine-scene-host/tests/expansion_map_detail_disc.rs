@@ -246,7 +246,7 @@ fn the_dressed_sample_pack_floors_enter() {
             let mut vram = field_resources(&host.index, host.scene.as_ref().unwrap())
                 .unwrap()
                 .vram;
-            let row = |v: &legaia_tim::Vram| (0..16).map(|x| v.pixel(x, 506)).collect::<Vec<_>>();
+            let row = |v: &psx_tim::Vram| (0..16).map(|x| v.pixel(x, 506)).collect::<Vec<_>>();
             let before = row(&vram);
             let rgb = |w: u16| (w & 31, (w >> 5) & 31, (w >> 10) & 31);
             let (r, _, b) = rgb(before[14]);

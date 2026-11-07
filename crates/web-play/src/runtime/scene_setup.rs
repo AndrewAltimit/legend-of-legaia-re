@@ -64,6 +64,8 @@ impl LegaiaRuntime {
         // copy (`play_land_frame_grab`), as the native window does.
         host.world.enable_frame_grab(true);
         host.world.locomotion.follow_terrain_height = true;
+        // Retail's footing glide (`FUN_801D1BA0`), over the step snap.
+        host.world.locomotion.vertical_settle = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
@@ -339,9 +341,13 @@ impl LegaiaRuntime {
         // retail-authored landing it has already validated against the
         // walkability grid; this page-side heuristic is only for the scenes
         // that fell back to the cold-entry seat.
+        // So is a reviewed override seat (`PICKER_SEAT_OVERRIDES`).
         if matches!(
             host.picker_seat(),
-            Some(legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. })
+            Some(
+                legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. }
+                    | legaia_engine_scene_host::scene_host::PickerSeat::Override { .. }
+            )
         ) {
             return;
         }

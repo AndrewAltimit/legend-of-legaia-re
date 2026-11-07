@@ -35,8 +35,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use legaia_tim::Vram;
 use legaia_tmd::mesh::VramMesh;
+use psx_tim::Vram;
 
 use super::equip_isolate::warm_like;
 

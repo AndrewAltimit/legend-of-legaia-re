@@ -17,9 +17,9 @@ legaia-engine-system.workspace = true
 serde.workspace = true
 legaia-anm.workspace = true
 legaia-art.workspace = true
-legaia-bytes.workspace = true
+psx-bytes.workspace = true
 legaia-save.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-actor-formats.workspace = true
 legaia-game-tables.workspace = true
@@ -29,7 +29,7 @@ legaia-ui-formats.workspace = true
 
 [dev-dependencies]
 legaia-overlay-images.workspace = true
-legaia-lzs.workspace = true
+psx-lzs.workspace = true
 
 [[test]]
 name = "integration"

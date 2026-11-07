@@ -126,6 +126,9 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
     <label class="arts-trail-label" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
       <input type="checkbox" id="arts-trail-toggle"> after-image trail
     </label>
+    <label class="arts-trail-label" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
+      <input type="checkbox" id="arts-smooth-toggle" checked> smooth motion
+    </label>
     <button id="arts-glb-btn" class="btn-accent" type="button" disabled
             title="Download the selected character's assembled battle model with every battle animation (the labeled action bank: idle, walk, flinches, knockdown, block + the four weapon swings + all arts) baked in as named glTF animations. Needs a loaded disc.">Download .glb with all battle animations</button>
   </div>
@@ -341,6 +344,10 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
         trail: 'arts-trail-toggle', glb: 'arts-glb-btn', actions: 'arts-actions',
       })
     : null;
+  // Smooth (interpolated) playback, default on; off = retail stepping.
+  if (window.MeshView && MeshView.attachSmoothToggle) {
+    MeshView.attachSmoothToggle(document.getElementById('arts-smooth-toggle'));
+  }
 
   $tabs.forEach(btn => {
     btn.addEventListener('click', () => {

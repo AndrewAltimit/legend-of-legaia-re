@@ -57,7 +57,7 @@
 //! reproduces every pinned content offset against the captured framebuffer.
 
 use anyhow::{Result, anyhow, bail};
-use legaia_bytes::{i16_le, u8_at, u16_le, u32_le};
+use psx_bytes::{i16_le, u8_at, u16_le, u32_le};
 
 /// PROT entry (extraction index) of the menu overlay hosting the table.
 pub const MENU_OVERLAY_PROT_INDEX: usize =

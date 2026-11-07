@@ -67,7 +67,7 @@ pub struct FishingSceneAssets {
     /// the per-frame swell (its corner tiers).
     ground: Option<(usize, legaia_scene_formats::field_objects::WalkHeightfield)>,
     bodies: Vec<Body>,
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
 }
 
 impl std::fmt::Debug for FishingSceneAssets {
@@ -245,7 +245,7 @@ impl FishingSceneAssets {
     }
 
     /// The pond VRAM: the scene upload with the field-character atlases.
-    pub fn vram(&self) -> &legaia_tim::Vram {
+    pub fn vram(&self) -> &psx_tim::Vram {
         &self.vram
     }
 }
@@ -840,7 +840,7 @@ impl FishingSurface {
     }
 
     /// The pond's VRAM.
-    pub fn vram(&self) -> Option<&legaia_tim::Vram> {
+    pub fn vram(&self) -> Option<&psx_tim::Vram> {
         self.scene.as_ref()?;
         Some(self.assets.as_ref()?.vram())
     }

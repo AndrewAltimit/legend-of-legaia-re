@@ -1,5 +1,5 @@
 [package]
-name = "legaia-xa"
+name = "psx-xa"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 autotests = false
 
 [lib]
-name = "legaia_xa"
+name = "psx_xa"
 path = "src/lib.rs"
 
 [[bin]]
@@ -26,7 +26,7 @@ cli = ["dep:clap", "dep:libc"]
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
-legaia-iso.workspace = true
+psx-iso.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }

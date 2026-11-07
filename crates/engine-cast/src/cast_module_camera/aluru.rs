@@ -38,6 +38,40 @@ pub const ALURU_RECORD_KILL_ARM: u8 = 15;
 /// programs reach the stager's white fall (arm 2) and take the wash away.
 pub const ALURU_ARM14_RECORDS: [u32; 3] = [0x801F_8E58, 0x801F_8EA8, 0x801F_8F0C];
 
+/// The arm whose pass seats the creature and starts its assembly
+/// (`0x801F707C..0x801F722C`).
+pub const ALURU_ASSEMBLY_ARM: u8 = 4;
+
+/// The arm whose exit ends the assembly: `+0x1BA = 0`, then `+0x21C = 0`
+/// (`sb zero,0x21c(s2)` at `0x801F7430`), which hands the white word back to
+/// the tint ease.
+pub const ALURU_ASSEMBLED_ARM: u8 = 6;
+
+/// The creature's colour word on arm 4's pass (`lui t0,0x3FFF; ori
+/// t0,0xFFFF; sw t0,0x4(s2)` at `0x801F70AC..0x801F7134`): every lane at
+/// `0x3FF`, the shards drawn white.
+pub const ALURU_ASSEMBLY_COLOUR: u32 = 0x3FFF_FFFF;
+
+/// The tint blend arm 4 stores beside it (`sw v0,0xc(s2)`, `v0 = 0x1000`).
+pub const ALURU_ASSEMBLY_BLEND: u32 = 0x1000;
+
+/// The deformation row arm 4 hands the creature's node (`sb t3,0x6d(v0)` at
+/// `0x801F71B8`, `t3` the `1` the prologue spills to `sp+0x3C`) and writes
+/// into `0x8007BE60` (`0x801F71BC..0x801F71D8`): offset `(0, 0, 0)`, `+6 =
+/// -0x800`, flags `0xC`. The same row PROT 0912 re-forms Freed under, with
+/// the front starting twice as far down.
+pub const ALURU_SHATTER_ROW: u8 = 1;
+/// See [`ALURU_SHATTER_ROW`].
+pub const ALURU_SHATTER_ROW_OFFSET: [i16; 4] = [0, 0, 0, -0x800];
+/// See [`ALURU_SHATTER_ROW`].
+pub const ALURU_SHATTER_ROW_FLAGS: u32 = 0xC;
+
+/// The row the kill path rewrites on arm `0x11`'s pass and points the
+/// victim's node at (`sb s1,0x6d(v0)` with `s1 = 1`, `0x801F7DD8..0x801F7E0C`):
+/// offset `(0, 0, -0x200)`, the same front and flags, so the victim the
+/// spread breaks up comes apart from the floor up.
+pub const ALURU_KILL_SHATTER_ROW_OFFSET: [i16; 4] = [0, 0, -0x200, -0x800];
+
 /// The arm that draws the bands once at rest and, on the kill path, zeroes
 /// the victim's HP (`0x801F7CB0`; the kill writes `0x801F7DCC..0x801F7E70`).
 pub const ALURU_BLAST_ARM: u8 = 0x11;

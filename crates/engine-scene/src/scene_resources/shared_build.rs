@@ -43,7 +43,7 @@ impl SceneResources {
                 let bytes: &[u8] = &entry.bytes;
                 for hit in tim_scan::scan_buffer(bytes) {
                     let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
-                    match legaia_tim::parse(payload) {
+                    match psx_tim::parse(payload) {
                         Ok(tim) => {
                             vram.upload_tim(&tim);
                             *tim_count += 1;
@@ -89,7 +89,7 @@ impl SceneResources {
                         };
                         for hit in tim_scan::scan_buffer(&decoded.bytes) {
                             let payload = &decoded.bytes[hit.offset..hit.offset + hit.byte_len];
-                            if let Ok(tim) = legaia_tim::parse(payload) {
+                            if let Ok(tim) = psx_tim::parse(payload) {
                                 vram.upload_tim(&tim);
                                 *tim_count += 1;
                             } else {
@@ -205,7 +205,7 @@ impl SceneResources {
                             continue;
                         }
                         let payload = &decoded.bytes[hit.offset..end];
-                        if let Ok(tim) = legaia_tim::parse(payload) {
+                        if let Ok(tim) = psx_tim::parse(payload) {
                             vram.upload_tim(&tim);
                             stats.tims_uploaded += 1;
                         }

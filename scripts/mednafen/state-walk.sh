@@ -45,7 +45,7 @@ fi
 CLI="target/release/mednafen-state"
 if [[ ! -x "$CLI" ]]; then
     echo "[info] building mednafen-state..."
-    cargo build --release -p legaia-mednafen >/dev/null
+    cargo build --release -p psx-mednafen >/dev/null
 fi
 
 # Use the CLI's `scenarios` subcommand to list scenarios in a parseable form.

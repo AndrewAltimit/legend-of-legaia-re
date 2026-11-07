@@ -29,8 +29,8 @@ pub(in crate::byte_account) fn claim_value_monitor_name_tables(buf: &[u8], sink:
     let mut tables: Vec<usize> = (0..rows.count)
         .filter_map(|k| {
             let row = rows_off + k * rows.stride;
-            let kind = legaia_bytes::u16_le(buf, row)?;
-            let table = legaia_bytes::u32_le(buf, row + 0x24)?;
+            let kind = psx_bytes::u16_le(buf, row)?;
+            let table = psx_bytes::u32_le(buf, row + 0x24)?;
             (kind == 1 && table > BASE && table < rows.base_va).then(|| (table - BASE) as usize)
         })
         .collect();

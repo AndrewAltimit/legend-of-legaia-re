@@ -156,7 +156,7 @@ impl SceneBagInject {
         }
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, consumed) = psx_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }
@@ -248,7 +248,7 @@ impl SceneBagInject {
             } if idx == guard_bit && target == self.inject_offset + block.len() => {}
             _ => return None,
         }
-        let stream = legaia_lzs::compress(&new_man);
+        let stream = psx_lzs::compress(&new_man);
         if stream.len() > self.compressed_budget {
             return None;
         }

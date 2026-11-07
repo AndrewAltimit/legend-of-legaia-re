@@ -12,6 +12,7 @@
     <dt>Generic, Legaia quirks</dt><dd>Sony's format or hardware, but the code bakes in something Legaia does. Each quirk is named below.</dd>
     <dt>Legaia-only</dt><dd>Legaia's own containers, data or runtime. A worked example, not a dependency.</dd>
   </dl>
+  <p>The package name follows the class: the standalone generic crates are named <code>psx-*</code> (lib <code>psx_*</code>), everything else <code>legaia-*</code>. The two engine crates with a generic core (<code>legaia-engine-audio</code>, <code>legaia-render-kernels</code>) keep the engine's prefix. The directory under <code>crates/</code> carries no prefix either way.</p>
   <figure class="diagram">
     <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three bands of crates. Generic PS1: iso, xa, bytes. Generic with Legaia quirks: tim, vab, seq, lzs, mdec, mednafen, pcsx-redux, ram-image, engine-audio, and the gte module of render-kernels. Legaia-only: tmd, container-formats, prot, the format families and the engine crates.">
       <rect class="dg-node-ok" x="20" y="20" width="840" height="64" rx="4"/>
@@ -32,7 +33,7 @@
 <section class="doc-section" id="depending" data-doc="depending-on-a-crate">
   <h2>Depending on a crate</h2>
   <p>Nothing here is on crates.io. Take a crate as a git dependency and turn off its default <code>cli</code> feature, which adds the command-line binary and its dependencies (for some crates, other Legaia crates):</p>
-  <div class="cli"><code>legaia-tim = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }</code></div>
+  <div class="cli"><code>psx-tim = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }</code></div>
   <p>Every crate is <code>MIT OR Unlicense</code>. The binaries build with <code>cargo build --release -p &lt;crate&gt;</code>. None embeds Sony bytes, and none needs a Legaia disc to run on another game's files unless noted.</p>
 </section>
 
@@ -42,18 +43,18 @@
   <table>
     <thead><tr><th>Crate</th><th>Class</th><th>Entry point</th><th>CLI</th></tr></thead>
     <tbody>
-      <tr><td><code>legaia-iso</code></td><td>Generic</td><td><code>RawDisc::open</code>, <code>iso9660::walk_files</code>, <code>write::patch_file_logical</code></td><td><code>disc-extract</code></td></tr>
-      <tr><td><code>legaia-xa</code></td><td>Generic</td><td><code>demux::demux_raw_sectors</code>, <code>decode</code>, <code>StreamingDecoder</code></td><td><code>xa</code></td></tr>
-      <tr><td><code>legaia-retail-exec</code></td><td>Generic</td><td><code>Cpu::call</code>, <code>Cpu::hook</code>, <code>Cpu::calls</code>; the Legaia comparisons are its tests alone (<a href="retail-kernel-differential.html">method</a>)</td><td>-</td></tr>
-      <tr><td><code>legaia-bytes</code></td><td>Generic</td><td><code>u16_le</code> / <code>u32_le</code> returning <code>Option</code></td><td>-</td></tr>
-      <tr><td><code>legaia-tim</code></td><td>Quirks</td><td><code>parse</code>, <code>parse_strict</code>, <code>decode_rgba8</code>, <code>encode::encode_replacement</code></td><td><code>tim</code></td></tr>
-      <tr><td><code>legaia-vab</code></td><td>Quirks</td><td><code>parse</code>, <code>find_vabs</code>, <code>decode_vag</code></td><td><code>vab</code></td></tr>
-      <tr><td><code>legaia-seq</code></td><td>Quirks</td><td><code>Seq::parse</code></td><td><code>seq</code></td></tr>
-      <tr><td><code>legaia-lzs</code></td><td>Quirks</td><td><code>decompress</code>, <code>compress</code></td><td><code>lzs-decode</code></td></tr>
-      <tr><td><code>legaia-mdec</code></td><td>Quirks</td><td><code>str_av::demux_str_av</code>, <code>MdecDecoder</code></td><td><code>mdec</code></td></tr>
-      <tr><td><code>legaia-mednafen</code></td><td>Quirks</td><td><code>SaveState::main_ram_structured</code>, <code>gpu::PsxGpu</code>, <code>spu::PsxSpu</code></td><td><code>mednafen-state</code></td></tr>
-      <tr><td><code>legaia-pcsx-redux</code></td><td>Quirks</td><td><code>SaveState::from_path_structural</code>, <code>gpu::PcsxGpu</code>, <code>fixture::SyntheticState</code></td><td><code>pcsxr-state --game generic</code></td></tr>
-      <tr><td><code>legaia-ram-image</code></td><td>Quirks</td><td><code>diff::diff_ram</code>, <code>bisect::bisect_first_bad</code>, <code>prim_pool::decode</code>, <code>GameProfile</code></td><td>-</td></tr>
+      <tr><td><code>psx-iso</code></td><td>Generic</td><td><code>RawDisc::open</code>, <code>iso9660::walk_files</code>, <code>write::patch_file_logical</code></td><td><code>disc-extract</code></td></tr>
+      <tr><td><code>psx-xa</code></td><td>Generic</td><td><code>demux::demux_raw_sectors</code>, <code>decode</code>, <code>StreamingDecoder</code></td><td><code>xa</code></td></tr>
+      <tr><td><code>psx-retail-exec</code></td><td>Generic</td><td><code>Cpu::call</code>, <code>Cpu::hook</code>, <code>Cpu::calls</code>; the Legaia comparisons are its tests alone (<a href="retail-kernel-differential.html">method</a>)</td><td>-</td></tr>
+      <tr><td><code>psx-bytes</code></td><td>Generic</td><td><code>u16_le</code> / <code>u32_le</code> returning <code>Option</code></td><td>-</td></tr>
+      <tr><td><code>psx-tim</code></td><td>Quirks</td><td><code>parse</code>, <code>parse_strict</code>, <code>decode_rgba8</code>, <code>encode::encode_replacement</code></td><td><code>tim</code></td></tr>
+      <tr><td><code>psx-vab</code></td><td>Quirks</td><td><code>parse</code>, <code>find_vabs</code>, <code>decode_vag</code></td><td><code>vab</code></td></tr>
+      <tr><td><code>psx-seq</code></td><td>Quirks</td><td><code>Seq::parse</code></td><td><code>seq</code></td></tr>
+      <tr><td><code>psx-lzs</code></td><td>Quirks</td><td><code>decompress</code>, <code>compress</code></td><td><code>lzs-decode</code></td></tr>
+      <tr><td><code>psx-mdec</code></td><td>Quirks</td><td><code>str_av::demux_str_av</code>, <code>MdecDecoder</code></td><td><code>mdec</code></td></tr>
+      <tr><td><code>psx-mednafen</code></td><td>Quirks</td><td><code>SaveState::main_ram_structured</code>, <code>gpu::PsxGpu</code>, <code>spu::PsxSpu</code></td><td><code>mednafen-state</code></td></tr>
+      <tr><td><code>psx-pcsx-redux</code></td><td>Quirks</td><td><code>SaveState::from_path_structural</code>, <code>gpu::PcsxGpu</code>, <code>fixture::SyntheticState</code></td><td><code>pcsxr-state --game generic</code></td></tr>
+      <tr><td><code>psx-ram-image</code></td><td>Quirks</td><td><code>diff::diff_ram</code>, <code>bisect::bisect_first_bad</code>, <code>prim_pool::decode</code>, <code>GameProfile</code></td><td>-</td></tr>
       <tr><td><code>legaia-engine-audio</code></td><td>Quirks</td><td><code>spu::Spu</code>, <code>Sequencer::new</code>, <code>vab_bind::VabBank::upload</code></td><td><code>note-trace</code></td></tr>
       <tr><td><code>legaia-render-kernels</code></td><td>Generic module</td><td><code>gte::Gte</code>, <code>gte::gte_divide</code>, <code>vram_capture</code></td><td>-</td></tr>
       <tr><td><code>legaia-tmd</code></td><td>Legaia-only</td><td><code>parse</code> (Legaia variant)</td><td><code>tmd</code></td></tr>
@@ -66,7 +67,7 @@
 
 <section class="doc-section" id="generic" data-doc="generic-ps1-crates">
   <h2>Generic PS1 crates</h2>
-  <h3><code>legaia-iso</code></h3>
+  <h3><code>psx-iso</code></h3>
   <p>A raw Mode 2/2352 <code>.bin</code> (or <code>.cue</code>) reader, an ISO9660 walker that resolves names the way the console does (case-insensitive, <code>;1</code> stripped), and the write side: EDC and P/Q ECC re-encode by the ECMA-130 math, and <code>patch_file_logical</code> to rewrite bytes inside a file. Four things name Legaia:</p>
   <ul class="bullets">
     <li><code>extract_prot_dat</code>, <code>extract_cdname_txt</code> and <code>extract_scus</code> are shorthands for Legaia's root files; use <code>read_file_in_image</code> or <code>find_path_in_image</code>.</li>
@@ -74,9 +75,9 @@
     <li><code>relayout::grow_prot_dat</code> grows one file and renumbers every reference after it. Its safety rests on a fact proved for Legaia only - no executable seeks a later file by absolute LBA (<a href="../formats/disc.html#full-iso-relayout">relayout</a>). Check another game's executable first.</li>
     <li><code>grow_prot_dat_by_name</code> looks up <code>PROT.DAT</code> by name.</li>
   </ul>
-  <h3><code>legaia-xa</code></h3>
+  <h3><code>psx-xa</code></h3>
   <p>CD-XA ADPCM in 4- and 8-bit, mono and stereo, decoded bit-identically to jPSXdec's reference. The one Legaia-shaped helper, <code>demux_disc_all</code>, visits only files named <code>*.XA</code>; for XA interleaved in <code>.STR</code> files or an archive, feed <code>demux_raw_sectors</code> the raw sectors.</p>
-  <h3><code>legaia-bytes</code></h3>
+  <h3><code>psx-bytes</code></h3>
   <p>Bounds-checked little-endian readers returning <code>Option</code>; no dependencies.</p>
 </section>
 
@@ -104,8 +105,8 @@
 <section class="doc-section" id="worked-example" data-doc="-">
   <h2>A worked example</h2>
   <p><code>crates/pcsx-redux/examples/bring_your_own_game.rs</code> runs the generic crates on inputs built in code, none of them from a game: a 4-bit TIM with its CLUT through <code>parse_strict</code>, <code>decode_rgba8</code> and <code>write_png</code>; a SEQ through <code>Seq::parse</code>; a two-directory ISO9660 image mastered as Mode 2/2352 sectors and read back by both the in-memory walker and <code>RawDisc</code> (it also lists and extracts under <code>xorriso</code>); and a made-up game's PCSX-Redux and mednafen states, opened structurally, diffed and bisected. A test runs the same code in CI, with no disc.</p>
-  <pre><code>cargo run -p legaia-pcsx-redux --example bring_your_own_game -- &lt;out_dir&gt;</code></pre>
-  <div class="callout callout-trap"><p class="callout-title">The SEQ step is not evidence about other games</p><p>It builds the shape <code>legaia-seq</code> parses: meta events without a length byte, which is what the libsnd reader in Legaia's executable consumes. No other title's SEQ is tested here. The step also shows the trap: an SMF-style tempo event (<code>FF 51 03 tt tt tt</code>) does not read as the right tempo.</p></div>
+  <pre><code>cargo run -p psx-pcsx-redux --example bring_your_own_game -- &lt;out_dir&gt;</code></pre>
+  <div class="callout callout-trap"><p class="callout-title">The SEQ step is not evidence about other games</p><p>It builds the shape <code>psx-seq</code> parses: meta events without a length byte, which is what the libsnd reader in Legaia's executable consumes. No other title's SEQ is tested here. The step also shows the trap: an SMF-style tempo event (<code>FF 51 03 tt tt tt</code>) does not read as the right tempo.</p></div>
 </section>
 
 <section class="doc-section" id="legaia-only" data-doc="legaia-only-crates">

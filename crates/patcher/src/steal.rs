@@ -35,7 +35,7 @@ impl StealEdits {
     /// Locate + decode the steal table from a whole disc image. Returns `None`
     /// when `SCUS_942.54` isn't present or isn't a parseable PSX-EXE.
     pub fn locate(image: &[u8]) -> Option<Self> {
-        let scus = legaia_iso::iso9660::read_file_in_image(image, SCUS_NAME)?;
+        let scus = psx_iso::iso9660::read_file_in_image(image, SCUS_NAME)?;
         let table = StealTable::from_scus(&scus)?;
         let table_file_off = steal_table::table_file_offset(&scus)?;
         Some(Self {

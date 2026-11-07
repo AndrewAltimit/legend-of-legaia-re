@@ -91,6 +91,7 @@ Flags worth knowing:
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
+| `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
@@ -98,6 +99,13 @@ Flags worth knowing:
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
+
+The engine recorder also writes `rates.csv` (no header), per tick and per retail seat the
+animation rate `+0x21D` and the node cursor `+0x68`, the engine half of the probe's file,
+and a `guard` column in `meta.csv`, the party seats in the Spirit stance. A reaction's pace
+reads off the first: on Water Crystals both sides now walk Vahn's knockdown through the same
+cursors (`0, 8, .. 32, 44, 54, 62, 68, 72, 74`), the engine one step-`4` pass ahead, which
+is the pairing rule's offset.
 
 `LEGAIA_DIAG_CAST_PARTS=1` beside the engine recorder (`--engine-env`) adds
 `parts.csv`: every live part of the cast's scene graph each tick - record
@@ -157,7 +165,8 @@ seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 token a module's stream-wait arm polls) and the words the read-span poll
 `FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
 `cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`), the BIOS `rand()` seed word
-`0x80009010` (`rand`) and which ordering table links a screen fade's quad
+`0x80009010` (`rand`), the frame-cost ring's newest entry (`cost`: `0x80084098`
+at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and which ordering table links a screen fade's quad
 (`fade_back`: `2` the current record, `1` only the other, `0` none; see
 [the pairing rule](#the-pairing-rule)). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
@@ -201,6 +210,13 @@ instant, and a whole run under them leaves the evolved-Cort arena's flesh on
 one palette and one scroll where retail's keeps cycling. Their phase is then
 the engine's own: nothing aligns the hue clock with retail's across the
 fight's history.
+
+The backdrop's slot-1 angle (`LEGAIA_BATTLE_BACKDROP_YAW`,
+[battle-stage-camera](../subsystems/battle-stage-camera.md)) is kept, since
+its phase is the capture's, but a gate film lets go of it on the gate's frame:
+retail's frame driver winds it half a frame step a frame from there on, and
+held through the film it stood the horizon mist or cloud band still behind
+every strike on a stage that keeps object 1.
 
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
@@ -264,7 +280,12 @@ would have drifted, and the release also answers the two capture-band polls the 
 held (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`), which nothing
 else answers once the drive stops: a state saved inside `0x6F`
 (`battle_map01_gomboo_steal_mid_cast`) otherwise parks the band there for the whole
-run; and the score keeps the recording's first action only
+run, and the release also stands every seat on the capture's ground, its live pair
+and heading (`LEGAIA_BATTLE_GROUND_SNAP`, `ground_snap::snap_battle_ground` with no
+body pair), because the action framing's yaw is the counter less the framed seat's
+heading and the replay's rounds need not have turned or walked a seat where retail's
+did (`battle_nilboa_amethyst_heal_mid_cast`'s two monsters stood at `0x800`, the film
+`.795` to `.866`); and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
 capture that starts inside the strike loop. The first action is the one the first
@@ -274,6 +295,20 @@ that turn's Done band before any frame, and the cut does not count it. A strike'
 second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
+
+<a id="the-headings-stand-with-their-pairs"></a>
+
+The headings stand with their pairs. A strike's attacker re-faces every pass onto its
+target's body pair, which the target's heading turns about its live pair, so a heading
+seated on the replay's pair moved the attacker's bearing off retail's: in
+`battle_dolk_drake_ghost_strike` the drake stood `15` units off its captured pair, and
+Vahn's captured heading `145` swung the framing's yaw a further `30` units round
+(`.876` with no heading seated, `.814` with headings alone, `.964` with pairs and
+headings). `battle_balden_devil_pump_strike` (`.898`, `.842`, `.920`) had its whole row
+up to `168` units off. `battle_vell_nighto_49_strike` (`.741`, `.697`, `.688`) is the
+case where the heading was right and the frame step was not: its films read low until
+the frame's draw load drove the step
+([the frame step](../subsystems/battle-stage-camera.md#a-frames-draw-load)).
 
 <a id="the-frames-after-the-gate-run-on-the-captures-ring"></a>
 
@@ -382,12 +417,70 @@ makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
 
+Seeded at the cast's begin (`--rand-at 0x28:0`), the stream is also a probe of
+the engine's frame pacing: the battle frame driver draws once a pass
+(`FUN_80046A20`), so the first word the engine reaches early or late names the
+pass where its frames part from retail's. On the lone-caster
+`party_basic_attack_vs_gobu_gobu` films that is how the summon close-up's
+step drop and the ring's one-pass lag were found
+([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds));
+with both in, the draws hold word for word through `0x34` and part at the
+module's CD-seek hold.
+
+Unseeded, the logged words still count draws: the LCG steps between one vsync's
+word and the next are the draws made in between, on either side. Counted per key
+on the lone-caster films, Odd Dimension (`0x93`, PROT 0921) and Ozma (`0xA0`, PROT
+0934) part in two ways once the module's CD-seek hold is past:
+
+| Cast | Key | Retail draws / vsyncs | Engine draws / ticks |
+|---|---|---|---|
+| `0x93` | arm 1 (the seek) | `1` / `1` | `6` / `31` |
+| `0x93` | arms 5..8 | `724` / `773` | `724` / `724` |
+| `0x93` | arm 9 | `81` / `166` | `36` / `132` |
+| `0xA0` | arm 16 | `5820` / `240` | `60` / `240` |
+| `0xA0` | arm 18 | `14095` / `508` | `1918` / `512` |
+
+Odd Dimension's arm 9 runs about one pass every two vsyncs in retail and one
+every four in the engine (its frame-step row); Ozma's sparks and bolts
+(arms 1..3's `0x801F9E28` / `0x801F9F2C` records, then the arms past 15) draw
+two dozen words a vsync in retail and almost none from the engine's world
+stream, so their deal cannot meet retail's whatever the seed.
+
 A cast whose outcome is a roll parts on the deal the same way, and the sound
 channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a
 cue score of `0.000` on the engine's own stream: retail's arm 3 rolled "Nothing
 happened.", the engine's stripped the accessory and played the victim's knockdown
 and its three cues. With `--rand-at 0x70:3` both sides miss, the cues score
 `1.000` and the frames `.773` against `.756`.
+
+A `--rand-at` word deals one pass. An arm that draws on every pass outruns it: PROT
+0935's Earthquake bursts a rock pair a frame off `rand()`, and retail's other passes
+draw tens of times a frame where the engine draws a few, so from the second pair on the
+rocks fall on the engine's own stream. `--rand-track` holds every pass instead. The driver
+writes `retail-rand.txt`, one `state phase word` line per retail frame inside a module
+band, the word the frame's last row holds, keyed as the step track keys a frame. The
+engine child (`RetailRandTrack`) seats the word for the pass that opens under the same
+key, ahead of the frame driver's discarded draw, counting each key's passes from the
+band's entry. The key the recording opens on is left out, because the capture's instant
+falls inside it. Measured with it:
+
+| Film | Own stream | `--rand-track` |
+|---|---|---|
+| `battle_jagaroom_van_saryu_earthquake_mid_cast` | `.808` | `.943` |
+| `battle_map03_scale_lizard_earthquake_mid_cast` | `.748` | `.910` |
+| `battle_taiku_puera_death_game_mid_cast` | `.806` (cues `.800`) | `.839` (cues `.970`) |
+| `battle_korb2_mage_void_accessories_mid_cast` | `.823` (cues `0`) | `.841` (cues `1.000`) |
+| `battle_retockin_evil_shadow_fatal_decision_mid_cast` | `.841` | `.830` |
+
+Death Game deals its four cards in arm 0 (`0x801FA288`), after the library's states
+were saved, so neither `--rand-at` nor the track reaches the deal: both states' tables
+still read zero. `LEGAIA_SEAT_DEATH_GAME_DEAL=a,b,c,d` (through `--engine-env`) lands the
+engine's deal on a table read off a retail RAM image (`LEGAIA_RAM_AT` in arm 2); the
+retail-compare seed derives the same seat for a state past arm 0. A harness seat.
+
+It does not help every film. The words are retail's frame ends, so an engine pass that
+draws in another order than retail's inside the frame still parts: Fatal Decision gains
+five extra cues. Read it as a harness seat that takes the stream out, not as a score.
 
 ## The game clock
 
@@ -515,6 +608,14 @@ harvested-strike Seru films (44 with drive arms), the mean goes from `.792`
 strict to `.808`, Gimard from `.847` to `.897`, Viguro from `.757` to `.786`;
 the five monster casts in the same run, with no drive arms, are unchanged.
 
+A monster cast reached through the state's pad drive stages the clip the drive's
+replay picked, and the picker stores its clip bytes under draws the replay does not
+share. The seed therefore carries the capture's queue for a monster cast (`q` on
+`LEGAIA_BATTLE_DRIVE`), and the drive holds `+0x1E0` and the Spirit band's `+0x1E7` on
+it until the clip stages: `battle_balden_orb_v2_hyper_heal_mid_cast`'s Orb plays clip
+`9` as retail's does, where the walk's last tag-`0x23` entry `0x0A` held the Spirit band
+twice as long (`.818` to `.943`). A harness seat.
+
 ## A monster's physical attack
 
 `--physical` records the strike a harvested state already holds instead of
@@ -552,7 +653,10 @@ on both sides, so a clip both sides played can be read cue for cue.
 `--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held:
 
 - the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
-  drive's gate holds only the bytes up to the cursor;
+  drive's gate holds only the bytes up to the cursor. A byte the replay's loop has staged and not
+  yet committed is re-staged from the queue too (`restage_dealt_byte`): a walking monster opens the
+  loop with its first byte over the idle, and `battle_rugi_caruban_3_strike`'s replay had staged its
+  own `07` where retail held `08`, so it played Bite alone and skipped Flap (`.690` to `.772`);
 - the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` off the state. They feed the first hit's block roll,
   and the replay walked in from elsewhere to a target facing elsewhere: `battle_rugi_barra_strike`
   holds `393` / `64`, the replay `86` / `116`;
@@ -561,7 +665,11 @@ on both sides, so a clip both sides played can be read cue for cue.
 - the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
   makes its frame draw tens of times where any other frame draws once, so the frames read straight
   off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
-  hit, so the word steps on once.
+  hit, so the word steps on once. A blocked or missed swing draws no burst and leaves no word,
+  so each word goes out as `word@vsync` and the engine hands it to the hit within twelve display
+  frames of that vsync (`World::dealt_hit_word`); a hit with none in reach draws on its own stream.
+  Handed out in order, `battle_rugi_caruban_3_strike`'s two words (Bite's hit and the last swing's)
+  fell on Flap's two events, whose first retail blocks and whose second draws no spark.
 
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal

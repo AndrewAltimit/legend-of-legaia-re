@@ -247,6 +247,9 @@ pub struct Renderer {
     /// The scene-lights block's `gte_sat` word (see
     /// [`Renderer::set_gte_saturation`]).
     pub(super) gte_sat: std::cell::Cell<[f32; 4]>,
+    /// The scene-lights block's `ground_drop` word (see
+    /// [`Renderer::set_field_ground_drop`]).
+    pub(super) ground_drop: std::cell::Cell<[f32; 4]>,
     /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
     /// When `true` (the default), a semi-transparent prim's blended fragments
     /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
@@ -937,6 +940,19 @@ impl Renderer {
     pub fn set_gte_saturation(&self, gte: Option<(f32, f32)>) {
         self.gte_sat
             .set(legaia_render_kernels::prim_near_reject::gte_saturation_params(gte));
+    }
+
+    /// The field ground's depth rule: `None` (the default) draws a bucketed
+    /// ground cell at its retail ordering-table bucket - the far slice, or
+    /// two buckets behind its farthest corner; `Some(drop)` depth-tests a
+    /// flat bucketed cell as the plane `drop` units below it along each
+    /// pixel's ray (`legaia_engine_scene::field_ground::dropped_floor_w`),
+    /// leaves a sloped far-bucket cell in the far slice and a sloped sorted
+    /// cell at its own depth. Hosts pass
+    /// `legaia_engine_world_views::field_view_window::field_ground_drop`.
+    pub fn set_field_ground_drop(&self, drop: Option<f32>) {
+        self.ground_drop
+            .set([drop.filter(|d| *d > 0.0).unwrap_or(0.0), 0.0, 0.0, 0.0]);
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

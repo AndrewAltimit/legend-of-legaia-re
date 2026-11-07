@@ -112,7 +112,7 @@ fn every_arts_table_art_resolves_to_a_decoded_clip() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let scus = legaia_iso::image::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let scus = psx_iso::image::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
     let table = arts_table::parse_from_scus(&scus).expect("arts-name table");
     let mut unresolved: Vec<(String, String)> = Vec::new();
     for (cslot, character) in [
@@ -343,7 +343,7 @@ fn probe_dump_bank_names() {
     let Some((mut arts, disc_bytes)) = loaded() else {
         return;
     };
-    let scus = legaia_iso::image::extract_scus(&disc_bytes).unwrap();
+    let scus = psx_iso::image::extract_scus(&disc_bytes).unwrap();
     let table = arts_table::parse_from_scus(&scus).unwrap();
     for (cslot, character) in [
         (0u32, Character::Vahn),
@@ -547,7 +547,7 @@ fn arts_voice_is_the_retail_cue_not_a_guess() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let scus = legaia_iso::image::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let scus = psx_iso::image::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
     let table = ArtsVoiceTable::parse_from_scus(&scus).expect("arts-voice table parses");
 
     // Clip file per character = XA<(char*2+1)+1>.XA.
@@ -698,7 +698,7 @@ fn export_character_glb_carries_the_whole_animation_bank() {
         // The idle leads (its frame 0 is the exported rest pose).
         assert_eq!(anims[0]["name"].as_str(), Some("Idle"));
         // Names are unique; durations are plausible (retail clips run
-        // fractions of a second up to a few seconds at 7.5 * rate fps).
+        // fractions of a second up to a few seconds at 15 * rate fps).
         let mut names: Vec<&str> = anims.iter().map(|a| a["name"].as_str().unwrap()).collect();
         names.sort_unstable();
         let before = names.len();

@@ -334,7 +334,7 @@ fn battle_render_mesh_injects_pool_and_relocates_cba_tsb() {
         eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
         return;
     };
-    use legaia_tim::Vram;
+    use psx_tim::Vram;
 
     // Render Gimard (id 10) into battle slot 2: inject its texture pool into a
     // fresh VRAM at the loader's per-slot coords and relocate every prim's
@@ -930,7 +930,7 @@ fn the_preview_atlas_samples_what_battle_vram_samples() {
             continue;
         };
         let pool_width = mesh.texture().map_or(0, |t| t.width);
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let battle = mesh.battle_render_mesh(0, &mut vram).expect("battle mesh");
         monster_archive::write_boss_effect_page(&entry, id, &mut vram);
         assert_eq!(battle.uvs.len(), preview.atlas_uvs.len(), "id {id}");

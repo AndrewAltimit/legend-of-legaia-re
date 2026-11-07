@@ -496,7 +496,7 @@ fn decode_record0_tracked(file: &[u8]) -> Result<(Vec<u8>, usize)> {
     let stream = file
         .get(0x10..)
         .context("player file shorter than its record[0] stream")?;
-    legaia_lzs::decompress_tracked(stream, budget).context("decompress record[0]")
+    psx_lzs::decompress_tracked(stream, budget).context("decompress record[0]")
 }
 
 /// Header offset of `record[0]` block `i` (`clut_a_off` / `clut_b_off`).
@@ -616,9 +616,8 @@ pub fn resolve_block(
                 .get(file_off..file_off + 4)
                 .map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize)
                 .context("record dec_size prefix past file end")?;
-            let (decoded, consumed) =
-                legaia_lzs::decompress_tracked(&file[file_off + 4..], dec_size)
-                    .with_context(|| format!("decompress record {record_index}"))?;
+            let (decoded, consumed) = psx_lzs::decompress_tracked(&file[file_off + 4..], dec_size)
+                .with_context(|| format!("decompress record {record_index}"))?;
             let flag = decoded
                 .get(0x12..0x14)
                 .map(|b| u16::from_le_bytes(b.try_into().unwrap()))

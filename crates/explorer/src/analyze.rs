@@ -1,6 +1,6 @@
 //! What one PROT entry holds: the sub-assets the previews and exporters work
 //! on, found by the format crates' own scanners (`tim_scan`, `tmd_scan`,
-//! `scene_tmd_stream`, `legaia_vab::find_vabs`, `parse_streaming`,
+//! `scene_tmd_stream`, `psx_vab::find_vabs`, `parse_streaming`,
 //! `legaia_mes`). Nothing here decodes a format itself.
 
 use std::sync::Arc;
@@ -53,7 +53,7 @@ pub struct TmdRef {
 #[derive(Debug, Clone)]
 pub struct VabRef {
     pub offset: usize,
-    pub report: legaia_vab::VabReport,
+    pub report: psx_vab::VabReport,
     /// Spans resolved through the DATA_FIELD body chunk (`parse_in_stream`)
     /// rather than walked straight on from the size table.
     pub in_stream: bool,
@@ -129,10 +129,10 @@ impl Analysis {
 
     /// Every TIM in the entry uploaded into a VRAM image - the texture
     /// source the TMD preview samples, as the site's viewer builds it.
-    pub fn vram(&self) -> legaia_tim::Vram {
-        let mut vram = legaia_tim::Vram::new();
+    pub fn vram(&self) -> psx_tim::Vram {
+        let mut vram = psx_tim::Vram::new();
         for t in &self.tims {
-            if let Ok(tim) = legaia_tim::parse(self.tim_bytes(t)) {
+            if let Ok(tim) = psx_tim::parse(self.tim_bytes(t)) {
                 vram.upload_tim(&tim);
             }
         }
@@ -209,13 +209,13 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>, codec: TextCodec) -> Anal
     }
 
     let mut vabs = Vec::new();
-    for off in legaia_vab::find_vabs(buf) {
+    for off in psx_vab::find_vabs(buf) {
         let streamed = off
             .checked_sub(4)
-            .and_then(|s| legaia_vab::parse_in_stream(buf, s).ok());
+            .and_then(|s| psx_vab::parse_in_stream(buf, s).ok());
         let (report, in_stream) = match streamed {
             Some(r) => (r, true),
-            None => match legaia_vab::parse(buf, off) {
+            None => match psx_vab::parse(buf, off) {
                 Ok(r) => (r, false),
                 Err(_) => continue,
             },
@@ -231,7 +231,7 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>, codec: TextCodec) -> Anal
     let mut from = 0;
     while let Some(rel) = buf[from..].windows(4).position(|w| w == b"pQES") {
         let off = from + rel;
-        if let Ok(h) = legaia_seq::parse_header(&buf[off..]) {
+        if let Ok(h) = psx_seq::parse_header(&buf[off..]) {
             seqs.push(SeqRef {
                 offset: off,
                 ppqn: h.ppqn,
@@ -310,7 +310,7 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>, codec: TextCodec) -> Anal
         .tims
         .iter()
         .map(|t| {
-            legaia_tim::parse(a.tim_bytes(t))
+            psx_tim::parse(a.tim_bytes(t))
                 .map(|tim| tim.palette_count())
                 .unwrap_or(0)
         })

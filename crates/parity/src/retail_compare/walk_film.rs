@@ -55,6 +55,7 @@ impl WalkFilm {
         // What both play hosts raise.
         session.host.world.locomotion.leading_edge_wall_probes = true;
         session.host.world.locomotion.follow_terrain_height = true;
+        session.host.world.locomotion.vertical_settle = true;
         session.host.world.npcs.solid = true;
         session.host.world.npcs.animate = true;
         session.host.world.locomotion.run_default =
@@ -69,7 +70,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint"
         )?;
         let n0 = session
             .host
@@ -105,9 +106,18 @@ impl WalkFilm {
             }
             let g = &session.camera.globals.0;
             let anim = world.locomotion.player_anim.as_ref();
+            // The scene change's own timeline: the scene, whether the hold
+            // is parked, whether the player is engaged, and the strongest
+            // channel of any full-screen wash pushed this tick.
+            let tint = world
+                .screen_tint_push_args()
+                .iter()
+                .map(|&(_, _, p)| (p & 0xFF).max((p >> 8) & 0xFF).max((p >> 16) & 0xFF))
+                .max()
+                .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -125,6 +135,10 @@ impl WalkFilm {
                 anim.map_or(-1, |a| a.playing_clip().2 as i32),
                 world.locomotion.player_clip_rate,
                 anim.map_or(-1, |a| a.playing_clip().1 as i32),
+                world.active_scene_label,
+                u8::from(world.scene_transition_hold.is_some()),
+                u8::from(world.script_context_engages_player()),
+                tint,
             )?;
         }
         session.host.world.input.set_pad(0);

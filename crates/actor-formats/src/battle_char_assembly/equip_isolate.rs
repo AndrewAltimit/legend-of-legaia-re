@@ -54,9 +54,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use legaia_tim::Vram;
 use legaia_tmd::mesh::VramMesh;
 use legaia_tmd::{Tmd, legaia_prims};
+use psx_tim::Vram;
 use serde::Deserialize;
 
 use super::assembly::AssembledCharacter;

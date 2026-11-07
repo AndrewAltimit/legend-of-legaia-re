@@ -3,6 +3,17 @@
 
 use super::*;
 
+impl World {
+    /// Run field-VM op `0x34` sub-0 (the screen-effect colour tween) for a
+    /// record the port follows statically rather than stepping: an overworld
+    /// entrance's exit fade, issued on the crossing frame ahead of its `0x3F`
+    /// (`SceneHost`'s portal hold). The same body the field VM's arm runs.
+    // REF: FUN_801DE840 (op 0x34 sub-0 arm 0x801DFCD4)
+    pub fn run_screen_effect_colour(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
+        FieldHostImpl { world: self }.set_effect_colour(op0, rgb, intensity);
+    }
+}
+
 impl FieldHostImpl<'_> {
     // Op `0x4C` outer-nibble-4 subs `0xA..=0xD` - four scene globals written
     // or ramped from one script operand. Subs `0xA`/`0xB`/`0xC` are the three

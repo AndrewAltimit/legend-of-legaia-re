@@ -16,8 +16,8 @@ The minigames' disc data. The rules engines that consume it live in
 ## Layering
 
 Sits on [`legaia-container-formats`](../container-formats/README.md) and the
-leaf codecs (`legaia-lzs`, `legaia-prot`, `legaia-tim`, `legaia-tmd`,
-`legaia-vab`). It must not depend on the scene, UI or actor format
+leaf codecs (`psx-lzs`, `legaia-prot`, `psx-tim`, `legaia-tmd`,
+`psx-vab`). It must not depend on the scene, UI or actor format
 crates, nor on `legaia-disc-audit`.
 
 ## Module reference

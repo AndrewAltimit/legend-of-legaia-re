@@ -262,12 +262,12 @@ pub fn patch_player_record0_super_power(
     edits: &[(u8, u8)],
 ) -> Option<(usize, Vec<u8>, Vec<PowerEdit>)> {
     let region = crate::arts::record0_lzs_region(entry)?;
-    let mut decoded = legaia_lzs::decompress(entry.get(region.lzs_off..)?, region.budget).ok()?;
+    let mut decoded = psx_lzs::decompress(entry.get(region.lzs_off..)?, region.budget).ok()?;
     let applied = apply_super_power_edits(scus, &mut decoded, ch, edits);
     if applied.is_empty() {
         return None;
     }
-    let recompressed = legaia_lzs::compress(&decoded);
+    let recompressed = psx_lzs::compress(&decoded);
     if recompressed.len() > region.avail {
         return None;
     }

@@ -222,7 +222,7 @@ fn the_table_does_not_change_the_session() {
 #[test]
 fn the_card_page_is_written_and_put_back() {
     let mut w = world(true);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let (px, py, pw, ph) = legaia_engine_modes::cards::table_art::PAGE_RECT;
     // Some scene words under the page.
     let before: Vec<u8> = (0..u32::from(pw) * u32::from(ph) * 2)

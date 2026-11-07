@@ -367,6 +367,7 @@ impl LegaiaRuntime {
         host.world.toggles.use_vm_dialogue = true;
         host.world.enable_frame_grab(true);
         host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.vertical_settle = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;

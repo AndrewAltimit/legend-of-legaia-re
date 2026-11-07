@@ -10,7 +10,7 @@ use crate::battle_intro_tiles::TileGrid;
 use crate::battle_intro_transition::IntroQuad;
 use crate::screen_prim::ScreenPrim;
 use crate::vram_capture::{CaptureOpts, FIELD_CAPTURE_CLEARS};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// The per-style working set, one variant per [`IntroStyle`].
 #[derive(Debug, Clone)]

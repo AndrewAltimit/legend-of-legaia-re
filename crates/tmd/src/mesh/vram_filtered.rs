@@ -249,7 +249,7 @@ pub struct FilterStats {
 }
 
 /// Structured decision a status-aware filter predicate returns for one
-/// primitive. Lives in `legaia_tmd` (not `legaia_tim`) so the mesh
+/// primitive. Lives in `legaia_tmd` (not `psx_tim`) so the mesh
 /// builder doesn't need to depend on TIM/VRAM internals to count drops
 /// by reason. `legaia-engine-core` translates `tim::PrimTextureStatus`
 /// into this enum at the call site.

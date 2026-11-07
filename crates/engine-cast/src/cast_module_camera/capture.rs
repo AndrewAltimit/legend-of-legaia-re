@@ -40,6 +40,13 @@ pub struct CapturePartWrite {
     pub dy: i16,
     pub x: Option<i16>,
     pub y: Option<i16>,
+    /// A word stored into both packed colours `+0xA0` / `+0xA4`.
+    pub colours: Option<u32>,
+    /// `+0x84` (the spin rate the move VM's op `0x04` seeds) shifted left by
+    /// this many bits.
+    pub spin_84_shl: u8,
+    /// A store into the depth-cue rate `+0x90`.
+    pub level_rate: Option<i16>,
 }
 
 /// What a capture module's camera does on one pass of one arm.
@@ -96,6 +103,12 @@ pub struct CaptureCamArm {
     pub backdrop_off: bool,
     /// A literal store into the stage byte `ctx[+0x278]` on this pass.
     pub ctx_278: Option<u8>,
+    /// `(clip, [count, start, end])`: the arm's stores into the loop-window
+    /// bytes `+0x84..+0x86` of a monster caster's action entry `clip`
+    /// (`*(record + 0x4C + clip * 4)`, the record off `0x801C9348 + (seat - 3) * 4`),
+    /// which the clip commit seeds the loop counter `+0x21B` / budget `+0x176`
+    /// from. Made ahead of the arm's caster stage.
+    pub caster_clip_window: Option<(u8, [u8; 3])>,
     /// The arm drifts ahead of its gate and shoots after it, so a pass's
     /// cut lands on its own endpoint (the drift is spent before the cut).
     pub drift_first: bool,
@@ -104,6 +117,10 @@ pub struct CaptureCamArm {
     /// ([`crate::cast_module_ticks::damage_shape_for`]); the module then
     /// owns the cast's outcome and the band's fold is waived.
     pub hit_site: Option<u8>,
+    /// The split hit ([`crate::cast_module_ticks::SplitHits`]) the arm lands
+    /// on this pass, numbered from `1`: the band rolls and applies it
+    /// (PROT 0937's arm 7).
+    pub split_hit: Option<u8>,
     /// The arm framed the caster through the action SM's **case 6**
     /// (`FUN_801D5854(ctx[+0x13], 6)`) on this pass: the follow framing on
     /// the live yaw ladder `ctx[+0x6DA]` and depth `ctx[+0x6D0]`.

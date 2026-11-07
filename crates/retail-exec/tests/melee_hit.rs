@@ -14,8 +14,8 @@ use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_core::world::World;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::element_affinity;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::{AutoCommandBand, Party};
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

@@ -6,7 +6,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle_vm::battle_action::{
     ActionValidatorHost, RecordStat, SlotResources, validate_action,
 };
-use legaia_retail_exec::{GP, Stop, V0};
+use psx_retail_exec::{GP, Stop, V0};
 
 const VALIDATOR: u32 = 0x8003_FB10;
 const MODE: u32 = 0x8007_B83C;

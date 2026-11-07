@@ -131,9 +131,13 @@ impl World {
             def.target,
             legaia_engine_battle::spells::SpellTarget::AllEnemies
         );
+        // What the module's own rolls already earned (its pre-hits, Ozma's
+        // ladder): each ran the finisher's XP tail when it rolled, so the fold
+        // adds to it rather than starting over.
         let mut summon_xp_gain: u32 = std::mem::take(&mut self.casting.module_hit_xp);
         if trains_spell_xp {
-            summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
+            summon_xp_gain =
+                summon_xp_gain.saturating_add(self.inline_module_spell_xp(def.id, jedo_banish));
         }
         // The Seru-magic **side-effect stager** (`FUN_801F3D3C`). Retail's
         // summon module calls it once as the cast commits, before any hit, and
@@ -207,6 +211,29 @@ impl World {
                         *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
                     }
                 }
+            }
+            // A cast whose spell record names an applier HP heal (class `0`
+            // one seat, `1` the side) never reads its MP: state `0x3F` hands
+            // the record's class and tier to `FUN_800402F4`
+            // (`0x801E4108..0x801E4138`), whose HP arms restore
+            // `min(max - hp, 0x8007655C[tier])`, the compare signed. Hyper
+            // Heal (`0x2F`, tier `1`) restores up to `800` where the catalog's
+            // MP-scaled placeholder gave `400`.
+            if let legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } = &mut outcome
+                && matches!(self.spell_table_class(def.id), Some(0 | 1))
+                && let Some(tier) = self.spell_table_sub_class(def.id)
+                && let Some(cap) = self
+                    .tables
+                    .item_effects
+                    .as_ref()
+                    .map(|t| t.heal_amounts().hp[usize::from(tier.min(2))])
+            {
+                let deficit = snap.target_hp_max.wrapping_sub(snap.target_hp);
+                *amount = if deficit as i16 > cap as i16 {
+                    cap
+                } else {
+                    deficit
+                };
             }
             // The three **ally-side** player Seru casts do not roll a spell
             // magnitude at all in retail: their module's own tick arm computes

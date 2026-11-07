@@ -17,8 +17,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use psx_ram_image::ScenarioManifest;
 
 /// (scenario label, kingdom bundle PROT entry, scene label) per kingdom.
 ///

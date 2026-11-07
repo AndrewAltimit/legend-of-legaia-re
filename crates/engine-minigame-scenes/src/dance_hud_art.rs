@@ -26,7 +26,7 @@ use legaia_engine_minigames::dance::*;
 pub fn stage_dance_hud_vram(
     index: &legaia_engine_scene::scene::ProtIndex,
     rects: &[DanceHudRect],
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
 ) -> usize {
     if rects.is_empty() {
         return 0;
@@ -36,7 +36,7 @@ pub fn stage_dance_hud_vram(
     };
     let mut uploaded = 0;
     for member in legaia_prot::timpack::unpack(&raw) {
-        let Ok(tim) = legaia_tim::parse(&member) else {
+        let Ok(tim) = psx_tim::parse(&member) else {
             continue;
         };
         let origin = (tim.image.fb_x, tim.image.fb_y);

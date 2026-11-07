@@ -211,7 +211,7 @@ fn find_embedded_asset_table(bytes: &[u8]) -> Option<(SceneAssetTable, usize)> {
 /// Per-descriptor extraction: descriptor metadata plus the file-relative
 /// payload range. `payload_start` and `payload_end` are byte offsets into
 /// the entry's raw bytes; engines slice `entry.bytes[start..end]` and pass
-/// to the per-type decoder ([`legaia_lzs::decompress`] for compressed
+/// to the per-type decoder ([`psx_lzs::decompress`] for compressed
 /// payloads, raw copy otherwise).
 #[derive(Debug, Clone)]
 pub struct ExtractedDescriptor {
@@ -259,7 +259,7 @@ impl ExtractedDescriptor {
 /// is unusable: `size` is the *decompressed* length, so the on-disc extent
 /// is only known once the stream is decoded. Callers that want those bytes
 /// resolve `bundle.table_offset() + d.data_offset` themselves and hand the
-/// slice to [`legaia_lzs::decompress_tracked`], which is what
+/// slice to [`psx_lzs::decompress_tracked`], which is what
 /// [`extract_man_payload`] does.
 pub fn walk_descriptors(bundle: &BundleSource) -> Vec<ExtractedDescriptor> {
     let descriptors = bundle.descriptors();
@@ -315,7 +315,7 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
         ));
     }
     let body = &bytes[payload_start..];
-    let (decoded, consumed) = legaia_lzs::decompress_tracked(body, d.size as usize)?;
+    let (decoded, consumed) = psx_lzs::decompress_tracked(body, d.size as usize)?;
     Ok((decoded, consumed))
 }
 
@@ -329,7 +329,7 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
 /// Each descriptor in the scene asset table is its own independently
 /// LZS-compressed stream. `data_offset` is the file-relative byte
 /// position of that stream and `size` is the **decompressed** payload
-/// size that the dispatcher passes to [`legaia_lzs::decompress`]. So
+/// size that the dispatcher passes to [`psx_lzs::decompress`]. So
 /// the Move payload is `LZS.decode(entry_bytes[desc[4].data_offset..],
 /// desc[4].size)` directly.
 ///
@@ -379,7 +379,7 @@ pub fn extract_move_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result
     }
     let body = &entry_bytes[payload_start..];
 
-    let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, move_desc.size as usize)?;
+    let (decoded, _consumed) = psx_lzs::decompress_tracked(body, move_desc.size as usize)?;
     if decoded.len() != move_desc.size as usize {
         return Ok(None);
     }
@@ -436,7 +436,7 @@ pub fn extract_man_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result<
         ));
     }
     let body = &entry_bytes[payload_start..];
-    let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man_desc.size as usize)?;
+    let (decoded, _consumed) = psx_lzs::decompress_tracked(body, man_desc.size as usize)?;
     // Some scene_asset_table bundles have descriptor offsets that fall
     // past the indexed footprint and need the extended footprint. In
     // that case the decompressor may stop short; treat short reads as
@@ -501,7 +501,7 @@ pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
 ///
 /// Returns one `(entry_idx, tim_offset_in_entry)` pair per TIM the
 /// engine should upload. Engines slice `entry.bytes[tim_offset..]`,
-/// hand it to [`legaia_tim::parse`], and upload the image + CLUT to
+/// hand it to [`psx_tim::parse`], and upload the image + CLUT to
 /// the software VRAM at the TIM's framebuffer coordinates.
 ///
 /// Scope: scans every entry in `scene.entries`, runs the TIM detector at
@@ -530,7 +530,7 @@ pub fn scene_tim_layout(scene: &Scene) -> Result<Vec<TimLocation>> {
 /// pre-pass.
 ///
 /// The framebuffer coordinates aren't surfaced here - they live inside
-/// the TIM header proper. Engines parse with [`legaia_tim::parse`] at
+/// the TIM header proper. Engines parse with [`psx_tim::parse`] at
 /// `entry_bytes[offset..]` to get `fb_x` / `fb_y` / `clut_fb_x` /
 /// `clut_fb_y` for the VRAM upload.
 #[derive(Debug, Clone, Copy)]
@@ -900,7 +900,7 @@ mod tests {
 
     /// LZS-encode `input` as a literal-only stream: every input byte
     /// becomes a literal under an all-ones control byte. Decoding via
-    /// `legaia_lzs::decompress(.., input.len())` yields `input` verbatim.
+    /// `psx_lzs::decompress(.., input.len())` yields `input` verbatim.
     /// Used only by the test synth helpers since the production code
     /// path never produces LZS bytes - the decoder consumes retail
     /// streams that an external encoder produced.

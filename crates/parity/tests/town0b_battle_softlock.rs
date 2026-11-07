@@ -78,7 +78,7 @@ fn inputs() -> Option<Inputs> {
     let path = library
         .join("pcsx-redux")
         .join(format!("{ANCHOR_FP}.sstate"));
-    let Ok(state) = legaia_pcsx_redux::SaveState::from_path(&path) else {
+    let Ok(state) = psx_pcsx_redux::SaveState::from_path(&path) else {
         eprintln!("[skip] anchor state {ANCHOR_FP} not in the library");
         return None;
     };

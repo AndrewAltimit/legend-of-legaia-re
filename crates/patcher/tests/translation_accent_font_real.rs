@@ -17,11 +17,11 @@
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_font::accent_font::{AccentFontState, CellDraw, FontPage};
 use legaia_font::{Font, MeasureOptions, latin};
-use legaia_iso::raw::SECTOR_SIZE;
-use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_translate::accents::{self, AccentMode, DiscFont};
 use legaia_translate::markup::{self, Target};
 use legaia_translate::{export_pack, import_pack};
+use psx_iso::raw::SECTOR_SIZE;
+use psx_iso::write::mode2_form1_sector_is_valid;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

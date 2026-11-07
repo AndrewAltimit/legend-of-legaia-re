@@ -4,8 +4,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::{extract_prot_dat, is_mode2_2352_disc};
 use legaia_prot::toc_index::parse_prot_toc;
+use psx_iso::image::{extract_prot_dat, is_mode2_2352_disc};
 use std::env;
 use std::fs;
 

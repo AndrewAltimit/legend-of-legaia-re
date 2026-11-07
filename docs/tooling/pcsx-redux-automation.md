@@ -105,7 +105,7 @@ every `captures/**/snap_*.sstate` and `autosave_*.sstate` in this repo is.
 Any reader that assumes gzip therefore rejects most of the capture corpus with
 `invalid gzip header` while working fine on the handful of quicksaves - a
 failure shaped like "that state is corrupt" rather than "my reader handles one
-of two formats". `legaia_pcsx_redux::SaveState` dispatches on the `1f 8b` magic and
+of two formats". `psx_pcsx_redux::SaveState` dispatches on the `1f 8b` magic and
 opens both.
 
 The corpus-wide consequence is worth stating plainly: a gzip-only reader indexes
@@ -128,7 +128,7 @@ run whose first `0x400` bytes are dense and whose remaining `0xFC00` are almost
 all zero - the scratchpad-plus-I/O-map shape. On a `teien` field-run state that
 lands one blob, and reading `+0x3E8` out of it returns the same visible-tile
 window the live probe logged. What is missing is only a reader:
-`legaia_pcsx_redux::SaveState` exposes `main_ram()` and nothing else, so a
+`psx_pcsx_redux::SaveState` exposes `main_ram()` and nothing else, so a
 scratchpad-dependent question still needs either a live probe (which reads it
 directly) or a new accessor.
 
@@ -1103,6 +1103,7 @@ instrument produced them.
 | [`autorun_fight_pace.lua`](../../scripts/pcsx-redux/autorun_fight_pace.lua) | A whole fight from a state, CROSS through every prompt, walking the field to an encounter first: `pace.csv` per vsync with the frame counter, step and ring entry. What [the ring](../subsystems/battle-stage-camera.md#what-the-ring-holds) is measured on |
 | [`autorun_tetsu_spar_order.lua`](../../scripts/pcsx-redux/autorun_tetsu_spar_order.lua) | The Rim Elm spar and the talk after it from a state, logging flags `0x20B` / `0x20C` / `0x227` / `0x22E` to `flags.csv`; `LEGAIA_TUTORIAL_DONE=1` closes the battle tutorial by its lesson byte. What [the early-spar softlock](../reference/glitches/field-sequence-breaks.md#sparring-with-tetsu-before-the-measuring) is captured on |
 | [`autorun_walk_route.lua`](../../scripts/pcsx-redux/autorun_walk_route.lua) | Walks a planned route (`<scene> <x> <z>` waypoints from [`plan_walk_route.py`](../../scripts/pcsx-redux/plan_walk_route.py) over `asset scene-nav` JSON) through one or more scenes, steering on the player position through the pad octant `0x8007B5F0`; fights encounters; `ACT` / `TALK` / `WAIT` / `AVOID` lines; pad only | `--fast`, a retail field state; `LEGAIA_ROUTE_FILE`, `LEGAIA_SHOTS`, `LEGAIA_MASH`, `LEGAIA_PLAY_SCRIPT`, `LEGAIA_WATCH` | `<prefix>_scene_<label>_v<vsync>.rawsstate` per scene entered, `_end_` at the last waypoint, `_mode<mm>_t<t>` after an `ACT`: the retail minigame and far-scene states of the [capture-coverage](capture-coverage.md#filling-the-worklist) worklist | |
+| [`autorun_entrance_film.lua`](../../scripts/pcsx-redux/autorun_entrance_film.lua) | Player seat and engaged bit, scene label, game mode, the streaming actor's countdown, the colour tween's slot and the displayed frame's mean brightness once a vsync under a pad schedule; the retail side of the [overworld crossing timeline](../subsystems/world-map.md#the-crossing-frame) | `LEGAIA_PAD_SCRIPT="A-B:BTN"` |
 | [`autorun_field_walk_film.lua`](../../scripts/pcsx-redux/autorun_field_walk_film.lua) | Player, follow camera, staging descriptor and every field-ticked placement once a vsync under a pad schedule; the retail side of the [walk film](walk-film.md) | `LEGAIA_PAD_SCRIPT="A-B:BTN"` |
 | [`autorun_field_leg_timing.lua`](../../scripts/pcsx-redux/autorun_field_leg_timing.lua) | Every field actor once a vsync with its halt bit `+0x10 & 0x400`, parked op bytes at `+0x94`, script cursor and the actor-tick counter: when a scripted leg lands, ends and frees its script | `LEGAIA_CROSS_EVERY=N` pages dialogue |
 | [`autorun_field_ease_callers.lua`](../../scripts/pcsx-redux/autorun_field_ease_callers.lua) | Who enters the follow ease `FUN_801DB510`, its compose and pin legs, the walk controller and each focus write, with the gates and position pairs | `LEGAIA_PAD_SCRIPT="A-B:BTN"`, interpreter |

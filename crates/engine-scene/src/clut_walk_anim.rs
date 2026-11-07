@@ -23,7 +23,7 @@
 //! frame++ wrapping).
 
 use legaia_scene_formats::clut_walk::{self, ClutWalkTable, ParkStrip};
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 use crate::scene::{ProtIndex, Scene, is_world_map_scene};
 

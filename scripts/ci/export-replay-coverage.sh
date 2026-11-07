@@ -52,7 +52,9 @@ export_one() {
     # `[[test]] name = "integration"` in its Cargo.toml) runs them as
     # `--lib integration::<file>::`.
     local target=(--test integration) filter="${t}::"
-    if ! grep -q '^name = "integration"' "crates/${pkg#legaia-}/Cargo.toml"; then
+    local dir=${pkg#legaia-}
+    dir=${dir#psx-}
+    if ! grep -q '^name = "integration"' "crates/${dir}/Cargo.toml"; then
         target=(--lib)
         filter="integration::${t}::"
     fi

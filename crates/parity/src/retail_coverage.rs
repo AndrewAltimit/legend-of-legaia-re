@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 use serde::Serialize;
 
 use crate::retail_compare::{StateClass, enumerate_corpus, read_retail};

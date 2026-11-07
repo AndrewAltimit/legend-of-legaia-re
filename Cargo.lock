@@ -1627,16 +1627,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-art",
- "legaia-bytes",
  "legaia-container-formats",
  "legaia-font",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-prot",
- "legaia-tim",
  "legaia-tmd",
  "png",
+ "psx-bytes",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
  "serde",
  "serde_json",
  "toml",
@@ -1663,8 +1663,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "legaia-iso",
  "libc",
+ "psx-iso",
  "serde",
  "serde_json",
 ]
@@ -1677,9 +1677,9 @@ dependencies = [
  "legaia-art",
  "legaia-code-hooks",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-randomizer",
+ "psx-iso",
+ "psx-lzs",
 ]
 
 [[package]]
@@ -1689,21 +1689,21 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-actor-formats",
- "legaia-bytes",
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-expansion-format",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
  "libc",
  "png",
+ "psx-bytes",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
  "serde",
  "serde_json",
 ]
@@ -1733,19 +1733,15 @@ dependencies = [
  "legaia-mes",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
  "libc",
  "log",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
  "winit",
 ]
-
-[[package]]
-name = "legaia-bytes"
-version = "0.1.0"
 
 [[package]]
 name = "legaia-cheats"
@@ -1773,13 +1769,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-anm",
- "legaia-bytes",
- "legaia-lzs",
  "legaia-prot",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
- "legaia-vab",
+ "psx-bytes",
+ "psx-lzs",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
  "serde",
 ]
 
@@ -1791,9 +1787,9 @@ dependencies = [
  "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-mes",
  "legaia-scene-formats",
+ "psx-lzs",
 ]
 
 [[package]]
@@ -1807,13 +1803,13 @@ dependencies = [
  "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-party-swap",
  "legaia-randomizer",
  "legaia-texture-replace",
  "legaia-translate",
- "legaia-vab",
- "legaia-xa",
+ "psx-lzs",
+ "psx-vab",
+ "psx-xa",
 ]
 
 [[package]]
@@ -1823,11 +1819,8 @@ dependencies = [
  "anyhow",
  "legaia-actor-formats",
  "legaia-anm",
- "legaia-bytes",
  "legaia-container-formats",
  "legaia-game-tables",
- "legaia-lzs",
- "legaia-mdec",
  "legaia-mdt",
  "legaia-mes",
  "legaia-minigame-formats",
@@ -1835,11 +1828,14 @@ dependencies = [
  "legaia-prot",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
+ "psx-bytes",
+ "psx-lzs",
+ "psx-mdec",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
  "serde",
  "serde_json",
 ]
@@ -1850,10 +1846,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-iso",
- "legaia-lzs",
  "legaia-prot",
  "legaia-scene-formats",
+ "psx-iso",
+ "psx-lzs",
  "serde",
 ]
 
@@ -1867,10 +1863,10 @@ dependencies = [
  "js-sys",
  "legaia-game-tables",
  "legaia-prot",
- "legaia-seq",
- "legaia-vab",
- "legaia-xa",
  "log",
+ "psx-seq",
+ "psx-vab",
+ "psx-xa",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -1882,19 +1878,19 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-art",
- "legaia-bytes",
  "legaia-engine-battle-vm",
  "legaia-engine-system",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-overlay-images",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
  "log",
+ "psx-bytes",
+ "psx-lzs",
+ "psx-tim",
  "serde",
 ]
 
@@ -2070,7 +2066,6 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-lzs",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-overlay-images",
@@ -2079,10 +2074,11 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
  "log",
+ "psx-lzs",
+ "psx-tim",
 ]
 
 [[package]]
@@ -2112,8 +2108,8 @@ dependencies = [
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-render-kernels",
- "legaia-tim",
  "legaia-tmd",
+ "psx-tim",
 ]
 
 [[package]]
@@ -2145,8 +2141,8 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
+ "psx-tim",
  "serde_json",
 ]
 
@@ -2163,7 +2159,6 @@ dependencies = [
  "legaia-engine-motion-vm",
  "legaia-engine-system",
  "legaia-engine-vm",
- "legaia-lzs",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-overlay-images",
@@ -2171,6 +2166,7 @@ dependencies = [
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tmd",
+ "psx-lzs",
 ]
 
 [[package]]
@@ -2236,9 +2232,9 @@ dependencies = [
  "legaia-game-tables",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-translate",
  "legaia-ui-formats",
+ "psx-tim",
  "serde",
  "toml",
 ]
@@ -2267,8 +2263,8 @@ dependencies = [
  "legaia-prot",
  "legaia-render-kernels",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
+ "psx-tim",
 ]
 
 [[package]]
@@ -2293,10 +2289,10 @@ dependencies = [
 name = "legaia-engine-mode"
 version = "0.1.0"
 dependencies = [
- "legaia-bytes",
  "legaia-engine-system",
  "legaia-game-tables",
  "legaia-minigame-formats",
+ "psx-bytes",
 ]
 
 [[package]]
@@ -2316,8 +2312,8 @@ version = "0.1.0"
 dependencies = [
  "legaia-container-formats",
  "legaia-engine-system",
- "legaia-lzs",
  "legaia-scene-formats",
+ "psx-lzs",
 ]
 
 [[package]]
@@ -2356,10 +2352,10 @@ dependencies = [
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-render-kernels",
- "legaia-tim",
  "log",
  "naga",
  "pollster",
+ "psx-tim",
  "serde",
  "serde_json",
  "wgpu",
@@ -2414,8 +2410,6 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-expansion-format",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-mdt",
  "legaia-mes",
  "legaia-minigame-formats",
@@ -2423,11 +2417,13 @@ dependencies = [
  "legaia-prot",
  "legaia-render-kernels",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
+ "psx-iso",
+ "psx-lzs",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
  "serde",
  "serde_json",
  "toml",
@@ -2470,7 +2466,6 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-lzs",
  "legaia-mdt",
  "legaia-mes",
  "legaia-minigame-formats",
@@ -2479,14 +2474,15 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-translate",
  "legaia-ui-formats",
- "legaia-vab",
  "log",
  "png",
+ "psx-lzs",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
 ]
 
 [[package]]
@@ -2562,20 +2558,20 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-prot",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
- "legaia-vab",
- "legaia-xa",
  "log",
+ "psx-iso",
+ "psx-lzs",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde",
  "serde_json",
 ]
@@ -2632,29 +2628,29 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-mdec",
- "legaia-mednafen",
  "legaia-minigame-formats",
  "legaia-netplay",
  "legaia-overlay-images",
  "legaia-parity",
- "legaia-pcsx-redux",
  "legaia-prot",
- "legaia-ram-image",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
  "legaia-web-play",
- "legaia-xa",
  "libc",
  "log",
  "png",
+ "psx-iso",
+ "psx-mdec",
+ "psx-mednafen",
+ "psx-pcsx-redux",
+ "psx-ram-image",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "rayon",
  "rfd",
  "serde",
@@ -2684,8 +2680,8 @@ dependencies = [
  "anyhow",
  "legaia-engine-system",
  "legaia-prot",
- "legaia-tim",
  "legaia-ui-formats",
+ "psx-tim",
 ]
 
 [[package]]
@@ -2702,12 +2698,12 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
- "legaia-mednafen",
  "legaia-minigame-formats",
- "legaia-ram-image",
  "legaia-render-kernels",
- "legaia-tim",
  "legaia-ui-formats",
+ "psx-mednafen",
+ "psx-ram-image",
+ "psx-tim",
  "serde",
  "serde_json",
 ]
@@ -2749,13 +2745,13 @@ dependencies = [
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-expansion-format",
- "legaia-lzs",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
+ "psx-lzs",
+ "psx-tim",
 ]
 
 [[package]]
@@ -2792,19 +2788,19 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-iso",
- "legaia-lzs",
- "legaia-mdec",
  "legaia-mes",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-translate",
- "legaia-vab",
- "legaia-xa",
  "log",
+ "psx-iso",
+ "psx-lzs",
+ "psx-mdec",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "rayon",
  "rfd",
  "serde",
@@ -2823,14 +2819,14 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-font",
- "legaia-iso",
- "legaia-lzs",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
- "legaia-xa",
  "libc",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
+ "psx-xa",
  "rayon",
  "serde_json",
  "sha2",
@@ -2854,10 +2850,10 @@ name = "legaia-game-tables"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "legaia-bytes",
  "legaia-font",
  "legaia-overlay-images",
  "legaia-prot",
+ "psx-bytes",
  "serde",
 ]
 
@@ -2878,39 +2874,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "legaia-iso"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "libc",
- "sha2",
- "tempfile",
-]
-
-[[package]]
-name = "legaia-lzs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "libc",
-]
-
-[[package]]
-name = "legaia-mdec"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "legaia-iso",
- "legaia-prot",
- "legaia-xa",
- "libc",
- "png",
-]
-
-[[package]]
 name = "legaia-mdt"
 version = "0.1.0"
 dependencies = [
@@ -2919,25 +2882,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-mednafen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "flate2",
- "legaia-actor-formats",
- "legaia-cheats",
- "legaia-overlay-images",
- "legaia-prot",
- "legaia-ram-image",
- "libc",
- "png",
- "serde",
- "serde_json",
- "toml",
 ]
 
 [[package]]
@@ -2959,12 +2903,12 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-container-formats",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-overlay-images",
  "legaia-prot",
- "legaia-tim",
  "legaia-tmd",
- "legaia-vab",
+ "psx-lzs",
+ "psx-tim",
+ "psx-vab",
  "serde",
 ]
 
@@ -2983,10 +2927,10 @@ name = "legaia-overlay-images"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "legaia-bytes",
  "legaia-container-formats",
- "legaia-lzs",
  "legaia-prot",
+ "psx-bytes",
+ "psx-lzs",
  "serde",
  "sha2",
  "toml",
@@ -3002,7 +2946,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-bytes",
  "legaia-container-formats",
  "legaia-disc-patch",
  "legaia-engine-audio",
@@ -3033,28 +2976,29 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-engine-world-views",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
- "legaia-mdec",
- "legaia-mednafen",
  "legaia-overlay-images",
  "legaia-patcher",
- "legaia-pcsx-redux",
  "legaia-prot",
- "legaia-ram-image",
  "legaia-randomizer",
  "legaia-render-kernels",
- "legaia-retail-exec",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
- "legaia-xa",
  "log",
  "png",
+ "psx-bytes",
+ "psx-iso",
+ "psx-lzs",
+ "psx-mdec",
+ "psx-mednafen",
+ "psx-pcsx-redux",
+ "psx-ram-image",
+ "psx-retail-exec",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde",
  "serde_json",
  "sha2",
@@ -3067,11 +3011,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-bytes",
  "legaia-container-formats",
- "legaia-lzs",
- "legaia-tim",
  "legaia-tmd",
+ "psx-bytes",
+ "psx-lzs",
+ "psx-tim",
 ]
 
 [[package]]
@@ -3084,7 +3028,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-bytes",
  "legaia-code-hooks",
  "legaia-container-formats",
  "legaia-delilas-challenge",
@@ -3094,8 +3037,6 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-iso",
- "legaia-lzs",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-party-swap",
@@ -3103,30 +3044,18 @@ dependencies = [
  "legaia-randomizer",
  "legaia-scene-formats",
  "legaia-texture-replace",
- "legaia-tim",
  "legaia-tmd",
  "legaia-translate",
  "legaia-ui-formats",
- "legaia-vab",
- "legaia-xa",
  "libc",
  "png",
+ "psx-bytes",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde",
- "serde_json",
-]
-
-[[package]]
-name = "legaia-pcsx-redux"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "flate2",
- "legaia-iso",
- "legaia-mednafen",
- "legaia-ram-image",
- "legaia-seq",
- "legaia-tim",
  "serde_json",
 ]
 
@@ -3139,15 +3068,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-ram-image"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "toml",
 ]
 
 [[package]]
@@ -3166,45 +3086,9 @@ dependencies = [
  "legaia-font",
  "legaia-overlay-images",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
+ "psx-tim",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-retail-exec"
-version = "0.1.0"
-dependencies = [
- "legaia-actor-formats",
- "legaia-art",
- "legaia-container-formats",
- "legaia-disc-patch",
- "legaia-engine-audio",
- "legaia-engine-battle",
- "legaia-engine-battle-hud",
- "legaia-engine-battle-loop",
- "legaia-engine-battle-vm",
- "legaia-engine-cast",
- "legaia-engine-core",
- "legaia-engine-dialog",
- "legaia-engine-field",
- "legaia-engine-fishing",
- "legaia-engine-menu-runtime",
- "legaia-engine-menus",
- "legaia-engine-minigame-scenes",
- "legaia-engine-minigames",
- "legaia-engine-motion-vm",
- "legaia-engine-scene",
- "legaia-engine-system",
- "legaia-engine-vm",
- "legaia-font",
- "legaia-game-tables",
- "legaia-lzs",
- "legaia-minigame-formats",
- "legaia-render-kernels",
- "legaia-save",
- "legaia-scene-formats",
- "legaia-vab",
 ]
 
 [[package]]
@@ -3222,27 +3106,16 @@ dependencies = [
 name = "legaia-scene-formats"
 version = "0.1.0"
 dependencies = [
- "legaia-bytes",
  "legaia-container-formats",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-overlay-images",
  "legaia-prot",
- "legaia-tim",
  "legaia-tmd",
  "png",
+ "psx-bytes",
+ "psx-lzs",
+ "psx-tim",
  "serde",
-]
-
-[[package]]
-name = "legaia-seq"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "libc",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3254,21 +3127,10 @@ dependencies = [
  "legaia-disc-audit",
  "legaia-disc-patch",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
- "legaia-tim",
  "legaia-ui-formats",
-]
-
-[[package]]
-name = "legaia-tim"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "clap",
- "libc",
- "png",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
 ]
 
 [[package]]
@@ -3277,8 +3139,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "legaia-tim",
  "libc",
+ "psx-tim",
  "serde",
  "serde_json",
 ]
@@ -3295,9 +3157,9 @@ dependencies = [
  "legaia-disc-patch",
  "legaia-font",
  "legaia-game-tables",
- "legaia-lzs",
  "legaia-prot",
  "legaia-scene-formats",
+ "psx-lzs",
  "serde",
  "serde_json",
  "serde_norway",
@@ -3312,19 +3174,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-overlay-images",
  "legaia-prot",
- "legaia-tim",
-]
-
-[[package]]
-name = "legaia-vab"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "legaia-xa",
- "libc",
- "serde",
- "serde_json",
+ "psx-tim",
 ]
 
 [[package]]
@@ -3342,9 +3192,9 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-iso",
  "legaia-scene-formats",
  "legaia-tmd",
+ "psx-iso",
  "serde",
  "serde_json",
  "wasm-bindgen",
@@ -3382,19 +3232,19 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-iso",
  "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
- "legaia-xa",
+ "psx-iso",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde_json",
  "wasm-bindgen",
  "web-sys",
@@ -3416,15 +3266,15 @@ dependencies = [
  "legaia-disc-patch",
  "legaia-font",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-lzs",
  "legaia-patcher",
  "legaia-prot",
  "legaia-randomizer",
  "legaia-texture-replace",
- "legaia-tim",
  "legaia-translate",
  "legaia-ui-formats",
+ "psx-iso",
+ "psx-lzs",
+ "psx-tim",
  "serde_json",
  "sha2",
  "wasm-bindgen",
@@ -3474,8 +3324,6 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
- "legaia-iso",
- "legaia-mdec",
  "legaia-minigame-formats",
  "legaia-netplay",
  "legaia-overlay-images",
@@ -3483,12 +3331,14 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
  "legaia-web-minigames",
- "legaia-xa",
+ "psx-iso",
+ "psx-mdec",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde",
  "serde_json",
  "toml",
@@ -3517,6 +3367,7 @@ dependencies = [
  "legaia-disc-audit",
  "legaia-engine-audio",
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-menus",
@@ -3529,40 +3380,30 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
- "legaia-iso",
- "legaia-lzs",
- "legaia-mdec",
- "legaia-mednafen",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-prot",
- "legaia-ram-image",
  "legaia-render-kernels",
  "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
  "legaia-web-expansion",
  "legaia-web-patcher",
  "legaia-web-play",
- "legaia-xa",
+ "psx-iso",
+ "psx-lzs",
+ "psx-mdec",
+ "psx-mednafen",
+ "psx-ram-image",
+ "psx-seq",
+ "psx-tim",
+ "psx-vab",
+ "psx-xa",
  "serde_json",
  "sha2",
  "toml",
  "wasm-bindgen",
  "web-sys",
-]
-
-[[package]]
-name = "legaia-xa"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "legaia-iso",
- "libc",
 ]
 
 [[package]]
@@ -4450,6 +4291,166 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+
+[[package]]
+name = "psx-bytes"
+version = "0.1.0"
+
+[[package]]
+name = "psx-iso"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "psx-lzs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+]
+
+[[package]]
+name = "psx-mdec"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "legaia-prot",
+ "libc",
+ "png",
+ "psx-iso",
+ "psx-xa",
+]
+
+[[package]]
+name = "psx-mednafen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "legaia-actor-formats",
+ "legaia-cheats",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "libc",
+ "png",
+ "psx-ram-image",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "psx-pcsx-redux"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "psx-iso",
+ "psx-mednafen",
+ "psx-ram-image",
+ "psx-seq",
+ "psx-tim",
+ "serde_json",
+]
+
+[[package]]
+name = "psx-ram-image"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "psx-retail-exec"
+version = "0.1.0"
+dependencies = [
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-container-formats",
+ "legaia-disc-patch",
+ "legaia-engine-audio",
+ "legaia-engine-battle",
+ "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
+ "legaia-engine-battle-vm",
+ "legaia-engine-cast",
+ "legaia-engine-core",
+ "legaia-engine-dialog",
+ "legaia-engine-field",
+ "legaia-engine-fishing",
+ "legaia-engine-menu-runtime",
+ "legaia-engine-menus",
+ "legaia-engine-minigame-scenes",
+ "legaia-engine-minigames",
+ "legaia-engine-motion-vm",
+ "legaia-engine-scene",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-minigame-formats",
+ "legaia-render-kernels",
+ "legaia-save",
+ "legaia-scene-formats",
+ "psx-lzs",
+ "psx-vab",
+]
+
+[[package]]
+name = "psx-seq"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "psx-tim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "clap",
+ "libc",
+ "png",
+]
+
+[[package]]
+name = "psx-vab"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "psx-xa",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "psx-xa"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "psx-iso",
+]
 
 [[package]]
 name = "pxfm"

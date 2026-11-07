@@ -165,10 +165,15 @@ pub fn hyper_lightning_camera(
             } else {
                 arm.drift = Some(push(s));
             }
+            // The arm's exit tests the count before the settle
+            // (`bne v1,v0` on `4` at `0x801F77AC`): it holds until the
+            // fourth hit has landed.
+            arm.hold = hits < 4;
             if hits < 4 {
                 st.module_words[1] -= SPEED_SCALAR;
                 if st.module_words[1] <= 0 {
                     st.module_words[0] += 1;
+                    arm.split_hit = Some(st.module_words[0] as u8);
                     st.module_words[1] += SPEED_SCALAR << 3;
                     // Each hit flashes the victim (`+0x04 = 0x200FFE00`,
                     // `+0x0C = 0x1000`) and turns it to the caster.

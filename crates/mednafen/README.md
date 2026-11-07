@@ -1,4 +1,4 @@
-# `legaia-mednafen`
+# `psx-mednafen`
 
 Mednafen save-state parser + watchpoint-equivalent automation toolkit.
 
@@ -36,18 +36,18 @@ Modules: `container` (MDFNSVST section index), `psx` (CPU / GTE register
 snapshot), `gpu` / `spu` (typed section accessors). The emulator-neutral
 analysis of the RAM a state carries - `extract`, `game_anchors`, `diff`,
 `bisect`, `prim_pool` + `source_hunt`, `prim_dispatch`, `scenarios` - lives in
-[`legaia-ram-image`](../ram-image/README.md); the CLI below drives both.
+[`psx-ram-image`](../ram-image/README.md); the CLI below drives both.
 
 The library reads any PSX game's states: `main_ram_structured()` returns the
 `MAIN.MainRAM.data8` entry from mednafen's own section layout, `main_ram()`
 takes it and only falls back to a search for Legaia's executable strings when
 that entry is missing, and `main_ram_with_anchors(exe, profile)` is that
 fallback for another game (its executable, and the strings a
-`legaia_ram_image::GameProfile` names). The CLI is narrower: its `cli`
+`psx_ram_image::GameProfile` names). The CLI is narrower: its `cli`
 feature pulls in `legaia-actor-formats` and `legaia-cheats`, and `identify`,
 `display-list`, `write-taxonomy`, `clut-trace`, `prim-dispatch-*` and
 `world-map-camera` read Legaia structures. See
-[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image).
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-psx-mednafen-psx-pcsx-redux-psx-ram-image).
 
 ## CLI
 
@@ -83,7 +83,7 @@ target in world units, alongside the walk-view / top-view mode flag.
 states, mirroring `pcsxr-state identify` so `scripts/mednafen/state-index.py`
 can sweep both emulators' corpora into one scene index. Unreadable states report
 as an `!` row instead of aborting the sweep. The anchors live in
-`legaia_ram_image::game_anchors`, which `legaia-pcsx-redux` reads through too - so a mednafen `.mc`
+`psx_ram_image::game_anchors`, which `psx-pcsx-redux` reads through too - so a mednafen `.mc`
 and a PCSX-Redux `.sstate` answer "which scene is this?" identically.
 
 `display-list` reads a frame's libgpu ordering table straight out of a RAM

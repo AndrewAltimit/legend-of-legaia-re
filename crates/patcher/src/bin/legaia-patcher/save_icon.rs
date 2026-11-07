@@ -14,7 +14,7 @@ use anyhow::{Context, Result, bail};
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_disc_patch::ppf;
 use legaia_texture_replace::save_icon::{self, SLOT_COUNT};
-use legaia_tim::encode::decode_png_rgba;
+use psx_tim::encode::decode_png_rgba;
 
 use crate::disc_io::{cue_contents, load_image, note_overwrite};
 
@@ -59,7 +59,7 @@ pub(crate) fn cmd_save_icon_export(input: &Path, slot: usize, output: &Path) -> 
     let sheet = save_icon::read_sheet(&patcher)?;
     let rgba = save_icon::export_slot(&sheet, slot)?;
     let size = legaia_ui_formats::save_icon::TILE_SIZE;
-    legaia_tim::write_png(output, size, size, &rgba)?;
+    psx_tim::write_png(output, size, size, &rgba)?;
     println!(
         "wrote {} - save-icon slot {slot} (save number {}), {size}x{size}, 16-colour palette",
         output.display(),
@@ -139,7 +139,7 @@ pub(crate) fn cmd_save_icon_replace(
             .as_chunks::<4>()
             .0
             .iter()
-            .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
+            .flat_map(|p| psx_tim::bgr555_to_rgba8(psx_tim::encode::rgba8_to_bgr555(*p)))
             .collect();
         if got != want {
             bail!("verification failed: patched portrait does not decode to the input image");

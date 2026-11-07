@@ -49,7 +49,7 @@ fn every_real_bank_maps_programs_by_used_slot_rank() {
         // accept a bare VAB at 0 too.
         let Some(report) = [4usize, 0]
             .iter()
-            .find_map(|&off| legaia_vab::parse(&bytes, off).ok().map(|r| (off, r)))
+            .find_map(|&off| psx_vab::parse(&bytes, off).ok().map(|r| (off, r)))
             .map(|(_, r)| r)
         else {
             continue;

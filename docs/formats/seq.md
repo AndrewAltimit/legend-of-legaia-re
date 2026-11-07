@@ -91,7 +91,7 @@ music banks) and is acted on by the sequencer; channel/poly aftertouch
 A VLQ is a big-endian sequence of 7-bit groups; the high bit of each
 byte is `1` for "more bytes follow", `0` for the final group. Maximum
 4 bytes per delta. SEQ uses VLQ for delta-times only - meta events
-carry **no** length field (see below). See `legaia_seq::read_vlq`.
+carry **no** length field (see below). See `psx_seq::read_vlq`.
 
 ### Meta events
 
@@ -245,7 +245,7 @@ byte and scatter those into nonsense, so the reading is self-verifying -
 `real_seq_stream_integrity.rs` asserts the roundness precisely to keep that
 falsification standing.
 
-`legaia_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
+`psx_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
 `f64` for inspection. The engine playback clock (`Sequencer`) does **not**
 use this float: it accumulates time as an exact integer in units of
 `sample × ppqn × 1_000_000` and fires an event of delta `d` ticks once the

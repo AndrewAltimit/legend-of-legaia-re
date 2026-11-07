@@ -226,7 +226,7 @@ mod tests {
     }
 
     fn fake_slot(block: &[u8]) -> Vec<u8> {
-        let stream = legaia_lzs::compress(block);
+        let stream = psx_lzs::compress(block);
         assert!(4 + stream.len() <= SLOT_STRIDE);
         let mut slot = Vec::with_capacity(SLOT_STRIDE);
         slot.extend_from_slice(&(block.len() as u32).to_le_bytes());
@@ -237,7 +237,7 @@ mod tests {
 
     fn decode_slot(slot: &[u8]) -> Vec<u8> {
         let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
-        legaia_lzs::decompress(&slot[4..], declared).unwrap()
+        psx_lzs::decompress(&slot[4..], declared).unwrap()
     }
 
     fn record_of(block: &[u8]) -> MonsterRecord {

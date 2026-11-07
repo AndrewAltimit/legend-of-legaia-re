@@ -16,8 +16,8 @@ use super::*;
 use legaia_texture_replace::texture::{ExportFormat, replace_texture_png};
 use legaia_texture_replace::texture_palettes::texture_palettes;
 use legaia_texture_replace::{battle_texture, monster_texture, save_icon};
-use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
-use legaia_tim::multi_palette::{ImportKind, View};
+use psx_tim::encode::{EncodeOptions, decode_png_rgba};
+use psx_tim::multi_palette::{ImportKind, View};
 
 use crate::texture_pack::{self, PackEntry, PackMeta};
 use crate::texture_registry::{self as reg, ReplaceOp, Rgba, ScanCtx, TexCoord, TexRow};
@@ -95,11 +95,11 @@ pub(super) struct DiscScanInput {
 }
 
 pub(super) fn disc_scan_input(image: Vec<u8>) -> Result<DiscScanInput, JsValue> {
-    let prot = legaia_iso::iso9660::read_file_in_image(&image, "PROT.DAT")
+    let prot = psx_iso::iso9660::read_file_in_image(&image, "PROT.DAT")
         .ok_or_else(|| err("PROT.DAT not found in disc image"))?;
-    let blocks = legaia_iso::image::extract_cdname_txt(&image)
+    let blocks = psx_iso::image::extract_cdname_txt(&image)
         .and_then(|t| legaia_prot::cdname::parse_str(&t).ok());
-    let scus = legaia_iso::image::extract_scus(&image);
+    let scus = psx_iso::image::extract_scus(&image);
     drop(image);
     Ok(DiscScanInput { prot, blocks, scus })
 }
@@ -423,9 +423,9 @@ pub fn preview_texture_replace(
                 Ok(o) => o,
                 Err(e) => return fail(&out, format!("{e:#}")),
             };
-            let imp = legaia_tim::multi_palette::import_png(&orig.tim, png, &pals.context, &opts)
+            let imp = psx_tim::multi_palette::import_png(&orig.tim, png, &pals.context, &opts)
                 .map_err(|e| err(format!("{e:#}")))?;
-            let ptim = legaia_tim::parse(&imp.encoded.bytes)
+            let ptim = psx_tim::parse(&imp.encoded.bytes)
                 .map_err(|e| err(format!("re-parse encoded TIM: {e}")))?;
             // Show the result the way the edit was made: through the view it
             // was drawn in, or (strip / indexed) through the page's view.

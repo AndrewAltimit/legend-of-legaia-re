@@ -303,7 +303,7 @@ impl PlayWindowApp {
             let tim = tims[sheet as usize];
             // A palette past the sheet's CLUT bank simply isn't baked; the
             // draw that would sample it is skipped at build time.
-            let Ok(px) = legaia_tim::decode_rgba8(tim, pal as usize) else {
+            let Ok(px) = psx_tim::decode_rgba8(tim, pal as usize) else {
                 continue;
             };
             let (tw, th) = (tim.pixel_width() as u32, tim.pixel_height() as u32);
@@ -395,8 +395,10 @@ impl PlayWindowApp {
     /// STP-set on every non-zero entry, so an STP-free palette, which draws
     /// opaque as retail's GPU draws it, is one that is all zero).
     ///
-    /// One disclosed stand-in: a packet's vertical two-stop colour gradient
-    /// flattens to the stops' mean (the sprite pipeline is one-colour).
+    /// A packet's vertical two-stop colour gradient (the course-title face's
+    /// record carries one) goes out as one draw per display row, each at the
+    /// Gouraud colour of its row: the sprite pipeline carries one colour per
+    /// draw, and the GPU samples one texel row per display row.
     ///
     /// [`OverlayBlendSpan`]: legaia_engine_render::OverlayBlendSpan
     pub(in crate::window) fn muscle_hub_sprite_draws(
@@ -495,10 +497,18 @@ impl PlayWindowApp {
             if dw == 0 || dh == 0 || sw == 0 || sh == 0 {
                 continue;
             }
-            // PSX texture modulation is `texel * c / 128`; the per-vertex
-            // colours are a vertical two-stop gradient, flattened here to
-            // the stops' mean.
-            let tint = |k: usize| (q.rgb[0][k] as f32 + q.rgb[2][k] as f32) / 2.0 / 128.0;
+            // PSX texture modulation is `texel * c / 128`, with `c` the
+            // Gouraud colour of the row: the per-vertex colours are a
+            // vertical two-stop gradient, top corners to bottom corners.
+            let gradient = q.rgb[0] != q.rgb[2];
+            let tint_at = |row: i64| -> [f32; 4] {
+                let span = (dh as i64 - 1).max(1);
+                let ch = |k: usize| {
+                    let (a, b) = (i64::from(q.rgb[0][k]), i64::from(q.rgb[2][k]));
+                    (a + (b - a) * row / span) as f32 / 128.0
+                };
+                [ch(0), ch(1), ch(2), 1.0]
+            };
             // The retail display is the 320x240 frame and the GPU clips to
             // it; the first visit's wall tiles run past it (three 128-wide
             // columns, two 128-high rows), so clip here - the texel window
@@ -514,18 +524,33 @@ impl PlayWindowApp {
             let sy = q.uv[0].1 as i64 + (y0 - dy) * sh as i64 / dh as i64;
             let csw = ((x1 - x0) * sw as i64 / dw as i64).max(1) as u32;
             let csh = ((y1 - y0) * sh as i64 / dh as i64).max(1) as u32;
+            let start = out.len() as u32;
+            if gradient {
+                // One draw per display row, sampling the texel row the GPU
+                // steps to for it.
+                for y in y0..y1 {
+                    let row = y - dy;
+                    let v = q.uv[0].1 as i64 + row * sh as i64 / dh as i64;
+                    out.push(legaia_engine_ui::SpriteDraw {
+                        dst: (x0 as i32, y as i32, (x1 - x0) as u32, 1),
+                        src: (sx as u32, block_y + v as u32, csw, 1),
+                        color: tint_at(row),
+                    });
+                }
+            } else {
+                out.push(legaia_engine_ui::SpriteDraw {
+                    dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
+                    src: (sx as u32, block_y + sy as u32, csw, csh),
+                    color: tint_at(0),
+                });
+            }
             if let Some(abr) = semi_abr {
                 blend.push(legaia_engine_render::OverlayBlendSpan {
-                    start: out.len() as u32,
-                    count: 1,
+                    start,
+                    count: out.len() as u32 - start,
                     abr,
                 });
             }
-            out.push(legaia_engine_ui::SpriteDraw {
-                dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
-                src: (sx as u32, block_y + sy as u32, csw, csh),
-                color: [tint(0), tint(1), tint(2), 1.0],
-            });
         }
         if shade_at >= quads.len()
             && let Some(sh) = shade
@@ -561,6 +586,11 @@ fn shade_row_draws(
     let mut out = Vec::new();
     for row in 0..h {
         let f = top + (bottom - top) * row / h;
+        // The GPU blends at the framebuffer's 5 bits: the shade's Gouraud
+        // value loses its low 3 bits before `B - F` (the packet's draw mode
+        // `0x46` leaves dither off), so an 8-bit `F` would take a whole
+        // 5-bit step more off the wall on most rows.
+        let f = f & !7;
         if f <= 0 {
             continue;
         }

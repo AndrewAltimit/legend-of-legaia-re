@@ -748,9 +748,25 @@ pub struct BattleState {
     pub frame_cost_ring: crate::frame_clock::FrameCostRing,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
+    /// The action state the last ring push was made in and the passes made
+    /// in it before that one (`measured_frame_cost_at`).
+    pub frame_cost_state: Option<(u8, u8)>,
+    /// The step the last pass left for the next one, installed when that
+    /// pass opens its frame (`World::battle_sm_pass_due`): retail waits a
+    /// pass's frame out on the step the pass ran at and only then copies the
+    /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
+    pub pending_frame_step: Option<u8>,
     /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
     /// outranks the arm table and the default.
     pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
+    /// A film's retail `rand()` word per battle frame (`RetailRandTrack`): a
+    /// harness seat the frame driver's pass seats ahead of its draws.
+    pub retail_rand_track: Option<crate::frame_clock::RetailRandTrack>,
+    /// A capture's dealt Death Game table (`0x801FA288`, each `1..=4`): a
+    /// harness seat PROT 0957's arm 0 lands its deal on, after drawing as
+    /// retail did. A capture past that arm holds the deal its replay cannot
+    /// redraw. No play path installs one.
+    pub death_game_deal_seat: Option<[u8; 4]>,
     /// The display tick the capture band's CD read answers on. Retail's `0x6E`
     /// polls `FUN_8003DE7C(1)` and `0x6F` polls `FUN_8003F2B8(1)`, and the camera
     /// walk and the framing's pull-in run on through both
@@ -1151,9 +1167,10 @@ pub struct BattleState {
     pub capture_reseat_bars: Vec<CaptureReseatBars>,
     /// The `rand()` word each coming melee hit's block roll draws from, as
     /// retail's recording of the same strike held it
-    /// (`legaia_engine_capture::strike_deal`). Empty outside that oracle: the
-    /// hit then draws on the world stream as it stands.
-    pub capture_hit_rand: std::collections::VecDeque<u32>,
+    /// (`legaia_engine_capture::strike_deal`), with the display frame the
+    /// recording read it on when the deal times it. Empty outside that
+    /// oracle: the hit then draws on the world stream as it stands.
+    pub capture_hit_rand: std::collections::VecDeque<(u32, Option<u64>)>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1413,7 +1430,11 @@ impl BattleState {
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
+            frame_cost_state: None,
+            pending_frame_step: None,
             retail_step_track: None,
+            retail_rand_track: None,
+            death_game_deal_seat: None,
             capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,

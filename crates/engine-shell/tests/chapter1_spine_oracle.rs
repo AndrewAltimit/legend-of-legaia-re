@@ -4,8 +4,8 @@
 //!
 //! **Part A - retail anchors.** The cataloged playthrough anchors codify the
 //! retail progression through the spine; each is loaded from `saves/library/`
-//! (pcsx-redux `.sstate` via [`legaia_pcsx_redux`], mednafen `.mcr` via
-//! [`legaia_mednafen`] through
+//! (pcsx-redux `.sstate` via [`psx_pcsx_redux`], mednafen `.mcr` via
+//! [`psx_mednafen`] through
 //! [`legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save`])
 //! and its recorded scene / mode (/ position where the loader exposes it) is
 //! asserted. Present anchors are checked; absent ones skip. A `checked >= 1`
@@ -59,7 +59,7 @@ use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save;
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 
 // ---------------------------------------------------------------------
 // Discovery helpers
@@ -143,7 +143,7 @@ fn part_a_spine_anchors_codify_retail_progression() {
         eprintln!("[skip] saves/library missing (capture-gated)");
         return;
     }
-    // legaia_pcsx_redux resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
+    // psx_pcsx_redux resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
     // at the extracted copy if the harness didn't set it.
     if std::env::var_os("LEGAIA_SCUS").is_none() {
         // SAFETY: single-threaded test setup before any save load.
@@ -181,7 +181,7 @@ fn part_a_spine_anchors_codify_retail_progression() {
             eprintln!("[skip] {}: no pcsx save", a.label);
             continue;
         };
-        let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
+        let st = psx_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
         eprintln!(
             "[{}] scene={:?} mode=0x{:02X} pos={:?}",
             a.label,

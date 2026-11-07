@@ -302,16 +302,16 @@ fn upload_block_decodes_4bpp_pixels_through_a_chosen_palette() {
     // Index 0 stays 0x0000 through the STP pass -> fully transparent.
     assert_eq!(&rgba[0..4], &[0, 0, 0, 0]);
     // Index 1 of palette 0 is red 1/31, opaque via the forced STP bit.
-    assert_eq!(&rgba[4..8], &legaia_tim::bgr555_to_rgba8(0x8001));
+    assert_eq!(&rgba[4..8], &psx_tim::bgr555_to_rgba8(0x8001));
     // Nibble order is low-first: texel 1 comes from the low nibble of the
     // second byte pair, i.e. the run is 0,1,2,3,4,5,6,7.
-    assert_eq!(&rgba[7 * 4..8 * 4], &legaia_tim::bgr555_to_rgba8(0x8007));
+    assert_eq!(&rgba[7 * 4..8 * 4], &psx_tim::bgr555_to_rgba8(0x8007));
     // Row 1 is uniformly index 1.
-    assert_eq!(&rgba[8 * 4..9 * 4], &legaia_tim::bgr555_to_rgba8(0x8001));
+    assert_eq!(&rgba[8 * 4..9 * 4], &psx_tim::bgr555_to_rgba8(0x8001));
 
     // Palette 1 repaints the same indices green.
     let green = u.rgba(1).expect("palette 1");
-    assert_eq!(&green[4..8], &legaia_tim::bgr555_to_rgba8(0x8020));
+    assert_eq!(&green[4..8], &psx_tim::bgr555_to_rgba8(0x8020));
     assert_eq!(&green[0..4], &[0, 0, 0, 0], "index 0 stays transparent");
 
     // Out-of-range palettes name the count instead of panicking.
@@ -323,7 +323,7 @@ fn upload_block_decodes_4bpp_pixels_through_a_chosen_palette() {
         .map(|i| if i == 0 { 0 } else { i << 10 })
         .collect();
     let blue = u.rgba_with_palette(&borrowed).expect("borrowed palette");
-    assert_eq!(&blue[4..8], &legaia_tim::bgr555_to_rgba8(0x0400));
+    assert_eq!(&blue[4..8], &psx_tim::bgr555_to_rgba8(0x0400));
     assert!(u.rgba_with_palette(&borrowed[..4]).is_err());
 }
 

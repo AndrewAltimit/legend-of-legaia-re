@@ -5,7 +5,7 @@
 //! Ground truth is the `s4_rimelm_door_transition` anchor: the grid-BFS door-nav
 //! walked Vahn out of his house and a walk-touch warp jumped him to world
 //! `(3264, 3520)` = tile `(25, 27)` (see `docs/tooling/playthrough-coverage.md`).
-//! This test (1) loads that anchor's main RAM through the [`legaia_pcsx_redux`] bridge
+//! This test (1) loads that anchor's main RAM through the [`psx_pcsx_redux`] bridge
 //! and confirms retail parks the player at `(3264, 3520)` in `town01` field mode,
 //! then (2) finds the town01 MAN's `0xA3 0xF8` op whose target decodes to that
 //! position and drives it through the real field VM, asserting the engine emits a
@@ -92,7 +92,7 @@ fn engine_walk_touch_warp_matches_s4_capture() {
     }
     let retail_land = match library_save(S4_FINGERPRINT) {
         Some(path) => {
-            let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load s4 .sstate");
+            let st = psx_pcsx_redux::SaveState::from_path(&path).expect("load s4 .sstate");
             assert_eq!(st.scene_name(), "town01", "S4 anchor scene");
             assert_eq!(st.game_mode(), 0x03, "S4 anchor field mode");
             let (x, z) = st.player_pos().expect("S4 player pos");

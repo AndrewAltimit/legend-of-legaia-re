@@ -315,7 +315,7 @@ struct LoadedCast {
     cast: SummonCast,
     mesh: legaia_tmd::mesh::VramMesh,
     object_ids: Vec<u32>,
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
     /// Decoded FX texture pages, parallel to `cast.fx_slots`.
     fx_pages: Vec<summon_readef::FxPage>,
 }
@@ -391,8 +391,8 @@ impl LegaiaSummons {
     /// Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
     /// TOC. Returns `{"entries": N}` JSON; errors throw.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
-        let prot = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
-            legaia_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
+        let prot = if psx_iso::image::is_mode2_2352_disc(&bytes) {
+            psx_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
                 JsValue::from_str("summons: PROT.DAT not found in this disc image")
             })?
         } else {
@@ -451,7 +451,7 @@ impl LegaiaSummons {
 
         // Mesh + VRAM through the ordinary battle relocation, at the slot the
         // big-summon raw slot's own VRAM targets pin (monster battle slot 2).
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let Some(mesh) = cast
             .mesh
             .battle_render_mesh(summon_readef::SUMMON_VRAM_SLOT, &mut vram)

@@ -14,7 +14,7 @@
     <dt>Accents</dt><dd>One high byte per letter on a CP437-aligned layout; drawn on NTSC by the accent font, or folded to ASCII</dd>
     <dt>Fit</dt><dd>Same-size in place for part of the corpus; <code>--allow-relayout</code> grows scene MANs by whole sectors and imports the rest byte-faithfully</dd>
     <dt>In the browser</dt><dd>The <a href="rom-patcher.html">ROM patcher</a> runs the same lift in the tab; neither disc is uploaded</dd>
-    <dt>Code</dt><dd><code>legaia_translate::lift</code>, <code>legaia_translate::diff</code>; disc-level relayout <code>legaia_iso::relayout</code></dd>
+    <dt>Code</dt><dd><code>legaia_translate::lift</code>, <code>legaia_translate::diff</code>; disc-level relayout <code>psx_iso::relayout</code></dd>
   </dl>
   <div class="cli"><code>legaia-patcher translate lift-official --from &lt;PAL-FR.bin&gt; --target &lt;USA.bin&gt; -o fr.yaml</code></div>
   <div class="callout callout-warn">
@@ -226,7 +226,7 @@
     </svg>
     <figcaption>The whole reference graph reduces to one rule, so the relayout is a mechanical cascade rather than a search. The PROT entry index space is preserved, so every index-keyed randomizer edit still resolves afterwards.</figcaption>
   </figure>
-  <p>The disc layer is <code>legaia_iso::relayout::grow_prot_dat</code> (generic ISO 9660 + ECMA-130), driven by <code>DiscPatcher::grow_prot_entries</code>. Above it the importer inserts the sectors after the MAN, shifts the later sub-assets and bumps their descriptor offsets. What the rewriter still refuses is a handful of keyed lines whose <code>0x1F &hellip; 0x00</code> framing is a coincidence inside an instruction's operands; the importer skips them with a diagnostic.</p>
+  <p>The disc layer is <code>psx_iso::relayout::grow_prot_dat</code> (generic ISO 9660 + ECMA-130), driven by <code>DiscPatcher::grow_prot_entries</code>. Above it the importer inserts the sectors after the MAN, shifts the later sub-assets and bumps their descriptor offsets. What the rewriter still refuses is a handful of keyed lines whose <code>0x1F &hellip; 0x00</code> framing is a coincidence inside an instruction's operands; the importer skips them with a diagnostic.</p>
   <p>The raw corpus has no residual: every raw line lives in the uncompressed MAN leading one of the ten <a href="../formats/data-field.html">streaming dungeon scenes</a>, which the importer rewrites with the same relocator. Growth lands in the entry's trailing sector slack when it fits (a same-size write) and otherwise in the relayout, bounded by the loader's <code>0x62C00</code>-byte asset arena with 64 KiB of headroom.</p>
   <h3 id="in-the-browser">In the browser</h3>
   <p>The <a href="rom-patcher.html">ROM patcher</a> offers the lift as a second language path: pick the official translation from your own PAL disc, supply it beside your USA disc, and <code>lift_official_pack(usa, pal, fold_accents)</code> runs in the tab. Neither disc is uploaded; the lifted pack lives in page memory and feeds straight into the patch with the same coverage report every pack gets. Folding is on by default there, and the relayout is the page's <em>give translated dialog more room</em> checkbox. Without it, roughly a third of the dialog corpus lands in place; the rest is reported, never dropped quietly.</p>

@@ -19,7 +19,7 @@
 //!   the primitive dispatch table resident in the image.
 //! - [`scenarios`] - the capture-scenario manifest (`scripts/scenarios.toml`).
 //!
-//! The container readers `legaia-mednafen` and `legaia-pcsx-redux` sit on
+//! The container readers `psx-mednafen` and `psx-pcsx-redux` sit on
 //! this crate; it depends on neither.
 
 pub mod bisect;

@@ -7,8 +7,8 @@ use legaia_actor_formats::battle_char_assembly::decode_record0;
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_core::world::World;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

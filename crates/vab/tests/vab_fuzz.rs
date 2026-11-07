@@ -5,7 +5,7 @@
 //! here is hand-constructed synthetic data - zero real game bytes - and
 //! the suite passes with `LEGAIA_DISC_BIN` unset.
 
-use legaia_vab::{
+use psx_vab::{
     PROGRAMS_TABLE_SIZE, TONE_SIZE, TONES_PER_PROGRAM, VAB_HEADER_SIZE, VAB_MAGIC, VAG_BLOCK_BYTES,
     VAG_TABLE_ENTRIES, decode_vag, find_vabs, parse, parse_header,
 };

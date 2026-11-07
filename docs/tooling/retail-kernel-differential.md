@@ -14,7 +14,7 @@ hand reading between the two sides. No Sony bytes are committed; without
 `LEGAIA_DISC_BIN` the tests skip.
 
 ```bash
-cargo test -p legaia-retail-exec --profile dev-fast --test integration
+cargo test -p psx-retail-exec --profile dev-fast --test integration
 ```
 
 ## What it can run
@@ -206,6 +206,8 @@ The field VM's state arms close with the host answering what clear RAM answers: 
 
 The hooked fish `FUN_801D4004` with the gauge's reel arms matches over whole fights at every species, rod and frame step.
 
+The fishing line's clip `FUN_801D56E4` matches `clip_segment_2d` over random segments against the line's own rectangle and random ones (`fishing_line_clip`), the rectangle read off the scratchpad halfwords `0x1F800388..0x1F80038E`.
+
 The Seru side-effect stager `FUN_801F3D3C` found the port rolling the scripted bypass on the first enemy the cast targeted, where the bytes read the formation's first record whoever is targeted and whether that seat stands, and comparing a group cast's first target, where the bytes walk to the first seat with HP left and stage with no compare when there is none.
 
 Reading the shop's quantity steppers for a differential turned up the word they step on: the window kernel's cursor auto-repeat `FUN_80035C24` had no port, so no list in the game repeated on a held direction, and buying ninety-nine of anything took ninety-eight presses or nine and eight. The steppers' own arithmetic reads the same as the port's. The inn's restore op `4C 82` writes exactly the two HP and MP words the port writes.
@@ -380,4 +382,37 @@ cast on a member already at full HP, which retail's confirm refuses through the 
 The field walk-regen tick `FUN_801D0B90` (PROT 0897) matches `tick_walk_regen` over the present party's
 records: the step counter, the HP / MP / AP Walk bumps with their clamps (a current above its cap snaps
 down), a fallen member's bump, and the Incense window's wear-off edge with its event pointer and flag.
+
+The cast arms whose host draws `rand()` for them, each run through its arm off the module image, found four
+draw-order defects. PROT 0941's Steal (`FUN_801F730C`) opens a party victim's draw with a `rand()` gate
+(`0x801F779C`) the port skipped, and a monster robbing a monster raises a line (`"`" + name + the module's
+`0x801F83E0` text) the port left blank. PROT 0940's split (`FUN_801F78B8`) throws its coin only for `0xAE`,
+where the host drew for `0x50` too; it copies the clone's HP off the caster before the coin (`0x801F8090`), so
+a weakened caster left both halves on 1 HP in the port, and it zeroes the weakened caster's MP. PROT 0964's
+Element Change (`FUN_801F88EC`) re-draws only while the draw repeats the last, where the host pre-drew 33. PROT
+0956's Water Hazard (`FUN_801F7298`) draws each seat's damage and then its Venom before the next seat, where the
+host rolled the whole row's damage first. The attack ring's builder `FUN_801D8A88` and step `FUN_801D8D00`
+match.
+
+A second pass over the same hosts found three more. Water Hazard's monster leg sweeps the whole monster row
+whatever single seat the code names, where the port struck the one seat and rolled neither damage nor Venom on
+that leg. PROT 0915's Mushura chase trades its target with `rand() % 4 + 3` redrawn on a repeat, over all four
+monster seats, where the port drew once from the other living seats. PROT 0907's Nighto skips the resist throw
+for an immune target (`0x801F6C20`), where the host drew it anyway. PROT 0922's crystal deal and PROT 0955's
+Void Accessories and PROT 0957's Death Game deals match (the first by test, the other two by their disassembly).
+
+PROT 0934's Ozma, arm `0x18` run pass by pass against `World::summon_stager_tick` with `FUN_801DD0AC`
+live beneath both sides (`ozma_ladder`), found the arm drawing its spray's six `rand()`s at its head
+where the port seated the spray after the module's tick, so every ladder hit rolled off different draws;
+and each ladder roll going without the finisher's spell XP and spirit, where every `FUN_801DD0AC` call
+runs `FUN_801DDB30`. The same bare roll sat in Mule's wave, and the fold threw away what the pre-hits had
+banked: it took `module_hit_xp` and then overwrote it with the inline grant. Kiss of Death's arm 4
+(`kiss_of_death`) matches `kiss_of_death_tick` on both legs, the refund and a Stoned victim's skip.
+
+Mule's arm 16 against the same seat (`mule_wave`) found the wave walking every monster seat to `ctx[+1]` and
+testing HP inside the loop (`0x801F7DEC`), so a fallen seat takes the skip path, losing its staged clip
+(`0x801F80A0`) and riding the lift; the port walked the living row only. Its draws and rolls match. A sweep of
+the slot-B images (`summon_roll_sites`) finds every `jal FUN_801DD0AC` in `0903..0966`, thirty-two in the
+images' own code and two in inherited tails, and holds each to the port routine that rolls it through the
+finisher. The encounter counter's scene-entry top-up (`0x8003AC78..0x8003ACB4`, `encounter_top_up`) matches.
 

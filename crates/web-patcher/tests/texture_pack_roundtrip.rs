@@ -18,11 +18,11 @@ use std::fs;
 
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_texture_replace::texture::TextureTarget;
-use legaia_tim::encode::EncodeOptions;
 use legaia_web_patcher::texture_pack::{
     EntryStatus, PackEntry, PackMeta, from_json, to_json, verify,
 };
 use legaia_web_patcher::texture_registry::{self as reg, Rgba, ScanCtx, TIER_RAW, TexRow};
+use psx_tim::encode::EncodeOptions;
 
 fn disc() -> Option<Vec<u8>> {
     let path = env::var("LEGAIA_DISC_BIN").ok()?;
@@ -33,7 +33,7 @@ fn disc() -> Option<Vec<u8>> {
 }
 
 fn prot_and_spans(image: &[u8]) -> (Vec<u8>, Vec<(u64, u64, u32)>) {
-    let prot = legaia_iso::iso9660::read_file_in_image(image, "PROT.DAT").expect("PROT.DAT");
+    let prot = psx_iso::iso9660::read_file_in_image(image, "PROT.DAT").expect("PROT.DAT");
     let archive = legaia_prot::archive::Archive::from_bytes(prot.clone()).expect("TOC");
     let spans = archive
         .entries
@@ -72,7 +72,7 @@ fn png_of(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
     ));
     fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("t.png");
-    legaia_tim::write_png(&path, w, h, rgba).expect("write png");
+    psx_tim::write_png(&path, w, h, rgba).expect("write png");
     let bytes = fs::read(&path).expect("read png");
     let _ = fs::remove_file(&path);
     let _ = fs::remove_dir(&dir);
@@ -217,7 +217,7 @@ fn re_importing_onto_an_already_patched_texture_is_caught() {
         lzs_section: None,
         offset: row.coord.offset,
     };
-    let (w, h, rgba) = legaia_tim::encode::decode_png_rgba(&png).expect("our own png");
+    let (w, h, rgba) = psx_tim::encode::decode_png_rgba(&png).expect("our own png");
     legaia_texture_replace::texture::replace_texture(
         &mut patcher,
         &target,

@@ -10,7 +10,7 @@ use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_di
 use legaia_engine_menus::item_bag::ItemBag;
 use legaia_engine_menus::menu_item_category::parse_category_table;
 use legaia_game_tables::equip_stats::EquipStatTable;
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const SCAN: u32 = 0x801C_F88C;

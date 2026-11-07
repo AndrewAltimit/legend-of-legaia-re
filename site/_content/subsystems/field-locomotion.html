@@ -165,7 +165,7 @@
 
 <section class="doc-section" id="vertical-settle" data-doc="vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878">
   <h2>Height: two floor models</h2>
-  <p>The walk controller only writes X and Z. After it commits, a second controller re-samples the floor under the new position and glides Y toward it; a third probes ahead along the last step and starts a scripted hop when the floor rises a ledge.</p>
+  <p>The walk controller only writes X and Z. After it commits, a second controller re-samples the floor under the new position and glides Y toward it, 12 units a vsync; a third probes ahead along the last step and starts a scripted hop when the floor rises a ledge. The glide runs under a script's movement lock too, so a player a cutscene walks up a stair climbs it the same way.</p>
   <table class="data-table">
     <thead><tr><th>Tile word bit <code>0x800</code></th><th>Model</th><th>Used for</th></tr></thead>
     <tbody>

@@ -10,9 +10,9 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::extract_prot_dat;
 use legaia_prot::toc_index::parse_prot_toc;
 use legaia_web_viewer::player_anm::{bundle_json, corpus_record_meta};
+use psx_iso::image::extract_prot_dat;
 use std::env;
 
 fn prot_entry(prot: &[u8], index: u32) -> Option<&[u8]> {
@@ -127,7 +127,7 @@ fn field_glb_bakes_the_locomotion_bank() {
     let tmd = legaia_tmd::parse(&tmd_bytes).expect("field TMD");
     let (mesh, object_ids, shading) =
         legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     legaia_actor_formats::field_char_textures::parse(raw)
         .expect("field textures")
         .upload_to_vram(&mut vram, false);
@@ -206,7 +206,7 @@ fn battle_glb_bakes_the_1203_bank() {
         let tmd = legaia_tmd::parse(&tmd_bytes).expect("battle TMD");
         let (mesh, object_ids) =
             legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &tmd_bytes);
-        let vram = legaia_tim::Vram::new();
+        let vram = psx_tim::Vram::new();
         let anims: Vec<(String, _)> = (0..bo::ACTIONS_PER_FIGHTER)
             .map(|k| {
                 let rec = slot * bo::ACTIONS_PER_FIGHTER + k;

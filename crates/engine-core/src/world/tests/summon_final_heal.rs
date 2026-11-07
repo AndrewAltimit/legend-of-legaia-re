@@ -431,6 +431,23 @@ fn a_waived_fold_banks_the_xp_its_modules_rolls_earned() {
     assert_eq!(world.casting.module_hit_xp, 0, "banked once");
 }
 
+/// A fold that is not waived adds to what the module's own rolls earned: Meta's,
+/// Terra's and Palma's pre-hits and Ozma's ladder each ran the finisher's XP
+/// tail (`FUN_801DD0AC` calls `FUN_801DDB30` on every roll, `0x801DD478`), so
+/// the fold's own hits bank on top of them, not in their place.
+#[test]
+fn a_folded_cast_banks_its_modules_rolls_beside_its_own() {
+    for id in [0x81u8, 0x9E, 0xA0] {
+        let (mut plain, def) = summon_xp_world_for(id, 4000, 4000);
+        let (mut pre, _) = summon_xp_world_for(id, 4000, 4000);
+        plain.cast_spell_on_slots(0, &def, &[1]);
+        pre.casting.module_hit_xp = 7;
+        pre.cast_spell_on_slots(0, &def, &[1]);
+        assert_eq!(xp_of(&pre, id), xp_of(&plain, id) + 7, "spell {id:#04X}");
+        assert_eq!(pre.casting.module_hit_xp, 0, "banked once");
+    }
+}
+
 /// PROT 0918's hit stages no clip: the fold lands its HP and leaves the
 /// victim's reaction channel alone.
 #[test]
@@ -442,4 +459,23 @@ fn a_quiet_fold_lands_its_hp_without_a_reaction() {
     world.cast_spell_on_slots(0, &def, &[1]);
     assert!(world.actors[1].battle.hp < before);
     assert!(world.actors[1].battle_reaction_entry.is_none());
+}
+
+/// Inside the summon band the hit banks its XP but the level check waits for
+/// state `0x36` (`jal 0x801E70BC` on the band's way out), so the banner rises
+/// after the module's last arm, not on the hit's pass.
+#[test]
+fn the_band_defers_the_level_check_to_its_return() {
+    let mut world = summon_xp_world(50, 4000);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
+    world.battle_ctx.action_state = 0x35;
+    world.cast_spell_on_slots(0, &gimard_spell_def(), &[1]);
+    assert!(world.drain_magic_level_ups().is_empty());
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0);
+    world.run_summon_magic_level_check();
+    assert_eq!(world.drain_magic_level_ups(), vec![(0, 0x81, 2)]);
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0x65);
 }

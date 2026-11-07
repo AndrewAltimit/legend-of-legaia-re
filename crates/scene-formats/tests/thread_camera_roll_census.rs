@@ -168,7 +168,7 @@ fn census(resume: bool) -> Option<Census> {
         if start >= bytes.len() {
             continue;
         }
-        let Ok((man, _)) = legaia_lzs::decompress_tracked(&bytes[start..], d.size as usize) else {
+        let Ok((man, _)) = psx_lzs::decompress_tracked(&bytes[start..], d.size as usize) else {
             continue;
         };
         if man.len() as u32 != d.size {

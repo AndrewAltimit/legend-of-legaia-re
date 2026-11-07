@@ -150,8 +150,8 @@ pub(super) fn begin_chip_elapsed(x: i32) -> Option<u8> {
 /// (`koru_strip_forced`: the tables hold the cap at rest and five pixels
 /// short, the display shows it ten short).
 pub(super) fn round_prompt_pool_seat(ram: &[u8], step: u8) -> Option<HudGlideSeat> {
-    use legaia_ram_image::extract::PSX_RAM_KSEG0;
-    use legaia_ram_image::prim_pool::{self, Prim};
+    use psx_ram_image::extract::PSX_RAM_KSEG0;
+    use psx_ram_image::prim_pool::{self, Prim};
     let oldest = prim_pool::find_ot_arrays(ram, PSX_RAM_KSEG0, 64)
         .iter()
         .filter_map(|ot| {

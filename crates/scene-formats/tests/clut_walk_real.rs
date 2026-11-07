@@ -235,7 +235,7 @@ fn slot0_tim_clut_rows(slot0: &[u8]) -> Vec<u16> {
         if bo >= slot0.len() {
             continue;
         }
-        if let Ok(tim) = legaia_tim::parse(&slot0[bo..])
+        if let Ok(tim) = psx_tim::parse(&slot0[bo..])
             && let Some(c) = tim.clut.as_ref()
         {
             rows.push(c.fb_y);

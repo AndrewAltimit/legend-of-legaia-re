@@ -27,9 +27,9 @@ use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_world_views::camera_view::resolve_field_camera;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::game_anchors;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::game_anchors;
 
 const RAM_BASE: u32 = 0x8000_0000;
 const GTE_H: u32 = 0x8007_B6F4;

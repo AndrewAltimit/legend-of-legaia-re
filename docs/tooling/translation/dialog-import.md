@@ -43,7 +43,7 @@ Each line is first placed on its record's clean script walk
 
 A whole scene's edits must recompress into the MAN's original LZS footprint
 at the same LBA. Text compresses well, and the repack falls back to an
-optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
+optimal-parse LZS encoder (`psx_lzs::compress_optimal` - exact
 shortest-encoding DP, including back-references into the decoder's initial
 zero window) when the fast greedy parse just misses the budget.
 

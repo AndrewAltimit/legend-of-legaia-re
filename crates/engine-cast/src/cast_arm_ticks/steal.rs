@@ -85,6 +85,43 @@ pub fn steal_pick_bag_slot(
     None
 }
 
+/// The party-seat half of PROT 0941's resolution: one `rand()` **gate**
+/// first (`jal 0x80056798; beq v0, zero` at `0x801F779C..0x801F77A4`), where
+/// a zero draw takes nothing and goes straight to the "nothing was stolen"
+/// line, then [`steal_pick_bag_slot`]'s draw. The gate is a draw of its own,
+/// so a steal that skipped it would shift every later roll of the battle by
+/// one. Fatal Decision's steal (PROT 0954, `0x801F8164`) opens with the same
+/// gate.
+pub fn steal_party_draw(
+    bag: &[StealBagSlot],
+    min_slot: Option<u8>,
+    mut rand: impl FnMut() -> u32,
+    item_valid: impl Fn(u8) -> bool,
+) -> Option<u8> {
+    if rand() == 0 {
+        return None;
+    }
+    steal_pick_bag_slot(bag, min_slot, rand, item_valid)
+}
+
+/// The message bar line PROT 0941's Steal composes for `outcome`, with the
+/// item's name from `name`.
+///
+/// Both item arms build `"`" + name + suffix` into the module's buffer
+/// (`FUN_8003CA78` then two `FUN_8003CAC4`): the party arm's suffix is
+/// `0x801F83B4`, the monster arm's (`0x801F7AC4`) is `0x801F83E0`, the text
+/// meant to open the line, so a monster robbing a monster reads with its
+/// opener at the end. The two empty arms point the bar at `0x801F83A0` /
+/// `0x801F83C4`.
+pub fn steal_caption(outcome: StealOutcome, name: impl Fn(u8) -> String) -> String {
+    match outcome {
+        StealOutcome::FromBag { item } => format!("`{}' was stolen.", name(item)),
+        StealOutcome::BagEmpty => "Nothing was stolen.".to_string(),
+        StealOutcome::FromMonster { hit: false, .. } => "Failed to steal an item.".to_string(),
+        StealOutcome::FromMonster { item, .. } => format!("`{}You stole `", name(item)),
+    }
+}
+
 /// The `0x400` rejection budget the loop counts down
 /// (`addiu v0, v0, 1; sltiu v0, v0, 0x400`).
 pub const STEAL_DRAW_BUDGET: u32 = 0x400;

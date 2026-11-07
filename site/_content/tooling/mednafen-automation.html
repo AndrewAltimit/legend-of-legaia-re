@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Input</dt><dd>Mednafen <code>.mc{0..9}</code> save states under <code>~/.mednafen/mcs/</code>; PCSX-Redux <code>.sstate</code> where marked</dd>
-    <dt>Library + CLI</dt><dd><code>crates/mednafen</code> (<code>legaia_mednafen</code>) and the <code>mednafen-state</code> binary; orchestrators in <code>scripts/mednafen/</code></dd>
+    <dt>Library + CLI</dt><dd><code>crates/mednafen</code> (<code>psx_mednafen</code>) and the <code>mednafen-state</code> binary; orchestrators in <code>scripts/mednafen/</code></dd>
     <dt>Manifest</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a> - names each state by <strong>label</strong>, never slot number; shared with the PCSX-Redux harness</dd>
     <dt>Unit of analysis</dt><dd>A <em>sister pair</em> of states bracketing one gameplay event</dd>
     <dt>Beyond RAM</dt><dd>The <code>GPU</code> section holds VRAM, main RAM holds the frame's display list, the <code>SPU</code> section feeds the audio oracle</dd>
@@ -176,7 +176,7 @@ end = 0x801F3818</code></pre>
   <table>
     <thead><tr><th>Item</th><th>Address / function</th><th>What it proves</th><th>Source</th></tr></thead>
     <tbody>
-      <tr><td>Game anchors</td><td>scene name <code>0x8007050C</code>, mode <code>0x8007B83C</code>, player pointer <code>0x8007C364</code></td><td>A state can be identified from its bytes alone</td><td><code>legaia_ram_image::game_anchors</code>, <a href="../reference/memory-map.html">memory map</a></td></tr>
+      <tr><td>Game anchors</td><td>scene name <code>0x8007050C</code>, mode <code>0x8007B83C</code>, player pointer <code>0x8007C364</code></td><td>A state can be identified from its bytes alone</td><td><code>psx_ram_image::game_anchors</code>, <a href="../reference/memory-map.html">memory map</a></td></tr>
       <tr><td>Widget class table</td><td><code>0x800732A4</code> in <code>SCUS_942.54</code></td><td>Both SCUS sprite draw routines copy <code>(u,v,w,h)</code> verbatim, so the sprite join is exact</td><td><a href="../subsystems/battle.html">battle - widget class table</a></td></tr>
       <tr><td>Per-prim renderer dispatch</td><td><code>FUN_80043390</code>; tables <code>0x8007657C</code>, <code>0x801F8968</code></td><td>Which routine draws each primitive mode</td><td><code>crates/mednafen/tests/dispatch_table.rs</code></td></tr>
       <tr><td>Save-state layout</td><td>Mednafen section table; <code>&amp;GPURAM[0][0]</code> blob</td><td>Where main RAM and VRAM sit in the file</td><td><code>crates/mednafen</code> README</td></tr>

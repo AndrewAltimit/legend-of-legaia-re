@@ -15,7 +15,7 @@
 //! the *post-resolve* state from a save snapshot.
 //!
 //! Inputs:
-//!   * 2 MiB PSX main-RAM blob (from ``legaia_mednafen::SaveState::main_ram``)
+//!   * 2 MiB PSX main-RAM blob (from ``psx_mednafen::SaveState::main_ram``)
 //!   * Disc-extracted, LZS-decompressed MAN buffer for the kingdom
 //!   * Kingdom TMD-pack metadata (load base + per-slot byte offsets;
 //!     produced by the existing extractor pipeline)
@@ -36,7 +36,7 @@ use std::ops::Range;
 pub const PSX_RAM_KSEG0: u32 = 0x8000_0000;
 
 /// Size of the physical PSX main RAM that ``mednafen-state extract``
-/// dumps. The legaia-mednafen ``main_ram`` helper returns this many
+/// dumps. The psx-mednafen ``main_ram`` helper returns this many
 /// bytes.
 pub const PSX_RAM_SIZE: usize = 2 * 1024 * 1024;
 

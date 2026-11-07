@@ -720,9 +720,12 @@ impl World {
     /// clamped to `HP - 1`, the flinch `+0x1EF` (else `+0x1F0`) staged with
     /// the restage bits `5`, and per monster a fade over `0x10` frames. The
     /// fourth hit, at threshold `0`, is the band's fold on the arm's pass.
+    /// Each ladder roll trains the spell and fills the victim's spirit gauge
+    /// as the fold's does ([`Self::summon_module_roll`]).
     ///
     /// Not carried: the damage tallies the quartered part is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target).
+    /// REF: FUN_801DD0AC (each ladder roll, through [`Self::summon_module_roll`])
     fn ozma_hit_ladder(&mut self, passed: bool, monster_count: u8, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         for (e, _) in self.ra_seru_row(monster_count) {
@@ -750,12 +753,15 @@ impl World {
             if self.cast_view(s).flags & FLAG_NON_TARGETABLE != 0 {
                 continue;
             }
-            let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+            // The whole roll through the finisher, as every `FUN_801DD0AC`
+            // call runs it (`0x801DD478`): the spell XP, the victim's spirit
+            // and the struck mark land on the unquartered roll.
+            let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
                 continue;
             };
             // The readout flag kept down (`0x801F8E30`).
             self.battle.combo_cluster_held = true;
-            let hit = u32::from(roll >> 2) + 0x40 + self.next_rand() % 0x40;
+            let hit = (roll >> 2) + 0x40 + self.next_rand() % 0x40;
             self.battle
                 .hit_fx
                 .push(legaia_engine_battle::battle_events::BattleHitFx {

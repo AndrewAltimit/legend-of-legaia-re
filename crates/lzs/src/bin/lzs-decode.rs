@@ -114,7 +114,7 @@ fn main() -> Result<()> {
 
 /// Graceful LZS decode: emit up to `max_out` bytes from `input[start..]` into
 /// `out` (cleared first), stopping at the cap or at EOF (no error). Mirrors
-/// `legaia_lzs::decompress` byte-for-byte; `out` + `window` are caller-owned so a
+/// `psx_lzs::decompress` byte-for-byte; `out` + `window` are caller-owned so a
 /// brute loop reuses them instead of allocating per offset.
 fn decode_into(
     input: &[u8],
@@ -226,7 +226,7 @@ fn raw(input: &PathBuf, size: usize, skip: usize, out: Option<&PathBuf>) -> Resu
         bail!("--skip {} larger than input ({}b)", skip, raw.len());
     }
     let body = &raw[skip..];
-    let decoded = legaia_lzs::decompress(body, size)?;
+    let decoded = psx_lzs::decompress(body, size)?;
     eprintln!(
         "[ok] body={}b output={}b ratio={:.2}x",
         body.len(),
@@ -249,7 +249,7 @@ fn read_input(path: &PathBuf) -> Result<Vec<u8>> {
 
 fn container(input: &PathBuf, out_dir: &PathBuf) -> Result<()> {
     let raw = read_input(input)?;
-    let c = legaia_lzs::parse_container(&raw)?;
+    let c = psx_lzs::parse_container(&raw)?;
     eprintln!(
         "[container] meta=[0x{:08X}, 0x{:08X}]  sections={}",
         c.header_meta[0],
@@ -259,7 +259,7 @@ fn container(input: &PathBuf, out_dir: &PathBuf) -> Result<()> {
     std::fs::create_dir_all(out_dir)?;
     for (i, sec) in c.sections.iter().enumerate() {
         let body = &raw[sec.byte_offset as usize..];
-        let decoded = legaia_lzs::decompress(body, sec.size as usize)?;
+        let decoded = psx_lzs::decompress(body, sec.size as usize)?;
         let stem = input
             .file_stem()
             .unwrap_or_default()
@@ -280,7 +280,7 @@ fn container(input: &PathBuf, out_dir: &PathBuf) -> Result<()> {
 
 fn probe(input: &PathBuf) -> Result<()> {
     let raw = read_input(input)?;
-    match legaia_lzs::parse_container(&raw) {
+    match psx_lzs::parse_container(&raw) {
         Ok(c) => {
             eprintln!(
                 "[container ok] meta=[0x{:08X}, 0x{:08X}]  sections={}",
@@ -297,7 +297,7 @@ fn probe(input: &PathBuf) -> Result<()> {
             // Try decompressing each - only success if every section decodes
             for (i, sec) in c.sections.iter().enumerate() {
                 let body = &raw[sec.byte_offset as usize..];
-                match legaia_lzs::decompress(body, sec.size as usize) {
+                match psx_lzs::decompress(body, sec.size as usize) {
                     Ok(_) => eprintln!("  s{:02} decompressed cleanly", i),
                     Err(e) => eprintln!("  s{:02} FAILED: {}", i, e),
                 }
@@ -328,7 +328,7 @@ fn scan(dir: &PathBuf) -> Result<()> {
             Ok(r) => r,
             Err(_) => continue,
         };
-        let decoded = match legaia_lzs::decompress_container_strict(&raw) {
+        let decoded = match psx_lzs::decompress_container_strict(&raw) {
             Ok(d) => d,
             Err(_) => continue,
         };
@@ -377,8 +377,8 @@ fn audit(dir: &PathBuf, tsv: Option<&PathBuf>) -> Result<()> {
         // First try strict; if that rejects, see if lenient parses anything
         // non-trivial - that bucket is "real LZS-shaped data with non-standard
         // section layout" (e.g., music_01).
-        let strict = legaia_lzs::decompress_container_strict(&raw);
-        let lenient_total = legaia_lzs::decompress_container(&raw)
+        let strict = psx_lzs::decompress_container_strict(&raw);
+        let lenient_total = psx_lzs::decompress_container(&raw)
             .map(|v| v.iter().map(|d| d.len()).sum::<usize>())
             .ok();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();

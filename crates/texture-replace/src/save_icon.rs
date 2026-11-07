@@ -11,7 +11,7 @@
 //!
 //! Two properties of the sheet defeat the generic texture path:
 //!
-//! * **The palette is per tile.** [`legaia_tim::encode::encode_replacement`]
+//! * **The palette is per tile.** [`psx_tim::encode::encode_replacement`]
 //!   replicates a rebuilt palette into *every* CLUT row, which is correct for
 //!   a normal multi-palette texture and catastrophic here - editing one
 //!   portrait would repaint the other fifteen.
@@ -113,7 +113,7 @@ fn encode_tile(
         .as_chunks::<4>()
         .0
         .iter()
-        .map(|c| legaia_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], c[3]]))
+        .map(|c| psx_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], c[3]]))
         .collect();
 
     // Distinct colours, most frequent first - frequency decides who keeps a
@@ -239,7 +239,7 @@ pub fn preview_slot(
     let mut out = Vec::with_capacity(TILE_SIZE * TILE_SIZE * 4);
     for byte in pixels.iter() {
         for nib in [byte & 0x0F, byte >> 4] {
-            out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(palette[nib as usize]));
+            out.extend_from_slice(&psx_tim::bgr555_to_rgba8(palette[nib as usize]));
         }
     }
     Ok(SlotPreview {
@@ -422,7 +422,7 @@ mod tests {
     fn save_icon_encode_tile_reuses_the_slot_a_colour_already_has() {
         let pal = base_palette();
         // Paint the whole tile in the colour that already sits in slot 7.
-        let rgba: Vec<u8> = legaia_tim::bgr555_to_rgba8(pal[7])
+        let rgba: Vec<u8> = psx_tim::bgr555_to_rgba8(pal[7])
             .iter()
             .copied()
             .cycle()
@@ -440,7 +440,7 @@ mod tests {
     fn save_icon_encode_tile_places_new_colours_in_free_slots_only() {
         let pal = base_palette();
         // Two colours: one already in slot 3, one brand new.
-        let known = legaia_tim::bgr555_to_rgba8(pal[3]);
+        let known = psx_tim::bgr555_to_rgba8(pal[3]);
         let mut rgba = solid(known);
         for i in 0..4 {
             rgba[i * 4..i * 4 + 4].copy_from_slice(&[255, 255, 255, 255]);
@@ -454,7 +454,7 @@ mod tests {
         assert_ne!(new_slot, 3);
         assert_eq!(
             palette[new_slot],
-            legaia_tim::encode::rgba8_to_bgr555([255, 255, 255, 255])
+            psx_tim::encode::rgba8_to_bgr555([255, 255, 255, 255])
         );
         // Exactly one palette slot moved.
         let changed = palette

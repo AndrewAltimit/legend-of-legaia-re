@@ -30,7 +30,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-legaia-iso.workspace = true
+psx-iso.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }

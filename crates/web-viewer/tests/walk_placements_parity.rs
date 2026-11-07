@@ -14,9 +14,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_iso::image::{extract_cdname_txt, extract_prot_dat};
 use legaia_prot::toc_index::parse_prot_toc;
 use legaia_web_viewer::build_walk_placements;
+use psx_iso::image::{extract_cdname_txt, extract_prot_dat};
 use std::env;
 use std::fs;
 

@@ -322,13 +322,13 @@ fn scene_carrier_pack(buf: &[u8]) -> Option<legaia_scene_formats::field_pack::Sc
         // Bare form: the members pick the magic, they just have to agree.
         None => None,
     };
-    let first = legaia_bytes::u32_le(buf, pack.members.first()?.start)?;
+    let first = psx_bytes::u32_le(buf, pack.members.first()?.start)?;
     let want = want.unwrap_or(first);
     if want != MEMBER_MAGIC_TIM && want != MEMBER_MAGIC_TMD {
         return None;
     }
     for r in &pack.members {
-        if legaia_bytes::u32_le(buf, r.start) != Some(want) {
+        if psx_bytes::u32_le(buf, r.start) != Some(want) {
             return None;
         }
     }

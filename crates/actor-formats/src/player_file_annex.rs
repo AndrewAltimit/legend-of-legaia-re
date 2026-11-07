@@ -66,7 +66,7 @@ pub fn chain(buf: &[u8]) -> Option<Chain> {
     if buf.len() < 0x10 {
         return None;
     }
-    let word = legaia_bytes::u32_le(buf, 0)?;
+    let word = psx_bytes::u32_le(buf, 0)?;
     if (word >> 24) != 0 {
         return None;
     }
@@ -74,9 +74,9 @@ pub fn chain(buf: &[u8]) -> Option<Chain> {
     if table_offset < 0x10 || table_offset + 12 > buf.len() {
         return None;
     }
-    let clut_a = legaia_bytes::u32_le(buf, 4)?;
-    let clut_b = legaia_bytes::u32_le(buf, 8)?;
-    let budget = legaia_bytes::u32_le(buf, 12)?;
+    let clut_a = psx_bytes::u32_le(buf, 4)?;
+    let clut_b = psx_bytes::u32_le(buf, 8)?;
+    let budget = psx_bytes::u32_le(buf, 12)?;
     if clut_a == 0 || clut_a >= clut_b || clut_b >= budget {
         return None;
     }
@@ -85,9 +85,9 @@ pub fn chain(buf: &[u8]) -> Option<Chain> {
     let mut expected: Option<u32> = None;
     let mut p = table_offset;
     while p + 12 <= buf.len() && rows.len() < 256 {
-        let id = legaia_bytes::u32_le(buf, p)?;
-        let offset = legaia_bytes::u32_le(buf, p + 4)?;
-        let size = legaia_bytes::u32_le(buf, p + 8)?;
+        let id = psx_bytes::u32_le(buf, p)?;
+        let offset = psx_bytes::u32_le(buf, p + 4)?;
+        let size = psx_bytes::u32_le(buf, p + 8)?;
         if size == 0 {
             if id != 0 || offset != 0 {
                 return None;

@@ -59,7 +59,7 @@ pub const OCEAN_ANIM_FRAME_COUNT: usize = 13;
 /// Extract the ocean tile texture + base CLUT + 13-frame CLUT animation
 /// table out of a kingdom bundle's decompressed slot 0 (TIM_LIST). The
 /// caller decompresses slot 0 via [`crate::kingdom_bundle::decode_slot`]
-/// (or [`legaia_lzs::decompress`]) and passes the resulting buffer here.
+/// (or [`psx_lzs::decompress`]) and passes the resulting buffer here.
 ///
 /// Returns `None` when the buffer doesn't contain the ocean TIM (any
 /// non-world-map kingdom, or a corrupt bundle). The ocean TIM is keyed
@@ -90,7 +90,7 @@ pub fn find_ocean_assets(slot0: &[u8]) -> Option<OceanAssets> {
         if bo >= slot0.len() {
             continue;
         }
-        let Ok(tim) = legaia_tim::parse(&slot0[bo..]) else {
+        let Ok(tim) = psx_tim::parse(&slot0[bo..]) else {
             continue;
         };
         let img_ok = tim.image.fb_x == 768
@@ -154,7 +154,7 @@ mod tests {
         let mut buf = Vec::new();
         buf.extend_from_slice(&1u32.to_le_bytes()); // count
         buf.extend_from_slice(&1u32.to_le_bytes()); // word_offsets[0] = 1 word = 4 bytes
-        // (TIM body at byte offset 4 is invalid; legaia_tim::parse rejects)
+        // (TIM body at byte offset 4 is invalid; psx_tim::parse rejects)
         buf.extend_from_slice(&[0u8; 16]);
         assert!(find_ocean_assets(&buf).is_none());
     }

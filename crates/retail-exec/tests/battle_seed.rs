@@ -8,8 +8,8 @@ use legaia_engine_core::world::World;
 use legaia_engine_menus::equipment::equip_modifier_table_from_disc;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::equip_stats::EquipStatTable;
-use legaia_retail_exec::Stop;
 use legaia_save::{CharacterRecord, Party};
+use psx_retail_exec::Stop;
 
 const RECORDS: u32 = 0x8008_4708;
 const STRIDE: u32 = 0x414;

@@ -8,8 +8,8 @@ use legaia_engine_menus::equipment::equip_modifier_table_from_disc;
 use legaia_engine_menus::pause_screens::{menu_stat_block, stat_record_from_character};
 use legaia_game_tables::equip_stats::EquipStatTable;
 use legaia_game_tables::item_effect::ItemEffectTable;
-use legaia_retail_exec::Stop;
 use legaia_save::CharacterRecord;
+use psx_retail_exec::Stop;
 
 const SUMMER: u32 = 0x801C_F650;
 const OVERLAY_BASE: u32 = 0x801C_E818;

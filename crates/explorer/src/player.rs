@@ -60,7 +60,7 @@ impl Player {
         looped: bool,
     ) -> Result<()> {
         self.stop();
-        let song = legaia_seq::Seq::parse(&a.bytes[seq.offset..]).context("parse SEQ")?;
+        let song = psx_seq::Seq::parse(&a.bytes[seq.offset..]).context("parse SEQ")?;
         let out = self.out()?;
         let bank = out.with_spu(|spu: &mut Spu| {
             let mut alloc = SpuAllocator::new(0x1000, SPU_RAM_BYTES as u32 - 0x1000);
@@ -85,7 +85,7 @@ impl Player {
         &mut self,
         pcm: Vec<i16>,
         rate: u32,
-        channels: legaia_xa::Channels,
+        channels: psx_xa::Channels,
         label: String,
     ) -> Result<()> {
         self.stop();

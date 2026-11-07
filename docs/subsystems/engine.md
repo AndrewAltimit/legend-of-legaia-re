@@ -389,7 +389,19 @@ The entry seat is the first ranked arrival that `World::picker_arrival_seat` acc
 
 Unlike the cold seat, an arrival need not be in the scene's largest region: a dungeon whose floors are disconnected rooms is entered through a door into one of them. The party faces along the arrival's sector, as through the door itself.
 
-Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
+Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, an override row, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
+
+### Reviewed picker seats
+
+A few scenes defeat the ranked rule, and `PICKER_SEAT_OVERRIDES` (`engine-scene-host`, `scene_entry::entry_seat`) seats them instead. Each row is one scene, a `PickerSeatRule` and a comment saying why the default fails and where the seat comes from:
+
+- `Arrival { from, tile, step }` - a named `0x3F` arrival from the catalog, stepped whole tiles, taken without the enclosure and trigger tests. The party faces the arrival's sector and inherits the home track, as on a ranked arrival. A row whose arrival the disc does not carry falls through to the ranked rule.
+- `ManMoveTo { tile }` - a tile the scene's own MAN moves the player to (`A3 F8 xb zb`), for the dream scenes, whose only arrival is the map-centre placeholder `(0x40, 0x40)`.
+- `Tile { tile }` - a tile read off the walkability grid, for a scene whose only arrival is the `(0x7F, 0x7F)` hide box.
+
+The failures the rows answer come in four shapes. A door that lands behind a closed grille (`conc`) passes the grid's tests, because the grille is a prop body, not a wall bit. An arrival on its own gate-1 trigger is stepped off by the ranked rule, sometimes across a warp or exit row (`geremi`), sometimes skipping the arrival beat the door plays (`rugi`, which the override seats on the door so the first tick fires it). A room whose doorway opens onto the unwalled map edge fails the enclosure test (`koin1b`). And a placeholder or hide-box arrival leaves only the cold seat (`urudre2`, `urudre3`, `garmel`). The sweep checks every row seats its scene on a standable tile that is not walled in, at its floor height, and stays there.
+
+A relocated picker seat is snapped onto its floor after the scene's floor-height ladder is installed, not before: sampled earlier, the grid's tier nibbles read through no ladder and a seat on a raised tier landed at the wrong height, gliding onto the floor over its first frames.
 
 ## Fidelity and enhancements
 
@@ -488,6 +500,7 @@ options is safe by default. A headless comparison against retail calls
 | Battle tuning: `World::toggles.enemy_stat_permille`, `enemy_attack_permille`, `spirit_ap`, `damage_ap`, `seru_catch_pct` (`--enemy-stat-scale`, `--enemy-attack-count`, `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`; the launcher's Battle tuning group; the play page's Battle tuning panel) | retail (`1x`, `1x`, `32`, `100`, each Seru's own), held there by `pin_retail` | Each is one scale at its reader with the patcher's arithmetic for the same flag ([gameplay tweaks](gameplay-tweaks.md#battle-tuning)). |
 | `OptionsState::retail_static_window` -> `StaticObjectWindow::retail_windowing` | **on** | Retail's windowed static-object list (`FUN_801D7B50`): a `.MAP` placement the sub-area window sweep owns draws only while the camera's latched region box holds it. On because it is retail, and because the props it leaves out are other rooms' scenery. Off draws every placement for the whole map ([field-locomotion](field-locomotion.md)). |
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-scene/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
+| `Renderer::set_field_ground_drop` (`field_view_window::field_ground_drop`; the play page's `u_ground_drop`) | retail's buckets at retail's vantage, the dropped floor off it | Off retail's vantage (the default `Far` preset, the drag / tilt / zoom knobs, `F3`) a flat field ground cell is depth-tested as the floor eight units lower instead of in retail's ordering-table bucket, so faces buried under it stay hidden ([renderer](renderer.md#off-retails-vantage-the-floor-is-depth-tested-a-few-units-lower)). Not a knob; follows the framing. |
 | `Renderer::set_psx_mode` + `set_native_resolution` (`--psx-render` / `LEGAIA_PSX_RENDER=1`; the window's `F12` *PlayStation pixel look* row; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation at the display's own 320x240, magnified nearest-neighbour - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
 | `World::toggles.battle_entry_off_axis` | **on** (off under `pin_retail` / `--retail`) | A fight's battle camera opens on the field camera's azimuth, moved out of the window where the two seat rows overlap on screen, where retail's battle init zeroes the yaw and opens every fight down the seat axis ([battle-stage-camera](battle-stage-camera.md#idle-orbit-and-resting-yaw)). Framing only. |
@@ -630,7 +643,7 @@ Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the numbe
 
 - **Deterministic gameplay.** RNG is seeded from a known value and the simulation ticks on a fixed timestep; the same input file produces bit-identical state traces.
 - **Fixed-timestep tick, display-rate render.** The window presents with `wgpu::PresentMode::AutoVsync`; `SimStepper` keeps game logic at 60 Hz whatever the display refresh.
-- **Mockable I/O.** The disc read path is abstracted behind `legaia_iso::raw::RawDisc`, so tests run without a disc.
+- **Mockable I/O.** The disc read path is abstracted behind `psx_iso::raw::RawDisc`, so tests run without a disc.
 - **Quirks are preserved in the faithful mode, fixable outside it.** Quirky damage rounding and oddly-timed cutscenes are replicated where the oracles measure. Changing them lands as a toggle over the faithful path, never a silent edit to it.
 - **Behaviour is tested against runtime captures.** Inputs, RNG and frame outputs captured from the original replay through the engine and diff against it.
 
@@ -656,7 +669,7 @@ Per-VM notes that are not on the owning pages:
 - **Effect VM.** A slot pool (`Pool`) of 28-byte `MasterSlot`s and 32-byte `ChildSlot`s; `Pool::init_head` / `Pool::spawn` port `FUN_801DE914` / `FUN_801DFDF0`, and the per-frame walker `FUN_801E0080` is `Pool::tick_retail` (pass 1) + `Pool::child_billboards` (pass 2). The walker's only host callback is `EffectHost::next_random`.
 - **Battle action SM.** A per-frame edge-triggered state machine with 47 explicit states across the bands Attack `0x14..0x20`, Magic / Item `0x28..0x2E`, Summon `0x32..0x38`, Spirit `0x3C..0x40` / `0x46..0x48`, Done `0x50..0x52` / `0x5A`, Run / Capture `0x64..0x6B`, Magic-capture `0x6E..0x71`, terminal `0xFD` / `0xFF`. The Tactical-Arts strike band reads per-strike power bytes, hit timing, status effects and hit cues from `BattleActionHost::art_record` and surfaces them through `apply_art_strike(ArtStrikeInfo)`.
 - **Title dispatcher.** `TitleTickState::step` executes the graph, including all 56 `state[+0x204] = N` stores with their guards. Master game mode `0x02` has **two** writers: `LaunchGame` (`0x06`) at `0x801DFC00` on the NEW GAME route and `LaunchFade` (`0x16`) at `0x801DFAFC` on the load route.
-- **SCUS sprite-emit primitives** (`engine-title/src/title_prim.rs`). The port of the sprite-descriptor dispatcher `FUN_800198E0` (tag-`0x11` + alpha-OR pre-pass + width-divisor variants) behind a `PrimHost` trait, beside forwarding shims for the libgpu wrappers `FUN_80058298` (`ClearImage`) and `FUN_80058490` (`MoveImage`, whose VRAM copy is `legaia_tim::Vram::move_image`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
+- **SCUS sprite-emit primitives** (`engine-title/src/title_prim.rs`). The port of the sprite-descriptor dispatcher `FUN_800198E0` (tag-`0x11` + alpha-OR pre-pass + width-divisor variants) behind a `PrimHost` trait, beside forwarding shims for the libgpu wrappers `FUN_80058298` (`ClearImage`) and `FUN_80058490` (`MoveImage`, whose VRAM copy is `psx_tim::Vram::move_image`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
 
 ## Gameplay systems
 
@@ -746,11 +759,14 @@ The project deliberately does not call this "clean-room": the same people read t
 
 ## How it is verified
 
-Open work is tracked structurally rather than as a hand-maintained list. The [port catalog](../tooling/port-catalog.md) cross-references every dumped function against its docs page and its `// PORT:` tag in `crates/`; the question-level companion is [open RE threads](../reference/open-rev-eng-threads.md).
+Nothing of the original executes in the port, so its fidelity is measured rather than inherited ([why](../porting-by-reimplementation.md#fidelity-is-measured-not-inherited)). Open work is tracked structurally rather than as a hand-maintained list. The [port catalog](../tooling/port-catalog.md) cross-references every dumped function against its docs page and its `// PORT:` tag in `crates/`; the question-level companion is [open RE threads](../reference/open-rev-eng-threads.md).
 
 | Instrument | What it measures | Page |
 |---|---|---|
 | Retail comparison corpus | Engine RAM and VRAM against every walkable and battle library state, worst first. | [retail-compare](../tooling/retail-compare.md) |
+| Cast-sequence oracle | One spell, summon or monster cast on both sides, scored frame by frame on the action-SM clock. | [cast-sequence-oracle](../tooling/cast-sequence-oracle.md) |
+| Audio sweep + real PCM | Music and cues against the emulator's state and its recorded output. | [audio](audio.md#the-audio-state-sweep) |
+| Retail kernel differential | A retail routine run off the disc in `crates/retail-exec` beside its Rust port, on generated inputs. | [retail-kernel-differential](../tooling/retail-kernel-differential.md) |
 | Record / replay | Same input file twice gives bit-identical state traces. | [determinism-replay](../tooling/determinism-replay.md) |
 | Full-game ladder | New Game to credits, per story segment. | [full-game-ladder](../tooling/full-game-ladder.md) |
 | Soak harness | Seeded random pad input over every scene and minigame, with softlock / stall detectors. | [soak-harness](../tooling/soak-harness.md) |

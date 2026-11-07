@@ -12,13 +12,11 @@
 //! returns owned `Vec<i16>` / metadata structs. The wasm-bindgen boundary
 //! lives in [`crate::LegaiaAudio`].
 
-use legaia_iso::image::{FileEntry, read_raw_sector, walk_iso_files};
 use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
-use legaia_vab::{VabReport, find_vabs, parse as parse_vab};
-use legaia_xa::demux::{
-    AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader,
-};
-use legaia_xa::{Channels, DecodeOptions, decode};
+use psx_iso::image::{FileEntry, read_raw_sector, walk_iso_files};
+use psx_vab::{VabReport, find_vabs, parse as parse_vab};
+use psx_xa::demux::{AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader};
+use psx_xa::{Channels, DecodeOptions, decode};
 
 /// Default playback rate for decoded VAG samples. The Sony VAG header carries
 /// no per-sample rate; the engine and the WAV exporter both use 22 050 Hz
@@ -118,7 +116,7 @@ pub fn enumerate_bgm_pairs(disc: &[u8], entries: &[EntryMeta]) -> Vec<BgmPair> {
         let Ok(report) = parse_vab(buf, vab_off) else {
             continue;
         };
-        let Ok(hdr) = legaia_seq::parse_header(&buf[seq_off..]) else {
+        let Ok(hdr) = psx_seq::parse_header(&buf[seq_off..]) else {
             continue;
         };
         let track = legaia_engine_system::music_labels::sound_test_index_for_prot_entry(e.index)
@@ -244,7 +242,7 @@ pub fn decode_vag_sample(
     if body.is_empty() {
         return None;
     }
-    legaia_vab::decode_vag(body).ok()
+    psx_vab::decode_vag(body).ok()
 }
 
 /// One XA audio file on the disc (`*.STR`, `*.XA`). MV*.STR carry video too;
@@ -288,7 +286,7 @@ pub struct DecodedXa {
 /// `(file_no, ch_no)` and decodes each channel to PCM. Returns one
 /// [`DecodedXa`] per channel.
 ///
-/// Mirrors the path-based `legaia_xa::demux::demux_disc_range` but reads
+/// Mirrors the path-based `psx_xa::demux::demux_disc_range` but reads
 /// straight out of the in-memory `disc` slice instead of going through
 /// `RawDisc` (which needs `std::fs`).
 pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<DecodedXa> {
@@ -337,11 +335,11 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
             },
             sample_rate: stream.sample_rate,
             // The subheader's own sample width, as the movie demux
-            // (`legaia_mdec::str_av`) reads it.
+            // (`psx_mdec::str_av`) reads it.
             bits: if stream.bits == 8 {
-                legaia_xa::BitsPerSample::Eight
+                psx_xa::BitsPerSample::Eight
             } else {
-                legaia_xa::BitsPerSample::Four
+                psx_xa::BitsPerSample::Four
             },
         };
         let Ok((pcm, _)) = decode(&stream.audio, opts) else {
@@ -385,7 +383,7 @@ pub struct StrVideo {
 /// recovered from the mean sectors-per-frame at the 2x CD rate, exactly like
 /// the native path.
 pub fn demux_str_video(disc: &[u8], start_lba: u32, byte_size: u32) -> StrVideo {
-    use legaia_mdec::str_sector::{CD_SECTORS_PER_SEC_2X, StrFrameAssembler};
+    use psx_mdec::str_sector::{CD_SECTORS_PER_SEC_2X, StrFrameAssembler};
 
     const VIDEO_USER_DATA: usize = 2048;
     let sector_count = byte_size.div_ceil(2048);
@@ -434,7 +432,7 @@ pub fn demux_str_video(disc: &[u8], start_lba: u32, byte_size: u32) -> StrVideo 
 /// Returns an empty vec on a decode error (a single bad frame shouldn't abort
 /// playback).
 pub fn decode_str_frame_rgba(frame: &StrVideoFrame) -> Vec<u8> {
-    legaia_mdec::MdecDecoder::new(frame.width, frame.height)
+    psx_mdec::MdecDecoder::new(frame.width, frame.height)
         .decode_frame(&frame.bitstream)
         .unwrap_or_default()
 }
@@ -450,7 +448,7 @@ fn entry_buf<'a>(disc: &'a [u8], e: &EntryMeta) -> Option<&'a [u8]> {
 /// access to the private viewer state.
 pub fn entries_from_disc(disc: &[u8], prot_bytes: &[u8]) -> Vec<EntryMeta> {
     // PROT TOC parses against the PROT.DAT bytes; for the in-memory walker
-    // we always extract PROT.DAT first (see [`legaia_iso::image::extract_prot_dat`]).
+    // we always extract PROT.DAT first (see [`psx_iso::image::extract_prot_dat`]).
     let _ = disc;
     parse_prot_toc(prot_bytes).unwrap_or_default()
 }

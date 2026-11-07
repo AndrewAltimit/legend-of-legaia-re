@@ -127,7 +127,7 @@ static OCCLUDER_MEMO: MeshMemo<(Vec<[f32; 3]>, Vec<u32>)> = MeshMemo::new(64 << 
 /// kept triangles' indices.
 fn occluder_triangles(
     rt: &crate::scene_resources::ResolvedTmd,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) -> (Vec<[f32; 3]>, Vec<u32>) {
     let semi = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&rt.tmd, &rt.raw, |cba, tsb, uvs| {

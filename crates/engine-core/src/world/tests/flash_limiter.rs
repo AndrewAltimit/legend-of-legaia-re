@@ -44,8 +44,8 @@ fn part_with(
 }
 
 /// Seed a recognisable capture row so `apply_hsv_cell` output is non-trivial.
-fn seeded_vram() -> legaia_tim::Vram {
-    let mut vram = legaia_tim::Vram::new();
+fn seeded_vram() -> psx_tim::Vram {
+    let mut vram = psx_tim::Vram::new();
     // Mid-brightness distinct texels on the strobe row.
     let row: Vec<u8> = (0..16u16)
         .flat_map(|i| (0x3DEFu16 | (i & 1) << 15).to_le_bytes())
@@ -54,7 +54,7 @@ fn seeded_vram() -> legaia_tim::Vram {
     vram
 }
 
-fn row_at(vram: &legaia_tim::Vram) -> Vec<u16> {
+fn row_at(vram: &psx_tim::Vram) -> Vec<u16> {
     (0..16)
         .map(|i| vram.as_u16()[RECT.1 as usize * 1024 + RECT.0 as usize + i])
         .collect()

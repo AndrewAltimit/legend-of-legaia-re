@@ -344,11 +344,22 @@ impl World {
         // box: the walk kernel steps it off the player's own `0x400`, not off
         // the record. A run whose record has already ended stays engaged
         // until the leg lands, then releases the player.
+        // The leg spends on the game-frame grid, as a cutscene timeline's
+        // does: nothing between game frames, the frame step's worth on one
+        // (`speed = DAT_1F800393`). Stepped every vsync at speed `1`, the
+        // player moved half a pass a vsync and the follow focus, which trails
+        // the player a pass, trailed it half as far (`tower_field_walk`).
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_801DE840 (0x801DEE90..0x801DEF1C)
-        if let Some(mut glide) = id.player_glide.take()
-            && self.step_player_glide(&mut glide)
-        {
-            id.player_glide = Some(glide);
+        let grid = self.clock.script_frame_delta();
+        if let Some(mut glide) = id.player_glide.take() {
+            if grid == 0 {
+                id.player_glide = Some(glide);
+            } else {
+                glide.state.speed = grid;
+                if self.step_player_glide(&mut glide) {
+                    id.player_glide = Some(glide);
+                }
+            }
         }
         if id.done {
             if id.player_glide.is_none() {
@@ -580,7 +591,9 @@ impl World {
                         frames: 0,
                     };
                     id.pc += 4;
-                    if host.world.step_player_glide(&mut glide) {
+                    let grid = host.world.clock.script_frame_delta();
+                    glide.state.speed = grid;
+                    if grid == 0 || host.world.step_player_glide(&mut glide) {
                         id.player_glide = Some(glide);
                     }
                     continue;
@@ -1047,15 +1060,36 @@ impl World {
         if st.yaw_written {
             ms.render_26 = (st.yaw & 0x0FFF) as i16;
         }
-        let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
-        // The floor under every step, not just the landing tile: a leg that
-        // crosses a stair run (chitei2's escape beats) otherwise carries the
-        // start height through the steps and snaps at the end.
-        let y = self.sample_field_floor_height(nx, nz) as i16;
-        if let Some(a) = self.actors.get_mut(p as usize) {
-            a.move_state.world_y = y;
-        }
+        // The kernel writes `+0x14` / `+0x18` alone (no store to `+0x16` in
+        // `FUN_8003774C`); the player's height is the settle's.
+        self.snap_player_y_unless_settling();
         done
+    }
+
+    /// Land the player's Y on the floor under it after a script moved it,
+    /// unless the retail settle ([`crate::world::FieldLocomotion::vertical_settle`])
+    /// owns the footing. Retail's walk kernel `FUN_8003774C` (op `0x47`'s
+    /// walk-to-tile, the `0x37` / `0x41` compass legs) writes `+0x14` /
+    /// `+0x18` only, and
+    /// `FUN_801D1BA0`'s glide carries `+0x16` onto the floor at `12` a vsync
+    /// on every frame, movement lock or not: a carried player climbs a stair
+    /// run `24` a pass (`tower_field_walk`'s film). Under the step snap alone
+    /// nothing else would, so the floor under every step is sampled here: a
+    /// leg that crosses a stair run (chitei2's escape beats) otherwise
+    /// carries the start height through the steps.
+    pub(crate) fn snap_player_y_unless_settling(&mut self) {
+        if self.locomotion.vertical_settle {
+            return;
+        }
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(usize::from(slot))
+        {
+            let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+            let y = self.sample_field_floor_height(i32::from(x), i32::from(z));
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.move_state.world_y = y.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            }
+        }
     }
 
     /// Set / clear the player's movement-disabled flag (`+0x10 & 0x80000`) -

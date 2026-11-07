@@ -49,7 +49,7 @@ pub(crate) struct DancePresentation {
     pub sfx: Option<SfxCueBank>,
     /// The same VAB, parsed directly, for the direct-keyed hit stings
     /// (`FUN_801d3d78` bypasses the cue ring and keys two voices itself).
-    pub sting_vab: Option<(legaia_vab::VabReport, Vec<u8>)>,
+    pub sting_vab: Option<(psx_vab::VabReport, Vec<u8>)>,
 }
 
 /// One dancer's renderable body, built once at disc load.
@@ -359,8 +359,8 @@ impl LegaiaMinigames {
         };
         // Sample spans in the report index into the whole entry buffer.
         let sting_vab = vab_entry.and_then(|entry| {
-            let off = *legaia_vab::find_vabs(entry).first()?;
-            let report = legaia_vab::parse(entry, off).ok()?;
+            let off = *psx_vab::find_vabs(entry).first()?;
+            let report = psx_vab::parse(entry, off).ok()?;
             Some((report, entry.to_vec()))
         });
         Some(DancePresentation {

@@ -159,11 +159,11 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
             let orig = legaia_texture_replace::texture::read_texture(patcher, &target)
                 .map_err(|e| format!("{e:#}"))?;
             let bpp = match orig.tim.mode {
-                legaia_tim::PixelMode::Bpp4 => 4,
-                legaia_tim::PixelMode::Bpp8 => 8,
-                legaia_tim::PixelMode::Bpp16 => 16,
-                legaia_tim::PixelMode::Bpp24 => 24,
-                legaia_tim::PixelMode::Mixed => 0,
+                psx_tim::PixelMode::Bpp4 => 4,
+                psx_tim::PixelMode::Bpp8 => 8,
+                psx_tim::PixelMode::Bpp16 => 16,
+                psx_tim::PixelMode::Bpp24 => 24,
+                psx_tim::PixelMode::Mixed => 0,
             };
             Ok(Ident {
                 fnv1a: fnv1a64(&orig.tim_bytes),

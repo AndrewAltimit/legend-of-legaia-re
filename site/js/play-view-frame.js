@@ -1146,6 +1146,16 @@
         try { g = rt.play_render_gte_sat(!this.debugCamera); } catch (_) { g = null; }
         this.renderer.setGteSat(g);
       }
+      /* The field ground's depth rule (field_view_window::field_ground_drop):
+       * retail's ordering-table buckets at retail's vantage, and off it a
+       * flat bucketed cell depth-tested as the floor a few units lower, so a
+       * face buried under it stays hidden from a swung or pulled-back
+       * camera. */
+      if (this.renderer.setGroundDrop && typeof rt.play_render_ground_drop === 'function') {
+        let d = 0;
+        try { d = rt.play_render_ground_drop(!!this.debugCamera); } catch (_) { d = 0; }
+        this.renderer.setGroundDrop(d);
+      }
     }
 
     /* The clear colour is part of what a frame looks like, not a renderer

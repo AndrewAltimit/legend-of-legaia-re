@@ -1,4 +1,4 @@
-//! Bind a parsed VAB sound bank ([`legaia_vab::VabReport`] + raw VAG body
+//! Bind a parsed VAB sound bank ([`psx_vab::VabReport`] + raw VAG body
 //! bytes) into a [`crate::Spu`] instance.
 //!
 //! This is the bridge between the asset-extraction track (which parses VAB
@@ -33,7 +33,7 @@ use crate::spu::{
     ram::{SpuAllocator, TransferDirection},
     voice::PITCH_UNITY,
 };
-use legaia_vab::{VabReport, VagAtr};
+use psx_vab::{VabReport, VagAtr};
 
 /// One program slot of a bank: the program-level attributes retail stages at
 /// key-on, plus the program's tone page. Indexed by **program number** (the
@@ -121,10 +121,10 @@ pub struct VabBank {
 /// convention and at 0 in the second.
 ///
 /// **The origin.** A retail VAB is two chunks of a DATA_FIELD stream, and
-/// `legaia_vab::parse` walks straight on from the VAG size table onto the body
+/// `psx_vab::parse` walks straight on from the VAG size table onto the body
 /// chunk's own 4-byte header - so its spans are four bytes early where the
 /// body chunk comes next, and thousands of bytes early where a SEQ chunk
-/// intervenes. `legaia_vab::vag_body_origin_at` reads the real origin by
+/// intervenes. `psx_vab::vag_body_origin_at` reads the real origin by
 /// walking forward for the chunk whose payload is `fsize - header part`.
 ///
 /// Over the 218 retail stream-carried VABs the two errors cancel exactly on
@@ -147,8 +147,8 @@ fn body_frame(report: &VabReport, bank_buf: &[u8]) -> (usize, usize) {
         // Neither landmark: leave the caller's indexes alone.
         return (0, 0);
     };
-    let walked = vab_at + legaia_vab::header_part_size(report.header.ps as usize);
-    let delta = legaia_vab::vag_body_origin_at(bank_buf, vab_at)
+    let walked = vab_at + psx_vab::header_part_size(report.header.ps as usize);
+    let delta = psx_vab::vag_body_origin_at(bank_buf, vab_at)
         .ok()
         .and_then(|o| o.checked_sub(walked))
         .unwrap_or(0);
@@ -157,7 +157,7 @@ fn body_frame(report: &VabReport, bank_buf: &[u8]) -> (usize, usize) {
 
 impl VabBank {
     /// Upload every VAG body in `report` into `spu`'s RAM, allocating
-    /// through `alloc`. `bank_buf` is either the buffer `legaia_vab::parse`
+    /// through `alloc`. `bank_buf` is either the buffer `psx_vab::parse`
     /// was given or that buffer re-sliced at the VAB; [`body_frame`] resolves
     /// which, and where the bodies really begin.
     pub fn upload(
@@ -373,13 +373,13 @@ impl VabBank {
         spu: &mut Spu,
         voice: usize,
         prog: &VabProgram,
-        tone: &legaia_vab::VagAtr,
+        tone: &psx_vab::VagAtr,
         note: u8,
         velocity: u8,
         stage_pan: i32,
         path: PitchPath,
     ) -> bool {
-        // tone.vag is 1-based in PSX VAB format. legaia_vab::VabReport's
+        // tone.vag is 1-based in PSX VAB format. psx_vab::VabReport's
         // `vag_samples` is 0-indexed (samples[0..vs]), so subtract 1.
         if tone.vag <= 0 {
             return false;
@@ -1060,13 +1060,13 @@ mod tests {
                     mvol: 127,
                     mpan: 0x40,
                     tones: vec![dummy_tone(60, 1, 100, 0x40)],
-                    key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                    key_tones: psx_vab::TONES_PER_PROGRAM as u8,
                 },
                 VabProgram {
                     mvol: 127,
                     mpan: 0x40,
                     tones: vec![dummy_tone(60, 2, 100, 0x40)],
-                    key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                    key_tones: psx_vab::TONES_PER_PROGRAM as u8,
                 },
             ],
         };
@@ -1100,7 +1100,7 @@ mod tests {
                 mvol: 127,
                 mpan: 0x40,
                 tones: vec![wet, dry],
-                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
+                key_tones: psx_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();
@@ -1113,8 +1113,8 @@ mod tests {
         assert!(spu.voices[5].reverb_send);
     }
 
-    fn prog(tones: u8, mvol: u8) -> legaia_vab::ProgAtr {
-        legaia_vab::ProgAtr {
+    fn prog(tones: u8, mvol: u8) -> psx_vab::ProgAtr {
+        psx_vab::ProgAtr {
             tones,
             mvol,
             prior: 0,
@@ -1127,12 +1127,9 @@ mod tests {
         }
     }
 
-    fn mk_report(
-        progs: Vec<legaia_vab::ProgAtr>,
-        tones: Vec<Vec<VagAtr>>,
-    ) -> legaia_vab::VabReport {
-        legaia_vab::VabReport {
-            header: legaia_vab::VabHeader {
+    fn mk_report(progs: Vec<psx_vab::ProgAtr>, tones: Vec<Vec<VagAtr>>) -> psx_vab::VabReport {
+        psx_vab::VabReport {
+            header: psx_vab::VabHeader {
                 magic: 0,
                 version: 0,
                 vab_id: 0,
@@ -1194,7 +1191,7 @@ mod tests {
     /// entries carry (their SEQ); its payload is `0xEE` so a mis-resolved
     /// origin shows up as the wrong byte.
     fn stream_with(ps: usize, body: &[u8], mid: usize) -> Vec<u8> {
-        let hps = legaia_vab::header_part_size(ps);
+        let hps = psx_vab::header_part_size(ps);
         let mut v = Vec::new();
         v.extend_from_slice(&((hps as u32).to_le_bytes()));
         // VAB header part: magic, version, id, fsize, then ps / vs.
@@ -1234,7 +1231,7 @@ mod tests {
         // ambiguous by construction (no retail carrier has one).
         for mid in [0usize, 0x50] {
             let stream = stream_with(1, &body, mid);
-            let whole = legaia_vab::parse(&stream, 4).expect("parse at the VAB");
+            let whole = psx_vab::parse(&stream, 4).expect("parse at the VAB");
             let mut out = Vec::new();
             for buf in [stream.clone(), stream[4..].to_vec()] {
                 let mut spu = Spu::new();

@@ -59,7 +59,7 @@ fn the_fatal_decision_casters_stream_the_icon_sheet_to_the_page_the_icons_sample
     assert_eq!(formation_readef_groups(&archive, &[119, 120, 121]), vec![7]);
 
     let readef = entry(&dir, 894);
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     assert_eq!(write_readef_group_textures(&readef, 7, &mut vram), 2);
     let slot = &readef[22 * SLOT_BYTES..23 * SLOT_BYTES];
     assert_eq!(u32::from_le_bytes(slot[..4].try_into().unwrap()), 2);

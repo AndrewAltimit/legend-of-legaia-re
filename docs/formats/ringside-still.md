@@ -267,6 +267,20 @@ pipeline (`OverlayBlendSpan` in `legaia-engine-render`), which switches
 equation mid-list, so the shade stays between the wall tiles and the screens
 over them.
 
+The subtraction runs at the framebuffer's 5 bits. The packet's draw mode
+`0x46` leaves dither off, so the GPU drops the Gouraud value's low 3 bits
+before `B - F`, and both hosts take each row's `F` as `F & !7`: an 8-bit `F`
+takes one 5-bit step more off the wall on most rows, the brick wall reading
+a step dark against `minigame_muscle_dome_retail_title`.
+
+The hub records carry a vertical two-stop colour gradient of their own
+(the course-title face's runs dark at the top to past neutral at the
+bottom), and the GPU modulates each display row by its row's Gouraud colour.
+The native window's sprite pass carries one colour per draw, so a gradient
+packet goes out as one draw per display row, each sampling the texel row
+the GPU steps to; the pages build the same ramp into the sprite they draw
+(`modulatedSprite` in `site-util.js`).
+
 ### Which hub packets blend
 
 The hub emitters mark every variant packet semi-transparent - variant 1 with

@@ -408,7 +408,12 @@ impl World {
         // world-map walk path (which collides through the same routine but
         // derives height from the continent grid) is unaffected. No-op height
         // 0 until a scene supplies a floor LUT.
-        if self.locomotion.follow_terrain_height && !self.player_script_arc_live() {
+        // Under the retail glide ([`FieldLocomotion::vertical_settle`]) the
+        // per-frame settle owns the footing, so the step leaves Y alone.
+        if self.locomotion.follow_terrain_height
+            && !self.locomotion.vertical_settle
+            && !self.player_script_arc_live()
+        {
             let y = match self.field_actor_mirrored_y(slot) {
                 Some(mirror) => i32::from(mirror),
                 None => {
@@ -819,11 +824,11 @@ impl World {
     /// a one-line assignment.
     ///
     /// This is the retail sibling of [`crate::world::FieldLocomotion::follow_terrain_height`], which
-    /// snaps instead of gliding. The snap stays authoritative when set, and
-    /// the glide runs only behind its own opt-in
-    /// [`crate::world::FieldLocomotion::vertical_settle`] - the engine's default is that Y is
-    /// left untouched, an invariant the locomotion oracles pin, so the
-    /// retail glide cannot become the default without rewriting them.
+    /// snaps instead of gliding. The glide runs behind its own flag
+    /// [`crate::world::FieldLocomotion::vertical_settle`], which both play
+    /// hosts raise and which takes the footing over from the step snap; a
+    /// bare `World` leaves Y untouched, an invariant the locomotion oracles
+    /// pin.
     ///
     /// The **ledge-hop trigger below is not gated on any of that**: it runs
     /// off the step delta on every field frame, which is what makes this
@@ -874,6 +879,21 @@ impl World {
         self.locomotion.ladder_seen = self.terrain.floor_height_lut;
         if let Some(mirror) = self.field_actor_mirrored_y(slot) {
             self.actors[slot].move_state.world_y = mirror;
+        } else if self.locomotion.vertical_settle {
+            // The glide (`0x801D1C30..0x801D1C68`): `+0x16` steps toward the
+            // floor sample, clamped to the rate, so a step onto a raised tier
+            // takes a few vsyncs and a ladder the field VM moves carries the
+            // player at the same rate.
+            let (x, z, y) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)
+            };
+            let floor = self.sample_field_floor_height(x, z);
+            let step = (floor - y).clamp(-rate, rate);
+            if step != 0 {
+                let ny = (y + step).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                self.actors[slot].move_state.world_y = ny;
+            }
         } else if self.locomotion.follow_terrain_height && ladder_moved {
             // The snap's standing-still half: the field VM moved the floor
             // ladder under the player (op `0x4C` nibble 9), so the footing
@@ -886,17 +906,6 @@ impl World {
             let floor = self.sample_field_floor_height(x, z);
             self.actors[slot].move_state.world_y =
                 floor.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-        } else if self.locomotion.vertical_settle && !self.locomotion.follow_terrain_height {
-            let (x, z, y) = {
-                let ms = &self.actors[slot].move_state;
-                (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)
-            };
-            let floor = self.sample_field_floor_height(x, z);
-            let step = (floor - y).clamp(-rate, rate);
-            if step != 0 {
-                let ny = (y + step).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                self.actors[slot].move_state.world_y = ny;
-            }
         }
         // Retail gates the hop on the step-delta pair being non-zero - i.e.
         // the actor actually walked this frame - and on the warp pair: no

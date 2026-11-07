@@ -19,12 +19,12 @@
 //! only in memory.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_texture_replace::texture::{
     TextureTarget, read_texture, replace_texture, texture_catalogs,
 };
-use legaia_tim::encode::{EncodeOptions, encode_replacement};
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::SECTOR_SIZE;
+use psx_tim::encode::{EncodeOptions, encode_replacement};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -46,7 +46,7 @@ fn assert_touched_sectors_valid(a: &[u8], b: &[u8]) -> usize {
         if sa != sb {
             touched += 1;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(sb),
+                psx_iso::write::mode2_form1_sector_is_valid(sb),
                 "touched sector {i} fails EDC/ECC"
             );
         }
@@ -68,8 +68,8 @@ fn encoder_round_trips_every_raw_catalog_tim_byte_exactly() {
     let mut checked = 0usize;
     for t in &raw {
         let bytes = &prot[t.abs_offset as usize..t.abs_offset as usize + t.byte_len];
-        let tim = legaia_tim::parse_strict(bytes).expect("catalog TIM strict-parses");
-        let rgba = match legaia_tim::decode_rgba8(&tim, 0) {
+        let tim = psx_tim::parse_strict(bytes).expect("catalog TIM strict-parses");
+        let rgba = match psx_tim::decode_rgba8(&tim, 0) {
             Ok(r) => r,
             // A handful of raw hits decode-fail (e.g. undecodable CLUT
             // geometry); the deep catalog gates on decodability, the raw one
@@ -119,7 +119,7 @@ fn raw_replacement_round_trips_and_keeps_sectors_valid() {
 
     // Edit: stamp a rectangle of an existing palette color (index-only edit,
     // exercised exactly as a user PNG edit would arrive).
-    let mut rgba = legaia_tim::decode_rgba8(&orig.tim, 0).expect("decode original");
+    let mut rgba = psx_tim::decode_rgba8(&orig.tim, 0).expect("decode original");
     let stamp: [u8; 4] = rgba[(200 * w + 200) * 4..(200 * w + 200) * 4 + 4]
         .try_into()
         .unwrap();
@@ -143,7 +143,7 @@ fn raw_replacement_round_trips_and_keeps_sectors_valid() {
 
     // Pixel-exact readback off the patched image.
     let after = read_texture(&patcher, &target).expect("re-read");
-    let got = legaia_tim::decode_rgba8(&after.tim, 0).expect("decode patched");
+    let got = psx_tim::decode_rgba8(&after.tim, 0).expect("decode patched");
     assert_eq!(got, rgba, "patched texture must decode to the edited image");
     // VRAM placement fields survive.
     assert_eq!(after.tim.image.fb_x, orig.tim.image.fb_x);
@@ -222,7 +222,7 @@ fn lzs_replacement_round_trips_through_a_compressed_section() {
     };
     let orig = read_texture(&patcher, &target).expect("read original");
     let (w, h) = (orig.tim.pixel_width(), orig.tim.pixel_height());
-    let mut rgba = legaia_tim::decode_rgba8(&orig.tim, 0).expect("decode original");
+    let mut rgba = psx_tim::decode_rgba8(&orig.tim, 0).expect("decode original");
     let stamp: [u8; 4] = rgba[(128 * w + 128) * 4..(128 * w + 128) * 4 + 4]
         .try_into()
         .unwrap();
@@ -250,7 +250,7 @@ fn lzs_replacement_round_trips_through_a_compressed_section() {
 
     // Pixel-exact readback through decompression.
     let after = read_texture(&patcher, &target).expect("re-read");
-    let got = legaia_tim::decode_rgba8(&after.tim, 0).expect("decode patched");
+    let got = psx_tim::decode_rgba8(&after.tim, 0).expect("decode patched");
     assert_eq!(got, rgba, "patched texture must decode to the edited image");
 
     // Touched sectors stay EDC/ECC-valid.
@@ -273,7 +273,7 @@ fn no_op_replacement_leaves_the_image_byte_identical() {
         offset: 0x14228,
     };
     let orig = read_texture(&patcher, &target).expect("read original");
-    let rgba = legaia_tim::decode_rgba8(&orig.tim, 0).unwrap();
+    let rgba = psx_tim::decode_rgba8(&orig.tim, 0).unwrap();
     replace_texture(
         &mut patcher,
         &target,

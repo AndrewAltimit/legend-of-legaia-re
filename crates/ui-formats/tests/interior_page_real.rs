@@ -42,7 +42,7 @@ fn interior_page_tim_at_pinned_gap_offset() {
         interior_page::IMAGE_RECT
     );
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     interior_page::upload_to_vram(&tim, &mut vram);
     // The strip populates row 510 out to x=256 (223 of the 256 entries are
     // non-zero on the disc base). The town01 CBA (64,510) selects the

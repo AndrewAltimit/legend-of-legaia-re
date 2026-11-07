@@ -186,7 +186,7 @@ fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
     let man = table.used()[man_idx];
     let body = &entry[man.data_offset as usize..];
     let (decoded, _) =
-        legaia_lzs::decompress_tracked(body, man.size as usize).expect("decompress MAN");
+        psx_lzs::decompress_tracked(body, man.size as usize).expect("decompress MAN");
     let mf = man_section::parse(&decoded).expect("parse MAN");
     let off = *mf.partitions[1].first().expect("partition-1 record 0");
     let rstart = mf.data_region_offset + off as usize;

@@ -99,12 +99,22 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// model of a frame's work: Mednafen reads a full party's action about `100` lower,
 /// with the GPU wait in it, and no real hardware has been measured.
 ///
+/// The strike states `0x1E..=0x20` of a lone member and a full party are the
+/// monster strike recordings' frames with no effect part live (the probe's
+/// `cost` column, the ring's newest entry): what a strike's own spark burst
+/// and a special clip's ghosts add is [`frame_load_cost`]'s. The library's
+/// full-party medians (`700` in `0x1F`, `667` in `0x20`) held that load in
+/// the base, where a monster strike on a full party with no part live reads
+/// `596`.
+///
 /// The summon close-up `0x33` and the flash `0x34` are read off the step
 /// rather than a ring entry: on every PCSX-Redux summon film of a lone caster
 /// the step drops from `2` to `1` sixteen frames after the close-up's first few
 /// frames (so those frames cost under `0xF1`), and on a full party's from `3`
-/// to `2` at `0x34`'s entry (under `0x1FF`). The two-member figure is the
-/// member step between them; no film records it.
+/// to `2` sixteen frames after the close-up's first (under `0x1FF`). The
+/// two-member figure is the member step between them; no film records it.
+/// The close-up's opening frames cost more than the rest
+/// ([`measured_frame_cost_at`]).
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
         0x33 | 0x34 => [200, 330, 460],
@@ -113,9 +123,9 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         0x0C => [354, 463, 608],
         0x14 => [329, 453, 593],
         0x19 => [379, 483, 594],
-        0x1E => [373, 479, 612],
-        0x1F => [382, 453, 700],
-        0x20 => [383, 540, 667],
+        0x1E => [393, 479, 622],
+        0x1F => [389, 453, 596],
+        0x20 => [386, 540, 596],
         0x29 => [284, 411, 500],
         0x2B => [354, 387, 534],
         0x2E => [354, 494, 560],
@@ -129,6 +139,58 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         2 => 1,
         _ => 2,
     }]
+}
+
+/// The passes the summon close-up `0x33` opens on at a higher cost
+/// ([`measured_frame_cost_at`]).
+pub const CLOSE_UP_OPENING_PASSES: u8 = 6;
+
+/// What each of the close-up's opening passes costs over the state's own
+/// entry ([`measured_frame_cost_at`]).
+pub const CLOSE_UP_OPENING_EXTRA: u16 = 45;
+
+/// [`measured_frame_cost`] on the `passes`-th pass (from `0`) the action SM
+/// has run in `action_state`. The summon close-up `0x33` opens on
+/// [`CLOSE_UP_OPENING_PASSES`] frames that cost [`CLOSE_UP_OPENING_EXTRA`]
+/// over the rest, which is what places the step's drop on the PCSX-Redux
+/// films: thirty-nine lone-caster films of `party_basic_attack_vs_gobu_gobu`
+/// drop from `2` to `1` forty-two vsyncs into `0x33` (six opening frames
+/// over `0xF1`, then fifteen passes until the ring has none), where a close-up
+/// costed flat from its first frame dropped at thirty; the six full-party films (`kor`, `tower`)
+/// drop from `3` to `2` forty-nine vsyncs in, which the same extra keeps
+/// under `0x1FF` (`460 + 45`). Like the table it is one emulated machine's
+/// measurement: the `map01` lone caster drops at fifty-four.
+pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u8) -> u16 {
+    let cost = measured_frame_cost(party_count, action_state);
+    if action_state == 0x33 && passes < CLOSE_UP_OPENING_PASSES {
+        cost + CLOSE_UP_OPENING_EXTRA
+    } else {
+        cost
+    }
+}
+
+/// Hblanks one after-image ghost adds to a frame: the draw tick's walk
+/// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
+/// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two
+/// ghosts raise a lone member's `0x20` frame by `37` and `35` on the frames
+/// they appear, before any effect part is live.
+pub const GHOST_DRAW_COST: u16 = 36;
+
+/// Hblanks one live move-VM effect part adds to a frame (its tick
+/// `FUN_80021DF4` and its sprite or mesh draw). Read off the lone-member strike
+/// recordings: each hit's spark burst of about sixteen parts raises
+/// `battle_dolk_drake_ghost_strike`'s frames from `390` to `424`, and the
+/// cost falls back as the burst's parts retire.
+pub const EFFECT_PART_COST: u16 = 2;
+
+/// What a frame's draw load adds over [`measured_frame_cost`]: `parts` live
+/// effect parts and `ghosts` after-image ghosts. The base rows of the strike
+/// states `0x1E..=0x20` are the recordings' frames with no part live, so a
+/// strike's burst and a special clip's ghosts are what lift its frames.
+pub const fn frame_load_cost(parts: u16, ghosts: u16) -> u16 {
+    parts
+        .saturating_mul(EFFECT_PART_COST)
+        .saturating_add(ghosts.saturating_mul(GHOST_DRAW_COST))
 }
 
 /// The cost a frame an arm table names its step for leaves in the ring, so the
@@ -268,9 +330,93 @@ impl RetailStepTrack {
     }
 }
 
+/// A retail recording's `rand()` seed word going into each battle frame, per
+/// action-SM key, for a film whose arms draw on every pass (`--rand-track` in
+/// `scripts/ci/cast-sequence.py`). PROT 0935's Earthquake bursts a rock pair
+/// a frame off `rand()`, and retail's other passes make tens of draws the
+/// engine does not, so one held seed (`LEGAIA_CAST_RAND_SEED`) deals the first
+/// pair and leaves the rest on the engine's own stream. The track hands the
+/// frame driver's pass, ahead of its discarded draw (`0x80046D2C`), the word
+/// retail's generator held at the end of the frame before. A harness seat: no
+/// play path installs one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RetailRandTrack {
+    /// `(action state, module phase)` to the word each retail frame under it
+    /// ended on, in film order.
+    words: std::collections::BTreeMap<(u8, u8), Vec<u32>>,
+    /// Passes the engine has opened under each key since the band began.
+    passes: std::collections::BTreeMap<(u8, u8), usize>,
+    /// Whether the last pass stood in a module band.
+    in_band: bool,
+}
+
+impl RetailRandTrack {
+    /// Parse `state phase word` lines, one retail frame each, in film order.
+    pub fn parse(text: &str) -> Self {
+        let mut track = Self::default();
+        for line in text.lines() {
+            let f: Vec<u32> = line
+                .split_whitespace()
+                .filter_map(|w| w.parse().ok())
+                .collect();
+            if let [state, phase, word] = f[..]
+                && let (Ok(state), Ok(phase)) = (u8::try_from(state), u8::try_from(phase))
+            {
+                track.words.entry((state, phase)).or_default().push(word);
+            }
+        }
+        track
+    }
+
+    /// The word to seat for the pass that opens under this key: retail's
+    /// frame of the same ordinal under it, `None` past the recording's last
+    /// or for a key it never saw (the engine's own stream runs on).
+    pub fn next_word(&mut self, state: u8, phase: u8) -> Option<u32> {
+        let words = self.words.get(&(state, phase))?;
+        let n = self.passes.entry((state, phase)).or_default();
+        let word = words.get(*n).copied();
+        *n += 1;
+        word
+    }
+
+    /// Start every key's count again: a new cast band opened, and the
+    /// recording's frames are the last band's.
+    pub fn restart(&mut self) {
+        self.passes.clear();
+    }
+
+    /// The word for a pass opening under `(state, phase)`, the phase counted
+    /// only inside a module band. The track covers the bands alone: a drive
+    /// that replays rounds passes through other states the recording never
+    /// held, and a band entered afresh restarts the counts.
+    pub fn pass_word(&mut self, state: u8, phase: u8, band: bool) -> Option<u32> {
+        if band && !self.in_band {
+            self.restart();
+        }
+        self.in_band = band;
+        band.then(|| self.next_word(state, phase)).flatten()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_rand_track_hands_out_each_keys_words_in_order() {
+        let mut t = RetailRandTrack::parse("112 4 10\n112 4 11\n112 5 20\nbad line\n");
+        assert_eq!(t.next_word(112, 4), Some(10));
+        assert_eq!(t.next_word(112, 5), Some(20));
+        assert_eq!(t.next_word(112, 4), Some(11));
+        assert_eq!(t.next_word(112, 4), None);
+        assert_eq!(t.next_word(112, 3), None);
+        t.restart();
+        assert_eq!(t.next_word(112, 4), Some(10));
+        // Outside a band nothing is seated; a band entered afresh counts again.
+        assert_eq!(t.pass_word(0x51, 0, false), None);
+        assert_eq!(t.pass_word(112, 4, true), Some(10));
+        assert_eq!(t.pass_word(112, 4, true), Some(11));
+    }
 
     #[test]
     fn ticks_into_frame_counts_from_the_step_origin() {

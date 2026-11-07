@@ -107,7 +107,7 @@ fn head_tim_ranges(tims: &[u8], cluts: &[(u16, u16)]) -> Vec<(usize, usize)> {
     let mut off = 0usize;
     while off + 8 <= tims.len() {
         if u32::from_le_bytes(tims[off..off + 4].try_into().unwrap()) == 0x10
-            && let Ok(tim) = legaia_tim::parse(&tims[off..])
+            && let Ok(tim) = psx_tim::parse(&tims[off..])
             && let Some(c) = tim.clut.as_ref()
             && cluts.contains(&(c.fb_x, c.fb_y))
         {

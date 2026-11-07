@@ -26,6 +26,156 @@ pub enum PickerSeat {
         /// The world `(x, z)` seat the resolver chose.
         seat: (i16, i16),
     },
+    /// A row of [`PICKER_SEAT_OVERRIDES`] seated it: a scene whose ranked
+    /// arrival or cold seat lands somewhere a player cannot play from.
+    Override {
+        /// The row's rule.
+        rule: PickerSeatRule,
+        /// The world `(x, z)` seat it resolved to.
+        seat: (i16, i16),
+    },
+}
+
+/// How a [`PICKER_SEAT_OVERRIDES`] row places the party, in the tile form the
+/// field VM's `0x3F` and `MOVE_TO` carry (`(tile << 7) + 0x40`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerSeatRule {
+    /// The disc's inbound `0x3F` arrival from `from` at `tile` (an
+    /// [`ArrivalCatalog::arrivals`] row), stepped `step` whole tiles. The
+    /// party faces the arrival's sector and the scene's home track is
+    /// inherited, as for a ranked arrival. Unlike the ranked path the seat is
+    /// taken as is: the row is the review that the ranked path's enclosure
+    /// and trigger tests stand in for.
+    Arrival {
+        /// The scene whose `0x3F` lands here.
+        from: &'static str,
+        /// The `0x3F`'s entry tile (low 7 bits of its entry bytes).
+        tile: (u8, u8),
+        /// Whole tiles added to `tile`.
+        step: (i8, i8),
+    },
+    /// A tile the scene's own MAN seats the player on (a `MOVE_TO` of the
+    /// player, `A3 F8 xb zb`), for a scene no usable door leads into.
+    ManMoveTo {
+        /// The op's tile operand.
+        tile: (u8, u8),
+    },
+    /// A tile read off the scene's walkability grid, for a scene whose only
+    /// arrival is the off-map hide box (`0x7F`, `0x7F`) or the map-centre
+    /// placeholder a later script moves the party from.
+    Tile {
+        /// The tile.
+        tile: (u8, u8),
+    },
+}
+
+/// Scene-picker seats reviewed by hand: scenes where neither the ranked door
+/// arrival nor the cold resolver lands the party somewhere playable. Every
+/// other scene keeps [`SceneHost::arm_picker_entry_seat`]'s ranked rule.
+/// Each row says why the default is wrong and where its seat comes from; the
+/// disc-gated `picker_door_arrival_disc` sweep checks each seat is standable
+/// and stays in the scene.
+pub const PICKER_SEAT_OVERRIDES: &[(&str, PickerSeatRule)] = &[
+    // Conkram (Past): its one arrival, the conc2 door, lands in the pocket
+    // behind the grille door at tile (0x1E, 0x40); the grille's body walls
+    // the party in with only the off-map opening behind it. Three tiles
+    // towards the room puts the party in front of the door.
+    (
+        "conc",
+        PickerSeatRule::Arrival {
+            from: "conc2",
+            tile: (0x1E, 0x40),
+            step: (0, -3),
+        },
+    ),
+    // Jeremi: the map02 entrance tile (0x1B, 0x08) carries the town's
+    // gate-1 intro trigger, so the ranked rescue stepped off it - across
+    // the warp portal's trigger row (z = 0x05) to the far side. One tile
+    // past the arrival, towards the town, is in front of the portal.
+    (
+        "geremi",
+        PickerSeatRule::Arrival {
+            from: "map02",
+            tile: (0x1B, 0x08),
+            step: (0, 1),
+        },
+    ),
+    // Gala's dream (Biron): the uru door's entry tile is the map-centre
+    // placeholder (0x40, 0x40), whose rescue lands in a corridor behind a
+    // locked door. The dream's own MAN seats the player at (0x32, 0x60)
+    // (`A3 F8 32 60`, twice), in a furnished hall.
+    ("urudre3", PickerSeatRule::ManMoveTo { tile: (0x32, 0x60) }),
+    // Noa's dream (Conkram): the same map-centre placeholder, rescued into
+    // the off-map strip by the long east corridor. The dream's MAN seats the
+    // player in the plaza at (0x1E, 0x1F) (`A3 F8 1E 1F`, twice).
+    ("urudre2", PickerSeatRule::ManMoveTo { tile: (0x1E, 0x1F) }),
+    // Ra-Seru scene (2): the noaru warp lands at the deep end of the ramp
+    // (0x1B, 0x71), which the scene's wide camera shows as the party
+    // standing off the end of the walkway. One tile up the ramp stands on
+    // it, short of Terra's trigger rows (z = 0x6E, 0x6F).
+    (
+        "juui2",
+        PickerSeatRule::Arrival {
+            from: "noaru",
+            tile: (0x1B, 0x71),
+            step: (0, -1),
+        },
+    ),
+    // Rogue's Tower: the juui1 door's tile (0x22, 0x58) carries the gate-1
+    // trigger of the party's entrance beat; the ranked rule steps off every
+    // gate-1 tile, so the beat never played. Seating on the door itself
+    // fires it on the first tick, as the door does.
+    (
+        "rugi",
+        PickerSeatRule::Arrival {
+            from: "juui1",
+            tile: (0x22, 0x58),
+            step: (0, 0),
+        },
+    ),
+    // Sol Tower (rooms F): both kor3 doors land in the bar room, which the
+    // enclosure test rejects (its doorway opens onto the unwalled map
+    // edge), so the cold resolver seated the party in the arena wing. The
+    // rec-3 door at (0x1B, 0x0B) is the one the retail route walk entered
+    // by.
+    (
+        "koin1b",
+        PickerSeatRule::Arrival {
+            from: "kor3",
+            tile: (0x1B, 0x0B),
+            step: (0, 0),
+        },
+    ),
+    // Zeto's Dungeon: its one arrival is a map01 script's hide-box warp
+    // (0x7F, 0x7F), and the cold seat lands on the grass beside the
+    // entrance path, off any floor the walls bound. The path is the walled
+    // strip x = 0x14..0x15, z = 0x05..0x07 below the gate's triggers
+    // (z = 0x08), whose gap leads back out to map01; (0x14, 0x06) stands
+    // on it a tile clear of them.
+    ("garmel", PickerSeatRule::Tile { tile: (0x14, 0x06) }),
+];
+
+/// The [`PICKER_SEAT_OVERRIDES`] row for `scene`.
+pub fn picker_seat_override(scene: &str) -> Option<PickerSeatRule> {
+    PICKER_SEAT_OVERRIDES
+        .iter()
+        .find(|(name, _)| *name == scene)
+        .map(|(_, rule)| *rule)
+}
+
+/// A resolved [`PickerSeatRule`], armed for the next field entry.
+#[derive(Debug, Clone)]
+pub(crate) struct PickerOverrideSeat {
+    pub(crate) rule: PickerSeatRule,
+    /// World `(x, z)`.
+    pub(crate) seat: (i16, i16),
+    /// The arrival it came from, for its facing and home track.
+    pub(crate) arrival: Option<SceneArrival>,
+}
+
+/// Retail's tile-centre conversion, `(tile << 7) + 0x40`.
+fn tile_centre(t: i32) -> i16 {
+    ((t << 7) + 0x40) as i16
 }
 
 impl SceneHost {
@@ -142,6 +292,7 @@ impl SceneHost {
     pub fn arm_picker_entry_seat(&mut self, scene: &str) -> bool {
         self.picker_seat = None;
         self.pending_picker_arrivals = None;
+        self.pending_picker_override = None;
         if self.pending_entry_seat.is_some()
             || self.world.cutscene.opening_chain_active
             || self.world.cutscene.entering_town01_opening
@@ -152,6 +303,13 @@ impl SceneHost {
         // Rim Elm is the one scene retail itself enters without a door: the
         // New Game seat in Vahn's yard (`FIELD_COLD_SPAWN_XZ`), which the cold
         // resolver keeps. A picked Rim Elm starts there, not at its gate.
+        if let Some(rule) = picker_seat_override(scene)
+            && let Some(seat) = self.resolve_picker_override(scene, rule)
+        {
+            self.pending_picker_override = Some(seat);
+            self.pending_picker_arrivals = Some(Vec::new());
+            return true;
+        }
         let ranked = if scene == legaia_game_tables::new_game::OPENING_SCENE {
             Vec::new()
         } else {
@@ -159,6 +317,44 @@ impl SceneHost {
         };
         self.pending_picker_arrivals = Some(ranked);
         true
+    }
+
+    /// Resolve an override row against the disc's arrivals; `None` when an
+    /// [`PickerSeatRule::Arrival`] row names an arrival the disc does not
+    /// carry (the ranked rule then seats the entry).
+    fn resolve_picker_override(
+        &mut self,
+        scene: &str,
+        rule: PickerSeatRule,
+    ) -> Option<PickerOverrideSeat> {
+        let at = |(x, z): (u8, u8), (dx, dz): (i8, i8)| {
+            (
+                tile_centre(i32::from(x) + i32::from(dx)),
+                tile_centre(i32::from(z) + i32::from(dz)),
+            )
+        };
+        match rule {
+            PickerSeatRule::Arrival { from, tile, step } => {
+                let arrival = self
+                    .arrival_catalog()
+                    .arrivals(scene)
+                    .iter()
+                    .find(|a| a.from_scene == from && (a.entry_x & 0x7F, a.entry_z & 0x7F) == tile)
+                    .cloned()?;
+                Some(PickerOverrideSeat {
+                    rule,
+                    seat: at(tile, step),
+                    arrival: Some(arrival),
+                })
+            }
+            PickerSeatRule::ManMoveTo { tile } | PickerSeatRule::Tile { tile } => {
+                Some(PickerOverrideSeat {
+                    rule,
+                    seat: at(tile, (0, 0)),
+                    arrival: None,
+                })
+            }
+        }
     }
 
     /// Where the last scene-picker entry seated the party, `None` when the

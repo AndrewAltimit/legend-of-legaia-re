@@ -43,7 +43,7 @@ fn fresh(
         key.cslot,
         &key.equipped,
     )?;
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     log.replay(&mut vram);
     Some((
         format!("{form:?}"),
@@ -60,7 +60,7 @@ fn through_memo(
 ) -> Option<(String, Vec<u8>, Vec<u8>)> {
     let mut log = VramWriteLog::default();
     let form = memo.form(&ProtFormDisc(index), sources, &mut log, key)?;
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     log.replay(&mut vram);
     Some((
         format!("{form:?}"),
@@ -355,8 +355,8 @@ fn one_monster_walk_is_the_mesh_and_the_ids_of_two() {
         };
         let ids = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
         for slot in 0..5u8 {
-            let mut a = legaia_tim::Vram::new();
-            let mut b = legaia_tim::Vram::new();
+            let mut a = psx_tim::Vram::new();
+            let mut b = psx_tim::Vram::new();
             let old = mesh.battle_render_mesh(slot, &mut a);
             let new = mesh.battle_render_mesh_with_object_ids(slot, &mut b);
             assert_eq!(a.as_bytes(), b.as_bytes(), "monster {id} slot {slot}: VRAM");

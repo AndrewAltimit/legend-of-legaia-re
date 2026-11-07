@@ -390,7 +390,7 @@ pub fn decode_slot_by_type(entry: &[u8], type_byte: u8) -> Option<Result<Vec<u8>
             "type-{type_byte:#04x} slot data_offset {start:#x} out of range"
         )));
     };
-    Some(legaia_lzs::decompress(stream, size).map_err(|e| format!("lzs: {e}")))
+    Some(psx_lzs::decompress(stream, size).map_err(|e| format!("lzs: {e}")))
 }
 
 /// Lenient count-prefixed descriptor walk for the table variants the strict
@@ -407,7 +407,7 @@ pub fn decode_slot_by_type(entry: &[u8], type_byte: u8) -> Option<Result<Vec<u8>
 /// walks its structure - has a stronger signal than the header alone, and
 /// should use this instead of widening [`detect`] for everyone.
 pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
-    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    let count = psx_bytes::u32_le(entry, 0)? as usize;
     if !(2..=7).contains(&count) {
         return None;
     }
@@ -415,8 +415,8 @@ pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let p = 8 + i * 8;
-        let type_size = legaia_bytes::u32_le(entry, p)?;
-        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_size = psx_bytes::u32_le(entry, p)?;
+        let data_offset = psx_bytes::u32_le(entry, p + 4)?;
         let type_byte = ((type_size >> 24) & 0xFF) as u8;
         let size = type_size & 0x00FF_FFFF;
         if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
@@ -467,7 +467,7 @@ pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
 /// the runtime. See `ghidra/scripts/funcs/80020224.txt` and
 /// [`docs/formats/scene-bundles.md`](../../../docs/formats/scene-bundles.md).
 pub fn descriptor_bundle_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
-    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    let count = psx_bytes::u32_le(entry, 0)? as usize;
     if count == 0 || count > MAX_BUNDLE_DESCRIPTORS {
         return None;
     }
@@ -479,8 +479,8 @@ pub fn descriptor_bundle_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
     let mut prev_offset = 0u32;
     for i in 0..count {
         let p = 8 + i * 8;
-        let type_size = legaia_bytes::u32_le(entry, p)?;
-        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_size = psx_bytes::u32_le(entry, p)?;
+        let data_offset = psx_bytes::u32_le(entry, p + 4)?;
         let type_byte = ((type_size >> 24) & 0xFF) as u8;
         let size = type_size & 0x00FF_FFFF;
         if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
@@ -571,7 +571,7 @@ impl DescriptorRecord {
 /// Try to detect a scene asset table. Returns `None` when the buffer doesn't
 /// match the strict 7-asset header.
 pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
-    let count_u32 = legaia_bytes::u32_le(buf, 0)?;
+    let count_u32 = psx_bytes::u32_le(buf, 0)?;
     // Retail imposes no bound at all - `FUN_80020224` reads `count` from
     // `+0x00` and loops that many descriptors - so the bound here is purely a
     // detector heuristic against arbitrary small leading words, and the anchor
@@ -596,7 +596,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     if buf.len() < table_end {
         return None;
     }
-    let total_decompressed_size = legaia_bytes::u32_le(buf, 4)?;
+    let total_decompressed_size = psx_bytes::u32_le(buf, 4)?;
 
     let mut descriptors = [DescriptorRecord {
         type_byte: 0,
@@ -605,8 +605,8 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     }; MAX_DESCRIPTORS];
     for (i, slot) in descriptors.iter_mut().take(count).enumerate() {
         let p = 8 + i * 8;
-        let type_size = legaia_bytes::u32_le(buf, p)?;
-        let data_offset = legaia_bytes::u32_le(buf, p + 4)?;
+        let type_size = psx_bytes::u32_le(buf, p)?;
+        let data_offset = psx_bytes::u32_le(buf, p + 4)?;
         let type_byte = ((type_size >> 24) & 0xFF) as u8;
         let size = type_size & 0x00FF_FFFF;
 
@@ -758,8 +758,7 @@ pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
         else {
             return 0;
         };
-        let Ok((payload, _consumed)) = legaia_lzs::decompress_tracked(stream, d.size as usize)
-        else {
+        let Ok((payload, _consumed)) = psx_lzs::decompress_tracked(stream, d.size as usize) else {
             return 0;
         };
         if payload.len() != d.size as usize {
@@ -830,7 +829,7 @@ pub fn pac_mesh_pool(pac: &[u8]) -> Vec<PoolMesh> {
     let mut out = Vec::new();
     let mut off = 0usize;
     let mut chunk = 0usize;
-    while let Some(header) = legaia_bytes::u32_le(pac, off) {
+    while let Some(header) = psx_bytes::u32_le(pac, off) {
         let size = (header & 0x00FF_FFFF) as usize;
         if size == 0 {
             break;

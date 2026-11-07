@@ -39,7 +39,7 @@
 use crate::spu::Spu;
 use crate::spu::ram::{SPU_RAM_BYTES as SPU_RAM_USIZE, SpuAllocator};
 use crate::vab_bind::VabBank;
-use legaia_vab::VabReport;
+use psx_vab::VabReport;
 
 /// Total SPU RAM in bytes.
 pub const SPU_RAM_BYTES: u32 = SPU_RAM_USIZE as u32;
@@ -112,7 +112,7 @@ pub struct OwnedBankUpload {
 }
 
 /// Upload a track's own bank (`report` parsed from `bank_buf`, which is the
-/// buffer `legaia_vab::parse` was given or that buffer re-sliced at the
+/// buffer `psx_vab::parse` was given or that buffer re-sliced at the
 /// VAB). A bank that fits goes into the BGM region, capped below the SFX
 /// region; one that does not is laid from the same base across the SFX
 /// region, the retail VAB-`10` placement (module docs).

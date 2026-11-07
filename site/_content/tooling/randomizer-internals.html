@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Crate</dt><dd><code>crates/patcher</code> (<code>legaia_patcher</code>); disc bridge <code>disc::DiscPatcher</code>, orchestration <code>apply</code>, patch output <code>ppf</code></dd>
-    <dt>Three capabilities</dt><dd>LZS <em>encoder</em> (<code>legaia_lzs::compress</code>), Mode 2/2352 sector write-back with EDC/ECC (<code>legaia_iso::write</code>), PROT-entry &rarr; LBA addressing (<code>DiscPatcher</code>)</dd>
+    <dt>Three capabilities</dt><dd>LZS <em>encoder</em> (<code>psx_lzs::compress</code>), Mode 2/2352 sector write-back with EDC/ECC (<code>psx_iso::write</code>), PROT-entry &rarr; LBA addressing (<code>DiscPatcher</code>)</dd>
     <dt>Editing rule</dt><dd>Same-size in place; only doors and place names resize a record, through <a href="../formats/man-relocation.html">MAN relocation</a></dd>
     <dt>Code hosts</dt><dd>SCUS rodata gap <code>0x8007AB38</code> (1028 B), the SCUS arena (652 B in four regions), reference-free dead runs inside overlays 0898 / 0899 / 0958, the <code>DMY.DAT</code> annex</dd>
     <dt>Detour shape</dt><dd>Two words at the hook site become <code>j routine</code> + <code>nop</code>; the routine replays the two displaced instructions and jumps back</dd>
@@ -23,16 +23,16 @@
   <table>
     <thead><tr><th>Capability</th><th>Module</th><th>Why it is needed</th></tr></thead>
     <tbody>
-      <tr><td>LZS encoder</td><td><code>legaia_lzs::compress</code></td><td>Retail ships only a decoder. Monster records, scene MANs and art records are LZS streams, so editing one means producing a stream the retail decoder accepts - and packing it no larger than the original. <a href="../formats/lzs.html">LZS &rarr;</a></td></tr>
-      <tr><td>Sector write-back</td><td><code>legaia_iso::write</code></td><td>Overwriting a sector's 2048-byte payload also means recomputing its 4-byte EDC and 276-byte P/Q ECC, or the drive reads it as corrupt. <a href="../formats/disc.html">Disc geometry &rarr;</a></td></tr>
+      <tr><td>LZS encoder</td><td><code>psx_lzs::compress</code></td><td>Retail ships only a decoder. Monster records, scene MANs and art records are LZS streams, so editing one means producing a stream the retail decoder accepts - and packing it no larger than the original. <a href="../formats/lzs.html">LZS &rarr;</a></td></tr>
+      <tr><td>Sector write-back</td><td><code>psx_iso::write</code></td><td>Overwriting a sector's 2048-byte payload also means recomputing its 4-byte EDC and 276-byte P/Q ECC, or the drive reads it as corrupt. <a href="../formats/disc.html">Disc geometry &rarr;</a></td></tr>
       <tr><td>Disc bridge</td><td><code>legaia_disc_patch::disc::DiscPatcher</code></td><td>Turns "byte <code>K</code> of PROT entry <code>N</code>" into physical sector writes through the <a href="../formats/prot.html">PROT.DAT</a> table of contents.</td></tr>
     </tbody>
   </table>
   <ol class="steps">
     <li><b>Edit</b><span>Addressed as (PROT entry <code>N</code>, offset <code>K</code>). <code>legaia_patcher</code></span></li>
     <li><b>PROT TOC</b><span><code>start_lba[N] * 2048 + K</code> = an offset inside <code>PROT.DAT</code>. <code>legaia_prot</code></span></li>
-    <li><b>ISO 9660</b><span><code>PROT.DAT</code>'s own LBA turns that into a disc sector. <code>legaia_iso</code></span></li>
-    <li><b>Sector write</b><span>The 2352-byte sector is rewritten with fresh EDC/ECC. <code>legaia_iso::write</code></span></li>
+    <li><b>ISO 9660</b><span><code>PROT.DAT</code>'s own LBA turns that into a disc sector. <code>psx_iso</code></span></li>
+    <li><b>Sector write</b><span>The 2352-byte sector is rewritten with fresh EDC/ECC. <code>psx_iso::write</code></span></li>
   </ol>
   <figure class="diagram">
     <svg viewBox="0 0 860 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ri-wp-title ri-wp-desc">

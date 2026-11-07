@@ -7,7 +7,7 @@
 
 use crate::common::{Rng, disc, scus, scus_cpu};
 use legaia_font::{Font, MeasureOptions};
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const MEASURE: u32 = 0x8003_5F04;
 const PAD: u32 = 0x8007_40E8;
@@ -49,11 +49,8 @@ fn a_measured_width_is_the_retail_width() {
     let font = Font::from_disc_tim_and_scus(&tim, &scus).expect("font");
     // BIOS A(0x2B) `memset`, the scratch line's clear.
     cpu.hook(0x8005_6788, |r, m| {
-        for i in 0..r.r[legaia_retail_exec::A2] {
-            m.wr8(
-                r.r[legaia_retail_exec::A0] + i,
-                r.r[legaia_retail_exec::A1] as u8,
-            );
+        for i in 0..r.r[psx_retail_exec::A2] {
+            m.wr8(r.r[psx_retail_exec::A0] + i, r.r[psx_retail_exec::A1] as u8);
         }
     });
     let escapes = legaia_font::escape_icons::escape_table_from_scus(&scus).expect("escapes");

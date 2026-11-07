@@ -10,8 +10,8 @@
 use crate::common::{Rng, diff_offsets, scus, scus_cpu};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
-use legaia_retail_exec::{Cpu, Stop};
 use legaia_save::CharacterRecord;
+use psx_retail_exec::{Cpu, Stop};
 
 const AGGREGATOR: u32 = 0x8004_2558;
 const RECORDS: u32 = 0x8008_4708;

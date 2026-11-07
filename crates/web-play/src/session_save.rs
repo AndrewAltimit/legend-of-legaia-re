@@ -247,10 +247,10 @@ pub fn card_icon_rgba(bytes: Vec<u8>, block: u8) -> Result<Vec<u8>, JsValue> {
 /// doesn't parse - the bar falls back to initial chips.
 #[wasm_bindgen]
 pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
-    use legaia_iso::image::{extract_prot_dat, is_mode2_2352_disc};
     use legaia_ui_formats::title_pak::{
         OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE, OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
     };
+    use psx_iso::image::{extract_prot_dat, is_mode2_2352_disc};
     if char_id >= OVERLAY_LOAD_PORTRAIT_COUNT {
         return Vec::new();
     }
@@ -271,10 +271,10 @@ pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
 /// A save-file portrait TIM's bytes decoded to RGBA8 (empty when it does not
 /// parse).
 fn portrait_tim_rgba(tim_bytes: &[u8]) -> Vec<u8> {
-    let Ok(parsed) = legaia_tim::parse(tim_bytes) else {
+    let Ok(parsed) = psx_tim::parse(tim_bytes) else {
         return Vec::new();
     };
-    legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+    psx_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
 }
 
 #[wasm_bindgen]

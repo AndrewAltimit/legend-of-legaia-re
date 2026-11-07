@@ -19,11 +19,11 @@ use std::collections::BTreeSet;
 
 use legaia_actor_formats::battle_data_pack;
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;
 use legaia_patcher::weapon_specialty::{
     self, FAVORED_COST, Family, arm_cost_offset, cost_for, weapon_family,
 };
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -67,7 +67,7 @@ fn changed_sectors_valid(orig: &[u8], patched: &[u8]) -> usize {
         let b = a + SECTOR_SIZE;
         if orig[a..b] != patched[a..b] {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(&patched[a..b]),
+                psx_iso::write::mode2_form1_sector_is_valid(&patched[a..b]),
                 "changed sector {s} is not EDC/ECC-valid"
             );
             checked += 1;

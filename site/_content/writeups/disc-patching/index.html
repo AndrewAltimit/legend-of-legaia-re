@@ -14,7 +14,7 @@
   <dl class="kv">
     <dt>Tool</dt><dd><code>legaia-patcher</code> (CLI) and the <a href="../../tooling/rom-patcher.html">browser ROM patcher</a> - same code, nothing uploaded</dd>
     <dt>Input / output</dt><dd>Your own USA disc image &rarr; a shareable PPF patch (no Sony bytes) and an optional patched copy</dd>
-    <dt>Three foundations</dt><dd>LZS encoder <code>legaia_lzs::compress</code> &middot; sector write-back <code>legaia_iso::write</code> &middot; PROT-entry bridge <code>disc::DiscPatcher</code></dd>
+    <dt>Three foundations</dt><dd>LZS encoder <code>psx_lzs::compress</code> &middot; sector write-back <code>psx_iso::write</code> &middot; PROT-entry bridge <code>disc::DiscPatcher</code></dd>
     <dt>Edit classes</dt><dd><em>in-place</em> (same-size) for tiers A, B, C, E, F; <em>relocate</em> (footprint-bounded) for tier D</dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Shipped</span> - every mod has a disc-gated oracle test that re-decodes the patched image</dd>
     <dt>Full reference</dt><dd><a href="../../tooling/randomizer.html">Randomizer / disc patcher</a> (every flag, every hook)</dd>
@@ -119,8 +119,8 @@
   <table>
     <thead><tr><th>Capability</th><th>Module</th><th>Why</th></tr></thead>
     <tbody>
-      <tr><td>LZS encoder</td><td><code>legaia_lzs::compress</code></td><td>Retail ships only a decoder. Greedy LZSS, slightly looser than Sony's packer, always accepted - <a href="../../formats/lzs.html">Legaia LZS</a>.</td></tr>
-      <tr><td>Sector write-back</td><td><code>legaia_iso::write</code></td><td>A CD sector carries error-correction fields over its payload; overwrite the payload and they must be recomputed or the sector reads as damaged - <a href="../../formats/disc.html">disc geometry</a>.</td></tr>
+      <tr><td>LZS encoder</td><td><code>psx_lzs::compress</code></td><td>Retail ships only a decoder. Greedy LZSS, slightly looser than Sony's packer, always accepted - <a href="../../formats/lzs.html">Legaia LZS</a>.</td></tr>
+      <tr><td>Sector write-back</td><td><code>psx_iso::write</code></td><td>A CD sector carries error-correction fields over its payload; overwrite the payload and they must be recomputed or the sector reads as damaged - <a href="../../formats/disc.html">disc geometry</a>.</td></tr>
       <tr><td>Disc bridge</td><td><code>disc::DiscPatcher</code></td><td>Maps a "PROT entry N, offset K" edit to the sector it lives in through the <a href="../../formats/prot.html">PROT.DAT table of contents</a>.</td></tr>
     </tbody>
   </table>

@@ -234,7 +234,7 @@ fn hud_sync_status_pulls_from_tracker() {
 fn stone_reaches_the_party_clut_row_through_sync_status() {
     use crate::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let row = PARTY_CLUT_ROW_BASE + 1;
     // A resident party palette: STP-set, deliberately not grey.
     let base: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
@@ -642,6 +642,38 @@ fn a_held_cast_counts_its_hits_and_opens_as_hit_total() {
     one.arm_combo(Some(ComboStyle::Damage), 3);
     one.push_damage(0, 16);
     assert_eq!(one.combo.unwrap().style, ComboStyle::Damage);
+}
+
+/// The cluster's word follows the push count `ctx[+0x273]`
+/// (`0x801E8AB0..0x801E8AB8`), not the action: a one-swing strike closes on
+/// `DAMAGE`, its second hit turns it to `HIT` / `TOTAL`.
+#[test]
+fn a_one_hit_melee_reads_damage_and_a_second_hit_reads_hit_total() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::HitTotal), 3);
+    h.push_damage(1, 39);
+    h.land_combo_total(3);
+    let c = h.combo.expect("counted");
+    assert_eq!((c.style, c.hits, c.total), (ComboStyle::Damage, 1, 39));
+    h.push_damage(1, 12);
+    assert_eq!(h.combo.unwrap().style, ComboStyle::HitTotal);
+}
+
+/// A total landed on one battle frame opens the cluster on the next: the
+/// SM's readout pass (`FUN_801E805C`) runs ahead of the anim tick that raised
+/// the flag.
+#[test]
+fn a_landed_total_opens_the_cluster_on_the_next_frame() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::HitTotal), 3);
+    h.push_damage(1, 39);
+    h.defer_combo_total(3, 10);
+    h.release_combo_total(10);
+    assert!(h.combo.unwrap().hidden, "same frame: still shut");
+    h.release_combo_total(11);
+    let c = h.combo.unwrap();
+    assert!(!c.hidden);
+    assert_eq!(c.age, 0);
 }
 
 #[test]

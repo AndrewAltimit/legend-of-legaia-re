@@ -65,14 +65,14 @@ impl LegaiaViewer {
             .get(id as usize)
             .ok_or_else(|| JsValue::from_str(&format!("catalog id {id} out of range")))?;
         let off = t.abs_offset as usize;
-        let tim = legaia_tim::parse(&self.disc[off..])
+        let tim = psx_tim::parse(&self.disc[off..])
             .map_err(|e| JsValue::from_str(&format!("catalog[{id}] TIM parse: {e}")))?;
         let clut_idx = if t.clut_count > 0 {
             (clut as usize).min(t.clut_count - 1)
         } else {
             0
         };
-        let rgba = legaia_tim::decode_rgba8(&tim, clut_idx)
+        let rgba = psx_tim::decode_rgba8(&tim, clut_idx)
             .map_err(|e| JsValue::from_str(&format!("catalog[{id}] decode: {e}")))?;
         let w = tim.pixel_width() as u32;
         let h = tim.image.h as u32;
@@ -170,7 +170,7 @@ impl LegaiaViewer {
         if end > self.disc.len() {
             return Err(JsValue::from_str(&format!("deep[{id}]: entry span OOB")));
         }
-        let sections = legaia_lzs::decompress_container(&self.disc[start..end])
+        let sections = psx_lzs::decompress_container(&self.disc[start..end])
             .map_err(|e| JsValue::from_str(&format!("deep[{id}]: LZS decode: {e}")))?;
         let section = sections
             .get(t.lzs_section as usize)
@@ -190,7 +190,7 @@ impl LegaiaViewer {
         canvas_id: &str,
     ) -> Result<(), JsValue> {
         let (section, off) = self.deep_section_bytes(id)?;
-        let tim = legaia_tim::parse(&section[off..])
+        let tim = psx_tim::parse(&section[off..])
             .map_err(|e| JsValue::from_str(&format!("deep[{id}] TIM parse: {e}")))?;
         let nclut = tim.palette_count();
         let clut_idx = if nclut > 0 {
@@ -198,7 +198,7 @@ impl LegaiaViewer {
         } else {
             0
         };
-        let rgba = legaia_tim::decode_rgba8(&tim, clut_idx)
+        let rgba = psx_tim::decode_rgba8(&tim, clut_idx)
             .map_err(|e| JsValue::from_str(&format!("deep[{id}] decode: {e}")))?;
         let w = tim.pixel_width() as u32;
         let h = tim.image.h as u32;
@@ -253,10 +253,10 @@ fn parse_palette_choice(s: &str) -> Option<PaletteChoice> {
     }
 }
 
-fn entries_per_palette(tim: &legaia_tim::Tim) -> usize {
+fn entries_per_palette(tim: &psx_tim::Tim) -> usize {
     match tim.mode {
-        legaia_tim::PixelMode::Bpp4 => 16,
-        legaia_tim::PixelMode::Bpp8 => 256,
+        psx_tim::PixelMode::Bpp4 => 16,
+        psx_tim::PixelMode::Bpp8 => 256,
         _ => 0,
     }
 }
@@ -302,12 +302,12 @@ fn shared_palette_notes(
 }
 
 impl LegaiaViewer {
-    fn catalog_tim_parsed(&self, id: u32) -> Result<(u64, legaia_tim::Tim), String> {
+    fn catalog_tim_parsed(&self, id: u32) -> Result<(u64, psx_tim::Tim), String> {
         let t = self
             .tim_catalog
             .get(id as usize)
             .ok_or_else(|| format!("catalog id {id} out of range"))?;
-        let tim = legaia_tim::parse(&self.disc[t.abs_offset as usize..])
+        let tim = psx_tim::parse(&self.disc[t.abs_offset as usize..])
             .map_err(|e| format!("catalog[{id}] TIM parse: {e}"))?;
         Ok((t.abs_offset, tim))
     }
@@ -316,7 +316,7 @@ impl LegaiaViewer {
     /// covers any of it. Returns `(rgba, covered, contested)`. Reads the
     /// same kernel as the ROM patcher's region map
     /// (`legaia_ui_formats::tim_palette_context::texel_palettes`).
-    fn catalog_composite(&self, tim: &legaia_tim::Tim) -> Option<(Vec<u8>, usize, usize)> {
+    fn catalog_composite(&self, tim: &psx_tim::Tim) -> Option<(Vec<u8>, usize, usize)> {
         let regions = self.sheet_regions.as_ref()?;
         let boot = self.boot_cluts.as_ref()?;
         if !palctx::on_sheet_page(tim) {
@@ -353,7 +353,7 @@ impl LegaiaViewer {
             PaletteChoice::Own(i) => {
                 let n = tim.palette_count();
                 let i = if n > 0 { i.min(n - 1) } else { 0 };
-                legaia_tim::decode_rgba8(&tim, i).map_err(|e| e.to_string())?
+                psx_tim::decode_rgba8(&tim, i).map_err(|e| e.to_string())?
             }
             PaletteChoice::Vram(x, y) => {
                 let boot = self
@@ -361,8 +361,7 @@ impl LegaiaViewer {
                     .as_ref()
                     .ok_or("no boot VRAM for this input")?;
                 let pal = boot.palette_at(x, y, entries_per_palette(&tim));
-                legaia_tim::decode_rgba8_with_palette(&tim, &pal.entries)
-                    .map_err(|e| e.to_string())?
+                psx_tim::decode_rgba8_with_palette(&tim, &pal.entries).map_err(|e| e.to_string())?
             }
             PaletteChoice::Composite => {
                 self.catalog_composite(&tim)
@@ -535,7 +534,7 @@ impl LegaiaViewer {
         let Ok((section, off)) = self.deep_section_bytes(id) else {
             return "{}".to_string();
         };
-        let Ok(tim) = legaia_tim::parse(&section[off..]) else {
+        let Ok(tim) = psx_tim::parse(&section[off..]) else {
             return "{}".to_string();
         };
         let empty = palctx::empty_palettes(&tim);

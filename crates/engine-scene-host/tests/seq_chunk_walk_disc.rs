@@ -131,7 +131,7 @@ fn every_music_bank_entry_splits_through_the_installer_walk() {
         assert_eq!(walked, hunted, "bgm {bgm_id}: walk and hunt disagree");
         match walked {
             Some((_, seq)) => {
-                legaia_seq::Seq::parse(&entry[seq..])
+                psx_seq::Seq::parse(&entry[seq..])
                     .unwrap_or_else(|e| panic!("bgm {bgm_id}: score does not parse: {e}"));
                 paired += 1;
             }

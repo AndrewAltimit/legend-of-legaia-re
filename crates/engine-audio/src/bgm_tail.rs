@@ -53,7 +53,7 @@ use crate::spu::Spu;
 use crate::spu::ram::SpuAllocator;
 use crate::spu_layout::{SFX_REGION_BASE, SPU_RESERVED_BYTES, bank_used_end, vab_body_bytes};
 use crate::vab_bind::VabBank;
-use legaia_vab::VabReport;
+use psx_vab::VabReport;
 
 /// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is opened in
 /// (`FUN_8004E568`: `li a1,0xb` at `0x8004ED7C` for the loader,

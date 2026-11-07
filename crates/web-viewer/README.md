@@ -22,7 +22,7 @@ wasm-bindgen gathers the `#[wasm_bindgen]` exports of every crate the
 `legaia_web_viewer.js` as this crate's: the site's JS API does not depend on
 which crate an export lives in. The viewer pages also stand on `web-play`'s
 field actor layer (`field_actors`, `field_npc`, `field_scene_anim`), naming
-those modules there directly, and read the disc through `legaia_iso::image`
+those modules there directly, and read the disc through `psx_iso::image`
 and `legaia_prot::toc_index`. Module
 by module, the exports are in
 [`docs/subsystems/browser-host.md`](../../docs/subsystems/browser-host.md).

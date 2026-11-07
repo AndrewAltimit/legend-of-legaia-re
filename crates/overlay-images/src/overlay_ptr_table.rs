@@ -120,7 +120,7 @@ pub fn detect(buf: &[u8]) -> Option<OverlayPtrTable> {
     let mut last_ptr = 0;
 
     while count < MAX_PTRS && (count + 1) * 4 <= buf.len() {
-        let v = legaia_bytes::u32_le(buf, count * 4)?;
+        let v = psx_bytes::u32_le(buf, count * 4)?;
         if !(OVERLAY_LO..OVERLAY_HI).contains(&v) {
             break;
         }

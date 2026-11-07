@@ -87,6 +87,10 @@ impl World {
         // own creature), which the draw copies to the node's `+0x7A` and
         // turns into the shatter renderer.
         a.battle.shatter = 0;
+        // The fresh node's deformation-row byte `+0x6D` is zero too: a row a
+        // previous creature's module pointed it at (PROT 0912 / 0916's row 1)
+        // does not carry over.
+        a.battle.shatter_row = None;
         // The node is built fresh (`FUN_80024C88` at `0x801F1D4C`), at the
         // allocator's unity render scale `+0x72 = 0x1000`: a previous
         // creature's scale (PROT 0923 zeroes and grows its own) does not
@@ -521,8 +525,14 @@ impl World {
                     SpawnRecord::Module(0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
                 )
             {
-                pos[0] = (self.next_rand() % 0x101) as i16 - 0x80;
-                pos[1] = (self.next_rand() % 0x101) as i16 - 0x80;
+                // Drawn at the arm's head when the band pre-drew them
+                // (`World::draw_ozma_spray`).
+                for p in &mut pos[..2] {
+                    *p = match self.casting.module_ozma_spray.pop() {
+                        Some(v) => v,
+                        None => (self.next_rand() % 0x101) as i16 - 0x80,
+                    };
+                }
             }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {

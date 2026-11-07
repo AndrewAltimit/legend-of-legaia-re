@@ -63,7 +63,7 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
         let mut i = 0;
         while i + 4 <= bytes.len() {
             if &bytes[i..i + 4] == b"pBAV"
-                && let Ok(report) = legaia_vab::parse(&bytes, i)
+                && let Ok(report) = psx_vab::parse(&bytes, i)
             {
                 banks += 1;
                 for program in &report.tones {
@@ -181,7 +181,7 @@ fn keyon_volume_spans_the_spu_register_domain_for_retail_tones() {
         let mut i = 0;
         while i + 4 <= bytes.len() {
             if &bytes[i..i + 4] == b"pBAV"
-                && let Ok(report) = legaia_vab::parse(&bytes, i)
+                && let Ok(report) = psx_vab::parse(&bytes, i)
             {
                 let bank_master = report.header.mvol as i32;
                 for program in &report.tones {

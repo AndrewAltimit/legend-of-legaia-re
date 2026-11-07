@@ -258,7 +258,7 @@ impl SceneEncounters {
         // descriptor offset is entry-relative.
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, _consumed) = psx_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }

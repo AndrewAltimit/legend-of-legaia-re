@@ -10,7 +10,7 @@
 //! own index of the same PROT.DAT (`java -jar jpsxdec.jar -f PROT.DAT -x
 //! index.idx`): all 1132 TIM items match on absolute offset, decoded
 //! dimensions, bit depth, and palette count. So pinning the catalog also pins
-//! jPSXdec parity - if our strict TIM validator (`legaia_tim::parse_strict`)
+//! jPSXdec parity - if our strict TIM validator (`psx_tim::parse_strict`)
 //! ever drifts from jPSXdec's TIM detector, the digest changes and this test
 //! fails. No jPSXdec output (or any TIM pixel data) is committed; the
 //! reference holds only derived metadata + FNV fingerprints.

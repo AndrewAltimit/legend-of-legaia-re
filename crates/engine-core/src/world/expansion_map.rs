@@ -192,7 +192,7 @@ impl World {
 
     /// Apply the map's animated materials to `vram` for this frame. Returns
     /// `true` when a word changed (the host re-uploads). No-op off a map.
-    pub fn step_expansion_materials(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step_expansion_materials(&mut self, vram: &mut psx_tim::Vram) -> bool {
         use legaia_expansion_format::map_detail::MaterialFx;
         let frame = self.frame;
         let Some(map) = self.expansion.map.as_mut() else {
@@ -260,7 +260,7 @@ impl World {
                     };
                     turned
                         .iter()
-                        .map(|&w| legaia_tim::tint::tint_bgr555(w, color))
+                        .map(|&w| psx_tim::tint::tint_bgr555(w, color))
                         .collect()
                 }
                 MaterialFx::Scroll { dx, dy, .. } => {

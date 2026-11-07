@@ -26,11 +26,11 @@
 //! skips and passes without it.
 
 use legaia_engine_camera::psx_camera::camera_rotation;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::prim_pool;
 use legaia_render_kernels::gte::{
     CameraRelativePart, PartCameraPose, camera_relative_part, camera_view_rotation,
 };
+use psx_mednafen::SaveState;
+use psx_ram_image::prim_pool;
 use std::path::PathBuf;
 
 /// The battle / field actor-list heads the frame passes walk (next at `+0`).

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use legaia_mdec::{
+use psx_mdec::{
     MdecDecoder,
     str_player::{Bitstream, FmvSlot, PumpIdle, StrPlayer, seek_sector_offset},
     str_sector::StrFrameAssembler,
@@ -227,7 +227,7 @@ fn cmd_str_plan(
     end_frame: u32,
     slices: usize,
 ) -> Result<()> {
-    use legaia_mdec::str_player::{
+    use psx_mdec::str_player::{
         Bitstream, FmvSlot, SLICE_W_16BPP, SLICE_W_24BPP, StrPlayer, end_of_stream,
         slice_word_count, vram_units,
     };
@@ -417,7 +417,7 @@ fn cmd_scan_str(str_file: &PathBuf) -> Result<()> {
             frame_count += 1;
         }
     }
-    let timing = legaia_mdec::str_sector::analyze_str_timing(&data);
+    let timing = psx_mdec::str_sector::analyze_str_timing(&data);
     println!("{} sectors, {} complete frames", n_sectors, frame_count);
     println!(
         "{:.3} sectors/frame -> {:.2} fps (2x CD rate); duration {:.1}s",

@@ -1088,7 +1088,7 @@ impl World {
     /// Drain the banked game ticks and apply the live CLUT-cell effects to
     /// `vram`. Returns `true` when any texels changed (the caller re-uploads
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
-    pub fn step_ambient_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step_ambient_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
         if self.ambient.fx.is_empty() && self.ambient.cell_fx_seed.is_empty() {
             return false;
@@ -1199,7 +1199,7 @@ impl World {
     ///
     /// PORT: FUN_80021DF4 (the mode-4 arm's StoreImage / MoveImage /
     /// LoadImage trio, `0x80022D08..` and `0x80022DF8..`)
-    fn apply_ambient_scrolls(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    fn apply_ambient_scrolls(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let mut wrote = false;
         for idx in 0..self.ambient.fx.len() {
             if self.ambient.fx[idx].scroll_fx.is_empty() {
@@ -1260,7 +1260,7 @@ fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
 /// One fired mode-4 tick against `vram`: rotate the part's rect by its strip
 /// widths. `true` when any texel moved. Shared by the field ambient parts and
 /// the battle effect parts ([`World::apply_battle_vram_moves`]).
-pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::VramScrollFx) -> bool {
+pub(crate) fn apply_scroll_fx(vram: &mut psx_tim::Vram, fx: &vram_scroll::VramScrollFx) -> bool {
     let (x, y, w, h) = fx.rect;
     if w == 0 || h == 0 || w > 1024 || h > 512 {
         return false;
@@ -1280,7 +1280,7 @@ pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::Vra
     true
 }
 
-pub(crate) fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
+pub(crate) fn read_rect(vram: &psx_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     let mut out = Vec::with_capacity(usize::from(w) * usize::from(h));
     for row in 0..h {
         for col in 0..w {
@@ -1293,7 +1293,7 @@ pub(crate) fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16)
 impl World {
     /// Write [`crate::world::AmbientFxState::vram_rect_seed`] over the
     /// engine's VRAM; `true` when a texel changed. Capture alignment only.
-    pub(crate) fn apply_vram_rect_seed(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub(crate) fn apply_vram_rect_seed(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let mut wrote = false;
         for ((x, y, w, h), texels) in &self.ambient.vram_rect_seed {
             if texels.len() != usize::from(*w) * usize::from(*h) {
@@ -1309,7 +1309,7 @@ impl World {
 }
 
 /// Write a `w`-wide halfword rect into the software VRAM.
-pub(crate) fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
+pub(crate) fn write_rect(vram: &mut psx_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);

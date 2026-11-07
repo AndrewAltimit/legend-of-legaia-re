@@ -15,8 +15,8 @@
 
 use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_texture_replace::battle_texture::{self, BattleTextureTarget, PaletteSource};
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -253,7 +253,7 @@ fn a_repaint_is_surgical_edc_valid_and_deterministic() {
     for s in 0..footprint.div_ceil(USER_DATA_SIZE) {
         let sb = (lba + s) * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
             "player-file sector {s} must stay EDC/ECC-valid"
         );
     }

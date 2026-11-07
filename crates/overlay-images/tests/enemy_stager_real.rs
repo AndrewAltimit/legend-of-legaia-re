@@ -5,7 +5,7 @@
 //! shared slot-B link base `0x801F69D8`, exactly like the player block. This is
 //! the disc-only *structural* test; the per-leg RAM loader-B binding against the
 //! `cort_*_mid_cast` save states is pinned by `enemy_stager_binding`
-//! (disc+library-gated, in `legaia-mednafen`).
+//! (disc+library-gated, in `psx-mednafen`).
 //!
 //! Two structural facts are pinned here:
 //!

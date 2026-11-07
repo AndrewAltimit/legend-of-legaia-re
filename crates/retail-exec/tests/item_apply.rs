@@ -8,8 +8,8 @@ use legaia_engine_core::world::World;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::item_effect::ItemEffectTable;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::{CharacterRecord, Party};
+use psx_retail_exec::{Stop, V0};
 
 const RECORDS: u32 = 0x8008_4708;
 const STRIDE: u32 = 0x414;

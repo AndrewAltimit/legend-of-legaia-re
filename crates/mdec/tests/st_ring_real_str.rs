@@ -1,4 +1,4 @@
-//! Disc-gated oracle for the retail `St` sector ring ([`legaia_mdec::st_ring`]).
+//! Disc-gated oracle for the retail `St` sector ring ([`psx_mdec::st_ring`]).
 //!
 //! Streams real `MOV/MV*.STR` sectors off a user-supplied disc image through
 //! the ring exactly as the STR overlay does - one 2048-byte sector at a time,
@@ -10,16 +10,16 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset - no Sony bytes here.
 
-use legaia_mdec::st_ring::{RETAIL_RING_SLOTS, StRing, StStatus};
-use legaia_mdec::str_sector::StrFrameAssembler;
+use psx_mdec::st_ring::{RETAIL_RING_SLOTS, StRing, StStatus};
+use psx_mdec::str_sector::StrFrameAssembler;
 
 /// Locate a movie's extent on the disc, if the env var points at one.
-fn open_movie(name: &str) -> Option<(legaia_iso::raw::RawDisc, u32, u32)> {
+fn open_movie(name: &str) -> Option<(psx_iso::raw::RawDisc, u32, u32)> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
-    let path = legaia_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
-    let mut disc = legaia_iso::raw::RawDisc::open(&path).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut disc).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
+    let path = psx_iso::raw::resolve_disc_path(std::path::Path::new(&path)).ok()?;
+    let mut disc = psx_iso::raw::RawDisc::open(&path).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut disc).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut disc, &volume.root).ok()?;
     let (_, rec) = files
         .into_iter()
         .find(|(p, _)| p.to_ascii_uppercase().contains(name))?;

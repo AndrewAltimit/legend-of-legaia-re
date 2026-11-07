@@ -48,7 +48,7 @@ fn extracted() -> Option<PathBuf> {
     None
 }
 
-fn window_vram(extracted: &std::path::Path, scene: &str) -> legaia_tim::Vram {
+fn window_vram(extracted: &std::path::Path, scene: &str) -> psx_tim::Vram {
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio: false,
@@ -92,7 +92,7 @@ fn scene_texels_win_over_the_pool() {
     let Some(extracted) = extracted() else { return };
     let vram = window_vram(&extracted, "dolk");
     let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted).expect("index");
-    let mut pool = legaia_tim::Vram::new();
+    let mut pool = psx_tim::Vram::new();
     legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
     let differing = (0..256)

@@ -2,7 +2,7 @@
 //! buffer, predicted byte for byte by TOC order.
 //!
 //! A `scene_asset_table` bundle's content ends where its last descriptor's LZS
-//! stream stops being consumed (`legaia_lzs::decompress_tracked`), always
+//! stream stops being consumed (`psx_lzs::decompress_tracked`), always
 //! inside the entry's last sector. The bytes above are not this bundle's: the
 //! packer wrote every PROT entry out of one buffer it never cleared, so file
 //! offset `k` of that slack holds the byte the nearest earlier entry reaching
@@ -58,8 +58,7 @@ fn bundle_content_end(buf: &[u8]) -> Option<usize> {
     let mut end = 8 + r.table.count * 8;
     for d in r.table.used() {
         let off = d.data_offset as usize;
-        let (_, consumed) =
-            legaia_lzs::decompress_tracked(buf.get(off..)?, d.size as usize).ok()?;
+        let (_, consumed) = psx_lzs::decompress_tracked(buf.get(off..)?, d.size as usize).ok()?;
         end = end.max(off + consumed);
     }
     Some(end)

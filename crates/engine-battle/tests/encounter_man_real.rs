@@ -42,7 +42,7 @@ fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let body = &bytes[start..];
-    let (decoded, _) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+    let (decoded, _) = psx_lzs::decompress_tracked(body, man.size as usize).ok()?;
     if decoded.len() != man.size as usize {
         return None;
     }

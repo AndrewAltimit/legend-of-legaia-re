@@ -107,7 +107,7 @@ fn decode_pool(pool: &[u8]) -> (Vec<[u16; 16]>, Vec<u8>, usize) {
         .map(|c| {
             let mut pal = [0u16; 16];
             for (i, slot) in pal.iter_mut().enumerate() {
-                *slot = legaia_bytes::u16_le(pool, c * 32 + i * 2).unwrap_or(0);
+                *slot = psx_bytes::u16_le(pool, c * 32 + i * 2).unwrap_or(0);
             }
             pal
         })

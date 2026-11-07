@@ -110,7 +110,7 @@ fn assert_vahn_form_installed(session: &NativeSession) {
 fn assert_monster_slots_untouched(session: &NativeSession) {
     use legaia_actor_formats::monster_archive::{MONSTER_CLUT_ROW_BASE, monster_page_origin};
     let forms = session.host.battle_party_forms().expect("party forms");
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let sentinel = 0x5A5Au16;
     let (x0, y0) = monster_page_origin(0);
     let (x2, _) = monster_page_origin(2);

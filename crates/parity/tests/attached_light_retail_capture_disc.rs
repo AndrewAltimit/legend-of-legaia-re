@@ -77,7 +77,7 @@ struct RetailLight {
     parent: u32,
 }
 
-fn retail_light(st: &legaia_pcsx_redux::SaveState) -> Option<RetailLight> {
+fn retail_light(st: &psx_pcsx_redux::SaveState) -> Option<RetailLight> {
     let in_ram = |a: u32| (0x8000_0000..0x8020_0000).contains(&a);
     for head in LIST_HEADS {
         let mut a = st.u32_at(head);
@@ -110,7 +110,7 @@ fn retail_light(st: &legaia_pcsx_redux::SaveState) -> Option<RetailLight> {
 /// the screen edge, and their first two vertices sit on the rim, so the
 /// bounding box of those vertices is the ellipse's. Returns
 /// `(centre_x, centre_y, half_w, half_h)`.
-fn packet_rim(st: &legaia_pcsx_redux::SaveState, rgb: [u8; 3]) -> Option<(i32, i32, i32, i32)> {
+fn packet_rim(st: &psx_pcsx_redux::SaveState, rgb: [u8; 3]) -> Option<(i32, i32, i32, i32)> {
     let ram = st.main_ram();
     let (mut x0, mut x1, mut y0, mut y1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
     let mut i = 0;
@@ -150,7 +150,7 @@ fn dolk_darkness_mask_matches_the_retail_capture() {
         // SAFETY: single-threaded test setup before any save load.
         unsafe { std::env::set_var("LEGAIA_SCUS", extracted.join("SCUS_942.54")) };
     }
-    let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load the dolk state");
+    let st = psx_pcsx_redux::SaveState::from_path(&path).expect("load the dolk state");
     assert_eq!(st.scene_name(), "dolk", "the capture is the dolk field");
 
     // 1. The record, retail vs engine.

@@ -25,8 +25,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::extract_prot_dat;
 use legaia_prot::toc_index::parse_prot_toc;
+use psx_iso::image::extract_prot_dat;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
@@ -90,7 +90,7 @@ impl<'a> AssetTable<'a> {
             return None;
         }
         let src = &self.buf[self.table_off + offset..];
-        legaia_lzs::decompress(src, size).ok()
+        psx_lzs::decompress(src, size).ok()
     }
 }
 

@@ -51,6 +51,47 @@ fn run_aluru(world: &mut World) -> AluruRun {
     (phases, spreads, peak)
 }
 
+/// Arm 4 lights the creature white and hands its node deformation row 1
+/// (a sweep from the floor up) while its `+0x1BA` drains; arm 6's exit
+/// drops `+0x21C` and the tint ease takes the word back.
+#[test]
+fn the_aluru_creature_reforms_white_on_row_one() {
+    use legaia_engine_cast::cast_module_camera::{
+        ALURU_ASSEMBLED_ARM, ALURU_ASSEMBLY_COLOUR, ALURU_SHATTER_ROW, ALURU_SHATTER_ROW_FLAGS,
+        ALURU_SHATTER_ROW_OFFSET,
+    };
+    let mut world = aluru_world(Some(false));
+    let mut seen = None;
+    for _ in 0..20_000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(ALURU, phase) else {
+            break;
+        };
+        let c = &world.actors[9].battle;
+        if world.casting.module_phase == ALURU_ASSEMBLED_ARM && seen.is_none() {
+            seen = Some((c.render_color, c.render_flag, c.shatter_row));
+        }
+        if !run.busy || phase > ALURU_ASSEMBLED_ARM {
+            break;
+        }
+    }
+    assert_eq!(
+        seen,
+        Some((ALURU_ASSEMBLY_COLOUR, 0xFF, Some(ALURU_SHATTER_ROW)))
+    );
+    let row = world.shatter_row(ALURU_SHATTER_ROW);
+    assert_eq!(
+        (row.off, row.h3, row.flags),
+        (
+            [0, 0, 0],
+            ALURU_SHATTER_ROW_OFFSET[3],
+            ALURU_SHATTER_ROW_FLAGS
+        )
+    );
+    let c = &world.actors[9].battle;
+    assert_eq!((c.render_flag, c.shatter_row), (0, None));
+}
+
 /// The kill path zeroes the victim's HP on arm `0x11`'s passing tick,
 /// breaks it up through arm `0x13`, owes the band no fold, and leaves
 /// `0x13` for the done phase without visiting arm `0x14`.
@@ -479,4 +520,93 @@ fn ozma_walks_its_hit_threshold_down_arm_0x18() {
         }
     }
     assert_eq!(seen, [0x60, 0x40, 0x20, 0]);
+}
+
+/// Each of PROT 0934's ladder rolls is a whole `FUN_801DD0AC(0x10, 7, seat)`,
+/// and that kernel runs the finisher on every roll (`0x801DD478`): the ladder
+/// trains Ozma before the fold does and fills the victim's spirit gauge, and
+/// the hit it lands is the quartered roll plus `0x40 + rand() % 0x40`.
+#[test]
+fn ozmas_ladder_rolls_train_the_spell() {
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    roster_with_spell(&mut world, OZMA, 1);
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 9000;
+    world.actors[1].battle.max_hp = 9000;
+    world.actors[0].battle.active_target = 1;
+    for i in 2..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    let mut body = legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Ozma", 900, 10);
+    body.intel = 400;
+    world.tables.summon_creatures.insert(OZMA, body);
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let mut hits = 0;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let before = world.actors[1].battle.hp;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        if phase == 0x18 && world.actors[1].battle.hp != before {
+            hits += 1;
+            assert!(before - world.actors[1].battle.hp >= 0x40);
+        }
+        if !run.busy || world.casting.module_phase > 0x18 {
+            break;
+        }
+    }
+    assert_eq!(hits, 3, "three ladder hits ahead of the fold");
+    assert!(
+        world.casting.module_hit_xp > 0,
+        "the ladder's rolls ran the finisher's XP tail"
+    );
+}
+
+/// PROT 0929's (Mule) arm 16 wave rolls `FUN_801DD0AC(0x10, 7, seat)` on each
+/// monster it passes (`0x801F7E4C`), and that kernel runs the finisher on
+/// every roll (`0x801DD478`): the wave trains the spell before the fold does.
+#[test]
+fn mules_wave_rolls_train_the_spell() {
+    const MULE: u8 = 0x9B;
+    let mut world = module_code_world();
+    roster_with_spell(&mut world, MULE, 1);
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 9000;
+    world.actors[1].battle.max_hp = 9000;
+    world.actors[1].move_state.world_z = -0x400;
+    world.actors[0].battle.active_target = 1;
+    for i in 2..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    let mut body = legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Mule", 900, 10);
+    body.intel = 400;
+    world.tables.summon_creatures.insert(MULE, body);
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, MULE);
+    let mut struck = false;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let before = world.actors[1].battle.hp;
+        let Some(run) = world.run_cast_module_code(MULE, phase) else {
+            break;
+        };
+        struck |= phase == 16 && world.actors[1].battle.hp < before;
+        if !run.busy || world.casting.module_phase > 16 {
+            break;
+        }
+    }
+    assert!(struck, "the wave reached the monster");
+    assert!(
+        world.casting.module_hit_xp > 0,
+        "the wave's rolls ran the finisher's XP tail"
+    );
 }

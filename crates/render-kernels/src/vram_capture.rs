@@ -10,7 +10,7 @@
 //! capture.
 //!
 //! The port's renderer draws through wgpu into a colour attachment that has no
-//! relationship to [`legaia_tim::Vram`]: `Renderer::upload_vram` pushes the
+//! relationship to [`psx_tim::Vram`]: `Renderer::upload_vram` pushes the
 //! software page *to* the GPU (`TEXTURE_BINDING | COPY_DST`) and nothing ever
 //! comes back, so a frame the engine just drew was not addressable as a
 //! texture. This module is that missing direction.
@@ -50,7 +50,7 @@
 //! what a full-screen transition wants; clearing it reproduces the
 //! "black reads as a hole" behaviour a sprite capture relies on.
 
-use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
+use psx_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 
 /// Native PSX display width the engine's screen-space primitives are authored
 /// in (every retail emitter clamps against `0x140`).

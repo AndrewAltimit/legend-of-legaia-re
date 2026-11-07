@@ -96,7 +96,7 @@ impl PlayWindowApp {
         intro: Option<&mut BattleIntro>,
         renderer: &legaia_engine_render::Renderer,
         target: legaia_engine_render::RenderTarget<'_>,
-        base: Option<&legaia_tim::Vram>,
+        base: Option<&psx_tim::Vram>,
     ) -> Option<legaia_engine_render::UploadedVram> {
         let intro = intro?;
         let base = base?;

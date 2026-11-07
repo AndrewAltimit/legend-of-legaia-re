@@ -221,7 +221,7 @@ impl AudioSink for AudioOut {
 /// that decode to (approximately) the original samples.
 ///
 /// The trick: filter=0 / shift=0 / nibble = `(pcm[i] >> 12) & 0xF` decodes
-/// (per `legaia_xa::F0[0]=0`) to exactly `(nibble_signed << 12)`. So if we
+/// (per `psx_xa::F0[0]=0`) to exactly `(nibble_signed << 12)`. So if we
 /// encode the top 4 bits of each sample, the decoder reproduces the top
 /// 4 bits - a coarse but functional preview. Good enough for "does sample
 /// N play and at the right pitch?"

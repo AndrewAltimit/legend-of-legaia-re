@@ -590,7 +590,23 @@ pub fn run_engine_battle(
     let facing = battle.seeded_facing();
     let defeat_lanes = battle.engine_defeat_lanes();
     let status = battle.engine_status();
-    let keys = battle.engine_init_keys();
+    let mut keys = battle.engine_init_keys();
+    // The capture's keys are a later round's remainder. A fight that opens
+    // on a back attack (`ctx[+0x290] == 1`: Lapis's scripted ambush) plays
+    // its first round on the side lockout, the party's keys zeroed
+    // (`FUN_801DA780`, `0x801DAA40`), so seeding the party's live keys into
+    // that round handed each member a no-input swing retail's ambush never
+    // runs (`battle_deene_lapis_strike`: Vahn's struck Lapis `144` below the
+    // capture's `64800` before the first prompt). Unless the capture stands
+    // inside that round, the party keeps the lockout's zeros.
+    if session.host.world.battle_formation()
+        == legaia_engine_battle_vm::battle_formulas::FormationAdvantage::BackAttack
+        && !battle.in_formation_round()
+    {
+        for k in keys.iter_mut().take(pc_seed) {
+            *k = Some(0);
+        }
+    }
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;

@@ -423,7 +423,7 @@ export function field(ctx, obj, spec, path) {
 
 /**
  * A per-channel palette multiply `[r, g, b]` at `obj[spec.k]`, `128` =
- * unchanged and `255` about double (`legaia_tim::tint::tint_bgr555`): three
+ * unchanged and `255` about double (`psx_tim::tint::tint_bgr555`): three
  * boxes, a colour swatch that is also a picker (the colour a mid-grey texel
  * takes, so neutral reads as grey) and a Neutral button. `spec.opt`: a
  * checkbox; unticked writes `null` (no tint at all).

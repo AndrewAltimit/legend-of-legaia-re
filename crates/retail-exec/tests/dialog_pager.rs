@@ -8,7 +8,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_dialog::dialog::OwnedDialogPanel;
 use legaia_engine_dialog::dialog_window::WindowPhase;
-use legaia_retail_exec::{Cpu, Stop};
+use psx_retail_exec::{Cpu, Stop};
 use std::sync::Arc;
 
 const OVERLAY_BASE: u32 = 0x801C_E818;

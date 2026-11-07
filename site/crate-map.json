@@ -535,7 +535,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/asset-viewer/README.md"
   },
   "bytes": {
-   "package": "legaia-bytes",
+   "package": "psx-bytes",
    "deps": [],
    "dev_deps": [],
    "bins": [],
@@ -1214,7 +1214,8 @@
     "parity",
     "web-expansion",
     "web-minigames",
-    "web-play"
+    "web-play",
+    "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-vm/README.md"
   },
@@ -3396,7 +3397,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/gamedata/README.md"
   },
   "iso": {
-   "package": "legaia-iso",
+   "package": "psx-iso",
    "deps": [],
    "dev_deps": [],
    "bins": [
@@ -3437,7 +3438,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/iso/README.md"
   },
   "lzs": {
-   "package": "legaia-lzs",
+   "package": "psx-lzs",
    "deps": [],
    "dev_deps": [],
    "bins": [
@@ -3472,7 +3473,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/lzs/README.md"
   },
   "mdec": {
-   "package": "legaia-mdec",
+   "package": "psx-mdec",
    "deps": [
     "xa"
    ],
@@ -3523,7 +3524,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mdt/README.md"
   },
   "mednafen": {
-   "package": "legaia-mednafen",
+   "package": "psx-mednafen",
    "deps": [
     "actor-formats",
     "cheats",
@@ -3932,7 +3933,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/patcher/README.md"
   },
   "pcsx-redux": {
-   "package": "legaia-pcsx-redux",
+   "package": "psx-pcsx-redux",
    "deps": [
     "ram-image"
    ],
@@ -4005,7 +4006,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/prot/README.md"
   },
   "ram-image": {
-   "package": "legaia-ram-image",
+   "package": "psx-ram-image",
    "deps": [],
    "dev_deps": [],
    "bins": [],
@@ -4147,7 +4148,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/render-kernels/README.md"
   },
   "retail-exec": {
-   "package": "legaia-retail-exec",
+   "package": "psx-retail-exec",
    "deps": [],
    "dev_deps": [
     "actor-formats",
@@ -4313,7 +4314,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/scene-formats/README.md"
   },
   "seq": {
-   "package": "legaia-seq",
+   "package": "psx-seq",
    "deps": [],
    "dev_deps": [],
    "bins": [
@@ -4370,7 +4371,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/texture-replace/README.md"
   },
   "tim": {
-   "package": "legaia-tim",
+   "package": "psx-tim",
    "deps": [],
    "dev_deps": [],
    "bins": [
@@ -4580,7 +4581,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ui-formats/README.md"
   },
   "vab": {
-   "package": "legaia-vab",
+   "package": "psx-vab",
    "deps": [],
    "dev_deps": [
     "xa"
@@ -4890,6 +4891,7 @@
     "disc-audit",
     "engine-audio",
     "engine-battle",
+    "engine-battle-vm",
     "engine-effects",
     "engine-field",
     "engine-menus",
@@ -4934,6 +4936,7 @@
     "field_scene",
     "npc_dialog",
     "player_anm",
+    "pose_sampler",
     "sentinel_placements",
     "sfx_view",
     "shop_items",
@@ -4948,7 +4951,7 @@
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
   },
   "xa": {
-   "package": "legaia-xa",
+   "package": "psx-xa",
    "deps": [
     "iso"
    ],

@@ -107,7 +107,7 @@ fn a_monster_cue_keys_a_sample_from_its_monster_snd_bank() {
         .expect("monster.snd");
     let bytes = legaia_container_formats::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
         .expect("bank in the archive");
-    let report = legaia_vab::parse(bytes, 4).expect("the bank's VAB header at +4");
+    let report = psx_vab::parse(bytes, 4).expect("the bank's VAB header at +4");
     let mut spu = Spu::new();
     let vab = legaia_engine_audio::bgm_tail::upload_at(&mut spu, 0x20000, &report, &bytes[4..]);
     let voice = SfxBank::default()

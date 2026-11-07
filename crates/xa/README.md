@@ -1,4 +1,4 @@
-# legaia-xa
+# psx-xa
 
 PSX CD-XA ADPCM decoder and WAV exporter.
 
@@ -26,7 +26,7 @@ The `encode` module is the write side: `encode_mono_4bit` /
 accepts (exhaustive filter/range search per 28-sample unit), and `resample_linear` brings
 replacement audio onto the stream's rate. The disc patcher's XA voice
 edits (`legaia-patcher`, Delilas arts-voice modes) are built on it,
-paired with `legaia_iso::write::encode_mode2_form2_sector` for the
+paired with `psx_iso::write::encode_mode2_form2_sector` for the
 sector-level EDC.
 
 ## Filter coefficients (1/64 units)
@@ -38,7 +38,7 @@ sector-level EDC.
 | 2      | 115 |  -52 |
 | 3      |  98 |  -55 |
 
-XA defines four filters; the SPU adds a fifth. `legaia-vab` shares these
+XA defines four filters; the SPU adds a fifth. `psx-vab` shares these
 constants.
 
 ## Decode formula (per sample)
@@ -59,7 +59,7 @@ reading sectors as Form 1 (2048 user-data bytes per sector), which
 silently dropped 276 bytes of audio per sector AND collapsed every
 channel of the stream into a single shuffled byte sequence.
 
-The fix lives in `legaia_xa::demux`: read raw 2352-byte sectors,
+The fix lives in `psx_xa::demux`: read raw 2352-byte sectors,
 parse each subheader, filter to `AUDIO + FORM2`, group by
 `(file_no, ch_no)`. Each resulting per-channel buffer is a clean
 concatenation of 128-byte sound groups that the 4-bit XA decoder

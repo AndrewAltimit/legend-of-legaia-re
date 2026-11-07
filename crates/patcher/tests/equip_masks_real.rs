@@ -22,10 +22,10 @@ use std::collections::BTreeMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::equip_stats::{EquipStatTable, bonus_table_file_offset};
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -136,8 +136,7 @@ fn shuffle_equip_masks_round_trips_on_disc() {
     // Every SCUS sector the bonus table spans stays EDC/ECC-valid.
     let img = patcher.image();
     let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
-    let scus =
-        legaia_iso::iso9660::read_file_in_image(&original, "SCUS_942.54").expect("read SCUS");
+    let scus = psx_iso::iso9660::read_file_in_image(&original, "SCUS_942.54").expect("read SCUS");
     let off = bonus_table_file_offset(&scus).expect("bonus table offset");
     let span = before.len() * 8;
     let first = off / USER_DATA_SIZE;
@@ -146,7 +145,7 @@ fn shuffle_equip_masks_round_trips_on_disc() {
         let sector = scus_lba as usize + s;
         let sb = sector * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
             "patched bonus-table sector {sector} must be EDC/ECC-valid"
         );
     }

@@ -179,7 +179,7 @@ pub(crate) fn clut_finder_cmd(
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            let tim = match legaia_tim::parse(&bytes) {
+            let tim = match psx_tim::parse(&bytes) {
                 Ok(t) => t,
                 Err(_) => continue,
             };

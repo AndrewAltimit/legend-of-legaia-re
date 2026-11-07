@@ -17,11 +17,11 @@
 use std::collections::HashMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply::{self, EncounterScope, SoloStrongConfig};
 use legaia_patcher::encounter::{MonsterPowerTable, SceneEncounters};
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -162,7 +162,7 @@ fn solo_strong_collapses_strong_packs_on_disc() {
     let disc_sector = prot_lba as u64 + archive.entries[changed_idx].start_lba as u64;
     let sb = disc_sector as usize * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
         "patched scene {changed_idx} first sector must be EDC/ECC-valid"
     );
 

@@ -28,6 +28,20 @@
  *   view.setMesh(positions, uvs, cbaTsb, indices, bounds, objectIds, flatRgba);
  *   view.setAnimation({ partCount, frameCount, frames });   // null = rest
  *   view.setPlaying(true);
+ *
+ * **Between keyframes.** Retail does not hold a keyframe until the next one:
+ * the battle anim tick (`FUN_80047430`) moves a 12.4 cursor once a battle
+ * frame and the decoder (`FUN_8004998C`) blends toward the next keyframe by
+ * the cursor's sixteenths. The view has two readings of a clip, both through
+ * the WASM `PoseSampler` (crates/web-viewer/src/pose_sampler.rs), so the
+ * blend is the engine's own:
+ *   - smooth (the default, an enhancement): the blend at a continuous
+ *     position, re-posed every display frame;
+ *   - retail stepping: the retail cursor, advanced once per battle frame
+ *     (`meta.retailStep` vsyncs, default 2) and decoded at its sixteenth.
+ * The choice is one per visitor (`MeshView.smoothPref`, localStorage), shared
+ * by every page that uses this view. Without the sampler (an older bundle) the
+ * view steps whole keyframes, as it always did.
  */
 (function () {
   'use strict';
@@ -36,6 +50,15 @@
   const ANIM_FPS = 14;
   /* PSX angle units -> radians (4096 = one revolution). */
   const A2R = (Math.PI * 2) / 4096;
+  /* Display vsyncs per second the retail cursor is clocked on. */
+  const VSYNC_HZ = 60;
+  /* Visitor preference: smooth (interpolated) playback, default on. */
+  const SMOOTH_KEY = 'legaia-anim-smooth';
+  function readSmoothPref() {
+    try { return window.localStorage.getItem(SMOOTH_KEY) !== '0'; } catch (e) { return true; }
+  }
+  /* Every live view, so one toggle flips them all. */
+  const VIEWS = new Set();
 
   class MeshView {
     /* `opts.onSpin(isSpinning)` fires whenever auto-rotate flips, so the page
@@ -48,7 +71,8 @@
       this.canvas = canvas;
       this.renderer = new window.TmdRenderer(canvas);
       this.onSpin = o.onSpin || null;
-      this.onFrame = null;
+      this.onFrame = null;   /* once per keyframe index */
+      this.onPose = null;    /* after every posed sample (smooth: every display frame) */
       this.defaultCam = Object.assign(
         { yaw: -0.4, pitch: 0.1, distance: 2.6, autoRotate: true }, o.cam || {});
       this.zoom = Object.assign({ min: 1.4, max: 8 }, o.zoom || {});
@@ -72,6 +96,10 @@
       this.speed = 1;
       this._startMs = 0;
       this._lastPosedFrame = -1;
+      /* Smooth (interpolated) playback vs retail stepping; see the header. */
+      this.smooth = readSmoothPref();
+      this._lastSample = null;   /* the last sampled cursor, to skip re-posing */
+      VIEWS.add(this);
 
       this._loop = this._loop.bind(this);
       this._raf = 0;
@@ -145,12 +173,17 @@
         if (this._basePos) this.renderer.updatePositions(this._basePos);
         return;
       }
+      if (this.anim && this.anim.sampler) this.anim.sampler.free();
       this.anim = {
         out: new Float32Array(this._basePos),
         partCount: meta.partCount,
         frameCount: meta.frameCount,
         frames: meta.frames,
         fps: meta.fps || ANIM_FPS,
+        /* Vsyncs per battle frame the retail cursor steps on. */
+        retailStep: Math.max(1, meta.retailStep | 0 || 2),
+        sampler: null,
+        parts: new Float32Array(meta.partCount * 6),
         /* Opt-in: fit the camera over EVERY frame of the clip rather than
          * frame 0 only - action clips (battle arts) translate the actor far
          * from the rest stance mid-clip. */
@@ -159,8 +192,34 @@
       this._startMs = performance.now();
       this._frameOverride = 0;
       this._lastPosedFrame = -1;
+      this._lastSample = null;
       this._poseAt(0);
       this._refit();
+      this._attachSampler(this.anim);
+    }
+
+    /* Build the WASM sampler for clip `A` once the module is in hand (the
+     * pages that use this view have already loaded it, so this resolves on
+     * the next microtask). Until then, and on a bundle without it, the view
+     * steps whole keyframes. */
+    _attachSampler(A) {
+      if (!window.LegaiaWasm || A.frameCount < 2) return;
+      window.LegaiaWasm.load().then((mod) => {
+        if (this.anim !== A || typeof mod.PoseSampler !== 'function') return;
+        try {
+          A.sampler = new mod.PoseSampler(Int32Array.from(A.frames), A.partCount, A.frameCount);
+        } catch (e) {
+          console.warn('mesh-view: no pose sampler', e);
+        }
+        this._lastSample = null;
+      }).catch(() => {});
+    }
+
+    /* Smooth (interpolated) playback on / off for this view; the page's
+     * toggle goes through `MeshView.setSmoothAll`. */
+    setSmooth(on) {
+      this.smooth = !!on;
+      this._lastSample = null;
     }
 
     /* Re-fit the camera on the assembled pose. Frame 0 of a clip is the
@@ -265,15 +324,23 @@
       const A = this.anim;
       if (!A) return;
       const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
+      this._poseParts(A.frames, ff * A.partCount * 6, out);
+    }
+
+    /* Pose the mesh from per-part `[tx, ty, tz, rx, ry, rz]` rows starting
+     * at `src[at]` (a keyframe of the clip, or a sampler's blended row) into
+     * `out`. */
+    _poseParts(src, at, out) {
+      const A = this.anim;
       const base = this._basePos;
       const ids = this._objIds, n = base.length / 3;
       /* Precompute each bone's sin/cos + translation once per frame. */
       const sin = new Float32Array(A.partCount * 3);
       const cos = new Float32Array(A.partCount * 3);
       const tr = new Float32Array(A.partCount * 3);
-      const f = A.frames;
+      const f = src;
       for (let p = 0; p < A.partCount; p++) {
-        const o = (ff * A.partCount + p) * 6;
+        const o = at + p * 6;
         for (let k = 0; k < 3; k++) {
           const a = f[o + 3 + k] * A2R;
           sin[p*3+k] = Math.sin(a);
@@ -392,19 +459,50 @@
       }
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
       if (this.anim && this.playing && this.anim.frameCount > 1) {
-        const t = (performance.now() - this._startMs) / 1000 * this._rate();
-        const f = Math.floor(t) % this.anim.frameCount;
-        if (f !== this._lastPosedFrame) {
-          this._poseAt(f);
-          this._lastPosedFrame = f;
-          if (typeof this.onFrame === 'function') this.onFrame(f);
-        }
+        this._advance((performance.now() - this._startMs) / 1000);
       }
       /* Orbit UX: drag rotates rather than pans, so panX/panY stay 0. */
       this.renderer.render(
         this.cam.yaw, this.cam.pitch, this.cam.distance,
         0, 0, this.center, this.radius);
       this._raf = requestAnimationFrame(this._loop);
+    }
+
+    /* Pose the clip `secs` seconds into playback. With a sampler the pose is
+     * the blend at the smooth position, or at the retail cursor; without one,
+     * the whole keyframe. `onFrame` fires once per keyframe either way. */
+    _advance(secs) {
+      const A = this.anim;
+      const t = secs * this._rate();
+      const f = Math.floor(t) % A.frameCount;
+      if (A.sampler) {
+        let key;
+        if (this.smooth) {
+          key = t;
+          A.sampler.sample_smooth(t, A.parts);
+        } else {
+          /* The retail cursor: whole battle frames of vsyncs, each moving it
+           * the clip rate's sixteenths (15 * rate keyframes a second at the
+           * normal rate is 4 * rate sixteenths a vsync). */
+          const vs = Math.floor(secs * VSYNC_HZ * (this.speed || 1) + 1e-6);
+          const gf = vs - (vs % A.retailStep);
+          key = Math.floor(gf * (A.fps * 16) / VSYNC_HZ + 1e-6);
+          if (key === this._lastSample) return;
+          A.sampler.sample_retail(key, A.parts);
+        }
+        this._lastSample = key;
+        this._poseParts(A.parts, 0, A.out);
+        this.renderer.updatePositions(A.out);
+        this._updateTrail(f);
+        if (typeof this.onPose === 'function') this.onPose();
+      } else if (f !== this._lastPosedFrame) {
+        this._poseAt(f);
+        if (typeof this.onPose === 'function') this.onPose();
+      }
+      if (f !== this._lastPosedFrame) {
+        this._lastPosedFrame = f;
+        if (typeof this.onFrame === 'function') this.onFrame(f);
+      }
     }
 
     /* Draw the current model once at the default camera (or `yaw`) and copy
@@ -428,8 +526,27 @@
     dispose() {
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = 0;
+      VIEWS.delete(this);
+      if (this.anim && this.anim.sampler) this.anim.sampler.free();
     }
   }
+
+  /* The visitor's smooth-playback preference (default on). */
+  MeshView.smoothPref = readSmoothPref;
+
+  /* Flip smooth playback on every live view and remember the choice. */
+  MeshView.setSmoothAll = function (on) {
+    try { window.localStorage.setItem(SMOOTH_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+    VIEWS.forEach((v) => v.setSmooth(on));
+  };
+
+  /* Wire a checkbox as the page's "smooth motion" toggle: checked = the
+   * interpolated enhancement, unchecked = retail stepping. */
+  MeshView.attachSmoothToggle = function (box) {
+    if (!box) return;
+    box.checked = readSmoothPref();
+    box.addEventListener('change', () => MeshView.setSmoothAll(box.checked));
+  };
 
   /* Wire a button to "bake the model on screen into a .glb and download it".
    * `getName()` supplies the filename stem (and the glTF node name); it's a

@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_iso::iso9660;
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
 use legaia_prot::archive::Entry;
 use legaia_prot::cdname::{self, IndexMap};
+use psx_iso::iso9660;
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
 
 /// What the user opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,14 +80,14 @@ pub fn validate(path: &Path) -> Result<Source> {
     // A file the reader would refuse (a 2048-byte .iso, a .chd, a zip, a
     // .cue whose .bin was renamed) is named for what it is, with what to
     // pick instead; the path is already in the path bar.
-    if let Some(d) = legaia_iso::sniff::diagnose_path(path) {
+    if let Some(d) = psx_iso::sniff::diagnose_path(path) {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
         bail!("{name} can't be opened. {d}");
     }
-    let bin = legaia_iso::raw::resolve_disc_path(path)
+    let bin = psx_iso::raw::resolve_disc_path(path)
         .with_context(|| format!("resolving {}", path.display()))?;
     // The reader's own message names the file and says what is wrong with
     // it; only an error that does not (permission, I/O) gets the path added.

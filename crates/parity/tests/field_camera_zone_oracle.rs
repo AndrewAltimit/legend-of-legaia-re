@@ -41,9 +41,9 @@ use legaia_engine_field::camera_zone::{
     CameraZoneConfig, ComposeInputs, atan_q11, compose, sqrt0_lut,
 };
 use legaia_engine_scene_host::scene_host::SceneHost;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::game_anchors;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::game_anchors;
 
 const RAM_BASE: u32 = 0x8000_0000;
 /// GTE `H` (`_DAT_8007B6F4`).

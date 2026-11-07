@@ -48,8 +48,8 @@ fn the_credits_theme_is_score_1062_over_bank_1056() {
         .expect("the ending theme resolves");
     let split = legaia_engine_system::chunk_install::owned_bank_offsets(&stream)
         .expect("the composed stream splits into a bank and a score");
-    let report = legaia_vab::parse(&stream, split.vab).expect("the bank parses");
-    let seq = legaia_seq::Seq::parse(&stream[split.seq..]).expect("the score parses");
+    let report = psx_vab::parse(&stream, split.vab).expect("the bank parses");
+    let seq = psx_seq::Seq::parse(&stream[split.seq..]).expect("the score parses");
 
     // The bank is extraction 1056's (53 programs); the score is 1062's.
     assert_eq!(report.header.ps, 53, "extraction 1056's program count");
@@ -65,8 +65,8 @@ fn the_credits_theme_is_score_1062_over_bank_1056() {
     let defined: Vec<bool> = report.programs.iter().map(|p| p.tones > 0).collect();
     let mut used = std::collections::BTreeSet::new();
     for ev in &seq.events {
-        if let legaia_seq::EventBody::Channel {
-            message: legaia_seq::ChannelMessage::ProgramChange { program },
+        if let psx_seq::EventBody::Channel {
+            message: psx_seq::ChannelMessage::ProgramChange { program },
             ..
         } = ev.body
         {

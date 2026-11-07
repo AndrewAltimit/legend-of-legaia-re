@@ -21,7 +21,7 @@ fn scus_bytes() -> Option<Vec<u8>> {
     }
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
     let image = std::fs::read(disc).ok()?;
-    let (lba, size) = legaia_iso::iso9660::find_file_in_image(&image, "SCUS_942.54")?;
+    let (lba, size) = psx_iso::iso9660::find_file_in_image(&image, "SCUS_942.54")?;
     // Form-1 user data: 2048 bytes at offset 24 of each 2352-byte sector.
     let sectors = size.div_ceil(2048) as usize;
     let mut out = Vec::with_capacity(sectors * 2048);

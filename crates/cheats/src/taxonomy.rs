@@ -4,7 +4,7 @@
 //! The companion to [`classify_address`]:
 //! given the addresses that changed between two points in time (e.g. the
 //! per-byte deltas from a pair of save states via
-//! `legaia_mednafen::diff_ram`), this rolls them up into per-region counts +
+//! `psx_mednafen::diff_ram`), this rolls them up into per-region counts +
 //! a few sample classifications each. It is the classification half of a
 //! gameplay-driven write tracer - feed it a capture diff and it answers
 //! "*what* changed, bucketed by subsystem", surfacing writes that land in

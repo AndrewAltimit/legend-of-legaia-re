@@ -11,7 +11,7 @@ pub(in crate::byte_account) const STR_OVERLAY_PROT_INDEX: u32 = 970;
 /// the VLC lookup table is unpacked from.
 ///
 /// Both are consumed by modules in this workspace at pinned constants
-/// ([`legaia_game_tables::fmv_dispatch`], `legaia_mdec::strv2_table`) and neither was
+/// ([`legaia_game_tables::fmv_dispatch`], `psx_mdec::strv2_table`) and neither was
 /// claimed: the dispatch table and its path strings read as `plausible_mips` /
 /// `ascii_text` residue, and the blob - the second-largest overlay residue run
 /// on the disc - read as `mixed`, which is what a compressed stream looks like
@@ -25,7 +25,7 @@ pub(in crate::byte_account) const STR_OVERLAY_PROT_INDEX: u32 = 970;
 /// take.
 pub(in crate::byte_account) fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
     use legaia_game_tables::fmv_dispatch as fmv;
-    use legaia_mdec::strv2_table as vlc;
+    use psx_mdec::strv2_table as vlc;
 
     let base = fmv::STR_OVERLAY_BASE_VA;
     let table_off = (fmv::FMV_TABLE_VA - base) as usize;
@@ -82,8 +82,7 @@ pub(in crate::byte_account) fn claim_str_overlay_tables(buf: &[u8], sink: &mut S
         ),
     ] {
         let off = (va - base) as usize;
-        if legaia_bytes::u32_le(buf, off) == Some(header)
-            && off + fmv::MDEC_PACKET_BYTES <= buf.len()
+        if psx_bytes::u32_le(buf, off) == Some(header) && off + fmv::MDEC_PACKET_BYTES <= buf.len()
         {
             sink.claim(off, off + fmv::MDEC_PACKET_BYTES, OWNER_RECORD, what);
         } else {
@@ -105,7 +104,7 @@ pub(in crate::byte_account) fn claim_str_overlay_tables(buf: &[u8], sink: &mut S
                 OWNER_LZS,
                 format!(
                     "STRv2 VLC table source, mode-switched LZ77 -> {} bytes at {:#010x} \
-                     (legaia_mdec::strv2_table, FUN_801f1a00)",
+                     (psx_mdec::strv2_table, FUN_801f1a00)",
                     table.len(),
                     vlc::STRV2_TABLE_VA
                 ),
@@ -132,7 +131,7 @@ pub(in crate::byte_account) const STR_DEAD_VLC_END_VA: u32 = 0x801D_199C;
 /// the register block's own accesses stop at its last pointer, `0x801D0E98`.
 /// The overlay's decoder reads the separate `0x11000`-byte table
 /// `FUN_801F1A00` unpacks at `0x801E0A00` instead
-/// (`legaia_mdec::strv2_table`). So this is initialised data the link carried
+/// (`psx_mdec::strv2_table`). So this is initialised data the link carried
 /// and no code uses - claimed as dead data under that name, not as a
 /// structure anything consumes.
 ///

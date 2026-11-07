@@ -4,7 +4,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_fishing::fishing::{FishAi, FishFrame, TensionGauge};
 use legaia_minigame_formats::fishing_species as fs;
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -98,7 +98,7 @@ fn a_hooked_fish_fights_as_retail_fights() {
             gauge.apply_load(mask, load, dt as i32);
             let probe = ai.probe();
 
-            let rd = |cpu: &mut legaia_retail_exec::Cpu, a: u32| cpu.mem.rd32(a) as i32;
+            let rd = |cpu: &mut psx_retail_exec::Cpu, a: u32| cpu.mem.rd32(a) as i32;
             let retail = (
                 rd(&mut cpu, DEPTH),
                 rd(&mut cpu, STATE),

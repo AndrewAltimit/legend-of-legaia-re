@@ -38,7 +38,7 @@ pub(crate) fn play_str_in(
     // (video-only) Form-1 extract from the filesystem.
     let (frames, timing, audio): (_, _, Option<CutsceneAudio>) = if let Some(disc_path) = disc {
         let (lba, size) = resolve_iso_file(disc_path, str_file)?;
-        let count = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let count = size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
         let av = decode_str_av_from_disc(disc_path, lba, count)
             .with_context(|| format!("decode STR {} from disc", str_file.display()))?;
         (av.frames, av.timing, av.audio)
@@ -59,7 +59,7 @@ pub(crate) fn play_str_in(
             Some(a) => format!(
                 "{:.1} kHz {} ({:.1}s)",
                 a.sample_rate as f64 / 1000.0,
-                if matches!(a.channels, legaia_xa::Channels::Stereo) {
+                if matches!(a.channels, psx_xa::Channels::Stereo) {
                     "stereo"
                 } else {
                     "mono"
@@ -116,13 +116,13 @@ pub(crate) fn play_str_in(
 /// Resolve an ISO9660 path inside a disc image to its `(lba, size)`. Matches
 /// case-insensitively and tolerates a leading slash. Errors if not found.
 pub(crate) fn resolve_iso_file(disc_path: &Path, iso_path: &Path) -> Result<(u32, u32)> {
-    use legaia_iso::iso9660;
+    use psx_iso::iso9660;
     let want = iso_path
         .to_string_lossy()
         .trim_start_matches('/')
         .replace('\\', "/")
         .to_ascii_uppercase();
-    let mut disc = legaia_iso::raw::RawDisc::open(disc_path)
+    let mut disc = psx_iso::raw::RawDisc::open(disc_path)
         .with_context(|| format!("open disc {}", disc_path.display()))?;
     let vol = iso9660::read_volume(&mut disc).context("read ISO volume")?;
     let files = iso9660::walk_files(&mut disc, &vol.root).context("walk ISO files")?;
@@ -135,7 +135,7 @@ pub(crate) fn resolve_iso_file(disc_path: &Path, iso_path: &Path) -> Result<(u32
 
 struct StrPlayerApp {
     win: EngineWindow,
-    frames: Vec<legaia_mdec::VideoFrame>,
+    frames: Vec<psx_mdec::VideoFrame>,
     uploaded: Option<legaia_engine_render::UploadedTexture>,
     /// Wall-clock duration to hold each frame (from the stream's detected fps).
     frame_period: std::time::Duration,

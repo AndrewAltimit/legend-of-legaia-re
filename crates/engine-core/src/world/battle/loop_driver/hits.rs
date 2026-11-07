@@ -30,6 +30,10 @@ pub(super) struct MeleeBlock {
     pub mystic: bool,
 }
 
+/// Display frames a timed strike-deal word reaches either side of its
+/// recorded vsync ([`World::dealt_hit_word`]).
+const DEALT_HIT_SLACK: u64 = 12;
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -51,6 +55,39 @@ impl World {
     /// 0x80047A44`: the bit-1 event-path commit)
     /// REF: FUN_801EC3E4 (head guard chain ported as
     /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
+    /// The `rand()` word a capture's strike deal holds for the hit landing
+    /// now ([`BattleState::capture_hit_rand`]). An untimed word goes to the
+    /// next hit. A timed one goes to the hit within [`DEALT_HIT_SLACK`]
+    /// display frames of its vsync: retail's recording reads a word only off
+    /// a hit whose spark burst shows in the draw count, so a blocked or
+    /// missed swing leaves no word, and handed out in order the words fell
+    /// on the wrong hits (`battle_rugi_caruban_3_strike`: Flap's two events
+    /// took the words retail's Bite and last swing drew). A word whose
+    /// window has passed is dropped; a hit with no word in reach draws on
+    /// the world stream.
+    fn dealt_hit_word(&mut self) -> Option<u32> {
+        let now = self.clock.display_frames;
+        let q = &mut self.battle.capture_hit_rand;
+        while let Some(&(_, Some(at))) = q.front() {
+            if at + DEALT_HIT_SLACK < now {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        match q.front().copied() {
+            Some((w, None)) => {
+                q.pop_front();
+                Some(w)
+            }
+            Some((w, Some(at))) if at <= now + DEALT_HIT_SLACK => {
+                q.pop_front();
+                Some(w)
+            }
+            _ => None,
+        }
+    }
+
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
         self.begin_battle_hit_pass();
         for i in 0..self.actors.len() {
@@ -642,7 +679,7 @@ impl World {
         // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
         // the `0x801ECB60` skip). It draws nothing.
         self.battle.juggle = self.next_juggle(target);
-        if let Some(word) = self.battle.capture_hit_rand.pop_front() {
+        if let Some(word) = self.dealt_hit_word() {
             self.rng_state = word;
         }
         // A capture's seed names this hit as one retail's string landed, and the
@@ -1490,7 +1527,7 @@ impl World {
 
     /// A party member's ability word - the character record's `+0xF4` u32,
     /// the bitfield `FUN_801EC3E4` reads as `0x80084140 + id*0x414 + 0x6BC`.
-    pub(super) fn party_ability_word(&self, member: usize) -> u32 {
+    pub(in crate::world) fn party_ability_word(&self, member: usize) -> u32 {
         self.party
             .roster
             .members

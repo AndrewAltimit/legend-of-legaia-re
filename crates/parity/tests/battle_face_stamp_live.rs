@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use legaia_actor_formats::face_anim::{
     EYE_FRAME_COUNT, FaceFrameTables, FaceStamp, MOUTH_FRAME_COUNT,
 };
-use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use psx_ram_image::ScenarioManifest;
 
 /// Catalogued mid-battle captures with the party texture bands resident
 /// (the same set the texture-placement oracle uses).

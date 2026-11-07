@@ -228,7 +228,12 @@ pub const CAPTURE_SITE_POWERS: &[(u32, &[u8], u16, u32)] = &[
     (942, &[0xAA], 0x280, 0x801F_774C),
     // Big Wave only: Call Wave never reaches arm 7 ([`call_wave_folds`]).
     (946, &[BIG_WAVE_ACTION], 0x120, 0x801F_73DC),
-    (947, &[], 0xEA, 0x801F_7414),
+    // V-Windhash keeps the `li a0,0x7b` in the delay slot of the `bne` on
+    // `+0x1DF != 0xA7` (`0x801F73D8` / `0x801F73DC`) and jumps straight to the
+    // call; Neo Windhash falls through, rolls its Slow and loads `0xEA`
+    // (`0x801F7410`).
+    (947, &[0x57], 0x7B, 0x801F_7414),
+    (947, &[0xA7], 0xEA, 0x801F_7414),
     (948, &[], 0x78, 0x801F_6FB0),
     (949, &[], 0xC0, 0x801F_7318),
     (951, &[0x36], 0x3A0, 0x801F_7414),

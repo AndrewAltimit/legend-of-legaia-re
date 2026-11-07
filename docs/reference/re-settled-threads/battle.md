@@ -1995,7 +1995,7 @@ runtime source, and battle does not reuse the field pack 0874 section 0.
   fits Vahn and Noa but lands Gala's subs on a zero-padded `0x7000` block). The `0x2000` stride seen
   in RAM is only the loader's staging buffer. Layout on the owning page.
 - Decode: `FUN_8001A55C`'s first argument is an **output-byte budget** (decremented per literal and
-  per match-copied byte; loop `while budget > 0`). One `legaia_lzs::decompress(stream, budget)` per
+  per match-copied byte; loop `while budget > 0`). One `psx_lzs::decompress(stream, budget)` per
   record, with `record[0]` + the 5 staged sub-records decoded into one work buffer as `FUN_80052FA0`
   does, reproduces Vahn's palette byte-exact in all 3 bands: `base=0x00` = `record[0]`'s CLUT B,
   `base=0x40` = sub#0's trailing CLUT, `base=0x70` = sub#4's trailing CLUT. A budget-less decode runs

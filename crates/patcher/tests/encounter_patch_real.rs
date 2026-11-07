@@ -6,11 +6,11 @@
 //! fixed seed byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -26,8 +26,7 @@ fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<
     let table = legaia_scene_formats::scene_asset_table::detect(&entry)?;
     let man = table.used().iter().find(|d| d.type_byte == 0x03).copied()?;
     let (decoded, _) =
-        legaia_lzs::decompress_tracked(&entry[man.data_offset as usize..], man.size as usize)
-            .ok()?;
+        psx_lzs::decompress_tracked(&entry[man.data_offset as usize..], man.size as usize).ok()?;
     let mf = legaia_scene_formats::man_section::parse(&decoded).ok()?;
     let body = mf.encounter_section_body(&decoded)?;
     let sec = legaia_scene_formats::man_section::parse_encounter_section(body).ok()?;
@@ -137,7 +136,7 @@ fn shuffle_encounters_round_trips_on_disc() {
     let disc_sector = prot_lba as u64 + start_lba as u64;
     let sb = disc_sector as usize * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
         "patched scene {changed_idx} first sector must be EDC/ECC-valid"
     );
 

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use legaia_prot::archive::Archive;
-use legaia_seq::{ChannelMessage, EventBody, Seq};
+use psx_seq::{ChannelMessage, EventBody, Seq};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

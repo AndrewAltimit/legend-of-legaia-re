@@ -62,7 +62,7 @@ correctly in one draw, instead of needing per-page sub-meshes.
 - `winit` 0.30 - windowing.
 - `wgpu` 30 - GPU API.
 - `glam` 0.30 - math.
-- `legaia-tim` for `Vram`.
+- `psx-tim` for `Vram`.
 
 The [`window`](src/window.rs) module is the shared winit + wgpu app scaffold
 (`EngineWindow`: open, resize, fixed-step tick pacing) that `asset-viewer` and

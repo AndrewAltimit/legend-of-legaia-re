@@ -216,7 +216,7 @@ fn a_shipped_vram_rect_copy_runs_through_the_frame_tail() {
         .step_field()
         .expect("step the shipped `43 12` instruction");
 
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     assert!(
         world.step_field_vram_effects(&mut vram, false),
         "{scene}: the instruction queued a rect copy the VRAM tail must drain \
@@ -304,7 +304,7 @@ fn shipped_mask_bit_runs_apply_through_the_frame_tail() {
             .first()
             .unwrap_or_else(|| panic!("{scene}: `4C {op0:02X}` queued no mask-bit run"));
         assert_eq!(s, set, "{scene}: `4C {op0:02X}` queued the wrong direction");
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         let seed: u16 = if set { 0x1524 } else { 0x9524 };
         let row: Vec<u8> = (0..16).flat_map(|_| seed.to_le_bytes()).collect();
         vram.write_block(x, y, 16, 1, &row);

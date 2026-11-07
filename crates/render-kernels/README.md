@@ -53,7 +53,7 @@ or cpal, so it builds for native and `wasm32` alike.
   translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
   the from-scratch `psx_sin` / `psx_cos` trig LUT).
 - `vram_capture` - quantising an RGBA8 frame readback to BGR555 and blitting
-  it into a `legaia_tim::Vram` rect, plus the transition's capture-rect
+  it into a `psx_tim::Vram` rect, plus the transition's capture-rect
   constants.
 - `battle_intro` - the field-to-battle transition emitter: per-style working
   sets, the five retail packet builders, the curtain's CPU two-pass

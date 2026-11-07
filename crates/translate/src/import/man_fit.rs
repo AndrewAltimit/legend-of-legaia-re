@@ -44,11 +44,11 @@ fn relocate_and_pack(
     if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
         return Err(GrowFail::NotPreserved);
     }
-    let stream = legaia_lzs::compress(&grown);
+    let stream = psx_lzs::compress(&grown);
     if stream.len() <= man.compressed_budget {
         return Ok((stream, grown.len() as u32));
     }
-    let opt = legaia_lzs::compress_optimal(&grown);
+    let opt = psx_lzs::compress_optimal(&grown);
     if opt.len() <= man.compressed_budget {
         return Ok((opt, grown.len() as u32));
     }
@@ -237,8 +237,8 @@ pub(super) fn build_grown_entry_payload(
     if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
         return None;
     }
-    let greedy = legaia_lzs::compress(&grown);
-    let optimal = legaia_lzs::compress_optimal(&grown);
+    let greedy = psx_lzs::compress(&grown);
+    let optimal = psx_lzs::compress_optimal(&grown);
     let stream = if optimal.len() < greedy.len() {
         optimal
     } else {

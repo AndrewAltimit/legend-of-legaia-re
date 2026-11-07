@@ -41,7 +41,7 @@ encoders and arena map of [`legaia-code-hooks`](../code-hooks/README.md), the
 portrait swap of [`legaia-texture-replace`](../texture-replace/README.md),
 the dialog export / import of [`legaia-translate`](../translate/README.md),
 the `DiscPatcher` of [`legaia-disc-patch`](../disc-patch/README.md), and the
-audio codecs (`legaia-xa`, `legaia-vab`) the voice passes re-encode with.
+audio codecs (`psx-xa`, `psx-vab`) the voice passes re-encode with.
 
 The Delilas Challenge dome course and the custom items are a different
 feature and live in

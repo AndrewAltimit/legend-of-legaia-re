@@ -98,7 +98,7 @@ fn the_tint_pass_reproduces_the_captured_render_words() {
         eprintln!("[skip] scripts/scenarios.toml or saves/library missing (capture-gated)");
         return;
     };
-    let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest).expect("manifest");
+    let manifest = psx_ram_image::ScenarioManifest::from_path(&manifest).expect("manifest");
     let (mut states, mut bodies, mut exact, mut depth_arm) = (0, 0, 0, 0);
     for scn in &manifest.scenarios {
         if scn.phase.as_deref() != Some("battle") {
@@ -108,10 +108,10 @@ fn the_tint_pass_reproduces_the_captured_render_words() {
             continue;
         };
         let ram = match path.extension().and_then(|e| e.to_str()) {
-            Some("sstate") => legaia_pcsx_redux::SaveState::from_path(&path)
+            Some("sstate") => psx_pcsx_redux::SaveState::from_path(&path)
                 .ok()
                 .map(|s| s.main_ram().to_vec()),
-            _ => legaia_mednafen::SaveState::from_path(&path)
+            _ => psx_mednafen::SaveState::from_path(&path)
                 .ok()
                 .and_then(|s| s.main_ram().ok().map(<[u8]>::to_vec)),
         };

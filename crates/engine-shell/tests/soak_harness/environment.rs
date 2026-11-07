@@ -174,6 +174,7 @@ pub(super) fn arm_host_play_defaults(session: &mut NativeSession) {
     w.toggles.use_vm_dialogue = true;
     w.locomotion.leading_edge_wall_probes = true;
     w.locomotion.follow_terrain_height = true;
+    w.locomotion.vertical_settle = true;
     w.npcs.solid = true;
     w.npcs.animate = true;
 }

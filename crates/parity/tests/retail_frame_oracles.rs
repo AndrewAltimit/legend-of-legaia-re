@@ -43,8 +43,8 @@
 use std::path::{Path, PathBuf};
 
 use legaia_engine_battle_vm::battle_value_readout as vr;
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
 
 const RAM_BASE: u32 = 0x8000_0000;
 /// GTE `H` (`_DAT_8007B6F4`).
@@ -369,8 +369,8 @@ fn walkable_camera_rows(
             continue;
         };
         let Ok(ram) = st.main_ram() else { continue };
-        let scene = legaia_ram_image::game_anchors::scene_name(ram);
-        let mode = legaia_ram_image::game_anchors::game_mode(ram);
+        let scene = psx_ram_image::game_anchors::scene_name(ram);
+        let mode = psx_ram_image::game_anchors::game_mode(ram);
         // Field / walkable modes only - a battle writes its own camera.
         if mode != 0x03 {
             continue;

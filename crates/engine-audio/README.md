@@ -162,6 +162,6 @@ verified across several extracted banks.
 
 - [`docs/subsystems/audio.md`](../../docs/subsystems/audio.md) - full byte-level audio reference + the `engine-audio model` section that documents this crate.
 - [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md)
-- [`legaia-vab`](../vab) for the VAB parser this crate consumes.
-- [`legaia-xa`](../xa) for the F0/F1 filter constants the ADPCM decoder
+- [`psx-vab`](../vab) for the VAB parser this crate consumes.
+- [`psx-xa`](../xa) for the F0/F1 filter constants the ADPCM decoder
   shares.

@@ -315,13 +315,7 @@ fn art_shout_pcm_lands_in_the_mix_after_the_cd_delay() {
 
     let delay = legaia_engine_audio::xa_start_delay(0, false);
     let mut mix = legaia_engine_audio::OfflineMixer::new(44_100);
-    mix.play_xa_shout(
-        clip_pcm,
-        clip_rate,
-        legaia_xa::Channels::Mono,
-        0x4000,
-        delay,
-    );
+    mix.play_xa_shout(clip_pcm, clip_rate, psx_xa::Channels::Mono, 0x4000, delay);
     // Silence during the modeled CD-response window: the shout must trail
     // the (animation-start) request, never lead it. The resampler's
     // two-sample interpolation window adds one frame of latency, so probe

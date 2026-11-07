@@ -113,6 +113,66 @@
 <section class="doc-section" id="three-ways" data-doc="three-ways-to-port-a-game">
   <h2>Three ways to port a game</h2>
   <p>Each method suits different goals, and none is the best in general. The clearest way to separate them is by what each one starts with and what it still has to earn.</p>
+  <figure class="diagram">
+      <svg viewBox="0 0 1000 466" xmlns="http://www.w3.org/2000/svg" style="font-family:var(--font-body)" role="img" aria-label="Decompilation starts from the executable rewritten as source and produces source that rebuilds the game, with fidelity proved by the byte match. Static recompilation translates the machine code and produces the original game running over a hardware model, with fidelity inherited. Reimplementation, this repository&#x27;s route, starts from format docs and traced behaviour and produces a new engine that loads the game data, with fidelity measured against retail states. A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game.">
+        <defs><marker id="pr-routes-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+        <rect class="dg-group" x="20" y="20" width="300" height="390" rx="10"/>
+        <text class="dg-label" x="170.0" y="52" style="font-size:19px;font-weight:700">Decompilation</text>
+        <text class="dg-sub dg-start" x="36" y="104" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">STARTS FROM</text>
+        <rect class="dg-node" x="34" y="112" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="170.0" y="137" style="font-size:14.5px;font-weight:600">The executable</text>
+        <text class="dg-sub" x="170.0" y="157" style="font-size:12.5px">rewritten as source, function by function</text>
+        <text class="dg-sub dg-start" x="36" y="206" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">PRODUCES</text>
+        <rect class="dg-node" x="34" y="214" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="170.0" y="239" style="font-size:14.5px;font-weight:600">Source that rebuilds the game</text>
+        <text class="dg-sub" x="170.0" y="259" style="font-size:12.5px">matching: compiles to the retail bytes</text>
+        <path class="dg-edge" d="M170.0 172 L170.0 194" marker-end="url(#pr-routes-arrow)"/>
+        <text class="dg-sub dg-start" x="36" y="296" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">FIDELITY</text>
+        <text class="dg-label dg-start" x="36" y="316" style="font-size:14.5px;font-weight:600">Fidelity is proved</text>
+        <text class="dg-sub dg-start" x="36" y="333" style="font-size:12.5px">by the byte match, per function</text>
+        <text class="dg-sub dg-start" x="36" y="358" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">GOOD AT</text>
+        <text class="dg-label dg-start" x="36" y="377" style="font-size:13px">Exact source-level truth;</text>
+        <text class="dg-label dg-start" x="36" y="394" style="font-size:13px">source mods; retarget it later</text>
+        <rect class="dg-group" x="350" y="20" width="300" height="390" rx="10"/>
+        <text class="dg-label" x="500.0" y="52" style="font-size:19px;font-weight:700">Static recompilation</text>
+        <text class="dg-sub dg-start" x="366" y="104" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">STARTS FROM</text>
+        <rect class="dg-node" x="364" y="112" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="500.0" y="137" style="font-size:14.5px;font-weight:600">The executable&#x27;s machine code</text>
+        <text class="dg-sub" x="500.0" y="157" style="font-size:12.5px">translated whole into host code</text>
+        <text class="dg-sub dg-start" x="366" y="206" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">PRODUCES</text>
+        <rect class="dg-node" x="364" y="214" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="500.0" y="239" style="font-size:14.5px;font-weight:600">The original game, running</text>
+        <text class="dg-sub" x="500.0" y="259" style="font-size:12.5px">over a model of the PS1 hardware</text>
+        <path class="dg-edge" d="M500.0 172 L500.0 194" marker-end="url(#pr-routes-arrow)"/>
+        <text class="dg-sub dg-start" x="366" y="296" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">FIDELITY</text>
+        <text class="dg-label dg-start" x="366" y="316" style="font-size:14.5px;font-weight:600">Fidelity is inherited</text>
+        <text class="dg-sub dg-start" x="366" y="333" style="font-size:12.5px">its code runs, translated</text>
+        <text class="dg-sub dg-start" x="366" y="358" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">GOOD AT</text>
+        <text class="dg-label dg-start" x="366" y="377" style="font-size:13px">Retail behaviour early, with</text>
+        <text class="dg-label dg-start" x="366" y="394" style="font-size:13px">its quirks and timing included</text>
+        <rect class="dg-node-accent" x="680" y="20" width="300" height="390" rx="10" style="stroke-width:2"/>
+        <text class="dg-label" x="830.0" y="52" style="font-size:19px;font-weight:700">Reimplementation</text>
+        <rect x="768.0" y="62" width="124" height="22" rx="11" style="fill:var(--dg-accent)"/>
+        <text class="dg-label" x="830.0" y="78" style="font-size:12px;font-weight:700;fill:var(--bg)">this repository</text>
+        <text class="dg-sub dg-start" x="696" y="104" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">STARTS FROM</text>
+        <rect class="dg-node-accent" x="694" y="112" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="830.0" y="137" style="font-size:14.5px;font-weight:600">Format docs + traced behaviour</text>
+        <text class="dg-sub" x="830.0" y="157" style="font-size:12.5px">the disassembly read, never translated</text>
+        <text class="dg-sub dg-start" x="696" y="206" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">PRODUCES</text>
+        <rect class="dg-node-accent" x="694" y="214" width="272" height="60" rx="7"/>
+        <text class="dg-label" x="830.0" y="239" style="font-size:14.5px;font-weight:600">A new engine for the game</text>
+        <text class="dg-sub" x="830.0" y="259" style="font-size:12.5px">loads the game data off your disc</text>
+        <path class="dg-edge" d="M830.0 172 L830.0 194" marker-end="url(#pr-routes-arrow)"/>
+        <text class="dg-sub dg-start" x="696" y="296" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">FIDELITY</text>
+        <text class="dg-label dg-start" x="696" y="316" style="font-size:14.5px;font-weight:600">Fidelity is measured</text>
+        <text class="dg-sub dg-start" x="696" y="333" style="font-size:12.5px">against retail states, ratcheted</text>
+        <text class="dg-sub dg-start" x="696" y="358" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">GOOD AT</text>
+        <text class="dg-label dg-start" x="696" y="377" style="font-size:13px">New renderers, hosts, mechanics;</text>
+        <text class="dg-label dg-start" x="696" y="394" style="font-size:13px">modding by game concept</text>
+        <text class="dg-label" x="500.0" y="442" style="font-size:15px;font-style:italic">A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game.</text>
+      </svg>
+    <figcaption>Three routes to a port. The same picture heads the project README.</figcaption>
+  </figure>
   <div class="pr-compare">
     <article class="pr-col">
       <h3>Decompilation</h3>
@@ -137,6 +197,7 @@
     </article>
   </div>
   <p>A wrong reading of a routine in a reimplementation produces a running game that is quietly different, which is what the measuring half of the method exists to catch. Overlays are a cost for a translation in this game: they share virtual addresses, so an address alone does not identify a function (<a href="../reference/re-do-not-re-walk.html">VA aliasing</a>).</p>
+  <p><strong>Put shortly: a recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game.</strong> Neither is the better route in general. A recomp is the faster way to retail behaviour on a new machine, and a matching decompilation is the only one that proves what the code says. A reimplementation trades both away for an engine whose structure is its own, and then has to buy fidelity back by measurement.</p>
 </section>
 
 <section class="doc-section" id="why" data-doc="why-this-project-reimplements">
@@ -150,6 +211,8 @@
         <li><strong>A long road to first playable.</strong> Formats, VMs, a renderer, an audio stack and a battle system all have to exist first.</li>
         <li><strong>The instruments are a project of their own.</strong> Seeding from retail RAM, scoring frames and keeping baselines honest take ongoing engineering.</li>
         <li><strong>Being faithful is a discipline.</strong> An enhancement must leave the faithful mode bit-identical when off.</li>
+        <li><strong>Fidelity is a long tail, paid continuously.</strong> The first playable game is far from the last divergence, and parity on what the corpus has seen says nothing about what it has not.</li>
+        <li><strong>It rests on decompilation-grade analysis; it does not replace it.</strong> Every port is read from the disassembly with the care a decompilation takes. Reimplementing changes what gets written from that reading, not how much has to be understood.</li>
       </ul>
     </div>
     <div>
@@ -158,11 +221,22 @@
         <li><strong>New rendering.</strong> Enhanced lighting, fog, the occlusion fade and SSAO in the <a href="../subsystems/renderer-port.html">wgpu renderer</a>, beside a PSX mode on the native target the corpus scores.</li>
         <li><strong>Its own audio stack.</strong> A from-scratch <a href="../subsystems/audio.html">SPU and sequencer</a> on both hosts, with pack music mixed beside them.</li>
         <li><strong>More hosts.</strong> One session in a native window and <a href="../subsystems/browser-host.html">in the browser</a>, with <a href="../subsystems/vr-mode.html">VR</a> on the site's 3D pages.</li>
-        <li><strong>Modding as a feature.</strong> <a href="../formats/expansion-pack.html">Expansion packs</a>, <a href="../subsystems/run-rules.html">run rules</a>, <a href="../subsystems/expansion-modes.html">game modes</a> and <a href="../subsystems/netplay.html">netplay</a>.</li>
+        <li><strong>Modding by game concept.</strong> An <a href="../formats/expansion-pack.html">expansion pack</a> is TOML naming monsters, maps, quests, arts and items, not addresses; <a href="../subsystems/run-rules.html">run rules</a>, <a href="../subsystems/expansion-modes.html">game modes</a> and <a href="../subsystems/netplay.html">netplay</a> are the port's own. Patcher features proved against retail graduate into <a href="../subsystems/gameplay-tweaks.html">engine toggles</a>.</li>
+        <li><strong>Rules you can read.</strong> A damage formula, an AI pick or a script opcode is a named Rust kernel tagged <code>// PORT:</code> with the retail address it was read from, so the retail routine stays its provenance and the <a href="port-catalog.html">port catalog</a> derives what is ported from the tree.</li>
         <li><strong>No original code executing.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and reads a cast module's image to recover which presentation calls each arm makes, but no MIPS executes.</li>
       </ul>
     </div>
   </div>
+  <h3 id="measured">Fidelity is measured, not inherited</h3>
+  <p>A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise.</p>
+  <dl class="kv">
+    <dt>Stills</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> seats the engine where each of several hundred retail save states stood and scores frame, camera, player, placements, music, flags, party and enemies per state.</dd>
+    <dt>Film</dt><dd>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still sees one instant.</dd>
+    <dt>Sound</dt><dd>The <a href="../subsystems/audio.html#state-sweep">audio-state sweep and real retail PCM</a> compare music and cues against what the emulator actually played.</dd>
+    <dt>Routines</dt><dd>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs a retail routine off your disc in the <code>crates/retail-exec</code> R3000 interpreter beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two.</dd>
+    <dt>Whole game</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a> plays New Game to credits on pad input, segment by segment and as one continuous run.</dd>
+  </dl>
+  <p>None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc (<a href="capture-coverage.html">capture coverage</a>) and its gates refuse a silent loosening.</p>
   <div class="callout callout-provenance">
     <div class="callout-title">The boundary, stated honestly</div>
     <p>The project does not call this "clean-room". The same people read the Ghidra output and write the Rust, which is not the two-team firewall that term means. The boundary actually enforced is narrower and checkable: the dumps in <code>ghidra/scripts/funcs/</code> stay reference material and are never committed, no Sony-derived bytes are committed, and no code is mechanically translated. The user supplies the disc.</p>
@@ -247,7 +321,7 @@
   <h2>Step 6: measure against a retail corpus</h2>
   <dl class="kv">
     <dt>Done</dt><dd>Capture moments of the original as emulator save states. For each, read what retail was doing out of the state's own memory, put the engine in the same situation through its own load path, and score the difference per channel, worst state first. The <a href="retail-compare.html#channels">channels</a> cover what a player notices: the frame on screen, player position, camera, NPC placement, facing, the music track, story flags, party, enemies and more. <a href="retail-oracle-method.html">The retail-oracle method</a> writes it up engine-neutral.</dd>
-    <dt>Produces</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> and its siblings: the <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> for what unfolds over time, the <a href="../subsystems/audio.html#state-sweep">audio sweep</a> and real PCM comparison for sound, the <a href="recomp-differential.html">recomp differential</a> for continuous traces. Its reports are a worklist, with a <a href="retail-compare.html#divergence">catalogue of divergence shapes</a>.</dd>
+    <dt>Produces</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> and its siblings: the <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> for what unfolds over time, the <a href="../subsystems/audio.html#state-sweep">audio sweep</a> and real PCM comparison for sound, the <a href="retail-kernel-differential.html">retail kernel differential</a> for single routines run off the disc, the <a href="recomp-differential.html">recomp differential</a> for continuous traces. Its reports are a worklist, with a <a href="retail-compare.html#divergence">catalogue of divergence shapes</a>.</dd>
     <dt>Gate</dt><dd>Per-state, per-channel <a href="retail-compare.html#ratchet">scores may only rise</a>. Two more gates protect the ratchet: a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed (<a href="retail-oracle-method.html#ratchet">ratchet integrity</a>).</dd>
     <dt>Keeping it wide</dt><dd>A corpus grows where capturing is easy, and parity on those moments says nothing about the rest. <a href="retail-compare.html#capture-coverage">Capture coverage</a> lists every scene, monster, enemy attack, player cast and menu screen the disc defines, and ranks what no state shows yet. As parity is reached on what the corpus holds, the corpus is extended into what it does not hold.</dd>
     <dt>Example</dt><dd>On <code>noaru_field_card_walk</code>, the engine's frame is black where retail shows a floor, with every other channel exact. That pattern points at a mesh-bearing ambient part seated off its anchor: Noaru's ice floor rides the camera focus through <a href="../subsystems/move-vm-overlay-ext.html">move-VM extension op <code>0x24</code></a>. The frame pointed at the gap, and the mechanism itself is read from the move VM's overlay extension.</dd>

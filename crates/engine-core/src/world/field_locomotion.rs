@@ -228,14 +228,14 @@ pub struct FieldLocomotion {
     /// Run the retail vertical settle (`FUN_801d1ba0`'s rate-clamped glide
     /// toward the floor) instead of leaving the actor's Y alone.
     ///
-    /// Default **off**, and deliberately separate from
-    /// [`crate::world::FieldLocomotion::follow_terrain_height`]: that flag *snaps* Y to the sampled
-    /// floor in one frame, and the engine's flat-Y default (Y untouched when
-    /// the snap is off) is an invariant the locomotion oracles pin. Retail
-    /// does neither - it glides at `delta_scalar * 12` units per frame, so a
-    /// tall drop takes several frames. Enabling this replaces "untouched"
-    /// with the retail glide; it does not override the snap, which stays
-    /// authoritative when set.
+    /// Default **off** in a bare `World`, so the flat-Y locomotion oracles
+    /// keep their constant Y; both play hosts raise it beside
+    /// [`crate::world::FieldLocomotion::follow_terrain_height`]. That flag
+    /// alone *snaps* Y to the sampled floor on each committed step. Retail
+    /// glides at `delta_scalar * 12` units per frame instead, so a step onto
+    /// a raised tier takes a few vsyncs and a tall drop several; set, the
+    /// glide owns the footing and the step snap stands aside (the scene-entry
+    /// seat still lands on the floor at once).
     ///
     /// The ledge-hop trigger is **not** gated on this - a hop is posted off
     /// the step delta whether or not the settle runs.

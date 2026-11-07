@@ -23,8 +23,8 @@ use legaia_engine_battle::battle_party_form::{PartyFormSources, VramWriteLog};
 use legaia_engine_core::battle_party_form::{ProtFormDisc, build_party_battle_form};
 use legaia_engine_core::world::World;
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_mednafen::SaveState;
 use legaia_prot::archive::Archive;
+use psx_mednafen::SaveState;
 use std::path::{Path, PathBuf};
 
 /// Character records: `0x414` bytes each from `0x80084708`.
@@ -91,7 +91,7 @@ fn party_clut_rows_are_the_equipped_sections_palettes() {
             continue;
         };
         let ram = st.main_ram().expect("main RAM");
-        let retail = legaia_mednafen::gpu::PsxGpu::new(&st);
+        let retail = psx_mednafen::gpu::PsxGpu::new(&st);
         let mut world = World::default();
         world.party.roster.members = (0..4)
             .map(|c| {
@@ -107,7 +107,7 @@ fn party_clut_rows_are_the_equipped_sections_palettes() {
                 .expect("battle form");
             assert!(form.assembled, "{label}: member {member} assembles");
         }
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         log.replay(&mut vram);
         for member in 0..3usize {
             // The columns the equipped uploads own.

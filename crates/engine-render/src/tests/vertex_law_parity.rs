@@ -47,6 +47,9 @@ struct Frame {
     snap: bool,
     /// `(enable, sz_per_w, ot_shift, near_otz)` of the near reject.
     prim_near: [f32; 4],
+    /// The field ground's drop (`Renderer::set_field_ground_drop`), 0 =
+    /// retail's buckets.
+    ground_drop: f32,
 }
 
 /// One vertex of one primitive.
@@ -62,8 +65,25 @@ struct Vertex {
     corners: [[f32; 4]; 4],
 }
 
-/// `(clip x, y, w, rejected)`, and the packet colour in bytes.
-type VOut = ([f32; 3], bool, [f32; 3]);
+/// `(clip x, y, w, rejected)`, the packet colour in bytes, and the view
+/// depth the depth write keys on (native: read back off clip `z` through the
+/// matrix's depth row; page: `v_depth_w`).
+type VOut = ([f32; 3], bool, [f32; 3], f32);
+
+/// The `w` whose normalised depth is `ndc` under `m`'s depth row, inverting
+/// the shaders' `depth_affine` (`ndc = a + b / w`).
+fn w_of_ndc(m: &[f32; 16], ndc: f32) -> f32 {
+    let col = |c: usize| &m[c * 4..c * 4 + 4];
+    let mut c = col(2);
+    if col(0)[3].abs() > c[3].abs() && col(0)[3].abs() >= col(1)[3].abs() {
+        c = col(0);
+    } else if col(1)[3].abs() > c[3].abs() {
+        c = col(1);
+    }
+    let a = if c[3].abs() > 1e-7 { c[2] / c[3] } else { 0.0 };
+    let b = m[14] - a * m[15];
+    b / (ndc - a)
+}
 
 fn rejected(clip: &[f32]) -> bool {
     clip == [2.0, 2.0, 2.0, 1.0]
@@ -77,6 +97,7 @@ fn run_native(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
         Val::f(&[STAGE_W, STAGE_H, if f.snap { 1.0 } else { 0.0 }, 0.0]),
     );
     m.set_uniform("prim_near", Val::f(&f.prim_near));
+    m.set_uniform("ground_drop", Val::f(&[f.ground_drop, 0.0, 0.0, 0.0]));
     let main = m.function("vs_main");
     let c = v.corners;
     let args: Vec<Val> = main
@@ -129,6 +150,7 @@ fn run_native(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
         [clip[0], clip[1], clip[3]],
         rejected(clip),
         [col[0], col[1], col[2]],
+        w_of_ndc(&f.mvp, clip[2] / clip[3]),
     )
 }
 
@@ -145,6 +167,7 @@ fn run_page(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
         Val::f(&[STAGE_W, STAGE_H, if f.snap { 1.0 } else { 0.0 }, 0.0]),
     );
     m.set_uniform("u_prim_near", Val::f(&f.prim_near));
+    m.set_uniform("u_ground_drop", Val::f(&[f.ground_drop]));
     m.set_uniform("u_fog_enable", Val::I(vec![0]));
     m.set_global("a_position", Val::f(&v.pos));
     m.set_global("a_uv_byte", Val::f(&[3.0, 7.0]));
@@ -175,6 +198,7 @@ fn run_page(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
         [clip[0], clip[1], clip[3]],
         rejected(&clip),
         [col[0] / w * 255.0, col[1] / w * 255.0, col[2] / w * 255.0],
+        m.global("v_depth_w").floats()[0],
     )
 }
 
@@ -218,6 +242,7 @@ fn frames() -> Vec<Frame> {
                         curve,
                         snap,
                         prim_near,
+                        ground_drop: 0.0,
                     });
                 }
             }
@@ -345,9 +370,10 @@ fn the_psx_snap_truncates_onto_the_stage_grid() {
             curve: 0.0,
             snap,
             prim_near: [0.0; 4],
+            ground_drop: 0.0,
         };
-        let (exact, rej, _) = run_native(&mut m, &frame(false), &v);
-        let (snapped, _, _) = run_native(&mut m, &frame(true), &v);
+        let (exact, rej, _, _) = run_native(&mut m, &frame(false), &v);
+        let (snapped, _, _, _) = run_native(&mut m, &frame(true), &v);
         if rej || exact[2] <= 0.0 {
             continue;
         }
@@ -359,4 +385,89 @@ fn the_psx_snap_truncates_onto_the_stage_grid() {
         n += 1;
     }
     assert!(n > 20, "the grid covers the stage: {n} vertices checked");
+}
+
+/// The field ground off retail's vantage: a flat bucketed cell - far-bucket
+/// (its `z` pair swapped) or sorted (unswapped) - is depth-tested on both
+/// hosts as the plane `drop` units below it along the pixel's ray,
+/// `w * (h + drop) / h` for an eye `h` above the floor
+/// (`legaia_engine_scene::field_ground::dropped_floor_w`), with `x`, `y`
+/// and `w` untouched. A sloped cell and an unmarked mesh keep their depth;
+/// at drop 0 nothing moves.
+#[test]
+fn the_dropped_floor_depth_agrees_on_both_hosts() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let page = parse_glsl(&page_vertex_glsl(), naga::ShaderStage::Vertex);
+    let mut mn = Machine::new(&native, no_fetch());
+    let mut mp = Machine::new(&page, no_fetch());
+    let drop = 8.0;
+    let mut n = 0;
+    for mvp in [camera(0.0, 2400.0), camera(0.7, 6000.0)] {
+        // The test camera's eye height: its clip `y` row is `-sy * y + 40`.
+        let eye_y = 40.0 / -mvp[5];
+        for (k, v) in vertices().into_iter().enumerate() {
+            let y = v.pos[1];
+            let (x0, z0) = (v.pos[0] - 64.0, v.pos[2] - 64.0);
+            let (fa, fb, flat) = match k % 4 {
+                0 => ([x0, z0 + 128.0, x0 + 128.0, z0], [y; 4], true),
+                1 => ([x0, z0, x0 + 128.0, z0 + 128.0], [y; 4], true),
+                2 => ([x0 + 128.0, z0, x0, z0 + 128.0], [y, y + 30.0, y, y], false),
+                _ => ([0.0; 4], [0.0; 4], false),
+            };
+            let v = Vertex {
+                fa,
+                fb,
+                corners: [[0.0; 4]; 4],
+                ..v
+            };
+            let f = |ground_drop| Frame {
+                mvp,
+                curve: 0.0,
+                snap: false,
+                prim_near: [0.0; 4],
+                ground_drop,
+            };
+            let plain = run_native(
+                &mut mn,
+                &f(0.0),
+                &Vertex {
+                    fa: [0.0; 4],
+                    fb: [0.0; 4],
+                    ..v
+                },
+            );
+            let a = run_native(&mut mn, &f(drop), &v);
+            let b = run_page(&mut mp, &f(drop), &v);
+            if plain.0[2] <= 1.0 {
+                continue;
+            }
+            assert_eq!(a.0, plain.0, "native moved x / y / w");
+            let near = |p: f32, q: f32| (p - q).abs() <= 1e-5 * p.abs().max(1.0);
+            assert!(
+                b.0.iter().zip(&plain.0).all(|(p, q)| near(*p, *q)),
+                "page moved x / y / w"
+            );
+            if flat {
+                let h = (eye_y - y).abs();
+                let want = plain.0[2] * (h + drop) / h.max(1.0);
+                for (host, got) in [("native", a.3), ("page", b.3)] {
+                    assert!(
+                        (got - want).abs() <= 1e-3 * want,
+                        "{host}: cell {k} depth {got}, the dropped floor is {want}"
+                    );
+                }
+                n += 1;
+            } else if k % 4 == 3 {
+                assert!(
+                    (a.3 - plain.0[2]).abs() <= 1e-3 * plain.0[2],
+                    "an unmarked mesh moved"
+                );
+                assert!(
+                    (b.3 - plain.0[2]).abs() <= 1e-3 * plain.0[2],
+                    "an unmarked mesh moved"
+                );
+            }
+        }
+    }
+    assert!(n > 20, "{n} flat cells checked");
 }

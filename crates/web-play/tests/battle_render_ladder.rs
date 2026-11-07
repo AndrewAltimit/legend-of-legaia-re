@@ -252,7 +252,7 @@ fn run_style(
 
     // The one-shot capture: retail stashes the drawn field frame as the
     // transition arms and every later frame samples that copy.
-    let base = legaia_tim::Vram::new();
+    let base = psx_tim::Vram::new();
     let rgba = synthetic_field_rgba(320, 240);
     assert!(intro.needs_capture(), "a fresh emitter wants its capture");
     intro.land_capture_rgba(&rgba, 320, 240, &base);
@@ -427,7 +427,7 @@ fn rung3_curtain_two_pass(index: &ProtIndex) -> Result<(), String> {
         &mut trig,
         corners,
     );
-    let base = legaia_tim::Vram::new();
+    let base = psx_tim::Vram::new();
     intro.land_capture_rgba(&synthetic_field_rgba(320, 240), 320, 240, &base);
 
     // Seed the display model, then hold the emitter still (same elapsed) and
@@ -1054,11 +1054,11 @@ fn battle_render_ladder() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let Some(prot) = legaia_iso::image::extract_prot_dat(&disc) else {
+    let Some(prot) = psx_iso::image::extract_prot_dat(&disc) else {
         eprintln!("[skip] PROT.DAT extraction failed (disc-gated)");
         return;
     };
-    let cdname = legaia_iso::image::extract_cdname_txt(&disc);
+    let cdname = psx_iso::image::extract_cdname_txt(&disc);
     let index = ProtIndex::from_bytes(prot, cdname.as_deref()).expect("PROT index");
 
     let mut rt = LegaiaRuntime::new();

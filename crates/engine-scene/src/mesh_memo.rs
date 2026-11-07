@@ -48,7 +48,7 @@ impl ContentKey {
     }
 
     /// The key of a VRAM image: its pixels and its written-cell map.
-    pub fn of_vram(v: &legaia_tim::Vram) -> Self {
+    pub fn of_vram(v: &psx_tim::Vram) -> Self {
         Self::of(&[v.as_bytes(), v.written_bytes()])
     }
 
@@ -198,8 +198,8 @@ mod tests {
             ContentKey::of(&[b"ab", b"c"]),
             ContentKey::of(&[b"a", b"bc"])
         );
-        let v = legaia_tim::Vram::new();
-        let mut w = legaia_tim::Vram::new();
+        let v = psx_tim::Vram::new();
+        let mut w = psx_tim::Vram::new();
         assert_eq!(ContentKey::of_vram(&v), ContentKey::of_vram(&w));
         // A written zero is content: the written map changes, the pixels not.
         w.write_block(0, 0, 1, 1, &[0, 0]);

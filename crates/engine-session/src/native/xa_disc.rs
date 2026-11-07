@@ -19,7 +19,7 @@ use crate::xa_banks::BATTLE_XA_CLIP_SLOTS;
 ///
 /// Channel demux needs the raw 2352-byte sectors (the CD-XA subheaders carry
 /// the channel number; a 2048-byte ISO view strips them), so this reads the
-/// disc through [`legaia_iso::raw::RawDisc`] - extracted-directory boots
+/// disc through [`psx_iso::raw::RawDisc`] - extracted-directory boots
 /// can't stage a shout bank. Returns `None` when the disc / executable /
 /// tables don't resolve; the caller degrades to silent arts.
 ///
@@ -29,14 +29,14 @@ use crate::xa_banks::BATTLE_XA_CLIP_SLOTS;
 pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShoutBank> {
     let scus = read_scus(&SceneSource::Disc(disc))?;
     let table = legaia_art::arts_voice::ArtsVoiceTable::parse_from_scus(&scus)?;
-    let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let mut raw = psx_iso::raw::RawDisc::open(disc).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
     let mut bank = legaia_engine_audio::ArtsShoutBank::new();
     for (cslot, name) in crate::xa_banks::shout_files() {
         let rec = find_disc_file(&files, name)?;
-        let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
-        let streams = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors).ok()?;
+        let sectors = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
+        let streams = psx_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors).ok()?;
         crate::xa_banks::install_shout_file(&mut bank, cslot, &streams, Some(&table));
     }
     bank.has_clips().then_some(bank)
@@ -45,9 +45,9 @@ pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShou
 /// The directory record of the ISO file named `name` (`XA/XA2.XA;1` matches
 /// `XA2.XA`).
 fn find_disc_file<'a>(
-    files: &'a [(String, legaia_iso::iso9660::DirectoryRecord)],
+    files: &'a [(String, psx_iso::iso9660::DirectoryRecord)],
     name: &str,
-) -> Option<&'a legaia_iso::iso9660::DirectoryRecord> {
+) -> Option<&'a psx_iso::iso9660::DirectoryRecord> {
     files
         .iter()
         .find_map(|(path, rec)| (crate::xa_banks::file_key(path) == name).then_some(rec))
@@ -60,16 +60,16 @@ fn find_disc_file<'a>(
 /// files through the same call). Same disc-only caveat as
 /// [`read_arts_shout_bank`]. `None` when nothing decodes.
 pub fn read_battle_xa_clip_bank(disc: &Path) -> Option<legaia_engine_audio::XaClipBank> {
-    let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
-    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
-    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let mut raw = psx_iso::raw::RawDisc::open(disc).ok()?;
+    let volume = psx_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = psx_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
     let mut bank = legaia_engine_audio::XaClipBank::new();
     for &(slot, name) in BATTLE_XA_CLIP_SLOTS {
         let Some(rec) = find_disc_file(&files, name) else {
             continue;
         };
-        let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
-        let Ok(streams) = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors) else {
+        let sectors = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
+        let Ok(streams) = psx_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors) else {
             continue;
         };
         crate::xa_banks::install_clip_file(&mut bank, slot, &streams);
@@ -88,15 +88,15 @@ impl XaDiscSource {
     /// Walk the disc's ISO once for the `XA<n>.XA` files. `None` when the
     /// image does not open or carries none.
     fn open(disc: &std::path::Path) -> Option<Self> {
-        let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
-        let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
-        let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+        let mut raw = psx_iso::raw::RawDisc::open(disc).ok()?;
+        let volume = psx_iso::iso9660::read_volume(&mut raw).ok()?;
+        let files = psx_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
         let mut map = BTreeMap::new();
         for (path, rec) in &files {
             let Some(slot) = crate::xa_banks::clip_slot_of(path) else {
                 continue;
             };
-            let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+            let sectors = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
             map.insert(slot, (rec.lba, sectors));
         }
         (!map.is_empty()).then_some(Self {
@@ -107,7 +107,7 @@ impl XaDiscSource {
 
     /// `count` raw 2352-byte sectors from `lba`, concatenated.
     fn read_sectors(&self, lba: u32, count: u32) -> Option<Vec<u8>> {
-        let mut raw = legaia_iso::raw::RawDisc::open(&self.disc).ok()?;
+        let mut raw = psx_iso::raw::RawDisc::open(&self.disc).ok()?;
         let mut out = Vec::with_capacity(
             count as usize * legaia_engine_audio::xa_clip_bank::RAW_SECTOR_BYTES,
         );

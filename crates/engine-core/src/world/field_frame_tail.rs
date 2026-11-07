@@ -124,11 +124,7 @@ impl World {
     ///
     /// Off in battle, where the host's VRAM image is the battle one and a
     /// field write would clobber it.
-    pub fn step_field_vram_effects(
-        &mut self,
-        vram: &mut legaia_tim::Vram,
-        back_buffer: bool,
-    ) -> bool {
+    pub fn step_field_vram_effects(&mut self, vram: &mut psx_tim::Vram, back_buffer: bool) -> bool {
         if self.mode == SceneMode::Battle {
             return false;
         }
@@ -620,7 +616,7 @@ mod tests {
         w.mode = SceneMode::Field;
         w.ambient.clut_pending_game_ticks = 9;
         w.ambient.pending_game_ticks = 9;
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         assert!(!w.step_field_vram_effects(&mut vram, false));
         assert_eq!(w.ambient.clut_pending_game_ticks, 0);
         assert_eq!(w.ambient.pending_game_ticks, 0);
@@ -631,7 +627,7 @@ mod tests {
         let mut w = World::new();
         w.mode = SceneMode::Battle;
         w.ambient.clut_pending_game_ticks = 9;
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         assert!(!w.step_field_vram_effects(&mut vram, false));
         assert_eq!(w.ambient.clut_pending_game_ticks, 9);
     }

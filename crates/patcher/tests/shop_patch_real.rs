@@ -4,9 +4,9 @@
 //! in memory.
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_randomizer::drops::DropMode;
+use psx_iso::iso9660::read_file_in_image;
 use std::collections::BTreeMap;
 
 fn load_disc() -> Option<Vec<u8>> {

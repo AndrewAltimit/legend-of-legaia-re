@@ -8,8 +8,8 @@
 //!
 //! Asserts, for the clean `sound_data2` entries (`0877`..=`0885`), that
 //! [`sound_pack::extract`] returns a VAB + SEQ, that the reconstituted VAB
-//! parses with the real `legaia_vab` header parser (declared `fsize` ==
-//! concatenated chunk sizes), and that the SEQ parses with `legaia_seq`.
+//! parses with the real `psx_vab` header parser (declared `fsize` ==
+//! concatenated chunk sizes), and that the SEQ parses with `psx_seq`.
 //!
 //! Non-vacuous: requires at least 3 clean entries to decode. Skips silently
 //! when the disc / extracted `PROT.DAT` is absent.
@@ -67,7 +67,7 @@ fn sound_data2_decodes_as_vab_plus_seq() {
             pack.vab_total_size as usize,
             "PROT {idx}: reconstituted VAB length == declared total_size"
         );
-        let header = legaia_vab::parse_header(&pack.vab, 0)
+        let header = psx_vab::parse_header(&pack.vab, 0)
             .unwrap_or_else(|e| panic!("PROT {idx}: reconstituted VAB header parse: {e}"));
         assert_eq!(
             header.fsize as usize,
@@ -85,7 +85,7 @@ fn sound_data2_decodes_as_vab_plus_seq() {
             .seq
             .as_ref()
             .unwrap_or_else(|| panic!("PROT {idx}: terminator should be a SEQ"));
-        legaia_seq::Seq::parse(seq).unwrap_or_else(|e| panic!("PROT {idx}: SEQ parse: {e}"));
+        psx_seq::Seq::parse(seq).unwrap_or_else(|e| panic!("PROT {idx}: SEQ parse: {e}"));
 
         decoded += 1;
     }

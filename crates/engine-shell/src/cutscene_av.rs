@@ -10,7 +10,7 @@
 //! byte sectors straight off the disc image, where both tracks are present.
 //!
 //! [`decode_str_av_from_disc`] does exactly that in a single pass through the
-//! shared [`legaia_mdec::str_av`] demuxer (the browser play page's kernel
+//! shared [`psx_mdec::str_av`] demuxer (the browser play page's kernel
 //! too), decoding the dominant audio channel to PCM and the video to RGBA
 //! frames. The interleaving (and thus the A/V alignment) is
 //! preserved because both tracks are pulled from the same sector stream.
@@ -23,18 +23,18 @@
 //! position, matching the prior video-only behaviour.
 
 use anyhow::{Context, Result};
-use legaia_iso::raw::{RawDisc, SECTOR_SIZE};
-use legaia_mdec::VideoFrame;
-use legaia_mdec::str_sector::{StrFrameAssembler, StrTiming, analyze_str_timing};
+use psx_iso::raw::{RawDisc, SECTOR_SIZE};
+use psx_mdec::VideoFrame;
+use psx_mdec::str_sector::{StrFrameAssembler, StrTiming, analyze_str_timing};
 use std::path::Path;
 
 /// Form-1 video user-data length.
-const VIDEO_USER_DATA: usize = legaia_iso::raw::USER_DATA_SIZE;
+const VIDEO_USER_DATA: usize = psx_iso::raw::USER_DATA_SIZE;
 
 /// The decoded XA audio track interleaved in a cutscene STR stream, ready to
 /// hand to [`legaia_engine_audio::AudioOut::play_xa`] - the shared demux
-/// kernel's [`legaia_mdec::str_av::StrAudio`].
-pub type CutsceneAudio = legaia_mdec::str_av::StrAudio;
+/// kernel's [`psx_mdec::str_av::StrAudio`].
+pub type CutsceneAudio = psx_mdec::str_av::StrAudio;
 
 /// Result of decoding a cutscene STR straight off the disc image.
 pub struct CutsceneAv {
@@ -48,7 +48,7 @@ pub struct CutsceneAv {
 /// starting at `lba`) from a disc image into RGBA video frames, the detected
 /// playback timing, and the demuxed XA audio track.
 ///
-/// The demux is [`legaia_mdec::str_av::StrAvDemuxer`] - the same kernel the
+/// The demux is [`psx_mdec::str_av::StrAvDemuxer`] - the same kernel the
 /// browser play page opens a movie through - so both hosts agree on the
 /// frame list, the frame rate and the soundtrack. This host decodes every
 /// frame up front; a frame that fails to decode repeats the previous picture
@@ -61,7 +61,7 @@ pub fn decode_str_av_from_disc(
 ) -> Result<CutsceneAv> {
     let mut disc =
         RawDisc::open(disc_path).with_context(|| format!("open disc {}", disc_path.display()))?;
-    let mut demux = legaia_mdec::str_av::StrAvDemuxer::new();
+    let mut demux = psx_mdec::str_av::StrAvDemuxer::new();
     for s in 0..sector_count {
         let raw = disc
             .read_raw_sector(lba + s)
@@ -78,7 +78,7 @@ pub fn decode_str_av_from_disc(
 
 /// Decode a demuxed frame list, keeping one output frame per assembled
 /// frame: an undecodable frame repeats its predecessor (black for the first).
-pub fn decode_frames(frames: &[legaia_mdec::str_av::StrFrameBits]) -> Vec<VideoFrame> {
+pub fn decode_frames(frames: &[psx_mdec::str_av::StrFrameBits]) -> Vec<VideoFrame> {
     let mut out: Vec<VideoFrame> = Vec::with_capacity(frames.len());
     for f in frames {
         let rgba = match f.decode_rgba() {
@@ -117,7 +117,7 @@ pub fn decode_str_video_only(str_path: &Path) -> Result<(Vec<VideoFrame>, StrTim
     for i in 0..n_sectors {
         let sector = &data[i * VIDEO_USER_DATA..(i + 1) * VIDEO_USER_DATA];
         if let Ok(Some((hdr, bs))) = asm.push_sector(sector) {
-            bits.push(legaia_mdec::str_av::StrFrameBits {
+            bits.push(psx_mdec::str_av::StrFrameBits {
                 width: hdr.width as u32,
                 height: hdr.height as u32,
                 frame_number: hdr.frame_number,
@@ -239,7 +239,7 @@ mod tests {
         let a = CutsceneAudio {
             pcm: vec![0i16; 37_800 * 2], // 1 s of stereo at 37.8 kHz
             sample_rate: 37_800,
-            channels: legaia_xa::Channels::Stereo,
+            channels: psx_xa::Channels::Stereo,
             file_no: 1,
             ch_no: 0,
         };

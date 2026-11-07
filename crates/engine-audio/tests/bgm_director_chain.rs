@@ -13,8 +13,8 @@
 use legaia_engine_audio::sequencer::Sequencer;
 use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};
-use legaia_seq::{SEQ_MAGIC, Seq};
-use legaia_vab::{
+use psx_seq::{SEQ_MAGIC, Seq};
+use psx_vab::{
     PROGRAMS_TABLE_SIZE, TONE_SIZE, TONES_PER_PROGRAM, VAB_HEADER_SIZE, VAB_MAGIC, VAG_BLOCK_BYTES,
     VAG_TABLE_ENTRIES, parse,
 };
@@ -110,7 +110,7 @@ impl AudioDevice {
     /// Upload a VAB into this device's SPU and stash the resulting bank.
     /// `engine-core::SceneHost::scene_vab_bytes` produces the same
     /// `(report, bytes)` pair an engine would feed here.
-    pub fn install_bank(&mut self, report: &legaia_vab::VabReport, bytes: &[u8]) {
+    pub fn install_bank(&mut self, report: &psx_vab::VabReport, bytes: &[u8]) {
         let mut alloc = SpuAllocator::new(0x1000, 0x40_000);
         let bank = VabBank::upload(&mut self.spu, &mut alloc, report, bytes);
         self.bank = Some(bank);

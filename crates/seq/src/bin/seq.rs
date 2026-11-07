@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use legaia_seq::{ChannelMessage, EventBody, MetaMessage, SEQ_MAGIC, Seq, parse_header};
+use psx_seq::{ChannelMessage, EventBody, MetaMessage, SEQ_MAGIC, Seq, parse_header};
 
 #[derive(Parser)]
 #[command(name = "seq", version, about = "Inspect PsyQ SEQ files")]

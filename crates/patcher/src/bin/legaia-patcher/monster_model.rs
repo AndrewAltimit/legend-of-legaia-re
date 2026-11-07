@@ -73,7 +73,7 @@ pub(crate) fn cmd_monster_model(
             .with_context(|| format!("write {}", obj_path.display()))?;
         std::fs::write(&mtl_path, &exported.mtl)
             .with_context(|| format!("write {}", mtl_path.display()))?;
-        legaia_tim::write_png(
+        psx_tim::write_png(
             &png_path,
             exported.page_width,
             exported.page_height,
@@ -83,7 +83,7 @@ pub(crate) fn cmd_monster_model(
         // editor to display. Reference only: --obj never reads it back.
         if let Some(boss) = &exported.boss_rgba {
             let boss_path = stem.with_file_name(format!("{stem_name}_boss.png"));
-            legaia_tim::write_png(
+            psx_tim::write_png(
                 &boss_path,
                 monster_model::UV_SPACE,
                 monster_model::PAGE_HEIGHT,
@@ -124,7 +124,7 @@ pub(crate) fn cmd_monster_model(
             .with_context(|| format!("read {}", obj_path.display()))?;
         let png_bytes = std::fs::read(texture_path)
             .with_context(|| format!("read {}", texture_path.display()))?;
-        let (w, h, rgba) = legaia_tim::encode::decode_png_rgba(&png_bytes)?;
+        let (w, h, rgba) = psx_tim::encode::decode_png_rgba(&png_bytes)?;
         let retail_page_width = mesh
             .texture()
             .map(|t| t.width)

@@ -20,6 +20,7 @@ mod nav_disc;
 pub mod npc_dialog;
 mod packet_color;
 pub mod player_anm;
+pub mod pose_sampler;
 mod prot_locate;
 mod scene_export;
 mod scene_geom;
@@ -44,8 +45,8 @@ use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};
 use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
-use legaia_iso::image::{extract_prot_dat, extract_scus};
 use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
+use psx_iso::image::{extract_prot_dat, extract_scus};
 // The measurement build's counting allocator is `legaia-web-play-bundle`'s:
 // `frame-bench-web.mjs` reads it on the play page.
 
@@ -182,7 +183,7 @@ struct KingdomPack {
     prot_index: u32,
     /// 1 MB software PSX VRAM filled by uploading every TIM that decodes
     /// out of slot 0's LZS payload.
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
     /// Decompressed slot-1 payload: `[u32 count][u32 word_offsets[count]][TMDs]`.
     pack: Vec<u8>,
     /// Per-slot byte offset within `pack` (= `word_offsets[k] * 4`, the
@@ -358,7 +359,7 @@ struct PrimTarget {
 /// target. The "doesn't clobber" half is what kills the rainbow-noise
 /// symptom that comes from a TIM's image bytes landing on a VRAM row
 /// another primitive uses as its CLUT.
-fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bool) {
+fn tim_block_targeting(tim: &psx_tim::Tim, needs: &[PrimTarget]) -> (bool, bool) {
     let img = &tim.image;
     let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
     let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));

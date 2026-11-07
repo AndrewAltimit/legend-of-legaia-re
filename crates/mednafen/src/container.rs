@@ -193,14 +193,14 @@ impl SaveState {
         if let Some(bytes) = self.main_ram_structured() {
             return Ok(bytes);
         }
-        legaia_ram_image::extract::main_ram_via_anchor(&self.payload)
+        psx_ram_image::extract::main_ram_via_anchor(&self.payload)
     }
 
     /// The `MAIN.MainRAM.data8` entry when present and exactly 2 MiB. Reads
     /// only mednafen's own section layout, so it works for any PSX game.
     pub fn main_ram_structured(&self) -> Option<&[u8]> {
         self.entry_bytes("MAIN", "MainRAM.data8")
-            .filter(|b| b.len() == legaia_ram_image::extract::PSX_RAM_SIZE)
+            .filter(|b| b.len() == psx_ram_image::extract::PSX_RAM_SIZE)
     }
 
     /// Structured first, then the anchor search with `profile`'s strings
@@ -208,12 +208,12 @@ impl SaveState {
     pub fn main_ram_with_anchors(
         &self,
         exe: &[u8],
-        profile: &dyn legaia_ram_image::GameProfile,
+        profile: &dyn psx_ram_image::GameProfile,
     ) -> Result<&[u8]> {
         if let Some(bytes) = self.main_ram_structured() {
             return Ok(bytes);
         }
-        legaia_ram_image::extract::main_ram_via_profile(&self.payload, exe, profile)
+        psx_ram_image::extract::main_ram_via_profile(&self.payload, exe, profile)
     }
 
     /// 1 KiB of PSX scratchpad RAM - index `0` corresponds to
@@ -383,7 +383,7 @@ mod tests {
     /// layout, and the anchor fallback takes the caller's game profile.
     #[test]
     fn main_ram_is_located_for_any_game() {
-        use legaia_ram_image::{GameProfile, GenericGame, PSX_RAM_SIZE};
+        use psx_ram_image::{GameProfile, GenericGame, PSX_RAM_SIZE};
         let mut ram = vec![0u8; PSX_RAM_SIZE];
         ram[0x1_0000..0x1_0010].copy_from_slice(b"OTHER GAME v1.00");
         let payload = make_save(vec![make_section_bytes(

@@ -101,8 +101,7 @@ fn condition_groups_tile_the_region_array_in_every_scene() {
         if start >= bytes.len() {
             continue;
         }
-        let Ok((man_bytes, _)) =
-            legaia_lzs::decompress_tracked(&bytes[start..], desc.size as usize)
+        let Ok((man_bytes, _)) = psx_lzs::decompress_tracked(&bytes[start..], desc.size as usize)
         else {
             continue;
         };

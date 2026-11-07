@@ -222,6 +222,11 @@ pub struct RecordPathTrace {
     pub writes: Vec<(bool, u16)>,
     /// Every op-`0x35` it passes, `(operand, sub-op)`, in order.
     pub bgm: Vec<(u16, u8)>,
+    /// Every op-`0x34` sub-0 screen-effect colour tween it passes,
+    /// `(op0, rgb, intensity)`, in order. An overworld entrance record issues
+    /// its exit fade this way (`34 05 FF FF FF 41 00`) on the crossing frame,
+    /// ahead of its `0x3F`.
+    pub fades: Vec<(u8, [u8; 3], i16)>,
 }
 
 impl RecordPathTrace {
@@ -246,6 +251,7 @@ pub fn record_path_trace(
     use legaia_scene_formats::field_disasm::decode;
     let mut writes: Vec<(bool, u16)> = Vec::new();
     let mut bgm: Vec<(u16, u8)> = Vec::new();
+    let mut fades: Vec<(u8, [u8; 3], i16)> = Vec::new();
     let mut pc = pc;
     let end = 'walk: {
         for _ in 0..4096 {
@@ -260,6 +266,17 @@ pub fn record_path_trace(
             match insn.info {
                 InsnInfo::Bgm { text_id, sub_op } => {
                     bgm.push((text_id, sub_op));
+                    pc = next;
+                }
+                InsnInfo::Effect {
+                    op0,
+                    kind:
+                        legaia_scene_formats::field_disasm::EffectKind::ColorIntensity {
+                            rgb,
+                            intensity,
+                        },
+                } => {
+                    fades.push((op0, rgb, intensity));
                     pc = next;
                 }
                 InsnInfo::SceneChange {
@@ -320,7 +337,12 @@ pub fn record_path_trace(
         }
         RecordPathEnd::Undecided
     };
-    RecordPathTrace { end, writes, bgm }
+    RecordPathTrace {
+        end,
+        writes,
+        bgm,
+        fades,
+    }
 }
 
 /// [`record_path_walk`] over the MAN record at **flat** index `flat` (the

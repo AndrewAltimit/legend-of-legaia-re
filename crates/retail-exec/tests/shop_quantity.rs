@@ -11,7 +11,7 @@ use legaia_engine_menus::shop::{
     apply_sale_gold,
 };
 use legaia_engine_system::input::PadButton;
-use legaia_retail_exec::{Cpu, Stop};
+use psx_retail_exec::{Cpu, Stop};
 
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const BUY: u32 = 0x801D_B7F4;

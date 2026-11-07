@@ -23,7 +23,7 @@
 //! The LZS ring buffer initializes to zeros, so random input decodes to
 //! plausible-looking output - "decompresses without error" is never a
 //! validity signal. A deep hit is admitted only when the decoded bytes both
-//! (a) pass [`legaia_tim::parse_strict`] (no reserved flag bits, real pmode,
+//! (a) pass [`psx_tim::parse_strict`] (no reserved flag bits, real pmode,
 //! exact block lengths, in-VRAM-bounds image) AND (b) decode to RGBA without
 //! error. That double gate rejects the coincidental TIM-magic-in-noise hits a
 //! magic-only scan of decompressed garbage would otherwise turn up.
@@ -94,22 +94,22 @@ fn scan_section(
     let mut off = 0usize;
     while off + 4 <= section.len() {
         let magic = u32::from_le_bytes(section[off..off + 4].try_into().unwrap());
-        if magic == legaia_tim::TIM_MAGIC
-            && let Ok(tim) = legaia_tim::parse_strict(&section[off..])
+        if magic == psx_tim::TIM_MAGIC
+            && let Ok(tim) = psx_tim::parse_strict(&section[off..])
             // Dimension sanity + decode dry run: a strict-valid header whose
             // body is noise still decodes here (the bytes exist), but this
             // catches any pathological dimension that would panic a consumer.
             && tim.pixel_width() > 0
             && tim.pixel_height() > 0
-            && legaia_tim::decode_rgba8(&tim, 0).is_ok()
+            && psx_tim::decode_rgba8(&tim, 0).is_ok()
         {
             let byte_len = tim.byte_extent();
             let bpp = match tim.mode {
-                legaia_tim::PixelMode::Bpp4 => 4,
-                legaia_tim::PixelMode::Bpp8 => 8,
-                legaia_tim::PixelMode::Bpp16 => 16,
-                legaia_tim::PixelMode::Bpp24 => 24,
-                legaia_tim::PixelMode::Mixed => 0,
+                psx_tim::PixelMode::Bpp4 => 4,
+                psx_tim::PixelMode::Bpp8 => 8,
+                psx_tim::PixelMode::Bpp16 => 16,
+                psx_tim::PixelMode::Bpp24 => 24,
+                psx_tim::PixelMode::Mixed => 0,
             };
             let fnv1a = fnv1a64(&section[off..off + byte_len]);
             out.push(DeepCatalogTim {
@@ -134,7 +134,7 @@ fn scan_section(
 /// Build the deep catalog from a flat PROT.DAT image and its TOC entry spans.
 ///
 /// Walks every entry in index order, LZS-decompresses its bytes with
-/// [`legaia_lzs::decompress_container`] (the same decode path
+/// [`psx_lzs::decompress_container`] (the same decode path
 /// [`legaia_container_formats::tim_scan::scan_entry`] uses), and strict-parses every TIM in each
 /// decoded section. Entries that are not LZS containers (the lenient header
 /// heuristic fails to find a section table) contribute no sections and are
@@ -158,7 +158,7 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Dee
         if end > prot.len() {
             continue; // span runs off the image (already filtered at TOC parse)
         }
-        let Ok(sections) = legaia_lzs::decompress_container(&prot[start..end]) else {
+        let Ok(sections) = psx_lzs::decompress_container(&prot[start..end]) else {
             continue;
         };
         for (sec_idx, section) in sections.iter().enumerate() {

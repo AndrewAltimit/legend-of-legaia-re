@@ -8,8 +8,8 @@ use legaia_actor_formats::battle_char_assembly::{art_animation_bank, decode_reco
 use legaia_art::Character;
 use legaia_art::queue::{ActionConstant, Command};
 use legaia_engine_core::world::World;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 

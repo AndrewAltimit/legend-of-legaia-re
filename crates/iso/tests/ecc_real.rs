@@ -9,9 +9,9 @@
 //!   sector is still valid and the byte reads back, and confirm restoring the
 //!   original byte returns the sector byte-for-byte.
 
-use legaia_iso::iso9660::find_file_in_image;
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
-use legaia_iso::write::{
+use psx_iso::iso9660::find_file_in_image;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
+use psx_iso::write::{
     encode_mode2_form1_sector, is_form2, mode2_form1_sector_is_valid, patch_file_logical,
 };
 

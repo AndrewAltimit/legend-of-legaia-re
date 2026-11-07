@@ -7,8 +7,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::extract_prot_dat;
 use legaia_prot::toc_index::parse_prot_toc;
+use psx_iso::image::extract_prot_dat;
 use std::env;
 
 fn prot_entry(prot: &[u8], index: u32) -> Option<&[u8]> {

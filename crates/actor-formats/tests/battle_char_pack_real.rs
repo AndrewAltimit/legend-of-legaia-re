@@ -145,7 +145,7 @@ fn real_pack_layout() {
             "atlas {i} file offset"
         );
         assert_eq!(atlas.clut_fb_y, ATLAS_CLUT_ROWS[i], "atlas {i} CLUT row");
-        // TIM magic check (parse byte 0..4 inline; legaia_tim parses too but
+        // TIM magic check (parse byte 0..4 inline; psx_tim parses too but
         // its full image-block validation isn't needed here).
         assert_eq!(
             &atlas.tim_bytes[..4],

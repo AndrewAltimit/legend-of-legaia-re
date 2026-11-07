@@ -18,19 +18,29 @@ use std::collections::VecDeque;
 use crate::battle_drive::{StrikeHand, engine_seat};
 use legaia_engine_core::world::World;
 
-/// The words in order, one per melee hit past the gate.
+/// The words in order, one per melee hit past the gate, each with the
+/// recording's vsync it was read on when the deal names one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StrikeDeal {
-    pub hit_words: Vec<u32>,
+    pub hit_words: Vec<(u32, Option<u32>)>,
 }
 
-/// `w1,w2,..`, each decimal. An empty list is a deal of no hits.
+/// `w1,w2,..`, each decimal, or `w@vsync` with the recording's vsync of the
+/// hit the word went into. An empty list is a deal of no hits.
 pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
     let hit_words = v
         .split(',')
         .filter(|f| !f.trim().is_empty())
-        .map(|f| f.trim().parse().ok())
-        .collect::<Option<Vec<u32>>>()?;
+        .map(|f| {
+            let mut it = f.trim().splitn(2, '@');
+            let w = it.next()?.parse().ok()?;
+            let at = match it.next() {
+                Some(t) => Some(t.parse().ok()?),
+                None => None,
+            };
+            Some((w, at))
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some(StrikeDeal { hit_words })
 }
 
@@ -39,6 +49,7 @@ pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
 pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal) {
     let actor = usize::from(engine_seat(hand.seat, world.party.party_count));
     if let Some(a) = world.actors.get_mut(actor) {
+        restage_dealt_byte(&mut a.battle, &hand.queue);
         let n = hand.queue.len().min(a.battle.params.len());
         a.battle.params[..n].copy_from_slice(&hand.queue[..n]);
     }
@@ -49,7 +60,36 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
-    world.battle.capture_hit_rand = VecDeque::from(deal.hit_words.clone());
+    // A timed word lands on the hit nearest its vsync: the gate stands on the
+    // recording's first row, so the recording's vsync counts from it.
+    let gate = world.clock.display_frames;
+    world.battle.capture_hit_rand = deal
+        .hit_words
+        .iter()
+        .map(|&(w, at)| (w, at.map(|v| gate + u64::from(v.saturating_sub(1)))))
+        .collect::<VecDeque<_>>();
+}
+
+/// The byte the replay's strike loop already staged from its own stream,
+/// re-staged from the dealt queue.
+///
+/// The gate opens on the strike loop's phase, not on its stream: a walking
+/// monster's loop stages its first byte over the idle on the pass it opens
+/// (`battle_rugi_caruban_3_strike` holds clip `0` with byte `8` staged), and
+/// the replay's own pick may have staged another (its stream read `07 07 06`).
+/// Copying the queue alone leaves that byte to commit, so the replay played
+/// its own first swing and skipped retail's. A byte staged and not yet
+/// committed is the queue's byte behind the cursor: it takes the dealt one.
+fn restage_dealt_byte(b: &mut legaia_engine_battle_vm::battle_action::BattleActor, queue: &[u8]) {
+    let Some(behind) = usize::from(b.strike_index).checked_sub(1) else {
+        return;
+    };
+    let (Some(&own), Some(&dealt)) = (b.params.get(behind), queue.get(behind)) else {
+        return;
+    };
+    if b.queued_anim == own && b.queued_anim != b.current_anim && dealt != 0 {
+        b.queued_anim = dealt;
+    }
 }
 
 #[cfg(test)]
@@ -57,12 +97,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_staged_byte_the_replay_picked_takes_the_dealt_one() {
+        let mut b = legaia_engine_battle_vm::battle_action::BattleActor::default();
+        b.params[..3].copy_from_slice(&[7, 7, 6]);
+        b.strike_index = 1;
+        b.queued_anim = 7;
+        restage_dealt_byte(&mut b, &[8, 7, 6]);
+        assert_eq!(b.queued_anim, 8);
+        // A committed byte is the clip playing: left alone.
+        b.queued_anim = 7;
+        b.current_anim = 7;
+        restage_dealt_byte(&mut b, &[8, 7, 6]);
+        assert_eq!(b.queued_anim, 7);
+    }
+
+    #[test]
     fn the_env_form_reads_decimal_words_in_order() {
         let d = strike_deal_from_env("1,4294967295").unwrap();
-        assert_eq!(d.hit_words, vec![1, u32::MAX]);
+        assert_eq!(d.hit_words, vec![(1, None), (u32::MAX, None)]);
+        let d = strike_deal_from_env("7@147,9@230").unwrap();
+        assert_eq!(d.hit_words, vec![(7, Some(147)), (9, Some(230))]);
+        assert!(strike_deal_from_env("7@x").is_none());
         assert_eq!(
             strike_deal_from_env("").unwrap().hit_words,
-            Vec::<u32>::new()
+            Vec::<(u32, Option<u32>)>::new()
         );
         assert!(strike_deal_from_env("x").is_none());
     }

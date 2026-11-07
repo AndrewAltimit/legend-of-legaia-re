@@ -47,9 +47,9 @@ use anyhow::{Context, Result, bail};
 
 use legaia_actor_formats::battle_char_assembly::{self as bca, SECTION_COUNT};
 use legaia_actor_formats::battle_char_assembly::{equip_isolate, equip_item};
-use legaia_tim::Vram;
 use legaia_tmd::encode::{ModelGroup, ModelObject, ModelPrim};
 use legaia_tmd::legaia_prims;
+use psx_tim::Vram;
 
 /// Item-table ids `0x01..=0x1A` are the Ra-Seru level forms (`asset
 /// item-tables` on `SCUS_942.54`): Meta `$1..$9` = `0x01..=0x09`, Terra

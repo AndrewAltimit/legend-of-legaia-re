@@ -25,7 +25,7 @@
     </svg>
     <figcaption>The <a href="port-catalog.html">port catalog</a> asks whether a routine has a tag and a caller, and the <a href="retail-compare.html">retail comparison corpus</a> asks about what a save state happens to show. This asks whether the Rust computes what the bytes compute, over inputs no capture reached.</figcaption>
   </figure>
-  <div class="cli"><code>cargo test -p legaia-retail-exec --profile dev-fast --test integration</code></div>
+  <div class="cli"><code>cargo test -p psx-retail-exec --profile dev-fast --test integration</code></div>
 </section>
 
 <section class="doc-section" id="what-it-can-run" data-doc="what-it-can-run">
@@ -85,6 +85,12 @@
       <tr><td>SFX cue ring and drainer (<code>FUN_80035B50</code>, <code>FUN_8001698C</code>, <code>FUN_80016B6C</code>)</td><td>Run frame by frame with the sound library&rsquo;s key calls logged, the ring, the one-shot voice cursor and the sustained run match. A sustained row with no voices keyed nothing in the port, where the drainer releases the held run before it tests the count, so the old run kept sounding.</td></tr>
       <tr><td>Field Magic casts (<code>FUN_801D9594</code>, <code>FUN_801D9280</code>, <code>FUN_800402F4</code>)</td><td>A heal cast from the pause Magic screen restored a catalog placeholder (MP &times; 8, or &times; 6 for the party) where the applier caps it at 0x100 / 0x200 / 0x400 plus the caster&rsquo;s level in the spell; 122 of 125 casts wrote different records. A single-target heal on a member at full HP also charged MP, where retail&rsquo;s confirm refuses it.</td></tr>
       <tr><td>Field interact probe <code>FUN_801CF9F4</code></td><td>The port&rsquo;s interact box matches. Where boxes overlap, retail talks to the last actor in list order and the port to the nearest; a slot-order pick turned the casino&rsquo;s door into a talk with a neighbour, so the port keeps the nearest until a capture reads that scene&rsquo;s spawn order.</td></tr>
+      <tr><td>Enemy Steal <code>FUN_801F730C</code> (PROT 0941)</td><td>A party victim&rsquo;s draw opens with a <code>rand()</code> gate the port skipped, so every enemy steal shifted the battle&rsquo;s later rolls by one; a monster robbing a monster raised no line where retail composes one.</td></tr>
+      <tr><td>Divide split <code>FUN_801F78B8</code> (PROT 0940)</td><td>Only <code>0xAE</code> throws the coin, where the host drew for <code>0x50</code> too; the clone takes the caster&rsquo;s HP before the coin, so a weakened caster left both halves on 1 HP in the port; the weakened caster also loses its MP.</td></tr>
+      <tr><td>Element Change <code>FUN_801F88EC</code> (PROT 0964)</td><td>Retail draws once and again only while the draw repeats the last roll; the host pre-drew 33 <code>rand()</code>s every cast.</td></tr>
+      <tr><td>Water Hazard <code>FUN_801F7298</code> (PROT 0956)</td><td>Retail draws each seat&rsquo;s damage and then its Venom before the next seat; the host rolled the whole row&rsquo;s damage first. The attack ring <code>FUN_801D8A88</code> / <code>FUN_801D8D00</code> matches.</td></tr>
+      <tr><td>Mushura chase (PROT 0915), Nighto (PROT 0907)</td><td>The chase trades its target with <code>rand() % 4 + 3</code> redrawn on a repeat, over all four monster seats, where the port drew once from the living ones; Nighto skips its resist throw for an immune target, where the host drew it. Water Hazard&rsquo;s monster leg sweeps the whole row; the port struck one seat and rolled nothing there.</td></tr>
+      <tr><td>Ozma&rsquo;s hit ladder (PROT 0934 arm <code>0x18</code>), Mule&rsquo;s wave (PROT 0929)</td><td>The arm draws its spray&rsquo;s six <code>rand()</code>s before the ladder rolls; the port drew them after, so every ladder hit rolled off other draws. Each ladder and wave roll is a whole <code>FUN_801DD0AC</code>, finisher included, but the port rolled it bare: no spell XP, no spirit. The fold also threw away what the pre-hits had banked. Mule&rsquo;s wave also walks fallen seats and clears their staged clip; the port skipped them. Every <code>FUN_801DD0AC</code> call site in <code>0903..0966</code> is now held to an owner that runs the finisher. Kiss of Death&rsquo;s arm 4 (PROT 0955) and the encounter counter&rsquo;s scene-entry top-up match.</td></tr>
     </tbody>
   </table>
   </div>

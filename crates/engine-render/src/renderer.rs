@@ -6,7 +6,7 @@ use crate::shaders::*;
 use crate::*;
 use anyhow::{Context, Result};
 use glam::Mat4;
-use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
+use psx_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 

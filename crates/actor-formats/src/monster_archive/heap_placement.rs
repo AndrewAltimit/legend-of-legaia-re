@@ -58,7 +58,7 @@ const ENTRY_STREAM_OFFSET: u32 = 0x8C;
 /// it (the texture pool past it is staged elsewhere). `None` for a block too
 /// short to carry the header.
 pub fn block_heap_bytes(block: &[u8]) -> Option<u32> {
-    legaia_bytes::u32_le(block, 0x08)
+    psx_bytes::u32_le(block, 0x08)
 }
 
 /// The payload address of every distinct monster block a formation loads.
@@ -96,7 +96,7 @@ fn relocated_byte(block: &[u8], base: u32, off: usize) -> Option<u8> {
     let word = off & !3;
     let count = usize::from(*block.get(0x4A)?);
     for i in 0..count {
-        let Some(entry) = legaia_bytes::u32_le(block, 0x4C + i * 4) else {
+        let Some(entry) = psx_bytes::u32_le(block, 0x4C + i * 4) else {
             break;
         };
         if entry as usize + ENTRY_STREAM_POINTER == word {
@@ -133,7 +133,7 @@ pub fn four_slot_beats(block: &[u8], base: u32) -> Vec<Option<u8>> {
     let count = usize::from(block[0x4A]);
     (0..count)
         .map(|i| {
-            legaia_bytes::u32_le(block, 0x4C + i * 4)
+            psx_bytes::u32_le(block, 0x4C + i * 4)
                 .and_then(|off| four_slot_beat(block, off as usize, base))
         })
         .collect()

@@ -456,7 +456,7 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         let Some(&action_id) = block.get(entry_off) else {
@@ -487,7 +487,7 @@ pub fn animations_by_entry(entry: &[u8], id: u16) -> Result<Option<Vec<Option<Mo
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         out.push(
@@ -532,7 +532,7 @@ pub fn animation_loop_windows(
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         let Some(&action_id) = block.get(entry_off) else {
@@ -572,7 +572,7 @@ pub fn action_tags(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         // An entry pointer past the end of the block terminates the usable
@@ -666,7 +666,7 @@ pub fn juggle_windows(entry: &[u8], id: u16) -> Result<Option<Vec<JuggleWindow>>
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         let Some(&tag) = block.get(entry_off) else {
@@ -952,7 +952,7 @@ pub fn animation_cue_tracks(entry: &[u8], id: u16) -> Result<Option<Vec<ActionCu
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = psx_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         let Some(&action_id) = block.get(entry_off) else {
@@ -966,8 +966,8 @@ pub fn animation_cue_tracks(entry: &[u8], id: u16) -> Result<Option<Vec<ActionCu
         for k in 0..8 {
             let base = entry_off + 0x54 + k * 4;
             let (Some(frame), Some(cue)) = (
-                legaia_bytes::u16_le(&block, base),
-                legaia_bytes::u16_le(&block, base + 2),
+                psx_bytes::u16_le(&block, base),
+                psx_bytes::u16_le(&block, base + 2),
             ) else {
                 break;
             };

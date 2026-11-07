@@ -142,7 +142,7 @@ Where the 218 sit:
 
 ```rust
 use legaia_container_formats::scene_vab_stream;
-use legaia_vab::parse_header;
+use psx_vab::parse_header;
 
 if let Some(s) = scene_vab_stream::detect(buf) {
     let header = parse_header(buf, s.vab_range().start)?;

@@ -14,7 +14,7 @@ The formats a field or world-map scene is built from.
 ## Layering
 
 Sits on [`legaia-container-formats`](../container-formats/README.md) and the
-leaf codecs (`legaia-lzs`, `legaia-tim`, `legaia-tmd`, `legaia-bytes`). The one
+leaf codecs (`psx-lzs`, `psx-tim`, `legaia-tmd`, `psx-bytes`). The one
 sideways edge is [`legaia-overlay-images`](../overlay-images/README.md):
 `scene_event_scripts` reads the summon part records an event script can
 spawn. It must not depend on the UI, minigame or actor format crates,

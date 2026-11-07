@@ -110,7 +110,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
         }
 
         // VAB pass: every `scene_vab_stream` entry must carry the `VABp`
-        // magic and parse via `legaia_vab::parse` past the chunk header.
+        // magic and parse via `psx_vab::parse` past the chunk header.
         // This catches regressions in the chunk-header offset math used
         // by `SceneAssets::build` and the BGM resolver.
         //
@@ -159,7 +159,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
             // PROT entries (`fsize > buf.len()`), so a strict full parse
             // legitimately fails for ~25% of entries. The header is enough
             // to validate the chunk-header offset math.
-            match legaia_vab::parse_header(bytes, resolved_off) {
+            match psx_vab::parse_header(bytes, resolved_off) {
                 Ok(header) => {
                     counters.1 += 1; // vab_parse_ok
                     if sample.is_none() {
@@ -279,7 +279,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     );
     assert_eq!(
         vab_parse_bad, 0,
-        "{vab_parse_bad} VAB entries failed legaia_vab::parse - chunk-header offset math regressed?"
+        "{vab_parse_bad} VAB entries failed psx_vab::parse - chunk-header offset math regressed?"
     );
     assert!(
         sample_vab.is_some(),

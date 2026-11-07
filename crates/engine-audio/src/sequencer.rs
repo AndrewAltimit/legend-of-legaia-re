@@ -1,5 +1,5 @@
 //! Tick-driven sequencer: drives a [`crate::Spu`] from a parsed
-//! [`legaia_seq::Seq`] + a loaded [`crate::vab_bind::VabBank`].
+//! [`psx_seq::Seq`] + a loaded [`crate::vab_bind::VabBank`].
 //!
 //! Models the public surface of Sony's libsnd SsAPI sequencer
 //! (`SsSeqOpen`/`SsSeqPlay`/`SsSeqClose`/`SsSeqSetVol`) without copying any
@@ -34,7 +34,7 @@
 
 use crate::spu::voice::SPU_INTERNAL_RATE;
 use crate::vab_bind::VabBank;
-use legaia_seq::Seq;
+use psx_seq::Seq;
 
 mod channel_math;
 mod clock;

@@ -152,7 +152,7 @@ pub(in crate::byte_account) fn claim_world_map_prim_dispatch(buf: &[u8], sink: &
     let end = start + 4 * PRIM_DISPATCH_SLOTS;
     let words: Option<Vec<u32>> = (start..end)
         .step_by(4)
-        .map(|o| legaia_bytes::u32_le(buf, o))
+        .map(|o| psx_bytes::u32_le(buf, o))
         .collect();
     let Some(words) = words else {
         return;

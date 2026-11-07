@@ -327,7 +327,7 @@ pub fn assemble_field_scene_with(
 /// model (`texel * colour / 128`).
 pub fn build_hybrid_env_mesh(
     rtmd: &ResolvedTmd,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     let (mesh, flat, _) = build_hybrid_env_mesh_lit(rtmd, vram);
     (mesh, flat)
@@ -339,7 +339,7 @@ pub fn build_hybrid_env_mesh(
 /// shades at a draw's rotation.
 pub fn build_hybrid_env_mesh_lit(
     rtmd: &ResolvedTmd,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
 ) -> (
     legaia_tmd::mesh::VramMesh,
     Vec<u8>,
@@ -373,7 +373,7 @@ const HYBRID_MEMO_BYTES: usize = 64 << 20;
 /// handed: the halves are built and hashed, and the resolve runs once per state.
 pub fn hybrid_env_positions_memo(
     rtmd: &ResolvedTmd,
-    vram: &legaia_tim::Vram,
+    vram: &psx_tim::Vram,
     memo: &mut HybridPositionsMemo,
 ) -> Vec<f32> {
     let (mut mesh, _) = rtmd.build_filtered_vram_mesh_lit_vertices(vram);
@@ -768,7 +768,7 @@ mod tests {
             tmd,
             raw,
         };
-        let vram = legaia_tim::Vram::new();
+        let vram = psx_tim::Vram::new();
         let (mesh, _) = build_hybrid_env_mesh(&rtmd, &vram);
         let want: Vec<f32> = mesh.positions.iter().flatten().copied().collect();
         let mut memo = HybridPositionsMemo::default();

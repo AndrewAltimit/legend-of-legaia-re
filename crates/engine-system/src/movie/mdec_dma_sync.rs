@@ -37,7 +37,7 @@
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,
 //! `..._0x801D0230.txt`. Ported from the disassembly.
 //!
-//! # REPLACED-BY: the `legaia_mdec` software decoder, driven by `crate::movie::cutscene`
+//! # REPLACED-BY: the `psx_mdec` software decoder, driven by `crate::movie::cutscene`
 //!
 //! Two independent reasons, and both land on the same class.
 //!
@@ -193,7 +193,7 @@ impl MdecSync {
 ///
 /// PORT: FUN_801cfe20
 ///
-/// REPLACED-BY: the `legaia_mdec` software decoder - and additionally
+/// REPLACED-BY: the `psx_mdec` software decoder - and additionally
 /// retail-unreachable, so there is nothing to wire it to either way. Nothing
 /// on the disc references `FUN_801CFE20` in any form; its decode steps call
 /// the blocking half `FUN_801D0100` directly. See the module heading and
@@ -211,7 +211,7 @@ pub fn mdec_in_sync<F: FnMut() -> u32>(mode: i32, mut in_status: F) -> MdecSync 
 ///
 /// PORT: FUN_801cfe5c
 ///
-/// REPLACED-BY: the `legaia_mdec` software decoder - and additionally
+/// REPLACED-BY: the `psx_mdec` software decoder - and additionally
 /// retail-unreachable, so there is nothing to wire it to either way. Nothing
 /// on the disc references `FUN_801CFE5C` in any form - not even an aliased
 /// branch - and its decode steps call the blocking half `FUN_801D0198`

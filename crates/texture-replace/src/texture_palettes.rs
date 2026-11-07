@@ -12,7 +12,7 @@
 //! wins where two overlap, and which rectangle another TIM covers at
 //! runtime. The asset viewer's "as the game draws it" view reads the same
 //! kernel. This module only translates its CLUT cells into this texture's
-//! palette indices for the [`legaia_tim::multi_palette`] editor.
+//! palette indices for the [`psx_tim::multi_palette`] editor.
 //!
 //! A cell on VRAM row 511 at `x = 16k` is sub-palette `k`. The sheet's
 //! 16x16 CLUT block lands flattened on that row, so sub-palette `k < 16` is
@@ -24,8 +24,6 @@
 
 use anyhow::Result;
 
-use legaia_tim::multi_palette::{PaletteContext, own_palettes};
-use legaia_tim::{PixelMode, Tim};
 use legaia_ui_formats::tim_palette_context::{
     SheetRegion, parse_button_glyph_tim, parse_subpalette_ext_tim, sheet_palette_regions,
     texel_palettes,
@@ -34,6 +32,8 @@ use legaia_ui_formats::ui_widgets::{
     BUTTON_GLYPH_TIM_PROT_OFFSET, ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST,
     SUBPALETTE_EXT_TIM_PROT_OFFSET, WidgetTable,
 };
+use psx_tim::multi_palette::{PaletteContext, own_palettes};
+use psx_tim::{PixelMode, Tim};
 
 use legaia_disc_patch::disc::DiscPatcher;
 
@@ -55,7 +55,7 @@ pub struct PaletteRegion {
 #[derive(Debug, Clone, Default)]
 pub struct TexturePalettes {
     /// External palettes + per-pixel map, ready for
-    /// [`legaia_tim::multi_palette::import_png`].
+    /// [`psx_tim::multi_palette::import_png`].
     pub context: PaletteContext,
     /// Every region the map was built from, in table order.
     pub regions: Vec<PaletteRegion>,
@@ -237,7 +237,7 @@ mod tests {
         b.extend_from_slice(&16u16.to_le_bytes());
         b.extend_from_slice(&8u16.to_le_bytes());
         b.extend(std::iter::repeat_n(0x21u8, 16 * 8 * 2));
-        legaia_tim::parse_strict(&b).unwrap()
+        psx_tim::parse_strict(&b).unwrap()
     }
 
     fn ext() -> Tim {
@@ -256,7 +256,7 @@ mod tests {
         b.extend_from_slice(&1u16.to_le_bytes());
         b.extend_from_slice(&4u16.to_le_bytes());
         b.extend(std::iter::repeat_n(0u8, 8));
-        legaia_tim::parse_strict(&b).unwrap()
+        psx_tim::parse_strict(&b).unwrap()
     }
 
     fn region(widget: u8, rect: (u16, u16, u16, u16), palette: u8) -> SheetRegion {

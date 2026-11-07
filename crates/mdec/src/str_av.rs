@@ -26,9 +26,9 @@ use std::collections::BTreeMap;
 
 /// Raw CD sector size the demuxer is fed.
 pub const RAW_SECTOR_BYTES: usize = 2352;
-const SUBHEADER_OFFSET: usize = legaia_xa::demux::SUBHEADER_OFFSET;
-const USER_DATA_OFFSET: usize = legaia_xa::demux::USER_DATA_OFFSET;
-const AUDIO_BYTES_PER_SECTOR: usize = legaia_xa::demux::AUDIO_BYTES_PER_SECTOR;
+const SUBHEADER_OFFSET: usize = psx_xa::demux::SUBHEADER_OFFSET;
+const USER_DATA_OFFSET: usize = psx_xa::demux::USER_DATA_OFFSET;
+const AUDIO_BYTES_PER_SECTOR: usize = psx_xa::demux::AUDIO_BYTES_PER_SECTOR;
 
 /// One assembled, not yet decoded, video frame.
 #[derive(Debug, Clone)]
@@ -60,7 +60,7 @@ pub struct StrAudio {
     /// Output sample rate in Hz.
     pub sample_rate: u32,
     /// Mono or stereo.
-    pub channels: legaia_xa::Channels,
+    pub channels: psx_xa::Channels,
     /// Source XA file number.
     pub file_no: u8,
     /// Source XA channel number.
@@ -70,7 +70,7 @@ pub struct StrAudio {
 impl StrAudio {
     /// Whether the track is stereo.
     pub fn stereo(&self) -> bool {
-        matches!(self.channels, legaia_xa::Channels::Stereo)
+        matches!(self.channels, psx_xa::Channels::Stereo)
     }
 
     /// Playback length in seconds.
@@ -142,7 +142,7 @@ impl StrAvDemuxer {
         }
         let mut sub = [0u8; 8];
         sub.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
-        let (sh, ok) = legaia_xa::demux::parse_subheader(&sub);
+        let (sh, ok) = psx_xa::demux::parse_subheader(&sub);
         if ok && sh.is_audio() && sh.is_form2() {
             let end = USER_DATA_OFFSET + AUDIO_BYTES_PER_SECTOR;
             if end <= raw.len() {
@@ -195,21 +195,21 @@ impl StrAvDemuxer {
             .max_by_key(|(_, acc)| acc.audio.len())
             .and_then(|((file_no, ch_no), acc)| {
                 let bits = match acc.bits_per_sample {
-                    4 => legaia_xa::BitsPerSample::Four,
-                    8 => legaia_xa::BitsPerSample::Eight,
+                    4 => psx_xa::BitsPerSample::Four,
+                    8 => psx_xa::BitsPerSample::Eight,
                     _ => return None,
                 };
                 let channels = if acc.stereo {
-                    legaia_xa::Channels::Stereo
+                    psx_xa::Channels::Stereo
                 } else {
-                    legaia_xa::Channels::Mono
+                    psx_xa::Channels::Mono
                 };
-                let opts = legaia_xa::DecodeOptions {
+                let opts = psx_xa::DecodeOptions {
                     channels,
                     sample_rate: acc.sample_rate,
                     bits,
                 };
-                let (pcm, _) = legaia_xa::decode(&acc.audio, opts).ok()?;
+                let (pcm, _) = psx_xa::decode(&acc.audio, opts).ok()?;
                 Some(StrAudio {
                     pcm,
                     sample_rate: acc.sample_rate,

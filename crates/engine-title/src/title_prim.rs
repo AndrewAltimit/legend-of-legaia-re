@@ -405,7 +405,7 @@ pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b
 /// dimension is zero, matching the original's `li v0, -0x1` early-out
 /// path (`*(short *)(rect + 4) == 0 || *(short *)(rect + 6) == 0`).
 ///
-/// REF: FUN_80058490 - ported once, as `legaia_tim::Vram::move_image`; this
+/// REF: FUN_80058490 - ported once, as `psx_tim::Vram::move_image`; this
 /// forwards to [`PrimHost::queue_move_image`].
 pub fn exec_move_image<H: PrimHost>(
     host: &mut H,

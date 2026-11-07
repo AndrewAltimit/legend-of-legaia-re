@@ -10,7 +10,7 @@
 //! so every *odd* 16-colour slot on the CLUT rows stayed empty and the prims
 //! indexing them (228 triangles in Rim Elm alone) drew nothing.
 //!
-//! See `legaia_tim::vram`'s `multi_palette_clut_loads_linearly_along_the_row`
+//! See `psx_tim::vram`'s `multi_palette_clut_loads_linearly_along_the_row`
 //! for the semantic itself; this is the corpus-wide consequence.
 //!
 //! Skips when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
@@ -144,7 +144,7 @@ fn env_prims_never_sample_an_empty_clut() {
             n, 0,
             "{n} env triangles in {pinned} sample an all-zero CLUT: they decode to \
              0x0000, get discarded as transparent, and leave holes in the ground - \
-             a CLUT block is landing on the wrong VRAM cells (see legaia_tim::vram's \
+             a CLUT block is landing on the wrong VRAM cells (see psx_tim::vram's \
              linear multi-palette layout)"
         );
     }

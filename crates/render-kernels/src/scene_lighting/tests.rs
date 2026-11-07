@@ -93,7 +93,7 @@ fn tagging_sets_only_the_emissive_bit() {
         light: [1.0; 3],
         radius: 800.0,
     };
-    let vram = legaia_tim::Vram::new();
+    let vram = psx_tim::Vram::new();
     let (n, center) = tag_emissive_vram(&pos, &mut plain, &colors, &uvs, &idx, Some((&e, &vram)));
     assert_eq!(n, 2);
     assert_eq!(center, Some([0.0; 3]));
@@ -122,7 +122,7 @@ fn hybrid_tagging_reads_the_fill() {
         normals: vec![[0.0; 3]; 4],
         colors: vec![[0x80; 3]; 4],
     };
-    let vram = legaia_tim::Vram::new();
+    let vram = psx_tim::Vram::new();
     let mut warm_mesh = mesh([0, SEMI_BIT]);
     let flat: Vec<u8> = (0..4).flat_map(|_| [0xF0, 0xC0, 0x60, 0]).collect();
     assert!(tag_emissive_hybrid(&[], &mut warm_mesh, &flat, &vram).is_none());
@@ -200,7 +200,7 @@ fn a_light_is_as_bright_as_its_emitter() {
 /// the same number its hue is normalised by.
 #[test]
 fn a_neutral_glow_takes_its_brightness_from_its_texels() {
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     // A 16bpp texture page 0 run of one dim grey: 8/31 per channel.
     let grey: u16 = 8 | (8 << 5) | (8 << 10);
     vram.write_block(0, 0, 16, 16, &grey.to_le_bytes().repeat(16 * 16));
@@ -528,7 +528,7 @@ fn lit_window_table_is_well_formed() {
 /// rectangle, and only while VRAM holds the hashed texels.
 #[test]
 fn window_art_match_keys_on_place_and_content() {
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     // A 4bpp page at x=0 with a CLUT at (0, 480): paint index 1 blue.
     let clut: Vec<u8> = [0u16, 0x7C00, 0x001F]
         .iter()

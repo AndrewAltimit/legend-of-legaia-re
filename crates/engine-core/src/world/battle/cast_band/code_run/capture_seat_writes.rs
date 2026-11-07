@@ -71,6 +71,33 @@ impl World {
         }
     }
 
+    /// A module's stores into the loop-window bytes `+0x84..+0x86` of a
+    /// monster caster's action entry `clip`
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_window`]).
+    /// Retail edits the entry the archive holds, so every later commit of the
+    /// clip seeds from the new bytes; the actor's own bank stands for it.
+    pub(in crate::world::battle::cast_band) fn write_clip_loop_window(
+        &mut self,
+        caster: u8,
+        clip: u8,
+        window: [u8; 3],
+    ) {
+        use legaia_actor_formats::monster_archive::ENTRY_LOOP_WINDOW_OFFSET as AT;
+        if caster < self.party.party_count {
+            return;
+        }
+        if let Some(entry) = self
+            .actors
+            .get_mut(usize::from(caster))
+            .and_then(|a| a.battle_action_clips.as_mut())
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(usize::from(clip)))
+            .and_then(Option::as_mut)
+            && let Some(bytes) = entry.effect_script.get_mut(AT..AT + 3)
+        {
+            bytes.copy_from_slice(&window);
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass

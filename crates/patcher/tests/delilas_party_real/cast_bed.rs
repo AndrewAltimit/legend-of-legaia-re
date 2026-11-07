@@ -96,14 +96,14 @@ fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
 
     // The advance: the opening hit now lands in +0.15..0.6 s, where
     // retail carries digital silence.
-    let opts = legaia_xa::DecodeOptions {
-        channels: legaia_xa::Channels::Stereo,
+    let opts = psx_xa::DecodeOptions {
+        channels: psx_xa::Channels::Stereo,
         sample_rate: 37800,
         ..Default::default()
     };
     let rms = |payload: &[u8], a: usize, b: usize| -> f64 {
         let need = SPAN_LEN * 2304;
-        let (pcm, _) = legaia_xa::decode(&payload[..need], opts).expect("decode");
+        let (pcm, _) = psx_xa::decode(&payload[..need], opts).expect("decode");
         let mut acc = 0.0f64;
         for f in a..b {
             let v = pcm[2 * f] as f64;

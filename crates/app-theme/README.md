@@ -11,7 +11,7 @@ its own colour type.
 |---|---|
 | `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
-| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
+| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::option_value` for a settings row's value (the launcher's list draws its values by the same rule, so a row reads alike in both), and the chrome inset and line gap. |
 
 ## Icons, and where the release puts the programs
 

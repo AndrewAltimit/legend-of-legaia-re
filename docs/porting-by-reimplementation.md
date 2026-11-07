@@ -28,6 +28,13 @@ Nothing here changes the ground rules: the user supplies the disc, no Sony-owned
 
 The clearest way to separate the methods is by what each one starts with and what it still has to earn.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../site/assets/porting-routes-dark.svg">
+    <img alt="Three ways to port a PS1 game. Decompilation starts from the executable rewritten as source, produces source that rebuilds the game, and its fidelity is proved by the byte match. Static recompilation translates the machine code, produces the original game running over a hardware model, and its fidelity is inherited. Reimplementation, this repository's route, starts from format docs and traced behaviour, produces a new engine that loads the game data, and its fidelity is measured against retail states." src="../site/assets/porting-routes-light.svg" width="900">
+  </picture>
+</p>
+
 | | Decompilation | Static recompilation | Engine reimplementation |
 |---|---|---|---|
 | **Works from** | The executable, rewritten as source | The executable, translated mechanically | Format docs and the traced behaviour |
@@ -47,6 +54,8 @@ It is the right choice when retail behaviour on modern machines is the product, 
 
 It is the right choice when the goal goes beyond the original's behaviour, when the target cannot carry the original's code, and when much of the game is data the engine can load, rather than logic it has to rewrite.
 
+Put shortly: a recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game. Neither is the better route in general. A recomp is the faster way to retail behaviour on a new machine, and a matching decompilation is the only one that proves what the code says. A reimplementation trades both of those away for an engine whose structure is its own, and then has to buy fidelity back by measurement.
+
 ## Why this project reimplements
 
 The project has two coordinated tracks: preserving and documenting every asset, and a port the user runs over their own disc. Format documentation is a deliverable here regardless of the porting method, and the disc patcher and language packs are built on it. The port aims to go past the original with retail one toggle away ([fidelity and enhancements](subsystems/engine.md#fidelity-and-enhancements)). And Legaia is heavily data-driven: field scripts, effects and moves are bytecode on the disc, so porting a [VM](subsystems/vm-inventory.md) brings along every script the disc holds for it.
@@ -57,14 +66,29 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 - **A long road to first playable.** Formats, VMs, a renderer, an audio stack and a battle system all have to exist before the game can be played at all.
 - **The measuring instruments are a project of their own.** Seeding the engine from retail RAM, scoring frames and keeping baselines honest take real, ongoing engineering.
 - **Being faithful is a discipline.** Every enhancement must leave the faithful mode bit-identical when off, or "faithful" stops being a testable claim.
+- **Fidelity is a long tail, paid continuously.** The first playable game is far from the last divergence. Every scene, cast and menu screen the corpus has not seen is unmeasured, and parity on what it has seen says nothing about the rest ([step 6](#step-6-measure-against-a-retail-corpus)).
+- **It rests on decompilation-grade analysis; it does not replace it.** Every port is read from the disassembly with the care a decompilation takes, routine by routine. Reimplementing changes what gets written from that reading, not how much of the original has to be understood.
 
 ### What it buys
 
 - **New rendering.** Enhanced lighting, volumetric fog, the camera-occlusion fade and SSAO are ordinary passes in the [wgpu renderer](subsystems/renderer-port.md), beside a PSX mode on the native `320 x 240` target that the corpus scores.
 - **Its own audio stack.** A from-scratch [SPU and sequencer](subsystems/audio.md) play the game's banks on both hosts, and pack music mixes beside them.
 - **More hosts.** The same session runs in a native window and [in the browser](subsystems/browser-host.md), with [VR](subsystems/vr-mode.md) on the site's 3D pages.
-- **Modding as a feature.** [Expansion packs](formats/expansion-pack.md) add maps, quests and fights, [run rules](subsystems/run-rules.md) add difficulty and an in-engine randomizer, and [game modes](subsystems/expansion-modes.md) and [netplay](subsystems/netplay.md) are the port's own.
+- **Modding by game concept.** An [expansion pack](formats/expansion-pack.md) is TOML that names monsters, formations, maps, quests, arts and items, not addresses and byte patches; [run rules](subsystems/run-rules.md) add difficulty and an in-engine randomizer, and [game modes](subsystems/expansion-modes.md) and [netplay](subsystems/netplay.md) are the port's own. Features the disc patcher proves against retail with MIPS hooks graduate into engine toggles ([gameplay tweaks](subsystems/gameplay-tweaks.md)).
+- **Rules you can read.** A damage formula, an AI pick or a script opcode is a named Rust kernel with no `World` behind it, tagged `// PORT:` with the retail address it was read from, so the retail routine stays its provenance and the [port catalog](tooling/port-catalog.md) can derive what is ported from the tree.
 - **No original code executing.** The engine parses data tables out of `SCUS_942.54` and the overlays on the user's disc, and reads a cast module's image to recover which presentation calls each arm makes (`legaia_overlay_images::cast_presentation`), but no MIPS executes, so there is no translated code to carry.
+
+### Fidelity is measured, not inherited
+
+A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise:
+
+- **Stills.** The [retail comparison corpus](tooling/retail-compare.md) seats the engine where each of several hundred retail save states stood and scores the frame, camera, player, placements, music, flags, party and enemies per state, in [`scripts/ci/retail-compare-baseline.json`](../scripts/ci/retail-compare-baseline.json).
+- **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant.
+- **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`.
+- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two.
+- **The whole game.** The [full-game ladder](tooling/full-game-ladder.md) plays New Game to credits on pad input, segment by segment and as one continuous run.
+
+None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
 
 ### The boundary, stated honestly
 
@@ -172,7 +196,7 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What is done.** Capture moments of the original as emulator save states. For each, read what retail was doing out of the state's own memory, put the engine in the same situation through its own load path, and score the difference per channel, worst state first. The channels cover what a player notices: the frame on screen, player position, camera, NPC placement, facing, the music track, story flags, party, enemies and more ([channels](tooling/retail-compare.md#channels)). The method is written up engine-neutral in [the retail-oracle method](tooling/retail-oracle-method.md).
 
-**What it produces.** The [retail comparison corpus](tooling/retail-compare.md) and its siblings: the [cast-sequence oracle](tooling/cast-sequence-oracle.md) for what unfolds over time, the [audio sweep and real PCM comparison](subsystems/audio.md#the-audio-state-sweep) for sound, and the [recomp differential](tooling/recomp-differential.md) for continuous traces. Its reports are a worklist, with a [catalogue of divergence shapes](tooling/retail-compare.md#divergence-shapes) saying what each pattern usually means.
+**What it produces.** The [retail comparison corpus](tooling/retail-compare.md) and its siblings: the [cast-sequence oracle](tooling/cast-sequence-oracle.md) for what unfolds over time, the [audio sweep and real PCM comparison](subsystems/audio.md#the-audio-state-sweep) for sound, the [retail kernel differential](tooling/retail-kernel-differential.md) for single routines run off the disc, and the [recomp differential](tooling/recomp-differential.md) for continuous traces. Its reports are a worklist, with a [catalogue of divergence shapes](tooling/retail-compare.md#divergence-shapes) saying what each pattern usually means.
 
 **The gate.** Per-state, per-channel [scores may only rise](tooling/retail-compare.md#the-ratchet). Two more gates protect the ratchet itself ([ratchet integrity](tooling/ratchet-integrity.md)): a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed.
 

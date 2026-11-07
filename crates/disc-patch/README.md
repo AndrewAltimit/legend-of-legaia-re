@@ -6,7 +6,7 @@ bottom of the patcher family: the feature crates and
 of them.
 
 - `disc` - `DiscPatcher`: same-size in-place PROT-entry edits on a
-  user-supplied Mode 2/2352 image, through `legaia_iso::write`'s sector
+  user-supplied Mode 2/2352 image, through `psx_iso::write`'s sector
   write-back with the EDC/ECC re-encoded, plus the `DMY.DAT` annex that gives
   grown records room, the XA sector readers / writers, and `boot_exe_name`
   (which executable `SYSTEM.CNF` boots). `disc::synth` builds the tiny
@@ -33,8 +33,8 @@ knows nothing about any feature. No MIPS (that is
 [`legaia-code-hooks`](../code-hooks/README.md)), no audio or image codec, no
 randomizer logic.
 
-It depends on the disc and container crates (`legaia-iso`, `legaia-prot`,
-`legaia-lzs`) and on `legaia-actor-formats` and `legaia-scene-formats` for
+It depends on the disc and container crates (`psx-iso`, `legaia-prot`,
+`psx-lzs`) and on `legaia-actor-formats` and `legaia-scene-formats` for
 three format items: the monster
 archive's slot stride, the player-file annex chain and the scene asset table.
 

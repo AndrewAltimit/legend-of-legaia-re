@@ -22,10 +22,10 @@
 
 use std::path::PathBuf;
 
-use legaia_iso::iso9660;
-use legaia_iso::raw::RawDisc;
-use legaia_mdec::MdecDecoder;
-use legaia_mdec::str_sector::{StrFrameAssembler, analyze_str_timing};
+use psx_iso::iso9660;
+use psx_iso::raw::RawDisc;
+use psx_mdec::MdecDecoder;
+use psx_mdec::str_sector::{StrFrameAssembler, analyze_str_timing};
 
 fn disc_bin() -> Option<PathBuf> {
     let p = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from)?;
@@ -34,7 +34,7 @@ fn disc_bin() -> Option<PathBuf> {
 
 /// Read all 2048-byte user-data sectors of an ISO9660 file into one buffer.
 fn read_file_sectors(disc: &mut RawDisc, lba: u32, size: u32) -> Vec<u8> {
-    let count = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+    let count = size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
     let mut buf = Vec::new();
     disc.read_user_data(lba, count, &mut buf)
         .expect("read STR sectors");
@@ -212,7 +212,7 @@ fn str_av_decode_recovers_synced_audio_and_video() {
         .min_by_key(|(_, rec)| rec.size)
         .expect("at least one .STR");
     let (path, rec) = smallest;
-    let count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+    let count = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
 
     let av = decode_str_av_from_disc(&bin, rec.lba, count).expect("decode AV");
     assert!(!av.frames.is_empty(), "{path}: no video frames");
@@ -226,7 +226,7 @@ fn str_av_decode_recovers_synced_audio_and_video() {
     let audio = av.audio.as_ref().expect("expected an interleaved XA track");
     assert_eq!(audio.sample_rate, 37_800, "{path}: unexpected XA rate");
     assert!(
-        matches!(audio.channels, legaia_xa::Channels::Stereo),
+        matches!(audio.channels, psx_xa::Channels::Stereo),
         "{path}: expected stereo XA"
     );
     assert!(!audio.pcm.is_empty(), "{path}: empty audio PCM");
@@ -274,7 +274,7 @@ fn xa_channels_decode_to_expected_sample_counts() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    let files = legaia_xa::demux::demux_disc_all(&bin).expect("demux all XA");
+    let files = psx_xa::demux::demux_disc_all(&bin).expect("demux all XA");
     let mut channels = 0usize;
     for f in &files {
         for s in &f.streams {
@@ -287,7 +287,7 @@ fn xa_channels_decode_to_expected_sample_counts() {
                 s.sample_rate
             );
             assert!(
-                s.audio.len().is_multiple_of(legaia_xa::SOUND_GROUP_BYTES),
+                s.audio.len().is_multiple_of(psx_xa::SOUND_GROUP_BYTES),
                 "{} f{} c{}: audio not whole groups",
                 f.path,
                 s.file_no,
@@ -296,16 +296,16 @@ fn xa_channels_decode_to_expected_sample_counts() {
             if s.bits_per_sample != 4 {
                 continue; // this oracle's expected-sample math is 4-bit-specific
             }
-            let opts = legaia_xa::DecodeOptions {
+            let opts = psx_xa::DecodeOptions {
                 channels: if s.stereo {
-                    legaia_xa::Channels::Stereo
+                    psx_xa::Channels::Stereo
                 } else {
-                    legaia_xa::Channels::Mono
+                    psx_xa::Channels::Mono
                 },
                 sample_rate: s.sample_rate,
-                bits: legaia_xa::BitsPerSample::Four,
+                bits: psx_xa::BitsPerSample::Four,
             };
-            let (pcm, report) = legaia_xa::decode(&s.audio, opts).expect("decode XA");
+            let (pcm, report) = psx_xa::decode(&s.audio, opts).expect("decode XA");
             // 4-bit: 8 sound units x 28 samples per group, interleaved across
             // all channels of this (mono/stereo) stream.
             let expected = report.n_groups * 8 * 28;
@@ -332,7 +332,7 @@ fn xa_channels_decode_to_expected_sample_counts() {
 }
 
 /// Host parity on the opening movie: the native window's disc decode and the
-/// browser play page's install (`legaia_mdec::str_av::demux_str_av` over the
+/// browser play page's install (`psx_mdec::str_av::demux_str_av` over the
 /// raw sectors the page slices off its disc bytes) agree on the frame list,
 /// the frame rate and the soundtrack PCM, sample for sample. `MV1.STR` is
 /// `fmv_id 0`, the title attract.
@@ -352,7 +352,7 @@ fn opening_fmv_decodes_identically_on_both_hosts() {
         .into_iter()
         .find(|(p, _)| p.to_ascii_uppercase().ends_with("MV1.STR"))
         .expect("MV1.STR on disc");
-    let count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+    let count = rec.size.div_ceil(psx_iso::raw::USER_DATA_SIZE as u32);
 
     let native = decode_str_av_from_disc(&bin, rec.lba, count).expect("native decode");
 
@@ -361,7 +361,7 @@ fn opening_fmv_decodes_identically_on_both_hosts() {
     f.seek(SeekFrom::Start(rec.lba as u64 * 2352))
         .expect("seek");
     f.read_exact(&mut raw).expect("read MV1 sectors");
-    let page = legaia_mdec::str_av::demux_str_av(&raw);
+    let page = psx_mdec::str_av::demux_str_av(&raw);
 
     assert_eq!(native.frames.len(), page.frames.len(), "frame count");
     assert_eq!(native.timing, page.timing, "timing");

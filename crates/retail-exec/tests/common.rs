@@ -1,6 +1,6 @@
 //! What every differential shares: the disc, and a CPU with the executable in.
 
-use legaia_retail_exec::Cpu;
+use psx_retail_exec::Cpu;
 use std::sync::OnceLock;
 
 /// The retail executable and PROT reader, once per test binary. `None` skips.
@@ -24,7 +24,7 @@ pub fn scus_cpu() -> Option<Cpu> {
     let mut cpu = Cpu::new();
     cpu.load_psx_exe(&scus()?);
     // The header's `gp` is zero; the boot code loads the real one (`0x80026CA8`).
-    cpu.regs.r[legaia_retail_exec::GP] = 0x8007_B318;
+    cpu.regs.r[psx_retail_exec::GP] = 0x8007_B318;
     Some(cpu)
 }
 

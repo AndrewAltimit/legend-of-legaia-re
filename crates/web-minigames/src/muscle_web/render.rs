@@ -386,7 +386,7 @@ impl LegaiaMinigames {
         let mesh = monster_archive::mesh(entry, monster_id).ok()??;
         // Scratch VRAM: the geometry accessors only need the relocated
         // CBA/TSB; `muscle_vram` repeats the texture injection for real.
-        let mut scratch = legaia_tim::Vram::new();
+        let mut scratch = psx_tim::Vram::new();
         mesh.battle_render_mesh(0, &mut scratch)
     }
 
@@ -549,7 +549,7 @@ impl LegaiaMinigames {
     /// chunks: 4bpp pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479;
     /// all three bands are disjoint, so upload order doesn't matter).
     pub fn muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         if let Some(raw) = self.muscle_player_file(char_slot)
             && let Ok(pack) = legaia_actor_formats::battle_data_pack::parse(raw)
         {
@@ -601,7 +601,7 @@ impl LegaiaMinigames {
         if let Some(buf) = self.muscle_arena_entry() {
             for chunk in scene_tmd_stream::battle_tim_chunks(buf) {
                 if let Some(bytes) = buf.get(chunk.payload_offset..)
-                    && let Ok(tim) = legaia_tim::parse(bytes)
+                    && let Ok(tim) = psx_tim::parse(bytes)
                 {
                     vram.upload_tim(&tim);
                 }

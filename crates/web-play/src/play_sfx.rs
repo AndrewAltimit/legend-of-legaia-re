@@ -393,7 +393,7 @@ impl LegaiaRuntime {
         };
         let Some((report, vab_offset)) = [4usize, 0]
             .into_iter()
-            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+            .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))
         else {
             return (0, 0);
         };

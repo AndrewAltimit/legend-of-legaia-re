@@ -1,5 +1,5 @@
 //! End-to-end smoke test: build a synthetic VAB byte stream, parse it via
-//! `legaia-vab`, upload it into a `Spu` via `engine-audio`'s `VabBank`, and
+//! `psx-vab`, upload it into a `Spu` via `engine-audio`'s `VabBank`, and
 //! verify a key-on path actually drives the voice's envelope into Attack.
 //!
 //! Synthesises ONE program with ONE tone covering the whole keyboard, one
@@ -7,7 +7,7 @@
 
 use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};
-use legaia_vab::{
+use psx_vab::{
     PROGRAMS_TABLE_SIZE, TONE_SIZE, TONES_PER_PROGRAM, VAB_HEADER_SIZE, VAB_MAGIC, VAG_BLOCK_BYTES,
     VAG_TABLE_ENTRIES, parse,
 };
@@ -52,7 +52,7 @@ fn build_synth_vab() -> Vec<u8> {
     // Program 0: one tone in use.
     buf[prog_off] = 1; // tones in use
 
-    // Tone 0 (program 0, tone slot 0). Field offsets per legaia_vab::parse:
+    // Tone 0 (program 0, tone slot 0). Field offsets per psx_vab::parse:
     //   0 prior, 1 mode, 2 vol, 3 pan, 4 center, 5 shift, 6 min, 7 max,
     //   16..18 adsr1, 18..20 adsr2, 22..24 vag (1-based)
     let p = tone_off;

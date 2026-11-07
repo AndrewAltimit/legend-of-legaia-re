@@ -16,7 +16,7 @@ pieces that only make sense next to it.
 
 ## Layering
 
-Depends on `legaia-bytes`, `legaia-game-tables` (the SFX bank PROT indices) and
+Depends on `psx-bytes`, `legaia-game-tables` (the SFX bank PROT indices) and
 `legaia-engine-system` (mode-entry initialisers, the boot entry word, music
 labels, pad input). It must not depend on `legaia-engine-field`,
 `legaia-engine-menus` or anything above them: the field camera reads

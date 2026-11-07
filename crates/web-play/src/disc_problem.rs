@@ -1,11 +1,11 @@
 //! Why a picked file is not a disc the page can run, in the desktop programs'
-//! words: `legaia_iso::sniff` for what the file is, `legaia_app_theme::disc_text`
+//! words: `psx_iso::sniff` for what the file is, `legaia_app_theme::disc_text`
 //! for an image cut short. Native says this before it opens anything; without
 //! it the page's only word was the loader's own error.
 
 use legaia_app_theme::disc_text;
-use legaia_iso::image::walk_iso_source;
-use legaia_iso::sniff;
+use psx_iso::image::walk_iso_source;
+use psx_iso::sniff;
 use wasm_bindgen::prelude::*;
 
 /// How many leading bytes the page reads for [`disc_file_problem`]: the sniff's
@@ -76,8 +76,8 @@ pub fn problem(name: &str, head: &[u8], file_len: u64) -> Option<String> {
     }
     // The desktop programs refuse another region's disc the same way. A patched
     // USA disc keeps its executable and passes.
-    if let Some(cnf) = legaia_iso::iso9660::read_file_in_source(head, "SYSTEM.CNF")
-        && let Ok(detected) = legaia_iso::region::parse(&cnf)
+    if let Some(cnf) = psx_iso::iso9660::read_file_in_source(head, "SYSTEM.CNF")
+        && let Ok(detected) = psx_iso::region::parse(&cnf)
         && !detected.executable.eq_ignore_ascii_case(USA_EXECUTABLE)
     {
         return Some(format!(

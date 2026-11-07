@@ -6,6 +6,21 @@ use super::*;
 // PROT 0908 - Zenoir (spell id 0x86)
 // ---------------------------------------------------------------------------
 
+/// The reach of arm 10's show loop: a monster seat whose ground pair
+/// `+0x34` / `+0x38` lies under this Manhattan distance of the creature's
+/// (`slti v0,v0,0x400` at `0x801F7A78`) is shown. The creature's pair is the
+/// victim's body pair `+0x3C` / `+0x40`, which the arm has just copied onto
+/// it (`0x801F79E8..0x801F7A18`).
+pub const ZENOIR_BUMP_REACH: i32 = 0x400;
+
+/// Arm 10's show test, `|dx| + |dz| < 0x400` between a seat's ground pair
+/// and the creature's (`0x801F7A44..0x801F7A7C`).
+pub fn zenoir_bump_in_reach(creature: (i16, i16), seat: (i16, i16)) -> bool {
+    let dx = (i32::from(seat.0) - i32::from(creature.0)).abs();
+    let dz = (i32::from(seat.1) - i32::from(creature.1)).abs();
+    dx + dz < ZENOIR_BUMP_REACH
+}
+
 /// PROT 0908's tick entry.
 pub const ZENOIR_TICK: u32 = 0x801F_69D8;
 
@@ -97,7 +112,8 @@ pub const ZENOIR_FINISH_CTX_278: u8 = 2;
 /// render flag `7` with a second `+0x1DA` bump in arm 6, its clip zeroed in
 /// arm 9, both the caster's and the summon seat's `+0x1DD =`
 /// [`TARGET_CODE_ENEMY_ROW`] in arm 8, and the clip pair bumped again in arm
-/// 10.
+/// 10, which also shows every live monster seat `in_reach` names (the host's
+/// [`zenoir_bump_in_reach`] over its seat positions).
 ///
 /// The arm gates (countdowns, the creature's clip and reach, its height) and
 /// the camera are the director's (`cast_module_camera::zenoir_direct`),
@@ -112,6 +128,7 @@ pub fn zenoir_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
     who: SeruSeats,
+    in_reach: impl Fn(u8) -> bool,
     mut rolls: impl FnMut(u8) -> Option<i32>,
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
@@ -194,16 +211,21 @@ pub fn zenoir_tick(
                 s.restage = s.restage.wrapping_add(1);
                 s.staged_anim = s.staged_anim.wrapping_add(1);
             }
-            // The arm then shows every live monster within `0x400` of the
-            // creature it has just moved over the victim
-            // (`0x801F7A2C..0x801F7A9C`); the victim is always one of them.
-            // The distance test needs seat positions the mirror does not
-            // carry, so only the victim is shown here.
-            if let Some(v) = seats.get_mut(who.victim as usize)
-                && v.hp != 0
-            {
-                v.present_04 = ZENOIR_NEUTRAL_COLOUR;
-                v.render_flag = 0;
+            // The arm then shows every live monster seat `3..=6` within
+            // [`ZENOIR_BUMP_REACH`] of the creature it has just moved onto
+            // the victim's body pair (`0x801F7A2C..0x801F7A9C`): `+0x04 =
+            // 0x20080200`, `+0x21C = 0`. A seat it shows is one the arm-11
+            // splash can strike, the summon band having hidden the rest.
+            for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
+                if !in_reach(seat) {
+                    continue;
+                }
+                if let Some(v) = seats.get_mut(seat as usize)
+                    && v.hp != 0
+                {
+                    v.present_04 = ZENOIR_NEUTRAL_COLOUR;
+                    v.render_flag = 0;
+                }
             }
             CastArmStep::Advance
         }

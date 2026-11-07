@@ -5,8 +5,8 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::item_bag::ItemBag;
 use legaia_engine_menus::menu_arrange::parse_arrange_rank_table;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::retail_inventory::ItemWindow;
+use psx_retail_exec::{Stop, V0};
 
 const ARRANGE: u32 = 0x801D_64A8;
 const OVERLAY_BASE: u32 = 0x801C_E818;

@@ -1,4 +1,4 @@
-# legaia-retail-exec
+# psx-retail-exec
 
 A user-mode R3000 interpreter: integer instructions, `hi` / `lo`, unaligned
 loads and stores, RAM and the scratchpad, with no GTE and no COP0. The crate's

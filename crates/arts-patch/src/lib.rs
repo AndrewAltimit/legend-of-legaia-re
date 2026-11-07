@@ -9,7 +9,7 @@
 //! `legaia-patcher`.
 //!
 //! It names `legaia-art` (the arts tables and tokenizer), `legaia-game-tables`,
-//! `legaia-lzs`, `legaia-iso`, `legaia-code-hooks` and `legaia-disc-patch`,
+//! `psx-lzs`, `psx-iso`, `legaia-code-hooks` and `legaia-disc-patch`,
 //! and no other feature crate. See the crate README for the module map.
 
 #![forbid(unsafe_code)]

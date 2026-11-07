@@ -75,7 +75,7 @@
 //!   with no GTE projection.
 
 use anyhow::{Context, Result, bail};
-use legaia_tim::{PixelMode, Tim, decode_rgba8, parse as parse_tim};
+use psx_tim::{PixelMode, Tim, decode_rgba8, parse as parse_tim};
 
 use legaia_container_formats::{DecodeMode, decode, pack, parse_player_lzs};
 
@@ -149,7 +149,7 @@ impl ClutId {
         self.0 >> 6
     }
     /// Palette index *within* a TIM whose CLUT block starts at column 0 of the
-    /// same row - i.e. the `clut_idx` to hand [`legaia_tim::decode_rgba8`].
+    /// same row - i.e. the `clut_idx` to hand [`psx_tim::decode_rgba8`].
     pub fn palette_index(self) -> usize {
         (self.0 & 0x3F) as usize
     }

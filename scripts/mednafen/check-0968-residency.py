@@ -112,10 +112,10 @@ def resolve_scenarios(labels):
 
 def main() -> int:
     if not CLI.exists():
-        sys.exit("build first: cargo build --release -p legaia-mednafen")
+        sys.exit("build first: cargo build --release -p psx-mednafen")
     if any(Path(a).suffix == ".sstate" for a in sys.argv[1:]) \
             and not PCSXR_CLI.exists():
-        sys.exit("build first: cargo build --release -p legaia-pcsx-redux")
+        sys.exit("build first: cargo build --release -p psx-pcsx-redux")
     e968 = (PROT_DIR / "0968_xxx_dat.BIN").read_bytes()
     band = band_entries()
 

@@ -36,18 +36,18 @@ legaia-extract.workspace = true
 legaia-font.workspace = true
 legaia-gamedata.workspace = true
 legaia-game-tables.workspace = true
-legaia-iso.workspace = true
-legaia-lzs.workspace = true
-legaia-mdec.workspace = true
+psx-iso.workspace = true
+psx-lzs.workspace = true
+psx-mdec.workspace = true
 legaia-mes.workspace = true
 legaia-prot.workspace = true
 legaia-scene-formats.workspace = true
-legaia-seq.workspace = true
-legaia-tim.workspace = true
+psx-seq.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-translate.workspace = true
-legaia-vab.workspace = true
-legaia-xa.workspace = true
+psx-vab.workspace = true
+psx-xa.workspace = true
 
 # build.rs embeds the program's icon into its Windows executable
 # (`legaia_app_theme::win_icon`; a no-op for every other target).

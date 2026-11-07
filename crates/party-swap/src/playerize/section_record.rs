@@ -82,7 +82,7 @@ pub(super) fn rewrite_section_record(
     anchor_section: &mut Option<usize>,
 ) -> Result<Vec<u8>> {
     let u32at = |o: usize| -> Result<u32> {
-        legaia_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
+        psx_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
     };
     let frame_off = u32at(0)? as usize;
     let body_end = u32at(0xC)? as usize;
@@ -209,7 +209,7 @@ pub(super) fn rewrite_section_record(
 /// tail come from; the new TMD is written at its `frame_off + 0xC`.
 pub fn splice_record_tmd(decoded: &[u8], new_tmd: &[u8], pool_block: &[u8]) -> Result<Vec<u8>> {
     let u32at = |o: usize| -> Result<u32> {
-        legaia_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
+        psx_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
     };
     let frame_off = u32at(0)? as usize;
     let swing_a = u32at(4)? as usize;

@@ -26,7 +26,7 @@ pub struct SceneExportState {
     name: String,
     meshes: Vec<SceneMesh>,
     instances: Vec<SceneInstance>,
-    vram: legaia_tim::Vram,
+    vram: psx_tim::Vram,
 }
 
 #[wasm_bindgen]
@@ -38,7 +38,7 @@ impl LegaiaViewer {
             name: name.to_string(),
             meshes: Vec::new(),
             instances: Vec::new(),
-            vram: legaia_tim::Vram::new(),
+            vram: psx_tim::Vram::new(),
         });
     }
 
@@ -46,7 +46,7 @@ impl LegaiaViewer {
     /// the page uploads to its R16UI texture) the atlas bake reads from.
     pub fn scene_export_set_vram(&mut self, bytes: &[u8]) {
         if let Some(s) = self.scene_export.as_mut() {
-            s.vram = legaia_tim::Vram::new();
+            s.vram = psx_tim::Vram::new();
             s.vram.write_block(0, 0, 1024, 512, bytes);
         }
     }

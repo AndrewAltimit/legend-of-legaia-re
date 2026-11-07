@@ -11,8 +11,8 @@ use legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session;
 use legaia_engine_menu_runtime::menu_validator::spell_affects_anyone;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_game_tables::item_effect::ItemEffectTable;
-use legaia_retail_exec::{Cpu, Stop, V0};
 use legaia_save::{CharacterRecord, Party};
+use psx_retail_exec::{Cpu, Stop, V0};
 
 const PROBE: u32 = 0x8003_043C;
 const MODE: u32 = 0x8007_B83C;

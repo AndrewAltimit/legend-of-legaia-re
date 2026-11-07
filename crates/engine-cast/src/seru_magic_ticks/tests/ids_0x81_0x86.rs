@@ -888,7 +888,13 @@ fn zenoir_opener_cannot_kill_and_lands_a_quarter() {
         phase: ZENOIR_OPENER_ARM,
         ..Default::default()
     };
-    let (_, hits) = zenoir_tick(&mut ctx, &mut seats, WHO, |s| (s == 3).then_some(80));
+    let (_, hits) = zenoir_tick(
+        &mut ctx,
+        &mut seats,
+        WHO,
+        |_| false,
+        |s| (s == 3).then_some(80),
+    );
     assert_eq!(
         hits,
         vec![SweepHit {
@@ -908,13 +914,43 @@ fn zenoir_finisher_splashes_every_other_live_monster_seat() {
         phase: ZENOIR_FINISH_ARM,
         ..Default::default()
     };
-    let (_, hits) = zenoir_tick(&mut ctx, &mut seats, WHO, |_| Some(120));
+    let (_, hits) = zenoir_tick(&mut ctx, &mut seats, WHO, |_| false, |_| Some(120));
     let seats_hit: Vec<u8> = hits.iter().map(|h| h.seat).collect();
     assert_eq!(seats_hit, vec![3, 4, 6]);
     // 120 * 3/4 on the primary, 120 * 2/3 on the splash.
     assert_eq!(hits[0].applied, 90);
     assert_eq!(hits[1].applied, 80);
     assert_eq!(ctx.ctx_278, ZENOIR_FINISH_CTX_278);
+}
+
+#[test]
+fn zenoir_bump_shows_the_seats_in_reach_for_the_splash() {
+    // `zenoir_summon_mid_cast` (mednafen, frame-stepped): the creature lands
+    // on the victim's body pair (-751, 968); seat 4 at (0, 750) is 969 away
+    // and shown, seat 5 at (600, 825) is 1494 away and stays hidden. The
+    // finisher then strikes seats 3 and 4 only.
+    let creature = (-751, 968);
+    assert!(zenoir_bump_in_reach(creature, (-774, 999)));
+    assert!(zenoir_bump_in_reach(creature, (0, 750)));
+    assert!(!zenoir_bump_in_reach(creature, (600, 825)));
+    assert!(!zenoir_bump_in_reach((0, 0), (0x200, 0x200)));
+    let mut seats = row();
+    for s in &mut seats[3..7] {
+        s.render_flag = 0xFF;
+    }
+    let mut ctx = CastModuleCtx {
+        phase: ZENOIR_BUMP_ARM,
+        ..Default::default()
+    };
+    zenoir_tick(&mut ctx, &mut seats, WHO, |s| s == 3 || s == 4, |_| None);
+    assert_eq!(seats[3].render_flag, 0);
+    assert_eq!(seats[4].render_flag, 0);
+    assert_eq!(seats[4].present_04, ZENOIR_NEUTRAL_COLOUR);
+    assert_eq!(seats[5].render_flag, 0xFF);
+    ctx.phase = ZENOIR_FINISH_ARM;
+    let (_, hits) = zenoir_tick(&mut ctx, &mut seats, WHO, |_| false, |_| Some(120));
+    let seats_hit: Vec<u8> = hits.iter().map(|h| h.seat).collect();
+    assert_eq!(seats_hit, vec![3, 4]);
 }
 
 #[test]
@@ -941,7 +977,7 @@ fn every_body_reaches_done_from_phase_zero() {
             905 => vera_tick(ctx, &mut seats, WHO, None).0,
             906 => gizam_tick(ctx, &mut seats, WHO, |_| None).0,
             907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted, true),
-            _ => zenoir_tick(ctx, &mut seats, WHO, |_| None).0,
+            _ => zenoir_tick(ctx, &mut seats, WHO, |_| true, |_| None).0,
         });
         // Every chain walks its whole arm run before the terminal, and
         // none of them wraps. PROT 0905's arm 5 steps the phase by three,
@@ -987,7 +1023,7 @@ fn a_phase_past_the_chain_is_done_rather_than_busy_forever() {
                 NightoOutcome::ConfuseResisted,
                 true,
             ),
-            _ => zenoir_tick(&mut ctx, &mut seats, WHO, |_| None).0,
+            _ => zenoir_tick(&mut ctx, &mut seats, WHO, |_| true, |_| None).0,
         };
         assert_eq!(step, CastTickStep::Done, "PROT {entry}");
     }

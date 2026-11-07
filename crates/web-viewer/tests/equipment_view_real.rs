@@ -687,7 +687,7 @@ fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
             );
         }
         let who = slot["label"].as_str().unwrap().to_ascii_lowercase();
-        legaia_tim::write_png(&dir.join(format!("{who}_cards.png")), w, h, &img).unwrap();
+        psx_tim::write_png(&dir.join(format!("{who}_cards.png")), w, h, &img).unwrap();
     }
 }
 

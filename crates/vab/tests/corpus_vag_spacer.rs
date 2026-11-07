@@ -4,14 +4,14 @@
 //! `vag_table[0]` is a leading spacer. This scans every VAB in the extracted
 //! PROT corpus and asserts the spacer is universally `0` - the empirical
 //! confirmation that it carries no master pitch / sample-rate correction (see
-//! [`legaia_vab::VabReport::vag_table_spacer`]).
+//! [`psx_vab::VabReport::vag_table_spacer`]).
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention): it
 //! reads only `extracted/PROT/*.BIN`, which exist after `legaia-extract`.
 
 use std::path::PathBuf;
 
-use legaia_vab::{find_vabs, parse};
+use psx_vab::{find_vabs, parse};
 
 fn extracted_prot_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

@@ -52,7 +52,7 @@ fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
     if start >= bytes.len() {
         return None;
     }
-    let (decoded, _) = legaia_lzs::decompress_tracked(&bytes[start..], man.size as usize).ok()?;
+    let (decoded, _) = psx_lzs::decompress_tracked(&bytes[start..], man.size as usize).ok()?;
     (decoded.len() == man.size as usize).then_some(decoded)
 }
 
@@ -215,8 +215,8 @@ fn prescript_stager_ids_census() {
 /// bytes - installer id `k` = prescript record `k`.
 #[test]
 fn stager_table_ram_relocation_matches_the_file_bundle() {
-    use legaia_mednafen::SaveState;
-    use legaia_ram_image::ScenarioManifest;
+    use psx_mednafen::SaveState;
+    use psx_ram_image::ScenarioManifest;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

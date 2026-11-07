@@ -47,7 +47,7 @@ impl Clip {
 pub struct Actor {
     pub label: String,
     pub model: Model,
-    pub vram: legaia_tim::Vram,
+    pub vram: psx_tim::Vram,
     pub clips: Vec<Clip>,
     pub notes: Vec<String>,
 }
@@ -106,7 +106,7 @@ pub fn monster(lib: &Library, id: u16) -> Result<Actor> {
         .map(|r| display_name(&r.name, level_mark(lib.exe.as_deref())))
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| format!("monster {id}"));
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     // `battle_render_mesh` uploads the pool and relocates CBA/TSB; the same
     // relocation is applied to the object-tagged mesh the poser needs.
     mesh.battle_render_mesh(0, &mut vram)

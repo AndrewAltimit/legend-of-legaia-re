@@ -13,7 +13,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Target</dt><dd>Values inside an LZS stream - chiefly the monster archive (PROT 0867) and the player battle files (PROT 0863..0865)</dd>
-    <dt>Enabler</dt><dd><code>legaia_lzs::compress</code>: greedy LZSS with one-step lazy matching; <code>decompress(compress(x)) == x</code> against the retail decoder</dd>
+    <dt>Enabler</dt><dd><code>psx_lzs::compress</code>: greedy LZSS with one-step lazy matching; <code>decompress(compress(x)) == x</code> against the retail decoder</dd>
     <dt>Slot</dt><dd><code>[u32 decompressed_size][LZS stream][zero pad]</code>, fixed <code>0x14000</code> bytes per monster</dd>
     <dt>Edit class</dt><dd>In place at the slot level; <code>repack_slot</code> rejects the rare stream that would overflow</dd>
     <dt>Mods</dt><dd><code>--drops</code> &middot; <code>--monster-stats</code> &middot; <code>--weapon-specialty</code></dd>
@@ -101,7 +101,7 @@
   <div class="disclosure-body">
     <ol>
       <li>Confirm the field's offset in the <em>decompressed</em> record (structural check on the decode).</li>
-      <li>Edit, recompress with <code>legaia_lzs::compress</code>, pad back to the slot stride, reject on overflow.</li>
+      <li>Edit, recompress with <code>psx_lzs::compress</code>, pad back to the slot stride, reject on overflow.</li>
       <li>Add a disc-gated oracle that re-decodes the patched slot.</li>
     </ol>
   </div>

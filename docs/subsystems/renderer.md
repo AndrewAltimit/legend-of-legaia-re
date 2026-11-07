@@ -492,7 +492,8 @@ past-the-front triangle under `0x10000` does not rebuild the matrix: it scales
 whatever the previous triangle left in `0x1F800314`. Of the field's flag words
 only `0xC` (`jagaroom`) sweeps; in battle PROT 0912 (Freed) writes the same
 `0xC` into row 1 with `h3 = -0x400` and re-forms its creature under it, the
-front climbing from the floor as `+0x1BA` drains. The object matrix carries
+front climbing from the floor as `+0x1BA` drains, and PROT 0916 (Aluru) writes
+it with `h3 = -0x800` for its own creature's assembly. The object matrix carries
 the battle world scale (base matrix `16384 * I`), so a triangle's measure is
 four times its body-space height.
 
@@ -921,6 +922,50 @@ continent cells already draw at their bucket the same way, at `+ 14`
 (`overworld_flat_depth`). GPU pin:
 `a_sorted_field_cell_draws_flat_two_buckets_behind_its_far_corner`
 (`engine-render` `tests/overworld_flat_depth_gpu.rs`).
+
+### Off retail's vantage the floor is depth-tested a few units lower
+
+The two buckets are faithful only under retail's camera. They let every
+primitive outside the bucket paint over the floor, nearer or not, and the
+scenes keep meshes below the floor plane that retail's steep follow camera
+frames, at most, as slivers at their seams. A camera swung, tilted toward the
+horizon or pulled back sees those faces whole, painted over the ground:
+
+- `taiku2`: the sky shell's lower half lies under the throne room floor.
+  Swung (drag orbit `4.8` from the entry spot), the sky covers most of the
+  floor, which shows only in a patch around the player.
+- `town01`: a green-brick triangle more than eight units under the path south
+  of the garden fence shows on the path (orbit `5.6`, tilt `-0.5`, zoom
+  `0.7` by the hut west of Vahn's house).
+
+So both hosts stage a per-frame word through one kernel,
+`engine-world-views::field_view_window::field_ground_drop`: `None` at
+retail's vantage (`retail_vantage`: `F3` off, and a battle frame, a scripted
+shot, or the follow camera at `CameraDistance::Retail` with the knobs at
+identity) and off the field, `Some(FREE_VANTAGE_FLOOR_DROP)` (`8` units,
+`engine-scene::field_ground`) on any other field frame - the default `Far`
+preset included. Under a drop:
+
+- a **flat** far-bucket or sorted cell is depth-tested as the plane `8` units
+  below it, along each pixel's own ray (`field_ground::dropped_floor_w`): an
+  eye `h` above the floor meets that plane `(h + drop) / h` times as deep, a
+  factor constant over the cell, so the corners' depths interpolate exactly.
+  The shaders recover the eye from the draw's own matrix (`eye_of_matrix` /
+  `eyeOfMatrix`). `conc`'s shadow strips, six units down, still paint over the
+  floor; a mesh buried deeper is hidden;
+- a **sloped** far-bucket cell keeps the far slice, since the cliff faces it
+  rises against are what hide it;
+- a **sloped** sorted cell keeps its own per-pixel depth.
+
+Natively the word rides the scene-lights block (`Renderer::set_field_ground_drop`,
+`ground_drop_param` in the WGSL); the play page stages it as `u_ground_drop`
+(`play_render_ground_drop` -> `setGroundDrop`). The retail-compare corpus
+frames at retail's vantage, so its frames keep the buckets. Pins:
+`the_dropped_floor_depth_agrees_on_both_hosts` (`engine-render`
+`tests/vertex_law_parity.rs`) and `the_ground_drops_only_off_retail_vantage_on_the_field`.
+The play window reproduces a swung view with `LEGAIA_CAPTURE_FIELD_KNOBS=orbit,tilt,zoom`
+on a capture run, and `LEGAIA_DIAG_NO_GROUND_DROP` stages the buckets
+whatever the vantage.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 
@@ -1742,7 +1787,7 @@ block and the CLUT block are decided **independently** against the
 prim-target rectangles of the current TMD, so a TIM can contribute one
 block, both, or neither.
 
-`legaia_tim::vram::Vram::prim_texture_status` then classifies each prim's
+`psx_tim::vram::Vram::prim_texture_status` then classifies each prim's
 `(cba, tsb, uv)` lookup as `Ok` / `MissingClut` / `MissingTexturePage`. The
 viewer drops bad prims at mesh-build time; the CLI can say why. The same
 filter runs in engine scene loads through
@@ -2031,7 +2076,7 @@ and 320 column strips, each an ordinary textured quad whose texture page is
 the capture.
 
 The port draws through wgpu into a colour attachment unrelated to
-`legaia_tim::Vram`: `Renderer::upload_vram` pushes the software page to the
+`psx_tim::Vram`: `Renderer::upload_vram` pushes the software page to the
 GPU and nothing comes back. The shared `vram_capture` kernel
 (`crates/render-kernels`) adds the missing direction, and
 `Renderer::capture_into_vram` is `capture_rgba` plus that blit.

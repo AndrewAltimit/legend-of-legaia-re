@@ -29,7 +29,7 @@ fn engine_png(path: &Path, v: u8) {
 
 /// The 8-bit level a 5-bit grey decodes to.
 fn expand(v5: u16) -> u8 {
-    legaia_mednafen::bgr555_to_rgba8(v5 | (v5 << 5) | (v5 << 10))[0]
+    psx_mednafen::bgr555_to_rgba8(v5 | (v5 << 5) | (v5 << 10))[0]
 }
 
 #[test]

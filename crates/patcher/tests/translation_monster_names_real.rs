@@ -11,8 +11,8 @@
 
 use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::{export_pack, import_pack, monster_names};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -182,7 +182,7 @@ fn monster_names_export_import_round_trip() {
     {
         if a != b && a.len() == SECTOR_SIZE {
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid"
             );
         }

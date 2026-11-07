@@ -108,6 +108,10 @@ pub struct CastFxState {
     /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
     /// once, with the level check, when the cast folds or its fold is waived.
     pub module_hit_xp: u32,
+    /// Spell XP a summon cast banked inside the band, waiting for the level
+    /// check `FUN_801E70BC` that state `0x36` runs on the cast's way out
+    /// (`World::run_summon_magic_level_check`): `(caster, spell id, gain)`.
+    pub pending_level_check: Option<(u8, u8, u32)>,
     /// PROT 0939 arm 4's pace, armed by arm 3's pass.
     pub spore_gas_beat: legaia_engine_cast::cast_module_ticks::SporeGasBeat,
     /// The module's hit stages no reaction (PROT 0918's): the fold lands its
@@ -256,12 +260,19 @@ pub struct CastFxState {
     pub module_ozma_word: i32,
     /// PROT 0934's hit threshold `0x801FA408` on arm `0x18`.
     pub module_ozma_ladder: i32,
+    /// PROT 0934's spray offsets for this pass, drawn at the arm's head
+    /// (`rand() % 0x101 - 0x80`, x then y for each of its three records) and
+    /// stored last first, so the ladder's rolls draw after them.
+    pub module_ozma_spray: Vec<i16>,
     /// PROT 0915's spin word `0x801F8150`.
     pub module_mushura_spin: i32,
     /// The top of PROT 0919's clip row, `0x8008401E`.
     pub module_spoon_clip: i16,
     /// PROT 0915's chase target `0x801F8154`, an engine slot.
     pub module_mushura_target: u8,
+    /// PROT 0915's chase target as retail's seat (`3..=6`), for a draw that
+    /// lands on a seat the engine seats nobody in.
+    pub module_mushura_retail_seat: u8,
     /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
     /// `-0x100` and arm 16 walks it toward the row.
     pub module_mule_front: i32,
@@ -508,6 +519,7 @@ impl CastFxState {
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,
+            pending_level_check: None,
             spore_gas_beat: Default::default(),
             module_fold_quiet: false,
             fatal_decision: None,
@@ -547,9 +559,11 @@ impl CastFxState {
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
             module_ozma_ladder: 0,
+            module_ozma_spray: Vec::new(),
             module_mushura_spin: 0,
             module_spoon_clip: 0,
             module_mushura_target: 0,
+            module_mushura_retail_seat: 0,
             module_mule_front: 0,
             module_terra_orbit: (0, 0),
             module_meta_tail: 0,

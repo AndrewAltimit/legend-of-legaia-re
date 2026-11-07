@@ -117,7 +117,7 @@ pub struct Rect {
 /// One 32-byte FMV dispatch slot, in the play loop's own terms.
 ///
 /// Field-for-field the record documented in
-/// `legaia_game_tables::fmv_dispatch`; kept here so `legaia-mdec` can drive a
+/// `legaia_game_tables::fmv_dispatch`; kept here so `psx-mdec` can drive a
 /// segment without depending on the asset crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FmvSlot {

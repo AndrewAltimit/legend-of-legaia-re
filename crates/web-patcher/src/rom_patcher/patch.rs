@@ -261,7 +261,7 @@ impl<'a> PatchRun<'a> {
             || chest_mode == Some(DropMode::Random)
             || steal_mode == Some(DropMode::Random);
         let mut pool = if needs_pool {
-            let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
                 .ok_or_else(|| {
                     "SCUS_942.54 not found in disc image (needed for a random mode)".to_string()
                 })?;

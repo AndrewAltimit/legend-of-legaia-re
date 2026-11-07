@@ -222,7 +222,7 @@ fn fighter_packs_reproduce() {
             .unwrap_or_else(|| panic!("fighter pack {prot_index} (roster {roster}) parses"));
 
         // The atlas: a 256x256 4bpp TIM with a 256x1 CLUT strip.
-        let tim = legaia_tim::parse(&pack.tim_bytes).expect("fighter TIM parses");
+        let tim = psx_tim::parse(&pack.tim_bytes).expect("fighter TIM parses");
         assert_eq!((tim.pixel_width(), tim.pixel_height()), (256, 256));
         let clut = tim.clut.as_ref().expect("fighter TIM carries a CLUT");
         assert!(clut.entries.len() >= 256, "256-entry CLUT strip");

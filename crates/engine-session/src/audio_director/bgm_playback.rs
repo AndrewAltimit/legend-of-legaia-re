@@ -130,7 +130,7 @@ impl<S: AudioSink> AudioDirector<S> {
         // magic hunt - see `chunk_install::owned_bank_offsets`.
         let split = legaia_engine_system::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
-        let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        let report = psx_vab::parse(entry_bytes, vab_off).ok()?;
         // Both halves are validated before the SPU is touched - the page's
         // `stage_owned` keeps the same order - so a score that does not parse
         // leaves the playing track's samples where they were.

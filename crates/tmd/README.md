@@ -72,7 +72,7 @@ first object's worth of geometry.
 
 `mesh::tmd_to_vram_mesh_filtered` lets a caller drop primitives whose
 texture page hasn't been uploaded into VRAM yet via a closure predicate;
-the caller can pair it with `legaia_tim::Vram::prim_has_texture_data`
+the caller can pair it with `psx_tim::Vram::prim_has_texture_data`
 (or any other heuristic) so the mesh upload doesn't include prims that
 would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 
@@ -101,7 +101,7 @@ would clobber another mesh's CLUT row, which is what causes rainbow
 noise). The asset viewer GUI and the `tmd prims` / `tmd vram-dump` CLI
 share this logic so on-screen rendering and offline diagnostics agree.
 
-`legaia_tim::vram::Vram::prim_texture_status` returns a structured
+`psx_tim::vram::Vram::prim_texture_status` returns a structured
 verdict per prim: `Ok` / `MissingClut { row }` /
 `MissingTexturePage { tpage }`. The CLI prints these as readable trailers
 on each prim row when invoked with `--vram-dir`. A fourth variant,

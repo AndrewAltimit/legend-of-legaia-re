@@ -361,8 +361,8 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 
 | Chain step | Port |
 |---|---|
-| Palette resolution for exports | `legaia_ui_formats::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
-| VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `legaia_tim::Vram` |
+| Palette resolution for exports | `legaia_ui_formats::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `psx_tim::decode_rgba8_with_palette` |
+| VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `psx_tim::Vram` |
 | Colour word + depth cue | `psx_cue_colour` / `psx_modulate` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
 | Battle ambient | `legaia_engine_battle_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
 | Actor tint | `legaia_engine_battle_vm::battle_actor_tint`, `battle_actor_draw` |

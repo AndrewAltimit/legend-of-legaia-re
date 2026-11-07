@@ -24,11 +24,11 @@
 use std::collections::BTreeMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;
 use legaia_patcher::items::valid_item_pool;
 use legaia_randomizer::drops::DropMode;
 use legaia_translate::{ImportPhase, import_pack_phase};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -70,7 +70,7 @@ fn vowel_swap(src: &str) -> String {
 /// Run every randomizer pass in the exact order (and with the exact settings)
 /// the site's chaos preset uses in `patch_rom`.
 fn run_chaos_passes(patcher: &mut DiscPatcher, seed: u64) {
-    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .expect("SCUS in image");
     let mut pool = valid_item_pool(&scus).expect("item pool");
     legaia_patcher::unused::extend_pool(&mut pool, legaia_patcher::unused::UNUSED_ITEM_IDS);
@@ -199,7 +199,7 @@ fn language_pack_plus_chaos_preset_composes() {
         if a != b && a.len() == SECTOR_SIZE {
             touched += 1;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid after combined patch"
             );
         }

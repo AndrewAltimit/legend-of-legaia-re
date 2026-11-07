@@ -28,10 +28,10 @@ master clock, and the scripted scenes execute their retail bytecode.
 
 | Piece | Retail home | Port home |
 |---|---|---|
-| FMV dispatch + play loop | STR overlay, PROT 0970 (`FUN_801CEA3C`, `FUN_801CF098`) | `legaia_engine_system::movie::cutscene`, `legaia_mdec::str_player` |
-| Sector demux (ring) | SCUS `St` library (`FUN_8005ECD4` / `FUN_8005F024`) | `legaia_mdec::st_ring`, `str_sector::StrFrameAssembler`, `str_av::StrAvDemuxer` |
-| Bitstream decode | `FUN_801D0378` (Iki), `FUN_801D070C` (STRv2/v3, dev slots only) | `legaia_mdec::MdecDecoder`, `strv2_decode` |
-| IDCT + colour conversion | MDEC hardware | `legaia_mdec::MdecDecoder` (software) |
+| FMV dispatch + play loop | STR overlay, PROT 0970 (`FUN_801CEA3C`, `FUN_801CF098`) | `legaia_engine_system::movie::cutscene`, `psx_mdec::str_player` |
+| Sector demux (ring) | SCUS `St` library (`FUN_8005ECD4` / `FUN_8005F024`) | `psx_mdec::st_ring`, `str_sector::StrFrameAssembler`, `str_av::StrAvDemuxer` |
+| Bitstream decode | `FUN_801D0378` (Iki), `FUN_801D070C` (STRv2/v3, dev slots only) | `psx_mdec::MdecDecoder`, `strv2_decode` |
+| IDCT + colour conversion | MDEC hardware | `psx_mdec::MdecDecoder` (software) |
 | Movie audio | drive plays XA sectors in hardware into the SPU CD input | `crates/xa` decode into `AudioOut::play_xa` |
 | FMV trigger | field-VM op `4C E2`, title attract countdown | `legaia_engine_vm::field`, `World::cutscene.pending_fmv_trigger` |
 | Dispatch table | `0x801D0A6C`, 23 slots of 32 bytes | `legaia_game_tables::fmv_dispatch` |
@@ -297,7 +297,7 @@ what forces the wrap handling when a frame does not fit before the ring end.
 | 3 | filling (sectors of this frame still arriving) |
 | 4 | handed to the decoder; released by `StFreeRing` |
 
-### Engine port - `legaia_mdec::st_ring`
+### Engine port - `psx_mdec::st_ring`
 
 [`StRing`](../../crates/mdec/src/st_ring.rs) is the port of the ring and its per-sector state
 machine, minus the CD/DMA register pokes: `set_ring` / `set_stream` / `set_mask` /
@@ -314,14 +314,14 @@ Who uses which demuxer:
 
 | Demuxer | Used by | Why |
 |---|---|---|
-| `StRing` | [`str_player::StrPlayer`](#engine-port---legaia_mdecstr_player), and through it `mdec decode-str` | back-pressure-aware; makes a *segment* of a movie playable off the CLI |
+| `StRing` | [`str_player::StrPlayer`](#engine-port---psx_mdecstr_player), and through it `mdec decode-str` | back-pressure-aware; makes a *segment* of a movie playable off the CLI |
 | [`StrFrameAssembler`](../../crates/mdec/src/str_sector.rs) | the play hosts (via `cutscene_av` / `StrAvDemuxer`), `legaia-engine play-str`, offline extraction | no ring exists to overrun |
 
 The disc-gated `st_ring_real_str` test streams a real `MV1.STR` through both and asserts they
 agree frame-for-frame and byte-for-byte, and that the armed seek lands exactly on `MV3.STR`'s
 `0xE2` segment boundary.
 
-### Engine port - `legaia_mdec::str_player`
+### Engine port - `psx_mdec::str_player`
 
 [`str_player`](../../crates/mdec/src/str_player.rs) is the layer between the ring and the
 bitstream decoder - the retail play loop minus its CD, DMA and GPU register pokes:
@@ -387,7 +387,7 @@ last column of every row lands flush on the right edge.
 decoder is selected by `DAT_801E09FC`:
 
 - **Iki** (`FUN_801D0378`, every retail movie): decompresses the per-block qscale/DC table with
-  the LZSS decoder `FUN_801D0604` (the retail original of `legaia_mdec::iki_lzss_decompress` -
+  the LZSS decoder `FUN_801D0604` (the retail original of `psx_mdec::iki_lzss_decompress` -
   control-byte LSB-first, length `+3`, 1/2-byte offsets) and converts the AC-only bitstream
   using the GTE leading-zero-count register as the VLC prefix scanner.
 - **STRv2/v3** (`FUN_801D070C`, dev slots 9/10 only): standard VLC with per-block DC deltas,
@@ -424,9 +424,9 @@ So `FUN_801D070C` is a bit-prefix lookup: only the DC coefficients (raw 10-bit i
 size-prefixed predicted differences chained per channel in v3), the `0x7C1F`-escape raw codes
 and the 65-code `0xFE00` end padding are computed.
 
-Ports: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) (the unpacker,
+Ports: [`psx_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) (the unpacker,
 reachable as `mdec strv2-table <overlay>`) and its consumer
-[`legaia_mdec::strv2_decode::decode_frame`](../../crates/mdec/src/strv2_decode.rs). The path is
+[`psx_mdec::strv2_decode::decode_frame`](../../crates/mdec/src/strv2_decode.rs). The path is
 dead in retail (no released movie uses it), so the port has no golden decode to check against;
 the tests pin the distinct code paths against the disassembly.
 
@@ -473,7 +473,7 @@ Four more overlay helpers sit on the same boundary and carry no port site:
 The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays *inside* the port: it loops
 `StGetNext` (up to 2000 spins), sets the inclusive end-frame latch `DAT_801E09F8`, and
 re-programs the decode rects from the sector header's dimensions - both ported in
-[`str_player`](#engine-port---legaia_mdecstr_player). It also builds a stack `RECT` of
+[`str_player`](#engine-port---psx_mdecstr_player). It also builds a stack `RECT` of
 `(0, 0, slot_width * 3/2, slot_height * 2)` whenever the cached dimensions change; nothing in the
 body consumes it, so the port does not reproduce it.
 `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` / `overlay_str_fmv_0x801CF740.txt`.
@@ -659,7 +659,7 @@ the raw 2352-byte sectors **straight off the disc image**:
 
 - [`legaia_engine_shell::cutscene_av::decode_str_av_from_disc`](../../crates/engine-shell/src/cutscene_av.rs)
   makes one pass over the sectors through the shared demuxer
-  [`legaia_mdec::str_av::StrAvDemuxer`](../../crates/mdec/src/str_av.rs), routing Form-2 audio
+  [`psx_mdec::str_av::StrAvDemuxer`](../../crates/mdec/src/str_av.rs), routing Form-2 audio
   to a per-`(file_no, ch_no)` buffer and the rest to the `StrFrameAssembler`, then decodes the
   dominant audio channel to PCM and the video to RGBA frames.
 - The browser play page opens a movie through the same demuxer (`play_fmv.rs`). Both hosts index
@@ -705,7 +705,7 @@ recovers the authored rate:
 fps = 150 / (total_sectors / video_frame_count)
 ```
 
-`legaia_mdec::str_sector::analyze_str_timing` computes this and `StrTiming::frame_period` returns
+`psx_mdec::str_sector::analyze_str_timing` computes this and `StrTiming::frame_period` returns
 the per-frame hold duration (falling back to 15 fps for a degenerate stream). All six Legaia
 movies measure **exactly 10 sectors/frame -> 15.00 fps** (`MV1` = 1345 frames = 89.7 s). The
 in-flow cutscene driver and `play-str` both pace to this clock when no audio track is playing;
@@ -875,7 +875,7 @@ Coverage limits of the sweep:
 Every one of the dispatch slot's eight words is read by the play loop and by nothing else - see
 [the consumer sweep](../formats/str-fmv-table.md#every-word-of-the-record-is-a-play-loop-input).
 `legaia_game_tables::fmv_dispatch` keeps six of the eight; the two it drops (`fb_x`, `fb_y`) are the
-decode rect's VRAM origin, resolved in `legaia_mdec::str_player`.
+decode rect's VRAM origin, resolved in `psx_mdec::str_player`.
 
 ### Static FMV-trigger sites - exhaustive
 
@@ -1311,7 +1311,7 @@ Evidence (cold-boot probes in `scripts/pcsx-redux/`):
 **Port.** On entering `opdeene`,
 [`cutscene_caption::decode_opdeene_caption`](../../crates/engine-scene/src/cutscene_caption.rs)
 locates the TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry
-is `0x0000`, so `legaia_tim::decode_rgba8` gives it alpha 0), stored on
+is `0x0000`, so `psx_tim::decode_rgba8` gives it alpha 0), stored on
 `World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick/mode_tick.rs)
 fades `caption_alpha` in after the first crawl block scrolls out
 (`World::cutscene.narration_seq == 1` and narration inactive) and back out after a ~2 s hold

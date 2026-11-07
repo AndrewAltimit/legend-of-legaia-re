@@ -998,3 +998,35 @@ changes = [
   ["counts/native/town01/enhanced/allocs_per_frame", 1608.6, 1608.7],
   ["counts/native/town01/retail/allocs_per_frame", 1226.8, 1226.9],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Wave 32, each bisected. Puera v2 strike image and Aluru v3 strike camera: d57b75c6d (battle frame cost counts effect parts and after-image ghosts, measured from the cast-sequence probe's new cost column over 125 retail films; the ring's step opens the next pass). It lifts the 124-film set .8432 -> .8435 and Nighto .688 -> .728 against .729 on retail's own steps; these two stills settle on a different step in their seat ticks. Mad Ogre camera: the looping-clip natural end zeroes the cursor (0x8004B068 on every path; two retail recordings wrap 138 -> 0 and 140 -> 0); the state was already about 18 units of focus off. Queen Bee image: the arrival-pass strike camera walk-back (59c33d4eb), which lifts thirteen other strike stills (Lip King .904 -> 1.000, Death Wings .888 -> .993). shiny_refactor_gimard_levelup is a patched-executable state, not evidence."
+changes = [
+  ["states/battle_jou_aluru_v3_strike/camera", 0.999, 0.998],
+  ["states/battle_map02_mad_ogre_strike/camera", 1.0, 0.999],
+  ["states/battle_rugi_puera_v2_strike/image", 1.0, 0.956],
+  ["states/battle_town01_queen_bee_strike/image", 0.998, 0.997],
+  ["states/shiny_refactor_gimard_levelup/camera", 0.978, 0.976],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 32 adds engine code both bundles carry: Hyper Lightning / Spore Gas split hits, Dark Typhoon, Paralyzing Wave guards and captions, the frame-cost load, monster heal table, summon finisher sites, the off-vantage floor depth bias, the world-map entrance crossing fade, the scene-picker seat table and the viewer's retail-rate keyframe blend: +0.15% gzip on the play bundle. Battle and summon allocs per frame (+4) are the frame-cost load's per-frame part and ghost counts. World-map draws +0.7 per frame (0.3%) were measured on the wave tip and not bisected; the world-map changes this wave are the entrance crossing's exit fade and the floor depth bias."
+changes = [
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 112166, 112312],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 111658, 111808],
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 221.16, 221.86],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 168788, 168844],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 151.13, 151.83],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 165066, 165119],
+  ["counts/bundle/gzip_bytes", 7050522, 7059595],
+  ["counts/bundle/play_gzip_bytes", 4916953, 4924328],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4547.1, 4547.2],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1371.5, 1375.4],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4519.5, 4519.7],
+  ["counts/native/battle/retail/allocs_per_frame", 1319.8, 1323.7],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1405.8, 1409.4],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1353.4, 1356.9],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1571.6, 1571.9],
+]

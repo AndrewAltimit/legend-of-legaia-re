@@ -5,10 +5,10 @@
 //!
 //! 1. The word immediately before `pBAV` is a DATA_FIELD chunk header of type
 //!    `0x00` whose payload length is the VAB's header part
-//!    (`legaia_vab::header_part_size`).
-//! 2. [`legaia_vab::vag_body_origin`] lands on a self-consistent SPU-ADPCM
+//!    (`psx_vab::header_part_size`).
+//! 2. [`psx_vab::vag_body_origin`] lands on a self-consistent SPU-ADPCM
 //!    block grid - every 16-byte block's high nibble is a legal filter index
-//!    `0..=4` - while the origin [`legaia_vab::parse`] reports does not. That
+//!    `0..=4` - while the origin [`psx_vab::parse`] reports does not. That
 //!    is the measurement, not the assumption: an illegal filter index is what
 //!    stops the decoder, so a 100 % legal grid at one origin and a
 //!    coin-flip rate at the other separates them without decoding anything.
@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 
-use legaia_vab::{header_part_size, parse, vag_body_origin};
+use psx_vab::{header_part_size, parse, vag_body_origin};
 
 fn extracted_prot_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -134,7 +134,7 @@ fn every_corpus_vab_is_carried_as_two_chunks() {
 /// The spans a stream-aware parse reports are the real sample bodies, and the
 /// VAB-anchored resolution agrees with the stream-anchored one.
 ///
-/// [`legaia_vab::vag_body_origin_at`] exists because a caller that has sliced a
+/// [`psx_vab::vag_body_origin_at`] exists because a caller that has sliced a
 /// bank out of its entry no longer has chunk 0's header in front of it. Nothing
 /// about the resolution needs that header - the body chunk is found by walking
 /// forward - so the two must return the same offset on every retail carrier,
@@ -163,9 +163,9 @@ fn stream_aware_spans_land_on_real_bodies() {
         let Ok(plain) = parse(&data, 4) else {
             continue;
         };
-        let staged = legaia_vab::parse_in_stream(&data, 0).expect("stream-aware parse");
+        let staged = psx_vab::parse_in_stream(&data, 0).expect("stream-aware parse");
         assert_eq!(
-            legaia_vab::vag_body_origin_at(&data, 4).expect("VAB-anchored origin"),
+            psx_vab::vag_body_origin_at(&data, 4).expect("VAB-anchored origin"),
             vag_body_origin(&data, 0).expect("stream-anchored origin"),
             "{}: the two body-origin resolutions disagree",
             path.display()

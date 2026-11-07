@@ -100,8 +100,7 @@ fn census() -> Option<Vec<Site>> {
         if start >= bytes.len() {
             continue;
         }
-        let Ok((man, _)) = legaia_lzs::decompress_tracked(&bytes[start..], desc.size as usize)
-        else {
+        let Ok((man, _)) = psx_lzs::decompress_tracked(&bytes[start..], desc.size as usize) else {
             continue;
         };
         let name = path

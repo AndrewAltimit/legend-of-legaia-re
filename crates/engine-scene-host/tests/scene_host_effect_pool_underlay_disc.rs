@@ -65,7 +65,7 @@ fn host_vram(extracted: &std::path::Path, scene: &str) -> SceneHost {
 fn host_field_entry_underlays_the_effect_pool() {
     let Some(extracted) = extracted() else { return };
     let index = ProtIndex::open_extracted(&extracted).expect("index");
-    let mut pool = legaia_tim::Vram::new();
+    let mut pool = psx_tim::Vram::new();
     legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
 
@@ -103,7 +103,7 @@ fn host_field_entry_underlays_the_effect_pool() {
 fn a_caption_tims_transparent_words_stay_transparent_over_the_pool() {
     let Some(extracted) = extracted() else { return };
     let index = ProtIndex::open_extracted(&extracted).expect("index");
-    let mut pool = legaia_tim::Vram::new();
+    let mut pool = psx_tim::Vram::new();
     legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
     let scene = Scene::load(&index, "edteien").expect("edteien");
@@ -119,7 +119,7 @@ fn a_caption_tims_transparent_words_stay_transparent_over_the_pool() {
                 }
             };
             let end = (hit.offset + hit.byte_len).min(src.len());
-            if let Ok(t) = legaia_tim::parse(&src[hit.offset..end])
+            if let Ok(t) = psx_tim::parse(&src[hit.offset..end])
                 && (t.image.fb_x, t.image.fb_y, t.image.fb_w, t.image.h) == (320, 416, 40, 32)
             {
                 caption = Some(t);

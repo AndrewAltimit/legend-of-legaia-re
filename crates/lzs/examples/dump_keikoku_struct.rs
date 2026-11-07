@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 fn main() {
     let raw = std::fs::read("extracted/PROT/0115_keikoku.BIN").unwrap();
-    let decoded = legaia_lzs::decompress_container_strict(&raw).unwrap();
+    let decoded = psx_lzs::decompress_container_strict(&raw).unwrap();
     let s1 = &decoded[1]; // 6335 B section
     println!("section 1: {} bytes", s1.len());
     let nz: Vec<(usize, u8)> = s1

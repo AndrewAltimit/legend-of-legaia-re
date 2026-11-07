@@ -114,7 +114,7 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     );
 
     // And the stage itself is a 16x1 row move onto column 224 of row 476.
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let src: Vec<u8> = (0..32).collect();
     vram.write_clut_row(u16::from(expected_x), 476, &src);
     assert!(legaia_engine_battle::battle_effect_clut::stage_effect_clut(

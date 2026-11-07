@@ -108,7 +108,6 @@ names = [
     "debug_arm_scene_shop",
     "debug_host_trace_text",
     "debug_formation_rows",
-    "debug_seed_inflight_cast",
     "debug_seed_monster_cast",
     "debug_shatter",
     "debug_talk_to_placement",

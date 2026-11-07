@@ -21,7 +21,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 | script phase | [`retail_compare_script.rs`](../../crates/parity/src/retail_compare_script.rs) | Read the running field contexts off the actor lists, run the engine to the same script phase |
 | frame channel | [`retail_compare_image.rs`](../../crates/parity/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
 | `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/parity/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
-| PCSX-Redux GPU reader | [`legaia_pcsx_redux::gpu`](../../crates/pcsx-redux/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
+| PCSX-Redux GPU reader | [`psx_pcsx_redux::gpu`](../../crates/pcsx-redux/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
 | result cache | [`retail_compare_cache.rs`](../../crates/parity/src/retail_compare_cache.rs) | Reuses a state's result when every input matches |
 | driver | [`scripts/ci/retail-compare.py`](../../scripts/ci/retail-compare.py) | Resolves the gitignored data, builds, runs, blesses / checks |
 | ratchet test | [`retail_compare_corpus.rs`](../../crates/engine-shell/tests/retail_compare_corpus.rs) | Disc-gated; fails on any per-state channel drop |
@@ -341,7 +341,7 @@ come out in the engine's own schema on both sides.
 
 A PCSX-Redux state carries its GPU as one protobuf submessage: the `GPUSTAT`
 word, a `0x400`-byte log of the last value written to each GP1 command, and
-the 1 MiB VRAM. `legaia_pcsx_redux::gpu` finds it by shape (a `0x400` and a
+the 1 MiB VRAM. `psx_pcsx_redux::gpu` finds it by shape (a `0x400` and a
 `0x100000` member side by side) and reads the display start off `GP1(0x05)`
 and the mode off `GP1(0x08)` - the same pair a mednafen state stores as
 `DisplayFB_XStart/YStart` and `DisplayMode` - so both emulators crop the
@@ -1559,6 +1559,9 @@ Its walk start takes the RAM's counter as the arrival reading: the table on that
 A capture on the same arrival pass whose staged idle has already committed (cursor `0`, accumulator `0`, clip `0`) is not a walk-clock capture, but its counter is the walk's last reading too, where the accumulator rule adds the arrival pass and the loop's first (`RetailBattle::arrival_pass`).
 On that pass the table was armed before the body moved: the poll's case 6 runs ahead of the pass's anim tick, which cuts the walk clip and steps the attacker back off the arrival, and ahead of the pass's re-face. So the endpoint frames the attacker's position-ring slot `1`, not the RAM's live pair, on the heading the pass before left, which the table names (`counter - yaw`, plus the half turn on style bit 0): `battle_geremi_spikefish_strike`'s table ends on `(-188, 321)`, its ring slot `1`, where the RAM holds `(-219, 417)`.
 The headless framing endpoint is read with the attacker seated there (`RetailBattle::arrival_arm_snaps`), then the bodies stand on the RAM's ground. Placing the walk on the counter alone cost the states whose endpoint the step-back moved furthest (`battle_tunnela_mad_bird_strike` `.996` to `.981`, `battle_geremi_spikefish_strike` `.999` to `.989`); with the arm seat every arrival-pass strike in the corpus reads `camera` `1.000` (`battle_garmel_zeto_strike` `.988` to `1.000`). Case 6 frames the live pair itself, so the seat moves no body pair: seated through the body pair the replay's pose centroid put Gimard's endpoint `43` units off retail's.
+The displayed frame of such a capture stands two passes back on the walk, and each of those passes re-armed case 6 on the walker's live pair a ring stride further back: the arm of pass `k` back read ring slot `k + 1` (`arrival_end_shift`).
+Walked back against the RAM's endpoint alone, the frame stands short of a camera that was chasing the walk (`battle_map02_lip_kid_strike` draws focus `(255, 687)`, ring slot `1` its endpoint `(83, 224)`); walked back against the walker's slots it draws `(243, 657)`, and the near body that seemed a few pixels off sits on retail's. `image` rises `.890` to `.980` there, `battle_retona_lip_king_strike` `.904` to `1.000`, `battle_map02_death_wings_strike` `.888` to `.993`, `battle_deene_lapis_strike` `.897` to `.961`, `battle_garmel_zeto_strike` `.932` to `.990`; of the arrival-pass strikes only `battle_town01_queen_bee_strike` moves the other way, one block (`.998` to `.997`).
+The walk back steps those passes on the frame history's step, so it takes the shift only where the older ordering table's floor confirms that step (`arrival_end_shift_confirmed`): `battle_noaru_songi_strike` (history `3`, floor `4`) reads `.966` on the RAM's endpoint and `.945` on the walker's, and keeps the former.
 The counter's reading comes off the tween table, since the accumulator counts from the walk's last loop re-commit and says nothing of the arrival. Case 7 aims `0x700` under the approach's case 6 and re-arms `ceil(gap / 0xC)` every pass, so the increments fall on one ladder (`150`, then by the step) and the table's increment names how many passes have run (`strike_passes_off_table`): `battle_nilboa_warfish_strike` sits on the first at accumulator `288`, `battle_map02_poisonous_worm_strike` on the second at `384`.
 The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
 The image child stands such a walker on the displayed frame's ring pair and seats its walk cursor at the displayed frame, as it does a struck body: the walk carries it `speed * scale / 8` a vsync, two game frames of which separate the screen from the RAM (`battle_korb2_warhalf_strike` `image` `.812` to `.824`, `battle_tunnelb_warman_strike` `.759` to `.801`).
@@ -2331,7 +2334,13 @@ frame shows no "level increased" line or banner.
   passing them all over scored the first stream at the ambush's prompt. It does
   not count as a surprise; the party instead stands back on its seeded HP and MP
   at the first prompt (`battle_deene_lapis_strike`: Vahn `5420` against the
-  capture's `9999`).
+  capture's `9999`). The capture's initiative keys are a later round's
+  remainder, so they stay off the party for that round: the side lockout
+  (`FUN_801DA780`, `0x801DAA40`) zeroes the party's keys, and the capture's
+  live ones seeded over it gave each member a no-input swing retail's ambush
+  never runs (Vahn's took Lapis `144` below the capture's `64800`, `enemy_hp`
+  `.750`). Unless the capture stands inside the ambush round, the party's keys
+  are seeded `0`.
 - **The harvest probe's restores.** A capture whose party maximum the probe raised
   (`LEGAIA_TOUGH=2`, `RetailBattle::party_seat_pool_raised`) carries the probe's HP,
   restored at every round prompt. A drive that runs rounds ahead of the capture's own
@@ -3472,7 +3481,7 @@ the file's, whatever the story. A movie-class state scores the image channel
 alone, in [`movie_run.rs`](../../crates/parity/src/retail_compare/movie_run.rs).
 Retail's frame reads 24-bit when the dispatch slot's `+0x04` colour flag says so.
 The engine's is the frame the stream word `DAT_801CAD90` names, through
-`legaia_mdec`, centred in the 240-line display; the word runs ahead of the buffer
+`psx_mdec`, centred in the 240-line display; the word runs ahead of the buffer
 on screen (`3` frames at most, the best taken and named in the detail).
 [`autorun_movie_state.lua`](../../scripts/pcsx-redux/autorun_movie_state.lua) makes
 these states with op `4C E2`'s two stores.
@@ -4784,7 +4793,13 @@ lowers both (`4C 31`, `60 1F` at `+0x1FC`). `rikuroa_post_genesis_tree` was
 taken after that beat in the same visit, so retail holds both down, and no
 record is running. A card load of that save runs the entry script again and
 raises both, which is what the engine's seed does: the divergence is history
-the save does not carry.
+the save does not carry. Nothing in the save can derive it. The raise stands
+on the entry record's straight-line head, ahead of its first branch; the
+beat is the scene's only other `4C 30` / `4C 31` and its only flag-`0x1F` writer,
+and `P1[0]` spawns it (`44 60` at `+0xF7`) only while system flag `0x2C9` is
+up, which the beat clears as its first op. The gate word `0x8007B854` sits
+outside the save window at `0x80084140`, so a load of the post-beat save has
+the flag down, skips the beat and keeps the raise.
 
 The Genesis tree in `rikuroa_post_caruban` is the same history from the other
 side. The tree's three objects (`P0[2..4]`) arm their withered vertex morph
@@ -5546,6 +5561,17 @@ two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
 `.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
 target on its knockdown or get-up (case 8 on the held passes too), a framing
 style `2` / `3` and a monster's pull-in keep the one-pass pose.
+
+The three `koru_pre_*` states are one frame: each is the same Done-arm pass of
+Gala's Lightning Storm, saved a vsync after the monster-pick probe rewrote
+Koru's queue, so they score alike to the block. Sweeping the walked-back pose
+through `LEGAIA_RC_ENV_OVERRIDE` (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`) puts the
+best yaw on the walk's own `3595` (`.906`; `25` either side `.84` / `.85`), and
+the best depth near `6125` against the walk's `5998`, a rise to `.921` and no
+further: the focus Y and `TR.y` are sharp at the walk's values. What the
+sweep leaves is the ice crystals behind Koru and the mist band, both standing
+a few rows higher in the engine than Koru does, so the rest of that pass's
+pose is not one component the RAM still holds.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and

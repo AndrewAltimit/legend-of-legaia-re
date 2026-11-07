@@ -13,7 +13,7 @@ use legaia_engine_battle::battle_steal::{
 };
 use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
 use legaia_game_tables::steal_table::StealTable;
-use legaia_retail_exec::{RETURN_SENTINEL, Stop};
+use psx_retail_exec::{RETURN_SENTINEL, Stop};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 

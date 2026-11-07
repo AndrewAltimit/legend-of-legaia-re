@@ -12,8 +12,8 @@
 
 use super::*;
 use legaia_engine_camera::projection::{BATTLE_WORLD_SCALE, BattleCamPose, battle_vp};
-use legaia_ram_image::extract::PSX_RAM_KSEG0;
-use legaia_ram_image::prim_pool::{self, Prim};
+use psx_ram_image::extract::PSX_RAM_KSEG0;
+use psx_ram_image::prim_pool::{self, Prim};
 
 /// The floor grid's texture address (`77c0c0c0 000dc0df ..`, the emitter's
 /// literal UV words).

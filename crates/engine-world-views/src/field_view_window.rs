@@ -36,6 +36,23 @@ pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> boo
             || framing_is_retail(camera))
 }
 
+/// The field ground's depth rule for this frame, the word both play hosts
+/// stage for their ground shaders (`Renderer::set_field_ground_drop`, the
+/// play page's `setGroundDrop`): `None` keeps retail's ordering-table
+/// buckets, `Some(drop)` depth-tests each flat bucketed cell as the plane
+/// `drop` units below it
+/// ([`legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP`]).
+///
+/// The buckets hold at retail's vantage ([`retail_vantage`]) and in every
+/// mode but the field, whose ground mesh is the only one that carries them.
+/// Off that vantage - the default `Far` preset, the drag / tilt / zoom
+/// knobs, `F3` - the camera sees under-floor faces retail's camera never
+/// frames, which the buckets would paint over the ground.
+pub fn field_ground_drop(world: &World, camera: &Camera, debug_camera: bool) -> Option<f32> {
+    (world.mode == SceneMode::Field && !retail_vantage(world, camera, debug_camera))
+        .then_some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP)
+}
+
 /// This frame's cell rectangle, or `None` when the host should draw the whole
 /// map - the one entry point both play hosts ask.
 ///
@@ -187,6 +204,26 @@ mod tests {
             assert!(retail_vantage(&world, &c, false), "the phase camera");
             world.mode = SceneMode::Field;
         }
+    }
+
+    /// The ground keeps retail's buckets at retail's vantage and off the
+    /// field, and takes the dropped floor on any other field frame.
+    #[test]
+    fn the_ground_drops_only_off_retail_vantage_on_the_field() {
+        use legaia_engine_camera::camera_distance::CameraDistance;
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let retail = Camera::default();
+        assert_eq!(field_ground_drop(&world, &retail, false), None);
+        let drop = Some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP);
+        assert_eq!(field_ground_drop(&world, &retail, true), drop, "F3");
+        let mut far = Camera::default();
+        far.distance = CameraDistance::Far;
+        assert_eq!(field_ground_drop(&world, &far, false), drop);
+        world.mode = SceneMode::Battle;
+        assert_eq!(field_ground_drop(&world, &far, false), None);
+        world.mode = SceneMode::WorldMap;
+        assert_eq!(field_ground_drop(&world, &far, false), None);
     }
 
     #[test]

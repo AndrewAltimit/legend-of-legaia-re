@@ -67,6 +67,7 @@ impl SceneHost {
             expansion_collision: None,
             arrival_catalog: None,
             pending_picker_arrivals: None,
+            pending_picker_override: None,
             picker_seat: None,
             scene_destinations: Vec::new(),
             field_triggers: (Vec::new(), Vec::new()),

@@ -151,7 +151,7 @@ impl<S: AudioSink> AudioDirector<S> {
         self.audio.play_xa_shout(
             pcm,
             sample_rate,
-            legaia_xa::Channels::Mono,
+            psx_xa::Channels::Mono,
             XA_CUE_GAIN,
             legaia_engine_audio::xa_start_delay(u32::from(channel), false),
         );
@@ -346,9 +346,9 @@ impl<S: AudioSink> AudioDirector<S> {
             clip.pcm.len()
         }) as u32;
         let channels = if clip.stereo {
-            legaia_xa::Channels::Stereo
+            psx_xa::Channels::Stereo
         } else {
-            legaia_xa::Channels::Mono
+            psx_xa::Channels::Mono
         };
         self.audio.play_xa_shout(
             clip.pcm,
@@ -456,7 +456,7 @@ impl<S: AudioSink> AudioDirector<S> {
 mod tests {
     use super::*;
     use legaia_engine_audio::TestAudioSink;
-    use legaia_xa::demux::{
+    use psx_xa::demux::{
         AUDIO_BYTES_PER_SECTOR, RAW_SECTOR_BYTES, SUBHEADER_OFFSET, USER_DATA_OFFSET,
     };
 

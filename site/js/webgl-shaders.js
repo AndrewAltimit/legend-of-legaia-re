@@ -511,6 +511,14 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
  * into the ordering table's fixed far bucket, so every other primitive
  * paints over it; a sloped such cell carries a swapped x pair (fa.x > fa.z).
  * Off the overworld only (u_curve 0); the FS moves the marked depth. */
+/* The field ground's depth rule off retail's vantage - the twin of
+ * engine-render's ground_drop word (field_view_window::field_ground_drop,
+ * play_render_ground_drop -> setGroundDrop). 0 (the GL default, and every
+ * page but the play page) keeps the buckets below; a drop depth-tests each
+ * flat bucketed cell as the plane that many units under it
+ * (fieldDroppedFloorW), so a face buried under the floor does not paint
+ * over it from a camera retail never had. */
+uniform float u_ground_drop;
 bool fieldFarBucket(vec4 fa) {
   return u_curve <= 0.0 && fa.x > fa.z;
 }
@@ -518,7 +526,7 @@ bool fieldFarBucket(vec4 fa) {
  * the same far slice, so a decal authored under the floor plane paints over
  * it as it does over retail's far bucket (engine-scene field_ground::flat_refs). */
 bool fieldFlatFarBucket(vec4 fa) {
-  return u_curve <= 0.0 && fa.y > fa.w && fa.x <= fa.z;
+  return u_curve <= 0.0 && u_ground_drop <= 0.0 && fa.y > fa.w && fa.x <= fa.z;
 }
 
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
@@ -543,8 +551,34 @@ vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
  * the base matrix's scale 6. The representative w, or -1 where the vertex
  * keeps its per-pixel depth. Off the overworld only (u_curve 0). */
 const float FIELD_SZ_PER_W = 6.0;
+/* The eye of projection m in its object space: the point its clip x, y and w
+ * rows all map to zero - engine-render's eye_of_matrix. */
+vec3 eyeOfMatrix(mat4 m) {
+  vec4 r0 = vec4(m[0][0], m[1][0], m[2][0], m[3][0]);
+  vec4 r1 = vec4(m[0][1], m[1][1], m[2][1], m[3][1]);
+  vec4 r3 = vec4(m[0][3], m[1][3], m[2][3], m[3][3]);
+  vec3 c13 = cross(r1.xyz, r3.xyz);
+  float det = dot(r0.xyz, c13);
+  if (abs(det) < 1.0e-20) return vec3(0.0);
+  return -(r0.w * c13 + r1.w * cross(r3.xyz, r0.xyz) + r3.w * cross(r0.xyz, r1.xyz)) / det;
+}
+/* Off retail's vantage (u_ground_drop > 0): the factor a flat bucketed cell's
+ * view depth takes so it is depth-tested as the plane u_ground_drop units
+ * below it along each pixel's ray, (h + drop) / h for an eye h above the
+ * floor (legaia_engine_scene::field_ground::dropped_floor_w, engine-render's
+ * field_dropped_floor_depth); -1 on any other vertex. A sloped far-bucket
+ * cell keeps the far slice, a sloped sorted cell its own depth. */
+float fieldDroppedFloorScale(mat4 m, vec4 fa, vec4 fb) {
+  if (u_ground_drop <= 0.0 || u_curve > 0.0) return -1.0;
+  bool flatFar = fa.y > fa.w && fa.x <= fa.z;
+  bool sorted = fa.z > fa.x && fa.w > fa.y;
+  if (!(flatFar || sorted)) return -1.0;
+  if (fb.x != fb.y || fb.x != fb.z || fb.x != fb.w) return -1.0;
+  float h = abs(eyeOfMatrix(m).y - fb.x);
+  return (h + u_ground_drop) / max(h, 1.0);
+}
 float fieldSortedCellW(mat4 m, vec4 fa, vec4 fb) {
-  if (u_curve > 0.0 || fa.z <= fa.x || fa.w <= fa.y) return -1.0;
+  if (u_curve > 0.0 || u_ground_drop > 0.0 || fa.z <= fa.x || fa.w <= fa.y) return -1.0;
   float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
   float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
   float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
@@ -700,6 +734,15 @@ void main() {
   /* A ground cell carries its own bucket (above, or the far bucket). */
   if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
+  /* Off retail's vantage a flat bucketed cell is depth-tested as the floor a
+   * few units lower (fieldDroppedFloorScale); the scale is constant over the
+   * cell, so the per-corner depth interpolates exactly. */
+  float dropS = fieldDroppedFloorScale(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  if (dropS > 0.0 && gl_Position.w > 0.0) {
+    vec2 dab = depthAffine(u_mvp * u_model);
+    v_depth_w = gl_Position.w * dropS;
+    gl_Position.z = (dab.x + dab.y / v_depth_w) * gl_Position.w;
+  }
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
   v_normal = a_normal;

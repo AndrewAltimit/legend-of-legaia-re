@@ -21,7 +21,7 @@ legaia-overlay-images.workspace = true
 
 [dev-dependencies]
 legaia-prot.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 
 [[test]]
 name = "integration"

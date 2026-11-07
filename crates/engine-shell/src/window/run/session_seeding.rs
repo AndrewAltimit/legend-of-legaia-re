@@ -389,6 +389,23 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             Some(legaia_engine_battle_loop::frame_clock::RetailStepTrack::parse(&text));
     }
 
+    // `LEGAIA_SEAT_DEATH_GAME_DEAL=a,b,c,d`: a capture's dealt Death Game
+    // table, past the arm that dealt it (the retail-compare seed).
+    if let Ok(v) = std::env::var("LEGAIA_SEAT_DEATH_GAME_DEAL") {
+        let t: Vec<u8> = v.split(',').filter_map(|w| w.trim().parse().ok()).collect();
+        if let Ok(table) = <[u8; 4]>::try_from(t) {
+            world.battle.death_game_deal_seat = Some(table);
+        }
+    }
+    // `LEGAIA_CAST_RAND_TRACK=<file>` (the cast-sequence oracle's
+    // `--rand-track`): seat each band pass on retail's `rand()` word.
+    if let Some(text) =
+        std::env::var_os("LEGAIA_CAST_RAND_TRACK").and_then(|p| std::fs::read_to_string(p).ok())
+    {
+        world.battle.retail_rand_track =
+            Some(legaia_engine_battle_loop::frame_clock::RetailRandTrack::parse(&text));
+    }
+
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast

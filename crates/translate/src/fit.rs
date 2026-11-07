@@ -206,9 +206,9 @@ fn grow_and_measure(man: &SceneManText, edits: &[TextEdit]) -> GrowFit {
     if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
         return GrowFit::Structural;
     }
-    let best = legaia_lzs::compress(&grown)
+    let best = psx_lzs::compress(&grown)
         .len()
-        .min(legaia_lzs::compress_optimal(&grown).len());
+        .min(psx_lzs::compress_optimal(&grown).len());
     if best <= man.compressed_budget {
         GrowFit::Fit
     } else {

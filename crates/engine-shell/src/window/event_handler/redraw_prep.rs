@@ -354,6 +354,14 @@ impl PlayWindowApp {
                 self.tick_no >= sc.capture_tick
             }
         });
+        // Capture harness: a field view off retail's framing
+        // (`LEGAIA_CAPTURE_FIELD_KNOBS`), held on every field frame.
+        if let Some([orbit, tilt, zoom]) = self.screenshot.as_ref().and_then(|sc| sc.field_knobs)
+            && self.session.host.world.mode == SceneMode::Field
+        {
+            let cam = &mut self.session.camera;
+            (cam.manual_orbit, cam.manual_tilt, cam.manual_zoom) = (orbit, tilt, zoom);
+        }
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
             && self.session.host.world.mode == SceneMode::Battle
             && capture_frame
@@ -370,6 +378,19 @@ impl PlayWindowApp {
             && self.session.host.world.mode == SceneMode::Battle
         {
             self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
+            // A film that runs on from the capture's gate
+            // (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`) lets go of the angle there:
+            // retail's frame driver winds it on every frame after
+            // (`World::tick_battle_backdrop_spin`), and held it stood the sky
+            // still behind the whole strike.
+            // The gate itself, not the capture frame: a film forces its
+            // capture tick past the run (`LEGAIA_DIAG_CAPTURE_TICK`).
+            if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+                && self.capture_gate_met()
+                && let Some(sc) = self.screenshot.as_mut()
+            {
+                sc.battle_backdrop_yaw = None;
+            }
         }
         // ... and, once a cast capture's gate holds, the summon close-up's
         // accumulator (`PhaseGate::accum_align`).

@@ -16,6 +16,13 @@ honest: an evidence grade on every claim, a register of disproved readings, a
 coverage denominator taken from the original's data rather than from the work
 done so far, and runs that replay bit for bit.
 
+A static recompilation inherits retail behaviour by running the original's
+translated code; a reimplementation runs none of it, so its fidelity exists
+only as far as it is measured, and this loop is that measurement. The same
+loop also serves a decompilation or a recomp as a regression oracle, since it
+asks nothing about how the engine under test was built
+([three ways to port a game](../porting-by-reimplementation.md#three-ways-to-port-a-game)).
+
 The parts that read emulator states and disc images are reusable code;
 [reusing for other PS1 games](reusing-for-other-ps1-games.md) says which crates
 carry and runs them on a made-up game in its worked example.
@@ -36,7 +43,7 @@ project keeps immutable copies under a fingerprint name and a manifest that
 maps a human label to the fingerprint, the scene it shows, how it was made and
 anything done to it
 ([save-state library](pcsx-redux-automation.md#save-state-library-immutable-backups),
-the manifest schema in `legaia_ram_image::scenarios`).
+the manifest schema in `psx_ram_image::scenarios`).
 
 **Record what was done to the machine.** A state made after a debugger poke,
 or on a patched disc, is not the original's behaviour. The manifest names the

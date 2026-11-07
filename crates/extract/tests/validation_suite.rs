@@ -11,9 +11,9 @@ use std::path::PathBuf;
 
 use legaia_container_formats::{AssetType, parse_streaming};
 use legaia_disc_audit::categorize;
-use legaia_iso::iso9660;
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
 use legaia_prot::archive::Archive;
+use psx_iso::iso9660;
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
 
 // ============================================================================
 // Pinned baselines (NA SCUS-94254, project author's dump)
@@ -380,7 +380,7 @@ fn validation_suite_full_pipeline() {
         archive
             .read_entry(entry, &mut entry_buf)
             .expect("read entry");
-        let Ok(decoded) = legaia_lzs::decompress_container_strict(&entry_buf) else {
+        let Ok(decoded) = psx_lzs::decompress_container_strict(&entry_buf) else {
             continue;
         };
         let total: usize = decoded.iter().map(|d| d.len()).sum();

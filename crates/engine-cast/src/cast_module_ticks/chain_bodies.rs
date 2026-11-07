@@ -408,7 +408,9 @@ pub fn run_chain_body(
         ctx.ctx_0d = 0;
     }
     match arm.effect {
-        Some(ChainEffect::MarkAndStealTurn { flag, .. }) if victim.hp != 0 => {
+        Some(ChainEffect::MarkAndStealTurn { flag, .. })
+            if victim.hp != 0 && !victim.numb_guard =>
+        {
             victim.flags |= flag;
             out.refund = steal_turn(ctx, victim);
         }
@@ -601,9 +603,10 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
 /// The camera arms, the seat hides and the records are
-/// `cast_module_camera::hyper_lightning_camera`. Not ported: the packet arms,
-/// arm 7's per-hit shots and the four-hit split (the fold lands the cast's
-/// outcome as one). Countdowns:
+/// `cast_module_camera::hyper_lightning_camera`, which also paces arm 7's
+/// hits and re-cuts to the victim on each. The four hits are the band's
+/// ([`HYPER_LIGHTNING_HITS`]; the fold owes the cast nothing). Not ported: the
+/// packet arms. Countdowns:
 /// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
 /// PORT: FUN_801F69D8 (PROT 0937; phase chain + caster staging; packet arms unported)
@@ -734,6 +737,97 @@ pub const SPORE_GAS_SHAPE: CastDamageShape = CastDamageShape {
     powers: &[0x60],
 };
 
+/// PROT 0937's one wrapper site, `FUN_801DD4B0(0x26A)` at `0x801F76AC`, which
+/// arm 7's four hits share.
+pub const HYPER_LIGHTNING_SHAPE: CastDamageShape = CastDamageShape {
+    prot_entry: 937,
+    routine: 0x801F_69D8,
+    wrapper: CastWrapper::Respect,
+    never_kills: false,
+    powers: &[0x26A],
+};
+
+/// A capture body that splits its cast into several wrapper hits on one
+/// victim, each rolled for real and cut to a share: the band lands every hit
+/// itself ([`split_hits_for`]) and the fold owes the cast nothing. Each hit
+/// rolls the site, keeps `roll / divisor`, pushes that share as its popup
+/// (`FUN_801F44A0` ahead of the clamp), clamps it to `HP - 1` on the hits
+/// below [`Self::spares_below`] and to the live HP after, writes HP and the
+/// bar (`+0x10`), stages the hit's reaction with `+0x1DC = 1` and turns the
+/// victim onto the caster. A victim already down, or Stoned, takes nothing.
+#[derive(Debug, Clone, Copy)]
+pub struct SplitHits {
+    pub shape: &'static CastDamageShape,
+    /// The tick body the hits are in.
+    pub body: u32,
+    /// The roll's divisor.
+    pub divisor: i32,
+    /// The hit count.
+    pub hits: u8,
+    /// Hits numbered below this clamp to `HP - 1`; `1` clamps none.
+    pub spares_below: u8,
+    /// Each hit's reaction, an index into the `+0x1EF..=+0x1F1` trio
+    /// (`2` the knockdown), hit 1 first. A hit that downs the victim stages
+    /// the knockdown whatever its row says.
+    pub reactions: [usize; 4],
+}
+
+impl SplitHits {
+    /// The share of `roll` hit `hit` lands on a victim at `hp`, after the
+    /// clamp: `roll / divisor`, at most `hp - 1` on a spared hit, at most
+    /// `hp` otherwise (`0x801F76E0..0x801F7718` on PROT 0937).
+    pub fn landed(&self, hit: u8, roll: i32, hp: u16) -> i32 {
+        let share = roll.max(0) / self.divisor;
+        let cap = if hit < self.spares_below {
+            i32::from(hp) - 1
+        } else {
+            i32::from(hp)
+        };
+        share.min(cap.max(0))
+    }
+}
+
+/// PROT 0937 `0x4C` arm 7: four hits a quarter of the roll each, hits 1..3
+/// clamped to `HP - 1` (`sb zero,0x8007B64C` beside the cap,
+/// `0x801F76E0..0x801F7700`) and hit 4 to HP; hits 1..3 stage `+0x1EF`, hit 4
+/// `+0x1F1` (`0x801F7738..0x801F775C`).
+pub const HYPER_LIGHTNING_HITS: SplitHits = SplitHits {
+    shape: &HYPER_LIGHTNING_SHAPE,
+    body: 0x801F_69D8,
+    divisor: 4,
+    hits: 4,
+    spares_below: 4,
+    reactions: [0, 0, 0, 2],
+};
+
+/// PROT 0939 `0x4F` arm 4: four hits a third of the roll each, none spared,
+/// staging `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` ([`spore_gas_reaction`]).
+pub const SPORE_GAS_HITS: SplitHits = SplitHits {
+    shape: &SPORE_GAS_SHAPE,
+    body: 0x801F_69D8,
+    divisor: 3,
+    hits: 4,
+    spares_below: 1,
+    reactions: [
+        spore_gas_reaction(1),
+        spore_gas_reaction(2),
+        spore_gas_reaction(3),
+        spore_gas_reaction(4),
+    ],
+};
+
+/// The split-hit rows ([`SplitHits`]) by PROT entry and tick body; a
+/// single-body module's body may be passed as
+/// [`crate::cast_module_camera::SINGLE_BODY`].
+pub fn split_hits_for(prot_entry: u32, body: u32) -> Option<&'static SplitHits> {
+    [&HYPER_LIGHTNING_HITS, &SPORE_GAS_HITS]
+        .into_iter()
+        .find(|h| {
+            h.shape.prot_entry == prot_entry
+                && (h.body == body || body == crate::cast_module_camera::SINGLE_BODY)
+        })
+}
+
 /// PROT 0939 hit `k`'s reaction: index into the `+0x1EF..=+0x1F1` trio, hits 1
 /// and 2 the first, hit 3 the second, hit 4 the knockdown
 /// (`0x801F71A8`, `0x801F7224`, `0x801F72BC`, `0x801F73A4`).
@@ -769,13 +863,14 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
 /// its own reaction. Arm 6 is terminal: `ctx[+0x0D] = 0`, busy cleared at
 /// `0x801F7CFC`.
 ///
-/// Rates left out under the module's rate rule: the caster ends at `2`
-/// (`+0x21D = 4` at `0x801F6B50`, `2` at `0x801F6DEC`) with no restore in the
-/// body. The camera arms, the vortex's position stores and the per-arm records
-/// are `cast_module_camera::dark_typhoon_camera` and its spawn tables, the
-/// party-row moves `World::dark_typhoon_party_swirl`. Not ported: the packet
-/// arms, the colour stores into the arm-3 records and the monster-AI block
-/// bytes `+0x84..+0x86`. Countdowns: `capture_countdown::POWER_UP_AA`.
+/// The caster's rates (`+0x21D = 4` at `0x801F6B50` and on every arm-1 pass,
+/// `2` at `0x801F6DEC`, no restore in the body: the Done band's
+/// `FUN_801E93C8` puts it back), its tint, its clip-9 park window
+/// (`+0x84..+0x86` of the action entry) and the vortex's arm-3 / arm-4 stores
+/// are `cast_module_camera::dark_typhoon_camera`, beside the camera arms, the
+/// vortex's position stores and the per-arm records; the party-row moves are
+/// `World::dark_typhoon_party_swirl`. Not ported: the packet arms.
+/// Countdowns: `capture_countdown::POWER_UP_AA`.
 ///
 /// PORT: FUN_801F69F4 (PROT 0942; the `0xAA` arm's phase chain + caster staging; packet arms unported)
 pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
@@ -791,7 +886,8 @@ pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
         arm(3, 0x801F_715C, Advance).stages(&[stage(Caster, Keep, Bump, 0x801F_7348)]),
         arm(4, 0x801F_73F8, Advance)
             .stages(&[reaction(Bump, 0x801F_77EC)])
-            .hit(0x801F_774C),
+            .hit(0x801F_774C)
+            .hit_rate(4), // `0x801F7810`
         arm(5, 0x801F_7A2C, Advance),
         arm(6, 0x801F_7BAC, Finish).clears_0d(),
     ],
@@ -886,14 +982,15 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// Arm 3 ramps `0x801F86A8` and stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`,
 /// restores every live seat and returns zero.
 ///
-/// The port runs the mark and the steal on a live victim, read after the
-/// fold has landed the hit as retail reads it. It cannot see the record's
-/// two immunity bits.
+/// The port runs the mark and the steal on a live victim without either
+/// immunity bit ([`CastActorState::numb_guard`]), read after the fold has
+/// landed the hit as retail reads it. The marked victim's caption (its
+/// character's line into `0x800774AC`, then `FUN_801D8DE8(0x5B, 0)`,
+/// `0x801F6FC8..0x801F7050`) is `World`'s.
 ///
 /// The camera arms, the seat hides and the records are
-/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms,
-/// the per-character effect pointer (`0x800774AC`) and
-/// `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
+/// `cast_module_camera::paralyzing_wave_camera`. Not ported: the packet arms.
+/// Countdowns:
 /// `capture_countdown::PARALYZING_WAVE`; arm 3's settle:
 /// [`ChainSettle::Victim`].
 ///
@@ -1459,6 +1556,44 @@ mod chain_tests {
         assert_eq!(v.init_key, 0);
         assert_eq!(ctx.turn_cursor, 1);
         assert_eq!(ctx.phase, 3);
+    }
+
+    /// ... but not one carrying Numb Guard or Master Guard
+    /// (`0x801F6F80..0x801F6F98`): `battle_jou_iota_v3_paralyzing_wave_mid_cast`'s
+    /// party all wear `0x10000000`, and retail marks no one.
+    #[test]
+    fn water_hazard_75_spares_a_guarded_victim() {
+        let mut ctx = CastModuleCtx {
+            phase: 2,
+            ..Default::default()
+        };
+        let (mut c, mut s) = (actor(), actor());
+        let mut v = CastActorState {
+            init_key: 5,
+            numb_guard: true,
+            ..actor()
+        };
+        let t = run_chain_body(&WATER_HAZARD_75_CHAIN, &mut ctx, &mut c, &mut v, &mut s, 0);
+        assert_eq!(t.refund, None);
+        assert_eq!(v.flags & 0x0400, 0);
+        assert_eq!(v.init_key, 5);
+        assert_eq!(ctx.phase, 3);
+    }
+
+    /// PROT 0937's four quarters: hits 1..3 leave the victim a point, the
+    /// fourth may down it; PROT 0939 spares no hit.
+    #[test]
+    fn split_hits_cut_and_clamp_each_share() {
+        let h = &HYPER_LIGHTNING_HITS;
+        assert_eq!(h.landed(1, 400, 9999), 100);
+        assert_eq!(h.landed(1, 400, 50), 49);
+        assert_eq!(h.landed(3, 400, 1), 0);
+        assert_eq!(h.landed(4, 400, 50), 50);
+        assert_eq!(SPORE_GAS_HITS.landed(1, 300, 50), 50);
+        assert_eq!(SPORE_GAS_HITS.landed(2, 300, 9999), 100);
+        assert_eq!(split_hits_for(937, 0x801F_69D8).map(|h| h.divisor), Some(4));
+        assert_eq!(split_hits_for(939, 0).map(|h| h.divisor), Some(3));
+        assert!(split_hits_for(936, 0x801F_69D8).is_none());
     }
 
     /// Bodies are keyed by `(entry, body)`: six images share `0x801F69D8`.

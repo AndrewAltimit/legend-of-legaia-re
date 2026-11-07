@@ -930,7 +930,9 @@ impl RetailBattle {
                             std::array::from_fn(|k| summon[k].or(pull_in[k]))
                         }),
                         {
-                            let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
+                            let mut shift = walker_end_shift(ram, ctx)
+                                .or_else(|| arrival_end_shift_confirmed(ram, ctx))
+                                .unwrap_or([0; 9]);
                             shift[1] = walk_heading(ram, ctx)
                                 .map(|h| h.end_shift)
                                 .or_else(|| clip_clock_end_shift(ram, ctx))
@@ -1163,6 +1165,9 @@ impl RetailBattle {
             sound_option: game_anchors::u8_at(ram, SOUND_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             ai_counter: game_anchors::u32_at(ram, 0x801C_8FE4),
+            death_game_table: std::array::from_fn(|i| {
+                game_anchors::u32_at(ram, DEATH_GAME_TABLE + 4 * i as u32)
+            }),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
@@ -1585,3 +1590,7 @@ pub(super) fn arrival_columns(ram: &[u8]) -> Option<Option<u16>> {
         (level - rate * lag).clamp(0, 0x1000) as u16
     }))
 }
+
+/// PROT 0957's dealt card table (`lui 0x8020` / `-0x5D78`, `0x801F7BBC`): four
+/// words, cleared and dealt by Death Game's arm 0.
+const DEATH_GAME_TABLE: u32 = 0x801F_A288;

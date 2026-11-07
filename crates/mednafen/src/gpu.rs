@@ -10,7 +10,7 @@
 //!
 //! VRAM is 1024x512 16-bit pixels (BGR555 + STP). The byte layout is
 //! linear: pixel `(x, y)` lives at `bytes[(y * 1024 + x) * 2 .. + 2]`,
-//! little-endian. This matches `legaia_tim::Vram::pixel(x, y)`.
+//! little-endian. This matches `psx_tim::Vram::pixel(x, y)`.
 
 use crate::container::SaveState;
 

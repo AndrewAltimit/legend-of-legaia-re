@@ -68,15 +68,15 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
     let slot0_ts = read_u32(table, 8).unwrap();
     let slot0_off = read_u32(table, 12).unwrap() as usize;
     assert_eq!(slot0_ts >> 24, 0x01, "slot 0 is the TIM_LIST");
-    let tims = legaia_lzs::decompress(&table[slot0_off..], (slot0_ts & 0xFF_FFFF) as usize)
+    let tims = psx_lzs::decompress(&table[slot0_off..], (slot0_ts & 0xFF_FFFF) as usize)
         .expect("slot 0 LZS");
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let count = read_u32(&tims, 0).unwrap() as usize;
     let mut uploaded = 0;
     for k in 0..count {
         let bo = read_u32(&tims, 4 + k * 4).unwrap() as usize * 4;
         if let Some(src) = tims.get(bo..)
-            && let Ok(tim) = legaia_tim::parse(src)
+            && let Ok(tim) = psx_tim::parse(src)
         {
             vram.upload_tim(&tim);
             uploaded += 1;
@@ -88,7 +88,7 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
     let slot1_ts = read_u32(table, 16).unwrap();
     let slot1_off = read_u32(table, 20).unwrap() as usize;
     assert_eq!(slot1_ts >> 24, 0x02, "slot 1 is the TMD pack");
-    let pack = legaia_lzs::decompress(&table[slot1_off..], (slot1_ts & 0xFF_FFFF) as usize)
+    let pack = psx_lzs::decompress(&table[slot1_off..], (slot1_ts & 0xFF_FFFF) as usize)
         .expect("slot 1 LZS");
     let nslots = read_u32(&pack, 0).unwrap() as usize;
     assert!(

@@ -7,7 +7,10 @@
 //!   arrivals (or the arrival's bounded wall rescue): standable, clear of the
 //!   collision walls, and still in the picked scene after the first ticks (a
 //!   seat on an exit trigger would warp straight out);
-//! - a scene nothing leads into keeps the cold-entry resolver's seat.
+//! - a scene nothing leads into keeps the cold-entry resolver's seat;
+//! - a scene with a `PICKER_SEAT_OVERRIDES` row (a reviewed seat, for the
+//!   scenes whose ranked arrival or cold seat is unplayable) seats there, on
+//!   a standable tile that is not walled in, and stays in the scene.
 //!
 //! The scenes that fall back are printed, not pinned: the list is the disc's
 //! property, and the sweep's job is that no arrival seat is out of bounds.
@@ -17,7 +20,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_scene::scene::is_world_map_scene;
-use legaia_engine_scene_host::scene_host::{PickerSeat, SceneHost};
+use legaia_engine_scene_host::scene_host::{PICKER_SEAT_OVERRIDES, PickerSeat, SceneHost};
 
 fn disc_path() -> Option<PathBuf> {
     let p = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -52,6 +55,7 @@ fn picker_entry_seats_on_a_standable_door_arrival() {
     println!("arrival catalog built in {:?}", t0.elapsed());
     let mut seated = 0usize;
     let mut fallbacks: Vec<String> = Vec::new();
+    let mut overridden: Vec<String> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
     for scene in &picker {
         // A fresh host per scene: a scene's entry script can leave story
@@ -109,6 +113,45 @@ fn picker_entry_seats_on_a_standable_door_arrival() {
                 );
                 seated += 1;
             }
+            Some(PickerSeat::Override { rule, seat }) => {
+                let ms = &h.world.actors[0].move_state;
+                if (ms.world_x, ms.world_z) != seat {
+                    failures.push(format!(
+                        "{scene}: player at ({},{}) not on the override seat {seat:?}",
+                        ms.world_x, ms.world_z
+                    ));
+                }
+                // Standing on its floor from the first frame, not gliding
+                // onto it.
+                let floor = h
+                    .world
+                    .sample_field_floor_height(i32::from(seat.0), i32::from(seat.1));
+                if i32::from(ms.world_y) != floor {
+                    failures.push(format!(
+                        "{scene}: override seat y {} is not its floor {floor}",
+                        ms.world_y
+                    ));
+                }
+                if h.world.field_tile_is_wall(seat.0, seat.1) {
+                    failures.push(format!("{scene}: override seat {seat:?} is a wall"));
+                }
+                if (0..4).all(|d| h.world.field_dir_blocked(seat.0, seat.1, d)) {
+                    failures.push(format!("{scene}: override seat {seat:?} is walled in"));
+                }
+                for _ in 0..SETTLE_TICKS {
+                    if h.tick().is_err() {
+                        break;
+                    }
+                }
+                let now = h.scene.as_ref().map(|s| s.name.clone()).unwrap_or_default();
+                if now != *scene {
+                    failures.push(format!(
+                        "{scene}: left for '{now}' within {SETTLE_TICKS} ticks of the override seat {seat:?}"
+                    ));
+                }
+                println!("[{scene}] OVERRIDE seat {seat:?} <- {rule:?}");
+                overridden.push(scene.clone());
+            }
             Some(PickerSeat::ColdFallback { arrivals, seat }) => {
                 println!("[{scene}] FALLBACK cold seat {seat:?} ({arrivals} arrival(s) rejected)");
                 fallbacks.push(format!("{scene} ({arrivals})"));
@@ -122,6 +165,15 @@ fn picker_entry_seats_on_a_standable_door_arrival() {
         fallbacks.join(", ")
     );
     assert!(seated > 0, "no picker scene seated on a door arrival");
+    // Every reviewed row took: an override whose arrival the disc no longer
+    // carries would fall back to the ranked rule silently.
+    for (scene, _) in PICKER_SEAT_OVERRIDES {
+        if picker.iter().any(|s| s == scene) && !overridden.iter().any(|s| s == scene) {
+            failures.push(format!(
+                "{scene}: its PICKER_SEAT_OVERRIDES row did not seat it"
+            ));
+        }
+    }
     assert!(
         failures.is_empty(),
         "picker seat failures:\n{}",

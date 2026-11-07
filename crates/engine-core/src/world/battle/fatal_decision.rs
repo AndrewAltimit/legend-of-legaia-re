@@ -399,25 +399,20 @@ impl World {
     /// and names it in the message bar; a miss says "no effect" and skips the
     /// reaction arm.
     fn fatal_steal(&mut self) -> bool {
-        let gate = self.next_rand();
-        let item = if gate == 0 {
-            None
-        } else {
-            let bag: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
-            let mut priced = [true; 256];
-            if let Some(data) = self.shops.item_shop_data.as_ref() {
-                for (id, cell) in priced.iter_mut().enumerate() {
-                    *cell = data.price(id as u8) != 0;
-                }
+        let bag: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
+        let mut priced = [true; 256];
+        if let Some(data) = self.shops.item_shop_data.as_ref() {
+            for (id, cell) in priced.iter_mut().enumerate() {
+                *cell = data.price(id as u8) != 0;
             }
-            legaia_engine_cast::cast_arm_ticks::steal_pick_bag_slot(
-                &bag,
-                None,
-                || self.next_rand(),
-                |id| priced[usize::from(id)],
-            )
-            .and_then(|s| bag.get(usize::from(s)).map(|&(id, _)| id))
-        };
+        }
+        let item = legaia_engine_cast::cast_arm_ticks::steal_party_draw(
+            &bag,
+            None,
+            || self.next_rand(),
+            |id| priced[usize::from(id)],
+        )
+        .and_then(|s| bag.get(usize::from(s)).map(|&(id, _)| id));
         self.battle_ctx.message_id = MESSAGE_BAR_ELEMENT;
         match item {
             Some(id) => {

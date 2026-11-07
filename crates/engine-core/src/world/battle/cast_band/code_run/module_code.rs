@@ -409,6 +409,9 @@ impl World {
             if let Some(v) = arm.ctx_278 {
                 ctx.ctx_278 = v;
             }
+            if let Some((clip, window)) = arm.caster_clip_window {
+                self.write_clip_loop_window(caster_slot, clip, window);
+            }
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
@@ -679,8 +682,13 @@ impl World {
         {
             if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
                 self.casting.module_hit_arm = Some(phase_in);
-                // PROT 0939's hits are its own, on their beat.
-                self.casting.module_skips_fold = entry == 939;
+                // A split cast's hits are its own, on their beat
+                // (PROT 0939's, PROT 0937's arm 7).
+                self.casting.module_skips_fold = ticks::split_hits_for(
+                    entry,
+                    body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                )
+                .is_some();
                 self.fold_pending_cast_at_rate(arm.hit_rate);
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
@@ -989,22 +997,19 @@ impl World {
                 (964, Some(ticks::ELEMENT_CHANGE_TICK)) => {
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
                     let last_roll = self.cast_element_change_last_roll();
-                    let mut rolls: Vec<u32> = Vec::new();
-                    if ctx.phase == 0 {
-                        for _ in 0..=ticks::ELEMENT_CHANGE_MAX_REROLLS {
-                            rolls.push(self.next_rand());
+                    // Arm 0 draws on demand, once and again while the draw
+                    // repeats the last one (`0x801F89F0` / `0x801F8A3C`); a
+                    // capture past arm 0 names the roll its arm accepted.
+                    let (step, outcome) = match self.battle.element_roll_seed.take() {
+                        Some(roll) if ctx.phase == 0 => {
+                            ticks::element_change_tick(&mut ctx, &mut seats, u8::MAX, || {
+                                u32::from(roll)
+                            })
                         }
-                    }
-                    // A capture past arm 0 names the roll its arm accepted.
-                    let (rolls, last_roll) = match self.battle.element_roll_seed.take() {
-                        Some(roll) if ctx.phase == 0 => (vec![u32::from(roll)], u8::MAX),
-                        _ => (rolls, last_roll),
+                        _ => ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {
+                            self.next_rand()
+                        }),
                     };
-                    let mut cursor = rolls.into_iter();
-                    let (step, outcome) =
-                        ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {
-                            cursor.next().unwrap_or(0)
-                        });
                     self.write_cast_seat_row(&seats);
                     if let Some(out) = outcome {
                         self.battle
@@ -1043,14 +1048,13 @@ impl World {
                 (940, Some(arms::GLARE_DIVIDE_SPLIT_TICK)) => {
                     let ext = self.cast_arm_ext_state(caster_slot);
                     let saved = self.casting.module_split_saved_target.unwrap_or(0);
-                    let roll = (ctx.phase == 2).then(|| self.next_rand());
                     let (step, split) = arms::glare_divide_split_tick(
                         &mut ctx,
                         &mut caster,
                         &ext,
                         spell_id,
                         saved,
-                        roll,
+                        || self.next_rand(),
                     );
                     if let Some(sp) = split {
                         self.casting.module_split_saved_target = Some(sp.saved_caster_target);
@@ -1161,36 +1165,26 @@ impl World {
                 }
                 (956, Some(arms::WATER_HAZARD_TICK)) => {
                     let code = caster.target_code;
-                    let rolls =
-                        self.cast_arm_sweep_rolls(&ctx, 956, arms::WATER_HAZARD_TICK, caster_slot);
-                    let status: Vec<(u8, u32)> = if ctx.phase == 2 {
-                        rolls.iter().map(|(s, _)| (*s, self.next_rand())).collect()
-                    } else {
-                        Vec::new()
-                    };
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
-                    let take = |seat: u8| {
-                        rolls
-                            .iter()
-                            .find(|(s, _)| *s == seat)
-                            .map(|(_, d)| *d)
-                            .unwrap_or(0)
-                    };
-                    let st = |seat: u8| {
-                        status
-                            .iter()
-                            .find(|(s, _)| *s == seat)
-                            .map(|(_, r)| *r)
-                            .unwrap_or(1)
-                    };
+                    // Each hit seat's damage and then its status draw, seat by
+                    // seat, as retail's sweep draws them, on either leg. The
+                    // kernel names retail seats; the roll takes engine slots.
+                    let shape = arms::arm_damage_shape_for(956, arms::WATER_HAZARD_TICK);
+                    let map = self.cast_seat_map();
                     let (step, hits) = arms::water_hazard_tick(
                         &mut ctx,
                         r_caster as u8,
                         code,
                         &mut caster,
                         &mut seats,
-                        take,
-                        st,
+                        |seat| {
+                            let damage = map
+                                .engine(seat)
+                                .zip(shape)
+                                .and_then(|(e, sh)| self.capture_module_roll(sh, caster_slot, e))
+                                .unwrap_or(0);
+                            (damage, self.next_rand())
+                        },
                     );
                     self.write_cast_seat_row(&seats);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
@@ -1251,6 +1245,8 @@ impl World {
                     } else {
                         0
                     };
+                    use super::super::presentation::{PARALYZING_WAVE_MARK, PARALYZING_WAVE_TICK};
+                    let marked_before = victim.flags & PARALYZING_WAVE_MARK != 0;
                     let t = ticks::run_chain_body(
                         chain,
                         &mut ctx,
@@ -1260,6 +1256,12 @@ impl World {
                         selector,
                     );
                     run.item_refund = t.refund;
+                    if (e, b) == (956, PARALYZING_WAVE_TICK)
+                        && !marked_before
+                        && victim.flags & PARALYZING_WAVE_MARK != 0
+                    {
+                        self.raise_paralyzing_wave_caption(victim_slot);
+                    }
                     Some(t.step)
                 }
                 // Every ported trampoline arm the band names. An arm whose
@@ -1353,11 +1355,18 @@ impl World {
                         904 => {
                             // Arm 12's cone gate is the host's: retail reads
                             // the ring's rim bearing and every seat's, and the
-                            // module only ever sees "in" or "out". The damage
-                            // magnitude stays the fold's, so an in-cone seat
-                            // gets a zero roll and the arm's presentation half
-                            // (render flag, reaction bits) runs.
+                            // module only ever sees "in" or "out". Each seat
+                            // the ray crosses takes the arm's own hit
+                            // (`FUN_801DD0AC(0x11, 7, seat)` at `0x801F7D38`):
+                            // a party cast rolls it here and folds nothing, so
+                            // every monster the sweep reaches is struck, as
+                            // retail's are (`theeder_summon_mid_cast`: seats 3,
+                            // 5 and 4 at vsyncs 783, 791 and 819). A monster's
+                            // cast of the id has no roll and keeps the fold.
                             let in_cone = cone_seats.clone();
+                            let party_cast = caster_slot < self.party.party_count;
+                            self.casting.module_skips_fold |= party_cast;
+                            let mut rolled: Vec<(u8, u32)> = Vec::new();
                             // Arm 4 seats the creature between the caster and
                             // the victim, facing the victim (`0x801F6EEC`).
                             // No later arm writes the seat's position, so it
@@ -1378,8 +1387,29 @@ impl World {
                                 who,
                                 geom,
                                 &mut fx,
-                                |seat| in_cone.contains(&seat).then_some(0),
+                                |seat| {
+                                    if !in_cone.contains(&seat) {
+                                        return None;
+                                    }
+                                    if !party_cast {
+                                        return Some(0);
+                                    }
+                                    let t = map.engine(seat)?;
+                                    let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                    rolled.push((t, roll));
+                                    Some(roll as i32)
+                                },
                             );
+                            for (t, amount) in rolled {
+                                self.battle.hit_fx.push(
+                                    legaia_engine_battle::battle_events::BattleHitFx {
+                                        target_slot: t,
+                                        amount: amount.min(u32::from(u16::MAX)) as u16,
+                                        is_heal: false,
+                                        is_crit: false,
+                                    },
+                                );
+                            }
                             self.casting.module_theeder = fx;
                             // Arm 7's shot is armed on the pass its clip wait
                             // lets through (`0x801F7274`).
@@ -1428,21 +1458,48 @@ impl World {
                             let finishing = ctx.phase == ticks_a::ZENOIR_FINISH_ARM
                                 && caster_slot < self.party.party_count;
                             self.casting.module_skips_fold |= caster_slot < self.party.party_count;
+                            // Arm 10's show loop: the seats within reach of
+                            // the creature, which stands on the victim's body
+                            // pair (`0x801F79E8..0x801F7A7C`), each seat's
+                            // ground pair against it.
+                            let reach: Vec<u8> = if ctx.phase == ticks_a::ZENOIR_BUMP_ARM {
+                                let creature = map
+                                    .engine(who.victim)
+                                    .and_then(|v| self.live_body_pair(usize::from(v)));
+                                (ticks::FIRST_MONSTER_SEAT..ticks_a::MONSTER_ROW_END)
+                                    .filter(|&r| {
+                                        let ground = map.engine(r).and_then(|t| {
+                                            let a = self.actors.get(usize::from(t))?;
+                                            Some((a.move_state.world_x, a.move_state.world_z))
+                                        });
+                                        matches!((creature, ground), (Some(c), Some(g))
+                                            if ticks_a::zenoir_bump_in_reach(c, g))
+                                    })
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            };
                             let mut rolled: Vec<(u8, u32)> = Vec::new();
-                            let out = ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |r| {
-                                if !finishing {
-                                    return None;
-                                }
-                                let t = map.engine(r)?;
-                                let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
-                                let site = if r == who.victim {
-                                    ticks_a::SERU_HIT_SITES[4]
-                                } else {
-                                    ticks_a::SERU_HIT_SITES[5]
-                                };
-                                rolled.push((t, roll * site.scale_num / site.scale_den));
-                                Some(roll as i32)
-                            });
+                            let out = ticks_a::zenoir_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                |r| reach.contains(&r),
+                                |r| {
+                                    if !finishing {
+                                        return None;
+                                    }
+                                    let t = map.engine(r)?;
+                                    let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                    let site = if r == who.victim {
+                                        ticks_a::SERU_HIT_SITES[4]
+                                    } else {
+                                        ticks_a::SERU_HIT_SITES[5]
+                                    };
+                                    rolled.push((t, roll * site.scale_num / site.scale_den));
+                                    Some(roll as i32)
+                                },
+                            );
                             for (t, amount) in rolled {
                                 self.battle.hit_fx.push(
                                     legaia_engine_battle::battle_events::BattleHitFx {
@@ -1838,6 +1895,17 @@ impl World {
                     let y = w.y.unwrap_or(part.state.world_y.wrapping_add(w.dy));
                     part.poke(0x14, x as u16);
                     part.poke(0x16, y as u16);
+                    if let Some(c) = w.colours {
+                        part.state.set_actor_u32(0xA0, c);
+                        part.state.set_actor_u32(0xA4, c);
+                    }
+                    if w.spin_84_shl != 0 {
+                        part.state.anim_84 =
+                            part.state.anim_84.wrapping_shl(u32::from(w.spin_84_shl));
+                    }
+                    if let Some(r) = w.level_rate {
+                        part.state.tween_src_x = r;
+                    }
                 }
             }
             if arm.hides_creature {
@@ -1912,6 +1980,20 @@ impl World {
                 && entry == 959
             {
                 self.casting.module_skips_fold = true;
+            }
+            // A director that paces a split cast's hits names each as it
+            // lands (PROT 0937's arm 7); the band rolls and applies it.
+            if let Some(hit) = arm.split_hit
+                && let Some(hits) = ticks::split_hits_for(
+                    entry,
+                    body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                )
+            {
+                self.land_split_hit(hits, hit, caster_slot, victim_slot);
+                // Hits short of the last clear the readout flag
+                // `0x8007B64C` beside their `HP - 1` cap: the cluster opens
+                // on the last.
+                self.battle.combo_cluster_held = hit < hits.spares_below;
             }
             if let Some(site) = arm.hit_site
                 && let Some(shape) = legaia_engine_cast::cast_module_ticks::damage_shape_for(entry)
@@ -2268,40 +2350,65 @@ impl World {
         }
     }
 
-    /// One of PROT 0939's four hits, `hit` counting from `1`
-    /// (`0x801F70B0..0x801F7400`): skipped on a dead or Stoned victim (the count
-    /// still moved), else `FUN_801DD4B0(0x60)` cut to a third and clamped, the
-    /// hit's reaction clip with `+0x1DC = 1`, its Rot roll behind the record's
-    /// immunity bits, and the victim turned on the caster. A dead victim takes
-    /// the knockdown and ends the count.
-    fn spore_gas_hit(&mut self, hit: u8, caster_slot: u8, victim_slot: u8) {
-        use legaia_engine_cast::cast_module_ticks as ticks;
-        const IMMUNE: u32 = 0x1100_0000;
+    /// One hit of a capture body's split cast ([`ticks::SplitHits`]): the
+    /// wrapper roll at the shared site, its share pushed as the popup, the
+    /// clamp, the HP and bar writes, the hit's reaction and the turn onto the
+    /// caster. `None` when the victim is down or Stoned (no roll is drawn);
+    /// otherwise whether the hit downed it.
+    fn land_split_hit(
+        &mut self,
+        hits: &legaia_engine_cast::cast_module_ticks::SplitHits,
+        hit: u8,
+        caster_slot: u8,
+        victim_slot: u8,
+    ) -> Option<bool> {
         let v = usize::from(victim_slot);
-        let Some(a) = self.actors.get(v) else {
-            return;
-        };
-        if a.battle.hp == 0 || self.battle.actor_is_petrified(victim_slot) {
-            return;
+        let hp = self.actors.get(v)?.battle.hp;
+        if hp == 0 || self.battle.actor_is_petrified(victim_slot) {
+            return None;
         }
-        let Some(roll) =
-            self.capture_module_roll_site(&ticks::SPORE_GAS_SHAPE, 0, caster_slot, victim_slot)
-        else {
-            return;
-        };
-        let roll = roll.max(0) / 3;
-        // The HP and bar writes of the hit arm; this body picks its own clip.
+        let roll = self.capture_module_roll_site(hits.shape, 0, caster_slot, victim_slot)?;
+        let share = roll.max(0) / hits.divisor;
+        let landed = hits.landed(hit, roll, hp);
+        // The HP and bar writes of the hit arm; the body picks its own clip.
         let staged = self.actors[v].battle.queued_anim;
-        self.apply_effect_child_hit(v, roll);
+        self.apply_effect_child_hit(v, landed);
         self.actors[v].battle.queued_anim = staged;
         self.battle
             .hit_fx
             .push(legaia_engine_battle::battle_events::BattleHitFx {
                 target_slot: victim_slot,
-                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                amount: share.clamp(0, i32::from(u16::MAX)) as u16,
                 is_heal: false,
                 is_crit: false,
             });
+        let dead = self.actors[v].battle.hp == 0;
+        let index = hits
+            .reactions
+            .get(usize::from(hit.saturating_sub(1)))
+            .copied()
+            .unwrap_or(2);
+        if let Some(clip) = self
+            .battle_reaction_map(v)
+            .map(|m| m[if dead { 2 } else { index }])
+        {
+            self.commit_battle_reaction_entry(v, clip);
+        }
+        self.turn_victim_to_caster(victim_slot, caster_slot);
+        Some(dead)
+    }
+
+    /// PROT 0939's hit `hit` (`1..=4`, [`ticks::SPORE_GAS_HITS`]), then its
+    /// Rot roll behind the record's two immunity bits (`+0x6BC & 0x11000000`).
+    /// A victim the hit downs ends the count.
+    fn spore_gas_hit(&mut self, hit: u8, caster_slot: u8, victim_slot: u8) {
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        const IMMUNE: u32 = 0x1100_0000;
+        let v = usize::from(victim_slot);
+        let Some(dead) = self.land_split_hit(&ticks::SPORE_GAS_HITS, hit, caster_slot, victim_slot)
+        else {
+            return;
+        };
         let party = victim_slot < self.party.party_count;
         let immune = party
             && self
@@ -2319,21 +2426,9 @@ impl World {
             );
             self.battle.status_effects.set_rot_limb(victim_slot, limb);
         }
-        let dead = self.actors[v].battle.hp == 0;
         if dead {
             self.casting.spore_gas_beat.hits = 4;
         }
-        let clip = self.battle_reaction_map(v).map(|m| {
-            m[if dead {
-                2
-            } else {
-                ticks::spore_gas_reaction(hit)
-            }]
-        });
-        if let Some(clip) = clip {
-            self.commit_battle_reaction_entry(v, clip);
-        }
-        self.turn_victim_to_caster(victim_slot, caster_slot);
     }
 
     /// [`Self::fold_pending_cast`] for a chain arm that stores a rate on each

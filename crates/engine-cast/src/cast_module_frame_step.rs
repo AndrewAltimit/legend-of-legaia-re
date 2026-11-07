@@ -258,6 +258,9 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
         0x4C,
         &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4), (7, 3)],
     ),
+    // kiss_of_death: arm 0 and the pull-in run at `4` under the lips, arm 5
+    // (the victim alone) at `2`
+    (0x6E, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
     // divide
     (0x50, &[(1, 4), (2, 4), (3, 3)]),
     // steal: the thief's dash and the item flash draw next to nothing

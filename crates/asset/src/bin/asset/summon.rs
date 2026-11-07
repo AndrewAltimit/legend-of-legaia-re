@@ -152,10 +152,7 @@ pub(crate) fn summon_readef_cmd(
                     let pal: Vec<[u8; 4]> = (0..16)
                         .map(|i| {
                             let off = clut_base + i * 2;
-                            legaia_tim::bgr555_to_rgba8(u16::from_le_bytes([
-                                raw[off],
-                                raw[off + 1],
-                            ]))
+                            psx_tim::bgr555_to_rgba8(u16::from_le_bytes([raw[off], raw[off + 1]]))
                         })
                         .collect();
                     let mut rgba = vec![0u8; w * h * 4];

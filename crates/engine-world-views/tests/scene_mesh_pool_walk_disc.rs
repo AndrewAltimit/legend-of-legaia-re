@@ -80,9 +80,8 @@ fn town01_mesh_pack_is_the_descriptor_walk_not_a_byte_sweep() {
         .find(|s| s.type_byte == 0x02)
         .expect("the bundle declares a TMD descriptor");
     let start = table.table_base + tmd_slot.data_offset as usize;
-    let (payload, _) =
-        legaia_lzs::decompress_tracked(&bundle.bytes[start..], tmd_slot.size as usize)
-            .expect("the TMD descriptor's LZS stream decodes inside its own entry");
+    let (payload, _) = psx_lzs::decompress_tracked(&bundle.bytes[start..], tmd_slot.size as usize)
+        .expect("the TMD descriptor's LZS stream decodes inside its own entry");
     assert_eq!(payload.len(), tmd_slot.size as usize);
     let declared = u32::from_le_bytes(payload[0..4].try_into().unwrap());
     assert_eq!(

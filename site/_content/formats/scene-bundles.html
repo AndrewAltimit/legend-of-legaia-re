@@ -115,7 +115,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <div class="bm-cell" style="--w:10"><span class="bm-off">+0x04+N</span><span class="bm-name">DATA_FIELD chunks: VAG bodies, SEQ&hellip;</span><span class="bm-size"></span></div>
   </div>
   <p>The chunk-0 size's low byte is always <code>0x20</code> (32-byte aligned). The gate accepts version <code>&lt;= 10</code> and <code>&lt;= 128</code> programs and tones. The bank is carried as <strong>two</strong> chunks - the header part up front, the VAG sample bodies in a later chunk - and the SEQ sits in a tail chunk at a non-zero offset; six entries put the SEQ <em>before</em> the body chunk (<a href="vab.html">vab</a>, <a href="seq.html">seq</a>).</p>
-  <p>Carriers: 119 of the 123 entries in the CDNAME <code>vab_01</code> cluster, 77 in <code>music_01</code>, 11 in <code>sound_data2</code>, and a few pairs and singles elsewhere (<code>teien</code>, <code>monster_test</code>, <code>other1</code>, <code>battle_data</code>, &hellip;). Read with <code>scene_vab_stream::detect</code>, then <code>legaia_vab::parse_header(buf, s.vab_range().start)</code>.</p>
+  <p>Carriers: 119 of the 123 entries in the CDNAME <code>vab_01</code> cluster, 77 in <code>music_01</code>, 11 in <code>sound_data2</code>, and a few pairs and singles elsewhere (<code>teien</code>, <code>monster_test</code>, <code>other1</code>, <code>battle_data</code>, &hellip;). Read with <code>scene_vab_stream::detect</code>, then <code>psx_vab::parse_header(buf, s.vab_range().start)</code>.</p>
 </section>
 
 <section class="doc-section" id="scene-v12-table-scene-header-event-script-bundle">

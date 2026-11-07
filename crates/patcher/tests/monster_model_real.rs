@@ -15,8 +15,8 @@ use std::path::PathBuf;
 
 use legaia_actor_formats::{monster_archive, monster_model};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
-use legaia_iso::write::mode2_form1_sector_is_valid;
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
+use psx_iso::write::mode2_form1_sector_is_valid;
 
 const LU_ID: u16 = 164;
 const LU_PARTS: usize = 15;
@@ -118,7 +118,7 @@ fn committed_example_model_patches_verifies_and_is_deterministic() {
     let Some((obj_text, png_bytes)) = example_model() else {
         panic!("committed example model missing from data/models/twintail_duelist");
     };
-    let (w, h, rgba) = legaia_tim::encode::decode_png_rgba(&png_bytes).expect("png");
+    let (w, h, rgba) = psx_tim::encode::decode_png_rgba(&png_bytes).expect("png");
     assert_eq!((w, h), (256, 256), "example page matches Lu's retail page");
     let imported = monster_model::import_obj(&obj_text, &rgba, w, LU_PARTS).expect("import");
     let want_prims = legaia_tmd::parse(&imported.tmd)

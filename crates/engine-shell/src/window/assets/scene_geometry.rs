@@ -21,7 +21,7 @@ struct EnvMeshPrep {
 }
 
 impl EnvMeshPrep {
-    fn build(rtmd: &ResolvedTmd, vram: &legaia_tim::Vram) -> Self {
+    fn build(rtmd: &ResolvedTmd, vram: &psx_tim::Vram) -> Self {
         // Build this mesh's untextured (F*/G*) vertex-colour primitives.
         // `tmd_to_color_mesh` skips textured groups, so these are DISJOINT
         // from the VRAM-mesh primitives below: a mesh carrying both textured

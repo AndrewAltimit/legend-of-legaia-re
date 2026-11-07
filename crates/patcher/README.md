@@ -2,7 +2,7 @@
 
 Disc-patching toolkit for a user-supplied Legend of Legaia disc image. Every
 feature is built on the same foundation: same-size in-place sector edits with
-the EDC/ECC re-encoded (`legaia_disc_patch::disc::DiscPatcher` over `legaia_iso::write`), emitted
+the EDC/ECC re-encoded (`legaia_disc_patch::disc::DiscPatcher` over `psx_iso::write`), emitted
 as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
 That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md).

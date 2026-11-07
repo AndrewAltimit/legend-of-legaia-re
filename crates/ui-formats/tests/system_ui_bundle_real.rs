@@ -90,7 +90,7 @@ fn system_ui_bundle_parses_and_uploads_strips() {
     // Upload: the strip band + the atlas page land where the env meshes
     // sample them (town01 slots 21/26/74 / rikuroa slots 50/51/63:
     // CBA (64,510), texpage (960,256)).
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     bundle.upload_to_vram(&mut vram);
     let lit_510 = (0..256).filter(|&x| vram.pixel(x, 510) != 0).count();
     assert!(lit_510 > 200, "row-510 strip populated (lit={lit_510})");

@@ -3,10 +3,10 @@
 //! Skipped when `LEGAIA_MEDNAFEN_DIR` is unset - keeps CI green for
 //! contributors without a disc + saves on hand.
 
-use legaia_mednafen::SaveState;
-use legaia_ram_image::ScenarioManifest;
-use legaia_ram_image::diff::{DiffOptions, diff_ram, sort_by_size};
-use legaia_ram_image::extract::PSX_RAM_SIZE;
+use psx_mednafen::SaveState;
+use psx_ram_image::ScenarioManifest;
+use psx_ram_image::diff::{DiffOptions, diff_ram, sort_by_size};
+use psx_ram_image::extract::PSX_RAM_SIZE;
 
 fn mcs_dir() -> Option<std::path::PathBuf> {
     std::env::var("LEGAIA_MEDNAFEN_DIR")

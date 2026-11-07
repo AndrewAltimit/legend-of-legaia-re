@@ -2,24 +2,24 @@
 //! Legend of Legaia bytes at all, every one of them built here in code.
 //!
 //! ```text
-//! cargo run -p legaia-pcsx-redux --example bring_your_own_game -- [out_dir]
+//! cargo run -p psx-pcsx-redux --example bring_your_own_game -- [out_dir]
 //! ```
 //!
 //! Each step builds a stock input, hands it to the crate a second PS1 project
 //! would depend on, and checks what comes back:
 //!
-//! 1. a 4-bit TIM with its CLUT -> `legaia_tim::parse_strict`, `decode_rgba8`,
+//! 1. a 4-bit TIM with its CLUT -> `psx_tim::parse_strict`, `decode_rgba8`,
 //!    `write_png`;
-//! 2. a SEQ -> `legaia_seq::Seq::parse` (see the step's note on which SEQ
+//! 2. a SEQ -> `psx_seq::Seq::parse` (see the step's note on which SEQ
 //!    shape this is, and the trap it does not cover);
 //! 3. a Mode 2/2352 ISO9660 image with a subdirectory ->
-//!    `legaia_iso::write::encode_mode2_form1_sector` to master it, then both
+//!    `psx_iso::write::encode_mode2_form1_sector` to master it, then both
 //!    the in-memory walker and the file-backed `RawDisc` reader;
 //! 4. a PCSX-Redux state and a mednafen state of a made-up game ->
-//!    `legaia_pcsx_redux::SaveState` (structural RAM location, no executable)
-//!    and `legaia_mednafen::SaveState::main_ram_structured`;
+//!    `psx_pcsx_redux::SaveState` (structural RAM location, no executable)
+//!    and `psx_mednafen::SaveState::main_ram_structured`;
 //! 5. the watchpoint-equivalent tooling over those states ->
-//!    `legaia_ram_image::diff::diff_ram` and `bisect::bisect_first_bad`, with
+//!    `psx_ram_image::diff::diff_ram` and `bisect::bisect_first_bad`, with
 //!    `GenericGame` standing in for the per-game profile.
 //!
 //! The same `run` is executed by `tests/bring_your_own_game.rs`, so CI keeps
@@ -86,15 +86,15 @@ fn build_tim() -> Vec<u8> {
 
 fn tim_step(out_dir: &Path) -> Result<PathBuf> {
     let bytes = build_tim();
-    let tim = legaia_tim::parse_strict(&bytes).context("parse a stock 4bpp TIM")?;
+    let tim = psx_tim::parse_strict(&bytes).context("parse a stock 4bpp TIM")?;
     ensure!(tim.pixel_width() == 8 && tim.pixel_height() == 2);
-    let rgba = legaia_tim::decode_rgba8(&tim, 0)?;
+    let rgba = psx_tim::decode_rgba8(&tim, 0)?;
     ensure!(rgba.len() == 8 * 2 * 4);
     // Texel 15 (last pixel) is CLUT entry 15: blue 15, red 1.
     let last = &rgba[rgba.len() - 4..];
-    ensure!(last == legaia_tim::bgr555_to_rgba8((15 << 10) | 1));
+    ensure!(last == psx_tim::bgr555_to_rgba8((15 << 10) | 1));
     let png = out_dir.join("stock_4bpp.png");
-    legaia_tim::write_png(&png, 8, 2, &rgba)?;
+    psx_tim::write_png(&png, 8, 2, &rgba)?;
     Ok(png)
 }
 
@@ -104,7 +104,7 @@ fn tim_step(out_dir: &Path) -> Result<PathBuf> {
 /// libsnd's SsAPI reader consumes: a program change, a note on/off pair under
 /// running status, a tempo meta **without** a length byte, end of track.
 ///
-/// Note what this does and does not show. It is the shape `legaia-seq` parses
+/// Note what this does and does not show. It is the shape `psx-seq` parses
 /// and the shape the libsnd reader linked into Legaia's executable reads; it
 /// is synthetic, and no other title's SEQ file is tested in this repository.
 /// The crate does not read an SMF-style meta that carries a length byte
@@ -126,7 +126,7 @@ fn seq_step() -> Result<usize> {
     ];
     s.extend_from_slice(body);
 
-    let seq = legaia_seq::Seq::parse(&s).context("parse the synthetic SEQ")?;
+    let seq = psx_seq::Seq::parse(&s).context("parse the synthetic SEQ")?;
     ensure!(seq.header.ppqn == 480 && seq.header.tempo_us_per_qn == 500_000);
     ensure!(seq.is_complete(), "stream ends on its own FF 2F");
     ensure!(seq.events.len() == 5);
@@ -138,11 +138,11 @@ fn seq_step() -> Result<usize> {
     smf.extend_from_slice(&[
         0x00, 0xFF, 0x51, 0x03, 0x0F, 0x42, 0x40, 0x00, 0xFF, 0x2F, 0x00,
     ]);
-    let misread = legaia_seq::Seq::parse(&smf);
+    let misread = psx_seq::Seq::parse(&smf);
     let tempo_ok = misread.as_ref().is_ok_and(|m| {
         m.events.iter().any(|e| {
             e.body
-                == legaia_seq::EventBody::Meta(legaia_seq::MetaMessage::SetTempo {
+                == psx_seq::EventBody::Meta(psx_seq::MetaMessage::SetTempo {
                     us_per_qn: 1_000_000,
                 })
         })
@@ -179,7 +179,7 @@ fn sector(lba: u32, data: &[u8], end_of_file: bool) -> Result<Vec<u8>> {
         s[o..o + 4].copy_from_slice(&[0, 0, submode, 0]);
     }
     s[24..24 + data.len()].copy_from_slice(data);
-    legaia_iso::write::encode_mode2_form1_sector(&mut s)?;
+    psx_iso::write::encode_mode2_form1_sector(&mut s)?;
     Ok(s)
 }
 
@@ -307,13 +307,13 @@ fn build_disc() -> Result<Vec<u8>> {
 
 fn iso_step(out_dir: &Path) -> Result<(PathBuf, Vec<String>)> {
     let disc = build_disc()?;
-    ensure!(legaia_iso::image::is_mode2_2352_disc(&disc));
+    ensure!(psx_iso::image::is_mode2_2352_disc(&disc));
     for lba in 0..disc.len() / RAW {
-        ensure!(legaia_iso::write::mode2_form1_sector_is_valid(
+        ensure!(psx_iso::write::mode2_form1_sector_is_valid(
             &disc[lba * RAW..(lba + 1) * RAW]
         ));
     }
-    let files: Vec<String> = legaia_iso::image::walk_iso_files(&disc)
+    let files: Vec<String> = psx_iso::image::walk_iso_files(&disc)
         .into_iter()
         .map(|f| f.path)
         .collect();
@@ -322,19 +322,19 @@ fn iso_step(out_dir: &Path) -> Result<(PathBuf, Vec<String>)> {
         "walked {files:?}"
     );
     // Names resolve the way the console resolves them: any case, no `;1`.
-    let level = legaia_iso::iso9660::find_path_in_image(&disc, "data/level1.bin")
+    let level = psx_iso::iso9660::find_path_in_image(&disc, "data/level1.bin")
         .context("find DATA/LEVEL1.BIN")?;
     ensure!(level == (22, 9));
-    let exe = legaia_iso::iso9660::read_file_in_image(&disc, "mygame.exe").context("read exe")?;
+    let exe = psx_iso::iso9660::read_file_in_image(&disc, "mygame.exe").context("read exe")?;
     ensure!(exe.len() == USER + 100 && exe[USER + 99] == ((USER + 99) % 251) as u8);
 
     // The file-backed reader a CLI uses, on the same bytes written out.
     let path = out_dir.join("mygame.bin");
     std::fs::write(&path, &disc)?;
-    let mut raw = legaia_iso::raw::RawDisc::open(&path)?;
-    let vol = legaia_iso::iso9660::read_volume(&mut raw)?;
+    let mut raw = psx_iso::raw::RawDisc::open(&path)?;
+    let vol = psx_iso::iso9660::read_volume(&mut raw)?;
     ensure!(vol.volume_id == "MYGAME");
-    let mut walked: Vec<String> = legaia_iso::iso9660::walk_files(&mut raw, &vol.root)?
+    let mut walked: Vec<String> = psx_iso::iso9660::walk_files(&mut raw, &vol.root)?
         .into_iter()
         .map(|(p, _)| p)
         .collect();
@@ -368,7 +368,7 @@ fn mednafen_payload(ram: &[u8]) -> Vec<u8> {
 /// word at `0x800A0100` that drops to zero between the second and third
 /// capture.
 fn game_ram(frame: u32, boss_hp: u32) -> Vec<u8> {
-    let mut ram = vec![0u8; legaia_ram_image::PSX_RAM_SIZE];
+    let mut ram = vec![0u8; psx_ram_image::PSX_RAM_SIZE];
     ram[0x1_0000..0x1_0010].copy_from_slice(b"OTHER GAME v1.00");
     ram[0xA_0000..0xA_0004].copy_from_slice(&frame.to_le_bytes());
     ram[0xA_0100..0xA_0104].copy_from_slice(&boss_hp.to_le_bytes());
@@ -376,14 +376,14 @@ fn game_ram(frame: u32, boss_hp: u32) -> Vec<u8> {
 }
 
 fn save_state_step() -> Result<usize> {
-    use legaia_ram_image::{GameProfile, GenericGame, bisect, diff};
+    use psx_ram_image::{GameProfile, GenericGame, bisect, diff};
 
     let captures = [game_ram(100, 900), game_ram(160, 350), game_ram(220, 0)];
 
     // PCSX-Redux: gzipped and bare states, located without any executable.
     let mut from_pcsx = Vec::new();
     for (i, ram) in captures.iter().enumerate() {
-        let st = legaia_pcsx_redux::fixture::SyntheticState {
+        let st = psx_pcsx_redux::fixture::SyntheticState {
             ram,
             hardware: &[],
             vram: &[],
@@ -394,8 +394,8 @@ fn save_state_step() -> Result<usize> {
         } else {
             st.to_payload()
         };
-        let s = legaia_pcsx_redux::SaveState::from_sstate_bytes_structural(&bytes)?;
-        ensure!(s.ram_source() == legaia_pcsx_redux::RamSource::Structural);
+        let s = psx_pcsx_redux::SaveState::from_sstate_bytes_structural(&bytes)?;
+        ensure!(s.ram_source() == psx_pcsx_redux::RamSource::Structural);
         // The generic profile claims no identity rather than reading
         // Legaia's globals out of this game's RAM.
         ensure!(s.identity_with(&GenericGame).is_none());
@@ -404,7 +404,7 @@ fn save_state_step() -> Result<usize> {
 
     // Mednafen: the same RAM through the section walker.
     for (ram, pcsx) in captures.iter().zip(&from_pcsx) {
-        let st = legaia_mednafen::SaveState::from_decompressed(mednafen_payload(ram))?;
+        let st = psx_mednafen::SaveState::from_decompressed(mednafen_payload(ram))?;
         let via_mdfn = st
             .main_ram_structured()
             .context("MAIN.MainRAM.data8 in the synthetic mednafen state")?;

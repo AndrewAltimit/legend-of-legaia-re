@@ -79,7 +79,8 @@ pub const NIGHTO_EXTRA_ROLL_CHARACTER: u8 = 3;
 pub struct NightoRoll {
     /// `FUN_80056798()` at `0x801F6B50` - `% 8` picks kill over confuse.
     pub kill_roll: u32,
-    /// `FUN_80056798()` at `0x801F6C28` - the resist throw.
+    /// `FUN_80056798()` at `0x801F6C28` - the resist throw, not drawn for an
+    /// immune target (`bnez` at `0x801F6C20` jumps past it).
     pub resist_roll: u32,
     /// `record[+0x729 + slot]`, found the same way
     /// [`VeraRestore::magic_level`] is found.

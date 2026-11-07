@@ -756,19 +756,31 @@ Somersault's parked last beat landed the string, and the cluster reads `3 HIT`
 swings' `430` sit in the Skeleton's bank at full HP, `DAT_8007BD14` reads `0`,
 and no cluster is up as the Hyper Art commits. Port: `BattleHud::push_popup`
 counts a melee hit hidden and `BattleHud::land_combo_total` opens (or
-restarts) the cluster on the hit event whose `applied` is set; a cast's hit
-opens it as it lands (below).
+restarts) the cluster on the next battle frame after the hit event whose
+`applied` is set (`BattleHud::defer_combo_total`): the frame driver runs the
+action SM, and with it the readout pass, ahead of the actor-list walk whose
+anim tick raised the flag, so the flag waits a frame. On
+`map03_speed_wolf_strike`'s film retail's cluster stands at `x = 274` twelve
+vsyncs past the bank on the displayed frame, where a same-tick open put the
+engine's there in eight. A cast's hit opens it as it lands (below).
 
 **A hit that clears the flag counts without opening.** PROT 0959's wrapper
 hits store `0` into `DAT_8007B64C` beside each HP write
 (`0x801F7244` / `0x801F7AF4` / `0x801F7F18`) and its arm `0xF` raises it once
 as it passes, so Megaton Press opens the cluster on the barrage's last pass
 already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
-by `BattleState::combo_cluster_held`. A cast that lands more than one hit
-reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
-(`battle_gimard_tail_fire_a`). The summon pre-hits do the same (PROT 0908, 0915,
-0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the
-band's fold.
+by `BattleState::combo_cluster_held`. The summon pre-hits do the same (PROT 0908, 0915, 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the band's fold.
+
+**The cluster's word is the hit count's, not the action's.** The readout pass
+tests the action's damage-number push count `ctx[+0x273]` against `1`
+(`0x801E8AB0..0x801E8AB8`, and again at `0x801E8B64` ahead of the `HIT` word):
+one push draws `DAMAGE` and its value, any other count draws `HIT` / `TOTAL`
+with the count. So a cast that lands more than one hit reads `HIT` / `TOTAL`
+as Megaton Press does, a one-hit cast reads `DAMAGE`
+(`battle_gimard_tail_fire_a`), and so does any one-hit melee: every one-swing
+monster strike closes on `DAMAGE` (the Ogre's on `battle_geremi_ogre_strike`,
+Cort's on `battle_jou_cort_181_strike`). Port: `BattleHud::push_popup` sets the
+cluster's style from its hit count.
 
 **A row-aimed cast opens value rows instead.** The action seed `FUN_801E6D84`
 lists every living monster in `0x801F6978` when the target is the every-enemy code

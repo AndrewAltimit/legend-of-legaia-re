@@ -50,7 +50,7 @@ def run_diff(left: Path, right: Path,
     if not DEFAULT_BIN.exists():
         print(f"[info] building mednafen-state...", file=sys.stderr)
         subprocess.check_call(
-            ["cargo", "build", "--release", "-p", "legaia-mednafen"],
+            ["cargo", "build", "--release", "-p", "psx-mednafen"],
             cwd=REPO_ROOT)
     args = [str(DEFAULT_BIN), "diff", str(left), str(right),
             "--min-changed", str(min_changed),

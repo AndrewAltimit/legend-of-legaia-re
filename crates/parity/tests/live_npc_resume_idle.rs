@@ -47,7 +47,7 @@ fn an_idle_resume_with_live_npcs_does_not_move_the_player() {
         return;
     };
     let manifest =
-        legaia_ram_image::ScenarioManifest::from_path(repo().join("scripts/scenarios.toml"))
+        psx_ram_image::ScenarioManifest::from_path(repo().join("scripts/scenarios.toml"))
             .expect("scenario manifest");
     let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("SCUS");
     let entries = enumerate_corpus(&manifest, &library);

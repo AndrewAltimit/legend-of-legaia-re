@@ -209,7 +209,7 @@ impl ManPlaceNames {
             return None;
         }
         let body = entry.get(man_offset..)?;
-        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, consumed) = psx_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }

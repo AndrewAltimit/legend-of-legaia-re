@@ -1820,8 +1820,15 @@ impl RetailBattle {
                         && (3..8).contains(&self.target_code))
                     .then(|| self.target_code - 3),
                     queue: ((seat < 3 && self.queued_category == 3 && self.arts_queue)
-                        || (self.strike_stream_steer && self.strike_stream_steerable()))
-                    .then_some(self.committed_queue),
+                        || (self.strike_stream_steer && self.strike_stream_steerable())
+                        // A monster cast's clip bytes (`+0x1E0`, the Spirit
+                        // band's `+0x1E7`): the picker stored them under its
+                        // own draws, and a replay that reaches the cast by
+                        // another stream walks the clip table to another
+                        // entry (`battle_balden_orb_v2_hyper_heal_mid_cast`:
+                        // retail `09`, the walk's last tag-`0x23` entry `0A`).
+                        || (seat >= 3 && self.queued_category == 2))
+                        .then_some(self.committed_queue),
                     cursor: ((seat < 3
                         && self.queued_category == 3
                         && self.arts_queue

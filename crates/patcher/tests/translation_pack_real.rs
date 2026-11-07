@@ -15,8 +15,8 @@
 use std::collections::BTreeMap;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::{LanguagePack, export_pack, import_pack, pack::Entry};
+use psx_iso::raw::SECTOR_SIZE;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -186,7 +186,7 @@ fn synthetic_pack_round_trips_on_disc() {
         if a != b && a.len() == SECTOR_SIZE {
             touched += 1;
             assert!(
-                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                psx_iso::write::mode2_form1_sector_is_valid(b),
                 "sector {i} invalid after patch"
             );
         }
@@ -213,7 +213,7 @@ fn synthetic_pack_round_trips_on_disc() {
     assert_eq!(found, expect.len(), "every patched key re-exports");
 
     // The engine-facing SCUS parsers resolve the new names too.
-    let scus = legaia_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
+    let scus = psx_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
     let items =
         legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("item table");
     assert!(

@@ -16,9 +16,9 @@
 use std::path::Path;
 
 use legaia_actor_formats::monster_archive;
-use legaia_iso::iso9660;
-use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
 use legaia_prot::archive::Archive;
+use psx_iso::iso9660;
+use psx_iso::raw::{RawDisc, USER_DATA_SIZE};
 
 /// PROT entry 867 (the monster archive) of the disc image at `bin`.
 fn monster_archive_entry(bin: &Path) -> Vec<u8> {

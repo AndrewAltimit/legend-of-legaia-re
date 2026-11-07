@@ -14,8 +14,8 @@
 
 use legaia_engine_audio::SfxBank;
 use legaia_game_tables::sfx_table::{SFX_TABLE_ENTRIES, SFX_TABLE_VA, SfxTable};
-use legaia_mednafen::SaveState;
-use legaia_ram_image::{ScenarioManifest, ram_slice};
+use psx_mednafen::SaveState;
+use psx_ram_image::{ScenarioManifest, ram_slice};
 use std::path::PathBuf;
 
 fn first_existing<const N: usize>(cands: [&str; N]) -> Option<PathBuf> {

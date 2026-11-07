@@ -1022,7 +1022,7 @@ pub fn apply_equipment_edits(
             }
             let mut decoded = dec.bytes.clone();
             decoded[off] = e.cost;
-            let recompressed = legaia_lzs::compress(&decoded);
+            let recompressed = psx_lzs::compress(&decoded);
             let avail = (rec.size as usize).saturating_sub(4);
             if recompressed.len() > avail {
                 report

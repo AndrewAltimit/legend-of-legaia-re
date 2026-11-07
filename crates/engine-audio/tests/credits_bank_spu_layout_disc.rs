@@ -32,7 +32,7 @@ use legaia_game_tables::sfx_table::{
 };
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
-use legaia_vab::VabReport;
+use psx_vab::VabReport;
 
 /// Extraction index of the ending theme's VAB-only bank (raw TOC `0x422`,
 /// the field initialiser's second read at `0x801D7214`).
@@ -78,7 +78,7 @@ fn read_bank(archive: &mut Archive, index: usize) -> Bank {
     archive.read_entry(&entry, &mut bytes).expect("read entry");
     let (report, off) = [4usize, 0]
         .into_iter()
-        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        .find_map(|o| psx_vab::parse(&bytes, o).ok().map(|r| (r, o)))
         .unwrap_or_else(|| panic!("entry {index} carries no VAB at +4 or +0"));
     Bank { bytes, report, off }
 }
@@ -94,7 +94,7 @@ fn ordinary_track(archive: &mut Archive, extracted: &std::path::Path) -> Bank {
             let mut bytes = Vec::new();
             archive.read_entry(&entry, &mut bytes).ok()?;
             let off = bytes.windows(4).position(|w| w == b"pBAV")?;
-            let report = legaia_vab::parse(&bytes, off).ok()?;
+            let report = psx_vab::parse(&bytes, off).ok()?;
             (vab_body_bytes(&report) <= BGM_REGION_BYTES).then_some(Bank { bytes, report, off })
         })
         .expect("an ordinary music_01 bank")

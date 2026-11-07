@@ -103,7 +103,7 @@ pub fn build_atlas_from_prot_dat_slice(tim_bytes: &[u8]) -> Result<MenuGlyphAtla
 }
 
 fn build_from_view(view: &src::MenuGlyphTim<'_>) -> Result<MenuGlyphAtlas> {
-    let parsed = legaia_tim::parse(view.bytes).context("parse menu-glyph TIM")?;
+    let parsed = psx_tim::parse(view.bytes).context("parse menu-glyph TIM")?;
     let width = parsed.pixel_width() as u32;
     let height = parsed.image.h as u32;
     if width != ATLAS_WIDTH || height != ATLAS_HEIGHT {

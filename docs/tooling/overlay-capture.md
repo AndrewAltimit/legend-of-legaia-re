@@ -161,7 +161,7 @@ A captured RAM dump often contains transient TIMs that the game staged in main R
        # validate CLUT block size + RECT, then pixel block size + RECT
        # (within sane bounds: w/h <= 1024 / 512, sizes in plausible ranges)
    ```
-2. Extract each hit as a `.tim` file and decode with `tim convert` (the `legaia-tim` crate's binary) to PNG to identify visually.
+2. Extract each hit as a `.tim` file and decode with `tim convert` (the `psx-tim` crate's binary) to PNG to identify visually.
 3. Build a 16-byte fingerprint from the first CLUT row at offset `0x14` inside the TIM file (skip the RECT bytes at `0x0C..0x14` because those get runtime-relocated).
 4. Grep the PROT corpus (`extracted/PROT/*.BIN`) for that fingerprint. Each hit identifies the source entry; byte-compare CLUT + pixel data to confirm.
 

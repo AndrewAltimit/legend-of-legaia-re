@@ -708,8 +708,8 @@ fn rescan(buf: &[u8], residue: &[(usize, usize)], sink: &mut Sink) {
                 if let Some(n) = seq_extent(run, i) {
                     sink.claim(a + i, a + i + n, OWNER_SCAN, "SEQ");
                 }
-            } else if legaia_bytes::u32_le(run, i) == Some(legaia_vab::VAB_MAGIC)
-                && let Ok(h) = legaia_vab::parse_header(run, i)
+            } else if psx_bytes::u32_le(run, i) == Some(psx_vab::VAB_MAGIC)
+                && let Ok(h) = psx_vab::parse_header(run, i)
             {
                 sink.claim(a + i, a + i + h.fsize as usize, OWNER_SCAN, "VAB");
             }

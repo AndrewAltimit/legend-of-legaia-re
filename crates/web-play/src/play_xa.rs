@@ -6,7 +6,7 @@
 //! # Why the page needs its own staging
 //!
 //! The native window demuxes the clip files off the disc image at boot
-//! through `legaia_iso::raw::RawDisc` - channel demux needs the raw
+//! through `psx_iso::raw::RawDisc` - channel demux needs the raw
 //! 2352-byte sectors, because the CD-XA subheader that carries the channel
 //! number sits outside the 2048-byte ISO view. The browser has no
 //! filesystem, but it holds the visitor's disc as a `Blob` it can read by
@@ -24,7 +24,7 @@
 //! `legaia_engine_session::xa_banks` - the same calls the native boot's
 //! `read_arts_shout_bank` / `read_battle_xa_clip_bank` make, so the two
 //! hosts stage identical banks from identical sectors; this module only
-//! demuxes the page's slice (`legaia_xa::demux::demux_raw_sectors`) and
+//! demuxes the page's slice (`psx_xa::demux::demux_raw_sectors`) and
 //! hands the channels over.
 //!
 //! * **Shouts** - `XA2.XA` Vahn / `XA4.XA` Noa / `XA6.XA` Gala, 16-channel
@@ -253,7 +253,7 @@ impl LegaiaRuntime {
         };
         // The staging is the engine's (`legaia_engine_session::xa_banks`),
         // the call the native boot's readers make over the same channels.
-        let streams = legaia_xa::demux::demux_raw_sectors(sectors);
+        let streams = psx_xa::demux::demux_raw_sectors(sectors);
         let n = match file {
             XaBankFile::Shout(cslot) => {
                 let table = self.arts_voice_table();
@@ -377,7 +377,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_xa::demux::{
+    use psx_xa::demux::{
         AUDIO_BYTES_PER_SECTOR, RAW_SECTOR_BYTES, SUBHEADER_OFFSET, USER_DATA_OFFSET,
     };
 
@@ -398,7 +398,7 @@ mod tests {
     /// A runtime whose disc carries `XA7.XA` and whose director knows it.
     fn runtime_with_xa7() -> LegaiaRuntime {
         let mut rt = LegaiaRuntime::new();
-        rt.disc_files.push(legaia_iso::image::FileEntry {
+        rt.disc_files.push(psx_iso::image::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
             size: 8 * 2048 * 300,
@@ -479,7 +479,7 @@ mod tests {
         let d = rt.audio_director().unwrap();
         assert!(d.play_xa_clip(6, 4, 686).is_none());
         assert!(d.xa_stage_requests().is_empty());
-        rt.disc_files.push(legaia_iso::image::FileEntry {
+        rt.disc_files.push(psx_iso::image::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
             size: 2048 * 10,

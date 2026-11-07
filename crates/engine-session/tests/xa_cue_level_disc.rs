@@ -73,7 +73,7 @@ fn a_cue_mixes_at_retail_cd_volume_through_the_zigzag_converter() {
 
     // The mix as the director stages it.
     let mut mix = legaia_engine_audio::OfflineMixer::new(44_100);
-    mix.play_xa_shout(src.clone(), rate, legaia_xa::Channels::Mono, XA_CUE_GAIN, 0);
+    mix.play_xa_shout(src.clone(), rate, psx_xa::Channels::Mono, XA_CUE_GAIN, 0);
     let out_len = (src.len() as u64 * 44_100 / rate as u64) as usize;
     let mixed: Vec<f64> = (0..out_len).map(|_| mix.next_frame().0 as f64).collect();
 

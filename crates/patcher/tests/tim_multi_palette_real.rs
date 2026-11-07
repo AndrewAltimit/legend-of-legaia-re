@@ -17,8 +17,8 @@ use legaia_texture_replace::texture::{
     texture_catalogs,
 };
 use legaia_texture_replace::texture_palettes::texture_palettes;
-use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
-use legaia_tim::multi_palette::{ImportKind, View, rgba_png};
+use psx_tim::encode::{EncodeOptions, decode_png_rgba};
+use psx_tim::multi_palette::{ImportKind, View, rgba_png};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -33,7 +33,7 @@ const SHEET: TextureTarget = TextureTarget {
 
 #[test]
 fn every_raw_multi_palette_tim_round_trips_through_every_shape() {
-    use legaia_tim::multi_palette::{
+    use psx_tim::multi_palette::{
         PaletteContext, all_sets, composite_geom, import_png, indexed_png, own_palettes,
         render_composite, render_strip, standalone_strip_geom, uniform_map,
     };
@@ -49,8 +49,8 @@ fn every_raw_multi_palette_tim_round_trips_through_every_shape() {
     let mut checked = 0usize;
     for t in raw.iter().filter(|t| t.clut_count > 1) {
         let bytes = &prot[t.abs_offset as usize..t.abs_offset as usize + t.byte_len];
-        let tim = legaia_tim::parse_strict(bytes).expect("catalog TIM strict-parses");
-        if legaia_tim::decode_rgba8(&tim, 0).is_err() {
+        let tim = psx_tim::parse_strict(bytes).expect("catalog TIM strict-parses");
+        if psx_tim::decode_rgba8(&tim, 0).is_err() {
             continue;
         }
         let (w, h) = (tim.pixel_width(), tim.pixel_height());
@@ -60,11 +60,11 @@ fn every_raw_multi_palette_tim_round_trips_through_every_shape() {
         let mut shapes: Vec<(&str, Vec<u8>)> = vec![
             (
                 "image pal 0",
-                rgba_png(w, h, &legaia_tim::decode_rgba8(&tim, 0).unwrap()).unwrap(),
+                rgba_png(w, h, &psx_tim::decode_rgba8(&tim, 0).unwrap()).unwrap(),
             ),
             (
                 "image last pal",
-                rgba_png(w, h, &legaia_tim::decode_rgba8(&tim, last).unwrap()).unwrap(),
+                rgba_png(w, h, &psx_tim::decode_rgba8(&tim, last).unwrap()).unwrap(),
             ),
             ("indexed", indexed_png(&tim, &own[last]).unwrap()),
         ];

@@ -69,8 +69,7 @@ fn man_section_parses_every_retail_scene_bundle() {
             continue;
         }
         let body = &bytes[start..];
-        let Ok((man_bytes, _consumed)) =
-            legaia_lzs::decompress_tracked(body, man_desc.size as usize)
+        let Ok((man_bytes, _consumed)) = psx_lzs::decompress_tracked(body, man_desc.size as usize)
         else {
             continue;
         };

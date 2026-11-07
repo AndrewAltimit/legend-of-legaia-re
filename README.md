@@ -36,6 +36,23 @@ A **port**, in the [ScummVM](https://www.scummvm.org/) / [OpenRCT2](https://gith
 
 One engine runs behind every host. The simulation crates carry no GPU, windowing or audio-device dependency, so the same code ticks in a native window and as WebAssembly in the browser; [How it fits together](#how-it-fits-together) draws the whole stack.
 
+## Three ways to port a PS1 game
+
+Most PS1 ports lately are static recompilations, and for good reason: the whole game runs early, with its retail behaviour nearly for free. This project takes the third route, **reimplementation**: a new engine that loads the game's data and is held to retail by measurement rather than by running the original code.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/porting-routes-dark.svg">
+    <img alt="Three ways to port a PS1 game. Decompilation starts from the executable rewritten as source, produces source that rebuilds the game, and its fidelity is proved by the byte match. Static recompilation translates the machine code, produces the original game running over a hardware model, and its fidelity is inherited. Reimplementation, this repository's route, starts from format docs and traced behaviour, produces a new engine that loads the game data, and its fidelity is measured against retail states." src="site/assets/porting-routes-light.svg" width="900">
+  </picture>
+</p>
+
+A recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game. That engine has no PS1 underneath, so it renders through wgpu, runs in the browser and in VR, takes mods as TOML expansion packs, and keeps every rule as a readable Rust kernel citing its retail address. The price is that fidelity is a long tail paid continuously, on top of decompilation-grade reading of the disassembly, not instead of it.
+
+- [Porting by reimplementation](docs/porting-by-reimplementation.md) - the three routes compared fairly, what this one costs and buys, and the method step by step ([on the site](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/porting-by-reimplementation.html)).
+- [The retail-oracle method](docs/tooling/retail-oracle-method.md) - how fidelity is measured: retail save states, scored channels, ratchets; usable whichever route a port takes.
+- [Reusing for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) - which crates and scripts carry to another title; the short table is [below](#reusable-for-other-ps1-games).
+
 ## What works
 
 The whole game plays, New Game to the ending credits:
@@ -260,7 +277,7 @@ A scene takes one path through the stack on every host: [`iso`](crates/iso/READM
 
 ## Reusable for other PS1 games
 
-Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay), which [the retail-oracle method](docs/tooling/retail-oracle-method.md) writes up engine-neutral. A worked example runs the generic crates on a made-up game built in code: `cargo run -p legaia-pcsx-redux --example bring_your_own_game`.
+Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay), which [the retail-oracle method](docs/tooling/retail-oracle-method.md) writes up engine-neutral. A worked example runs the generic crates on a made-up game built in code: `cargo run -p psx-pcsx-redux --example bring_your_own_game`.
 
 | Crate | What it does | Generic? | Entry point |
 |---|---|---|---|

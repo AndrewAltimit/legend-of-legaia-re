@@ -6,7 +6,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::muscle_dome::{
     COURSE_COUNT, ContestFlags, ContestState, DomeContest, LegReport,
 };
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -40,19 +40,19 @@ fn a_contest_runs_and_settles_as_retails_does() {
     let items = Rc::new(RefCell::new(Vec::<u32>::new()));
     let f = flags.clone();
     cpu.hook(0x8003_CE64, move |r, _| {
-        r.r[V0] = u32::from(f.borrow().contains(&r.r[legaia_retail_exec::A0]));
+        r.r[V0] = u32::from(f.borrow().contains(&r.r[psx_retail_exec::A0]));
     });
     let f = flags.clone();
     cpu.hook(0x8003_CE08, move |r, _| {
-        f.borrow_mut().insert(r.r[legaia_retail_exec::A0]);
+        f.borrow_mut().insert(r.r[psx_retail_exec::A0]);
     });
     let f = flags.clone();
     cpu.hook(0x8003_CE34, move |r, _| {
-        f.borrow_mut().remove(&r.r[legaia_retail_exec::A0]);
+        f.borrow_mut().remove(&r.r[psx_retail_exec::A0]);
     });
     let i = items.clone();
     cpu.hook(0x8004_21D4, move |r, _| {
-        i.borrow_mut().push(r.r[legaia_retail_exec::A0]);
+        i.borrow_mut().push(r.r[psx_retail_exec::A0]);
     });
     // The two spin waits on the vsync counter.
     cpu.hook(0x8005_FB84, |_, m| m.wr32(0x8007_B8AC, 0x100));

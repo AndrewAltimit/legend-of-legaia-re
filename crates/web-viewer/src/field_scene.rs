@@ -268,7 +268,7 @@ impl FieldScenePack {
     /// live - it carries what the world uploads at entry (the party /
     /// global-pool actors' pages) and is what the world's VRAM effects write -
     /// else the static assembly's.
-    pub fn display_vram(&self) -> &legaia_tim::Vram {
+    pub fn display_vram(&self) -> &psx_tim::Vram {
         self.live
             .as_ref()
             .and_then(|l| l.host.resources.as_ref())
@@ -290,7 +290,7 @@ impl FieldScenePack {
     }
 
     /// Mutable [`Self::display_vram`].
-    pub fn display_vram_mut(&mut self) -> &mut legaia_tim::Vram {
+    pub fn display_vram_mut(&mut self) -> &mut psx_tim::Vram {
         match self.live.as_mut().and_then(|l| l.host.resources.as_mut()) {
             Some(r) => &mut r.vram,
             None => &mut self.res.vram,
@@ -417,7 +417,7 @@ impl LegaiaViewer {
         if let Some(ix) = &self.prot_index {
             return Ok(ix.clone());
         }
-        let prot_bytes = if legaia_iso::image::is_mode2_2352_disc(&self.disc) {
+        let prot_bytes = if psx_iso::image::is_mode2_2352_disc(&self.disc) {
             extract_prot_dat(&self.disc)
                 .ok_or_else(|| "PROT.DAT not found in disc image".to_string())?
         } else {

@@ -709,6 +709,17 @@ cast-sequence oracle reads `9998` / `9999` hits (a `2499` popup from PROT 0908's
 quartered opener) on casts Vahn has not learned. Measured on
 `party_basic_attack_vs_gobu_gobu`.
 
+The spell XP takes the same slot. The finisher's accrual and the level check
+`FUN_801E70BC` walk the same `0x20` ids (`slti v0,a1,0x20` at `0x801E713C`) and
+index the three parallel arrays at `0x20`, which is inside them: the lists hold
+`0x24` entries ([save-record](../formats/save-record.md)), so slot `0x20` is the
+list's own XP word `+0x88` and level byte `+0x181`. A level of `0` reads the
+threshold halfword ahead of the table, `0x8007656A`, which is `0`, so the first
+XP an unlearned cast banks levels the slot to `1` and raises the "magic level
+increased" banner (`0x65`), as every cast-sequence film of an unlearned spell
+shows in its Done band. `magic_xp::accrue_and_level` takes the same slot;
+`retail-exec`'s `magic_level` test runs the overlay's check against it.
+
 **The matrix.** Static data in PROT 0898: matrix at file `0x26BD0`, character
 table at file `0x26C68`. Values are a nudge, not a x0 / x2 weakness table:
 

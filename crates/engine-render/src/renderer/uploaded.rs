@@ -248,6 +248,10 @@ pub(super) struct SceneLightsUniform {
     /// mode: [`legaia_render_kernels::prim_near_reject::gte_saturation_params`].
     /// All-zero (the `Zeroable` default) leaves every corner unclamped.
     pub(super) gte_sat: [f32; 4],
+    /// The field ground's depth rule (`[drop, 0, 0, 0]`, see
+    /// [`crate::Renderer::set_field_ground_drop`]). All-zero (the
+    /// `Zeroable` default) keeps retail's buckets.
+    pub(super) ground_drop: [f32; 4],
     pub(super) lights:
         [ScenePointLightUniform; legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS],
 }

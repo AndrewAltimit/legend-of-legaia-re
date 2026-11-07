@@ -40,8 +40,8 @@ use legaia_code_hooks::arenas::{
 };
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
+use psx_iso::iso9660::read_file_in_image;
 
 const PCT: u8 = 20;
 

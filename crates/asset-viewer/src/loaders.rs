@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 pub(crate) fn load_tim(bytes: &[u8], clut_idx: usize) -> Result<(Vec<u8>, u32, u32)> {
-    let tim = legaia_tim::parse(bytes).context("parse TIM")?;
-    let rgba = legaia_tim::decode_rgba8(&tim, clut_idx).context("decode TIM to RGBA")?;
+    let tim = psx_tim::parse(bytes).context("parse TIM")?;
+    let rgba = psx_tim::decode_rgba8(&tim, clut_idx).context("decode TIM to RGBA")?;
     Ok((rgba, tim.pixel_width() as u32, tim.pixel_height() as u32))
 }
 
@@ -95,11 +95,11 @@ pub(crate) fn load_vab_sample(path: &Path, offset: usize, idx: usize) -> Result<
 }
 
 pub(crate) fn decode_vab_sample(bytes: &[u8], offset: usize, idx: usize) -> Result<Vec<i16>> {
-    let report = legaia_vab::parse(bytes, offset).context("parse VAB")?;
+    let report = psx_vab::parse(bytes, offset).context("parse VAB")?;
     let span = report
         .vag_samples
         .get(idx)
         .ok_or_else(|| anyhow::anyhow!("VAB has only {} samples", report.vag_samples.len()))?;
     let body = &bytes[span.byte_offset..span.byte_offset + span.size];
-    legaia_vab::decode_vag(body).context("decode VAG body")
+    psx_vab::decode_vag(body).context("decode VAG body")
 }

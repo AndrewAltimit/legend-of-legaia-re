@@ -51,16 +51,16 @@ legaia-netplay.workspace = true
 legaia-engine-render.workspace = true
 legaia-prot.workspace = true
 legaia-save.workspace = true
-legaia-seq.workspace = true
-legaia-vab.workspace = true
-legaia-tim.workspace = true
+psx-seq.workspace = true
+psx-vab.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 rayon.workspace = true
 legaia-font.workspace = true
-legaia-mdec.workspace = true
-legaia-mednafen.workspace = true
-legaia-iso.workspace = true
-legaia-xa.workspace = true
+psx-mdec.workspace = true
+psx-mednafen.workspace = true
+psx-iso.workspace = true
+psx-xa.workspace = true
 legaia-actor-formats.workspace = true
 legaia-container-formats.workspace = true
 legaia-engine-battle.workspace = true
@@ -75,7 +75,7 @@ legaia-engine-ui.workspace = true
 legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
-legaia-ram-image.workspace = true
+psx-ram-image.workspace = true
 legaia-scene-formats.workspace = true
 legaia-ui-formats.workspace = true
 glam.workspace = true
@@ -133,7 +133,7 @@ legaia-app-theme.workspace = true
 tempfile.workspace = true
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.
-legaia-pcsx-redux.workspace = true
+psx-pcsx-redux.workspace = true
 # `mode_seat_host_parity` drives the BROWSER host beside this one, so the two
 # mode traces are compared by running both rather than by transcribing one.
 # `legaia-web-play` never depends on this crate, so the edge is acyclic, and

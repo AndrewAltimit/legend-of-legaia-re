@@ -80,7 +80,7 @@ impl World {
     /// Write the seated table's card page into `vram` (a duel's faces, or a
     /// poker table's visible cards), or put the covered words back once no
     /// table is seated. Returns whether `vram` changed.
-    pub fn step_duel_card_page(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+    pub fn step_duel_card_page(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let (px, py, pw, ph) = PAGE_RECT;
         let Some(content) = self.table_page_content() else {
             let page = &mut self.expansion.cards.duel_page;

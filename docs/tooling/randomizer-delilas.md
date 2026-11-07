@@ -634,7 +634,7 @@ the host's stance reads as the wrong body.
   edits: it is the only one that adds compressed bytes, and batching means one
   LZS re-fit. `patch_player_record0_full`'s `None` return means "nothing
   changed" and "did not fit" equally, so the write falls back to
-  `legaia_lzs::compress_optimal` and the caller treats an unexplained `None` as
+  `psx_lzs::compress_optimal` and the caller treats an unexplained `None` as
   a hard error. An overflow silently dropped would leave an art showing its new
   combo in the menu while answering to the old one in battle.
 
@@ -684,7 +684,7 @@ Routing facts those rows rest on:
   [battle voice cues](../subsystems/battle-action.md).
 - **Re-voicing** (`delilas_xa_voice`): each sibling's `monster.snd` SPU samples
   decode to PCM, peak-normalize, resample to the channel's CD-XA rate and
-  re-encode through the crate's XA-ADPCM encoder (`legaia_xa::encode`, mono and
+  re-encode through the crate's XA-ADPCM encoder (`psx_xa::encode`, mono and
   dual-mono-stereo 4-bit; the staged-event banks and victory barks ship
   stereo), written at each channel head. Subheaders and routing survive, and
   other speakers' channels stay byte-identical.
@@ -1340,7 +1340,7 @@ music starting late. The fix is a front shift in place
   correlation of -0.15, and the out-of-phase blend is audible as the music
   restarting;
 - every frame past the bridge is bit-identical input, so the true-stereo
-  re-encode (`legaia_xa::encode::encode_stereo_4bit`) converges back onto the
+  re-encode (`psx_xa::encode::encode_stereo_4bit`) converges back onto the
   retail bytes within the written span (the disc oracle asserts the span's tail
   equals retail) and the blast keeps its authored +14.8 s offset;
 - an RMS guard skips an already-shifted stream (retail is silent at

@@ -67,7 +67,7 @@ impl MonsterMesh {
             .map(|c| {
                 let mut pal = [[0u8; 4]; 16];
                 for (i, slot) in pal.iter_mut().enumerate() {
-                    let raw = legaia_bytes::u16_le(pool, c * 32 + i * 2).unwrap_or(0);
+                    let raw = psx_bytes::u16_le(pool, c * 32 + i * 2).unwrap_or(0);
                     *slot = bgr555_to_rgba(raw);
                 }
                 pal
@@ -126,7 +126,7 @@ impl MonsterMesh {
     pub fn battle_render_mesh(
         &self,
         slot: u8,
-        vram: &mut legaia_tim::Vram,
+        vram: &mut psx_tim::Vram,
     ) -> Option<legaia_tmd::mesh::VramMesh> {
         self.battle_render_mesh_with_object_ids(slot, vram)
             .map(|(mesh, _)| mesh)
@@ -137,7 +137,7 @@ impl MonsterMesh {
     pub fn battle_render_mesh_with_object_ids(
         &self,
         slot: u8,
-        vram: &mut legaia_tim::Vram,
+        vram: &mut psx_tim::Vram,
     ) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u32>)> {
         let tmd = legaia_tmd::parse(self.tmd_bytes()).ok()?;
         let (mut mesh, object_ids) =
@@ -332,13 +332,13 @@ pub fn mesh(entry: &[u8], id: u16) -> Result<Option<MonsterMesh>> {
     // The stat record's +0x04 holds the block-relative TMD offset (and +0x08
     // the texture pool). Validate the TMD magic before trusting the pointer so
     // filler / non-mesh slots return None rather than a bogus offset.
-    let Some(tmd_offset) = legaia_bytes::u32_le(&block, 0x04).map(|v| v as usize) else {
+    let Some(tmd_offset) = psx_bytes::u32_le(&block, 0x04).map(|v| v as usize) else {
         return Ok(None);
     };
-    if tmd_offset + 4 > block.len() || legaia_bytes::u32_le(&block, tmd_offset) != Some(TMD_MAGIC) {
+    if tmd_offset + 4 > block.len() || psx_bytes::u32_le(&block, tmd_offset) != Some(TMD_MAGIC) {
         return Ok(None);
     }
-    let texture_pool_offset = legaia_bytes::u32_le(&block, 0x08).unwrap_or(0) as usize;
+    let texture_pool_offset = psx_bytes::u32_le(&block, 0x08).unwrap_or(0) as usize;
     Ok(Some(MonsterMesh {
         id,
         block,

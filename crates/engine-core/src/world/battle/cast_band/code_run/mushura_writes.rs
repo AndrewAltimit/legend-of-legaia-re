@@ -20,6 +20,10 @@ const FULL_TURN: i32 = 0x1000;
 /// quarter of it: retail's stand reads `-552` entering arm 8 and `-140` leaving.
 const ARM_FRAME_STEP: i32 = 4;
 
+/// The chase target an empty retail seat leaves (`0x801F8154` naming a
+/// seat the engine seats nobody in).
+const MUSHURA_EMPTY_SEAT: u8 = 0xFF;
+
 impl World {
     /// PROT 0915's creature, on each pass of the arms that move it:
     ///
@@ -241,17 +245,29 @@ impl World {
             let off = if bearing > own { 0xC00 } else { 0x400 };
             m.battle.facing_angle = ((own + off) & 0xFFF) as u16;
         }
-        // The chase target `0x801F8154`.
-        let row = self.ra_seru_row(monster_count);
+        // The chase target `0x801F8154`. A target in reach is traded by
+        // `do t = rand() % 4 + 3 while t == old` (`0x801F7ABC..0x801F7AE8`):
+        // the four monster seats whatever the row holds, standing or not, so
+        // a seat with no monster in it can come up. The engine has no actor
+        // there; it holds `0xFF`, which no metric reaches and no turn reads.
+        let _ = monster_count;
         let mut target = self.casting.module_mushura_target;
-        if row.len() > 1 && self.creature_range_metric((here.x, here.z), 0, target) == 0 {
-            let others: Vec<u8> = row
-                .iter()
-                .map(|&(e, _)| e as u8)
-                .filter(|&e| e != target)
-                .collect();
-            target = others[self.next_rand() as usize % others.len()];
+        if self.creature_range_metric((here.x, here.z), 0, target) == 0 {
+            let map = self.cast_seat_map();
+            let old = if target == MUSHURA_EMPTY_SEAT {
+                self.casting.module_mushura_retail_seat
+            } else {
+                map.retail(target)
+            };
+            let seat = loop {
+                let t = (self.next_rand() % 4) as u8 + 3;
+                if t != old {
+                    break t;
+                }
+            };
+            target = map.engine(seat).unwrap_or(MUSHURA_EMPTY_SEAT);
             self.casting.module_mushura_target = target;
+            self.casting.module_mushura_retail_seat = seat;
         }
         let Some(t) = self.actors.get(usize::from(target)) else {
             return;

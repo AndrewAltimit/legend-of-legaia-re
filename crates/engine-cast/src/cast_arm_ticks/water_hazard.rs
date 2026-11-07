@@ -18,8 +18,8 @@ use super::*;
 ///
 /// * the **low** leg (`caster[+0x1DD] < 3` or `== 8`) sweeps `0 .. ctx[+0]`,
 ///   staging `+0x1DA = +0x1F1` with `+0x1DC = 1`;
-/// * the **monster** leg sweeps `3 .. 3 + ctx[+1]`, **skipping the caster's
-///   own seat**, and picks the reaction clip the way the rest of the band
+/// * the **monster** leg (any other code, a single monster seat included)
+///   sweeps `3 .. 3 + ctx[+1]`, **skipping the caster's own seat**, and picks the reaction clip the way the rest of the band
 ///   does - `+0x1F1` with `+0x1DC = 1` when the seat died or `+0x1F2 != 0`,
 ///   else `+0x1EF` with `+0x1DC = 5`.
 ///
@@ -30,8 +30,11 @@ use super::*;
 /// Not ported: the twelve-step ring of `FUN_80021B04` spawns arm `2` opens
 /// with, the framing and the countdown at `0x801F86A0`.
 ///
-/// `damage` is the caller's per-seat roll; `status` is the caller's per-seat
-/// `rand()`, of which only `& 7 == 0` is read.
+/// `roll` is called once per hit seat, in sweep order, and answers that seat's
+/// damage and then its status `rand()` (only `& 7 == 0` is read). Retail draws
+/// them in that order seat by seat - the wrapper's two draws, then the status
+/// draw (`0x801F78D0` / `0x801F797C`) - so a caller must not roll the row's
+/// damage ahead of its statuses.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -43,8 +46,7 @@ pub fn water_hazard_tick(
     caster_target_code: u8,
     caster: &mut CastActorState,
     seats: &mut [CastActorState],
-    damage: impl Fn(u8) -> i32,
-    status: impl Fn(u8) -> u32,
+    mut roll: impl FnMut(u8) -> (i32, u32),
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let step = run_chain_tick(ctx, |c| match c.phase {
@@ -56,7 +58,14 @@ pub fn water_hazard_tick(
         2 => {
             let low_leg = caster_target_code == TARGET_CODE_LOW_ROW
                 || caster_target_code < FIRST_MONSTER_SEAT;
-            for seat in arm_target_seats(c, caster_target_code, true) {
+            // The monster leg is the whole row whatever monster seat the code
+            // names (`0x801F79D0..0x801F7B6C` runs `3 .. 3 + ctx[+1]`).
+            let row: Vec<u8> = if low_leg {
+                (0..c.party_count).collect()
+            } else {
+                (FIRST_MONSTER_SEAT..FIRST_MONSTER_SEAT.saturating_add(c.monster_count)).collect()
+            };
+            for seat in row {
                 if !low_leg && seat == caster_seat {
                     continue;
                 }
@@ -66,7 +75,7 @@ pub fn water_hazard_tick(
                 if !aoe_seat_is_hittable(s) {
                     continue;
                 }
-                let roll = damage(seat);
+                let (roll, status) = roll(seat);
                 let applied = if low_leg {
                     apply_arm_hit(s, roll, 1, s.anim_rate)
                 } else {
@@ -86,7 +95,7 @@ pub fn water_hazard_tick(
                     }
                     dmg
                 };
-                if status(seat) & 7 == 0 {
+                if status & 7 == 0 {
                     s.flags |= FLAG_WATER_HAZARD_STATUS;
                 }
                 hits.push(SweepHit { seat, applied });

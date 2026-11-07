@@ -69,7 +69,7 @@ use legaia_parity::mode_trace_oracle::{
     build_engine_mode_trace_field_live, build_engine_mode_trace_new_game_battle_leg,
     first_mode_trace_divergence, load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
-use legaia_ram_image::ScenarioManifest;
+use psx_ram_image::ScenarioManifest;
 use sha2::{Digest, Sha256};
 
 /// Default location of the v0.1 replay file, relative to the workspace

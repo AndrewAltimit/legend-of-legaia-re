@@ -1174,7 +1174,7 @@ boxes, the base scene's own meshes. `cycle` rotates palette entries
 mode-3 HSV cell kernel (`FUN_80019D50`'s port,
 `engine-field::clut_cell_fx::apply_hsv_cell`); `tint` recolours entries once and holds them: a
 static hue turn and brightness shift through the same kernel, then a
-per-channel multiply (`legaia_tim::tint::tint_bgr555`), so a kept room's
+per-channel multiply (`psx_tim::tint::tint_bgr555`), so a kept room's
 art takes the map's mood; `scroll` rotates an atlas
 cell's texels by whole texels, wrapping, at any page depth - texture
 flowing over still geometry; a floor that itself moves is a

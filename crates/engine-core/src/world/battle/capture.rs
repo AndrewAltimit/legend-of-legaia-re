@@ -246,6 +246,49 @@ impl World {
         } else {
             gain
         };
+        // Inside the summon band the finisher banks the XP at the hit, but
+        // the level check runs only once `0x36` has seen the stager return
+        // (`jal 0x801E70BC` after the `bne v0,zero` hold at `0x801E4CB0`): the
+        // banner rises after the module's last arm, not on the hit's pass. A
+        // module still ticking in `0x36` banks there too.
+        if matches!(self.battle_ctx.action_state, 0x32..=0x36) {
+            let (c, s, g) = self
+                .casting
+                .pending_level_check
+                .unwrap_or((caster, spell_id, 0));
+            if (c, s) == (caster, spell_id) {
+                // The XP itself lands now, as the finisher's tail stores it;
+                // a pack spell's XP waits with the check.
+                let banked = !self.expansion_casting_pack(caster, spell_id) && {
+                    let char_slot = self.party_roster_slot(caster as usize);
+                    self.party
+                        .roster
+                        .members
+                        .get_mut(char_slot)
+                        .is_some_and(|r| {
+                            let slot = legaia_engine_battle::magic_xp::spell_slot(r, spell_id)
+                                .unwrap_or(legaia_engine_battle::magic_xp::SPELL_SEARCH_BOUND);
+                            legaia_engine_battle::magic_xp::add_spell_xp(r, slot, gain);
+                            true
+                        })
+                };
+                let held = if banked { g } else { g.saturating_add(gain) };
+                self.casting.pending_level_check = Some((c, s, held));
+                return;
+            }
+        }
+        self.bank_summon_spell_xp(caster, spell_id, gain);
+    }
+
+    /// The level check state `0x36` runs (`FUN_801E70BC`) over the XP the
+    /// band banked ([`Self::accrue_summon_spell_xp`]).
+    pub(in crate::world) fn run_summon_magic_level_check(&mut self) {
+        if let Some((caster, spell_id, gain)) = self.casting.pending_level_check.take() {
+            self.bank_summon_spell_xp(caster, spell_id, gain);
+        }
+    }
+
+    fn bank_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
         // An expansion pack spell trains its own level, not the base's.
         if self.expansion_cast_xp(caster, spell_id, gain) {
             return;

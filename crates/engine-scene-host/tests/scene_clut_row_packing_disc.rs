@@ -12,7 +12,7 @@
 //! every primitive of the placed house at tile `(37, 42)` sampled the
 //! densely-packed row 491 and was dropped, leaving a hole through to the
 //! clear colour where the building should stand. See
-//! `legaia_tim::vram::PrimTextureStatus::ClutDepthMismatch`.
+//! `psx_tim::vram::PrimTextureStatus::ClutDepthMismatch`.
 //!
 //! Both halves are asserted, because either alone can pass vacuously: the
 //! house must keep its prims (a filter that dropped everything would still
@@ -64,7 +64,7 @@ fn a_densely_packed_clut_row_keeps_its_prims() {
     let env_tmds = legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res);
 
     // --- The VRAM half: the row really is packed past the old bound. ---
-    let packed = (0..legaia_tim::vram::VRAM_WIDTH)
+    let packed = (0..psx_tim::vram::VRAM_WIDTH)
         .filter(|&x| res.vram.pixel(x, HOUSE_CLUT_ROW) != 0)
         .count();
     assert!(

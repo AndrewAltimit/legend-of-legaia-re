@@ -31,8 +31,8 @@ use std::path::PathBuf;
 use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};
 use legaia_prot::archive::Archive;
-use legaia_seq::{ChannelMessage, EventBody, Seq};
-use legaia_vab::VagAtr;
+use psx_seq::{ChannelMessage, EventBody, Seq};
+use psx_vab::VagAtr;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -90,7 +90,7 @@ fn sweep() -> Option<Vec<UnusedHit>> {
         // The bank that rides in the same container: wrapped at +4, or bare.
         let Some(report) = [4usize, 0]
             .iter()
-            .find_map(|&off| legaia_vab::parse(&bytes, off).ok())
+            .find_map(|&off| psx_vab::parse(&bytes, off).ok())
         else {
             continue;
         };

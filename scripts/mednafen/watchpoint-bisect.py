@@ -63,7 +63,7 @@ def main() -> int:
     if not DEFAULT_BIN.exists():
         print("[info] building mednafen-state...", file=sys.stderr)
         subprocess.check_call(
-            ["cargo", "build", "--release", "-p", "legaia-mednafen"],
+            ["cargo", "build", "--release", "-p", "psx-mednafen"],
             cwd=REPO_ROOT)
 
     resolved = [resolve(s) for s in args.saves]

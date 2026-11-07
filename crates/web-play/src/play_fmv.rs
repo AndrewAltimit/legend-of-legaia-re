@@ -80,8 +80,8 @@ use legaia_game_tables::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_seg
 use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
-use legaia_iso::image::FileEntry;
-use legaia_mdec::str_av::{StrAv, demux_str_av};
+use psx_iso::image::FileEntry;
+use psx_mdec::str_av::{StrAv, demux_str_av};
 
 /// Raw Mode-2 sector size the page slices the disc image by.
 pub const RAW_SECTOR_SIZE: usize = 2352;
@@ -122,7 +122,7 @@ pub(crate) struct WantedFmv {
 
 /// An installed movie: demuxed video (decoded per frame) + decoded audio.
 pub(crate) struct OpenFmv {
-    /// The shared demux ([`legaia_mdec::str_av`]) - the native window opens
+    /// The shared demux ([`psx_mdec::str_av`]) - the native window opens
     /// its movies through the same kernel, so the frame list, the frame rate
     /// and the soundtrack (dominant channel, at its own sample width) agree.
     av: StrAv,
@@ -780,15 +780,15 @@ pub(crate) mod tests {
     use legaia_engine_system::movie::cutscene::fmv_skip_edge_hit as skip_edge_hit;
 
     /// A one-frame 320x224 movie at 15 fps standing in for an installed one.
-    fn test_av(audio: Option<legaia_mdec::str_av::StrAudio>) -> StrAv {
+    fn test_av(audio: Option<psx_mdec::str_av::StrAudio>) -> StrAv {
         StrAv {
-            frames: vec![legaia_mdec::str_av::StrFrameBits {
+            frames: vec![psx_mdec::str_av::StrFrameBits {
                 width: 320,
                 height: 224,
                 frame_number: 1,
                 bitstream: Vec::new(),
             }],
-            timing: legaia_mdec::str_sector::StrTiming {
+            timing: psx_mdec::str_sector::StrTiming {
                 sector_count: 10,
                 frame_count: 1,
                 sectors_per_frame: 10.0,
@@ -877,11 +877,11 @@ pub(crate) mod tests {
             let slot = rt.fmv.slot.as_mut().unwrap();
             slot.wanted = None;
             slot.open = Some(OpenFmv {
-                av: test_av(Some(legaia_mdec::str_av::StrAudio {
+                av: test_av(Some(psx_mdec::str_av::StrAudio {
                     file_no: 1,
                     ch_no: 0,
                     sample_rate: 37_800,
-                    channels: legaia_xa::Channels::Stereo,
+                    channels: psx_xa::Channels::Stereo,
                     pcm: vec![1, -1, 2, -2],
                 })),
                 audio_handed: false,

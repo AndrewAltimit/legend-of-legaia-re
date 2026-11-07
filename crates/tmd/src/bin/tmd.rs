@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_tim::vram::{PrimTextureStatus, VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use legaia_tmd::{legaia_prim_probe, legaia_prims, parse, vram_targeted};
+use psx_tim::vram::{PrimTextureStatus, VRAM_HEIGHT, VRAM_WIDTH, Vram};
 
 #[derive(Parser)]
 #[command(name = "tmd", version, about = "PSX TMD parser (Legaia variant)")]
@@ -493,7 +493,7 @@ fn vram_dump(tmd_path: &Path, out: &Path, vram_dirs: &[PathBuf], annotate: bool)
     if annotate {
         annotate_vram_png(&mut rgba, &needs);
     }
-    legaia_tim::write_png(out, VRAM_WIDTH, VRAM_HEIGHT, &rgba)
+    psx_tim::write_png(out, VRAM_WIDTH, VRAM_HEIGHT, &rgba)
         .with_context(|| format!("write PNG to {}", out.display()))?;
     eprintln!(
         "wrote {} ({}x{} BGR555 + STP-as-alpha)",

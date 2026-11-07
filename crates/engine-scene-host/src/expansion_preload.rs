@@ -101,7 +101,7 @@ impl PreparedMap {
                 .map(|p| p.words.len() * 2)
                 .sum::<usize>();
         if let Some(b) = self.build.as_ref() {
-            n += legaia_tim::VRAM_PIXELS * 2;
+            n += psx_tim::VRAM_PIXELS * 2;
             n += b
                 .tmds
                 .iter()

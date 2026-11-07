@@ -181,6 +181,7 @@ class TmdRenderer {
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
     this.locCurveBias = gl.getUniformLocation(this.program, 'u_curve_bias');
     this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');
+    this.locGroundDrop = gl.getUniformLocation(this.program, 'u_ground_drop');
     this.locGteSat = gl.getUniformLocation(this.program, 'u_gte_sat');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
@@ -313,6 +314,8 @@ class TmdRenderer {
      * every other page. */
     this.primNear = [0, 0, 0, 0];
     this.gteSat = [0, 0, 0, 0];
+    /* The field ground's depth rule (setGroundDrop); 0 = retail's buckets. */
+    this.groundDrop = 0;
     this.primRefsFn = null;
     /* Camera-occlusion fade focus: the player's WORLD-space body centre
      * (draw frame, i.e. the Y-flipped coords every placement uses), staged
@@ -694,6 +697,7 @@ class TmdRenderer {
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
     /* Nor near-reject: another scene-pass word on the shared program. */
     if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
+    if (this.locGroundDrop) gl.uniform1f(this.locGroundDrop, 0);
     /* Nor the GTE's register limits (the same scene-pass staging). */
     if (this.locGteSat) gl.uniform4f(this.locGteSat, 0, 0, 0, 0);
     /* Nor does it NCLIP-reject: `u_nclip_cull` is a scene-pass word too

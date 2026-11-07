@@ -57,7 +57,11 @@ def manifest_info(path: Path) -> dict:
     m = tomllib.loads(path.read_text())
 
     def names(table: dict) -> set[str]:
-        return {k.removeprefix("legaia-") for k in table if k.startswith("legaia-")}
+        return {
+            k.removeprefix("legaia-").removeprefix("psx-")
+            for k in table
+            if k.startswith(("legaia-", "psx-"))
+        }
 
     normal: set[str] = set()
     dev: set[str] = set()

@@ -188,7 +188,7 @@ fn tim_addresses(bytes: &[u8]) -> Vec<(FbRect, FbRect)> {
         let Some(slice) = bytes.get(hit.offset..end) else {
             continue;
         };
-        let Ok(tim) = legaia_tim::parse(slice) else {
+        let Ok(tim) = psx_tim::parse(slice) else {
             continue;
         };
         let Some(c) = tim.clut.as_ref() else { continue };
@@ -294,14 +294,14 @@ fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
         .into_iter()
         .filter_map(|hit| {
             let end = hit.offset + hit.byte_len;
-            let tim = legaia_tim::parse(raw.get(hit.offset..end)?).ok()?;
+            let tim = psx_tim::parse(raw.get(hit.offset..end)?).ok()?;
             let c = tim.clut?;
             Some((c.fb_x, c.fb_y, c.entries))
         })
         .collect();
     assert!(!want.is_empty(), "the stage entry carries CLUTs");
 
-    let read_row = |v: &legaia_tim::Vram, x: u16, y: u16, n: usize| -> Vec<u16> {
+    let read_row = |v: &psx_tim::Vram, x: u16, y: u16, n: usize| -> Vec<u16> {
         (0..n)
             .map(|i| v.pixel(x as usize + i, y as usize))
             .collect()

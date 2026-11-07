@@ -100,7 +100,7 @@ The 8-bit mode (subheader `coding_info` bits 4..5 = `01`) uses the **same 128-by
 - **Reconstruction.** Identical filter math, but the sample sits in the top byte of the 16-bit word before the gain shift: `shifted = (sign_extend(byte, 8) << 8) >> range` (8 bits of headroom vs the 4-bit path's 12). The 8-bit byte is signed (`0x80` = -128).
 - **Stereo de-interleave.** LEFT = even units (0,2), RIGHT = odd units (1,3), pairing `(0,1),(2,3)`.
 
-This yields 112 samples/group (4 × 28) vs the 4-bit path's 224. Select it with `legaia_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }` (the demux path maps each channel's reported width automatically; the CLI exposes `--bits 8`). The whole NA corpus is 4-bit, so 4-bit is the default and the 8-bit path is exercised by synthetic unit tests (silence, full-byte sign-extension, the stereo split).
+This yields 112 samples/group (4 × 28) vs the 4-bit path's 224. Select it with `psx_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }` (the demux path maps each channel's reported width automatically; the CLI exposes `--bits 8`). The whole NA corpus is 4-bit, so 4-bit is the default and the 8-bit path is exercised by synthetic unit tests (silence, full-byte sign-extension, the stereo split).
 
 ## Demuxing
 
@@ -154,7 +154,7 @@ and [The CD input volume](../subsystems/audio.md#the-cd-input-volume).
 
 | Subject | Source |
 |---|---|
-| Mode 2 / Form 2 sector layout | PSX BIOS docs + `legaia-iso::raw` |
+| Mode 2 / Form 2 sector layout | PSX BIOS docs + `psx-iso::raw` |
 | Subheader interpretation | [`crates/xa/src/demux.rs`](../../crates/xa/src/demux.rs) |
 | 4-bit ADPCM filter coefficients | [`crates/xa/src/lib.rs`](../../crates/xa/src/lib.rs) |
 | Sound-group decode (param + nibble layout, predictor) | bit-exact, sample-for-sample, against an external lossless reference decode of a real cutscene track; pinned by the disc-gated `xa_pcm_matches_reference` oracle in [`crates/xa/tests/pcm_reference.rs`](../../crates/xa/tests/pcm_reference.rs). |

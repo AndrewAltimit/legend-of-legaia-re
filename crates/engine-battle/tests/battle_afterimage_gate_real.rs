@@ -35,7 +35,7 @@ fn entry_bytes(entry: &[u8], id: u16) -> Option<Vec<(u8, u8, u8, u8)>> {
     let count = *block.get(0x4a)? as usize;
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
-        let off = legaia_bytes::u32_le(&block, 0x4c + i * 4)? as usize;
+        let off = psx_bytes::u32_le(&block, 0x4c + i * 4)? as usize;
         let tag = *block.get(off)?;
         let b77 = block.get(off + 0x77).copied().unwrap_or(0);
         let b87 = block.get(off + 0x87).copied().unwrap_or(0);

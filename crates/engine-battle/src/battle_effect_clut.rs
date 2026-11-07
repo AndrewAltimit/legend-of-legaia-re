@@ -43,7 +43,7 @@
 //! `{0x00, 0xB0, 0xC0, 0xD0}`: three non-zero values, each a multiple of 16
 //! and each a plausible CLUT column. A sound map would not be three-valued.
 
-use legaia_tim::{VRAM_WIDTH, Vram};
+use psx_tim::{VRAM_WIDTH, Vram};
 
 /// VRAM row the effect palette lives on (`0x1DC`), source and destination
 /// both - the copy moves sideways along one row.

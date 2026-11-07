@@ -63,6 +63,60 @@ impl World {
         const TINT_FLAT: u8 = 0xC8;
         const NEUTRAL_WORD: u32 = 0x2008_0200;
         const HIDDEN: u8 = 0xFF;
+        // Arm 4's pass seats the creature (`jal 0x801F19EC`), then lights it
+        // white and points its node at deformation row 1, a sweep that
+        // re-forms it from the floor up as its `+0x1BA` drains
+        // (`0x801F7120..0x801F71D8`). The host seats the creature's mesh
+        // when it has bound it, which can be after the arm's pass, so the
+        // stores land on the first pass of arms 4..6 the seat exists on:
+        // ahead of them the installer's reset would undo them. Arm 6's exit
+        // drops `+0x21C` (`0x801F7430`) and the tint ease takes the word back.
+        let assembling = (phase_in == cam::ALURU_ASSEMBLY_ARM && passed)
+            || (phase_in > cam::ALURU_ASSEMBLY_ARM && phase_in <= cam::ALURU_ASSEMBLED_ARM);
+        if assembling
+            && let Some(slot) = self.casting.summon_actor_slot
+            && self
+                .actors
+                .get(usize::from(slot))
+                .is_some_and(|a| a.battle.shatter_row != Some(cam::ALURU_SHATTER_ROW))
+        {
+            self.npcs.face_rows.insert(
+                cam::ALURU_SHATTER_ROW,
+                crate::world::FieldFaceRow {
+                    offset: cam::ALURU_SHATTER_ROW_OFFSET,
+                    flags: cam::ALURU_SHATTER_ROW_FLAGS,
+                },
+            );
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.battle.render_color = cam::ALURU_ASSEMBLY_COLOUR;
+                a.battle.render_blend = cam::ALURU_ASSEMBLY_BLEND;
+                a.battle.render_flag = HIDDEN;
+                a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
+            }
+        }
+        if phase_in == cam::ALURU_ASSEMBLED_ARM
+            && passed
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            a.battle.render_flag = 0;
+            a.battle.shatter_row = None;
+        }
+        if phase_in == cam::ALURU_BLAST_ARM && passed && self.casting.module_cam.kill == Some(true)
+        {
+            self.npcs.face_rows.insert(
+                cam::ALURU_SHATTER_ROW,
+                crate::world::FieldFaceRow {
+                    offset: cam::ALURU_KILL_SHATTER_ROW_OFFSET,
+                    flags: cam::ALURU_SHATTER_ROW_FLAGS,
+                },
+            );
+            if let Some(a) = self.actors.get_mut(usize::from(victim)) {
+                a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
+            }
+        }
         if phase_in == cam::ALURU_RECORD_KILL_ARM && passed {
             if let Some(scene) = self.casting.active_summon.as_mut() {
                 for part in &mut scene.parts {
@@ -207,8 +261,8 @@ impl World {
 
     /// The non-lethal pre-hits five summon modules land before the
     /// band's fold, on the pass that makes them: each target's roll is the
-    /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
-    /// clamped to `HP - 1`
+    /// summon branch of `FUN_801DD0AC` with its finisher
+    /// ([`Self::summon_module_roll`]), clamped to `HP - 1`
     /// ([`legaia_engine_cast::seru_magic_ticks::summon_pre_hit`]).
     ///
     /// - PROT 0915 arm 7's pass: the latched victim, the roll quartered and
@@ -223,10 +277,10 @@ impl World {
     ///   `4`.
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
-    /// quartered roll is checked against, the first argument's `0x10` /
-    /// `0x12` mode (the predamage port has one summon branch), and PROT 0934
-    /// arm `0x18`'s per-pass ladder. PROT 0929 arm 16's is
-    /// [`Self::mule_wave_hit`].
+    /// quartered roll is checked against. The first argument's `0x10` /
+    /// `0x12` mode is read only on the kernel's monster branch. PROT 0929 arm
+    /// 16's wave is [`Self::mule_wave_hit`], PROT 0934 arm `0x18`'s ladder
+    /// `ozma_hit_ladder`.
     pub(in crate::world::battle::cast_band) fn apply_summon_pre_hits(
         &mut self,
         entry: u32,
@@ -618,7 +672,12 @@ impl World {
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
                 let shield = self.battle.mystic_shield_up();
-                for &(_, e) in &slots {
+                // Every monster seat, fallen ones too: the walk tests HP inside
+                // the loop (`0x801F7DD8..0x801F8188`, bound `ctx[+1]`).
+                let row: Vec<usize> = (0..monsters)
+                    .filter_map(|i| map.engine(3 + i as u8).map(usize::from))
+                    .collect();
+                for &e in &row {
                     self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {
                         continue;
@@ -665,36 +724,40 @@ impl World {
     /// zero - plus `rand() % (hit / 8 + 1)`, its popup pushed with that
     /// amount (`FUN_801F44A0`), the HP write clamped to `HP - 1` (the wave
     /// cannot kill) and its reaction clip `+0x1EF` (else `+0x1F0`) staged with
-    /// the restage bits `5`. A living monster the wave does not hit this pass
-    /// has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
+    /// the restage bits `5`. Any monster seat the wave does not hit this pass,
+    /// a fallen one included, has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
     ///
     /// Not carried: the damage tallies the roll is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target), and
     /// the byte `0x8007B64C` the hit clears.
+    /// REF: FUN_801DD0AC (each wave roll, through [`Self::summon_module_roll`])
+    /// REF: FUN_801F44A0 (the popup push, `World::battle.hit_fx`)
     fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let s = slot as u8;
         let v = self.cast_view(s);
-        if v.hp == 0 {
-            return;
-        }
         let z = self
             .actors
             .get(slot)
             .map_or(0, |a| i32::from(a.move_state.world_z));
         // `+0x1D9 == 0`: no clip playing - the engine's reaction channel
         // included, where a staged reaction plays (`battle_current_anim`).
-        let hittable = v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
+        // A fallen seat takes the same skip as the others: its staged clip is
+        // cleared (`beq v0,zero,0x801F80A0` at `0x801F7DEC`).
+        let hittable =
+            v.hp != 0 && v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
         if !hittable || z >= front || shield {
             let mut v = v;
             v.staged_anim = 0;
             self.write_cast_view(s, &v);
             return;
         }
-        let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+        // A whole `FUN_801DD0AC` roll, finisher and all (`0x801DD478`): the
+        // wave trains the spell and fills the victim's spirit on every hit.
+        let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
             return;
         };
-        let mut hit = u32::from(roll) / 3;
+        let mut hit = roll / 3;
         if hit == 0 {
             hit = self.next_rand() % 16 + 16;
         }
@@ -895,6 +958,28 @@ impl World {
                         a.battle.render_color = 0;
                         a.battle.render_flag = RENDER_FLAG_HIDDEN;
                     }
+                }
+                // The same exit puts the creature into the defeat fade
+                // (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)` with `v0 = 2`,
+                // `0x801F7CA4..0x801F7CB0`): it fades out over arm `0x12`'s
+                // `96 * scalar`, whose exit zeroes its word (`sw zero,0x4(s4)`
+                // at `0x801F7D70`).
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_flag = 2;
+                    a.battle.capture_state = 2;
+                }
+            }
+            (0x12, true) => {
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_color = 0;
                 }
             }
             (0x13, true) => {

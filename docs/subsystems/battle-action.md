@@ -401,7 +401,10 @@ The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto) and 0908 
 
 #### State `0x36` - Summon - return-from-fade
 
-Runs `func_0x801F1ED4` and **holds while it returns non-zero** (`bne v0,zero,<exit>` at `0x801E4CB0`) - the stager's own phase machine paces this state. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](battle-action-helpers.md#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero.
+Runs `func_0x801F1ED4` and **holds while it returns non-zero** (`bne v0,zero,<exit>` at `0x801E4CB0`) - the stager's own phase machine paces this state. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](battle-action-helpers.md#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`).
+The check runs only after the stager has returned, so the "magic level increased" banner rises after the module's last arm, not on the pass its hit banked the XP.
+The engine holds a band hit's XP (`CastFxState::pending_level_check`) and runs the check from this state's host call (`BattleActionHost::summon_magic_level_check`); banked at the hit, the banner covered the last arms of every film that levels.
+Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero.
 
 **Next:** `0x37`.
 

@@ -20,14 +20,14 @@ fn synth_player_file(clut_n: usize, extra_tail: usize) -> Vec<u8> {
     decoded.extend(std::iter::repeat_n(0xA5u8, rect.pixel_bytes()));
     decoded.extend(std::iter::repeat_n(0u8, extra_tail));
 
-    let stream = legaia_lzs::compress_optimal(&decoded);
+    let stream = psx_lzs::compress_optimal(&decoded);
     let slot_size = ((4 + stream.len()).div_ceil(0x800) * 0x800) as u32;
 
     // record[0]'s own stream: a tiny buffer with two pool offsets that
     // deliberately do NOT satisfy the exact-extent rule, so this
     // fixture yields exactly one row.
     let r0 = vec![0u8; 0x40];
-    let r0_stream = legaia_lzs::compress_optimal(&r0);
+    let r0_stream = psx_lzs::compress_optimal(&r0);
 
     let desc_off = 0x10 + r0_stream.len().div_ceil(4) * 4 + 0x10;
     let mut buf = Vec::new();
@@ -159,7 +159,7 @@ fn synth_with_record0(a_clut_n: usize, b_clut_n: usize) -> Vec<u8> {
     let clut_b_off = r0.len();
     push_block(&mut r0, b_clut_n, RECORD0_TEXTURE_RECTS[1], 64);
 
-    let r0_stream = legaia_lzs::compress_optimal(&r0);
+    let r0_stream = psx_lzs::compress_optimal(&r0);
     let desc_off = 0x10 + r0_stream.len().div_ceil(4) * 4 + 0x10;
     let mut buf = Vec::new();
     buf.extend_from_slice(&(desc_off as u32).to_le_bytes());
@@ -225,9 +225,9 @@ fn record0_blocks_that_do_not_chain_are_rejected() {
     let mut file = synth_with_record0(0, 32);
     let a_off = u32::from_le_bytes(file[4..8].try_into().unwrap()) as usize;
     let budget = u32::from_le_bytes(file[12..16].try_into().unwrap()) as usize;
-    let mut r0 = legaia_lzs::decompress(&file[0x10..], budget).unwrap();
+    let mut r0 = psx_lzs::decompress(&file[0x10..], budget).unwrap();
     r0[a_off + 2..a_off + 4].copy_from_slice(&16u16.to_le_bytes());
-    let stream = legaia_lzs::compress_optimal(&r0);
+    let stream = psx_lzs::compress_optimal(&r0);
     file[0x10..0x10 + stream.len()].copy_from_slice(&stream);
     let mut id = 0u32;
     let rows = build_from_file(865, &file, &mut id);
@@ -269,9 +269,9 @@ fn resolve_reports_an_unflagged_record_as_dead_pool() {
     let pack = battle_data_pack::detect(&file).unwrap();
     let off = pack.records[0].file_offset(pack.data_base);
     let dec_size = u32::from_le_bytes(file[off..off + 4].try_into().unwrap()) as usize;
-    let mut decoded = legaia_lzs::decompress(&file[off + 4..], dec_size).unwrap();
+    let mut decoded = psx_lzs::decompress(&file[off + 4..], dec_size).unwrap();
     decoded[0x12..0x14].copy_from_slice(&0u16.to_le_bytes());
-    let stream = legaia_lzs::compress_optimal(&decoded);
+    let stream = psx_lzs::compress_optimal(&decoded);
     file[off + 4..off + 4 + stream.len()].copy_from_slice(&stream);
     let err = resolve_block(&file, BattleTextureSlot::Section(0), 0)
         .unwrap_err()

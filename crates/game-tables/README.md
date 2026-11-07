@@ -46,7 +46,7 @@ table's layout and provenance.
 
 ## Layering
 
-Depends on `legaia-bytes` and `legaia-overlay-images`. It must not depend on
+Depends on `psx-bytes` and `legaia-overlay-images`. It must not depend on
 the container layer or on any scene, UI, minigame or actor format
 crate; those sit above it and read these tables.
 

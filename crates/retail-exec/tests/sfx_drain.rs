@@ -13,7 +13,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_audio::spu::Spu;
 use legaia_engine_audio::vab_bind::{UploadedVag, VabBank, VabProgram};
 use legaia_engine_audio::{SfxBank, SfxScheduler};
-use legaia_retail_exec::{A0, A2, A3, Cpu, Stop};
+use psx_retail_exec::{A0, A2, A3, Cpu, Stop};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -52,7 +52,7 @@ const TONES: usize = 32;
 
 /// A bank whose tone `(p, t)` plays sample `p * TONES + t`, at a unique address.
 fn tagged_bank() -> VabBank {
-    let tone = |vag: i16| legaia_vab::VagAtr {
+    let tone = |vag: i16| psx_vab::VagAtr {
         prior: 0,
         mode: 0,
         vol: 127,
@@ -110,14 +110,14 @@ fn rig(log: &Rc<RefCell<Vec<Ev>>>) -> Option<Cpu> {
     // saved its own `ra` on entry (`0x80016B80`) and restores it from there.
     cpu.hook(DRAIN_SLOT, move |r, _| {
         l.borrow_mut().push(Ev::Cue);
-        r.r[legaia_retail_exec::V0] = 0x8008_0000;
-        r.r[legaia_retail_exec::RA] = DRAIN_SLOT + 4;
+        r.r[psx_retail_exec::V0] = 0x8008_0000;
+        r.r[psx_retail_exec::RA] = DRAIN_SLOT + 4;
     });
     let l = log.clone();
     // The routine goes on past the ring loop into the frame's vsync pacing,
     // which rewrites the frame step; the differential stops at the loop's exit.
     cpu.hook(DRAIN_LOOP_EXIT, |r, _| {
-        r.r[legaia_retail_exec::RA] = legaia_retail_exec::RETURN_SENTINEL
+        r.r[psx_retail_exec::RA] = psx_retail_exec::RETURN_SENTINEL
     });
     cpu.hook(KEY_ON, move |r, _| {
         l.borrow_mut()
@@ -215,7 +215,7 @@ fn port_events(spu: &mut Spu) -> Vec<Ev> {
 /// `0x10(sp)` before it returns.
 fn call_interior(cpu: &mut Cpu, entry: u32) -> Stop {
     cpu.mem
-        .wr32(STACK_TOP + 0x10, legaia_retail_exec::RETURN_SENTINEL);
+        .wr32(STACK_TOP + 0x10, psx_retail_exec::RETURN_SENTINEL);
     cpu.call(entry, &[])
 }
 

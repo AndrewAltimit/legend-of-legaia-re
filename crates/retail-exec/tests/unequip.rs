@@ -6,8 +6,8 @@
 
 use crate::common::{Rng, diff_offsets, scus_cpu};
 use legaia_engine_menus::equipment::party_unequip_accessory_by_id;
-use legaia_retail_exec::{Stop, V0};
 use legaia_save::Party;
+use psx_retail_exec::{Stop, V0};
 
 const UNEQUIP: u32 = 0x8004_30AC;
 const COUNT: u32 = 0x8008_4594;

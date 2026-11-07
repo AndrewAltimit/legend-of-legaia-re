@@ -211,6 +211,10 @@ pub trait BattleActionHost {
     /// reads it before the pass ends. Default no-op.
     fn camera_variant_pinned(&mut self, _style: u8) {}
 
+    /// State `0x36`'s call into the summon-magic level check `FUN_801E70BC`
+    /// (after the visibility restore, ahead of `0x37`). Default no-op.
+    fn summon_magic_level_check(&mut self) {}
+
     /// The summon band's `0x37` exit: it clears `ctx[+0x278]`
     /// (`sb zero,0x278(a0)` at `0x801E4E98`) - the byte the band shares with
     /// the slot-B module, which keeps its own copy host-side - and the

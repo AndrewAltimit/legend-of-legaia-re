@@ -703,7 +703,7 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
 
     // The touched overlay sector stays EDC/ECC-valid (the arm rewrite is
     // the only code edit this feature makes).
-    use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
+    use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
     let img = patcher.image();
     assert_eq!(img.len() % SECTOR_SIZE, 0);
     let ov_lba = patcher
@@ -711,7 +711,7 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
         .expect("overlay lba") as usize;
     let s = (ov_lba + arm_off / USER_DATA_SIZE) * SECTOR_SIZE;
     assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
+        psx_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
         "overlay arm sector EDC/ECC"
     );
 }

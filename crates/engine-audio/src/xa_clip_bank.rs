@@ -92,7 +92,7 @@ pub const RAW_SECTOR_BYTES: usize = 2352;
 /// the sectors off the disc image, the play page slices them out of the
 /// bytes it holds; neither keeps the raw sectors afterwards.
 pub fn decode_channel_span(raw_sectors: &[u8], channel: u8) -> Option<(XaClip, u8)> {
-    use legaia_xa::demux::{
+    use psx_xa::demux::{
         AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader,
     };
     let mut widest = 0u8;
@@ -117,16 +117,16 @@ pub fn decode_channel_span(raw_sectors: &[u8], channel: u8) -> Option<(XaClip, u
         return None;
     }
     let channels = if stereo {
-        legaia_xa::Channels::Stereo
+        psx_xa::Channels::Stereo
     } else {
-        legaia_xa::Channels::Mono
+        psx_xa::Channels::Mono
     };
-    let (pcm, _) = legaia_xa::decode(
+    let (pcm, _) = psx_xa::decode(
         &audio,
-        legaia_xa::DecodeOptions {
+        psx_xa::DecodeOptions {
             channels,
             sample_rate,
-            bits: legaia_xa::BitsPerSample::Four,
+            bits: psx_xa::BitsPerSample::Four,
         },
     )
     .ok()?;
@@ -352,7 +352,7 @@ mod tests {
 
     /// One synthetic raw Mode 2 Form 2 audio sector for `(file, ch)`.
     fn sector(ch_no: u8, coding: u8, fill: u8) -> Vec<u8> {
-        use legaia_xa::demux::{AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET};
+        use psx_xa::demux::{AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET};
         let mut s = vec![0u8; RAW_SECTOR_BYTES];
         // submode: audio (0x04) | form 2 (0x20) | real-time (0x40).
         let sub = [1, ch_no, 0x64, coding];
@@ -385,8 +385,8 @@ mod tests {
         assert!(decode_channel_span(&run, 5).is_none(), "no such channel");
         // An 8-bit channel is refused: the decoder is 4-bit only.
         let mut eight = sector(2, 0x10, 0x44);
-        eight[legaia_xa::demux::SUBHEADER_OFFSET + 3] = 0x10;
-        eight[legaia_xa::demux::SUBHEADER_OFFSET + 7] = 0x10;
+        eight[psx_xa::demux::SUBHEADER_OFFSET + 3] = 0x10;
+        eight[psx_xa::demux::SUBHEADER_OFFSET + 7] = 0x10;
         assert!(decode_channel_span(&eight, 2).is_none());
     }
 }

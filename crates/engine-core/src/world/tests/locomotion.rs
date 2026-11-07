@@ -214,6 +214,38 @@ fn locomotion_follows_terrain_height_only_when_gated_on() {
 }
 
 #[test]
+fn terrain_follow_glides_under_the_retail_settle() {
+    // Both play hosts raise the glide beside the snap. Retail's settle
+    // (`FUN_801D1BA0`, `0x801D1C30..0x801D1C68`) steps `+0x16` toward the
+    // floor at `delta_scalar * 12` a frame, so the step onto a tier `40`
+    // units up reads `-12, -24, -36, -40` over four vsyncs where the snap
+    // lands it at once. Retail films read the same ramp at `24` a pass
+    // (`tower_field_walk`: `-32, -8, 0`).
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.reset_field_collision_grid();
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 200;
+    world.actors[0].move_state.world_y = 0;
+    world.terrain.floor_height_lut[3] = -40;
+    let base = STRIDE + 1;
+    for &i in &[base, base + 1, base + STRIDE, base + STRIDE + 1] {
+        world.terrain.collision_grid[i] = 0x03;
+    }
+    world.locomotion.follow_terrain_height = true;
+    world.locomotion.vertical_settle = true;
+    let mut ys = Vec::new();
+    for _ in 0..5 {
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        ys.push(world.actors[0].move_state.world_y);
+    }
+    assert_eq!(ys, vec![-12, -24, -36, -40, -40]);
+}
+
+#[test]
 fn locomotion_gated_by_movement_disabled_flag() {
     let mut world = World::new();
     world.mode = SceneMode::Field;

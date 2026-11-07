@@ -11,8 +11,8 @@
 //! primitive's UVs can address; a palette starts on a 16-halfword boundary,
 //! which is what a CLUT word can address.
 
-use legaia_tim::Vram;
-use legaia_tim::vram::{VRAM_HEIGHT, VRAM_WIDTH};
+use psx_tim::Vram;
+use psx_tim::vram::{VRAM_HEIGHT, VRAM_WIDTH};
 
 /// VRAM the runtime writes after the scene build, so never handed out:
 /// `(x, y, w, h)` in halfwords.

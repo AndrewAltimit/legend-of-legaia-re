@@ -25,7 +25,7 @@ Implementation: [`crates/vab`](../../crates/vab/README.md) (header parser, extra
 | `0x820 + 0x200*ps` | 256 x u16 | VAG size table | **1-indexed**: `[1..=vs]` are sample sizes in 8-byte units; `[0]` is a spacer | Confirmed |
 | after the table | - | VAG bodies | SPU-ADPCM, 16-byte blocks of 28 samples | Confirmed |
 
-The header part is therefore `0x20 + 0x800 + 0x200 * ps + 0x200` bytes (`legaia_vab::header_part_size`).
+The header part is therefore `0x20 + 0x800 + 0x200 * ps + 0x200` bytes (`psx_vab::header_part_size`).
 
 The size table's leading spacer is `0` in all 424 retail VABs (asserted by the disc-gated `corpus_vag_spacer` test). It is **not** a master pitch or sample-rate shift; `VabReport::vag_table_spacer` surfaces the raw value only.
 
@@ -69,13 +69,13 @@ carriage is asserted over every top-level VAB by the disc-gated
 `crates/vab/tests/corpus_chunk_carriage.rs`. The body chunk's type byte is
 `0x01` in almost every case and `0x03` in ten.
 
-**Why this matters to a reader.** `legaia_vab::parse` walks straight on from the
+**Why this matters to a reader.** `psx_vab::parse` walks straight on from the
 size table, so the `byte_offset` it reports for each VAG body is that chunk
 header's address, not the body's - four bytes early wherever the body chunk
 comes next. The data shows it directly: an SPU-ADPCM block's high nibble is a
 filter index and only `0..=4` is legal, and the grid at `+4` scores 100 % legal
 filters where the reported origin scores about chance.
-`legaia_vab::vag_body_origin` reads the real origin off the stream instead, and
+`psx_vab::vag_body_origin` reads the real origin off the stream instead, and
 `decode_vag_aligned`'s `{0, 4}` probe is the fallback for callers that hold only
 the body.
 
@@ -104,9 +104,9 @@ The two halves have to move together. Three entry points cover the cases:
 | `parse_in_stream(buf, stream_start)` | The bank is inside a DATA_FIELD stream; spans come back already resolved |
 | `vag_body_origin_at(buf, vab_offset)` | Only the body origin is needed, from a buffer that may start at `pBAV` |
 
-`legaia_vab::vag_body_origin_at` finds the body chunk by walking **forward**
+`psx_vab::vag_body_origin_at` finds the body chunk by walking **forward**
 from the end of the header part (no chunk-0 header needed, so it works on a
-buffer that starts at `pBAV`), and `legaia_vab::parse_in_stream` returns a
+buffer that starts at `pBAV`), and `psx_vab::parse_in_stream` returns a
 report whose spans are already resolved. The `pBAV` magic tells a consumer which
 buffer convention it was handed. `parse`'s own spans stay where they are -
 several callers compensate with a hard-coded `+4` of their own.
@@ -180,7 +180,7 @@ for the standalone-extraction case, which is a separate question from playback.
 ## API
 
 ```rust
-use legaia_vab::parse_header;
+use psx_vab::parse_header;
 let header = parse_header(buf, offset)?;
 println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);
 ```

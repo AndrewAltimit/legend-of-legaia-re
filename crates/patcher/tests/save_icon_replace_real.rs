@@ -68,7 +68,7 @@ fn save_icon_replace_is_surgical_on_disc() {
         .as_chunks::<4>()
         .0
         .iter()
-        .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
+        .flat_map(|p| psx_tim::bgr555_to_rgba8(psx_tim::encode::rgba8_to_bgr555(*p)))
         .collect();
     assert_eq!(
         save_icon::export_slot(&after, slot).unwrap(),

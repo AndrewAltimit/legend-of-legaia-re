@@ -10,7 +10,7 @@
 //! [`docs/subsystems/cutscene.md`](../../../docs/subsystems/cutscene.md).
 //!
 //! This module decodes that one TIM to RGBA8 (its background palette entry is
-//! `0x0000`, so [`legaia_tim::decode_rgba8`] gives it alpha 0 and only the white
+//! `0x0000`, so [`psx_tim::decode_rgba8`] gives it alpha 0 and only the white
 //! text is opaque) so the host can upload it as a sprite atlas and blit it,
 //! faded, over the gap. No Sony bytes live here: the pixels are decoded from the
 //! user's disc at runtime.
@@ -59,8 +59,8 @@ pub fn decode_opdeene_caption(scene: &Scene) -> Option<CaptionImage> {
             legaia_container_formats::tim_scan::Source::Raw => &entry.bytes,
         };
         let payload = section.get(hit.offset..hit.offset + hit.byte_len)?;
-        let tim = legaia_tim::parse(payload).ok()?;
-        let rgba = legaia_tim::decode_rgba8(&tim, 0).ok()?;
+        let tim = psx_tim::parse(payload).ok()?;
+        let rgba = psx_tim::decode_rgba8(&tim, 0).ok()?;
         return Some(CaptionImage {
             rgba,
             width: hit.width,

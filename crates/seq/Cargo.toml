@@ -1,11 +1,11 @@
 [package]
-name = "legaia-seq"
+name = "psx-seq"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "legaia_seq"
+name = "psx_seq"
 path = "src/lib.rs"
 
 [[bin]]

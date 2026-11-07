@@ -30,7 +30,7 @@ The SPU sub-message schema is sourced from PCSX-Redux's
 A voice is "audible" when its ADSR **envelope level** is non-zero. The
 envelope is what scales the voice's output, so it is the one field that
 answers the question, and it is the same line the mednafen side draws
-(`legaia_mednafen::SpuVoiceState::is_active`) and the same line the engine
+(`psx_mednafen::SpuVoiceState::is_active`) and the same line the engine
 side draws (`Phase::Off`). Over a town-scene capture the three candidates
 that do NOT use it all over-count badly: `on || stop` reports 18-23 of 24
 voices per frame and `state != Stopped` 13-24, against 3-19 for the

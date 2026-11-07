@@ -266,7 +266,7 @@ pub(super) fn chests(run: &mut Run<'_>) -> Result<()> {
         // placed), or the user's explicit (possibly empty) override.
         let keep_static: std::collections::BTreeSet<u8> = match &args.keep_static_items {
             None => {
-                let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
                     .context("SCUS_942.54 not found in disc image (needed for chest defaults)")?;
                 legaia_patcher::items::default_static_chest_items(&scus)
             }

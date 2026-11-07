@@ -13,7 +13,7 @@
 //!   (`legaia_disc_audit::tim_deep_catalog`). Addressed as `(entry, section,
 //!   offset within the decoded section)`. Replaceable only when the edited
 //!   section **recompresses into the retail stream's byte footprint**
-//!   ([`legaia_lzs::compress_optimal`]); otherwise the replacement fails
+//!   ([`psx_lzs::compress_optimal`]); otherwise the replacement fails
 //!   with a clear size report rather than corrupting neighbours.
 //!
 //! Every write goes through [`DiscPatcher`], so touched sectors get their
@@ -22,12 +22,12 @@
 use anyhow::{Context, Result, bail};
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_tim::encode::{EncodeOptions, Encoded, encode_replacement};
-use legaia_tim::multi_palette::{
+use psx_tim::encode::{EncodeOptions, Encoded, encode_replacement};
+use psx_tim::multi_palette::{
     ImportKind, View, all_sets, decode_mapped, import_png, indexed_png, own_palettes,
     render_composite, render_strip, rgba_png, standalone_strip_geom, view_map,
 };
-use legaia_tim::{Tim, parse_strict};
+use psx_tim::{Tim, parse_strict};
 
 /// Where the target TIM lives on the disc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +136,7 @@ pub fn read_texture(patcher: &DiscPatcher, target: &TextureTarget) -> Result<Ori
             let bytes = patcher
                 .read_entry(entry)
                 .with_context(|| format!("read PROT entry {entry}"))?;
-            let container = legaia_lzs::parse_container(&bytes)
+            let container = psx_lzs::parse_container(&bytes)
                 .with_context(|| format!("PROT entry {entry} is not an LZS container"))?;
             let sec = container.sections.get(section as usize).with_context(|| {
                 format!(
@@ -145,7 +145,7 @@ pub fn read_texture(patcher: &DiscPatcher, target: &TextureTarget) -> Result<Ori
                 )
             })?;
             let stream = &bytes[sec.byte_offset as usize..];
-            let (decoded, consumed) = legaia_lzs::decompress_tracked(stream, sec.size as usize)
+            let (decoded, consumed) = psx_lzs::decompress_tracked(stream, sec.size as usize)
                 .with_context(|| format!("decompress {}", target))?;
             let off = target.offset as usize;
             if off >= decoded.len() {
@@ -207,11 +207,11 @@ pub struct ReplaceOutcome {
 
 fn bpp_of(tim: &Tim) -> u32 {
     match tim.mode {
-        legaia_tim::PixelMode::Bpp4 => 4,
-        legaia_tim::PixelMode::Bpp8 => 8,
-        legaia_tim::PixelMode::Bpp16 => 16,
-        legaia_tim::PixelMode::Bpp24 => 24,
-        legaia_tim::PixelMode::Mixed => 0,
+        psx_tim::PixelMode::Bpp4 => 4,
+        psx_tim::PixelMode::Bpp8 => 8,
+        psx_tim::PixelMode::Bpp16 => 16,
+        psx_tim::PixelMode::Bpp24 => 24,
+        psx_tim::PixelMode::Mixed => 0,
     }
 }
 
@@ -235,7 +235,7 @@ pub fn replace_texture(
 }
 
 /// Replace a texture with a PNG in any of the shapes
-/// [`legaia_tim::multi_palette::import_png`] recognises - a plain image
+/// [`psx_tim::multi_palette::import_png`] recognises - a plain image
 /// through any palette (or through the game's per-region palettes, when
 /// [`crate::texture_palettes`] knows them), a composite with the palette
 /// strip below it, a standalone palette strip, or an indexed PNG. The write
@@ -262,7 +262,7 @@ pub fn replace_texture_png(
 }
 
 fn palette_entries_changed(original: &Tim, new_bytes: &[u8]) -> usize {
-    let Ok(after) = legaia_tim::parse_strict(new_bytes) else {
+    let Ok(after) = psx_tim::parse_strict(new_bytes) else {
         return 0;
     };
     match (&original.clut, &after.clut) {
@@ -319,7 +319,7 @@ fn write_encoded(
             offset,
         } => {
             decoded[offset..offset + enc.bytes.len()].copy_from_slice(&enc.bytes);
-            let recompressed = legaia_lzs::compress_optimal(&decoded);
+            let recompressed = psx_lzs::compress_optimal(&decoded);
             outcome.lzs = Some(LzsFit {
                 capacity: consumed,
                 recompressed: recompressed.len(),
@@ -405,7 +405,7 @@ pub fn decode_view(
     view: View,
 ) -> Result<Vec<u8>> {
     if tim.palette_count() == 0 {
-        return legaia_tim::decode_rgba8(tim, 0);
+        return psx_tim::decode_rgba8(tim, 0);
     }
     let view = resolve_view(tim, pals, view);
     let sets = all_sets(tim, &pals.context);
@@ -515,7 +515,7 @@ pub fn texture_catalogs(
 mod tests {
     use super::*;
     use legaia_disc_patch::disc::synth::{synth_disc, synth_prot};
-    use legaia_tim::decode_rgba8;
+    use psx_tim::decode_rgba8;
 
     /// A minimal strict-valid 4bpp TIM: 16-entry CLUT (red/green/black + STP
     /// black), 4x4 pixels.
@@ -670,7 +670,7 @@ mod tests {
     /// Wrap `decoded` as a one-section LZS container entry:
     /// `[meta u32 x2][size,off pair][compressed stream @ +0x10]`.
     fn lzs_container_entry(decoded: &[u8]) -> Vec<u8> {
-        let stream = legaia_lzs::compress_optimal(decoded);
+        let stream = psx_lzs::compress_optimal(decoded);
         let mut entry = Vec::new();
         entry.extend_from_slice(&0u32.to_le_bytes());
         entry.extend_from_slice(&0u32.to_le_bytes());
@@ -843,7 +843,7 @@ mod tests {
         let (mut patcher, target, tim) = four_palette_disc();
         let ex =
             export_texture_png(&patcher, &target, ExportFormat::Strip, View::Palette(0)).unwrap();
-        let (w, h, mut rgba) = legaia_tim::encode::decode_png_rgba(&ex.png).unwrap();
+        let (w, h, mut rgba) = psx_tim::encode::decode_png_rgba(&ex.png).unwrap();
         let (cw, ch) = (w / 16, h / 4);
         // Palette 3, entry 7 -> pure green.
         for y in 3 * ch..4 * ch {
@@ -851,7 +851,7 @@ mod tests {
                 rgba[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&[0, 255, 0, 255]);
             }
         }
-        let png = legaia_tim::multi_palette::rgba_png(w, h, &rgba).unwrap();
+        let png = psx_tim::multi_palette::rgba_png(w, h, &rgba).unwrap();
         let out = replace_texture_png(
             &mut patcher,
             &target,
@@ -881,7 +881,7 @@ mod tests {
     fn an_image_edited_through_palette_two_only_touches_palette_two() {
         let (mut patcher, target, tim) = four_palette_disc();
         let orig = read_texture(&patcher, &target).unwrap();
-        let mut rgba = legaia_tim::decode_rgba8(&orig.tim, 2).unwrap();
+        let mut rgba = psx_tim::decode_rgba8(&orig.tim, 2).unwrap();
         // Two new colours on two pixels: they need two free slots, and the
         // image uses all sixteen indices... so free two first by repainting
         // pixels 14/15 (indices 14/15, row 0 and row 1) with index-0's colour.
@@ -890,7 +890,7 @@ mod tests {
             rgba[i * 4..i * 4 + 4].copy_from_slice(&c0);
         }
         rgba[4..8].copy_from_slice(&[255, 0, 255, 255]);
-        let png = legaia_tim::multi_palette::rgba_png(16, 2, &rgba).unwrap();
+        let png = psx_tim::multi_palette::rgba_png(16, 2, &rgba).unwrap();
         let out = replace_texture_png(
             &mut patcher,
             &target,
@@ -912,7 +912,7 @@ mod tests {
                 "palette {p} untouched"
             );
         }
-        let got = legaia_tim::decode_rgba8(&after.tim, 2).unwrap();
+        let got = psx_tim::decode_rgba8(&after.tim, 2).unwrap();
         assert_eq!(&got[4..8], &[255, 0, 255, 255]);
         assert_eq!(after.tim_bytes.len(), tim.len());
     }

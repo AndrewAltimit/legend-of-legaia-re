@@ -24,8 +24,8 @@ use legaia_code_hooks::flee_exp::{
 };
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
+use psx_iso::iso9660::read_file_in_image;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -141,7 +141,7 @@ fn injection_writes_the_expected_detour_and_routine() {
             .is_some(),
         "patched battle-action overlay still parses"
     );
-    legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+    psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
         .expect("patched image re-reads (sectors stay valid)");
 }
 

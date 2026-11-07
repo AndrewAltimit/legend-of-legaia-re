@@ -481,7 +481,7 @@ pub fn randomize_weapon_specialty(patcher: &mut DiscPatcher, seed: u64) -> Resul
             }
             let mut decoded = dec.bytes.clone();
             decoded[coff] = new_cost;
-            let recompressed = legaia_lzs::compress(&decoded);
+            let recompressed = psx_lzs::compress(&decoded);
 
             // Available footprint for the LZS stream: the slot minus its 4-byte
             // decoded-size prefix. A stream too large to re-pack is skipped.

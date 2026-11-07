@@ -60,5 +60,5 @@ pub fn read_rank_counter(main_ram: &[u8], record_base: u32) -> Option<u8> {
 /// Read the cumulative XP (u16 LE) at `+0x004`.
 pub fn read_xp_u16(main_ram: &[u8], record_base: u32) -> Option<u16> {
     let off = (record_base - 0x80000000) as usize + XP_LO as usize;
-    legaia_bytes::u16_le(main_ram, off)
+    psx_bytes::u16_le(main_ram, off)
 }

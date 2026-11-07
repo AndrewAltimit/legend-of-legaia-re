@@ -424,7 +424,9 @@ pub(super) fn traverse(
             // Short of the overworld, with its clock not showing what a talk
             // ahead wants: step out onto it first (the party trained from
             // `ropeway`, whose outings on `map02` flew the cart back east).
-            if pad && continuous::PLAYS_ON.with(std::cell::Cell::get) {
+            // Both pad hands wait: a segment's pad run that crossed `map02`
+            // with the cart east met the same refusal at the counter.
+            if pad {
                 if session.host.world.mode == SceneMode::WorldMap {
                     wait_on_overworld_clock(session, &route[1..])?;
                 } else if let Some(w) = clock_detour(session, graph, &route) {

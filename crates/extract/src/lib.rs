@@ -16,12 +16,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail};
 use legaia_container_formats::{AssetType, pack, parse_streaming};
-use legaia_iso::{
+use legaia_prot::{archive::Archive, cdname};
+use psx_iso::{
     iso9660,
     raw::{RawDisc, USER_DATA_SIZE},
     region,
 };
-use legaia_prot::{archive::Archive, cdname};
 use rayon::prelude::*;
 
 /// Number of pipeline steps a [`Reporter`] can see: verification is step 0,
@@ -323,15 +323,15 @@ fn step_all_textures(
                 continue;
             }
             tims.fetch_add(1, Ordering::Relaxed);
-            let Ok(tim) = legaia_tim::parse(slab) else {
+            let Ok(tim) = psx_tim::parse(slab) else {
                 continue;
             };
             let (w, h) = (tim.pixel_width(), tim.pixel_height());
             if w == 0 || h == 0 {
                 continue;
             }
-            if let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 0)
-                && legaia_tim::write_png(&tim_path.with_extension("png"), w, h, &rgba).is_ok()
+            if let Ok(rgba) = psx_tim::decode_rgba8(&tim, 0)
+                && psx_tim::write_png(&tim_path.with_extension("png"), w, h, &rgba).is_ok()
             {
                 pngs.fetch_add(1, Ordering::Relaxed);
                 if verbose {
@@ -690,13 +690,13 @@ fn step_tim_to_png(stream_dir: &Path, verbose: bool, r: &dyn Reporter) -> Result
             Ok(b) => b,
             Err(_) => return,
         };
-        let tim = match legaia_tim::parse(&buf) {
+        let tim = match psx_tim::parse(&buf) {
             Ok(t) => t,
             Err(_) => return,
         };
         // CLUT 0 for default rendering; --all-cluts via the standalone `tim`
         // binary covers the full palette set.
-        let rgba = match legaia_tim::decode_rgba8(&tim, 0) {
+        let rgba = match psx_tim::decode_rgba8(&tim, 0) {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -706,7 +706,7 @@ fn step_tim_to_png(stream_dir: &Path, verbose: bool, r: &dyn Reporter) -> Result
             return;
         }
         let png_path = entry.with_extension("png");
-        if legaia_tim::write_png(&png_path, w, h, &rgba).is_ok() {
+        if psx_tim::write_png(&png_path, w, h, &rgba).is_ok() {
             if verbose {
                 r.detail(&format!("    [png] {}", png_path.display()));
             }
@@ -725,14 +725,14 @@ fn step_tim_to_png(stream_dir: &Path, verbose: bool, r: &dyn Reporter) -> Result
 /// multiplexed channels into one shuffled byte stream - those raw dumps are not
 /// listenable. This step instead reads the raw 2352-byte sectors straight off
 /// the disc image, splits them by `(file_no, ch_no)` via
-/// [`legaia_xa::demux::demux_disc_all`], and decodes each channel at its true
+/// [`psx_xa::demux::demux_disc_all`], and decodes each channel at its true
 /// per-sector rate / stereo mode, so the WAVs are reference-quality. Non-4-bit
 /// channels are skipped with a warning (the group decoder is 4-bit only) rather
 /// than mis-decoded.
 fn step_xa_demux(bin: &Path, out: &Path, verbose: bool, r: &dyn Reporter) -> Result<usize> {
-    use legaia_xa::{Channels, DecodeOptions};
+    use psx_xa::{Channels, DecodeOptions};
 
-    let files = legaia_xa::demux::demux_disc_all(bin)
+    let files = psx_xa::demux::demux_disc_all(bin)
         .with_context(|| format!("demux all XA on {}", bin.display()))?;
     std::fs::create_dir_all(out)?;
     let total: usize = files.iter().map(|f| f.streams.len()).sum();
@@ -752,8 +752,8 @@ fn step_xa_demux(bin: &Path, out: &Path, verbose: bool, r: &dyn Reporter) -> Res
             done += 1;
             r.progress(done, total);
             let bits = match s.bits_per_sample {
-                4 => legaia_xa::BitsPerSample::Four,
-                8 => legaia_xa::BitsPerSample::Eight,
+                4 => psx_xa::BitsPerSample::Four,
+                8 => psx_xa::BitsPerSample::Eight,
                 other => {
                     r.warn(&format!(
                         "    [xa] {}_file{}_ch{}: SKIPPED ({other}-bit ADPCM unsupported, 4/8-bit only)",
@@ -771,9 +771,9 @@ fn step_xa_demux(bin: &Path, out: &Path, verbose: bool, r: &dyn Reporter) -> Res
                 sample_rate: s.sample_rate,
                 bits,
             };
-            let (samples, _report) = legaia_xa::decode(&s.audio, opts)?;
+            let (samples, _report) = psx_xa::decode(&s.audio, opts)?;
             let path = out.join(format!("{stem}_file{}_ch{}.wav", s.file_no, s.ch_no));
-            legaia_xa::write_wav(&path, &samples, opts.channels, opts.sample_rate)?;
+            psx_xa::write_wav(&path, &samples, opts.channels, opts.sample_rate)?;
             if verbose {
                 let dur = samples.len() as f64 / opts.sample_rate as f64 / opts.channels.n() as f64;
                 r.detail(&format!(

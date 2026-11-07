@@ -51,6 +51,7 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <li>The follow camera's ease runs once a game pass, not once a vsync (<a href="../formats/encounter.html">encounter and camera</a>); a player a script carries reads as still, and the camera focus trails a pass.</li>
     <li>The d-pad remap reads the scene's <a href="../subsystems/field-locomotion.html#authored-octant">authored octant</a>, not the live camera angle.</li>
     <li><code>kor3</code>'s placements hold retail's headings for a whole film, with no spin.</li>
+    <li>A player a script carries up a stair glides onto each step as retail's does, 24 units a pass, instead of landing on it at once; on <code>tower_field_walk</code> that brought the camera's pitch and eye height onto retail's for nearly every pass.</li>
     <li>A placement at <code>geremi_field_door_hop</code> that looked mis-faced is not: the scene's system script turns it every pass onto the bearing of a wanderer, so its heading is that wanderer's <code>rand()</code> history one pass late, on both sides.</li>
     <li>An ambient script's turns run at retail's rate and differ only in phase: two placements repeat retail's ramps a fixed number of vsyncs early, the wait their scripts were inside at the capture.</li>
     <li><code>kor_field_route_walk</code>'s displayed frame is its pass-two-back pose exactly, filmed over the passes before the save by <code>autorun_walk_route.lua</code> with <code>LEGAIA_FILM_SCENE</code>.</li>

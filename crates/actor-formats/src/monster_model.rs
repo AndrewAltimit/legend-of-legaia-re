@@ -110,7 +110,7 @@ pub struct ImportedModel {
 }
 
 // ---------------------------------------------------------------------------
-// BGR555 helpers (shared convention with `legaia_tim`).
+// BGR555 helpers (shared convention with `psx_tim`).
 
 fn rgba_to_bgr555(r: u8, g: u8, b: u8, a: u8) -> u16 {
     if a == 0 {
@@ -297,7 +297,7 @@ fn decode_pool(pool: &[u8]) -> Option<(Vec<[u16; 16]>, Vec<u8>, usize)> {
         .map(|c| {
             let mut pal = [0u16; 16];
             for (i, slot) in pal.iter_mut().enumerate() {
-                *slot = legaia_bytes::u16_le(pool, c * CLUT_BYTES + i * 2).unwrap_or(0);
+                *slot = psx_bytes::u16_le(pool, c * CLUT_BYTES + i * 2).unwrap_or(0);
             }
             pal
         })
@@ -404,7 +404,7 @@ fn export_impl(
                 let byte = pixels.get(y * (UV_SPACE / 2) + x / 2).copied().unwrap_or(0);
                 let idx = if x % 2 == 0 { byte & 0x0F } else { byte >> 4 } as usize;
                 let pal = o.unwrap_or(0) as usize % BOSS_CLUT_COUNT;
-                let c = legaia_bytes::u16_le(clut, (pal * 16 + idx) * 2).unwrap_or(0);
+                let c = psx_bytes::u16_le(clut, (pal * 16 + idx) * 2).unwrap_or(0);
                 out[t * 4..t * 4 + 4].copy_from_slice(&bgr555_to_rgba(c));
             }
             out

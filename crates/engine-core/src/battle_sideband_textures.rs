@@ -168,7 +168,7 @@ mod tests {
     #[derive(Default)]
     struct Blocks(Vec<(u16, u16, u16, u16, usize)>);
     impl VramSink for Blocks {
-        fn upload_tim(&mut self, _: &legaia_tim::Tim) {}
+        fn upload_tim(&mut self, _: &psx_tim::Tim) {}
         fn write_block(&mut self, x: u16, y: u16, w: u16, h: u16, b: &[u8]) {
             self.0.push((x, y, w, h, b.len()));
         }

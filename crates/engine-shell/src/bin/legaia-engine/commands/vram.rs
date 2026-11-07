@@ -25,7 +25,7 @@ pub(crate) fn cmd_clut_trace(
     max_sources: usize,
 ) -> Result<()> {
     use legaia_container_formats::tim_scan;
-    use legaia_tim::vram::PrimTextureStatus;
+    use psx_tim::vram::PrimTextureStatus;
     use std::collections::BTreeMap;
 
     let index = open_index_from_args(extracted_root, disc)?;
@@ -111,7 +111,7 @@ pub(crate) fn cmd_clut_trace(
             continue;
         };
         for hit in tim_scan::scan_buffer(&bytes) {
-            let Ok(tim) = legaia_tim::parse(&bytes[hit.offset..hit.offset + hit.byte_len]) else {
+            let Ok(tim) = psx_tim::parse(&bytes[hit.offset..hit.offset + hit.byte_len]) else {
                 continue;
             };
             let Some(clut) = tim.clut.as_ref() else {
@@ -276,7 +276,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 
 /// Resolves the (scene_name, runtime_bytes, source_label) triple from
 /// either explicit args or a scenario lookup. Scenario mode reads the
-/// VRAM blob in-process via `legaia-mednafen`'s GPU section parser, so
+/// VRAM blob in-process via `psx-mednafen`'s GPU section parser, so
 /// no temp file is needed.
 ///
 /// In scenario mode with `frames > 0`, additionally boots a
@@ -286,7 +286,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// that the pure pre-pass doesn't see.
 #[cfg(feature = "oracles")]
 fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
-    use legaia_ram_image::ScenarioManifest;
+    use psx_ram_image::ScenarioManifest;
 
     match (args.scenario, args.scene, args.runtime_vram) {
         (Some(label), _, _) => {
@@ -554,7 +554,7 @@ fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
 }
 
 pub(crate) fn write_vram_png(path: &Path, bgr555_le: &[u8]) -> Result<()> {
-    let rgba = legaia_mednafen::vram_to_rgba8(bgr555_le);
+    let rgba = psx_mednafen::vram_to_rgba8(bgr555_le);
     let f = std::fs::File::create(path)
         .with_context(|| format!("create VRAM PNG {}", path.display()))?;
     let bw = std::io::BufWriter::new(f);

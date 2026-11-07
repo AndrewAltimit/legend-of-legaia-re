@@ -70,13 +70,13 @@ const BEFECT_ETIM_SECTION: usize = 2;
 /// the CLUTs resident through the battle scene-mode overlay.
 pub fn upload_effect_textures_into_vram(
     index: &ProtIndex,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
     upload_clut: bool,
 ) -> Result<usize> {
     let decoded = befect_etim_section_bytes(index)?;
     let mut uploaded = 0;
     for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
-        match legaia_tim::parse(&decoded[target.offset..]) {
+        match psx_tim::parse(&decoded[target.offset..]) {
             Ok(tim) => {
                 // Image page: declared rect, verbatim.
                 vram.upload_tim_partial(&tim, true, false);
@@ -146,7 +146,7 @@ pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u1
     let decoded = befect_etim_section_bytes(index)?;
     let mut rects = Vec::new();
     for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
-        if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
+        if let Ok(tim) = psx_tim::parse(&decoded[target.offset..]) {
             let img = &tim.image;
             rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
         }
@@ -179,7 +179,7 @@ pub fn block_image_rects(index: &ProtIndex, block: &str) -> Result<Vec<(u16, u16
                 }
             };
             if let Some(slice) = payload.get(hit.offset..)
-                && let Ok(tim) = legaia_tim::parse(slice)
+                && let Ok(tim) = psx_tim::parse(slice)
             {
                 let img = &tim.image;
                 rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
@@ -209,7 +209,7 @@ pub fn block_image_rects(index: &ProtIndex, block: &str) -> Result<Vec<(u16, u16
 /// truncate the trailing TIM). Soft-fails; returns the number of TIMs uploaded.
 pub fn upload_flame_atlas_into_vram(
     index: &ProtIndex,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
     upload_clut: bool,
 ) -> Result<usize> {
     let raw = index
@@ -217,7 +217,7 @@ pub fn upload_flame_atlas_into_vram(
         .with_context(|| format!("read PROT entry {PROT_FLAME_ATLAS_ENTRY} (flame atlas)"))?;
     let mut uploaded = 0;
     for target in legaia_actor_formats::befect_cluster::scan_tims(&raw) {
-        match legaia_tim::parse(&raw[target.offset..]) {
+        match psx_tim::parse(&raw[target.offset..]) {
             Ok(tim) => {
                 vram.upload_tim_partial(&tim, true, upload_clut);
                 uploaded += 1;
@@ -266,18 +266,18 @@ pub fn upload_flame_atlas_into_vram(
 pub fn upload_battle_stage_tims_into_vram(
     scene: &Scene,
     stage_entry: u32,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
 ) -> usize {
     upload_battle_stage_tims_into_vram_tinted(scene, stage_entry, vram, None)
 }
 
 /// [`upload_battle_stage_tims_into_vram`] with every stage TIM's palette
-/// under `tint` ([`legaia_tim::tint::tint_bgr555`]); `None` uploads the stream's bytes as
+/// under `tint` ([`psx_tim::tint::tint_bgr555`]); `None` uploads the stream's bytes as
 /// they are.
 pub fn upload_battle_stage_tims_into_vram_tinted(
     scene: &Scene,
     stage_entry: u32,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut psx_tim::Vram,
     tint: Option<[u8; 3]>,
 ) -> usize {
     let Some(entry) = scene.entries.iter().find(|e| e.idx == stage_entry) else {
@@ -290,10 +290,10 @@ pub fn upload_battle_stage_tims_into_vram_tinted(
         if end > bytes.len() {
             continue;
         }
-        if let Ok(mut tim) = legaia_tim::parse(&bytes[hit.offset..end]) {
+        if let Ok(mut tim) = psx_tim::parse(&bytes[hit.offset..end]) {
             if let (Some(t), Some(clut)) = (tint, tim.clut.as_mut()) {
                 for w in &mut clut.entries {
-                    *w = legaia_tim::tint::tint_bgr555(*w, t);
+                    *w = psx_tim::tint::tint_bgr555(*w, t);
                 }
             }
             vram.upload_tim_partial(&tim, true, true);

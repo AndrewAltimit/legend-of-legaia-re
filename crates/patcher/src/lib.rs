@@ -16,7 +16,7 @@
 //!
 //! Most editable values live *inside* a Legaia LZS stream (the asset
 //! dispatcher decompresses them at load), so an edit is
-//! decompress → mutate → recompress, using [`legaia_lzs::compress`] to produce
+//! decompress → mutate → recompress, using [`psx_lzs::compress`] to produce
 //! a stream the retail decoder accepts. Where the data sits in a fixed-size
 //! slot (the monster archive's `0x14000`-byte records), the re-packed stream is
 //! padded back to the original slot size so no offset downstream moves - see

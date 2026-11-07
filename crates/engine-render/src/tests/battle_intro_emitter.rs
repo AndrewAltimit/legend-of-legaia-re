@@ -31,7 +31,7 @@ use legaia_render_kernels::vram_capture::{
     CaptureOpts, FIELD_CAPTURE_LAND, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
     blit_rgba_into_vram,
 };
-use legaia_tim::Vram;
+use psx_tim::Vram;
 
 /// Deterministic stand-in for the disc's trig tables, sqrt and PRNG - the same
 /// shape `engine-vm`'s `battle_intro_chain.rs` uses, kept synthetic so this

@@ -2,8 +2,8 @@ use super::voices::flush_key_on_lag;
 use super::*;
 use crate::Spu;
 use crate::spu::adsr::Phase;
-use legaia_seq::ChannelMessage;
-use legaia_seq::SEQ_MAGIC;
+use psx_seq::ChannelMessage;
+use psx_seq::SEQ_MAGIC;
 
 fn synthetic_seq() -> Seq {
     // ppqn=480, tempo 500000 us/qn (120 BPM) so 1 quarter = 500_000 us.
@@ -835,8 +835,8 @@ fn cc10_pan_repans_the_sounding_voice() {
     );
     assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), centre);
 }
-fn layer_tone(vag: i16, min: u8, max: u8, center: u8) -> legaia_vab::VagAtr {
-    legaia_vab::VagAtr {
+fn layer_tone(vag: i16, min: u8, max: u8, center: u8) -> psx_vab::VagAtr {
+    psx_vab::VagAtr {
         prior: 0,
         mode: 0,
         vol: 127,

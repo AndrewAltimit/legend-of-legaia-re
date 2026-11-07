@@ -36,6 +36,9 @@ fn every_gated_chain_body_finishes() {
             world.arm_capture_cast_module(id);
             let mut done = false;
             for _ in 0..20_000 {
+                // One vsync a tick, as the host's frame does: a body that
+                // counts its passes (PROT 0936's arm 4) counts battle frames.
+                world.clock.display_frames += 1;
                 let phase = world.casting.module_phase;
                 match world.run_cast_module_code(id, phase) {
                     Some(r) if r.busy => {}
@@ -139,6 +142,7 @@ fn every_capture_tick_body_finishes() {
             world.arm_capture_cast_module(id);
             let mut done = false;
             for _ in 0..40_000 {
+                world.clock.display_frames += 1;
                 let phase = world.casting.module_phase;
                 match world.run_cast_module_code(id, phase) {
                     Some(r) if r.busy => {}

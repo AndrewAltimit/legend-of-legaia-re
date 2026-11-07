@@ -26,7 +26,7 @@ pub(super) fn item_pool(run: &mut Run<'_>) -> Result<(Vec<u8>, &'static [u8])> {
         || chest_mode == Some(DropMode::Random)
         || steal_mode == Some(DropMode::Random);
     let mut pool = if needs_pool {
-        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        let scus = psx_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .context("SCUS_942.54 not found in disc image (needed for a `random` mode)")?;
         valid_item_pool(&scus).context("build valid item pool from SCUS")?
     } else {

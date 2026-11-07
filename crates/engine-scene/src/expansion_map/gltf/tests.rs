@@ -14,7 +14,7 @@ pub(crate) fn quad_glb(nodes_scale: f32) -> Vec<u8> {
             });
         }
     }
-    let png = legaia_tim::multi_palette::rgba_png(4, 4, &rgba).unwrap();
+    let png = psx_tim::multi_palette::rgba_png(4, 4, &rgba).unwrap();
     let mut bin: Vec<u8> = Vec::new();
     let pos: [[f32; 3]; 4] = [
         [0.0, 0.0, 0.0],

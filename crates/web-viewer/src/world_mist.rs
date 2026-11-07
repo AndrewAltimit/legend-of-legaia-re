@@ -70,7 +70,7 @@ pub fn flatten_regions(regions: &[legaia_render_kernels::fog_volume::FogRegion])
 /// CLUT word is `0x0000` is transparent (alpha 0); every other texel is
 /// opaque (alpha 255) - the sheets draw additively, so the alpha only marks
 /// which texels the GPU would blend at all.
-pub fn sheet_rgba(vram: &legaia_tim::Vram) -> Vec<u8> {
+pub fn sheet_rgba(vram: &psx_tim::Vram) -> Vec<u8> {
     let mut out = Vec::with_capacity(SHEET_W * SHEET_H * 4);
     for row in 0..SHEET_H {
         let y = SHEET_V0 + row;
@@ -123,7 +123,7 @@ impl LegaiaViewer {
         let Ok(pack) = legaia_actor_formats::field_char_textures::parse(raw) else {
             return Vec::new();
         };
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         pack.upload_to_vram(&mut vram, false);
         sheet_rgba(&vram)
     }
@@ -167,7 +167,7 @@ mod tests {
             .expect("PROT 0874");
         let raw = &prot[meta.byte_offset as usize..(meta.byte_offset + meta.size_bytes) as usize];
         let pack = legaia_actor_formats::field_char_textures::parse(raw).expect("0874 s2");
-        let mut vram = legaia_tim::Vram::new();
+        let mut vram = psx_tim::Vram::new();
         pack.upload_to_vram(&mut vram, false);
         let rgba = sheet_rgba(&vram);
         assert_eq!(rgba.len(), SHEET_W * SHEET_H * 4);

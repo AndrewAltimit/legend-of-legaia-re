@@ -75,7 +75,7 @@ fn main() -> Result<()> {
 
 fn info(path: &Path) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let tim = legaia_tim::parse(&buf)?;
+    let tim = psx_tim::parse(&buf)?;
     println!("file:     {}", path.display());
     println!("flags:    0x{:08x}", tim.flags);
     println!("mode:     {:?}", tim.mode);
@@ -107,7 +107,7 @@ fn info(path: &Path) -> Result<()> {
 
 fn convert(path: &Path, out: Option<&Path>, clut: usize, all_cluts: bool) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let tim = legaia_tim::parse(&buf)?;
+    let tim = psx_tim::parse(&buf)?;
     let n = tim
         .clut
         .as_ref()
@@ -140,13 +140,13 @@ fn convert(path: &Path, out: Option<&Path>, clut: usize, all_cluts: bool) -> Res
     Ok(())
 }
 
-fn write_decoded(tim: &legaia_tim::Tim, clut: usize, target: &Path) -> Result<()> {
+fn write_decoded(tim: &psx_tim::Tim, clut: usize, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let rgba = legaia_tim::decode_rgba8(tim, clut)?;
-    legaia_tim::write_png(target, tim.pixel_width(), tim.pixel_height(), &rgba)?;
+    let rgba = psx_tim::decode_rgba8(tim, clut)?;
+    psx_tim::write_png(target, tim.pixel_width(), tim.pixel_height(), &rgba)?;
     Ok(())
 }
 
@@ -176,7 +176,7 @@ fn convert_dir(dir: &Path, out: Option<&Path>, all_cluts: bool) -> Result<()> {
                 continue;
             }
         };
-        let tim = match legaia_tim::parse(&buf) {
+        let tim = match psx_tim::parse(&buf) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("parse {}: {}", t.display(), e);

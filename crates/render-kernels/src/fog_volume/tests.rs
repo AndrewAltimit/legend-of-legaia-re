@@ -184,7 +184,7 @@ fn a_dark_scene_dims_the_bank_and_a_bright_one_does_not() {
 
 #[test]
 fn scene_luminance_reads_lit_texels() {
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     // A 15-bit page at (0, 0): mid-grey 16/31 everywhere it is sampled.
     let grey: u16 = 16 | (16 << 5) | (16 << 10);
     let bytes: Vec<u8> = std::iter::repeat_n(grey.to_le_bytes(), 64 * 4)

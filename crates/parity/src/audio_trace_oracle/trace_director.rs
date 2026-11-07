@@ -87,7 +87,7 @@ impl TraceBgmDirector {
     /// would program for the same bank.
     pub fn stage_scene_bank(&mut self, bytes: &[u8], vab_off: usize) -> Result<()> {
         let report =
-            legaia_vab::parse(bytes, vab_off).context("parse scene VAB header for audio trace")?;
+            psx_vab::parse(bytes, vab_off).context("parse scene VAB header for audio trace")?;
         let mut alloc = SpuAllocator::new(
             legaia_engine_session::session::SPU_RESERVED_BYTES,
             legaia_engine_session::session::SPU_RAM_BYTES
@@ -156,7 +156,7 @@ impl TraceBgmDirector {
         // magic hunt - see `chunk_install::owned_bank_offsets`.
         let split = legaia_engine_system::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
-        let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        let report = psx_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
         // The shared placement kernel, so a bank over the BGM region (the
         // ending theme's) lands where the live director puts it.

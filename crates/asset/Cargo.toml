@@ -26,18 +26,18 @@ serde.workspace = true
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
 legaia-actor-formats.workspace = true
-legaia-bytes.workspace = true
+psx-bytes.workspace = true
 legaia-container-formats.workspace = true
 legaia-disc-audit.workspace = true
 legaia-expansion-format.workspace = true
 legaia-game-tables.workspace = true
-legaia-iso.workspace = true
-legaia-lzs.workspace = true
+psx-iso.workspace = true
+psx-lzs.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 legaia-scene-formats.workspace = true
-legaia-tim.workspace = true
+psx-tim.workspace = true
 legaia-tmd.workspace = true
 
 [target.'cfg(unix)'.dependencies]

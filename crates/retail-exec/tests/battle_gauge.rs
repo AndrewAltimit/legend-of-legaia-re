@@ -9,8 +9,8 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle::battle_hud_state::BattleHud;
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_core::world::World;
-use legaia_retail_exec::Stop;
 use legaia_save::Party;
+use psx_retail_exec::Stop;
 
 const FRAME: u32 = 0x8004_6A20;
 /// The `jal` past the gauge loop.
@@ -118,7 +118,7 @@ fn the_party_gauges_take_retail_colours() {
         for slot in 0..hud.slots.len() as u8 {
             hud.sync_status(slot, &w.battle.status_effects);
         }
-        let cell = |cpu: &mut legaia_retail_exec::Cpu, g: u32, c: u32| {
+        let cell = |cpu: &mut psx_retail_exec::Cpu, g: u32, c: u32| {
             cpu.mem.rd16(CELLS + (g * 4 + c) * 2) as u8
         };
         for g in 0..4u32 {

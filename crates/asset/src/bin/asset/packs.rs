@@ -71,7 +71,7 @@ pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> 
             continue;
         }
         let r = &pack.members[i];
-        let magic = legaia_bytes::u32_le(&raw, r.start);
+        let magic = psx_bytes::u32_le(&raw, r.start);
         let what = match magic {
             Some(0x0000_0010) => "TIM",
             Some(0x8000_0002) => "TMD",

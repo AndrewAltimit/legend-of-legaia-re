@@ -6,7 +6,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_battle_vm::battle_action::{
     ARCTAN_LUT_LEN, approx_arctan_lut, bearing_12bit_approx,
 };
-use legaia_retail_exec::{Stop, V0};
+use psx_retail_exec::{Stop, V0};
 
 const BEARING: u32 = 0x8001_9B28;
 const ATAN_LUT: u32 = 0x8006_F4C8;

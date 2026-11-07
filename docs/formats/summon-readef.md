@@ -406,7 +406,11 @@ read from the installed Burning Attack record while the acting seat
 `FUN_801F19EC` then routes the TMD + texture pool through `FUN_80055468` - the
 same mesh/texture installer the [monster archive](../formats/monster-animation.md)
 uses - and stages the summon creature as a battle actor (`FUN_80024C88`
-allocation, scale `(part_pool_byte_0x1F) << 5`, etc.).
+allocation, scale `(part_pool_byte_0x1F) << 5`, etc.). The installer's slot
+argument is a constant `2` (`li a3,0x2` in the delay slot at `0x801F1D14`), so
+every creature's palette lands on CLUT row `486` and its page at `(448, 256)`,
+over whatever monster species held slot 2; a cast's own CLUT cyclers address
+that row by value (`engine-session::battle_stage::SUMMON_CREATURE_TEX_SLOT`).
 
 #### The stat head is the summon body
 

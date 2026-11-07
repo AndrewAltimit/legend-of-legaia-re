@@ -12,9 +12,9 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_iso::image::extract_prot_dat;
 use legaia_prot::toc_index::parse_prot_toc;
 use legaia_web_viewer::{build_walk_ground, build_walk_placements, build_world_map_labels};
+use psx_iso::image::extract_prot_dat;
 use std::env;
 use std::fs;
 

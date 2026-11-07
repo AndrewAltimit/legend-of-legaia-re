@@ -34,7 +34,7 @@ pub fn render(archive: &[u8], id: u16, opts: &RasterOptions) -> Option<Vec<u8>> 
     let tmd = legaia_tmd::parse(monster.tmd_bytes()).ok()?;
     let (_, object_ids) =
         legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, monster.tmd_bytes());
-    let mut vram = legaia_tim::Vram::new();
+    let mut vram = psx_tim::Vram::new();
     let mesh = monster.battle_render_mesh(0, &mut vram)?;
     monster_archive::write_boss_effect_page(archive, id, &mut vram);
     if mesh.positions.is_empty() || mesh.indices.is_empty() {

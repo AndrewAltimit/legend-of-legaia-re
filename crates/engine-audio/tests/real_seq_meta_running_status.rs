@@ -21,7 +21,7 @@
 use std::path::PathBuf;
 
 use legaia_prot::archive::Archive;
-use legaia_seq::{EventBody, MetaMessage, Seq, Termination, parse_header_with_len};
+use psx_seq::{EventBody, MetaMessage, Seq, Termination, parse_header_with_len};
 
 const PROT_1045: usize = 1045;
 

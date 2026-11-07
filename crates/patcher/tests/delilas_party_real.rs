@@ -194,7 +194,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     {
         use legaia_delilas_party::delilas_voice::{BATTLE_BANK_ENTRY, MONSTER_SND_ENTRY};
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
-        let tone_vag = |vab: &legaia_vab::VabReport, prog: usize, tone: usize| -> usize {
+        let tone_vag = |vab: &psx_vab::VabReport, prog: usize, tone: usize| -> usize {
             let page = vab
                 .programs
                 .iter()
@@ -207,7 +207,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         // Bodies compare on the TRUE ADPCM grid (the parser's spans sit
         // 4 bytes early; the splice writes at +4).
         let body = |buf: &[u8], off: usize, prog: usize, tone: usize| -> Vec<u8> {
-            let vab = legaia_vab::parse(buf, off).expect("VAB parses");
+            let vab = psx_vab::parse(buf, off).expect("VAB parses");
             let span = vab.vag_samples[tone_vag(&vab, prog, tone) - 1];
             buf[span.byte_offset + 4..(span.byte_offset + 4 + span.size).min(buf.len())].to_vec()
         };
@@ -217,7 +217,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         };
 
         let bank = reopened.read_entry(BATTLE_BANK_ENTRY).expect("bank");
-        let bank_off = *legaia_vab::find_vabs(&bank).first().expect("bank VAB");
+        let bank_off = *psx_vab::find_vabs(&bank).first().expect("bank VAB");
         let retail_bank = retail.read_entry(BATTLE_BANK_ENTRY).expect("retail bank");
         let snd = reopened.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");
         let retail_snd = retail.read_entry(MONSTER_SND_ENTRY).expect("retail snd");
@@ -248,8 +248,8 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         // vol 0) stays silent, and the SHARED vag-1 body it points at
         // (also a battle SFX + other programs' placeholders) stays
         // byte-identical to retail.
-        let vab = legaia_vab::parse(&bank, bank_off).expect("patched bank");
-        let retail_vab = legaia_vab::parse(&retail_bank, bank_off).expect("retail bank");
+        let vab = psx_vab::parse(&bank, bank_off).expect("patched bank");
+        let retail_vab = psx_vab::parse(&retail_bank, bank_off).expect("retail bank");
         let page7 = vab
             .programs
             .iter()
@@ -294,7 +294,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // real signal energy. A helper collects one channel's payload in
     // stream order.
     let channel_payload = |name: &str, chan: u8| -> Vec<u8> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
         let mut out = Vec::new();
         for i in 0..sectors {
@@ -308,9 +308,9 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     };
     let decodes_with_energy = |name: &str, chan: u8| {
         let payload = channel_payload(name, chan);
-        let mut dec = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
-            channels: legaia_xa::Channels::Mono,
-            bits: legaia_xa::BitsPerSample::Four,
+        let mut dec = psx_xa::StreamingDecoder::new(psx_xa::DecodeOptions {
+            channels: psx_xa::Channels::Mono,
+            bits: psx_xa::BitsPerSample::Four,
             sample_rate: 18900,
         });
         let mut pcm = Vec::new();
@@ -349,7 +349,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         "XA/XA21.XA",
         "XA/XA30.XA",
     ] {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
         for i in 0..sectors {
             let base = (lba as usize + i) * 2352;
@@ -375,7 +375,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // intro span (channel ordinals 0..70), which the cast-bed front
     // shift rewrites in place (and must actually differ).
     for name in ["XA/XA20.XA", "XA/XA22.XA"] {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
+        let (lba, size) = psx_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
         let (mut muted, mut kept, mut boosted) = (0usize, 0usize, 0usize);
         let mut ch2_ordinal = 0usize;
@@ -435,7 +435,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // results-music jingle path, not a hero voice line.
     {
         let (lba, size) =
-            legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA12.XA").expect("XA12.XA");
+            psx_iso::iso9660::find_path_in_image(&patched, "XA/XA12.XA").expect("XA12.XA");
         let sectors = (size as usize).div_ceil(2048);
         for i in 0..sectors {
             let base = (lba as usize + i) * 2352;
@@ -506,18 +506,17 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 // destination tone so the spliced body plays at its
                 // recorded rate - and only the VAG voice bodies may
                 // differ, which they must, still decoding with energy.
-                let rv = legaia_vab::parse(&r_snd, s + 4).expect("retail clip VAB");
-                let pv = legaia_vab::parse(&p_snd, s + 4).expect("patched clip VAB parses");
+                let rv = psx_vab::parse(&r_snd, s + 4).expect("retail clip VAB");
+                let pv = psx_vab::parse(&p_snd, s + 4).expect("patched clip VAB parses");
                 // The parser's spans sit 4 bytes before the real block
                 // grid (see `decode_vag_aligned`); the header block AND
                 // that lead word must stay retail (minus the re-pitch
                 // bytes), so the checked prefix extends to first_vag + 4.
                 let first_vag = rv.vag_samples.iter().map(|v| v.byte_offset).min().unwrap();
-                let tone_base =
-                    s + 4 + legaia_vab::VAB_HEADER_SIZE + legaia_vab::PROGRAMS_TABLE_SIZE;
+                let tone_base = s + 4 + psx_vab::VAB_HEADER_SIZE + psx_vab::PROGRAMS_TABLE_SIZE;
                 let repitch: std::collections::BTreeSet<usize> = (0..16)
                     .flat_map(|t| {
-                        let a = tone_base + t * legaia_vab::TONE_SIZE;
+                        let a = tone_base + t * psx_vab::TONE_SIZE;
                         [a + 4, a + 5]
                     })
                     .collect();
@@ -581,8 +580,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                         "victory clip {clip:#x} VAG {i} data after terminal"
                     );
                     let head = span.start..span.start + 8192.min(span.len());
-                    let pcm =
-                        legaia_vab::decode_vag_aligned(&p_snd[head]).expect("VAG body decodes");
+                    let pcm = psx_vab::decode_vag_aligned(&p_snd[head]).expect("VAG body decodes");
                     let peak = pcm.iter().map(|&v| (v as i32).abs()).max().unwrap_or(0);
                     assert!(peak > 500, "victory clip {clip:#x} VAG {i} is silent");
                 }

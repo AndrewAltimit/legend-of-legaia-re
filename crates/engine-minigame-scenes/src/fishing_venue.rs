@@ -719,14 +719,24 @@ pub fn tick_venue_actors(
 /// The native window and the browser play page both call this and wrap the
 /// result with the one builder `legaia_engine_ui::fishing::line`. `None`
 /// with no session, no camera or no line out.
+///
+/// `venue_camera` says `view` is the venue's own retail camera
+/// ([`venue_view`]); only then does the tail's off-screen test run
+/// (`PondSession::line_frame_retail`), since a fallback framing would put
+/// the cast's spawn point off its screen for no reason retail has.
 pub fn fishing_line_frame(
     mg: &mut MinigameState,
     view: Option<&legaia_engine_camera::psx_camera::FieldCameraView>,
+    venue_camera: bool,
 ) -> Option<legaia_engine_fishing::fishing_actors::FishingLine> {
     let view = view?;
-    mg.fishing
-        .as_mut()?
-        .line_frame(|p| project_to_retail_screen(view, p))
+    let pond = mg.fishing.as_mut()?;
+    let project = |p| project_to_retail_screen(view, p);
+    if venue_camera {
+        pond.line_frame_retail(project)
+    } else {
+        pond.line_frame(project)
+    }
 }
 
 /// Project a raw retail-world point through a host camera pose into retail

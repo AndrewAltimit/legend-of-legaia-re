@@ -18,12 +18,12 @@ use legaia_game_tables::new_game::{
     live_record_xp_offset, party_template_file_offset, scus_file_offset,
     starting_xp_seed_file_offset,
 };
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::starting_level::{
     DEFAULT_STARTING_LEVEL, MAX_STARTING_LEVEL, MIN_STARTING_LEVEL, plan,
 };
+use psx_iso::iso9660::{find_file_in_image, read_file_in_image};
+use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -248,7 +248,7 @@ fn starting_level_round_trips_on_disc() {
     ] {
         let sb = (scus_lba as usize + off / USER_DATA_SIZE) * SECTOR_SIZE;
         assert!(
-            legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+            psx_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
             "patched sector must be EDC/ECC-valid"
         );
     }

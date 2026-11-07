@@ -183,6 +183,36 @@ pub(crate) fn side_panel_max(ctx: &egui::Context, min: f32) -> f32 {
     (ctx.content_rect().width() * 0.45).max(min)
 }
 
+/// A playback key a player view takes: Space plays or pauses, Left and Right
+/// step one frame back or on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Transport {
+    PlayPause,
+    Back,
+    Forward,
+}
+
+/// The playback key pressed this frame, consumed. Only while no widget holds
+/// the keyboard: a focused button takes Space as its own click and a text
+/// field takes all three as typing, so the views keep a typed search intact.
+pub(crate) fn transport_key(ui: &egui::Ui) -> Option<Transport> {
+    if ui.ctx().memory(|m| m.focused().is_some()) {
+        return None;
+    }
+    ui.input_mut(|i| {
+        let none = egui::Modifiers::NONE;
+        if i.consume_key(none, egui::Key::Space) {
+            Some(Transport::PlayPause)
+        } else if i.consume_key(none, egui::Key::ArrowLeft) {
+            Some(Transport::Back)
+        } else if i.consume_key(none, egui::Key::ArrowRight) {
+            Some(Transport::Forward)
+        } else {
+            None
+        }
+    })
+}
+
 /// The list row an arrow, Page, Home or End key moves to from `cur`, when the
 /// frame has such a key and it moves. A nothing-selected list starts at its
 /// top. Rows beyond `last` do not exist.
@@ -239,7 +269,7 @@ enum TexSource {
 struct ModelView {
     key: (usize, usize),
     model: Option<Model>,
-    entry_vram: legaia_tim::Vram,
+    entry_vram: psx_tim::Vram,
     source: TexSource,
     /// The scene-cache key the view last drew with (`None` = entry VRAM).
     drawn_with: Option<String>,
@@ -681,7 +711,7 @@ impl App {
         if let Some(img) = image {
             let [w, h] = img.size;
             let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
-            match legaia_tim::write_png(&shot, w, h, &rgba) {
+            match psx_tim::write_png(&shot, w, h, &rgba) {
                 Ok(()) => log::info!("screenshot saved to {}", shot.display()),
                 Err(e) => log::error!("screenshot: {e:#}"),
             }
@@ -3066,6 +3096,10 @@ const KEYS: &[(&str, &str)] = &[
         "walk the archive tree",
     ),
     (
+        "Space, Left / Right",
+        "play or pause, step a frame (movies, animations)",
+    ),
+    (
         "Ctrl+= / Ctrl+- / Ctrl+0",
         "zoom in, out, reset (also View)",
     ),
@@ -3295,7 +3329,7 @@ const START_MARGIN: f32 = 16.0;
 /// The texture source a model view opens on: the entry's own TIMs when they
 /// cover every textured prim of the mesh (`Model::texture_coverage`), else
 /// the scene's VRAM, where the missing pages and CLUTs are uploaded.
-fn default_tex_source(model: Option<&Model>, entry_vram: &legaia_tim::Vram) -> TexSource {
+fn default_tex_source(model: Option<&Model>, entry_vram: &psx_tim::Vram) -> TexSource {
     match model.map(|m| m.texture_coverage(entry_vram)) {
         Some((covered, textured)) if covered < textured => TexSource::Scene,
         _ => TexSource::Entry,
@@ -3470,6 +3504,57 @@ mod layout_tests {
         // gets 8; a wide one 16.
         assert_eq!(hex_row_bytes(390.0, 7.4), 8);
         assert_eq!(hex_row_bytes(900.0, 7.4), 16);
+    }
+
+    /// One frame with `key` pressed; what `transport_key` read, with a text
+    /// field focused first when `typing`.
+    fn transport_with(key: egui::Key, typing: bool) -> Option<Transport> {
+        let ctx = egui::Context::default();
+        let field = egui::Id::new("field");
+        let mut got = None;
+        let press = |k| egui::Event::Key {
+            key: k,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for frame in 0..2 {
+            let input = egui::RawInput {
+                events: if frame == 1 { vec![press(key)] } else { vec![] },
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| {
+                let mut s = String::new();
+                let r = ui.add(egui::TextEdit::singleline(&mut s).id(field));
+                if typing && frame == 0 {
+                    r.request_focus();
+                }
+                if frame == 1 {
+                    got = transport_key(ui);
+                }
+            });
+        }
+        got
+    }
+
+    #[test]
+    fn playback_keys_yield_to_a_focused_field() {
+        assert_eq!(
+            transport_with(egui::Key::Space, false),
+            Some(Transport::PlayPause)
+        );
+        assert_eq!(
+            transport_with(egui::Key::ArrowLeft, false),
+            Some(Transport::Back)
+        );
+        assert_eq!(
+            transport_with(egui::Key::ArrowRight, false),
+            Some(Transport::Forward)
+        );
+        // A search being typed keeps its space and its caret keys.
+        assert_eq!(transport_with(egui::Key::Space, true), None);
+        assert_eq!(transport_with(egui::Key::ArrowLeft, true), None);
     }
 
     #[test]

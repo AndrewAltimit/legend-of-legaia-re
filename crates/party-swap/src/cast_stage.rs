@@ -182,7 +182,7 @@ pub fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
             && (0x10..budget).contains(&clut_a)
             && (0x10..budget).contains(&clut_b)
             && clut_a < clut_b;
-        if plausible && legaia_lzs::decompress(&entry[o + 0x10..], budget).is_ok() {
+        if plausible && psx_lzs::decompress(&entry[o + 0x10..], budget).is_ok() {
             return Ok((clut_a, clut_b));
         }
         o += 4;

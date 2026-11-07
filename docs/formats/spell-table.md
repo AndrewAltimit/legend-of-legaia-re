@@ -225,6 +225,15 @@ tests `andi 0x40` at `0x801D1C50` / `0x801D1C58` (PROT 0898) and then `0x20`,
 the same ladder the item-effect descriptors' `+2` bit `0x40` runs at
 `0x801D18E0`.
 
+A heal record's magnitude is not its MP. A class byte below `0x14` sends the cast to
+the Spirit band, whose state `0x3F` hands `+0x1E8` / `+0x1E9` (the record's class and
+`+1` tier) to the item applier `FUN_800402F4` (`0x801E4108..0x801E4138`). Classes `0`
+and `1` restore `min(max - hp, 0x8007655C[tier])` with a signed compare, the heal-amount
+table the consumables read ([item-effect table](item-effect-table.md)): Heal (`0x2E`,
+class `0` tier `0`) restores up to `200` and Hyper Heal (`0x2F`, tier `1`) up to `800`.
+Every heal film agrees (`battle_balden_orb_v2_hyper_heal_mid_cast`'s Orb goes `266` to
+`800`), where the port's MP-scaled placeholder gave `160` and `400`.
+
 The per-monster `switch` after it overrides the shape. Slime Divide `0x50`
 carries `0x24`, and its arms store the caster's own seat
 (`addiu v0,s7,0x3; sb v0,0x1dd(s4)` at `0x801EB9AC`), which PROT 0940's split

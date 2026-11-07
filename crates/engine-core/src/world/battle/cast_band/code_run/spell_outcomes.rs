@@ -118,7 +118,9 @@ impl World {
         // Retail's character id is 1-based over the present-party list.
         let caster_character = self.party_roster_slot(caster_slot as usize) as u8 + 1;
         let kill_roll = self.next_rand();
-        let resist_roll = self.next_rand();
+        // An immune target branches past the resist throw (`bnez` at
+        // `0x801F6C20` to `0x801F6CB8`), so it draws none.
+        let resist_roll = if target_immune { 0 } else { self.next_rand() };
         let extra_roll =
             (caster_character == ticks_a::NIGHTO_EXTRA_ROLL_CHARACTER).then(|| self.next_rand());
         let outcome = ticks_a::nighto_outcome(&ticks_a::NightoRoll {

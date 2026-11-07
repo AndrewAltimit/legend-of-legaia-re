@@ -51,10 +51,10 @@ pub fn detect(buf: &[u8]) -> Option<TmdSizePrefix> {
     if buf.len() < 16 {
         return None;
     }
-    let claimed_total = legaia_bytes::u32_le(buf, 0)?;
-    let magic = legaia_bytes::u32_le(buf, 4)?;
-    let flags = legaia_bytes::u32_le(buf, 8)?;
-    let nobj = legaia_bytes::u32_le(buf, 12)?;
+    let claimed_total = psx_bytes::u32_le(buf, 0)?;
+    let magic = psx_bytes::u32_le(buf, 4)?;
+    let flags = psx_bytes::u32_le(buf, 8)?;
+    let nobj = psx_bytes::u32_le(buf, 12)?;
 
     if magic != 0x80000002 {
         return None;
@@ -85,12 +85,12 @@ pub fn detect(buf: &[u8]) -> Option<TmdSizePrefix> {
     let claimed = claimed_total as usize;
     for i in 0..(nobj as usize) {
         let off = 16 + i * 28;
-        let vert_top = legaia_bytes::u32_le(buf, off)? as usize;
-        let n_vert = legaia_bytes::u32_le(buf, off + 4)? as usize;
-        let norm_top = legaia_bytes::u32_le(buf, off + 8)? as usize;
-        let n_norm = legaia_bytes::u32_le(buf, off + 12)? as usize;
-        let prim_top = legaia_bytes::u32_le(buf, off + 16)? as usize;
-        let n_prim = legaia_bytes::u32_le(buf, off + 20)? as usize;
+        let vert_top = psx_bytes::u32_le(buf, off)? as usize;
+        let n_vert = psx_bytes::u32_le(buf, off + 4)? as usize;
+        let norm_top = psx_bytes::u32_le(buf, off + 8)? as usize;
+        let n_norm = psx_bytes::u32_le(buf, off + 12)? as usize;
+        let prim_top = psx_bytes::u32_le(buf, off + 16)? as usize;
+        let n_prim = psx_bytes::u32_le(buf, off + 20)? as usize;
 
         // Pointers must reside inside the claimed payload, after the obj table.
         // The vertex / normal / primitive sections themselves must also fit.

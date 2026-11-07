@@ -11,7 +11,7 @@ name = "legaia_engine_mode"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-bytes.workspace = true
+psx-bytes.workspace = true
 legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 
