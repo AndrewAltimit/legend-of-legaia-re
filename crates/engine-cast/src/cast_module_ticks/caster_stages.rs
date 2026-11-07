@@ -98,21 +98,29 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: Some(&[0]),
     },
-    // PROT 0936 Hyper Crush: `0x0D` at `0x801F6BA0`, then `0x0B` at `0x801F6EB0`.
+    // PROT 0936 Hyper Crush: `0x0D` at `0x801F6BA0` in arm 0 (one pass), then
+    // `0x0B` at `0x801F6EB0` in arm 2, past its countdown gate (`bgtz` at
+    // `0x801F6E98`). Clip `0x0D` parks on its frame 15 (entry window
+    // `255, 15, 15`) through arm 1 and arm 2's count:
+    // `battle_retona_songi_hyper_crush_mid_cast` holds it there for 170 vsyncs.
+    // Replayed at the band's head, both clips ran out in phase 0 and the
+    // module waited on them there.
     CasterStageRow {
         prot_entry: 936,
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0D, 0x0B]),
         approach: false,
-        arms: None,
+        arms: Some(&[0, 2]),
     },
-    // PROT 0937 Hyper Lightning: `0x0D` at `0x801F6B38`, then `0x0C` at `0x801F6E80`.
+    // PROT 0937 Hyper Lightning: `0x0D` at `0x801F6B38` in arm 0, then `0x0C`
+    // at `0x801F6E80` in arm 2, past its countdown gate (`bgtz` at
+    // `0x801F6E30`).
     CasterStageRow {
         prot_entry: 937,
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0D, 0x0C]),
         approach: false,
-        arms: None,
+        arms: Some(&[0, 2]),
     },
     // PROT 0938 `0xB7` (`0x801F69EC`, Mystic Circle): `li v0,0x7;
     // sb v0,0x1da(s4)` at `0x801F6CCC`, in arm 1 (table word 1,
@@ -491,7 +499,7 @@ mod caster_stage_tests {
         // The rows placed in their arms.
         assert_eq!(capture_caster_stage_arms(938, 0xB7), Some(&[1u8][..]));
         assert_eq!(capture_caster_stage_arms(961, 0xB4), Some(&[1u8][..]));
-        assert_eq!(capture_caster_stage_arms(937, 0x4C), None);
+        assert_eq!(capture_caster_stage_arms(937, 0x4C), Some(&[0u8, 2][..]));
         for r in CAPTURE_CASTER_STAGES {
             if let (Some(arms), CasterClipRule::Fixed(clips)) = (r.arms, r.rule) {
                 assert_eq!(arms.len(), clips.len(), "PROT {}", r.prot_entry);

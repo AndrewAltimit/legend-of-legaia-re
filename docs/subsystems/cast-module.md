@@ -3702,6 +3702,25 @@ three units). The bodies without that store keep the half turn
   seats the vortex on the shot's trios: three records straight through
   `FUN_80021B04` at `0xA00` / `0x400` / `0x1000` and four through the pool. Arms
   1..3 walk the vortex's `+0x14` / `+0x16`, arm 6 halts it.
+- **0942 `0xAA`'s caster and vortex stores** (`dark_typhoon_camera`). Arm 0 puts the
+  caster on tint state `9`, the yellow (`+0x21C`, `0x801F6B54`), at rate `4`, and
+  writes a loop window into its clip-9 action entry, `*(record + 0x70)` `+0x84..+0x86`
+  = `FF 0D 0E` (`0x801F6C08..0x801F6C98`), so the clip parks on frames 13..14 through
+  arm 1. Arm 1's passing pass releases the park (`+0x21B` / `+0x176` zeroed) at rate
+  `2`, arm 4's clears the tint after its ring, and arm 6 writes the window back to
+  zeros. Arm 3's passing pass recolours the vortex to `0x8060C0` in both packed
+  colours and shifts its spin `+0x84` left by two (`0x801F7300..0x801F7338`); arm 4's
+  sets its depth-cue rate `+0x90 = 0x200`. Arm 6's pool flush sits past the countdown's
+  `bgtz` (`0x801F7C20`), so the arm-4 ring's columns stand through the closing pull-out.
+  On `battle_taiku_zora_dark_typhoon_mid_cast` the film reads Zora yellow and the
+  vortex pink-white where it read dark and blue.
+- **0936 `0x4B` / 0937 `0x4C`'s caster clips.** Each body stages clip `0x0D` on its arm 0
+  and its second clip (`0x0B` / `0x0C`) past arm 2's countdown gate (`0x801F6EB0` /
+  `0x801F6E80`); `0x0D` parks on its own entry window (`255, 15, 15`) between them.
+  Replayed at the band's head, both clips ran out ahead of arm 1 and Songi's wind-up
+  was gone from the frame. Hyper Crush's arm-4 counter `0x801F817C` steps once a pass,
+  a battle frame (`ModuleCamState::opens_pass`): retail's six passes run about 25 vsyncs
+  of game clock, and counted once a vsync the arm left in 8.
 - **0942 `0xAA`'s party swirl**
   (`World::dark_typhoon_party_swirl`). Arm 2's pass copies each party seat's plane
   pair into `0x801F88C4 + 8 * seat`. Arm 3's pass clears the pull `0x801F88B8` and

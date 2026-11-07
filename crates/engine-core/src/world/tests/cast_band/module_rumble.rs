@@ -36,6 +36,7 @@ fn drive(world: &mut World, entry: u32, mut tick: impl FnMut(&mut World) -> bool
     for _ in 0..20_000 {
         let before = snapshot(world);
         let arm = world.casting.module_phase;
+        world.clock.display_frames += 1;
         let busy = tick(world);
         let after = snapshot(world);
         if after != before {

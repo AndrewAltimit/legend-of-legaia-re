@@ -170,7 +170,12 @@ pub fn hyper_crush_camera(
         }
         4 => {
             st.countdown.drain();
-            st.module_words[0] += 1;
+            // The counter steps once a pass of the body, a battle frame
+            // ([`ModuleCamState::opens_pass`]), not once a vsync: retail's six
+            // passes run about 25 vsyncs of game clock.
+            if st.opens_pass {
+                st.module_words[0] += 1;
+            }
             let n = st.module_words[0];
             arm.pose_set = Some(CapturePoseSet {
                 tr_y: Some(if n & 1 != 0 { 0x580 } else { 0x500 }),
@@ -230,6 +235,7 @@ mod tests {
         let mut st = ModuleCamState::default();
         let seats = ModuleCamSeats::default();
         let mut passes = 0;
+        st.opens_pass = true;
         loop {
             passes += 1;
             let a = hyper_crush_camera(&mut st, 4, seats);
