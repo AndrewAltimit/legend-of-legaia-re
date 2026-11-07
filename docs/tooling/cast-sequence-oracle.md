@@ -113,6 +113,18 @@ children (tick, slot, frame count, cursor, position, anim id). It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
+`LEGAIA_DIAG_CAST_HIDE=<va>,..` (also through `--engine-env`) leaves the cast
+scene's parts seated from those record addresses out of the draw lists while
+their programs run on: a film whose frame shows something no retail frame
+holds is re-recorded with candidate records hidden until the shape goes, or
+stays. Aluru's arm-11 dark triangle stayed with every arm-11 record hidden,
+which put it on the creature rather than the cast. The record addresses come
+off `parts.csv` and read with `asset move-disasm slot-b`
+([move VM](../subsystems/move-vm.md#reading-a-program-asset-move-disasm)).
+Retail `parts.csv` recordings older than the probe's `s16` position columns
+hold `s32(+0x14)`, `s32(+0x18)`, `s32(+0x1C)` under `x`, `y`, `z`: their `y`
+is `+0x18`.
+
 Set against a retail recording made with `--retail-parts`, the file reads a mechanism
 off directly: Spoon's fans stood at scale `0x400` beside retail's `0x666`, Barra's cone
 at `z = 0` beside `456`, the Rogue's ray emitter on the floor beside retail's

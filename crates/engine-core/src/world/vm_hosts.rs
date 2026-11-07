@@ -248,6 +248,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             arg: arg1,
             scale: state.field_72,
             disp: [state.anim_3c, state.anim_3e, state.anim_40],
+            walk_successor: state.walk_successor,
         };
         // PROT 0925's stager writes into its caller, so its arm runs here,
         // inside the caller's step as retail's does; what it seats waits

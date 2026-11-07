@@ -41,6 +41,10 @@ pub struct SummonScene {
     /// spawned it, and drags along the flight while the move-power record's
     /// `+0x09` byte is set. `None` for a scene no flight addresses.
     pub homing_slot: Option<u8>,
+    /// Record tags ([`SummonPartRuntime::tag`]) the draw lists leave out: a
+    /// diagnostic recorder's per-part toggle (`LEGAIA_DIAG_CAST_HIDE`), for
+    /// naming which part a film's frame shows. Empty in play.
+    pub diag_hidden: Vec<u32>,
 }
 
 impl SummonScene {
@@ -102,6 +106,7 @@ impl SummonScene {
             retail_wait_drain: false,
             last_frame_delta: RETAIL_CHANNEL_DELTA,
             homing_slot: None,
+            diag_hidden: Vec::new(),
         }
     }
 
@@ -277,13 +282,48 @@ impl SummonScene {
     pub fn tick<H: MoveHost + ?Sized>(&mut self, host: &mut H, frame_delta: u16) {
         self.frame = self.frame.wrapping_add(1);
         self.last_frame_delta = frame_delta;
+        for p in self.parts.iter_mut().filter(|p| p.finished) {
+            p.halted_walks = p.halted_walks.saturating_add(1);
+        }
+        // Whether each part has a node still linked behind it as the walk
+        // reaches it ([`ActorState::walk_successor`]).
+        let mut behind = false;
+        for p in self.parts.iter_mut().rev() {
+            p.state.walk_successor = behind;
+            behind |= p.walk_linked();
+        }
         for i in 0..self.parts.len() {
             // A part seated earlier this frame (a module arm's spawn in the
             // world tick) gets the seater's VM run first, then this frame's
             // part tick - the order retail's list walk gives it.
             self.seat_part(i, host);
+            self.parts[i].walk_reached = false;
             self.tick_part(i, host, frame_delta);
         }
+    }
+
+    /// The seats made by op-`0x20` calls during this frame's [`Self::tick`]:
+    /// the seater's own VM run for every unrun part, then the part tick on
+    /// the same frame for the ones the walk reaches ([`SummonPartRuntime::walk_reached`],
+    /// set by the code that seated them from its caller's
+    /// [`ActorState::walk_successor`]). A part seated by the walk's last node
+    /// is past the `next` the walk already read and waits for the next frame
+    /// (PROT 0964's first rays, seated by their emitter while it is the
+    /// tail, take their first fade step a frame late); one seated behind
+    /// another node is reached on the same walk (PROT 0917's arm-7 clouds,
+    /// each drawn one step along on the frame its emitter seats it).
+    /// Returns the parts that ran.
+    pub fn seat_walk<H: MoveHost + ?Sized>(&mut self, host: &mut H) -> Vec<usize> {
+        let mut ran = Vec::new();
+        for i in 0..self.parts.len() {
+            if self.seat_part(i, host) {
+                if std::mem::take(&mut self.parts[i].walk_reached) {
+                    self.tick_part(i, host, self.last_frame_delta);
+                }
+                ran.push(i);
+            }
+        }
+        ran
     }
 
     /// One frame of the part tick `FUN_80021DF4` for part `i`.
@@ -413,6 +453,12 @@ impl SummonScene {
         }
     }
 
+    /// Whether part `p` draws: running, and not hidden by
+    /// [`Self::diag_hidden`].
+    fn drawn(&self, p: &SummonPartRuntime) -> bool {
+        !p.finished && !p.tag.is_some_and(|t| self.diag_hidden.contains(&t))
+    }
+
     /// `true` once every part has halted / ended.
     pub fn finished(&self) -> bool {
         self.parts.iter().all(|p| p.finished)
@@ -428,7 +474,7 @@ impl SummonScene {
         // kept drawing the fully grown flame until the tunnel parts ended.
         self.parts
             .iter()
-            .filter(|p| !p.finished && is_mesh_sel(p.model_sel))
+            .filter(|p| self.drawn(p) && is_mesh_sel(p.model_sel))
             .map(|p| {
                 let s = &p.state;
                 SummonPartDraw {
@@ -456,7 +502,7 @@ impl SummonScene {
     pub fn ribbon_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| !p.finished)
+            .filter(|p| self.drawn(p))
             .filter_map(|p| {
                 let s = &p.state;
                 let mut mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
@@ -489,7 +535,7 @@ impl SummonScene {
     pub fn sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| !p.finished)
+            .filter(|p| self.drawn(p))
             .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
             .collect()
     }
@@ -500,7 +546,7 @@ impl SummonScene {
     pub fn default_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| !p.finished)
+            .filter(|p| self.drawn(p))
             .filter_map(|p| crate::effect_default_arm::default_arm_draw(&p.state))
             .collect()
     }
@@ -590,6 +636,8 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         tag: None,
         seat_pokes: Vec::new(),
         seat_halve_speed: false,
+        halted_walks: 0,
+        walk_reached: false,
     })
 }
 

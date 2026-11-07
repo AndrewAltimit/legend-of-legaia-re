@@ -91,10 +91,12 @@ impl World {
     /// The op-`0x20` stager calls this frame's part tick queued, run on the
     /// caller's frame: retail makes the call inside the caller's move-VM step
     /// and seats what the stager seats there (`FUN_80050ED4` ->
-    /// `FUN_80021B04`, whose own VM run, `jal 0x80023070` at `0x80021DC0`,
-    /// is the only step a new part takes that frame). Queued until the
-    /// module's next tick instead, PROT 0964's first rays were born a battle
-    /// frame after its emitter's opening call, and every later fan with them.
+    /// `FUN_80021B04`, whose own VM run is `jal 0x80023070` at `0x80021DC0`).
+    /// The new node lands at the list's tail, so the walk ticks it on the same
+    /// frame unless the caller was the walk's last node
+    /// (`SummonScene::seat_walk`). Queued until the module's next tick
+    /// instead, PROT 0964's first rays were born a battle frame after its
+    /// emitter's opening call, and every later fan with them.
     fn run_summon_part_stager_calls(&mut self) {
         let Some(entry) = self.casting.module_running_entry else {
             return;
@@ -117,7 +119,7 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
-            scene.seat_unrun(&mut host);
+            scene.seat_walk(&mut host);
         }
         self.casting.active_summon = Some(scene);
     }

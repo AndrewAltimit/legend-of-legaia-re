@@ -26,6 +26,7 @@ operand widths by a factor of two.
 | Buffer setup | `FUN_80021B04` (part seater), `FUN_800252EC` (prescript installer) |
 | Per-frame caller | part tick `FUN_80021DF4` (`ghidra/scripts/funcs/80021df4.txt`); one-shot at spawn from `FUN_80021B04` |
 | Port | [`legaia_engine_vm::move_vm`](../../crates/engine-vm/src/move_vm.rs) (`step`, `run_until_break`, `actor_tick`, `MoveHost`); part tick blocks in `engine-effects::part_motion`; field host in `engine-core::world::ambient` |
+| Disassembler | [`legaia_overlay_images::move_disasm`](../../crates/overlay-images/src/move_disasm.rs); CLI `asset move-disasm file\|slot-b\|prescript` - [below](#reading-a-program-asset-move-disasm) |
 
 ## The runtime VM family
 
@@ -111,6 +112,58 @@ channel and motion blocks, and runs the envelope tail. Port:
 `SummonScene::seat_run` (`crates/engine-effects/src/summon.rs`) runs it there;
 the `nighto_summon_mid_cast` capture's ray burst is the reference frame.
 
+### A part seated during the walk
+
+A part another part seats from inside its own tick (op `0x20` into a
+stager, op `0x25`) takes its first part tick on the same frame only when the
+walk still has somewhere to go. The walk `FUN_8002519C` reads a node's `next`
+before it calls the node's tick (`lw s1,0x0(s1)` at `0x800251D8`, the call
+`jalr v0` at `0x800252B4`), and the allocator under `FUN_80021B04`
+(`FUN_80020454`) links the new node at the list's **tail**: `sw v0,0x0(v1)`
+on the old tail, `sw v0,0xc(a0)` as the list's new tail. So:
+
+- a part seated by the list's last node is past the `next` the walk already read (`0`), and waits for the next frame: PROT 0964's first rays, whose emitter is the newest node when it seats them, are born at level `0x1000` and take their first fade step a frame late;
+- a part seated by a node with anything behind it is reached on the same walk: PROT 0917's arm-7 emitter `0x801F8B18` seats a cloud a frame behind the clouds it seated before, so every cloud shows one step along (`+0x18 = 832` from `1024`) on the frame it is seated, as retail's `parts.csv` holds it.
+
+A halted node stays linked for two more walks (the first ORs `0x2000000`
+into `+0x10`, the second unlinks it through `FUN_800204A4`), so it still
+counts as a node behind the ones before it. Port:
+`SummonScene::seat_walk` (`crates/engine-effects/src/summon/scene.rs`), fed
+by `ActorState::walk_successor`, which `SummonScene::tick` sets per part
+before its tick; the summon scene's own parts are the walk it models.
+
+## Reading a program: `asset move-disasm`
+
+[`legaia_overlay_images::move_disasm`](../../crates/overlay-images/src/move_disasm.rs)
+decodes a move program without running it: one line per instruction with its
+width, mnemonic, operands and the actor fields it stores, the `0x2F`
+sub-ops included. The widths are the `$a2` each arm of `FUN_80023070` leaves
+for the epilogue at `0x80024150` and the `li s2, N` of each
+`FUN_801D362C` arm, read off the disassembly; `legaia-engine-vm`'s
+`disasm_widths` tests step the executing VM over every opcode and sub-op and
+hold it to the same widths.
+
+```text
+asset move-disasm slot-b extracted/PROT/0917_xxx_dat.BIN --record 0x801F8B40
+asset move-disasm file <image> --base 0x801F69D8 --at 0x801F8B18 --record
+asset move-disasm prescript <scene_event_scripts entry> --id 12
+```
+
+`slot-b` walks every spawn record of a cast / summon module inside the
+record band `slot_b_module` bounds (`--chained` adds the records chained
+above the highest credited one); `prescript` walks a scene's stager table;
+`file` walks one program or record in any buffer, `--through-halt` past its
+`HALT`. Control flow is reported rather than followed: loops print their
+count (`forever` for the `0x4000` bit), and the ten `0x2F` branches print the
+offset their taken side lands on; a forward branch over a `HALT` carries the
+walk past it.
+
+`0x0B` has no arm of its own: its jump-table word is the epilogue
+`0x80024150`, which adds whatever `$a2` holds, and every arm writes `$a2`
+after its last call, so `0x0B` repeats the previous instruction's width (the
+caller's `$a2` as a pass's first instruction). The walker decodes it that
+way; no slot-B record on the disc issues it.
+
 ## Actor fields the opcodes touch
 
 | Offset | Type | Use |
@@ -160,7 +213,7 @@ subsection under the table.
 | `0x08` | `HALT` | 0 | `+0x10 \|= 0x8`; ends the loop without advancing the PC |
 | `0x09` | `WAIT_SET` | 2 | `+0x54 = v1 << 3`; ends the loop |
 | `0x0A` | `KEYFRAME_LOAD` | 3 + 3*count | Morph-lane install - [below](#0x0a---keyframe_load) |
-| `0x0B` | - | - | No distinct handler: falls straight to the continue-epilogue |
+| `0x0B` | - | previous | No arm: the jump-table word is the epilogue, which advances by the previous instruction's `$a2` - [below](#reading-a-program-asset-move-disasm) |
 | `0x0C` | - | 6 | `+0x74 = (v1<<24 \| 0x40000000) + v2 + (v3<<8) + (v4<<16)`; `+0x78 = v5` |
 | `0x0D` | - | 2 | `+0x90 = v1 << 3` (the `+0x78` depth-cue rate) |
 | `0x0E` | - | 2 | `+0x72 = v1` (scale X) |

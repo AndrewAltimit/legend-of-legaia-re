@@ -250,7 +250,21 @@ impl World {
                     .push_megaton_press_fade(&MEGATON_PRESS_WHITE_OUT, 0x801F_84D4, None);
             }
             for s in &spawns {
+                let before = self
+                    .casting
+                    .active_summon
+                    .as_ref()
+                    .map_or(0, |sc| sc.parts.len());
                 self.casting.seat_stager_spawn(entry, s);
+                // Retail's walk reaches what a caller with a node behind it
+                // seats (`SummonScene::seat_walk`).
+                if caller.walk_successor
+                    && let Some(sc) = self.casting.active_summon.as_mut()
+                {
+                    for p in sc.parts.iter_mut().skip(before) {
+                        p.walk_reached = true;
+                    }
+                }
             }
             if entry == 959 && arm == 3 {
                 self.casting.push_megaton_press_fade(
