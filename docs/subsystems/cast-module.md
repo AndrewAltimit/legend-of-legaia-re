@@ -4634,7 +4634,15 @@ parked in the pool's words and halts the engine's parts of every record the
 image seats through the wrapper; a part seated straight through
 `FUN_80021B04` is in no pool word and lives on. Without it Horn's cast reads
 as a white screen from arm 4 to the end of the Done band in the cast-sequence
-oracle. The last arm has no phase write, so its
+oracle. A module the engine stages whole (`World::spawn_cast_module_fx`, and the
+stager-only records of `World::spawn_cast_module_stager_records`) stands in for seats
+its stager makes through `FUN_80050ED4`, so those parts carry their record's address
+too (`SummonScene::spawn_parts_tagged`), and the flush reaches them. PROT 0956's
+Paralyzing Wave flushes at the end of arm 1 (`jal 0x80050E74` at `0x801F6D0C`): a
+retail recording holds every live part halted (`+0x10 |= 0x8`) on that pass, its
+rings' radius word `+0xB6` stopped at `255`, `510` and `765`. Left untagged, the
+engine's rings grew one unit a tick for the rest of the cast and whited out the screen
+through the Done band. The last arm has no phase write, so its
 sites read as `Every`; its countdown gate (`summon_holds::gate_va`,
 `0x801F7CAC`) keeps the flush on the pass that ends the module.
 

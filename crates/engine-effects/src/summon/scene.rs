@@ -105,6 +105,30 @@ impl SummonScene {
         }
     }
 
+    /// [`Self::spawn_parts`] with each part tagged by the record it was
+    /// seated from (`link_base + record_off`, the record's address in the
+    /// paged image). A module's whole-set placement stands in for seats its
+    /// stager makes through the pool wrapper `FUN_80050ED4`, and the tag is
+    /// how a later pool flush `FUN_80050E74` finds them.
+    pub fn spawn_parts_tagged(
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        model_base: usize,
+        origin: [i16; 3],
+        link_base: u32,
+    ) -> Self {
+        let mut scene = Self::spawn_parts(&[], record_bytes, model_base, origin);
+        scene.parts = parts
+            .iter()
+            .filter_map(|p| {
+                let mut part = seed_part(p, record_bytes, origin)?;
+                part.tag = Some(link_base + p.record_off as u32);
+                Some(part)
+            })
+            .collect();
+        scene
+    }
+
     /// Seat more parts into a running scene - one `FUN_80021B04(pos, rot,
     /// record, 0x1000)` call per part, made on a later frame than the scene's
     /// first. `pos` seeds `+0x14..+0x18` and `rot` the render banks

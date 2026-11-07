@@ -564,7 +564,16 @@ impl PlayWindowApp {
             && self.capture_gate_met()
             && let Some(sc) = self.screenshot.as_ref()
         {
-            sc.battle_drive_released.set(true);
+            // The drive holds the capture band's two polls while it steers
+            // (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`);
+            // once it lets go nothing would answer them, and a gate that
+            // opens inside `0x6F` (`battle_map01_gomboo_steal_mid_cast`)
+            // parked the band there for the rest of the run.
+            if !sc.battle_drive_released.replace(true) {
+                let world = &mut self.session.host.world;
+                world.battle.prev_action_cleared = true;
+                world.audio.sound_bank_ready = true;
+            }
         }
         match self.screenshot.as_ref() {
             Some(sc) if sc.battle_drive_released.get() => field_pad,

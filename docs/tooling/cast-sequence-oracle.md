@@ -248,7 +248,11 @@ recorder. It keeps the capture's re-seat (`PHYSICAL_KEEP_ENV`), which stands the
 on the capture's ground; it lets go of the drive at its gate
 (`ScreenshotConfig::battle_drive_released`), because the drive's steer pins the yaw
 counter for as long as the state lasts and leaves the camera short by what the state
-would have drifted; and the score keeps the recording's first action only
+would have drifted, and the release also answers the two capture-band polls the drive
+held (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`), which nothing
+else answers once the drive stops: a state saved inside `0x6F`
+(`battle_map01_gomboo_steal_mid_cast`) otherwise parks the band there for the whole
+run; and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
 capture that starts inside the strike loop. The first action is the one the first
