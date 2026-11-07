@@ -373,32 +373,21 @@ impl PlayWindowApp {
     /// The Muscle Dome hub screens as retail-placed sprite draws, through the
     /// shared `engine-ui` emitters both hosts draw with
     /// ([`legaia_engine_ui::muscle_dome_hud::hub_screen_quads`] /
-    /// [`legaia_engine_ui::muscle_dome_hud::score_tally_quads`] - the browser
-    /// dome page reaches the same functions via
-    /// `muscle_web::muscle_hub_quads_json`): the hub's first visit
-    /// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
-    /// title zoom, course card, ROUND card) over a fresh contest's first leg,
-    /// the INTERVAL heading + six-row score tally between legs. Every quad's extent and screen seat come out of the
-    /// PROT 0977 descriptor table and recovered draw lists; the host places
-    /// nothing itself.
+    /// [`legaia_engine_ui::muscle_dome_hud::score_tally_quads`]): the hub's
+    /// first visit (`ringside_backdrop::first_visit_hub_draw` - wall, shade,
+    /// intro strip, title zoom, course card, ROUND card) over a fresh
+    /// contest's first leg, the INTERVAL heading + six-row score tally
+    /// between legs, the ringside still under a re-entered hub. Every quad's
+    /// extent and screen seat come out of the PROT 0977 descriptor table and
+    /// recovered draw lists; the host places nothing itself.
     ///
-    /// The tally's six values are the contest's own rows - the four
-    /// `LegScoreRows` lanes, then the running tally and the coin bank they
-    /// settle into - the same model row set the browser page feeds the same
-    /// builder.
-    ///
-    /// Semi-transparent packets ride the returned [`OverlayBlendSpan`]s: the
-    /// first visit's shade through the subtractive (`ABR 2`) sprite
-    /// pipeline, between the wall tiles and the screens drawn over them, and
-    /// a hub quad through its tpage's ABR wherever its palette carries STP
-    /// (`HubPaletteStp::quad_abr` over the CLUTs as the arena uploads them -
-    /// STP-set on every non-zero entry, so an STP-free palette, which draws
-    /// opaque as retail's GPU draws it, is one that is all zero).
-    ///
-    /// A packet's vertical two-stop colour gradient (the course-title face's
-    /// record carries one) goes out as one draw per display row, each at the
-    /// Gouraud colour of its row: the sprite pipeline carries one colour per
-    /// draw, and the GPU samples one texel row per display row.
+    /// The decomposition into draws - the frame clip, one draw per row for a
+    /// packet's vertical colour gradient, the shade's rows at the
+    /// framebuffer's 5 bits, the ABR each semi packet blends with - is the
+    /// one the play page draws too
+    /// ([`legaia_engine_screens::minigame_hud::muscle_hub_sprites`]); this
+    /// host only resolves each draw's source onto its sprite atlas.
+    /// Semi-transparent draws ride the returned [`OverlayBlendSpan`]s.
     ///
     /// [`OverlayBlendSpan`]: legaia_engine_render::OverlayBlendSpan
     pub(in crate::window) fn muscle_hub_sprite_draws(
@@ -409,153 +398,70 @@ impl PlayWindowApp {
         Vec<legaia_engine_ui::SpriteDraw>,
         Vec<legaia_engine_render::OverlayBlendSpan>,
     ) {
+        use legaia_engine_screens::minigame_hud::HubSpriteSource;
         let Some(assets) = self.muscle_hub.as_ref() else {
             return (Vec::new(), Vec::new());
         };
-        // The quad selection is the one both hosts draw from; this host
-        // keeps only the sprite-draw form and the ringside still under it.
-        let legaia_engine_screens::minigame_hud::MuscleHubQuads {
-            quads,
-            shade,
-            in_dome,
-        } = legaia_engine_screens::minigame_hud::muscle_hub_quads(
+        let sprites = legaia_engine_screens::minigame_hud::muscle_hub_sprites(
             &self.session.host.world,
             &assets.table,
+            &assets.palette_stp,
         );
-        let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::new();
-        // The backdrop goes first: retail links the still's two packets at
-        // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
-        if !in_dome
-            && let Some(b) = self
-                .session
-                .host
-                .world
-                .minigames
-                .muscle_hub
-                .backdrop
-                .filter(|b| b.visible())
-            && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
-        {
-            use legaia_engine_ui::ringside_backdrop as rb;
-            for q in rb::ringside_still_quads(b.level()) {
-                let Some(d) = rb::StillDraw::from_quad(&q) else {
-                    continue;
-                };
-                // A flat packet colour: texture modulation `texel * c / 128`.
-                let c = f32::from(d.level) / 128.0;
-                out.push(legaia_engine_ui::SpriteDraw {
-                    dst: d.dst,
-                    src: (d.src.0, still_y + d.src.1, d.src.2, d.src.3),
-                    color: [c, c, c, 1.0],
-                });
-            }
-        }
-        if quads.is_empty() && out.is_empty() {
+        if sprites.is_empty() {
             return (Vec::new(), Vec::new());
         }
-        // The first visit's shade sits between the wall tiles and the
-        // screens drawn over them.
-        let shade_at = shade.map_or(quads.len(), |(at, _)| at);
-        let shade = shade.map(|(_, sh)| sh);
-        let mut blend = Vec::new();
-        let push_shade =
-            |out: &mut Vec<legaia_engine_ui::SpriteDraw>,
-             blend: &mut Vec<legaia_engine_render::OverlayBlendSpan>,
-             sh: &legaia_engine_ui::ringside_backdrop::BackdropShade| {
-                let rows = shade_row_draws(sh, assets.white_y);
-                blend.push(legaia_engine_render::OverlayBlendSpan {
-                    start: out.len() as u32,
-                    count: rows.len() as u32,
-                    abr: sh.abr,
-                });
-                out.extend(rows);
-            };
-        for (i, q) in quads.iter().enumerate() {
-            if i == shade_at
-                && let Some(sh) = shade
-            {
-                push_shade(&mut out, &mut blend, &sh);
-            }
-            let sheet = u8::from(q.tpage & 0x10 != 0);
-            let pal = (q.clut & 0x3F) as u8;
-            let Some(&(_, _, block_y)) = assets
-                .blocks
-                .iter()
-                .find(|(s, p, _)| *s == sheet && *p == pal)
-            else {
-                continue;
-            };
-            // A semi packet blends only through STP texels. The arena
-            // uploads the hub CLUTs STP-set (`hub_page_tims`), so the
-            // variant-2 knockout palettes blend subtractively (`B - F`)
-            // under the face the variant-1 pass adds over them.
-            let semi_abr = assets.palette_stp.quad_abr(q);
-            let dw = (q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1).max(0) as u32;
-            let dh = (q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1).max(0) as u32;
-            let sw = (q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1).max(0) as u32;
-            let sh = (q.uv[2].1 as i32 - q.uv[0].1 as i32 + 1).max(0) as u32;
-            if dw == 0 || dh == 0 || sw == 0 || sh == 0 {
-                continue;
-            }
-            // PSX texture modulation is `texel * c / 128`, with `c` the
-            // Gouraud colour of the row: the per-vertex colours are a
-            // vertical two-stop gradient, top corners to bottom corners.
-            let gradient = q.rgb[0] != q.rgb[2];
-            let tint_at = |row: i64| -> [f32; 4] {
-                let span = (dh as i64 - 1).max(1);
-                let ch = |k: usize| {
-                    let (a, b) = (i64::from(q.rgb[0][k]), i64::from(q.rgb[2][k]));
-                    (a + (b - a) * row / span) as f32 / 128.0
-                };
-                [ch(0), ch(1), ch(2), 1.0]
-            };
-            // The retail display is the 320x240 frame and the GPU clips to
-            // it; the first visit's wall tiles run past it (three 128-wide
-            // columns, two 128-high rows), so clip here - the texel window
-            // shrinks with the same ratio - or the stage transform carries
-            // the overhang onto the window beside the frame.
-            let (dx, dy) = (q.xy[0].0 as i64, q.xy[0].1 as i64);
-            let (x0, x1) = (dx.max(0), (dx + dw as i64).min(320));
-            let (y0, y1) = (dy.max(0), (dy + dh as i64).min(240));
-            if x1 <= x0 || y1 <= y0 {
-                continue;
-            }
-            let sx = q.uv[0].0 as i64 + (x0 - dx) * sw as i64 / dw as i64;
-            let sy = q.uv[0].1 as i64 + (y0 - dy) * sh as i64 / dh as i64;
-            let csw = ((x1 - x0) * sw as i64 / dw as i64).max(1) as u32;
-            let csh = ((y1 - y0) * sh as i64 / dh as i64).max(1) as u32;
-            let start = out.len() as u32;
-            if gradient {
-                // One draw per display row, sampling the texel row the GPU
-                // steps to for it.
-                for y in y0..y1 {
-                    let row = y - dy;
-                    let v = q.uv[0].1 as i64 + row * sh as i64 / dh as i64;
-                    out.push(legaia_engine_ui::SpriteDraw {
-                        dst: (x0 as i32, y as i32, (x1 - x0) as u32, 1),
-                        src: (sx as u32, block_y + v as u32, csw, 1),
-                        color: tint_at(row),
-                    });
+        let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::with_capacity(sprites.len());
+        let mut blend: Vec<legaia_engine_render::OverlayBlendSpan> = Vec::new();
+        for s in &sprites {
+            // Each source's atlas row and its colour: texture modulation
+            // `texel * c / 128`; the shade a white texel at the value it
+            // subtracts, presented at the framebuffer's 5 bits as a flat
+            // packet's colour is (`screen_prim::flat_gpu_color`, the page's
+            // law for the same row), so the 5-bit tint takes exactly the
+            // `F >> 3` steps retail's `B - F` takes.
+            let modulate = s.color.map(|c| f32::from(c) / 128.0);
+            let (atlas_y, color) = match s.source {
+                HubSpriteSource::Page { sheet, pal, .. } => {
+                    let Some(&(_, _, y)) = assets
+                        .blocks
+                        .iter()
+                        .find(|(bs, bp, _)| *bs == sheet && *bp == pal)
+                    else {
+                        continue;
+                    };
+                    (y, modulate)
                 }
-            } else {
-                out.push(legaia_engine_ui::SpriteDraw {
-                    dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
-                    src: (sx as u32, block_y + sy as u32, csw, csh),
-                    color: tint_at(0),
-                });
+                HubSpriteSource::Still { variant } => {
+                    let Some(&(_, y)) = assets.stills.iter().find(|(v, _)| *v == variant) else {
+                        continue;
+                    };
+                    (y, modulate)
+                }
+                HubSpriteSource::Shade => {
+                    (assets.white_y, s.color.map(|c| f32::from(c >> 3) / 31.0))
+                }
+            };
+            let src = match s.source {
+                HubSpriteSource::Shade => (0, atlas_y, 1, 1),
+                _ => (s.src.0, atlas_y + s.src.1, s.src.2, s.src.3),
+            };
+            if let Some(abr) = s.abr {
+                match blend.last_mut() {
+                    Some(b) if b.abr == abr && b.start + b.count == out.len() as u32 => {
+                        b.count += 1
+                    }
+                    _ => blend.push(legaia_engine_render::OverlayBlendSpan {
+                        start: out.len() as u32,
+                        count: 1,
+                        abr,
+                    }),
+                }
             }
-            if let Some(abr) = semi_abr {
-                blend.push(legaia_engine_render::OverlayBlendSpan {
-                    start,
-                    count: out.len() as u32 - start,
-                    abr,
-                });
-            }
-        }
-        if shade_at >= quads.len()
-            && let Some(sh) = shade
-        {
-            push_shade(&mut out, &mut blend, &sh);
+            out.push(legaia_engine_ui::SpriteDraw {
+                dst: s.dst,
+                src,
+                color: [color[0], color[1], color[2], 1.0],
+            });
         }
         // The quads sit in the retail 320x240 frame; map them through the
         // same stage transform every minigame chrome layer uses.
@@ -563,43 +469,4 @@ impl PlayWindowApp {
         legaia_engine_ui::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
         (out, blend)
     }
-}
-
-/// The first visit's backdrop shade (`FUN_801D1610`, a subtractive `B - F`
-/// Gouraud quad, `0x64` at the top fading to `0` at the bottom) as sprite
-/// draws over the atlas's white block, for the caller to put in an `ABR 2`
-/// [`legaia_engine_render::OverlayBlendSpan`].
-///
-/// The sprite pipeline carries one colour per draw, and the quad's colour
-/// only varies with `y`, so one draw per display row reproduces the ramp:
-/// row `y` subtracts `top + (bottom - top) * y / h`, the Gouraud value at
-/// that row. A row that subtracts nothing is skipped.
-fn shade_row_draws(
-    sh: &legaia_engine_ui::ringside_backdrop::BackdropShade,
-    white_y: u32,
-) -> Vec<legaia_engine_ui::SpriteDraw> {
-    let (x0, y0) = (i32::from(sh.xy[0].0), i32::from(sh.xy[0].1));
-    let w = (i32::from(sh.xy[1].0) - x0).max(0) as u32;
-    let h = (i32::from(sh.xy[2].1) - y0).max(0);
-    let top = i32::from(sh.rgb[0][0]);
-    let bottom = i32::from(sh.rgb[2][0]);
-    let mut out = Vec::new();
-    for row in 0..h {
-        let f = top + (bottom - top) * row / h;
-        // The GPU blends at the framebuffer's 5 bits: the shade's Gouraud
-        // value loses its low 3 bits before `B - F` (the packet's draw mode
-        // `0x46` leaves dither off), so an 8-bit `F` would take a whole
-        // 5-bit step more off the wall on most rows.
-        let f = f & !7;
-        if f <= 0 {
-            continue;
-        }
-        let f = f as f32 / 255.0;
-        out.push(legaia_engine_ui::SpriteDraw {
-            dst: (x0, y0 + row, w, 1),
-            src: (0, white_y, 1, 1),
-            color: [f, f, f, 1.0],
-        });
-    }
-    out
 }

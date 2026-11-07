@@ -37,7 +37,7 @@ use legaia_engine_battle_menus::muscle_dome_session::{MuscleDomeSession, MuscleP
 use legaia_engine_minigames::dance::DanceGame;
 use legaia_engine_minigames::muscle_dome::DomeContest;
 use legaia_engine_ui::TextDraw;
-use legaia_engine_ui::muscle_dome_hud::{self as hud, HudQuad, HudSprite};
+use legaia_engine_ui::muscle_dome_hud::{self as hud, HudSprite};
 use wasm_bindgen::prelude::*;
 
 use crate::play_minigames::{DIM, WHITE, row};
@@ -52,9 +52,6 @@ const ARENA_OVERLAY_PROT_INDEX: u32 =
 /// two hub-page TIMs (`other6.lzs` slot 0).
 const HUB_CONTAINER_PROT_INDEX: u32 =
     legaia_minigame_formats::muscle_dome::HUB_CONTAINER_PROT_INDEX;
-/// The page's sheet id for the ringside still (the hub pages are `4` / `5`);
-/// its `pal` is the still variant, `0` = extraction 1221, `1` = 1222.
-const STILL_SHEET: u32 = 8;
 
 // ------------------------------------------------------------- Muscle Dome
 
@@ -71,6 +68,10 @@ pub(crate) struct MuscleUi {
     sprite_table: Option<Vec<HudSprite>>,
     /// The hub pages' palette STP classes (whether a semi packet blends).
     palette_stp: legaia_engine_ui::ringside_backdrop::HubPaletteStp,
+    /// This frame's hub screen primitives, built by
+    /// [`LegaiaRuntime::play_mg_muscle_hub_prims_stage`]: the count and the
+    /// geometry the page's screen-primitive pass draws.
+    hub_geom: Option<(u32, legaia_render_kernels::screen_prim::OverlayGeometry)>,
     prev_phase: Option<MusclePhase>,
     /// Count of turns resolved this leg (the page's clip-trigger edge).
     pub(crate) turns_resolved: u32,
@@ -153,70 +154,27 @@ impl LegaiaRuntime {
         }
     }
 
-    /// This frame's hub-screen rows, the shared selection
-    /// (`legaia_engine_screens::minigame_hud::muscle_hub_quads`) the native
-    /// window draws too: blit rows for the quads, plus a
-    /// `shade` row for the first visit's backdrop shade between the wall
-    /// tiles and the screens drawn over them.
-    fn muscle_hub_rows(&self) -> Vec<serde_json::Value> {
+    /// This frame's hub draws, the decomposition the native window draws
+    /// too (`legaia_engine_screens::minigame_hud::muscle_hub_sprites`).
+    /// Empty before the sprite table parses.
+    fn muscle_hub_sprites(&self) -> Vec<legaia_engine_screens::minigame_hud::HubSprite> {
         let ui = &self.minigame_ui.muscle;
-        let Some(table) = ui.sprite_table.as_ref() else {
+        let (Some(table), Some(host)) = (ui.sprite_table.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        // The quad selection is the one both hosts draw from; this page keeps
-        // only the blit-row form.
-        let hub = legaia_engine_screens::minigame_hud::muscle_hub_quads(&host.world, table);
-        let quads = hub.quads;
-        let shade_row = hub.shade.map(|(at, sh)| (at, shade_json(&sh)));
-        let mut rows: Vec<serde_json::Value> = quads
-            .iter()
-            .map(|q| hub_quad_json(q, &ui.palette_stp))
-            .collect();
-        if let Some((at, row)) = shade_row {
-            rows.insert(at.min(rows.len()), row);
-        }
-        rows
+        legaia_engine_screens::minigame_hud::muscle_hub_sprites(&host.world, table, &ui.palette_stp)
     }
 
-    /// The re-entered hub's backdrop as blit rows, drawn under
-    /// [`Self::muscle_hub_rows`]: the two still quads, resolved through
-    /// their texture pages onto the still sheet (`sheet` [`STILL_SHEET`],
-    /// `pal` = the still variant). Empty unless a still is up.
-    fn muscle_still_rows(&self) -> Vec<serde_json::Value> {
-        use legaia_engine_ui::ringside_backdrop as rb;
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        if host.world.minigames.muscle_dome.is_some() {
-            return Vec::new();
-        }
-        let Some(b) = host
-            .world
-            .minigames
-            .muscle_hub
-            .backdrop
-            .filter(|b| b.visible())
-        else {
-            return Vec::new();
-        };
-        rb::ringside_still_quads(b.level())
+    /// The ringside still variant the hub draws this frame, if any.
+    fn muscle_hub_still_variant(&self) -> Option<u32> {
+        self.muscle_hub_sprites()
             .iter()
-            .filter_map(|q| {
-                let d = rb::StillDraw::from_quad(q)?;
-                Some(serde_json::json!({
-                    "sheet": STILL_SHEET,
-                    "pal": b.variant(),
-                    "tpage": q.tpage,
-                    "u": d.src.0, "v": d.src.1, "w": d.src.2, "h": d.src.3,
-                    "x": d.dst.0, "y": d.dst.1, "dw": d.dst.2, "dh": d.dst.3,
-                    "bright": d.level,
-                    "semi": false,
-                }))
+            .find_map(|s| match s.source {
+                legaia_engine_screens::minigame_hud::HubSpriteSource::Still { variant } => {
+                    Some(variant)
+                }
+                _ => None,
             })
-            .collect()
     }
 
     /// The two hub-page TIMs out of the dome data container (extraction
@@ -423,48 +381,6 @@ impl LegaiaRuntime {
     }
 }
 
-/// Quad -> the page's blit record (the standalone page's
-/// `muscle_hub_quads_json` row shape, so one JS blitter serves both).
-///
-/// `abr` is the equation the quad's texels blend with, `null` for a quad
-/// that draws opaque (`HubPaletteStp::quad_abr`).
-fn hub_quad_json(
-    q: &HudQuad,
-    stp: &legaia_engine_ui::ringside_backdrop::HubPaletteStp,
-) -> serde_json::Value {
-    serde_json::json!({
-        "sheet": if q.tpage & 0x10 != 0 { 5 } else { 4 },
-        "pal": q.clut & 0x3F,
-        "u": q.uv[0].0, "v": q.uv[0].1,
-        "w": q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1,
-        "h": q.uv[2].1 as i32 - q.uv[0].1 as i32 + 1,
-        "x": q.xy[0].0, "y": q.xy[0].1,
-        "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
-        "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
-        "semi": q.semi_transparent,
-        "abr": stp.quad_abr(q),
-        // The Gouraud colour, top then bottom (`texel * c / 128`) - the
-        // brightness the hub screens fade by.
-        "rgb": [q.rgb[0], q.rgb[2]],
-    })
-}
-
-/// The first visit's backdrop shade (`FUN_801D1610`) as a page row:
-/// `{ shade: true, x, y, dw, dh, top, bottom }` - a vertical ramp the page
-/// applies subtractively (`B - F`, clamped at 0) to the pixels already on its
-/// 2D layer (`subtractShade` in `play-minigames.js`), which is retail's
-/// ABR 2 - the equation the native window's sprite pass runs in hardware.
-fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_json::Value {
-    serde_json::json!({
-        "shade": true,
-        "x": sh.xy[0].0, "y": sh.xy[0].1,
-        "dw": sh.xy[1].0 as i32 - sh.xy[0].0 as i32,
-        "dh": sh.xy[2].1 as i32 - sh.xy[0].1 as i32,
-        "top": sh.rgb[0][0],
-        "bottom": sh.rgb[2][0],
-    })
-}
-
 impl LegaiaRuntime {
     /// The live fishing session's ripple rings in raw world space
     /// ([`legaia_engine_minigame_scenes::fishing_venue::FishingVenue::ripple_world_mesh`]);
@@ -536,18 +452,43 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// This frame's hub-screen quads (intro card / ROUND banner inside the
-    /// dome, INTERVAL + score tally after a leg), `{ ok, quads: [...] }` in
-    /// the standalone page's row shape. `quads` is empty when no screen is
-    /// up.
-    ///
-    /// A re-entered hub's ringside still leads the list (retail links it at
-    /// the ordering table's far end): two rows on sheet `8` whose `tpage` is
-    /// the packet's own `0x106` / `0x109`, `pal` the still variant and
-    /// `bright` the packet colour (`0x80` = neutral modulation).
+    /// This frame's hub draws as JSON, `{ ok, quads: [...] }`, for the
+    /// disc-gated tests: one row per
+    /// `legaia_engine_screens::minigame_hud::HubSprite`, back to front -
+    /// `source` (`page` / `still` / `shade`), `sheet` + `pal` for a page,
+    /// `variant` + `tpage` (the 15-bit page its first column sits in) for the
+    /// still, `x y dw dh` the frame rect, `u v w h` the texel rect (page
+    /// texels; still-sheet pixels), `color` the modulation (`0x80` neutral;
+    /// the shade's subtracted value), `abr` the blend or `null`. A
+    /// re-entered hub's still leads the list (retail links it at the
+    /// ordering table's far end). `quads` is empty when no screen is up.
     pub fn play_mg_muscle_hub_quads_json(&self) -> String {
-        let mut rows = self.muscle_still_rows();
-        rows.extend(self.muscle_hub_rows());
+        use legaia_engine_screens::minigame_hud::{HubSpriteSource, still_page};
+        let rows: Vec<serde_json::Value> = self
+            .muscle_hub_sprites()
+            .iter()
+            .map(|s| {
+                let mut row = serde_json::json!({
+                    "x": s.dst.0, "y": s.dst.1, "dw": s.dst.2, "dh": s.dst.3,
+                    "u": s.src.0, "v": s.src.1, "w": s.src.2, "h": s.src.3,
+                    "color": s.color,
+                    "abr": s.abr,
+                });
+                let extra = match s.source {
+                    HubSpriteSource::Page { sheet, pal, .. } => {
+                        serde_json::json!({ "source": "page", "sheet": sheet, "pal": pal })
+                    }
+                    HubSpriteSource::Still { variant } => serde_json::json!({
+                        "source": "still", "variant": variant, "tpage": still_page(s.src.0).0,
+                    }),
+                    HubSpriteSource::Shade => serde_json::json!({ "source": "shade" }),
+                };
+                if let (Some(r), serde_json::Value::Object(e)) = (row.as_object_mut(), extra) {
+                    r.extend(e);
+                }
+                row
+            })
+            .collect();
         serde_json::json!({
             "ok": self.minigame_ui.muscle.sprite_table.is_some(),
             "quads": rows,
@@ -555,46 +496,92 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// One dome hub page (`4` = VRAM (320,0), `5` = (320,256)) through
-    /// 16-colour sub-palette `palette`, RGBA8. Empty when absent.
-    ///
-    /// Sheet `8` is the ringside still `palette` (`0` = extraction 1221,
-    /// `1` = 1222), 320x256, as the battle end's loader lays it into VRAM
-    /// at `(384, 0)`.
-    pub fn play_mg_muscle_hub_sheet_rgba(&self, sheet: u32, palette: u32) -> Vec<u8> {
-        if sheet == STILL_SHEET {
-            return self
-                .scene_host
-                .host()
-                .and_then(|h| {
-                    h.index
-                        .entry_bytes_extended(
-                            legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT
-                                + palette.min(1),
-                        )
-                        .ok()
-                })
-                .and_then(|b| legaia_engine_ui::ringside_backdrop::still_sheet_rgba(&b))
-                .unwrap_or_default();
-        }
-        self.minigame_art()
-            .map(|a| a.muscle_hud_sheet_rgba(sheet, palette))
+    /// Build this frame's hub screen primitives and return how many there
+    /// are (`0`: no hub screen is up, and the page draws nothing). The draws
+    /// are [`Self::play_mg_muscle_hub_quads_json`]'s, as
+    /// `legaia_engine_screens::minigame_hud::hub_sprite_prims` over the hub's
+    /// own VRAM ([`Self::play_mg_muscle_hub_vram`]), through the shared
+    /// `screen_prim::build_geometry` every other screen layer takes: the page
+    /// draws them with its screen-primitive pass, the rasteriser the
+    /// window's screen layers share, not a canvas of their own. Read the
+    /// buffers with the `play_mg_muscle_hub_prim_*` accessors.
+    pub fn play_mg_muscle_hub_prims_stage(&mut self) -> u32 {
+        use legaia_render_kernels::screen_prim::{PSX_DISPLAY_H, PSX_DISPLAY_W, build_geometry};
+        let prims =
+            legaia_engine_screens::minigame_hud::hub_sprite_prims(&self.muscle_hub_sprites());
+        let n = prims.len() as u32;
+        self.minigame_ui.muscle.hub_geom = (n > 0).then(|| {
+            (
+                n,
+                build_geometry(&prims, PSX_DISPLAY_W as u32, PSX_DISPLAY_H as u32),
+            )
+        });
+        n
+    }
+
+    /// The staged hub primitives' vertex stream, in the `ScreenVertex`
+    /// layout [`Self::play_screen_prim_vertex_bytes`] documents.
+    pub fn play_mg_muscle_hub_prim_vertex_bytes(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle
+            .hub_geom
+            .as_ref()
+            .map(|(_, g)| g.vertex_bytes())
             .unwrap_or_default()
     }
 
-    /// `[width, height]` of hub page `4` / `5`; empty when absent.
-    pub fn play_mg_muscle_hub_sheet_dims(&self, sheet: u32) -> Vec<u32> {
-        if sheet == STILL_SHEET {
-            return vec![
-                legaia_minigame_formats::ringside_still::WIDTH as u32,
-                legaia_minigame_formats::ringside_still::HEIGHT as u32,
-            ];
+    /// The staged hub primitives' index buffer, in draw order.
+    pub fn play_mg_muscle_hub_prim_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .muscle
+            .hub_geom
+            .as_ref()
+            .map(|(_, g)| g.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// The staged hub primitives' run table, `[class_code, index_start,
+    /// index_count]` triples as [`Self::play_screen_prim_runs`].
+    pub fn play_mg_muscle_hub_prim_runs(&self) -> Vec<u32> {
+        self.minigame_ui
+            .muscle
+            .hub_geom
+            .as_ref()
+            .map(|(_, g)| g.run_words())
+            .unwrap_or_default()
+    }
+
+    /// Which hub VRAM image this frame wants: `-1` none (the hub pages did not
+    /// decode), else `0` for the two hub pages alone or `1 + variant` with
+    /// ringside still `variant` laid at `(384, 0)` too. The page re-uploads
+    /// [`Self::play_mg_muscle_hub_vram`] when this changes.
+    pub fn play_mg_muscle_hub_vram_key(&self) -> i32 {
+        if self.minigame_ui.muscle.sprite_table.is_none() {
+            return -1;
         }
+        self.muscle_hub_still_variant()
+            .map_or(0, |v| 1 + v.min(1) as i32)
+    }
+
+    /// The hub's own VRAM image for [`Self::play_mg_muscle_hub_vram_key`]
+    /// (`legaia_engine_ui::ringside_backdrop::hub_vram`), `1024 x 512` 16-bit
+    /// words; empty when the hub pages do not decode.
+    pub fn play_mg_muscle_hub_vram(&self) -> Vec<u8> {
         let Some((t0, t1)) = self.muscle_hub_tims() else {
             return Vec::new();
         };
-        let t = if sheet == 5 { t1 } else { t0 };
-        vec![t.pixel_width() as u32, t.pixel_height() as u32]
+        let still = self.muscle_hub_still_variant().and_then(|v| {
+            self.scene_host.host().and_then(|h| {
+                h.index
+                    .entry_bytes_extended(
+                        legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT + v.min(1),
+                    )
+                    .ok()
+            })
+        });
+        legaia_engine_ui::ringside_backdrop::hub_vram(&t0, &t1, still.as_ref().map(|b| &b[..]))
+            .as_bytes()
+            .to_vec()
     }
 
     /// Pose the dome's 3D arena surface for this frame

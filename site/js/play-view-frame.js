@@ -678,6 +678,15 @@
        * field picture and under the screen prims (a no-op elsewhere). */
       if (this._editorFrame && this.editorOverlayOn) this._drawEditorOverlay();
       if (!skipDraw) this._drawScreenPrims(rt);
+      /* The dome's hub screens, over the screen primitives and under the text
+       * layer: the same pass over the hub's own VRAM. */
+      if (!skipDraw && window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.drawHub) {
+        try {
+          window.LegaiaPlayMinigames.drawHub(rt, this);
+        } catch (e) {
+          try { console.warn('play-minigames: hub draw failed', e); } catch (_) { /* no console */ }
+        }
+      }
 
       /* FPS + HUD, sampled twice a second. */
       this._fpsFrames++;
@@ -915,12 +924,25 @@
         ? Math.min(rt.play_screen_prim_over_run_start() >>> 0, total) : total;
       const back = (typeof rt.play_screen_prim_backdrop_run_end === 'function')
         ? Math.min(rt.play_screen_prim_backdrop_run_end() >>> 0, split) : 0;
-      let vbytes = rt.play_screen_prim_vertex_bytes();
-      /* PSX rasterisation on the native 320 x 240 canvas: the corners take
-       * the GPU's pixel centre and the textured corners its half-texel bias,
-       * the native renderer's `stage_screen_overlay_split`. ScreenVertex:
-       * pos at byte 0, uv at 8, flags at 40, 48-byte stride. PSX_TIE_NDC_Y is why
-       * a sprite's first row lands where the window's does (webgl-shaders.js). */
+      this._screenPrims.upload(
+        this._psxScreenVertices(rt.play_screen_prim_vertex_bytes()),
+        rt.play_screen_prim_indices(),
+        runs,
+        (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
+      );
+      this._screenSpans = { back, split, total, backDrawn: false };
+      return this._screenSpans;
+    }
+
+    /* A screen-primitive vertex stream as this frame draws it. PSX
+     * rasterisation on the native 320 x 240 canvas: the corners take the
+     * GPU's pixel centre and the textured corners its half-texel bias, the
+     * native renderer's `stage_screen_overlay_split`. ScreenVertex: pos at
+     * byte 0, uv at 8, flags at 40, 48-byte stride. PSX_TIE_NDC_Y is why a
+     * sprite's first row lands where the window's does (webgl-shaders.js).
+     * Every screen-primitive stream the page draws takes it: the frame's
+     * own and the dome hub's (play-minigames.js `drawHub`). */
+    _psxScreenVertices(vbytes) {
       if (this.psxRender && this.canvas && this.canvas.width === 320 && this.canvas.height === 240) {
         vbytes = new Uint8Array(vbytes);
         const f = new Float32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
@@ -935,14 +957,7 @@
           }
         }
       }
-      this._screenPrims.upload(
-        vbytes,
-        rt.play_screen_prim_indices(),
-        runs,
-        (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
-      );
-      this._screenSpans = { back, split, total, backDrawn: false };
-      return this._screenSpans;
+      return vbytes;
     }
 
     /* The backdrops, from inside the 3D pass (`preSceneHook`). */
@@ -987,7 +1002,7 @@
     _drawScreenPrimsOver() {
       const span = this._screenOver;
       this._screenOver = null;
-      const layers = [document.getElementById('play-minigame-layer'), this.menuOverlay]
+      const layers = [this.menuOverlay]
         .filter(c => c && !c.hidden && c.width > 0 && c.height > 0);
       let inGl = false;
       if (span && this._screenPrims && !this._screenPrimBroken) {
@@ -1003,7 +1018,7 @@
       }
       if (inGl !== !!this._layersInGl) {
         this._layersInGl = inGl;
-        for (const c of [document.getElementById('play-minigame-layer'), this.menuOverlay]) {
+        for (const c of [this.menuOverlay]) {
           if (c) c.style.visibility = inGl ? 'hidden' : '';
         }
       }

@@ -13,8 +13,8 @@
 //! 2. The re-entered hub draws it as two quads addressed **by texture page**,
 //!    `0x106` then `0x109` - the packets `FUN_801D00F8`'s still arm writes -
 //!    ahead of every hub sprite, with a fade level that rises off zero.
-//! 3. The sheet those quads resolve onto decodes off the disc at the still's
-//!    320x256 VRAM extent.
+//! 3. The hub VRAM those quads sample carries the still at its 320x256 extent
+//!    from `(384, 0)`, decoded off the disc.
 //! 4. Once the hub has played out it opens the next leg itself, with no
 //!    trip back to the field.
 //!
@@ -27,8 +27,6 @@ use legaia_web_play::runtime::LegaiaRuntime;
 
 const CROSS: u16 = 0x4000;
 const SUB_MUSCLE: u8 = 5;
-/// The page's sheet id for the still.
-const STILL_SHEET: u64 = 8;
 
 fn loaded() -> Option<LegaiaRuntime> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -121,13 +119,14 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
 
     let mut seen: Option<Vec<serde_json::Value>> = None;
     let mut peak = 0u64;
+    let mut hub_vram = None;
     for _ in 0..600 {
         step(&mut rt, 0);
         let hub = json(&rt.play_mg_muscle_hub_quads_json());
         let rows = hub["quads"].as_array().cloned().unwrap_or_default();
         let still: Vec<_> = rows
             .iter()
-            .filter(|q| q["sheet"].as_u64() == Some(STILL_SHEET))
+            .filter(|q| q["source"].as_str() == Some("still"))
             .cloned()
             .collect();
         if still.is_empty() {
@@ -139,7 +138,13 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
             still[..],
             "the still must precede every hub sprite"
         );
-        peak = peak.max(still[0]["bright"].as_u64().unwrap_or(0));
+        peak = peak.max(still[0]["color"][0].as_u64().unwrap_or(0));
+        if seen.is_none() {
+            hub_vram = Some((
+                rt.play_mg_muscle_hub_vram_key(),
+                rt.play_mg_muscle_hub_vram(),
+            ));
+        }
         seen.get_or_insert(still);
     }
     let still = seen.expect("the re-entered hub must draw the ringside still");
@@ -161,14 +166,21 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
     );
     assert!(peak >= 0x80, "the level reaches neutral ({peak:#x})");
 
-    let variant = still[0]["pal"].as_u64().unwrap() as u32;
+    let variant = still[0]["variant"].as_u64().unwrap() as u32;
     assert!(variant <= 1, "extraction 1221 or 1222");
-    let dims = rt.play_mg_muscle_hub_sheet_dims(STILL_SHEET as u32);
-    assert_eq!(dims, [320, 256]);
-    assert_eq!(
-        rt.play_mg_muscle_hub_sheet_rgba(STILL_SHEET as u32, variant)
-            .len(),
-        320 * 256 * 4
+    let (key, vram) = hub_vram.expect("captured with the first still frame");
+    assert_eq!(key, 1 + variant as i32);
+    assert_eq!(vram.len(), 1024 * 512 * 2);
+    let word = |x: usize, y: usize| {
+        u16::from_le_bytes([vram[(y * 1024 + x) * 2], vram[(y * 1024 + x) * 2 + 1]])
+    };
+    let lit = (0..256)
+        .flat_map(|y| (384..704).map(move |x| (x, y)))
+        .filter(|&(x, y)| word(x, y) != 0)
+        .count();
+    assert!(
+        lit > 320 * 256 / 2,
+        "the still fills its VRAM extent ({lit} texels)"
     );
     // Once the INTERVAL and the ROUND card have played, the next leg opens
     // without a trip to the field.

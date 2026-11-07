@@ -21,11 +21,12 @@
 //! rectangle of that sheet - which is the one step that has to know the
 //! still's VRAM origin, and so the one place the two halves are joined.
 //!
-//! Neither host samples a software VRAM for the hub: both draw the hub's
-//! other screens from per-page sheets (the native window's sprite atlas, the
-//! play page's canvas sheets), and the still rides the same path as one
-//! more sheet. What makes it the still and not an arbitrary picture is that
-//! the quads name it by texture page, exactly as retail's do.
+//! The native window draws the hub's screens from per-page sheets (its
+//! sprite atlas), and the still rides the same path as one more sheet. The
+//! play page draws them through its screen-primitive pass, which samples a
+//! VRAM image: [`hub_vram`] lays the two hub pages and the still down where
+//! retail's uploads put them. What makes it the still and not an arbitrary
+//! picture is that the quads name it by texture page, exactly as retail's do.
 
 use crate::muscle_dome_hud::{HudQuad, HudSprite};
 use legaia_engine_battle_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
@@ -430,6 +431,36 @@ pub fn still_sheet_rgba(entry: &[u8]) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// The hub's VRAM as retail's uploads leave it: the two hub page TIMs (the
+/// dome data container's section 0, CLUTs as uploaded,
+/// `legaia_minigame_formats::muscle_dome::hub_page_tims`) at their own
+/// `(320, 0)` / `(320, 256)` image and row-502 / 503 CLUT rects, and the
+/// ringside still `still_entry`, when given, band by band at the loader's
+/// rects from `(384, 0)` ([`backread_slice_rect`]).
+///
+/// A VRAM of its own rather than the arena's: the dome's battle textures
+/// take page `(320, 256)` and the CLUT rows the hub pages name, so the two
+/// cannot share one image. Every hub quad addresses it by its retail
+/// texture page and CLUT word.
+pub fn hub_vram(
+    page0: &psx_tim::Tim,
+    page1: &psx_tim::Tim,
+    still_entry: Option<&[u8]>,
+) -> psx_tim::Vram {
+    let mut vram = psx_tim::Vram::new();
+    vram.upload_tim(page0);
+    vram.upload_tim(page1);
+    if let Some(entry) = still_entry.filter(|e| e.len() == still::ENTRY_BYTES) {
+        for band in 0..still::BAND_COUNT {
+            let (x, y, w, h) = backread_slice_rect(band as u32);
+            if let Some(bytes) = still::band_span(band).and_then(|r| entry.get(r)) {
+                vram.write_block(x as u16, y as u16, w as u16, h as u16, bytes);
+            }
+        }
+    }
+    vram
 }
 
 #[cfg(test)]

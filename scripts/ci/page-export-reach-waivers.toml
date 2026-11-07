@@ -27,6 +27,7 @@ names = [
     "menu_is_open",
     "menu_label",
     "name_entry_state_json",
+    "play_mg_muscle_hub_quads_json",
     "play_net_state_json",
     "play_battle_camera_json",
     "play_battle_face_count",

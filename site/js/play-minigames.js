@@ -17,9 +17,10 @@
  *
  * Layers: the 3D games draw through the page's own TmdRenderer (its
  * single-mesh `uploadMesh` / `render` path, the field's assembled scene
- * meshes untouched underneath); the dome's hub screens draw on a 2D layer
- * canvas this script inserts between the GL
- * view and the page's text overlay.
+ * meshes untouched underneath); the dome's hub screens draw through the
+ * page's screen-primitive pass over a VRAM texture of their own
+ * (`drawHub`, called by the frame after its screen primitives), between the
+ * GL scene and the page's text overlay.
  *
  * The engine's status rows (`minigame_status`, the port's own readout of the
  * rules state plus the key hints - not retail chrome) are not in any draw
@@ -30,54 +31,18 @@
 (function () {
   'use strict';
 
-  const HUD_W = 320, HUD_H = 240;     /* retail stage */
-
   const S = {
     game: null,        /* 'slot' | 'muscle' | 'baka' | 'dance' | null */
     gen: -1,
-    layer: null,       /* the 2D layer canvas */
-    layerCtx: null,
     slotVram: false,   /* the slot art pack is the renderer's VRAM */
     scene: null,       /* the live 3D scene for muscle / baka / dance */
     savedFlags: null,  /* TmdRenderer flags to restore on exit */
-    hubSheets: {},     /* "sheet:pal" -> canvas */
-    hubDims: {},
+    hub: null,         /* { renderer, tex, key, pass }: the hub's VRAM + pass */
     prize: null,       /* the fishing prize-exchange panel */
   };
 
-  /* shared helper: site/js/site-util.js */
-  const rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
-
   function parse(fn) {
     try { return JSON.parse(fn()); } catch (e) { return null; }
-  }
-
-  /* The 2D layer between the GL view and the page's text overlay. Sized to
-   * the overlay canvas, same absolute placement (`.play-menu-overlay`). */
-  function ensureLayer(view) {
-    if (S.layer) return S.layer;
-    const ov = view.menuOverlay;
-    if (!ov || !ov.parentNode) return null;
-    const c = document.createElement('canvas');
-    c.className = 'play-menu-overlay';
-    c.id = 'play-minigame-layer';
-    c.width = ov.width; c.height = ov.height;
-    c.hidden = true;
-    ov.parentNode.insertBefore(c, ov);
-    S.layer = c;
-    S.layerCtx = c.getContext('2d');
-    return c;
-  }
-
-  function showLayer(view, on) {
-    const c = ensureLayer(view);
-    if (!c) return null;
-    if (view.menuOverlay && (c.width !== view.menuOverlay.width || c.height !== view.menuOverlay.height)) {
-      c.width = view.menuOverlay.width; c.height = view.menuOverlay.height;
-    }
-    c.hidden = !on;
-    if (!on) S.layerCtx.clearRect(0, 0, c.width, c.height);
-    return c;
   }
 
   function clearGl(view) {
@@ -193,7 +158,6 @@
   function slotFrame(rt, view, skipDraw) {
     const st = parse(() => rt.play_mg_slot_state_json());
     if (!st || !st.live) return;
-    showLayer(view, false);
     const ready = typeof rt.play_mg_slot_cabinet_ready === 'function' && rt.play_mg_slot_cabinet_ready();
     const r = view.renderer;
     if (ready && r && !S.slotVram) {
@@ -247,8 +211,8 @@
       r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
       r.mvpOverride = null;
     }
-    /* Hub screens (intro card / ROUND banner) over the arena. */
-    drawHubQuads(rt, view);
+    /* The hub screens (intro card / ROUND banner) over the arena are
+     * `drawHub`'s, after the frame's screen primitives. */
   }
 
   /* ================================================================== */
@@ -328,83 +292,51 @@
     r.mvpOverride = null;
   }
 
-  /* The PROT 0977 hub screens: engine-placed quads over the two hub page
-   * sheets, blitted at retail 320x240 coordinates scaled to the layer. */
-  function hubSheet(rt, sheet, pal) {
-    const key = sheet + ':' + pal;
-    if (S.hubSheets[key] !== undefined) return S.hubSheets[key];
-    let c = null;
-    try {
-      let dims = S.hubDims[sheet];
-      if (!dims) { dims = rt.play_mg_muscle_hub_sheet_dims(sheet); S.hubDims[sheet] = dims; }
-      const rgba = rt.play_mg_muscle_hub_sheet_rgba(sheet, pal);
-      if (dims && dims.length === 2) c = rgbaCanvas(rgba, dims[0], dims[1]);
-    } catch (e) { c = null; }
-    S.hubSheets[key] = c;
-    return c;
-  }
-  /* PSX semi-transparency for a hub quad's `abr`, and the `B - F` pass's
-   * black silhouette: the shared js/canvas-abr.js, which the minigames page
-   * draws its hub quads through too. */
-  const { withAbr, silhouette: hubSilhouette } = window.LegaiaCanvasAbr;
-  function drawHubQuads(rt, view) {
-    if (typeof rt.play_mg_muscle_hub_quads_json !== 'function') return false;
-    const m = parse(() => rt.play_mg_muscle_hub_quads_json());
-    const quads = (m && m.ok && m.quads) || [];
-    if (!quads.length) {
-      /* Only hide a layer that is up: this runs on every field frame too. */
-      if (S.game !== 'slot' && S.layer && !S.layer.hidden) showLayer(view, false);
-      return false;
+  /* The PROT 0977 hub screens (intro strip, title, course and ROUND cards,
+   * the INTERVAL tally, the ringside still): the engine's own draws
+   * (`minigame_hud::muscle_hub_sprites`, the decomposition the native window
+   * draws) as screen primitives (`hub_sprite_prims`), through the page's
+   * screen-primitive pass - the rasteriser every other screen layer takes -
+   * over a VRAM texture of the hub's own (`ringside_backdrop::hub_vram`: the
+   * arena's textures take the page and CLUT rows the hub names). Called by
+   * the frame after its screen primitives and before its text layer, which
+   * is where the hub sits on the native window. No 2D canvas, no second
+   * rasteriser: a 2D-canvas blit resampled the scaled wall tiles off the
+   * GPU's texel rule and drew the course card's text lighter. */
+  function drawHub(rt, view) {
+    if (!rt || typeof rt.play_mg_muscle_hub_prims_stage !== 'function') return;
+    const n = rt.play_mg_muscle_hub_prims_stage() | 0;
+    if (n <= 0) return;
+    const r = view.renderer;
+    const Pass = window.LegaiaScreenPrimPass;
+    if (!r || !r.gl || !Pass) return;
+    const key = rt.play_mg_muscle_hub_vram_key() | 0;
+    if (key < 0) return;
+    const gl = r.gl;
+    if (!S.hub || S.hub.renderer !== r) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, 1024, 512);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      S.hub = { renderer: r, tex, key: -1, pass: new Pass(r, tex) };
     }
-    const layer = showLayer(view, true);
-    if (!layer) return false;
-    const g = S.layerCtx;
-    const sx = layer.width / HUD_W, sy = layer.height / HUD_H;
-    g.imageSmoothingEnabled = false;
-    g.clearRect(0, 0, layer.width, layer.height);
-    for (const q of quads) {
-      /* The first visit's backdrop shade (FUN_801D1610): retail's
-       * subtractive Gouraud ramp, applied to what is already down; black
-       * bands at alpha f / 255 only when the layer cannot be read back. */
-      if (q.shade) {
-        if (subtractShade(g, q, sx, sy)) continue;
-        const bands = 16;
-        for (let b = 0; b < bands; b++) {
-          const y0 = q.y + Math.floor(q.dh * b / bands);
-          const y1 = q.y + Math.floor(q.dh * (b + 1) / bands);
-          const f = q.top + (q.bottom - q.top) * ((b + 0.5) / bands);
-          if (y1 <= y0 || f <= 0) continue;
-          g.fillStyle = 'rgba(0,0,0,' + (f / 255) + ')';
-          g.fillRect(q.x * sx, y0 * sy, q.dw * sx, (y1 - y0) * sy);
-        }
-        continue;
-      }
-      const s = hubSheet(rt, q.sheet, q.pal);
-      if (!s) continue;
-      /* The quad's Gouraud colour (`texel * c / 128`): the hub screens'
-       * fade in / out is this colour, not an alpha - the native window's
-       * sprite pass modulates by it, and leaving it out drew every banner at
-       * full strength through its whole fade. */
-      const mod = q.rgb ? window.LegaiaUtil.modulatedSprite(s, q.u, q.v, q.w, q.h, q.rgb[0], q.rgb[1]) : null;
-      withAbr(g, q.abr, (sub) => (mod && !sub)
-        ? g.drawImage(mod, 0, 0, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy)
-        : g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
-          q.x * sx, q.y * sy, q.dw * sx, q.dh * sy), q.rgb);
-      /* The ringside still is an opaque packet modulated by its fade level
-       * (`texel * c / 128`): below neutral that is the image darkened
-       * toward black, which a black fill at `1 - c/128` reproduces. */
-      if (typeof q.bright === 'number' && q.bright < 128) {
-        g.fillStyle = 'rgba(0,0,0,' + (1 - q.bright / 128) + ')';
-        g.fillRect(q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
-      }
+    const hub = S.hub;
+    if (hub.key !== key) {
+      const bytes = rt.play_mg_muscle_hub_vram();
+      if (bytes.byteLength !== 1024 * 512 * 2) return;
+      gl.bindTexture(gl.TEXTURE_2D, hub.tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, 512, gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+        new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1));
+      hub.key = key;
     }
-    return true;
-  }
-
-  /* The first visit's backdrop shade (FUN_801D1610, ABR 2 `B - F` over what
-   * is already down): the shared composite-op form in site-util.js. */
-  function subtractShade(g, q, sx, sy) {
-    return window.LegaiaUtil.subtractShade(g, q, sx, sy);
+    const runs = rt.play_mg_muscle_hub_prim_runs();
+    hub.pass.upload(view._psxScreenVertices(rt.play_mg_muscle_hub_prim_vertex_bytes()),
+      rt.play_mg_muscle_hub_prim_indices(), runs, null);
+    hub.pass.drawRuns(0, (runs.length / 3) | 0);
   }
 
   /* ================================================================== */
@@ -796,15 +728,12 @@
     S.game = null;
     S.gen = -1;
     S.scene = null;
-    showLayer(view, false);
   }
 
   function build(rt, view, info) {
     S.game = info.game;
     S.gen = info.gen;
     S.scene = null;
-    S.hubSheets = {};
-    S.hubDims = {};
     if (info.game === 'slot') return;
     /* The pond builds off the scene host's own disc index, not the art. */
     if (info.game === 'fishing') return;
@@ -827,10 +756,6 @@
     const info = parse(() => rt.play_mg_game_json());
     if (!info || !info.game) {
       if (S.game) teardown(rt, view);
-      /* Between legs the arena keeps the frame (the engine stays in the
-       * dome mode, so `muscleFrame` draws the hub over a cleared view); this
-       * only clears a hub layer left up when the field comes back. */
-      drawHubQuads(rt, view);
       if (typeof rt.play_mg_take_vram_restore === 'function' && rt.play_mg_take_vram_restore()
           && view.renderer && typeof rt.field_vram_bytes === 'function') {
         try { view.renderer.uploadVram(rt.field_vram_bytes()); } catch (e) { /* keep going */ }
@@ -856,6 +781,8 @@
 
   window.LegaiaPlayMinigames = {
     frame,
+    /* The dome's hub screens, after the frame's screen primitives. */
+    drawHub,
     /* Which game owns the view (`null` outside one). */
     active: () => S.game,
     /* The fishing prize-exchange panel, for a page control that wants to

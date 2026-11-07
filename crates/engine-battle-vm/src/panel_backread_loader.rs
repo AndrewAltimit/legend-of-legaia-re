@@ -67,10 +67,11 @@
 //!   path (`World::tick_muscle_dome`'s Won / Lost arm).
 //! - **The upload rectangles** ([`backread_slice_rect`]) are live.
 //!   `legaia_engine_ui::ringside_backdrop::still_sheet_rgba` lays the entry's
-//!   four bands down at exactly these rects, relative to `(384, 0)`, and both
-//!   hosts build the still's sheet through it: the native window's
-//!   `load_muscle_hub_assets` (baked into the hub atlas) and the play page's
-//!   `play_mg_muscle_hub_sheet_rgba(8, variant)`.
+//!   four bands down at exactly these rects, relative to `(384, 0)`, and the
+//!   native window builds the still's sheet through it
+//!   (`load_muscle_hub_assets`, baked into the hub atlas);
+//!   `ringside_backdrop::hub_vram` writes the bands at the same rects into
+//!   the hub VRAM the play page samples (`play_mg_muscle_hub_vram`).
 //! - **The frame-sliced read schedule** ([`BackreadStep`],
 //!   [`backread_tick`]) is replaced. Its twelve arms exist to overlap four
 //!   20-sector `FUN_8003E800` reads with `FUN_8003DE7C` polls across frames;
