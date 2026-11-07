@@ -98,6 +98,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   color: var(--text-muted); min-width: 7ch; text-align: right;
 }
 .char-transport-spacer { flex: 1 1 0; }
+.char-smooth-label { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-muted); cursor: pointer; }
 .char-transport-view { display: flex; gap: 0.35rem; margin-left: auto; }
 
 /* The clip strip: every clip the shown model has, grouped by what it is. */
@@ -268,6 +269,9 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
             <option value="0.5">½×</option>
             <option value="1" selected>1×</option>
           </select>
+          <label class="char-smooth-label" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
+            <input type="checkbox" id="char-anm-smooth" checked> smooth
+          </label>
           <div class="char-transport-view">
             <button id="char-spin-btn" type="button" title="Auto-rotate the view">⏸ spin</button>
             <button id="char-reset-btn" type="button" title="Reset the camera (double-click the view does the same)">↺ view</button>
@@ -436,6 +440,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   const anmInfo = document.getElementById('char-anm-info');
   const anmPlayBtn = document.getElementById('char-anm-play-btn');
   const anmSpeedSel = document.getElementById('char-anm-speed');
+  // Smooth (interpolated) playback, default on; off = retail stepping.
+  if (window.MeshView && MeshView.attachSmoothToggle) {
+    MeshView.attachSmoothToggle(document.getElementById('char-anm-smooth'));
+  }
   const anmClipName = document.getElementById('char-anm-clip-name');
   const anmBrowseEl = document.getElementById('char-anm-browse');
   if (!fileInput) return;
@@ -1567,9 +1575,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       partCount: equipSummary.part_count | 0,
       frameCount: clip.frames | 0,
       frames: Int32Array.from(frames),
-      // The record's own retail rate byte (FUN_80047430 advances rate/8
-      // keyframes per 60 Hz tick).
-      fps: clip.rate ? 7.5 * clip.rate : 15,
+      // The record's own retail rate byte: FUN_80047430 advances the 12.4
+      // cursor by (step * 8 * rate) >> 1 a battle frame of `step` vsyncs,
+      // rate/4 keyframes a vsync (only a Slowed actor's idle runs at half).
+      fps: clip.rate ? 15 * clip.rate : 15,
       // An art translates the actor (flips, lunges): frame the whole clip.
       fitAll: clipKindOf(clip) === 'art',
     });

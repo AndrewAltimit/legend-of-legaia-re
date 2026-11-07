@@ -517,9 +517,10 @@ impl LegaiaViewer {
         let Some(c) = &self.equipped else {
             return Vec::new();
         };
+        // `FUN_80047430`: rate/4 keyframes a vsync at the normal anim rate.
         let fps_for_rate = |rate: u8| {
             if rate > 0 {
-                7.5 * f32::from(rate)
+                15.0 * f32::from(rate)
             } else {
                 15.0
             }

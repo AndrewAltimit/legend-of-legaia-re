@@ -698,7 +698,7 @@ fn export_character_glb_carries_the_whole_animation_bank() {
         // The idle leads (its frame 0 is the exported rest pose).
         assert_eq!(anims[0]["name"].as_str(), Some("Idle"));
         // Names are unique; durations are plausible (retail clips run
-        // fractions of a second up to a few seconds at 7.5 * rate fps).
+        // fractions of a second up to a few seconds at 15 * rate fps).
         let mut names: Vec<&str> = anims.iter().map(|a| a["name"].as_str().unwrap()).collect();
         names.sort_unstable();
         let before = names.len();

@@ -1214,7 +1214,8 @@
     "parity",
     "web-expansion",
     "web-minigames",
-    "web-play"
+    "web-play",
+    "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-vm/README.md"
   },
@@ -4890,6 +4891,7 @@
     "disc-audit",
     "engine-audio",
     "engine-battle",
+    "engine-battle-vm",
     "engine-effects",
     "engine-field",
     "engine-menus",
@@ -4934,6 +4936,7 @@
     "field_scene",
     "npc_dialog",
     "player_anm",
+    "pose_sampler",
     "sentinel_placements",
     "sfx_view",
     "shop_items",

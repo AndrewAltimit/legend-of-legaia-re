@@ -46,8 +46,12 @@
   'use strict';
 
   const CHAR_SLOT = { Vahn: 0, Noa: 1, Gala: 2, Terra: 3 };
-  /* FUN_80047430 advances rate/8 keyframes per 60 Hz tick. */
-  const fpsForRate = (rate) => (rate > 0 ? 7.5 * rate : 15);
+  /* FUN_80047430 advances the 12.4 cursor by (step * 8 * rate) >> 1 a battle
+   * frame of `step` vsyncs: rate/4 keyframes a vsync, 15 * rate a second. A
+   * retail film reads Vahn's rate-1 idle looping its 9 keyframes in 36 vsyncs
+   * (docs/subsystems/battle-actor-rendering.md). Only a Slowed actor's idle
+   * runs at half that. */
+  const fpsForRate = (rate) => (rate > 0 ? 15 * rate : 15);
 
   /* Retail draws a delayed translucent after-image of the character during
    * an art, tinted per character: Vahn RED, Noa GREEN, Gala BLUE (a PSX ABE

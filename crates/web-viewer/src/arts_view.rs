@@ -893,7 +893,7 @@ impl LegaiaArts {
     /// keyframe stream decoded, named by its inline HUD art name where the
     /// record carries one, else by its `anim_id` in hex (duplicated names get
     /// the hex id appended). Each clip's timeline runs at its retail rate
-    /// byte (`7.5 * rate`).
+    /// byte (`15 * rate` keyframes a second, `FUN_80047430`'s rate/4 a vsync).
     ///
     /// Everything is baked client-side off the visitor's own disc; nothing
     /// is uploaded. Empty until [`Self::set_character`] (or if the mesh has
@@ -902,9 +902,10 @@ impl LegaiaArts {
         let Some(c) = &self.current else {
             return Vec::new();
         };
+        // `FUN_80047430`: rate/4 keyframes a vsync at the normal anim rate.
         let fps_for_rate = |rate: u8| {
             if rate > 0 {
-                7.5 * f32::from(rate)
+                15.0 * f32::from(rate)
             } else {
                 15.0
             }

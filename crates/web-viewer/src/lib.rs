@@ -20,6 +20,7 @@ mod nav_disc;
 pub mod npc_dialog;
 mod packet_color;
 pub mod player_anm;
+pub mod pose_sampler;
 mod prot_locate;
 mod scene_export;
 mod scene_geom;

@@ -3517,6 +3517,7 @@ dependencies = [
  "legaia-disc-audit",
  "legaia-engine-audio",
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-menus",
