@@ -25,14 +25,13 @@
 //! * Eight rows fit a page ([`ROWS_PER_PAGE`]); the header is the list
 //!   kernel's `PAGE` sprites and digits ([`LIST_HEADER_RECT`]).
 //! * Counts are the kernel's three-cell number field ([`COUNT_CELLS_X`]).
-//! * A **breadcrumb trail** of gold tab plates (`Begin`, the acting
-//!   member's name, `Item`) sits top-left - the same tab-banner 3-slice
-//!   the pause menu's title tab uses.
+//! * The **breadcrumb trail** of gold tab plates top-left (`Begin`, the
+//!   acting member's name, `Item`) is not this module's: it is the HUD's
+//!   trail - placement records 1, `0x1A` and `0x0C` - which the battle HUD
+//!   builder draws for every command-entry window.
 //!
-//! Content pens (row text, PAGE header, description line, breadcrumb
-//! seats) are screenshot-read off the same captures rather than
-//! packet-decoded - the glyph packets ride a different draw pass - and are
-//! marked so below.
+//! The content pens follow the kernel: rows and hand on one `row_y`, the
+//! name at `WX + 0xC`, the description on placement record `0x17`'s pen.
 //!
 //! The port draws the window with the shared 9-slice menu-window chrome
 //! ([`crate::menu_window_chrome_draws_for`]) rather than re-tiling the
@@ -59,7 +58,7 @@
 //! full-width readout draws at (`ui_overlay`'s `BAR_*`), and the sub-draw
 //! step retail runs into `0x64` opens placement record 7 (`07/0`, the same
 //! record the ring's step 1 opens) for the member the cursor names. So this
-//! module draws **only the breadcrumb trail** at target select; the strip
+//! module draws **nothing** at target select; the strip
 //! itself is `battle_hud_draws_for`'s bar, fed by
 //! `engine-battle-hud::battle_readout_bar_slot`
 //! (`CommandSurface::ItemTarget`), which is what keeps the blue plate and
@@ -81,14 +80,27 @@ use crate::{SaveMenuAtlasRects, SpriteDraw, TextDraw, text_draws_for};
 pub const LIST_WINDOW: (i32, i32, i32, i32) = (166, 28, 147, 136);
 /// Description window stage rect - packet-pinned.
 pub const DESC_WINDOW: (i32, i32, i32, i32) = (8, 122, 159, 42);
-/// Hand-cursor seat for row 0 - packet-pinned (16x16 sprite top-left).
-pub const HAND_SEAT: (i32, i32) = (167, 45);
+/// The list kernel's content pen `WX`: placement record `0x16` (the item
+/// list, `FUN_801D8DE8`'s table at `0x80076C10`) rests its content box at
+/// `(174, 38)`, `131 x 120`.
+pub const LIST_WX: i32 = 174;
+/// Hand-cursor seat for row 0 (16x16 sprite top-left). The kind-4 list
+/// kernel draws the hand `FUN_8002B994(0, browsing, WX - 6, row_y)`
+/// (`0x80032FB4`) on the row's own `row_y`, and the bob table `0x80073D78`
+/// adds `+2` in x for half of each 32-vsync period - the pause lists'
+/// `list_hand_pos` rule. The `y` is the packet-pinned row-0 seat (the
+/// `battle_item_window` capture holds the hand at `y = 45`; its `x = 167`
+/// is one bob step, `-1`, of the same `WX - 6`).
+pub const HAND_SEAT: (i32, i32) = (LIST_WX - 6 + 2, 45);
 /// List row pitch - packet-pinned (the hand moves 14 per Down press).
 pub const ROW_PITCH: i32 = 14;
 /// Rows one page shows (screenshot-read: eight rows fill the window).
 pub const ROWS_PER_PAGE: usize = 8;
-/// Row text pen for row 0 (screenshot-read).
-pub const ROW_TEXT_SEAT: (i32, i32) = (186, 47);
+/// Row text pen for row 0: the kernel's name pen `WX + 0xC` on the same
+/// `row_y` it hands the hand cursor ([`HAND_SEAT`]). A pen's glyph ink
+/// stands two rows under it, so the row-0 name reads from `y = 47`
+/// (`battle_item_window_gaza2_retail`, `battle_magic_window_gaza2_retail`).
+pub const ROW_TEXT_SEAT: (i32, i32) = (LIST_WX + 0xC, HAND_SEAT.1);
 /// The per-row count's three-cell number field, `WX + 0x6C` off the list
 /// kernel's pen `WX = 174` (`gaza2` item window capture).
 pub const COUNT_CELLS_X: i32 = 282;
@@ -99,47 +111,23 @@ pub const LIST_HEADER_RECT: (i32, i32, i32) = (174, 37, 131);
 pub const PAGE_NEXT_SEAT: (i32, i32) = (308, 94);
 /// The previous-page triangle's seat: the kernel's `WX - 0xC` off the same list.
 pub const PAGE_PREV_SEAT: (i32, i32) = (162, 94);
-/// Description line pen (screenshot-read).
-pub const DESC_SEAT: (i32, i32) = (16, 132);
-/// First breadcrumb tab's glyph pen (screenshot-read: the `Begin` plate
-/// starts at x 10, and a tab plate insets its pen by the 8-px cap).
-pub const CRUMB_SEAT0: (i32, i32) = (18, 14);
-/// Gap between one breadcrumb plate's right cap and the next plate's left
-/// cap (screenshot-read).
-pub const CRUMB_GAP: i32 = 6;
-/// Minimum interior width of a breadcrumb tab (screenshot-read off the
-/// retail `Vahn` tab; a longer label widens its own tab - the engine font
-/// is wider than retail's tab glyphs, so tabs are sized per label rather
-/// than pinned to the retail plate widths).
-pub const CRUMB_MIN_INTERIOR_W: i32 = 24;
-
-/// Per-tab breadcrumb layout for the `Begin | <actor> | <third>` trail
-/// (`Item` while browsing, the selected item's name during target select):
-/// `(label pen, interior width)` per tab, advancing left-to-right from
-/// [`CRUMB_SEAT0`] with each tab sized to its own label.
-pub fn crumb_layout(
-    font: &legaia_font::Font,
-    actor_name: &str,
-    third: &str,
-) -> [((i32, i32), i32); 3] {
-    let mut x = CRUMB_SEAT0.0;
-    let mut out = [((0, 0), 0); 3];
-    for (i, label) in ["Begin", actor_name, third].into_iter().enumerate() {
-        let interior = (font.layout_ascii(label).advance_x as i32).max(CRUMB_MIN_INTERIOR_W);
-        out[i] = ((x, CRUMB_SEAT0.1), interior);
-        // Advance past this tab's interior + right cap, the gap, and the
-        // next tab's left cap.
-        x += interior + 8 + CRUMB_GAP + 8;
-    }
-    out
-}
-
+/// Description line pen: placement record `0x17` (the description box)
+/// rests at `(16, 132)`, and the record walker hands the spawner
+/// `y - 2` (`0x801D9368`), the plate records' `pen = (x, y - 2)` law. Its
+/// glyph ink reads from `y = 132` on the item and magic captures.
+pub const DESC_SEAT: (i32, i32) = (16, 130);
 // ----------------------------------------------------------------- palette
 
-/// Row ink for an unselected admissible row.
-pub const ROW_IDLE: [f32; 4] = [0.82, 0.85, 0.92, 1.0];
-/// Row ink for a row the context filter refuses (kept visible, dimmed).
-pub const ROW_DIMMED: [f32; 4] = [0.5, 0.5, 0.55, 1.0];
+/// Row ink for an enabled row: the kind-4 list kernel stages ink 7
+/// (`0x8003312C..0x80033154`), the body-text white - `(206, 206, 206)` on
+/// the `gaza2` item and magic captures.
+pub const ROW_IDLE: [f32; 4] = crate::MENU_TEXT_WHITE;
+/// Row ink for a row whose entry carries the disabled bit `0x800`: the
+/// kernel drops the staging to ink 0, the menu grey.
+pub const ROW_DIMMED: [f32; 4] = crate::MENU_TEXT_GREY;
+/// Description ink: the info line draws in the same ink 7 as the rows
+/// (`(206, 206, 206)` on both captures).
+pub const DESC_INK: [f32; 4] = crate::MENU_TEXT_WHITE;
 /// The `PAGE` label's green (retail draws it in the teal header ink).
 pub const PAGE_LABEL_INK: [f32; 4] = [0.45, 0.95, 0.75, 1.0];
 /// Ink of a dead target's name in the target strip.
@@ -260,10 +248,10 @@ fn scaled(
     }
 }
 
-/// The window's sprite half: both 9-slice windows, the three breadcrumb
-/// tab plates (sized per label via [`crumb_layout`]) and the hand cursor.
+/// The window's sprite half: both 9-slice windows and the hand cursor. The
+/// breadcrumb trail above them is the HUD's (records 1, `0x1A` and `0x0C`,
+/// `engine-battle-hud::battle_breadcrumb_third_tab`).
 pub fn battle_item_window_sprites(
-    font: &legaia_font::Font,
     rects: &SaveMenuAtlasRects,
     frame: &BattleItemMenuFrame<'_>,
     stage_origin: (i32, i32),
@@ -285,19 +273,6 @@ pub fn battle_item_window_sprites(
         out.extend(crate::menu_window_chrome_draws_for(
             rects,
             DESC_WINDOW,
-            stage_origin,
-            stage_scale,
-        ));
-    }
-    // Breadcrumb trail: three gold tab plates - the same 3-slice the pause
-    // menu's title tab banner uses. The third tab reads `Item` while
-    // browsing and the selected item's name during target select (the
-    // capture shows `Begin | Vahn | Healing Leaf`).
-    for (pen, interior) in crumb_layout(font, frame.actor_name, frame.third_crumb()) {
-        out.extend(crate::tab_banner_draws(
-            rects,
-            pen,
-            interior,
             stage_origin,
             stage_scale,
         ));
@@ -396,7 +371,7 @@ fn list_header_draws(
     out.append(&mut draws);
 }
 
-/// The window's text half: breadcrumb labels, the `PAGE n/m` header, the
+/// The window's text half: the `PAGE n/m` header, the
 /// visible rows (name + right-aligned count, or the target roster during
 /// target select) and the description line.
 pub fn battle_item_window_text(
@@ -408,24 +383,6 @@ pub fn battle_item_window_text(
 ) -> Vec<TextDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out = Vec::new();
-    let white = [1.0, 1.0, 1.0, 1.0];
-
-    let third = frame.third_crumb();
-    for (label, (pen, _)) in ["Begin", frame.actor_name, third]
-        .into_iter()
-        .zip(crumb_layout(font, frame.actor_name, third))
-    {
-        // The breadcrumb tabs are the plaque's gold plates, inked like it.
-        emit(
-            &mut out,
-            font,
-            label,
-            pen,
-            crate::READOUT_NORMAL,
-            stage_origin,
-            scale,
-        );
-    }
 
     match frame.targets {
         None => {
@@ -472,7 +429,15 @@ pub fn battle_item_window_text(
     if frame.targets.is_none()
         && let Some(desc) = frame.description
     {
-        emit(&mut out, font, desc, DESC_SEAT, white, stage_origin, scale);
+        emit(
+            &mut out,
+            font,
+            desc,
+            DESC_SEAT,
+            DESC_INK,
+            stage_origin,
+            scale,
+        );
     }
     out
 }
@@ -594,7 +559,6 @@ pub fn battle_spell_window_text(
 ) -> Vec<TextDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out = Vec::new();
-    let white = [1.0, 1.0, 1.0, 1.0];
     list_header_draws(
         &mut out,
         font,
@@ -640,7 +604,7 @@ pub fn battle_spell_window_text(
     }
     for (i, line) in frame.description.iter().enumerate() {
         let pen = (DESC_SEAT.0, DESC_SEAT.1 + i as i32 * DESC_LINE_PITCH);
-        emit(&mut out, font, line, pen, white, stage_origin, scale);
+        emit(&mut out, font, line, pen, DESC_INK, stage_origin, scale);
     }
     if let Some((lv, mp)) = frame.level_mp {
         for (((pen, interior), label), value) in [SPELL_LV_TAB, SPELL_MP_TAB]
@@ -726,15 +690,8 @@ mod tests {
     fn both_windows_draw_their_chrome_at_the_pinned_rects() {
         let r = rects();
         let all = rows(3);
-        let sprites = battle_item_window_sprites(
-            &legaia_font::Font::placeholder(),
-            &r,
-            &frame(&all, 0),
-            (0, 0),
-            1,
-        );
-        // A 9-slice panel is at least 9 sprites; two windows + 3 crumb
-        // plates (3 sprites each) + the hand.
+        let sprites = battle_item_window_sprites(&r, &frame(&all, 0), (0, 0), 1);
+        // A 9-slice panel is at least 9 sprites; two windows + the hand.
         let list_only = crate::menu_window_chrome_draws_for(&r, LIST_WINDOW, (0, 0), 1);
         let desc_only = crate::menu_window_chrome_draws_for(&r, DESC_WINDOW, (0, 0), 1);
         assert!(list_only.len() >= 9, "list window is a real 9-slice");
@@ -766,27 +723,22 @@ mod tests {
         }
     }
 
-    /// The hand cursor rides the packet-pinned seat + pitch: row 0 at
-    /// (167, 45), one Down press = 14 further, exactly the two captures.
+    /// The hand cursor rides the kernel's `WX - 6` plus the bob's `+2`, on
+    /// the packet-pinned row-0 `y = 45` and pitch: one Down press = 14
+    /// further, exactly the two captures.
     #[test]
     fn the_hand_cursor_sits_on_the_pinned_seat_and_pitch() {
         let r = rects();
         let all = rows(3);
         let hand_at = |cursor: usize| {
-            let sprites = battle_item_window_sprites(
-                &legaia_font::Font::placeholder(),
-                &r,
-                &frame(&all, cursor),
-                (0, 0),
-                1,
-            );
+            let sprites = battle_item_window_sprites(&r, &frame(&all, cursor), (0, 0), 1);
             let hand = sprites.last().unwrap();
             assert_eq!(hand.src, r.cursor);
             (hand.dst.0, hand.dst.1)
         };
-        assert_eq!(hand_at(0), (167, 45));
-        assert_eq!(hand_at(1), (167, 59));
-        assert_eq!(hand_at(2), (167, 73));
+        assert_eq!(hand_at(0), (170, 45));
+        assert_eq!(hand_at(1), (170, 59));
+        assert_eq!(hand_at(2), (170, 73));
     }
 
     /// Rows page by eight and the header names the cursor's page.
@@ -800,8 +752,7 @@ mod tests {
         // Page 2 draws the remainder (3 rows), and the hand wraps onto the
         // page-relative seat.
         let r = rects();
-        let sprites =
-            battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f9, (0, 0), 1);
+        let sprites = battle_item_window_sprites(&r, &f9, (0, 0), 1);
         let hand = sprites.last().unwrap();
         assert_eq!(hand.dst.1, 45 + ROW_PITCH); // row 9 = page row 1
         // An empty bag still has one page, like retail's PAGE 1/1 header.
@@ -840,15 +791,15 @@ mod tests {
         );
         // Description line at its pen.
         assert!(draws.iter().any(|d| d.dst.1 == DESC_SEAT.1));
-        // The three breadcrumb labels are drawn.
-        assert!(draws.iter().any(|d| d.dst.1 == CRUMB_SEAT0.1));
+        // The breadcrumb trail is the HUD's: nothing above the list window.
+        assert!(!draws.iter().any(|d| d.dst.1 < LIST_WINDOW.1));
     }
 
     /// Target select is the packet-pinned state-0x64 surface: the item
     /// windows close, the hand goes, the third breadcrumb becomes the
     /// selected item's name - and the target strip at the screen's foot is
-    /// the party bar (placement record 7), which the HUD builder draws, so
-    /// this window emits neither a strip window nor a row of its own.
+    /// the party bar (placement record 7), which the HUD builder draws, as
+    /// it draws the trail, so this window emits nothing at all.
     #[test]
     fn target_select_hands_the_strip_to_the_party_bar() {
         let r = rects();
@@ -874,10 +825,8 @@ mod tests {
         ];
         let mut f = frame(&all, 1);
         f.targets = Some((&targets, 1));
-        let sprites =
-            battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
-        // No strip window, no list window, no description window, no hand:
-        // only the three breadcrumb tabs remain on the sprite layer.
+        let sprites = battle_item_window_sprites(&r, &f, (0, 0), 1);
+        // No strip window, no list window, no description window, no hand.
         for (name, seat) in [
             (
                 "target strip",
@@ -892,22 +841,16 @@ mod tests {
                 "{name} is not this window's at target select"
             );
         }
-        assert!(!sprites.is_empty(), "the breadcrumb trail stays");
+        assert!(sprites.is_empty(), "the trail and the strip are the HUD's");
         let draws = battle_item_window_text(&font, &f, true, (0, 0), 1);
         // No text on the strip's row (the bar's), none in the list band, no
-        // PAGE header, no description line - the crumbs alone.
+        // PAGE header, no description line.
         let has = |y: i32| draws.iter().any(|d| d.dst.1 == y);
         assert!(!has(TARGET_NAME_SEAT.1), "the bar's row is the HUD's");
         assert!(!has(TARGET_HP_LABEL_SEAT.1), "no HP/MP text stand-ins");
         assert!(!has(ROW_TEXT_SEAT.1), "no roster column in the list band");
-        assert!(
-            !draws
-                .iter()
-                .any(|d| d.dst.1 > CRUMB_SEAT0.1 && d.dst.1 < ROW_TEXT_SEAT.1),
-            "no PAGE header during target select"
-        );
+        assert!(draws.is_empty(), "no PAGE header, rows or crumbs");
         assert!(!has(DESC_SEAT.1), "the description closes with its window");
-        assert!(has(CRUMB_SEAT0.1), "breadcrumb labels drawn");
         // The third breadcrumb is the held item's name, not `Item`.
         assert_eq!(f.third_crumb(), all[1].name);
         // By contrast, browsing draws the description at its pen.
@@ -946,20 +889,8 @@ mod tests {
     fn stage_scale_multiplies_every_prim() {
         let r = rects();
         let all = rows(2);
-        let one = battle_item_window_sprites(
-            &legaia_font::Font::placeholder(),
-            &r,
-            &frame(&all, 0),
-            (0, 0),
-            1,
-        );
-        let two = battle_item_window_sprites(
-            &legaia_font::Font::placeholder(),
-            &r,
-            &frame(&all, 0),
-            (7, 11),
-            2,
-        );
+        let one = battle_item_window_sprites(&r, &frame(&all, 0), (0, 0), 1);
+        let two = battle_item_window_sprites(&r, &frame(&all, 0), (7, 11), 2);
         assert_eq!(one.len(), two.len());
         for (a, b) in one.iter().zip(two.iter()) {
             assert_eq!(b.dst.0, 7 + a.dst.0 * 2);
@@ -1006,7 +937,10 @@ mod tests {
             list.iter().map(key).collect::<Vec<_>>()
         );
         let hand = sprites.last().unwrap();
-        assert_eq!((hand.dst.0, hand.dst.1), (167, 59));
+        assert_eq!(
+            (hand.dst.0, hand.dst.1),
+            (HAND_SEAT.0, HAND_SEAT.1 + ROW_PITCH)
+        );
         // Both tab plates are there: a left cap at each pinned plate edge.
         for x in [188, 250] {
             assert!(

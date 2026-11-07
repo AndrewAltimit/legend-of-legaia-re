@@ -246,10 +246,13 @@ glides that arm's chip onto the trail as a third tab abutting the plaque, at
 |---|---|---|---|
 | `Attack` (SCUS `0x8007B674`) | `0x0D` | attack-mode prompt `0x78`, target cursor `0x5A`, arts entry `0x50` | `0x801D39A0..0x801D39AC` |
 | magic arm (the member's Ra-Seru name, `FUN_801D8DE8` case `0xE`) | `0x0E` | the spell window and its target step | `0x801D3968..0x801D3974` |
-| `Item` | `0x0C` | the item window (drawn by its own builder) | - |
+| `Item` | `0x0C` | the item window (step 5, `0C/0`) | - |
+| the selected item's name | `0x3B` | the item target step `0x64` (step `0x12`, `3B/3`), plate sized to the name | - |
 
-Both `0x0D` and `0x0E` carry interior `w = 0x30`; the `arts_bar_*` captures
-read `Begin | Vahn | Attack` over the direction chips. Port:
+`0x0C`, `0x0D` and `0x0E` carry interior `w = 0x30` and a seat-B `x` of `0`
+that the step overwrites; the `arts_bar_*` captures read `Begin | Vahn | Attack`
+over the direction chips, and `battle_item_window_gaza2_retail` reads
+`Begin | Vahn | Item` on plates `8..60`, `60..103` and `103..167`. Port:
 `engine-battle-hud::battle_breadcrumb_third_tab`, drawn by
 `engine-ui::battle_hud` on both hosts.
 
@@ -885,7 +888,8 @@ is shared too.
 ### The target-select plaque (record `0x29`)
 
 While a target cursor rests on a monster, retail draws one blue plaque with that
-monster's name - placement record `0x29` (disc seats `(328, 162)` /
+monster's name (the item and spell target steps `0x12` / `0x1B` open it for a
+pointed party member too) - placement record `0x29` (disc seats `(328, 162)` /
 `(200, 162)`, width `96`, style pair `0x0101`). `FUN_801D5854`'s target arm
 seats it ([the shift](#the-record-4142-shift-inside-fun_801d5854)). Captured on
 `party_basic_attack_vs_gobu_gobu`: "Gobu Gobu" measures `55`, rests at
@@ -1368,15 +1372,11 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | Piece | Pin |
 |---|---|
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
-| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line |
-| hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7) at `(167, 45 + 14*row)` - row pitch 14 |
-| rows | eight per page on the list kernel's pen `WX = 174`: name at `WX + 0xC`, the bag count in the three-cell number field at `WX + 0x6C`; a row's ink is its enable bit, not the hand |
+| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line in ink 7 on placement record `0x17`'s pen `(16, 132 - 2)` |
+| hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7), the [list kernel's](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) `FUN_8002B994(0, browsing, WX - 6, row_y)`: `x = 168` plus the bob table's `-2..2` (`167` on this capture), `y = 45 + 14*row` - row pitch 14 |
+| rows | eight per page on the list kernel's pen `WX = 174` (placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
 | header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
-| breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
-
-Content pens (row text, header, description line, breadcrumb seats) are
-screenshot-read off the same captures - the glyph packets ride a different draw
-pass than the window tiles.
+| breadcrumbs | the HUD's [trail](#the-actor-name-plaque): `Begin` tab (record 1), the plaque behind it (record `0x1A`), the `Item` tab (record `0x0C`) |
 
 **Row enable.** Which rows are selectable is the SCUS list builder's call
 (`FUN_80030628`), and it branches on the menu context word `gp+0x85C`. The field
@@ -1424,8 +1424,8 @@ step 1 opens for the ring - sends the description window (`34/1`) off, and
 re-points the bar per cursor move (step `0x18`).
 
 **Port.** `engine-ui::battle_item_ui` carries the pins and composes the windows
-through the shared 9-slice menu-window chrome, the tab-banner 3-slice and the
-save-select hand cell. The projection (dedup row list with the cursor mapped
+through the shared 9-slice menu-window chrome and the save-select hand cell; the
+trail and the name tag are the HUD builder's. The projection (dedup row list with the cursor mapped
 into it, disc description, breadcrumb name, same-side target rows) is
 `engine-battle-hud::battle_item_menu_model` /
 `InventoryUseSession::menu_view`, consumed by both play hosts. At target select
@@ -1434,15 +1434,16 @@ party bar (`battle_readout_bar_slot` names the pointed member through
 `CommandSurface::ItemTarget`), and the `TARGET_*` pins are held equal to the
 bar's seats by test.
 
+The name tag over the strip is the [target-select plaque](#the-target-select-plaque-record-0x29),
+record `0x29`, which the step opens for the pointed member: `Vahn` at plate
+x `211` on `battle_item_target_gaza2_retail`.
+
 Known divergences, disclosed in the module doc:
 
-- breadcrumb tabs are sized per label (the engine font is wider than retail's
-  tab glyphs);
 - the strip capture starts the HP maximum at `146` where the ring capture's
   three-digit maximum starts at `154`; the bar draws the ring's right-align to
   `178`, under which `146` is where a four-digit maximum starts;
-- the floating world-anchored name tag and the target-camera re-frame are not
-  drawn.
+- the target-camera re-frame is not drawn.
 
 ## The battle magic window (`0x46`)
 

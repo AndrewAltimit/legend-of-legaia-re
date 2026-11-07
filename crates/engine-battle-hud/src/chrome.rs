@@ -9,8 +9,10 @@ use super::*;
 /// Step 1 turns the round prompt's `Begin` chip into the tab (record 1,
 /// `(104, 88)` to `(16, 14)`, the gold plate class) and drops the plaque
 /// (record 26) in beside it; every later menu step keeps both with a snap
-/// (`01/3 1A/3`). The item window continues the trail as `Begin | <name>
-/// | Item` through its own breadcrumb builder, so it is excluded here.
+/// (`01/3 1A/3`). The item window's steps carry both too: step 5 (`0x3C`,
+/// `01/3 .. 0C/0 .. 1A/3`) and step `0x12` (`0x64`, `01/3 .. 1A/3 .. 3B/3`),
+/// so its trail is this one, with the third tab
+/// [`battle_breadcrumb_third_tab`] names.
 ///
 /// The arts-entry screen (`0x50`, step 9: `01/3 .. 1A/3`) keeps both, with
 /// the `Attack` tab after them ([`battle_breadcrumb_third_tab`]) - the
@@ -32,6 +34,9 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
                 | CommandSurface::ArtsList
                 | CommandSurface::SpellBrowse
                 | CommandSurface::SpellTarget(_)
+                | CommandSurface::ItemBrowse
+                | CommandSurface::ItemTarget(_)
+                | CommandSurface::ItemAllAllies
         )
     ) || battle_begin_tab_alone(world)
 }
@@ -73,8 +78,15 @@ pub fn battle_begin_tab_alone(world: &legaia_engine_core::world::World) -> bool 
 /// member's Ra-Seru name) opens with the spell window (`0x46`, step 7:
 /// `0E/0`) and stays through its target step. Both rest at
 /// `x = width(name) + 0x54` (`0x801D39A0..0x801D39AC` for `0x0D`,
-/// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque. The item
-/// window draws its own trail (record `0x0C`), so it is not named here.
+/// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque.
+///
+/// The item window's trail is the same three plates. Step 5 (`0x3C`) opens
+/// record `0x0C`, the `Item` arm's chip (SCUS label `0x8007B67C`), which
+/// ships the same `w = 0x30` and runtime-written seat-B `x` as `0x0D` /
+/// `0x0E`; the target step `0x12` (`0x64`) swaps it for record `0x3B`, a gold
+/// tab (`style 2`, seat-B `x` runtime-written) holding the selected item's
+/// name - `Begin | Vahn | Healing Berry` on `battle_item_target_gaza2_retail`,
+/// its plate sized to the name.
 pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> Option<String> {
     use legaia_engine_battle_menus::battle_input::BattleCommand;
     match battle_command_surface(world)? {
@@ -89,6 +101,12 @@ pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> 
         {
             let slot = command_entry_actor(world)?;
             Some(battle_magic_chip(world, slot).0)
+        }
+        CommandSurface::ItemBrowse => Some(BattleCommand::Item.label().to_string()),
+        CommandSurface::ItemTarget(_) | CommandSurface::ItemAllAllies => {
+            let model = crate::battle_item_menu_model(world)?;
+            let row = model.view.cursor_row?;
+            model.view.rows.get(row).map(|r| r.name.clone())
         }
         _ => None,
     }
