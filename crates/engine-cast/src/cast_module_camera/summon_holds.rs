@@ -590,6 +590,13 @@ pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
         // `bgtz` (`0x801F7C20`). Flushed on the arm's first tick, it took the
         // arm-4 ring's columns down for the whole closing pull-out.
         (942, 6) => 0x801F_7C20,
+        // Cort's two last arms of the same shape: Mystic Circle's flush past
+        // its countdown test (`bgtz` at `0x801F7210`, flush `0x801F7220`) and
+        // Mystic Shield's (`0x801F7868`, flush `0x801F7870`). Flushed on the
+        // first tick, Mystic Circle's floor circle and light columns, seated
+        // by arm 3's pass, ended two ticks after they went in.
+        (938, 4) => 0x801F_7210,
+        (940, 7) => 0x801F_7868,
         _ => return None,
     })
 }

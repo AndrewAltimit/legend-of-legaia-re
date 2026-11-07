@@ -3863,11 +3863,24 @@ three units). The bodies without that store keep the half turn
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
   ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+  Guilty Cross's arm-2 pass, the cut to the victim, hides the caster by its colour
+  word as well as its flag (`sw zero,0x4(s5)`), shows the victim on the neutral
+  word and clears the caster's loop counter `+0x21B` and budget `+0x176`
+  (`0x801F6F08..0x801F6F1C`): Cort's clip 8 leaves the loop window it held since
+  arm 0 and runs to its end, where it parks until arm 5 plays it out into the idle.
+  Arm 4's pass shows the caster again (`0x801F7320`) and arm 5's puts every seat with
+  HP back on the neutral word, flag `0` and rate `8` (`0x801F73C4..0x801F7418`).
+  The colour word is also what PROT 0940's shield sphere keys on, so the sphere is
+  off while Cort is hidden.
 - **0961 drifts**, stored before each gate tests the countdown, with
   `s = scalar * delta`: arm 1 TR z `+s`, TR y `-s/4`, pitch `+s/8`; arm 2 in
   `0xB5` TR y and pitch `+delta`, TR z `+s`; arm 3 TR z `+3s`, TR y `-s`,
   pitch `+s/8`; arm 6 TR z `+s`; and the terminal arm's
   `ctx[+0x6DA] = 0x780`.
+- **0946** Call Wave tints its caster through the charge: arm 1 stores the soft red
+  arm `7` of the tint SM into `caster[+0x21C]` (`0x801F6D8C..0x801F6D98`), and arms 2
+  and 3 store `0` on their passes (`0x801F6E44`, `0x801F6E7C`), after which arm 0 of
+  the SM eases the body home. Big Wave's branch makes no such store.
 - **0946** arm 0 forks the two choreographies off a per-seat word retail
   toggles on every cast (the port keys on the action id). With
   `z = ctx[+0x6D0]`: Call Wave cuts to `(0, 0x600, 2z)` and pans to `z/2` then
@@ -4931,7 +4944,13 @@ unkillable - a solid yellow or white screen for the rest of the band.
 Where the decoder could not split an arm's sites around a ported countdown
 gate, the gate's `bgtz` VA (`summon_holds::gate_va`) does: a site past it
 fires on the pass alone, as in retail (PROT 0919 arm 7's three fades, which
-otherwise flashed white a countdown early).
+otherwise flashed white a countdown early). Cort's Mystic Circle (PROT 0938) has
+the same shape in its terminal arm 4: the flush `0x801F7220` sits past the
+countdown's `bgtz` at `0x801F7210`, and fired on the arm's first tick it halted
+the floor circle and light columns arm 3's pass had just seated, two ticks after
+they went in, where retail draws them through the arm's `192` vsyncs. Mystic
+Shield's arm 7 (PROT 0940, flush `0x801F7870` past `0x801F7868`) is listed for
+the same reason.
 Arms that share their code fork on a reload of the phase byte: PROT 0918's
 arms 18 and 19 both enter at `0x801F8698`, and only arm 19 gets past
 `lbu v1,0x0(s6)` / `li v0,0x12` / `bne` (`0x801F878C..0x801F8794`) to the
