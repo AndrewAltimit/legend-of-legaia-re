@@ -63,6 +63,60 @@ impl World {
         const TINT_FLAT: u8 = 0xC8;
         const NEUTRAL_WORD: u32 = 0x2008_0200;
         const HIDDEN: u8 = 0xFF;
+        // Arm 4's pass seats the creature (`jal 0x801F19EC`), then lights it
+        // white and points its node at deformation row 1, a sweep that
+        // re-forms it from the floor up as its `+0x1BA` drains
+        // (`0x801F7120..0x801F71D8`). The host seats the creature's mesh
+        // when it has bound it, which can be after the arm's pass, so the
+        // stores land on the first pass of arms 4..6 the seat exists on:
+        // ahead of them the installer's reset would undo them. Arm 6's exit
+        // drops `+0x21C` (`0x801F7430`) and the tint ease takes the word back.
+        let assembling = (phase_in == cam::ALURU_ASSEMBLY_ARM && passed)
+            || (phase_in > cam::ALURU_ASSEMBLY_ARM && phase_in <= cam::ALURU_ASSEMBLED_ARM);
+        if assembling
+            && let Some(slot) = self.casting.summon_actor_slot
+            && self
+                .actors
+                .get(usize::from(slot))
+                .is_some_and(|a| a.battle.shatter_row != Some(cam::ALURU_SHATTER_ROW))
+        {
+            self.npcs.face_rows.insert(
+                cam::ALURU_SHATTER_ROW,
+                crate::world::FieldFaceRow {
+                    offset: cam::ALURU_SHATTER_ROW_OFFSET,
+                    flags: cam::ALURU_SHATTER_ROW_FLAGS,
+                },
+            );
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.battle.render_color = cam::ALURU_ASSEMBLY_COLOUR;
+                a.battle.render_blend = cam::ALURU_ASSEMBLY_BLEND;
+                a.battle.render_flag = HIDDEN;
+                a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
+            }
+        }
+        if phase_in == cam::ALURU_ASSEMBLED_ARM
+            && passed
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            a.battle.render_flag = 0;
+            a.battle.shatter_row = None;
+        }
+        if phase_in == cam::ALURU_BLAST_ARM && passed && self.casting.module_cam.kill == Some(true)
+        {
+            self.npcs.face_rows.insert(
+                cam::ALURU_SHATTER_ROW,
+                crate::world::FieldFaceRow {
+                    offset: cam::ALURU_KILL_SHATTER_ROW_OFFSET,
+                    flags: cam::ALURU_SHATTER_ROW_FLAGS,
+                },
+            );
+            if let Some(a) = self.actors.get_mut(usize::from(victim)) {
+                a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
+            }
+        }
         if phase_in == cam::ALURU_RECORD_KILL_ARM && passed {
             if let Some(scene) = self.casting.active_summon.as_mut() {
                 for part in &mut scene.parts {

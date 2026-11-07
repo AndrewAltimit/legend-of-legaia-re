@@ -2135,7 +2135,7 @@ The summon writers, on seat 7:
 | 0910 Swordie | arms 2 and 3, `0x801F6E28` / `0x801F6E8C` | `= 0`: the creature appears whole |
 | 0912 Freed | arm 7 `0x801F74EC`; arms 8 and 9 `0x801F75B8..0x801F75D4`, `0x801F7720..0x801F7744` | `= scalar << 7` as it hides the creature, then `-= 2 * frame * scalar` a pass until it reads non-positive, then `= 0`: the creature re-forms |
 | 0914 Gola Gola | `0x801F790C..0x801F792C` | a ramp clamped at `0x7530` |
-| 0916 Aluru | arm 4 `0x801F7138` `= 0x800`; drains `0x801F727C` (to `0x400`) and `0x801F7338` (to `0`) | assembles the creature; the kill path's `0x801F81AC` writes the **victim** (`s3`), not seat 7 |
+| 0916 Aluru | arm 4 `0x801F7138` `= 0x800`; drains `0x801F727C` (to `0x400`) and `0x801F7338` (to `0`) | assembles the creature white on deformation row 1 ([below](#prot-0916-aluru)); the kill path's `0x801F81AC` writes the **victim** (`s3`), not seat 7 |
 | 0925 Spikefish | arm 8, `0x801F7348..0x801F7358` | `+= frame << 3` a pass |
 
 The **Jette hook** at the tail of `FUN_8004CE2C`'s pass 2
@@ -2218,8 +2218,36 @@ plus `0x800`, and arms `0x12` / `0x13` hold that while its clip is `0`; the dama
 leaves it on rate `2`, impact `2`, `+0x21C = 0` beside its roll, and arm `0xFF` hides
 the victim (`World::apply_aluru_seat_writes`).
 
-Not carried: the battle lighting block writes of arms 4 and `0x11`, the kill
-tallies in the character record and banner `0x5B`; the arm `0x14` framing focuses the
+**The assembly.** Arm 4's pass seats the creature (`jal 0x801F19EC` at
+`0x801F7074`) and then dresses it: colour word `+0x04 = 0x3FFFFFFF`, blend
+`+0x0C = 0x1000` and `+0x21C = 0xFF` (`0x801F70AC..0x801F7134`), so every lane
+stands at `0x3FF` and the tint pass draws the shards white, and its node's
+deformation byte `+0x6D = 1` (`sb t3,0x6d(v0)` at `0x801F71B8`, `t3` the `1`
+the prologue spills to `sp+0x3C`). The same pass writes that row of the table
+`0x8007BE60` (`0x801F71BC..0x801F71D8`): offset `(0, 0, 0)`, `+6 = -0x800`,
+flags `0xC`, the view-Y sweep with shrink PROT 0912 re-forms Freed under, its
+front starting twice as far down
+([renderer](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)). As
+`+0x1BA` drains through arms 5 and 6 the creature comes together from the floor
+up instead of spinning in from every side, and arm 6's exit drops `+0x21C`
+(`sb zero,0x21c(s2)` at `0x801F7430`), which hands the white word back to the
+tint ease. The engine's host seats the creature's mesh when it has bound it,
+which can be after arm 4's pass, so the port lands the stores on the first pass
+of arms 4..6 the seat exists on (`World::apply_aluru_seat_writes`); ahead of
+the seat the installer's reset would undo them. Measured on
+`party_basic_attack_vs_gobu_gobu` `0x8E`: arms 5 and 6 read `.684` / `.682`
+with the default row (the shards strewn over the screen) and `.701` / `.731`
+with row 1. The retail frames stand nearer white than the port's: the
+port's lanes at `0x3FF` double the texel, retail's shards read near
+`(247, 238, 218)` where the port's read `(167, 104, 63)` over the same
+body, and the doubling cannot reach that from the creature's texels.
+
+The kill path's arm `0x11` pass rewrites that row as offset `(0, 0, -0x200)`
+with the same front and flags and points the victim's node at it
+(`0x801F7DD8..0x801F7E0C`), so the victim arm `0x13` breaks up comes apart from
+the floor up as well.
+
+Not carried: the kill tallies in the character record and banner `0x5B`; the arm `0x14` framing focuses the
 victim's seat rather than its `+0x3C` / `+0x40` pair; arm `0xFF`'s hide on a living
 victim, whose way back is not read.
 

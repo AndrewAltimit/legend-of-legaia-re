@@ -492,7 +492,8 @@ past-the-front triangle under `0x10000` does not rebuild the matrix: it scales
 whatever the previous triangle left in `0x1F800314`. Of the field's flag words
 only `0xC` (`jagaroom`) sweeps; in battle PROT 0912 (Freed) writes the same
 `0xC` into row 1 with `h3 = -0x400` and re-forms its creature under it, the
-front climbing from the floor as `+0x1BA` drains. The object matrix carries
+front climbing from the floor as `+0x1BA` drains, and PROT 0916 (Aluru) writes
+it with `h3 = -0x800` for its own creature's assembly. The object matrix carries
 the battle world scale (base matrix `16384 * I`), so a triangle's measure is
 four times its body-space height.
 

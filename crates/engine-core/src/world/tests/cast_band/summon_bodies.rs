@@ -51,6 +51,47 @@ fn run_aluru(world: &mut World) -> AluruRun {
     (phases, spreads, peak)
 }
 
+/// Arm 4 lights the creature white and hands its node deformation row 1
+/// (a sweep from the floor up) while its `+0x1BA` drains; arm 6's exit
+/// drops `+0x21C` and the tint ease takes the word back.
+#[test]
+fn the_aluru_creature_reforms_white_on_row_one() {
+    use legaia_engine_cast::cast_module_camera::{
+        ALURU_ASSEMBLED_ARM, ALURU_ASSEMBLY_COLOUR, ALURU_SHATTER_ROW, ALURU_SHATTER_ROW_FLAGS,
+        ALURU_SHATTER_ROW_OFFSET,
+    };
+    let mut world = aluru_world(Some(false));
+    let mut seen = None;
+    for _ in 0..20_000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(ALURU, phase) else {
+            break;
+        };
+        let c = &world.actors[9].battle;
+        if world.casting.module_phase == ALURU_ASSEMBLED_ARM && seen.is_none() {
+            seen = Some((c.render_color, c.render_flag, c.shatter_row));
+        }
+        if !run.busy || phase > ALURU_ASSEMBLED_ARM {
+            break;
+        }
+    }
+    assert_eq!(
+        seen,
+        Some((ALURU_ASSEMBLY_COLOUR, 0xFF, Some(ALURU_SHATTER_ROW)))
+    );
+    let row = world.shatter_row(ALURU_SHATTER_ROW);
+    assert_eq!(
+        (row.off, row.h3, row.flags),
+        (
+            [0, 0, 0],
+            ALURU_SHATTER_ROW_OFFSET[3],
+            ALURU_SHATTER_ROW_FLAGS
+        )
+    );
+    let c = &world.actors[9].battle;
+    assert_eq!((c.render_flag, c.shatter_row), (0, None));
+}
+
 /// The kill path zeroes the victim's HP on arm `0x11`'s passing tick,
 /// breaks it up through arm `0x13`, owes the band no fold, and leaves
 /// `0x13` for the done phase without visiting arm `0x14`.
