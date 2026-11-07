@@ -655,6 +655,28 @@ impl World {
                     tl.pc = pc + insn.size;
                     continue;
                 }
+                // The VM prologue's busy gate (`0x801DE90C..0x801DE944`): a
+                // cross-context op whose target carries the halt bit
+                // `+0x10 & 0x400` returns the unadvanced PC, so the record
+                // waits there. An NPC halt-acquire (`C3 <id> 0/1 ..`, the
+                // scripted arc) raises that bit on its target until the arc's
+                // release helper `0x801D5D60` lands it; the acquire itself
+                // advances, and the record parks at its next op aimed at the
+                // arced actor. `eddoman` P2[7] arcs placement `0x16` over 36
+                // frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it
+                // with `B3 16 0A`: holding there is what keeps its white flash
+                // up as long as the retail film does.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_801D5D60
+                if let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                    && let Ok(slot) = u8::try_from(channels[ci].placement_index)
+                    && host.world.script_arc_live(
+                        legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(slot),
+                    )
+                {
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 // An NPC end-latch spin (`AD <id> 08`) re-tests on game frames
                 // only. The placement's anim tick latches `+0x62 & 0x100`
                 // after the record's script slice (the placements tick on
