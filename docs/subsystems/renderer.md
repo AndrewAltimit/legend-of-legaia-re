@@ -2396,6 +2396,10 @@ A scene that only ever plays a cutscene can ship a map whose rooms have nothing 
 The port draws what the disc holds, so a free roam in `taiku2` shows the rooms' floors (the ground layer, which comes from the walk grid) with no walls, and `taiku` draws the same room whole.
 Retail never shows those rooms in `taiku2`: the scene is a [pass-through](engine.md#pass-through-scenes), and the scene picker now plays it as one. A retail capture of the save room (`taiku_field_card_walk`, the player poked onto the `(71, 34)` teleport into it) matches the port's `taiku` frame.
 
+The arrival beat's first dialogue line pans the camera low past the throne-room stair block at tile `(48, 20)`, and black slabs cover up to 85% of the lower three quarters of the frame for about a thousand frames. Retail draws the same slabs.
+The block is pack slot 63 (PROT 426 `+0xC0B0`), one object of two groups: four textured treads (mode `0x3D`) and six untextured flat quads (group mode `0x29`, every colour word `0x28000000`, flat black) for the block's inner risers and walls. They face the eye on that pan, sit well clear of the near cut, and are not stubs, so nothing rejects them.
+`taiku2_field_door_hop` run on PCSX-Redux with no pad input, sampled every 50 frames, shows the slabs at the same places on the same shots as the port at a 301-tick offset: the black share of the lower three quarters of the frame runs `0.21 -> 0.84 -> 0.20` in both, within five points, clean and PSX framing alike.
+
 ### The field pass culls back faces
 
 Retail rejects the back faces of every field mesh. Each per-prim handler
