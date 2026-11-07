@@ -341,9 +341,13 @@ impl LegaiaRuntime {
         // retail-authored landing it has already validated against the
         // walkability grid; this page-side heuristic is only for the scenes
         // that fell back to the cold-entry seat.
+        // So is a reviewed override seat (`PICKER_SEAT_OVERRIDES`).
         if matches!(
             host.picker_seat(),
-            Some(legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. })
+            Some(
+                legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. }
+                    | legaia_engine_scene_host::scene_host::PickerSeat::Override { .. }
+            )
         ) {
             return;
         }

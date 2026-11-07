@@ -19,7 +19,8 @@ mod walk_on_triggers;
 mod world_map_scene;
 
 pub use door_replay::DoorTaken;
-pub use entry_seat::PickerSeat;
+pub(crate) use entry_seat::PickerOverrideSeat;
+pub use entry_seat::{PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule, picker_seat_override};
 pub use field_scene::field_scene_build;
 pub use fmv_handoff::*;
 

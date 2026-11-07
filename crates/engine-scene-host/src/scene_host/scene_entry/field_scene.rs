@@ -330,6 +330,9 @@ impl SceneHost {
         // (`SceneHost::arm_picker_entry_seat`), spent by this entry whether or
         // not an operand overrides them.
         let picker_arrivals = self.pending_picker_arrivals.take();
+        // A reviewed seat for this scene (`PICKER_SEAT_OVERRIDES`), spent the
+        // same way.
+        let picker_override = self.pending_picker_override.take();
         self.picker_seat = None;
         let cold = legaia_engine_system::mode_entry_init::field_spawn(
             legaia_engine_system::mode_entry_init::FieldEntryMode::Cold,
@@ -494,10 +497,12 @@ impl SceneHost {
             }
             _ => None,
         };
-        let resolved = match (operand, &picker_arrival) {
-            (Some(seat), _) => seat,
-            (None, Some((_, seat, _))) => *seat,
-            (None, None) => self
+        let override_seat = picker_override.filter(|_| operand.is_none());
+        let resolved = match (operand, &override_seat, &picker_arrival) {
+            (Some(seat), _, _) => seat,
+            (None, Some(ov), _) => ov.seat,
+            (None, None, Some((_, seat, _))) => *seat,
+            (None, None, None) => self
                 .world
                 .resolve_cold_field_spawn(&teleport_tiles, &anchors),
         };
@@ -505,7 +510,17 @@ impl SceneHost {
         // entry (a door, a resume, a cold fallback) leaves a park start as
         // retail runs it.
         self.world.field_vm.picker_bgm_inherit = None;
-        if operand.is_none()
+        if let Some(ov) = &override_seat {
+            if let Some(arrival) = &ov.arrival {
+                self.world.field_vm.picker_bgm_inherit =
+                    self.arrival_catalog().home_bgm(&arrival.from_scene);
+                self.world.face_player_sector(arrival.dir);
+            }
+            self.picker_seat = Some(crate::scene_host::PickerSeat::Override {
+                rule: ov.rule,
+                seat: ov.seat,
+            });
+        } else if operand.is_none()
             && let Some(ranked) = picker_arrivals.as_deref()
         {
             self.picker_seat = Some(match &picker_arrival {
@@ -531,13 +546,18 @@ impl SceneHost {
         // record that ends with the player inside a wall re-seats them here
         // (see `World::step_helper_contexts`).
         self.world.props.resolved_cold_spawn = Some(resolved);
-        if operand.is_none()
+        // A relocated picker seat is snapped onto its floor again once the
+        // scene's floor-height ladder is installed (below): the sample here
+        // reads the grid's tier nibbles through no ladder yet, so a seat on a
+        // raised tier landed at the wrong height and glided onto the floor
+        // over its first frames.
+        let picker_floor_snap = operand.is_none()
             && resolved
                 != (
                     legaia_engine_core::world::FIELD_COLD_SPAWN_XZ,
                     legaia_engine_core::world::FIELD_COLD_SPAWN_XZ,
-                )
-        {
+                );
+        if picker_floor_snap {
             let floor_y = self
                 .world
                 .sample_field_floor_height(resolved.0 as i32, resolved.1 as i32)
@@ -625,10 +645,11 @@ impl SceneHost {
         // door onto a ledge) stayed buried at `0` until its first step: the
         // browser page drew it inside the rock with the camera focus under
         // the ground, while the native window hid it behind a host-side snap
-        // at mesh upload. The entry settles the seat itself, for every host.
-        if self.world.locomotion.follow_terrain_height
-            && let Some(player) = self.world.actors.first()
-            && player.move_state.world_y == 0
+        // at mesh upload. The entry settles the seat itself, for every host,
+        // and a relocated picker seat always (`picker_floor_snap` above).
+        if let Some(player) = self.world.actors.first()
+            && (picker_floor_snap
+                || (self.world.locomotion.follow_terrain_height && player.move_state.world_y == 0))
         {
             let (x, z) = (
                 i32::from(player.move_state.world_x),

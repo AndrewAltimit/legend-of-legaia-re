@@ -325,6 +325,10 @@ pub struct SceneHost {
     /// cleared) by the next [`SceneHost::enter_field_scene`].
     pub(crate) pending_picker_arrivals:
         Option<Vec<legaia_engine_scene::scene_arrivals::SceneArrival>>,
+    /// A [`PICKER_SEAT_OVERRIDES`] seat for the
+    /// scene a picker entry is about to enter, armed and consumed beside
+    /// [`Self::pending_picker_arrivals`].
+    pub(crate) pending_picker_override: Option<scene_entry::PickerOverrideSeat>,
     /// Where the last scene-picker entry seated the party (see
     /// [`SceneHost::picker_seat`]).
     pub(crate) picker_seat: Option<PickerSeat>,
@@ -437,7 +441,10 @@ pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
-pub use scene_entry::{DoorTaken, FmvHandoffOutcome, PickerSeat, field_scene_build};
+pub use scene_entry::{
+    DoorTaken, FmvHandoffOutcome, PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule,
+    field_scene_build, picker_seat_override,
+};
 
 #[cfg(test)]
 mod tests;

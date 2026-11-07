@@ -389,7 +389,19 @@ The entry seat is the first ranked arrival that `World::picker_arrival_seat` acc
 
 Unlike the cold seat, an arrival need not be in the scene's largest region: a dungeon whose floors are disconnected rooms is entered through a door into one of them. The party faces along the arrival's sector, as through the door itself.
 
-Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
+Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, an override row, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
+
+### Reviewed picker seats
+
+A few scenes defeat the ranked rule, and `PICKER_SEAT_OVERRIDES` (`engine-scene-host`, `scene_entry::entry_seat`) seats them instead. Each row is one scene, a `PickerSeatRule` and a comment saying why the default fails and where the seat comes from:
+
+- `Arrival { from, tile, step }` - a named `0x3F` arrival from the catalog, stepped whole tiles, taken without the enclosure and trigger tests. The party faces the arrival's sector and inherits the home track, as on a ranked arrival. A row whose arrival the disc does not carry falls through to the ranked rule.
+- `ManMoveTo { tile }` - a tile the scene's own MAN moves the player to (`A3 F8 xb zb`), for the dream scenes, whose only arrival is the map-centre placeholder `(0x40, 0x40)`.
+- `Tile { tile }` - a tile read off the walkability grid, for a scene whose only arrival is the `(0x7F, 0x7F)` hide box.
+
+The failures the rows answer come in four shapes. A door that lands behind a closed grille (`conc`) passes the grid's tests, because the grille is a prop body, not a wall bit. An arrival on its own gate-1 trigger is stepped off by the ranked rule, sometimes across a warp or exit row (`geremi`), sometimes skipping the arrival beat the door plays (`rugi`, which the override seats on the door so the first tick fires it). A room whose doorway opens onto the unwalled map edge fails the enclosure test (`koin1b`). And a placeholder or hide-box arrival leaves only the cold seat (`urudre2`, `urudre3`, `garmel`). The sweep checks every row seats its scene on a standable tile that is not walled in, at its floor height, and stays there.
+
+A relocated picker seat is snapped onto its floor after the scene's floor-height ladder is installed, not before: sampled earlier, the grid's tier nibbles read through no ladder and a seat on a raised tier landed at the wrong height, gliding onto the floor over its first frames.
 
 ## Fidelity and enhancements
 
