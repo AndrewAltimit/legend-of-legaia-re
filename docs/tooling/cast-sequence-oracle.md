@@ -453,6 +453,12 @@ falls inside it. Measured with it:
 | `battle_korb2_mage_void_accessories_mid_cast` | `.823` (cues `0`) | `.841` (cues `1.000`) |
 | `battle_retockin_evil_shadow_fatal_decision_mid_cast` | `.841` | `.830` |
 
+Death Game deals its four cards in arm 0 (`0x801FA288`), after the library's states
+were saved, so neither `--rand-at` nor the track reaches the deal: both states' tables
+still read zero. `LEGAIA_SEAT_DEATH_GAME_DEAL=a,b,c,d` (through `--engine-env`) lands the
+engine's deal on a table read off a retail RAM image (`LEGAIA_RAM_AT` in arm 2); the
+retail-compare seed derives the same seat for a state past arm 0. A harness seat.
+
 It does not help every film. The words are retail's frame ends, so an engine pass that
 draws in another order than retail's inside the frame still parts: Fatal Decision gains
 five extra cues. Read it as a harness seat that takes the stream out, not as a score.
@@ -582,6 +588,14 @@ prints the same line. Measured on the `party_basic_attack_vs_gobu_gobu` and
 harvested-strike Seru films (44 with drive arms), the mean goes from `.792`
 strict to `.808`, Gimard from `.847` to `.897`, Viguro from `.757` to `.786`;
 the five monster casts in the same run, with no drive arms, are unchanged.
+
+A monster cast reached through the state's pad drive stages the clip the drive's
+replay picked, and the picker stores its clip bytes under draws the replay does not
+share. The seed therefore carries the capture's queue for a monster cast (`q` on
+`LEGAIA_BATTLE_DRIVE`), and the drive holds `+0x1E0` and the Spirit band's `+0x1E7` on
+it until the clip stages: `battle_balden_orb_v2_hyper_heal_mid_cast`'s Orb plays clip
+`9` as retail's does, where the walk's last tag-`0x23` entry `0x0A` held the Spirit band
+twice as long (`.818` to `.943`). A harness seat.
 
 ## A monster's physical attack
 

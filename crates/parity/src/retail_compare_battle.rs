@@ -564,6 +564,10 @@ pub struct RetailBattle {
     pub hud_glides_landed: bool,
     /// The monster AI's counter `0x801C8FE4`: the roll PROT 0964's strike forks on.
     pub ai_counter: u32,
+    /// PROT 0957's dealt card table `0x801FA288` (four words, each `1..=4`
+    /// once Death Game's arm 0 has dealt): read for any capture, meaningful
+    /// only past that arm.
+    pub death_game_table: [u32; 4],
     /// The HUD widget glides in flight, each as the displayed frame shows
     /// it ([`HudGlideSeat`]); empty when every record has landed.
     pub hud_glides: Vec<HudGlideSeat>,

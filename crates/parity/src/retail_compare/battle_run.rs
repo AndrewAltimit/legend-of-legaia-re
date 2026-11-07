@@ -900,6 +900,17 @@ pub(super) fn battle_image(
     if battle.queued_action == 0xAF && battle.action_state == 0x70 && battle.module_phase > 0 {
         env.push(("LEGAIA_SEAT_ELEMENT_ROLL", battle.ai_counter.to_string()));
     }
+    // Death Game's arm 0 dealt its table before the capture: a replay's own
+    // deal draws another order, so a capture past that arm names retail's.
+    // A harness seat (`World::death_game_deal_seat`).
+    if battle.queued_action == 0x76
+        && battle.action_state == 0x70
+        && battle.module_phase > 0
+        && battle.death_game_table.iter().all(|v| (1..=4).contains(v))
+    {
+        let t: Vec<String> = battle.death_game_table.iter().map(u32::to_string).collect();
+        env.push(("LEGAIA_SEAT_DEATH_GAME_DEAL", t.join(",")));
+    }
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }

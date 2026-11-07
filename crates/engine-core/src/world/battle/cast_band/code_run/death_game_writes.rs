@@ -20,6 +20,12 @@ impl World {
     ) {
         if phase == 0 {
             st.death_game.deal(caster_monster, || self.next_rand());
+            // A capture's own deal (`LEGAIA_SEAT_DEATH_GAME_DEAL`), dealt
+            // before the capture's instant: the replay draws as retail did
+            // and then stands on retail's table. A harness seat.
+            if let Some(table) = self.battle.death_game_deal_seat {
+                st.death_game.table = table;
+            }
         }
         if phase == 4 && st.death_game.counter == 0 {
             st.death_game.draw_swap(|| self.next_rand());

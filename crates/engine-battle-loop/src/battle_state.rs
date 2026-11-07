@@ -762,6 +762,11 @@ pub struct BattleState {
     /// A film's retail `rand()` word per battle frame (`RetailRandTrack`): a
     /// harness seat the frame driver's pass seats ahead of its draws.
     pub retail_rand_track: Option<crate::frame_clock::RetailRandTrack>,
+    /// A capture's dealt Death Game table (`0x801FA288`, each `1..=4`): a
+    /// harness seat PROT 0957's arm 0 lands its deal on, after drawing as
+    /// retail did. A capture past that arm holds the deal its replay cannot
+    /// redraw. No play path installs one.
+    pub death_game_deal_seat: Option<[u8; 4]>,
     /// The display tick the capture band's CD read answers on. Retail's `0x6E`
     /// polls `FUN_8003DE7C(1)` and `0x6F` polls `FUN_8003F2B8(1)`, and the camera
     /// walk and the framing's pull-in run on through both
@@ -1429,6 +1434,7 @@ impl BattleState {
             pending_frame_step: None,
             retail_step_track: None,
             retail_rand_track: None,
+            death_game_deal_seat: None,
             capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,

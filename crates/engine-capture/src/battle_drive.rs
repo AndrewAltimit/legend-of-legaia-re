@@ -1551,6 +1551,25 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // A monster cast's clip bytes ([`ActionSteer::queue`] on a monster
+        // seat whose drive is a cast): the capture's `+0x1E0` and the Spirit
+        // band's `+0x1E7` (`params[1]` / `params[8]`), held from the seed to
+        // the stage that commits one of them (`0x29`, or the Spirit band's
+        // `0x3C`). A harness seat: the picker stored them under draws the
+        // replay does not share.
+        if seat >= 3
+            && ours
+            && category == 2
+            && (0x0A..0x3D).contains(&state)
+            && let Some(queue) = steer.queue
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+            && a.battle.params[0] == queue[0]
+        {
+            a.battle.params[1] = queue[1];
+            if queue[8] != 0 {
+                a.battle.queued_anim_b = queue[8];
+            }
+        }
         // A monster strike gated on its first swing clip
         // ([`ActionSteer::queue`] on a monster seat): from the seed to the
         // approach's end, the stream the strike loop stages its swings from
