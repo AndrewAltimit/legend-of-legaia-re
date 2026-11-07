@@ -1041,6 +1041,84 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     Some(shift)
 }
 
+/// How far the focus endpoint stood, on each pass before the RAM's, from the
+/// RAM's own - [`displayed_cam_live_steps`]'s `end_shift` - on a monster's
+/// arrival pass.
+///
+/// The walk runs in `0x19`, which re-arms case 6 on every pass with the focus
+/// on the walker's live pair (`0x801D64C4`) ahead of the pass's anim tick, so
+/// the arm of pass `k` back read position-ring slot `k + 1`. The pass that
+/// finds the walker in range arms case 6 one last time and moves on to the
+/// strike loop, whose first case-7 arm comes a pass later; its anim tick
+/// commits the arrival's idle stage. A capture on that pass - the clip-record
+/// ring's slot `0` on the stage, slots `1` and `2` on the walk, the cursor
+/// ring's slot `0` on the commit's `0` and no swing staged (strike cursor
+/// `ctx[+0x15]` still `0`) - holds case 6's table on slot `1`'s pair
+/// (`battle_map02_lip_kid_strike`: endpoint `(83, 224)`), and every pass
+/// before chased the walker a ring stride further back. The walk's stride is
+/// even, so pass `n` back stood `n` strides off.
+///
+/// Walked back against the RAM's endpoint alone, the displayed frame stands
+/// short of the camera that was chasing the walk: `battle_map02_lip_kid_strike`
+/// draws focus `(255, 687)` and reads `image` `.890`; on the walk's endpoints
+/// it draws `(243, 657)` and reads `.980`.
+///
+/// `None` off that pass, on a party seat, or when the RAM's focus endpoint is
+/// not slot `1`'s pair.
+/// [`arrival_end_shift`] where the older ordering table's floor confirms the
+/// frame step the history names for the RAM's pass
+/// ([`super::camera_pool::older_table_step`]). The shift walks the passes
+/// back on that step, and a floor that fits another step says the passes
+/// back did not run as the history reads them: `battle_noaru_songi_strike`
+/// (history `3`, floor `4`) reads `image` `.966` on the RAM's endpoint and
+/// `.945` on the walker's, `battle_cave01_theeder_strike` (history `2`)
+/// `.977` and `.935` with the floor's step taken instead. Without a floor
+/// fit the history stands.
+pub(super) fn arrival_end_shift_confirmed(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
+    let shift = arrival_end_shift(ram, ctx)?;
+    match super::camera_pool::older_table_step(ram, ctx) {
+        Some(s) if s != frame_step(ram) => None,
+        _ => Some(shift),
+    }
+}
+
+pub(super) fn arrival_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
+        || game_anchors::u8_at(ram, ctx + 0x15) != 0
+    {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if !(3..=7).contains(&seat) || !in_ram(actor) || game_anchors::u8_at(ram, actor + 0x1DE) != 3 {
+        return None;
+    }
+    let record = |k: u32| game_anchors::u32_at(ram, actor + RING_RECORD + k * 4);
+    if record(0) == record(1)
+        || record(1) != record(2)
+        || game_anchors::u16_at(ram, actor + CURSOR_RING) != 0
+    {
+        return None;
+    }
+    let ring = |k: u32| {
+        let at = actor + POSITION_RING + k * 8;
+        [
+            game_anchors::u32_at(ram, at) as i32 as i16 as i32,
+            game_anchors::u32_at(ram, at + 4) as i32 as i16 as i32,
+        ]
+    };
+    let (s1, s2) = (ring(1), ring(2));
+    // The focus records hold the pair negated.
+    let end = |k: u32| i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16);
+    if end(6) != -s1[0] || end(8) != -s1[1] {
+        return None;
+    }
+    let mut shift = [0i32; 9];
+    shift[6] = s1[0] - s2[0];
+    shift[8] = s1[1] - s2[1];
+    Some(shift)
+}
+
 /// How far case `0xA`'s yaw endpoint stood, on the pass before the RAM's, from
 /// the RAM's own - [`displayed_cam_live_steps`]'s `end_shift` for the yaw.
 ///

@@ -431,6 +431,76 @@ fn a_frame_before_the_strike_loops_first_arm_stands_on_case_six() {
     assert!(camera_align::walk_arm_prior_end(&ram, ctx).is_none());
 }
 
+/// `battle_map02_lip_kid_strike`'s words: the RAM's pass committed the
+/// arrival's idle stage (record ring `A, B, B`, cursor ring `0, 408`) with no
+/// swing staged (strike cursor `0`). Its table is case 6's on ring slot `1`,
+/// and each pass before it chased the walker a ring stride further back.
+#[test]
+fn a_capture_on_the_arrivals_own_pass_walks_back_onto_case_six() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D538u32, 0x800E_C9E8u32);
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0xD, 1);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x15, 0);
+    put16(&mut ram, ctx + 0x6DA, 588);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE, target);
+    put8(&mut ram, attacker + 0x1DE, 3);
+    for (k, (x, z)) in [
+        (93i32, 244i32),
+        (83, 224),
+        (117, 315),
+        (151, 406),
+        (185, 496),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    put16(&mut ram, attacker + 0x17A, 0);
+    put16(&mut ram, attacker + 0x17C, 408);
+    put32(&mut ram, attacker + 0x234, 0x800F_0000);
+    put32(&mut ram, attacker + 0x238, 0x800F_0100);
+    put32(&mut ram, attacker + 0x23C, 0x800F_0100);
+    // Frame step `3`.
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x273);
+    assert_eq!(frame_step(&ram), 3);
+    put16(&mut ram, 0x8007_B792, 353);
+    put16(&mut ram, rec(1), 1);
+    put16(&mut ram, rec(1) + 2, 357);
+    put32(&mut ram, 0x8008_9118, (-177i32) as u32);
+    put16(&mut ram, rec(6), 11);
+    put16(&mut ram, rec(6) + 2, (-83i16) as u16);
+    put32(&mut ram, 0x8008_9120, (-483i32) as u32);
+    put16(&mut ram, rec(8), 29);
+    put16(&mut ram, rec(8) + 2, (-224i16) as u16);
+
+    let shift = camera_align::arrival_end_shift(&ram, ctx).expect("the arrival's pass");
+    assert_eq!((shift[6], shift[8]), (-34, -91));
+    let p =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], true, [None; 9], shift, false);
+    assert_eq!((p.focus[0], p.focus[2]), (243.0, 657.0));
+    // On the RAM's endpoint alone the walk back overshoots.
+    let q =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], true, [None; 9], [0; 9], false);
+    assert_eq!((q.focus[0], q.focus[2]), (255.0, 687.0));
+
+    // A swing already staged on that pass is not the arrival's.
+    put8(&mut ram, ctx + 0x15, 1);
+    assert!(camera_align::arrival_end_shift(&ram, ctx).is_none());
+}
+
 /// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
 /// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
 /// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,

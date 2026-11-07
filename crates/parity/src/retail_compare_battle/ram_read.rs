@@ -930,7 +930,9 @@ impl RetailBattle {
                             std::array::from_fn(|k| summon[k].or(pull_in[k]))
                         }),
                         {
-                            let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
+                            let mut shift = walker_end_shift(ram, ctx)
+                                .or_else(|| arrival_end_shift_confirmed(ram, ctx))
+                                .unwrap_or([0; 9]);
                             shift[1] = walk_heading(ram, ctx)
                                 .map(|h| h.end_shift)
                                 .or_else(|| clip_clock_end_shift(ram, ctx))
