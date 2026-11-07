@@ -94,6 +94,10 @@ const NAV = [
     title: 'Write-ups',
     items: [
       { href: 'writeups/index.html', text: 'Technical write-ups', key: 'writeups/index' },
+      { heading: 'Beyond Legaia' },
+      { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },
+      { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
+      { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
       { heading: 'Investigations' },
       { href: 'writeups/gaza-orbit-softlock.html', text: 'The endless camera orbit', key: 'writeups/gaza-orbit-softlock' },
       { href: 'writeups/spirit-fish.html', text: 'The Spirit fish gate', key: 'writeups/spirit-fish' },
@@ -337,10 +341,6 @@ const NAV = [
       { href: 'tooling/frame-hash.html', text: 'Browser frame hash', key: 'tooling/frame-hash' },
       { href: 'tooling/host-drift.html', text: 'Host drift', key: 'tooling/host-drift' },
       { href: 'tooling/build-and-test-speed.html', text: 'Build and test speed', key: 'tooling/build-and-test-speed' },
-      { heading: 'Beyond Legaia' },
-      { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },
-      { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
-      { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
     ],
   },
   {
