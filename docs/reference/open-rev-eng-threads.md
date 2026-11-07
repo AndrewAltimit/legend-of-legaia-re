@@ -242,6 +242,7 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Why does a full party's summon run step `2` into the flash where retail runs `3`? | open (measured) | On the `battle_kor_spoon_strike` and `battle_tower_swordie_strike` films retail holds step `3` from the inject through `0x33` and drops to `2` on `0x34`'s entry; the engine reads `2` throughout, so its flash-in rise trails retail's and `0x34` scores `.55..58` where a lone caster's now reads `.95`. The ring entries of a full party's `0x28` / `0x29` / `0x32` frames on a cast, read off those films' step drops, would settle it. |
 | Why do a few strikes and casts fall under the measured frame step? | open (measured) | `battle_korb2_medusa_strike`, `battle_tower_guardian_windhash_mid_cast`, `battle_deroa_spoon_v2_hyper_heal_mid_cast` and `battle_map03_moldy_worm_strike` read lower once the ring feeds ordinary frames (`FrameCostRing`). On Medusa's strike the camera is exact and the difference is a party member near the lens, mid-fade in one frame and solid in the other, so the replay's gate lands at another point of that fade. `battle_map03_death_trigger_strike` parks in `0x19` under the capture's seats, so its child retries at the default step; the ladder's strikes never park. Moldy Worm's and Devil Pump's strikes: a bearing unit moves the gate. Seating fade and walk off the state's own ring would settle it. |
 | What parts Gimard's late arms from retail? | open (measured) | Arm 12's stand, its coin and arm 10's victim show are ported ([cast-module](../subsystems/cast-module.md#spawn-reports)), and the walk's pose and puff law match retail's to the unit. Arm 11 (`.732`) is left to the `rand()` picks of the puffs' pose objects and jitter, and to retail's slow frames (fourteen of its passes run five vsyncs). `--rand-at` on arm 11's key would show how much the picks hold. |
 | Why does `battle_vell_nighto_49_strike`'s headless camera stand its yaw `51` short of retail's? | open (measured) | Before the ground snap the engine's case-6 glide reads yaw `2798` onto `2801`, against retail's live `2794` onto `2803`; the snap's strike-heading target reads `2752` (Nighto's facing `1911` against retail's `1930`, yaw counter `584` against `588`) and the glide-origin align carries the camera to `2743` (camera `.982`). Next: compare `strike_heading_target`'s inputs with the RAM's case-6 arm on a capture at accumulator `0` (`LEGAIA_RC_CAM_TRACE`). |
@@ -478,6 +479,14 @@ not one length either: from the state to the flash, Theeder's `0x33` runs `7` vs
 `~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. What closes it: the invoke clip's
 first passes after its commit against retail's (the caster's `+0x68` cursor beside `ctx[+0x87C]`), and
 `0x34`'s hold on the caster's `+0x1D9`.
+
+On the PCSX-Redux summon films the module's own poll arm waits `4` vsyncs where
+the mednafen-fitted model holds it `22` (Nova, Freed) to `30` (Orb) ticks. The
+[cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits) absorbs
+the wait itself, but what the poll's pass starts (Nova's vortex, Orb's star
+burst) then runs that much behind, and the arm after the poll scores `.32`
+(Nova) and `.48` (Orb) on frames that otherwise match. Which drive is right is a
+real console's seek time; the frames are not evidence either way.
 
 ### Why does Theeder's score not subtract out of its recording?
 
