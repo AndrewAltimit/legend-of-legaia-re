@@ -210,8 +210,27 @@
   <ul class="bullets">
     <li><strong>The window is the crop.</strong> Four signed bytes in the scratchpad give the tile window as offsets around the camera's tile, so the pass runs a fixed-size double loop - 32 by 48 cells in one measured scene - and nothing outside it exists that frame.</li>
     <li><strong>A far-bucket cell is painted under everything, nearer or not.</strong> A depth buffer agrees for a flat cell but not for a sloped one: where a cell's corners are a cliff apart it is a near-vertical sheet of ground texture that retail never shows, because the cliff mesh in front paints over it. The port carries the bit per cell and its ground shader pushes such cells to the back of the depth range, flat ones by a hair and sloped ones into a thin far slice.</li>
+    <li><strong>Off retail&rsquo;s vantage the floor is tested a few units lower.</strong> The two buckets are only faithful under retail&rsquo;s steep follow camera: the scenes keep meshes under the floor (the sky shell beneath <code>taiku2</code>&rsquo;s throne room, a brick triangle under a <code>town01</code> path) that a swung, tilted or pulled-back camera would see painted over the ground. So whenever the view leaves retail&rsquo;s framing - the default <em>Far</em> distance preset included - both hosts depth-test every far-bucket cell as a level plane 8 units below it, along each pixel&rsquo;s own ray: a flat cell as the plane under itself, a sloped one as the plane under its corner farthest from the eye. A sloped cell left in the far slice there lost to the beach 192 units below a <code>town01</code> plateau ramp. At retail&rsquo;s framing, which is what the comparison corpus scores, the buckets stay as retail draws them.</li>
     <li><strong>Why the hair matters.</strong> A decal authored on the floor plane - a subtractive shadow strip a tenth of a unit above the ground - ties with the floor at float rounding and loses every pixel without it.</li>
   </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Side view of a swung camera looking down past the floor. A pixel's ray from the eye crosses the floor cell and goes on to a level plane 8 units below it; the floor's depth is taken where the ray meets that plane. A shadow strip 6 units under the floor is nearer than the plane, so it still paints over the floor. A mesh buried deeper than 8 units is behind the plane and hidden.">
+      <defs><marker id="rn-drop-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <circle class="dg-node-accent" cx="70" cy="40" r="14"/><text class="dg-sub" x="70" y="22">eye</text>
+      <line class="dg-edge" x1="40" y1="120" x2="820" y2="120" style="stroke-width:3"/>
+      <text class="dg-label dg-start" x="40" y="108">floor cell (drawn here)</text>
+      <line class="dg-edge-dim" x1="40" y1="170" x2="820" y2="170"/>
+      <text class="dg-sub dg-start" x="40" y="190">plane 8 units lower (depth taken here)</text>
+      <rect class="dg-node-ok" x="130" y="131" width="130" height="7" rx="2"/>
+      <text class="dg-sub" x="195" y="156">shadow strip, 6 units under: shows</text>
+      <rect class="dg-node-warn" x="610" y="200" width="170" height="28" rx="3"/>
+      <text class="dg-sub" x="695" y="218">buried mesh: hidden</text>
+      <path class="dg-edge" d="M84 52 L655 168" marker-end="url(#rn-drop-arrow)"/>
+      <circle class="dg-node" cx="419" cy="120" r="4"/><circle class="dg-node-accent" cx="665" cy="170" r="5"/>
+      <text class="dg-edge-label" x="300" y="70">one pixel&rsquo;s ray</text>
+    </svg>
+    <figcaption>Off retail&rsquo;s framing each floor pixel is coloured where its ray meets the floor but depth-tested where the same ray meets a plane 8 units lower (not to scale). A shallow decal still wins; anything buried deeper loses to the floor.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="rejects">
@@ -222,7 +241,7 @@
     <thead><tr><th>Cut</th><th>Retail rule</th><th>What goes wrong without it</th></tr></thead>
     <tbody>
       <tr><td>Back faces</td><td>Every per-primitive handler runs <code>NCLIP</code> and rejects a non-positive area; a quad survives when either of its triangles faces the eye. A mask lowered by colour-word bit <code>0x08000000</code> makes a body double-sided, and no placed field object carries it</td><td>A sky dome seen from outside paints its outer shell over the scene; a semi-transparent battle body draws about twice as bright because both shells add</td></tr>
-      <tr><td>Placed object near the eye</td><td>The actor draw walk skips a placed object whose origin's view depth is below <code>0xA0</code> (160 units), or behind the eye</td><td>A cutscene camera parked inside a mist shell draws the shell's inside across the frame</td></tr>
+      <tr><td>Placed object near the eye</td><td>The actor draw walk skips a placed object whose origin's view depth is below <code>0xA0</code> (160 units), or behind the eye - unless its map record sets the exemption bit (record <code>+0x12 &amp; 0x20</code>, copied to actor <code>+0x52</code>), as the two sky shells outside the window of the credits&rsquo; <code>edkorout</code> shot do</td><td>A cutscene camera parked inside a mist shell draws the shell's inside across the frame</td></tr>
       <tr><td>Primitive near the eye</td><td>After the depth average, a primitive whose ordering-table depth is under a per-scene floor is dropped: a mean depth under 128 on the field, under 64 in battle</td><td>A wall the camera is pressed against stretches across the screen</td></tr>
       <tr><td>Oversized polygon</td><td>The GPU's own limit (<a href="#gpu-span-limit">above</a>)</td><td>Long shards from a limb that reaches past the camera</td></tr>
     </tbody>

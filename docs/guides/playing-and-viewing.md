@@ -201,6 +201,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Battle tuning | Spirit AP (`--spirit-ap`: 32 is the original, negative drains) | `launcher.toml` | - | 32 |
 | Battle tuning | AP from damage (`--damage-ap`: 100 is the original, negative drains) | `launcher.toml` | - | 100 |
 | Battle tuning | Seru catch rate (`--seru-catch-rate`: Original or 10..100%) | `launcher.toml` | - | Original |
+| Sound | Master volume (overall output level, 0..100%) | `legaia-options.toml` | - | 25% |
 | Sound | Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
 | Sound | Mono output | `legaia-options.toml` | - | off |
 | Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
@@ -306,7 +307,7 @@ A launcher start runs the game from the per-user data directory
 (`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
 Windows and macOS), so key bindings (`legaia-input.toml`), options
 (`legaia-options.toml`) and `saves/` stay in one place however the binary was
-started; *Open saves folder* opens it. Right-click or `Shift+Enter` on that
+started; the *Saves folder* button opens it. Right-click or `Shift+Enter` on that
 button (Triangle on a controller), or dropping the file on the window, picks
 a memory card from another emulator (`.mcr`, `.mcd`, `.srm`, DexDrive `.gme`,
 single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
