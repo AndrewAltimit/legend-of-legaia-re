@@ -76,7 +76,8 @@ fn kiss_of_death_lands_what_retail_lands() {
             }
         }
         let va = ACTOR + u32::from(victim) * STRIDE;
-        cpu.mem.wr8(ACTOR + u32::from(caster) * STRIDE + 0x1DD, victim);
+        cpu.mem
+            .wr8(ACTOR + u32::from(caster) * STRIDE + 0x1DD, victim);
         cpu.mem.wr16(va + 0x14C, v.hp);
         cpu.mem.wr16(va + 0x16E, v.flags);
         cpu.mem.wr32(va + 0x10, v.hp_bar_delta as u32);

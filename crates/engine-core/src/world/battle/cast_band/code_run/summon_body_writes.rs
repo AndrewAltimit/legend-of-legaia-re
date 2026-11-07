@@ -745,10 +745,12 @@ impl World {
             self.write_cast_view(s, &v);
             return;
         }
-        let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+        // A whole `FUN_801DD0AC` roll, finisher and all (`0x801DD478`): the
+        // wave trains the spell and fills the victim's spirit on every hit.
+        let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
             return;
         };
-        let mut hit = u32::from(roll) / 3;
+        let mut hit = roll / 3;
         if hit == 0 {
             hit = self.next_rand() % 16 + 16;
         }

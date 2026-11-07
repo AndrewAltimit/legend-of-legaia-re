@@ -567,3 +567,46 @@ fn ozmas_ladder_rolls_train_the_spell() {
         "the ladder's rolls ran the finisher's XP tail"
     );
 }
+
+/// PROT 0929's (Mule) arm 16 wave rolls `FUN_801DD0AC(0x10, 7, seat)` on each
+/// monster it passes (`0x801F7E4C`), and that kernel runs the finisher on
+/// every roll (`0x801DD478`): the wave trains the spell before the fold does.
+#[test]
+fn mules_wave_rolls_train_the_spell() {
+    const MULE: u8 = 0x9B;
+    let mut world = module_code_world();
+    roster_with_spell(&mut world, MULE, 1);
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 9000;
+    world.actors[1].battle.max_hp = 9000;
+    world.actors[1].move_state.world_z = -0x400;
+    world.actors[0].battle.active_target = 1;
+    for i in 2..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    let mut body = legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Mule", 900, 10);
+    body.intel = 400;
+    world.tables.summon_creatures.insert(MULE, body);
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, MULE);
+    let mut struck = false;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let before = world.actors[1].battle.hp;
+        let Some(run) = world.run_cast_module_code(MULE, phase) else {
+            break;
+        };
+        struck |= phase == 16 && world.actors[1].battle.hp < before;
+        if !run.busy || world.casting.module_phase > 16 {
+            break;
+        }
+    }
+    assert!(struck, "the wave reached the monster");
+    assert!(
+        world.casting.module_hit_xp > 0,
+        "the wave's rolls ran the finisher's XP tail"
+    );
+}
