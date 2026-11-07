@@ -830,10 +830,25 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     assert!(p.last_award() > 0);
     let events = p.take_events();
     assert!(events.iter().any(|e| matches!(e, PondEvent::Landed(_))));
-    // The result plate: on the landing frame, counter 0, the award and the
-    // species the fight hooked; it climbs `4` per frame step and holds at
-    // `0x1000` (`FUN_801D5298`).
-    let r = p.catch_result().expect("a landed catch shows its plate");
+    // The result plate waits out the landed fish's lift: no result actor
+    // until the line actor's `+0x22` passes `0xD2` (`FUN_801D4948` sub-state
+    // `4`), which at step `1` is frame `0xD4` counting the landing as the
+    // first; the actor spawned off it counts from the next frame.
+    assert!(p.catch_result().is_none(), "no plate on the landing frame");
+    for f in 2..=LIFT_SEAT_FRAMES + 1 {
+        p.tick(PondInput::default(), 1, 0x80);
+        assert!(
+            p.catch_result().is_none(),
+            "plate during the lift, frame {f}"
+        );
+    }
+    // The seat frame leaves the counter at 0 with the award and the species
+    // the fight hooked; from the next frame it climbs `4` per frame step and
+    // holds at `0x1000` (`FUN_801D5298`).
+    p.tick(PondInput::default(), 1, 0x80);
+    let r = p
+        .catch_result()
+        .expect("the seated result actor shows its plate");
     assert_eq!((r.ramp, r.points, r.species), (0, p.last_award(), id));
     p.tick(PondInput::default(), 3, 0x80);
     assert_eq!(p.catch_result().unwrap().ramp, 12);
