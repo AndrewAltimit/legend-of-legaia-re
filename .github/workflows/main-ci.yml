@@ -487,10 +487,15 @@ jobs:
           fi
           rm -f site/wasm/SOURCE_STAMP.json site/wasm/play/SOURCE_STAMP.json
 
+      # A re-run of this job runs inside the same workflow run, where the
+      # earlier attempt's artifact still exists. With one fixed name the
+      # deploy step then finds two `github-pages` artifacts and refuses to
+      # choose, so each attempt uploads and deploys its own.
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: site/
+          name: github-pages-attempt-${{ github.run_attempt }}
 
       # GitHub's side of a Pages deploy sometimes sits in `syncing_files`
       # well past the action's status poll, which is capped at 10 minutes
@@ -504,6 +509,7 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         with:
           timeout: 600000
+          artifact_name: github-pages-attempt-${{ github.run_attempt }}
 
       - name: Back off before retrying the deploy
         if: steps.deploy1.outcome == 'failure'
@@ -518,6 +524,7 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         with:
           timeout: 600000
+          artifact_name: github-pages-attempt-${{ github.run_attempt }}
 
       - name: Back off before the last deploy attempt
         if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
@@ -531,6 +538,7 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         with:
           timeout: 600000
+          artifact_name: github-pages-attempt-${{ github.run_attempt }}
 
   # -- CI Summary -------------------------------------------------------------
   notify:
