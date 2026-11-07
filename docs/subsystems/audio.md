@@ -3482,9 +3482,34 @@ the disc's CD-XA, with its director on a device-less output that it pulls once a
 vsync of samples a tick, and records the mix from the seed's gate on with the music bus at `0`
 (`LEGAIA_DIAG_AUDIO_WAV`, stopped `20` vsyncs past the action SM's Done band, where the child plays
 on into a turn retail's recording never takes). That recording is mixed into the track render on the
-track's lag, at an offset fitted within one vsync either way and reported, because the gate tick
-stands within a vsync of the state's instant and not on its sample; the score is over the cast's own
-span. `--per-second` prints level and correlation second by second.
+track's lag, at an offset fitted and reported, because the gate tick stands near the state's instant
+and not on its sample; the score is over the cast's own span. `--per-second` prints level and
+correlation second by second.
+
+<a id="the-cast-offset-reaches-a-frame-step"></a>
+**The cast offset reaches a frame step.** The gate is a game-frame boundary, and a fight on a frame
+step of `2` or `3` vsyncs puts the state's instant up to that far from the nearest one. Fitted as one
+shift against what the track leaves of the recording, second by second, the Cort casts sit outside a
+one-vsync reach and hold one shift for every second: `cort_guilty_cross_mid_cast` (step `3`) `1.89`
+vsyncs early, `cort_mystic_shield_mid_cast` (step `2`) `1.45`, `gilium_summon_mid_cast` (step `2`)
+`1.86`. A fit held to one vsync put the cast where its loudest second agreed and left the rest a vsync
+or two off, which read as the ring's cues being wrong. The reach is now the state's frame step
+(`pcm_retail::fit_cast_offset`, the step off `retail_compare_battle::frame_step`). A wider reach can
+also lock a voice the drive model misplaces onto a louder stretch (Zenoir's whole-cast fit prefers
+`+2.4` vsyncs and scores `0.45`), so both reaches are mixed and the one that scores better is kept:
+one alignment parameter, chosen on the score, and printed with the reach it came from.
+
+<a id="the-monaural-states"></a>
+**Five summon states were saved in Monaural.** `theeder`, `zenoir`, `nighto`, `orb` and
+`swordie_summon_mid_cast` carry the options screen's Sound word `0x800846BC = 1` and libsnd's mono
+flag `_DAT_801CE330 = 1`, and every sounding voice in them has `L == R`, the larger of the two sides.
+That is the fold `FUN_80067E9C` and the key-on make after the three pan stages (`lh v1,-0x1cd0(v1)`
+at `0x800682BC`, the `sltu` / `move` pair to `0x800682E8`), and `Spu::mono` is the port's. The
+oracle rendered all of them in stereo. The track render now takes the flag off the state
+(`RetailSeqPosition::mono`), and the retail comparison corpus hands the child the state's Sound word
+(`LEGAIA_SOUND_OPTION`, pinned like the Battle Camera word). The cast recordings came out
+byte-identical with the word set: the cue voices these casts key are centred, so only the score
+moved.
 
 A summon ducks the score to `75` % across the cast, and the track render plays the state's own sequence
 volume, so the channel renders the score under a duck as well: the child writes the audio level its
@@ -3499,14 +3524,14 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 |---|---|---|---|---|
 | `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
-| `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
-| `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
-| `theeder_summon_mid_cast` | `0.701` | `-0.27` dB | `-378` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `11` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)) |
-| `zenoir_summon_mid_cast` | `0.812` | `+1.59` dB | `+725` | the voice within `0.08` s of retail's |
-| `nighto_summon_mid_cast` | `0.973` | `+0.10` dB | `-274` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
-| `orb_summon_mid_cast` | `0.994` | `+0.02` dB | `+246` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
-| `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-243` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
-| `gilium_summon_mid_cast` | `0.852` | `+0.02` dB | `-376` | the voice `8.5` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
+| `cort_mystic_shield_mid_cast` | `0.995` | `+0.00` dB | `-1070` | the cast fits `1.45` vsyncs before its gate ([a frame step](#the-cast-offset-reaches-a-frame-step)) |
+| `cort_guilty_cross_mid_cast` | `0.981` | `-0.01` dB | `-1392` | the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
+| `theeder_summon_mid_cast` | `0.712` | `-0.43` dB | `-1100` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)) |
+| `zenoir_summon_mid_cast` | `0.836` | `+1.43` dB | `-288` | the voice within `0.08` s of retail's; [Monaural](#the-monaural-states) |
+| `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
+| `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
+| `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
+| `gilium_summon_mid_cast` | `0.991` | `+0.02` dB | `-1365` | the voice `6.0` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 
@@ -3565,8 +3590,8 @@ to `max(8, wait / 2)` vsyncs later (`pcm_retail::fit_cast_offset_after_wait`, th
 [cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
 never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
-the applier, not the drive. On the five summon states with a wait the voice lands `-11.0` vsyncs from the
-cast's offset on Theeder, `-13.1` on Nighto, `-8.4` on Orb, `-10.0` on Swordie and `-8.5` on Gilium. These
+the applier, not the drive. On the five summon states with a wait the voice lands `-10.0` vsyncs from the
+cast's offset on Theeder, `-13.1` on Nighto, `-11.7` on Orb, `-11.8` on Swordie and `-6.0` on Gilium. These
 shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
 drive and of the band ahead of the module that the window covers, not emulator variance.
 

@@ -479,6 +479,21 @@ not one length either: from the state to the flash, Theeder's `0x33` runs `7` vs
 first passes after its commit against retail's (the caster's `+0x68` cursor beside `ctx[+0x87C]`), and
 `0x34`'s hold on the caster's `+0x1D9`.
 
+### Why does Theeder's score not subtract out of its recording?
+
+*Status:* open (measured)
+
+`theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
+with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
+to a frame step. What is left is the score, not the cast: fitted window by window as `a * track +
+b * cast`, `b` is `1.0` wherever the cast sounds (the flash cue `0x63` at `0.55` s matches the
+recording's residual band for band above `400` Hz) while `a` holds at `0.5..0.8` everywhere, and the
+residual keeps the score's whole low end (`100..400` Hz, `~25` dB over the engine's cast there). The
+track alone over the first four seconds reads `0.62..0.64` on every pass. The voices the state holds
+pair with the engine's at its stand point, pitch, ADSR and volume. Next: the track's stems
+(`pcm-retail --stems`, `audio-note-fit.py`) on this state's first four seconds, against the same
+track (`2013`) on a stereo state, to name the note or the voice the low end misses.
+
 ## Title / boot / overlays
 
 No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
