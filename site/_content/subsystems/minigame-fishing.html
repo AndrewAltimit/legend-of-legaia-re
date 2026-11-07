@@ -350,7 +350,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
   <table>
     <thead><tr><th>Condition</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td>the line&rsquo;s screen end leaves <code>x = -0x20 .. 0x160</code></td><td>line-break latch</td></tr>
+      <tr><td>the cast&rsquo;s spawn point, projected, leaves <code>x = -0x20 .. 0x160</code></td><td>line-break latch</td></tr>
       <tr><td>hooked and the line record at or past <code>0x899</code></td><td>tension <code>+ step * 300</code>: a fish run far out strains the line by itself</td></tr>
       <tr><td>tension at the ceiling</td><td>one-in-ten roll per frame sets the latch</td></tr>
       <tr><td>latch set with the lure in the water</td><td><strong>line breaks</strong>: one lure is consumed, the LINE BREAK banner converges, the rod recovers</td></tr>
@@ -538,7 +538,7 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <summary>Open: what the port still reconstructs</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Line break.</strong> The ceiling roll, the spent lure, the far-record strain and the no-lure screen after the last lure are ported; the off-screen latch is not.</li>
+        <li><strong>Line break.</strong> The ceiling roll, the spent lure, the far-record strain and the no-lure screen after the last lure are ported, and so is the off-screen latch: on a host drawing through the venue&rsquo;s own camera, a fish that drags the view far enough round that the cast&rsquo;s spawn point leaves the screen breaks the line.</li>
         <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
         <li><strong>Result plate.</strong> The plate waits out the landed fish&rsquo;s lift, which seats it on the lift&rsquo;s frame <code>0xD4</code>; the fish model&rsquo;s own rise is not modelled.</li>

@@ -110,16 +110,17 @@ pub fn fishing_line_screen_prims(
     if world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
         return Vec::new();
     }
-    let view =
-        legaia_engine_minigame_scenes::fishing_venue::venue_view(&world.minigames).or_else(|| {
-            legaia_engine_world_views::camera_view::resolve_field_camera(
-                world,
-                camera,
-                None,
-                scene_center_xz,
-            )
-            .field_view()
-        });
+    let venue = legaia_engine_minigame_scenes::fishing_venue::venue_view(&world.minigames);
+    let venue_camera = venue.is_some();
+    let view = venue.or_else(|| {
+        legaia_engine_world_views::camera_view::resolve_field_camera(
+            world,
+            camera,
+            None,
+            scene_center_xz,
+        )
+        .field_view()
+    });
     // The rod model first: its actor runs ahead of the lure tick, so in a
     // shared bucket its packets are the earlier `AddPrim`s.
     let mut prims: Vec<_> = world
@@ -135,6 +136,7 @@ pub fn fishing_line_screen_prims(
         legaia_engine_minigame_scenes::fishing_venue::fishing_line_frame(
             &mut world.minigames,
             view.as_ref(),
+            venue_camera,
         )
         .and_then(|l| {
             legaia_engine_ui::fishing::line::fishing_line_prim(

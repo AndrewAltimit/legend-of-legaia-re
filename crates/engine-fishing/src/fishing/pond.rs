@@ -61,6 +61,7 @@ impl PondSession {
             rod_actor: None,
             line: None,
             line_latched: false,
+            offscreen_latch: false,
             line_fish_prev: None,
             creak_timer: 0,
             rod_creaks: 0,
@@ -268,6 +269,76 @@ impl PondSession {
         std::mem::take(&mut self.spent_lures)
     }
 
+    /// The lure tick's line-break arm (`0x801D3C0C..0x801D3C64`): the
+    /// `LINE BREAK!` pair, one lure spent, the rod's recover swing, state
+    /// `0x28`.
+    ///
+    /// PORT: FUN_801d26cc (the line-break arm, `0x801D3C0C..0x801D3C64`)
+    fn break_line(&mut self) {
+        self.events.push(PondEvent::Snapped);
+        self.phase = PondPhase::Snapped;
+        self.break_banner = 1;
+        // One lure consumed (`FUN_80042310(lure + 0x9D, 1)`).
+        // REF: FUN_80042310 (the bag consume; the host spends the item)
+        self.spent_lures
+            .push(super::rod_menu::lure_item_id(self.lure));
+        // The break arm starts the rod's recover swing
+        // (`DAT_801d91ac = 10` at `0x801D3C44`).
+        if let Some(rod) = self.rod_actor.as_mut() {
+            rod.recover();
+        }
+    }
+
+    /// [`Self::line_frame`] on a host that projects through retail's own
+    /// camera, which also runs the tail's off-screen test.
+    ///
+    /// The tail projects the cast's spawn point with its height zeroed into
+    /// the packet's rod end (`jal 0x8003D368` at `0x801D3AD4`, before the
+    /// rod tip overwrites it at `0x801D3CF4`) and latches a line break when
+    /// that point's screen `x` is below `-0x20` or at / past `0x161`
+    /// (`0x801D3AF4..0x801D3B2C`). With the lure in the water the latch
+    /// breaks the line that frame instead of drawing it
+    /// (`0x801D3BE8..0x801D3C64`), so a fish that drags the camera far
+    /// enough round loses the line. The latch is sticky from the cast lock
+    /// on: one set in flight breaks the line on the first in-water frame.
+    ///
+    /// The minigames page draws through its own fitted framing, not
+    /// retail's camera, so it calls [`Self::line_frame`] and takes no
+    /// off-screen breaks.
+    ///
+    /// PORT: FUN_801d26cc (the off-screen latch, `0x801D3AF4..0x801D3B2C`)
+    pub fn line_frame_retail(
+        &mut self,
+        project: impl Fn([i32; 3]) -> Option<(i16, i16)>,
+    ) -> Option<crate::fishing_actors::FishingLine> {
+        if !self.line_latched
+            && matches!(
+                self.phase,
+                PondPhase::Flight | PondPhase::Waiting | PondPhase::Hooked
+            )
+            && let Some(lure) = self.lure_actor
+            && self.rod_actor.as_ref().is_some_and(|r| r.tip.is_some())
+        {
+            let (sx, sz) = lure.spawn;
+            // A point the host cannot project (behind its eye) latches
+            // nothing: retail's `RTPS` saturates such a point to an edge of
+            // the `SXY` range, but the port's camera is not trusted to stand
+            // behind the angler on exactly retail's frames.
+            if let Some((x, _)) = project([i32::from(sx), 0, i32::from(sz)])
+                && !(OFFSCREEN_X_MIN..OFFSCREEN_X_END).contains(&x)
+            {
+                self.offscreen_latch = true;
+            }
+            if self.offscreen_latch && self.phase != PondPhase::Flight {
+                self.line_latched = true;
+                self.line = None;
+                self.break_line();
+                return None;
+            }
+        }
+        self.line_frame(project)
+    }
+
     /// This frame's fishing line - the tail of retail's lure tick
     /// `FUN_801D26CC`, which every host calls once per frame after
     /// [`Self::tick`].
@@ -377,6 +448,9 @@ impl PondSession {
                     // The cast lock spawns the rod actor (`jal FUN_80020DE0`
                     // at `0x801CFC48`) and seeds its bend.
                     self.rod_actor = Some(crate::fishing_actors::RodActor::cast());
+                    // The lock clears the line-break latch (`sw zero` to
+                    // `DAT_801D91A4` at `0x801CFBEC`).
+                    self.offscreen_latch = false;
                     self.line_fish_prev = None;
                     self.depth = 0;
                     self.timer = 0;
@@ -544,17 +618,7 @@ impl PondSession {
                 // PORT: FUN_801d26cc (the tension-ceiling break roll and the break arm)
                 let broke = self.gauge.at_max() && self.rng.next_u15().is_multiple_of(10);
                 if broke {
-                    self.events.push(PondEvent::Snapped);
-                    self.phase = PondPhase::Snapped;
-                    self.break_banner = 1;
-                    // One lure consumed (`FUN_80042310(lure + 0x9D, 1)`).
-                    self.spent_lures
-                        .push(super::rod_menu::lure_item_id(self.lure));
-                    // The break arm starts the rod's recover swing
-                    // (`DAT_801d91ac = 10` at `0x801D3C44`).
-                    if let Some(rod) = self.rod_actor.as_mut() {
-                        rod.recover();
-                    }
+                    self.break_line();
                 } else if self.line_record < LAND_RECORD {
                     // Reel-in complete (`record < 0x136`): score the catch.
                     let award = sp.score_for(self.strength);
@@ -738,9 +802,17 @@ pub fn hook_strength(rng: &mut BiosRand, weight: i32, line_record: i32, rod: i32
 /// The departure-scene id that selects the **Vidna** venue (`DAT_801d90d0 =
 /// 1`): the raw CDNAME `#define` of the Sebucus overworld, `map02`.
 pub const VENUE_SCENE_VIDNA: u32 = 0xF4;
+
 /// The departure-scene id that selects the **Buma** venue (`DAT_801d90d0 =
 /// 0`): the raw CDNAME `#define` of the Karisto overworld, `map03`.
 pub const VENUE_SCENE_BUMA: u32 = 0x187;
+
+/// The off-screen latch's band on the spawn point's screen `x`: below
+/// `-0x20` (`slti v0,v0,-0x20` at `0x801D3AFC`) or at / past `0x161`
+/// (`slti v0,v0,0x161` at `0x801D3B18`) latches a line break.
+pub const OFFSCREEN_X_MIN: i16 = -0x20;
+/// See [`OFFSCREEN_X_MIN`]; the band's exclusive end.
+pub const OFFSCREEN_X_END: i16 = 0x161;
 
 /// The venue variant (`DAT_801d90d0`: `0` Buma, `1` Vidna) the fishing
 /// driver's setup state picks from the scene the door warp left.

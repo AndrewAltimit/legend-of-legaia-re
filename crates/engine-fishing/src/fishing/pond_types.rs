@@ -238,6 +238,12 @@ pub struct PondSession {
     pub(super) line: Option<crate::fishing_actors::FishingLine>,
     /// Whether [`Self::line_frame`] has run since the last tick.
     pub(super) line_latched: bool,
+    /// The line-break latch's off-screen value (`DAT_801D91A4 = 3`): the
+    /// cast's spawn point projected outside the frame's `x` band on a
+    /// line frame. Cleared by the cast lock (`0x801CFBEC`), sticky until
+    /// then, and spent by the first in-water line frame
+    /// ([`Self::line_frame_retail`]).
+    pub(super) offscreen_latch: bool,
     /// The fish end's last unclipped screen point (`0x801D9198`), which the
     /// next frame's rod yaw is measured against.
     pub(super) line_fish_prev: Option<(i16, i16)>,

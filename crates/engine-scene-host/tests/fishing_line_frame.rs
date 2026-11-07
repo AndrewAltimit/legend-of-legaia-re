@@ -235,6 +235,81 @@ fn the_line_goes_and_the_rod_recovers_once_the_fight_resolves() {
     assert!(p.rod_actor().is_none(), "the recover swing retires the rod");
 }
 
+/// The lure tick's off-screen latch (`0x801D3AF4..0x801D3B2C`): the cast's
+/// spawn point projected outside `-0x20..0x161` breaks the line on the
+/// in-water frame that sees it, in place of the line packet.
+#[test]
+fn a_spawn_point_driven_off_screen_breaks_the_line() {
+    let mut p = pond();
+    hook(&mut p, (100, 150));
+    let spawn = p.lure_actor().unwrap().spawn;
+    let spawn = [i32::from(spawn.0), 0, i32::from(spawn.1)];
+    // In the band: the line draws.
+    for x in [-0x20i16, 0x160] {
+        tick(&mut p, PondInput::default());
+        assert_eq!(p.phase(), PondPhase::Hooked);
+        let line = p.line_frame_retail(|w| Some(if w == spawn { (x, 120) } else { (100, 150) }));
+        assert!(line.is_some(), "spawn x {x} is on screen");
+    }
+    let _ = p.take_events();
+    // Out of it: the frame breaks the line instead of drawing it.
+    tick(&mut p, PondInput::default());
+    assert_eq!(p.phase(), PondPhase::Hooked);
+    let line = p.line_frame_retail(|w| Some(if w == spawn { (0x161, 120) } else { (100, 150) }));
+    assert!(line.is_none(), "the break frame draws no line");
+    assert_eq!(p.phase(), PondPhase::Snapped);
+    assert_eq!(
+        p.take_events(),
+        vec![legaia_engine_fishing::fishing::PondEvent::Snapped]
+    );
+    assert_eq!(p.take_spent_lures().len(), 1, "one lure spent");
+    assert_eq!(p.rod_actor().map(|r| r.swing), Some(RodSwing::Recover));
+}
+
+/// A latch raised in flight sticks until the lure is in the water, and the
+/// host without retail's camera (`line_frame`) never raises it.
+#[test]
+fn a_latch_raised_in_flight_breaks_the_line_on_landing() {
+    let mut p = pond();
+    let press = PondInput {
+        cast_edge: true,
+        ..Default::default()
+    };
+    tick(&mut p, press);
+    while p.phase() != PondPhase::Power {
+        tick(&mut p, PondInput::default());
+    }
+    while p.cast_power() < CAST_POWER_MAX {
+        tick(&mut p, PondInput::default());
+    }
+    tick(&mut p, press);
+    assert_eq!(p.phase(), PondPhase::Flight);
+    let spawn = p.lure_actor().unwrap().spawn;
+    let spawn = [i32::from(spawn.0), 0, i32::from(spawn.1)];
+    // One flight frame (past the lock, once the rod has a tip) with the
+    // spawn point off the left edge.
+    tick(&mut p, PondInput::default());
+    assert_eq!(p.phase(), PondPhase::Flight);
+    let line = p.line_frame_retail(|w| Some(if w == spawn { (-0x21, 120) } else { (100, 150) }));
+    assert!(line.is_some(), "flight keeps drawing the line");
+    assert_eq!(p.phase(), PondPhase::Flight);
+    while p.phase() == PondPhase::Flight {
+        tick(&mut p, PondInput::default());
+        if p.phase() == PondPhase::Flight {
+            let _ = p.line_frame_retail(|_| Some((100, 150)));
+        }
+    }
+    assert_eq!(p.phase(), PondPhase::Waiting);
+    assert!(p.line_frame_retail(|_| Some((100, 150))).is_none());
+    assert_eq!(p.phase(), PondPhase::Snapped);
+
+    // The same flight through `line_frame` takes no break.
+    let mut q = pond();
+    cast(&mut q);
+    assert!(q.line_frame(|_| Some((-0x100, 120))).is_some());
+    assert_eq!(q.phase(), PondPhase::Waiting);
+}
+
 #[test]
 fn a_held_dpad_side_rolls_the_rod() {
     let mut p = pond();
