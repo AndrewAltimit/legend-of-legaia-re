@@ -746,7 +746,7 @@ pub fn fit_cast_offset_after_wait(
     // grid over it lands on whichever side lobe the grid happens to sample,
     // and a cue tail a few dB under the voice was enough to move it a period
     // (`gilium_summon_mid_cast`, `-5771` to `-5245`). The envelope has no such
-    // lobes; the waveform passes then refine inside one period of it.
+    // lobes; the waveform pass then searches every sample within a block of it.
     let block = ENVELOPE_BLOCK as i64;
     let env = |sample: &dyn Fn(i64) -> f64, from: i64, n: usize| -> Vec<f64> {
         (0..n)
@@ -781,8 +781,9 @@ pub fn fit_cast_offset_after_wait(
             ncc(&cast_env, &ea).total_cmp(&ncc(&cast_env, &eb))
         })
         .unwrap_or(offset);
-    let mid = best(coarse - block, coarse + block, 4);
-    (best(mid - 4, mid + 4, 1), window)
+    // Every sample of the block either side: a coarser step can straddle the
+    // narrow true peak and settle on a side lobe a period off.
+    (best(coarse - block, coarse + block, 1), window)
 }
 
 /// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
