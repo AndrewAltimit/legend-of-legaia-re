@@ -334,6 +334,24 @@ impl PlayWindowApp {
             self.options_state.battle_camera =
                 legaia_engine_system::option_values::BattleCameraOpt::from_word(v);
         }
+        // `LEGAIA_SOUND_OPTION=<0|1>`: the capture's own Sound word
+        // (`0x800846BC`, Stereo / Monaural), pinned the same way. A state
+        // saved in Monaural keys every voice at its larger side, which the
+        // cast channel's recording has to as well.
+        if let Some(v) = std::env::var("LEGAIA_SOUND_OPTION")
+            .ok()
+            .and_then(|v| v.trim().parse::<u8>().ok())
+        {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::OptionsSetting::Sound.pin_bit(),
+            );
+            self.options_state.audio = if v != 0 {
+                legaia_engine_system::option_values::AudioMode::Mono
+            } else {
+                legaia_engine_system::option_values::AudioMode::Stereo
+            };
+        }
         // Push the loaded options into their live consumers (audio downmix)
         // before the loop starts.
         self.apply_options_side_effects();

@@ -129,6 +129,8 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
 pub(crate) const DOME_LEG_MAP_DEFINE: u16 = 0x4C6;
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
+/// The options screen's Sound config word (Stereo `0` / Monaural `1`).
+const SOUND_OPTION: u32 = 0x8008_46BC;
 /// The options screen's Select Attack config word.
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
@@ -543,6 +545,11 @@ pub struct RetailBattle {
     /// saved game-state window, but the save lift does not carry options,
     /// so the seed stamps it (`World::toggles.battle_camera`).
     pub camera_option: u8,
+    /// The options screen's Sound word `0x800846BC` (Stereo `0` / Monaural
+    /// `1`), which libsnd's `SsSetMono` flag follows. Nothing on screen reads
+    /// it; the cast channel's recording does (`audio.md`, "Real retail PCM"),
+    /// so the seed stamps it like the Battle Camera word.
+    pub sound_option: u8,
     /// No HUD widget glide is in flight: every tracked record
     /// `ctx[+0x11B4 + slot * 0xC]` reads `total == 0`, which is what
     /// `FUN_801D9BBC` leaves once a glide has snapped onto its target

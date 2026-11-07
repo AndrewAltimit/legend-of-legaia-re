@@ -1112,6 +1112,7 @@ impl RetailBattle {
                 pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            sound_option: game_anchors::u8_at(ram, SOUND_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             ai_counter: game_anchors::u32_at(ram, 0x801C_8FE4),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {

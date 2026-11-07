@@ -881,6 +881,7 @@ pub(super) fn battle_image(
         "LEGAIA_BATTLE_CAMERA_OPTION",
         battle.camera_option.to_string(),
     ));
+    env.push(("LEGAIA_SOUND_OPTION", battle.sound_option.to_string()));
     // Retail's HUD glides had all landed: the frame shows every plate at its
     // rest seat whatever the replay's own seed-to-phase time was (a seat
     // seeded on its captured ground skips the approach retail spent the
