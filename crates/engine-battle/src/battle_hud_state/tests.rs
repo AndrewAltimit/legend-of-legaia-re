@@ -644,6 +644,21 @@ fn a_held_cast_counts_its_hits_and_opens_as_hit_total() {
     assert_eq!(one.combo.unwrap().style, ComboStyle::Damage);
 }
 
+/// The cluster's word follows the push count `ctx[+0x273]`
+/// (`0x801E8AB0..0x801E8AB8`), not the action: a one-swing strike closes on
+/// `DAMAGE`, its second hit turns it to `HIT` / `TOTAL`.
+#[test]
+fn a_one_hit_melee_reads_damage_and_a_second_hit_reads_hit_total() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::HitTotal), 3);
+    h.push_damage(1, 39);
+    h.land_combo_total(3);
+    let c = h.combo.expect("counted");
+    assert_eq!((c.style, c.hits, c.total), (ComboStyle::Damage, 1, 39));
+    h.push_damage(1, 12);
+    assert_eq!(h.combo.unwrap().style, ComboStyle::HitTotal);
+}
+
 #[test]
 fn subdraw_decoder_reads_a_synthetic_table() {
     let base = 0x801F_0000u32;

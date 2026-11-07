@@ -386,15 +386,19 @@ impl BattleHud {
                 hidden: held,
             });
             c.hits = c.hits.saturating_add(1);
-            // A cast that lands more than one hit counts them like a chain:
-            // `nivora_duel_pre_megaton_press`'s Megaton Press (eleven
-            // wrapper hits) closes on `11 HIT` / `TOTAL 378`, where a
-            // one-hit cast (`battle_gimard_tail_fire_a`'s Tail Fire) shows
-            // `DAMAGE` alone.
-            c.style = if style == ComboStyle::Damage && c.hits > 1 {
+            // The cluster's word is the hit count's, not the action's: the
+            // readout pass draws `DAMAGE` when the count `ctx[+0x273]` reads
+            // `1` and `HIT` / `TOTAL` otherwise (`lbu v1,0x273` / `li v0,1` /
+            // `bne` at `0x801E8AB0..0x801E8AB8`, and again at `0x801E8B64`
+            // before the `HIT` word). So Megaton Press (eleven wrapper hits)
+            // closes on `11 HIT` / `TOTAL 378`, a one-hit cast
+            // (`battle_gimard_tail_fire_a`'s Tail Fire) shows `DAMAGE`, and
+            // so does a monster's one-hit strike (the Ogre's on
+            // `battle_geremi_ogre_strike`'s film reads `DAMAGE 39`).
+            c.style = if c.hits > 1 {
                 ComboStyle::HitTotal
             } else {
-                style
+                ComboStyle::Damage
             };
             c.total = c.total.saturating_add(u32::from(popup.amount));
             if !held {
