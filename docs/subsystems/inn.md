@@ -193,6 +193,18 @@ the restore (the `0x3F` transition above). The restore runs first and
 unconditionally, so a stay is complete without it. The dream scenes themselves
 are not covered by an oracle.
 
+### The night-before stay in Conkram
+
+The Conkram innkeeper (`conc` `P1[9]`) ends a stay with a scene change rather
+than a fade: it sets system flag `0x53C` and loads `CONC3` at tile `(15, 96)`.
+conc3's entry script `P1[0]` spawns the wake-up record `P2[9]` (`44 59`) only
+while `0x53C` is set and `0x5F7` clear. `P2[9]` fades back in, parks the
+innkeeper, Dr. Usha, his companion and the counter relay at the off-map tile
+(`A3 <id> 7F 7F` for `P1[7]` / `P1[8]` / `P1[9]` / `P1[23]`), sets `0x3F9`,
+shows its wake-up page and sets `0x5F7`, so a later entry seats the four
+again. Disc-gated `conc3_inn_arrival_disc` (engine-scene-host) pins both arms;
+the `conc3_field_inn_night` capture holds the post-record end state.
+
 ## The engine-side `InnSession` prompt
 
 `engine-menus::inn` also carries a

@@ -32,6 +32,7 @@ mod chitei2_collapse_beats_disc;
 mod code_lock_doman_disc;
 mod cold_boot_default_party_disc;
 mod cold_seat_walkable_disc;
+mod conc3_inn_arrival_disc;
 mod conc_flag_6de_position_latch_disc;
 mod cort_arena_backdrop_disc;
 mod credits_two_part_bgm_disc;
