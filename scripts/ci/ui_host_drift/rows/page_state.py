@@ -80,4 +80,24 @@ PAGE_STATE_RULES = [
         "every flat band on the PSX canvas (the ending vignettes' letterbox) drew "
         "a row low in the headless pair runs while a real GPU drew it right",
     },
+    {
+        "what": "the dome hub draws through the screen-primitive pass",
+        "path": REPO / "site/js/play-minigames.js",
+        "kind": "contains",
+        "source": "hub.pass.drawRuns(0, (runs.length / 3) | 0);",
+        "why": "a 2D-canvas blit of the hub quads resampled the stretched wall "
+        "tiles off the GPU's texel rule (the wall a column left from x = 288) "
+        "and drew the course card's text lighter: 3.55% of every hub frame "
+        "off the window, on SwiftShader and a real GPU alike",
+    },
+    {
+        "what": "the dome hub draws over the screen primitives, under the text",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "before",
+        "source": "if (!skipDraw) this._drawScreenPrims(rt);",
+        "then": "window.LegaiaPlayMinigames.drawHub(rt, this);",
+        "why": "the hub's layer sat over the GL frame and under the page's "
+        "text, the window's order; drawn inside the minigame frame it would "
+        "go under the screen primitives, and on a field frame under the scene",
+    },
 ]

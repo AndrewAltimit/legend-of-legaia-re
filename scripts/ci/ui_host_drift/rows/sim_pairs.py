@@ -702,6 +702,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["muscle_surface"],
     },
     {
+        "what": "Muscle Dome hub screens, native vs play page - the page "
+        "blitted the hub quads onto a 2D canvas with its own clip, gradient "
+        "and shade, and differed from the window on 3.55% of every hub "
+        "frame. Both hosts draw the one decomposition "
+        "(`minigame_hud::muscle_hub_sprites`): the window through its sprite "
+        "atlas, the page as screen primitives over the hub's own VRAM",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/minigames/muscle_dome.rs",
+                "muscle_hub_sprite_draws",
+            ),
+            "web": (WEB_PLAY_ARENA, "muscle_hub_sprites"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["muscle_hub_sprites"],
+    },
+    {
         "what": "Muscle Dome camera, native vs play page - both hosts draw "
         "the dome under the surface camera's matrix (`DomeCamera::vp_raw`), "
         "never a host-side orbit framing",

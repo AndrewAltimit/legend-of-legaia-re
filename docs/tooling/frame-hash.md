@@ -63,7 +63,8 @@ town01 retail 0042 gl=<hash> ov=<hash> st=<hash> lit=1.000 col=704
 HUD text draw on, `st` the engine's `state_json`. A difference in `st` is the simulation; one
 in `gl` alone is the renderer. `lit` and `col` are the share of non-black pixels and the count
 of colours, off a sample of the frame, for the check below. DOM text on the page, a movie's
-own canvas and a minigame's hub layer are not in it; [`host-pair.mjs`](host-drift.md#the-host-pair-run) composites the last.
+own canvas are not in it. The Muscle Dome's hub screens are: they draw in the GL frame, through
+the screen-primitive pass.
 
 ## What makes agreeing mean something
 
