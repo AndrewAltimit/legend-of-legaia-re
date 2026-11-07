@@ -257,9 +257,14 @@ const LOG_DEPTH_RANGE = 24.0;
  * takes that tie is the window's fill rule. The canvas's drawing buffer runs
  * bottom-up, so its rule hands a flat edge's tie to the row under the GPU's and
  * every sprite draws a row low, its last texel row past the art. A 64th of a stage
- * row up, coarser than the rasteriser's sub-pixel grid, gives the tie back. The 3D
+ * row up gives a textured primitive's tie back on a real GPU; any more shifts the
+ * texels a rotated quad samples (the battle intro's shards). An untextured one
+ * takes an eighth: a 64th rounds back onto the tie on SwiftShader's coarser
+ * sub-pixel grid, where every flat band (the ending vignettes' letterbox, the
+ * slot machine's panels) drew a row low while a real GPU drew it right. The 3D
  * pass draws into a framebuffer object, which agrees with the window already. */
 const PSX_TIE_NDC_Y = 2 / 240 / 64;
+const PSX_TIE_FLAT_NDC_Y = 2 / 240 / 8;
 
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {

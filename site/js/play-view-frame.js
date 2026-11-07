@@ -926,8 +926,13 @@
         const f = new Float32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         const u = new Uint32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         for (let o = 0; o + 12 <= f.length; o += 12) {
-          f[o] += 1 / 320; f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;
-          if (u[o + 10] & 1) { f[o + 2] += 0.5; f[o + 3] += 0.5; }
+          f[o] += 1 / 320;
+          if (u[o + 10] & 1) {
+            f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;
+            f[o + 2] += 0.5; f[o + 3] += 0.5;
+          } else {
+            f[o + 1] -= 1 / 240 - PSX_TIE_FLAT_NDC_Y;
+          }
         }
       }
       this._screenPrims.upload(

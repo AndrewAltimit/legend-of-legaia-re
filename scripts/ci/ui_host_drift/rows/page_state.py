@@ -71,4 +71,13 @@ PAGE_STATE_RULES = [
         "mesh took its link depth, so PSX mode's per-primitive sort was inert "
         "and the sea covered town01's beach off retail's vantage",
     },
+    {
+        "what": "an untextured screen primitive's tie nudge is coarser than SwiftShader's sub-pixel grid",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "contains",
+        "source": "f[o + 1] -= 1 / 240 - PSX_TIE_FLAT_NDC_Y;",
+        "why": "a 64th of a row rounded back onto the tie under SwiftShader, so "
+        "every flat band on the PSX canvas (the ending vignettes' letterbox) drew "
+        "a row low in the headless pair runs while a real GPU drew it right",
+    },
 ]
