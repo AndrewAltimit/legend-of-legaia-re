@@ -239,7 +239,7 @@
     <li><strong>Target confirm is the bar.</strong> Picking an item closes both windows and the target strip at the foot of the screen appears. It is not a widget of its own: it is the active-actor bar, re-opened by the target step and re-pointed per cursor move.</li>
     <li><strong>The magic window</strong> (<code>0x46</code>) is the same frame with spell content: a leading element icon per row, a two-line description (name, then scope), and two gold tabs top right for the highlighted spell&rsquo;s level and MP cost.</li>
   </ul>
-  <p>Both are composed by <code>engine-ui::battle_item_ui</code> through the shared menu-window chrome and drawn by both hosts. The port does not yet draw the element and Ra-Seru icon cells, the world-anchored target name tag or the magic target step&rsquo;s <em>All</em> plate.</p>
+  <p>Both are composed by <code>engine-ui::battle_item_ui</code> through the shared menu-window chrome and drawn by both hosts. The rows, the hand and the description line sit on the pens the list kernel and the placement table give them, in the menu font&rsquo;s ink&nbsp;7 (ink&nbsp;0 for a disabled row); the breadcrumb tabs are the HUD&rsquo;s own trail, not the window&rsquo;s, and the magic rows draw each spell&rsquo;s element or Ra-Seru icon through the same font escape the pause Magic list uses. At target select the pointed member&rsquo;s name tag is the target-select plaque. Still not drawn: the camera&rsquo;s re-frame onto the target and the magic target step&rsquo;s <em>All</em> plate.</p>
 </section>
 
 <section class="doc-section" id="arts-banner" data-doc="arts-announcement-banner-fun_801e2524--fun_801e2650">

@@ -80,6 +80,7 @@
     </tbody>
   </table>
   </div>
+  <p>A neighbour in the same nibble is not a camera arm: <code>4C 37</code> (issued as <code>CC &lt;id&gt; 37</code>) copies the player&rsquo;s position and facing onto another actor - the &ldquo;materialise a parked companion at the player&rdquo; step before a walk-out. A target held at a scripted height rather than on the floor also has that height set to the player&rsquo;s, so it appears level with him.</p>
 </section>
 
 <section class="doc-section" id="nibble-7" data-doc="-">
@@ -169,7 +170,7 @@
     </svg>
     <figcaption>The clip binds on every path that reaches the op - the install pre-run, a cutscene&rsquo;s cross-context poke and a live channel alike. A party member is seated with a depth byte in <code>0x8_</code>, so its clip id resolves through the party locomotion bank; any other depth plays a scene-bank clip.</figcaption>
   </figure>
-  <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
+  <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and binds the clip at the op itself, so a script line that waits for the seated clip to finish waits for the right one, and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
 </section>
 
 <section class="doc-section" id="nibble-cd" data-doc="-">
