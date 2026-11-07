@@ -1985,10 +1985,18 @@ cross-context op. Unit-covered by
 
 **An arced NPC parks the next op aimed at it.** Against a placement the halt-acquire is the
 scripted arc (`World::start_field_script_arc`), and the busy gate is modelled as retail runs
-it: a cross-context op whose target placement is mid-arc holds the record at that op until the
-arc lands (`World::script_arc_live`). `eddoman` `P2[7]` arcs placement `0x16` over 36 frames
-(`C3 16 01 68 63 46 00 24 00`) and then verifies it with `B3 16 0A`; held there, its white
-flash stays up as long as the retail film's.
+it: a cross-context op whose target placement still carries the arc's halt bit holds the record
+at that op until the arc lands (`World::script_arc_halts`). `eddoman` `P2[7]` arcs placement
+`0x16` over 36 frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it with `B3 16 0A`; held
+there, its white flash stays up as long as the retail film's.
+
+The gate reads the bit (`+0x10 & 0x400`, `0x801DE90C`), not the arc. The halt clear `32 <id> 0A`
+is exempt from it (`0x801DE8E0..0x801DE904`) and lowers the bit while the arc helper flies on, so
+the ops after it drive the actor mid-flight (`World::clear_script_arc_halt`). `edson` `P2[0]`
+flies both Seru across its aerial shot on 470- and 370-frame arcs, waits for the 320-frame glide
+(`4C CD`), then clears both halts (`B2 0C 0A`, `B2 0D 0A`) and re-stages them at once: the shot
+lasts the glide, about 300 vsyncs in the retail film, not the arcs (disc-gated
+`edson_aerial_shot_disc`).
 
 **Two more spins hold the record.** Besides the clip end latch (`AD <id> 08`), a record spins on
 an actor's morph envelope ADVANCE bit (`AD <id> 0B`, `+0x62 & 0x800`), which the ramp envelope

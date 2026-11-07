@@ -37,6 +37,11 @@ pub struct FieldScriptArc {
     /// with the player). `None` for a caller outside the channel set (the
     /// cutscene timeline, which parks on the arc instead).
     pub release_channel: Option<u8>,
+    /// The arced actor's halt bit `+0x10 & 0x400`, raised by the acquire.
+    /// The VM prologue's busy gate and the acquire refusal read the bit, not
+    /// the arc: a halt clear `32 <id> 0A` lowers it while the arc flies on,
+    /// and from then on records drive the actor mid-flight.
+    pub halt: bool,
 }
 
 /// One live attached light.

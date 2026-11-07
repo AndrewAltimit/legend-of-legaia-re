@@ -666,18 +666,24 @@ impl World {
                 // frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it
                 // with `B3 16 0A`: holding there is what keeps its white flash
                 // up as long as the retail film does. The halt clear
-                // `32 <id> 0A` is exempt (`0x801DE8E0..0x801DE904`).
+                // `32 <id> 0A` is exempt (`0x801DE8E0..0x801DE904`) and lowers
+                // the bit while the arc flies on, so the ops after it run
+                // mid-flight: `edson` P2[0] clears both Seru arcs
+                // (`B2 0C 0A`, `B2 0D 0A`) and re-stages them at once, and
+                // its aerial shot lasts the camera glide, not the arcs.
                 // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_801D5D60
                 if let Some((_, ci)) = target
-                    && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && !channels[ci].object_bind
                     && let Ok(slot) = u8::try_from(channels[ci].placement_index)
-                    && host.world.script_arc_live(
-                        legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(slot),
-                    )
                 {
-                    tl.frames = tl.frames.saturating_sub(1);
-                    break;
+                    let arced =
+                        legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(slot);
+                    if opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A) {
+                        host.world.clear_script_arc_halt(arced);
+                    } else if host.world.script_arc_halts(arced) {
+                        tl.frames = tl.frames.saturating_sub(1);
+                        break;
+                    }
                 }
                 // An NPC end-latch spin (`AD <id> 08`) re-tests on game frames
                 // only. The placement's anim tick latches `+0x62 & 0x100`
