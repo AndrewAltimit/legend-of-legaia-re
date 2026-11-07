@@ -64,6 +64,8 @@ impl LegaiaRuntime {
         // copy (`play_land_frame_grab`), as the native window does.
         host.world.enable_frame_grab(true);
         host.world.locomotion.follow_terrain_height = true;
+        // Retail's footing glide (`FUN_801D1BA0`), over the step snap.
+        host.world.locomotion.vertical_settle = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;

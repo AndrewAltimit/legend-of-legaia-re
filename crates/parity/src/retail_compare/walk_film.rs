@@ -55,6 +55,7 @@ impl WalkFilm {
         // What both play hosts raise.
         session.host.world.locomotion.leading_edge_wall_probes = true;
         session.host.world.locomotion.follow_terrain_height = true;
+        session.host.world.locomotion.vertical_settle = true;
         session.host.world.npcs.solid = true;
         session.host.world.npcs.animate = true;
         session.host.world.locomotion.run_default =

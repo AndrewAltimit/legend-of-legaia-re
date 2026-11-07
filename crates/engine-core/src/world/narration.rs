@@ -967,11 +967,11 @@ impl World {
                     glide.rate,
                 );
                 let (nx, nz) = (glide.state.world_x, glide.state.world_z);
-                let y = self.sample_field_floor_height(i32::from(nx), i32::from(nz)) as i16;
                 let ms = &mut self.actors[p as usize].move_state;
                 ms.world_x = nx;
                 ms.world_z = nz;
-                ms.world_y = y;
+                // `+0x16` is the settle's, as on the walk-to-tile leg.
+                self.snap_player_y_unless_settling();
                 done
             }
             // No player actor to move: nothing plays the leg out.

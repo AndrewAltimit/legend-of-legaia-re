@@ -1016,10 +1016,11 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         simple_dialogue: bool,
         /// Disable terrain-following: keep the player's Y flat instead of
-        /// snapping each field locomotion step to the floor-height sample
-        /// (`FUN_80019278`) at the new tile. Floor-snap is the retail
-        /// behaviour and the default; pass this to get the old flat-Y walk.
-        /// No effect on the world-map walk.
+        /// gliding it each frame toward the floor-height sample
+        /// (`FUN_80019278`) under it, 12 units a vsync (retail's settle
+        /// `FUN_801D1BA0`). The glide is the retail behaviour and the
+        /// default; pass this to get the old flat-Y walk. No effect on the
+        /// world-map walk.
         #[arg(long, default_value_t = false)]
         flat_y: bool,
         /// Disable retail's three-probe leading-edge wall footprint

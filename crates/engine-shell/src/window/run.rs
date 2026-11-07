@@ -182,9 +182,11 @@ fn apply_launch_toggles(
     // The window lands its drawn frame for a framebuffer-reading `43 12`
     // copy (the ending vignettes' photo grab) - see the redraw's grab.
     session.host.world.enable_frame_grab(true);
-    // Opt-in: snap the player's Y to the per-scene floor height each
-    // locomotion step. Off by default → flat-Y behaviour preserved.
+    // Terrain follow: the player's Y rides the per-scene floor height,
+    // through retail's per-frame footing glide (`FUN_801D1BA0`, 12 units a
+    // vsync) rather than the step snap. `--flat-y` keeps flat Y.
     session.host.world.locomotion.follow_terrain_height = terrain_y;
+    session.host.world.locomotion.vertical_settle = terrain_y;
     // Retail's three-probe leading-edge wall footprint (the `DAT_801f2214`
     // standoff), solid NPCs (the `DAT_801f21b4` actor probes) and the
     // villagers' ambient tail-section-1 wander are all retail

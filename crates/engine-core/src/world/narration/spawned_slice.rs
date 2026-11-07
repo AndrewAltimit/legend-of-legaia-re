@@ -168,17 +168,13 @@ impl World {
                         self.npcs.positions.insert(slot, walk.target);
                     }
                     None => {
-                        let y = self.sample_field_floor_height(
-                            i32::from(walk.target.0),
-                            i32::from(walk.target.1),
-                        ) as i16;
                         if let Some(p) = self.player_actor_slot
                             && let Some(actor) = self.actors.get_mut(p as usize)
                         {
                             actor.move_state.world_x = walk.target.0;
                             actor.move_state.world_z = walk.target.1;
-                            actor.move_state.world_y = y;
                         }
+                        self.snap_player_y_unless_settling();
                     }
                 }
             }
