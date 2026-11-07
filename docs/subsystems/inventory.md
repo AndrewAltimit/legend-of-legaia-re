@@ -227,10 +227,11 @@ Most consumers address the bag by **id**: the pause menu's filtered pages, `GIVE
 
 ### The consumer that indexes by slot
 
-PROT 0941's enemy Steal ([cast-module.md](cast-module.md)) is a rejection sampler over the physical array, and it is the reason the array shape matters. `World::roll_cast_steal` reproduces all four of its rules:
+PROT 0941's enemy Steal ([cast-module.md](cast-module.md)) is a rejection sampler over the physical array, and it is the reason the array shape matters. `World::roll_cast_steal` reproduces its gate and all four of its rules:
 
 | rule | retail | where |
 |---|---|---|
+| one `rand()` gate first: a zero draw takes nothing | `0x801F779C..0x801F77A4` | `cast_arm_ticks::steal_party_draw` |
 | uniform draw over **256 slots**, budget `0x400`, one `rand()` per rejection | `0x801F77C4` loop | `cast_arm_ticks::steal_pick_bag_slot` |
 | accept only `id != 0 && count != 0 && shop price != 0` | `0x801F7884..0x801F78A4` | the price mask `roll_cast_steal` builds from `ShopItemData` |
 | re-draw while `slot < window start` when the second party member is character `4` | `0x801F77E8` arms on `DAT_8007BD10[1]`, floor `*(i16*)0x8007B5EA` | the `min_slot` argument |

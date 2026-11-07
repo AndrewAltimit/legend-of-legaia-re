@@ -1392,7 +1392,13 @@ Notes on individual arms:
   `+0x2C`.
 - **PROT 0940's `0x50` / `0xAE` body is the only routine in the band that
   allocates a battle seat** (the Glare split's clone, seated at
-  `3 + ctx[+1]`, bounded `ctx[+1] < 5`).
+  `3 + ctx[+1]`, bounded `ctx[+1] < 5`). The clone takes the caster's HP
+  (`0x801F8090`) before `0xAE` throws its one `rand()` (`0x801F8134`; `0x50`
+  draws none), so when the coin weakens the caster the clone stands at full HP.
+- **PROT 0956's Water Hazard draws seat by seat**: the `0xD0` wrapper, then the
+  1-in-8 Venom `rand()` (`0x801F78D0`, `0x801F797C`), before the next seat.
+- **PROT 0964's Element Change draws on demand**: one `rand() % 3`, re-drawn
+  only while it equals the last roll `0x801C8FE4` (`0x801F89F0`, `0x801F8A3C`).
 - **PROT 0940's `0xAC` is Cort's Mystic Shield.** It blanks
   `actor_table[3]`'s reaction-clip run through a reassigned `s0`, and stores
   the handle of the effect it spawns into `_DAT_8007BD84` (`0x801F7678`), the

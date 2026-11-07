@@ -381,3 +381,13 @@ The field walk-regen tick `FUN_801D0B90` (PROT 0897) matches `tick_walk_regen` o
 records: the step counter, the HP / MP / AP Walk bumps with their clamps (a current above its cap snaps
 down), a fallen member's bump, and the Incense window's wear-off edge with its event pointer and flag.
 
+The cast arms whose host draws `rand()` for them, each run through its arm off the module image, found four
+draw-order defects. PROT 0941's Steal (`FUN_801F730C`) opens a party victim's draw with a `rand()` gate
+(`0x801F779C`) the port skipped, and a monster robbing a monster raises a line (`"`" + name + the module's
+`0x801F83E0` text) the port left blank. PROT 0940's split (`FUN_801F78B8`) throws its coin only for `0xAE`,
+where the host drew for `0x50` too; it copies the clone's HP off the caster before the coin (`0x801F8090`), so
+a weakened caster left both halves on 1 HP in the port, and it zeroes the weakened caster's MP. PROT 0964's
+Element Change (`FUN_801F88EC`) re-draws only while the draw repeats the last, where the host pre-drew 33. PROT
+0956's Water Hazard (`FUN_801F7298`) draws each seat's damage and then its Venom before the next seat, where the
+host rolled the whole row's damage first. The attack ring's builder `FUN_801D8A88` and step `FUN_801D8D00`
+match.

@@ -441,7 +441,8 @@ image word `0x801F8658` before clearing the busy register.
 `FUN_801DD4B0` or `FUN_801DD6B4`.
 
 What arm 1 does instead splits on the victim's seat. For a **party** seat
-(`< 3`) it rejection-samples the bag at `0x80085958`: `slot = rand() % 0x100`,
+(`< 3`) it draws one `rand()` gate (`0x801F779C`; a zero takes nothing), then
+rejection-samples the bag at `0x80085958`: `slot = rand() % 0x100`,
 index `slot * 2`, accept when the id byte, the count byte and the item table's
 record at `id * 0xC` are all non-zero, up to `0x400` draws; a second inner
 redraw floors the slot against `*(0x8007B5EA)` while `DAT_8007BD10[1] == 4`
