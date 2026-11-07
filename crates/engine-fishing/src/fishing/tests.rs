@@ -1371,6 +1371,47 @@ fn the_catch_plate_waits_for_its_accept_word_and_the_banner() {
     assert_eq!(p.phase(), PondPhase::Idle);
 }
 
+/// Back at the shore, state `0xB`'s lure gate (`FUN_801D712C`) re-points a
+/// spent lure at one still held, and with none held parks state `0x96`, which
+/// leaves the venue on a face-button edge (state `200`).
+#[test]
+fn the_shore_gate_repoints_the_lure_or_parks_the_no_lure_screen() {
+    let mut p = pond();
+    p.lure = 1;
+    // Lure 1 spent, lure 2 still held: re-pointed, the cast loop runs on.
+    assert!(p.shore_lure_gate(|id| i32::from(id == lure_item_id(2))));
+    assert_eq!((p.phase(), p.persist().lure), (PondPhase::Idle, 2));
+    // A cast press on the parked screen casts nothing.
+    assert!(!p.shore_lure_gate(|_| 0));
+    assert_eq!(p.phase(), PondPhase::NoLure);
+    assert!(!p.catch_hud().visible);
+    let cast = PondInput {
+        cast_edge: true,
+        ..Default::default()
+    };
+    p.tick(cast, 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::NoLure);
+    assert!(
+        !p.take_exit_request(),
+        "no face edge in the cast press alone"
+    );
+    p.tick(
+        PondInput {
+            face_edge: true,
+            ..Default::default()
+        },
+        1,
+        CAST_POWER_STEP,
+    );
+    assert!(p.take_exit_request());
+    assert!(!p.take_exit_request(), "drained");
+    // The gate leaves a session away from the shore alone.
+    let mut p = pond();
+    p.phase = PondPhase::Hooked;
+    assert!(p.shore_lure_gate(|_| 0));
+    assert_eq!(p.phase(), PondPhase::Hooked);
+}
+
 /// A broken line parks state `0x28` on the converging pair and returns to
 /// the shore by itself the frame `FUN_801D7528` stops drawing (`0xC8`); the
 /// leave edge does nothing meanwhile.

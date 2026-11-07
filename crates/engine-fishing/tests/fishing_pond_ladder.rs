@@ -163,6 +163,7 @@ fn work_the_lure(p: &mut PondSession, frames: usize) -> Vec<PondEvent> {
                 },
                 cast_edge: false,
                 leave_edge: false,
+                face_edge: false,
                 // One fresh edge on each hold/release transition - the pad
                 // nudge the retail check counts, at the realistic magnitude.
                 edge_bonus: i32::from(f as i32 % HOLD == 0),
@@ -189,6 +190,7 @@ fn fight(p: &mut PondSession, frames: usize) -> Vec<PondEvent> {
                 reel_edge: if f % 8 == 0 { REEL_A } else { 0 },
                 cast_edge: false,
                 leave_edge: false,
+                face_edge: false,
                 edge_bonus: 0,
             },
             1,

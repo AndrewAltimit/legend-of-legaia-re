@@ -538,10 +538,10 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <summary>Open: what the port still reconstructs</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Line break.</strong> The ceiling roll, the spent lure and the far-record strain are ported; the off-screen latch and the no-lure screen after the last lure are not.</li>
+        <li><strong>Line break.</strong> The ceiling roll, the spent lure, the far-record strain and the no-lure screen after the last lure are ported; the off-screen latch is not.</li>
         <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
-        <li><strong>Result plate.</strong> The landed fish&rsquo;s lift is modelled only as the camera reads it; the fish model&rsquo;s own rise and the recast gate on the plate&rsquo;s accept word are not.</li>
+        <li><strong>Result plate.</strong> The plate waits out the landed fish&rsquo;s lift, which seats it on the lift&rsquo;s frame <code>0xD4</code>; the fish model&rsquo;s own rise is not modelled.</li>
         <li><strong>State <code>0x2D</code></strong> has no writer anywhere on the disc; every store to the state word resolves to another value.</li>
       </ul>
     </div>

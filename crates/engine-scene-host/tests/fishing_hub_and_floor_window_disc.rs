@@ -138,3 +138,59 @@ fn the_floor_window_legend_comes_off_the_field_overlay() {
         "both legend strings read off PROT 0897"
     );
 }
+
+/// Back at the shore with the bag's last lure gone, the world's fishing tick
+/// runs the lure gate (`FUN_801D712C` at the end of state `0xB`'s fade) and
+/// parks the no-lure screen (state `0x96`): the hub line is the overlay's own
+/// text, a cast press casts nothing, and a face-button edge leaves the venue
+/// (state `200`).
+#[test]
+fn a_shore_return_with_no_lure_left_parks_the_no_lure_screen_and_leaves() {
+    use legaia_engine_fishing::fishing::PondPhase;
+    let Some(mut host) = host() else {
+        return;
+    };
+    host.load_scene("town01").expect("town01");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .expect("fishing overlay in static map");
+    let raw = host.index.entry_bytes_extended(rec.prot_index).unwrap();
+    let loaded = static_overlay::as_loaded(&raw, rec).unwrap();
+    host.world.mode = SceneMode::Field;
+    host.world.party.inventory.clear();
+    host.world.party.inventory.add(0x9D, 1);
+    host.world.party.inventory.add(0xA0, 1);
+    assert!(host.enter_fishing_from_overlay(&loaded));
+    let text = host.world.minigames.fishing_hub_text.clone().unwrap();
+    assert!(
+        !text.no_lure.is_empty(),
+        "the no-lure line decodes off PROT 0972"
+    );
+    let world = &mut host.world;
+    let phase = |w: &World| w.minigames.fishing.as_ref().map(|s| s.phase());
+    // Cast, lock the meter, and wait for the lure to land.
+    press(world, PadButton::Cross);
+    for _ in 0..64 {
+        if phase(world) == Some(PondPhase::Power) {
+            break;
+        }
+        let _ = world.tick();
+    }
+    press(world, PadButton::Cross);
+    for _ in 0..2000 {
+        if phase(world) == Some(PondPhase::Waiting) {
+            break;
+        }
+        let _ = world.tick();
+    }
+    assert_eq!(phase(world), Some(PondPhase::Waiting), "the lure lands");
+    // The lure goes from the bag; Circle reels the cast back to the shore.
+    world.party.inventory.clear();
+    press(world, PadButton::Circle);
+    assert_eq!(phase(world), Some(PondPhase::NoLure));
+    assert_eq!(world.fishing_hub_lines().len(), 1, "the no-lure line");
+    // A face-button edge leaves the venue.
+    press(world, PadButton::Cross);
+    assert!(world.minigames.fishing.is_none());
+    assert_ne!(world.mode, SceneMode::Fishing);
+}
