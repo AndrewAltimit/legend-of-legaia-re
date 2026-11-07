@@ -52,6 +52,7 @@ mod motion_vm;
 mod mule_wave;
 mod muscle_contest;
 mod nighto_roll;
+mod object_spawn;
 mod ozma_ladder;
 mod passive_sweep;
 mod puera_crystals;

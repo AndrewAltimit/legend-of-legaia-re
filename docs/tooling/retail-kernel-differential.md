@@ -420,8 +420,16 @@ finisher. The encounter counter's scene-entry top-up (`0x8003AC78..0x8003ACB4`, 
 The walk-on dispatcher `FUN_801D1EC4`, idle half, over every field scene's real `.MAP` and fallback window
 with the grid-mark refresh `FUN_80017BEC` run first (`walk_on`), found the map init's fallback stamp
 (`FUN_8003AEB0`, `0x8003AFA8..0x8003B018`) with no port: it ORs `0x400` into every `.PCH` kind-1 tile, 2317
-cells over the disc that the `.MAP` and the refresh leave clear, and the sub-area window sweep reads that bit as
-"owned by the init sweep". The port's dispatch had skipped the `cell & 0x600` filter in its place, which only
-held while those cells went unstamped. The kind-1 arm spawns on any non-zero gate (`0x8003BDF0`), where the port
+cells over the disc that the `.MAP` and the refresh leave clear. The sub-area window sweep reads that bit as
+"owned by the init sweep", though no spawnable object's anchor is among those cells. The port's dispatch had
+skipped the `cell & 0x600` filter in its place, which only held while those cells went unstamped; with both
+stamps in, the filter stops no table tile on the disc. The kind-1 arm spawns on any non-zero gate (`0x8003BDF0`), where the port
 spawned on gate `1` only, and resets the clip base on every hit, gate `0` included. The crossing and re-poll
 arms now run as `walk_on_crossing` / `walk_on_repoll` and match over every trigger tile in both lock states.
+
+The scene-init object sweep `FUN_8003A55C` (`object_spawn`), over the same scenes with the kind-1 lookup live
+beneath it, matches `parse_map_objects` joined with the lookup on all 2291 binds: which objects spawn, the seat,
+the floor rung, the angles and the record. Retail spawns a script context for every bound object; the port
+does not. `object_script_bind_seats` drops a second object with the same record and contact centre (`kor` keeps
+43 of its 55, fifteen scenes lose some), and `spawn_object_channels` then keeps one channel per record, so of
+`koin1`'s two door pieces bound to record 1 at one seat, only one runs the script.

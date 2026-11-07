@@ -37,7 +37,7 @@ const SCRATCH_FLAGS: u32 = 0x1F80_0394;
 const REPOLL: u32 = 0x0008_0000;
 const FALLBACK_LEN: usize = 0x2000;
 
-fn index() -> ProtIndex {
+pub fn index() -> ProtIndex {
     use legaia_engine_scene::vfs::Vfs;
     let vfs = legaia_engine_scene::vfs::DiscVfs::open(std::env::var_os("LEGAIA_DISC_BIN").unwrap())
         .expect("disc");
@@ -53,7 +53,7 @@ fn index() -> ProtIndex {
 /// behind it, built from the same bytes the port's two table readers use.
 /// `None` when the port's kind-0 and kind-1 readers would take their
 /// fallbacks from different places, which no single RAM image can hold.
-fn map_image(index: &ProtIndex, scene: &Scene) -> Option<Vec<u8>> {
+pub fn map_image(index: &ProtIndex, scene: &Scene) -> Option<Vec<u8>> {
     let bytes = scene.field_map_bytes(index).ok()??;
     if bytes.len() < MAP_TRIGGER_FALLBACK_OFFSET {
         return None;
