@@ -573,6 +573,20 @@ impl PlayWindowApp {
                 let world = &mut self.session.host.world;
                 world.battle.prev_action_cleared = true;
                 world.audio.sound_bank_ready = true;
+                // The capture's headings (`LEGAIA_BATTLE_GROUND_SNAP`'s
+                // facing tokens): the replay's rounds need not have turned
+                // each seat where retail's did, and the action framing's yaw
+                // is the counter less the framed seat's heading. A heal
+                // state's caster and patient faced their earlier targets in
+                // `battle_nilboa_amethyst_heal_mid_cast` and stood at `0x800`
+                // in the replay. A seat of the harness: it moves no rule.
+                for s in &sc.battle_ground_snap {
+                    if let (Some(f), Some(a)) =
+                        (s.facing, world.actors.get_mut(usize::from(s.slot)))
+                    {
+                        a.battle.facing_angle = f & 0xFFF;
+                    }
+                }
                 // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
                 // `entries;cursor`): the frames after the gate run on the
                 // ring from where retail's stood, not on the step the walk
