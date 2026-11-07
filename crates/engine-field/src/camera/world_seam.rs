@@ -101,6 +101,14 @@ pub trait CameraWorld {
     }
     /// Whether a cutscene timeline owns the frame.
     fn cutscene_timeline_active(&self) -> bool;
+    /// Whether a script record that holds the player has staged an op-`0x45`
+    /// shot into the camera globals - the concurrent helper records the
+    /// ending vignettes and boss arrivals run, which frame through the follow
+    /// arm rather than the modal timeline's. The user's follow knobs stay out
+    /// of such a shot exactly as they stay out of a timeline's.
+    fn scripted_shot_holds_camera(&self) -> bool {
+        false
+    }
     /// Whether a scripted arc drives the follow camera.
     fn script_arc_follow_camera(&self) -> bool;
     /// Whether the per-frame camera-zone re-query flag is raised.

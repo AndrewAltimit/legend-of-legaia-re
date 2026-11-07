@@ -749,8 +749,10 @@ impl PlayWindowApp {
         // rectangle moves.
         let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
-                && !self.field_debug_camera,
+            legaia_engine_world_views::field_view_window::retail_framing(
+                &self.session.host.world,
+                &self.session.camera,
+            ) && !self.field_debug_camera,
         );
         self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());

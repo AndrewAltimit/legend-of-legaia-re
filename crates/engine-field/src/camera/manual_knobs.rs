@@ -43,7 +43,9 @@ impl Camera {
     }
 
     /// Whether the user's follow-camera knobs steer this frame: free-roam
-    /// field, with no cutscene timeline owning the camera. The same gate
+    /// field, with no cutscene timeline owning the camera and no
+    /// player-holding record's scripted shot in the globals
+    /// ([`CameraWorld::scripted_shot_holds_camera`]). The same gate
     /// [`Self::reset_for_free_roam`] and the field locomotion step run on,
     /// so the camera is the player's exactly when the character is.
     pub fn follow_knobs_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
@@ -51,6 +53,7 @@ impl Camera {
             world.scene_mode(),
             legaia_engine_mode::mode::SceneMode::Field
         ) && !world.cutscene_timeline_active()
+            && !world.scripted_shot_holds_camera()
     }
 
     /// Swing [`Self::manual_orbit`] by `radians` (compass sense), when the

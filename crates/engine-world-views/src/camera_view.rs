@@ -64,7 +64,9 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 /// ([`FOLLOW_PIVOT_LIFT`]), so the character holds its screen point through
 /// both. None of them reaches a cutscene shot -
 /// [`resolve_field_camera`] hands a running timeline the
-/// [`FieldCameraFrame::Cutscene`] arm, which reads none of the four.
+/// [`FieldCameraFrame::Cutscene`] arm, which reads none of the four, and a
+/// player-holding helper record's shot, which frames through this arm, runs
+/// with all four at identity (`World::scripted_shot_holds_camera`).
 ///
 /// The eye trio is the live `_DAT_800840B8/BC/C0` the ease walks, divided by
 /// the 6x world scale retail folds into its camera rotation - eye X
@@ -77,9 +79,16 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 ///
 /// REF: FUN_801DBE9C, FUN_801DAB90
 pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
+    // A player-holding record's op-`0x45` shot frames through this arm too
+    // (`World::scripted_shot_holds_camera`), and none of the four knobs
+    // reaches a scripted shot.
+    if world.scripted_shot_holds_camera() {
+        return follow_view_with_knobs(cam, world, 1.0, 0.0, 0.0, 1.0);
+    }
     follow_view_with_knobs(
         cam,
         world,
+        cam.distance.scale(),
         cam.manual_orbit,
         cam.manual_tilt,
         cam.manual_zoom,
@@ -96,6 +105,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
 fn follow_view_with_knobs(
     cam: &Camera,
     world: &World,
+    depth_scale: f32,
     manual_orbit: f32,
     manual_tilt: f32,
     manual_zoom: f32,
@@ -103,10 +113,10 @@ fn follow_view_with_knobs(
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
     let s = CUTSCENE_WORLD_SCALE;
-    // The coarse distance preset scales the eye-back depth alone (its
-    // historical shape, which a `Far` capture baseline pins); the continuous
-    // wheel zoom and the tilt re-pivot the pose about the character below.
-    let depth_scale = cam.distance.scale();
+    // The coarse distance preset (`depth_scale`) scales the eye-back depth
+    // alone (its historical shape, which a `Far` capture baseline pins); the
+    // continuous wheel zoom and the tilt re-pivot the pose about the
+    // character below.
     let (pitch_units, yaw_units, tr_eye) = if cam.zone.active {
         let g = &cam.globals.0;
         (
@@ -399,8 +409,13 @@ pub fn resolve_field_camera(
         // section-3 records compose for the player's tile, eased per region.
         // The user's follow knobs stay out of it (see
         // `follow_view_with_knobs`).
+        let depth_scale = if world.scripted_shot_holds_camera() {
+            1.0
+        } else {
+            cam.distance.scale()
+        };
         if cam.zone.active
-            && let Some(v) = follow_view_with_knobs(cam, world, 0.0, 0.0, 1.0)
+            && let Some(v) = follow_view_with_knobs(cam, world, depth_scale, 0.0, 0.0, 1.0)
         {
             return FieldCameraFrame::WorldMapWalk {
                 view: world_map_view_from_follow(&v, az),
@@ -569,6 +584,43 @@ mod tests {
             (d(z.eye()) - d(base.eye()) * 0.5).abs() < 1e-2,
             "zoom halves the eye distance"
         );
+    }
+
+    /// A player-holding helper record's op-`0x45` shot frames through the
+    /// follow arm with every user knob at identity: the `Far` preset left on
+    /// it scaled the ending vignettes' authored eye depth (`edteien`'s first
+    /// shot showed the whole island). Once the record ends the knobs are back.
+    #[test]
+    fn a_helper_records_scripted_shot_reads_none_of_the_knobs() {
+        use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+        let mut w = world_with_player(300, -200);
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        cam.globals.0[0] = 416;
+        cam.globals.0[1] = 75;
+        cam.globals.0[5] = 10389;
+        let retail = field_follow_view(&cam, &w).unwrap();
+        cam.distance = legaia_engine_camera::camera_distance::CameraDistance::Far;
+        cam.manual_orbit = 0.4;
+        cam.manual_zoom = 0.7;
+        let free = field_follow_view(&cam, &w).unwrap();
+        assert_ne!(free, retail, "free roam: the knobs steer");
+        w.camera
+            .state
+            .params
+            .push(legaia_engine_vm::field::CameraParam {
+                slot: 5,
+                value: 10389,
+            });
+        let mut helper = CutsceneTimeline::new(vec![0x4A, 0x40, 0x00], 0);
+        helper.stepped = true;
+        w.field_vm.helper_contexts.push(helper);
+        assert!(w.scripted_shot_holds_camera());
+        assert!(!cam.follow_knobs_live(&w));
+        assert_eq!(field_follow_view(&cam, &w).unwrap(), retail);
+        assert!(crate::field_view_window::retail_framing(&w, &cam));
+        w.field_vm.helper_contexts.clear();
+        assert_eq!(field_follow_view(&cam, &w).unwrap(), free);
     }
 
     /// Both knobs at identity return the retail pose bit for bit - no
