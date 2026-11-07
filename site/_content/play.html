@@ -1481,6 +1481,8 @@ div.play-vis-head { cursor: default; }
       installXaBanks();
       /* ?minigame=<sub_id>: open that minigame once the disc is up. */
       if (minigamePending) startPendingMinigame();
+      /* ?cast=<spell>: open a battle and cast it once the disc is up. */
+      if (castPending) startPendingCast();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -2469,6 +2471,20 @@ div.play-vis-head { cursor: default; }
     level: embedQuery.has('level') ? parseInt(embedQuery.get('level'), 10) : null,
     lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
   } : null;
+  /* `?cast=<spell id>[&target=<seat>][&scene=<label>][&embed=1]`: open a
+   * battle straight off the disc load and cast that spell in it - the
+   * magic page embeds this, so a Seru's whole cast (the creature, the
+   * module's effect layer, its camera) plays through this runtime, the same
+   * battle every other fight here runs. `debug_seed_inflight_cast` hands
+   * the spell to the lead (engine actor 0) on the first command prompt, and
+   * `debug_force_battle` opens the scene's first rollable formation (the
+   * native `LEGAIA_BATTLE_INFLIGHT` + forced-encounter seams). `target` is a
+   * retail seat: `3` the first monster (the default), `0` the lead. */
+  const castPending = embedQuery.has('cast') ? {
+    spell: parseInt(embedQuery.get('cast'), embedQuery.get('cast').startsWith('0x') ? 16 : 10),
+    target: embedQuery.has('target') ? parseInt(embedQuery.get('target'), 10) : 3,
+    scene: embedQuery.get('scene') || 'map01',
+  } : null;
   /* `?xwpreview=1`: the expansion workbench's 3D preview frames this page
    * (js/play-expansion-live.js); it shows the picture alone, as `embed=1`. */
   if (embedQuery.get('embed') === '1' || embedQuery.get('xwpreview') === '1') {
@@ -2487,6 +2503,21 @@ div.play-vis-head { cursor: default; }
     lift();
     window.addEventListener('load', lift);
   }
+  function startPendingCast() {
+    const req = castPending;
+    if (!req || isNaN(req.spell) || !runtime) return;
+    enter(req.scene);
+    const rt = runtime;
+    try {
+      /* A party that outlives the cast, so the fight is the spell's. */
+      if (typeof rt.cheat_apply === 'function') rt.cheat_apply('level', 99, '');
+      rt.debug_seed_inflight_cast(0, req.spell & 0xFF, isNaN(req.target) ? 3 : req.target);
+      if (!rt.debug_force_battle(-1)) console.warn('cast launch: no formation in ' + req.scene);
+    } catch (e) { console.warn('cast launch', e); }
+    canvas.focus();
+  }
+  window.__playCastAgain = startPendingCast;
+
   function startPendingMinigame() {
     const req = minigamePending;
     minigamePending = null;

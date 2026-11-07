@@ -1201,6 +1201,58 @@ tint) is a JS-side re-draw (`MeshView.setTrail` -> the renderer's
 Disc-gated oracle: `crates/web-viewer/tests/arts_view_real.rs` (bank coverage, arts-table
 resolution, voice pools, and the `.glb` export's animation bank).
 
+## Keyframe playback on the viewer pages (`pose_sampler`)
+
+The characters, arts, magic, NPC and shop pages pose one body at a time through
+`site/js/mesh-view.js` (`MeshView`). Two retail facts set how it plays a clip.
+
+**The rate.** The battle anim tick `FUN_80047430` advances a body's 12.4
+cursor by `(step * actor[+0x21D] * entry[+0x78]) >> 1` a battle frame of `step`
+vsyncs ([battle-actor-rendering.md](battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)):
+at the normal `+0x21D = 8` that is `rate / 4` keyframes a vsync, `15 * rate` a
+second, whatever the frame step. A retail film holds it: Vahn's rate-`1` idle
+(9 keyframes) steps its cursor `8` sixteenths every 2-vsync frame and loops in
+36 vsyncs (`dolk_gimard`'s `rates.csv`, seat 0, clip 0). The battle-form clips on
+the characters and arts pages, and their `.glb` timelines, play at that rate.
+Only a Slowed actor's idle (`>> 2`) runs at half of it. A summon's clips stay
+at half the law on the magic page: under the cast's load the battle frame
+runs 5 to 7 vsyncs with the step clamped at 4, so a retail film reads
+Zenoir's rate-`1` clip one keyframe every 5 to 7 vsyncs.
+
+**Between keyframes.** Retail blends: the decoder `FUN_8004998C` draws the
+cursor's keyframe blended toward the next by the cursor's low nibble
+([monster-animation.md](../formats/monster-animation.md#playback)). The view
+has two readings, both through the WASM `PoseSampler`
+([`pose_sampler`](../../crates/web-viewer/src/pose_sampler.rs)) over
+`legaia_engine_battle_vm::battle_pose_blend`, so the blend is the engine's:
+
+| Reading | What it draws | Default |
+|---|---|---|
+| Smooth | The blend at a continuous position, re-posed every display frame; angles on the decoder's short arc with its Euler-flip retry, so no part swings the long way across `0` / `4096`. | On (an enhancement) |
+| Retail stepping | The retail cursor, moved once a battle frame (2 vsyncs) and decoded at its sixteenth. | One toggle away |
+
+The choice is one per visitor (`legaia-anim-smooth` in `localStorage`), shared
+by every page; each page's "smooth" box flips it (`MeshView.attachSmoothToggle`).
+The field-form ANM records on the characters page go through the same sampler,
+so their retail reading is the battle decoder's, not the field blender's
+(`FUN_8001BE80`, which parts from it at exactly half a turn).
+
+## Seru-magic viewer and the cast in battle (`summon_view`)
+
+`LegaiaSummons` (`site/magic.html`) decodes each cast's summon-creature record
+out of `summon.dat` and plays its keyframe clips: the creature alone. A cast in
+a fight is also the cast module's effect layer - the spawn records, emitters,
+fades, washes, CLUT cycles, tints - plus its camera and its cry, and all of that
+is the module's code ([cast-module.md](cast-module.md#what-the-port-runs)),
+which needs a battle to run in. So the page's "Watch the whole cast in battle"
+button frames the play page's runtime with `play.html?cast=<id>&target=<seat>&embed=1`:
+on the disc load the page enters `map01` (or `scene=`), raises the party's level,
+seeds the cast on engine actor 0 (`debug_seed_inflight_cast`, the native
+`LEGAIA_BATTLE_INFLIGHT` seam) and opens the scene's first formation
+(`debug_force_battle`). The frame boots off the shared disc cache, as the
+minigames page's Muscle Dome frame does, and runs with the visitor's play-page
+options. What the engine leaves out of a module is what the frame leaves out.
+
 ## Equipment loadout viewer (`equipment_view`)
 
 The `equipment loadout` form on `site/characters.html`, and the only surface
@@ -1652,6 +1704,7 @@ reference TIMs sitting in other PROT entries.
 | [`sentinel_placements`](../../crates/web-viewer/src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
 | [`player_anm`](../../crates/web-viewer/src/player_anm.rs) | Player-ANM corpus + record decode exports. |
+| [`pose_sampler`](../../crates/web-viewer/src/pose_sampler.rs) | `PoseSampler` - a clip's between-keyframe pose, smooth or at the retail cursor, for `MeshView`. |
 | [`packet_color`](../../crates/web-viewer/src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-field::packet_color`. |
 | [`pad_bindings`](../../crates/web-play/src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
 | [`summon_view`](../../crates/web-viewer/src/summon_view.rs) | `LegaiaSummons` - the Seru-magic summon viewer. |

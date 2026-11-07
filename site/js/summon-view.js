@@ -31,7 +31,10 @@
 (function () {
   'use strict';
 
-  /* FUN_80047430 advances rate/8 keyframes per 60 Hz tick. */
+  /* The law (FUN_80047430) is rate/4 keyframes a vsync, but a summon plays
+   * under the cast's load: the battle frame runs 5 to 7 vsyncs with the frame
+   * step clamped at 4, so a retail film reads Zenoir's rate-1 clip at one
+   * keyframe every 5 to 7 vsyncs. Half the law sits in that band. */
   const fpsForRate = (rate) => (rate > 0 ? 7.5 * rate : 15);
 
   /* Per-element accent, used for the card chips only. */
@@ -39,6 +42,9 @@
     earth: '#b08a4a', water: '#4a8fd0', fire: '#d05a3a', wind: '#5ab98a',
     thunder: '#d0bb3a', light: '#d9d4c0', dark: '#8a5ad0', neutral: '#8a8aa0',
   };
+
+  /* Spell ids whose cast module is a null stub (PROT 0926 for 0x98). */
+  const NO_CAST_MODULE = new Set([0x98]);
 
   const esc = window.escapeHtml;
 
@@ -85,6 +91,8 @@
       /* Null = use the WASM default. Overridable so the framing can be swept
        * and measured against the rendered pixels rather than tuned by eye. */
       this.frameOutlierK = null;
+      /* Whether the in-engine battle frame is open (openBattle). */
+      this.battleOpen = false;
       try {
         this.fitAll = window.localStorage.getItem(FIT_KEY) === '1';
       } catch (e) { /* private mode */ }
@@ -225,6 +233,16 @@
       this.playSequence();
       /* A decoded cast is on the canvas - the .glb download can act on it. */
       if (this.els.glbBtn) this.els.glbBtn.disabled = false;
+      /* Id 0x98's module (PROT 0926) is a stub with no tick arm in retail
+       * (docs/subsystems/cast-module.md): nothing would play. */
+      const castable = !NO_CAST_MODULE.has(spellId);
+      if (this.els.battleBtn) {
+        this.els.battleBtn.disabled = !castable;
+        this.els.battleBtn.title = castable ? (this.els.battleBtn.dataset.title || '')
+          : 'This cast has no module in the game - its slot is a stub with no tick arm, so a battle would show nothing.';
+      }
+      /* A battle already open follows the card: cast the new spell there. */
+      if (this.battleOpen && castable) this.openBattle();
       /* Highlight the active card. */
       document.querySelectorAll('.summon-card-playing')
         .forEach((el) => el.classList.remove('summon-card-playing'));
@@ -372,8 +390,55 @@
           v.radius = b[3] * FRAME_SLACK;
         }
       }
-      v.onFrame = () => this._follow();
+      v.onPose = () => this._follow();
       this._follow();
+    }
+
+    /* The whole cast, in the engine. The model above is the creature's own
+     * keyframes; a fight's cast is also the module's effect layer (beams,
+     * rings, flashes, washes, CLUT cycles, tints), its camera and its cry,
+     * all of it the cast module's code (docs/subsystems/cast-module.md). So
+     * this frames the play page's runtime with `?cast=`: the same battle the
+     * play page fights, on map01's first formation, with the lead casting
+     * the spell through the native `LEGAIA_BATTLE_INFLIGHT` seam. The frame
+     * loads the disc from the shared cache, as the minigames page's Muscle
+     * Dome frame does. A cure (light element) targets the lead. */
+    openBattle() {
+      const f = this.els.battle;
+      if (!f || this.currentId == null) return;
+      const st = this.state || {};
+      const q = new URLSearchParams({
+        cast: '0x' + this.currentId.toString(16),
+        target: st.element === 'light' ? '0' : '3',
+        embed: '1',
+      });
+      this.battleOpen = true;
+      f.hidden = false;
+      if (this.els.battleNote) this.els.battleNote.hidden = false;
+      if (this.els.battleAgain) this.els.battleAgain.hidden = false;
+      if (this.els.battleClose) this.els.battleClose.hidden = false;
+      f.src = 'play.html?' + q.toString();
+      f.addEventListener('load', () => { try { f.focus(); } catch (e) { /* cross-origin */ } }, { once: true });
+    }
+
+    /* Cast again in the open frame: a fresh battle on the same runtime. */
+    castAgain() {
+      const f = this.els.battle;
+      if (!f || !this.battleOpen) return;
+      const w = f.contentWindow;
+      if (w && typeof w.__playCastAgain === 'function') w.__playCastAgain();
+      else this.openBattle();
+    }
+
+    closeBattle() {
+      const f = this.els.battle;
+      this.battleOpen = false;
+      if (!f) return;
+      f.removeAttribute('src');
+      f.hidden = true;
+      if (this.els.battleNote) this.els.battleNote.hidden = true;
+      if (this.els.battleAgain) this.els.battleAgain.hidden = true;
+      if (this.els.battleClose) this.els.battleClose.hidden = true;
     }
 
     /* Bake the current cast's summon model + every phase clip (as named glTF
@@ -421,6 +486,11 @@
       gallery: ids.gallery ? $(ids.gallery) : null,
       grid: ids.grid ? $(ids.grid) : null,
       glbBtn: ids.glb ? $(ids.glb) : null,
+      battle: ids.battle ? $(ids.battle) : null,
+      battleBtn: ids.battleBtn ? $(ids.battleBtn) : null,
+      battleAgain: ids.battleAgain ? $(ids.battleAgain) : null,
+      battleClose: ids.battleClose ? $(ids.battleClose) : null,
+      battleNote: ids.battleNote ? $(ids.battleNote) : null,
     };
     const app = new SummonViewerApp(els);
     /* .glb download: the current cast's summon model + its phase clips,
@@ -457,6 +527,12 @@
         if (msg) setTimeout(() => { els.glbBtn.textContent = prev; }, 1500);
       });
     }
+    if (els.battleBtn) {
+      els.battleBtn.dataset.title = els.battleBtn.title;
+      els.battleBtn.addEventListener('click', () => app.openBattle());
+    }
+    if (els.battleAgain) els.battleAgain.addEventListener('click', () => app.castAgain());
+    if (els.battleClose) els.battleClose.addEventListener('click', () => app.closeBattle());
     const fitToggle = ids.fit ? $(ids.fit) : null;
     if (fitToggle) {
       fitToggle.checked = app.fitAll;
