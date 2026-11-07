@@ -51,6 +51,11 @@ pub type CueVoice = ((i16, i16), u16, (u16, u16));
 pub struct CueProbe {
     pub ids: Vec<u16>,
     pub keyed: BTreeMap<u16, Vec<CueVoice>>,
+    /// The state's libsnd monaural flag (`_DAT_801CE330 == 1`). Retail folds a
+    /// cue voice to its larger side in the key-on chain itself, so its shadow
+    /// registers read `L == R`; the port folds at the mix (`Spu::mono`), so its
+    /// registers keep the pan, and the probe folds them to compare.
+    pub mono: bool,
 }
 
 /// Key the probe's ids through the settled session's director.
@@ -70,7 +75,15 @@ pub fn probe<S: AudioSink>(session: &mut BootSession<S>, audio: &mut EngineAudio
                     .iter()
                     .zip(&before)
                     .filter(|(v, b)| v.key_on_count() != **b)
-                    .map(|(v, _)| ((v.vol_left, v.vol_right), v.pitch, v.adsr_cfg.raw))
+                    .map(|(v, _)| {
+                        let vols = if p.mono {
+                            let m = v.vol_left.max(v.vol_right);
+                            (m, m)
+                        } else {
+                            (v.vol_left, v.vol_right)
+                        };
+                        (vols, v.pitch, v.adsr_cfg.raw)
+                    })
                     .collect();
                 out.sort();
                 out
@@ -227,6 +240,9 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         }
         let probe = CueProbe {
             ids: ids.clone(),
+            mono: ram
+                .get(0x1C_E330..0x1C_E332)
+                .is_some_and(|b| i16::from_le_bytes([b[0], b[1]]) == 1),
             ..Default::default()
         };
         // The listening run hands the probe back filled.

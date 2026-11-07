@@ -3389,7 +3389,13 @@ differs is a cue that sounds different: another bank open, another tone, another
 
 Every static cue of every ordinary scene reads alike, the bank residency included. What it found is one
 level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a cue past `0x3FFF`
-(`0x4B63` on the rows that reach it), where the port clamped. What remains is not a defect:
+(`0x4B63` on the rows that reach it), where the port clamped. And one voice rule: a one-shot pass stops
+its voice before programming it, which cancels a key-on the same cue staged there a pass earlier
+([sfx-table](../formats/sfx-table.md#voice-allocation-one-shots-descend-from-23-sustained-cues-ascend-from-7)),
+so a field row with more voices than the limit's two keeps only its last two passes. The port keyed every
+pass that resolved; `jouina`..`jouind`, `jiji`, `rugi`, `uru` and `kor5` now read alike. A state saved
+in Monaural folds each cue voice to its larger side in retail's key-on chain and at the port's mix, so
+the probe folds the port's registers to compare. What remains is not a defect:
 
 - A row past the end of a scene's runtime bank. Retail reads whatever follows the table, and the port
   stops at its own bound, so the last row of a scene's run disagrees.
@@ -3401,7 +3407,7 @@ level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a 
 `monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already
 written. These read alike but for a state in the battle loader (slot `2` not open yet, as
 `v0_1_battle_loading_tetsu` shows beside `v0_1_battle_start_tetsu`), the reward cue `0x50`,
-whose bank the port stages on demand, and the `map01` arts states captured under the Monaural option.
+whose bank the port stages on demand.
 
 The engine side takes the rows as retail's RAM holds them, so the run checks the port's `+4` writes
 apart: it prints each seat's category byte at node `+0x80` against `monster_sound_category`, the rule
