@@ -62,6 +62,8 @@ const every = (from, to, step, b) => { const t = []; for (let n = from; n <= to;
 export const SCENES = {
   town_walk: { scene: 'town01', ticks: 300, every: 30, hold: walk },
   map_walk: { scene: 'map01', ticks: 300, every: 30, hold: walk },
+  /* A scene with a ground-fog bank (the Ravine), for `--mode fog_bloom`. */
+  fog_walk: { scene: 'keikoku', ticks: 85, every: 10, hold: walk }, /* the walk leaves the scene at about tick 90 */
   menu: { scene: 'town01', ticks: 960, every: 30, taps: menuTaps() },
   dialog: { scene: 'town01', ticks: 600, every: 30, talk: { tick: 30, slot: 0 }, taps: every(120, 590, 40, 'Cross') },
   shop: { scene: 'bylon', ticks: 420, every: 15, shop: { tick: 30, idx: 0 }, taps: [[90, 'Cross'], [150, 'Down'], [200, 'Cross'], [260, 'Circle'], [320, 'Circle']] },
@@ -125,6 +127,9 @@ const MODES = {
   no_lighting: { native: ['--no-dynamic-lighting'], boxes: [], unboxes: ['play-dyn-light'] },
   no_fog: { native: ['--no-volumetric-fog'], boxes: [], unboxes: ['play-ground-fog'] },
   no_fade: { native: ['--no-occlusion-fade'], boxes: [], unboxes: ['play-see-through'] },
+  /* The two passes that default off, on for both hosts: the window has no switch that turns
+   * either on, so its run reads them from the options file in its own working directory. */
+  fog_bloom: { native: [], options: 'volumetric_fog = true\nbloom = true\n', boxes: ['play-ground-fog', 'play-bloom'] },
 };
 
 function nativeRun(engine, name, sc, mode, dir, opts) {
@@ -147,6 +152,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.shop) env.LEGAIA_CAPTURE_SHOP = `${sc.shop.idx}@${sc.shop.tick}`;
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
+  if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
   const r = spawnSync(engine, a, { env, cwd, encoding: 'utf8', timeout: 1200000 });
   if (r.status !== 0) console.error(`[host-pair] native ${name}/${mode}: exit ${r.status} ${r.signal || ''}\n${(r.stderr || '').slice(-1500)}`);
   return fs.readdirSync(dir).filter((f) => /^tick_\d+\.png$/.test(f)).sort();

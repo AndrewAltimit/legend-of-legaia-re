@@ -1370,8 +1370,11 @@ scripts/ci/host-pair.mjs --site <site> --engine target/release-test/legaia-engin
 
 `--mode` takes `retail`, `enhanced`, or `enhanced` with one pass off on both
 hosts (`no_ssao`, `no_lighting`, `no_fog`, `no_fade`), which splits a pixel
-difference by the pass behind it. `LEGAIA_SSAO_VIEW=1` draws the AO term alone
-on both sides.
+difference by the pass behind it, or `fog_bloom`, the two passes that default
+off turned on for both hosts. The window has no switch that turns either on, so
+that run writes them into the options file of its own working directory; the
+`fog_walk` scene (the Ravine) carries a fog bank for it. `LEGAIA_SSAO_VIEW=1`
+draws the AO term alone on both sides.
 
 | Side | How it runs |
 |---|---|
@@ -1469,6 +1472,7 @@ Traps, each of which has produced a false drift report:
 | play clock | Counted per claimed tick (`World::count_play_tick`), so two hosts paired by engine frame show one `TIME`; a free-running host is ahead by the ticks it ran. |
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
+| real-GPU page frames | `--gl egl` on an NVIDIA GB10 drops every textured draw from scattered page frames: the slot cabinet, a venue, a battle stage come back black for one frame while untextured lines, the 2D layers and the trace agree, and which frames moves with `--every`. The same pairs on SwiftShader agree to a few tenths of a percent. A pair that fails on isolated frames with the trace agreeing is re-run on SwiftShader before it is read as drift. |
 | startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
 | startup hang | A native child at 0 CPU that never maps is waiting on a wedged input-method server; scripted windows opt out of XIM ([below](#a-native-child-that-hangs-before-its-window-maps)). |
 
