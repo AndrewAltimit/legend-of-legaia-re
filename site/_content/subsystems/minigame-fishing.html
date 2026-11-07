@@ -554,6 +554,12 @@ power % = power * 100 &gt;&gt; 12</code></pre>
   <p>In flight the lure travels on the locked power until the power is spent. In the water it moves by a pull that presses set: Cross and Square set different strengths, and the pull fades each frame until it drops out. A line reeled in below the landing distance returns the angler to the shore with nothing, which is why a weak throw comes straight back.</p>
 </section>
 
+<section class="doc-section" id="no-lure" data-doc="the-no-lure-screen">
+  <h2>Running out of lures</h2>
+  <p>Every time the angler comes back to the shore, the game checks the tackle: if the equipped lure is gone it switches to one the bag still holds. Only a broken line spends a lure, so the check only bites after the last one snaps. With nothing left it shows the &ldquo;lost the lure&rdquo; line, and any face button leaves the venue.</p>
+  <p>The port runs the same check on the native window, the play page and the minigames page. The line is drawn as a hub line; the panel behind it is not drawn yet.</p>
+</section>
+
 <section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <p>Every state, the cadence ring, the fish-weight registers, the rod pose and cull, the sky strip, the floor buffer, the full RAM map and the port&rsquo;s kernel table are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-fishing.md</code></a>.</p>
