@@ -573,20 +573,26 @@ impl PlayWindowApp {
                 let world = &mut self.session.host.world;
                 world.battle.prev_action_cleared = true;
                 world.audio.sound_bank_ready = true;
-                // The capture's headings (`LEGAIA_BATTLE_GROUND_SNAP`'s
-                // facing tokens): the replay's rounds need not have turned
-                // each seat where retail's did, and the action framing's yaw
-                // is the counter less the framed seat's heading. A heal
-                // state's caster and patient faced their earlier targets in
-                // `battle_nilboa_amethyst_heal_mid_cast` and stood at `0x800`
-                // in the replay. A seat of the harness: it moves no rule.
-                for s in &sc.battle_ground_snap {
-                    if let (Some(f), Some(a)) =
-                        (s.facing, world.actors.get_mut(usize::from(s.slot)))
-                    {
-                        a.battle.facing_angle = f & 0xFFF;
-                    }
-                }
+                // The capture's ground (`LEGAIA_BATTLE_GROUND_SNAP`): each
+                // seat's live pair and heading. The replay's rounds need not
+                // have turned or walked a seat where retail's did, and the
+                // action framing's yaw is the counter less the framed seat's
+                // heading. A heal state's caster and patient faced their
+                // earlier targets in `battle_nilboa_amethyst_heal_mid_cast`
+                // and stood at `0x800` in the replay. The pairs stand with
+                // the headings: a strike's attacker re-faces every pass onto
+                // its target's body pair, which the target's heading turns,
+                // so a heading seated on a replay's pair moved the attacker's
+                // bearing off retail's (`battle_dolk_drake_ghost_strike`'s
+                // drake stood `15` units off, and Vahn's retail heading
+                // swung its bearing a further `30`). A seat of the harness:
+                // it moves no rule.
+                let snaps: Vec<_> = sc
+                    .battle_ground_snap
+                    .iter()
+                    .map(|s| legaia_engine_capture::ground_snap::GroundSnap { body: None, ..*s })
+                    .collect();
+                let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
                 // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
                 // `entries;cursor`): the frames after the gate run on the
                 // ring from where retail's stood, not on the step the walk

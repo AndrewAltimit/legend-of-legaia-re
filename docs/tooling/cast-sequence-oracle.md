@@ -279,11 +279,12 @@ would have drifted, and the release also answers the two capture-band polls the 
 held (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`), which nothing
 else answers once the drive stops: a state saved inside `0x6F`
 (`battle_map01_gomboo_steal_mid_cast`) otherwise parks the band there for the whole
-run, and the release also stands every seat on the capture's heading (the facing
-tokens of `LEGAIA_BATTLE_GROUND_SNAP`), because the action framing's yaw is the
-counter less the framed seat's heading and the replay's rounds need not have turned
-a seat where retail's did (`battle_nilboa_amethyst_heal_mid_cast`'s two monsters stood
-at `0x800`, the film `.795` to `.866`); and the score keeps the recording's first action only
+run, and the release also stands every seat on the capture's ground, its live pair
+and heading (`LEGAIA_BATTLE_GROUND_SNAP`, `ground_snap::snap_battle_ground` with no
+body pair), because the action framing's yaw is the counter less the framed seat's
+heading and the replay's rounds need not have turned or walked a seat where retail's
+did (`battle_nilboa_amethyst_heal_mid_cast`'s two monsters stood at `0x800`, the film
+`.795` to `.866`); and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
 capture that starts inside the strike loop. The first action is the one the first
@@ -293,6 +294,20 @@ that turn's Done band before any frame, and the cut does not count it. A strike'
 second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
+
+<a id="the-headings-stand-with-their-pairs"></a>
+
+The headings stand with their pairs. A strike's attacker re-faces every pass onto its
+target's body pair, which the target's heading turns about its live pair, so a heading
+seated on the replay's pair moved the attacker's bearing off retail's: in
+`battle_dolk_drake_ghost_strike` the drake stood `15` units off its captured pair, and
+Vahn's captured heading `145` swung the framing's yaw a further `30` units round
+(`.876` with no heading seated, `.814` with headings alone, `.964` with pairs and
+headings). `battle_balden_devil_pump_strike` (`.898`, `.842`, `.920`) had its whole row
+up to `168` units off. `battle_vell_nighto_49_strike` (`.741`, `.697`, `.688`) is the
+case where the heading was right and the frame step was not: its films read low until
+the frame's draw load drove the step
+([the frame step](../subsystems/battle-stage-camera.md#a-frames-draw-load)).
 
 <a id="the-frames-after-the-gate-run-on-the-captures-ring"></a>
 
