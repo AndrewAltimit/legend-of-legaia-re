@@ -1365,6 +1365,12 @@ Notes on individual arms:
   (`capture_module_walks`): a leg held the module on phase `0` for the whole
   walk and left arm 1 a two-tick pass, which paired every walk frame against
   one engine tick and missed both voice cues by up to 51 ticks.
+- **The Steal's framing style.** Arm 2 stores `ctx[+0xD] = 0` ahead of its
+  case 6 on every pass (`0x801F7B44`) and the `1` back after it on its pass
+  (`0x801F7BF8`), so the hold frames tight behind the thief on style `0`. No
+  arm clears the style at exit (the module's `0xB9` body does, `0x801F72CC`),
+  so the Done band's case 6 frames on style `1`, half a turn round
+  (`capture_exit_clears_style` keys on the action).
 - **The Steal's way out of reach.** On arrival arm 1 turns the caster to
   `FUN_80019B28(victim, caster)`, its back to the victim, and steps it along
   that heading by its playing clip's stride (`*(+0x22C)+0x4C` entry `+0xC`, the

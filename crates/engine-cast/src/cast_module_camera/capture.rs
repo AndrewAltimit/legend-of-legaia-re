@@ -400,9 +400,12 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// `ctx[+0x0D]` that state `0x70` stores `1` on every pass. PROT 0935, 0936,
 /// 0937, 0939 and 0962 hold no `sb zero,0xd`, so their Done band's case 6 frames
 /// from half a turn round (`teien_berserker__spore_gas`'s `0x51` endpoint reads
-/// `ctx[+0x6DA] - facing + 0x800`).
-pub fn capture_exit_clears_style(entry: u32) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+/// `ctx[+0x6DA] - facing + 0x800`). PROT 0941's Steal (`0x51`) zeroes it
+/// only through its arm 2 (`0x801F7B44`) and stores the `1` back on that arm's
+/// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
+/// body clears it on its last arm (`0x801F72CC`).
+pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
+    !matches!(entry, 935 | 936 | 937 | 939 | 962) && !(entry == 941 && action == 0x51)
 }
 
 /// The module-resident countdown word a directed capture body gates its arms

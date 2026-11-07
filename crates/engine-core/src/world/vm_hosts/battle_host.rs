@@ -471,10 +471,17 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.module_pass(World::capture_stager_tick)
     }
     fn capture_exit_clears_style(&self) -> bool {
-        self.world
-            .casting
-            .module_running_entry
-            .is_none_or(legaia_engine_cast::cast_module_camera::capture_exit_clears_style)
+        // The caster's queued action `+0x1DF`: the band has let go of
+        // `capture_spell` by the time the exit reads this.
+        let action = self
+            .world
+            .actors
+            .get(usize::from(self.world.battle_ctx.active_actor))
+            .and_then(|a| a.battle.params.first().copied())
+            .unwrap_or(0);
+        self.world.casting.module_running_entry.is_none_or(|e| {
+            legaia_engine_cast::cast_module_camera::capture_exit_clears_style(e, action)
+        })
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
