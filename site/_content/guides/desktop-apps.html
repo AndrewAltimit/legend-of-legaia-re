@@ -188,6 +188,26 @@
   <p><kbd>Esc</kbd> <strong>twice</strong> quits. The first press only shows <em>Press Esc again to quit</em> at the bottom left, so a stray key does not lose an unsaved game; save in the game first.</p>
 
   <h3 id="port-toggles">Display toggles and the F12 panel</h3>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The F12 panel's four pages in order. F12, the question-mark key or Select plus Start opens Settings; Tab, L1 or R1 steps to Cheats, then Scenes, then Keys, and on round to Settings. The game is held still while the panel is open; Esc, F12, Circle or Start closes it.">
+      <defs><marker id="da-f12-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="22">F12 / ? / Select+Start opens; Tab, L1 or R1 steps; Esc, F12, Circle or Start closes. The game holds still.</text>
+      <rect class="dg-node-accent" x="20" y="40" width="190" height="64" rx="5"/>
+      <text class="dg-label" x="115" y="64">Settings</text><text class="dg-sub" x="115" y="82">every launcher row, live</text>
+      <rect class="dg-node" x="240" y="40" width="190" height="64" rx="5"/>
+      <text class="dg-label" x="335" y="64">Cheats</text><text class="dg-sub" x="335" y="82">the play page's cheat list</text>
+      <rect class="dg-node" x="460" y="40" width="190" height="64" rx="5"/>
+      <text class="dg-label" x="555" y="64">Scenes</text><text class="dg-sub" x="555" y="82">go to any town or field</text>
+      <rect class="dg-node" x="680" y="40" width="180" height="64" rx="5"/>
+      <text class="dg-label" x="770" y="64">Keys</text><text class="dg-sub" x="770" y="82">toggle keys and bindings</text>
+      <path class="dg-edge" d="M210 72 H238" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge" d="M430 72 H458" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge" d="M650 72 H678" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge-dim" d="M770 104 V128 H115 V106" marker-end="url(#da-f12-ah)"/>
+      <text class="dg-edge-label" x="442" y="142" text-anchor="middle">and round again</text>
+    </svg>
+    <figcaption>The panel&rsquo;s pages. <em>Scenes</em> takes your party and bag to the picked scene, seated as the play page seats a picked scene; it refuses on the title, in a menu, a fight, a movie or a minigame, and says why.</figcaption>
+  </figure>
   <figure class="screenshot">
     <img src="../img/desktop/port-settings.jpg" width="960" height="720" alt="The F12 panel over a dimmed town on its Settings page: fullscreen, camera distance, reduce flashing, the lighting rows, fog, see-through walls, free-angle movement and the volumes, with the focused row's help below" loading="lazy">
     <figcaption>The settings page, the panel's first: Up / Down pick a row, Left / Right change it and <kbd>Delete</kbd> puts it back on its default, with the game held still and the change showing behind the panel at once. It writes the same <code>legaia-options.toml</code> as the launcher. It carries every launcher row but <em>Look and feel</em> and the window size, the gameplay tweaks and battle tuning among them, under a heading naming the row's group; the launcher's own rows change the game live too, and the launcher remembers them for the next Play.</figcaption>
