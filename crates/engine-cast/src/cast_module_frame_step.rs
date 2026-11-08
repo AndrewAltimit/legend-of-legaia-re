@@ -283,6 +283,28 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x76, &[]),
     // dark_typhoon
     (0xAA, &[(1, 4), (2, 4), (3, 4), (4, 3), (5, 4), (6, 4)]),
+    // The boss casts, off their harvest states (`chitei2_cort_pre_*`,
+    // `garmel_zeto_pre_*`, `nilboa_koru_pre_*`, `--caster 3`), read as above.
+    // guilty_cross: arm 5 (the cut back) splits `2` / `3` near evenly and
+    // keeps the ordinary step
+    (0x37, &[(1, 4), (2, 4), (3, 4), (4, 4)]),
+    // call_wave: arm 1 is too short to read
+    (0x55, &[(2, 4), (3, 3)]),
+    // blade_breath, thunder_needle, gigaton_press: a lone Vahn's arm 1 runs
+    // the ordinary `2`, the breath and the hit `4`; thunder needle's hit
+    // mostly runs `3`, and on the ring after arm 3's `4`
+    (0xA2, &[(3, 4), (4, 4)]),
+    (0xA3, &[(3, 4)]),
+    (0xA4, &[(3, 4), (4, 4)]),
+    // ultra_charge
+    (0xA5, &[(1, 4)]),
+    // mystic_shield: the shield's last arms draw the party alone
+    (
+        0xAC,
+        &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 2), (7, 2)],
+    ),
+    // mystic_circle
+    (0xB7, &[(1, 4), (2, 4), (3, 3), (4, 4)]),
 ];
 
 /// The step retail ran module phase `phase` of the capture cast `spell` at:

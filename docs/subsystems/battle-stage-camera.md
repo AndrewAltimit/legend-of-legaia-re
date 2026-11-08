@@ -1573,6 +1573,15 @@ Death Game is held at the ordinary step. Retail runs its dice arms at `1` and `3
 those steps the port's arms 3 and 5 score `.94` to `.79` and `.99` to `.78`, so its
 bodies still count per pass something retail counts per vsync.
 
+The boss casts filmed off their harvest states (Cort's Guilty Cross, Mystic Shield and
+Mystic Circle, Zeto's Call Wave, Koru's Blade Breath, Thunder Needle, Gigaton Press and
+Ultra Charge) carry rows read the same way. Their whole-screen arms run `4` where the
+port's ordinary step was `2` for Koru's lone Vahn and `3` for a full party, and the
+cost those arms leave in the ring also carries into the Done band: Koru's `0x51`
+tails gain most of the lift. Two arms keep the ordinary step because their reading
+lost to it: Guilty Cross's arm 5, which retail splits between `2` and `3`, and Thunder
+Needle's hit, mostly `3` in retail but run straight after arm 3's `4`.
+
 <a id="what-the-arm-step-table-is"></a>
 
 **What the arm step table is.** One recording per cast (`party_basic_attack_vs_gobu_gobu`),
