@@ -1059,6 +1059,88 @@ fn three_actor_talk_switch_suppressed_by_the_release_hold() {
     assert_eq!(world.field_warp_words().1, 0, "the latch was spent");
 }
 
+/// The release hold follows the record, not its last box (`FUN_80039B7C`):
+/// the depth `_DAT_801C6EA4+0xA` stays up while a modal record runs on
+/// behind a closed box, and `_DAT_8007B6B4 = 0x10` lands when the record
+/// ends. `town01`'s Tetsu scene closes its last box 400 vsyncs before its
+/// `0x21`; a retail capture reads the word `16` on the vsync after the `0x21`.
+#[test]
+fn the_release_hold_fires_when_the_record_ends_not_at_its_last_box() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
+    let mut world = talk_world_with_participants();
+    let bytes = vec![0x1F, b'a', 0x00, 0x48];
+    let mut tl = CutsceneTimeline::new(bytes.clone(), 0);
+    tl.dialog = Some(legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
+        std::sync::Arc::new(bytes),
+        0,
+    ));
+    world.cutscene.timeline = Some(tl);
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, 0, "no hold under the box");
+
+    // The box closes; the record runs on, the depth stays up.
+    world.cutscene.timeline.as_mut().unwrap().dialog = None;
+    for _ in 0..4 {
+        world.tick_script_release_hold();
+        assert_eq!(world.field_warp_words().1, 0, "the record is still live");
+    }
+
+    // The record's `0x21`: the hold, once.
+    world.cutscene.timeline = None;
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, SCRIPT_RELEASE_HOLD_FRAMES);
+    world.release_post_load_hold();
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, 0, "the latch was spent");
+}
+
+/// A stepped helper record counts in the depth as the modal timeline does,
+/// and a helper that has not yet run a slice does not.
+#[test]
+fn the_release_hold_waits_for_a_stepped_helper_record() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
+    let mut world = talk_world_with_participants();
+    world.dialog.script_yield_latch = true;
+    world.dialog.script_engaged_prev = true;
+    let mut helper = CutsceneTimeline::new(vec![0x21], 0);
+    helper.stepped = true;
+    world.field_vm.helper_contexts.push(helper);
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, 0, "the helper holds the depth");
+    world.field_vm.helper_contexts.clear();
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, SCRIPT_RELEASE_HOLD_FRAMES);
+}
+
+/// A scene load tears the old contexts down without their release arm, and
+/// nothing but the runner clears the latch: the system channel's next pass
+/// at depth `0` fires it (`FUN_801DA51C`, `0x801DA78C..0x801DA7BC`), over the
+/// post-load hold. A player still locked keeps the channel from running.
+#[test]
+fn a_latch_across_a_scene_load_fires_on_the_first_unlocked_tick() {
+    use legaia_engine_field::field_warp_tile::{POST_WARP_HOLD_FRAMES, SCRIPT_RELEASE_HOLD_FRAMES};
+    let mut world = talk_world_with_participants();
+    world.dialog.script_yield_latch = true;
+    world.seat_map_install_tail();
+    assert_eq!(world.field_warp_words().1, POST_WARP_HOLD_FRAMES);
+
+    world.actors[0].move_state.flags |= 0x0008_0000;
+    world.tick_script_release_hold();
+    assert_eq!(
+        world.field_warp_words().1,
+        POST_WARP_HOLD_FRAMES,
+        "a locked player keeps the system channel off"
+    );
+    assert!(world.dialog.script_yield_latch, "and the latch up");
+
+    world.actors[0].move_state.flags &= !0x0008_0000;
+    world.tick_script_release_hold();
+    assert_eq!(world.field_warp_words().1, SCRIPT_RELEASE_HOLD_FRAMES);
+    assert!(!world.dialog.script_yield_latch, "the latch is spent");
+}
+
 /// The **player's** request route: a Square press, through `World::set_pad`.
 ///
 /// Retail reads the newly-pressed word `_DAT_8007B874` AND packed bit `0x80`
