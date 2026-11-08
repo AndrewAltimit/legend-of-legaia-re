@@ -154,3 +154,70 @@ fn conc_hall_walk_keeps_one_room_ladder() {
         "the hall's ladder stays installed"
     );
 }
+
+/// The retail capture `autorun_room_mask_walk.lua` took on
+/// `conc_field_card_boot`: latched `0x9` in the start building, the player
+/// poked into the corridor north of the hall and walked by pad down column
+/// 55 through it. Retail holds mask `0x9`, the live ladder `[0, 256, 512,
+/// 768, ..]` and the tile window `[-10, -6, 10, 10]` on every hall tile; the
+/// port's former per-tile refresh installed the hall instead.
+#[test]
+fn conc_walk_into_the_hall_keeps_the_start_latch() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+    host.enter_field_scene("conc", 0)
+        .expect("enter_field_scene('conc')");
+    host.world.toggles.live_gameplay_loop = true;
+    host.world.locomotion.follow_terrain_height = true;
+    let mut cam = Camera::default();
+    cam.reset_globals_for_scene_entry();
+    let step = |host: &mut SceneHost, cam: &mut Camera, pad: u16| {
+        camera_before_world_tick(cam, &mut host.world, None);
+        host.world.set_pad(pad);
+        let _ = host.world.tick();
+        camera_after_world_tick(cam, &mut host.world, false);
+    };
+    for _ in 0..60 {
+        step(&mut host, &mut cam, 0);
+    }
+    // The card state's seat, which latches its building.
+    assert!(host.debug_seat_standing(2274, 12506));
+    for _ in 0..60 {
+        step(&mut host, &mut cam, 0);
+    }
+    let latched = host.world.flags.extra_flags;
+    assert_eq!(latched & (HALL | WEST_ROOM), WEST_ROOM, "start building");
+    let ladder = host.world.terrain.floor_height_lut;
+    let window = cam.zone.view_window;
+    // The poke: no re-centre.
+    let slot = host.world.player_actor_slot.expect("player") as usize;
+    {
+        let a = &mut host.world.actors[slot];
+        a.move_state.world_x = 7152;
+        a.move_state.world_z = 12256;
+        a.physics.world_x = 7152;
+        a.physics.world_z = 12256;
+    }
+    let mut hall_tiles = 0;
+    for _ in 0..400 {
+        step(&mut host, &mut cam, PadButton::Up.mask());
+        let ms = &host.world.actors[slot].move_state;
+        let (tx, tz) = (tile(ms.world_x), tile(ms.world_z));
+        if (46..56).contains(&tx) && (100..124).contains(&tz) {
+            hall_tiles += 1;
+            assert_eq!(host.world.flags.extra_flags, latched, "tile ({tx},{tz})");
+            assert_eq!(host.world.terrain.floor_height_lut[..4], ladder[..4]);
+            assert_eq!(cam.zone.view_window, window);
+        }
+    }
+    eprintln!("[ran] conc hall walk-in: {hall_tiles} frames on hall tiles");
+    assert!(hall_tiles > 100, "the walk crosses the hall");
+}

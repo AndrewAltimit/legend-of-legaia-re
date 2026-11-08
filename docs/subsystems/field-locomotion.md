@@ -854,7 +854,13 @@ A walk does not rewrite the mask. A five-form reference scan of every code image
 - the zone queries through `FUN_801DE3E0`: the MAN load (`0x8003B800`), `[4C 38]`, `[4C 39]`, `[4C C4]`, the warp landing (`0x801D1FF4`, at the destination halved) and the leader swap;
 - the player tick `FUN_801D1344` per frame, only while scratchpad bit 22 is raised (`0x801D17E4..0x801D1830`, at `(coord + 0x40) >> 7`).
 
-So the mask names the room the player last *landed* in. That matters where two rooms' boxes overlap. `conc`'s southern hall (type 2, tiles `x 45..56`, `z 99..123`) shares its west and east edge columns with type-3 boxes, and those columns are open floor. A mask holding both bits makes the selector install the hall on one pass and its neighbour on the next, for as long as the player stands there: rungs 1..3 jump by 256 / 512 / 1280 units a pass. Retail never builds that mask from a walk; the port's former per-tile refresh did, and with the free-roam camera drawing the whole map every tier of the town jumped with the ladder. Port: `World::requery_region_mask_per_frame`, `World::zone_query_region_mask`; regression `crates/engine-scene-host/tests/conc_room_ladder_latch_disc.rs`.
+So the mask names the room the player last *landed* in.
+
+A retail capture agrees: `conc_field_card_boot` (latched `0x9` in its start building), the player poked into the corridor north of `conc`'s southern hall and walked by pad down column 55 through the whole hall, holds `0x9` on every hall tile (whose boxes give `0x5`), with the floor ladder and tile window unchanged ([`autorun_room_mask_walk.lua`](../../scripts/pcsx-redux/autorun_room_mask_walk.lua); the port, on the same poke and walk, reads the same three).
+
+The hall's own install (ladder with swaying rungs 1 and 2, window `F6 FA 0A 0A`) therefore runs only from a latch taken inside it - a card load or a battle return there - since no door, arrival or scripted move lands in it.
+
+That matters where two rooms' boxes overlap. `conc`'s southern hall (type 2, tiles `x 45..56`, `z 99..123`) shares its west and east edge columns with type-3 boxes, and those columns are open floor. A mask holding both bits makes the selector install the hall on one pass and its neighbour on the next, for as long as the player stands there: rungs 1..3 jump by 256 / 512 / 1280 units a pass. Retail never builds that mask from a walk; the port's former per-tile refresh did, and with the free-roam camera drawing the whole map every tier of the town jumped with the ladder. Port: `World::requery_region_mask_per_frame`, `World::zone_query_region_mask`; regression `crates/engine-scene-host/tests/conc_room_ladder_latch_disc.rs`.
 
 #### The walk-on dispatcher `FUN_801D1EC4`
 
