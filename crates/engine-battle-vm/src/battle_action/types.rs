@@ -1014,10 +1014,15 @@ pub struct BattleActionCtx {
     /// Kernel: [`crate::battle_cast_census::effect_child_hit`].
     pub cast_readout_cursor: u8,
     /// `[+0x273]` - the damage-number ring's pushes this action: every hit
-    /// that reaches the melee damage body (`0x801EDDE4`) and every
-    /// effect-child hit (`0x801E1918`). Zeroed by the action seed
-    /// (`0x801E2C3C`); the combo readout's Max Hits fold reads it
-    /// ([`crate::battle_value_readout::fold_combo_records`]).
+    /// that reaches the melee damage body (`0x801EDDE4`), every effect-child
+    /// hit (`0x801E1918`) and every popup a cast module pushes through
+    /// `FUN_801F44A0` (`0x801F4518`, beside its own wrapper roll). Zeroed by
+    /// the action seed (`0x801E2C3C`); the combo readout's Max Hits fold
+    /// reads it ([`crate::battle_value_readout::fold_combo_records`]). The
+    /// round-open status tick `FUN_801E752C` counts its pushes too
+    /// (`0x801E7748`), but the Max Hits fold never sees them, since the next
+    /// action's seed zeroes the count first; the port does not carry that
+    /// site.
     pub readout_pushes: u8,
     /// `DAT_8007BD14` - the string total the melee kernel last landed on its
     /// target's HP (`0x801EEA78`), a battle-overlay global carried here because

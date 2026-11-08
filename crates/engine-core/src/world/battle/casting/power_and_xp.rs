@@ -320,6 +320,12 @@ impl World {
         }
         self.accrue_spirit_gauge(target, roll.min(u32::from(u16::MAX)) as u16);
         self.finisher_struck(target);
+        // The module pushes the roll's popup through `FUN_801F44A0`, whose
+        // tail counts it (`ctx[+0x273] += 1` at `0x801F4518`). Only the Max
+        // Hits fold reads the count, on a party Attack, so a cast's pushes
+        // never reach a record.
+        // REF: FUN_801F44A0 (`0x801F4518`)
+        self.battle_ctx.readout_pushes = self.battle_ctx.readout_pushes.wrapping_add(1);
         Some(roll)
     }
 
