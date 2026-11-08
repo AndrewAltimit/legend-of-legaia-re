@@ -158,8 +158,11 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x4F, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
     // power_up
     (0x52, &[(1, 4), (2, 4), (3, 3)]),
-    // big_wave
-    (0x56, &[(5, 4), (6, 4), (7, 3), (8, 4)]),
+    // big_wave: arm 7 (the wave's crest) runs `4` on both of its films,
+    // Zeto's (`garmel_zeto_pre_big_wave`) and Slippery's
+    // (`battle_jou_slippery_v3_big_wave_mid_cast`); arm 8 splits by fight
+    // (`3` and `4`) and keeps `4`
+    (0x56, &[(5, 4), (6, 4), (7, 4), (8, 4)]),
     // v_windhash
     (0x57, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
     // cross_beam
