@@ -43,6 +43,9 @@ pub struct EngineObs {
     /// Each partition-1 placement's heading (retail space) and position,
     /// keyed by its retail flat MAN index (`N0 + slot`).
     pub npc_facings: BTreeMap<u16, (i16, i16, i16)>,
+    /// The same for a placement with no surfaced position: where it stands
+    /// by its MAN seat. `LEGAIA_RC_FACING_DUMP` lists these; no channel scores them.
+    pub npc_seated_facings: BTreeMap<u16, (i16, i16, i16)>,
 }
 
 /// Records which track the field VM starts.
@@ -653,18 +656,27 @@ pub(super) fn sample_engine(
             );
         }
     }
-    // Every placement: a live position when one has surfaced, otherwise its
-    // MAN seat (a script-only placement never surfaces one, and `FUN_8003A1E4`
-    // seats its actor there all the same).
     let npc_facings = n0
         .map(|n0| {
-            let live = world.npcs.positions.iter().map(|(&slot, &p)| (slot, p));
-            let seated = spawn_placements
+            world
+                .npcs
+                .positions
+                .iter()
+                .map(|(&slot, &(x, z))| {
+                    let h = world.npcs.heading(slot);
+                    (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // Placements no script or walk has surfaced a position for: the facing
+    // dump's rows, not scored.
+    let npc_seated_facings = n0
+        .map(|n0| {
+            spawn_placements
                 .iter()
                 .filter(|(slot, _, _)| !world.npcs.positions.contains_key(slot))
-                .map(|&(slot, x, z)| (slot, (x, z)));
-            live.chain(seated)
-                .map(|(slot, (x, z))| {
+                .map(|&(slot, x, z)| {
                     let h = world.npcs.heading(slot);
                     (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
                 })
@@ -694,5 +706,6 @@ pub(super) fn sample_engine(
         script: None,
         player_facing,
         npc_facings,
+        npc_seated_facings,
     }
 }

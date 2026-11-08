@@ -3635,11 +3635,9 @@ is scored only when the engine holds that placement within 96 units of
 retail's position - a placement in the wrong place is the position's miss,
 not the heading's - and not on the off-map park seat, where nothing is drawn.
 A placement no script or walk has surfaced a position for stands on its MAN seat
-and is scored there: `npcs.positions` is sparse, and a text-free placement whose
-prologue seat lands on its own spawn tile never gets an entry, yet it holds a
-heading like any other (`jagaroom` `P1[2..=7]`, statues a `CC <id> 85 00 00 26`
-face-at turns onto the room's centre, all six read `0` where retail's bearings
-are before their [face legs](../subsystems/motion-vm.md) read the context's seat).
+and is not scored, since a story-history park of an undrawn marker or a captured talk
+reads as a miss there; `LEGAIA_RC_FACING_DUMP` lists those as `facing-seated` lines, and
+across the field corpus only two non-ambient rows there part from retail.
 The detail lists every heading more than a sixteenth turn off with both
 values, and tags the party-bank placements (`+0x10 & 0x01000000`). Set
 `LEGAIA_RC_FACING_DUMP` to print every matched pair.
