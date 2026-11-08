@@ -478,3 +478,10 @@ where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit
 the script, where the arm clears it on the player object (`0x801E07BC..0x801E07D8`), so a door's warp left the
 player's walk lock up. A field the port leaves to its host is counted rather than compared, since the host there is
 inert; what the test holds is every store `step` makes itself.
+The seat `4C 51` is the op the port hands its host whole, so a second pass steps it on the real `World`, as a live
+placement channel's op, and compares the tile on the context and on the drawn seat, the party-bank bit, `+0x62`,
+`+0x5C` and the stored heading. Every seat matched but the hide box: the host returned early on tile `(127, 127)`, a
+guard left from when the op started a walk, where the arm writes it like any tile (`0x801E1880`, `0x801E1898`) and
+the cull hides the actor. `town01`'s blackboard tour parks the villagers round the map that way and re-seats them
+with `CC <id> C3`, which the talk runner then ran on the talker's own context; both now land on the placement. The
+player arm keeps the guard, unmeasured against the follow camera.

@@ -1062,16 +1062,17 @@ impl World {
 /// The placement slot a prop record's cross-context op at `pc` reaches, when
 /// the op is one of the actor-word ops the prop runner routes onto the NPC's
 /// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, an
-/// `A3 <id> x z` or `CC <id> 51 ..` seat, a clip-control `AB` / `AC` /
+/// `A3 <id> x z` or `CC <id> 51 ..` seat, a `CC <id> C3` re-seat at the
+/// placement's own record, a clip-control `AB` / `AC` /
 /// `AD`, or a class-bit `B1` / `B2` - but not the
 /// retire (`3`), engage (`8`) or halt (`0xA`) bits, whose side effects the
 /// runner models elsewhere or not at all. `None` for any other op, and for a
 /// target no placement channel carries.
-fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
+pub(in crate::world) fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
     let b = *bytecode.get(pc)?;
     let routed = match b & 0x7F {
         0x22 | 0x23 | 0x2B..=0x2D => true,
-        0x4C => bytecode.get(pc + 2) == Some(&0x51),
+        0x4C => matches!(bytecode.get(pc + 2), Some(&(0x51 | 0xC3))),
         0x31 | 0x32 => bytecode
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
@@ -1100,8 +1101,13 @@ fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
 /// the NPC's own clip; with no clip cursor bound to the NPC nothing would
 /// latch the bit, and the spin is taken as a clip of no length.
 ///
+/// A re-seat (`CC <id> C3`) always publishes the context's tile: the
+/// teleport puts the actor back on its record's seat, which is where its
+/// context already stands when an earlier seat parked only the drawn
+/// placement.
+///
 /// REF: FUN_8003C83C, FUN_800204F8
-fn step_npc_word_op(
+pub(in crate::world) fn step_npc_word_op(
     host: &mut FieldHostImpl<'_>,
     id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
     slot: u8,
@@ -1134,15 +1140,16 @@ fn step_npc_word_op(
         id.pc,
     );
     host.world.field_vm.executing_channel = None;
-    // A seat (`A3 <id> x z`, `CC <id> 51 x z ..`) lands on the NPC's
-    // `+0x14` / `+0x18` at once, ending any leg it had in flight.
+    // A seat (`A3 <id> x z`, `CC <id> 51 x z ..`, `CC <id> C3`) lands on the
+    // NPC's `+0x14` / `+0x18` at once, ending any leg it had in flight.
     let before = host
         .world
         .field_vm
         .channels
         .get(ci)
         .map(|c| (c.ctx.world_x, c.ctx.world_z));
-    if before != Some((target_ctx.world_x, target_ctx.world_z)) {
+    let reseat = b & 0x7F == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0xC3);
+    if reseat || before != Some((target_ctx.world_x, target_ctx.world_z)) {
         let pos = (target_ctx.world_x as i16, target_ctx.world_z as i16);
         host.world.npcs.positions.insert(slot, pos);
         host.world.npcs.motions.remove(&slot);

@@ -137,12 +137,10 @@ fn wr(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8, v: u32) {
     }
 }
 
-#[test]
-fn every_instruction_leaves_its_context_as_retail_leaves_it() {
-    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset");
-        return;
-    };
+/// The field overlay over the executable, every cross-context target resolved
+/// to the one context under test and every call outside the overlay stubbed.
+fn retail_vm() -> Option<psx_retail_exec::Cpu> {
+    let (mut cpu, d) = (scus_cpu()?, disc()?);
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
@@ -154,6 +152,15 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
     });
     cpu.step_budget = 20_000;
     cpu.mem.wr8(0x1F80_0393, 1);
+    Some(cpu)
+}
+
+#[test]
+fn every_instruction_leaves_its_context_as_retail_leaves_it() {
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let corpus = corpus();
@@ -232,4 +239,115 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
     eprintln!("{ran} runs; left to the host: {missed:?}");
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(ran > 4000, "{ran}");
+}
+
+/// The `4C 51` seat is the op the port hands its host whole: `step` decodes
+/// it and `World` writes the tile, the class bit, the anim-control word and
+/// the move id. Stepped by the real `World` as a live placement channel's own
+/// op (the `executing_channel` arm the talk runner, the prop runner and a
+/// channel's slice all reach), does the placement end up where retail's
+/// `0x801E1828..0x801E1940` arm puts the actor? Compared: the tile on the
+/// context and on the placement's drawn seat, the party-bank bit of `+0x10`,
+/// `+0x62` and `+0x5C`, and the `+0x26` heading the seat stores. Not
+/// compared: `+0x16` (the floor sample is an executable call, stubbed here),
+/// `+0x10` bit 1 (the cull `FUN_801D79E8` the arm calls, which the port runs
+/// per frame) and the walk-state bytes `+0x5E` / `+0x8B..+0x8D`, which the
+/// port's NPC walk does not keep.
+#[test]
+fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x5345_4154);
+    let mut ran = 0u32;
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in corpus() {
+        if label != "4C 51" {
+            continue;
+        }
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(SCRIPT, &script);
+        cpu.mem.wr32(CTX + 0x94, SCRIPT);
+        let mut ctx = FieldCtx::default();
+        for (name, off, width) in FIELDS {
+            let mut v = rng.next();
+            match name {
+                // Running, not halted.
+                "flags" => v &= !0x400,
+                "script_id" => v = rng.below(0x40),
+                _ => {}
+            }
+            if width == 1 {
+                v &= 0xFF;
+            } else if width == 2 {
+                v &= 0xFFFF;
+            }
+            wr(&mut cpu, off, width, v);
+            seat(&mut ctx, name, v);
+        }
+        if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+            continue;
+        }
+        let mut w = legaia_engine_core::world::World::new();
+        w.field_vm.executing_channel = Some(0);
+        w.npcs
+            .positions
+            .insert(0, (ctx.world_x as i16, ctx.world_z as i16));
+        w.field_ctx = ctx;
+        w.field_bytecode = script.clone();
+        w.field_pc = pc;
+        let _ = w.step_field();
+        ran += 1;
+        let c = &w.field_ctx;
+        let (rx, rz) = (rd(&mut cpu, 0x14, 2), rd(&mut cpu, 0x18, 2));
+        let seat = w.npcs.positions.get(&0).copied();
+        let heading = w.npcs.headings.get(&0).copied();
+        let mut wrong = Vec::new();
+        let mut check = |what: &str, retail: u32, port: u32| {
+            if retail != port {
+                wrong.push(format!("{what} retail {retail:#x} port {port:#x}"));
+            }
+        };
+        check("+0x14", rx, c.world_x.into());
+        check("+0x18", rz, c.world_z.into());
+        check(
+            "drawn seat",
+            rx << 16 | rz,
+            seat.map_or(u32::MAX, |(x, z)| {
+                u32::from(x as u16) << 16 | u32::from(z as u16)
+            }),
+        );
+        check(
+            "+0x10 party bank",
+            rd(&mut cpu, 0x10, 4) & 0x0100_0000,
+            c.flags & 0x0100_0000,
+        );
+        check("+0x62", rd(&mut cpu, 0x62, 2), c.local_flags.into());
+        check("+0x5C", rd(&mut cpu, 0x5C, 2), c.move_id.into());
+        // The port keeps the drawn heading half a turn on from `+0x26`.
+        check(
+            "+0x26",
+            (rd(&mut cpu, 0x26, 2) + 0x800) & 0xFFF,
+            heading.map_or(u32::MAX, |h| u32::from(h as u16) & 0xFFF),
+        );
+        if !wrong.is_empty() {
+            let e = differ
+                .entry(format!("{:02x?}", &script[pc..pc + 4]))
+                .or_default();
+            e.0 += 1;
+            if e.0 == 1 {
+                e.1 = wrong.join(", ");
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(ran > 1000, "{ran}");
 }

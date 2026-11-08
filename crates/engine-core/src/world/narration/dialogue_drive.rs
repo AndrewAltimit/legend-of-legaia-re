@@ -599,6 +599,19 @@ impl World {
                 && id.ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0)
                 .then_some(ext_target)
                 .flatten();
+            // A re-seat aimed at another placement (`CC <id> C3`): the
+            // teleport reads the TARGET's `+0x50` to find its own record, so
+            // it runs on that placement's context, as the prop runner steps
+            // it. Run on the talker's stand-in it re-seated the talker:
+            // `town01`'s blackboard tour (`P1[51]`) parks the villagers
+            // around the map with `CC <id> 51 7F 7F` and brings them back
+            // with `CC <id> C3`.
+            // REF: FUN_8003C83C, FUN_801DE840 (nibble C sub 3, 0x801E2700..0x801E282C)
+            let reseat = (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0xC3))
+                .then(|| {
+                    crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc)
+                })
+                .flatten();
             let talker = host.world.dialog.stepping_inline_npc;
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
@@ -638,6 +651,8 @@ impl World {
                     }
                 }
                 r
+            } else if let Some(slot) = reseat {
+                crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
             } else if let Some(t) = other_seat {
                 let mut other = id.ctx.clone();
                 other.flags &= !legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;

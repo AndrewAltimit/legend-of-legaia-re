@@ -558,9 +558,16 @@ impl FieldHostImpl<'_> {
             self.world.seat_npc_floor_resample(slot, ctx.flags);
             return;
         }
-        // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
-        // a despawn, not a walk.
-        if world_x == 0x3FC0 && world_z == 0x3FC0 {
+        // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0).
+        // On an NPC it is an ordinary seat: the arm writes it to `+0x14` /
+        // `+0x18` like any tile (`0x801E1880`, `0x801E1898`) and the cull
+        // hides an actor that far off the map, so the seat below parks the
+        // placement in the hide box. `town01`'s blackboard tour hides the
+        // villagers around the map this way (`P1[51]`, `CC 31 51 7F 7F ..`)
+        // and re-seats them with `CC 31 C3` after it. The player keeps the
+        // older no-op until the player arm's hide (`balden` `P1[6]`,
+        // `CC F8 51 7F 7F`) is measured against the follow camera.
+        if is_player && world_x == 0x3FC0 && world_z == 0x3FC0 {
             return;
         }
         if is_player {
