@@ -66,7 +66,11 @@ caster `3500` units from the ground retail recorded. It drops the still's pin
 to the default step too (`LEGAIA_BATTLE_PARTY_STEP=0`, for a replay whose gate
 counts passes): a film plays the cast through on the party's step, which
 `chitei2_cort_pre_mystic_circle`'s recording runs from its first frame, and on the
-pin Mystic Circle read `.717` against `.852` without it. The scroller rects
+pin Mystic Circle read `.717` against `.852` without it. Over the strike and enemy
+cast films the drop lifts most (`ropeway_curry_devil` `.63` to `.90`,
+`geremi_ogre_strike` `.72` to `.93`); the two Death Game films and
+`jou_cort_181_strike` read lower off the pin, which had held them on the step their
+bodies were tuned to ([the frame step](../subsystems/battle-stage-camera.md#the-capture-band-against-the-films)). The scroller rects
 (`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
 cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
 roll. A scrolled page's phase is time since its scroller started, which a pre-cast
