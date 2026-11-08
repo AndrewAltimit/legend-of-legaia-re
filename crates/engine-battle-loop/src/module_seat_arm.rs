@@ -235,7 +235,9 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// The modules whose seat arm drains a countdown and calls the installer
 /// only on the pass that finds it spent (a `bgez` / `bgtz` straight ahead of
 /// `jal 0x801F19EC`), so the creature appears as the arm **leaves**, not as
-/// it is entered: PROT 0904 (`0x801F6E5C`), 0907 (`0x801F76B8`), 0911
+/// it is entered: PROT 0904 (`0x801F6E5C`), 0905 (`bgez` at `0x801F7198`,
+/// ahead of the arm-4 kills, the caption and `jal 0x801F19EC` at
+/// `0x801F7284`), 0907 (`0x801F76B8`), 0911
 /// (`0x801F70A0`), 0915 (`0x801F6E54`), 0916 (`0x801F706C`), 0917
 /// (`0x801F6E30`), 0920 (`0x801F6CEC`), 0921 (the gate at the head of the arm
 /// whose spawn block ends in `0x801F6FA4`), 0923 (`0x801F6D9C`), 0931
@@ -257,8 +259,8 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// it keeps the entry seat.
 /// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
 /// pass, so it seats as it is entered and the hide lands on the seat.
-pub const SEATS_ON_PASS: [u32; 16] = [
-    904, 907, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
+pub const SEATS_ON_PASS: [u32; 17] = [
+    904, 905, 907, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -283,5 +285,15 @@ mod seat_due_tests {
         assert!(seat_due(Some(934), 5, 6));
         assert!(seat_due(Some(903), 3, 3));
         assert!(seat_due(None, 3, 3));
+    }
+
+    /// PROT 0905's arm 5 drains its countdown (`bgez` at `0x801F7198`)
+    /// before `jal 0x801F19EC` at `0x801F7284`, and its pass jumps the phase
+    /// by three: the creature is first seated at arm 8, as
+    /// `party_basic_attack_vs_gobu_gobu`'s `0x83` recording reads it.
+    #[test]
+    fn vera_seats_as_arm_five_jumps_to_eight() {
+        assert!(!seat_due(Some(905), 5, 5));
+        assert!(seat_due(Some(905), 5, 8));
     }
 }

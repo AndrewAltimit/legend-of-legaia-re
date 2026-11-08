@@ -4714,7 +4714,11 @@ stream is resident at once, so a module with a seat arm has its creature
 requested as its phase reaches the arm, or as it leaves it where the arm drains its
 countdown ahead of the `jal` (`module_seat_arm::SEATS_ON_PASS`): each cast's
 `creature.csv` reads the seat's node first on the arm after. Seated on entry, those
-creatures stood up to a whole arm early with their clip already running.
+creatures stood up to a whole arm early with their clip already running. PROT
+0905's arm 5 is one (`bgez` at `0x801F7198`, the `jal` at `0x801F7284`): seated on
+entry, Vera hung in the white rise through the arm's 180-frame countdown that retail
+holds empty: the `0x83` film reads arm 5 at `.741` seated on entry and `.888` seated
+on the pass.
 The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.
