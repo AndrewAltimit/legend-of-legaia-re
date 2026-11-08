@@ -80,7 +80,7 @@ impl World {
                 .actors
                 .get(caster_slot as usize)
                 .and_then(|a| a.battle.render_scale)
-                .unwrap_or(0x1000) as u16,
+                .unwrap_or(0x1000),
         }
     }
 

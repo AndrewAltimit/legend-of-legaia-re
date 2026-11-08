@@ -5,6 +5,7 @@
 //! phase chain, clip staging and rate stores are
 //! [`crate::cast_module_ticks::astral_slash_tick`].
 
+use super::v_windhash::{HIDDEN, SHOWN};
 use super::{
     CaptureCamArm, ModuleCamSeats, ModuleCamState, ModuleSeat, ModuleShot, SPEED_SCALAR,
     bearing_12bit_approx, focus_on,
@@ -51,6 +52,10 @@ pub fn astral_slash_camera(
             focus: focus_on(on),
             frames: 0xC,
         };
+    if phase == 0 {
+        // The CLUT row copy every pass of the walk (`0x801F6BE8..0x801F6C18`).
+        arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE);
+    }
     if phase <= 1 {
         // `0x801F6B0C..0x801F6B30` saves it on arm 0, and both walk arms write
         // it back (`0x801F6CDC..0x801F6CFC`).
@@ -73,6 +78,12 @@ pub fn astral_slash_camera(
             arm.caster_write.facing = Some(facing);
             arm.shot = Some(shot(facing, 0xA00, 0, 0x600, 0, c));
             st.countdown.0 = SPEED_SCALAR << 6;
+            // The party row hidden, then the victim shown over it
+            // (`0x801F6E14..0x801F6E6C`).
+            arm.party_write = HIDDEN;
+            arm.party_skip_victim = true;
+            arm.victim_write.colour = SHOWN.colour;
+            arm.victim_write.render_flag = SHOWN.render_flag;
         }
         3 => {
             let [cx, cz, vx, vz] = st.horns_pin;

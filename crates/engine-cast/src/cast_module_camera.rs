@@ -1063,6 +1063,7 @@ mod puera;
 mod rolling_flare;
 mod scythe_wind;
 mod seru;
+mod shadow_break;
 mod spoon;
 mod spore_gas;
 mod steal;
@@ -1151,6 +1152,10 @@ pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
+pub use shadow_break::{
+    SHADOW_BREAK_BLADES, SHADOW_BREAK_BODY, SHADOW_BREAK_BURST_RECORD, SHADOW_BREAK_FALL_RECORD,
+    SHADOW_BREAK_OPENING_RECORD, SHADOW_BREAK_RISE, shadow_break_camera, shadow_break_ring,
+};
 pub use spoon::*;
 pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
 pub use steal::{STEAL_BODY, steal_camera};

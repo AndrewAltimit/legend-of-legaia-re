@@ -112,16 +112,6 @@ pub fn rolling_flare_sweep_tick(
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let step = run_arm_tick(ctx, 14, |c| match c.phase {
-        1 => {
-            // As in PROT 0941's sweep: the arm's countdown brackets a hide
-            // and a show, and the port applies the exit state.
-            for seat in 0..c.party_count {
-                if let Some(s) = seats.get_mut(seat as usize) {
-                    s.render_flag = 0;
-                }
-            }
-            CastArmStep::Advance
-        }
         6 => {
             stage_clip(caster, 10);
             CastArmStep::Advance

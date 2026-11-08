@@ -322,6 +322,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
         (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
+        (950, super::SHADOW_BREAK_BODY) => Some(super::shadow_break_camera),
         (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (942, super::DARK_TYPHOON_BODY) => Some(super::dark_typhoon_camera),
