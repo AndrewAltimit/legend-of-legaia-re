@@ -421,8 +421,19 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// only through its arm 2 (`0x801F7B44`) and stores the `1` back on that arm's
 /// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
 /// body clears it on its last arm (`0x801F72CC`).
+///
+/// Three more bodies of split modules finish with no `sb zero,0xd` at all,
+/// where their module's other body has one: PROT 0945's Water Column (`0x54`,
+/// `0x801F6EDC`, finishing at `0x801F769C..0x801F76C4`), PROT 0938's Chaos
+/// Breath (`0x4E`, `0x801F726C`) and PROT 0940's Slime Divide (`0x50` / `0xAE`,
+/// `0x801F78B8`). A film of Water Column reads the half turn: the Done band's
+/// yaw endpoint `4177` against `ctx[+0x6DA] - facing = 2129`.
 pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962) && !(entry == 941 && action == 0x51)
+    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+        && !matches!(
+            (entry, action),
+            (938, 0x4E) | (940, 0x50 | 0xAE) | (941, 0x51) | (945, 0x54)
+        )
 }
 
 /// The module-resident countdown word a directed capture body gates its arms
@@ -1575,6 +1586,27 @@ mod slime_divide_tests {
         let mut st = ModuleCamState::default();
         let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
         assert_eq!(arm0.tr, [0, 0x400, 0x800]);
+    }
+}
+
+#[cfg(test)]
+mod exit_style_tests {
+    use super::capture_exit_clears_style;
+
+    /// A body with no `sb zero,0xd` leaves state `0x70`'s style `1` standing
+    /// and the Done band frames half a turn round; the other body of the same
+    /// module clears it.
+    #[test]
+    fn a_split_module_keys_the_style_clear_on_the_body_its_action_runs() {
+        assert!(!capture_exit_clears_style(945, 0x54), "Water Column");
+        assert!(capture_exit_clears_style(945, 0xBA), "all-stats surge");
+        assert!(!capture_exit_clears_style(938, 0x4E), "Chaos Breath");
+        assert!(capture_exit_clears_style(938, 0xB7), "Mystic Circle");
+        assert!(!capture_exit_clears_style(940, 0x50), "Slime Divide");
+        assert!(!capture_exit_clears_style(940, 0xAE), "Slime Divide");
+        assert!(capture_exit_clears_style(940, 0x3C), "Glare");
+        assert!(!capture_exit_clears_style(941, 0x51), "Steal");
+        assert!(capture_exit_clears_style(941, 0xB9), "Stone Circle");
     }
 }
 

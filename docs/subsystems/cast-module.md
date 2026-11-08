@@ -540,7 +540,12 @@ exactly the arms its `sltiu` allows and stops on the terminal arm with no
   `ctx[+0x6DA]` (Zora's Glare at `0x801F7208` in PROT 0940, for one). PROT
   0946..0948, 0953, 0959 and 0960 clear the style without the yaw store. PROT
   0935..0937, 0939 and 0962 hold neither, so the Done band after them frames
-  from half a turn round.
+  from half a turn round. Three bodies of split modules hold neither either,
+  where the other body of their module has both: PROT 0945's Water Column
+  (`0x54`, `0x801F6EDC`), PROT 0938's Chaos Breath (`0x4E`, `0x801F726C`) and
+  PROT 0940's Slime Divide (`0x50` / `0xAE`, `0x801F78B8`). A film of Water
+  Column reads the half turn in its Done band's yaw endpoint
+  (`ctx[+0x6DA] - facing + 0x800`).
 
 **Two store forms write the phase.** Every player-Seru tick materialises a
 pointer to `ctx + 0x279` in its prologue (`addiu s6, s1, 0x279` at
