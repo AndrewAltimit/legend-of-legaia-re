@@ -21,6 +21,9 @@ pub(super) struct OverlayDraws {
     pub save_chrome_blend: Vec<legaia_engine_render::OverlayBlendSpan>,
     /// The opening caption quad.
     pub caption_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    /// The window's chrome when it draws light, from its own atlas; empty
+    /// when it rides the glyph layer.
+    pub chrome_draw_vec: Vec<TextDraw>,
 }
 
 /// The frame's effect meshes (built and uploaded here, drawn in the scene
@@ -157,7 +160,10 @@ impl PlayWindowApp {
         }
         // The window's own chrome (quit prompt, hotkey notice, hotkey help)
         // last, so nothing in the text layer covers it.
-        hud.extend(self.window_chrome_draws(w, h));
+        let mut chrome_draw_vec = self.window_chrome_draws(w, h);
+        if self.chrome_dark || self.chrome_atlas.is_none() {
+            hud.append(&mut chrome_draw_vec);
+        }
 
         // Boot-phase sprite overlay: alternates between the
         // publisher-logos atlas (during PublisherLogos) and
@@ -278,6 +284,7 @@ impl PlayWindowApp {
             save_chrome_draw_vec,
             save_chrome_blend,
             caption_draw_vec,
+            chrome_draw_vec,
         }
     }
 

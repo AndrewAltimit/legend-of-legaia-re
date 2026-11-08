@@ -6,14 +6,7 @@
 //! cover them.
 
 use super::*;
-use legaia_app_theme::{chrome, spacing};
-
-/// The window chrome's colours, from the palette the launcher and Explorer
-/// share (`legaia_app_theme::chrome`).
-const HEADING: [f32; 4] = chrome::HEADING.to_f32();
-const KEY: [f32; 4] = chrome::KEY.to_f32();
-const TEXT: [f32; 4] = chrome::TEXT.to_f32();
-const CHANGED: [f32; 4] = chrome::CHANGED.to_f32();
+use legaia_app_theme::spacing;
 
 impl PlayWindowApp {
     /// One line of this window's own text at a pen on the shared 320x240
@@ -38,6 +31,7 @@ impl PlayWindowApp {
     /// ("Ground fog: off"), and the hotkey help panel (`F12` / `?`). None of
     /// it is game surface - retail has no quit key and no host toggles.
     pub(in crate::window) fn window_chrome_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {
+        let ink = self.chrome();
         use crate::window::app_state::{NOTICE_DURATION, QUIT_CONFIRM_WINDOW};
         if self.font_atlas.is_none() {
             return Vec::new();
@@ -53,7 +47,7 @@ impl PlayWindowApp {
                 .quit_prompt
                 .is_some_and(|t| t.elapsed() <= QUIT_CONFIRM_WINDOW)
         {
-            rows.push(("Press Esc again to quit", HEADING));
+            rows.push(("Press Esc again to quit", ink.heading));
         }
         // The notice hides behind the help panel's plate while the panel
         // is up (the panel shows every state anyway).
@@ -62,12 +56,23 @@ impl PlayWindowApp {
             && let Some((text, at)) = &self.notice
             && at.elapsed() <= NOTICE_DURATION
         {
-            rows.push((text.as_str(), KEY));
+            rows.push((text.as_str(), ink.key));
         }
-        // The start-up pointer at the help panel, under the panel's own
-        // gold; never with the panel up.
-        if !self.hotkey_help && self.startup_hint.visible(std::time::Instant::now()) {
-            rows.push((crate::window::app_state::STARTUP_HINT_TEXT, HEADING));
+        // The start-up pointer at the keys and the help panel, under the
+        // panel's own gold; never with the panel up. It waits out the
+        // publisher logos and stays up on the title, where a first-time
+        // player is waiting to be told which key does what; the clock starts
+        // when the title is left.
+        let startup_line;
+        if !self.hotkey_help
+            && self.boot_ui.logos_session().is_none()
+            && self.startup_hint.live()
+            && (self.boot_ui.title_session().is_some()
+                || self.startup_hint.visible(std::time::Instant::now()))
+        {
+            let key = |b| self.mapping.key_label_for_button(b).unwrap_or("-");
+            startup_line = crate::window::app_state::startup_hint_line(key("Cross"), key("Circle"));
+            rows.push((startup_line.as_str(), ink.heading));
         }
         // Bottom-left of the stage, stacking upward: the top-left is the
         // field party readout's seat.
@@ -99,6 +104,12 @@ impl PlayWindowApp {
 
     /// A translucent dark plate behind window text (the font atlas's solid
     /// texel, tinted), so the line reads over a bright scene. Stage pixels.
+    /// The window chrome's inks, in the palette the player's theme resolves
+    /// to.
+    pub(in crate::window) fn chrome(&self) -> legaia_app_theme::chrome::Inks {
+        legaia_app_theme::chrome::inks(self.chrome_dark)
+    }
+
     pub(in crate::window) fn push_scrim(
         &self,
         out: &mut Vec<TextDraw>,
@@ -110,7 +121,10 @@ impl PlayWindowApp {
             out.push(TextDraw {
                 dst: (at.0, at.1, size.0, size.1),
                 src,
-                color: [0.0, 0.0, 0.0, alpha],
+                color: {
+                    let s = self.chrome().scrim;
+                    [s[0], s[1], s[2], alpha]
+                },
             });
         }
     }
@@ -119,6 +133,7 @@ impl PlayWindowApp {
     /// state, read off the shared table so a new hotkey lists itself, laid
     /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
+        let ink = self.chrome();
         use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
         // Each row's state, and whether it is one the original game does
         // not have (the launcher's original values, shared through
@@ -159,30 +174,30 @@ impl PlayWindowApp {
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
         };
-        put("Keys", (l.x0, l.y0), HEADING);
+        put("Keys", (l.x0, l.y0), ink.heading);
         if self.netplay.is_none() && self.netplay_menu.is_none() {
             let back = "L1/R1 or Tab: settings";
             let w = self.font.layout_ascii(back).advance_x as i32;
-            put(back, (l.x0 + l.width - w, l.y0), TEXT);
+            put(back, (l.x0 + l.width - w, l.y0), ink.text);
         }
         let mut y = l.y0 + l.line_h + 2;
-        put("Esc", (l.x0, y), KEY);
-        put(HELP_QUIT, (l.x0 + l.key_w, y), TEXT);
-        put("F12", (l.x0 + l.col_w, y), KEY);
-        put(HELP_SELF, (l.x0 + l.col_w + l.key_w, y), TEXT);
+        put("Esc", (l.x0, y), ink.key);
+        put(HELP_QUIT, (l.x0 + l.key_w, y), ink.text);
+        put("F12", (l.x0 + l.col_w, y), ink.key);
+        put(HELP_SELF, (l.x0 + l.col_w + l.key_w, y), ink.text);
         y += l.line_h + 2;
         for (((k, line), &(col, row)), state) in entries.iter().zip(&l.cells).zip(&states) {
             let at = (l.x0 + col * l.col_w, y + row as i32 * l.line_h);
-            put(k, at, KEY);
+            put(k, at, ink.key);
             let x = at.0 + l.key_w;
             match state {
                 Some((head, true)) => {
                     let (h, v) = line.split_at(*head);
-                    put(h, (x, at.1), TEXT);
+                    put(h, (x, at.1), ink.text);
                     let hx = self.font.layout_ascii(h).advance_x as i32;
-                    put(v, (x + hx, at.1), CHANGED);
+                    put(v, (x + hx, at.1), ink.changed);
                 }
-                _ => put(line, (x, at.1), TEXT),
+                _ => put(line, (x, at.1), ink.text),
             }
         }
         y += l.rows as i32 * l.line_h + 2;
@@ -191,16 +206,16 @@ impl PlayWindowApp {
         for row in &pad {
             let mut x = l.x0;
             for (button, key) in row {
-                put(button, (x, y), TEXT);
+                put(button, (x, y), ink.text);
                 x += self.font.layout_ascii(button).advance_x as i32 + PAD_KEY_GAP;
-                put(key, (x, y), KEY);
+                put(key, (x, y), ink.key);
                 x += self.font.layout_ascii(key).advance_x as i32 + PAD_PAIR_GAP;
             }
             y += l.line_h;
         }
-        put(HELP_MOUSE, (l.x0, y + 2), TEXT);
-        put(HELP_LEGEND, (l.x0, y + 2 + l.line_h), CHANGED);
-        put(HELP_FOOTER, (l.x0, y + 2 + 2 * l.line_h), HEADING);
+        put(HELP_MOUSE, (l.x0, y + 2), ink.text);
+        put(HELP_LEGEND, (l.x0, y + 2 + l.line_h), ink.changed);
+        put(HELP_FOOTER, (l.x0, y + 2 + 2 * l.line_h), ink.heading);
         out
     }
 

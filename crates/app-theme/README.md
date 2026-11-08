@@ -10,8 +10,8 @@ its own colour type.
 | Consumer | What it takes |
 |---|---|
 | `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
-| The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
-| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::option_value` for a settings row's value (the launcher's list draws its values by the same rule, so a row reads alike in both), and the chrome inset and line gap. |
+| The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | Both palettes by `Role` for its software canvas (`resolve_dark` over the *Menu colours* row); `game_exit` for its help box after a failed game. |
+| The play window's chrome (`window/hud/text_list.rs`) | `chrome::inks(dark)` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::option_value` for a settings row's value (the launcher's list draws its values by the same rule, so a row reads alike in both), and the chrome inset and line gap. |
 
 ## Icons, and where the release puts the programs
 
@@ -62,8 +62,7 @@ holds WCAG AA's 4.5:1 like the other text inks; it stays a visible step below
 Key names are `info` (`chrome::KEY`) in all three programs: the launcher's
 Controls panel, Explorer's shortcut list and the play window's `F12` panel.
 
-The play window's chrome is always dark: it sits on a scrim over whatever the
-game draws.
+The launcher and the play window's chrome draw in either palette by role (`Palette::get`, `chrome::inks`), resolved by `resolve_dark`: the player's choice, else the window system, else the desktop's preference (`desktop_prefers_dark`), else dark. Light chrome letters the disc font without its drop shadow (`Font::atlas_rgba_without_shadow`), which would smear into dark ink.
 
 ## How a failed game is reported
 

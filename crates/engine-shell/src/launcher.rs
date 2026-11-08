@@ -886,6 +886,9 @@ pub struct SaveRow {
     pub card: PathBuf,
     /// The block's grid cell on that card (`MountedCard::save_at`).
     pub cell: u8,
+    /// The number the save's filename carries, what the game's load screen
+    /// shows it under (`None` for a save filed under no number).
+    pub number: Option<usize>,
     /// The party leader's display name.
     pub name: String,
     pub level: u8,
@@ -923,6 +926,7 @@ pub fn list_saves(path: &Path) -> Vec<SaveRow> {
             Some(SaveRow {
                 card: path.to_path_buf(),
                 cell,
+                number: card.save_number_of_block(cell + 1),
                 name: leader.name,
                 level: leader.level,
                 location,
@@ -1219,6 +1223,7 @@ pub enum OptionRow {
     Preset,
     Fullscreen,
     WindowSize,
+    Theme,
     EnhancedLighting,
     TimeOfDay,
     LampShadows,
@@ -1259,10 +1264,11 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 39] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 40] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
+    (None, OptionRow::Theme),
     (None, OptionRow::CameraDistance),
     (None, OptionRow::PsxRender),
     (Some("Enhancements"), OptionRow::EnhancedLighting),
@@ -1395,6 +1401,7 @@ impl OptionRow {
             Self::Preset => "Look and feel",
             Self::Fullscreen => "Fullscreen",
             Self::WindowSize => "Window size",
+            Self::Theme => "Menu colours",
             Self::EnhancedLighting => "Enhanced lighting",
             Self::TimeOfDay => "Time of day",
             Self::LampShadows => "Lamp shadows",
@@ -1446,6 +1453,10 @@ impl OptionRow {
             Self::WindowSize => {
                 "The game window's size when not fullscreen, in steps of the \
                  PlayStation's 320x240 picture. Dragging its edge still resizes it."
+            }
+            Self::Theme => {
+                "The launcher's and the game's settings colours: follow your desktop, or \
+                 always light or dark."
             }
             Self::EnhancedLighting => {
                 "A time-of-day mood, real light at lamps and glowing props. Off draws the \
@@ -1615,6 +1626,7 @@ impl OptionRow {
                 | Self::MonoDownmix
                 | Self::Fullscreen
                 | Self::WindowSize
+                | Self::Theme
         )
     }
 
@@ -1627,6 +1639,7 @@ impl OptionRow {
         match self {
             Self::Preset => preset_of(opts, s).to_string(),
             Self::Fullscreen => on_off(opts.fullscreen),
+            Self::Theme => opts.ui_theme.name().to_string(),
             Self::WindowSize => {
                 let k = u32::from(opts.window_scale.clamp(WINDOW_SCALES.0, WINDOW_SCALES.1));
                 format!("{}x{}", 320 * k, 240 * k)
@@ -1689,6 +1702,7 @@ impl OptionRow {
             Self::Preset
             | Self::Fullscreen
             | Self::WindowSize
+            | Self::Theme
             | Self::TimeOfDay
             | Self::MasterVolume
             | Self::MusicVolume
@@ -1777,6 +1791,7 @@ impl OptionRow {
                 }
             }
             Self::Fullscreen => opts.fullscreen = o.fullscreen,
+            Self::Theme => opts.ui_theme = o.ui_theme,
             Self::WindowSize => opts.window_scale = o.window_scale,
             Self::EnhancedLighting => opts.enhanced_lighting = o.enhanced_lighting,
             Self::TimeOfDay => opts.lighting_time_of_day = o.lighting_time_of_day,
@@ -1842,6 +1857,7 @@ impl OptionRow {
                 s.switches.psx_render = on;
             }
             Self::Fullscreen => opts.fullscreen ^= true,
+            Self::Theme => opts.ui_theme = opts.ui_theme.stepped(dir),
             Self::WindowSize => {
                 let (lo, hi) = WINDOW_SCALES;
                 let cur = opts.window_scale.clamp(lo, hi);
@@ -2026,6 +2042,7 @@ mod tests {
         let row = SaveRow {
             card: "c".into(),
             cell: 0,
+            number: Some(1),
             name: "Vahn".into(),
             level: 5,
             location: "Rim Elm".into(),
@@ -2821,7 +2838,7 @@ mod tests {
     fn page_twin(row: OptionRow) -> Option<&'static str> {
         use OptionRow::*;
         Some(match row {
-            WindowSize => return None,
+            WindowSize | Theme => return None,
             // The page says the same two things with its Retail-faithful switch
             // and its Reset to defaults button.
             Preset => "play-retail-mode",

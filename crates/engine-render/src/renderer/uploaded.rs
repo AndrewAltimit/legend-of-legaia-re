@@ -631,6 +631,9 @@ pub struct Scene<'a> {
     /// [`Self::overlay_text`]. Used by the actor sprite pipeline.
     pub overlay_sprites: Option<&'a SpriteOverlay<'a>>,
     pub overlay_text: Option<&'a TextOverlay<'a>>,
+    /// Text drawn over [`Self::overlay_text`] from its own atlas: the play
+    /// window's chrome on a light scrim, lettered without the font's shadow.
+    pub overlay_chrome: Option<&'a TextOverlay<'a>>,
     /// Optional second sprite-overlay slot drawn between
     /// [`Self::overlay_sprites`] and [`Self::overlay_text`]. Used when
     /// two distinct sprite atlases need to render on the same frame

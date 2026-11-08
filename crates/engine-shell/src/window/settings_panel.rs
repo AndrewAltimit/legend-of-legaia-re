@@ -28,8 +28,9 @@ use legaia_engine_system::input::PadButton;
 /// smarter monsters, the saved-chain Arts list, the gameplay tweaks and the
 /// battle tuning) and *Original game only*, as the play page's boxes take
 /// them live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 37] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 38] = [
     OptionRow::Fullscreen,
+    OptionRow::Theme,
     OptionRow::CameraDistance,
     OptionRow::PsxRender,
     OptionRow::EnhancedLighting,
@@ -346,6 +347,7 @@ impl PlayWindowApp {
         edit(row, &mut self.options_state, &mut switches);
         match row {
             OptionRow::Fullscreen => self.win.set_fullscreen(self.options_state.fullscreen),
+            OptionRow::Theme => self.resolve_chrome_theme(),
             OptionRow::PsxRender => {
                 self.set_psx_render(switches.switches.psx_render);
                 return;
@@ -369,6 +371,35 @@ impl PlayWindowApp {
         }
         self.session.apply_option_knobs(&self.options_state, None);
         self.persist_and_apply_options();
+    }
+
+    /// Pick the chrome's palette from the row's choice and the window.
+    pub(super) fn resolve_chrome_theme(&mut self) {
+        use winit::window::Theme;
+        let window_dark = self
+            .win
+            .window
+            .as_deref()
+            .and_then(|w| w.theme())
+            .map(|t| t == Theme::Dark);
+        self.chrome_dark =
+            legaia_app_theme::resolve_dark(self.options_state.ui_theme.forced_dark(), window_dark);
+        self.ensure_chrome_atlas();
+    }
+
+    /// Upload the chrome's shadow-free atlas when the chrome draws light;
+    /// dark chrome draws through the game's glyph layer and needs none.
+    pub(super) fn ensure_chrome_atlas(&mut self) {
+        if self.chrome_dark || self.chrome_atlas.is_some() {
+            return;
+        }
+        let (w, h) = self.font.atlas_dimensions();
+        if let Some(r) = self.win.renderer.as_ref() {
+            match r.upload_font_atlas(&self.font.atlas_rgba_without_shadow(), w, h) {
+                Ok(a) => self.chrome_atlas = Some(a),
+                Err(e) => log::error!("chrome atlas upload: {e:#}"),
+            }
+        }
     }
 
     /// The launch switches the page shows and changes, as they stand: the
@@ -515,9 +546,9 @@ impl PlayWindowApp {
 
     /// The settings page's draws, in stage pixels.
     pub(super) fn settings_stage_draws(&self) -> Vec<TextDraw> {
-        let heading = chrome::HEADING.to_f32();
-        let text = chrome::TEXT.to_f32();
-        let faint = legaia_app_theme::DARK.ink_faint.to_f32();
+        let heading = self.chrome().heading;
+        let text = self.chrome().text;
+        let faint = self.chrome().faint;
         let height = plate_height(SHOWN_ROWS.min(SETTINGS_ROWS.len()), HELP_LINES);
         let mut out = Vec::new();
         self.push_scrim(
@@ -560,7 +591,7 @@ impl PlayWindowApp {
             out.push(TextDraw {
                 dst: (x, y, 1, track_h as u32),
                 src,
-                color: legaia_app_theme::DARK.rule.to_f32(),
+                color: self.chrome().rule,
             });
             out.push(TextDraw {
                 dst: (x, thumb_y, 1, thumb_h as u32),
@@ -579,7 +610,7 @@ impl PlayWindowApp {
                 out.push(TextDraw {
                     dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
                     src,
-                    color: legaia_app_theme::DARK.hover.to_f32(),
+                    color: self.chrome().hover,
                 });
             }
             let label_at = (left, y - 2);
@@ -599,7 +630,13 @@ impl PlayWindowApp {
             let ink = if muted {
                 faint
             } else {
-                chrome::option_value(&value, row.original_value().as_deref()).to_f32()
+                self.chrome()
+                    .palette
+                    .get(chrome::option_value(
+                        &value,
+                        row.original_value().as_deref(),
+                    ))
+                    .to_f32()
             };
             let shown = if focused {
                 format!("< {value} >")
@@ -689,7 +726,7 @@ pub(super) fn copy_changed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::window::app_state::STARTUP_HINT_TEXT as STARTUP_LINE_FOR_TEST;
+    use crate::window::app_state::startup_hint_line;
 
     #[test]
     fn page_rows_are_game_options_and_unique() {
@@ -841,7 +878,7 @@ mod tests {
                 assert!(lines.len() <= HELP_LINES, "{row:?}: {lines:?}");
             }
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
-            assert!(width(STARTUP_LINE_FOR_TEST) <= 310);
+            assert!(width(&startup_hint_line("Z", "S")) <= 310);
             // The longest heading leaves room for the flip hint beside it.
             for row in SETTINGS_ROWS {
                 let h = format!("Settings: {}", group_of(row));

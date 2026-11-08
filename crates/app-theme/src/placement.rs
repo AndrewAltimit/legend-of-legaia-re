@@ -64,9 +64,65 @@ fn monitor_under(x: i32, y: i32, monitors: &[Monitor]) -> Option<&Monitor> {
         .find(|m| m.contains(x, y) && m.contains(x + GRAB.0, y + GRAB.1))
 }
 
+/// The room a title bar and a desktop panel take off a monitor's height, in
+/// logical points.
+const TITLE_ROOM: f64 = 64.0;
+
+/// The inner size (logical points) a window saved as `saved_logical` opens
+/// at: on the monitor it reopens on (the one under `position`, else the
+/// largest), held to what that monitor can show and to `min`, so a size
+/// saved on a large monitor opens whole on a small one, and a size saved
+/// before a resolution change still fits after it. `None` when nothing was
+/// saved or no monitor is known; the caller opens at its default.
+pub fn restore_size(
+    saved_logical: Option<[u32; 2]>,
+    position: Option<[i32; 2]>,
+    monitors: &[Monitor],
+    min: [u32; 2],
+) -> Option<[u32; 2]> {
+    let [w, h] = saved_logical?;
+    let on = position
+        .and_then(|[x, y]| monitor_under(x, y, monitors))
+        .or_else(|| {
+            monitors
+                .iter()
+                .max_by_key(|m| u64::from(m.width) * u64::from(m.height))
+        })?;
+    let room_w = (f64::from(on.width) / on.scale) as u32;
+    let room_h = ((f64::from(on.height) / on.scale - TITLE_ROOM).max(1.0)) as u32;
+    Some([w.min(room_w).max(min[0]), h.min(room_h).max(min[1])])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_size_is_held_to_the_monitor_it_reopens_on() {
+        let min = [320, 240];
+        // Kept whole on the big one, in logical points.
+        assert_eq!(
+            restore_size(Some([1200, 900]), Some([2000, 100]), &[LEFT, RIGHT], min),
+            Some([1200, 656])
+        );
+        // The same size on the small monitor is cut to what it shows.
+        assert_eq!(
+            restore_size(Some([2400, 1800]), Some([100, 100]), &[LEFT], min),
+            Some([1920, 1016])
+        );
+        // Off every monitor: judged against the largest.
+        assert_eq!(
+            restore_size(Some([500, 400]), Some([9000, 0]), &[LEFT, RIGHT], min),
+            Some([500, 400])
+        );
+        // A tiny saved window is held up to the minimum.
+        assert_eq!(
+            restore_size(Some([100, 100]), None, &[LEFT], min),
+            Some([320, 240])
+        );
+        assert_eq!(restore_size(None, None, &[LEFT], min), None);
+        assert_eq!(restore_size(Some([500, 400]), None, &[], min), None);
+    }
 
     const LEFT: Monitor = Monitor {
         x: 0,

@@ -3221,7 +3221,13 @@ fn about_max_height(screen_h: f32) -> f32 {
 
 fn theme_preference(t: crate::settings::Theme) -> egui::ThemePreference {
     match t {
-        crate::settings::Theme::System => egui::ThemePreference::System,
+        // egui's own System reads winit, which has nothing on X11; the
+        // desktop's preference is what the launcher follows too.
+        crate::settings::Theme::System => match legaia_app_theme::desktop_prefers_dark() {
+            Some(true) => egui::ThemePreference::Dark,
+            Some(false) => egui::ThemePreference::Light,
+            None => egui::ThemePreference::System,
+        },
         crate::settings::Theme::Light => egui::ThemePreference::Light,
         crate::settings::Theme::Dark => egui::ThemePreference::Dark,
     }

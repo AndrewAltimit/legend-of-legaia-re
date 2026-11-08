@@ -89,6 +89,45 @@ pub const MASTER_VOLUME_DEFAULT: u8 = 25;
 /// The top of [`OptionsState::master_volume`]'s `0..=100` percent range.
 pub const MASTER_VOLUME_MAX: u8 = 100;
 
+/// The desktop programs' chrome theme.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UiTheme {
+    /// Follow the desktop's light or dark preference.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl UiTheme {
+    /// The choice as a palette: `Some(dark)` when the player fixed it,
+    /// `None` to follow the desktop.
+    pub fn forced_dark(self) -> Option<bool> {
+        match self {
+            UiTheme::System => None,
+            UiTheme::Light => Some(false),
+            UiTheme::Dark => Some(true),
+        }
+    }
+
+    /// The next choice, wrapping: System, Light, Dark.
+    pub fn stepped(self, dir: i8) -> Self {
+        const ALL: [UiTheme; 3] = [UiTheme::System, UiTheme::Light, UiTheme::Dark];
+        let i = ALL.iter().position(|t| *t == self).unwrap_or(0) as i32;
+        ALL[(i + i32::from(dir)).rem_euclid(3) as usize]
+    }
+
+    /// The word a settings row shows.
+    pub fn name(self) -> &'static str {
+        match self {
+            UiTheme::System => "System",
+            UiTheme::Light => "Light",
+            UiTheme::Dark => "Dark",
+        }
+    }
+}
+
 /// Full set of user-editable options. Engines round-trip via
 /// [`OptionsState::load_or_default`] / [`OptionsState::save`] (TOML,
 /// mirroring `input::Mapping`).
@@ -245,6 +284,9 @@ pub struct OptionsState {
     /// not a render knob: the frame is drawn the same at any surface, and a
     /// `--screenshot` run ignores it.
     pub fullscreen: bool,
+    /// The desktop programs' chrome (the launcher, the `F12` panel): follow
+    /// the desktop, or always light or dark. Window chrome only.
+    pub ui_theme: UiTheme,
     /// Native window: the windowed size as a multiple of the PlayStation's
     /// 320x240 display, `2..=6` (`--window-scale`; the launcher's row).
     /// Default 3 = 960x720. Window chrome like [`Self::fullscreen`].
@@ -282,6 +324,7 @@ impl Default for OptionsState {
             bloom: false,
             ssao: true,
             fullscreen: false,
+            ui_theme: UiTheme::System,
             window_scale: 3,
         }
     }

@@ -532,6 +532,18 @@ impl Font {
         &self.atlas_rgba
     }
 
+    /// The atlas with the drop-shadow texels made transparent: for text on a
+    /// light surface, where the shadow would smear into a dark ink.
+    pub fn atlas_rgba_without_shadow(&self) -> Vec<u8> {
+        let mut out = self.atlas_rgba.clone();
+        for px in out.as_chunks_mut::<4>().0 {
+            if px[3] == FONT_SHADOW_ALPHA && px[0] == FONT_SHADOW_TEXEL {
+                px[3] = 0;
+            }
+        }
+        out
+    }
+
     /// Pixel advance for character `c`. Returns `0` for characters outside
     /// the printable range (e.g. `\0`, control bytes).
     pub fn advance_of(&self, c: u8) -> u32 {

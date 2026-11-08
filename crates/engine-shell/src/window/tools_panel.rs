@@ -12,7 +12,6 @@
 //! GameShark box (a file here: a window has no text field).
 
 use super::*;
-use legaia_app_theme::chrome;
 
 /// One row of the page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +62,7 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 18] = [
     (
         ToolRow::AutoBattle,
         "Auto-battle",
-        "Each party turn attacks the first living monster by itself.",
+        "From the next round on, each party turn attacks the first living monster by itself.",
     ),
     (
         ToolRow::BattleCadence,
@@ -364,10 +363,10 @@ impl PlayWindowApp {
 
     /// The Tools page's draws, in stage pixels.
     pub(super) fn tools_stage_draws(&self) -> Vec<TextDraw> {
-        let heading = chrome::HEADING.to_f32();
-        let key_ink = chrome::KEY.to_f32();
-        let text = chrome::TEXT.to_f32();
-        let changed = chrome::CHANGED.to_f32();
+        let heading = self.chrome().heading;
+        let key_ink = self.chrome().key;
+        let text = self.chrome().text;
+        let changed = self.chrome().changed;
         let height = super::settings_panel::plate_height(SHOWN, NOTE_LINES);
         let mut out = Vec::new();
         self.push_scrim(
@@ -401,7 +400,7 @@ impl PlayWindowApp {
                 out.push(TextDraw {
                     dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
                     src,
-                    color: legaia_app_theme::DARK.hover.to_f32(),
+                    color: self.chrome().hover,
                 });
             }
             put(&mut out, label, (left, y - 2), text);

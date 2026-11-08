@@ -36,12 +36,34 @@ impl ApplicationHandler for PlayWindowApp {
         if !self.scripted_run() {
             setup.position =
                 crate::window_placement::restore(crate::window_placement::Which::Game, evl);
+            // The last dragged size, unless a launch flag or fullscreen says
+            // otherwise.
+            if self.window_launch.scale.is_none()
+                && !setup.fullscreen
+                && let Some([w, h]) = crate::window_placement::restore_game_size(
+                    self.options_state.window_scale,
+                    setup.position,
+                    evl,
+                )
+            {
+                setup.logical_size = (f64::from(w), f64::from(h));
+            }
         }
         legaia_engine_render::profile::startup("event loop up");
+        let setup_fullscreen = setup.fullscreen;
         if !self.win.open_with(evl, minigames::WINDOW_TITLE, setup) {
             return;
         }
         legaia_engine_render::profile::startup("window + renderer + pipelines");
+        if !self.scripted_run() {
+            self.resolve_chrome_theme();
+            if !setup_fullscreen
+                && crate::window_placement::game_was_maximized()
+                && let Some(w) = self.win.window.as_deref()
+            {
+                w.set_maximized(true);
+            }
+        }
         // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV
         // warp + sub-pixel vertex jitter + 15-bit BGR555 ordered dithering on
         // the 3D mesh pipelines. Off by default (clean modern output); enable
@@ -110,6 +132,7 @@ impl ApplicationHandler for PlayWindowApp {
             && let Some(w) = self.win.window.as_deref()
         {
             crate::window_placement::remember(crate::window_placement::Which::Game, w);
+            crate::window_placement::remember_game_size(w, self.options_state.window_scale);
         }
     }
 

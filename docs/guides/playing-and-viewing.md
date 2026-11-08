@@ -144,6 +144,11 @@ A fullscreen game keeps the spot it had before it went fullscreen, and a
 desktop that does not report window positions (Wayland) leaves placement to
 the desktop.
 
+The game window also comes back at the size it was dragged to (`game_size` in
+the same file), or maximized when it closed that way; a size that no longer
+fits the monitor it reopens on is held to that monitor, and moving the
+launcher's *Window size* row (or `--window-scale`) asks for that size instead.
+
 A `launcher.toml` that does not parse (a hand edit gone wrong, a write cut off
 by a crash) is never overwritten with the defaults: the launcher renames it to
 `launcher.toml.broken` (`.broken-2`, ... when an older one is still there),
@@ -153,6 +158,12 @@ Every write of the file goes to a temporary file first and replaces the old
 one in one step, so a crash mid-save leaves the previous file whole. Legaia
 Explorer treats its `settings.json` the same way and says so on its error
 banner.
+
+The launcher and the game's own chrome draw in the same two palettes as Legaia
+Explorer. *Menu colours* in the Display group follows the desktop's light or dark
+preference (GNOME's colour scheme or `GTK_THEME` on Linux, the system setting
+elsewhere), or stays light or dark; the `F12` page changes it live and Explorer's
+*View* menu keeps its own choice.
 
 The launcher keeps the last few discs that passed (`recent_discs` in the same
 file, newest first), so a retail disc and a randomized or translated copy are
@@ -168,7 +179,7 @@ started from Legaia Explorer (`legaia-engine launch --disc`).
 | Group | Row | `Enter` | `Delete`, `Shift+Enter`, right-click |
 |---|---|---|---|
 | Discs | every remembered disc: *In use*, *Ready* or *Not found* | switch to it | forget it |
-| Continue a save | every save on the game's own card and on card 2, by leader, level, place and play time | start the game on it, without the title screen (`play-window --resume-save`) | - |
+| Continue your game / Continue from card 2 | every save on that card, longest played first, by leader, level, place and play time | start the game on it, without the title screen (`play-window --resume-save`) | - |
 | Memory cards | every remembered card, and *Mount a memory card...* | mount it as card 2, or take it out | forget it |
 
 `Esc`, Circle or the page's *Options* button goes back to the options.
@@ -198,6 +209,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Start here | Look and feel (Enhanced, Original, Custom) | both | - | Enhanced |
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
+| Display | Menu colours (System, Light, Dark) | `legaia-options.toml` | - | System |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
 | Display | PlayStation pixel look: the native 320x240 picture, magnified (`--psx-render`) | `launcher.toml` | - | off |
 | Enhancements | Enhanced lighting | `legaia-options.toml` | `I` | on |

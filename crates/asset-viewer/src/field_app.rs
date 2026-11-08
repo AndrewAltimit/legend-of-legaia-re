@@ -935,6 +935,7 @@ impl ApplicationHandler for FieldApp {
                         overlay_sprites: None,
                         overlay_sprites_2: None,
                         overlay_text: Some(&overlay),
+                        overlay_chrome: None,
                         clear_color: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {

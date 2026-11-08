@@ -19,7 +19,6 @@
 //! never looks dead.
 
 use super::*;
-use legaia_app_theme::chrome;
 
 /// The scene-table categories the page offers, in its group order, with the
 /// heading each group shows. The play page's `GROUPS`.
@@ -209,10 +208,10 @@ impl PlayWindowApp {
     pub(super) fn scenes_stage_draws(&self) -> Vec<TextDraw> {
         let rows = scene_rows();
         let here = self.player_scene();
-        let heading = chrome::HEADING.to_f32();
-        let key_ink = chrome::KEY.to_f32();
-        let text = chrome::TEXT.to_f32();
-        let changed = chrome::CHANGED.to_f32();
+        let heading = self.chrome().heading;
+        let key_ink = self.chrome().key;
+        let text = self.chrome().text;
+        let changed = self.chrome().changed;
         let height = super::settings_panel::plate_height(SHOWN, NOTE_LINES);
         let mut out = Vec::new();
         self.push_scrim(
@@ -252,7 +251,7 @@ impl PlayWindowApp {
                 out.push(TextDraw {
                     dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
                     src,
-                    color: legaia_app_theme::DARK.hover.to_f32(),
+                    color: self.chrome().hover,
                 });
             }
             let current = here.as_deref() == Some(row.label.as_str());

@@ -304,24 +304,24 @@ fn picker_event_loop() -> Result<EventLoop<()>> {
 // The shared dark palette (`legaia_app_theme`), which Explorer's dark theme
 // draws in too.
 
-use legaia_app_theme::DARK as P;
+use legaia_app_theme::Role;
 
-const INK: [f32; 4] = P.ink.to_f32();
-const DIM: [f32; 4] = P.ink_dim.to_f32();
-const FAINT: [f32; 4] = P.ink_faint.to_f32();
-const GOLD: [f32; 4] = P.accent.to_f32();
-const GOOD: [f32; 4] = P.good.to_f32();
-const WARN: [f32; 4] = P.warn.to_f32();
-const ON_GOLD: [f32; 4] = P.on_accent.to_f32();
-const BODY: [f32; 4] = P.ground.to_f32();
-const BAND: [f32; 4] = P.band.to_f32();
-const CARD: [f32; 4] = P.card.to_f32();
-const FOCUS: [f32; 4] = P.hover.to_f32();
-const BUTTON: [f32; 4] = P.raised.to_f32();
-const PRIMARY: [f32; 4] = P.accent_fill.to_f32();
-const PRIMARY_FOCUS: [f32; 4] = P.accent_fill_focus.to_f32();
-const RULE: [f32; 4] = P.rule.to_f32();
-const KEY: [f32; 4] = legaia_app_theme::chrome::KEY.to_f32();
+const INK: Role = Role::Ink;
+const DIM: Role = Role::InkDim;
+const FAINT: Role = Role::InkFaint;
+const GOLD: Role = Role::Accent;
+const GOOD: Role = Role::Good;
+const WARN: Role = Role::Warn;
+const ON_GOLD: Role = Role::OnAccent;
+const BODY: Role = Role::Ground;
+const BAND: Role = Role::Band;
+const CARD: Role = Role::Card;
+const FOCUS: Role = Role::Hover;
+const BUTTON: Role = Role::Raised;
+const PRIMARY: Role = Role::AccentFill;
+const PRIMARY_FOCUS: Role = Role::AccentFillFocus;
+const RULE: Role = Role::Rule;
+const KEY: Role = legaia_app_theme::chrome::KEY;
 
 /// Virtual stage the screen is laid out on; scaled up by an integer factor
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.
@@ -462,7 +462,7 @@ enum RecentKind {
 struct RecentEntry {
     label: String,
     value: String,
-    value_ink: [f32; 4],
+    value_ink: Role,
     help: String,
     kind: RecentKind,
 }
@@ -488,7 +488,7 @@ enum RecentLine {
 }
 
 /// A line of the help box with its ink.
-type Message = (String, [f32; 4]);
+type Message = (String, Role);
 
 /// A game the launcher started.
 struct Running {
@@ -532,6 +532,8 @@ struct LauncherApp {
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
+    /// The palette the screen draws in ([`Self::resolve_theme`]).
+    dark: bool,
     focus: Item,
     /// Where Tab left each column ([`Self::switch_column`]): the button,
     /// and the option or key row, focused when the other column was
@@ -618,6 +620,7 @@ impl LauncherApp {
             card: settings.card.as_deref().map(launcher::inspect_card),
             settings,
             settings_file,
+            dark: true,
             options,
             focus,
             left_at: (focus, None),
@@ -694,12 +697,32 @@ impl LauncherApp {
         if self.atlas.is_some() {
             return;
         }
+        let rgba = (!self.dark).then(|| self.font.atlas_rgba_without_shadow());
+        let (w, h) = self.font.atlas_dimensions();
         if let Some(r) = self.win.renderer() {
-            match r.upload_font(&self.font) {
+            let uploaded = match &rgba {
+                // Black letter shadows smear into dark ink on a light card.
+                Some(pixels) => r.upload_font_atlas(pixels, w, h),
+                None => r.upload_font(&self.font),
+            };
+            match uploaded {
                 Ok(a) => self.atlas = Some(a),
                 Err(e) => log::error!("launcher font upload: {e:#}"),
             }
         }
+    }
+
+    /// Pick the palette from the *Menu colours* row and the desktop.
+    fn resolve_theme(&mut self) {
+        use winit::window::Theme;
+        let window_dark = self
+            .win
+            .window
+            .as_deref()
+            .and_then(|w| w.theme())
+            .map(|t| t == Theme::Dark);
+        self.dark =
+            legaia_app_theme::resolve_dark(self.options.ui_theme.forced_dark(), window_dark);
     }
 
     fn save_settings(&mut self) {
@@ -1092,6 +1115,7 @@ impl LauncherApp {
                 (STAGE_H - HEADER_GIVE) as f64,
             )));
         }
+        self.resolve_theme();
         self.atlas = None;
         self.upload_font();
         self.opened_at = Instant::now();
@@ -1465,11 +1489,75 @@ impl LauncherApp {
             lines.push(RecentLine::Row(rows.len()));
             rows.push(entry);
         };
+        // Saves: the game's own card, then card 2, each newest first as far
+        // as a card can say. A card keeps no dates; the longest-played save
+        // is the one a player left off on.
+        let own = launcher::own_card_path();
+        let mut groups: Vec<(&'static str, String, Vec<launcher::SaveRow>)> = vec![(
+            "Continue your game",
+            "your own card".to_string(),
+            launcher::list_saves(&own),
+        )];
+        if let Some(card) = &self.settings.card {
+            groups.push((
+                "Continue from card 2",
+                file_name_of(card),
+                launcher::list_saves(card),
+            ));
+        }
+        for (heading, card_name, mut saves) in groups {
+            lines.push(RecentLine::Heading(heading));
+            if saves.is_empty() {
+                row(
+                    RecentEntry::note(if heading == "Continue your game" {
+                        "No saves yet."
+                    } else {
+                        "No Legend of Legaia saves on this card."
+                    }),
+                    &mut lines,
+                );
+            }
+            saves.sort_by_key(|s| std::cmp::Reverse(s.play_time_seconds));
+            for save in saves {
+                let mut value = save.location.clone();
+                let time = save.play_time();
+                if !time.is_empty() {
+                    if !value.is_empty() {
+                        value.push(' ');
+                    }
+                    value.push_str(&time);
+                }
+                row(
+                    RecentEntry {
+                        label: format!("{} Lv {}", save.name, save.level),
+                        value,
+                        value_ink: DIM,
+                        help: format!(
+                            "Enter starts the game on this save, without the title screen. {} on \
+                             {card_name}.",
+                            save.number.map_or_else(
+                                || format!("Block {}", save.cell + 1),
+                                |n| format!("Save {n:02}")
+                            ),
+                        ),
+                        kind: RecentKind::Save(save),
+                    },
+                    &mut lines,
+                );
+            }
+        }
         // Discs.
         lines.push(RecentLine::Heading("Discs"));
         let mut discs: Vec<PathBuf> = self.settings.recent_discs.clone();
         if let Some(d) = self.settings.disc.as_ref().filter(|d| !discs.contains(d)) {
             discs.insert(0, d.clone());
+        }
+        // The disc in use leads; the rest keep newest-first.
+        if let Some(cur) = self.disc.as_ref().map(|d| d.path.clone())
+            && let Some(i) = discs.iter().position(|p| *p == cur)
+        {
+            let d = discs.remove(i);
+            discs.insert(0, d);
         }
         if discs.is_empty() {
             row(RecentEntry::note("No disc chosen yet."), &mut lines);
@@ -1507,43 +1595,6 @@ impl LauncherApp {
                     value_ink: ink,
                     help: format!("{help} {}", path.display()),
                     kind: RecentKind::Disc(path),
-                },
-                &mut lines,
-            );
-        }
-        // Saves.
-        lines.push(RecentLine::Heading("Continue a save"));
-        let mut saves = launcher::list_saves(&launcher::own_card_path());
-        if let Some(card) = &self.settings.card {
-            saves.extend(launcher::list_saves(card));
-        }
-        if saves.is_empty() {
-            row(
-                RecentEntry::note("No saves yet: they appear here after your first save."),
-                &mut lines,
-            );
-        }
-        for save in saves {
-            let label = format!("{} Lv {}", save.name, save.level);
-            let mut value = save.location.clone();
-            let time = save.play_time();
-            if !time.is_empty() {
-                if !value.is_empty() {
-                    value.push(' ');
-                }
-                value.push_str(&time);
-            }
-            row(
-                RecentEntry {
-                    label,
-                    value,
-                    value_ink: DIM,
-                    help: format!(
-                        "Enter starts the game on this save, without the title screen. Block {} of {}.",
-                        save.cell + 1,
-                        file_name_of(&save.card)
-                    ),
-                    kind: RecentKind::Save(save),
                 },
                 &mut lines,
             );
@@ -1768,6 +1819,11 @@ impl LauncherApp {
             row.value(&self.options, &self.settings)
         );
         self.status = None;
+        if row == OptionRow::Theme {
+            self.resolve_theme();
+            self.atlas = None;
+            self.upload_font();
+        }
         if row == OptionRow::Preset {
             // One switch over both files.
             self.save_options();
@@ -2113,7 +2169,6 @@ impl LauncherApp {
                 FAINT
             } else {
                 legaia_app_theme::chrome::option_value(&value, row.original_value().as_deref())
-                    .to_f32()
             };
             let shown = if focused {
                 format!("< {value} >")
@@ -2232,16 +2287,25 @@ impl LauncherApp {
             } else {
                 INK
             };
-            // The value keeps its width; the label gets what is left.
-            let value = c.ellipsize_right(&entry.value, (panel.w - 24) * 3 / 5);
+            // The shorter side keeps its whole width; the longer one is cut
+            // in the middle, so a file name keeps its end and a save row
+            // its play time.
+            let room = panel.w - 24;
+            let gap = 8;
+            let (lw, vw) = (c.width(&entry.label), c.width(&entry.value));
+            let (label_room, value_room) = if lw + vw + gap <= room {
+                (lw, vw)
+            } else if vw <= room / 2 {
+                (room - vw - gap, vw)
+            } else if lw <= room / 2 {
+                (lw, room - lw - gap)
+            } else {
+                (room / 2 - gap / 2, room / 2 - gap / 2)
+            };
+            let label = c.ellipsize_middle(&entry.label, label_room);
+            let value = c.ellipsize_middle(&entry.value, value_room);
+            c.text(panel.x + 10, y, &label, ink);
             let vw = c.width(&value);
-            let label_room = panel.w - 24 - vw - 8;
-            c.text(
-                panel.x + 10,
-                y,
-                &c.ellipsize_right(&entry.label, label_room),
-                ink,
-            );
             c.text(panel.x + panel.w - 14 - vw, y, &value, entry.value_ink);
             y += ROW_PITCH;
         }
@@ -2399,6 +2463,7 @@ impl LauncherApp {
         };
         let stage = self.stage();
         let mut canvas = Canvas {
+            palette: legaia_app_theme::palette(self.dark),
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
@@ -2440,6 +2505,7 @@ impl LauncherApp {
         let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
         // Re-run the layout to get the rectangles (cheap: a few hundred quads).
         let mut canvas = Canvas {
+            palette: legaia_app_theme::palette(self.dark),
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
@@ -2764,6 +2830,8 @@ fn stage_for((w, h): (u32, u32)) -> Stage {
 
 /// Quads in stage coordinates, emitted in surface pixels.
 struct Canvas<'a> {
+    /// The palette every role resolves in.
+    palette: &'static legaia_app_theme::Palette,
     font: &'a legaia_font::Font,
     solid: (u32, u32, u32, u32),
     /// Set the built-in font 6 px a character instead of its 8 (its glyphs
@@ -2774,17 +2842,17 @@ struct Canvas<'a> {
 }
 
 impl Canvas<'_> {
-    fn fill_surface(&mut self, color: [f32; 4]) {
+    fn fill_surface(&mut self, color: Role) {
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, self.stage.surface.1),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
     /// A band `h` stage rows tall at stage row `y`, across the whole
     /// surface (the margins beside the stage included).
-    fn full_width(&mut self, y: i32, h: i32, color: [f32; 4]) {
+    fn full_width(&mut self, y: i32, h: i32, color: Role) {
         let s = self.stage.scale;
         let top = self.stage.origin.1 + y * s;
         let bottom = top + h.max(0) * s;
@@ -2796,23 +2864,23 @@ impl Canvas<'_> {
                 (bottom - top.max(0)).max(0) as u32,
             ),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
     /// A band from the surface's top edge down to stage row `bottom`,
     /// across the whole surface: the header in a window taller than the
     /// stage reaches the top instead of floating under a dark margin.
-    fn band_to_top(&mut self, bottom: i32, color: [f32; 4]) {
+    fn band_to_top(&mut self, bottom: i32, color: Role) {
         let h = self.stage.origin.1 + bottom * self.stage.scale;
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, h.max(0) as u32),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
-    fn rect(&mut self, r: Rect, color: [f32; 4]) {
+    fn rect(&mut self, r: Rect, color: Role) {
         let s = self.stage.scale;
         self.draws.push(TextDraw {
             dst: (
@@ -2822,11 +2890,11 @@ impl Canvas<'_> {
                 (r.h.max(0) * s) as u32,
             ),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
-    fn outline(&mut self, r: Rect, color: [f32; 4]) {
+    fn outline(&mut self, r: Rect, color: Role) {
         self.rect(Rect::new(r.x, r.y, r.w, 1), color);
         self.rect(Rect::new(r.x, r.y + r.h - 1, r.w, 1), color);
         self.rect(Rect::new(r.x, r.y, 1, r.h), color);
@@ -2853,14 +2921,15 @@ impl Canvas<'_> {
         if self.condense { x * 3 / 4 } else { x }
     }
 
-    fn text(&mut self, x: i32, y: i32, text: &str, color: [f32; 4]) {
+    fn text(&mut self, x: i32, y: i32, text: &str, color: Role) {
         self.text_scaled(x, y, text, color, 1);
     }
 
-    fn text_scaled(&mut self, x: i32, y: i32, text: &str, color: [f32; 4], k: i32) {
+    fn text_scaled(&mut self, x: i32, y: i32, text: &str, color: Role, k: i32) {
         let s = self.stage.scale;
         let layout = self.font.layout_ascii(&Self::clean(text));
-        for d in legaia_engine_ui::text_draws_for(&layout, (0, 0), color) {
+        for d in legaia_engine_ui::text_draws_for(&layout, (0, 0), self.palette.get(color).to_f32())
+        {
             self.draws.push(TextDraw {
                 dst: (
                     self.stage.origin.0 + (x + self.pitch(d.dst.0) * k) * s,
@@ -2873,7 +2942,7 @@ impl Canvas<'_> {
         }
     }
 
-    fn text_centered(&mut self, r: Rect, text: &str, color: [f32; 4]) {
+    fn text_centered(&mut self, r: Rect, text: &str, color: Role) {
         let w = self.width(text);
         self.text(r.x + (r.w - w) / 2, r.y + (r.h - 12) / 2, text, color);
     }
@@ -2930,6 +2999,30 @@ impl Canvas<'_> {
 
     /// `text` cut to `max_w` pixels by dropping characters from its end
     /// behind `...` - for a name, whose start says what it is.
+    /// `text` cut in the middle to `max_w`: the end of a file name (a seed,
+    /// `(Track 2)`, a translation's tag) is usually what tells two apart.
+    fn ellipsize_middle(&self, text: &str, max_w: i32) -> String {
+        if self.width(text) <= max_w {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        for keep in (2..chars.len()).rev() {
+            let head = keep.div_ceil(2);
+            let tail = keep - head;
+            let shown: String = chars[..head]
+                .iter()
+                .chain(std::iter::once(&'.'))
+                .chain(std::iter::once(&'.'))
+                .chain(std::iter::once(&'.'))
+                .chain(chars[chars.len() - tail..].iter())
+                .collect();
+            if self.width(&shown) <= max_w {
+                return shown;
+            }
+        }
+        String::from("...")
+    }
+
     fn ellipsize_right(&self, text: &str, max_w: i32) -> String {
         if self.width(text) <= max_w {
             return text.to_string();
@@ -3474,7 +3567,7 @@ fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
 /// reminder keeps its line, the last row text may reach, and whether every
 /// line fits.
 struct HelpLayout {
-    lines: Vec<(Vec<String>, [f32; 4])>,
+    lines: Vec<(Vec<String>, Role)>,
     footer: bool,
     bottom: i32,
     /// Read by the fit test; the window draws what fits either way.
@@ -3484,7 +3577,7 @@ struct HelpLayout {
 
 fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
     let help = help_rect();
-    let lines: Vec<(Vec<String>, [f32; 4])> = msg
+    let lines: Vec<(Vec<String>, Role)> = msg
         .iter()
         .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
         .collect();
@@ -3568,6 +3661,7 @@ mod tests {
 
     fn canvas(font: &legaia_font::Font) -> Canvas<'_> {
         Canvas {
+            palette: legaia_app_theme::palette(true),
             font,
             solid: (0, 0, 1, 1),
             condense: true,
