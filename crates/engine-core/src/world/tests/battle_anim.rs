@@ -1809,3 +1809,34 @@ fn a_monster_clip_names_its_move_until_it_hands_off() {
     world.commit_staged_battle_anim_at_boundary(0);
     assert_eq!(world.battle.monster_move_label, None);
 }
+
+/// The burning-body emitter sits in the pose decode, which only the draw
+/// callback reaches, and the draw tick `FUN_800480D8` skips the callback for
+/// a body whose colour word is zero (`0x800481CC`). A drawn body with a
+/// selector draws its emit points off `rand()`; the same body under a
+/// module's hide (`+0x04 = 0`, `+0x21C = 0xFF`) sheds nothing and draws
+/// nothing, however long it keeps the selector.
+#[test]
+fn a_hidden_body_sheds_no_impact_sprites() {
+    let mut w = pose_test_world();
+    w.mode = SceneMode::Battle;
+    w.party.party_count = 1;
+    w.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+    w.tick_battle_animations();
+    assert!(
+        crate::world::battle::stream_pose(&w.actors[0]).is_some_and(|p| !p.is_empty()),
+        "the body has a pose to shed from"
+    );
+    w.actors[0].battle.impact_state = 2;
+    let before = w.rng_state;
+    w.emit_battle_burn_sprites(0x10);
+    assert_ne!(w.rng_state, before, "a drawn body draws its emit point");
+
+    w.actors[0].battle.render_flag = 0xFF;
+    w.actors[0].battle.render_color = 0;
+    w.battle.burn_emit_accum = 0;
+    let before = w.rng_state;
+    w.emit_battle_burn_sprites(0x10);
+    assert_eq!(w.rng_state, before, "a hidden body is not decoded");
+    assert_eq!(w.actors[0].battle.impact_state, 2);
+}
