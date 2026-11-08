@@ -21,6 +21,7 @@ mod camera_follow;
 mod cast_damage;
 mod cast_steal;
 mod coin_counter;
+mod colour_tween;
 mod combo_records;
 mod common;
 mod confuse;

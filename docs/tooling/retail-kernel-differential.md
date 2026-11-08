@@ -466,3 +466,8 @@ The follow camera's per-frame kernels (`camera_follow`), the ease `FUN_801DB510`
 poses, the hold and force-ease bits and the script focus override. A mode-1 / mode-2 block over a box with no
 width, or a sweep over one with no depth, reaches the composer's `break` guards; the port reads that divide as
 `0`.
+The overlay colour tween `FUN_801DDC20` (`colour_tween`) found the port taking the ramp's progress as a word,
+where the bytes take `clock - delay` as a halfword (`0x801DDCC4..0x801DDCD8`): a negative delay with the clock past
+`0x7FFF` lerped from a progress `0x10000` too large. The field VM's screen-effect arm seats delay `0`, so no shipped
+script reaches it. The SCUS fade actor's tick `FUN_80025000` over its step `FUN_80020C14` matches `tick_fade_ramp`
+at every phase.
