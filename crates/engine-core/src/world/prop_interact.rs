@@ -1059,20 +1059,53 @@ impl World {
     }
 }
 
+/// The `0x4C` sub-ops whose arm reads or writes the **resolved actor**, the
+/// context the dispatcher prologue swaps into `s5` for a `0x80`-prefix op
+/// (`jal 0x8003C83C` / `move s5,v0` at `0x801DE8A8..0x801DE8B0`): the
+/// clip-control pair `35` / `36` (`+0x62`), the player copy `37` (`+0x14` ..
+/// `+0x18`, `+0x26`), the nibble-4 slots `40` .. `45` and `48` (`+0x72`,
+/// `+0x6A`, `+0x8E`, `+0x24`, `+0x28`, the look turn, `+0x26`), the model
+/// set `50`, the seat `51`, the tint `81` (`+0x74` / `+0x78`), the clip
+/// cursor test `8C` (`+0x68`), the clip phase `C0`, the height-law bit
+/// `D9` / `DA` (`+0x10`), the position copy `E3` and the box test `E4`
+/// (`+0x14` / `+0x18`). Every other sub-op works on globals, the player or
+/// the script's own flow, and runs wherever it is stepped.
+///
+/// REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+pub(in crate::world) fn is_resolved_actor_4c(sub: u8) -> bool {
+    matches!(
+        sub,
+        0x35..=0x37
+            | 0x40..=0x45
+            | 0x48
+            | 0x50
+            | 0x51
+            | 0x81
+            | 0x8C
+            | 0xC0
+            | 0xD9
+            | 0xDA
+            | 0xE3
+            | 0xE4
+    )
+}
+
 /// The placement slot a prop record's cross-context op at `pc` reaches, when
 /// the op is one of the actor-word ops the prop runner routes onto the NPC's
 /// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, an
-/// `A3 <id> x z` or `CC <id> 51 ..` seat, a `CC <id> C3` re-seat at the
-/// placement's own record, a clip-control `AB` / `AC` /
-/// `AD`, or a class-bit `B1` / `B2` - but not the
-/// retire (`3`), engage (`8`) or halt (`0xA`) bits, whose side effects the
-/// runner models elsewhere or not at all. `None` for any other op, and for a
-/// target no placement channel carries.
+/// `A3 <id> x z` seat, a `CC <id> C3` re-seat at the placement's own
+/// record, a clip-control `AB` / `AC` / `AD`, a class-bit `B1` / `B2` - but
+/// not the retire (`3`), engage (`8`) or halt (`0xA`)
+/// bits, whose side effects the runner models elsewhere or not at all - or
+/// a `CC <id> ..` sub-op on the resolved actor ([`is_resolved_actor_4c`]).
+/// `None` for any other op, and for a target no placement channel carries.
 pub(in crate::world) fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
     let b = *bytecode.get(pc)?;
     let routed = match b & 0x7F {
         0x22 | 0x23 | 0x2B..=0x2D => true,
-        0x4C => matches!(bytecode.get(pc + 2), Some(&(0x51 | 0xC3))),
+        0x4C => bytecode
+            .get(pc + 2)
+            .is_some_and(|&sub| sub == 0xC3 || is_resolved_actor_4c(sub)),
         0x31 | 0x32 => bytecode
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
@@ -1773,6 +1806,85 @@ mod tests {
                 .map(|a| a.anim_id),
             Some(4),
             "the ExecMove binds the player's clip cursor"
+        );
+    }
+
+    /// A prop record's `CC <id> ..` sub-ops on a placement's actor land on
+    /// the placement, as the dispatcher prologue swaps the resolved actor
+    /// into `s5` - the shape of `stone`'s Shadow Gate records (`P0[2..=5]`),
+    /// which hide Gi Delilas (`CC 12 40 ..`), seat Noa and Gala on Vahn
+    /// (`CC 09 37`) and turn heads (`CC 16 45 ..` in `jiji`). Stepped on the
+    /// record's own context, nobody hid, moved or looked anywhere.
+    #[test]
+    fn a_prop_records_actor_sub_ops_land_on_the_placement() {
+        use legaia_engine_field::actor_look::LookKey;
+        let mut w = World::new();
+        w.install_field_player(0);
+        let p = w.player_actor_slot.unwrap() as usize;
+        w.actors[p].move_state.world_x = 10 * 128 + 64;
+        w.actors[p].move_state.world_z = 12 * 128 + 64;
+        w.actors[p].move_state.render_26 = 0x0C00;
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 2,
+                ctx: FieldCtx {
+                    script_id: 0x11,
+                    world_x: 3 * 128 + 64,
+                    world_z: 3 * 128 + 64,
+                    field_72: 0x1000,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: true,
+                object_bind: false,
+            });
+        w.npcs.positions.insert(2, (3 * 128 + 64, 3 * 128 + 64));
+        let record = vec![
+            0x00, 0x00, // header
+            0xCC, 0x11, 0x40, 0x00, 0x00, 0x00, 0x00, // +0x72 = 0
+            0xCC, 0x11, 0x42, 0x2C, 0x01, 0x00, 0x00, // +0x8E = 300
+            0xCC, 0x11, 0x45, 0x00, 0x00, 0x00, 0xF4, 0x01, 0x00, 0x00, 0x00,
+            0x00, // look: object 0, Y = 500
+            0xCC, 0x11, 0x37, // the player's spot and heading
+            0x21,
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 2,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4000_0000,
+            },
+        );
+        assert!(w.start_prop_interaction(anchor));
+        for _ in 0..4 {
+            w.step_prop_interaction();
+        }
+        let ctx = &w.field_vm.channels[0].ctx;
+        assert_eq!(ctx.field_72, 0, "the placement is hidden");
+        assert_eq!(ctx.field_8e, 300, "the placement's height slot");
+        assert_eq!(
+            w.npcs.looks.get(LookKey::Npc(2)).angles,
+            [0, 500, 0],
+            "the placement's head turns"
+        );
+        assert_eq!(
+            w.npcs.positions.get(&2).copied(),
+            Some((10 * 128 + 64, 12 * 128 + 64)),
+            "the placement stands on the player's spot"
+        );
+        assert_eq!(
+            w.npcs.headings.get(&2).copied(),
+            Some(0x0C00),
+            "facing the player's way"
         );
     }
 }

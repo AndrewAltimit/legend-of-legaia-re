@@ -76,11 +76,15 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             // `0x801E103C..0x801E1044`), so the height arm holds it at the
             // player's height. Every path leaves through `0x801DF098`
             // (`s8 += 2`): the op always advances.
+            // The heading lands on the actor's drawn `+0x26` too, so the
+            // host's heading seat ([`FieldActorHost::set_actor_heading`])
+            // takes it, as `4C 48`'s immediate arm does.
             if let Some(p) = host.fetch_player_coords(ctx) {
                 ctx.world_x = p.world_x;
                 ctx.world_y = p.world_y;
                 ctx.world_z = p.world_z;
                 ctx.field_26 = p.field_26;
+                host.set_actor_heading(ctx, p.field_26);
                 if ctx.flags & 0x2000_0000 != 0 {
                     ctx.field_8e = (p.world_y as i16).wrapping_neg();
                 }

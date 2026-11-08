@@ -7,8 +7,10 @@
 //! `AD 26 08`. The prop runner (`World::step_prop_interaction`) sends these
 //! ops to the placement's own context; this census lists every carrier of the
 //! shape so the routing has a denominator. Word ops: an `A2` ExecMove, an `A3`
-//! or `CC .. 51` seat, an `AB` / `AC` / `AD` clip-control op, or a `B1` / `B2`
-//! class bit other than retire (`3`), engage (`8`) and halt (`0xA`). Motion
+//! seat, an `AB` / `AC` / `AD` clip-control op, a `B1` / `B2` class bit other
+//! than retire (`3`), engage (`8`) and halt (`0xA`), or a `CC ..` sub-op on
+//! the resolved actor (scale, height, look, tint, player copy, seat ...:
+//! `stone`'s Shadow Gate records, `chitei2`'s generator panels). Motion
 //! ops: a compass walk, turn, walk-to-tile or face-at, handed to the
 //! placement's walk kernel. Both aimed at an id in `N0..N0 + N1`.
 //!
@@ -31,12 +33,21 @@ fn extracted_dir() -> Option<PathBuf> {
         .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
+/// The `0x4C` sub-ops whose arm works on the resolved actor (the prologue's
+/// `s5`), mirrored from `World`'s `is_resolved_actor_4c`.
+fn resolved_actor_4c(sub: u8) -> bool {
+    matches!(
+        sub,
+        0x35..=0x37 | 0x40..=0x45 | 0x48 | 0x50 | 0x51 | 0x81 | 0x8C | 0xC0 | 0xD9 | 0xDA | 0xE3 | 0xE4
+    )
+}
+
 /// Whether the decoded op is one the prop runner routes onto a placement's
 /// words.
 fn routed(opcode: u8, body: &[u8], pc: usize) -> bool {
     match opcode {
         0x22 | 0x23 | 0x2B..=0x2D => true,
-        0x4C => body.get(pc + 2) == Some(&0x51),
+        0x4C => body.get(pc + 2).is_some_and(|&sub| resolved_actor_4c(sub)),
         0x31 | 0x32 => body
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
@@ -128,6 +139,12 @@ fn object_records_that_drive_a_placements_clip() {
             .any(|((s, _, _), &(_, legs))| s == "jiji" && legs > 0),
         "jiji's counters walk their keeper"
     );
+    for scene in ["stone", "chitei2", "nilboa"] {
+        assert!(
+            sites.keys().any(|(s, _, _)| s == scene),
+            "{scene}'s object records drive a placement's actor"
+        );
+    }
     let scenes: std::collections::BTreeSet<&str> =
         sites.keys().map(|(s, _, _)| s.as_str()).collect();
     assert!(

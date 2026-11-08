@@ -216,6 +216,12 @@
   </ul>
 </section>
 
+<section class="doc-section" id="resolved-actor" data-doc="which-sub-ops-act-on-the-resolved-actor">
+  <h2>Aimed at someone else, it acts on them</h2>
+  <p>Any <code>4C</code> op can carry a target id (<code>CC &lt;id&gt; ..</code>). The dispatcher looks the id up before the sub-op runs and swaps that actor in as the one the arm works on, so the sub-ops that touch an actor&rsquo;s own words land on the <em>named</em> actor: its scale, speed, height, tilt and head turn, heading, model, seat, tint, clip words, the copy of the player&rsquo;s spot, and the box test of where it stands. Sub-ops that work on the camera, the screen, the bag or the script&rsquo;s own flow ignore the target.</p>
+  <p>Door and switch records use this to stage the NPCs around them. At the Shadow Gate the gate&rsquo;s records hide Gi Delilas and grow him back in, tint him, and set Noa and Gala down on Vahn&rsquo;s spot; the inn counter in the Ancient Wind Cave turns its keeper&rsquo;s head. Talks do it too, in Rim Elm, the Fire Path and the Usha Research Center. The port&rsquo;s cutscene runner always ran such ops on the named actor; the door and talk runners ran them on their own record, so the NPC never hid, moved, tilted or looked anywhere. Both now hand them to the NPC.</p>
+</section>
+
 <section class="doc-section" id="port" data-doc="port-notes,evidence">
   <h2>In the port, and how it is known</h2>
   <p>The dispatcher lives in <code>legaia_engine_vm::field</code> (<code>step/menu_ctrl/</code>), with one <code>FieldHost</code> hook per sub-cluster implemented over the world by <code>FieldHostImpl</code>. Feature homes include the reflection controller, the actor clone, the morph-weight apply, the casino coin bank, the escape timer, the step-counter reroll and the camera-zone requests.</p>

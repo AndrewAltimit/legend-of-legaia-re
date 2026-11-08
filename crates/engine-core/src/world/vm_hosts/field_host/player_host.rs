@@ -46,7 +46,9 @@ impl<'a> FieldPlayerHost for FieldHostImpl<'a> {
             world_x: ms.world_x as u16,
             world_y: ms.world_y as u16,
             world_z: ms.world_z as u16,
-            field_26: ms.render_26 as u16,
+            // `+0x26` in retail space: the engine holds the player's
+            // heading a half-turn round (`render_26`).
+            field_26: (ms.render_26 as u16).wrapping_sub(0x800) & 0x0FFF,
         })
     }
 

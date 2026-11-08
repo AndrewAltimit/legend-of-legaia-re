@@ -1433,7 +1433,46 @@ On `jouina` and `concnow` almost every moving vertex is ground: `concnow`'s
 animated rungs touch about 3500 ground vertices against about 120 translated
 draws, and `jouina`'s touch none of its translated draws.
 
+## Which sub-ops act on the resolved actor
+
+A cross-context `CC <id> ..` reaches its arm with the target already in `s5`:
+the dispatcher prologue resolves the id byte through `FUN_8003C83C` and keeps
+the result there (`jal 0x8003C83C` / `move s5,v0` at `0x801DE8A8..0x801DE8B0`),
+and every arm that touches an actor word addresses it off `s5`. So the sub-ops
+below write or read the **named** actor, whoever runs the record:
+
+| Sub-ops | Actor words |
+|---|---|
+| `35` / `36` | clip-control word `+0x62` |
+| `37` | `+0x14` / `+0x16` / `+0x18` and `+0x26` from the player |
+| `40` .. `45`, `48` | `+0x72`, `+0x6A`, `+0x8E`, `+0x24`, `+0x28`, the look turn, `+0x26` |
+| `50`, `51` | model set, seat |
+| `81` | tint `+0x74` / `+0x78` |
+| `8C`, `C0` | clip cursor `+0x68` |
+| `D9` / `DA` | height-law bit `+0x10 & 0x20000000` |
+| `E3`, `E4` | position copy, box test of `+0x14` / `+0x18` |
+
+The rest work on globals, the player object or the record's own flow, and the
+target changes nothing. Object (partition-0) records aim these at placements
+in `stone` (the Shadow Gate records hide and grow Gi Delilas with
+`CC 12 40 ..`, tint him with `CC 12 81 ..`, seat Noa and Gala on Vahn with
+`CC 09 37` / `CC 0A 37`), `chitei2` (the generator panels tint the switch
+crew), `jiji` (the counters turn their keeper's head), `nilboa` and `vell`;
+talk records do the same in `town0b`, `town0c`, `tunnelc`, `doman` and
+others. The census is `crates/engine-scene/tests/object_record_placement_ops_disc.rs`.
+
 ## Port notes
+
+The cutscene timeline and the placement channels step every cross-context
+op on the resolved channel's context. The prop runner
+(`World::step_prop_interaction`) and the talk runner
+(`World::drive_inline_dialogue`) run on a stand-in context of their own, so
+they route the resolved-actor sub-ops above (`is_resolved_actor_4c`) onto the
+named placement's channel (`step_npc_word_op`); stepped on the stand-in, the
+named NPC never hid, moved, tilted or turned its head.
+`4C 37` hands the copied heading to the actor's heading seat as `4C 48` does,
+so a placement it lands on faces the player's way.
+
 
 The dispatcher lives in `legaia_engine_vm::field` (`step/menu_ctrl/`), with one
 `FieldHost` hook per sub-cluster implemented by `engine-core`'s

@@ -613,6 +613,25 @@ impl World {
                 })
                 .flatten();
             let talker = host.world.dialog.stepping_inline_npc;
+            // A `CC <id> ..` sub-op on another placement's actor - its scale,
+            // rate, height, tilt, look turn, heading, model, tint, clip
+            // words, or a copy of the player's spot - runs on that
+            // placement's context: the dispatcher prologue swaps the
+            // resolved actor into `s5` before the arm runs. `town0b`
+            // `P1[55]`'s first talk turns and raises placement `0x26` with
+            // `CC 26 45 ..` / `CC 26 42 ..`; stepped on the talk's context
+            // the talker took both.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+            let actor_target = (op == 0x4C
+                && run_target.is_none()
+                && !player_seat
+                && id
+                    .bytecode
+                    .get(id.pc + 2)
+                    .is_some_and(|&sub| crate::world::prop_interact::is_resolved_actor_4c(sub)))
+            .then(|| crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc))
+            .flatten()
+            .filter(|&slot| Some(slot) != talker);
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
                 host.world.dialog.stepping_inline_npc =
@@ -651,7 +670,8 @@ impl World {
                     }
                 }
                 r
-            } else if let Some(slot) = reseat {
+            } else if let Some(slot) = reseat.or(actor_target) {
+                host.world.dialog.stepping_inline_npc = None;
                 crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
             } else if let Some(t) = other_seat {
                 let mut other = id.ctx.clone();
