@@ -39,6 +39,9 @@ pub struct FieldCtx {
     pub model_id: u16,
     /// `+0x62` - local flag bank (16 bits). Manipulated by 0x2B/0x2C/0x2D.
     pub local_flags: u16,
+    /// `+0x6C` - the keyframe count op `0x4B` (ANIMATE) stores
+    /// (`sb v1,0x6c(s5)` at `0x801E08AC`).
+    pub anim_count: u8,
     /// `+0x6D` - face/body rotation index (op 0x43 sub-7).
     pub face_rotation: u8,
     /// `+0x72` - generic per-actor scalar slot. Written / ramped by

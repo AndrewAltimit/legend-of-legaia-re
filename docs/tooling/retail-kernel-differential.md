@@ -471,3 +471,10 @@ where the bytes take `clock - delay` as a halfword (`0x801DDCC4..0x801DDCD8`): a
 `0x7FFF` lerped from a progress `0x10000` too large. The field VM's screen-effect arm seats delay `0`, so no shipped
 script reaches it. The SCUS fade actor's tick `FUN_80025000` over its step `FUN_80020C14` matches `tick_fade_ramp`
 at every phase.
+The field VM's context stores (`field_ctx`), every distinct instruction on the disc run on a context of generated
+bytes with `step` beside it, found three: op `0x4B` writing its keyframe count over `+0x6D` (the face-rotation byte)
+where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit in its two tile bytes `+0x8C` /
+`+0x8D`, which the arm masks with `0x7F`; and op `0x3E`'s minigame warp clearing `0x80000` on the context running
+the script, where the arm clears it on the player object (`0x801E07BC..0x801E07D8`), so a door's warp left the
+player's walk lock up. A field the port leaves to its host is counted rather than compared, since the host there is
+inert; what the test holds is every store `step` makes itself.

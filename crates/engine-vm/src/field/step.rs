@@ -116,8 +116,10 @@ pub fn step_from_caller<H: FieldHost>(
             let world_z = grid_to_world(zb);
             ctx.world_x = world_x;
             ctx.world_z = world_z;
-            ctx.npc_x = xb;
-            ctx.npc_facing = zb;
+            // `andi 0x7f` ahead of both stores (`0x801DECAC..0x801DECC8`):
+            // the half-tile bit moves the seat, not the tile bytes.
+            ctx.npc_x = xb & 0x7F;
+            ctx.npc_facing = zb & 0x7F;
             ctx.field_8b = 0;
             let is_player = ctx.flags & 0x1000000 != 0;
             host.move_to(ctx, world_x, world_z, is_player);
@@ -657,8 +659,8 @@ pub fn step_from_caller<H: FieldHost>(
         // 0x4B - ANIMATE. `[4B, count, base_id, ...4*count keyframe bytes]`.
         // PC += 3 + count * 4. Sets ctx.flags |= 0x1000, ctx.local_flags |=
         // 0x1000 (with bits 0x2000+0x0C00 cleared via mask 0xD3FF), writes
-        // ctx[+0x6c] = count (face_rotation slot is reused - the original
-        // stores the count there).
+        // ctx[+0x6C] = count. That is its own byte, one below the
+        // `face_rotation` slot `+0x6D`, which the arm leaves alone.
         0x4B => {
             let Some(&count) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -674,7 +676,7 @@ pub fn step_from_caller<H: FieldHost>(
             }
             ctx.flags |= 0x1000;
             ctx.local_flags = (ctx.local_flags & 0xD3FF) | 0x1000;
-            ctx.face_rotation = count;
+            ctx.anim_count = count;
             let frames = &bytecode[frames_start..frames_end];
             host.setup_animation(ctx, count, base_id, frames);
             StepResult::Advance {

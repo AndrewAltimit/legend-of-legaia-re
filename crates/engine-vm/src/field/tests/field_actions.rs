@@ -555,7 +555,8 @@ fn animate_advances_3_plus_4_count_and_writes_flags() {
     assert_eq!(ctx.local_flags & 0x1000, 0x1000);
     assert_eq!(ctx.local_flags & 0x0C00, 0); // bits 10, 11 cleared by mask
     assert_eq!(ctx.local_flags & 0x2000, 0); // bit 13 cleared
-    assert_eq!(ctx.face_rotation, 2);
+    assert_eq!(ctx.anim_count, 2);
+    assert_eq!(ctx.face_rotation, 0, "+0x6D is not the count's byte");
     assert_eq!(host.animations.len(), 1);
     assert_eq!(host.animations[0].0, 7);
     assert_eq!(host.animations[0].1, 2);

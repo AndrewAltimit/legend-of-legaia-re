@@ -590,8 +590,8 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 | +0x74 | u32 | Draw word: low 24 bits the tint colour (`0xBBGGRR`), top byte mode bits. Written by op 0x4C nibble-8 sub-1 ([tint](script-vm-menuctrl.md)); XOR-toggled by op 0x4C nibble-C sub-8 (flips bit 0x10000000). The actor draw hands it to `FUN_80043390` as the far colour. |
 | +0x78 | u16 | Tint blend (`0x1000` = full), the draw's `IR0`. Written / tweened by op 0x4C nibble-8 sub-1. |
 | +0x8B | u8 | Cleared by op 0x23 NPC path. |
-| +0x8C | u8 | NPC X grid coord (op 0x23). |
-| +0x8D | u8 | NPC facing (op 0x23). |
+| +0x8C | u8 | NPC X tile, `x_byte & 0x7F` (op 0x23). |
+| +0x8D | u8 | NPC Z tile, `z_byte & 0x7F` (op 0x23); the port's field is named `npc_facing`. |
 | +0x8E | i16 | Inverted-Y mirror slot. Written / ramped by op 0x4C nibble-4 sub-2 (which also conditionally writes `world_y = -value` when `flags & 0x20000000` is set). |
 | +0x90 | u32 | Opaque actor-handle field. |
 | +0x94 | u32 | Saved PC (set by YIELD; the dispatcher reads this on resume). |
@@ -618,7 +618,7 @@ like `0x24` / `0x25`.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x22 | `EXEC_MOVE` | `[22, move_id]` | Schedule move-table playback on the current ctx. Sets `ctx[+0x5C] = move_id`, `ctx[+0x5E] = 0xFFFE`, then calls `func_0x800204F8(ctx)` - the **clip driver** that binds clip `move_id` from the scene's ANM clip bank (`_DAT_8007B888`, retail's "MOVE" buffer; [`mdt.md`](../formats/mdt.md), [`anm.md`](../formats/anm.md#binding-a-clip)), not move-VM bytecode. Player path has special cases around `+0x10` bit 0x1000000 (move chaining) and `move_id == 99` (auto-cancel). |
-| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path sets `+0x8C/+0x8D` facing, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
+| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path stores the two tile bytes (`& 0x7F`) at `+0x8C/+0x8D` and zeroes `+0x8B`, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
 | 0x26 | `JMP_REL` | `[26, lo, hi]` | Relative jump: `PC = pc_offset + 1 + (lo + hi*0x100)`. Unconditional. |
 
 ### 0x2B-0x33 (flag manipulation triplets)

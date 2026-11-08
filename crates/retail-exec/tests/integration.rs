@@ -35,6 +35,7 @@ mod encounter_top_up;
 mod enemy_impact;
 mod escape;
 mod escape_timer;
+mod field_ctx;
 mod field_magic;
 mod field_vm;
 mod field_walls;
