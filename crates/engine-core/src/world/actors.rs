@@ -657,6 +657,7 @@ impl World {
         // `P2[72]` lands the party on idle while its `C1 F8` leg drifts them
         // forward; `dohaty`'s lift picks idle with `A2 F8 02` before its
         // ramp). The detected move still marks `actor_moving`.
+        // REF: FUN_8003BC08
         let carried = player_slot
             .and_then(|s| self.actors.get(s as usize))
             .is_some_and(|a| a.move_state.flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0);
