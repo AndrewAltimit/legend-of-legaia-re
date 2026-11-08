@@ -47,7 +47,11 @@ fn the_solo_sweep_is_retails() {
         cpu.mem.wr8(actor(acting) + 0x1DD, target as u8);
         let mut seeded = Vec::new();
         for s in 0..7 {
-            let hp = if rng.below(4) == 0 { 0 } else { 1 + rng.below(99) as u16 };
+            let hp = if rng.below(4) == 0 {
+                0
+            } else {
+                1 + rng.below(99) as u16
+            };
             let state = [0u8, 0, 1, 2, 3, 0xC8][rng.below(6) as usize];
             cpu.mem.wr16(actor(s) + 0x14C, hp);
             cpu.mem.wr8(actor(s) + 0x21C, state);
@@ -99,8 +103,8 @@ fn the_tint_arms_are_retails() {
                 2 => rng.below(0x10),
                 _ => rng.below(0x400),
             };
-            let color = lane(&mut rng) | lane(&mut rng) << 10 | lane(&mut rng) << 20
-                | rng.below(4) << 30;
+            let color =
+                lane(&mut rng) | lane(&mut rng) << 10 | lane(&mut rng) << 20 | rng.below(4) << 30;
             let state = rng.below(0x0D) as u8;
             let blend = [0u32, 0x10, 0x800, 0x1000, 0x2000][rng.below(5) as usize];
             let selector = rng.below(4) as u8;
@@ -118,7 +122,9 @@ fn the_tint_arms_are_retails() {
             cpu.mem.wr8(a + 0x225, capture);
             cpu.mem.wr8(a + 0x1DA, 0x33);
             cpu.mem.wr8(a + 0x1DC, 0x22);
-            seeded.push((state, color, blend, selector, committed, knockdown, capture, mode));
+            seeded.push((
+                state, color, blend, selector, committed, knockdown, capture, mode,
+            ));
         }
         assert_eq!(cpu.call(SM, &[]), Stop::Returned, "{round}");
         for s in 0..8u32 {

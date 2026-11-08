@@ -161,7 +161,7 @@ pub fn scaled_anim_step(base_step: u32, rate: AnimRate, slowed_idle: bool) -> u3
     // not advance. A base step of a whole number of sixteenths floors on
     // that unit; anything else, a host's direct step, scales exactly.
     let mult = u32::from(rate.0) * if slowed_idle { 1 } else { 2 };
-    if base_step % 16 == 0 {
+    if base_step.is_multiple_of(16) {
         return ((base_step / 16) * mult / 8) * 16;
     }
     base_step * mult / 8

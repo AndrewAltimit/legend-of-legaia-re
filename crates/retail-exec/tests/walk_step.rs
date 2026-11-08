@@ -266,7 +266,8 @@ fn a_held_pad_stops_on_actors_where_retail_stops() {
             let rec = MAP + id * 0x20;
             let moving = rng.below(2) == 0;
             let interact = rng.below(2) == 0;
-            let flags = if moving { 0x0002_0000 } else { 0 } | if interact { 0x4000_0000 } else { 0 };
+            let flags =
+                if moving { 0x0002_0000 } else { 0 } | if interact { 0x4000_0000 } else { 0 };
             cpu.mem.wr32(a + 0x10, flags);
             if moving {
                 w.npcs.positions.insert(i as u8, (ax, az));
@@ -303,7 +304,10 @@ fn a_held_pad_stops_on_actors_where_retail_stops() {
             }
         }
         assert_eq!(cpu.call(WALK, &[ACTOR]), Stop::Returned, "round {round}");
-        let retail = (cpu.mem.rd16(ACTOR + 0x14) as i16, cpu.mem.rd16(ACTOR + 0x18) as i16);
+        let retail = (
+            cpu.mem.rd16(ACTOR + 0x14) as i16,
+            cpu.mem.rd16(ACTOR + 0x18) as i16,
+        );
         {
             let ms = &mut w.actors[0].move_state;
             ms.world_x = x;

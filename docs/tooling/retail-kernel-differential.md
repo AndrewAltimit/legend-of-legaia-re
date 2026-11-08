@@ -538,3 +538,10 @@ scripted tail off Close (`0x801D6E84..0x801D6EDC`, live pitch and height over a 
 far framing's box, whose midpoint floors, built over fallen seats where the walk gates on live HP (`0x801D7000`). Cases
 0, 1 and 3 match. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
 typewriter count `FUN_80036044` (`glyph_count`) and the cast dispatchers `FUN_801F1ED4` / `FUN_801F2160` (`cast_dispatch`) match.
+The per-frame anim-node cursor `FUN_80047430` (`anim_cursor`) over every rate, frame step, Slowed-idle gate and loop
+window found the port's step keeping a fraction retail drops: the cursor is in sixteenths of a keyframe, so a Slowed idle
+at rate `2` on a rate-`1` clip does not advance (`sra v1,t1,0x2` at `0x8004772C`). The HP and MP readout ramps of the same
+pass, the bystander sweep of `FUN_8004E13C` and the tint machine's arms (`tint_sm`), the pose decoder `FUN_8004998C`'s
+blend, centroid and body pair (`pose_decoder`), a held pad among seated moving and static actors (`FUN_801CFC40`,
+`walk_step`), the hop arc's tick `FUN_801D5C08` over the Bezier `FUN_801E45BC` (`hop_arc`) and the action effect stepper
+`FUN_801DEA50` (`effect_script`) match.

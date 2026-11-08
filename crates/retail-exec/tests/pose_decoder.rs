@@ -132,7 +132,14 @@ fn the_pose_decoder_is_retails() {
         for i in 0..parts {
             let p = blend_part_pose(poses[cf][i], poses[cf + 1][i], nibble as u8, 0);
             retries += u32::from(p.retried);
-            out_parts.push((p.translation, [p.rotation[0] as i16, p.rotation[1] as i16, p.rotation[2] as i16]));
+            out_parts.push((
+                p.translation,
+                [
+                    p.rotation[0] as i16,
+                    p.rotation[1] as i16,
+                    p.rotation[2] as i16,
+                ],
+            ));
             let at = POOL + i as u32 * 0xC;
             let got: Vec<u16> = (0..6).map(|k| cpu.mem.rd16(at + k * 2)).collect();
             let mut want: Vec<u16> = p.translation.iter().map(|&v| v as u16).collect();
@@ -140,7 +147,13 @@ fn the_pose_decoder_is_retails() {
             // The zero-nibble path stores the raw 12-bit translations.
             let got_t: Vec<i16> = got[..3]
                 .iter()
-                .map(|&v| if nibble == 0 { ((v << 4) as i16) >> 4 } else { v as i16 })
+                .map(|&v| {
+                    if nibble == 0 {
+                        ((v << 4) as i16) >> 4
+                    } else {
+                        v as i16
+                    }
+                })
                 .collect();
             let want_t: Vec<i16> = p.translation.to_vec();
             if (got_t != want_t || got[3..] != want[3..]) && failures.len() < 12 {
