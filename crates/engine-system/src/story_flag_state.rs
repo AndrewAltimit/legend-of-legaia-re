@@ -18,10 +18,12 @@ pub struct StoryFlagState {
     /// Field-VM `extra_flags` register read by op 0x42 mode 0 - the
     /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
     /// tile sits inside a type-`n` region of the scene `.MAP` region table.
-    /// Rebuilt per tile crossing by `World::refresh_field_regions` (the
-    /// `FUN_800180EC` / `FUN_801DBA20` ports in [`legaia_engine_field::field_regions`])
-    /// when the per-scene tables are installed; otherwise host-owned
-    /// scene-local state.
+    /// Latched, as retail latches it: rebuilt by the scene-entry and
+    /// warp-landing re-centres, the scripted player moves, `[4C 3D]` and the
+    /// camera-zone queries (the `FUN_800180EC` / `FUN_801DBA20` ports in
+    /// [`legaia_engine_field::field_regions`]), and per frame only behind
+    /// scratchpad bit 22 - never by a walk's tile crossing. Host-owned
+    /// scene-local state when no per-scene tables are installed.
     pub extra_flags: u32,
     /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Set
     /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested

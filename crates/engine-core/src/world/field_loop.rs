@@ -41,17 +41,10 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
         {
             let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
-            // Per-tile region refresh (the `FUN_800180EC` / `FUN_801DBA20`
-            // grain - retail re-runs the region scan when the player tile
-            // changes).
-            match self.terrain.last_tile {
-                Some(prev) if prev != tile => {
-                    self.terrain.last_tile = Some(tile);
-                    self.refresh_field_regions();
-                }
-                None => self.terrain.last_tile = Some(tile),
-                _ => {}
-            }
+            // No region refresh on a tile crossing: retail's walk never
+            // rewrites the region-type mask. Its per-frame writer is gated on
+            // scratchpad bit 22 (`Self::requery_region_mask_per_frame`).
+            self.requery_region_mask_per_frame();
             // The encounter step is sampled on the actor game tick only.
             // Retail reaches the region reader from an actor handler
             // (`FUN_801DA51C` state 0, `jal 0x801D9E1C` at `0x801DA5B0`), so

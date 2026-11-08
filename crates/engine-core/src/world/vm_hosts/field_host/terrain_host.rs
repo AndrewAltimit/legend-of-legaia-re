@@ -101,6 +101,7 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     }
 
     fn region_attributes_refresh_at_player(&mut self) {
+        self.world.refresh_region_attributes_at_player();
         self.world
             .push_camera_zone_request(CameraZoneRequest::RefreshAttributes);
     }

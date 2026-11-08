@@ -165,6 +165,11 @@ impl World {
                 // brings the interior's unbound placements into the list.
                 // REF: FUN_80017EC8
                 self.recentre_field_window(i32::from(world.0) >> 7, i32::from(world.1) >> 7);
+                // Then the `[4C 39]` sequence in code (`0x801D1FE8`):
+                // `FUN_801DE3E0` at the destination halved, whose zone query
+                // rewrites the region-type mask there.
+                // REF: FUN_801DE3E0
+                self.zone_query_region_mask(i32::from(query_tile.0), i32::from(query_tile.1));
                 self.pending_field_events.push(
                     legaia_engine_field::field_events::FieldEvent::MoveTo {
                         world_x: world.0 as u16,

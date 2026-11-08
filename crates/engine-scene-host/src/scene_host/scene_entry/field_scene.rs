@@ -619,7 +619,7 @@ impl SceneHost {
             }
         }
         // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
-        // block + the MAN section-3 camera-region table. Drives the per-tile
+        // block + the MAN section-3 camera-region table. Drives the latched
         // region-type mask (`extra_flags`, field-VM op 0x42 mode 0) and the
         // camera-zone selection via `World::refresh_field_regions` (the
         // `FUN_80017FBC` / `FUN_800180EC` / `FUN_801DBA20` ports). Installed
