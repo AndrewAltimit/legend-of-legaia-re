@@ -425,7 +425,6 @@
           frameCount: idle.frames,
           frames,
           fps: fpsForRate(idle.rate),
-          loop: false,    /* the idle runs once, then the body holds its stance */
         });
         this.view.setPlaying(true);
         this.els.now.textContent = `${this.charName} - battle idle`;
