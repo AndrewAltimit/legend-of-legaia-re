@@ -60,15 +60,13 @@ pub fn fishing_hud_items(world: &World, banners: &[HudDraw]) -> Vec<HudDraw> {
         lure,
         lures_left,
     );
-    // One derivation for the catch HUD (`PondSession::catch_hud`). The cast
-    // line-projection term `DAT_801d9178` has no engine analogue and stays
-    // zero.
+    // One derivation for the catch HUD (`PondSession::catch_hud`).
     let c = s.catch_hud();
     if c.visible {
         items.extend(legaia_engine_ui::catch_hud_draws(
             &legaia_engine_ui::CatchHudState {
                 record: c.record,
-                line_extent: 0,
+                line_extent: c.line_extent,
                 cast_power: c.cast_power,
                 depth: c.depth,
                 tension: c.tension,

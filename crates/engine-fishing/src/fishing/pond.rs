@@ -100,9 +100,10 @@ impl PondSession {
         self.phase
     }
 
-    /// The live cast-power meter value.
+    /// The live cast-power word `DAT_801D9274`: the meter until the cast is
+    /// locked, then what the flight has left of it, down to `0` at the landing.
     pub fn cast_power(&self) -> i32 {
-        self.cast.value()
+        self.lure_actor.map_or(self.cast.value(), |l| l.power)
     }
 
     /// Line record (`DAT_801d927c`); `0` before a cast.
@@ -509,6 +510,7 @@ impl PondSession {
                 };
                 if let Some(lure) = self.lure_actor.as_mut() {
                     lure.pull_step(reel_edge, fs);
+                    lure.sink_step(self.line_record, self.lure, fs);
                 }
                 let struck = self.band.tick(
                     &mut self.rng,
@@ -585,6 +587,7 @@ impl PondSession {
                 self.step_lure(Some(self.last_swim), fs);
                 if let Some(lure) = self.lure_actor.as_mut() {
                     lure.pull_step(reel_edge, fs);
+                    lure.sink_step(self.line_record, self.lure, fs);
                 }
                 // `FUN_801D4004`: the pull off the hook's bias, the
                 // behaviour arm, the line depth and the reel load.
@@ -942,7 +945,8 @@ impl PondSession {
             // shore nor the no-lure screen draws it.
             visible: !matches!(self.phase, PondPhase::Idle | PondPhase::NoLure),
             record: self.line_record,
-            cast_power: self.cast.value(),
+            cast_power: self.cast_power(),
+            line_extent: self.lure_actor.map_or(0, |l| l.y_fixed),
             depth: self.depth,
             tension: self.gauge.tension(),
             gauges_visible: self.phase == PondPhase::Hooked,
@@ -1029,16 +1033,18 @@ pub struct PondCatchResult {
     pub species: usize,
 }
 
-/// The catch HUD's inputs, host-neutral (the `engine-ui` `CatchHudState`
-/// minus its `line_extent`, which has no engine analogue yet).
+/// The catch HUD's inputs, host-neutral (the `engine-ui` `CatchHudState`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PondCatchHud {
     /// Whether the catch HUD draws at all (a cast is out).
     pub visible: bool,
     /// Line record `DAT_801d927c`.
     pub record: i32,
-    /// Live cast-power meter.
+    /// Live cast-power word `DAT_801D9274`.
     pub cast_power: i32,
+    /// The lure's height accumulator `DAT_801D9178`: the DEPTH readout and
+    /// the second term of LINE.
+    pub line_extent: i32,
     /// Line depth `DAT_801d9298`.
     pub depth: i32,
     /// Live tension.

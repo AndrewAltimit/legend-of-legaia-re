@@ -778,7 +778,7 @@ impl LegaiaMinigames {
         if c.visible {
             draws.extend(ui_fishing::catch_hud_draws(&CatchHudState {
                 record: c.record,
-                line_extent: 0,
+                line_extent: c.line_extent,
                 cast_power: c.cast_power,
                 depth: c.depth,
                 tension: c.tension,

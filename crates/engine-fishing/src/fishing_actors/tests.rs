@@ -595,3 +595,40 @@ fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
     }
     assert_eq!((rod.lean_target, rod.lean), (0, 0));
 }
+
+/// The lure's sink: under record `0x190` the height is capped by the record;
+/// past it the Normal lure's pull lowers it and a height under `0x5000` snaps
+/// to `0x5A00` (`minigame_fishing_retail_lure_cast` holds exactly `0x5A00`,
+/// the DEPTH readout's `4.5`), the Light lure's band is `0x1400` / `0x1900`,
+/// and a Heavy lure never moves (`0x801D2F44..0x801D3080`).
+#[test]
+fn the_sink_arms_follow_the_equipped_lure() {
+    let lure = |y: i32, pull: i32| {
+        let mut l = LureActor::cast(0, 0, 0, 0, 0x400, 1).unwrap();
+        l.y_fixed = y;
+        l.pull = pull;
+        l
+    };
+    let mut l = lure(0x8000, 0);
+    l.sink_step(0x12C, 1, 1);
+    assert_eq!(l.y_fixed, (0x12C - 0xFA) << 8, "capped close in");
+    let mut l = lure(0x3000, 0);
+    l.sink_step(0x190, 1, 1);
+    assert_eq!(l.y_fixed, 0x5A00, "a Normal lure snaps back");
+    let mut l = lure(0x6000, 0xA00);
+    l.sink_step(0x190, 1, 1);
+    assert_eq!(
+        l.y_fixed,
+        0x6000 - ((0xA00 * 0x500) >> 13),
+        "the pull lowers it"
+    );
+    let mut l = lure(0x1000, 0);
+    l.sink_step(0x190, 0, 1);
+    assert_eq!(l.y_fixed, 0x1900, "a Light lure's band");
+    let mut l = lure(0x1000, 0);
+    l.sink_step(0x190, 2, 1);
+    assert_eq!(l.y_fixed, 0x1000, "a Heavy lure holds");
+    let mut l = lure(-0x100, 0);
+    l.sink_step(0x12C, 2, 1);
+    assert_eq!(l.y_fixed, 0, "never negative");
+}
