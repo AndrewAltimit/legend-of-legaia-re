@@ -1134,7 +1134,7 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/retail-compare-baseline.json"
-reason = "The placement spawner and field wander now draw from the shared world rand stream (ff2014063), which moves the ambient falling-streak particles this patched-disc state's frame shows. Comparing the frame from the build before that commit with the current one, the changed pixels are the streaks and their immediate neighbours; the position, camera, NPC and flag channels hold at 1.0."
+reason = "Patched-disc state. Comparing the frame from the build before ff2014063 with HEAD, the changed pixels are the ambient falling streaks and their immediate neighbours; the position, camera, NPC and flag channels hold at 1.0. Inferred, not bisected: the streaks moving because the placement spawner and field wander now draw from the shared world rand stream is the likely cause, but no build was compared at that commit alone."
 changes = [
   ["states/rikuroa_post_caruban/image", 0.996, 0.994],
 ]
