@@ -4031,8 +4031,21 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
     overscroll-behavior: contain;
   }
   .sidebar.open { transform: translateX(0); }
-  /* The rail's destinations, which the hidden rail no longer provides. */
-  .sidebar-zones { display: grid; }
+  /* The rail's destinations, which the hidden rail no longer provides. They
+     stay pinned: the drawer opens wherever its saved or revealed scroll
+     position left it, and a strip that scrolled with the list went up under
+     the top bar, out of reach. `scroll-padding-top` keeps a keyboard-focused
+     row out from under the pinned strip. The drawer's top padding moves onto
+     the strip, or the list would show through that band above it. */
+  .sidebar { padding-top: 0; scroll-padding-top: 6rem; }
+  .sidebar-zones {
+    display: grid;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-top: 0.9rem;
+    background: var(--bg-raised);
+  }
 
   .sidebar-toggle { display: inline-flex; }
 

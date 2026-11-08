@@ -1047,8 +1047,13 @@ function revealActiveRow(sidebar) {
   if (!row) return;
   const box = sidebar.getBoundingClientRect();
   const r = row.getBoundingClientRect();
-  if (r.top < box.top || r.bottom > box.bottom) {
-    sidebar.scrollTop += (r.top - box.top) - box.height / 3;
+  /* The phone drawer pins the zone strip over the list's top edge, so a row
+     under it is as hidden as one above the box. The strip has no height where
+     the rail replaces it. */
+  const strip = sidebar.querySelector('.sidebar-zones');
+  const floor = strip && strip.offsetHeight ? strip.getBoundingClientRect().bottom : box.top;
+  if (r.top < floor || r.bottom > box.bottom) {
+    sidebar.scrollTop += (r.top - floor) - (box.bottom - floor) / 3;
   }
 }
 

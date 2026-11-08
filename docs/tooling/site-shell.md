@@ -71,7 +71,9 @@ Two things the shell derives from `NAV` instead of trusting the page:
 - **The drawer's scroll position.** `revealActiveRow()` scrolls the current
   page's row into view after the saved scroll position is restored and every
   time the phone drawer opens. Without it the drawer opened on the two
-  always-expanded sections, with the reader's own page below its fold.
+  always-expanded sections, with the reader's own page below its fold. The
+  zone strip is pinned at the top of the drawer, so it counts as covering the
+  rows under it here, and the scroll position never takes the strip away.
 
 ## Themes
 
@@ -129,6 +131,13 @@ on screen at any width. Without it, a phone on a docs page could reach Home
 only through the brand mark and could not reach Play, Mods or Browse at all -
 the docs sidebar deliberately omits them (`DOCS_SECTIONS` excludes the explore
 section, and the `home` key is skipped from the tree).
+
+The strip is `position: sticky` inside the drawer's scroller, because the drawer
+opens at its saved or revealed scroll position and a strip in normal flow is
+carried up behind the top bar with the list. A drawer `top` matching the bar says
+nothing about this: the bar and the drawer's own box agree at every width and only
+the strip's box moves, so the check is the strip's rectangle at a non-zero drawer
+`scrollTop`.
 
 The hamburger lives *inside* the top bar rather than floating over the page.
 A floating button needs the content column to reserve a strip for it; an in-bar
