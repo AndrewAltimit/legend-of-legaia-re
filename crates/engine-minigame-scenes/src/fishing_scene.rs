@@ -148,13 +148,18 @@ impl FishingSceneAssets {
     /// resolve on this image.
     pub fn load(index: &ProtIndex, venue: usize, party_equip: [u8; 3]) -> Option<Self> {
         let scene = Scene::load(index, FISHING_VENUE_SCENE).ok()?;
+        // The boot-resident atlas (raw entry 0 of the system UI bundle): the
+        // lure and ripple rings sample its page (`(960, 256)`) and CLUT row
+        // (`(64, 510)`), and no venue TIM uploads them. Left out, every ring
+        // texel read index 0 of an all-zero palette and the ring drew nothing.
+        let system_ui = index.system_ui_bundle().ok();
         let (res, _) = SceneResources::build_targeted_with_options(
             &scene,
             &[],
             BuildOptions {
                 kind: SceneLoadKind::Field,
                 upload_all_tims: true,
-                system_ui: None,
+                system_ui: system_ui.as_deref(),
             },
         )
         .ok()?;

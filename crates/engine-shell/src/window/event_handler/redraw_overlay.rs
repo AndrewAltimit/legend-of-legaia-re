@@ -338,7 +338,13 @@ impl PlayWindowApp {
         // one decision both hosts take (`battle_fx::battle_world_scale`).
         let fx_scale =
             legaia_engine_session::battle_fx::battle_world_scale(&self.session.host.world);
-        let fx_cam = if fx_scale != 1.0 {
+        // The pond's own surface camera (`FishingScene::vp_raw`) draws the
+        // venue; the effects on it (the lure rings, the catch bursts) share
+        // that view. The field follow camera the world resolves under a
+        // fishing session is a different projection.
+        let fx_cam = if let Some(g) = self.fishing_gpu.as_ref() {
+            g.mvp
+        } else if fx_scale != 1.0 {
             cam * Mat4::from_scale(Vec3::splat(fx_scale))
         } else {
             cam
