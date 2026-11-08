@@ -452,3 +452,6 @@ is up and a party seat holds an Attack, the member's Max Damage and Max Hits wor
 and the string total `DAT_8007BD14` and the push count `ctx[+0x273]`. Neither had a port, nor did the push count
 and the total the action seed zeroes (`0x801E2C3C..0x801E2C4C`, with the cast readout cursor `ctx[+0x262]` the port
 also carried on across actions).
+The escape timer's HUD actor `FUN_801D2EBC` (`escape_timer`), run over whole countdowns with random clock deltas,
+frame steps and busy frames, matches `EscapeTimer::tick` and `EscapeTimerHud::step`: the counter, the flags it
+fires, the phase machine and its kill bit, the digits and the ink.
