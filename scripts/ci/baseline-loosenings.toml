@@ -1080,3 +1080,15 @@ changes = [
   ["counts/bundle/gzip_bytes", 7072853, 7085636],
   ["counts/bundle/play_gzip_bytes", 4937227, 4947923],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Battle reactions end on the pass the cursor crosses the clip's end (FUN_80047430 0x80047A48..0x80047B58), bisected to that commit for every row below except moldy worm and Gimard victory. Earlier rounds finish a pass sooner, so a still's replay reaches its strike state on another pass: mad bird's attacker stands one walk step on (81,406 facing 2193 against retail's 81,417 facing 2137) and its film holds at .9425 to .9392. The Delilas row is a patched mod state on the same replay phase. Moldy worm and Gimard victory move with the display retake staying out of a state's first pass, a harness rule."
+changes = [
+  ["states/battle_dohaty_nova_v2_strike/image", 0.998, 0.993],
+  ["states/battle_map03_moldy_worm_strike/image", 1.0, 0.998],
+  ["states/battle_tunnela_mad_bird_strike/camera", 1.0, 0.991],
+  ["states/delilas_gi_spirit_artifact/camera", 1.0, 0.875],
+  ["states/delilas_gi_spirit_artifact/image", 0.969, 0.633],
+  ["states/rim_elm_gimard_victory/image", 0.969, 0.967],
+]
