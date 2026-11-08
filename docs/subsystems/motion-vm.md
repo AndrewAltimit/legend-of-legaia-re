@@ -691,6 +691,30 @@ every tick**, where those two deliberately hold raw out-of-range values
 mid-ramp. A port that generalises either property from the facing ops to the
 wander is wrong.
 
+#### The draws are the world's stream
+
+Both ops that draw - the `0x18` wander (direction at `0x80038C6C`, coin at `0x80039078`) and the `0x06` home step (direction at `0x80038908`) - call the BIOS thunk `FUN_80056798`, so they advance the one process-wide seed `0x80009010` and nothing per-actor. `World::tick_field_npc_ambient` lends the channel `World::rng_state` for each tick and takes the advanced value back (`Camera::tick_on_stream` is the same seam).
+
+The order those draws land in is the actor list's, because `FUN_8002519C` walks `_DAT_8007C354` from head to tail and every placement sits on it. The list is a tail-appended chain: `FUN_80020454` links each new node after the last and `FUN_800204A4` unlinks one. So the tick order is **spawn order**, not slot order:
+
+- at scene entry `FUN_8003AEB0` seats partition 1's records in order `1..N1`, so the placements tick in partition order;
+- a `4C D2` re-seat calls `FUN_8003A1E4` again, allocating a fresh node at the tail;
+- the seat ops relink the actor they place: the non-player arms of `0x23` `MOVE_TO` (`0x801DECD0`) and of `4C 51` (`0x801E1AA4`) call `FUN_801D81E0`, which unlinks the node and links it back at the tail of the placement list `_DAT_8007C354`.
+
+Scripted seats therefore reorder the list. `town01`'s `P2[3]` runs a block of `A3 <id> ..` cross-context `MOVE_TO`s, so a capture holds wanderers `73, 75, 79` ahead of `52, 48, 53, 49, 50` although their flat indices run the other way. In a scene entry's spawn prologue the list is still being built, so a placement seating itself stays where it is, and one seating an earlier placement puts it just behind the running slot, ahead of the placements not yet spawned.
+
+The port keeps this as `FieldNpcState::ambient_order`, built in `seed_field_npc_ambient` and moved by the `4C D2` arm and the two seat ops (`World::relink_placement_for_seat`); a retired slot keeps its place and skips its tick until `4C D2` moves it. Running `P2[3]` on the entry order lands on the capture's list order exactly (`crates/engine-scene-host/tests/field_placement_retire_disc.rs`). A retired placement draws nothing, as an actor off the list has no tick.
+
+The other draw at this layer is the placement spawner's: `FUN_8003A1E4` binds a placement's header clip through `FUN_800204F8` and, when the header anim byte is non-zero, seats `+0x68 = (rand() % frames) << 4` (`0x8003A410`) before its prologue slice, once per placement at scene entry and once per `4C D2` re-seat. `World::draw_placement_spawn_phases` and the re-seat take the draw at that point in the sequence and hand it to the clip bind through `FieldNpcState::phase_draws`, the same hand-off as op `4C C0`. On `map01` and `cave01` the placement count with a move (`6`, `7`) is the capture's count of draws at `0x8003A410` on those entries.
+
+No placed-object stream carries `0x18` or `0x06`, so the objects' streams take no place in this order (`crates/engine-scene/tests/ambient_motion_op_census_disc.rs`).
+
+A retail-seeded run can resume a stream from a capture: `retail_ambient_streams` reads each node's `+0x84` op cursor, `+0x86` variant selector and wander direction bits, its `+0x8B` / `+0xB7` cursor and its `0x801C6470[+0x50]` default-move record and phase, and `World::seed_ambient_stream` / `seed_ambient_order` stand the channels on them. The walk film does this at the start of its run, where the stream's time starts at the seat.
+
+The corpus seed does not: its gated path samples long after the seat, and a stream's own flag ops (`map03`'s, for one) would run ahead of retail's. Its warm-up re-asserts retail's seed before each tick, so the wanderers run on `FieldNpcState::ambient_rng_detour` for that window rather than repeating one pick.
+
+Seeded from `s3_rimelm_freeroam`, with the capture's seed `0x1A1193DF` and these streams, the engine's `rng_state` equals retail's seed word and each draw names the same actor over the capture's free-walk stretch: `crates/parity/tests/ambient_rand_stream_disc.rs`.
+
 #### What the walk ops collide with
 
 Both walk ops probe through `FUN_801cf8ac`, and its only subject is the
@@ -1410,6 +1434,7 @@ channel - but it is the thing to check before filing "op X does nothing".
 
 | op | engine mechanism |
 |---|---|
+| `0x18` / `0x06` | the world `rand()` stream, lent to the channel for the tick ([The draws are the world's stream](#the-draws-are-the-worlds-stream)) |
 | `0x07` / `0x08` | `World::system_flag_set` / `system_flag_clear` - the same bank the variant preamble re-selects against, so a stream can swap its own variant |
 | `0x0F` | `World::npcs.positions`, ungated by the liveliness toggle |
 | `0x10` / `0x11` / `0x12` | the actor flag word and clip-control word on the channel; the global halves are seeded from and written back to `World::flags.story_flags` each tick |
@@ -1444,6 +1469,10 @@ Disc-gated anchor test: `crates/engine-scene/tests/motion_flag_census_disc.rs`.
 - `ghidra/scripts/funcs/80039b7c.txt` - the driver's cutscene event-script arm.
 - `ghidra/scripts/funcs/80038050.txt` - its structural-op advance helper.
 - `ghidra/scripts/funcs/8003a9d4.txt` - motion-script installer (record chain + actor binding).
+- `ghidra/scripts/funcs/8003a1e4.txt` - the placement spawner, its clip-phase draw at `0x8003A410`.
+- `ghidra/scripts/funcs/80020454.txt`, `800204a4.txt` - the actor list's tail-append and unlink.
+- `ghidra/scripts/funcs/8002519c.txt` - the list walk that orders the ticks and the draws.
+- `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d81e0.txt` - the list relink the seat ops call.
 - `ghidra/scripts/funcs/8003c5f0.txt` - the ramp-scheduler installer op `0x0D` inlines.
 - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801cf8ac.txt` - the walk
   ops' player box test (field overlay; the `801cf8ac.txt` SCUS-space dump is

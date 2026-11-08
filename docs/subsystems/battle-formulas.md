@@ -2033,7 +2033,7 @@ divide it as a 15-bit quantity, so the shape matters.
 | `bios_rand_shape` | `(state >> 16) & 0x7FFF` |
 | `World::next_rand` | the retail draw: next state through `bios_rand_shape` |
 | `world_lcg_step` / `world_rand` | the same step + shape for code holding `World::rng_state` without `&mut World` (`engine-system::rand`, beside `bios_rand_shape`) |
-| `psyq_rand_step`, `BiosRand` | already-shaped generators for minigames and pure kernels with a private seed |
+| `psyq_rand_step`, `BiosRand` | already-shaped generators for minigames and pure kernels with a private seed (the field motion VM's ops step one too, on a seed the host lends from `World::rng_state`) |
 | `World::tick_battle_pass_draw` | the driver's discarded draw: one on the first tick of every battle frame (`BattleFrameClock`), under every battle owner of the frame; `WorldToggles::battle_pass_rand_draw` turns it off for an A/B |
 
 **Which draws are not on the world stream.** Retail has one `rand()` stream, and
