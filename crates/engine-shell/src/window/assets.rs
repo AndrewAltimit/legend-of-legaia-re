@@ -152,7 +152,7 @@ impl PlayWindowApp {
         self.build_static_env_products(&res);
         let draws = self.resolve_field_draws(&res, &geo, scene_bundle.as_ref());
         let light_samples = static_layer_light_samples(&geo, &draws);
-        let world_map = self.resolve_world_map_draws(&res, &geo);
+        let world_map = self.resolve_world_map_draws(&res, &geo, &draws.posed_props);
         legaia_engine_render::profile::startup("draw lists");
 
         // Commit to the window.

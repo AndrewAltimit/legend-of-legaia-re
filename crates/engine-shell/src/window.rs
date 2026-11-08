@@ -72,6 +72,7 @@ mod record;
 mod run;
 #[path = "window/save_rack_disk.rs"]
 mod save_rack_disk;
+mod scenes_panel;
 #[path = "window/screens.rs"]
 mod screens;
 #[path = "window/session_steps.rs"]

@@ -787,15 +787,40 @@ impl World {
         for i in 0..delta {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
+            self.casting.module_tick_drift = None;
             live = tick(self);
             if !live || self.casting.module_phase != phase {
                 if !cadence && live && self.casting.module_phase != phase {
                     self.casting.module_handover_waits = true;
                 }
+                // Retail's passing pass drifts the camera globals by
+                // `k * delta` before it stores the next phase (Gola Gola's
+                // arm `0xB`, `yaw += 4 p`), where the port's ticks stop on
+                // the one that hands over: the rest of the pass's drift.
+                if live && self.casting.module_phase != phase {
+                    self.drift_rest_of_pass(delta - 1 - i);
+                }
                 break;
             }
         }
         live
+    }
+
+    /// Re-apply the handing-over tick's camera drift for the `ticks` of its
+    /// pass the port does not run ([`Self::module_pass`]).
+    fn drift_rest_of_pass(&mut self, ticks: u8) {
+        let Some(d) = self.casting.module_tick_drift else {
+            return;
+        };
+        let Some(cam) = self.battle.camera.as_mut() else {
+            return;
+        };
+        for _ in 0..ticks {
+            cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+            if d.tr_x != 0 {
+                cam.drift_module_tr_x(d.tr_x);
+            }
+        }
     }
 
     /// The SM's `frame_dt` (`DAT_1F800393`): the frame step when the SM runs
@@ -988,6 +1013,34 @@ mod tests {
         w.battle.backdrop_slot_1_yaw = 0;
         w.module_pass(count);
         assert_eq!(w.battle.backdrop_slot_1_yaw, 1);
+    }
+
+    /// An arm that hands over on a pass's first tick still drifts the camera
+    /// for the whole pass, as retail's `k * delta` does before it stores the
+    /// next phase.
+    #[test]
+    fn a_handover_pass_drifts_the_camera_for_its_whole_delta() {
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
+        fn hand_over_drifting(w: &mut World) -> bool {
+            let d = legaia_engine_cast::cast_module_camera::CaptureDrift {
+                yaw: 32,
+                ..Default::default()
+            };
+            w.casting.module_tick_drift = Some(d);
+            if let Some(cam) = w.battle.camera.as_mut() {
+                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+            }
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(4);
+        w.battle.camera = Some(BattleCamera::new(BattleCamPhase::Menu, 0));
+        let before = w.battle.camera.as_ref().unwrap().pose().yaw;
+        w.module_pass(hand_over_drifting);
+        let after = w.battle.camera.as_ref().unwrap().pose().yaw;
+        assert_eq!((after - before).rem_euclid(4096.0), 128.0);
     }
 
     /// On the per-vsync cadence an arm that hands over leaves the next arm

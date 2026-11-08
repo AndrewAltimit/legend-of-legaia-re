@@ -18,6 +18,8 @@
 //! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
 //! executable from a build script. [`release_layout`] is where the release
 //! archive puts the engine, for the two programs that start it.
+//! [`placement`] is where each program's window reopens: where it last
+//! closed, when that is still on a connected monitor.
 //! [`drop_backend`] is the windowing backend the launcher and Explorer open
 //! on so a dropped file reaches them. [`settings_file`] is how both treat
 //! their own settings file: a broken one is set aside, never overwritten,
@@ -36,6 +38,7 @@ pub mod disc_text;
 pub mod drop_backend;
 pub mod game_exit;
 pub mod icons;
+pub mod placement;
 pub mod release_layout;
 pub mod settings_file;
 pub mod win_icon;

@@ -9,7 +9,7 @@
 //! - **`+0x130`** - the **displayed combat level**, read directly (it is *not*
 //!   re-derived from cumulative experience at a New Game - confirmed live: a record
 //!   with level-10 experience + stats but `+0x130 == 1` still shows "LV 1"). The
-//!   high byte `+0x131` is the magic-rank counter. `FUN_800560B4`'s **record-init
+//!   high byte `+0x131` is a second seeded byte that nothing on the disc reads. `FUN_800560B4`'s **record-init
 //!   loop** stamps `+0x130 = 1` / `+0x131 = 1` for *every* party record.
 //! - **stats** - eight `u16`s copied from the per-record starting-party template
 //!   ([`legaia_game_tables::new_game::PARTY_TEMPLATE_VA`], level-1 values) into each live
@@ -27,8 +27,8 @@
 //! level-1 next-level threshold):
 //!
 //! 1. **Displayed level** - rewrite the loop's level literal to `(1 << 8) | N` and
-//!    its first store to a `sh`, so the loop writes `+0x130 = N` (keeping magic rank
-//!    `+0x131 = 1`) into every party record.
+//!    its first store to a `sh`, so the loop writes `+0x130 = N` (keeping the
+//!    write-only `+0x131 = 1`) into every party record.
 //! 2. **Stats** - overwrite each growth-capable slot's eight `u16` template stats
 //!    with that character's level-`N` values, accumulating the deterministic
 //!    (jitter-free) per-level growth gains from `FUN_801E9504`'s curves
@@ -255,7 +255,7 @@ pub fn current_xp_store_instruction() -> [u8; 4] {
 /// Encode the loop's level literal `addiu $v0, $zero, (1 << 8) | level` written at
 /// [`legaia_game_tables::new_game::LEVEL_SEED_VA`]. Packed so the [`level_store_instruction`]
 /// `sh` sets the record's displayed-level cell `+0x130 = level` (low byte) and the
-/// magic-rank cell `+0x131 = 1` (high byte) in one halfword store.
+/// write-only byte `+0x131 = 1` (high byte) in one halfword store.
 pub fn level_literal_instruction(level: u8) -> [u8; 4] {
     (0x2402_0000u32 | 0x0100u32 | level as u32).to_le_bytes()
 }

@@ -112,11 +112,11 @@ pub fn push_apart(a: &mut SepActor, b: &mut SepActor, sin: i16, cos: i16) -> boo
 ///
 /// Retail walks the `SEPARATION_SLOTS`-entry actor table `DAT_801C9370` as a
 /// nested loop and, for each ordered pair `(i, j)` with `i != j` and both
-/// actors present-and-living (the table slot's pointer non-null and its actor's
-/// `+0x4` field non-zero), calls [`push_apart`]`(i, j)`. Every living actor is
-/// therefore pushed off every other one exactly once per pass. `alive[k]`
-/// abstracts the retail liveness test for slot `k`; `push(i, j)` is invoked in
-/// the retail visitation order.
+/// actors drawn (the actor's colour word `+0x4` non-zero, whatever its HP),
+/// calls [`push_apart`]`(i, j)`. Every drawn actor is therefore pushed off
+/// every other one exactly once per pass. `alive[k]` abstracts that test for
+/// **retail** seat `k` (party `0..=2`, monsters from `3`); `push(i, j)` is
+/// invoked in the retail visitation order.
 pub fn separation_pass<F: FnMut(usize, usize)>(alive: &[bool; SEPARATION_SLOTS], mut push: F) {
     for i in 0..SEPARATION_SLOTS {
         for j in 0..SEPARATION_SLOTS {

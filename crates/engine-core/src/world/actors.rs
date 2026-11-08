@@ -649,7 +649,22 @@ impl World {
         self.locomotion
             .motion_prev
             .retain(|slot, _| seen[usize::from(*slot)]);
-        if moved_player && let Some(anim) = &mut self.locomotion.player_anim {
+        // A player whose height a script holds (`+0x10 & 0x20000000`, the
+        // height arm `FUN_8003BC08` setting `+0x16 = -(+0x8E)`) is being
+        // carried - flown in, lifted, ridden on a platform - not walked, so
+        // its moves do not start the port's motion-derived walk: retail plays
+        // the pick, and the scripts that carry the player name it (`rugi`
+        // `P2[72]` lands the party on idle while its `C1 F8` leg drifts them
+        // forward; `dohaty`'s lift picks idle with `A2 F8 02` before its
+        // ramp). The detected move still marks `actor_moving`.
+        // REF: FUN_8003BC08
+        let carried = player_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .is_some_and(|a| a.move_state.flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0);
+        if moved_player
+            && !carried
+            && let Some(anim) = &mut self.locomotion.player_anim
+        {
             anim.moved_this_frame = true;
         }
     }

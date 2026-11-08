@@ -122,6 +122,7 @@ impl World {
             self.battle.steal_caption = Some(bs::StealCaption {
                 text,
                 owner: self.battle_ctx.active_actor,
+                subject: None,
             });
         }
     }
@@ -188,6 +189,7 @@ impl World {
         self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
             text,
             owner: self.battle_ctx.active_actor,
+            subject: None,
         });
         self.battle.message_bar_glide = Some(
             legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),

@@ -44,6 +44,10 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
     // advances PC by 2 (past the poll).
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
+    // The poll re-runs on the next game frame.
+    while !world.clock.script_slice_due() {
+        let _ = world.tick();
+    }
     assert!(
         world.dialog.current.is_none(),
         "dialog should clear on just-pressed Cross",
@@ -766,4 +770,29 @@ fn the_script_pause_bit_follows_the_bgm_sub_ops() {
     assert!(!step(&mut world, 0, 0xA), "the commit ends it");
     step(&mut world, 0, 3);
     assert!(!step(&mut world, 2017, 9), "a barrier start ends it");
+}
+
+/// The system script runs one slice per **game frame**, not per vsync: a
+/// `0x21`-paced loop that adds one to a counter slot each pass counts the
+/// install's pass plus one pass every `frame_step` vsyncs. A PCSX-Redux
+/// count finds every `FUN_801DE840` entry on a vsync the actor-list walk
+/// ran on (`autorun_field_script_cadence.lua`).
+#[test]
+fn the_system_script_steps_once_per_game_frame() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.clock.frame_step = 2;
+    // pc 0: `4C CB 00 01 00` (slot 0 += 1); pc 5: `21`; pc 6: `26` back to 0.
+    world.load_field_script(vec![0x4C, 0xCB, 0x00, 0x01, 0x00, 0x21, 0x26, 0xF9, 0xFF]);
+    let mut fired = 0;
+    for _ in 0..20 {
+        let _ = world.tick();
+        fired += usize::from(world.clock.game_tick_fired);
+    }
+    assert_eq!(fired, 10, "a game frame every second vsync");
+    assert_eq!(
+        world.field_vm.slot_table[0],
+        1 + 10,
+        "the install's pass, then one pass a game frame"
+    );
 }

@@ -512,7 +512,7 @@ probe.run({
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
         body = probe.csv_open(probe.out_path("body.csv"),
-            "vsync,st7,acting,clip,cursor,lx,lz,bx,bz,fx,fz,ex,ez,c87c")
+            "vsync,st7,acting,clip,cursor,lx,lz,bx,bz,fx,fz,ex,ez,c87c,facing,tlx,tlz,tbx,tbz")
         -- The live camera pose (pitch / yaw `0x8007B790/92`, TR
         -- `0x800840B8..C0`) with the yaw and TR z records of the tween
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
@@ -836,11 +836,16 @@ probe.run({
                 if v >= 0x8000 then v = v - 0x10000 end
                 return v
             end
-            body:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+            -- Then the facing +0x46 and the target's (+0x1DD) live and body
+            -- pairs: the pair a strike's heading and range law read.
+            local ta = actor(math.min(u8(ba + 0x1DD), 7))
+            local function pair(a, o) return ta ~= nil and s16(a + o) or 0 end
+            body:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                 elapsed, st7, acting, u8(ba + 0x1D9), ptr_ok(node) and u16(node + 0x68) or -1,
                 s16(ba + 0x34), s16(ba + 0x38), s16(ba + 0x3C), s16(ba + 0x40),
                 -s32(0x80089118), -s32(0x80089120),
-                -s16(cx + 0x118C + 6 * 4 + 2), -s16(cx + 0x118C + 8 * 4 + 2), u32(cx + 0x87C))
+                -s16(cx + 0x118C + 6 * 4 + 2), -s16(cx + 0x118C + 8 * 4 + 2), u32(cx + 0x87C),
+                u16(ba + 0x46), pair(ta, 0x34), pair(ta, 0x38), pair(ta, 0x3C), pair(ta, 0x40))
         end
         -- The module phase counts as movement: a slot-B module runs every
         -- arm inside one band state.

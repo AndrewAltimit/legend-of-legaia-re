@@ -6074,6 +6074,15 @@ expected_active_scene = "rikuroa2"
 topics = ["field", "rikuroa2", "scene coverage", "door hop"]
 
 [[scenarios]]
+label = "rikuroa_field_cave_exit_arrival"
+backup_fingerprint = "b89df0cd296a75a965d9d69b49e61bbe7bdc8c3d7fff272487f390e9dc32b3cc"
+description = "rikuroa free field run, arrived from the rikuroa2 cave. RETAIL disc: rikuroa2_field_door_hop crossed rikuroa2:12:24 by autorun_door_hop.lua: player position held on the door walk-on tile, the door record ran as the disc wrote it, saved 488 vsyncs in. No flag or other RAM poke. Shows the summit floor ladder the entry script installs (cliff at -920)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rikuroa"
+topics = ["field", "rikuroa", "scene coverage", "door hop"]
+
+[[scenarios]]
 label = "taiku2_field_door_hop"
 backup_fingerprint = "1fed5d94f0cc809bc5e90d6948ff8efc024d0db57d23fc55d36db21ac2b01076"
 description = "taiku2 free field run. RETAIL disc: korout_field_door_hop crossed korout:68:25 (P2[2]) by autorun_door_hop.lua, saved 678 vsyncs in. Flags poked at the start for the door record's arm: 0x403 set, 0x47E and 0x577 clear."

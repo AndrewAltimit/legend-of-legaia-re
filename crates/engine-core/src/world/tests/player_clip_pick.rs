@@ -264,3 +264,57 @@ fn an_op49_park_stands_the_player_on_the_leaders_idle_clip() {
     assert!(w.locomotion.player_party_bank);
     assert_eq!(scene_record(&w), None, "bound in the party bank");
 }
+
+/// The player arm of `4C 51` writes the words every arm writes ahead of the
+/// seat (`0x801E1828..0x801E1868`, before the identity compare at
+/// `0x801E1954`): the depth byte's bit 7 is the party-bank bit the clip pick
+/// then reads, and `+0x62` drops hold, clamp and reverse. `rugi` `P2[72]`
+/// seats Vahn with `CC F8 51 22 52 04 07`: depth `04` drops the bit, so clip
+/// 7 binds scene record 6 (his flight) instead of striding into the leader's
+/// bank (slot 6, the hop's landing).
+#[test]
+fn a_player_seat_writes_the_party_bank_bit_from_its_depth_byte() {
+    let mut w = world_with_anim();
+    let slot = w.player_actor_slot.expect("player") as usize;
+    w.actors[slot].move_state.local_flags |= legaia_engine_scene::field_env::ANIM_CLAMP;
+    let mut ctx = FieldCtx {
+        flags: legaia_engine_field::field_player_clip::PARTY_BANK_FLAG,
+        ..FieldCtx::default()
+    };
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        match vm::field::step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x51, 0x22, 0x52, 0x04, 0x07],
+            0,
+        ) {
+            FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 6),
+            other => panic!("4C 51 should advance 6 bytes, got {other:?}"),
+        }
+    }
+    assert!(!w.locomotion.player_party_bank, "depth 04 drops the bit");
+    assert_eq!(w.locomotion.player_clip, 7);
+    assert_eq!(scene_record(&w), Some(6));
+    assert_eq!(
+        w.actors[slot].move_state.local_flags & legaia_engine_scene::field_env::ANIM_CLAMP,
+        0,
+        "the seat drops the clamp"
+    );
+    // Depth `0x84` raises it again: the same clip strides into the bank.
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        let _ = vm::field::step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x51, 0x22, 0x52, 0x84, 0x02],
+            0,
+        );
+    }
+    assert!(w.locomotion.player_party_bank);
+    assert_eq!(scene_record(&w), None);
+    assert_eq!(
+        w.locomotion.player_anim.as_ref().unwrap().retail_slot(),
+        Some(1)
+    );
+}

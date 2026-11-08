@@ -425,6 +425,21 @@ cells (`+0x106` / `+0x10A`) right after a level-up, which reads as a refill
 grant ([level-up.md](../subsystems/level-up.md)). A write that lands *near* an event is not a write
 *by* it; a frame-window capture cannot separate the two, only the routine's store set can.
 
+### Record `+0x9C` is not a magic-rank counter
+
+**Tempting reading.** A save pair taken across a magic rank-up moves record `+0x9C` from `9` to
+`10` beside the spell's XP and level bytes, which reads as a rank counter.
+
+**Why it is wrong.**
+
+- **Disassembly.** A monster's death arm in `FUN_8004AD80` bumps `+0x9C` (`sw 0x664` off the save
+  block at `0x8004B1F4`) for the party seat holding the action, and Jedo's instant-kill arm bumps it
+  once per monster it fells. The records page `FUN_801ED710` prints the word under Monsters Defeated.
+  No rank-up path writes it.
+
+**What is true.** The pair's cast felled a monster. The rank lives in the spell-level array
+`+0x161..` ([save-record.md](../formats/save-record.md#the-battle-records-words)).
+
 ### The flash ramp is the Arts announcement banner
 
 **Tempting reading.** `FUN_801E2650` scales a percent into grey, replicates it into RGB, picks GP0
@@ -994,6 +1009,17 @@ state has no cue voice sounding at its first sample (no voice record owned `0x21
 `--cue-voices` changes nothing. The level is the cast's CD-XA voice (`XA11` channel `0`) in a
 whole-window energy ratio, and the [`cast` channel](../subsystems/audio.md#the-cast-channel),
 which renders it, reads `+0.01` dB.
+
+### Retail does not park a key-on behind an SPU transfer
+
+`FUN_8006B854` forks on `_DAT_8007AF38 & 1` into shadow accumulators instead of the KON
+register, and the word reads like a transfer-busy flag, so a retail key-on trailing the
+port's by a vsync or three (a key-on census on `rugi`, the extra key-on on `dolk2_market_noa`,
+one held note in `theeder_summon_mid_cast`) read as a mask parked behind a busy DMA. The
+word is libspu's event-queueing switch and its only store in any image is `SpuInit`'s zero,
+and a PCSX-Redux watch of the calc and every KON write finds each KON inside the calc that
+staged it ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
+Modelling SPU transfer timing would move no key-on.
 
 ### The cue funnels' de-dup word is not dead
 
@@ -1634,6 +1660,7 @@ PROT 0978.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| Placed `.MAP` records `1..=3` are protagonist / NPC ids whose mesh comes from the shared pool | falsified (disassembly and capture) | Plausible: the field pool's head is the five party / savepoint meshes, and the low ids look like a reserved band. `FUN_80020f88` stores `actor+0x64 = record[+0x10] + DAT_8007b6f8` with no id test (`0x80020FDC..0x80020FF0`), and live `conc2` / `concnow` / `rikuroa` / `retona` actor lists hold records `1` / `2` at `+0x64 = +0x10 + 5`, drawn. The reading left `conc2`'s archway double door out ([`field-locomotion.md`](../subsystems/field-locomotion.md)). |
 | `FUN_8001EBEC` patches groups `{0, 3, 5}` on equip bytes `+0x196` / `+0x199` / `+0x19B`, one table for both roles | falsified (capture and disassembly) | Plausible: the routine does copy two short stack tables, and the old reading fits one small triple. The tables are SCUS `0x8007B3A4 = {3, 2, 3}` and `0x8007B3A8 = {3, 5, 3}`, and the old group `0` was Vahn's head, which read as an open question about his row. Live TMD groups in eight retail states follow the Ra-Seru bytes, both ways ([`character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap)). |
 | `4C 32` clears `0x80085718..0x80085918`, party and inventory state | falsified (disassembly) | Plausible: 512 bytes beside the bag. The loop base is `0x80084140 + 0x1618`, so it clears `0x80085758..0x80085958`, the flag bank exactly; the shipped sites sit behind dev pickers (`rikuroa` P1[13]: "Clear all flags"). |
 | korb3 parks on a modal timeline at `pc=0x0144` and edlast's helper spins on a jump-to-self | falsified (the ladder printed the entry script's pc) | Plausible: the ladder report prints a parked pc for each scene. That pc is the entry script's, not the pad holder's. In korb3 the holder is `P2[15]`, sign text at the picker seat (the first-visit `P2[1]` at retail's arrival tile); in edlast it is `P2[1]`, a credits record of about 14100 vsyncs that ends on a held-pad poll. Neither is a port stall. |
@@ -2257,6 +2284,9 @@ plausible reading that shaped what work looked worth doing.
 | 32 battle-presentation names are web-only - the native host never calls them | falsified (31 have native call sites) | Plausible: a `.name(` scan finds none. Path calls (`Type::name(`) are the native host's usual form, so scan `[.:]name(`; the 32nd, `packet_color::hybrid`, is the page's WebGL vertex-colour stream, which the wgpu fragment shader replaces. |
 | The play page has no Records dev-menu page | falsified (it has one, from the same builder) | Plausible: the page's menu shows no Records row at the moment compared. `play_dev_menu.rs` builds it with the native builder and a drift-gate row pairs them; what differs is **when** each host builds the list. |
 | `battle_cursor_pose`'s routines have no caller anywhere - link-time dead code | falsified (every one is called, in retail and in the port) | Plausible: the module's Rust items were once referenced nowhere outside their own file, so no linked binary carried them and a reach export could not see them. That is a statement about the workspace, and it was written up as a five-form sweep over the disc images. The disc says otherwise: PROT 0898 calls `FUN_801D32BC` from six `jal` sites (the round reset `0x801D8910` among them), `FUN_801D57E8` from `0x801D4414` / `0x801D4434`, `FUN_801D5778` from `0x801D50A0` / `0x801D50F8`, `FUN_801D9AE8` from `0x801D4C04`. The port now wires all but the pool release, which is `REPLACED-BY:`. |
+| A ring cue keys a frame step after its push, because retail's drainer `FUN_80016B6C` runs at the end of the frame's work | falsified on the cast channel (the cues read worse held back) | Plausible: the drainer does run after the frame's game logic, and the port drains on the tick that opens the frame. Holding each drained cue `step` vsyncs (and `step - 1`) before its key-on dropped `audio-pcm`'s cast channel p10 on Zenoir `.68` to `.33`, Swordie `.57` to `.33` and Gilium `.76` to `.70`, lifting only Big Wave `.48` to `.52`. The recordings are Mednafen's, whose battle frames cost under the step-`3` rung, so a test on PCSX-Redux recordings is what is left. |
+| `audio-pcm`'s summon casts run step `2` because the summon arm rows are missing | falsified (the replay's seeded step outranks them) | Plausible: the cast channel's Big Wave runs `2` where the films run `4`. The child is retail-compare's image child, which carries the still's `LEGAIA_BATTLE_FRAME_STEP` / `LEGAIA_BATTLE_PARTY_STEP` pins, and `World::apply_cast_arm_frame_step` stands down while a seed is set. Dropping the pins moved the channel both ways (Zenoir p10 `.68` to `.73`, Theeder `.34` to `.29`, Big Wave median `.99` to `.83`): the tables are PCSX-Redux readings and the recordings Mednafen's. |
+| Summon voices land late against Mednafen because the pre-module band is long | falsified on the PCSX-Redux films (the band matches to the vsync) | Plausible: Theeder's and Swordie's voices sit `8..13` vsyncs late in `audio-pcm`. On the Gobu Gobu films `0x29`, `0x32`, `0x33` and `0x34` read `22`, `16`, `34`, `60` vsyncs on both sides for Theeder, Nighto, Orb, Swordie and Spoon; what differs is the CD-seek arm (arm 1, or 2 for Nighto), where the port's Mednafen-fit wait holds about `30` ticks and PCSX-Redux seeks in `1..4` vsyncs ([cast module](../subsystems/cast-module.md)). |
 
 **Generalises to:** a measurement instrument has no oracle, so a number it prints
 is believed on the strength of its *explanation*. Check the explanation against

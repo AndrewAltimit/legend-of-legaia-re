@@ -35,6 +35,7 @@ struct TestHost {
     scripted_battles: Vec<(u8, u8)>, // op 0x3E `op0 < 100` / `0xFF` (op0, row)
     scene_transitions: Vec<u8>,
     minigame_door_warps: Vec<u8>, // op 0x3E `op0 >= 100` sub-ids
+    player_walk_lock_releases: u32,
     named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
     render_long: Vec<(u8, u8, u8, u8)>,
     render_short: Vec<(u8, u8, u8, u8)>,
@@ -951,6 +952,10 @@ impl FieldActorFxHost for TestHost {
 impl FieldPlayerHost for TestHost {
     fn apply_arrival_facing(&mut self) {
         self.arrival_facing_calls += 1;
+    }
+
+    fn release_player_walk_lock(&mut self) {
+        self.player_walk_lock_releases += 1;
     }
 
     fn fetch_player_coords(&self, _ctx: &FieldCtx) -> Option<PlayerCoords> {

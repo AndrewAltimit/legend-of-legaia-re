@@ -168,6 +168,7 @@ impl World {
             self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
                 text,
                 owner: self.battle_ctx.active_actor,
+                subject: None,
             });
         }
     }

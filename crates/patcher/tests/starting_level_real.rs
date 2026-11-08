@@ -191,7 +191,7 @@ fn starting_level_round_trips_on_disc() {
     assert_eq!(
         (word(level_seed_off) >> 8) & 0xff,
         1,
-        "level literal keeps magic rank = 1"
+        "level literal keeps the write-only +0x131 = 1"
     );
     assert_eq!(
         word(level_store_off),
@@ -427,7 +427,11 @@ fn patched_seed_routine_levels_the_whole_party_xp() {
             level,
             "slot {slot} displayed level (+0x130)"
         );
-        assert_eq!(rec_u8(base + 0x131), 1, "slot {slot} magic rank (+0x131)");
+        assert_eq!(
+            rec_u8(base + 0x131),
+            1,
+            "slot {slot} write-only seed byte (+0x131)"
+        );
         // In-band: experience strictly below the next threshold (no spurious ding).
         assert!(
             rec_u32(base) < rec_u32(base + 4),

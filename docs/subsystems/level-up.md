@@ -201,7 +201,7 @@ This is the byte the status screen reads as "LV" and the `Level 99` GameShark co
 
 The captured multi-level jumps moved it by one per level-up event, so it can momentarily lag the XP-derived level after a rare multi-level grant. For single-level play and the new-game seed it equals the level.
 
-- It is not a magic-rank byte. The magic-rank counter is capture-pinned at record `+0x9C` ([`save-record.md`](../formats/save-record.md#0x130-is-the-displayed-character-level)).
+- It is not a magic-rank byte. The record keeps a spell's rank in its spell-level array; `+0x9C`, once read as a rank counter, is the Monsters Defeated word ([`save-record.md`](../formats/save-record.md#the-battle-records-words)).
 - The adjacent `+0x131`, which the seed also inits to 1, has one writer on the disc (`0x800561C8`) and no reader in any image.
 - The port keeps its level in the same byte (`CharacterRecord::level`). It must not live at `+0x100`: that is word 3 of the ability bitfield `+0xF4..+0x103`, which the aggregator zeroes and rebuilds from equipment on every pass.
 

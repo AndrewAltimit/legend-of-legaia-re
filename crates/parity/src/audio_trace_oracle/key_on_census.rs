@@ -157,9 +157,10 @@ pub(super) const RETAIL_LAG_MAX: usize = 3;
 ///
 /// Both sides are matched key-on for key-on, one to one, each retail KON
 /// taking the nearest unclaimed engine key-on within [`RETAIL_LAG`]. The
-/// engine writes a key-on at the flush of the vsync its note fires in;
-/// retail's can trail that, as `FUN_8006B854` parks the mask while an SPU
-/// transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`.
+/// engine writes a key-on at the flush of the vsync its note fires in; the
+/// census's KON rows trail that by up to three vsyncs on `rugi`. The window
+/// is a tolerance, not a mechanism: retail writes every KON inside the calc
+/// that staged it (`docs/subsystems/audio.md`, "A key-on is never deferred").
 /// Matching key-ons (not notes) keeps layered tones, where one note keys two
 /// voices on both sides, from penalising the right offset.
 ///

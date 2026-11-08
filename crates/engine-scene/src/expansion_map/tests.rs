@@ -732,9 +732,9 @@ fn a_kept_room_keeps_its_floor_steps_and_props_stand_on_them() {
 }
 
 #[test]
-fn no_mesh_record_takes_a_protagonist_object_id() {
-    // Object ids 1..=3 never draw from the scene pack, so every record the
-    // builder writes sits at 4 or past.
+fn no_mesh_record_takes_records_one_to_three() {
+    // The builder's layout starts at record 4 (`FIRST_FREE_RECORD`), so every
+    // record it writes sits there or past.
     let img = image(&def());
     for i in 1..4 {
         assert!(

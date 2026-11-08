@@ -132,7 +132,8 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
 ///   flag of the art record its staged id resolves to
 ///   ([`BattleActionHost::staged_art_record_flag`]);
 /// * the **slot array** - retail walks the seven actor-pointer-table entries
-///   writing `+0x21C` / `+0x21D`, which the port carries as
+///   (its own seats, so not a fifth monster at seat `7`) writing `+0x21C` /
+///   `+0x21D`, which the port carries as
 ///   [`BattleActor::render_flag`] / [`BattleActor::impact_step`].
 ///
 /// The context byte `+0x243` ([`BattleActionCtx::gauge_rearm_latch`]) is
@@ -140,7 +141,7 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
 /// early-outs.
 ///
 /// PORT: FUN_801E93C8 (call site; kernel in `battle_gauge_rearm`)
-pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
+pub fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) {
@@ -162,9 +163,13 @@ pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
         }
     };
 
+    // The walk is retail's seven table seats (party `0..=2`, monsters from
+    // `3`), so a fifth monster, at seat `7`, keeps its rate.
+    let seats = SeatMap::new(host.party_count());
+    let engine = |i: usize| seats.engine(i as u8);
     let mut slots = AnimRateSlots::default();
     for i in 0..ANIM_RATE_SLOTS {
-        if let Some(a) = host.actor(i as u8) {
+        if let Some(a) = engine(i).and_then(|e| host.actor(e)) {
             slots.latch[i] = a.render_flag;
             slots.anim_rate[i] = a.anim_rate.get();
         }
@@ -173,7 +178,7 @@ pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
         return;
     }
     for i in 0..ANIM_RATE_SLOTS {
-        if let Some(a) = host.actor_mut(i as u8) {
+        if let Some(a) = engine(i).and_then(|e| host.actor_mut(e)) {
             a.render_flag = slots.latch[i];
             a.anim_rate = crate::battle_anim_rate::AnimRate(slots.anim_rate[i]);
         }

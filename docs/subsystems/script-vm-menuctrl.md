@@ -1015,7 +1015,16 @@ executing context, or the `CC <t> 51` target):
    with depth `0x8_` (`korout` `P2[3]`: `CC 09 51 42 9E 84 0A`); `town0d`
    `P1[3]` seats a party model with depth `06` and so plays scene-bank clip
    `26`. The seater `FUN_8003A1E4` raises the bit at `0x8003A3B0`, before
-   the install pre-run, so a prologue seat has the last word.
+   the install pre-run, so a prologue seat has the last word. The write
+   lands on the **player** too: the identity compare that splits the
+   player arm off (`0x801E1954`) comes after steps 1-3, so a player seat
+   with bit 7 clear sends the clip of step 4 to the scene bank. `rugi`
+   `P2[72]` flies the party into Rogue's Tower this way - Vahn on scene clip
+   `7` (`CC F8 51 22 52 04 07`), Noa on `33`, Gala on `16` - and restores the
+   player's bit with `B1 F8 18` before `A2 F8 02` lands him on idle. The
+   census finds the same shape (target `0xF8`, depth below `0x80`) in a
+   couple of dozen cutscenes, among them `noaru` `P2[34]`, `son` `P2[5]`,
+   `taiku` `P2[12..18]` and `town0b` `P2[23]` / `P2[30]`.
 2. **Anim control.** `+0x62 &= 0xFF75` (`0x801E1864`) drops hold, clamp and
    reverse, so whatever one-shot a beat left on the actor, the new clip
    loops forward.
@@ -1041,7 +1050,9 @@ beside its tree with `4C 51 AA 30 00 2A` on its pre-fight arm (system flag
 its header clip `39`; and `korout` `P2[3]` seats Noa and Gala with walk
 clips `10` and `15` before the `C1` compass legs walk them up the bridge.
 Port: `FieldHostImpl::run_to_tile` writes the bit, the mask and `+0x5C` on
-every NPC arm, binds the clip at the op (`bind_npc_scene_clip`, the binder an
+every NPC arm, and the bit and the mask on the player arm (the player's
+`World::locomotion.player_party_bank` and its `+0x62`) ahead of the clip
+pick, binds the clip at the op (`bind_npc_scene_clip`, the binder an
 `A2` ExecMove reaches, so a record's end-latch spin on the seated clip waits for
 it) and raises the clip cue on the cross-context arm, and the seat's
 floor re-sample drops any height the placement held (`World::seat_npc_floor_resample`:
@@ -1413,12 +1424,55 @@ re-plan) both store `ladder[nibble] + y_off` into the spawn record
 bit (`0x20200`) that would make the per-frame driver re-sample the floor. So
 when `concnow`'s system script lifts rungs 1..3 by up to about 1300 units after
 the init sweep, the bound objects on those rungs stay where they spawned.
+The exception is an object whose bind prologue raises the floor-follow class
+(`31 11`): the actor tick re-samples its floor every tick it is in view, so it
+rides the ladder like the ground. `rikuroa`'s summit cliff is one
+([renderer.md](renderer.md#field-static-object-placement-town01)).
 
 On `jouina` and `concnow` almost every moving vertex is ground: `concnow`'s
 animated rungs touch about 3500 ground vertices against about 120 translated
 draws, and `jouina`'s touch none of its translated draws.
 
+## Which sub-ops act on the resolved actor
+
+A cross-context `CC <id> ..` reaches its arm with the target already in `s5`:
+the dispatcher prologue resolves the id byte through `FUN_8003C83C` and keeps
+the result there (`jal 0x8003C83C` / `move s5,v0` at `0x801DE8A8..0x801DE8B0`),
+and every arm that touches an actor word addresses it off `s5`. So the sub-ops
+below write or read the **named** actor, whoever runs the record:
+
+| Sub-ops | Actor words |
+|---|---|
+| `35` / `36` | clip-control word `+0x62` |
+| `37` | `+0x14` / `+0x16` / `+0x18` and `+0x26` from the player |
+| `40` .. `45`, `48` | `+0x72`, `+0x6A`, `+0x8E`, `+0x24`, `+0x28`, the look turn, `+0x26` |
+| `50`, `51` | model set, seat |
+| `81` | tint `+0x74` / `+0x78` |
+| `8C`, `C0` | clip cursor `+0x68` |
+| `D9` / `DA` | height-law bit `+0x10 & 0x20000000` |
+| `E3`, `E4` | position copy, box test of `+0x14` / `+0x18` |
+
+The rest work on globals, the player object or the record's own flow, and the
+target changes nothing. Object (partition-0) records aim these at placements
+in `stone` (the Shadow Gate records hide and grow Gi Delilas with
+`CC 12 40 ..`, tint him with `CC 12 81 ..`, seat Noa and Gala on Vahn with
+`CC 09 37` / `CC 0A 37`), `chitei2` (the generator panels tint the switch
+crew), `jiji` (the counters turn their keeper's head), `nilboa` and `vell`;
+talk records do the same in `town0b`, `town0c`, `tunnelc`, `doman` and
+others. The census is `crates/engine-scene/tests/object_record_placement_ops_disc.rs`.
+
 ## Port notes
+
+The cutscene timeline and the placement channels step every cross-context
+op on the resolved channel's context. The prop runner
+(`World::step_prop_interaction`) and the talk runner
+(`World::drive_inline_dialogue`) run on a stand-in context of their own, so
+they route the resolved-actor sub-ops above (`is_resolved_actor_4c`) onto the
+named placement's channel (`step_npc_word_op`); stepped on the stand-in, the
+named NPC never hid, moved, tilted or turned its head.
+`4C 37` hands the copied heading to the actor's heading seat as `4C 48` does,
+so a placement it lands on faces the player's way.
+
 
 The dispatcher lives in `legaia_engine_vm::field` (`step/menu_ctrl/`), with one
 `FieldHost` hook per sub-cluster implemented by `engine-core`'s

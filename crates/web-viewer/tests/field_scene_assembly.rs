@@ -342,7 +342,15 @@ fn world_map_scenes_include_the_walk_decoration_layer() {
             field_env::resolve_env_draws(&pack.env_tmds, &landmarks, floor_lut);
         let mut both = landmarks.clone();
         both.extend(deco.iter().cloned());
-        let (expected, _) = field_env::resolve_env_draws(&pack.env_tmds, &both, floor_lut);
+        let (mut expected, _) = field_env::resolve_env_draws(&pack.env_tmds, &both, floor_lut);
+        // A bound landmark whose bind names a clip carries it (Conkram's
+        // shell on `map03`), as both play hosts pose it.
+        if let Some(binds) = scene
+            .field_object_binds(&index)
+            .expect("field_object_binds")
+        {
+            field_env::pose_bound_landmarks(&mut expected, &binds);
+        }
 
         assert_eq!(
             pack.placements, expected,

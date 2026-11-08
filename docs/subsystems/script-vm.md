@@ -26,7 +26,7 @@ flowchart TD
     FETCH --> EXT{"Bit 0x80 set?"}
     EXT -- "yes" --> RES["Resolve target id byte<br/>FUN_8003C83C"]
     RES -- "no such actor" --> SKIP["Return pc + 1"]
-    RES -- "target halted" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
+    RES -- "target halted,<br/>caller not the system script" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
     RES -- "ok" --> DEC
     EXT -- "no" --> DEC{"Decode byte & 0x7F"}
     DEC -- "0x21..0x4F" --> ARM["Opcode arm<br/>may sub-dispatch on an operand"]
@@ -237,6 +237,28 @@ on `FUN_8003BC08`, which routes by the node's flag word `+0x10`: bit `0x100`
 runs the field-VM slice (`FUN_80039B7C`), bit `0x400` the walk kernel
 (`FUN_8003774C`), a non-zero `+0x80` the motion VM (`FUN_80038158`), and
 `+0x5C > 0` / bit `0x1000` the move-table VM.
+
+A "frame" here is a **game frame**, not a vsync. The walk runs once per pass of
+the frame loop, and a pass spans the adaptive frame step `DAT_1F800393` vsyncs
+(2 in a town or dungeon, 3 on the overworld and in heavy scenes, 4 at the
+worst). A PCSX-Redux count of `FUN_801DE840` entries against vsyncs
+([`autorun_field_script_cadence.lua`](../../scripts/pcsx-redux/autorun_field_script_cadence.lua))
+finds every dispatcher entry on a vsync the walk ran on, one walk every
+`DAT_1F800393` vsyncs, across `bubu2`, `dolk2`, `jiji`, `map01`, `nilboa`,
+`stone` (whose step moves between 3 and 4 inside the capture) and `town0b`. A
+field scene never runs at step 1: the scene loader `FUN_801D6704` floors the
+step at 2. A script context therefore runs one slice every `DAT_1F800393`
+vsyncs, and an op that times itself credits the step's worth at each visit
+(op `0x4A` adds `DAT_1F800393` to `ctx[+0x54]`).
+
+The port steps every script runner - the system script, spawned records, the
+prop runner and the talk runner - on the game frames only
+(`FrameClock::script_slice_due`). Three things run on the tick that comes, as
+retail runs them inside the frame that caused them: a freshly loaded system
+script's install slice, a freshly spawned record's first slice, and the
+dialog box, which reads the pad every vsync. A park a record sits in (a
+player arc, a walk leg, a halt-bit wait) resumes on the next game frame, not
+on a vsync between two.
 
 The slice itself is the run-until-yield loop inside `FUN_80039B7C` (its
 run-to-**text** sibling is `FUN_8003CF7C`): call `FUN_801DE840`, write the
@@ -536,8 +558,11 @@ if (*pbVar43 & 0x80) {
             return pc_offset + 1;
         }
     }
-    // Halt-flag check (with op 0x32 carve-out)
-    if (ctx_ptr[+0x10] & 0x400 && /* not opcode 0x32 with bit 0x400 */) {
+    // Halt-flag check (with op 0x32 carve-out). The refusal exempts a
+    // system-script caller and a non-zero `*(_DAT_801C6EA4 + 8)`.
+    if (ctx_ptr[+0x10] & 0x400 /* and not opcode 0x32 with bit 0x400 */
+        && *(u16*)(_DAT_801C6EA4 + 8) == 0
+        && caller[+0x50] != 0xFB) {             // caller = the original a2
         return pc_offset;                       // halted, don't dispatch
     }
     pbVar47 = pbVar43 + 2;                      // operands start at +2
@@ -548,6 +573,8 @@ switch (*pbVar43 & 0x7f) {
     // 43 unique opcodes 0x21-0x4F (with gaps at 0x27-0x2A)
 }
 ```
+
+The halt test reads the **caller** for its exemption (`lhu v1,0x50(s1)` at `0x801DE938`, `s1` the context the dispatcher was entered with), so the scene's system script lands a seat or flag op on an actor mid-walk while any other record waits. `conc2`'s entry script parks the plaza's light shaft (partition-0 record 11) with `A3 0B 7F 7F` while the shaft's bind-prologue compass walk (`37 02 01`) still holds `0x400`; retail RAM holds it at `(16192, 16320)`, parked and then walked its two steps. Port: `legaia_engine_vm::field::step_from_caller`.
 
 The high bit (0x80) of an opcode means "this instruction targets a different script context" - `*(pbVar43+1)` is the script ID, resolved through `func_0x8003C83C` to a context pointer. The original (caller's) context is preserved; the dispatch operates on the resolved one.
 
@@ -585,8 +612,8 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 | +0x74 | u32 | Draw word: low 24 bits the tint colour (`0xBBGGRR`), top byte mode bits. Written by op 0x4C nibble-8 sub-1 ([tint](script-vm-menuctrl.md)); XOR-toggled by op 0x4C nibble-C sub-8 (flips bit 0x10000000). The actor draw hands it to `FUN_80043390` as the far colour. |
 | +0x78 | u16 | Tint blend (`0x1000` = full), the draw's `IR0`. Written / tweened by op 0x4C nibble-8 sub-1. |
 | +0x8B | u8 | Cleared by op 0x23 NPC path. |
-| +0x8C | u8 | NPC X grid coord (op 0x23). |
-| +0x8D | u8 | NPC facing (op 0x23). |
+| +0x8C | u8 | NPC X tile, `x_byte & 0x7F` (op 0x23). |
+| +0x8D | u8 | NPC Z tile, `z_byte & 0x7F` (op 0x23); the port's field is named `npc_facing`. |
 | +0x8E | i16 | Inverted-Y mirror slot. Written / ramped by op 0x4C nibble-4 sub-2 (which also conditionally writes `world_y = -value` when `flags & 0x20000000` is set). |
 | +0x90 | u32 | Opaque actor-handle field. |
 | +0x94 | u32 | Saved PC (set by YIELD; the dispatcher reads this on resume). |
@@ -613,7 +640,7 @@ like `0x24` / `0x25`.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x22 | `EXEC_MOVE` | `[22, move_id]` | Schedule move-table playback on the current ctx. Sets `ctx[+0x5C] = move_id`, `ctx[+0x5E] = 0xFFFE`, then calls `func_0x800204F8(ctx)` - the **clip driver** that binds clip `move_id` from the scene's ANM clip bank (`_DAT_8007B888`, retail's "MOVE" buffer; [`mdt.md`](../formats/mdt.md), [`anm.md`](../formats/anm.md#binding-a-clip)), not move-VM bytecode. Player path has special cases around `+0x10` bit 0x1000000 (move chaining) and `move_id == 99` (auto-cancel). |
-| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path sets `+0x8C/+0x8D` facing, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
+| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path stores the two tile bytes (`& 0x7F`) at `+0x8C/+0x8D` and zeroes `+0x8B`, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
 | 0x26 | `JMP_REL` | `[26, lo, hi]` | Relative jump: `PC = pc_offset + 1 + (lo + hi*0x100)`. Unconditional. |
 
 ### 0x2B-0x33 (flag manipulation triplets)

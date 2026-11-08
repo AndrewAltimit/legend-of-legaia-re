@@ -202,6 +202,53 @@
   </table>
   <p>Map doors are the larger class, and a MAN-only census cannot see them. Vahn's house is the mixed case: script door in, map door out.</p>
   <p><strong>A door teleport re-centres the placed-object window.</strong> The sub-area sweep keeps a list of the window-owned placements around the camera&rsquo;s latched region box, and only a re-centre rebuilds it. A script door&rsquo;s player arm (<code>0x23</code> or <code>4C 51</code> aimed at the player) calls the re-centre on the landing tile, as do the kind-0 warp landing and the leader swap. Without it, leaving a house keeps the interior&rsquo;s box and the street&rsquo;s window-owned scenery stays hidden until something else re-centres. The port re-centres from the same arms: a door&rsquo;s contact runs the door&rsquo;s own record, whose jump goes through the player arm.</p>
+  <h3 id="room-mask">The room you landed in, not the tile you stand on</h3>
+  <p>A scene&rsquo;s system script often picks the current room from the <strong>region-type mask</strong> (<code>_DAT_8007B8F4</code>, one bit per kind-3 region box over the player): each pass it installs the first room whose bit is set - that room&rsquo;s floor-height ladder, view window and floor oscillators. Retail writes the mask only when the player <em>lands</em> somewhere: a re-centre (scene entry, a door warp, a scripted player move, the leader swap), a camera-zone query, <code>[4C 3D]</code>, or every frame while a script holds scratchpad bit 22. A walk never rewrites it.</p>
+  <p>That is what keeps overlapping rooms apart. <code>conc</code>&rsquo;s southern hall shares one open column with the room on each side; a mask rebuilt per tile held both rooms&rsquo; bits there, and the selector installed the two ladders on alternate passes - every floor tier jumping hundreds of units a frame, the whole town shaking while the player stood by the wall. The port now latches the mask where retail does.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Top: conc's southern hall, a type-2 region box, overlaps a type-3 room box on each side by one open column. The player lands in the hall through a door, which writes the mask with the hall's bit only, then walks west onto the shared column. Bottom left, a mask rebuilt on every tile: on the shared column it holds both bits, so the room selector installs the hall's floor ladder and the neighbour's on alternate passes and the floor tiers jump. Bottom right, retail's latch: the walk writes nothing, the mask keeps the hall's bit from the landing, and the hall's ladder stays installed.">
+      <defs><marker id="flw-latch-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="24">conc, top down: three region boxes in a row (bit n = region type n)</text>
+      <rect class="dg-node" x="40" y="40" width="210" height="80" rx="4"/>
+      <text class="dg-label" x="130" y="76">west room</text><text class="dg-sub" x="130" y="94">type 3, bit 0x08</text>
+      <rect class="dg-node" x="610" y="40" width="210" height="80" rx="4"/>
+      <text class="dg-label" x="730" y="76">east room</text><text class="dg-sub" x="730" y="94">type 3, bit 0x08</text>
+      <rect class="dg-node-accent" x="220" y="40" width="420" height="80" rx="4"/>
+      <text class="dg-label" x="430" y="70">southern hall</text><text class="dg-sub" x="430" y="88">type 2, bit 0x04</text>
+      <rect class="dg-node-warn" x="220" y="40" width="30" height="80" rx="2"/>
+      <rect class="dg-node-warn" x="610" y="40" width="30" height="80" rx="2"/>
+      <text class="dg-sub" x="235" y="138">shared column</text>
+      <text class="dg-sub" x="625" y="138">shared column</text>
+      <circle class="dg-node-ok" cx="500" cy="104" r="7"/>
+      <text class="dg-sub dg-start" x="512" y="108">landed: 0x04</text>
+      <path class="dg-edge" d="M492 104 H246" marker-end="url(#flw-latch-ah)"/>
+      <text class="dg-edge-label" x="370" y="99" text-anchor="middle">walk west</text>
+      <circle class="dg-node-ok" cx="235" cy="104" r="7"/>
+
+      <rect class="dg-group" x="20" y="164" width="400" height="180" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="188">mask rebuilt on every tile</text>
+      <text class="dg-sub dg-start" x="34" y="206">(the port before the latch)</text>
+      <rect class="dg-node-warn" x="34" y="220" width="372" height="28" rx="4"/>
+      <text class="dg-sub" x="220" y="239">on the shared column: mask = 0x0C (both bits)</text>
+      <rect class="dg-node" x="34" y="262" width="176" height="44" rx="4"/>
+      <text class="dg-sub" x="122" y="280">pass n: hall ladder</text><text class="dg-sub" x="122" y="296">installed</text>
+      <rect class="dg-node" x="230" y="262" width="176" height="44" rx="4"/>
+      <text class="dg-sub" x="318" y="280">pass n+1: west room</text><text class="dg-sub" x="318" y="296">ladder installed</text>
+      <path class="dg-edge" d="M210 276 H228" marker-end="url(#flw-latch-ah)"/>
+      <path class="dg-edge-dim" d="M318 306 V318 H122 V308" marker-end="url(#flw-latch-ah)"/>
+      <text class="dg-sub dg-start" x="34" y="336">floor tiers jump every pass: the town shakes</text>
+
+      <rect class="dg-group" x="440" y="164" width="400" height="180" rx="6"/>
+      <text class="dg-label dg-start" x="454" y="188">the mask is a latch (retail)</text>
+      <text class="dg-sub dg-start" x="454" y="206">written only where the player lands</text>
+      <rect class="dg-node-ok" x="454" y="220" width="372" height="28" rx="4"/>
+      <text class="dg-sub" x="640" y="239">on the shared column: mask = 0x04, from the landing</text>
+      <rect class="dg-node" x="454" y="262" width="372" height="44" rx="4"/>
+      <text class="dg-sub" x="640" y="280">every pass: hall ladder stays installed</text><text class="dg-sub" x="640" y="296">the west room's bit waits for the next landing</text>
+      <text class="dg-sub dg-start" x="454" y="336">writers: re-centres, MAN load, zone queries, [4C 3D]</text>
+    </svg>
+    <figcaption>Why <code>conc</code> held still in retail and shook in the port. The selector installs the first room whose bit is set and whose band flag is clear, so a mask holding two rooms&rsquo; bits flips between their floor ladders; a latch only ever holds the room of the last landing.</figcaption>
+  </figure>
   <h3 id="prop-door-rides">Prop-door rides: lifts and swinging doors</h3>
   <p>Every door bound to an object rides on its own record: retail&rsquo;s touch post only marks the touched actor (<code>+0x10 |= 0x100</code>), and that mark is what lets the context runner step the actor&rsquo;s script, so contact hands the touch to the prop runner, which executes the whole record - both doors, both walks and the jump between them. Sol Tower&rsquo;s floor lifts show the shape; every pair is the same record with the partner id, the walk tiles and the landing changed.</p>
   <figure class="diagram">
@@ -232,7 +279,9 @@
     <figcaption>Each cross-object op names its target by id, and a bound object&rsquo;s id is its flat record index, so step 5 lands on the partner door. The prop runner steps those ops on a context seeded from the target prop and writes the words back.</figcaption>
   </figure>
   <p>Two engine shortcuts used to hide both doors: applying the record&rsquo;s decoded teleport on the first contact frame put the player on the far floor before the near door moved, and stepping the partner ops on the record&rsquo;s own context swung the near door twice and the partner never. Every object door&rsquo;s record is now left to the runner; an interact-gated object, such as a lever, waits for the confirm press instead.</p>
+  <p><strong>A door record that animates someone else writes that actor&rsquo;s words.</strong> Some door records move an NPC standing beside them: the clip ops in the record name the NPC by id, so they set the NPC&rsquo;s clip and its clip-control bits, and a wait on the clip&rsquo;s end waits on the NPC&rsquo;s clip. The dance-hall door in Sol Tower (<code>koin3</code>) is the clearest case. With the Gold Card shown, the door swings open and its doorman steps aside; without it, the doorman steps into the doorway, the player is pushed back a step, and the door stays shut. The block carries no text - the Gold Card exchange is the doorman&rsquo;s own conversation, which checks the bag for the card and, on Yes, raises the flag the door tests. The port used to run the doorman&rsquo;s clip ops on the door itself, so without the card the door swung open and kept looping its swing while the doorman stood still. Door and counter records walk, turn and face NPCs the same way: the walk or turn plays on the NPC, the record runs on, and its next command to that NPC waits until the NPC has arrived - the Ancient Wind Cave&rsquo;s inn counter walks its keeper to the counter before he greets you. Object records drive an NPC&rsquo;s clip or legs in Drake Castle, the Ancient Wind Cave, Nivora Ravine, the Shadow Gate, Zora Castle, West Voz Forest and Rim Elm.</p>
   <p>A doorway with no animated prop is a door too. Rim Elm&rsquo;s house doors wash the screen white, wait out the wash, jump, and fade back in under a time-of-day tint, all from the door object&rsquo;s record; the port used to skip straight to the jump. The same cross-object ops drive lifts, gondolas and gates in several other dungeons.</p>
+  <p>Every placed object takes its mesh from its map record, whatever the record&rsquo;s number. The port used to treat records 1 to 3 as the party&rsquo;s own models and draw nothing for them; retail draws them like any other, and five placements on the disc sit on them. The double door in the archway off Conkram&rsquo;s past plaza is one: the port left the archway open.</p>
   <h3 id="one-actor-per-object">One actor per bound object</h3>
   <p>The scene-init sweep spawns an actor for every bound object, so two objects whose key tiles name the same record are two actors running one script under one id. Almost two objects in five on the disc share a record this way: Mt. Rikuroa&rsquo;s summit binds 46 props to one record, one Sol Tower stairway 31. An op aimed at that id reaches only the first of them the sweep spawned, and a retired actor leaves the list, so the next op reaches the next one: a summit beat takes six of them away one at a time with six identical retire ops, eight frames apart. The port used to keep one script context per record and draw every object on it from that one context, so the first retire op took all 46 props at once. It now runs one context per object, each seated at its own position and angle, and both play hosts read each placed object&rsquo;s live position, turn, tint and visibility from its own actor.</p>
   <h3 id="talk-proxies">Talking through a stand-in</h3>
@@ -345,7 +394,7 @@
     </tbody>
   </table>
   </div>
-  <p>Retail never enters a scene without a door operand, but the port's scene picker can. A picker entry first tries the scene&rsquo;s door arrivals - where other scenes&rsquo; scene-change ops land the party (<a href="engine.html#browser-host">engine</a>) - and only when none qualifies does it synthesise a seat: retail's own fallback coordinate when it is standable, inside the scene's main walkable region and not on a teleport pad; otherwise a door-arrival anchor, then the region's centroid.</p>
+  <p>Retail never enters a scene without a door operand, but the port's scene picker can. A picker entry first tries the scene&rsquo;s door arrivals - where other scenes&rsquo; scene-change ops land the party, an overworld&rsquo;s object-bound town mouths included (<a href="engine.html#browser-host">engine</a>). An arrival on a door frame or trigger tile steps to the nearest whole standable tile, at its centre, so a picked Zeto&rsquo;s Dungeon (<code>garmel</code>) starts one tile inside the hall rather than on the path behind its exit. A scene no door seats takes a seat its own scripts give the hero (the ending&rsquo;s Rim Elm, <code>town0e</code>, seats where its epilogue stands him), and only when none qualifies does it synthesise a seat: retail's own fallback coordinate when it is standable, inside the scene's main walkable region and not on a teleport pad; otherwise a door-arrival anchor, then the region's centroid.</p>
   <ul class="bullets">
     <li><strong>The main region is not simply the largest.</strong> On the three kingdom maps the collision grid leaves the sea open - the coast is a closed wall ring and retail only arrives by door onto land - and the sea is about four times the continent. The rule excludes a region that reaches three or more map edges, which is exactly those three seas.</li>
     <li><strong>A door arrival is never nudged.</strong> A standable tile is taken exactly as given, so every authored arrival lands byte-exact on its operand; only a derived tile the grid does not cover is moved to the nearest open sub-cell.</li>

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use legaia_engine_scene::scene_arrivals::ArrivalClass;
+
 impl SceneHost {
     /// Install the placed-prop collision + interaction layer for the current
     /// field scene: one [`legaia_engine_core::world::FieldPropCollider`] per placed `.MAP`
@@ -485,8 +487,9 @@ impl SceneHost {
             .map(|t| t.dest_world())
             .collect();
         // A picker entry first tries where the disc's doors land the party
-        // (`World::picker_arrival_seat`); an arrival the scene's grid rejects,
-        // or a scene no door leads into, falls through to the cold resolver.
+        // (`World::picker_arrival_seat`), then the scene's own player seats
+        // (`ArrivalCatalog::own_seats`, appended after the doors); a scene
+        // whose grid rejects them all falls through to the cold resolver.
         let picker_arrival = match (operand, picker_arrivals.as_deref()) {
             (None, Some(ranked)) if !ranked.is_empty() => {
                 let spots: Vec<(i16, i16)> = ranked.iter().map(|a| a.world_xz()).collect();
@@ -510,8 +513,31 @@ impl SceneHost {
                             .filter(|t| t.gate == 1)
                             .map(|t| (t.tile_x, t.tile_z)),
                     );
+                    // The doors first; the scene's own seats only when
+                    // retail's own cold seat (`FIELD_COLD_SPAWN_XZ`, the
+                    // cold resolver's first pick) does not stand: a Rim Elm
+                    // variant like `town0b` keeps the New Game yard.
+                    let doors = ranked
+                        .iter()
+                        .take_while(|a| a.class != ArrivalClass::OwnSeat)
+                        .count();
+                    let cold_default = (
+                        legaia_engine_core::world::FIELD_COLD_SPAWN_XZ,
+                        legaia_engine_core::world::FIELD_COLD_SPAWN_XZ,
+                    );
                     self.world
-                        .picker_arrival_seat(&spots, &avoid)
+                        .picker_arrival_seat(&spots[..doors], &avoid)
+                        .or_else(|| {
+                            let cold = self
+                                .world
+                                .resolve_cold_field_spawn(&teleport_tiles, &anchors);
+                            if cold == cold_default {
+                                return None;
+                            }
+                            self.world
+                                .picker_arrival_seat(&spots[doors..], &avoid)
+                                .map(|(i, seat)| (doors + i, seat))
+                        })
                         .map(|(i, seat)| (ranked[i].clone(), seat, i))
                 }
             }
@@ -545,8 +571,12 @@ impl SceneHost {
         {
             self.picker_seat = Some(match &picker_arrival {
                 Some((arrival, seat, rejected)) => {
-                    self.world.field_vm.picker_bgm_inherit =
-                        self.arrival_catalog().home_bgm(&arrival.from_scene);
+                    // A door brings its scene's music; a scene's own seat
+                    // brings none.
+                    self.world.field_vm.picker_bgm_inherit = (arrival.class
+                        != ArrivalClass::OwnSeat)
+                        .then(|| self.arrival_catalog().home_bgm(&arrival.from_scene))
+                        .flatten();
                     // The door's facing: armed for the entry script's
                     // `4C 3A` and applied now, as the `0x3F` arrival does.
                     self.world.face_player_sector(arrival.dir);
@@ -589,7 +619,7 @@ impl SceneHost {
             }
         }
         // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
-        // block + the MAN section-3 camera-region table. Drives the per-tile
+        // block + the MAN section-3 camera-region table. Drives the latched
         // region-type mask (`extra_flags`, field-VM op 0x42 mode 0) and the
         // camera-zone selection via `World::refresh_field_regions` (the
         // `FUN_80017FBC` / `FUN_800180EC` / `FUN_801DBA20` ports). Installed

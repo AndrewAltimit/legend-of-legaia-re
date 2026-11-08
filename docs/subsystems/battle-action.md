@@ -1474,6 +1474,23 @@ frame the body from it: `player_steal_skeleton_banner` reads its killed skeleton
 turned onto Vahn, `rim_elm_gimard_seru_capture_after` its Gimard. Port:
 `World::commit_melee_reaction`.
 
+**The re-commit cuts the clip it replaces.** Bit 0 of the `5` sends the
+defender's next anim tick (`FUN_80047430`) straight from `0x800478F4` to the cut
+at `0x80047940`, past the rate advance and ahead of the natural-end test: when
+the outgoing entry's `+0x76` event lock is clear and its `+0x0E` end displacement
+is non-zero, the live pair steps along the heading the commit just stored by
+`trig * +0x0E * frame / frames >> 12`, the share of the clip it played, and then
+the staged reaction commits. So a struck body slides by the part of its block or
+flinch it got through, on every hit of a string. In `jou_theeder_v3_strike` Vahn
+is guarding: each of Theeder's swings re-commits his block at keyframe 6, and
+his live pair steps `(-39, -134)` three times. Theeder's walk, which measures his
+body pair, follows him down the stage, and the strike camera's yaw climbs with
+it. Without the cut the block's pose snapped back over the guard's feet, the
+range law read Theeder in reach, and the back-off and reach snap walked him back
+each swing. Port: `World::commit_melee_reaction`, which installs the reaction
+on the hit itself and so takes the cut on the frame one advance ahead
+(`MonsterAnimPlayer::frame_after_vsyncs`).
+
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
 counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the

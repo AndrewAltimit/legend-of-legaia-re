@@ -464,6 +464,16 @@ impl World {
             }
         }
 
+        // The record's ops run on game frames only: the object's actor
+        // steps its context from the actor-list walk
+        // (`FrameClock::script_slice_due`). The box above and the player's
+        // legs read the pad and spend on every vsync.
+        // REF: FUN_8002519C, FUN_80039B7C
+        if !self.clock.script_slice_due() {
+            self.dialog.inline = Some(id);
+            return;
+        }
+
         // No box: sync the prop's live state into the context (the per-frame
         // anim tick may have latched the clip's end since the last slice),
         // then run a VM slice.
@@ -630,14 +640,15 @@ impl World {
                     }
                     continue;
                 }
-                // An op aimed at another actor (`C7 <id> ..` walk, `B8 <id>`
-                // turn, `CC <id> 85` acquire) runs on the record's own context,
-                // which stands in for the target, so the target's park
-                // (`+0x10 |= 0x400`) lands on it. In retail the target's
-                // walk kernel clears that bit on the leg's terminal frame
-                // (`FUN_8003774C`); the runner plays no leg for another actor,
-                // so it keeps the record's own halt state across the op, as
-                // the talk runner does. Left up, the bit held the record's
+                // An op aimed at another actor that no arm below routes to
+                // that actor (an id no placement or object answers, an op on
+                // an object with no word routing) runs on the record's own
+                // context, which stands in for the target, so a park the op
+                // raises (`+0x10 |= 0x400`) lands on it. In retail the
+                // target's walk kernel clears that bit on the leg's terminal
+                // frame (`FUN_8003774C`), so the runner keeps the record's own
+                // halt state across the op, as the talk runner does. Left
+                // up, the bit held the record's
                 // next op on any actor at the dispatcher's halted-target
                 // early-out (`0x801DE90C..0x801DE944`) until the park
                 // timeout, and the prop's flag word carried it into every
@@ -647,6 +658,32 @@ impl World {
                 // REF: FUN_8003774C, FUN_801DE840 (0x801DE90C..0x801DE944)
                 let other_target = b & 0x80 != 0 && !player_target;
                 let own_halt = (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum);
+                // A motion op aimed at a **placement** moves that placement:
+                // `FUN_8003C83C` resolves the id to the NPC, the arm raises
+                // its halt bit and hands the leg to its walk kernel, and the
+                // record runs on past the op. The record's next op on the
+                // same NPC waits at the dispatcher's halted-target early-out
+                // until the kernel lands the leg (the halt clear `B2 <id> 0A`
+                // is exempt). `koin3`'s dance-hall door turns its doorman
+                // with `B8 26 80 14`, `jiji`'s counters walk and turn their
+                // keeper, `stone`'s and `vell`'s records walk and face their
+                // cast. Stepped on the record's own context, nobody moved.
+                // REF: FUN_8003C83C, FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C
+                let npc_slot = other_target
+                    .then(|| vm::field::peek_extended(&id.bytecode, id.pc))
+                    .flatten()
+                    .and_then(|t| host.world.placement_slot_for_target(t));
+                if let Some(slot) = npc_slot {
+                    let halt_clear = b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A);
+                    if !halt_clear && host.world.npc_leg_in_flight(slot) {
+                        parked = true;
+                        break;
+                    }
+                    if let Some(next_pc) = host.world.run_placement_motion_op(&id.bytecode, id.pc) {
+                        id.pc = next_pc;
+                        continue;
+                    }
+                }
                 // An actor-word op aimed at another **placed object** lands on
                 // that object's words, not on the record's own: `tower`'s floor
                 // doors open the partner door one floor away with `AC <id> 07`,
@@ -665,7 +702,24 @@ impl World {
                 } else {
                     None
                 };
-                let step = if let Some(key) = object_target {
+                // An actor-word op aimed at a **placement** (a partition-1 NPC)
+                // lands on that NPC's context: its `+0x62` clip-control word,
+                // its `+0x10` bank bit and its clip. `koin3`'s dance-hall door
+                // (P0[3]) has its doorman (P1[2], id `0x26`) step across the
+                // doorway - `AC 26 07`, `AB 26 03`, `AC 26 01`, `B2 26 18`,
+                // `A2 26 35`, `AC 26 08` / `AD 26 08` - and the door itself
+                // never moves unless the Gold Card flags let the record reach
+                // its own `2B 03`. Stepped on the door's own context, the
+                // doorman's clip bits drove the door's clip, which then looped
+                // its swing for the rest of the visit, and the doorman stood
+                // still.
+                // REF: FUN_8003C83C, FUN_800204F8
+                let npc_target = (other_target && object_target.is_none())
+                    .then(|| npc_word_op_slot(host.world, &id.bytecode, id.pc))
+                    .flatten();
+                let step = if let Some(slot) = npc_target {
+                    step_npc_word_op(&mut host, &mut id, slot)
+                } else if let Some(key) = object_target {
                     let mut target_ctx = host.world.object_prop_ctx(key);
                     let r = vm::field::step_with_caller(
                         &mut host,
@@ -1013,6 +1067,148 @@ impl World {
             .and_then(|a| self.props.bank.props.get(&a))
             .is_some_and(|p| p.collision_exempt())
     }
+}
+
+/// The `0x4C` sub-ops whose arm reads or writes the **resolved actor**, the
+/// context the dispatcher prologue swaps into `s5` for a `0x80`-prefix op
+/// (`jal 0x8003C83C` / `move s5,v0` at `0x801DE8A8..0x801DE8B0`): the
+/// clip-control pair `35` / `36` (`+0x62`), the player copy `37` (`+0x14` ..
+/// `+0x18`, `+0x26`), the nibble-4 slots `40` .. `45` and `48` (`+0x72`,
+/// `+0x6A`, `+0x8E`, `+0x24`, `+0x28`, the look turn, `+0x26`), the model
+/// set `50`, the seat `51`, the tint `81` (`+0x74` / `+0x78`), the clip
+/// cursor test `8C` (`+0x68`), the clip phase `C0`, the height-law bit
+/// `D9` / `DA` (`+0x10`), the position copy `E3` and the box test `E4`
+/// (`+0x14` / `+0x18`). Every other sub-op works on globals, the player or
+/// the script's own flow, and runs wherever it is stepped.
+///
+/// REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+pub(in crate::world) fn is_resolved_actor_4c(sub: u8) -> bool {
+    matches!(
+        sub,
+        0x35..=0x37
+            | 0x40..=0x45
+            | 0x48
+            | 0x50
+            | 0x51
+            | 0x81
+            | 0x8C
+            | 0xC0
+            | 0xD9
+            | 0xDA
+            | 0xE3
+            | 0xE4
+    )
+}
+
+/// The placement slot a prop record's cross-context op at `pc` reaches, when
+/// the op is one of the actor-word ops the prop runner routes onto the NPC's
+/// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, an
+/// `A3 <id> x z` seat, a `CC <id> C3` re-seat at the placement's own
+/// record, a clip-control `AB` / `AC` / `AD`, a class-bit `B1` / `B2` - but
+/// not the retire (`3`), engage (`8`) or halt (`0xA`)
+/// bits, whose side effects the runner models elsewhere or not at all - or
+/// a `CC <id> ..` sub-op on the resolved actor ([`is_resolved_actor_4c`]).
+/// `None` for any other op, and for a target no placement channel carries.
+pub(in crate::world) fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
+    let b = *bytecode.get(pc)?;
+    let routed = match b & 0x7F {
+        0x22 | 0x23 | 0x2B..=0x2D => true,
+        0x4C => bytecode
+            .get(pc + 2)
+            .is_some_and(|&sub| sub == 0xC3 || is_resolved_actor_4c(sub)),
+        0x31 | 0x32 => bytecode
+            .get(pc + 2)
+            .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
+        _ => false,
+    };
+    if !routed {
+        return None;
+    }
+    let t = vm::field::peek_extended(bytecode, pc)?;
+    if t == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || t == 0xFB {
+        return None;
+    }
+    let ci = legaia_engine_field::field_channels::resolve_target(&world.field_vm.channels, t)?;
+    let ch = &world.field_vm.channels[ci];
+    if ch.object_bind {
+        return None;
+    }
+    u8::try_from(ch.placement_index).ok()
+}
+
+/// Step one actor-word op of a prop record on placement `slot`'s own context
+/// (the channel retail's `FUN_8003C83C` resolves the target byte to), with
+/// the channel marked executing so an `A2` binds the NPC's clip. The NPC
+/// anim tick moves that context's `+0x62` with the clip
+/// ([`World::tick_npc_clips`]), so an `AD <id> 08` end-latch spin waits on
+/// the NPC's own clip; with no clip cursor bound to the NPC nothing would
+/// latch the bit, and the spin is taken as a clip of no length.
+///
+/// A re-seat (`CC <id> C3`) always publishes the context's tile: the
+/// teleport puts the actor back on its record's seat, which is where its
+/// context already stands when an earlier seat parked only the drawn
+/// placement.
+///
+/// REF: FUN_8003C83C, FUN_800204F8
+pub(in crate::world) fn step_npc_word_op(
+    host: &mut FieldHostImpl<'_>,
+    id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    slot: u8,
+) -> FieldStepResult {
+    let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
+    if b & 0x7F == 0x2D && !host.world.npc_clip_cursor_bound(slot) {
+        return FieldStepResult::Advance { next_pc: id.pc + 3 };
+    }
+    let Some(ci) = host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
+    else {
+        let width = legaia_scene_formats::field_disasm::decode(&id.bytecode, id.pc)
+            .map_or(3, |insn| insn.size);
+        return FieldStepResult::Advance {
+            next_pc: id.pc + width,
+        };
+    };
+    let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
+    // The port keeps a placement's legs in its own leg state, which the
+    // caller has already tested (`World::npc_leg_in_flight`); a halt bit the
+    // channel's context still carries from an earlier leg or acquire is not
+    // the dispatcher's to refuse on here. It is put back after the op.
+    let held = target_ctx.flags & 0x400;
+    target_ctx.flags &= !0x400;
+    host.world.field_vm.executing_channel = Some(slot);
+    let r = vm::field::step_with_caller(
+        host,
+        &mut target_ctx,
+        &mut id.ctx,
+        false,
+        &id.bytecode,
+        id.pc,
+    );
+    host.world.field_vm.executing_channel = None;
+    // A seat (`A3 <id> x z`, `CC <id> 51 x z ..`, `CC <id> C3`) lands on the
+    // NPC's `+0x14` / `+0x18` at once, ending any leg it had in flight.
+    let before = host
+        .world
+        .field_vm
+        .channels
+        .get(ci)
+        .map(|c| (c.ctx.world_x, c.ctx.world_z));
+    let reseat = b & 0x7F == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0xC3);
+    if reseat || before != Some((target_ctx.world_x, target_ctx.world_z)) {
+        let pos = (target_ctx.world_x as i16, target_ctx.world_z as i16);
+        host.world.npcs.positions.insert(slot, pos);
+        host.world.npcs.motions.remove(&slot);
+        host.world.npcs.glide_legs.remove(&slot);
+    }
+    target_ctx.flags |= held;
+    if let Some(c) = host.world.field_vm.channels.get_mut(ci) {
+        c.ctx = target_ctx;
+    }
+    r
 }
 
 /// The actor-word ops a prop run routes onto another placed object
@@ -1627,6 +1823,85 @@ mod tests {
                 .map(|a| a.anim_id),
             Some(4),
             "the ExecMove binds the player's clip cursor"
+        );
+    }
+
+    /// A prop record's `CC <id> ..` sub-ops on a placement's actor land on
+    /// the placement, as the dispatcher prologue swaps the resolved actor
+    /// into `s5` - the shape of `stone`'s Shadow Gate records (`P0[2..=5]`),
+    /// which hide Gi Delilas (`CC 12 40 ..`), seat Noa and Gala on Vahn
+    /// (`CC 09 37`) and turn heads (`CC 16 45 ..` in `jiji`). Stepped on the
+    /// record's own context, nobody hid, moved or looked anywhere.
+    #[test]
+    fn a_prop_records_actor_sub_ops_land_on_the_placement() {
+        use legaia_engine_field::actor_look::LookKey;
+        let mut w = World::new();
+        w.install_field_player(0);
+        let p = w.player_actor_slot.unwrap() as usize;
+        w.actors[p].move_state.world_x = 10 * 128 + 64;
+        w.actors[p].move_state.world_z = 12 * 128 + 64;
+        w.actors[p].move_state.render_26 = 0x0C00;
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 2,
+                ctx: FieldCtx {
+                    script_id: 0x11,
+                    world_x: 3 * 128 + 64,
+                    world_z: 3 * 128 + 64,
+                    field_72: 0x1000,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: true,
+                object_bind: false,
+            });
+        w.npcs.positions.insert(2, (3 * 128 + 64, 3 * 128 + 64));
+        let record = vec![
+            0x00, 0x00, // header
+            0xCC, 0x11, 0x40, 0x00, 0x00, 0x00, 0x00, // +0x72 = 0
+            0xCC, 0x11, 0x42, 0x2C, 0x01, 0x00, 0x00, // +0x8E = 300
+            0xCC, 0x11, 0x45, 0x00, 0x00, 0x00, 0xF4, 0x01, 0x00, 0x00, 0x00,
+            0x00, // look: object 0, Y = 500
+            0xCC, 0x11, 0x37, // the player's spot and heading
+            0x21,
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 2,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4000_0000,
+            },
+        );
+        assert!(w.start_prop_interaction(anchor));
+        for _ in 0..4 {
+            w.step_prop_interaction();
+        }
+        let ctx = &w.field_vm.channels[0].ctx;
+        assert_eq!(ctx.field_72, 0, "the placement is hidden");
+        assert_eq!(ctx.field_8e, 300, "the placement's height slot");
+        assert_eq!(
+            w.npcs.looks.get(LookKey::Npc(2)).angles,
+            [0, 500, 0],
+            "the placement's head turns"
+        );
+        assert_eq!(
+            w.npcs.positions.get(&2).copied(),
+            Some((10 * 128 + 64, 12 * 128 + 64)),
+            "the placement stands on the player's spot"
+        );
+        assert_eq!(
+            w.npcs.headings.get(&2).copied(),
+            Some(0x0C00),
+            "facing the player's way"
         );
     }
 }

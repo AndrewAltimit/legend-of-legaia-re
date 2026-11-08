@@ -77,6 +77,9 @@ pub trait CameraWorld {
     fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32;
     /// The scene's walk-region attribute block.
     fn map_region_block(&self) -> &[u8];
+    /// The latched walk-region attribute box (scratchpad `0x1F800384..87` and
+    /// its kind `0x1F80037C`), as `FUN_800180EC` last wrote it.
+    fn region_attributes(&self) -> crate::field_regions::RegionAttributes;
     /// The scene's camera-zone record table.
     fn zone_table(&self) -> &[u8];
     /// The scene's walkability grid.

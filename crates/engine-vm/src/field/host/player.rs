@@ -18,6 +18,14 @@ pub trait FieldPlayerHost {
     /// does not thread through, so the host owns the write. PC += 2.
     fn apply_arrival_facing(&mut self) {}
 
+    /// Op `0x3E`'s minigame-warp arm (`op0 >= 100`) releases the **player's**
+    /// walk lock: `lw v1,0x1c(s0)` with `s0 = 0x8007C348` reads the player
+    /// object `_DAT_8007C364`, and `+0x10 &= 0xFFF7FFFF` lands there
+    /// (`0x801E07BC..0x801E07D8`), whichever context runs the script. The
+    /// player is host state the VM does not thread through, so the host owns
+    /// the write.
+    fn release_player_walk_lock(&mut self) {}
+
     /// Op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) aimed at the player
     /// channel `0xF8`: retail's extended prologue resolves `0xF8` to the
     /// player object `_DAT_8007C364` (`FUN_8003C83C`), so `B1 F8 <bit>` /

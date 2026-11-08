@@ -13,8 +13,11 @@
 //!
 //! Each arrival is classed by how the player reaches it:
 //!
-//! - [`ArrivalClass::Entrance`] - an overworld (`map01..03`) walk-on entrance
-//!   into the scene: the town / dungeon gate.
+//! - [`ArrivalClass::Entrance`] - an overworld (`map01..03`) entrance into
+//!   the scene: the town / dungeon gate. Either a walk-on tile (a gate-1
+//!   trigger spawning the partition-2 record) or an **object-bound** mouth (a
+//!   gate-0 trigger binding the partition-0 record that carries the `0x3F`,
+//!   `map01`'s Garmel mouth `P0[6]`).
 //! - [`ArrivalClass::WalkDoor`] - a door in a field scene: the carrying
 //!   partition-2 record is spawned by a `.MAP` kind-1 gate-1 walk-on tile
 //!   trigger ([`legaia_scene_formats::man_edit::site_p2_slots`] joined to
@@ -23,6 +26,13 @@
 //! - [`ArrivalClass::Scripted`] - every other `0x3F`: a scene change a script
 //!   or cutscene runs (story hops, event warps). Still a retail arrival spot,
 //!   ranked last.
+//!
+//! A scene no `0x3F` lands in (the ending's `town0e`, entered from an FMV
+//! hand-off that carries no entry tile) still seats the party somewhere: its
+//! own scripts' player seats, a `MOVE_TO` of the player (`A3 F8 x z`) or a
+//! `4C 51` run-to-tile poke on it (`CC F8 51 x z ..`), collected as
+//! [`ArrivalClass::OwnSeat`] rows ([`ArrivalCatalog::own_seats`]). The picker
+//! tries them only after every inbound arrival is rejected.
 //!
 //! [`ArrivalCatalog::ranked`] orders one scene's arrivals: class first
 //! (`Entrance`, then `WalkDoor`, then `Scripted`), then the arrival tile more
@@ -46,15 +56,21 @@ pub enum ArrivalClass {
     WalkDoor,
     /// A scripted / cutscene scene change.
     Scripted,
+    /// A player seat in the scene's own scripts (`A3 F8 x z`, `CC F8 51 x z`),
+    /// for a scene no other scene's `0x3F` lands in. Never in
+    /// [`ArrivalCatalog::ranked`]; see [`ArrivalCatalog::own_seats`].
+    OwnSeat,
 }
 
 /// One inbound arrival: a `0x3F` site in `from_scene` that lands the party in
 /// the catalogued destination.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneArrival {
-    /// CDNAME label of the scene whose script carries the scene change.
+    /// CDNAME label of the scene whose script carries the scene change (the
+    /// scene itself for an [`ArrivalClass::OwnSeat`] row).
     pub from_scene: String,
-    /// Offset of the `0x3F` op in `from_scene`'s decompressed MAN.
+    /// Offset of the `0x3F` op (the seat op, for an
+    /// [`ArrivalClass::OwnSeat`] row) in `from_scene`'s decompressed MAN.
     pub op_pc: usize,
     /// Entry-tile X byte (low 7 bits the tile, bit 7 the far half).
     pub entry_x: u8,
@@ -90,6 +106,50 @@ pub struct ArrivalCatalog {
     /// Per scene, the first global-pool track its entry script (MAN
     /// partition-1 record `0`) starts ([`entry_script_bgm`]).
     home_bgm: BTreeMap<String, u16>,
+    /// Per scene, the player seats its own scripts make ([`own_player_seats`]).
+    own_seats: BTreeMap<String, Vec<SceneArrival>>,
+}
+
+/// The player seats a decompressed scene MAN's own scripts make, in disc
+/// order and one per tile: a `MOVE_TO` aimed at the player (`A3 F8 xb zb`,
+/// which `FUN_8003C83C(0xF8)` resolves to the player object) and a `4C 51`
+/// run-to-tile poke on it (`CC F8 51 xb zb ..`, which seats its target
+/// exactly). The off-map hide box (`0x7F`, `0x7F`) and a zero operand (the
+/// "no tile" form `tile_center` maps to `0`) are skipped. Each row is an
+/// [`ArrivalClass::OwnSeat`] arrival of `scene` facing sector `0`.
+pub fn own_player_seats(scene: &str, man: &[u8]) -> Vec<SceneArrival> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, MenuCtrlKind};
+    const PLAYER: Option<u8> = Some(0xF8);
+    let mut out: Vec<SceneArrival> = Vec::new();
+    for (start, end) in legaia_scene_formats::man_edit::record_script_windows(man) {
+        let Some(body) = man.get(..end) else {
+            continue;
+        };
+        for insn in LinearWalker::new(body, start).map_while(Result::ok) {
+            let (xb, zb) = match insn.info {
+                InsnInfo::MoveTo { xb, zb } if insn.extended == PLAYER => (xb, zb),
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble5NpcRun { x_enc, z_enc, .. },
+                    ..
+                } if insn.extended == PLAYER => (x_enc, z_enc),
+                _ => continue,
+            };
+            let hide = xb & 0x7F == 0x7F && zb & 0x7F == 0x7F;
+            if hide || xb == 0 || zb == 0 || out.iter().any(|a| (a.entry_x, a.entry_z) == (xb, zb))
+            {
+                continue;
+            }
+            out.push(SceneArrival {
+                from_scene: scene.to_string(),
+                op_pc: insn.pc,
+                entry_x: xb,
+                entry_z: zb,
+                dir: 0,
+                class: ArrivalClass::OwnSeat,
+            });
+        }
+    }
+    out
 }
 
 /// The global-pool range a BGM start can name (`music_01`, `2000 +` the
@@ -164,6 +224,7 @@ impl ArrivalCatalog {
     ) -> Self {
         let mut by_dest: BTreeMap<String, Vec<SceneArrival>> = BTreeMap::new();
         let mut home_bgm: BTreeMap<String, u16> = BTreeMap::new();
+        let mut own_seats: BTreeMap<String, Vec<SceneArrival>> = BTreeMap::new();
         let mut seen = std::collections::BTreeSet::new();
         for name in index.cdname_scene_names() {
             if !seen.insert(name.clone()) {
@@ -175,24 +236,42 @@ impl ArrivalCatalog {
             if let Some(id) = entry_script_bgm(&man) {
                 home_bgm.insert(name.clone(), id);
             }
+            let seats = own_player_seats(&name, &man);
+            if !seats.is_empty() {
+                own_seats.insert(name.clone(), seats);
+            }
             let sites = legaia_scene_formats::man_edit::scene_change_sites(&man);
             if sites.is_empty() {
                 continue;
             }
-            let slots = legaia_scene_formats::man_edit::site_p2_slots(&man, &sites);
-            let walk_slots: std::collections::BTreeSet<usize> = scene
-                .field_tile_triggers(index)
-                .map(|(p, f)| {
-                    p.iter()
-                        .chain(f.iter())
-                        .filter(|t| t.gate == 1)
-                        .map(|t| usize::from(t.record))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let slots = legaia_scene_formats::man_edit::site_record_slots(&man, &sites);
+            // Per gate, the records the `.MAP` kind-1 triggers reach: gate 1
+            // spawns a partition-2 record on walk-on, gate 0 binds a
+            // partition-0 object script.
+            let trigger_slots = |gate: u8| -> std::collections::BTreeSet<usize> {
+                scene
+                    .field_tile_triggers(index)
+                    .map(|(p, f)| {
+                        p.iter()
+                            .chain(f.iter())
+                            .filter(|t| t.gate == gate)
+                            .map(|t| usize::from(t.record))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let walk_slots = trigger_slots(1);
+            let bind_slots = trigger_slots(0);
             let from_overworld = is_world_map_scene(&name);
             for (site, slot) in sites.into_iter().zip(slots) {
-                let walked = slot.is_some_and(|s| walk_slots.contains(&s));
+                let walked = slot.is_some_and(|s| match site.partition {
+                    2 => walk_slots.contains(&s),
+                    // An object-bound mouth is an entrance only on an
+                    // overworld; a field scene's partition-0 changes stay
+                    // scripted.
+                    0 => from_overworld && bind_slots.contains(&s),
+                    _ => false,
+                });
                 let class = match (walked, from_overworld) {
                     (true, true) => ArrivalClass::Entrance,
                     (true, false) => ArrivalClass::WalkDoor,
@@ -208,7 +287,18 @@ impl ArrivalCatalog {
                 });
             }
         }
-        Self { by_dest, home_bgm }
+        Self {
+            by_dest,
+            home_bgm,
+            own_seats,
+        }
+    }
+
+    /// The player seats `scene`'s own scripts make ([`own_player_seats`]),
+    /// in disc order. The picker's second resort, after every inbound arrival
+    /// ([`Self::ranked`]) is rejected.
+    pub fn own_seats(&self, scene: &str) -> &[SceneArrival] {
+        self.own_seats.get(scene).map_or(&[], Vec::as_slice)
     }
 
     /// The first global-pool track `scene`'s entry script starts

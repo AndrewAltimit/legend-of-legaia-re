@@ -622,11 +622,17 @@ impl RetailObs {
             env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
             env.push(("LEGAIA_SEAT_FOG_OFFSET", self.fog_offset.to_string()));
         }
+        // A field or overworld state that holds no sheet says so: the child
+        // ran the scene from its entry, and an emitter that spawned on the way
+        // (`bubu2`'s breath puff) leaves sheets the captured frame no longer
+        // draws.
         if !self.sprite_arms.is_empty() {
             env.push((
                 "LEGAIA_SEAT_SPRITE_ARMS",
                 sprite_arms_env(&self.sprite_arms),
             ));
+        } else if matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            env.push(("LEGAIA_SEAT_SPRITE_ARMS", "none".to_string()));
         }
         if let Some(b) = &self.balloon {
             env.push(("LEGAIA_SEAT_BALLOON", balloon_env(b.as_ref())));
@@ -708,6 +714,15 @@ impl RetailObs {
         }
         if let Some([p, y, h]) = self.seat_angles {
             env.push(("LEGAIA_SEAT_ANGLES", format!("{p},{y},{h}")));
+        }
+        // The script counters the seed holds through its settle window
+        // (`hold_slot_table`): RAM outside the save window, so the child's
+        // card load cannot bring them either.
+        if let Some(slots) = &self.slot_table {
+            env.push((
+                "LEGAIA_SEAT_SLOT_TABLE",
+                legaia_engine_capture::field_seeds::slot_table_env(slots),
+            ));
         }
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));

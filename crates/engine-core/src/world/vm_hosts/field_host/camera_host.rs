@@ -89,12 +89,20 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
     // on the world because the camera globals live on the host-owned
     // `Camera`; `Camera::tick` drains the queue for both hosts. See
     // `crate::world::camera_hooks`.
+    // Each query (`FUN_801DE3E0` -> `FUN_801DBA20`) also rewrites the
+    // region-type mask at its tile, which is world state, so that half runs
+    // here and only the camera load is queued.
     fn camera_zone_query_at_player(&mut self) {
+        if let Some((tx, tz)) = self.world.player_query_tile() {
+            self.world.zone_query_region_mask(tx, tz);
+        }
         self.world
             .push_camera_zone_request(CameraZoneRequest::QueryAtPlayer);
     }
 
     fn camera_zone_query_at_tile(&mut self, x: u8, z: u8) {
+        self.world
+            .zone_query_region_mask(i32::from(x), i32::from(z));
         self.world
             .push_camera_zone_request(CameraZoneRequest::QueryAtTile { x, z });
     }
@@ -103,7 +111,11 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
         // The arm's middle call, `FUN_80019278(player)` -> `player[+0x16]`:
         // re-conform the footing to the floor under the tile the script just
         // moved the player to, before the camera composes from it. The query
-        // and the snap are the queued half.
+        // and the snap are the queued half; the query's mask write runs first,
+        // at the tile before the conform.
+        if let Some((tx, tz)) = self.world.player_query_tile() {
+            self.world.zone_query_region_mask(tx, tz);
+        }
         if let Some(slot) = self.world.player_actor_slot
             && let Some(a) = self.world.actors.get(slot as usize)
         {

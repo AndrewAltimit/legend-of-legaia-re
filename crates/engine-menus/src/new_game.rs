@@ -147,8 +147,9 @@ pub fn starter_loadout(
 /// they seed `100`.
 ///
 /// The seed routine's non-halfword writes stay here, because
-/// [`seed_live_records`] deliberately does not carry them: the level /
-/// magic-rank bytes, the XP pair, and the template-name `strcpy`.
+/// [`seed_live_records`] deliberately does not carry them: the level byte
+/// `+0x130`, the XP pair, and the template-name `strcpy` (the write-only
+/// `+0x131` is not carried).
 pub fn starting_record(c: &StartingChar) -> CharacterRecord {
     let mut rec = CharacterRecord::zeroed();
     // Slot 0's live record base is `SC + LIVE_RECORD_0_XP_OFFSET`, so a
@@ -158,9 +159,9 @@ pub fn starting_record(c: &StartingChar) -> CharacterRecord {
         let off = (store.sc_offset - LIVE_RECORD_0_XP_OFFSET) as usize;
         rec.raw[off..off + 2].copy_from_slice(&store.value.to_le_bytes());
     }
-    // Seru magic rank starts at 1 (Vahn, validated); gates the first spell tier.
-    // (+0x130 doubles as the retail displayed level - LV 1 at a New Game.)
-    rec.set_magic_rank(1);
+    // The displayed level +0x130 starts at 1 (LV 1 at a New Game). The seed's
+    // second byte +0x131 is write-only on the disc, so it is not carried.
+    rec.set_level(1);
     // Retail New Game records carry cumulative XP 0 (+0x0) and the L2
     // threshold in +0x4 - the Status menu's "Next Level 121" (base curve;
     // slots 1/2 hold the ± sin-divisor-corrected value: Noa 102 / Gala 140).

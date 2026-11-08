@@ -991,7 +991,7 @@ Modules that credit XP in their own arm, under the same special-battle gate
 | Orb | `+0x4` / `+0x2` | `0x801F7B50` / `0x801F7B2C` |
 | Spoon | `+0x4` / `+0x2` | `0x801F80D4` / `0x801F80B0` |
 | Horn `0x9C` (PROT 0930) | walks every party seat (`0x801F786C..0x801F7B1C`), refills to max HP and clears `+0x16E`; `+3` for a seat missing HP, `+1` for a seat carrying a status | `0x801F79A0`, `0x801F7A14` |
-| Jedo `0x9D` (PROT 0931) | branches on the scripted-fight flag `ctx[+0x287]` (`0x801F8344`). Scripted: strikes, so the tail credits per hit. Otherwise `0x801F8558`: per monster seat `3..=6` with non-zero HP, bump the caster's magic-rank counter (record `+0x9C`), set the seat's `+0x21C` to `0xC8`, credit `+3`. | `0x801F8344`, `0x801F8558` |
+| Jedo `0x9D` (PROT 0931) | branches on the scripted-fight flag `ctx[+0x287]` (`0x801F8344`). Scripted: strikes, so the tail credits per hit. Otherwise `0x801F8558`: per monster seat `3..=6` with non-zero HP, bump the caster's Monsters Defeated word (record `+0x9C`, [records words](../formats/save-record.md#the-battle-records-words)), set the seat's `+0x21C` to `0xC8`, credit `+3`. | `0x801F8344`, `0x801F8558` |
 
 A seat missing nothing earns nothing. The heal-spell arms of `FUN_800402F4`
 (selector 0 tiers 3 / 4 / 5: spell ids `0x83` / `0x89`) accrue into the same

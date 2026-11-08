@@ -1051,7 +1051,9 @@ reached via the partition-2 record-offset table (see
 [`man-relocation.md`](../formats/man-relocation.md)).
 
 - `SceneDoors::locate` enumerates a scene's door sites
-  (`legaia_scene_formats::man_edit::scene_change_sites`).
+  (`legaia_scene_formats::man_edit::scene_change_sites`, each record walked
+  from its own partition's header, so an overworld's object-bound partition-0
+  mouths are listed too; they carry no partition-2 slot and never shuffle).
 - `classify_sites` gates the shuffle pool (`DoorSiteClass`): only
   **walk-through doors** shuffle - partition-2 records referenced by a `.MAP`
   kind-1 **gate-1** walk trigger (primary `+0x10000` block or the `+0x12000`

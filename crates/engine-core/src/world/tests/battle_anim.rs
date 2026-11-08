@@ -1369,6 +1369,38 @@ fn a_committed_swing_plays_its_animation_cue_track() {
     assert_eq!(row[4], 2, "the party literal category");
 }
 
+/// A character's cry on its cue track (`0xD7` / `0xE7` / `0xF7`) counts once on
+/// the seat's record `+0x98`, the records page's Knockouts word, whether or not
+/// the cry is muted: `FUN_800508DC` bumps it ahead of both gates.
+#[test]
+fn a_cry_on_the_cue_track_counts_a_knockout() {
+    for muted in [false, true] {
+        let mut world = World::new();
+        world.load_party(legaia_save::Party::zeroed(4));
+        world.enter_battle(1, 1);
+        if muted {
+            let rec = &mut world.party.roster.members[0];
+            let mut bits = rec.ability_bits();
+            bits[5] |= 0x20;
+            rec.set_ability_bits(bits);
+        }
+        let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+        clips[0] = Some(pose_test_clip(0, 2, 0));
+        clips[0x0C] = Some(cue_track_clip(0x0C, &[(0, 0xE7), (2, 0x1A), (4, 0xD7)]));
+        world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+        world.actors[0].battle.queued_anim = 0x0C;
+        world.commit_staged_battle_anim(0);
+        for _ in 0..12 {
+            world.tick_battle_animations();
+        }
+        assert_eq!(
+            world.party.roster.members[0].battle_records().knockouts,
+            2,
+            "muted {muted}"
+        );
+    }
+}
+
 #[test]
 fn the_art_name_label_closes_when_the_art_clip_hands_off() {
     // FUN_8004AD80: an art constant's commit opens the label; the commit
@@ -1808,4 +1840,105 @@ fn a_monster_clip_names_its_move_until_it_hands_off() {
     world.actors[0].battle.queued_anim = 5;
     world.commit_staged_battle_anim_at_boundary(0);
     assert_eq!(world.battle.monster_move_label, None);
+}
+
+/// The burning-body emitter sits in the pose decode, which only the draw
+/// callback reaches, and the draw tick `FUN_800480D8` skips the callback for
+/// a body whose colour word is zero (`0x800481CC`). A drawn body with a
+/// selector draws its emit points off `rand()`; the same body under a
+/// module's hide (`+0x04 = 0`, `+0x21C = 0xFF`) sheds nothing and draws
+/// nothing, however long it keeps the selector.
+#[test]
+fn a_hidden_body_sheds_no_impact_sprites() {
+    let mut w = pose_test_world();
+    w.mode = SceneMode::Battle;
+    w.party.party_count = 1;
+    w.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+    w.tick_battle_animations();
+    assert!(
+        crate::world::battle::stream_pose(&w.actors[0]).is_some_and(|p| !p.is_empty()),
+        "the body has a pose to shed from"
+    );
+    w.actors[0].battle.impact_state = 2;
+    let before = w.rng_state;
+    w.emit_battle_burn_sprites(0x10);
+    assert_ne!(w.rng_state, before, "a drawn body draws its emit point");
+
+    w.actors[0].battle.render_flag = 0xFF;
+    w.actors[0].battle.render_color = 0;
+    w.battle.burn_emit_accum = 0;
+    let before = w.rng_state;
+    w.emit_battle_burn_sprites(0x10);
+    assert_eq!(w.rng_state, before, "a hidden body is not decoded");
+    assert_eq!(w.actors[0].battle.impact_state, 2);
+}
+
+/// A monster's finished knockdown on zero HP credits the member holding the
+/// action on its record's Monsters Defeated word (`+0x9C`), once: the death
+/// arm's own `+0x1DC` bit 3 gates the credit on the passes after the first,
+/// and a monster holding the action credits nobody.
+#[test]
+fn a_monster_death_credits_the_acting_member() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.enter_battle(2, 1);
+    let monster = usize::from(world.party.party_count);
+    let clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    world.set_actor_battle_action_clips(monster, std::sync::Arc::new(clips));
+    world.actors[monster].battle_monster_id = Some(0x40);
+    world.actors[monster].battle.hp = 0;
+    world.battle_ctx.active_actor = 1;
+    let rslot = world.party_roster_slot(1);
+    for _ in 0..3 {
+        world.finish_battle_reaction(monster, 4);
+    }
+    let defeated =
+        |w: &World, r: usize| w.party.roster.members[r].battle_records().monsters_defeated;
+    assert_eq!(defeated(&world, rslot), 1, "one credit per death");
+    assert_eq!(defeated(&world, world.party_roster_slot(0)), 0);
+
+    // A monster holding the action credits nobody.
+    world.actors[monster].battle.flag_bits = legaia_engine_battle_vm::battle_action::ActorFlags(0);
+    world.battle_ctx.active_actor = monster as u8;
+    world.finish_battle_reaction(monster, 4);
+    assert_eq!(defeated(&world, rslot), 1);
+}
+
+/// The combo readout folds a party Attack's landed string into the acting
+/// member's Max Damage and Max Hits words, keeping the larger, and a monster's
+/// string or a cast folds nothing (`FUN_801E805C`, `0x801E88D4..0x801E89D8`).
+#[test]
+fn a_landed_string_folds_into_the_records() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.enter_battle(2, 1);
+    let monster = world.party.party_count;
+    world.actors[usize::from(monster)].battle.hp = 1000;
+    world.actors[usize::from(monster)].battle.max_hp = 1000;
+    world.battle_ctx.active_actor = 1;
+    world.actors[1].battle.action_category = 3;
+    world.battle_ctx.readout_pushes = 4;
+    world.actors[usize::from(monster)].battle.damage_accum = 321;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let rslot = world.party_roster_slot(1);
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
+
+    // A smaller string keeps the record.
+    world.battle_ctx.readout_pushes = 2;
+    world.actors[usize::from(monster)].battle.damage_accum = 50;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
+
+    // A cast's total folds nothing.
+    world.actors[1].battle.action_category = 2;
+    world.battle_ctx.readout_pushes = 9;
+    world.actors[usize::from(monster)].battle.damage_accum = 900;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
 }

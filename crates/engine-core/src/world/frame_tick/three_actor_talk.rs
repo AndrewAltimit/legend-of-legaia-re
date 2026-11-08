@@ -229,6 +229,10 @@ impl World {
                         // re-plans the windowed static-object list.
                         // REF: FUN_80017EC8
                         self.recentre_field_window(i32::from(nx) >> 7, i32::from(nz) >> 7);
+                        // Then `FUN_801DE3E0` at the same tile (`0x801D2BCC`),
+                        // whose zone query rewrites the region-type mask.
+                        // REF: FUN_801DE3E0
+                        self.zone_query_region_mask(i32::from(nx) >> 7, i32::from(nz) >> 7);
                     }
                 }
                 LeaderSwapEffect::ClearIncomingPose { slot } => {

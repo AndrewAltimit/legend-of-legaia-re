@@ -41,17 +41,10 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
         {
             let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
-            // Per-tile region refresh (the `FUN_800180EC` / `FUN_801DBA20`
-            // grain - retail re-runs the region scan when the player tile
-            // changes).
-            match self.terrain.last_tile {
-                Some(prev) if prev != tile => {
-                    self.terrain.last_tile = Some(tile);
-                    self.refresh_field_regions();
-                }
-                None => self.terrain.last_tile = Some(tile),
-                _ => {}
-            }
+            // No region refresh on a tile crossing: retail's walk never
+            // rewrites the region-type mask. Its per-frame writer is gated on
+            // scratchpad bit 22 (`Self::requery_region_mask_per_frame`).
+            self.requery_region_mask_per_frame();
             // The encounter step is sampled on the actor game tick only.
             // Retail reaches the region reader from an actor handler
             // (`FUN_801DA51C` state 0, `jal 0x801D9E1C` at `0x801DA5B0`), so
@@ -1070,7 +1063,12 @@ impl World {
     /// the save crystal.
     ///
     /// The player (`0xF8`) and the system context (`0xFB`) take the ordinary
-    /// step, as does an id no channel carries.
+    /// step, as does an id no channel carries. A halted target does not
+    /// refuse the op: the dispatcher's halted-target early-out exempts a
+    /// system-context caller (`0x801DE938..0x801DE940`), so `conc2`'s entry
+    /// script parks its light shaft (`A3 0B 7F 7F`) while the shaft's own
+    /// compass walk still holds `0x400`, and the walk lands it one step on
+    /// from the hide box, where retail RAM holds it (`(16192, 16320)`).
     ///
     /// REF: FUN_801DE840 (cases 0x23, 0x2B, 0x2C, 0x4C nibble 3), FUN_8003C83C
     fn step_field_cross_context_actor_op(&mut self) -> Option<FieldStepResult> {
@@ -1104,9 +1102,13 @@ impl World {
         let bc = std::mem::take(&mut self.field_bytecode);
         self.field_vm.executing_channel = (!object).then_some(channels[ci].placement_index as u8);
         self.field_vm.executing_object = object.then_some(channels[ci].placement_index as u16);
+        // The caller is the system context (`+0x50 == 0xFB`), which the
+        // dispatcher lets through a halted target: a placed object mid-walk
+        // still takes the seat (`conc2`'s light shaft, parked by `A3 0B 7F 7F`
+        // while its bind prologue's compass walk runs).
         let res = {
             let mut host = FieldHostImpl { world: self };
-            vm::field::step(&mut host, &mut channels[ci].ctx, &bc, pc)
+            vm::field::step_from_caller(&mut host, &mut channels[ci].ctx, 0xFB, &bc, pc)
         };
         self.field_vm.executing_channel = None;
         self.field_vm.executing_object = None;
@@ -1279,6 +1281,7 @@ impl World {
     /// ([`crate::world::AudioState::bgm_entry_latch`]).
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
         let last = self.run_field_frame_slice();
+        self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;
         last
@@ -1291,6 +1294,16 @@ impl World {
         // Retail's pre-loop guard: a context whose PC sits on a text /
         // terminator byte executes nothing at all this frame.
         if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
+            return None;
+        }
+        // The system SM runs from the actor-list walk, once per game frame
+        // (`FrameClock::script_slice_due`). The install's own pass (the
+        // first slice after a load) runs whenever it comes.
+        // REF: FUN_8002519C, FUN_801DA51C, FUN_8003AB2C
+        if !self.clock.script_slice_due()
+            && !self.field_vm.system_install_pass
+            && !self.audio.bgm_field_init_open
+        {
             return None;
         }
         // The system script is driven by the SYSTEM entity's tick
@@ -1474,6 +1487,7 @@ impl World {
             }
         }
         // The load-frame run is the install's slice: the entry latch ends.
+        self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;
     }

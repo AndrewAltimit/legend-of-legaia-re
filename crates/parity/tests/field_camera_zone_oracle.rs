@@ -329,6 +329,10 @@ fn every_walkable_state_frames_through_the_zone_camera() {
             a.move_state.world_y = s.player[1] as i16;
             a.move_state.world_z = s.player[2] as i16;
         }
+        // The attribute box is a latch (`FUN_800180EC`), and the poke above
+        // is no landing: latch it at the seat, as the state's own last
+        // landing did for the region it stands in.
+        host.world.refresh_region_attributes_at_player();
         // Drop anything the entry script staged over the camera so the
         // follow camera owns the frame the way a settled free-roam state does.
         host.world.cutscene.timeline = None;

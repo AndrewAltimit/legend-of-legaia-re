@@ -1107,7 +1107,24 @@ view with both combatants in frame - while a spell or item keeps the seed's
 `0x800`. The drift is about one unit per display frame; the
 `battle_melee_hit_spark` capture reads `0x298`, `0x280` plus 24 frames.
 
-Port: `BattleCamera::observe_action_state` applies the state-edge rungs. The
+The prologue's drift runs ahead of the state switch, so a rung an arm stores
+overwrites its own pass's drift: the pass that runs `0x0C` ends on `0x800`
+exactly, and the next pass adds the first drift. Every enemy cast film reads
+`2048` on its `0x28` frames; a rung stored on the edge into `0x0C` and drifted
+after reads `2052` there. Where a framing's endpoint sits a half turn from the
+live yaw, those units pick the arc. Zeto's Poisonous Bubbles opens its `0x29`
+turn at yaw `1205` with the endpoint `0x800 + 2 - facing`, `0x800` away, and the
+tween builder adds the full turn only past `0x800` (`build_camera_angle_tween`),
+so retail turns the positive way. The `2` is the `0x28` pass's drift at step
+`2`: the garmel fight's frames cost about `355` hblanks there, under the
+full-party rows of [the frame step](#the-frame-step), and a pass at step `3`
+adds `4` and turns the camera the other way.
+
+Port: `BattleCamera::observe_action_state` applies the state-edge rungs. It
+sees the state the newest pass ran (`World::battle_camera_state`), so a store
+of that pass's own arm (round begin, the seed) lands after the pass's drift
+(`pending_yaw_seed`), and the Attack entry's `0x200`, which the earlier `0x0C`
+pass stored, lands before it. The
 swing-clip re-seed is drawn by the world at the clip commit
 (`crates/engine-core/src/world/actors/battle_anim.rs`, which also zeroes
 `battle_ctx.camera_variant`) and applied by
@@ -1555,6 +1572,15 @@ retail's own steps (`--retail-steps`) they score as the table does (`.787`, `.95
 Death Game is held at the ordinary step. Retail runs its dice arms at `1` and `3`, but on
 those steps the port's arms 3 and 5 score `.94` to `.79` and `.99` to `.78`, so its
 bodies still count per pass something retail counts per vsync.
+
+The boss casts filmed off their harvest states (Cort's Guilty Cross, Mystic Shield and
+Mystic Circle, Zeto's Call Wave, Koru's Blade Breath, Thunder Needle, Gigaton Press and
+Ultra Charge) carry rows read the same way. Their whole-screen arms run `4` where the
+port's ordinary step was `2` for Koru's lone Vahn and `3` for a full party, and the
+cost those arms leave in the ring also carries into the Done band: Koru's `0x51`
+tails gain most of the lift. Two arms keep the ordinary step because their reading
+lost to it: Guilty Cross's arm 5, which retail splits between `2` and `3`, and Thunder
+Needle's hit, mostly `3` in retail but run straight after arm 3's `4`.
 
 <a id="what-the-arm-step-table-is"></a>
 

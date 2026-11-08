@@ -2023,6 +2023,24 @@ per-frame displacement of a follower is the floor's rise between the two
 (`World::object_draw_displacements`). `town01`'s record 8 is seated on a
 `16` floor and stands on a `-256` one through the opening.
 
+**The tick samples the live ladder.** `FUN_80019278` reads the rungs at
+`0x1F80035C`, so a ladder a script installs after the scene came up (`4C 9E`,
+[script-vm-menuctrl.md](script-vm-menuctrl.md#nibble-9-is-the-floor-height-ladder-not-a-fade))
+moves a follower with the floor under it. The bake therefore takes its sample
+through the ladder the bound objects were spawned against
+(`World::sample_field_floor_height_spawned`, the MAN header's), whenever the
+host builds the layer, and the follower's per-frame displacement carries the
+rest: the floor under the actor now, through the live rungs, less the floor
+under its seat through the spawn ones. `rikuroa`'s summit is the case. Its
+system script installs rung 8 at `-920` (header `-256`) when the player enters
+the zone the cave out of `rikuroa2` opens onto; the capture of that arrival
+holds the cliff carrying the cave mouth (record `P0[0]`'s object at `(8768,
+4800)`, pack 37) at `-920`, the player at `-1688` on the kind-2 tile in front
+of it, and the two summit chests at `-1912` / `-2296`. A cliff baked on the
+floor at scene setup stood at `-256`, and the player and both chests drew
+`664` units above the ledge. Disc-gated:
+`crates/engine-scene-host/tests/rikuroa_summit_ladder_disc.rs`.
+
 **A scripted height is absolute, not a lift.** The same sweep stores the seat
 `ladder[nibble] + y_off` in the actor's `+0x16` (`0x8003A62C..0x8003A64C`),
 so every later write to `+0x16` replaces it: op `4C 42`'s immediate mirror

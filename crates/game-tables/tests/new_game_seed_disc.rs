@@ -12,7 +12,7 @@
 //!
 //!  - the offsets [`seed_live_records`] produces for roster slot 0 are exactly
 //!    the `$s0`-relative `sh` immediates the routine executes for that slot;
-//!  - the level / magic-rank byte stores agree with the offsets the module
+//!  - the level / `+0x131` byte stores agree with the offsets the module
 //!    already documents for the starting-level randomizer's patch sites;
 //!  - the seeded cap constant really is a literal shared by all four slots
 //!    rather than a per-character template field.
@@ -20,8 +20,8 @@
 //! Skips and passes when `LEGAIA_DISC_BIN` / `extracted/` are absent.
 
 use legaia_game_tables::new_game::{
-    self, CURRENT_STATS_OFFSET, LEVEL_OFFSET, LIVE_RECORD_0_XP_OFFSET, MAGIC_RANK_OFFSET,
-    MAX_STATS_OFFSET, SEEDED_CAP_CONSTANT, StartingParty,
+    self, CURRENT_STATS_OFFSET, LEVEL_OFFSET, LIVE_RECORD_0_XP_OFFSET, MAX_STATS_OFFSET,
+    SEEDED_CAP_CONSTANT, SEEDED_UNREAD_OFFSET, StartingParty,
 };
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -114,13 +114,13 @@ fn seeded_stat_offsets_match_the_routines_store_immediates() {
         );
     }
 
-    // The level / magic-rank pair are byte stores, and must agree with the
+    // The level byte and the write-only +0x131 are byte stores, and must agree with the
     // offsets the module already pins for the starting-level patch sites.
     let level = LIVE_RECORD_0_XP_OFFSET + LEVEL_OFFSET;
-    let rank = LIVE_RECORD_0_XP_OFFSET + MAGIC_RANK_OFFSET;
+    let rank = LIVE_RECORD_0_XP_OFFSET + SEEDED_UNREAD_OFFSET;
     assert!(
         byte_stores.contains(&level) && byte_stores.contains(&rank),
-        "level/magic-rank stores at SC+{level:#x}/SC+{rank:#x} not found; \
+        "level/+0x131 stores at SC+{level:#x}/SC+{rank:#x} not found; \
          routine byte stores: {byte_stores:x?}"
     );
 }

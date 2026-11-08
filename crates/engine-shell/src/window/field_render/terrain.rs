@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// The landmarks the posed-prop pass owns, by `(anchor, cell)`.
+pub(in crate::window) type PosedLandmarkCells = std::collections::HashSet<((u8, u8), (u8, u8))>;
+
 impl PlayWindowApp {
     /// Resolve the field scene's **terrain / ground** tiles (the `CELL_VISIBLE`
     /// sweep in `Scene::field_terrain_tiles`) to `(mesh, model)` draws, the same
@@ -47,10 +50,18 @@ impl PlayWindowApp {
     /// outside the loaded slot-1 landmark pack (they reference the wider global
     /// TMD pool, not yet loaded for the world map) resolve to no mesh and are
     /// skipped by `resolve_placement_draws`.
+    ///
+    /// `posed_cells` are the landmarks the posed-prop pass owns
+    /// ([`Self::resolve_posed_props`]): a bound landmark whose bind names a
+    /// clip is a multi-object prop posed by it (`FUN_8001B964`, draw kind
+    /// `1`), so it is drawn there, at its clip frame, and left out here.
+    /// Conkram's shell (`map03` record 458, clip 4) is one: unposed, its lid
+    /// lies flat over the town instead of standing open behind it.
     pub(in crate::window) fn resolve_world_map_terrain_draws(
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
+        posed_cells: &PosedLandmarkCells,
     ) -> super::WorldMapDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return (Vec::new(), 0, Vec::new(), Vec::new());
@@ -81,6 +92,8 @@ impl PlayWindowApp {
             Ok(Some(t)) => t,
             _ => Vec::new(),
         };
+        landmarks
+            .retain(|p| !posed_cells.contains(&((p.anchor_col, p.anchor_row), (p.col, p.row))));
         // Story-hidden landmarks: a placed record whose bind prologue parked
         // its actor at the hide box draws nothing (map01's sea dome south of
         // Rim Elm, the river bridge's second stamp).

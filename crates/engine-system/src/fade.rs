@@ -103,17 +103,29 @@ impl FadeState {
     /// per-frame delta `((end - start) * 0x40) / duration` (i32 divide
     /// truncated to i16, as the retail store does).
     ///
+    /// A zero duration reaches the `div` at `0x80020B84` with no `break`
+    /// guard, so the R3000's own result ships: `lo = -1` for a non-negative
+    /// difference and `1` for a negative one. That delta always points away
+    /// from the target, so the first tick clamps onto it, and the duration
+    /// count is already spent. No shipped template has a zero duration.
+    ///
     /// PORT: FUN_80020B00
     pub fn load(t: &FadeTemplate) -> FadeState {
-        let duration = t.duration.max(1); // retail templates are never 0
+        // A negative duration is spent at once, as a zero one is; the
+        // divide still takes the word as it is.
+        let duration = t.duration.max(0);
         let mut current_q6 = [0i16; 3];
         let mut end_q6 = [0i16; 3];
         let mut delta_q6 = [0i16; 3];
         for c in 0..3 {
             current_q6[c] = t.start_rgb[c] << 6;
             end_q6[c] = t.end_rgb[c] << 6;
-            delta_q6[c] =
-                (((t.end_rgb[c] as i32 - t.start_rgb[c] as i32) * 0x40) / duration as i32) as i16;
+            let diff = (t.end_rgb[c] as i32 - t.start_rgb[c] as i32) * 0x40;
+            delta_q6[c] = match t.duration {
+                0 if diff >= 0 => -1,
+                0 => 1,
+                d => (diff / i32::from(d)) as i16,
+            };
         }
         FadeState {
             kind: t.kind as i32,

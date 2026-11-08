@@ -53,8 +53,10 @@ fn l1_opens_the_map_display_and_labels_the_discovered_places() {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     for (kingdom, scene) in ["map01", "map02", "map03"].into_iter().enumerate() {
         host.enter_world_map_scene(scene).expect("enter kingdom");
-        // Let the entry script settle before the pad is read.
-        for _ in 0..30 {
+        // Let the entry script settle, and the scene load's post-warp hold
+        // (`_DAT_8007B6B4`, under which `FUN_801D1344` skips the pad
+        // controller and its L1 arm) drain, before the pad is read.
+        for _ in 0..60 {
             frame(&mut host, 0);
         }
         let locations = host.world.world_map.locations.clone();

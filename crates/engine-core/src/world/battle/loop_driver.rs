@@ -126,6 +126,43 @@ impl World {
         self.battle_ctx = ctx;
     }
 
+    /// The action SM's anim-rate restore on its own, as its tail runs it
+    /// (`legaia_engine_battle_vm::battle_action::restore_action_anim_rates`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E93C8
+    pub fn restore_battle_anim_rates(&mut self) {
+        let mut ctx = self.battle_ctx.clone();
+        let mut host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::restore_action_anim_rates(&mut host, &mut ctx);
+        self.battle_ctx = ctx;
+    }
+
+    /// The action SM's `0x51` HP-bar settle check on its own
+    /// (`legaia_engine_battle_vm::battle_action::hp_bar_drain_pending`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E7250
+    pub fn battle_hp_bar_drain_pending(&mut self) -> bool {
+        let ctx = self.battle_ctx.clone();
+        let host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::hp_bar_drain_pending(&host, &ctx)
+    }
+
+    /// The capture takedown the action SM's state `0x68` runs on a captured
+    /// monster's seat, on its own
+    /// (`legaia_engine_battle_vm::battle_action::capture_takedown`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E7824
+    pub fn battle_capture_takedown(&mut self, slot: u8) {
+        let mut host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::capture_takedown(&mut host, slot);
+    }
+
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
     /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`].
     ///
@@ -508,6 +545,7 @@ impl World {
         if anim_vsyncs > 0 {
             self.tick_battle_hit_events();
         }
+        self.fold_combo_records();
 
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
         // state 0x50 *before* the liveness count resolves a wipe. Run it

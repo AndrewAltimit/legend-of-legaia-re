@@ -117,6 +117,7 @@ impl World {
             camera_nudge: None,
             capture_drift: None,
             capture_drift_after_shot: false,
+            tr_z_store: None,
             capture_pose_set: None,
             capture_focus_z: 0,
             capture_drift_first: false,

@@ -62,7 +62,15 @@ RAM**: keep the directory out of the repo.
 
 The engine child drops the state's own capture seeds as well as its gate and
 drive, its re-seat among them: a strike state's re-seat left in stood the
-caster `3500` units from the ground retail recorded. The scroller rects
+caster `3500` units from the ground retail recorded. It drops the still's pin
+to the default step too (`LEGAIA_BATTLE_PARTY_STEP=0`, for a replay whose gate
+counts passes): a film plays the cast through on the party's step, which
+`chitei2_cort_pre_mystic_circle`'s recording runs from its first frame, and on the
+pin Mystic Circle read `.717` against `.852` without it. Over the strike and enemy
+cast films the drop lifts most (`ropeway_curry_devil` `.63` to `.90`,
+`geremi_ogre_strike` `.72` to `.93`); the two Death Game films and
+`jou_cort_181_strike` read lower off the pin, which had held them on the step their
+bodies were tuned to ([the frame step](../subsystems/battle-stage-camera.md#the-capture-band-against-the-films)). The scroller rects
 (`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
 cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
 roll. A scrolled page's phase is time since its scroller started, which a pre-cast
@@ -176,8 +184,9 @@ at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and
 (`fade_back`: `2` the current record, `1` only the other, `0` none; see
 [the pairing rule](#the-pairing-rule)). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
-body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
-the series a summon close-up's framing is read off. A third, `cam.csv`, holds
+body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints,
+then the heading `+0x46` and the live and body pairs of the seat's target
+`+0x1DD`: the series a summon close-up's framing and a strike's walk are read off. A third, `cam.csv`, holds
 per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
 tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
 At cast begin it also logs each pool slot's ground pair
@@ -238,9 +247,10 @@ retail seat numbers: the engine packs the party ahead of the monsters, and the
 recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
 tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
 `body.csv` the acting seat's clip `+0x1D9`, staged byte `+0x1DA`, whether the
-clip loops, its cursor in sixteenths of a keyframe and the live pair: the
-engine half of the retail `body.csv`, which a clip that ends early or late
-is read off.
+clip loops, its cursor in sixteenths of a keyframe, the live pair, then the
+body pair, heading and the target's two pairs: the engine half of the retail
+`body.csv`, which a clip that ends early or late, or a struck body that does
+not slide where retail's does, is read off.
 
 The child drops the capture's drive and runs no earlier actor, so nothing in it left
 the camera where retail's stood. On cast begin it takes retail's pose from the

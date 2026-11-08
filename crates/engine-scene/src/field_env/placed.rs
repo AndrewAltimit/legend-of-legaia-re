@@ -218,6 +218,24 @@ pub fn retain_visible_landmark_placements(
     });
 }
 
+/// Give the overworld's bound landmarks their bind's clip id.
+///
+/// The kingdom maps resolve their landmarks without binds (every landmark
+/// draws, at unit scale), but the init sweep copies a bind header's anim byte
+/// into `+0x5C` there as in a town, so a bound multi-object landmark draws
+/// through `FUN_8001B964` (draw kind `1`) at its clip frame. Conkram's shell
+/// lid (`map03` record 458, clip 4) stands open behind the town only posed.
+/// Only placed-sweep draws are touched: a decoration cell
+/// (`FloorAnchor::corners` set) spawns no actor and runs no clip.
+// REF: FUN_8003A55C (the anim byte into `+0x5C`, `0x8003A8DC`)
+pub fn pose_bound_landmarks(draws: &mut [EnvDraw], binds: &HashMap<(u8, u8), ObjectBind>) {
+    for d in draws.iter_mut().filter(|d| d.floor.corners.is_none()) {
+        if let Some(b) = binds.get(&d.anchor) {
+            d.anim_id = b.anim_id;
+        }
+    }
+}
+
 /// Per-draw uniform render scale of a placed-object list (parallel to
 /// `draws`): the bound actor's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
 /// `1.0` for a draw with no bind or no listed scale. Keyed per object

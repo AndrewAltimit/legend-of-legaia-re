@@ -41,8 +41,9 @@ const SAVE_SCREEN_DESCRIPTOR: u32 = 0x8007_06BC;
 /// The pool discriminator, `_DAT_8007C34C`.
 const SAVE_SCREEN_POOL: u32 = 0x8007_C34C;
 
-/// A world sitting on the overworld with the debug band reachable - the same
-/// gate `World::tick_world_map_panels` puts the whole panel screen behind.
+/// A world sitting on the overworld with the developer panel chords opted in
+/// (`World::set_world_map_dev_panel_chords`) - the gate
+/// `World::tick_world_map_panels` puts the whole panel screen behind.
 fn overworld() -> World {
     let mut world = World::new();
     world.mode = SceneMode::WorldMap;
@@ -50,6 +51,7 @@ fn overworld() -> World {
         debug_enabled: true,
         ..WorldMapController::default()
     });
+    world.set_world_map_dev_panel_chords(true);
     world
 }
 

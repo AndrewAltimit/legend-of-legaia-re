@@ -1051,3 +1051,32 @@ changes = [
   ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4646.3, 4646.4],
 ]
 
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Gap wave 34. The five boss mid-cast stills and the Ultra Charge camera move with the boss capture-band frame-step rows (ee28e5c7e) and the 0x800 yaw-seed pass (3ea5c4d6e), bisected on cort_evolved_ultra_charge_mid_cast (main 1.000, + yaw seed 1.000, + step rows .998: TR z 32 units short, one step-4 pass of drift, because the table runs step 4 from arm 1's first pass where retail climbs into it through the frame-cost ring). The same rows lift the frame-by-frame films the stills sample from (Mystic Circle .625 -> .852, Call Wave .583 -> .767, Mystic Shield .704 -> .821, Koru Done tails .73/.81/.80 -> .86/.89/.89). The delilas_ states run a patched executable (the Delilas mod, not retail evidence) and are reported as patched drift."
+changes = [
+  ["states/battle_tunnelc_xain_bloody_horns_mid_cast/image", 0.849, 0.842],
+  ["states/cort_evolved_ultra_charge_mid_cast/camera", 1.0, 0.998],
+  ["states/cort_guilty_cross_mid_cast/image", 0.971, 0.967],
+  ["states/delilas_gi_spirit_distortion_v3/camera", 0.988, 0.986],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.628, 0.616],
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.983, 0.98],
+  ["states/koru_blade_breath_mid_cast/image", 0.979, 0.974],
+  ["states/koru_gigaton_press_mid_cast/image", 0.978, 0.974],
+  ["states/koru_thunder_needle_mid_cast/image", 0.979, 0.974],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Gap wave 34. Bundles grow ~11-13 KB gzip with the wave's new code (melee re-commit cut displacement, the battle message-bar result lines and instant-kill credits, world-map posed landmarks, F12 scene table, field 4C routing and game-frame script cadence, retail-exec seams). The +0.2-0.3% wasm bytes per frame on battle / cast / world map are the per-frame result-line, separation-by-colour-word and posed-landmark reads; native allocations per frame fell on the same scenes (battle -95, summon_cast -96, world_map -95 allocs per frame)."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125252, 125538],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124455, 124741],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 112290, 112479],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 111787, 111975],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 168821, 169341],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 165096, 165615],
+  ["counts/bundle/gzip_bytes", 7072853, 7085636],
+  ["counts/bundle/play_gzip_bytes", 4937227, 4947923],
+]

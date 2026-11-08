@@ -11,9 +11,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use legaia_app_theme::placement;
 use legaia_explorer::Explorer;
 use legaia_explorer::app::{App, Automation};
-use legaia_explorer::placement;
 use legaia_explorer::settings::{MIN_WINDOW, Settings};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};

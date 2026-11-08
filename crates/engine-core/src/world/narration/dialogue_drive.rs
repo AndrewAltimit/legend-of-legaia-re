@@ -192,6 +192,15 @@ impl World {
             return;
         }
 
+        // The dialog SM runs from the talker's actor tick, once per game
+        // frame (`FrameClock::script_slice_due`): between two game frames
+        // the record's ops wait. The box above reads the pad every vsync.
+        // REF: FUN_8002519C, FUN_80039B7C
+        if !self.clock.script_slice_due() {
+            self.dialog.inline = Some(id);
+            return;
+        }
+
         // No box open: step the VM until the next text segment or an end.
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.
@@ -451,28 +460,7 @@ impl World {
                 && let Some((body0, body1, rate)) =
                     super::field_channels::compass_walk_operands(&id.bytecode, id.pc)
             {
-                host.world.npcs.motions.remove(&slot);
-                let mut leg = legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
-                    slot,
-                    state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
-                    body0,
-                    body1,
-                    rate,
-                    frames: 0,
-                };
-                // The kernel takes the leg's first step in the arming frame,
-                // after the talk's slice (the target ticks behind the talk).
-                let grid = host.world.clock.script_frame_delta();
-                if grid > 0 && host.world.clock.game_tick_live {
-                    leg.state.speed = grid;
-                    if !host.world.step_npc_glide(&mut leg) {
-                        host.world.land_npc_leg(slot);
-                    } else {
-                        host.world.npcs.glide_legs.insert(slot, leg);
-                    }
-                } else {
-                    host.world.npcs.glide_legs.insert(slot, leg);
-                }
+                host.world.arm_npc_compass_leg(slot, body0, body1, rate);
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
                 }
@@ -620,7 +608,47 @@ impl World {
                 && id.ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0)
                 .then_some(ext_target)
                 .flatten();
+            // A re-seat aimed at another placement (`CC <id> C3`): the
+            // teleport reads the TARGET's `+0x50` to find its own record, so
+            // it runs on that placement's context, as the prop runner steps
+            // it. Run on the talker's stand-in it re-seated the talker:
+            // `town01`'s blackboard tour (`P1[51]`) parks the villagers
+            // around the map with `CC <id> 51 7F 7F` and brings them back
+            // with `CC <id> C3`.
+            // REF: FUN_8003C83C, FUN_801DE840 (nibble C sub 3, 0x801E2700..0x801E282C)
+            let reseat = (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0xC3))
+                .then(|| {
+                    crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc)
+                })
+                .flatten();
             let talker = host.world.dialog.stepping_inline_npc;
+            // A `CC <id> ..` sub-op on another placement's actor - its scale,
+            // rate, height, tilt, look turn, heading, model, tint, clip
+            // words, or a copy of the player's spot - runs on that
+            // placement's context: the dispatcher prologue swaps the
+            // resolved actor into `s5` before the arm runs. `town0b`
+            // `P1[55]`'s first talk turns and raises placement `0x26` with
+            // `CC 26 45 ..` / `CC 26 42 ..`; stepped on the talk's context
+            // the talker took both.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+            let actor_target = (op == 0x4C
+                && run_target.is_none()
+                && !player_seat
+                && id
+                    .bytecode
+                    .get(id.pc + 2)
+                    .is_some_and(|&sub| crate::world::prop_interact::is_resolved_actor_4c(sub)))
+            .then(|| crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc))
+            .flatten()
+            .filter(|&slot| Some(slot) != talker);
+            // The NPC's own leg holds its halt bit: the op waits at the
+            // dispatcher's halted-target early-out until the kernel lands it.
+            // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+            if let Some(slot) = actor_target
+                && host.world.npc_leg_in_flight(slot)
+            {
+                break;
+            }
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
                 host.world.dialog.stepping_inline_npc =
@@ -659,6 +687,9 @@ impl World {
                     }
                 }
                 r
+            } else if let Some(slot) = reseat.or(actor_target) {
+                host.world.dialog.stepping_inline_npc = None;
+                crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
             } else if let Some(t) = other_seat {
                 let mut other = id.ctx.clone();
                 other.flags &= !legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
@@ -1160,10 +1191,107 @@ impl World {
         done
     }
 
+    /// Arm a compass-walk leg (`B7` / `C1 <id> b0 b1`) on placement `slot`
+    /// from a talk or prop record: the arm seats the op on the target's
+    /// `+0x94`, raises its `0x400` and advances the caller past the op; the
+    /// walk kernel takes the leg's first step in the arming frame, after the
+    /// caller's slice, and the rest on the field tick
+    /// ([`Self::tick_field_npc_face_legs`]).
+    ///
+    /// REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+    pub(crate) fn arm_npc_compass_leg(&mut self, slot: u8, body0: u8, body1: u8, rate: i32) {
+        self.npcs.motions.remove(&slot);
+        let mut leg = legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+            slot,
+            state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+            body0,
+            body1,
+            rate,
+            frames: 0,
+        };
+        let grid = self.clock.script_frame_delta();
+        if grid > 0 && self.clock.game_tick_live {
+            leg.state.speed = grid;
+            if !self.step_npc_glide(&mut leg) {
+                self.land_npc_leg(slot);
+            } else {
+                self.npcs.glide_legs.insert(slot, leg);
+            }
+        } else {
+            self.npcs.glide_legs.insert(slot, leg);
+        }
+    }
+
+    /// A motion op a prop record aims at a placement, run on that placement:
+    /// a turn or face-at ([`Self::run_placement_facing_op`]), a compass walk
+    /// (`B7` / `C1 <id> b0 b1`, [`Self::arm_npc_compass_leg`]) or a
+    /// walk-to-tile (`C7 <id> <tx> <tz> <mode>`, the walk kernel's `0x47`
+    /// leg at the mode's speed and approach; the hide tile `(127, 127)`
+    /// seats at once). Each raises the target's halt and advances the
+    /// caller past the op - only a player target parks the caller. Returns
+    /// the PC past the op, or `None` when the op is none of these or the
+    /// target is not a placement.
+    ///
+    /// REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DEFC0..0x801DF054), FUN_8003774C (cases 0x37 / 0x38 / 0x41 / 0x47 / 0x4C)
+    pub(crate) fn run_placement_motion_op(&mut self, bc: &[u8], pc: usize) -> Option<usize> {
+        let op = *bc.get(pc)?;
+        if op & 0x80 == 0 {
+            return None;
+        }
+        let slot = self.placement_slot_for_target(*bc.get(pc + 1)?)?;
+        match op & 0x7F {
+            0x38 | 0x4C => self.run_placement_facing_op(bc, pc),
+            0x37 | 0x41 => {
+                let (body0, body1, rate) = super::field_channels::compass_walk_operands(bc, pc)?;
+                self.arm_npc_compass_leg(slot, body0, body1, rate);
+                Some(pc + 4)
+            }
+            0x47 => {
+                let (b0, b1, b2) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?, *bc.get(pc + 4)?);
+                let decode = |b: u8| -> i16 {
+                    i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                };
+                let (tx, tz) = (decode(b0), decode(b1));
+                self.npcs.glide_legs.remove(&slot);
+                if (b0 & 0x7F, b1 & 0x7F)
+                    == legaia_engine_field::man_field_scripts::PARKED_SENTINEL_TILE
+                {
+                    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+                    self.npcs.motions.remove(&slot);
+                    self.npcs.positions.insert(slot, (hide, hide));
+                } else if self.start_field_npc_motion(slot, tx, tz) {
+                    if let Some(m) = self.npcs.motions.get_mut(&slot) {
+                        m.state.speed = crate::world::field_npc_walk_step_speed(0x80, b2 & 7);
+                        m.state.approach = b2 >> 4;
+                    }
+                } else {
+                    self.npcs.positions.insert(slot, (tx, tz));
+                }
+                Some(pc + 5)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether placement `slot` carries a leg the walk kernel has not landed
+    /// yet - a compass walk, a turn, a face-at or a walk-to-tile - or landed
+    /// one on the current game frame. A cross-context op aimed at it waits at
+    /// the dispatcher's halted-target early-out until then.
+    ///
+    /// REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C
+    pub(crate) fn npc_leg_in_flight(&self, slot: u8) -> bool {
+        let n = &self.npcs;
+        n.glide_legs.contains_key(&slot)
+            || n.rotate_legs.contains_key(&slot)
+            || n.face_legs.contains_key(&slot)
+            || n.motions.contains_key(&slot)
+            || self.leg_landed_this_frame(slot)
+    }
+
     /// The placement slot a cross-context target byte names: the channel
     /// whose script id is `t` (`FUN_8003C83C`), when it is a placement - not
     /// the player (`0xF8`), the system channel (`0xFB`) or an object bind.
-    pub(super) fn placement_slot_for_target(&self, t: u8) -> Option<u8> {
+    pub(crate) fn placement_slot_for_target(&self, t: u8) -> Option<u8> {
         if t == 0xF8 || t == 0xFB {
             return None;
         }

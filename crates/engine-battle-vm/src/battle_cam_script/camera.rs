@@ -282,6 +282,11 @@ pub struct BattleCamera {
     /// the counter was last stored outright (a rung of the per-action
     /// ladder, a module's store, an alignment) - the clock half of the word.
     pub(super) action_yaw_drift: i32,
+    /// A rung of the per-action ladder the newest pass stored
+    /// ([`BattleCamera::observe_action_state`]). Retail's arms store it after
+    /// that pass's prologue drift (`0x801E29E4..0x801E2A24` runs ahead of the
+    /// state switch), so it lands once the pass's drift has been added.
+    pub(super) pending_yaw_seed: Option<i32>,
     /// The `0x2A` pass storing `0x2B` is the newest pass
     /// ([`Self::observe_chain_exit_pass`]).
     pub(super) chain_exit_pass: bool,

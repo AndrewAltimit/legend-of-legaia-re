@@ -12,6 +12,7 @@ mod placements;
 mod prop_animation;
 #[path = "field_render/terrain.rs"]
 mod terrain;
+pub(in crate::window) use terrain::PosedLandmarkCells;
 
 pub(super) use floor_wave::*;
 

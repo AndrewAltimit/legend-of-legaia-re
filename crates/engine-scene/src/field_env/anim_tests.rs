@@ -181,9 +181,16 @@ fn a_spawn_prologue_branches_on_the_live_flags() {
     // Linear: the first `0x21` in byte order.
     assert_eq!(run_spawn_prologue(rec, 2, None).1, 33);
 
-    // The clip words and class bits stay the linear walk's (both arms).
-    let spawn = vec![AnimCmd::Rate(0x40), AnimCmd::ResetHold, AnimCmd::EndHold];
+    // The clip words are the arm the flag picks (retail runs one arm: the
+    // clear arm sets the rate and holds the stone shut on frame 0, the set
+    // arm holds it on its last frame); the class bits stay the linear
+    // walk's, both arms together.
     for (up, parked) in [(false, 37), (true, 33)] {
+        let spawn = if up {
+            vec![AnimCmd::EndHold]
+        } else {
+            vec![AnimCmd::Rate(0x40), AnimCmd::ResetHold]
+        };
         let mut writes = Vec::new();
         let mut flags = |idx: u16, kind: FlagKind| match kind {
             FlagKind::Test => {
@@ -219,4 +226,40 @@ fn a_static_prop_record_decodes_to_no_animation() {
     let p = decode_prop_program(rec, 2);
     assert!(p.spawn.is_empty());
     assert!(!p.animates(), "nothing in the touch pass touches +0x62");
+}
+
+/// A two-state landmark's shape (Conkram's shell on `map03`, P0[0]): one flag
+/// test picks between the frame-0 snap and the last-frame snap, and the prop
+/// poses from the arm the flag picks. Walking both arms left the last snap in
+/// force whatever the flag said, so the shell's lid lay over the town instead
+/// of standing open behind it.
+#[test]
+fn a_two_state_prop_poses_from_the_arm_its_flag_picks() {
+    use legaia_scene_formats::field_disasm::FlagKind;
+    let rec: &[u8] = &[
+        0x00, 0x04, // header: no name, anim 4
+        0x25, // prologue marker (2)
+        0x71, 0x23, 0x09, 0x00, // test 0x123 -> 14 (3)
+        0x4C, 0x35, // reset + hold: frame 0 (7)
+        0x26, 0x06, 0x00, // jump -> 16 (9)
+        0x25, 0x25, // (12)
+        0x4C, 0x36, // end + hold: the last frame (14)
+        0x21, // park (16)
+        0x2C, 0x01, 0x2B, 0x03, 0x2C, 0x08, 0x2D, 0x08, 0x21, 0x26, 0xF4, 0xFF,
+    ];
+    for (up, want) in [(false, AnimCmd::ResetHold), (true, AnimCmd::EndHold)] {
+        let mut flags = |idx: u16, kind: FlagKind| {
+            assert_eq!((idx, kind), (0x123, FlagKind::Test));
+            up
+        };
+        let (p, at) = decode_prop_program_with(rec, 2, Some(&mut flags));
+        assert_eq!(p.spawn, vec![want], "0x123 up {up}");
+        assert_eq!(at, 17, "both arms park on the shared 0x21");
+        let mut anim = PropAnim::spawned(4, 15, false, 0);
+        for c in &p.spawn {
+            c.apply(&mut anim);
+        }
+        anim.tick();
+        assert_eq!(anim.frame(), if up { 14 } else { 0 });
+    }
 }

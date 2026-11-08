@@ -139,6 +139,7 @@
     <li><strong>The floor sampler</strong>, so the player walks the same shape and rides it while standing.</li>
   </ul>
   <p>A placed object&rsquo;s Y is written once, when it is spawned (at scene init or by the window sweep&rsquo;s re-plan), as its rung plus its own offset; its actor template sets neither height-arm bit that would make the per-frame driver re-sample the floor. When a scene&rsquo;s system script lifts rungs after spawn, the objects on those rungs stay where they were placed.</p>
+  <p>The exception is an object whose bind script raises the floor-follow class bit (<code>31 11</code>): the actor tick re-samples the floor under it every frame it is in view, through the live rungs, so it rides a new ladder like the ground does. Mt. Rikuroa&rsquo;s summit is the case: the system script installs a ladder that lifts the cave mouth out of <code>rikuroa2</code> 664 units above the header&rsquo;s floor, and the cliff carrying it, the player and the two chests beside it all stand on that raised floor.</p>
 </section>
 
 <section class="doc-section" id="nibble-45" data-doc="-">
@@ -168,9 +169,10 @@
       <path class="dg-edge" d="M740 94 L650 128" marker-end="url(#mc-seat-arrow)"/>
       <path class="dg-edge" d="M790 94 L796 128" marker-end="url(#mc-seat-arrow)"/>
     </svg>
-    <figcaption>The clip binds on every path that reaches the op - the install pre-run, a cutscene&rsquo;s cross-context poke and a live channel alike. A party member is seated with a depth byte in <code>0x8_</code>, so its clip id resolves through the party locomotion bank; any other depth plays a scene-bank clip.</figcaption>
+    <figcaption>The clip binds on every path that reaches the op - the install pre-run, a cutscene&rsquo;s cross-context poke and a live channel alike. A party member is seated with a depth byte in <code>0x8_</code>, so its clip id resolves through the party locomotion bank; any other depth plays a scene-bank clip. The first three writes land on the player as well - the arm only splits the player off at the clip - so a cutscene can seat the hero on a scene clip of his own.</figcaption>
   </figure>
   <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and binds the clip at the op itself, so a script line that waits for the seated clip to finish waits for the right one, and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
+  <p><strong>The player takes the bit too.</strong> Rugi&rsquo;s portal beat flies the party into Rogue&rsquo;s Tower with three seats at depth <code>04</code>: Vahn on scene clip 7, Noa on 33, Gala on 16, each a flight pose from the tower&rsquo;s own clip bank, and the record raises the hero&rsquo;s bit again before it lands him on idle. Left on, the bit would stride clip 7 into his locomotion bank and fly him in on a landing pose. The port writes the bit on the player arm, which some two dozen other cutscenes of the same shape also rely on, and treats a player whose height a script holds as carried rather than walked, so the landing drift plays the idle the script names instead of a walk.</p>
 </section>
 
 <section class="doc-section" id="nibble-cd" data-doc="-">
@@ -212,6 +214,12 @@
     <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta. <code>4C E0</code> formats the reading box: a row capacity, or a latch that loads the next page whole (the help pages use twelve-row boxes loaded at once).</li>
     <li><strong>Nibbles B and F</strong> - the error printer. They form a message string and call the message routine, returning the PC unchanged. Only <code>4C FF</code> passes through. The disc-wide opcode census finds no coherent use of either in any scene.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="resolved-actor" data-doc="which-sub-ops-act-on-the-resolved-actor">
+  <h2>Aimed at someone else, it acts on them</h2>
+  <p>Any <code>4C</code> op can carry a target id (<code>CC &lt;id&gt; ..</code>). The dispatcher looks the id up before the sub-op runs and swaps that actor in as the one the arm works on, so the sub-ops that touch an actor&rsquo;s own words land on the <em>named</em> actor: its scale, speed, height, tilt and head turn, heading, model, seat, tint, clip words, the copy of the player&rsquo;s spot, and the box test of where it stands. Sub-ops that work on the camera, the screen, the bag or the script&rsquo;s own flow ignore the target.</p>
+  <p>Door and switch records use this to stage the NPCs around them. At the Shadow Gate the gate&rsquo;s records hide Gi Delilas and grow him back in, tint him, and set Noa and Gala down on Vahn&rsquo;s spot; the inn counter in the Ancient Wind Cave turns its keeper&rsquo;s head. Talks do it too, in Rim Elm, the Fire Path and the Usha Research Center. The port&rsquo;s cutscene runner always ran such ops on the named actor; the door and talk runners ran them on their own record, so the NPC never hid, moved, tilted or looked anywhere. Both now hand them to the NPC.</p>
 </section>
 
 <section class="doc-section" id="port" data-doc="port-notes,evidence">

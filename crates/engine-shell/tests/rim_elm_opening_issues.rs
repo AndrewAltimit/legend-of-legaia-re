@@ -9,7 +9,9 @@
 //! - The panoramic map on the blackboard in the Genesis Tree garden
 //!   (`P1[51]`) waits on the staged mode switch (`4C 53`, `4C 54`) on its way
 //!   into the overview and back out; the talk parks on those polls rather
-//!   than ending on them, so the screen comes back.
+//!   than ending on them, so the screen comes back. The tour parks the
+//!   villagers around the map in the hide box (`CC <id> 51 7F 7F ..`) and
+//!   re-seats them (`CC <id> C3`) on the way out.
 //! - Mei, seated in Vahn's house for the measuring beat (`P2[5]`), stands on
 //!   the floor there, not at the height she had at her own front door.
 //!
@@ -30,6 +32,11 @@ const MEI_DOOR_RECORD: usize = 1;
 const MEI_SLOT: u8 = 34;
 /// The blackboard carrying the panoramic map (`P1[51]`).
 const BLACKBOARD_SLOT: u8 = 51;
+/// The actors the panorama parks while it tours (`+0x14E..+0x17F`) and
+/// re-seats behind it (`+0x409..+0x41E`), by their `+0x50` ids.
+const BLACKBOARD_PARKED: [u8; 7] = [0x31, 0x32, 0x41, 0x42, 0x33, 0x34, 0x35];
+/// `(127, 127)`'s tile centre: the off-map hide box.
+const HIDE_BOX: (i16, i16) = (0x3FC0, 0x3FC0);
 /// The `P2[5]` measuring beat.
 const MEASURING_RECORD: usize = 5;
 
@@ -171,10 +178,33 @@ fn garden_blackboard_panorama_returns_the_view() {
     );
     // Talk; Cross through the question and its Yes; at the overview's
     // picker, three Downs onto "Forget it" and Cross.
+    let slots: Vec<u8> = {
+        let world = &w.session().host.world;
+        let view = world.channel_view();
+        BLACKBOARD_PARKED
+            .iter()
+            .filter_map(|&t| legaia_engine_field::field_channels::resolve_target(view, t))
+            .filter_map(|ci| u8::try_from(view[ci].placement_index).ok())
+            .collect()
+    };
+    assert!(
+        !slots.is_empty(),
+        "no villager the panorama parks is placed"
+    );
+    let parked = |w: &HeadlessPlayWindow| {
+        slots
+            .iter()
+            .filter(|s| w.session().host.world.npcs.positions.get(s) == Some(&HIDE_BOX))
+            .count()
+    };
+    let mut hid_all = false;
     let mut overview = false;
     let mut picked: Option<u32> = None;
     let mut ended = false;
     for f in 0..3000u32 {
+        if overview && parked(&w) == slots.len() {
+            hid_all = true;
+        }
         let (pc, picker) =
             w.session()
                 .host
@@ -215,6 +245,11 @@ fn garden_blackboard_panorama_returns_the_view() {
         "the talk never reached the overview: it ended at the mode-switch poll"
     );
     assert!(ended, "the talk never ended");
+    assert!(
+        hid_all,
+        "the tour never parked the villagers {slots:?} in the hide box"
+    );
+    assert_eq!(parked(&w), 0, "the tour left villagers in the hide box");
     let world = &w.session().host.world;
     // The way out runs whole: the switch back to the field view (`4C 54`)
     // and the player re-seated in the garden the overview took him from.

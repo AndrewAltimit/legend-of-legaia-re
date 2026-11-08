@@ -83,6 +83,29 @@
 //! (`engine-battle::battle_hud_state::MultiReadout`), drawn by
 //! [`multi_row_cluster`] and `engine-battle-hud::battle_multi_readout_plates`.
 
+/// The combo readout's fold into the acting member's battle records: while
+/// the cluster is up (`ctx[+0x271] != 0`) and a party seat (`ctx[+0x13] < 3`)
+/// holds an Attack (`+0x1DE == 3`), its record's Max Damage word `+0xE8` keeps
+/// the larger of itself and the string total `DAT_8007BD14`, and its Max Hits
+/// word `+0xEC` the larger of itself and the push count `ctx[+0x273]`. Both
+/// compares are unsigned. Returns the two words, unchanged when the gate is
+/// shut.
+///
+// PORT: FUN_801E805C (`0x801E88D4..0x801E89D8`)
+pub fn fold_combo_records(
+    readout_up: bool,
+    acting_seat: u8,
+    acting_category: u8,
+    total: u32,
+    pushes: u8,
+    (max_damage, max_hits): (u32, u32),
+) -> (u32, u32) {
+    if !readout_up || acting_seat >= 3 || acting_category != 3 {
+        return (max_damage, max_hits);
+    }
+    (max_damage.max(total), max_hits.max(u32::from(pushes)))
+}
+
 /// Readout slots the value window holds (`_DAT_801F6980..0x801F6987`, four
 /// halfwords).
 pub const VALUE_SLOTS: usize = 4;

@@ -524,7 +524,7 @@ The persistent party record: stride `0x414` per character at `0x80084708 + n*0x4
 | `+0x00` | Cumulative XP, u32. |
 | `+0x04` | Next-level threshold, u32, rewritten by `FUN_801E9504` (`365 -> 730` across one level-up). |
 | `+0x08..+0x98` | u32 per-spell experience array (36 entries), parallel to the two byte arrays below. |
-| `+0x9C` | Magic-rank mirror. |
+| `+0x9C` | Monsters Defeated, u32: bumped by a monster's death arm for the member holding the action ([records words](../formats/save-record.md#the-battle-records-words)). |
 | `+0xF4..+0x100` | "Active abilities" 16-byte block, ORed into the global mask `0x80074358..0x80074368`. |
 | `+0x104..+0x10E` | HP / MP / AP as `(max, cur)` u16 pairs: maxima at `+0x104` / `+0x108` / `+0x10C`, currents at `+0x106` / `+0x10A` / `+0x10E`. AP is the arts gauge; the AGL stat is the adjacent `+0x110` / `+0x122`. |
 | `+0x110..+0x11A` | Stat maxima capped by the aggregator (`+0x110` at `280`, `+0x112..+0x11A` at `999`). |
@@ -576,12 +576,12 @@ Vahn's record across a single character-level event (Noa and Gala are byte-ident
 | `+0x11C..+0x122` | 6 x u8 | `67/1C/13/10/16/0B -> 6B/20/15/12/1A/0F` | Per-stat increments `+4 +4 +2 +2 +4 +4`. |
 | `+0x130` | u8 | `0x02 -> 0x03` | Displayed level. |
 
-Across a single magic-rank-up event:
+Across a single magic-rank-up event (the cast also felled a monster):
 
 | Offset | Width | Before -> after | Reading |
 |---|---|---|---|
 | `+0x08` | u32 | `0x30 -> 0x3C` | `spell_counter[0]`, +12. |
-| `+0x9C` | u8 | `0x09 -> 0x0A` | Magic-rank mirror. |
+| `+0x9C` | u32 | `0x09 -> 0x0A` | Monsters Defeated: the cast's kill, not the rank. |
 | `+0x10A` | u16 | `0x1B -> 0x11` | MP current: the cast that earned the rank. |
 | `+0x161` | u8 | `0x02 -> 0x03` | Spell-level byte. |
 
@@ -717,7 +717,7 @@ Small `SCUS_942.54` routines the battle tick and scene init reach through the ac
 | `FUN_80050120` | Per-actor presentation tick: skips actors with no `+0x22C` sub-struct and dispatches on `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, drains `+0x0C`, then clears `+0x21F`; arms `1` / `3` / `4` / `6..=10` ease toward fixed colours (dim, red, blue, magenta, soft red, green, yellow, white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. | `engine-battle-vm::battle_formulas::tint_sm_step` |
 | `FUN_80050F30` | 3 x 10-bit packed approach step: eases each channel of a packed `u32` toward an 8-bit target (widened `<< 2`) by at most `step_scale * DAT_1F800393 * 8`, clamping without overshoot; only differing channels are rewritten. | `battle_formulas::packed3_approach_target` / `approach_channel_clamped` |
 | `FUN_80050BB8` | Pairwise separation: reads two actors' radii (`+0x22C -> +0x58`: the seat stager writes `0x280` on a party seat, `0x400` on Terra's, a monster's size class `<< 5`) and body pairs `+0x3C` / `+0x40`, projects the gap onto the angle from `FUN_80019B28` through the sin / cos tables `_DAT_8007B81C` / `DAT_8007B7F8`, and if the gap is below `(r1+r2)/6` nudges both **live** pairs `+0x34` / `+0x38` apart by `sin/cos >> 10`. | `engine-battle-vm::battle_separation::push_apart`, driven by `World::tick_battle_separation` right after the action-SM step, once a battle frame on either cadence (neither routine reads the frame step `DAT_1F800393`, so the nudge is a pass's) |
-| `FUN_80051078` | Separation driver: a 7 x 7 loop calling `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`). `FUN_80046A20` runs it every battle frame directly after the action SM (`jal 0x801E295C` then `jal 0x80051078`). | same |
+| `FUN_80051078` | Separation driver: a 7 x 7 loop calling `FUN_80050BB8(i, j)` for every ordered pair of drawn actors (`i != j`, both colour words `+4 != 0`, whatever the HP; seat `7`, a fifth monster, is outside the walk). `FUN_80046A20` runs it every battle frame directly after the action SM (`jal 0x801E295C` then `jal 0x80051078`). | same |
 | `FUN_8005133C` | Per-actor status-marker spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` through `FUN_800583C8`, then sets `+0x220..+0x223 = 1`. | The primitive is a wgpu draw; the markers ride the actor's status flags. |
 
 The clip-morph pair `FUN_800495C8` / `FUN_80049858` (per-entry vertex deltas blended onto the mesh, then restored) is in [`monster-animation.md`](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858). The tween / separation cluster is presentation only: it moves and tints actors but touches no HP, MP or stat field.

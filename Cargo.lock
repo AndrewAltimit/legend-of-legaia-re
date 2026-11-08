@@ -2629,6 +2629,7 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
+ "legaia-gamedata",
  "legaia-minigame-formats",
  "legaia-netplay",
  "legaia-overlay-images",

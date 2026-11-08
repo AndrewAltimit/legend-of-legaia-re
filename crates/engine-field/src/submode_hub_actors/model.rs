@@ -79,6 +79,10 @@ pub struct HubEnv {
     pub board_flag: i32,
     /// The three bytes at `_DAT_8007B450 + 1..=3` the start menu counts.
     pub board_entries: [u8; 3],
+    /// The signed halfword at `_DAT_8007B450 + 2` (`FUN_8003CE9C`): the system
+    /// flag the coin counter clears on opening and raises on a sale, which the
+    /// script that opened it reads afterwards.
+    pub script_flag: i16,
     /// `_DAT_8007C364 + 0x10` - the busy word whose bit `0x80000` the
     /// dispatcher clears.
     pub busy_word: u32,
@@ -241,6 +245,10 @@ pub enum HubAction {
     BuyCoins { coins: i32, gold_cost: i32 },
     /// `DAT_8007BB88 = 0`.
     ClearCursorRow,
+    /// `FUN_8003CE08(flag)` - raise a system flag (the fourth flag bank).
+    SetSystemFlag(u16),
+    /// `FUN_8003CE34(flag)` - clear a system flag.
+    ClearSystemFlag(u16),
     /// The start panel's height and top, written into **window record 8** -
     /// `0x801F2B98 + 8*0x1C + 0xE` and `+0xA`, the record the start menu's own
     /// descriptor then installs.

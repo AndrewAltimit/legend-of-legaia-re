@@ -438,3 +438,91 @@ The region scan `FUN_80017FBC` under the attribute refresh `FUN_800180EC`, and t
 `FUN_801DBA20` over the box the refresh latched (`region_scan`), match `refresh_region_attributes` and
 `zone_query` on every field scene's region table, at tiles on and around every record edge, off the grid and in
 world-map mode.
+
+The battle cue router `FUN_8004FE5C` (`sfx_cue_route`) matches `route_sfx_cue` over the ring, the dedupe word,
+both tinted legs' category byte and the CD-XA voice leg. The animation cue walker `FUN_800508DC`
+(`anim_cue_walk`) matches `walk_anim_cues`, and its tally showed what the host dropped: each character cry the
+walk reaches bumps the seat's record `+0x98` before the mute and CD gates (`0x800509BC..0x800509EC`), the word the
+records page prints as Knockouts. Nothing in the port wrote it, so the page read `0` for ever.
+The death arm's credit `0x8004B184..0x8004B29C` (`defeat_credit`) had no port either: a monster's death bumps
+the record `+0x9C` of the party seat holding the action, once, behind the arm's own `+0x1DC` bit 3. That word is
+the records page's Monsters Defeated, not the magic-rank counter it was once read as.
+The combo readout's fold `0x801E88D4..0x801E89D8` (`combo_records`) completes the records page: while the cluster
+is up and a party seat holds an Attack, the member's Max Damage and Max Hits words keep the larger of themselves
+and the string total `DAT_8007BD14` and the push count `ctx[+0x273]`. Neither had a port, nor did the push count
+and the total the action seed zeroes (`0x801E2C3C..0x801E2C4C`, with the cast readout cursor `ctx[+0x262]` the port
+also carried on across actions).
+The escape timer's HUD actor `FUN_801D2EBC` (`escape_timer`), run over whole countdowns with random clock deltas,
+frame steps and busy frames, matches `EscapeTimer::tick` and `EscapeTimerHud::step`: the counter, the flags it
+fires, the phase machine and its kill bit, the digits and the ink.
+The casino coin counter `FUN_801F0ADC` (`coin_counter`), driven frame by frame with generated pad words over
+every purse and bank shape, matches `coin_exchange` on the cells, the cursor, the hold, the ceiling, the sale and
+the stings, and found the two flag calls the port had no arm for: opening raises system flag `8` and clears the
+flag the opening script names (`FUN_8003CE9C(_DAT_8007B450 + 2)`, `0x801F0B74..0x801F0B8C`), and a sale raises
+that flag (`0x801F1000..0x801F1010`), so the script that opened the counter could never tell a sale from a walk-off.
+The follow camera's per-frame kernels (`camera_follow`), the ease `FUN_801DB510` with the composer
+`FUN_801DAB90` beneath it and the focus edge clamp `FUN_801DAA50` after it, match `compose`, `ease_step` and
+`clamp_focus` over generated parameter blocks of every mode and sweep nibble, attribute boxes, floors, live
+poses, the hold and force-ease bits and the script focus override. A mode-1 / mode-2 block over a box with no
+width, or a sweep over one with no depth, reaches the composer's `break` guards; the port reads that divide as
+`0`.
+The overlay colour tween `FUN_801DDC20` (`colour_tween`) found the port taking the ramp's progress as a word,
+where the bytes take `clock - delay` as a halfword (`0x801DDCC4..0x801DDCD8`): a negative delay with the clock past
+`0x7FFF` lerped from a progress `0x10000` too large. The field VM's screen-effect arm seats delay `0`, so no shipped
+script reaches it. The SCUS fade actor's tick `FUN_80025000` over its step `FUN_80020C14` matches `tick_fade_ramp`
+at every phase. Loaded from a template through `FUN_80020B00` and played out, a fade shows on every vsync what
+`FadeState` shows, including some 40000 vsyncs past its ramp, where retail's halfword duration count wraps positive
+and the port's stays at its end: the channels sit on the target either way. A zero duration differed. The loader's
+`div` (`0x80020B84`) has no `break` guard, so the R3000's quotient ships, `-1` for a non-negative difference and `1`
+for a negative one, and the first tick clamps onto the target; the port had divided by one, and a frame step above
+one then overflowed the channel. No shipped template has a zero duration.
+The two scans of a caster's learned-spell list in the battle overlay (`spell_list_scans`), the killing blow's
+already-known Seru test `FUN_801E91E8` and the summon return's "No effect." pass `FUN_801F3C34`, match over lists of
+every length and every gate once the first compares as the bytes do: `id - 0x80` is a word (`0x801E92B0`), so an id
+below `0x80` goes negative and matches no token, where the port's byte subtract wrapped it onto a token of `0x80`
+or more. A Seru id is small and a list holds spell ids, so no game reaches it.
+The field VM's context stores (`field_ctx`), every distinct instruction on the disc run on a context of generated
+bytes with `step` beside it, found three: op `0x4B` writing its keyframe count over `+0x6D` (the face-rotation byte)
+where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit in its two tile bytes `+0x8C` /
+`+0x8D`, which the arm masks with `0x7F`; and op `0x3E`'s minigame warp clearing `0x80000` on the context running
+the script, where the arm clears it on the player object (`0x801E07BC..0x801E07D8`), so a door's warp left the
+player's walk lock up. A field the port leaves to its host is counted rather than compared, since the host there is
+inert; what the test holds is every store `step` makes itself.
+The seat `4C 51` is the op the port hands its host whole, so a second pass steps it on the real `World`, as a live
+placement channel's op, and compares the tile on the context and on the drawn seat, the party-bank bit, `+0x62`,
+`+0x5C` and the stored heading. Every seat matched but the hide box: the host returned early on tile `(127, 127)`, a
+guard left from when the op started a walk, where the arm writes it like any tile (`0x801E1880`, `0x801E1898`) and
+the cull hides the actor. `town01`'s blackboard tour parks the villagers round the map that way and re-seats them
+with `CC <id> C3`, which the talk runner then ran on the talker's own context; both now land on the placement. The
+player arm keeps the guard, unmeasured against the follow camera.
+The separation driver `FUN_80051078`, run over the actor table against `World::tick_battle_separation`
+(`separation`), found two. Its gate is each seat's colour word `+0x04` (`0x800510B4..0x800510DC`), where the
+port read HP: a fallen member lying on the stage and a monster still in its defeat fade push and are pushed, and
+a body a cast has hidden is not. And it walks retail's seven seats, party `0..=2` and monsters from `3`, so a
+fifth monster at seat `7` is never separated; the port walked its own compacted slots and took it in behind a
+smaller party.
+The action SM's anim-rate restore `FUN_801E93C8` (`anim_rate_restore`), run over every party size and formation
+with the acting seat on a plain or an art clip, or a monster whose staged record's `+0x87` is up or down, matches
+the gate and the `+0x21C` latch clear, and found the same seat walk: it restores retail's seven seats, so a fifth
+monster at seat `7` keeps its rate, where the port restored its own compacted slots. The arts slow-motion arms of
+`FUN_8004AD80` that the restore undoes walk the same seven (`0x8004B740`, `0x8004BB74`), and the port slowed every
+actor; both now walk the table's seats. The monster arm's record table is `0x801C9348`, ten words ahead of the actor
+table.
+The action SM's HP-bar settle check `FUN_801E7250` (`hp_bar_settle`), the capture takedown `FUN_801E7824`
+(`capture_takedown`) and the side-band transfer sequencer `FUN_801F17F8` (`stream_slot`, its libcd calls logged
+against the steps `StreamSlotSm` hands its host) match over every formation, target code and stage.
+The cast camera script `FUN_801DC0A0` (`spell_cam`), run case by case with the tween builder hooked and the group
+aim `FUN_801DCEAC` live, against `spell_cam_inputs` and `spell_cam_case`, found the input builder sizing a slot
+target with the party radius: retail reads the target's node `+0x58` (`0x801DC35C`, `0x801DC4B8`), so a monster or
+Terra framed at the wrong depth on cases `2` and `4`. It also built the group from the monsters not hidden, where
+the aim counts a monster by its colour word `+0x04` (`0x801DCF54`): one faded out after its death left the
+centroid, and one frozen in the ice stayed in it. The nineteen cases' shots and hand-offs match. A group with no
+drawn member, or a slot code on cases `9` / `0xB` naming a seat not drawn, stops on the aim's `break`.
+The auto-command preseed `FUN_801DA34C` and its write-back `FUN_801DA59C` (`auto_command`), over every seat, roster
+order and gauge pair, and the effect-placement clamp `FUN_801DF570` (`approach_clamp`) match.
+Two more host-handed ops are stepped on the real `World` against where it keeps their writes. The tint `4C 81`
+lands in `actor_tints` in all three forms (the running placement, `CC <id> 81` on another, `CC F8 81` on the
+player) as retail leaves `+0x74` / `+0x78`; the tile warp `0x23` lands its tile, world pair and walk byte on the
+context it names. What the first pass still counts as left to the host is the floor sample and the cull a warp
+calls, and the cross-context ops whose target state the port keeps off the context: the rotate `B8` and arc `C3`
+legs' halt bit and ramps, `4C C3`'s re-seat on the placement, and the player-aimed `3E` / `4C DA` / `4C E3` stores.

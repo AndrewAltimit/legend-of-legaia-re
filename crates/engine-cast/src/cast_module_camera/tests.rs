@@ -190,6 +190,30 @@ fn barra_climbs_until_tr_y_reaches_0x800() {
     assert_eq!(holds, (0x800 - 0x400) / MODULE_DRAIN_PER_TICK);
 }
 
+/// Arms 3 and 4 store TR z `0xFFFF` as a word: a straight store beside the
+/// cut, which a halfword shot endpoint cannot carry.
+#[test]
+fn barra_stores_its_far_tr_z_as_a_word() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0;
+    let arm3 = barra_direct(&mut st, 3, seats());
+    assert!(!arm3.hold);
+    assert_eq!(arm3.tr_z_store, Some(0xFFFF));
+    assert_eq!(arm3.shot.expect("arm 3 cuts").tr, [0, 0x400, 0]);
+    // Arm 4 pulls the word in by `p << 7` a pass, then stores it again.
+    let mut passes = 0;
+    let arm4 = loop {
+        let d = barra_direct(&mut st, 4, seats());
+        if !d.hold {
+            break d;
+        }
+        assert_eq!(d.tr_z_store, None);
+        passes += 1;
+    };
+    assert_eq!(passes, (0xFFFF - 0x801) / (MODULE_DRAIN_PER_TICK << 7));
+    assert_eq!(arm4.tr_z_store, Some(0xFFFF));
+}
+
 /// Mystic Shield's arm 0 frames the caster from behind and seeds the
 /// countdown; arm 1 holds on it and re-arms `scalar << 8` as it passes. The
 /// `cort_mystic_shield_mid_cast` capture's word (`496` left in arm 1) is
@@ -825,6 +849,22 @@ fn nighto_arm_ten_holds_on_the_loop_counter_sentinel() {
     let d = nighto_direct(&mut st, 10, seats());
     assert!(!d.hold, "the park took the counter off 0xFF");
     assert_eq!(st.countdown.0, SPEED_SCALAR << 7);
+}
+
+/// PROT 0907's arm 13 frees the attack name's text actor on the pass that
+/// forks (`FUN_800319A8(0)` at `0x801F7DF0`), and not while its drain holds:
+/// the confuse leg's result line opens with no caption over it.
+#[test]
+fn nighto_fork_clears_the_attack_name() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = SPEED_SCALAR * 160;
+    let held = nighto_direct(&mut st, 13, seats());
+    assert!(held.hold);
+    assert_eq!(held.caption, None, "the drain keeps the line up");
+    st.countdown.0 = -1;
+    let d = nighto_direct(&mut st, 13, seats());
+    assert!(!d.hold);
+    assert_eq!(d.caption, Some(ModuleCaption::Cleared));
 }
 
 /// PROT 0903 arm 3's three calls read the creature seat before the arm

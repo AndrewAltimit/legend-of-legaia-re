@@ -221,7 +221,8 @@ pub fn assemble_field_scene_with(
         // flags & 0x4) AND a **decoration** layer - walk-visible cells with a
         // nonzero record `+0x10` and no placed flag: the crossed-quad trees,
         // mountain groups and props (~300 cells on Drake alone). Both are one
-        // un-posed layer, concatenated landmarks-then-decorations exactly as
+        // layer, posed only where a landmark's bind names a clip, concatenated
+        // landmarks-then-decorations exactly as
         // `resolve_world_map_terrain_draws` in `engine-shell` does. The
         // continent ground itself is NOT this layer - it is the heightfield.
         let mut tiles = scene
@@ -279,6 +280,11 @@ pub fn assemble_field_scene_with(
         floor_lut,
         binds.as_ref(),
     );
+    // A bound overworld landmark is posed by its bind's clip (Conkram's
+    // shell on `map03`), as the play hosts draw it.
+    if is_world_map && let Ok(Some(wm_binds)) = scene.field_object_binds(index) {
+        field_env::pose_bound_landmarks(&mut placements, &wm_binds);
+    }
     // Story-hidden placed objects: the `.MAP` table says where an object CAN
     // stand, its bind record's spawn prologue says whether it currently DOES
     // (town01's flag-gated gate rocks; town0c's parked intact doorway). The

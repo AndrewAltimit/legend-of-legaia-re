@@ -180,12 +180,12 @@ impl FrameClock {
     /// `s * (ceil(N / s) - 1)` vsyncs - `27` for `4A 1E 00` at step `3`, not
     /// `30` and not `29`.
     ///
-    /// The engine steps a context every vsync, so it credits the whole step
-    /// on the vsyncs that are game frames ([`Self::game_tick_fired`]) and
-    /// nothing on the ones between: the sum moves exactly as retail's does,
-    /// and a context that reaches a wait between two game frames falls onto
-    /// the frame grid at its first credit. One vsync a step while the
-    /// game-tick clock is not running ([`Self::game_tick_live`]).
+    /// The engine steps a context on the vsyncs that are game frames
+    /// ([`Self::script_slice_due`]), so it credits the whole step on those
+    /// ([`Self::game_tick_fired`]) and nothing on the ones between - the
+    /// per-vsync legs and pager that read this clock between two game
+    /// frames spend nothing there. One vsync a step while the game-tick
+    /// clock is not running ([`Self::game_tick_live`]).
     ///
     /// REF: FUN_801DE840 (op 0x4A, `0x801E09CC`), FUN_80016B6C (the step)
     pub fn script_frame_delta(&self) -> u16 {
@@ -196,6 +196,23 @@ impl FrameClock {
         } else {
             0
         }
+    }
+
+    /// Whether a field script context runs its slice on this world tick.
+    ///
+    /// Retail runs every script context from the actor-list walk
+    /// (`FUN_8002519C` -> `FUN_8003BC08` -> the dispatcher `FUN_801DE840`),
+    /// and the walk runs once per **game frame**, not per vsync: a
+    /// PCSX-Redux count of dispatcher entries against vsyncs
+    /// (`scripts/pcsx-redux/autorun_field_script_cadence.lua`) finds every
+    /// entry on a vsync the walk ran on, one walk every `DAT_1F800393`
+    /// vsyncs, at frame steps 2, 3 and 4 alike. So a context steps on the
+    /// vsyncs that are game frames ([`Self::game_tick_fired`]) and on none
+    /// between them; every tick steps while the game-tick clock is down.
+    ///
+    /// REF: FUN_8002519C, FUN_8003BC08, FUN_801DE840
+    pub fn script_slice_due(&self) -> bool {
+        !self.game_tick_live || self.game_tick_fired
     }
 }
 

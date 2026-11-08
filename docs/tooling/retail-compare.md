@@ -501,7 +501,11 @@ engine verdict:
   once its counter holds `240`, and `minigame_fishing_pcsx` is captured
   with the counter there: a warm-up on a free-running stream rolled it,
   spawned `P2[18]` and flew the cart back (`0x5A3`, `0x467` up, `0x466`
-  down) where retail had not rolled yet. Ambient animation and water CLUT-walk phases cannot be
+  down) where retail had not rolled yet. The image child holds the counter
+  table the same way: the seed hands it over as `LEGAIA_SEAT_SLOT_TABLE`
+  (`field_seeds::slot_table_env`), and the window writes it back before
+  every tick up to its capture, so a timer the frame's scripts count towards
+  stands where retail's stood on both halves of the score. Ambient animation and water CLUT-walk phases cannot be
   phase-aligned. The one phase the channel does align is the field
   party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
   window outlasts the `0x28`-frame near idle, while a card-load state is
@@ -646,6 +650,16 @@ engine verdict:
   across the stair rail drawn where retail's frame has it, and the two other
   Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
   `.988` / `.984` (`.954` / `.953`).
+
+  A state that holds no sheet says so too (`LEGAIA_SEAT_SPRITE_ARMS=none` on
+  every field and overworld state), and the install retires every sheet the
+  child holds. The child ran the scene from its entry, so an emitter that
+  fires on a script clock has spawned on the way: `bubu2`'s entry loop adds
+  `2` to slot `1` a frame and, past `30`, subtracts `80` and drops stager
+  record `2` at the player (`4C CB 01 02 00`, `4E 00 60 1E ..`, `4C CC 01 50 00`,
+  `B4 F8 30 01`), two breath-puff sheets (record `8`) that live about `60`
+  vsyncs. `bubu2_field_door_hop` holds slot `1` at `20` and no part at all, and
+  the child drew a pale disc in front of Vahn (`.998` to `1.000`).
 
   A mesh-bearing ambient part that turns is a clock of the same kind. The
   part tick adds its bank rates `+0x80..+0x84` to the render banks every
@@ -2812,7 +2826,15 @@ the battle-frame cadence; on that cadence the replay's fixed step can still land
 its last ramp up to a pass short of retail's own mixed-step lattice, so the
 depth is stood on retail's before arm 0 cuts on it), its accumulator has run as far through `0x6E` as
 retail's (less what the `0x6F` frames still to come add), and the yaw counter
-agrees. The yaw matters under retail's ease-out camera: the three Delilas
+agrees. The counter is compared as the releasing pass will leave it: that
+pass drifts it in the SM's prologue before its poll, so a hold released on
+the counter's current value let `0x6E` out one drift late
+(`battle_rugi_berserker_2_spore_gas_mid_cast` read counter `2076` against
+retail's `2072`, its case-6 yaw endpoint `4` off and outside the glide
+alignment, camera `.940`; released on the pass's value it reads `2072` and
+`1.000`, and `battle_map01_gomboo_steal_mid_cast` `.986` to `1.000`). A `0x70`
+capture's counter is stood back by its ticks inside the band, which already
+counts that pass, and keeps the plain compare. The yaw matters under retail's ease-out camera: the three Delilas
 specials (`che_delilas_megaton_press_mid_cast` and its two siblings) sit `34`
 frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
@@ -3495,7 +3517,10 @@ alone, in [`movie_run.rs`](../../crates/parity/src/retail_compare/movie_run.rs).
 Retail's frame reads 24-bit when the dispatch slot's `+0x04` colour flag says so.
 The engine's is the frame the stream word `DAT_801CAD90` names, through
 `psx_mdec`, centred in the 240-line display; the word runs ahead of the buffer
-on screen (`3` frames at most, the best taken and named in the detail).
+on screen (`3` frames at most, the best taken and named in the detail). A tie
+on `within` goes to the smaller `mae`: on a low-detail fade every candidate
+scores `1.000`, and the earliest of them is a step of the fade brighter than
+the frame retail showed (`movie_mv2_t900_retail`).
 [`autorun_movie_state.lua`](../../scripts/pcsx-redux/autorun_movie_state.lua) makes
 these states with op `4C E2`'s two stores.
 
@@ -4561,8 +4586,10 @@ A field entry script typically carries a one-hot **region selector** in
 walks op `0x42` mode 0 over the region-type mask `_DAT_8007B8F4` and, on a
 region whose bit is not yet the selected one, clears the band, sets that
 region's bit and re-applies its view window (op `0x46`) and camera region.
-The bit therefore records where the player stood the last time the system
-loop ran a pass - and the system SM `FUN_801DA51C` runs no pass while a
+The bit therefore records the mask the system loop last read - a latch of
+where the player last landed, not of the tile underfoot
+([field-locomotion](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)) -
+and the system SM `FUN_801DA51C` runs no pass while a
 record holds the player ([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)).
 
 `cort_evolved_approach_cutscene` holds `0x19F` while `jouind P2[4]` has Vahn
@@ -4793,16 +4820,17 @@ region the entry loop reads as `0x19D`. The captures hold `0x19F`, the loop's
 type-4 arm (`42 00 04` at `+0x15E`, set at `+0x1F6`).
 
 The region is recoverable where the spot is not. The region-type mask
-`_DAT_8007B8F4` is rebuilt by the field's per-tile refresh, and a fight leaves
-it as the field left it: on every battle capture that does hold a snapshot,
+`_DAT_8007B8F4` is a latch - rebuilt where the player last landed, not on each
+tile crossing ([field-locomotion](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)) -
+and a fight leaves it as the field left it: on every battle capture that does hold a snapshot,
 the scene's `.MAP` region table rebuilds the captured mask at the snapshot's
 tile. The
 seven snapshot-less states read `0x11` - a type-0 box inside the type-4 east
 half of the village - while their entry operand `(3776, 11712)` is a tile of
-mask `0x09`. So the player walked east before the fight, and the seed stands
+mask `0x09`. So the player last landed in the east half before the fight, and the seed stands
 it on the tile nearest the entry operand whose regions rebuild the captured
 mask (`RetailObs::seat_battle_on_region`; the report's `seat` detail names the
-tile). That is the region the player stood in, not the position: nothing in
+tile). That is the region the player last landed in, not the position: nothing in
 the state records the latter, and nothing a battle channel reads depends on
 it.
 

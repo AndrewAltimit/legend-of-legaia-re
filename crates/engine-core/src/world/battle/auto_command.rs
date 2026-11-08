@@ -75,8 +75,10 @@ impl World {
     /// engine's own swing roll. The window is written in every case, which is
     /// what retail's zero-fill loop at `0x801DA558` does.
     ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
     /// PORT: FUN_801DA34C
-    pub(in crate::world) fn preseed_auto_command_string(&mut self, actor: u8) -> usize {
+    pub fn preseed_auto_command_string(&mut self, actor: u8) -> usize {
         let band = self.auto_command_band(actor);
         let roster_slot = self.party_roster_slot(usize::from(actor));
         let (first, second) = match self.party.roster.members.get(roster_slot) {
@@ -117,8 +119,10 @@ impl World {
     /// actor (`+0x14C == 0`) or one whose action category is not the
     /// attack/arts band (`+0x1DE != 3`).
     ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
     /// PORT: FUN_801DA59C
-    pub(in crate::world) fn save_auto_command_string(&mut self, actor: u8) -> bool {
+    pub fn save_auto_command_string(&mut self, actor: u8) -> bool {
         let band = self.auto_command_band(actor);
         let roster_slot = self.party_roster_slot(usize::from(actor));
         let Some(a) = self.actors.get(usize::from(actor)) else {

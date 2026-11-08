@@ -30,9 +30,10 @@ impl Camera {
     ///
     /// PORT: FUN_801DE3E0
     /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C, FUN_801D1344
+    /// REF: FUN_800180EC, FUN_80017DD4, FUN_80017EC8, FUN_801DBA20
     pub(super) fn zone_follow_tick<W: CameraWorld + ?Sized>(&mut self, world: &W, dt: i32) {
         use crate::camera_zone::{ComposeInputs, compose, ease_step, ease_step_i16, snap};
-        use crate::field_regions::{RegionTable, refresh_region_attributes, zone_query};
+        use crate::field_regions::{RegionTable, zone_query};
         use crate::register_ramp::{CameraRegisterFile, RampSlot};
 
         let Some((x, y, z)) = world.player_world_pos() else {
@@ -51,16 +52,17 @@ impl Camera {
         let pending = std::mem::take(&mut self.zone.pending);
         let zone = &mut self.zone;
 
-        // 1. The attribute box. Retail latches it in `FUN_800180EC`, which
-        //    runs from the sub-area rebuild sweep `FUN_80017DD4` (and from
-        //    the `[4C 3D]` arm); the port refreshes it whenever the player
-        //    changes tile, which is the same box on every library state.
+        // 1. The attribute box: the world's latch of scratchpad
+        //    `0x1F800384..87`. Its one writer is `FUN_800180EC`, run from the
+        //    re-centres `FUN_80017DD4` / `FUN_80017EC8` (scene entry, warp
+        //    landing, leader swap, scripted player moves), the MAN load and
+        //    `[4C 3D]` - never from a walk, and not from the zone query
+        //    `FUN_801DBA20`. The render pass's own stores at PROT 0900
+        //    `0x801F7A34` / 0901 `0x801F737C` put back the values it saved on
+        //    entry. The camera used to re-latch on every tile crossing.
         let table = RegionTable::parse(world.map_region_block());
-        if zone.tile != Some(tile) || zone.reload_pending {
-            let (_, attrs) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
-            zone.attrs = attrs;
-            zone.tile = Some(tile);
-        }
+        zone.attrs = world.region_attributes();
+        zone.tile = Some(tile);
 
         // 2. The zone query + block load (`FUN_801DE3E0`). Never on a bare
         //    tile crossing: only on the seat / arrival, on a queued script
@@ -95,10 +97,8 @@ impl Camera {
                     zone.snap_pending = true;
                 }
                 R::SnapAndClamp => zone.snap_pending = true,
-                R::RefreshAttributes => {
-                    let (_, a) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
-                    zone.attrs = a;
-                }
+                // `[4C 3D]`: the world latched the box when the arm ran.
+                R::RefreshAttributes => zone.attrs = world.region_attributes(),
             }
         }
 

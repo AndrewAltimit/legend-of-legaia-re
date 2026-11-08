@@ -154,8 +154,8 @@ impl World {
     /// [`legaia_engine_system::story_flag_state::StoryFlagState::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
     /// field-VM op `0x42` mode 0 tests), latches the scratch attribute
     /// block, and re-selects the current camera-zone record. Called on
-    /// scene entry and on every player tile crossing
-    /// (`Self::live_field_tick`).
+    /// scene entry (the table install) and by the debug seat. A walk does
+    /// not call it: see [`Self::requery_region_mask_per_frame`].
     ///
     /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`legaia_engine_field::field_regions`])
     pub fn refresh_field_regions(&mut self) {
@@ -202,6 +202,109 @@ impl World {
         } else {
             self.terrain.zone_record = None;
         }
+    }
+
+    /// The region-type mask write at the head of the camera-zone query
+    /// `FUN_801DBA20` (`0x801DBA64..0x801DBAA0`): zero `_DAT_8007B8F4`, then
+    /// OR `1 << type` over every `.MAP` region holding `(tile_x, tile_z)`.
+    /// The routine bails before the write when the MAN section-3 table is
+    /// empty (`0x801DBA58`), and so does this.
+    ///
+    /// Its callers, through `FUN_801DE3E0`, are the field-VM arms `[4C 38]`,
+    /// `[4C 39]` and `[4C C4 x z]`, the warp landing (`0x801D1FF4`, at the
+    /// destination halved) and the per-frame path behind scratchpad bit 22.
+    ///
+    /// REF: FUN_801DBA20, FUN_801DE3E0
+    pub fn zone_query_region_mask(&mut self, tile_x: i32, tile_z: i32) {
+        if self.terrain.zone_table.first().copied().unwrap_or(0) == 0 {
+            return;
+        }
+        let table =
+            legaia_engine_field::field_regions::RegionTable::parse(&self.terrain.map_region_block);
+        self.flags.extra_flags =
+            legaia_engine_field::field_regions::region_type_mask(table.as_ref(), tile_x, tile_z);
+    }
+
+    /// `[4C 3D]` (`0x801E10F8`): `FUN_800180EC` at the player's tile
+    /// (`(coord - 0x40) >> 7`) - the region-type mask and the scratch
+    /// attribute box. The camera's own copy of the box is the queued
+    /// [`legaia_engine_field::camera::CameraZoneRequest::RefreshAttributes`].
+    ///
+    /// REF: FUN_800180EC
+    pub fn refresh_region_attributes_at_player(&mut self) {
+        if self.terrain.map_region_block.is_empty() {
+            return;
+        }
+        let Some((tx, tz)) = self.player_query_tile() else {
+            return;
+        };
+        let table =
+            legaia_engine_field::field_regions::RegionTable::parse(&self.terrain.map_region_block);
+        let (mask, attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
+            table.as_ref(),
+            tx,
+            tz,
+            self.mode == SceneMode::WorldMap,
+        );
+        self.flags.extra_flags = mask;
+        self.terrain.region_attributes = attrs;
+    }
+
+    /// The player's tile as the `0x4C` camera arms take it: `(coord - 0x40)
+    /// >> 7`, the inverse of the tile-centre seat `tile * 0x80 + 0x40`.
+    pub fn player_query_tile(&self) -> Option<(i32, i32)> {
+        let a = self.actors.get(usize::from(self.player_actor_slot?))?;
+        Some((
+            (i32::from(a.move_state.world_x) - 0x40) >> 7,
+            (i32::from(a.move_state.world_z) - 0x40) >> 7,
+        ))
+    }
+
+    /// Retail's only **per-frame** writer of the region-type mask, in the
+    /// player's field tick `FUN_801D1344` (`0x801D17DC..0x801D1830`): with
+    /// scratchpad bit 22 raised ([`crate::world::ZONE_REQUERY_FLAG`]),
+    /// `FUN_801DE234` and then `FUN_801DE3E0` at the tile `(coord + 0x40) >>
+    /// 7`, both rebuilding `_DAT_8007B8F4` there. The branch runs on the
+    /// frames the tick reaches the camera ease (`s3 != 0`): scratchpad bit
+    /// 16 raised, or a player free of the `+0x10 & 0x80000` lock with
+    /// scratchpad `0x400` clear (`0x801D1634..0x801D16C0`).
+    ///
+    /// With the bit clear the mask holds whatever the last latch wrote: the
+    /// scene-entry and warp-landing re-centres (`FUN_80017DD4` /
+    /// `FUN_80017EC8` -> `FUN_800180EC`), the scripted player moves, `[4C
+    /// 3D]` and the zone queries. A walk does not touch it. The port used to
+    /// re-run `FUN_800180EC` on every tile crossing, which in a scene whose
+    /// room regions overlap by a tile put two room bits in the mask at once:
+    /// `conc`'s system script then re-installed the two rooms' floor ladders
+    /// on alternate passes, every tier of the drawn map jumping hundreds of
+    /// units a frame (`docs/subsystems/field-locomotion.md`, "The region-type
+    /// mask is a latch").
+    ///
+    /// REF: FUN_801D1344, FUN_801DE234, FUN_801DE3E0, FUN_80017DD4, FUN_80017EC8
+    pub fn requery_region_mask_per_frame(&mut self) {
+        if !self.camera_zone_requery_per_frame() || self.terrain.map_region_block.is_empty() {
+            return;
+        }
+        let story = self.flags.story_flags;
+        let eases = story & legaia_engine_field::camera::CAMERA_LOCKED_EASE_FLAG != 0
+            || (!self.field_player_movement_locked()
+                && story & legaia_engine_field::camera::CAMERA_HOLD_FLAG == 0);
+        if !eases {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(a) = self.actors.get(usize::from(slot)) else {
+            return;
+        };
+        let tx = (i32::from(a.move_state.world_x) + 0x40) >> 7;
+        let tz = (i32::from(a.move_state.world_z) + 0x40) >> 7;
+        let table =
+            legaia_engine_field::field_regions::RegionTable::parse(&self.terrain.map_region_block);
+        // `FUN_801DE3E0`'s own rewrite at the same tile is the same mask.
+        self.flags.extra_flags =
+            legaia_engine_field::field_regions::region_type_mask(table.as_ref(), tx, tz);
     }
 
     /// Apply one field-VM `0x4C` outer-nibble-7 rectangular wall paint to
@@ -296,6 +399,19 @@ impl World {
             world_z,
             &self.terrain.floor_height_lut_static,
         );
+        self.with_expansion_floor_top(y, world_x, world_z)
+    }
+
+    /// The same sample taken through the ladder the scene's bound placed
+    /// objects were spawned against
+    /// ([`crate::world::FieldTerrain::placed_spawn_lut`], `FUN_8003A55C`'s
+    /// ladder) - the fixed frame a host bakes a floor-following placed
+    /// draw in, so the live ladder can reach it as a per-frame displacement
+    /// ([`Self::object_draw_displacements`]).
+    // REF: FUN_8003A55C, FUN_80019278
+    pub fn sample_field_floor_height_spawned(&self, world_x: i32, world_z: i32) -> i32 {
+        let y =
+            self.sample_field_floor_height_with(world_x, world_z, &self.terrain.placed_spawn_lut);
         self.with_expansion_floor_top(y, world_x, world_z)
     }
 

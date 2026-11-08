@@ -276,7 +276,7 @@ fn the_world_hand_off_installs_riremito_and_warps_to_the_frozen_tile() {
     // The end-to-end path a player takes: the sub-list picker's row-1 confirm
     // is retail's state-3 hand-off, which the port binds to the travel art.
     let mut w = overworld();
-    w.world_map.ctrl.as_mut().expect("controller").debug_enabled = true;
+    w.set_world_map_dev_panel_chords(true);
     for _ in 0..4 {
         frame(&mut w, 0);
     }

@@ -2,12 +2,14 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 #[test]
-fn field_tile_crossing_refreshes_region_state() {
-    // Wiring oracle for the per-tile region ports (FUN_80017FBC /
-    // FUN_800180EC / FUN_801DBA20 in `legaia_engine_field::field_regions`): install a
-    // synthetic `.MAP` region block + MAN zone table, cross a tile in a
-    // live field tick, and assert the op-0x42 mask (`extra_flags`) and the
-    // camera-zone record refresh.
+fn field_tile_crossing_keeps_the_latched_region_mask() {
+    // The region-type mask (`extra_flags`, `_DAT_8007B8F4`) is a latch.
+    // Retail rewrites it at the re-centres, the zone queries and `[4C 3D]`,
+    // and per frame only behind scratchpad bit 22 (`FUN_801D1344`,
+    // `0x801D17DC..0x801D1830`); a walk's tile crossing never does. Install
+    // a synthetic `.MAP` region block + MAN zone table, cross a tile in a
+    // live field tick, and assert the mask holds - then raise bit 22 and
+    // assert the per-frame path rebuilds it at `(coord + 0x40) >> 7`.
     use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
 
     // .MAP region block: one type-4 region covering tiles x [0,8), z [0,8),
@@ -35,26 +37,33 @@ fn field_tile_crossing_refreshes_region_state() {
     world.actors[0].move_state.world_z = 0x40 + 5 * 0x80;
     world.load_field_region_tables(&block, &zone);
 
-    // Initial refresh: inside the type-4 region, no zone match.
+    // The install latches at the seat: inside the type-4 region.
     assert_eq!(world.flags.extra_flags, 1 << 4);
     assert!(world.terrain.zone_record.is_none());
 
-    // Prime the tile latch, then cross into the type-5 region.
+    // Walk into the type-5 region: the latch holds.
     world.tick();
     world.actors[0].move_state.world_x = 0x40 + 9 * 0x80;
     world.tick();
+    assert_eq!(
+        world.flags.extra_flags,
+        1 << 4,
+        "a tile crossing must not rebuild the mask"
+    );
 
+    // Bit 22 raised: the player tick rebuilds it every frame.
+    world.flags.story_flags |= crate::world::ZONE_REQUERY_FLAG;
+    world.tick();
     assert_eq!(
         world.flags.extra_flags,
         1 << 5,
-        "mask rebuilt on tile crossing"
+        "bit 22 re-queries per frame"
     );
-    let rec = world
-        .terrain
-        .zone_record
-        .expect("kind-5 zone record selected");
-    assert_eq!(rec[0], 5);
-    assert_eq!(rec[5], 0xAB, "payload carried through");
+
+    // The `[4C C4 x z]` query's own mask write, at an explicit tile.
+    world.flags.story_flags &= !crate::world::ZONE_REQUERY_FLAG;
+    world.zone_query_region_mask(3, 3);
+    assert_eq!(world.flags.extra_flags, 1 << 4);
 }
 
 #[test]

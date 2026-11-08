@@ -127,3 +127,47 @@ fn an_out_of_range_record_binds_an_inert_context() {
             .position(|c| c.ctx.script_id == 9)
     );
 }
+
+/// A floor follower (`+0x10 & 0x20000`, `FUN_8003BC08`'s snap arm) is baked on
+/// the floor under the ladder the scene spawned its objects against, and a
+/// ladder a script installs later reaches the draw as this frame's
+/// displacement - whenever the host built its placed layer. `rikuroa`'s
+/// summit arm (`4C 9E`, rung 8 to `-920`) is the case: a cliff baked on the
+/// live floor at scene setup stood `664` units under the player.
+#[test]
+fn a_floor_follower_rides_a_ladder_installed_after_spawn() {
+    let (man_file, man) = one_record_man();
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    w.seed_field_channels(&man_file, &man);
+    let tile = (10u8, 10u8);
+    w.seed_object_channels(&man_file, &man, &[bind(0, tile)]);
+    let c = w
+        .field_vm
+        .channels
+        .iter_mut()
+        .find(|c| c.object_bind)
+        .expect("the object's context");
+    c.ctx.flags |= 0x0002_0000;
+    // Every tile on tier 8; the spawn ladder is the header's linear ramp.
+    w.terrain.collision_grid = vec![8u8; 0x4000];
+    w.terrain.object_cells = vec![0u16; 0x4000];
+    let linear: [i16; 16] = std::array::from_fn(|i| -(i as i16) * 32);
+    w.terrain.placed_spawn_lut = linear;
+    w.terrain.floor_height_lut = linear;
+    let follow = w.object_floor_follow_records();
+    assert!(follow.contains(&0));
+    let (x, z) = (
+        i32::from(tile.0) * 128 + 0x40,
+        i32::from(tile.1) * 128 + 0x40,
+    );
+    assert_eq!(w.object_floor_follow_y(&follow, 0, x, z), Some(-256));
+    assert!(w.object_draw_displacements().is_empty());
+
+    // The script installs the summit ladder: the bake stays, the draw rises.
+    w.terrain.floor_height_lut[8] = -920;
+    assert_eq!(w.object_floor_follow_y(&follow, 0, x, z), Some(-256));
+    assert_eq!(w.object_draw_displacements().get(&0), Some(&[0, -664, 0]));
+}

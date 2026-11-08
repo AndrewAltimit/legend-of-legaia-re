@@ -246,11 +246,12 @@ impl World {
     /// one from the stager record; surplus live nodes and nodes of a record
     /// retail holds none of are retired. The image
     /// child of the retail comparison calls this on the frame it captures,
-    /// as it installs the fog pool. A no-op for an empty snapshot.
+    /// as it installs the fog pool. An empty snapshot is a state that holds
+    /// no sheet, and retires every live one: `bubu2`'s entry loop drops a
+    /// breath puff (stager record 2, two record-8 sheets) at the player
+    /// whenever its counter wraps, so a child that ran the scene from its
+    /// entry holds puffs the captured frame had already lost.
     pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
-        if seeds.is_empty() {
-            return;
-        }
         let is_sheet = |p: &AmbientPart| {
             !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
         };

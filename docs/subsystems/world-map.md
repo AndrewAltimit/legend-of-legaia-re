@@ -114,7 +114,15 @@ stateDiagram-v2
   (`0x801D01F8..0x801D0238`): when the per-scene byte `_DAT_8007B6A8` is set
   (the three kingdom maps) and the newly-pressed word `_DAT_8007B874 & 0x4`
   (packed L1) is up, it cues SFX `0x20` (`FUN_80035B50`) and stores `1` to the
-  ramp `_DAT_8007BAF4`.
+  ramp `_DAT_8007BAF4`. Only L1 arms it; no other shoulder button does
+  anything on the walk frame.
+- **When L1 does nothing.** The controller's first test
+  (`0x801D01E4..0x801D01F0`) jumps past the arm while the player's engaged
+  bit `player+0x10 & 0x80000` is up - a running script record, a committed
+  fight, a door crossing - and `FUN_801D1344` does not call the controller at
+  all under the scene load's post-warp hold `_DAT_8007B6B4`
+  (`0x801D16C8..0x801D16E4`). An L1 edge then cues nothing and seeds no ramp.
+  The arm reads no debug flag.
 - **Ramp.** While the ramp is non-zero `FUN_801D1344` suppresses locomotion
   (`player+0x10 |= 0x80000`) and ticks `FUN_800196A4` instead. That routine
   adds `DAT_1F800393 << 5` per frame, draws a full-screen grey quad
@@ -128,7 +136,17 @@ stateDiagram-v2
 Port: `WorldMapController` models the arm and the ramp
 (`WorldMapEntryFade`, port of `FUN_800196A4`) and raises
 `map_display_requested` when the ramp completes; `World::tick_world_map`
-opens [the map display](#the-map-display---prot-0981) on it. The ramp's quad
+opens [the map display](#the-map-display---prot-0981) on it. The engaged-bit
+skip is `World::world_map_player_engaged`, and while the ramp is live
+`World::step_world_map_locomotion` stands the player still, as the head of
+`FUN_801D1344` does (`0x801D1368..0x801D1388`), so a held d-pad cannot walk
+the party into a door or an encounter tile in the eight frames before the
+display opens. The arm fires in walk view whatever the top-view camera's
+`debug_enabled` says, and yields L1 only to the port's
+[developer panel chords](#the-chords-that-install-an-actor), which are an
+explicit opt-in: those chords bind L1 to the FadeFlash actor, whose
+white-out and Riremito hand-off took the press on a scene-picker entry when
+the picker armed them. The ramp's quad
 reaches both hosts as a `FUN_80024EE4` push
 (`World::map_display_fade_push_args`).
 
@@ -894,11 +912,15 @@ Three inputs are the **port's**, not retail's:
   installs the panel script at `0x801F2A88` (one `CloseAll` record in the
   PROT 0897 image), then it pumps and clears the completion gate while the
   input lock is down, and the actor retires.
-- **The chords that install an actor.** Retail reaches this band from debug
-  branches in the controller. The engine gates it behind the top-view toggle's
-  `debug_enabled` flag and binds Square (sub-list), L1 (fade/flash, pressed
-  again to release), L2 (fill fade), R1 (flag window), R2 (text box) and Start
-  (soft reset), walk mode only. The sub-list's state-3 hand-off installs the
+- <a id="the-chords-that-install-an-actor"></a>**The chords that install an
+  actor.** Retail reaches this band from debug branches in the controller.
+  The engine binds Square (sub-list), L1 (fade/flash, pressed again to
+  release), L2 (fill fade), R1 (flag window), R2 (text box) and Start (soft
+  reset), walk mode only, behind `WorldMapState::dev_panel_chords` - the
+  hosts' developer opt-in (the native `LEGAIA_DEV_MENU`, the play page's
+  dev-menu switch), not the top-view camera's `debug_enabled`, which a scene
+  picker arms. The chords are the port's bindings and L1 among them is
+  retail's map-display arm. The sub-list's state-3 hand-off installs the
   Riremito travel art, and Square while an actor is up dismisses it.
 
 #### The per-entry equipment sub-panel
@@ -1475,7 +1497,10 @@ GARMEL. `P0[10]`, the Drake castle door, runs the same `0x142` `dolk` /
 every object bind's flat record against the live flags
 (`man_field_scripts::flat_record_path_walk`) and installs an
 `OverworldPortal` with `object: true` at the object's contact centre for each
-path ending in a `0x3F`; the crossing replays the flag writes along that path.
+path ending in a `0x3F`; the crossing replays the flag writes along that path. The scene picker's arrival catalog counts the same mouths as entrances
+(`man_edit::site_record_slots` joins the `0x3F` to its partition-0 record and
+the record to its gate-0 bind), so a picked `garmel` enters where the Garmel
+mouth lands, tile `(0x14, 0x09)`.
 The object is solid, so the portal engages on **contact**: the player's
 position or one of the leading actor probes (`FIELD_ACTOR_PROBES`) inside the
 `+-0x50` static box, the points `FUN_801CFE4C` both refuses the step with and
@@ -2417,6 +2442,34 @@ landmark on model `32` (`+0x64 = 37` over a bank base of `5`). The swap lands
 on `World::object_live_models` (the table op `0x0E` writes) and the seat on
 `World::object_draw_displacements`; the native landmark pass and the browser
 page's overworld placements both draw a landmark's first stamp from the two.
+
+**A landmark whose bind names a clip is posed by it.** The init sweep copies
+the bind header's anim byte into `+0x5C` on the overworld as in a town, so a
+multi-object landmark draws through `FUN_8001B964` (draw kind `1`) at its
+clip frame ([`field-locomotion.md`](field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose)).
+The kingdom maps carry four: `map01` record 409 (clip 5), `map02` records
+476 / 477 (clip 4, three stamps) and `map03` record 458, Conkram's shell lid
+(pack mesh 16 at cell `(66, 104)`, clip 4: ANM record 3, one bone, 15
+frames). The town under it is the decoration cell `459` (mesh 17) and the
+window sweep's record 457 (mesh 15, draw kind `5`, unposed). The lid's frame
+0 lifts it `160` units, moves it `264` units north and pitches it back
+(`r_x = 0xEA0`); its bind prologue picks frame 0 or the last frame on flag
+`0x4C8`. A retail capture beside the town holds the lid actor at `+0x56 = 1`,
+`+0x5C = 4`, `+0x62 = 0x1F`, cursor `0`. Both hosts draw these landmarks
+posed: the native window through the posed-prop pass the field's doors use
+(`resolve_world_map_draws` leaves them out of the static stamps), the page by
+carrying the bind's clip id on the landmark (`build_field_render`). Drawn
+unposed, Conkram's lid lay flat in front of the town; posed off both prologue
+arms at once, it lay over the town. The other two pick their arm on a flag
+the same way: `map02`'s three stamps test `0x1D5` (`71 D5 05 00`), set
+holding frame 0 (`4C 35`) and clear looping the clip, and `map01` record 409
+snaps to frame 0 and then, with `0x27B` set (`72 7B 05 00`), to its last
+frame (`4C 36`). Every retail `map02` state in the library has `0x1D5` up and
+holds the stamps at `+0x62 = 0x1F`, cursor `0`; a `map01` state with `0x27B`
+up holds record 409 at `+0x62 = 0x9F`, cursor `304` (frame 19 of 20). The
+engine's bank reads the same words in the image child. Disc-gated:
+`crates/engine-scene-host/tests/map03_conkram_shell_disc.rs`,
+`crates/web-play/tests/map03_conkram_shell_page.rs`.
 
 **An overworld MAN actor's height is the actor driver's, as in a field.**
 `FUN_8003BC08` runs its height arm (`0x8003BC3C..0x8003BCF4`) on every

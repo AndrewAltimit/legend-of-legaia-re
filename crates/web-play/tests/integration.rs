@@ -22,6 +22,7 @@ mod expansion_map_page;
 mod fishing_banner_ladder;
 mod fishing_line_hosts;
 mod fog_page_prims;
+mod map03_conkram_shell_page;
 mod map_display_pointer_page;
 mod menu_depth_ladder;
 mod menu_parity;

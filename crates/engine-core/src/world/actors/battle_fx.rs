@@ -243,6 +243,19 @@ impl World {
         {
             a.battle_anim_cue_cursor = walk.cursor;
         }
+        // Each cry the walk reached bumps the seat's record `+0x98`, the
+        // records page's Knockouts word (`lw` / `addiu 1` / `sw 0x660` off the
+        // save block at `0x800509E0..0x800509EC`), ahead of the mute and CD
+        // gates.
+        let rslot = self.party_roster_slot(i);
+        if party
+            && walk.shout_tally > 0
+            && let Some(rec) = self.party.roster.members.get_mut(rslot)
+        {
+            let mut r = rec.battle_records();
+            r.knockouts = r.knockouts.wrapping_add(walk.shout_tally);
+            rec.set_battle_records(r);
+        }
         for emit in walk.emits {
             match emit {
                 AnimCueEmit::Route { id, slot } => self.route_battle_cue(id, slot),
@@ -891,7 +904,18 @@ impl World {
             else {
                 continue;
             };
-            let Some(plan) = self.battle_actor_draw_plan(i, None, 4.0, false) else {
+            // The loop sits in the pose decode, which only the draw callback
+            // `FUN_80048A08` reaches, and the draw tick `FUN_800480D8` calls
+            // that callback only for a body it draws (`jal 0x80048A08` at
+            // `0x800482E0` / `0x800482F8`): a zero colour word past the grey
+            // gate returns at `0x800481E4` / `0x80048234` with no decode. So a
+            // body a module hid (`+0x04 = 0`, `+0x21C = 0xFF`) sheds nothing,
+            // whatever selector it still holds - Aluru's victim keeps its `2`
+            // from arm `0x12` through the Done band.
+            let Some(plan) = self
+                .battle_actor_draw_plan(i, None, 4.0, false)
+                .filter(|p| p.drawn)
+            else {
                 continue;
             };
             let a = &self.actors[i];

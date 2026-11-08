@@ -127,11 +127,11 @@ fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 10 | hold while the creature's `+0x21B` reads `0xFF` ([`NIGHTO_LOOP_SENTINEL`]), clip `2` committed ([`NIGHTO_SUMMON_CLIP`]) | pitch `0`, yaw `0x800 - f`, TR `(0, 0x700, 0x480)`, over `0x80` frames; spawns [`NIGHTO_SONG_SPAWNS`]; `ctx[+0x6D8] = scalar << 7` |
 /// | 11 | drain, hold while non-negative | spawns [`NIGHTO_RING_SPAWNS`] |
 /// | 12 | - | snap: yaw `-f`, TR `(0, 0x500, 2 * ctx[+0x6D0] / 3)`, focus the victim; `ctx[+0x6D8] = scalar * 160` |
-/// | 13 | drain, hold while non-negative | the fork (the body's) |
+/// | 13 | drain, hold while non-negative | the fork (the body's); clears the attack name (`FUN_800319A8(0)` at `0x801F7DF0`) |
 /// | 14 | drain | the kill leg's settle: the body holds on the victim's fade |
 /// | 15 | drain, hold while non-negative | the confuse leg |
 ///
-/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the arm 7/8 captions, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's `+0x21B` loop-counter gate, arm 6's creature placement, the TR z drift of arms 5..7 and the spawn calls of arms 4/5/10/11)
+/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the arm 7/8 captions and arm 13's clear, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's `+0x21B` loop-counter gate, arm 6's creature placement, the TR z drift of arms 5..7 and the spawn calls of arms 4/5/10/11)
 pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -307,7 +307,13 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = NIGHTO_FORK_PENDING;
-            ArmDirection::PASS
+            // The fork opens the message bar (`FUN_801D8DE8(0x5B, 0)` at
+            // `0x801F7DDC`) and frees the attack name's text actor
+            // (`FUN_800319A8(0)` at `0x801F7DF0`) on both legs.
+            ArmDirection {
+                caption: Some(ModuleCaption::Cleared),
+                ..ArmDirection::PASS
+            }
         }
         14 => {
             nighto_leg_countdown(st, NIGHTO_KILL_SETTLE_PER_SCALAR);

@@ -97,7 +97,7 @@ pub use ctx::*;
 pub use host::*;
 pub use types::*;
 
-pub use step::{step, step_with_caller};
+pub use step::{step, step_from_caller, step_with_caller};
 
 mod step;
 

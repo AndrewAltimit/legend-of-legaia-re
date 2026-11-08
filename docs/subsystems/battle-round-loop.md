@@ -767,7 +767,7 @@ A magic-rank-up + character-level-up save triplet, diffed with the `mednafen-sta
 | Event | Offset | Before -> After | Interpretation |
 |---|---|---|---|
 | Magic-rank up | `+0x08` | `0x30 -> 0x3C` | `spell_counter[0]` (+12), the u32 array entry - not a flag word |
-| Magic-rank up | `+0x9C` | `0x09 -> 0x0A` | magic-rank counter (+1) |
+| Magic-rank up | `+0x9C` | `0x09 -> 0x0A` | Monsters Defeated (+1): the cast felled a monster ([records words](../formats/save-record.md#the-battle-records-words)) |
 | Magic-rank up | `+0x10A` | `0x1B -> 0x11` | low byte of `mp_cur` (cast cost spent) |
 | Magic-rank up | `+0x161` | `0x02 -> 0x03` | spell-level array (`spell_levels[0]` +1) |
 | Level-up | `+0x00` | `0x4F -> 0x73` | low byte of the cumulative XP `u32` (+36 from the fight) |

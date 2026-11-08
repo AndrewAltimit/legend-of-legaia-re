@@ -457,7 +457,7 @@ fn scripted_battle_handles_0xff_op0() {
 }
 
 #[test]
-fn warp_minigame_door_path_advances_6_and_clears_flag() {
+fn warp_minigame_door_path_advances_6_and_releases_the_players_lock() {
     // op0 = 105 (>= 100) → the mode-24 minigame door warp. sub_id = 5.
     //
     // This used to assert `scene_transitions == [5]`, which was the defect:
@@ -476,10 +476,10 @@ fn warp_minigame_door_path_advances_6_and_clears_flag() {
         host.scene_transitions.is_empty(),
         "the door-warp arm must not reach the map-id transition"
     );
-    // Bit 0x80000 cleared on the active ctx.
-    assert_eq!(ctx.flags & 0x80000, 0);
-    // Other bits preserved.
-    assert_eq!(ctx.flags & 0x40000, 0x40000);
+    // Bit 0x80000 comes off the player object, through the host; the
+    // context running the script keeps every bit.
+    assert_eq!(host.player_walk_lock_releases, 1);
+    assert_eq!(ctx.flags, 0xFFFF_FFFF);
 }
 
 // -- 0x46 RENDER_CFG ------------------------------------------------
@@ -555,7 +555,8 @@ fn animate_advances_3_plus_4_count_and_writes_flags() {
     assert_eq!(ctx.local_flags & 0x1000, 0x1000);
     assert_eq!(ctx.local_flags & 0x0C00, 0); // bits 10, 11 cleared by mask
     assert_eq!(ctx.local_flags & 0x2000, 0); // bit 13 cleared
-    assert_eq!(ctx.face_rotation, 2);
+    assert_eq!(ctx.anim_count, 2);
+    assert_eq!(ctx.face_rotation, 0, "+0x6D is not the count's byte");
     assert_eq!(host.animations.len(), 1);
     assert_eq!(host.animations[0].0, 7);
     assert_eq!(host.animations[0].1, 2);

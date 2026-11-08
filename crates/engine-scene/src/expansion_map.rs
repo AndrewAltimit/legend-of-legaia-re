@@ -69,8 +69,10 @@ const TRIGGER_BLOCK_OFFSET: usize = 0x10000;
 
 /// The number of object records a map has (`0x4000 / 0x20`).
 const RECORD_SLOTS: usize = 0x4000 / OBJECT_RECORD_STRIDE;
-/// The first record a pack map allocates: past the empty record 0 and the
-/// protagonist / NPC object ids `1..=3`.
+/// The first record a pack map allocates: past the empty record 0 and records
+/// `1..=3`. Retail draws a placed record on those ids like any other
+/// (`legaia_scene_formats::field_objects::pack_mesh_index`); the builder skips
+/// them only so its record layout stays where every built map already has it.
 const FIRST_FREE_RECORD: usize = 4;
 
 /// Record flags of a ground-texture cell: bit `0x1`, which the grid-mark
@@ -899,11 +901,9 @@ fn write_objects(
     let kept = KeptFloor::new(def, grid, base.base_map.filter(|_| keep));
     let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
-    // Record 0 is the empty slot every unnamed cell points at, and object
-    // ids 1..=3 name the protagonist / NPC meshes, which the field draw never
-    // takes from the scene pack (`pack_mesh_index`), so a mesh in one of them
-    // would not draw. In a kept base map the free slots are the all-zero
-    // records past those.
+    // Record 0 is the empty slot every unnamed cell points at; records 1..=3
+    // are left alone too (see `FIRST_FREE_RECORD`). In a kept base map the
+    // free slots are the all-zero records past those.
     let mut free: Vec<usize> = (FIRST_FREE_RECORD..RECORD_SLOTS)
         .filter(|&i| {
             !keep

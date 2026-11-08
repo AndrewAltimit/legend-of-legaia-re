@@ -147,10 +147,9 @@ sweep to the whole `+0x131..+0x13B` span leaves only false positives inside
 asset entries. So the record's displayed level is `+0x130` alone and `+0x131`
 carries no runtime meaning.
 
-That also retires the "magic-rank candidate" reading. The magic-rank counter is
-a *different* byte and is already capture-pinned at record `+0x9C`
-(`0x09 → 0x0A` across a magic-rank-up save pair; see
-[battle.md](../subsystems/battle.md)).
+That also retires the "magic-rank candidate" reading: the record keeps a
+spell's rank in its spell-level array, and `+0x9C`, once read as a rank counter,
+is the Monsters Defeated word ([save-record.md](save-record.md#the-battle-records-words)).
 
 The starting-level randomizer seeds the whole growth-capable party
 (Vahn / Noa / Gala) at level `N` with same-size in-place edits to the seed routine.

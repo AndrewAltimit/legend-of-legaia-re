@@ -20,8 +20,8 @@ const PACKET_LENGTH: u32 = 0x8003_CA38;
 
 /// Answers what stubbed calls and clear RAM answer in the VM: every call returns
 /// zero, the resolver finds a context, the frame step is `1`.
-struct Inert {
-    hit: bool,
+pub(crate) struct Inert {
+    pub(crate) hit: bool,
 }
 impl FieldFlagsHost for Inert {
     fn global_flags(&self) -> u32 {
@@ -107,7 +107,7 @@ fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Every distinct instruction on the disc, once, with the script around it.
-fn corpus() -> Vec<(Vec<u8>, usize, String)> {
+pub(crate) fn corpus() -> Vec<(Vec<u8>, usize, String)> {
     let disc = disc().unwrap();
     let mut seen: BTreeSet<Vec<u8>> = BTreeSet::new();
     let mut out = Vec::new();

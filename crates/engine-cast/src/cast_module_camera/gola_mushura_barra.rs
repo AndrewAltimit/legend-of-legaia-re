@@ -405,6 +405,13 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         cut([pitch, yaw], [tr[0], tr[1], raw_tr_z(tr[2])], [0; 3], 1)
     };
     let depth = i32::from(seats.depth_raw as i16);
+    // Arms 3 and 4 store TR z `0xFFFF` as a word (`sw` at `0x801F6E68` and
+    // `0x801F6F3C`): the global reads `65535` and arms 4 / 5 pull it in from
+    // there. Through the builder's halfword it would wrap to `-13109`.
+    let far_store = |dir: ArmDirection| ArmDirection {
+        tr_z_store: Some(0xFFFF),
+        ..dir
+    };
     match phase {
         0 => {
             let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -443,7 +450,7 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
             st.creature = Some(ModuleSeat::default());
             st.ramp = 0xFFFF;
-            store(0, 0x800, [0, 0x400, 0xFFFF])
+            far_store(store(0, 0x800, [0, 0x400, 0]))
         }
         4 | 5 => {
             st.ramp -= BARRA_PULL;
@@ -453,7 +460,7 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
             if phase == 4 {
                 st.ramp = 0xFFFF;
-                return store(0x60, 0, [0, 0x400, 0xFFFF]);
+                return far_store(store(0x60, 0, [0, 0x400, 0]));
             }
             st.countdown.0 = 0;
             // `+0x1DC` and `+0x1DA` both bumped (`0x801F703C..0x801F7058`):

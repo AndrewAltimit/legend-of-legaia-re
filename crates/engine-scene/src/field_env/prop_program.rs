@@ -221,19 +221,30 @@ pub fn decode_prop_program_with(
     };
 
     let mut prog = PropProgram::default();
-    // The cursor the first touch resumes from, and the pass's flag writes,
-    // are the flagged run's. The clip words and class bits are still read
-    // off the linear walk, both arms of a branch together: a door whose
-    // "already opened" arm sets `31 00` and `4C 36` therefore spawns
-    // exempt and drawn open whatever its flag says, as it always has here.
-    // Retail spawns a locked door solid (`dolk` P0[15..18], the Sunrise
-    // and sister gates, test `0x270..0x273`), and the ladder's routes still
-    // pass through those doors unopened, so that half stays as it was.
-    let (_, parked) = run_spawn_prologue(record, pc0, flags);
+    // The cursor the first touch resumes from, the pass's flag writes and
+    // the clip words are the flagged run's: retail executes one arm of each
+    // flag test, so a two-state prop poses from the arm its flag picks.
+    // Conkram's shell on `map03` (P0[0]) is `74 C8 07` over `4C 35` (frame
+    // 0, the lid standing open) and `4C 36` (the last frame); both arms
+    // together left the lid on the last frame, lying over the town.
+    //
+    // The class bits are still read off the linear walk, both arms of a
+    // branch together: a door whose "already opened" arm sets `31 00`
+    // therefore spawns exempt whatever its flag says. Retail spawns a
+    // locked door solid (`dolk` P0[15..18], the Sunrise and sister gates,
+    // test `0x270..0x273`), and the ladder's routes still pass through
+    // those doors unopened, so that half stays as it was.
+    let flagged = flags.is_some();
+    let (executed, parked) = run_spawn_prologue(record, pc0, flags);
     let (prologue, _) = run_spawn_prologue(record, pc0, None);
+    if flagged {
+        prog.spawn = executed.iter().filter_map(anim_cmd).collect();
+    }
     for insn in &prologue {
         if let Some(c) = anim_cmd(insn) {
-            prog.spawn.push(c);
+            if !flagged {
+                prog.spawn.push(c);
+            }
         } else if insn.extended.is_none()
             && insn.opcode == 0x31
             && let InsnInfo::CFlag {

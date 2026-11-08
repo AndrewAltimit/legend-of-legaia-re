@@ -183,7 +183,7 @@ options, window size and position, the view and preview tab last open, the
 character or monster and the movie last open, each view's left panel width,
 theme and zoom) live in `legaia-explorer/settings.json` under the per-user
 config folder. The window position is restored only when its title bar
-would land on a monitor that is still connected (`placement`, checked
+would land on a monitor that is still connected (`legaia_app_theme::placement`, checked
 against the monitors the windowing system reports as the event loop
 starts); otherwise the window opens centred.
 

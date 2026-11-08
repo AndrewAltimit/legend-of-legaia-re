@@ -114,6 +114,36 @@ pub const MAGIC_GROUP_STRIDE: usize = 12;
 
 // --- Sub-structs -----------------------------------------------------------
 
+/// The four per-character battle-records words the records page
+/// `FUN_801ED710` prints, each a full `u32` (the page clamps the display, not
+/// the word). Retail addresses them off the save block `0x80084140`, so each
+/// displacement there is the record offset plus `0x5C8`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BattleRecords {
+    /// `+0x98`: one per character cry the battle cue walker `FUN_800508DC`
+    /// reaches (`0x800509BC..0x800509EC`), counted before the mute and CD
+    /// gates.
+    pub knockouts: u32,
+    /// `+0x9C`: one per monster death committed while a party member holds
+    /// the action (`FUN_8004AD80`, `0x8004B184..0x8004B1F4`).
+    pub monsters_defeated: u32,
+    /// `+0xE8`: the largest string total the combo readout has shown.
+    pub max_damage: u32,
+    /// `+0xEC`: the largest hit count the combo readout has shown.
+    pub max_hits: u32,
+}
+
+impl BattleRecords {
+    /// Record offset of [`Self::knockouts`].
+    pub const KNOCKOUTS: usize = 0x98;
+    /// Record offset of [`Self::monsters_defeated`].
+    pub const MONSTERS_DEFEATED: usize = 0x9C;
+    /// Record offset of [`Self::max_damage`].
+    pub const MAX_DAMAGE: usize = 0xE8;
+    /// Record offset of [`Self::max_hits`].
+    pub const MAX_HITS: usize = 0xEC;
+}
+
 /// HP / MP / SP triplet: each pair is (**maximum, current**) at
 /// `+0x104..0x110` - `+0x104/+0x108/+0x10C` hold the effective maxima and
 /// `+0x106/+0x10A/+0x10E` the current values.
@@ -616,6 +646,30 @@ impl CharacterRecord {
         self.raw[LEVEL_OFFSET] = level;
     }
 
+    /// The four battle-records words the records page `FUN_801ED710` prints
+    /// for this character (see [`BattleRecords`]).
+    pub fn battle_records(&self) -> BattleRecords {
+        let w = |off: usize| u32::from_le_bytes(self.raw[off..off + 4].try_into().unwrap());
+        BattleRecords {
+            knockouts: w(BattleRecords::KNOCKOUTS),
+            monsters_defeated: w(BattleRecords::MONSTERS_DEFEATED),
+            max_damage: w(BattleRecords::MAX_DAMAGE),
+            max_hits: w(BattleRecords::MAX_HITS),
+        }
+    }
+
+    /// Replace the four battle-records words.
+    pub fn set_battle_records(&mut self, r: BattleRecords) {
+        for (off, v) in [
+            (BattleRecords::KNOCKOUTS, r.knockouts),
+            (BattleRecords::MONSTERS_DEFEATED, r.monsters_defeated),
+            (BattleRecords::MAX_DAMAGE, r.max_damage),
+            (BattleRecords::MAX_HITS, r.max_hits),
+        ] {
+            self.raw[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+
     /// Byte at `+0x130` (u8) - the **retail displayed character level** (legacy
     /// accessor name).
     ///
@@ -629,8 +683,8 @@ impl CharacterRecord {
     /// "Magic Rank, level derived from XP" reading is superseded for the level
     /// question, and the adjacent `+0x131` is not the magic-rank byte: the new-game
     /// seed's `sb $v0, 0x6f9($s0)` at `0x800561C8` is its only writer on the disc and
-    /// nothing reads it, while the magic-rank counter is capture-pinned at record
-    /// `+0x9C`. See `docs/formats/save-record.md`.
+    /// nothing reads it. `+0x9C`, once read as a rank counter, is the Monsters
+    /// Defeated word ([`BattleRecords`]). See `docs/formats/save-record.md`.
     pub fn magic_rank(&self) -> u8 {
         self.level()
     }

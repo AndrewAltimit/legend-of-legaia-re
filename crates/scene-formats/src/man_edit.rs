@@ -390,6 +390,11 @@ pub struct SceneChangeSite {
 /// the correct door enumeration: the destinations are partition-2 records, so a
 /// partition-1 recovering walk mis-attributes them. Only ops whose inline name
 /// passes the clean-CDNAME-label gate are returned; sites are unique by `op_pc`.
+///
+/// Each partition's own record header sets `pc0` ([`record_pc0`]): an
+/// overworld's object-bound entrances are partition-0 records (`map01`
+/// `P0[6]`, the Garmel mouth), whose `0x3F` the partition-1 header shape
+/// would start three bytes late and miss.
 pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
     let Ok(mf) = man_section::parse(man) else {
         return Vec::new();
@@ -403,14 +408,8 @@ pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
             if start >= man.len() {
                 continue;
             }
-            let pc0 = if p == 2 {
-                match p2_pc0(man, start) {
-                    Some(v) => v,
-                    None => continue,
-                }
-            } else {
-                let locals = *man.get(start).unwrap_or(&0) as usize;
-                1 + locals * 2 + 4
+            let Some(pc0) = record_pc0(man, p, start) else {
+                continue;
             };
             let end = starts
                 .iter()
@@ -463,39 +462,41 @@ pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
 /// tile trigger references, so this is the join between a door site and the
 /// walk-on tile that runs it.
 pub fn site_p2_slots(man: &[u8], sites: &[SceneChangeSite]) -> Vec<Option<usize>> {
+    site_record_slots(man, sites)
+        .into_iter()
+        .zip(sites)
+        .map(|(slot, site)| slot.filter(|_| site.partition == 2))
+        .collect()
+}
+
+/// The record slot carrying each of `sites` within the site's **own**
+/// partition ([`SceneChangeSite::partition`]), or `None` when another record
+/// or section starts between the record and the op. A partition-2 slot is
+/// what a gate-1 walk-on trigger spawns ([`site_p2_slots`]); a partition-0
+/// slot is what a gate-0 trigger binds as an object script - an overworld's
+/// object-bound entrance (`map01` `P0[6]`, the Garmel mouth).
+pub fn site_record_slots(man: &[u8], sites: &[SceneChangeSite]) -> Vec<Option<usize>> {
     let Ok(mf) = man_section::parse(man) else {
         return vec![None; sites.len()];
     };
     let dro = mf.data_region_offset;
     // Every record start (all partitions) + section starts bound a record.
-    let mut bounds: Vec<usize> = Vec::new();
-    for part in &mf.partitions {
-        for &off in part {
-            bounds.push(dro + off as usize);
-        }
-    }
-    for s in &mf.sections {
-        bounds.push(s.offset);
-    }
-    bounds.sort_unstable();
-    bounds.dedup();
+    let bounds = record_starts(&mf);
     sites
         .iter()
         .map(|site| {
-            if site.partition != 2 {
-                return None;
-            }
-            // Containing P2 record: greatest P2 start <= op_pc, with no
-            // other record/section start between it and the op.
-            let (slot, start) = mf.partitions[2]
+            // Containing record: greatest start in the site's partition
+            // <= op_pc, with no other record/section start between it and
+            // the op.
+            let (slot, start) = mf
+                .partitions
+                .get(site.partition)?
                 .iter()
                 .enumerate()
                 .map(|(ri, &off)| (ri, dro + off as usize))
                 .filter(|&(_, st)| st <= site.op_pc)
                 .max_by_key(|&(_, st)| st)?;
-            let intruded = bounds
-                .iter()
-                .any(|&b| b > start && b <= site.op_pc && b != start);
+            let intruded = bounds.iter().any(|&b| b > start && b <= site.op_pc);
             (!intruded).then_some(slot)
         })
         .collect()

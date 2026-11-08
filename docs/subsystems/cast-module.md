@@ -922,6 +922,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 | 0908 Zenoir | 7, pass (`0x801F761C`) | creature | - | `1` |
 | 0908 Zenoir | 8, pass (`0x801F7800`) | victim | `0x3FF` | `1` |
 | 0908 Zenoir | 11, pass (`0x801F7D5C`, `0x801F7F64`) | victim, live row | `0x3FF` | `1` |
+| 0909 Viguro | stager arm 0 (`0x801F7B74`, `0x801F7BA8`); arm 1 clears it (`0x801F7C60`) | creature | `0` | `2` |
 | 0909 Viguro | 11, pass (`0x801F7260`) | live row | - | `2` |
 | 0909 Viguro | 13, pass (`0x801F76F8`) | live row | `0x3FF00000` | `2` |
 | 0914 Gola Gola | 12, pass (`0x801F7470`) | live row | - | `1` |
@@ -1768,6 +1769,25 @@ scripted boost profile live: record ATK 288 / UDF 222 / INT 220 install as
 360 / 444 / 247 (`x5/4`, `x2`, `x9/8`), against the random encounter's
 17 / 15 / 10 installing as 17 / 25 / 12.
 
+**Arm 0's credits.** Once both words are drawn, arm 0 credits the outcome
+(`0x801F6D30..0x801F6F28`), the resist word first: a resisted cast adds `4` to
+the caster's XP word for the spell and points `0x800774AC` at the line
+`0x801F8528` ("No effect."); otherwise the victim's name `+0x1BC` goes into the
+buffer `0x801F8544` (`FUN_8003CA78`), and the confuse leg adds `8` and appends
+`0x801F8518` while the kill leg adds `0xC`, appends `0x801F8500` and adds one
+to the caster's record `+0x9C` (`0x801F6F0C..0x801F6F18`). Each XP add is
+skipped while the special-battle word `_DAT_8007BAC0` is up. Arm 13 raises the
+message bar on its pass, ahead of the fork (`FUN_801D8DE8(0x5B, 0)` at
+`0x801F7DDC`, `ctx[+0x18] = 0x5B`), so every outcome shows its line, and
+frees the attack name arm 8 put up (`FUN_800319A8(0)` at `0x801F7DF0`), so
+the line opens with no caption over it. The body
+holds no damage call, so the cast folds nothing: `capture`, the cast-sequence
+recording of a confused Nighto on `party_basic_attack_vs_gobu_gobu` holds the
+Gobu Gobu's `+0x14C` at 76 through the whole cast. Port:
+`World::nighto_verdict` (the credits, `NightoOutcome::arm0_credit`), the fold
+waived for a party's cast, and the bar from
+[`World::apply_cast_kill_results`](#instant-kills-records-and-result-lines).
+
 **Arm gates.** Every counted arm drains the halfword `ctx[+0x6D8]` by the
 frame product and holds while it reads non-negative; the director
 `cast_module_camera::nighto_direct` carries them and the body runs on the pass.
@@ -1921,6 +1941,15 @@ then stores the neutral word `0x20080200` on every enemy seat with HP left
 (`0x801F705C..0x801F7084`). With the flag alone the creature stayed drawn on
 its arm-7 blue tint through arms 10..14, over the enemy-row shots retail
 frames without it.
+
+Stager arm 0 also zeroes the creature's colour word and gives it impact
+selector `2`, which arm 1 clears (`viguro_stager`): the burning-body emitter
+sheds effect-`0x10` sparks off the creature through arms 4..7, the blue crackle
+round it in the close-ups. A `--retail-parts` film holds the same number of live
+effect-pool children on both sides at every sampled pair (fifteen through arm 5),
+but the port's sparks cover about three times retail's pixel area in arm 5's
+close-up, so that arm reads `.933` without them and `.898` with them; the
+sprites' size there is not traced.
 
 Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
 over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
@@ -2194,6 +2223,50 @@ shards; a scripted Berserker reaches the list test every tick and is never
 written. The write-up is
 [`glitches/status-and-damage.md`](../reference/glitches/status-and-damage.md#zenoir-leaves-a-lone-golem-in-pieces).
 
+### Instant kills: records and result lines
+
+<a id="instant-kills-records-and-result-lines"></a>
+
+Five modules can kill without a damage roll, and each adds one to the
+caster's Monsters Defeated word (record `+0x9C`, the record picked by
+`0x8007BD10[ctx[+0x13]]`; [save-record.md](../formats/save-record.md#the-battle-records-words))
+itself. A sweep of the 64 images for `sw` with offset `0x664` finds these
+five and no others.
+
+| Module | Store | When |
+|---|---|---|
+| 0907 Nighto | `0x801F6F18` | arm 0, the kill leg ([above](#prot-0907-nighto)) |
+| 0916 Aluru | `0x801F7E58` | arm `0x11`'s kill pass |
+| 0918 Kemaro | `0x801F881C` | arm `0x12`, when the roll reaches the victim's HP (`sltu` at `0x801F87C8`), before the clamp |
+| 0924 Ultimate Rave | `0x801F758C` | arm 9's pass on the kill path (head-table word 9, `0x801F7480`) |
+| 0931 Jedo | `0x801F8658` | arm 29's pass off a scripted fight, once per monster seat with HP (`0x801F8558..0x801F8658`) |
+
+The other credit site is the monster death arm of `FUN_8004AD80`
+(`0x8004B184..0x8004B1F4`), which needs the victim to finish a tag-4 entry on
+zero HP. Four of the five never stage one: Nighto and Aluru put the victim
+into the defeat fade or hide it, Kemaro puts it back on idle, Jedo fades the
+row. So each of their kills counts once. Ultimate Rave's arm 10 does stage the
+knockdown (`+0x1DA = +0x1F1`, `+0x1DC += 1` at `0x801F76A4..0x801F76B0`) on
+zero HP, so its kill also reaches the death arm and counts twice (`inference`
+from the disassembly; no capture of the one-in-128 kill).
+
+Two of them compose a result line at run time and raise it on the message
+bar (element `0x5B`, [battle-hud.md](battle-hud.md#the-bottom-message-bar-record-0x5b)):
+the victim's name copied into a module buffer (`FUN_8003CA78`) with the
+module's tail appended (`FUN_8003CAC4`). The same sweep for `FUN_8003CAC4`
+calls finds these two besides PROT 0941's and 0954's.
+
+| Module | Composed | Raised |
+|---|---|---|
+| 0907 Nighto | arm 0, by outcome ([above](#prot-0907-nighto)) | arm 13's pass, every outcome (`0x801F7DDC`) |
+| 0916 Aluru | arm `0x11`'s kill pass, tail `0x801F8FEC` | arm `0x13`'s last pass on the kill path (`0x801F87BC`) |
+
+Port: `World::apply_cast_kill_results` on each module pass (Kemaro's credit
+rides its fold, `World::fold_cast`); the line goes up through
+`World::raise_composed_message_bar`, which reads the tail off the resident
+image and leaves the name to the HUD, so it carries the twin letter the
+plaques print. Test: `world::tests::cast_band::kill_records`.
+
 ### PROT 0916 (Aluru)
 
 <a id="prot-0916-aluru"></a>
@@ -2211,11 +2284,24 @@ them every pass spread by `(i16)ctx[+0x6D8] / 24` rows, until it passes
 Arm `0` draws the module's verdict into `0x801F9010` (`0` kills): `rand() %
 (0x11 - level) < 8` kills, where `level` is the caster's level for the spell;
 a scripted fight (`ctx[+0x287]`) against a record with `+0x20` set skips the
-draw and never kills, unless the victim carries `+0x16E` bit `4`. The kill
+draw and never kills, unless the victim carries `+0x16E` bit `4`. A kill
+trains the spell on the same pass: the arm adds `0xC` to the caster's XP word
+for the cast spell (`+0x5D0` off `0x80084140`, `0x801F6E7C..0x801F6E88`; the
+slot the `+0x13D` search found, `0x20` when it found none) unless the
+special-battle word `_DAT_8007BAC0` is up. The kill waives the fold, so this is
+the cast's whole gain, and on an unlearned spell it is what the level check at
+`0x36` levels on, raising the "magic level increased" banner. The kill
 path zeroes the victim's HP on arm `0x11`'s pass (`0x801F7E14`), breaks it up
 through arm `0x13` (`+0x1BA += 2 * frame * scalar` on the victim,
 `0x801F81AC`) and stores `0xFF` as that arm ends, raising banner element
-`0x5B`. The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
+`0x5B` (`FUN_801D8DE8(0x5B, 0)` at `0x801F87BC`, `ctx[+0x18] = 0x5B`). Its
+line is composed on arm `0x11`'s kill pass: the victim's name `+0x1BC` and the
+overlay string at `0x801F8FEC` into `0x801F9014` (`FUN_8003CA78` /
+`FUN_8003CAC4` at `0x801F7E54` / `0x801F7E64`), with `0x800774AC` pointed at
+it, which is the "has been annihilated" window a retail Done band shows under
+the magic-level banner; the same pass adds one to the caster's record `+0x9C`
+(`0x801F7E48..0x801F7E58`). Both are ported
+([instant kills](#instant-kills-records-and-result-lines)). The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
 leaves for `0x13` (`0x801F85A8`), steps on to arm `0x14` and stores `0xFF`
 once the victim has settled.
 
@@ -2693,7 +2779,12 @@ drains it is not identified.
 
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
-through the inverse of the tween's prescale; Meta's arm-6 and Ozma's arms 5..9
+through the inverse of the tween's prescale. The builder keeps its endpoints in
+halfwords, so a stored word past `0x7FFF` lands as a word store beside the cut
+(`ArmDirection::tr_z_store`): Barra's arms 3 and 4 store `0xFFFF` (`sw` at
+`0x801F6E68` / `0x801F6F3C`), which arms 4 and 5 pull in to `0x800` and `0xC00`,
+and as a halfword endpoint it wrapped to `-13109` and the pull ran on past
+`-68000`; Meta's arm-6 and Ozma's arms 5..9
 TR y stores are not carried. Palma's arm 4 exit stores before it pans: the
 pass runs its per-pass stores at the word it reached, then TR x `-0x2000` and
 TR z `0x2000` straight (`0x801F7418..0x801F7424`), and only then arms its
@@ -3764,6 +3855,15 @@ holds the band after a hand-over until the tick that opens the next battle
 frame; the arms keep their one-vsync drains, so an arm's own span is
 unchanged. On retail's cadence the pass is already a frame.
 
+The pass that hands over still drifts the camera globals by `k * delta` before
+it stores the phase (Gola Gola's arm `0xB` adds `yaw += 4 p` and only then tests
+the park). The port's pass stops on the tick that hands over, so on a step-`4`
+pass that tick drifted a quarter of retail's: Gola's arm 12 opened `96` yaw units
+short and stood `128` short to the band's end. `World::module_pass` re-applies
+the handing-over tick's own drift (`CastFxState::module_tick_drift`) for the
+ticks of the pass it does not run. A body-paced director's first tick in an arm
+carries the new arm's drift (`drift_after_shot`), which is left out.
+
 ### The Mystic Shield effect
 
 <a id="the-mystic-shield-effect"></a>
@@ -4624,7 +4724,11 @@ stream is resident at once, so a module with a seat arm has its creature
 requested as its phase reaches the arm, or as it leaves it where the arm drains its
 countdown ahead of the `jal` (`module_seat_arm::SEATS_ON_PASS`): each cast's
 `creature.csv` reads the seat's node first on the arm after. Seated on entry, those
-creatures stood up to a whole arm early with their clip already running.
+creatures stood up to a whole arm early with their clip already running. PROT
+0905's arm 5 is one (`bgez` at `0x801F7198`, the `jal` at `0x801F7284`): seated on
+entry, Vera hung in the white rise through the arm's 180-frame countdown that retail
+holds empty: the `0x83` film reads arm 5 at `.741` seated on entry and `.888` seated
+on the pass.
 The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.
@@ -4657,11 +4761,11 @@ director carries it. Several arms also set their own rate: PROT 0922, 0927 and
 0966 freeze the creature (`0`), 0931, 0933 and 0934 seat it at `4`, 0924 and
 0925 at `8`, 0932 at `0x10`. PROT 0929 stores `-(0x80089120)`, the world
 anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
-ahead of the call (PROT 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
+ahead of the call (PROT 0905, 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
 sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
 creature is seated on the arm's pass rather than as it is entered, and the
 port does so for all of them. So it does where a stream poll (`FUN_8003F2B8(1)`)
-gates the call on the module's CD poll arm (PROT 0913, 0914): seated on entry,
+gates the call on the module's CD poll arm (PROT 0910, 0913, 0914): seated on entry,
 Nova stood in the open through the drive's whole modelled wait. PROT 0913's
 arm then seats its two vortex records and builds its shot on that seat, raises
 the floor clip `+0x42` to the busy word `1` (`0x801F6D70`), and only then steps
@@ -5325,7 +5429,7 @@ Module writes into the parts it keeps handles on, and into the victim:
 
 Each module ends its line with `FUN_800319A8(0)` (`ModuleCaption::Cleared`):
 0903 as arm 11's hit lands (`0x801F74C8`), 0905 on arm 10's pass
-(`0x801F802C`), 0910 on its settle arm's (`0x801F7BC4`), 0911 on arm 9's
+(`0x801F802C`), 0907 on arm 13's, where the fork opens the result line (`0x801F7DF0`), 0910 on its settle arm's (`0x801F7BC4`), 0911 on arm 9's
 (`0x801F7ED0`), 0913 as arm `0x13`'s hit lands (`0x801F8460`). PROT 0905 also
 puts up the spell name in arm 5 (`0x801F727C`) and the attack name in arm 8
 (`0x801F79EC`).

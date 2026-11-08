@@ -298,7 +298,7 @@ mod tests {
     fn world_on_the_overworld() -> legaia_engine_core::world::World {
         let mut w = legaia_engine_core::world::World::default();
         w.enter_world_map();
-        w.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
+        w.set_world_map_dev_panel_chords(true);
         w
     }
 

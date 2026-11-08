@@ -220,13 +220,16 @@ pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
             // Not started: hold the start colour, run the clock.
             (t.from, advance(t.clock), t.flags)
         } else {
-            let progress = i32::from(t.clock) - i32::from(t.delay);
+            // `subu a0,t1,v1` over the two `lhu` reads, then `sll` / `sra`
+            // by 16 (`0x801DDCC4..0x801DDCD8`): the progress is a halfword,
+            // so a negative delay with the clock past `0x7FFF` wraps it.
+            let progress = i32::from(t.clock.wrapping_sub(t.delay as u16) as i16);
             let lerp = |from: u16, to: u16| -> u16 {
                 if dur == 0 {
                     return from;
                 }
                 let d = i32::from(to as i16) - i32::from(from as i16);
-                from.wrapping_add((d * progress / dur) as u16)
+                from.wrapping_add((d.wrapping_mul(progress) / dur) as u16)
             };
             (
                 (

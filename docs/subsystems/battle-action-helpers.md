@@ -480,6 +480,7 @@ The per-body anim decode `FUN_8004998C` ends in a second spawn loop (`0x8004A5FC
 - Every body whose `+0x21F` impact selector is non-zero spends it `0x10` at a time.
 - Each pass picks a random object of the body's current pose, turns its translation by the facing `+0x46`, and jitters each axis by `(r >> 4) - rand % (r >> 3)`, with `r` the node's `+0x58` size.
 - When the point is at or above the floor (Y `<= 0`) it is handed to `FUN_801DFDF0`.
+- The loop runs only for a body the frame draws. `FUN_8004998C` is reached from the draw callback `FUN_80048A08`, and the draw tick `FUN_800480D8` calls the callback only past its colour test (`jal 0x80048A08` at `0x800482E0` / `0x800482F8`): a body whose colour word is zero (a module's hide, `+0x04 = 0` with `+0x21C = 0xFF`) sheds nothing and draws no `rand()`, whatever selector it keeps. Aluru's victim holds `2` from arm `0x12` through the Done band.
 
 | Selector `+0x21F` | Effect | Condition |
 |---|---|---|
@@ -488,7 +489,7 @@ The per-body anim decode `FUN_8004998C` ends in a second spawn loop (`0x8004A5FC
 
 This is the fire the `gimard_burning_attack` state shows at the creature's mouth: two effect-`0x0B` masters live at `(127, -317, -1732)` / `(133, -404, -1730)` beside the red creature at `(143, -1606)`. It is also the fire a Tail-Fire-struck body sheds.
 
-Port: `World::emit_battle_burn_sprites` over `engine-battle-vm::battle_impact_fx`'s `burn_effect` / `burn_emit_point`. Selector `2`'s puff also rumbles the controller, with two more `rand()` draws while the Battles vibration row is on ([audio.md](audio.md#battle-side-rumble)).
+Port: `World::emit_battle_burn_sprites` over `engine-battle-vm::battle_impact_fx`'s `burn_effect` / `burn_emit_point`, gated on the draw plan's `drawn` verdict. Selector `2`'s puff also rumbles the controller, with two more `rand()` draws while the Battles vibration row is on ([audio.md](audio.md#battle-side-rumble)).
 
 ### Seru-magic summon-overlay dispatch
 

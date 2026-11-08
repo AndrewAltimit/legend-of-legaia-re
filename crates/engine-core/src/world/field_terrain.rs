@@ -137,18 +137,10 @@ pub struct FieldTerrain {
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_field::field_actor_timers::FloorTierBob>,
-    /// Player tile `(col, row)` on the previous live-loop field tick. A
-    /// change between ticks is one "step" and drives the encounter roll,
-    /// mirroring the retail per-step counter rather than a per-frame roll.
-    /// `None` until the first field tick records a tile. Managed by the live
-    /// loop.
-    pub(crate) last_tile: Option<(i16, i16)>,
     /// Player tile the region encounter reader last compared, sampled only
     /// on the actor game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]):
     /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
-    /// which its caller `FUN_801DA51C` refreshes once per game tick. Kept
-    /// apart from [`crate::world::FieldTerrain::last_tile`], which the
-    /// per-tile region refresh samples every vsync.
+    /// which its caller `FUN_801DA51C` refreshes once per game tick.
     pub(crate) step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`legaia_engine_battle::region_encounter`] `FUN_801D9E1C` port the overworld
@@ -185,7 +177,6 @@ impl FieldTerrain {
             floor_cell_bit: legaia_scene_formats::field_objects::CELL_WALK_VISIBLE,
             elevation_overrides: Vec::new(),
             floor_tier_bobs: Vec::new(),
-            last_tile: None,
             step_tile: None,
             region_tracker: None,
             static_window: Default::default(),

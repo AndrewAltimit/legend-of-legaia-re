@@ -92,6 +92,7 @@ impl World {
         self.field_pc = 0;
         self.field_ctx = FieldCtx::default();
         self.field_vm.system_pass_open = true;
+        self.field_vm.system_install_pass = true;
     }
 
     /// Load a field-VM bytecode buffer and begin interpretation at `pc`
@@ -112,6 +113,7 @@ impl World {
         self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
         self.field_vm.system_pass_open = true;
+        self.field_vm.system_install_pass = true;
     }
 
     /// Load one event-script record into the field VM, skipping the leading
@@ -135,6 +137,7 @@ impl World {
         self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
         self.field_vm.system_pass_open = true;
+        self.field_vm.system_install_pass = true;
     }
 
     /// Activate a slot and return a mutable reference to the actor, keeping

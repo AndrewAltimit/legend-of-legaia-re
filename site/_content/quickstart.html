@@ -62,7 +62,7 @@ cargo test --workspace --profile release-test</code></pre>
   <p>First check that the dump is the one the tools know. A good USA image prints an <code>[ok]</code> line; a PAL or Japanese disc prints <code>[unknown]</code> with its hash and still extracts, but the offsets, fingerprints and patches all target the USA build.</p>
 <pre><code>./disc-extract verify "/path/to/Legend of Legaia (USA).bin"
 ./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
-  <p>The second command runs the whole pipeline in about five seconds and writes roughly 1.1 GB:</p>
+  <p>The second command runs the whole pipeline in about five seconds and writes roughly 900&nbsp;MB:</p>
   <ol>
     <li>Walk the ISO9660 filesystem - the disc's files.</li>
     <li>Split <code>PROT.DAT</code>, the game's one big archive, into its 1233 entries, named from <code>CDNAME.TXT</code>.</li>

@@ -7,6 +7,17 @@ impl<'a> FieldPlayerHost for FieldHostImpl<'a> {
         self.world.field_player_cflag(bit, set)
     }
 
+    // REF: FUN_801DE840 (`3E` warp arm, 0x801E07BC..0x801E07D8)
+    fn release_player_walk_lock(&mut self) {
+        if let Some(actor) = self
+            .world
+            .player_actor_slot
+            .and_then(|slot| self.world.actors.get_mut(usize::from(slot)))
+        {
+            actor.move_state.flags &= !0x0008_0000;
+        }
+    }
+
     fn player_set_model(&mut self, value: i16) -> bool {
         self.world.field_player_set_model(value)
     }
@@ -35,7 +46,9 @@ impl<'a> FieldPlayerHost for FieldHostImpl<'a> {
             world_x: ms.world_x as u16,
             world_y: ms.world_y as u16,
             world_z: ms.world_z as u16,
-            field_26: ms.render_26 as u16,
+            // `+0x26` in retail space: the engine holds the player's
+            // heading a half-turn round (`render_26`).
+            field_26: (ms.render_26 as u16).wrapping_sub(0x800) & 0x0FFF,
         })
     }
 

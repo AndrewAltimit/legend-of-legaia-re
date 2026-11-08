@@ -88,6 +88,49 @@ impl World {
         }
     }
 
+    /// The combo readout's fold into the acting member's Max Damage and Max
+    /// Hits words (`FUN_801E805C`, `0x801E88D4..0x801E89D8`), run each battle
+    /// frame after the hits: the readout pass is the action SM's prologue,
+    /// and a running maximum reads the same a frame either side.
+    ///
+    /// REF: FUN_801E805C (kernel `battle_value_readout::fold_combo_records`)
+    pub(in crate::world) fn fold_combo_records(&mut self) {
+        let ctx = &self.battle_ctx;
+        if !ctx.combo_readout_up {
+            return;
+        }
+        let acting = ctx.active_actor;
+        let party = self.party.party_count;
+        let Some(category) = self
+            .actors
+            .get(usize::from(acting))
+            .map(|a| a.battle.action_category)
+        else {
+            return;
+        };
+        // An engine slot past the party is a monster seat: retail's `>= 3`.
+        let seat = if acting < party { acting } else { 3 };
+        let (total, pushes) = (ctx.combo_total, ctx.readout_pushes);
+        let rslot = self.party_roster_slot(usize::from(acting));
+        let Some(rec) = self.party.roster.members.get_mut(rslot) else {
+            return;
+        };
+        let mut r = rec.battle_records();
+        let (d, h) = legaia_engine_battle_vm::battle_value_readout::fold_combo_records(
+            true,
+            seat,
+            category,
+            total,
+            pushes,
+            (r.max_damage, r.max_hits),
+        );
+        if (d, h) != (r.max_damage, r.max_hits) {
+            r.max_damage = d;
+            r.max_hits = h;
+            rec.set_battle_records(r);
+        }
+    }
+
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
         self.begin_battle_hit_pass();
         for i in 0..self.actors.len() {
@@ -735,6 +778,8 @@ impl World {
         if attacker < self.party.party_count {
             self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
         }
+        // The ring push itself (`0x801EDDD8..0x801EDDE4`), whoever swings.
+        self.battle_ctx.readout_pushes = self.battle_ctx.readout_pushes.wrapping_add(1);
         let defense = self.battle.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -946,8 +991,46 @@ impl World {
         {
             return;
         }
+        // The outgoing clip's cut displacement. The kernel's stage ORs `5`
+        // into the defender's `+0x1DC`, and its next anim tick takes bit 0
+        // straight to the cut (`0x800478F4..0x800478F8` -> `0x80047940`): the
+        // clip it is leaving moves it along its facing by that entry's
+        // `+0x0E`, pro-rated by the cursor's whole frame, unless the entry's
+        // `+0x76` event lock is set (`+0x228` taken as clear, as on the
+        // attacker's event path). So a guarding party member struck mid-block
+        // slides back the share of the block it played, every hit of a
+        // string: `jou_theeder_v3_strike`'s Vahn steps `(-39, -134)` on each
+        // re-commit, and the attacker's walk follows him.
+        // The engine installs the reaction now, where retail's tick first
+        // advances the outgoing cursor once more and cuts on that frame.
+        let vsyncs = self.battle.anim_pass_vsyncs.max(1);
+        let cut = self.actors.get(target_i).and_then(|a| {
+            let p = a.battle_animation.as_ref()?;
+            let step = p.end_root_step();
+            let locked = p.hit_source().is_some_and(|s| s.event_lock != 0);
+            // A one-shot the engine holds past its natural end has had its
+            // whole `+0x0E` already; retail committed the queued clip there,
+            // and that clip is what the cut would read.
+            if p.finished() {
+                return None;
+            }
+            let frame = p.frame_after_vsyncs(a.battle.anim_rate, false, vsyncs);
+            (step != 0 && !locked).then(|| (step, frame, p.frame_count().min(255) as u8))
+        });
         self.commit_battle_reaction_entry(target_i, entry);
         self.turn_defender_to_attacker(target_i, attacker_i);
+        // The cut runs on the tick after the stage, so it steps along the
+        // heading the stage just turned the defender onto.
+        // PORT: FUN_80047430 (`0x80047940..0x80047A28`, the bit-0 cut)
+        if let Some((step, frame, frames)) = cut {
+            let a = &mut self.actors[target_i];
+            let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
+            let (dx, dz) = legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
+                sin, cos, step, frame, frames,
+            );
+            a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+            a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
+        }
     }
 
     /// The bearing half of [`Self::commit_melee_reaction`], which the Mystic
@@ -1551,6 +1634,11 @@ impl World {
         };
         let total = a.battle.damage_accum;
         a.battle.damage_accum = 0;
+        // `sw a1,BD14` and the readout flag `0x78` at `0x801EEA64..0x801EEA78`,
+        // ahead of any test of the total: the readout pass opens the cluster
+        // on the flag, and the records fold reads the total.
+        self.battle_ctx.combo_total = total;
+        self.battle_ctx.combo_readout_up = true;
         if total == 0 {
             return;
         }

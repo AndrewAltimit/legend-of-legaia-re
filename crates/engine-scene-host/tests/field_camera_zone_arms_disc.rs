@@ -214,6 +214,9 @@ fn walking_holds_the_block_while_the_arms_reload_it() {
     };
     let mut cam = Camera::default();
     seat(&mut host, 4, 4);
+    // A seat is a landing: it latches the attribute box (`FUN_800180EC`).
+    // The walk below does not.
+    host.world.refresh_region_attributes_at_player();
     cam.reset_globals_for_scene_entry();
     cam.tick(&host.world);
     let hit_block = cam.zone.config;
@@ -237,6 +240,9 @@ fn walking_holds_the_block_while_the_arms_reload_it() {
     // Raise the flag and the same tile does re-query - onto the zone-miss
     // set, because no record covers it. That difference is the whole of the
     // behaviour the port used to have unconditionally.
+    // The ending vignette's state was put there by a script move, which
+    // latched the walk region's box; the kind-0 records test that box.
+    host.world.refresh_region_attributes_at_player();
     host.world.flags.story_flags |= ZONE_REQUERY_FLAG;
     cam.tick(&host.world);
     assert_ne!(
@@ -253,8 +259,8 @@ fn walking_holds_the_block_while_the_arms_reload_it() {
     // Note what the query does *not* re-read: `FUN_801DBA20` tests a kind-0
     // record against the attribute box that is currently latched in
     // scratchpad, which is the **player's**, not the named tile's - so
-    // `[4C C4]` moves the tile and keeps the box. Seat the player back where
-    // the box is the full-map fill and name the far tile.
+    // `[4C C4]` moves the tile and keeps the box. Seat the player back, latch the
+    // full-map fill there, and name the far tile.
     host.world.flags.story_flags &= !ZONE_REQUERY_FLAG;
     seat(&mut host, 4, 4);
     cam.tick(&host.world);
@@ -262,6 +268,8 @@ fn walking_holds_the_block_while_the_arms_reload_it() {
         cam.zone.loaded_record, None,
         "walking back must not re-query either"
     );
+    // Land back on the full-map fill (the box the query tests is the latch).
+    host.world.refresh_region_attributes_at_player();
     host.world
         .push_camera_zone_request(CameraZoneRequest::QueryAtTile { x: 94, z: 43 });
     cam.route_camera_events(&mut host.world);

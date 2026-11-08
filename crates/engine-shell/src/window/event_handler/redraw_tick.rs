@@ -389,6 +389,27 @@ impl PlayWindowApp {
             self.handle_key(code, ElementState::Pressed);
             self.handle_key(code, ElementState::Released);
         }
+        // A retail-compare capture holds retail's script counters on every
+        // tick up to its capture (`LEGAIA_SEAT_SLOT_TABLE`), as the headless
+        // seed holds them through its settle window: the warm-up is not game
+        // time, and a timer left running fires an arm retail is still
+        // counting towards.
+        if let Some(sc) = self.screenshot.as_ref()
+            && let Some(slots) = sc.seat_slot_table.as_deref()
+        {
+            let gated = sc.phase_gate.is_some()
+                || sc.arrival_gate.is_some()
+                || sc.script_gate.is_some()
+                || sc.battle_drive.is_some();
+            let held = if gated {
+                !self.capture_phase_met()
+            } else {
+                self.tick_no <= sc.capture_tick
+            };
+            if held {
+                self.session.host.world.field_vm.slot_table = *slots;
+            }
+        }
         // Screenshot harness: inject the scripted one-tick pad edge for
         // this tick (overriding keyboard). Ticks with no script entry get
         // a neutral pad so the previous press releases (edge resets).

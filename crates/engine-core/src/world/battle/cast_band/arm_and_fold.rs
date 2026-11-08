@@ -4,6 +4,9 @@
 use super::*;
 use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState, StepOutcome};
 
+/// PROT 0918 (Kemaro), whose hit the fold lands.
+const KEMARO_ENTRY: u32 = 918;
+
 impl World {
     /// Absolute actor slots a player cast lands on, from the submenu's
     /// resolution: a single-target shape takes the picked slot (enemy rows
@@ -458,7 +461,32 @@ impl World {
             return;
         };
         let hit_fx_start = self.battle.hit_fx.len();
+        // PROT 0918's hit is this fold: its arm `0x12` rolls the wrapper and,
+        // when the roll reaches the victim's HP, adds one to the caster's
+        // Monsters Defeated word before it clamps (`sltu` at `0x801F87C8`, the
+        // store at `0x801F881C`). The victim then goes back on idle, never its
+        // knockdown, so the death arm credits nothing for it.
+        let kemaro_hp: Vec<(u8, u16)> = if self.cast_module_for(pc.spell_id) == Some(KEMARO_ENTRY)
+            && pc.caster < self.party.party_count
+        {
+            pc.targets
+                .iter()
+                .filter_map(|&t| Some((t, self.actors.get(usize::from(t))?.battle.hp)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
+        for (t, before) in kemaro_hp {
+            if before > 0
+                && self
+                    .actors
+                    .get(usize::from(t))
+                    .is_some_and(|a| a.battle.hp == 0)
+            {
+                self.credit_monster_defeated(pc.caster);
+            }
+        }
         self.casting.module_fold_quiet = false;
         if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);

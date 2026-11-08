@@ -290,12 +290,21 @@ pub fn battle_move_name_is_module_line(world: &legaia_engine_core::world::World)
 /// Evil God Icon's steal, or a thief's loot handed back
 /// ([`legaia_engine_battle::battle_steal`]). Composed at the death commit from the
 /// templates on the user's executable, and held for the rest of the action
-/// that raised it.
+/// that raised it. A line a cast module composes at run time (Nighto's and
+/// Aluru's "<victim> has been annihilated.") leads with its subject's display
+/// name, the name the plaques print.
 pub fn battle_message_bar(world: &legaia_engine_core::world::World) -> Option<String> {
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
-    world.battle.steal_caption.as_ref().map(|c| c.text.clone())
+    world
+        .battle
+        .steal_caption
+        .as_ref()
+        .map(|c| match c.subject {
+            Some(slot) => format!("{}{}", actor_name(world, slot), c.text),
+            None => c.text.clone(),
+        })
 }
 
 /// Seat A / seat B rows of the message bar's glide record (placement record

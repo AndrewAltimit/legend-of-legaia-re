@@ -34,7 +34,9 @@ const MIRROR: u32 = 0x8000_8000;
 const REG_KON: u32 = MIRROR + 0x188;
 const REG_KOFF: u32 = MIRROR + 0x18C;
 const REG_EON: u32 = MIRROR + 0x198;
-/// libspu's transfer-busy word: bit 0 parks a KON in RAM instead of the register.
+/// libspu's event-queueing word: bit 0 stages a KON in RAM instead of the
+/// register. Only `SpuInit` stores it (zero); the harness clears the bit so a
+/// state's RAM cannot divert the calc it runs.
 const SPU_BUSY_WORD: u32 = 0x8007_AF38;
 const SEQ_CALC: u32 = 0x8006_2F98;
 const SEQ_INIT: u32 = 0x8006_2410;

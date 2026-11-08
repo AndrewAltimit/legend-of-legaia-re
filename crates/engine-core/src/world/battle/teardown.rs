@@ -324,7 +324,6 @@ impl World {
         self.battle.return_mode = SceneMode::Field;
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
-        self.terrain.last_tile = None;
         self.terrain.step_tile = None;
         if dome_leg {
             self.finish_muscle_battle_leg(dome_end);
@@ -382,7 +381,6 @@ impl World {
         }
         self.mode = self.battle.return_mode;
         self.battle.return_mode = SceneMode::Field;
-        self.terrain.last_tile = None;
         self.terrain.step_tile = None;
     }
 
@@ -466,7 +464,6 @@ impl World {
         }
         self.mode = self.battle.return_mode;
         self.battle.return_mode = SceneMode::Field;
-        self.terrain.last_tile = None;
         self.terrain.step_tile = None;
     }
 
