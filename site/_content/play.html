@@ -459,8 +459,8 @@ div.play-vis-head { cursor: default; }
     Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
     This is the project's from-scratch rewrite of the game engine compiled to WebAssembly - not a
     video and not an emulator. Pick your disc image, choose New Game or a town, and take the controls.
-    Most of the game plays - towns, battles, menus, minigames, saves - with the occasional bug; the
-    <a href="#what-works">map below</a> says what works and what is still rough. To play the original
+    The whole game plays, New Game to the credits - towns, battles, menus, minigames, saves - with the
+    occasional bug; the <a href="#what-works">list below</a> says what works and what is still rough. To play the original
     with mods instead, patch your disc with the <a href="tooling/rom-patcher.html">ROM patcher</a>
     and run it in your usual emulator.
   </p>
@@ -472,7 +472,8 @@ div.play-vis-head { cursor: default; }
       <label for="play-file">Disc:</label>
       <input type="file" id="play-file" accept=".bin">
       <span class="play-status" id="play-status">
-        No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy. It is read
+        No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy
+        (<a href="guides/desktop-apps.html#disc-image">how to make one</a>). It is read
         locally, nothing is uploaded; a disc loaded on another page here is picked up automatically.
       </span>
       <button type="button" id="play-copy-report" class="btn btn-ghost play-report-btn"
@@ -1049,8 +1050,7 @@ div.play-vis-head { cursor: default; }
   </p>
   <p>
     <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue.
-    <em>Scene picker</em> drops you straight into any town, field or dungeon - the best-supported
-    mode. You arrive where the game's own doors land you: a town's gate from the world map, a
+    <em>Scene picker</em> drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
     dungeon's door from the room before it; the few scenes no door leads into (Rim Elm, which the
     game itself starts in Vahn's yard, and some cutscene-only maps) start at a standable spot
     inside the map instead. The <em>save bar</em> resumes a session you exported earlier, or a real memory-card
@@ -1134,19 +1134,19 @@ div.play-vis-head { cursor: default; }
       own backdrop, with the theme starting when the fight does. Start leaves any minigame
       (a dome round is left the battle's way, by Run).</li>
   </ul>
-  <h3>Not here yet</h3>
+  <h3>Still rough</h3>
   <ul>
-    <li><strong>The overworld's placed figures.</strong> Retail binds each world-map placement
-      to its own actor model, and which model is still open, so neither host draws one. The
-      <em>Overworld markers</em> box shows each town, port and encounter zone as a coloured
-      post instead, depth-tested against the terrain. The
-      <a href="world-overview.html">world overview</a> shows the continents.</li>
+    <li><strong>It is not frame-identical to the original.</strong> Game state matches almost
+      everywhere; the picture is where the distance is, most of all mid-battle. The
+      <a href="subsystems/engine.html#status">engine page</a> says what is measured.</li>
+    <li><strong>Overworld debug.</strong> The world map draws its ground, landmarks and actors as
+      the game does; retail's top-view debug camera is not ported. The <em>Overworld markers</em>
+      box adds a coloured post for each town, port and encounter zone, an aid of the port's own.
+      The <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
   <p class="hint">
     The camera is retail's follow camera, framed per scene from the scene's own camera-region
-    records, with see-through walls for whatever blocks the view. In caves the
-    floor sampler can disagree with the visible ground - tracked with the
-    <a href="reference/open-rev-eng-threads.html">open questions</a>.
+    records, with see-through walls for whatever blocks the view.
   </p>
 </section>
 
