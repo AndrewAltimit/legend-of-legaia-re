@@ -252,4 +252,35 @@ impl OwnedDialogPanel {
         held.advance_icon = None;
         held
     }
+
+    /// The next line loading into the box a `0x24` left up: this panel is
+    /// the held box ([`Self::held_after_press`]), and the page whose first
+    /// lead is at `seg_lead` types beneath its rows, scrolling first when the
+    /// window is full, exactly as a `0x24` turn inside one record does.
+    ///
+    /// The dialog SM polls for an idle pager state (`1`, `4` or `7`,
+    /// `0x80039FAC..0x80039FC8`) and adds one to it as it stores the line
+    /// (`0x80039FDC..0x80039FF0`); the idle state `4` left the row table alone
+    /// (`0x801D8708`), so state `5` finds the rows of the box before it however
+    /// many ops ran between the two.
+    ///
+    /// Returns `None` when there is no window to continue or no page at
+    /// `seg_lead`; the caller opens a fresh box.
+    ///
+    /// PORT: FUN_80039B7C (`0x80039FAC..0x8003A000`, the `4` -> `5` hand-off)
+    pub fn resumed_at_segment(mut self, seg_lead: usize) -> Option<Self> {
+        self.window.as_ref()?;
+        let page = legaia_mes::pack_page(&self.bytes, seg_lead)?;
+        self.load_page(page, Some(true));
+        if let Some(w) = self.window.as_mut() {
+            w.resume_from_idle();
+        }
+        self.state = PanelState::Typing;
+        self.done = false;
+        self.waiting_for_input = false;
+        self.pending_box_advance = false;
+        self.vsync_phase = 0;
+        self.auto_pressed = false;
+        Some(self)
+    }
 }

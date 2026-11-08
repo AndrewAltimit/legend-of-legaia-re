@@ -383,32 +383,23 @@ impl World {
             }
             tl.pc = fw.resume_pc;
         }
-        // Player face-at park (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk
-        // kernel's FaceTarget leg turns the player toward the named actor,
-        // and the record resumes past the acquire on the leg's terminal
-        // frame - see `CutsceneTimeline::player_face`.
-        // REF: FUN_8003774C (the 0x4C arm)
-        if let Some((mut ramp, resume_pc, frames)) = tl.player_face.take() {
-            let done = grid > 0 && self.step_player_face_leg_by(&mut ramp, grid);
-            if !done && frames < WALK_PARK_TIMEOUT {
-                tl.player_face = Some((ramp, resume_pc, frames + u32::from(grid > 0)));
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
+        // Player face-at (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk kernel's
+        // FaceTarget leg turns the player toward the named actor while the
+        // record runs on past the acquire; see `CutsceneTimeline::player_face`.
+        // Like a compass leg, it spends its first unit on the arming frame
+        // and holds the player for the script through the frame it lands.
+        // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
+        let mut face_landed = false;
+        if let Some((mut ramp, frames)) = tl.player_face.take() {
+            glide_hold = true;
+            if grid > 0 && self.step_player_face_leg_by(&mut ramp, grid) {
+                tl.player_landed_hold = true;
+                face_landed = true;
+            } else if frames < WALK_PARK_TIMEOUT {
+                tl.player_face = Some((ramp, frames + u32::from(grid > 0)));
+            } else {
+                face_landed = true;
             }
-            if grid_live {
-                tl.park_landed = Some(resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = resume_pc;
         }
         if !due {
             tl.frames = tl.frames.saturating_sub(1);
@@ -509,16 +500,17 @@ impl World {
                         // escapes, exactly as the prop-interaction panel
                         // does, or a name renders as an empty string.
                         let _ = modal;
-                        let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
-                            std::sync::Arc::clone(&tl.bytecode),
-                            pc,
-                        );
+                        // The next line loads into the pager (state `4` ->
+                        // `5`), which takes over a held box's rows.
+                        let mut panel =
+                            legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
+                                tl.held_box.take(),
+                                &tl.bytecode,
+                                pc,
+                            );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
                         tl.dialog = Some(panel);
-                        // The next line loads into the pager, which ends a
-                        // held box.
-                        tl.held_box = None;
                         host.world.field_vm.dialog_claims += 1;
                         tl.dialog_claim = host.world.field_vm.dialog_claims;
                         break;
@@ -1150,9 +1142,8 @@ impl World {
                         host.world.locomotion.player_clip_rate = (rate >> 1).max(1);
                     }
                     // Halt-acquire of the player (`CC F8 85|8E|8F`): the
-                    // player turns to face the op's actor bind and the record
-                    // parks until the turn's terminal frame
-                    // (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
+                    // player turns to face the op's actor bind, and the record
+                    // runs on (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
                     // turns Vahn toward Cort this way before the evolved-Cort
                     // fight; stepped as a plain halt on the record's own
                     // context, the player kept facing the camera.
@@ -1166,18 +1157,21 @@ impl World {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
-                        let resume_pc = pc + 6;
-                        if grid_live {
-                            if grid > 0 && host.world.step_player_face_leg_by(&mut ramp, grid) {
-                                tl.park_landed = Some(resume_pc);
-                                break;
-                            }
-                        } else if host.world.step_player_face_leg(&mut ramp) {
-                            tl.pc = resume_pc;
-                            continue;
+                        tl.pc = pc + 6;
+                        tl.ctx.flags |= 0x400;
+                        glide_hold = true;
+                        let landed = if grid_live {
+                            grid > 0 && host.world.step_player_face_leg_by(&mut ramp, grid)
+                        } else {
+                            host.world.step_player_face_leg(&mut ramp)
+                        };
+                        if landed {
+                            tl.player_landed_hold = true;
+                            face_landed = true;
+                        } else {
+                            tl.player_face = Some((ramp, 1));
                         }
-                        tl.player_face = Some((ramp, resume_pc, 1));
-                        break;
+                        continue;
                     }
                     // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
                     // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
@@ -1791,6 +1785,14 @@ impl World {
                     break;
                 }
             }
+        }
+        // The leg's terminal frame clears the caller's halt and its `+0x54`
+        // (`0x80037FFC`, `0x80038020..0x80038028`) after this frame's script
+        // ran: a `4A` under the turn loses what it had counted.
+        // REF: FUN_8003774C, FUN_8003BC08
+        if face_landed {
+            tl.ctx.flags &= !0x400;
+            tl.ctx.wait_accum = 0;
         }
         // Timeline pokes that moved a channel context (cross-context MoveTo)
         // write through to the field NPC render/probe state. Object-bind

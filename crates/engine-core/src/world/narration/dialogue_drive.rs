@@ -269,8 +269,11 @@ impl World {
                     }
                     // Same name-escape resolution as the prop-interaction and
                     // cutscene panels; this is the main NPC-talk path.
-                    let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
-                        std::sync::Arc::clone(&id.bytecode),
+                    // The next line loads into the pager (state `4` -> `5`),
+                    // which takes over a held box's rows.
+                    let mut panel = legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
+                        id.held_box.take(),
+                        &id.bytecode,
                         id.pc,
                     );
                     panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
@@ -284,9 +287,6 @@ impl World {
                         }
                     }
                     id.panel = Some(panel);
-                    // The next line loads into the pager (state `4` -> `5`),
-                    // which ends the held box.
-                    id.held_box = None;
                     break;
                 }
                 // A non-`0x1F` terminator before any box opened: if a prologue

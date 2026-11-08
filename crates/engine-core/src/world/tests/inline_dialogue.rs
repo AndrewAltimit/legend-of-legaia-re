@@ -629,6 +629,28 @@ fn a_picker_commit_on_a_next_line_continuation_keeps_the_prompt_box_up() {
     );
 }
 
+/// The reply to a `0x24` commit types beneath the prompt's rows: the held
+/// box's window goes on, with the prompt in the slot above the new line
+/// (pager state `4` -> `5`), as a `0x24` turn inside one record does.
+#[test]
+fn the_line_after_a_held_continuation_types_beneath_its_rows() {
+    let mut world = World::new();
+    world.start_inline_dialogue(held_box_script(0x24));
+    commit_first_option(&mut world);
+    let mut guard = 0;
+    while world.dialog.inline.as_ref().unwrap().panel.is_none() {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "the reply never opened");
+    }
+    world.step_inline_dialogue(false, false, false);
+    let id = world.dialog.inline.as_ref().unwrap();
+    let panel = id.panel.as_ref().unwrap();
+    let rows = panel.window().expect("box path").rows.len();
+    assert_eq!(rows, 2, "the prompt's row and the reply's first row");
+    assert!(panel.picker().is_none(), "the prompt's menu stays closed");
+}
+
 /// An op-`0x49` park that opens a screen under a held `0x24` box takes the
 /// box down: the subsystem actor's installer `FUN_801F1278` rewinds the
 /// pager from its idle `4` to `1` (`0x801F1434..0x801F144C`), and state `1`

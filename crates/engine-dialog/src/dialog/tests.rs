@@ -640,3 +640,86 @@ fn an_idle_countdown_never_presses() {
     }
     assert_eq!(auto, 0);
 }
+
+/// Run `panel` at frame step one until its page waits; `false` if it never does.
+fn run_to_wait(panel: &mut OwnedDialogPanel) -> bool {
+    for _ in 0..4000 {
+        panel.tick();
+        if panel.is_waiting_for_input() || panel.is_done() {
+            return true;
+        }
+    }
+    false
+}
+
+/// `1F A 00 24 <op> 1F B 00 21`, one-row pages split by a non-text byte: a
+/// box the record runs ops under before its next line.
+fn split_pages(texts: &[&[u8]]) -> (Arc<Vec<u8>>, Vec<usize>) {
+    let mut bytes = Vec::new();
+    let mut leads = Vec::new();
+    for t in texts {
+        leads.push(bytes.len());
+        bytes.push(0x1F);
+        bytes.extend_from_slice(t);
+        bytes.extend_from_slice(&[0x00, 0x24, 0x4A]);
+    }
+    (Arc::new(bytes), leads)
+}
+
+/// One-row pages across ops: each types beneath the row before it, which
+/// the page end then scrolls away ahead of the wait (state `0x0F`).
+#[test]
+fn a_resumed_box_types_beneath_its_rows_and_scrolls_them_away() {
+    use crate::dialog_window::WindowPhase;
+    let (bytes, leads) = split_pages(&[b"AA", b"BB", b"CC"]);
+    let mut panel = OwnedDialogPanel::at_segment(bytes, leads[0]);
+    assert!(run_to_wait(&mut panel));
+    for (&lead, text) in leads[1..].iter().zip([&b"BB"[..], &b"CC"[..]]) {
+        panel = panel
+            .held_after_press()
+            .resumed_at_segment(lead)
+            .expect("a window to continue");
+        assert_eq!(panel.window().unwrap().phase, WindowPhase::Load);
+        panel.tick();
+        assert_eq!(
+            panel.window().unwrap().phase,
+            WindowPhase::Typing,
+            "the first call loads: no press call to spend"
+        );
+        assert_eq!(panel.window().unwrap().rows.len(), 2, "the carried row");
+        let mut scrolled = false;
+        for _ in 0..4000 {
+            panel.tick();
+            scrolled |= panel.window().unwrap().phase == WindowPhase::ScrollAway;
+            if panel.is_waiting_for_input() {
+                break;
+            }
+        }
+        assert!(scrolled, "the carried row scrolls away");
+        assert_eq!(panel.page_bytes(), text);
+    }
+}
+
+/// A full window scrolls before the resumed line, as state `5` does at
+/// `last + 1 >= 3`.
+#[test]
+fn a_resumed_box_with_a_full_window_scrolls_first() {
+    let mut bytes = Vec::new();
+    for t in [b"AA", b"BB", b"CC"] {
+        bytes.push(0x1F);
+        bytes.extend_from_slice(t);
+        bytes.push(0x00);
+    }
+    bytes.extend_from_slice(&[0x24, 0x4A]);
+    let lead = bytes.len();
+    bytes.extend_from_slice(&[0x1F, b'D', b'D', 0x00, 0x21]);
+    let mut panel = OwnedDialogPanel::at_segment(Arc::new(bytes), 0);
+    assert!(run_to_wait(&mut panel));
+    assert_eq!(panel.window().unwrap().rows.len(), 3);
+    let mut panel = panel.held_after_press().resumed_at_segment(lead).unwrap();
+    panel.tick();
+    assert_eq!(
+        panel.window().unwrap().phase,
+        crate::dialog_window::WindowPhase::ScrollIn
+    );
+}

@@ -303,12 +303,14 @@ pub struct CutsceneTimeline {
     /// the bytes back as its `0x4C` FaceTarget leg on the player - turn
     /// toward the actor bind `<id>` over the `u16` frame budget - and its
     /// terminal frame clears both halt bits (`0x80038004` / `0x80038028`).
-    /// So the player turns to face the named actor and the record waits for
-    /// the turn. The leg is the one the talk runner plays
-    /// ([`crate::inline_dialogue::TalkFaceRamp`]); `.1` is the PC past the
-    /// op, `.2` the ticks parked so far.
+    /// So the player turns to face the named actor while the record runs on:
+    /// the dispatcher's halted-target test (`0x801DE90C..0x801DE944`) sits on
+    /// the extended-op path only, so a plain op such as a `4A` wait passes,
+    /// and only a later op aimed at the player waits for the turn. The leg is
+    /// the one the talk runner plays
+    /// ([`crate::inline_dialogue::TalkFaceRamp`]); `.1` is the ticks spent.
     // REF: FUN_801DE840 (the acquire arm), FUN_8003774C (the 0x4C arm)
-    pub player_face: Option<(crate::inline_dialogue::TalkFaceRamp, usize, u32)>,
+    pub player_face: Option<(crate::inline_dialogue::TalkFaceRamp, u32)>,
     /// `Some` while a cross-context **compass walk** this timeline armed
     /// against the player plays (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
     /// `0x37` / `0x41` with the player-anchor target). Retail's dispatcher

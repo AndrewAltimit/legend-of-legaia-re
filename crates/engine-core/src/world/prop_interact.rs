@@ -1410,7 +1410,15 @@ impl World {
             legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
         );
         let instant = std::mem::take(&mut self.dialog.window_instant);
-        panel.set_window_format(usize::from(rows), instant);
+        // No `4C E0` since the last box: a window carried over a `0x24` keeps
+        // its count (`_DAT_801F2740` is reset by states `0`, `6` and `9`, not
+        // by the `3` -> `4` path).
+        let rows = if usize::from(rows) == legaia_engine_dialog::dialog_window::WINDOW_ROWS {
+            panel.box_rows().unwrap_or(usize::from(rows))
+        } else {
+            usize::from(rows)
+        };
+        panel.set_window_format(rows, instant);
     }
 
     pub fn dialog_substitutions(

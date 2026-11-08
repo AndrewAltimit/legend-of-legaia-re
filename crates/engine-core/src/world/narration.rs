@@ -846,6 +846,7 @@ impl World {
         if tl.dialog.is_some() {
             self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
+                self.step_face_legs_under_box(&mut tl);
                 self.cutscene.timeline = Some(tl);
                 return;
             }
@@ -887,6 +888,38 @@ impl World {
             // Still parked on the channel-completion handshake: keep the
             // timeline installed and re-test next tick.
             self.cutscene.timeline = Some(tl);
+        }
+    }
+
+    /// The face-at legs a record armed before its text lead go on under the
+    /// box: the walk kernel runs from the actor tick (`FUN_8003BC08`) whether
+    /// or not the record sits on a line. The landing clears the caller's halt
+    /// and `+0x54` as in the slice.
+    ///
+    /// REF: FUN_8003BC08, FUN_8003774C (the 0x4C arm)
+    fn step_face_legs_under_box(
+        &mut self,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 {
+            return;
+        }
+        if let Some((mut ramp, frames)) = tl.player_face.take() {
+            if self.step_player_face_leg_by(&mut ramp, grid) {
+                tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
+            } else {
+                tl.player_face = Some((ramp, frames + 1));
+            }
+        }
+        for mut face in std::mem::take(&mut tl.npc_faces) {
+            if self.step_npc_face_leg_by(face.slot, &mut face.ramp, grid) {
+                tl.npc_landed_hold.push(face.slot);
+            } else {
+                tl.npc_faces.push(face);
+            }
         }
     }
 
@@ -1284,11 +1317,13 @@ impl World {
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
                 if owner != Some(tl.dialog_claim) {
+                    self.step_face_legs_under_box(tl);
                     continue;
                 }
                 owner = None;
                 self.drive_script_dialog(tl, true);
                 if tl.dialog.is_some() || tl.done {
+                    self.step_face_legs_under_box(tl);
                     continue;
                 }
             }

@@ -207,6 +207,92 @@ fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
     assert_eq!(tl.pc, 6, "record resumed past the 6-byte acquire");
 }
 
+/// The record runs on under the player's turn: a plain `4A` counts while the
+/// leg plays, as in `town01`'s Tetsu record (`CC F8 85 0C 00 <id>`, `4A 0C 00`
+/// on one frame; retail leaves the wait as the 12-vsync turn lands), and an op
+/// aimed at the player waits for the turn's terminal frame.
+#[test]
+fn a_record_runs_on_under_the_players_turn() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    w.spawn_actor(0);
+    w.player_actor_slot = Some(0);
+    w.field_vm.channels = vec![FieldChannel {
+        placement_index: 4,
+        ctx: FieldCtx {
+            script_id: 0x17,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    w.npcs.positions.insert(4, (3136, 3136));
+    let bc = vec![
+        0xCC, 0xF8, 0x85, 0x0A, 0x00, 0x17, 0x4A, 0x03, 0x00, 0xB1, 0xF8, 0x18,
+    ];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    w.step_cutscene_timeline();
+    let pc = |w: &World| w.cutscene.timeline.as_ref().map_or(usize::MAX, |t| t.pc);
+    assert_eq!(pc(&w), 6, "the record ran on past the acquire");
+    for _ in 0..3 {
+        w.step_cutscene_timeline();
+    }
+    assert_eq!(pc(&w), 9, "the plain wait ran under the turn");
+    w.step_cutscene_timeline();
+    assert_eq!(pc(&w), 9, "the op on the player waits for the turn");
+    for _ in 0..8 {
+        w.step_cutscene_timeline();
+    }
+    assert!(pc(&w) > 9, "the landed turn released the op on the player");
+}
+
+/// A turn armed just before a text lead goes on under the box: retail's
+/// Tetsu record has the box up one frame after its `CC F8 85` and the bit
+/// clears at the budget with the page still typing.
+#[test]
+fn a_players_turn_lands_under_the_box_that_follows_it() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    w.spawn_actor(0);
+    w.player_actor_slot = Some(0);
+    w.field_vm.channels = vec![legaia_engine_field::field_channels::FieldChannel {
+        placement_index: 4,
+        ctx: legaia_engine_vm::field::FieldCtx {
+            script_id: 0x17,
+            ..Default::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    w.npcs.positions.insert(4, (3136, 3136));
+    let bc = vec![
+        0xCC, 0xF8, 0x85, 0x06, 0x00, 0x17, 0x1F, b'A', b'B', 0x00, 0x21,
+    ];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    w.step_cutscene_timeline();
+    let tl = w.cutscene.timeline.as_ref().unwrap();
+    assert!(tl.dialog.is_some(), "the text lead is not held by the turn");
+    assert!(tl.player_face.is_some(), "the leg is still in flight");
+    for _ in 0..8 {
+        w.step_cutscene_timeline();
+    }
+    let tl = w.cutscene.timeline.as_ref().unwrap();
+    assert!(tl.dialog.is_some(), "the box waits on the player");
+    assert!(tl.player_face.is_none(), "the turn landed under the box");
+}
+
 /// A halt-acquire of an **NPC** (`CC <id> 85 <lo> <hi> F8`) turns that
 /// placement toward the bind - here the player, the cutscenes'
 /// "Noa turns to Vahn" - over the op's budget, while the record runs on
