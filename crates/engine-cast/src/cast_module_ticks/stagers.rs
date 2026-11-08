@@ -127,6 +127,11 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
     }
 }
 
+/// The impact selector `+0x21F` PROT 0909's stager arm 0 gives the creature
+/// (`li v0,0x2; sb v0,0x21f(v1)` at `0x801F7BA4..0x801F7BA8`): the
+/// burning-body emitter's spark arm, effect `0x10`.
+pub const VIGURO_SEAT_BURN_SELECTOR: u8 = 2;
+
 /// PROT 0909's stager arm that stages a clip and advances the phase - the
 /// second of its two state-touching arms.
 pub const VIGURO_STAGER_STAGE_ARM: u8 = 1;
@@ -149,11 +154,16 @@ pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
 /// summon[+0x0C]  = 0x1000
 /// saved          = summon[+0x1DD]         ; stashed at 0x8019835C
 /// summon[+0x1DD] = 9                      ; the enemy-row group code
+/// summon[+0x04]  = 0                      ; 0x801F7B74, the colour word
+/// summon[+0x21F] = 2                      ; 0x801F7BA8, the burn selector
 /// ctx[+0x279]   += 1
 /// ```
 ///
-/// The `+0x34` / `+0x38` / `+0x46` / `+0x04` / `+0x21F` stores in the same arm
-/// are pose and render fields, left to the host's own seat placement.
+/// The `+0x34` / `+0x38` / `+0x46` stores in the same arm are the pose, left
+/// to the host's own seat placement. Selector `2` has the anim decode's
+/// burning-body emitter shed effect-`0x10` sparks off the creature's pose
+/// objects every battle frame until arm `1` clears it: the blue crackle
+/// round Viguro through arms 4..7.
 ///
 /// Arm `1` (`0x801F7BCC`) is the second, and it is what releases the tick
 /// body's phase-`8` rendezvous ([`crate::seru_magic_ticks`]):
@@ -164,7 +174,7 @@ pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
 /// summon[+0x1DA] = 1                      ; 0x801F7BF8, no +0x1DC bump
 /// jal FUN_80024E80 -> ctx[+0x102C]        ; the pool's
 /// ctx[+0x279]   += 1                      ; 0x801F7C54
-/// summon[+0x21F] = 0                      ; pose, unported
+/// summon[+0x21F] = 0                      ; 0x801F7C60, the sparks stop
 /// ```
 ///
 /// Returns the `+0x1DD` value the arm displaced, which retail stashes for a
@@ -183,6 +193,7 @@ pub fn viguro_stager(
         summon_seat.loop_timer = 0;
         summon_seat.loop_count = 0;
         summon_seat.staged_anim = VIGURO_STAGER_ARM1_CLIP;
+        summon_seat.render_21f = 0;
         advance_phase(ctx);
         return None;
     }
@@ -193,6 +204,8 @@ pub fn viguro_stager(
     summon_seat.render_flag = 0;
     summon_seat.root_speed = 0x1000;
     summon_seat.target_code = TARGET_CODE_ENEMY_ROW;
+    summon_seat.present_04 = 0;
+    summon_seat.render_21f = VIGURO_SEAT_BURN_SELECTOR;
     advance_phase(ctx);
     Some(saved)
 }

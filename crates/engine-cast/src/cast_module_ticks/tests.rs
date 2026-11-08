@@ -261,8 +261,13 @@ fn the_viguro_stager_retargets_the_summon_seat() {
     assert_eq!(seat.render_flag, 0);
     assert_eq!(seat.root_speed, 0x1000);
     assert_eq!(ctx.phase, 1);
+    assert_eq!(seat.render_21f, VIGURO_SEAT_BURN_SELECTOR);
+    assert_eq!(seat.present_04, 0);
     // Any other arm leaves the seat alone.
     assert_eq!(viguro_stager(&mut ctx, &mut seat, 3), None);
+    // Arm 1 stops the sparks.
+    assert_eq!(viguro_stager(&mut ctx, &mut seat, 1), None);
+    assert_eq!(seat.render_21f, 0);
 }
 
 #[test]

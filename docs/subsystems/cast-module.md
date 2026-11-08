@@ -922,6 +922,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 | 0908 Zenoir | 7, pass (`0x801F761C`) | creature | - | `1` |
 | 0908 Zenoir | 8, pass (`0x801F7800`) | victim | `0x3FF` | `1` |
 | 0908 Zenoir | 11, pass (`0x801F7D5C`, `0x801F7F64`) | victim, live row | `0x3FF` | `1` |
+| 0909 Viguro | stager arm 0 (`0x801F7B74`, `0x801F7BA8`); arm 1 clears it (`0x801F7C60`) | creature | `0` | `2` |
 | 0909 Viguro | 11, pass (`0x801F7260`) | live row | - | `2` |
 | 0909 Viguro | 13, pass (`0x801F76F8`) | live row | `0x3FF00000` | `2` |
 | 0914 Gola Gola | 12, pass (`0x801F7470`) | live row | - | `1` |
@@ -1940,6 +1941,15 @@ then stores the neutral word `0x20080200` on every enemy seat with HP left
 (`0x801F705C..0x801F7084`). With the flag alone the creature stayed drawn on
 its arm-7 blue tint through arms 10..14, over the enemy-row shots retail
 frames without it.
+
+Stager arm 0 also zeroes the creature's colour word and gives it impact
+selector `2`, which arm 1 clears (`viguro_stager`): the burning-body emitter
+sheds effect-`0x10` sparks off the creature through arms 4..7, the blue crackle
+round it in the close-ups. A `--retail-parts` film holds the same number of live
+effect-pool children on both sides at every sampled pair (fifteen through arm 5),
+but the port's sparks cover about three times retail's pixel area in arm 5's
+close-up, so that arm reads `.933` without them and `.898` with them; the
+sprites' size there is not traced.
 
 Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
 over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
@@ -4751,11 +4761,11 @@ director carries it. Several arms also set their own rate: PROT 0922, 0927 and
 0966 freeze the creature (`0`), 0931, 0933 and 0934 seat it at `4`, 0924 and
 0925 at `8`, 0932 at `0x10`. PROT 0929 stores `-(0x80089120)`, the world
 anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
-ahead of the call (PROT 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
+ahead of the call (PROT 0905, 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
 sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
 creature is seated on the arm's pass rather than as it is entered, and the
 port does so for all of them. So it does where a stream poll (`FUN_8003F2B8(1)`)
-gates the call on the module's CD poll arm (PROT 0913, 0914): seated on entry,
+gates the call on the module's CD poll arm (PROT 0910, 0913, 0914): seated on entry,
 Nova stood in the open through the drive's whole modelled wait. PROT 0913's
 arm then seats its two vortex records and builds its shot on that seat, raises
 the floor clip `+0x42` to the busy word `1` (`0x801F6D70`), and only then steps
