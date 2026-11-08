@@ -35,7 +35,10 @@ holds the glue around it:
   player. Its `F12` panel (`window::settings_panel`, also `Select` + `Start`)
   is a settings page over the launcher's live rows, a cheats page over the
   shared cheat list (`window::cheats_panel`, the play page's Cheats panel's
-  twin) and the key list. `window::HeadlessPlayWindow` is the same app with no window or
+  twin), a scene list that enters any town, field area or overworld
+  (`window::scenes_panel`, the play page's Scenes list's twin) and the key
+  list. [`window_placement`](src/window_placement.rs) reopens the launcher
+  and the game window where they last closed. `window::HeadlessPlayWindow` is the same app with no window or
   renderer, stepped one display frame at a time with a given pad word and
   tick count: what `tests/host_frame_parity.rs` drives against the browser
   play page.
