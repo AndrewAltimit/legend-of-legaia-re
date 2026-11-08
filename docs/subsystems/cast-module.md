@@ -4167,6 +4167,8 @@ dive (focus z `+2s`, TR z `+28s`, the caster walked `-s/4` in z), arm
 landing. Arm `0x11` stands the pair at `z = 0x200` / `-0x200`. The anim-rate
 stores ride the same seat writes; the director's table carries each one.
 
+The body's `+0x1DA` stores are arm 4 (`0x0A`, `0x801F6F40`), arm 7's victim knockdown (`0x801F7278`), arm `0x0A` (one up, `0x801F768C`), arm `0x0F` (`0`, `0x801F7FDC`) and arm `0x11` (the victim, `0x801F81AC`). Arms 5 and 6 bump `+0x1DC` with the byte unchanged (`0x801F7038`, `0x801F7120`): bit 0 commits the staged byte, so clip `0x0A` restarts on each and is still playing through arm 10. Only arm 7 stages a reaction, so the hits at `0x801F7A90` and `0x801F7EBC` land on the victim still parked in its get-up clip and sound nothing. `nivora_duel_pre_megaton_press` reads `.647` to `.730` with cues `.46` to `1.00`; `--rand-track` `.671` to `.772`. Grade `disassembly` + `capture`.
+
 Arm `0xF` lands a hit (`FUN_801DD6B4(0x30)`) on every pass the threshold word
 stands at or above the countdown, and lowers the word `scalar << 5` each
 time: with arm `0xE`'s `+ scalar << 8` that is nine hits over the arm, which

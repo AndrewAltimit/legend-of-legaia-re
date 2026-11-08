@@ -127,6 +127,9 @@ fn the_confirm_gate_holds_the_phase_until_the_clip_plays() {
         );
         assert_eq!(ctx.phase, PLASMA_STRIKE_CONFIRM_PHASE);
         assert_eq!(caster.staged_anim, PLASMA_STRIKE_CONFIRM_CLIP);
+        // The store alone (`0x801F7ADC`): no `+0x1DC` bump, which would cut
+        // the playing clip on every pass.
+        assert_eq!(caster.restage, 0);
     }
     // Once the commit mirrors the id into `+0x1D9` the gate passes.
     caster.playing_anim = PLASMA_STRIKE_CONFIRM_CLIP;

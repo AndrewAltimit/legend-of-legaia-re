@@ -2038,14 +2038,15 @@ impl World {
                 && let Some(roll) =
                     self.capture_module_roll_site(shape, usize::from(site), caster_slot, 0)
             {
-                // The shape-A clamp and the HP / bar writes. The two hits
-                // that strike the victim down (arms 7 and `0x0D`; arm 7
-                // stages its `+0x1F1` knockdown beside it) go through the
-                // safe-clamp hit arm the fold lands a cast with, the victim's
-                // reaction included; arm `0x0F`'s barrage restages nothing.
+                // The shape-A clamp and the HP / bar writes. Arms 7 and `0x0D`
+                // go through the safe-clamp hit arm the fold lands a cast with.
+                // Only arm 7 stages a reaction (`+0x1F1` at `0x801F7278`): the
+                // body's other `+0x1DA` stores are arm `0x0A`, `0x0F` and `0x11`,
+                // so arm `0x0D` lands on a victim still parked in its get-up
+                // clip, and arm `0x0F`'s barrage restages nothing.
                 if site < 2 {
                     self.apply_effect_child_hit(0, roll.max(0));
-                    if roll > 0 {
+                    if site == 0 && roll > 0 {
                         let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
                         self.queue_battle_reaction(0, survives);
                     }
