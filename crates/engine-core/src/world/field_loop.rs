@@ -999,11 +999,31 @@ impl World {
         }
         let target = *self.field_bytecode.get(pc + 1)?;
         let bit = *self.field_bytecode.get(pc + 2)? & 0x1F;
-        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+        if !self.poke_channel_cflag(op, target, bit) {
             return None;
         }
-        let ci =
-            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let next_pc = pc + 3;
+        self.field_pc = next_pc;
+        Some(FieldStepResult::Advance { next_pc })
+    }
+
+    /// Land a cross-context `CFLAG_SET` / `CFLAG_CLR` (`B1 <id> <bit>` /
+    /// `B2 <id> <bit>`) on the target actor's `+0x10`: the write
+    /// [`Self::step_field_cross_context_cflag`] makes for the system script
+    /// and the talk runner makes for a conversation. `false` when `<id>` is
+    /// the player, the system context or no channel, so the caller keeps its
+    /// own step. See that function for the bit-8 engagement.
+    ///
+    /// REF: FUN_801DE840 (cases 0x31 / 0x32), FUN_8003C83C
+    pub(crate) fn poke_channel_cflag(&mut self, op: u8, target: u8, bit: u8) -> bool {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return false;
+        }
+        let Some(ci) =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)
+        else {
+            return false;
+        };
         let ch = &mut self.field_vm.channels[ci];
         let mask = 1u32 << bit;
         if ch.object_bind {
@@ -1033,9 +1053,7 @@ impl World {
         } else {
             ch.ctx.flags &= !mask;
         }
-        let next_pc = pc + 3;
-        self.field_pc = next_pc;
-        Some(FieldStepResult::Advance { next_pc })
+        true
     }
 
     /// A system-script op aimed at another actor's own words: `FUN_8003C83C`

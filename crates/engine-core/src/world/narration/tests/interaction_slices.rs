@@ -546,3 +546,201 @@ fn a_talks_actor_sub_ops_on_another_placement_land_on_it() {
     assert_eq!(w.npcs.looks.get(LookKey::Npc(2)).angles, [0, 500, 0]);
     assert_eq!(w.npcs.looks.get(LookKey::Npc(1)).angles, [0, 0, 0]);
 }
+
+/// Two placement channels for a talk's cross-context ops: `0x20` on slot 1
+/// (the talker) and `0x26` on slot 2 (the target), both surfaced.
+fn talk_world_with_target() -> World {
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World::new();
+    w.install_field_player(0);
+    let channel = |slot: usize, id: u16| FieldChannel {
+        placement_index: slot,
+        ctx: FieldCtx {
+            script_id: id,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: true,
+        object_bind: false,
+    };
+    w.field_vm.channels = vec![channel(1, 0x20), channel(2, 0x26)];
+    w.npcs.positions.insert(1, (500, 500));
+    w.npcs.positions.insert(2, (900, 900));
+    w
+}
+
+fn run_talk(w: &mut World, bytecode: Vec<u8>) {
+    w.start_inline_dialogue(bytecode);
+    if let Some(id) = w.dialog.inline.as_mut() {
+        id.npc_slot = Some(1);
+    }
+    for _ in 0..4 {
+        w.step_inline_dialogue(false, false, false);
+    }
+}
+
+/// A talk's `A3 <id> x z` seats the named placement. `town01` P1[32] and
+/// `tunnelc`'s stage talks place their helpers this way; on the talk's
+/// stand-in context the actor stayed where it stood.
+#[test]
+fn a_talks_seat_lands_on_the_named_placement() {
+    let mut w = talk_world_with_target();
+    run_talk(&mut w, vec![0xA3, 0x26, 0x10, 0x11, 0x21]);
+    assert_eq!(
+        w.npcs.positions.get(&2),
+        Some(&(0x10 * 128 + 64, 0x11 * 128 + 64))
+    );
+    assert_eq!(w.field_vm.channels[1].ctx.world_x, 0x10 * 128 + 64);
+    assert_eq!(
+        w.npcs.positions.get(&1),
+        Some(&(500, 500)),
+        "the talker stays"
+    );
+}
+
+/// `C7 <id> tx tz mode` from a talk starts the walk kernel on the target and
+/// the record runs on past the op (`0x801DF030`): `rayman`'s and `doman`'s
+/// talks stage helpers this way.
+#[test]
+fn a_talks_walk_to_tile_walks_the_named_placement() {
+    let mut w = talk_world_with_target();
+    run_talk(&mut w, vec![0xC7, 0x26, 0x10, 0x11, 0x33, 0x21]);
+    let m = w
+        .npcs
+        .motions
+        .get(&2)
+        .expect("the target carries a walk leg");
+    assert_eq!(m.target, (0x10 * 128 + 64, 0x11 * 128 + 64));
+    assert_eq!(m.state.approach, 3);
+    assert!(!w.npcs.motions.contains_key(&1), "the talker does not walk");
+    assert!(
+        w.dialog.inline.as_ref().is_none_or(|d| d.pc > 0),
+        "the record ran on"
+    );
+}
+
+/// `B1 <id> <bit>` / `B2 <id> <bit>` from a talk write the target's `+0x10`
+/// (`bubu1` / `balden`'s talks raise the shadow-drop bit on their helpers),
+/// not the talk's stand-in context, and a bit-8 write engages the target as
+/// the system script's does.
+#[test]
+fn a_talks_flag_pokes_land_on_the_named_placement() {
+    let mut w = talk_world_with_target();
+    w.field_vm.channels[1].ctx.flags = 0x0100_0000;
+    run_talk(
+        &mut w,
+        vec![
+            0xB1, 0x26, 0x15, // raise 0x200000
+            0xB2, 0x26, 0x18, // clear the party-bank bit
+            0xB1, 0x26, 0x08, // engage
+            0x21,
+        ],
+    );
+    let flags = w.field_vm.channels[1].ctx.flags;
+    assert_ne!(flags & 0x0020_0000, 0, "the raise landed on the target");
+    assert_eq!(flags & 0x0100_0000, 0, "the clear landed on the target");
+    assert_eq!(w.field_vm.pending_engagements, vec![2]);
+    assert_eq!(
+        w.field_vm.channels[0].ctx.flags, 0,
+        "the talker's own context is untouched"
+    );
+}
+
+/// The walk the talk started holds later cross-context ops on the walker:
+/// the dispatcher's halted-target early-out returns them at their own PC
+/// until the kernel lands it. `B2 <id> 0A` is the one op exempt.
+#[test]
+fn an_op_on_a_walking_target_waits_for_the_walk() {
+    let mut w = talk_world_with_target();
+    w.start_inline_dialogue(vec![
+        0xC7, 0x26, 0x10, 0x11, 0x33, // walk
+        0xB1, 0x26, 0x15, // waits for the landing
+        0x21,
+    ]);
+    if let Some(id) = w.dialog.inline.as_mut() {
+        id.npc_slot = Some(1);
+    }
+    w.step_inline_dialogue(false, false, false);
+    assert!(w.npcs.motions.contains_key(&2));
+    assert_eq!(
+        w.field_vm.channels[1].ctx.flags & 0x0020_0000,
+        0,
+        "the poke waits while the target walks"
+    );
+    assert_eq!(w.dialog.inline.as_ref().map(|d| d.pc), Some(5));
+}
+
+/// `CC <id> A0` skips on the TARGET's `+0x10` bit: `retock` P1[46] raises
+/// bit 0 of placement `0x0D` with `B1 0D 00` and tests it with
+/// `CC 0D A0 00 05 00`, so the raise and the test have to name the same
+/// context once the raise lands on the target.
+#[test]
+fn a_talks_flag_skip_reads_the_named_placement() {
+    let mut w = talk_world_with_target();
+    run_talk(
+        &mut w,
+        vec![
+            0xB1, 0x26, 0x00, // raise target bit 0
+            0xCC, 0x26, 0xA0, 0x00, 0x03, 0x00, // bit set: skip the next op
+            0xB1, 0x26, 0x15, // skipped
+            0x21,
+        ],
+    );
+    let flags = w.field_vm.channels[1].ctx.flags;
+    assert_ne!(flags & 1, 0, "the raise landed on the target");
+    assert_eq!(
+        flags & 0x0020_0000,
+        0,
+        "the test read the target and skipped"
+    );
+}
+
+/// A talk that engages another context and ends has done its work: it does
+/// not fall back to its first text segment. `uru`'s sleepers tick a counter,
+/// run `B1 2E 08` and end on `21`, and the engaged spirit is the one who
+/// speaks.
+#[test]
+fn a_talk_that_engages_another_context_opens_no_box_of_its_own() {
+    let mut w = talk_world_with_target();
+    w.start_inline_dialogue_with_prologue(
+        vec![
+            0xB1, 0x26, 0x08, 0x21, // engage, end
+            0x1F, b'A', 0x00, 0x21, // the talker's first segment
+        ],
+        0,
+        4,
+    );
+    if let Some(id) = w.dialog.inline.as_mut() {
+        id.npc_slot = Some(1);
+    }
+    for _ in 0..4 {
+        w.step_inline_dialogue(false, false, false);
+    }
+    assert_eq!(w.field_vm.pending_engagements, vec![2]);
+    assert!(
+        w.dialog.inline.as_ref().is_none_or(|d| d.is_done()),
+        "the talk ended on its 21"
+    );
+    assert!(w.dialog.current.is_none(), "no box of the talker's opened");
+}
+
+/// A press a script box takes is spent for the tick: the talk probe later in
+/// the frame must not read it as a new talk, or dismissing an engaged
+/// context's last box re-opens the talk with whoever the player faces.
+#[test]
+fn a_press_a_script_box_takes_is_not_a_talk() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let mut w = World::new();
+    w.field_vm.helper_contexts.push(CutsceneTimeline::new(
+        vec![0x1F, b'H', 0x00, 0x4A, 0x40, 0x00],
+        0,
+    ));
+    w.step_helper_contexts();
+    assert!(w.script_dialog_panel().is_some());
+    w.dialog.input_consumed = false;
+    w.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
+    w.step_helper_contexts();
+    assert!(w.dialog.input_consumed, "the box spent the press");
+}
