@@ -305,6 +305,7 @@ impl World {
     /// ladder) - the fixed frame a host bakes a floor-following placed
     /// draw in, so the live ladder can reach it as a per-frame displacement
     /// ([`Self::object_draw_displacements`]).
+    // REF: FUN_8003A55C, FUN_80019278
     pub fn sample_field_floor_height_spawned(&self, world_x: i32, world_z: i32) -> i32 {
         let y =
             self.sample_field_floor_height_with(world_x, world_z, &self.terrain.placed_spawn_lut);
