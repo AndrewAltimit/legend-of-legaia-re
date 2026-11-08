@@ -62,7 +62,9 @@ fn the_map_display_draws_a_spinning_pointer_on_the_player() {
     let mut meshes: Vec<Vec<u8>> = Vec::new();
     for scene in ["map01", "map02", "map03"] {
         host.enter_world_map_scene(scene).expect("enter kingdom");
-        for _ in 0..30 {
+        // Past the scene load's post-warp hold (`_DAT_8007B6B4`), under
+        // which `FUN_801D1344` skips the pad controller and its L1 arm.
+        for _ in 0..60 {
             frame(&mut host, 0);
         }
         let src = host

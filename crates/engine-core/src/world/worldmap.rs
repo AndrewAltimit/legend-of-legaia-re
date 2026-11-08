@@ -58,7 +58,11 @@ impl World {
         let pad_held = pad & !self.input.pad_prev();
         let mut ctrl_sfx = Vec::new();
         let mut open_map_display = false;
+        let player_engaged = self.world_map_player_engaged();
+        let dev_panel_chords = self.world_map.dev_panel_chords;
         if let Some(ctrl) = &mut self.world_map.ctrl {
+            ctrl.player_engaged = player_engaged;
+            ctrl.dev_panel_chords = dev_panel_chords;
             ctrl.tick(pad, pad_held);
             // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
             // immediately after the toggle/camera block, gated on
@@ -403,6 +407,35 @@ impl World {
                 .is_some_and(|c| self.mode == SceneMode::WorldMap && c.entry_fade.ramp != 0)
     }
 
+    /// Whether retail's walk-frame pad controller `FUN_801D01B0` would skip
+    /// its map-display arm this frame: the player's engaged bit
+    /// (`player+0x10 & 0x80000`, tested at `0x801D01E4`), which a running
+    /// script record, a committed fight and a scene change in flight all
+    /// raise, plus the frame pump's gates in front of the call (the post-warp
+    /// hold and an open dialogue, `0x801D16A8..0x801D16E4`).
+    ///
+    /// REF: FUN_801D01B0
+    pub fn world_map_player_engaged(&self) -> bool {
+        let actor_engaged = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get(slot as usize))
+            .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0);
+        actor_engaged
+            || self.dialogue_owns_input()
+            || legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp)
+            || self.cutscene_timeline_active()
+            || self.script_context_engages_player()
+            || self.scene_change_in_flight()
+            || self.encounter_owns_player()
+    }
+
+    /// Developer opt-in for the overworld panel chords
+    /// ([`WorldMapState::dev_panel_chords`]). Hosts call it every frame from
+    /// their dev-menu switch.
+    pub fn set_world_map_dev_panel_chords(&mut self, on: bool) {
+        self.world_map.dev_panel_chords = on;
+    }
+
     /// Retail's dev flag `_DAT_8007B868`, which the map display's label pass
     /// reads as "show every place" (`0x801CF3A8`). `0` in retail.
     pub fn map_display_show_all(&self) -> bool {
@@ -511,6 +544,15 @@ impl World {
             return;
         }
         if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+            return;
+        }
+        // The map-display fade-up owns the walk frame: while its ramp is live
+        // `FUN_801D1344` raises the player's engaged bit, ticks the ramp and
+        // returns (`0x801D1368..0x801D1388`) before the pad controller runs,
+        // so the party stands still for the eight frames into the display
+        // instead of walking on into a door or an encounter tile.
+        // REF: FUN_801D1344
+        if self.map_display_owns_pad() {
             return;
         }
         // A spawned overworld cutscene timeline owns the player - the opening
@@ -795,8 +837,9 @@ impl World {
     /// The one rule both play hosts ask: a scene picked by name (the native
     /// `--scene`, the page's scene picker) arms it, and nothing else does -
     /// not a card Load, not a New Game, not a door. Retail ships the byte at
-    /// zero, and arming it shadows the retail L1 map-display arm, so a
-    /// player-reachable entry must leave it off. The page used to arm it on
+    /// zero. It no longer arms the port's developer panel chords, which bind
+    /// L1 over retail's map-display arm: those take the hosts' explicit
+    /// developer opt-in ([`Self::set_world_map_dev_panel_chords`]). The page used to arm it on
     /// every entry it ran (a Load included) while the native window armed it
     /// on its CLI entries only, so the same save behaved differently per host.
     ///
@@ -1163,7 +1206,12 @@ impl World {
             return;
         };
         let walk_mode = ctrl.view_mode == 0;
-        let debug = ctrl.debug_enabled;
+        // The port's own chords, behind the hosts' explicit developer opt-in
+        // - not the top-view camera's `debug_enabled`, which a scene-picker
+        // entry arms: the chords bind L1, and a picked overworld whose L1
+        // whited out the screen (and a second L1 sent the party off on the
+        // Riremito travel art) instead of opening the map was the result.
+        let debug = self.world_map.dev_panel_chords;
 
         // The stored tile only advances while no panel actor owns the screen,
         // so opening the screen freezes the return point the travel art warps

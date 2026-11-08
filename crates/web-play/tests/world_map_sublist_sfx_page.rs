@@ -59,6 +59,9 @@ fn world_map_sublist_confirm_replaces_the_last_ring_cue_on_the_page() {
     rt.load_disc(bytes, String::new()).expect("load disc");
     rt.enter_field("map01").expect("enter map01");
     assert_eq!(rt.scene_mode(), "WorldMap", "map01 is the overworld");
+    // The sub-list chord is one of the port's developer panel chords, which
+    // ride the page's dev-menu switch (`World::set_world_map_dev_panel_chords`).
+    rt.play_dev_menu_set_enabled(true);
     tick(&mut rt, 30);
 
     // Square opens the sub-list; its open arm runs on the next frame.

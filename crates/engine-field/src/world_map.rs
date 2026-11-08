@@ -195,6 +195,21 @@ pub struct WorldMapController {
     /// controller only exists while a kingdom overworld is the live scene,
     /// which is the state retail's byte selects for.
     pub map_display_enabled: bool,
+    /// Whether the player actor is engaged this frame - retail's
+    /// `player+0x10 & 0x80000` test that opens `FUN_801D01B0`
+    /// (`0x801D01E4..0x801D01F0`), plus the walk-frame gates in front of the
+    /// call (`FUN_801D1344` `0x801D16A8..0x801D16E4`). While it is up the pad
+    /// controller jumps past the map-display arm, so an L1 edge cues nothing
+    /// and seeds no ramp. `World::tick_world_map` writes it before every
+    /// [`Self::tick`].
+    pub player_engaged: bool,
+    /// The port's developer panel chords (`World::tick_world_map_panels`):
+    /// single-button installs on Square / L1 / L2 / R1 / R2 / Start. They are
+    /// the port's own bindings, not retail's, so they take L1 away from the
+    /// map-display arm only while a developer has opted in
+    /// (`WorldMapState::dev_panel_chords`, the hosts' dev-menu switch).
+    /// `World::tick_world_map` copies it in before every [`Self::tick`].
+    pub dev_panel_chords: bool,
     /// This tick's full-screen grey fade quad (retail `FUN_80024EE4(1, 2,
     /// grey * 0x010101)`), or `None` on a frame with no live ramp.
     ///
@@ -260,6 +275,8 @@ impl Default for WorldMapController {
             scene_base: 0,
             // Retail's `0x8007B6A8` gate - see the field docs above.
             map_display_enabled: true,
+            player_engaged: false,
+            dev_panel_chords: false,
             map_display_requested: false,
             pending_sfx: Vec::new(),
             horizon_params: (0, 0, 0),
@@ -306,12 +323,20 @@ impl WorldMapController {
 
         // The map-display arm, from the locomotion controller `FUN_801D01B0`
         // (`0x801D01F8..0x801D024C`): with the availability byte set, an L1
-        // edge cues SFX 0x20 and seeds the ramp with 1.
-        //
-        // The port's panel chords (see `World::tick_world_map_panels`) also
-        // bind L1, and those are the port's own binding rather than retail's,
-        // so the developer band shadows this arm while it is enabled.
-        if self.map_display_enabled && !self.debug_enabled && edge & MAP_DISPLAY_ARM != 0 {
+        // edge cues SFX 0x20 and seeds the ramp with 1. The controller's
+        // head (`0x801D01E4..0x801D01F0`) skips it while the player is
+        // engaged. Retail's arm reads no debug flag: the top-view debug
+        // camera (`debug_enabled`) leaves L1 to the map; only the top view
+        // itself, where L1 is the camera modifier, and the port's own
+        // developer panel chords (an explicit opt-in that also binds L1)
+        // keep it.
+        // REF: FUN_801D01B0
+        if self.map_display_enabled
+            && !self.player_engaged
+            && !self.dev_panel_chords
+            && self.view_mode == 0
+            && edge & MAP_DISPLAY_ARM != 0
+        {
             // Bounded: `World::tick_world_map` drains it into the SFX ring
             // every frame, but a controller ticked on its own keeps no more
             // than the cap.

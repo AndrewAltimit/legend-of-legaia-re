@@ -95,6 +95,14 @@ pub struct WorldMapState {
     /// seats (`0x801CF788`) and its tick's tail runs every frame. `None`
     /// outside the display.
     pub pointer: Option<legaia_engine_effects::summon::SummonScene>,
+    /// The port's developer panel chords on the overworld (Square / L1 / L2 /
+    /// R1 / R2 / Start install a panel actor; see
+    /// `World::tick_world_map_panels`). Off unless a host's explicit
+    /// developer opt-in raises it (the native `LEGAIA_DEV_MENU`, the play
+    /// page's dev-menu switch), because the chords are the port's bindings
+    /// and they take L1 from retail's map-display arm. Lives here rather than
+    /// on the controller so a door's fresh controller keeps the choice.
+    pub dev_panel_chords: bool,
 }
 
 /// The map display pointer's spawn inputs, read off the disc at scene load.
@@ -128,6 +136,7 @@ impl WorldMapState {
             curve_bias: 0,
             pointer_source: None,
             pointer: None,
+            dev_panel_chords: false,
         }
     }
 }

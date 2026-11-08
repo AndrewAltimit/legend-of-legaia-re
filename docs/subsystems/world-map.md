@@ -114,7 +114,15 @@ stateDiagram-v2
   (`0x801D01F8..0x801D0238`): when the per-scene byte `_DAT_8007B6A8` is set
   (the three kingdom maps) and the newly-pressed word `_DAT_8007B874 & 0x4`
   (packed L1) is up, it cues SFX `0x20` (`FUN_80035B50`) and stores `1` to the
-  ramp `_DAT_8007BAF4`.
+  ramp `_DAT_8007BAF4`. Only L1 arms it; no other shoulder button does
+  anything on the walk frame.
+- **When L1 does nothing.** The controller's first test
+  (`0x801D01E4..0x801D01F0`) jumps past the arm while the player's engaged
+  bit `player+0x10 & 0x80000` is up - a running script record, a committed
+  fight, a door crossing - and `FUN_801D1344` does not call the controller at
+  all under the scene load's post-warp hold `_DAT_8007B6B4`
+  (`0x801D16C8..0x801D16E4`). An L1 edge then cues nothing and seeds no ramp.
+  The arm reads no debug flag.
 - **Ramp.** While the ramp is non-zero `FUN_801D1344` suppresses locomotion
   (`player+0x10 |= 0x80000`) and ticks `FUN_800196A4` instead. That routine
   adds `DAT_1F800393 << 5` per frame, draws a full-screen grey quad
@@ -128,7 +136,17 @@ stateDiagram-v2
 Port: `WorldMapController` models the arm and the ramp
 (`WorldMapEntryFade`, port of `FUN_800196A4`) and raises
 `map_display_requested` when the ramp completes; `World::tick_world_map`
-opens [the map display](#the-map-display---prot-0981) on it. The ramp's quad
+opens [the map display](#the-map-display---prot-0981) on it. The engaged-bit
+skip is `World::world_map_player_engaged`, and while the ramp is live
+`World::step_world_map_locomotion` stands the player still, as the head of
+`FUN_801D1344` does (`0x801D1368..0x801D1388`), so a held d-pad cannot walk
+the party into a door or an encounter tile in the eight frames before the
+display opens. The arm fires in walk view whatever the top-view camera's
+`debug_enabled` says, and yields L1 only to the port's
+[developer panel chords](#the-chords-that-install-an-actor), which are an
+explicit opt-in: those chords bind L1 to the FadeFlash actor, whose
+white-out and Riremito hand-off took the press on a scene-picker entry when
+the picker armed them. The ramp's quad
 reaches both hosts as a `FUN_80024EE4` push
 (`World::map_display_fade_push_args`).
 
@@ -894,11 +912,15 @@ Three inputs are the **port's**, not retail's:
   installs the panel script at `0x801F2A88` (one `CloseAll` record in the
   PROT 0897 image), then it pumps and clears the completion gate while the
   input lock is down, and the actor retires.
-- **The chords that install an actor.** Retail reaches this band from debug
-  branches in the controller. The engine gates it behind the top-view toggle's
-  `debug_enabled` flag and binds Square (sub-list), L1 (fade/flash, pressed
-  again to release), L2 (fill fade), R1 (flag window), R2 (text box) and Start
-  (soft reset), walk mode only. The sub-list's state-3 hand-off installs the
+- <a id="the-chords-that-install-an-actor"></a>**The chords that install an
+  actor.** Retail reaches this band from debug branches in the controller.
+  The engine binds Square (sub-list), L1 (fade/flash, pressed again to
+  release), L2 (fill fade), R1 (flag window), R2 (text box) and Start (soft
+  reset), walk mode only, behind `WorldMapState::dev_panel_chords` - the
+  hosts' developer opt-in (the native `LEGAIA_DEV_MENU`, the play page's
+  dev-menu switch), not the top-view camera's `debug_enabled`, which a scene
+  picker arms. The chords are the port's bindings and L1 among them is
+  retail's map-display arm. The sub-list's state-3 hand-off installs the
   Riremito travel art, and Square while an actor is up dismisses it.
 
 #### The per-entry equipment sub-panel

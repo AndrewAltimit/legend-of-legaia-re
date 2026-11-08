@@ -51,7 +51,14 @@ impl LegaiaRuntime {
     /// (host-drift tier 5): the words come out of `World::set_pad`, converted
     /// to the retail packed layout the dev kernels key on.
     pub(crate) fn tick_dev_menu(&mut self) {
-        if !self.dev_menu_enabled {
+        // The overworld's developer panel chords ride the same opt-in: they
+        // bind L1 over retail's map-display arm, so no player path may arm
+        // them (`World::set_world_map_dev_panel_chords`).
+        let enabled = self.dev_menu_enabled;
+        if let Some(host) = self.scene_host.host_mut() {
+            host.world.set_world_map_dev_panel_chords(enabled);
+        }
+        if !enabled {
             return;
         }
         let Some((scene, camera)) = self.scene_host.host_cam_mut() else {

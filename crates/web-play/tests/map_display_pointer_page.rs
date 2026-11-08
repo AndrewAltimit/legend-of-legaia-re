@@ -50,17 +50,13 @@ fn the_page_draws_the_map_display_pointer() {
     rt.load_disc(bytes, String::new()).expect("load disc");
     rt.enter_field("map01").expect("enter map01");
     assert_eq!(rt.scene_mode(), "WorldMap", "map01 is the overworld");
-    // The scene picker arms the developer band, which shadows the retail L1
-    // arm (`World::arm_picker_world_map_debug`); a door or a Load leaves it
-    // off, which is the entry a player makes.
-    if let Some(c) = rt
-        .scene_host
-        .host_mut()
-        .and_then(|h| h.world.world_map.ctrl.as_mut())
-    {
-        c.debug_enabled = false;
-    }
-    for _ in 0..30 {
+    // The scene picker arms the top-view camera's debug flag
+    // (`World::arm_picker_world_map_debug`). L1 still belongs to retail's
+    // map-display arm: the picked overworld is the entry this test makes,
+    // and it used to hand L1 to the port's panel chords instead.
+    // Past the scene load's post-warp hold (`_DAT_8007B6B4`), under which
+    // `FUN_801D1344` skips the pad controller and its L1 arm.
+    for _ in 0..60 {
         frame(&mut rt, 0);
     }
     let slot = {

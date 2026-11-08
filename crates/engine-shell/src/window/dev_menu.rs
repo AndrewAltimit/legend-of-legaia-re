@@ -50,7 +50,15 @@ impl PlayWindowApp {
     /// re-mapped approximation - [`retail_packed`] does the conversion and
     /// records why the host has to.
     pub(super) fn tick_dev_menu(&mut self) {
-        if !Self::dev_menu_enabled() {
+        // The overworld's developer panel chords ride the same opt-in: they
+        // bind L1 over retail's map-display arm, so no player path may arm
+        // them (`World::set_world_map_dev_panel_chords`).
+        let enabled = Self::dev_menu_enabled();
+        self.session
+            .host
+            .world
+            .set_world_map_dev_panel_chords(enabled);
+        if !enabled {
             return;
         }
         let host = &self.session.host;

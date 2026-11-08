@@ -135,10 +135,13 @@ fn ctrl_mut(w: &mut World) -> &mut legaia_engine_field::world_map::WorldMapContr
     w.world_map.ctrl.as_mut().expect("world-map controller")
 }
 
-/// The developer opt-in the native window takes from its `--world-map` arm
-/// (`window/run.rs` sets `debug_enabled = true`). Everything after it is pad.
+/// The developer band: the top-view camera's `debug_enabled` (what a
+/// scene-picker entry arms) plus the port's panel chords (the hosts'
+/// explicit dev-menu opt-in, `World::set_world_map_dev_panel_chords`).
+/// Everything after it is pad.
 fn set_debug_band(w: &mut World, on: bool) {
     ctrl_mut(w).debug_enabled = on;
+    w.set_world_map_dev_panel_chords(on);
 }
 
 // ---------------------------------------------------------------------------

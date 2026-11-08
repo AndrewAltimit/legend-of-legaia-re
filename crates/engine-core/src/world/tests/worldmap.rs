@@ -956,3 +956,139 @@ fn the_anti_repeat_latch_crosses_a_scene() {
     let tracker = world.terrain.region_tracker.as_ref().expect("tracker");
     assert_eq!(tracker.last_formation(), 3);
 }
+
+// ---------------------------------------------------------------------------
+// The L1 map-display arm (`FUN_801D01B0` `0x801D01E4..0x801D024C`)
+// ---------------------------------------------------------------------------
+
+/// An overworld with a seated player actor and a clean pad history.
+fn overworld_with_player() -> World {
+    let mut w = World::default();
+    w.enter_world_map();
+    w.install_field_player(0);
+    w.seat_player_at_tile(20, 30);
+    w.set_pad(0);
+    let _ = w.tick();
+    let _ = w.take_sfx_ring_ops();
+    w
+}
+
+/// Press L1 once and run `frames` idle frames; report whether the confirm
+/// cue `0x20` rode the ring and whether the map display came up.
+fn press_l1(w: &mut World, frames: usize) -> (bool, bool) {
+    use legaia_engine_system::sound_state::SfxRingOp;
+    let mut cued = false;
+    let mut opened = false;
+    for f in 0..=frames {
+        w.set_pad(if f == 0 {
+            input::PadButton::L1.mask()
+        } else {
+            0
+        });
+        let _ = w.tick();
+        cued |= w.take_sfx_ring_ops().iter().any(|op| {
+            matches!(op, SfxRingOp::Push(id) if *id == i16::from(legaia_engine_field::world_map::MAP_DISPLAY_SFX))
+        });
+        opened |= w.world_map.map_display.is_some();
+    }
+    (cued, opened)
+}
+
+/// The scene-picker entry arms the top-view camera's debug flag. Retail's
+/// arm reads no debug flag, so L1 still opens the map: the picked overworld
+/// used to hand L1 to the port's FadeFlash panel chord instead - a white-out
+/// with no map, and a second L1 sent the party off on the Riremito travel
+/// art.
+#[test]
+fn a_picker_entry_still_opens_the_map_on_l1() {
+    let mut w = overworld_with_player();
+    assert!(w.arm_picker_world_map_debug());
+    let (cued, opened) = press_l1(&mut w, 20);
+    assert!(cued, "the arm cues SFX 0x20");
+    assert!(opened, "and the ramp reaches the map display");
+    assert!(
+        !w.world_map.ctrl.as_ref().unwrap().panels.is_active(),
+        "no developer panel actor took the press"
+    );
+}
+
+/// The developer panel chords are an explicit opt-in, and while they are on
+/// they own L1 (the FadeFlash install) - the only state that keeps L1 from
+/// the map.
+#[test]
+fn the_dev_panel_chords_take_l1_only_when_opted_in() {
+    let mut w = overworld_with_player();
+    w.set_world_map_dev_panel_chords(true);
+    let (cued, opened) = press_l1(&mut w, 20);
+    assert!(!cued && !opened, "the opted-in band owns L1");
+    assert!(w.world_map.ctrl.as_ref().unwrap().panels.is_active());
+}
+
+/// `FUN_801D01B0`'s head jumps past the arm while the player's engaged bit is
+/// up: an L1 edge then cues nothing and seeds no ramp. A scene change in
+/// flight is one of the states that raises it - the case where the port
+/// played the cue and then lost the ramp to the door it was crossing.
+#[test]
+fn an_engaged_player_does_not_arm_the_map() {
+    let mut w = overworld_with_player();
+    w.actors[0].move_state.flags |= 0x0008_0000;
+    let (cued, opened) = press_l1(&mut w, 20);
+    assert!(!cued && !opened, "engaged bit: no cue, no ramp");
+    assert_eq!(w.world_map.ctrl.as_ref().unwrap().entry_fade.ramp, 0);
+
+    let mut w = overworld_with_player();
+    w.pending_scene_transition = Some(1);
+    assert!(w.world_map_player_engaged());
+    w.set_pad(input::PadButton::L1.mask());
+    let _ = w.tick();
+    assert_eq!(w.world_map.ctrl.as_ref().unwrap().entry_fade.ramp, 0);
+}
+
+/// While the fade-up ramp is live `FUN_801D1344` returns before the pad
+/// controller (`0x801D1368..0x801D1388`): the party does not walk on into a
+/// door or an encounter tile during the eight frames into the display.
+#[test]
+fn the_party_stands_still_under_the_map_fade() {
+    let mut w = overworld_with_player();
+    let right = input::PadButton::Right.mask();
+    // Walk a few frames to prove the d-pad moves the player here at all.
+    let start = (
+        w.actors[0].move_state.world_x,
+        w.actors[0].move_state.world_z,
+    );
+    for _ in 0..8 {
+        w.set_pad(right);
+        let _ = w.tick();
+    }
+    let walked = (
+        w.actors[0].move_state.world_x,
+        w.actors[0].move_state.world_z,
+    );
+    assert_ne!(start, walked, "the d-pad walks the overworld player");
+    // L1 joins the held d-pad: from here to the display the player holds.
+    w.set_pad(right | input::PadButton::L1.mask());
+    let _ = w.tick();
+    let armed = (
+        w.actors[0].move_state.world_x,
+        w.actors[0].move_state.world_z,
+    );
+    assert_ne!(w.world_map.ctrl.as_ref().unwrap().entry_fade.ramp, 0);
+    let mut opened = false;
+    for _ in 0..20 {
+        w.set_pad(right);
+        let _ = w.tick();
+        if w.world_map.map_display.is_some() {
+            opened = true;
+            break;
+        }
+        assert_eq!(
+            (
+                w.actors[0].move_state.world_x,
+                w.actors[0].move_state.world_z
+            ),
+            armed,
+            "the player must not move under the fade-up"
+        );
+    }
+    assert!(opened, "the held d-pad does not stop the display opening");
+}
