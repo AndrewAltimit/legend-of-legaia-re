@@ -45,6 +45,7 @@ mod rayman_collapse_audio_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;
 mod rot_clut_disc;
+mod rugi_arrival_player_clip_disc;
 mod save_gate_field_menu;
 mod save_roundtrip_library;
 mod scene_encounter_rollable;

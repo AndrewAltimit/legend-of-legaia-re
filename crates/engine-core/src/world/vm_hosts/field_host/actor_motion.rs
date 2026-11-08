@@ -432,7 +432,8 @@ impl FieldHostImpl<'_> {
         // The VM's `is_player` is the bit; retail's is an identity compare
         // (`0x801E1954`).
         let is_player = is_player && self.ctx_is_player(ctx);
-        // The actor words every arm writes ahead of the seat, on an NPC:
+        // The actor words every arm writes ahead of the seat (the player arm
+        // writes the same words below, on the player's own state):
         // the depth byte's bit 7 sets or clears the party-bank bit
         // `0x01000000` of `+0x10` (`0x801E1828..0x801E1858`), the anim
         // control word `+0x62` drops hold / clamp / reverse (`andi 0xFF75`
@@ -442,7 +443,7 @@ impl FieldHostImpl<'_> {
         // clip of the named move playing, out of the bank the depth byte
         // names - on the install pre-run and a cutscene's cross-context
         // poke as much as on a live channel. The player arm picks its own
-        // clip (`field_player_script_clip` below) and keeps its words.
+        // clip (`field_player_script_clip` below).
         // REF: FUN_800204F8
         if !is_player {
             let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
@@ -563,7 +564,26 @@ impl FieldHostImpl<'_> {
             return;
         }
         if is_player {
-            // The player arm also aims its move id at the player's clip
+            // The words every arm writes ahead of the seat land on the player
+            // too: `s5` is the resolved actor, and the identity compare that
+            // splits the player arm off (`0x801E1954`) comes after them. The
+            // depth byte's bit 7 is the party-bank bit the pick below reads
+            // (`0x801E1828..0x801E1858`), so a seat with it clear binds scene
+            // record `move_id - 1` rather than striding into the leader's
+            // bank: `rugi` `P2[72]` flies Vahn in on scene clip 7
+            // (`CC F8 51 22 52 04 07`) beside Noa's 33 and Gala's 16, and
+            // restores the bit with `B1 F8 18` before its `A2 F8 02`. The
+            // `+0x62` mask (`andi 0xFF75`, `0x801E1864`) drops hold, clamp
+            // and reverse.
+            self.world.locomotion.player_party_bank = depth_byte & 0x80 != 0;
+            if let Some(slot) = self.world.player_actor_slot
+                && let Some(actor) = self.world.actors.get_mut(slot as usize)
+            {
+                actor.move_state.local_flags &= !(legaia_engine_scene::field_env::ANIM_HOLD
+                    | legaia_engine_scene::field_env::ANIM_CLAMP
+                    | legaia_engine_scene::field_env::ANIM_REVERSE);
+            }
+            // The player arm then aims its move id at the player's clip
             // (`0x801E1954..0x801E1A3C`: clip base + pick + bind).
             self.world.field_player_script_clip(move_id);
             let y = self
