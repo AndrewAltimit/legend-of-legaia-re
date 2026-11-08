@@ -827,6 +827,22 @@ fn nighto_arm_ten_holds_on_the_loop_counter_sentinel() {
     assert_eq!(st.countdown.0, SPEED_SCALAR << 7);
 }
 
+/// PROT 0907's arm 13 frees the attack name's text actor on the pass that
+/// forks (`FUN_800319A8(0)` at `0x801F7DF0`), and not while its drain holds:
+/// the confuse leg's result line opens with no caption over it.
+#[test]
+fn nighto_fork_clears_the_attack_name() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = SPEED_SCALAR * 160;
+    let held = nighto_direct(&mut st, 13, seats());
+    assert!(held.hold);
+    assert_eq!(held.caption, None, "the drain keeps the line up");
+    st.countdown.0 = -1;
+    let d = nighto_direct(&mut st, 13, seats());
+    assert!(!d.hold);
+    assert_eq!(d.caption, Some(ModuleCaption::Cleared));
+}
+
 /// PROT 0903 arm 3's three calls read the creature seat before the arm
 /// stores `+0x36 = 0x200` (`0x801F6E48`): the rings open on the floor under
 /// the creature's plane pair, facing its way, while the seat itself drops

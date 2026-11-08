@@ -1777,7 +1777,9 @@ buffer `0x801F8544` (`FUN_8003CA78`), and the confuse leg adds `8` and appends
 to the caster's record `+0x9C` (`0x801F6F0C..0x801F6F18`). Each XP add is
 skipped while the special-battle word `_DAT_8007BAC0` is up. Arm 13 raises the
 message bar on its pass, ahead of the fork (`FUN_801D8DE8(0x5B, 0)` at
-`0x801F7DDC`, `ctx[+0x18] = 0x5B`), so every outcome shows its line. The body
+`0x801F7DDC`, `ctx[+0x18] = 0x5B`), so every outcome shows its line, and
+frees the attack name arm 8 put up (`FUN_800319A8(0)` at `0x801F7DF0`), so
+the line opens with no caption over it. The body
 holds no damage call, so the cast folds nothing: `capture`, the cast-sequence
 recording of a confused Nighto on `party_basic_attack_vs_gobu_gobu` holds the
 Gobu Gobu's `+0x14C` at 76 through the whole cast. Port:
@@ -5399,7 +5401,7 @@ Module writes into the parts it keeps handles on, and into the victim:
 
 Each module ends its line with `FUN_800319A8(0)` (`ModuleCaption::Cleared`):
 0903 as arm 11's hit lands (`0x801F74C8`), 0905 on arm 10's pass
-(`0x801F802C`), 0910 on its settle arm's (`0x801F7BC4`), 0911 on arm 9's
+(`0x801F802C`), 0907 on arm 13's, where the fork opens the result line (`0x801F7DF0`), 0910 on its settle arm's (`0x801F7BC4`), 0911 on arm 9's
 (`0x801F7ED0`), 0913 as arm `0x13`'s hit lands (`0x801F8460`). PROT 0905 also
 puts up the spell name in arm 5 (`0x801F727C`) and the attack name in arm 8
 (`0x801F79EC`).
