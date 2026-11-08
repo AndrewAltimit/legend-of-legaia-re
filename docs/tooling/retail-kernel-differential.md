@@ -460,3 +460,9 @@ every purse and bank shape, matches `coin_exchange` on the cells, the cursor, th
 the stings, and found the two flag calls the port had no arm for: opening raises system flag `8` and clears the
 flag the opening script names (`FUN_8003CE9C(_DAT_8007B450 + 2)`, `0x801F0B74..0x801F0B8C`), and a sale raises
 that flag (`0x801F1000..0x801F1010`), so the script that opened the counter could never tell a sale from a walk-off.
+The follow camera's per-frame kernels (`camera_follow`), the ease `FUN_801DB510` with the composer
+`FUN_801DAB90` beneath it and the focus edge clamp `FUN_801DAA50` after it, match `compose`, `ease_step` and
+`clamp_focus` over generated parameter blocks of every mode and sweep nibble, attribute boxes, floors, live
+poses, the hold and force-ease bits and the script focus override. A mode-1 / mode-2 block over a box with no
+width, or a sweep over one with no depth, reaches the composer's `break` guards; the port reads that divide as
+`0`.

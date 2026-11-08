@@ -17,6 +17,7 @@ mod battle_leaves;
 mod battle_seed;
 mod bearing;
 mod best_equipment;
+mod camera_follow;
 mod cast_damage;
 mod cast_steal;
 mod coin_counter;
