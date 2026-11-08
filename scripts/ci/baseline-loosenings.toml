@@ -1042,11 +1042,12 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "Gap wave 33. Bundles grow ~13 KB gzip with the wave's new code (the dome hub's shared screen-primitive draw and hub VRAM, 4C D6 per-draw blend, per-object field contexts, readout ramp). The +0.01 GL draws per frame on town01 / world_map retail mode measured the same at the wave base before the dome-hub lane, and the +0.1 KB per frame on summon_cast is the jittered rings' world-stream rand deal."
+reason = "Gap wave 33. Bundles grow ~13 KB gzip with the wave's new code (the dome hub's shared screen-primitive draw and hub VRAM, 4C D6 per-draw blend, per-object field contexts, readout ramp, Death Game once-a-pass pad read). The +0.01 GL draws per frame on town01 / world_map retail mode measured the same at the wave base before the dome-hub lane, and the +0.1 KB per frame on summon_cast is the jittered rings' world-stream rand deal."
 changes = [
   ["counts/browser/town01/retail/gl_draws_per_frame", 43.79, 43.8],
   ["counts/browser/world_map/retail/gl_draws_per_frame", 151.83, 151.84],
   ["counts/bundle/gzip_bytes", 7059595, 7072853],
-  ["counts/bundle/play_gzip_bytes", 4924328, 4937206],
+  ["counts/bundle/play_gzip_bytes", 4924328, 4937227],
   ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4646.3, 4646.4],
 ]
+
