@@ -129,8 +129,8 @@ fn the_pose_decoder_is_retails() {
         assert_eq!(cpu.call(DECODE, &[NODE]), Stop::Returned, "{round}");
         let cf = cur_frame as usize;
         let mut out_parts: Vec<([i16; 3], [i16; 3])> = Vec::new();
-        for i in 0..parts {
-            let p = blend_part_pose(poses[cf][i], poses[cf + 1][i], nibble as u8, 0);
+        for (i, (cur, next)) in poses[cf].iter().zip(&poses[cf + 1]).enumerate() {
+            let p = blend_part_pose(*cur, *next, nibble as u8, 0);
             retries += u32::from(p.retried);
             out_parts.push((
                 p.translation,
