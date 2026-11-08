@@ -115,7 +115,12 @@ pub(super) fn run_movie(
     for (number, rgba, w, h) in frames {
         let frame = Frame::from_movie(&rgba, w, h);
         let score = crate::retail_compare_image::score(rf, &frame);
-        if best.as_ref().is_none_or(|b| score.within > b.0.within) {
+        // A tie on `within` goes to the smaller mean error: on a low-detail
+        // fade every candidate scores `1.000`, and the earliest one is a
+        // frame of the fade away from the one the display showed.
+        if best.as_ref().is_none_or(|b| {
+            score.within > b.0.within || (score.within == b.0.within && score.mae < b.0.mae)
+        }) {
             best = Some((score, frame, number));
         }
     }
