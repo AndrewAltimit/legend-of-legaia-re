@@ -350,7 +350,18 @@ it, so a scene that starts its own track and then parks over it (`son`)
 keeps its own. Door entries, resumes and the opening chain run the park as
 retail does. Both play hosts get it through the shared scene host; pinned by
 `engine-scene-host/tests/picker_park_bgm_disc.rs` and, over the whole picker
-list in sequence, `web-play/tests/play_scene_select_bgm.rs`.
+list in sequence, `web-play/tests/play_scene_select_bgm.rs`. A seat out of
+the scene's own scripts (an `OwnSeat` arrival,
+[engine.md](engine.md#picker-door-arrivals)) arms nothing: it is no door.
+
+An entry script can start two tracks in one pass, and the second is the
+scene's. `town0e`'s `P1[0]` starts `2016`, raises a side-band bank request
+(`36 01 80 ..`, op `0x36` sub `1`), raises a second one, which halts until
+the poller acknowledges the first ([script-vm.md](script-vm.md#the-stream-gates-on-op-0x36)),
+and then starts `2070`. `2070` is the scene's home track: its cutscene
+records `P2[7]` and `P2[8]` each switch to their own track and back to
+`2070`. The engine requests both starts on the first frame and sounds
+`2070`, on a picker visit and on the FMV 8 hand-off alike.
 
 ### Which track a scene plays
 

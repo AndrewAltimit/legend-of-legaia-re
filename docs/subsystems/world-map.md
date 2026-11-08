@@ -1475,7 +1475,10 @@ GARMEL. `P0[10]`, the Drake castle door, runs the same `0x142` `dolk` /
 every object bind's flat record against the live flags
 (`man_field_scripts::flat_record_path_walk`) and installs an
 `OverworldPortal` with `object: true` at the object's contact centre for each
-path ending in a `0x3F`; the crossing replays the flag writes along that path.
+path ending in a `0x3F`; the crossing replays the flag writes along that path. The scene picker's arrival catalog counts the same mouths as entrances
+(`man_edit::site_record_slots` joins the `0x3F` to its partition-0 record and
+the record to its gate-0 bind), so a picked `garmel` enters where the Garmel
+mouth lands, tile `(0x14, 0x09)`.
 The object is solid, so the portal engages on **contact**: the player's
 position or one of the leading actor probes (`FIELD_ACTOR_PROBES`) inside the
 `+-0x50` static box, the points `FUN_801CFE4C` both refuses the step with and
