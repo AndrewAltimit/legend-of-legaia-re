@@ -617,8 +617,10 @@ def score(a, out: Path) -> int:
         cmd += ["--sound-tolerance", str(a.sound_tolerance)]
     if a.strict_drive:
         cmd += ["--strict-drive"]
+    if a.camera_only:
+        cmd += ["--camera-only"]
     r = subprocess.run(cmd, cwd=REPO)
-    if r.returncode == 0:
+    if r.returncode == 0 and not a.camera_only:
         rep = json.loads((out / "report.json").read_text())
         print(f"[score] {out.name}: mean {rep['mean_within']:.3f} over {rep['valid_pairs']} pairs "
               f"(min {rep['min_within']:.3f}; white {rep['white_pairs']}, dark {rep['dark_pairs']}, "
@@ -772,6 +774,8 @@ def main() -> int:
                     help="both sides: every living monster's HP at the inject / first prompt, "
                          "so the cast's whole damage shows in the HP columns")
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--camera-only", action="store_true",
+                    help="score only the camera channel (camera.csv); no frame is read")
     a = ap.parse_args()
     if a.spell is None and not a.physical:
         ap.error("--spell is required without --physical")

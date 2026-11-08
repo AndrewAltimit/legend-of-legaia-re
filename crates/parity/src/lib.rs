@@ -16,6 +16,8 @@
 //! - [`cast_sequence`] - one cast scored against retail frame by frame,
 //!   paired on the action-SM clock (`legaia-engine cast-sequence-score`,
 //!   `docs/tooling/cast-sequence-oracle.md`).
+//! - [`cast_sequence_camera`] - the same cast's camera, every retail vsync
+//!   against its paired engine tick (`camera.csv`).
 //! - [`cast_sequence_sound`] - the same cast's sound cues, matched on id and
 //!   on the action-SM clock.
 //! - [`window_child`] - spawn a `play-window` child, retrying once the X11
@@ -28,6 +30,7 @@ pub mod audio_sweep;
 pub mod audio_trace_oracle;
 pub mod capture_observations;
 pub mod cast_sequence;
+pub mod cast_sequence_camera;
 pub mod cast_sequence_sound;
 pub mod cue_differential;
 pub mod mode_trace_oracle;

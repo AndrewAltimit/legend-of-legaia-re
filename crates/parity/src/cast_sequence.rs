@@ -55,7 +55,7 @@ pub const WHITE_LUMA: f64 = 230.0;
 
 /// The longest display lag retail shows (`2 *` the largest frame step the
 /// band runs on, `4`).
-const MAX_LAG: u64 = 8;
+pub(crate) const MAX_LAG: u64 = 8;
 
 /// Game frames a retail grab's screen fade stands behind the RAM when only
 /// the other ordering table links the fade's quad ([`Row::fade_back`]): one,
@@ -168,7 +168,7 @@ impl Segment {
     }
 }
 
-fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
+pub(crate) fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let mut lines = text.lines();
     let header: Vec<String> = lines
@@ -189,7 +189,7 @@ fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
         .collect())
 }
 
-fn field<T: std::str::FromStr>(r: &BTreeMap<String, String>, k: &str) -> Option<T> {
+pub(crate) fn field<T: std::str::FromStr>(r: &BTreeMap<String, String>, k: &str) -> Option<T> {
     r.get(k).and_then(|v| v.parse().ok())
 }
 
@@ -1388,11 +1388,20 @@ pub struct CastSequenceArgs {
     /// (the driver counts them from `cam.csv`, [`Side::drop_leading`]).
     #[arg(long, default_value_t = 0)]
     pub engine_skip: usize,
+    /// Write only `camera.csv`: no frame is read, so a recording whose frames
+    /// have been deleted still scores its camera.
+    #[arg(long)]
+    pub camera_only: bool,
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?.first_action_only();
     let engine = Side::read(&a.engine)?.drop_leading(a.engine_skip);
+    std::fs::create_dir_all(&a.out)?;
+    crate::cast_sequence_camera::write_camera_csv(&retail, &engine, &a.out)?;
+    if a.camera_only {
+        return Ok(());
+    }
     let mut report = compare_with(&a.label, &retail, &engine, a.retail_lag, !a.strict_drive)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
