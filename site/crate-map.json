@@ -4171,6 +4171,7 @@
     "engine-cast",
     "engine-core",
     "engine-dialog",
+    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
