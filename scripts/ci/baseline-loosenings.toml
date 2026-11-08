@@ -1030,3 +1030,12 @@ changes = [
   ["counts/native/summon_cast/retail/allocs_per_frame", 1353.4, 1356.9],
   ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1571.6, 1571.9],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Gap wave 33. Slippery Big Wave still: the same cast's frame-by-frame film rose .830 -> .916 when Big Wave's arm-6 halt walk stopped killing the two records it keeps no handle for (the floor-wide water sheet), and the mid-cast still moved -.001 with it. The two cort_evolved states run a patched executable (not retail evidence; reported as patched drift, not a regression) and were not bisected; the wave changed the boss-stage effect trees' per-battle-frame tick and the battle camera seating they pass through."
+changes = [
+  ["states/battle_noaru_slippery_v2_big_wave_mid_cast/image", 0.934, 0.933],
+  ["states/cort_evolved_pre_battle/image", 0.974, 0.97],
+  ["states/cort_evolved_pre_doomsday/image", 0.938, 0.937],
+]
