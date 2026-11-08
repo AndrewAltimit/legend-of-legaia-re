@@ -455,3 +455,8 @@ also carried on across actions).
 The escape timer's HUD actor `FUN_801D2EBC` (`escape_timer`), run over whole countdowns with random clock deltas,
 frame steps and busy frames, matches `EscapeTimer::tick` and `EscapeTimerHud::step`: the counter, the flags it
 fires, the phase machine and its kill bit, the digits and the ink.
+The casino coin counter `FUN_801F0ADC` (`coin_counter`), driven frame by frame with generated pad words over
+every purse and bank shape, matches `coin_exchange` on the cells, the cursor, the hold, the ceiling, the sale and
+the stings, and found the two flag calls the port had no arm for: opening raises system flag `8` and clears the
+flag the opening script names (`FUN_8003CE9C(_DAT_8007B450 + 2)`, `0x801F0B74..0x801F0B8C`), and a sale raises
+that flag (`0x801F1000..0x801F1010`), so the script that opened the counter could never tell a sale from a walk-off.

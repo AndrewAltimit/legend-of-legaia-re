@@ -206,6 +206,11 @@ impl World {
             // the dispatcher's release arm actually branches on.
             board_flag: i32::from(self.field_vm.submode_screen.open),
             board_entries: self.field_vm.submode_screen.board_entries,
+            // `FUN_8003CE9C(_DAT_8007B450 + 2)`: the parked operand's halfword.
+            script_flag: {
+                let op = &self.field_vm.submode_screen.op49_operand;
+                i16::from_le_bytes([op[2], op[3]])
+            },
             // `DAT_80084594` / `DAT_80084598..` are the present-party roster;
             // the engine's mirror of retail's `0x8007BD10` list is
             // `World::party.active_party`.
@@ -298,6 +303,8 @@ impl World {
                     self.party.money = self.party.money.saturating_sub(gold_cost).max(0);
                 }
                 HubAction::ClearCursorRow => self.field_vm.submode_screen.counter.cursor = 0,
+                HubAction::SetSystemFlag(flag) => self.system_flag_set(flag),
+                HubAction::ClearSystemFlag(flag) => self.system_flag_clear(flag),
                 // The hub's two ring producers cross to the host ring the way
                 // field-VM op `0x36`'s do: `FUN_80035BD0(id)` overwrites the
                 // last-written slot, `FUN_80035B50(id)` pushes.

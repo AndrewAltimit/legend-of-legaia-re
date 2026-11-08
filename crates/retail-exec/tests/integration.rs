@@ -19,6 +19,7 @@ mod bearing;
 mod best_equipment;
 mod cast_damage;
 mod cast_steal;
+mod coin_counter;
 mod combo_records;
 mod common;
 mod confuse;

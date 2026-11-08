@@ -106,6 +106,10 @@ pub const CUE_REFUSE: u8 = 0x23;
 /// The picker's own accept sting (`FUN_80035BD0(0)`).
 pub const CUE_PICK: u8 = 0x00;
 
+/// The system flag the counter raises on opening (`FUN_8003CE08(8)` at
+/// `0x801F0B74`) - the one field-VM op `0x4C 0xE5` raises on every coin delta.
+pub const COIN_BANK_FLAG: u16 = 8;
+
 /// Hold frames the commit state waits before closing (`0x801F0FD0`).
 pub const COIN_COMMIT_HOLD: i32 = 0x14;
 
@@ -165,6 +169,12 @@ pub fn coin_exchange(
     let mut hand_back_now = false;
     match slot {
         0 => {
+            // `FUN_8003CE08(8)`, then `FUN_8003CE34` on the script's flag
+            // (`FUN_8003CE9C(_DAT_8007B450 + 2)`) at `0x801F0B74..0x801F0B8C`:
+            // the counter opens with the coin-bank flag up and the sale flag
+            // down.
+            out.act(HubAction::SetSystemFlag(COIN_BANK_FLAG));
+            out.act(HubAction::ClearSystemFlag(env.script_flag as u16));
             counter.clear_digits();
             counter.cursor = 0;
             out.act(HubAction::ClearCursorRow);
@@ -252,6 +262,10 @@ pub fn coin_exchange(
             }
         }
         3 => {
+            // `FUN_8003CE08(FUN_8003CE9C(_DAT_8007B450 + 2))` at
+            // `0x801F1000..0x801F1010`: a sale raises the script's flag, ahead
+            // of the purse and bank writes.
+            out.act(HubAction::SetSystemFlag(env.script_flag as u16));
             let coins = counter.entered();
             out.act(HubAction::BuyCoins {
                 coins,

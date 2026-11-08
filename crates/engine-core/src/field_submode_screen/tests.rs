@@ -83,9 +83,15 @@ fn the_coin_counter_moves_coins_and_gold_through_a_world_tick() {
     w.party.money = 5_000;
     w.minigames.casino_coins = 7;
     w.open_coin_counter();
+    // The opening script's operand names the sale flag (`49 03 25 <flag>`).
+    w.field_vm.submode_screen.op49_operand = [0x03, 0x25, 0x40, 0x00, 0, 0, 0];
+    w.system_flag_set(0x40);
 
-    // Frame 1: state 0 seeds the screen.
+    // Frame 1: state 0 seeds the screen, raising the coin-bank flag and
+    // clearing the sale flag.
     w.tick_submode_screen(1);
+    assert!(w.system_flag_test(8));
+    assert!(!w.system_flag_test(0x40), "the counter opens with no sale");
     // Type 12 coins.
     w.field_vm.submode_screen.counter.set_entered(12);
     // Frame 2: accept.
@@ -112,6 +118,7 @@ fn the_coin_counter_moves_coins_and_gold_through_a_world_tick() {
         "coins land in the casino bank"
     );
     assert_eq!(w.party.money, 5_000 - 1_200, "gold pays 100 per coin");
+    assert!(w.system_flag_test(0x40), "a sale raises the script's flag");
 }
 
 #[test]
