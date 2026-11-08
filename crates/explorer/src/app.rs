@@ -1921,11 +1921,21 @@ impl App {
                 });
             });
         let t = a.tims[self.tim_sel].clone();
-        // Wraps rather than clipping the export buttons off a narrow pane;
-        // the sliders shrink so a label, its slider and its value box fit
-        // one row of the narrowest pane.
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().slider_width = (ui.available_width() - 110.0).clamp(60.0, 140.0);
+        // The CLUT and Zoom controls share a row when the pane has room for
+        // both, and each take one on a narrower pane: a wrapping row does
+        // not wrap a slider's value box with it, so a wrapped Zoom slider
+        // ran off the pane's edge. The sliders shrink so a label, its slider
+        // and its value box fit one row of the narrowest pane.
+        let stacked = ui.available_width() < TEX_CONTROLS_ROW_MIN;
+        let zoom_row = |ui: &mut egui::Ui, zoom: &mut f32, w: f32| {
+            ui.spacing_mut().slider_width = w;
+            ui.label("Zoom:");
+            ui.add(egui::Slider::new(zoom, 0.5..=8.0).step_by(0.5));
+        };
+        let slider_w =
+            (ui.available_width() / if stacked { 1.0 } else { 2.0 } - 110.0).clamp(60.0, 140.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().slider_width = slider_w;
             if t.palettes > 1 {
                 ui.label("CLUT:");
                 ui.add(egui::Slider::new(&mut self.clut, 0..=t.palettes - 1));
@@ -1941,10 +1951,15 @@ impl App {
             } else {
                 ui.label("direct colour (no CLUT)");
             }
-            ui.separator();
-            ui.label("Zoom:");
-            ui.add(egui::Slider::new(&mut self.tim_zoom, 0.5..=8.0).step_by(0.5));
-            ui.separator();
+            if !stacked {
+                ui.separator();
+                zoom_row(ui, &mut self.tim_zoom, slider_w);
+            }
+        });
+        if stacked {
+            ui.horizontal(|ui| zoom_row(ui, &mut self.tim_zoom, slider_w));
+        }
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Export PNG...").clicked() {
                 let name = format!(
                     "{}_tim{:02}_clut{}.png",
@@ -3376,6 +3391,10 @@ const TIM_LIST_MIN: f32 = 140.0;
 /// The texture list's default and largest width in a preview pane `avail`
 /// points wide: 270 points (one unwrapped row) at most, and never more
 /// than half the pane, so the controls beside it keep their room.
+/// The pane width from which the Textures tab's CLUT and Zoom controls fit
+/// one row.
+const TEX_CONTROLS_ROW_MIN: f32 = 520.0;
+
 pub(crate) fn tim_list_width(avail: f32) -> (f32, f32) {
     let max = (avail * 0.5).max(TIM_LIST_MIN);
     (270.0f32.min(max), max)
