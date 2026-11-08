@@ -542,7 +542,8 @@ exactly the arms its `sltiu` allows and stops on the terminal arm with no
   the counter beside the style clear: PROT 0959's Megaton Press
   (`sh zero,0x2(v1)` at `0x801F8214`, the base `ctx + 0x6D8`) and PROT 0960's
   Plasma Strike (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`), so the Done
-  band's case 6 frames from a counter of zero. PROT
+  band's case 6 frames from a counter of zero (retail films of all three read `0`
+  on `0x71`). PROT
   0935..0937, 0939 and 0962 hold neither, so the Done band after them frames
   from half a turn round. Three bodies of split modules hold neither either,
   where the other body of their module has both: PROT 0945's Water Column

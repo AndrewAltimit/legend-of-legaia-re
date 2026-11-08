@@ -396,8 +396,8 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
 ///
 /// Three bodies zero the counter instead (`sh zero,0x2(base)` beside `sb
 /// zero,0xd`): PROT 0959 Megaton Press (`0x801F8214`), PROT 0960 Plasma Strike
-/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). A retail Neo Star Slash film
-/// reads the counter `4` at the Done band's first pass, the drift on `0`.
+/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). Retail films of all three read the
+/// counter `0` on `0x71`, and the first Done pass adds its drift.
 ///
 /// The bodies of 0946..0948 and 0953 clear `ctx[+0x0D]` without the store
 /// ([`capture_exit_clears_style`]).
