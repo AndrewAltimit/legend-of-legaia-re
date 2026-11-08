@@ -1073,7 +1073,30 @@ pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::me
     })
 }
 
+/// The ground disc under an explicit flag word: the duel's floor glow and its
+/// fighters' shadows draw the same XZ disc through `FUN_80043390` with flag
+/// words `0x99000000` (additive) and `0x8A000000` (`FUN_801D6BB8`).
+///
+/// PORT: FUN_801D6BB8 (the disc build and draw, overlay PROT 0976)
+pub fn ground_disc_mesh(
+    inner: u32,
+    outer: u32,
+    radius: i16,
+    flag_word: u32,
+) -> legaia_tmd::mesh::VramMesh {
+    build_disc_mesh(inner, outer, radius, flag_word)
+}
+
 fn build_ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::mesh::VramMesh {
+    build_disc_mesh(inner, outer, radius, SHADOW_FLAG_WORD)
+}
+
+fn build_disc_mesh(
+    inner: u32,
+    outer: u32,
+    radius: i16,
+    flag_word: u32,
+) -> legaia_tmd::mesh::VramMesh {
     let src = ground_shadow_src(inner, outer, radius);
     let b = build(
         0x8000_0000 + SHADOW_SCRATCH_OFFSET,
@@ -1087,11 +1110,11 @@ fn build_ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::
     .expect("shape 0 always builds");
     let colour = ColourWord {
         semi: true,
-        abr: ((SHADOW_FLAG_WORD >> 24) & 3) as u8,
+        abr: ((flag_word >> 24) & 3) as u8,
         far: [0; 3],
         ir0: 1,
         split_quads: false,
-        double_sided: SHADOW_FLAG_WORD & 0x0800_0000 != 0,
+        double_sided: flag_word & 0x0800_0000 != 0,
     };
     vram_mesh(&decode(&b), 0x1000, &colour)
 }
