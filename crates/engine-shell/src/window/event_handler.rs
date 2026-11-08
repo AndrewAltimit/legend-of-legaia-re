@@ -29,7 +29,14 @@ mod redraw_tick;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        let setup = self.window_setup();
+        let mut setup = self.window_setup();
+        // Where the window last closed, when that is still on a monitor
+        // (`window_placement`); a scripted run opens where the desktop puts
+        // it, so its frame never depends on a player's desktop.
+        if !self.scripted_run() {
+            setup.position =
+                crate::window_placement::restore(crate::window_placement::Which::Game, evl);
+        }
         legaia_engine_render::profile::startup("event loop up");
         if !self.win.open_with(evl, minigames::WINDOW_TITLE, setup) {
             return;
@@ -93,6 +100,17 @@ impl ApplicationHandler for PlayWindowApp {
     /// rate does not change.
     fn about_to_wait(&mut self, _evl: &ActiveEventLoop) {
         self.win.request_redraw();
+    }
+
+    /// Every way out (the close button, `Esc` twice, the game's own quit)
+    /// ends the loop here, with the window still open: remember where it
+    /// is for the next start.
+    fn exiting(&mut self, _evl: &ActiveEventLoop) {
+        if !self.scripted_run()
+            && let Some(w) = self.win.window.as_deref()
+        {
+            crate::window_placement::remember(crate::window_placement::Which::Game, w);
+        }
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

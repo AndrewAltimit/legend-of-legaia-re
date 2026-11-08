@@ -12,4 +12,5 @@ pub mod launcher;
 pub mod replay;
 pub mod scenarios;
 pub mod window;
+pub mod window_placement;
 pub mod xa_clip;

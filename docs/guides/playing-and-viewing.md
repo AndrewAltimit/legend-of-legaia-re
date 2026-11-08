@@ -128,6 +128,13 @@ Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
 start shows it ready, with *Play* focused, so `Enter` starts the game.
 *Change disc...* picks another one.
 
+The launcher and the game window each reopen where they last closed
+(`window-placement.toml` beside `launcher.toml`), as Explorer does, unless
+that spot is no longer on a connected monitor; then the desktop places them.
+A fullscreen game keeps the spot it had before it went fullscreen, and a
+desktop that does not report window positions (Wayland) leaves placement to
+the desktop.
+
 A `launcher.toml` that does not parse (a hand edit gone wrong, a write cut off
 by a crash) is never overwritten with the defaults: the launcher renames it to
 `launcher.toml.broken` (`.broken-2`, ... when an older one is still there),

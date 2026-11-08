@@ -69,6 +69,7 @@ use legaia_engine_shell::launcher::{
     self, DiscInfo, DiscProblem, ExpansionInfo, LaunchDecision, LauncherSettings, OPTION_ROWS,
     OptionRow,
 };
+use legaia_engine_shell::window_placement;
 use legaia_engine_system::input::Mapping;
 use legaia_engine_ui::TextDraw;
 use winit::application::ApplicationHandler;
@@ -966,6 +967,7 @@ impl LauncherApp {
 
     fn close_window(&mut self) {
         self.atlas = None;
+        self.remember_placement();
         if let Some(w) = self.win.window.as_deref() {
             w.set_visible(false);
         }
@@ -973,8 +975,23 @@ impl LauncherApp {
         self.win.window = None;
     }
 
+    /// Remember where the window is, for the next start
+    /// (`window_placement`); a screenshot run leaves the file alone.
+    fn remember_placement(&self) {
+        if self.screenshot.is_none()
+            && let Some(w) = self.win.window.as_deref()
+        {
+            window_placement::remember(window_placement::Which::Launcher, w);
+        }
+    }
+
     fn open_window(&mut self, evl: &ActiveEventLoop) {
         let mut setup = legaia_engine_render::window::WindowSetup::default();
+        // Where the window last closed, when that is still on a monitor; a
+        // screenshot run opens where the desktop puts it.
+        if self.screenshot.is_none() {
+            setup.position = window_placement::restore(window_placement::Which::Launcher, evl);
+        }
         if let Some((w, h)) = std::env::var(SIZE_ENV)
             .ok()
             .and_then(|v| v.split_once('x').map(|(w, h)| (w.parse(), h.parse())))
@@ -1956,6 +1973,10 @@ impl ApplicationHandler for LauncherApp {
     fn about_to_wait(&mut self, evl: &ActiveEventLoop) {
         self.poll_game(evl);
         self.pad_input(evl);
+    }
+
+    fn exiting(&mut self, _evl: &ActiveEventLoop) {
+        self.remember_placement();
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

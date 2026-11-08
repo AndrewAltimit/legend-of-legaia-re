@@ -113,7 +113,7 @@ impl EngineWindow {
             return false;
         }
         let (w, h) = setup.logical_size;
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title(title)
             .with_window_icon(app_icon())
             .with_inner_size(winit::dpi::LogicalSize::new(w, h))
@@ -122,6 +122,9 @@ impl EngineWindow {
                     .fullscreen
                     .then_some(winit::window::Fullscreen::Borderless(None)),
             );
+        if let Some([x, y]) = setup.position.filter(|_| !setup.fullscreen) {
+            attrs = attrs.with_position(winit::dpi::PhysicalPosition::new(x, y));
+        }
         let window = match evl.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -233,6 +236,10 @@ pub struct WindowSetup {
     pub logical_size: (f64, f64),
     /// Open as a borderless fullscreen window on the current monitor.
     pub fullscreen: bool,
+    /// The outer top-left corner in physical pixels, for a window put back
+    /// where it last closed (the host checks it is still on a monitor);
+    /// `None` lets the desktop place it. Ignored when fullscreen.
+    pub position: Option<[i32; 2]>,
 }
 
 impl Default for WindowSetup {
@@ -255,6 +262,7 @@ impl WindowSetup {
         Self {
             logical_size: (320.0 * k, 240.0 * k),
             fullscreen,
+            position: None,
         }
     }
 }
