@@ -62,7 +62,11 @@ RAM**: keep the directory out of the repo.
 
 The engine child drops the state's own capture seeds as well as its gate and
 drive, its re-seat among them: a strike state's re-seat left in stood the
-caster `3500` units from the ground retail recorded. The scroller rects
+caster `3500` units from the ground retail recorded. It drops the still's pin
+to the default step too (`LEGAIA_BATTLE_PARTY_STEP=0`, for a replay whose gate
+counts passes): a film plays the cast through on the party's step, which
+`chitei2_cort_pre_mystic_circle`'s recording runs from its first frame, and on the
+pin Mystic Circle read `.717` against `.852` without it. The scroller rects
 (`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
 cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
 roll. A scrolled page's phase is time since its scroller started, which a pre-cast
