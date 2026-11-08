@@ -65,6 +65,7 @@ mod round_end;
 mod round_open;
 mod separation;
 mod seru_debuff;
+mod sfx_cue_route;
 mod sfx_drain;
 mod shop_quantity;
 mod slot_machine;
