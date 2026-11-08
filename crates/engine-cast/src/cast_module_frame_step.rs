@@ -298,6 +298,40 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x71, &[(1, 4), (2, 4), (3, 4)]),
     // thunder_storm: every arm `4` on all three fights
     (0x77, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4)]),
+    // bloody_horns (Xain's cast, `battle_tunnelc_xain_strike --monster-pick`)
+    (0x5C, &[(3, 4), (4, 4), (5, 4)]),
+    // megaton_press: the duel's pull-ins and the closing dive read `4`
+    (
+        0x7A,
+        &[
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 3),
+            (7, 3),
+            (9, 4),
+            (10, 4),
+            (11, 4),
+            (12, 3),
+            (15, 4),
+        ],
+    ),
+    // plasma_strike
+    (
+        0x7B,
+        &[
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (9, 4),
+            (11, 4),
+            (13, 4),
+            (14, 4),
+        ],
+    ),
     // white_shield
     (0x60, &[(1, 4), (2, 4), (3, 3)]),
     // power_charge
