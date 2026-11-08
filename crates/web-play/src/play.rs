@@ -296,6 +296,17 @@ pub fn build_field_render(
     } else {
         placements.len()
     };
+    // A bound landmark whose bind names a clip is a multi-object prop posed
+    // by it (`FUN_8001B964`, draw kind `1`), on the overworld as in a town:
+    // Conkram's shell (`map03` record 458, clip 4) stands open behind the
+    // town only at its clip frame. The overworld resolves without binds (the
+    // landmarks keep their unbound draws and unit scale), so the clip id is
+    // read off the walk map's binds here; the native window hands the same
+    // landmarks to its posed-prop pass (`resolve_world_map_draws`).
+    if is_world_map && let Ok(Some(wm_binds)) = scene.field_object_binds(index) {
+        let end = decoration_start.min(placements.len());
+        field_env::pose_bound_landmarks(&mut placements[..end], &wm_binds);
+    }
     // A record whose prologue parks its actor at the hide box still gets a
     // draw: `field_placement_parked` hides it per frame while it stands there,
     // and a script can seat it later (`son`'s sky). The native shell's
@@ -317,8 +328,9 @@ pub fn build_field_render(
             }
         }
     }
-    // The overworld resolves without binds (its landmarks draw unposed and
-    // unscaled), but a landmark still has an actor a kingdom MAN can tint -
+    // The overworld resolves without binds (its landmarks draw unscaled,
+    // posed only by the clip id set above), but a landmark still has an
+    // actor a kingdom MAN can tint -
     // so its record comes off the binds all the same; the decorations that
     // follow have none. The native window's `resolve_world_map_terrain_draws`
     // keys its landmark cues the same way.

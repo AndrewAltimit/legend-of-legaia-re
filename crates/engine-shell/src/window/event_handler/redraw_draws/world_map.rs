@@ -170,6 +170,51 @@ impl<'m> DrawCtx<'_, 'm> {
                 });
             }
         }
+        // The bound landmarks a clip poses (Conkram's shell, `map03`
+        // record 458): `FUN_8001B964` draws each TMD object at its bone's
+        // transform for the actor's clip frame, so they come from the
+        // posed-prop pass the field draws its doors with - the baked frame-0
+        // rest mesh, or a re-pose when the clip has moved - and the static
+        // stamps above leave them out (`resolve_world_map_draws`).
+        let posed_cue = |record: &Option<usize>| landmark_cue(Some(record));
+        for (mesh_idx, model, record) in &store.posed.posed_prop_baked_v {
+            let tag = super::super::field_render::LIT_VARIANT_TAG;
+            let baked = if *mesh_idx & tag != 0 {
+                store.field_lit.meshes.get(*mesh_idx & !tag)
+            } else {
+                store.meshes.get(*mesh_idx)
+            };
+            if let Some(mesh) = baked {
+                draws.push(SceneDraw {
+                    mesh,
+                    mvp: cam * *model,
+                    cue: posed_cue(record),
+                });
+            }
+        }
+        for (mesh, model, record) in &store.posed.posed_prop_live_v {
+            draws.push(SceneDraw {
+                mesh,
+                mvp: cam * *model,
+                cue: posed_cue(record),
+            });
+        }
+        for (mesh_idx, model, record) in &store.posed.posed_prop_baked_c {
+            if let Some(mesh) = store.color_meshes.get(*mesh_idx) {
+                color_draws.push(ColorSceneDraw {
+                    mesh,
+                    mvp: cam * *model,
+                    cue: posed_cue(record),
+                });
+            }
+        }
+        for (mesh, model, record) in &store.posed.posed_prop_live_c {
+            color_draws.push(ColorSceneDraw {
+                mesh,
+                mvp: cam * *model,
+                cue: posed_cue(record),
+            });
+        }
         // Last-resort fallback: nothing resolved at all -> draw
         // the whole pack at pack-local coords so the map isn't
         // blank.

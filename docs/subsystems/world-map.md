@@ -2443,6 +2443,27 @@ on `World::object_live_models` (the table op `0x0E` writes) and the seat on
 `World::object_draw_displacements`; the native landmark pass and the browser
 page's overworld placements both draw a landmark's first stamp from the two.
 
+**A landmark whose bind names a clip is posed by it.** The init sweep copies
+the bind header's anim byte into `+0x5C` on the overworld as in a town, so a
+multi-object landmark draws through `FUN_8001B964` (draw kind `1`) at its
+clip frame ([`field-locomotion.md`](field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose)).
+The kingdom maps carry four: `map01` record 409 (clip 5), `map02` records
+476 / 477 (clip 4, three stamps) and `map03` record 458, Conkram's shell lid
+(pack mesh 16 at cell `(66, 104)`, clip 4: ANM record 3, one bone, 15
+frames). The town under it is the decoration cell `459` (mesh 17) and the
+window sweep's record 457 (mesh 15, draw kind `5`, unposed). The lid's frame
+0 lifts it `160` units, moves it `264` units north and pitches it back
+(`r_x = 0xEA0`); its bind prologue picks frame 0 or the last frame on flag
+`0x4C8`. A retail capture beside the town holds the lid actor at `+0x56 = 1`,
+`+0x5C = 4`, `+0x62 = 0x1F`, cursor `0`. Both hosts draw these landmarks
+posed: the native window through the posed-prop pass the field's doors use
+(`resolve_world_map_draws` leaves them out of the static stamps), the page by
+carrying the bind's clip id on the landmark (`build_field_render`). Drawn
+unposed, Conkram's lid lay flat in front of the town; posed off both prologue
+arms at once, it lay over the town. Disc-gated:
+`crates/engine-scene-host/tests/map03_conkram_shell_disc.rs`,
+`crates/web-play/tests/map03_conkram_shell_page.rs`.
+
 **An overworld MAN actor's height is the actor driver's, as in a field.**
 `FUN_8003BC08` runs its height arm (`0x8003BC3C..0x8003BCF4`) on every
 mode-3 actor with no world-map gate: a culled actor (`+0x10 & 2`) keeps its

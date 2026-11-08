@@ -77,13 +77,21 @@ impl PlayWindowApp {
     /// colour-mesh list: the landmark pack's untextured F*/G* prims (hut
     /// roofs, colour-only landmarks) draw on the colour pipeline, as the
     /// field terrain's do.
+    ///
+    /// `posed_props` are the field draws' posed placed props: on a kingdom
+    /// map the same pass draws the bound landmarks a clip poses, so they are
+    /// left out of the static landmark stamps.
     pub(super) fn resolve_world_map_draws(
         &self,
         res: &SceneResources,
         geo: &SceneGeometry,
+        posed_props: &[PosedPropDraw],
     ) -> WorldMapDraws {
-        let terrain = self.resolve_world_map_terrain_draws(res, &geo.tmd_src_index);
-        let terrain_color = self.resolve_world_map_terrain_draws(res, &geo.color_tmd_src_index);
+        let posed_cells: crate::window::field_render::PosedLandmarkCells =
+            posed_props.iter().map(|p| (p.anchor, p.cell)).collect();
+        let terrain = self.resolve_world_map_terrain_draws(res, &geo.tmd_src_index, &posed_cells);
+        let terrain_color =
+            self.resolve_world_map_terrain_draws(res, &geo.color_tmd_src_index, &posed_cells);
         WorldMapDraws {
             terrain,
             terrain_color,

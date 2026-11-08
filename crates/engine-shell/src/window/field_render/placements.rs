@@ -391,7 +391,8 @@ impl PlayWindowApp {
     ///
     /// `record_binds` names each draw's bind record (the list's last member)
     /// without applying any of the `binds` gates - the overworld landmarks,
-    /// which draw unposed and unscaled but whose actors a script can tint.
+    /// which draw unscaled but whose actors a script can tint (the ones a
+    /// clip poses are left to the posed-prop pass, `resolve_world_map_draws`).
     #[allow(clippy::too_many_arguments)]
     pub(in crate::window) fn resolve_placement_draws(
         &self,
