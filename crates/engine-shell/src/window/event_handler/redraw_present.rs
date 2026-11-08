@@ -588,7 +588,7 @@ impl PlayWindowApp {
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
             let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
-            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
+            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz,bx,bz,facing,tlx,tlz,tbx,tbz");
             let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
             let _ = writeln!(sfx, "tick,st7,phase,id,kind");
             let mut xa = std::io::BufWriter::new(std::fs::File::create(dir.join("xa.csv")).ok()?);
@@ -951,15 +951,38 @@ impl PlayWindowApp {
         // cursor in sixteenths of a keyframe and the live pair.
         if let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor)) {
             let p = a.battle_animation.as_ref();
+            // The body pair `+0x3C` / `+0x40`, the facing `+0x46`, and the
+            // target's live and body pairs: the probe's `bx` / `bz` beside
+            // the pair a strike's heading is re-aimed at.
+            let pairs = |b: &legaia_engine_core::world::Actor| {
+                let (bx, bz) = b
+                    .battle
+                    .seat
+                    .unwrap_or((b.move_state.world_x, b.move_state.world_z));
+                (b.move_state.world_x, b.move_state.world_z, bx, bz)
+            };
+            let (_, _, bx, bz) = pairs(a);
+            let body = (bx, bz);
+            let tgt = w
+                .actors
+                .get(usize::from(a.battle.active_target))
+                .map_or((0, 0, 0, 0), pairs);
             let _ = writeln!(
                 rec.body,
-                "{tick},{st},{acting},{},{},{},{},{},{}",
+                "{tick},{st},{acting},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 a.battle.current_anim,
                 a.battle.queued_anim,
                 p.map_or(-1, |p| i32::from(p.is_looping())),
                 p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
                 a.move_state.world_x,
                 a.move_state.world_z,
+                body.0,
+                body.1,
+                a.battle.facing_angle,
+                tgt.0,
+                tgt.1,
+                tgt.2,
+                tgt.3,
             );
         }
         // `seats.csv` (no header): per tick, then per retail seat 0..7 the

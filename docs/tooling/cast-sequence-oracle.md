@@ -184,8 +184,9 @@ at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and
 (`fade_back`: `2` the current record, `1` only the other, `0` none; see
 [the pairing rule](#the-pairing-rule)). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
-body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
-the series a summon close-up's framing is read off. A third, `cam.csv`, holds
+body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints,
+then the heading `+0x46` and the live and body pairs of the seat's target
+`+0x1DD`: the series a summon close-up's framing and a strike's walk are read off. A third, `cam.csv`, holds
 per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
 tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
 At cast begin it also logs each pool slot's ground pair
@@ -246,9 +247,10 @@ retail seat numbers: the engine packs the party ahead of the monsters, and the
 recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
 tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
 `body.csv` the acting seat's clip `+0x1D9`, staged byte `+0x1DA`, whether the
-clip loops, its cursor in sixteenths of a keyframe and the live pair: the
-engine half of the retail `body.csv`, which a clip that ends early or late
-is read off.
+clip loops, its cursor in sixteenths of a keyframe, the live pair, then the
+body pair, heading and the target's two pairs: the engine half of the retail
+`body.csv`, which a clip that ends early or late, or a struck body that does
+not slide where retail's does, is read off.
 
 The child drops the capture's drive and runs no earlier actor, so nothing in it left
 the camera where retail's stood. On cast begin it takes retail's pose from the
