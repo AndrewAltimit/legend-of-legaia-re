@@ -18,8 +18,8 @@ is the pair's own. A film whose two sides act on different seats is marked `[sea
 and left out of the means; a film opening inside a module arm or the exit band has its
 first segment dropped and is marked `[opener]`, because that segment is the seat of the
 harness, not the game. A film's pixels are the mean displacement
-of six world probes around retail's focus under each side's pitch, yaw, TR trio and
-focus. See `docs/tooling/cast-sequence-oracle.md`, "The camera channel".
+of six world probes around retail's focus, sized to the shot, under each side's pitch,
+yaw, TR trio and focus. See `docs/tooling/cast-sequence-oracle.md`, "The camera channel".
 """
 
 import argparse
@@ -29,8 +29,9 @@ import sys
 from pathlib import Path
 
 GTE_H = 256.0
-RADIUS = 700.0
-PROBES = [(0, 0, 0), (RADIUS, 0, 0), (-RADIUS, 0, 0), (0, 0, RADIUS), (0, 0, -RADIUS), (0, -500, 0)]
+# Probe directions; each row scales them by `min(700, 0.35 * TR z)`, so a close-up's
+# probes stay in front of the eye and do not blow up on the division.
+PROBES = [(0, 0, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, -0.7, 0)]
 
 
 def circ(a: int, b: int) -> int:
@@ -79,7 +80,9 @@ def read(film: Path):
                     return 0.0
                 total = 0.0
                 d = (ef_[0] - rf[0], ef_[1] - rf[1]) if has_focus else (0, 0)
-                for p in PROBES:
+                radius = min(700.0, 0.35 * rt[2])
+                for o in PROBES:
+                    p = (o[0] * radius, o[1] * radius, o[2] * radius)
                     ax, ay = project(p, rp, ry, rt, (0, 0))
                     # The engine's probe is the same world point, so its offset
                     # from the engine's own focus moves by the focus error.
@@ -199,7 +202,7 @@ def main() -> int:
                 f"{s['sus_dtrz']:5d} {s['sus_dfocus']:4d}  {where(s['first']):<24} {s['film']}{' [seat]' if s['seat_mismatch'] else ''}{' [opener]' if s['harness_lead'] else ''}")
         if after:
             b = after.get(s["film"])
-            line = f"{(format(b['sus_px'], '7.2f') if b else '      -')} " + line
+            line = f"{(format(b['sus_robust'], '7.2f') if b else '      -')} " + line
         print(line)
     if after:
         common = [n for n in base if n in after and not base[n]["seat_mismatch"]]
