@@ -633,7 +633,16 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
     Some(script::AttackCamChannels {
         character,
         art_id: a.battle.latched_anim,
-        arm_select: a.battle.hit_count_bound,
+        // `+0x21B`, the clip's loop counter (`0x8004BDF4`, the tick's window
+        // stores at `0x800477E8` / `0x8004783C`): the arms that read it fork
+        // an art's shots on the loops still to run, so it reads the player's
+        // live budget on a party seat rather than the summon creature's
+        // mirror (`World::mirrors_loop_counter`).
+        // PORT: FUN_801D71B8 (`0x801D7308`, `actor[+0x21B]`)
+        arm_select: a
+            .battle_animation
+            .as_ref()
+            .map_or(a.battle.hit_count_bound, |p| p.loop_cycles_remaining()),
         anim_frame: a
             .battle_animation
             .as_ref()

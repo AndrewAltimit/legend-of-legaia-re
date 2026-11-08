@@ -613,8 +613,9 @@ pub struct RetailBattle {
     /// `0x801E7224`), and the next action seed clears it.
     pub magic_level_up: bool,
     /// Whether the active seat's committed queue `+0x1DF..+0x1EE` holds an
-    /// art starter (`0x19` / `0x1A`): the turn was entered through the
-    /// directional command entry, not the Auto swing.
+    /// art starter (`0x19` / `0x1A`) or opens on a direction swing
+    /// (`0x0C..=0x0F`): the turn replays through the directional command
+    /// entry, not the Auto swing.
     pub arts_queue: bool,
     /// The active seat's committed queue `+0x1DF..+0x1EE` itself - the
     /// tokenized turn the player entered ([`ActionSteer::queue`]).
