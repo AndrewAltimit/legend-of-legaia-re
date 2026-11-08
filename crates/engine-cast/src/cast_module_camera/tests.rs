@@ -823,7 +823,9 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(964, 0x801F_88EC), Some(0x780));
     assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
-    assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), None);
+    assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), Some(0));
+    assert_eq!(capture_exit_yaw_base(960, 0x801F_69D8), Some(0));
+    assert_eq!(capture_exit_yaw_base(960, 0x801F_74E4), Some(0));
 }
 
 /// PROT 0907's arm 10 holds on the creature's loop counter `+0x21B`

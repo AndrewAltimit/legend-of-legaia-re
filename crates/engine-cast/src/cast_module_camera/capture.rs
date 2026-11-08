@@ -394,8 +394,13 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// The bodies of 0946..0948, 0953, 0959 and 0960 clear `ctx[+0x0D]` without the
-/// store ([`capture_exit_clears_style`]).
+/// Three bodies zero the counter instead (`sh zero,0x2(base)` beside `sb
+/// zero,0xd`): PROT 0959 Megaton Press (`0x801F8214`), PROT 0960 Plasma Strike
+/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). A retail Neo Star Slash film
+/// reads the counter `4` at the Done band's first pass, the drift on `0`.
+///
+/// The bodies of 0946..0948 and 0953 clear `ctx[+0x0D]` without the store
+/// ([`capture_exit_clears_style`]).
 pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
     const YAW: i32 = 0x780;
     match (entry, body) {
@@ -412,6 +417,8 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
         | (963, 0x801F_6A20)
         | (964, 0x801F_69D8 | 0x801F_88EC)
         | (966, SINGLE_BODY) => Some(YAW),
+        (959, super::MEGATON_PRESS_BODY)
+        | (960, super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY) => Some(0),
         _ => None,
     }
 }
