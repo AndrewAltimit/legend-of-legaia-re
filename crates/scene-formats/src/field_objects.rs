@@ -326,33 +326,39 @@ pub fn collision_footprint_offset(rec: &ObjectRecord) -> (i32, i32) {
     (off_x, off_z)
 }
 
-/// The scene_asset_table TMD pack index this object draws, or `None` for
-/// objects whose mesh is NOT in the scene pack (the protagonist / NPC ids
-/// `1/2/3`, whose geometry lives in the shared player/NPC pack).
+/// The scene_asset_table TMD pack index this object draws: the record's
+/// `+0x10` field ([`ObjectRecord::pack_index_field`]), **uniformly**, for every
+/// object id. Always `Some` - the `Option` is the [`Placement::pack_index`]
+/// shape, which a hand-built placement may leave empty.
 ///
-/// The mesh is the record's `+0x10` field ([`ObjectRecord::pack_index_field`])
-/// **uniformly**, for every object id - the retail rule (`FUN_80020f88`:
-/// `actor+0x64 = record[+0x10] + DAT_8007b6f8`; `FUN_801F69D8` takes the same
-/// `+0x10` for its per-cell terrain meshes). The object id selects the *record*,
-/// never the mesh.
+/// The retail rule is `FUN_80020f88`: for an actor carrying the record bit
+/// `+0x10 & 0x8000` it reads the record `+0x60` names and stores
+/// `actor+0x64 = record[+0x10] + DAT_8007b6f8` (`0x80020FDC..0x80020FF0`), with
+/// no test on the record id; neither does the spawner `FUN_8003A55C` (its only
+/// record gates are the placed flag `+0x12 & 0x4` and the footprint-anchor
+/// bounds, `0x8003A5B8..0x8003A608`) nor the allocator `FUN_80020DE0`.
+/// `FUN_801F69D8` takes the same `+0x10` for its per-cell terrain meshes. The
+/// object id selects the *record*, never the mesh.
 ///
-/// (An earlier reading gave object ids `93..=118` a positional "field-actor
-/// band" rule - `pack_index = obj_idx - 5` - which is **falsified**: town0c cell
-/// `(30, 17)` carries object id `99` whose record `+0x10 = 2`, and the retail
-/// prim pool draws that cell's surface from env-pack mesh **2** (the quad's
-/// `cba=0x7D00 / tsb=0x000C` + UV set matches mesh 2's prim byte-for-byte), not
-/// from mesh `94`. The band rule silently swapped ten town meshes per Rim Elm
-/// map - among them the terrain slab south-east of the spawn, whose absence left
-/// a clear-colour hole in the ground.)
+/// **There is no protagonist / NPC carve-out on ids `1..=3`.** An earlier
+/// reading returned `None` for them, and a placed record on one of those ids
+/// then never drew. `conc2` shows it: record `1` is the double door in the
+/// archway at cell `(108, 69)` (`+0x10 = 61`), and the retail actor list of a
+/// live `conc2` field state holds it with `+0x60 = 1`, `+0x64 = 0x42`
+/// (`61 + 5`), drawn - the port left the archway empty.
+///
+/// (An earlier reading also gave object ids `93..=118` a positional
+/// "field-actor band" rule - `pack_index = obj_idx - 5` - which is
+/// **falsified**: town0c cell `(30, 17)` carries object id `99` whose record
+/// `+0x10 = 2`, and the retail prim pool draws that cell's surface from env-pack
+/// mesh **2** (the quad's `cba=0x7D00 / tsb=0x000C` + UV set matches mesh 2's
+/// prim byte-for-byte), not from mesh `94`.)
 ///
 /// `anim_id` (resolved separately via the MAN script) only drives animation;
 /// it does not pick geometry.
-pub fn pack_mesh_index(obj_idx: u16, rec: &ObjectRecord) -> Option<u16> {
-    match obj_idx {
-        // Protagonist / NPC meshes: not in the scene pack.
-        1..=3 => None,
-        _ => Some(rec.pack_index_field),
-    }
+// REF: FUN_80020F88, FUN_8003A55C
+pub fn pack_mesh_index(_obj_idx: u16, rec: &ObjectRecord) -> Option<u16> {
+    Some(rec.pack_index_field)
 }
 
 /// One placed static object: its grid anchor, source object id, and world
@@ -411,8 +417,8 @@ pub struct Placement {
     /// breaks terraced towns (Vidna) into stair-stepped plateaus.
     pub floor_corner_nibbles: Option<[u8; 4]>,
     /// scene_asset_table TMD pack index for this object's mesh (see
-    /// [`pack_mesh_index`]), or `None` for protagonist / NPC ids whose mesh is
-    /// not in the scene pack.
+    /// [`pack_mesh_index`]). Every parser here fills it; `None` only on a
+    /// hand-built placement that names no mesh.
     pub pack_index: Option<u16>,
     /// The record's flags (placed bit already confirmed set).
     pub flags: u16,
@@ -578,7 +584,7 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
 /// to a plain on-grid test (terrain tiles have no interaction footprint).
 /// `obj_idx == 0` cells are skipped (record 0 is the empty/sentinel slot).
 pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
-    parse_terrain_tiles_gated(field_map, CELL_VISIBLE, false)
+    parse_terrain_tiles_gated(field_map, CELL_VISIBLE)
 }
 
 /// The free-roam **walk** view's bulk continent: [`parse_terrain_tiles`] gated
@@ -588,23 +594,20 @@ pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
 ///
 /// The mesh is **`record[+0x10]` uniformly** (retail `FUN_80020f88`:
 /// `actor+0x64 = record[+0x10] + prefix`) - the same rule [`pack_mesh_index`]
-/// applies; `walk_mesh` only skips the protagonist/NPC id carve-out, which no
-/// continent tile hits.
+/// applies.
 pub fn parse_walk_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
-    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE, true)
+    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE)
 }
 
 /// Shared object-grid sweep for [`parse_terrain_tiles`] (overview, `0x2000`)
 /// and [`parse_walk_terrain_tiles`] (walk, `0x1000`). `gate` selects the
-/// object-index-grid cell bit that marks a drawn tile; `walk_mesh` takes
-/// `record[+0x10]` for **every** id (`true`) versus routing a **placed**
-/// record through [`pack_mesh_index`], which returns `None` for the
-/// protagonist / NPC ids `1..=3` (`false`). An unplaced record - a
-/// decoration cell - takes `+0x10` either way: scenes do put scenery on
-/// records `1..=3` (`vozz`'s ground fern is record 3, pack mesh 10, on
-/// dozens of cells; `vell`, `rugi`, `retona`, `deene`, `opdeene` and
-/// `rikuroa` each dress fifteen or more cells through those records).
-pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -> Vec<Placement> {
+/// object-index-grid cell bit that marks a drawn tile. Every cell's mesh is
+/// its record's `+0x10` ([`pack_mesh_index`]) whatever the record's index:
+/// scenes put scenery on records `1..=3` too (`vozz`'s ground fern is record
+/// 3, pack mesh 10, on dozens of cells; `vell`, `rugi`, `retona`, `deene`,
+/// `opdeene` and `rikuroa` each dress fifteen or more cells through those
+/// records).
+pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16) -> Vec<Placement> {
     let mut out = Vec::new();
     let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
         return out;
@@ -655,18 +658,11 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                 y_off: rec.y_off,
                 floor_nibble,
                 floor_corner_nibbles,
-                // A decoration cell - a record without the placed flag - is
-                // drawn by the per-cell pass itself, which indexes the pack
-                // with `record[+0x10]` whatever the record's index
-                // (`FUN_801F7088`: `lhu v0,0x10(s0)` ... `lw v0,-0x3fe8(at)`
-                // at `0x801F77E4..0x801F7804`, behind only the cell's
-                // `0x2000` and the record's placed-flag test). The id
-                // carve-out is the placed-object spawner's.
-                pack_index: if walk_mesh || rec.flags & FLAG_PLACED == 0 {
-                    Some(rec.pack_index_field)
-                } else {
-                    pack_mesh_index(obj_idx, &rec)
-                },
+                // The per-cell pass indexes the pack with `record[+0x10]`
+                // whatever the record's index (`FUN_801F7088`: `lhu v0,0x10(s0)`
+                // ... `lw v0,-0x3fe8(at)` at `0x801F77E4..0x801F7804`, behind
+                // only the cell's `0x2000` and the record's placed-flag test).
+                pack_index: pack_mesh_index(obj_idx, &rec),
                 flags: rec.flags,
                 rot_x: rec.rot_x,
                 rot_y: rec.rot_y,
@@ -708,9 +704,9 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
 /// `FUN_80020f88`), the same one [`parse_walk_terrain_tiles`] uses; world Y
 /// is the corner-block average ([`Placement::world_y`]).
 pub fn parse_walk_decorations(field_map: &[u8]) -> Vec<Placement> {
-    parse_terrain_tiles_gated(field_map, CELL_VISIBLE, true)
+    parse_terrain_tiles_gated(field_map, CELL_VISIBLE)
         .into_iter()
-        .filter(|p| p.pack_index.is_some() && p.flags & FLAG_PLACED == 0)
+        .filter(|p| p.flags & FLAG_PLACED == 0)
         .collect()
 }
 

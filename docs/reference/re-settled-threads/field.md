@@ -992,8 +992,11 @@ from the field `.MAP`.
   record in the `+0x0000` table. Placed tiles (record `+0x12` bit `0x4`) give the world transform:
   `world_y = -floorHeightLUT[nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02`.
 - **Mesh per object** is the record's `+0x10`, for **every** object id (retail `FUN_80020f88`,
-  `actor+0x64 = record[+0x10] + prefix`). Ids `1` / `2` / `3` are protagonist / NPC meshes from the
-  shared pool; `anim_id` only animates.
+  `actor+0x64 = record[+0x10] + prefix`); `anim_id` only animates. Records `1` / `2` / `3` are
+  no exception: neither `FUN_80020f88` (`0x80020FDC..0x80020FF0`) nor the spawner `FUN_8003A55C`
+  tests the id, and a live `conc2` actor list holds record `1` (the archway double door, `+0x10 = 61`)
+  at `+0x64 = 0x42`. Reading them as "protagonist / NPC meshes from the shared pool" left that door,
+  and the record-`2` props of `rikuroa` and `retona`, undrawn.
 - **Validation.** A live `town01` save (Vahn's house id `137` -> mesh 36), and the retail GPU prim
   pool: `town0c` cell `(30, 17)` (id `99`, record `+0x10 = 2`) draws its surface from env mesh **2** -
   the quad's `cba` / `tsb` / UVs match that mesh's primitive byte-for-byte - not from mesh `94`.

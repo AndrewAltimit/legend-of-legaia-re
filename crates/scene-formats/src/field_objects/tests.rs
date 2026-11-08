@@ -239,9 +239,10 @@ fn pack_mesh_index_rule() {
     // the town0c cell (30,17) / env-mesh-2 prim match in the fn docs).
     assert_eq!(pack_mesh_index(96, &rec), Some(15));
     assert_eq!(pack_mesh_index(118, &rec), Some(15));
-    // Protagonist / NPC ids draw from a different pool.
-    assert_eq!(pack_mesh_index(1, &rec), None);
-    assert_eq!(pack_mesh_index(3, &rec), None);
+    // Ids 1..=3 too: `FUN_80020F88` tests no id (conc2's archway door is
+    // record 1, drawn from its `+0x10` in retail).
+    assert_eq!(pack_mesh_index(1, &rec), Some(15));
+    assert_eq!(pack_mesh_index(3, &rec), Some(15));
 }
 
 #[test]
@@ -288,11 +289,12 @@ fn heightfield_emits_quad_per_visible_cell_with_floor_heights() {
     assert!(hf.cba_tsb.iter().all(|&ct| ct == [0x7EC0, 0x000C]));
 }
 
-/// A decoration cell draws its record's `+0x10` mesh whatever the
-/// record's index - the per-cell pass has no id test - while a placed
-/// record on ids `1..=3` keeps the spawner's carve-out.
+/// A cell draws its record's `+0x10` mesh whatever the record's index -
+/// placed or not. Neither the per-cell pass nor the placed-object spawner
+/// (`FUN_8003A55C` -> `FUN_80020F88`) tests the id, so a placed record on ids
+/// `1..=3` keeps its mesh too (`conc2`'s archway door is record 1).
 #[test]
-fn a_decoration_cell_on_a_low_record_id_keeps_its_mesh() {
+fn a_cell_on_a_low_record_id_keeps_its_mesh() {
     let mut map = vec![0u8; 0x12000];
     // Record 3: unplaced scenery, pack mesh 10. Record 2: placed.
     let r3 = 3 * OBJECT_RECORD_STRIDE;
@@ -310,7 +312,11 @@ fn a_decoration_cell_on_a_low_record_id_keeps_its_mesh() {
     let tiles = parse_terrain_tiles(&map);
     let at = |col: u8, row: u8| tiles.iter().find(|p| (p.col, p.row) == (col, row)).unwrap();
     assert_eq!(at(105, 64).pack_index, Some(10));
-    assert_eq!(at(20, 9).pack_index, None);
+    assert_eq!(at(20, 9).pack_index, Some(31));
+    // The placed sweep resolves the same record the same way.
+    let placed = parse_placements(&map);
+    let door = placed.iter().find(|p| (p.col, p.row) == (20, 9)).unwrap();
+    assert_eq!((door.obj_idx, door.pack_index), (2, Some(31)));
 }
 
 #[test]

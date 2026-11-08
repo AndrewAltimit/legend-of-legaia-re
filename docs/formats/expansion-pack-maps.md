@@ -205,9 +205,9 @@ logs the tiles that happened to. Its solid tile is always its own.
 The prop's record carries its anchor tile's ground texture: the tile
 style's, or, on a kept map whose style names none, the texture the cell's
 retail record already drew, so a prop on a kept floor leaves no hole. The
-builder never writes records `1..=3`: those object ids name the
-protagonist and NPC meshes, which the field draw never takes from the
-scene pack. A prop's `offset[1]` is from the floor the player walks on its
+builder never writes records `1..=3`, so its record layout stays where
+every built map already has it; retail draws a placed record on those ids
+like any other. A prop's `offset[1]` is from the floor the player walks on its
 tile: its tier, plus in a kept room the retail floor step there
 ([A kept room's floor](#a-kept-rooms-floor)). `0` stands the mesh's origin
 on the floor.

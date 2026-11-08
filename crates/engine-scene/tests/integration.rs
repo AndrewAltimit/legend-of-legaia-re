@@ -28,6 +28,7 @@ mod field_ground_texture_pages_disc;
 mod field_npc_model_source_disc;
 mod field_npc_placements_disc;
 mod field_object_binds_disc;
+mod field_object_low_record_ids_disc;
 mod field_occlusion_gate_disc;
 mod field_prop_pose_sampler_disc;
 mod field_text_free_spawn_touch_disc;
