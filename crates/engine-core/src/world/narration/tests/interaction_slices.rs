@@ -498,3 +498,51 @@ fn a_second_player_walk_waits_for_the_first_to_land() {
         "the player ends on the second walk's tile"
     );
 }
+
+/// A talk's `CC <id> ..` sub-ops on another placement's actor land on that
+/// placement, not on the talker: the dispatcher prologue swaps the resolved
+/// actor into `s5` before the `4C` arm runs. `town0b` `P1[55]`'s first talk
+/// turns and raises placement `0x26` this way.
+#[test]
+fn a_talks_actor_sub_ops_on_another_placement_land_on_it() {
+    use legaia_engine_field::actor_look::LookKey;
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World::new();
+    w.install_field_player(0);
+    let channel = |slot: usize, id: u16| FieldChannel {
+        placement_index: slot,
+        ctx: FieldCtx {
+            script_id: id,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: true,
+        object_bind: false,
+    };
+    w.field_vm.channels = vec![channel(1, 0x20), channel(2, 0x26)];
+    // Height `+0x8E = 300`, then a look turn `Y = 500`, then one box.
+    w.start_inline_dialogue_with_prologue(
+        vec![
+            0xCC, 0x26, 0x42, 0x2C, 0x01, 0x00, 0x00, // CC 26 42 300 0
+            0xCC, 0x26, 0x45, 0x00, 0x00, 0x00, 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x1F, b'A',
+            0x00, 0x21,
+        ],
+        0,
+        19,
+    );
+    if let Some(id) = w.dialog.inline.as_mut() {
+        id.npc_slot = Some(1);
+    }
+    for _ in 0..4 {
+        w.step_inline_dialogue(false, false, false);
+    }
+    assert_eq!(
+        w.field_vm.channels[1].ctx.field_8e, 300,
+        "placement 0x26 is raised"
+    );
+    assert_eq!(w.field_vm.channels[0].ctx.field_8e, 0, "the talker is not");
+    assert_eq!(w.npcs.looks.get(LookKey::Npc(2)).angles, [0, 500, 0]);
+    assert_eq!(w.npcs.looks.get(LookKey::Npc(1)).angles, [0, 0, 0]);
+}

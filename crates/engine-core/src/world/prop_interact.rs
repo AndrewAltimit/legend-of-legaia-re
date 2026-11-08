@@ -1173,6 +1173,12 @@ pub(in crate::world) fn step_npc_word_op(
         };
     };
     let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
+    // The port keeps a placement's legs in its own leg state, which the
+    // caller has already tested (`World::npc_leg_in_flight`); a halt bit the
+    // channel's context still carries from an earlier leg or acquire is not
+    // the dispatcher's to refuse on here. It is put back after the op.
+    let held = target_ctx.flags & 0x400;
+    target_ctx.flags &= !0x400;
     host.world.field_vm.executing_channel = Some(slot);
     let r = vm::field::step_with_caller(
         host,
@@ -1198,6 +1204,7 @@ pub(in crate::world) fn step_npc_word_op(
         host.world.npcs.motions.remove(&slot);
         host.world.npcs.glide_legs.remove(&slot);
     }
+    target_ctx.flags |= held;
     if let Some(c) = host.world.field_vm.channels.get_mut(ci) {
         c.ctx = target_ctx;
     }

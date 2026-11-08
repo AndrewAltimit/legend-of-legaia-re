@@ -641,6 +641,14 @@ impl World {
             .then(|| crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc))
             .flatten()
             .filter(|&slot| Some(slot) != talker);
+            // The NPC's own leg holds its halt bit: the op waits at the
+            // dispatcher's halted-target early-out until the kernel lands it.
+            // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+            if let Some(slot) = actor_target
+                && host.world.npc_leg_in_flight(slot)
+            {
+                break;
+            }
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
                 host.world.dialog.stepping_inline_npc =
