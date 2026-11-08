@@ -272,6 +272,32 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x54, &[(1, 4), (2, 4), (4, 4), (5, 4), (6, 4), (7, 3)]),
     // water_crystals
     (0x59, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    // chaos_flare
+    (
+        0x36,
+        &[
+            (1, 3),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (8, 4),
+            (9, 4),
+            (10, 4),
+            (11, 2),
+        ],
+    ),
+    // terio_punch
+    (0x5D, &[(5, 4), (6, 4), (7, 4), (8, 4)]),
+    // bull_charge
+    (0x5E, &[(2, 4)]),
+    // melt_spray
+    (0x6F, &[(1, 3), (3, 4), (4, 4)]),
+    // water_hazard
+    (0x71, &[(1, 4), (2, 4), (3, 4)]),
+    // thunder_storm: every arm `4` on all three fights
+    (0x77, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4)]),
     // white_shield
     (0x60, &[(1, 4), (2, 4), (3, 3)]),
     // power_charge
@@ -342,6 +368,8 @@ mod tests {
         assert_eq!(capture_arm_frame_step(0x57, 0), None);
         assert_eq!(capture_arm_frame_step(0x57, 200), None);
         assert_eq!(capture_arm_frame_step(0x76, 5), None);
+        // Thunder Storm runs every arm at `4` in all three fights recorded.
+        assert_eq!(capture_arm_frame_step(0x77, 4), Some(4));
         // Steal draws next to nothing; a cast no film records keeps the default.
         assert_eq!(capture_arm_frame_step(0x51, 2), Some(3));
         assert_eq!(capture_arm_frame_step(0x01, 1), None);
