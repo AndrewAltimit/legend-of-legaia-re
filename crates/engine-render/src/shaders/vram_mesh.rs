@@ -744,7 +744,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // screen-door discard of fragments between the camera and the player.
     // Identity while disabled - `occl_keep` returns 1.0 and no threshold
     // reaches it (see the prelude's `occl_bayer`).
-    if (u.flags.z > 0.5
+    if ((u.flags.z % 2.0) > 0.5
         && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
@@ -891,7 +891,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     // Camera-occlusion fade: same screen-door as the opaque pass, so a
     // semi-transparent wall patch (water panes, glass) opens up too.
-    if (u.flags.z > 0.5
+    if ((u.flags.z % 2.0) > 0.5
         && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }

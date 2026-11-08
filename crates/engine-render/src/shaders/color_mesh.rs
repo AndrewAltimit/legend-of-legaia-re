@@ -127,7 +127,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // Camera-occlusion fade (opt-in see-through-walls enhancement):
     // screen-door discard of fragments between the camera and the player,
     // mirroring the textured opaque pass. Identity while disabled.
-    if (u.flags.z > 0.5
+    if ((u.flags.z % 2.0) > 0.5
         && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
@@ -199,7 +199,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         discard;
     }
     // Camera-occlusion fade: same screen-door as the opaque colour pass.
-    if (u.flags.z > 0.5
+    if ((u.flags.z % 2.0) > 0.5
         && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }

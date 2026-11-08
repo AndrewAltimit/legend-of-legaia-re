@@ -493,7 +493,7 @@ float primMeanW(mat4 m) {
    * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer. */
   int order = int(u_prim_mean_depth + 0.5) - 1;
   float w = (order == 1 || order == 3) ? far : sum / n;
-  if (order >= 2) w = max(w - 320.0 / 6.0, 1.0);
+  if (order >= 2) w = max(w - 320.0 / (u_curve > 0.0 ? u_curve : 6.0), 1.0);
   return w;
 }
 

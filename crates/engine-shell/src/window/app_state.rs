@@ -540,6 +540,11 @@ pub(super) struct PlayWindowApp {
     /// (`field_env::placed_object_key_of`), parallel to the draws: the key
     /// its actor's live seat, turn and tint are read by.
     pub(super) world_map_terrain_keys: Vec<Option<usize>>,
+    /// Each world-map terrain draw's far-corner link (the record's flag
+    /// `0x800`, [`legaia_engine_scene::field_env::EnvDraw::far_corner_order`]).
+    pub(super) world_map_terrain_far: Vec<bool>,
+    /// [`Self::world_map_terrain_far`] for the colour bridge.
+    pub(super) world_map_terrain_color_far: Vec<bool>,
     /// [`Self::world_map_terrain_keys`] for the colour bridge.
     pub(super) world_map_terrain_color_keys: Vec<Option<usize>>,
     /// Where the decoration layer starts in `world_map_terrain_draws` /

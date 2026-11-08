@@ -91,6 +91,8 @@ impl PlayWindowApp {
             coplanar_env_offsets: std::collections::HashMap::new(),
             field_terrain_color_draws: Vec::new(),
             world_map_terrain_draws: Vec::new(),
+            world_map_terrain_far: Vec::new(),
+            world_map_terrain_color_far: Vec::new(),
             world_map_terrain_color_draws: Vec::new(),
             world_map_terrain_records: Vec::new(),
             world_map_terrain_color_records: Vec::new(),
