@@ -139,6 +139,7 @@
     <li><strong>The floor sampler</strong>, so the player walks the same shape and rides it while standing.</li>
   </ul>
   <p>A placed object&rsquo;s Y is written once, when it is spawned (at scene init or by the window sweep&rsquo;s re-plan), as its rung plus its own offset; its actor template sets neither height-arm bit that would make the per-frame driver re-sample the floor. When a scene&rsquo;s system script lifts rungs after spawn, the objects on those rungs stay where they were placed.</p>
+  <p>The exception is an object whose bind script raises the floor-follow class bit (<code>31 11</code>): the actor tick re-samples the floor under it every frame it is in view, through the live rungs, so it rides a new ladder like the ground does. Mt. Rikuroa&rsquo;s summit is the case: the system script installs a ladder that lifts the cave mouth out of <code>rikuroa2</code> 664 units above the header&rsquo;s floor, and the cliff carrying it, the player and the two chests beside it all stand on that raised floor.</p>
 </section>
 
 <section class="doc-section" id="nibble-45" data-doc="-">

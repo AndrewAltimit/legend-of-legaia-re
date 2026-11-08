@@ -1413,6 +1413,10 @@ re-plan) both store `ladder[nibble] + y_off` into the spawn record
 bit (`0x20200`) that would make the per-frame driver re-sample the floor. So
 when `concnow`'s system script lifts rungs 1..3 by up to about 1300 units after
 the init sweep, the bound objects on those rungs stay where they spawned.
+The exception is an object whose bind prologue raises the floor-follow class
+(`31 11`): the actor tick re-samples its floor every tick it is in view, so it
+rides the ladder like the ground. `rikuroa`'s summit cliff is one
+([renderer.md](renderer.md#field-static-object-placement-town01)).
 
 On `jouina` and `concnow` almost every moving vertex is ground: `concnow`'s
 animated rungs touch about 3500 ground vertices against about 120 translated
