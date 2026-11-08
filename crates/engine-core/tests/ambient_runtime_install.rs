@@ -323,3 +323,28 @@ fn a_sprite_arm_snapshot_reseats_sheets_by_record() {
             .any(|p| p.record_off == rec_b && p.finished)
     );
 }
+
+/// An empty sprite-arm snapshot is a state that holds no sheet: every live
+/// sheet is retired, and a part that is not a sheet stays.
+#[test]
+fn an_empty_sprite_arm_snapshot_retires_every_sheet() {
+    let mut world = World::default();
+    install_records(
+        &mut world,
+        &[
+            (-1, vec![0x08]),
+            (-1, vec![0x09, 0x0FFF, 0x08]),
+            (-1, vec![0x09, 0x0FFF, 0x08]),
+        ],
+    );
+    assert!(world.spawn_ambient_record(1, [0, 0, 0]));
+    assert!(world.spawn_ambient_record(2, [0, 0, 0]));
+    world.ambient.fx[0].state.move_substate = 4;
+    world.ambient.fx[0].state.field_9e = 0x4000;
+    world.install_sprite_arm_snapshot(&[]);
+    assert!(world.ambient.fx[0].finished, "the sheet is retired");
+    assert!(
+        !world.ambient.fx[1].finished,
+        "the part that is no sheet stays"
+    );
+}

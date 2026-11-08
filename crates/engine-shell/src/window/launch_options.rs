@@ -435,7 +435,8 @@ pub struct ScreenshotConfig {
     pub seat_fog_due: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
     /// installed over the ambient pool's on the frame the capture is taken
-    /// (`World::install_sprite_arm_snapshot`); taken once.
+    /// (`World::install_sprite_arm_snapshot`); taken once. `none` is a state
+    /// that holds no sheet, which retires the pool's own.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
     /// `LEGAIA_SEAT_TURNING_PARTS`: the render banks of a retail state's

@@ -647,6 +647,16 @@ engine verdict:
   Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
   `.988` / `.984` (`.954` / `.953`).
 
+  A state that holds no sheet says so too (`LEGAIA_SEAT_SPRITE_ARMS=none` on
+  every field and overworld state), and the install retires every sheet the
+  child holds. The child ran the scene from its entry, so an emitter that
+  fires on a script clock has spawned on the way: `bubu2`'s entry loop adds
+  `2` to slot `1` a frame and, past `30`, subtracts `80` and drops stager
+  record `2` at the player (`4C CB 01 02 00`, `4E 00 60 1E ..`, `4C CC 01 50 00`,
+  `B4 F8 30 01`), two breath-puff sheets (record `8`) that live about `60`
+  vsyncs. `bubu2_field_door_hop` holds slot `1` at `20` and no part at all, and
+  the child drew a pale disc in front of Vahn (`.998` to `1.000`).
+
   A mesh-bearing ambient part that turns is a clock of the same kind. The
   part tick adds its bank rates `+0x80..+0x84` to the render banks every
   pass, so the angle it stands at is time since the scene entry. `noaru`'s
@@ -3495,7 +3505,10 @@ alone, in [`movie_run.rs`](../../crates/parity/src/retail_compare/movie_run.rs).
 Retail's frame reads 24-bit when the dispatch slot's `+0x04` colour flag says so.
 The engine's is the frame the stream word `DAT_801CAD90` names, through
 `psx_mdec`, centred in the 240-line display; the word runs ahead of the buffer
-on screen (`3` frames at most, the best taken and named in the detail).
+on screen (`3` frames at most, the best taken and named in the detail). A tie
+on `within` goes to the smaller `mae`: on a low-detail fade every candidate
+scores `1.000`, and the earliest of them is a step of the fade brighter than
+the frame retail showed (`movie_mv2_t900_retail`).
 [`autorun_movie_state.lua`](../../scripts/pcsx-redux/autorun_movie_state.lua) makes
 these states with op `4C E2`'s two stores.
 
