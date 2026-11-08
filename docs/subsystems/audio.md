@@ -3619,7 +3619,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `cort_guilty_cross_mid_cast` | `0.981` | `-0.01` dB | `-1392` | the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
 | `theeder_summon_mid_cast` | `0.712` | `+0.11` dB | `-1100` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
 | `zenoir_summon_mid_cast` | `0.998` | `+0.09` dB | `-4031` | the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); seconds `13..14` hold both struck seats' reaction cues ([settled](../reference/re-settled-threads/audio.md#what-sounds-at-the-end-of-zenoirs-cast)), the port's a few vsyncs late on the module's frame step |
-| `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
+| `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `9.7` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
 | `gilium_summon_mid_cast` | `0.991` | `+0.02` dB | `-1365` | the voice `6.0` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
@@ -3684,10 +3684,44 @@ correlation repeats at its pitch period, and a grid over it once moved Gilium's 
 on a cue tail `29` dB under it. `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
 never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
-the applier, not the drive. On the five summon states with a wait the voice lands `-10.0` vsyncs from the
-cast's offset on Theeder, `-13.1` on Nighto, `-11.7` on Orb, `-11.8` on Swordie and `-6.0` on Gilium. These
+the applier, not the drive. On the five summon states with a wait the voice lands `-9.0` vsyncs from the
+cast's offset on Theeder, `-9.7` on Nighto, `-8.4` on Orb, `-10.0` on Swordie and `-6.0` on Gilium. These
 shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
 drive and of the band ahead of the module that the window covers, not emulator variance.
+
+<a id="where-a-voices-lateness-sits"></a>
+**Where a voice's lateness sits.** Stepped frame by frame from each state's first vsync
+(`drive-timeline.py --settle 0.15`, the emulator paused about five vsyncs in) and against the engine's own
+tick log of the same child, the arms before the voice split in two. The clock from the state's instant to the
+module's arm 1 (`0x35` phase `1`) reads `+7..+10` vsyncs in every state; from arm 1 to the voice the two sides
+match to within `+2..+4`, the arm-by-arm spacing of the module.
+
+| State | Arm 1, retail / engine | Stage drop | Voice, retail / engine |
+|---|---|---|---|
+| Orb | `+23` / `+30` | `+25` / `+34` | `+90` / `+101` |
+| Theeder | `+86` / `+93` | `+94` / `+97` | `+229` / `+240` |
+| Nighto | `+38` / `+48` | `+37` / `+48` | `+180` / `+192` |
+| Swordie | `+41` / `+48` | `+46` / `+56` | `+94` / `+103` |
+| Gilium | state stands in arm 1 | - | `+78` / `+86` |
+| Gizam | `+56` / `+66` | `+59` / `+66` | `+200` / `+211` |
+
+Times count from the state's instant. The state's place on the engine clock is the capture gate's
+(`PhaseGate`: the flash age or the close-up accumulator `ctx[+0x87C]`, within a frame step), so the first
+column's `+7..+10` is the distance between that instant and the end of the `0x33`/`0x34` band on the two
+clocks, not a defect in a module arm. A film from a pre-cast state, where the whole band is on the clock,
+agrees with retail: PCSX-Redux's `0x28..0x34` spans `132` vsyncs on Orb against the engine's `136`, and the
+Orb and Gizam films' sound channels read `1.000` with their cues inside the arms. Mednafen's `0x33` runs
+shorter than PCSX-Redux's (`theeder_summon_mid_cast` leaves `0x33` `26` vsyncs after the state, three into
+the band at a step of `3`), and the engine's stepped band is not known to carry that; the part of the
+`+7..+10` due to the gate and the part due to that band are not separated here.
+
+The seek arm's wait was two vsyncs too long and is fixed: `CdControl` accepts the next command at the end of
+the physical seek, ahead of the logical seek's tail, so the arm's blocking `CdlSetloc` leaves the seek hold
+then, and the new `CdlSeekL` starts at once without the old seek's tail on it (`CdDrive::seek_when_ready`);
+retail's arm 1 leaves `35` vsyncs after Orb's selector seek issues, `24` on Theeder and `23` on Swordie,
+each the modelled seek less the `2`. The poll arm's `CdSync(1)` does wait the tail, so the second seek's
+`30` vsyncs on Orb are unchanged. Voices moved `2..3` vsyncs earlier against mednafen; the ring's cues do not
+depend on the seek.
 
 <a id="a-state-inside-a-drive-hold"></a>
 **A state that stands inside a drive hold reads as a whole-cast shift.** Run over every mid-cast
@@ -3737,7 +3771,7 @@ summon rows hold their correlations.
 
 Theeder's and Nighto's voices are not held by the drive: their selector seeks and their own seeks both
 land on `XA8`, so the module's seek is a few vsyncs, and the cast channel's voice fit places their voices
-`11.0` and `13.1` vsyncs after mednafen's. Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86`
+`9.0` and `9.7` vsyncs after mednafen's. Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86`
 vsyncs after the state, behind the side-band read (`cmd 6` reads in the `summon.dat` region,
 `41347..41446` in three chunks, `30` vsyncs a slot after a first of `46`), holds the arm `8` vsyncs on the
 stage, then `23` on the selector's `XA8` seek. The module writes the latch `0x8007BDB0` itself: arm 1

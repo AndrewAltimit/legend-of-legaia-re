@@ -486,7 +486,7 @@ The drive's two seeks ahead of the head cue are modelled
 their order against the side-band read: the selector seeks once the stage `ctx[+0x276]` drops, and the
 module's seek arm polls the stage before its own seek
 ([the selector seeks when the side-band drops](../subsystems/audio.md#the-selector-seeks-when-the-side-band-drops)).
-With those, every summon state's voice lands `8..13` vsyncs after mednafen's, inside the cast channel's seek
+With those, every summon state's voice lands `6..10` vsyncs after mednafen's ([where it sits](../subsystems/audio.md#where-a-voices-lateness-sits)), inside the cast channel's seek
 window. What is not modelled is the band ahead of the module: the stage's drop against arm 1 is `8` vsyncs
 in on Theeder, about `7` on Gilium, `4` on Swordie and `0` on Orb, where the port's stand-in for the read
 (`30` vsyncs a slot and a first-slot seek) lands it within `5` of each. The band ahead of the module is

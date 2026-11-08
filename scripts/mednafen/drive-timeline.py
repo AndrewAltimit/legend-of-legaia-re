@@ -5,7 +5,7 @@ One CSV row per emulated frame: libetc's VSync counter, the battle context's mod
 `ctx[+0x279]` and side-band stage `ctx[+0x276]`, the XA drive-state word `0x8007BC20`, the
 action state `ctx[+0x07]`, the audio level `_DAT_8007B910`, and
 mednafen's own CD controller state (`DriveStatus`, `CurSector`, `SeekTarget`, `PSRCounter`,
-`PendingCommand`). It is how long a summon module's seek-then-wait arms hold in retail, and
+`PendingCommand`), the frame step and the cue ring's ids and countdowns. It is how long a summon module's seek-then-wait arms hold in retail, and
 where the head stood before the seek. Numbers only: it changes nothing and gates nothing.
 Steps the emulator with mednafen's advance-frame and save-state keys through xdotool, as
 `scripts/mednafen/xa-start.py` does. See `docs/subsystems/audio.md`, "The cast channel".
@@ -31,6 +31,9 @@ VCOUNT = 0x7A894  # libetc's VSync(-1) counter, main-RAM offset
 DRIVE_STATE = 0x7BC20  # _DAT_8007BC20
 CTX_PTR = 0x7BD24  # gp+0xA0C, the battle context pointer
 DUCK_CELL = 0x7B910  # _DAT_8007B910, the audio level the action SM steps
+RING_IDS = 0x7B6D8  # DAT_8007B6D8[4], the cue ring's ids (i16)
+RING_TIMERS = 0x7C338  # DAT_8007C338[4], their countdowns (u32)
+FRAME_STEP = 0x393  # 0x1F800393 in the scratchpad, the frame step
 CDC_VARS = ["DriveStatus", "CurSector", "SeekTarget", "PSRCounter", "PendingCommand",
             "PendingCommandCounter", "StatusAfterSeek"]
 
@@ -74,9 +77,14 @@ def row(path: Path) -> list | None:
     # blocking CD call moves only what the interrupt handlers write.
     prev, _last_ram[0] = _last_ram[0], ram
     moved = -1 if prev is None else sum(1 for x, y in zip(prev[0x10000:0x1F0000:4], ram[0x10000:0x1F0000:4]) if x != y)
+    ring = [struct.unpack_from("<h", ram, RING_IDS + 2 * n)[0] for n in range(4)] + \
+        [struct.unpack_from("<I", ram, RING_TIMERS + 4 * n)[0] for n in range(4)]
+    sp = b.find(b"ScratchRAM.data8")
+    step = b[sp + 16 + 4 + FRAME_STEP] if sp >= 0 else -1
     return [struct.unpack_from("<I", ram, VCOUNT)[0], ram[ctx + 0x279], ram[ctx + 0x276],
             struct.unpack_from("<I", ram, DRIVE_STATE)[0], ram[ctx + 7],
-            struct.unpack_from("<i", ram, DUCK_CELL)[0]] + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + [moved]
+            struct.unpack_from("<i", ram, DUCK_CELL)[0]] + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + \
+        [moved, step] + ring
 
 
 def main() -> int:
@@ -85,6 +93,9 @@ def main() -> int:
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--out", required=True)
     ap.add_argument("--display", type=int, default=278)
+    ap.add_argument("--settle", type=float, default=0.6,
+                    help="seconds between launch and pausing; the game runs meanwhile, so a "
+                         "shorter one logs the frames just after the state")
     a = ap.parse_args()
     disc = Path(os.environ["LEGAIA_DISC_BIN"])
     manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
@@ -92,7 +103,8 @@ def main() -> int:
     if state is None:
         print(f"no mednafen library state {a.state}")
         return 1
-    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved"]]
+    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved", "step"] + \
+        [f"id{n}" for n in range(4)] + [f"timer{n}" for n in range(4)]]
     with tempfile.TemporaryDirectory(prefix="drive-timeline-") as t:
         tmp = Path(t)
         stage, home = tmp / "disc", tmp / "home"
@@ -116,7 +128,7 @@ def main() -> int:
              "sdl", "-video.driver", "softfb", "-video.fs", "0", "-psx.input.port1", "gamepad",
              str(stage / disc.with_suffix(".cue").name)],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.6)
+        time.sleep(a.settle)
         key = lambda k: subprocess.run(["xdotool", "key", k], env=env, capture_output=True)
         key("Pause")
         time.sleep(0.2)

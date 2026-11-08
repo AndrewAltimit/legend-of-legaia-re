@@ -127,7 +127,7 @@ impl World {
             && self.module_seek_ready()
             && let Some(lba) = legaia_engine_battle_vm::battle_cd_drive::clip_lba(a.slot)
         {
-            self.casting.drive.seek(lba);
+            self.casting.drive.seek_when_ready(lba);
             self.casting.drive_arms = Some((a, true));
         }
     }
@@ -137,7 +137,7 @@ impl World {
     fn module_seek_ready(&self) -> bool {
         self.battle_ctx.menu_open == 0
             && self.casting.selector_seek.is_none()
-            && self.casting.drive.idle()
+            && self.casting.drive.ready()
     }
 
     /// Whether retail's game loop is held inside the seek arm's `CdlSetloc`
@@ -151,7 +151,7 @@ impl World {
             && self.casting.drive_ticked_at + 1 >= self.clock.display_frames
             && self.battle_ctx.menu_open == 0
             && self.casting.drive_arms.is_some_and(|(a, issued)| {
-                !issued && self.casting.module_phase == a.seek_arm && !self.casting.drive.idle()
+                !issued && self.casting.module_phase == a.seek_arm && !self.casting.drive.ready()
             })
     }
 
