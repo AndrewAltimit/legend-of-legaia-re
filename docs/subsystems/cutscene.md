@@ -2009,7 +2009,12 @@ about 95 vsyncs for it before move `22` ([`script-vm-menuctrl.md`](script-vm-men
 The end-latch spin on a placed object waits on that object's own clip: `edbylon` `P2[19]` swings
 the dojo door (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`) and holds the door shot with
 `AC 04 08` / `AD 04 08` for the 30-frame swing, about 60 vsyncs, before the pull-back
-(`World::object_prop_clip_running`; disc-gated `edbylon_door_spin_disc`).
+(`World::object_prop_clip_running`; disc-gated `edbylon_door_spin_disc`). The record closes the
+door with the same spin (`AB 04 07` reverses the clip, `AD 04 08` at `+0x393`), so the `AC 04 08`
+before it has to clear the latch the opening swing left. Retail's clip tick and script ops share
+one actor word; the port keeps the prop's cursor word apart from the channel's context word, and
+carries the end latch across before each op (`World::mirror_object_end_latch`). A retail film of
+the chain holds this shot `380` vsyncs against the engine's `380` ticks with both spins in place.
 
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
