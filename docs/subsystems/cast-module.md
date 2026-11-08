@@ -2753,7 +2753,7 @@ half its reach (`World::apply_jedo_writes`). Arm 26's cut takes its TR y off the
 living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). Terra's arm `0xC` cut takes the same
 middle (`0x801F7C70..0x801F7DA4`), which is what keeps the orbiting row in the
 whirl's centre through arm `0xE`. A retail recording's
-`creature.csv` reads these directly.
+`creature.csv` reads these directly. Jedo's arm 7 shrinks its three rings every pass, the drained word `<< 12` over `192` into each part's scale `+0x72` (`0x801F7354..0x801F73B0`), and its pass halts them (`JEDO_ARM7_RING_RECORDS`, `World::apply_jedo_writes`).
 
 Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+0x21C = 0xC8`, `0x801F81E0..0x801F825C`): the reaction arm 15 staged has to tick, and its cue reaches the screen on arm 17.
 
