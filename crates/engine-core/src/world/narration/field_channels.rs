@@ -209,10 +209,18 @@ impl World {
             .collect()
     }
 
-    /// The draw Y a placed object bound to `record` takes at world `(x, z)`:
-    /// the floor sample under it when the record follows the floor
-    /// ([`Self::object_floor_follow_records`]), else `None` (the `.MAP`
-    /// sweep's `lut[nibble] + y_off` stands).
+    /// The Y a host **bakes** a placed object bound to `record` at, standing
+    /// at world `(x, z)`: the floor sample under it when the record follows
+    /// the floor ([`Self::object_floor_follow_records`]), else `None` (the
+    /// `.MAP` sweep's `lut[nibble] + y_off` stands).
+    ///
+    /// The sample is taken through the ladder the bound objects were spawned
+    /// against ([`crate::world::FieldTerrain::placed_spawn_lut`]), not the
+    /// live rungs, so the bake does not depend on when the host builds its
+    /// placed layer. The live floor - a script's `4C 9E` ladder or a rung
+    /// oscillator - reaches the draw through
+    /// [`Self::object_draw_displacements`], which carries the difference
+    /// every frame.
     // REF: FUN_8003BC08, FUN_80019278
     pub fn object_floor_follow_y(
         &self,
@@ -223,7 +231,7 @@ impl World {
     ) -> Option<i32> {
         follow
             .contains(&record)
-            .then(|| self.sample_field_floor_height(x, z))
+            .then(|| self.sample_field_floor_height_spawned(x, z))
     }
 
     /// Flat partition-0 record index -> how far a script has moved that
@@ -282,12 +290,15 @@ impl World {
                     i32::from(c.ctx.world_z as i16),
                 );
                 // A floor follower's placed draw is baked on the floor under
-                // its seat (`follow_floor_placed_draws`), and retail's tick
-                // samples the floor under the actor where it stands now, so
-                // its rise is the floor's between the two.
+                // its seat through the spawn ladder
+                // (`follow_floor_placed_draws`), and retail's tick samples
+                // the floor under the actor where it stands now through the
+                // live ladder, so its rise is the floor's between the two -
+                // a script that walks it, and one that installs a ladder
+                // under it (`rikuroa`'s cave-mouth summit, `4C 9E`).
                 let dy = if follow.contains(&c.placement_index) {
                     self.sample_field_floor_height(lx, lz)
-                        - self.sample_field_floor_height(i32::from(sx), i32::from(sz))
+                        - self.sample_field_floor_height_spawned(i32::from(sx), i32::from(sz))
                 } else {
                     i32::from(c.ctx.world_y as i16) - i32::from(sy)
                 };

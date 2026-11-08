@@ -182,6 +182,7 @@ mod raseru_cross_out_atlas_disc;
 mod rayman_bridge_collapse_disc;
 mod region_battle_setup_disc;
 mod region_encounter_disc;
+mod rikuroa_summit_ladder_disc;
 mod rim_elm_ambush_disc;
 mod rim_elm_door_roundtrip_disc;
 mod save_gate_scene_man;
