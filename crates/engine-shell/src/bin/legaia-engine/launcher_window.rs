@@ -1836,7 +1836,9 @@ impl LauncherApp {
                 Panel::Options => "See and change the keyboard keys. In the game, F12 or \
                                    Select+Start opens settings, cheats, scenes and the key list."
                     .into(),
-                Panel::Controls => "Back to the options. Right or Tab goes to the keys.".into(),
+                Panel::Controls => "Back to the options. Right or Tab goes to the keys. In the \
+                                    game, F12 lists the toggle keys too."
+                    .into(),
             },
             Item::Bind(row) => match self.awaiting_key() {
                 Some(_) => waiting_message(self.rebind_button_label(row)),
