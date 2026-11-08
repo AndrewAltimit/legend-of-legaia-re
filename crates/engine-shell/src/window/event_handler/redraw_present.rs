@@ -1174,6 +1174,10 @@ impl PlayWindowApp {
         // (`battle_nilboa_neo_grude_power_up_mid_cast`, the gate's pass a
         // pass past the RAM's parts). A harness seat.
         let pass = u64::from(self.session.host.world.battle.frame_clock.step.max(1));
+        // The state's first pass still draws the state before it (the pass
+        // that flipped the byte draws its old frame), so a retake that lands
+        // on that pass has left the state; such a capture keeps the gate's
+        // own frame (`battle_garmel_p2_a434_h6`: retake `0.615`, gate `0.940`).
         let base = sc
             .part_age_run
             .get()
@@ -1181,7 +1185,7 @@ impl PlayWindowApp {
             .map_or(self.tick_no, |(first, _)| first);
         if let Some(want) = base
             .checked_sub(sc.display_lag)
-            .filter(|&t| t >= since || sc.retake_shot_only || sc.retake_across_entry)
+            .filter(|&t| t >= since + pass || sc.retake_shot_only || sc.retake_across_entry)
         {
             // A magic-band shot the camera armed after the retake's tick
             // framed none of the frames before it: the retake draws the

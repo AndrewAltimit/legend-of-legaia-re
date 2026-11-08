@@ -4031,7 +4031,7 @@ own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|
-| under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| under `lag` ticks into its state, or a retake landing on the state's first pass (which still draws the state before it) | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327`, and a party seat's first strike-loop pass (`battle_garmel_party_noa_lizard_tail_open`) read `.615` on the approach's last frame against `.940` at the gate |
 | a monster's clip age, the same shot | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); retaken, both `battle_gimard_tail_fire_*` frames fell, and the monster strikes split both ways (`battle_jouind_gilium_lv3_strike` `.850` to `.953`, `battle_vozz_gizam_strike` `.964` to `.921`) |
 | `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |

@@ -150,6 +150,16 @@ carries the movement-disabled bit `0x80000` at `+0x10` (an event holds it) takes
 all, so no roll fires there either way (`concnow_field_door_hop_settled`,
 `chapter2_garmel_pre_zeto`).
 
+Party strikes are not a census dimension yet, and they are where a harvest finds
+the most new reading: a command ring with `LEGAIA_PARTY_ARTS` set (per seat, a
+`,` list of arts as art-data tokens, `1` Left, `2` Right, `3` Down, `4` Up, cycled
+over the rounds) takes Attack, enters the art and commits, and each seat's strike
+loop `0x1E` is captured at `LEGAIA_PARTY_HOLDS` vsyncs in. `LEGAIA_MONSTER_TOUGH=1`
+restores the monsters at each round prompt so a fight outlasts the list, and
+`LEGAIA_PARTY_TRACE=1` writes `party_trace.csv` (state, cursor, committed and staged
+clip, close-up accumulator, yaw) per vsync of a party's attack chain. The states
+register as `battle_<scene>_party_<char>_<art>_{open,mid,late}`.
+
 A state is a valid run of the game whichever way it was reached, so state-making runs
 take `run_probe.sh --fast --turbo`: no display, several at once, well above 1x
 ([headless runs](pcsx-redux-automation.md#headless-runs)).

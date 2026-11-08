@@ -85,6 +85,19 @@
 --                    whole emulator state at the action's state 0x0A
 --                    (<key>_pre_...), before the pick, which replays the same
 --                    cast on its own for the cast-sequence oracle
+--   LEGAIA_PARTY_ARTS  per-seat art lists for the party-strike harvest:
+--                    `;`-separated seats, `,`-separated arts, each a string of
+--                    art-data direction tokens (1 Left, 2 Right, 3 Down, 4 Up),
+--                    so `124,343;343;341`. With this set, every round's command
+--                    ring takes Attack, the arts entry takes the round's art
+--                    (cycling the seat's list), Cross commits, and a party
+--                    seat's strike loop is captured too, at each vsync of
+--                    LEGAIA_PARTY_HOLDS (default "6,30,60") into the loop,
+--                    key p<char>_a<art tokens>_h<hold>. LEGAIA_SPIRIT_ROUNDS
+--                    still applies first (0 = attack from round one).
+--   LEGAIA_MONSTER_TOUGH 1 = at each round prompt write every monster's HP back
+--                    to its maximum, so the fight outlasts the arts lists; say
+--                    so in the state's description
 --   LEGAIA_AUDIO_LOG 1 = write audio.csv, one row per vsync: the game mode, the
 --                    track word, the field-BGM and battle sound sources (open,
 --                    libsnd sequence, its play flags, tick wait, read cursor)
@@ -128,6 +141,20 @@ local FINISH = probe.getenv_num("LEGAIA_FINISH", 0) == 1
 local HOLD_MODULE = probe.getenv_num("LEGAIA_HOLD_MODULE", 0)
 local HOLD_MAGIC = probe.getenv_num("LEGAIA_HOLD_MAGIC", 0)
 local SAVE_PRE = probe.getenv_num("LEGAIA_SAVE_PRE", 0) == 1
+local P = {}
+P.ARTS = {}
+for seat_arts in string.gmatch(probe.getenv("LEGAIA_PARTY_ARTS", ""), "[^;]+") do
+    local arts = {}
+    for a in string.gmatch(seat_arts, "[^,]+") do arts[#arts + 1] = a end
+    P.ARTS[#P.ARTS + 1] = arts
+end
+P.HOLDS = {}
+for h in string.gmatch(probe.getenv("LEGAIA_PARTY_HOLDS", "6,30,60"), "[^,]+") do
+    P.HOLDS[#P.HOLDS + 1] = tonumber(h)
+end
+P.TRACE = probe.getenv_num("LEGAIA_PARTY_TRACE", 0) == 1
+P.trace = {}
+P.MONSTER_TOUGH = probe.getenv_num("LEGAIA_MONSTER_TOUGH", 0) == 1
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
 local PLAYER_PTR = 0x8007c364
@@ -277,7 +304,12 @@ local function round_pokes(round)
     for s = 3, 7 do
         local a = seat_actor(s)
         if a ~= nil and (probe.read_u16(a + 0x14C) or 0) > 0 then
-            if FINISH and round > SPIRIT_ROUNDS then
+            if P.MONSTER_TOUGH then
+                local hp = probe.read_u16(a + 0x14E)
+                probe.write_u16(a + 0x14C, hp)
+                probe.write_u16(a + 0x172, hp)
+                probe.write_u32(a + 0x10, 0)
+            elseif FINISH and round > SPIRIT_ROUNDS then
                 probe.write_u16(a + 0x14C, 1)
             elseif round == WOUND or (WOUND_EVERY and WOUND > 0 and round > WOUND) then
                 probe.write_u16(a + 0x14C, math.max(1, math.floor(probe.read_u16(a + 0x14E) / 3)))
@@ -287,8 +319,10 @@ local function round_pokes(round)
 end
 
 local ring_i = 0
-local held_pre = nil
-local pre_written = {}
+P.art = {}
+P.input_i = 1
+P.held_pre = nil
+P.pre_written = {}
 local last_st = nil
 
 local caps = 0
@@ -459,8 +493,45 @@ probe.run({
         if flow == 0xFF then
             -- The action SM runs: watch for a monster's action on screen.
             local b = band(st)
+            if P.TRACE and (st >= 0x14 and st <= 0x20) and seat < 3 then
+                local ap = probe.read_u32(ACTORS + seat * 4)
+                if ok_ptr(ap) then
+                    P.trace[#P.trace + 1] = string.format("%d,%d,%02x,%02x,%02x,%02x,%02x,%d,%d,%d,%d",
+                        vsync, seat, st, probe.read_u8(cp + 0x15), probe.read_u8(ap + 0x1D9),
+                        probe.read_u8(ap + 0x1DA), probe.read_u8(ap + 0x1DC),
+                        probe.read_u32(cp + 0x87C), probe.read_u16(ap + 0x34),
+                        probe.read_u16(0x8007B792), probe.read_u16(cp + 0x6DA))
+                end
+            end
+            if #P.ARTS > 0 and seat < 3 then
+                if st == 0x1E then
+                    if P.since == nil or P.seat ~= seat then
+                        P.since, P.seat = vsync, seat
+                    end
+                    local char = probe.read_u8(0x8007BD10 + seat) or 0
+                    local el = vsync - P.since
+                    for _, h in ipairs(P.HOLDS) do
+                        local key = string.format("p%d_a%s_h%d", char, P.art[seat] or "x", h)
+                        if el >= h and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
+                            local name = string.format("%s_%s_%s_v%d", PREFIX, key, scene_name(), vsync)
+                            if save_checkpoint(name, vsync) then
+                                per_key[key] = (per_key[key] or 0) + 1
+                                caps = caps + 1
+                                logf("party %s seat=%d q=%02x %02x %02x", key, seat,
+                                    probe.read_u8(probe.read_u32(ACTORS + seat * 4) + 0x1DF) or 0,
+                                    probe.read_u8(probe.read_u32(ACTORS + seat * 4) + 0x1E0) or 0,
+                                    probe.read_u8(probe.read_u32(ACTORS + seat * 4) + 0x1E1) or 0)
+                                if caps >= MAX_CAPS then ctx.request_quit = true end
+                            end
+                            break
+                        end
+                    end
+                else
+                    P.since = nil
+                end
+            end
             if SAVE_PRE and st == 0x0A and last_st ~= 0x0A then
-                held_pre = PCSX.createSaveState()
+                P.held_pre = PCSX.createSaveState()
             end
             last_st = st
             if seat >= 3 and seat < 8 and b ~= nil then
@@ -476,13 +547,13 @@ probe.run({
                     if band_key ~= key .. b then
                         band_key, band_since = key .. b, vsync
                         logf("action %s band=%s st=0x%02x seat=%d vsync=%d", key, b, st, seat, vsync)
-                    elseif SAVE_PRE and cat == 2 and held_pre ~= nil and not pre_written[key] then
-                        pre_written[key] = true
+                    elseif SAVE_PRE and cat == 2 and P.held_pre ~= nil and not P.pre_written[key] then
+                        P.pre_written[key] = true
                         local name = string.format("%s_%s_%s_pre_v%d", PREFIX, key, scene_name(), vsync)
                         local fh = Support.File.open(probe.out_path(name .. ".rawsstate"), "TRUNCATE")
-                        fh:writeMoveSlice(held_pre)
+                        fh:writeMoveSlice(P.held_pre)
                         fh:close()
-                        held_pre = nil
+                        P.held_pre = nil
                         logf("CKPT %s vsync=%d", name, vsync)
                     elseif vsync - band_since >= (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
                             or b == "magic" and HOLD_MAGIC > 0 and HOLD_MAGIC or HOLD)
@@ -503,6 +574,35 @@ probe.run({
         end
         band_key = nil
         if vsync < next_menu_press then return end
+        if #P.ARTS > 0 and rounds > SPIRIT_ROUNDS
+            and (flow == 0x28 or flow == 0x78 or flow == 0x50) then
+            local arts = P.ARTS[seat + 1]
+            if flow == 0x28 then
+                press(BTN.LEFT, vsync, 4)
+                next_menu_press = vsync + 16
+                P.input_i = 1
+            elseif flow == 0x78 then
+                press(BTN.RIGHT, vsync, 4)
+                next_menu_press = vsync + 16
+                P.input_i = 1
+            elseif arts ~= nil then
+                local art = arts[(rounds - SPIRIT_ROUNDS - 1) % #arts + 1]
+                P.art[seat] = art
+                local c = string.sub(art, P.input_i, P.input_i)
+                if c == "" then
+                    press(BTN.CROSS, vsync, 4)
+                    next_menu_press = vsync + 24
+                else
+                    press(({ BTN.LEFT, BTN.RIGHT, BTN.DOWN, BTN.UP })[tonumber(c)], vsync, 4)
+                    P.input_i = P.input_i + 1
+                    next_menu_press = vsync + 14
+                end
+            else
+                press(BTN.CROSS, vsync, 4)
+                next_menu_press = vsync + 24
+            end
+            return
+        end
         if flow == 0x28 then
             if rounds > SPIRIT_ROUNDS then
                 -- The last formation's fight has nothing left to give.
@@ -524,6 +624,13 @@ probe.run({
         if held ~= nil then probe.pad.release(held) end
         if held2 ~= nil then probe.pad.release(held2) end
         logf("done: battles=%d captures=%d", battles, caps)
+        if P.TRACE then
+            local fh = io.open(probe.out_path("party_trace.csv"), "w")
+            if fh ~= nil then
+                fh:write("vsync,seat,st,cursor,clip,staged,flags,accum,x,yaw,yawhalf\n" .. table.concat(P.trace, "\n") .. "\n")
+                fh:close()
+            end
+        end
         local fh = io.open(probe.out_path("harvest.log"), "w")
         if fh ~= nil then
             fh:write(table.concat(log_lines, "\n") .. "\n")
