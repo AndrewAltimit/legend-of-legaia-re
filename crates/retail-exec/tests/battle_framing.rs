@@ -376,3 +376,173 @@ fn the_action_framings_are_retails() {
         failures[..failures.len().min(25)].join("\n")
     );
 }
+
+/// Cases 0, 1, 3 and 9: the command close-up, the two cursor shots and the far
+/// framing's formation box and yaw, against the pure framings the camera
+/// steps through.
+#[test]
+fn the_menu_framings_are_retails() {
+    use legaia_engine_battle_vm::battle_cam_script::{
+        FormationBox, menu_framing, menu_raw_z, target_ally_pose, target_enemy_pose,
+    };
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.stub(ART_TAIL, 0);
+    cpu.stub(0x8003_5F04, 0);
+    let shots: Rc<RefCell<Vec<Tween>>> = Rc::default();
+    {
+        let shots = shots.clone();
+        cpu.hook(TWEEN, move |r, m| {
+            let trio = |m: &mut psx_retail_exec::Memory, a: u32| {
+                [m.rd16(a) as i16, m.rd16(a + 2) as i16, m.rd16(a + 4) as i16]
+            };
+            let t = (
+                trio(m, r.r[A0]),
+                trio(m, r.r[A1]),
+                trio(m, r.r[A2]),
+                r.r[A3],
+            );
+            shots.borrow_mut().push(t);
+        });
+    }
+    for seat in 0..8 {
+        cpu.mem.wr32(ACTORS + seat * 4, actor(seat));
+        cpu.mem.wr32(actor(seat) + 0x22C, node(seat));
+    }
+    let mut rng = Rng(0x4D45_4E55);
+    let mut failures: Vec<String> = Vec::new();
+    for round in 0..60_000 {
+        let case = [0u32, 1, 3, 9][rng.below(4) as usize];
+        let party = 1 + rng.below(3);
+        let monsters = 1 + rng.below(4);
+        cpu.mem.wr8(CTX, party as u8);
+        cpu.mem.wr8(CTX + 0x13, rng.below(party) as u8);
+        let (live_yaw, focus) = (
+            rng.below(0x1000) as i16,
+            (s16(&mut rng, 0x800), s16(&mut rng, 0x800)),
+        );
+        cpu.mem.wr16(LIVE_YAW, live_yaw as u16);
+        cpu.mem.wr32(0x8008_9118, (-(i32::from(focus.0))) as u32);
+        cpu.mem.wr32(0x8008_9120, (-(i32::from(focus.1))) as u32);
+        let mut seats = Vec::new();
+        for s in 0..8u32 {
+            let present = (s < party) || (3..3 + monsters).contains(&s);
+            let hp = u16::from(present && rng.below(5) != 0);
+            let (x, y, z) = (
+                s16(&mut rng, 0x900),
+                -(rng.below(0x400) as i16),
+                s16(&mut rng, 0x900),
+            );
+            let f = rng.below(0x1000) as u16;
+            let a = actor(s);
+            cpu.mem.wr16(a + 0x34, x as u16);
+            cpu.mem.wr16(a + 0x36, y as u16);
+            cpu.mem.wr16(a + 0x38, z as u16);
+            cpu.mem.wr16(a + 0x46, f);
+            cpu.mem.wr16(a + 0x14C, hp);
+            cpu.mem.wr8(CHAR_IDS + s, 1 + rng.below(3) as u8);
+            cpu.mem.wr8(a + 0x1DD, (3 + rng.below(4)) as u8);
+            seats.push((s, hp, x, y, z, f));
+        }
+        let selector = if case == 9 { rng.below(3) } else { 0 };
+        let slot = if case == 9 {
+            selector
+        } else {
+            rng.below(party)
+        };
+        shots.borrow_mut().clear();
+        assert_eq!(cpu.call(FRAMING, &[slot, case]), Stop::Returned, "{round}");
+        let Some(&(rot, tr, foc, dur)) = shots.borrow().first() else {
+            continue;
+        };
+        let (_, _, ax, ay, az, facing) = seats[slot as usize];
+        let char_id = u32::from(cpu.mem.rd8(CHAR_IDS + slot));
+        let height = i32::from(cpu.mem.rd16(HEIGHTS + (char_id - 1) * 2));
+        let bcam = BattleCamActor {
+            facing: i32::from(facing as i16),
+            world: [f32::from(ax), f32::from(ay), f32::from(az)],
+            height: Some(height as f32),
+        };
+        let (pose, want_raw) = match case {
+            0 => (bcam.submenu_pose(), 0x600),
+            1 => {
+                let t = seats[cpu.mem.rd8(actor(slot) + 0x1DD) as usize];
+                (
+                    target_enemy_pose(
+                        bcam,
+                        [f32::from(t.2), f32::from(t.4)],
+                        [f32::from(focus.0), 0.0, f32::from(focus.1)],
+                    ),
+                    0x800,
+                )
+            }
+            3 => (target_ally_pose(bcam), 0x600),
+            _ => {
+                let (lo, hi) = match selector {
+                    1 => (3, 7),
+                    2 => (0, 3),
+                    _ => (0, 7),
+                };
+                let mut bx: Option<FormationBox> = None;
+                let mut s = lo;
+                while s < hi {
+                    // `s0 == ctx[+0]` jumps to the first monster seat, before
+                    // the loop test: a selector `2` party of fewer than three
+                    // walks seat 3 once (`0x801D6FE4..0x801D6FF0`).
+                    if s == party {
+                        s = 3;
+                    }
+                    let t = seats[s as usize];
+                    if t.1 != 0 {
+                        FormationBox::extend(&mut bx, f32::from(t.2), f32::from(t.4));
+                    }
+                    s += 1;
+                }
+                (menu_framing(bx, f32::from(live_yaw)), menu_raw_z(bx))
+            }
+        };
+        let raw = want_raw;
+        let want = (
+            i32::from(rot[0]),
+            i32::from(rot[1] as u16 & 0xFFF),
+            i32::from(tr[0]),
+            i32::from(tr[1]),
+            raw,
+            [
+                -i32::from(foc[0]),
+                -i32::from(foc[1]),
+                -i32::from(foc[2]),
+            ],
+        );
+        let got = (
+            pose.pitch as i32,
+            (pose.yaw as i32).rem_euclid(0x1000),
+            pose.tr[0] as i32,
+            pose.tr[1] as i32,
+            i32::from(tr[2]),
+            [
+                pose.focus[0] as i32,
+                pose.focus[1] as i32,
+                pose.focus[2] as i32,
+            ],
+        );
+        let z_ok = prescale_tr_z(i32::from(tr[2])) == pose.tr[2];
+        if want != got || !z_ok || dur != if case == 9 { 0xE } else { 0xC } {
+            failures.push(format!(
+                "round {round} case {case} slot {slot} party {party}: retail {want:x?} z {:x} port {got:x?} z {:?} dur {dur:#x}",
+                tr[2], pose.tr[2]
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} differ:\n{}",
+        failures.len(),
+        failures[..failures.len().min(16)].join("\n")
+    );
+}

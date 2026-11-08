@@ -475,7 +475,8 @@ pub fn battle_formation_box(world: &World) -> Option<script::FormationBox> {
     let pc = world.party.party_count as usize;
     let mut bbox: Option<script::FormationBox> = None;
     for (i, a) in world.actors.iter().enumerate() {
-        if !(i < pc || a.battle_monster_id.is_some()) {
+        // The live-HP halfword `+0x14C` gates each seat (`0x801D7000`).
+        if !(i < pc || a.battle_monster_id.is_some()) || a.battle.hp == 0 {
             continue;
         }
         script::FormationBox::extend(
@@ -1112,11 +1113,13 @@ mod tests {
             world.actors.resize_with(3, Default::default);
         }
         world.actors[0].move_state.world_z = -800;
+        world.actors[0].battle.hp = 100;
         for (slot, x) in [(1usize, -600i16), (2, 600)] {
             let a = &mut world.actors[slot];
             a.move_state.world_x = x;
             a.move_state.world_z = 800;
             a.battle.liveness = 1;
+            a.battle.hp = 100;
         }
         let picker = |first: bool| {
             let mut monsters = [SlotState::alive(false, false); 5];
