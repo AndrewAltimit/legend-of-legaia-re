@@ -56,6 +56,30 @@ pub fn install_party_composition(world: &mut World, slots: Vec<u8>) {
     }
 }
 
+/// Seat a parsed spec: fill the roster slots it names from the new-game
+/// template (`starting`, when the host could read it), then install the
+/// composition. Records already carrying stats are left alone. Returns the
+/// slots seated, which a caller compares against the request for the cut to
+/// the three on-screen positions, or the spec's parse error. The native
+/// window's `--party` and Tools row and the browser's party field all come
+/// through here, so a member who has not joined yet fights with stats on
+/// every host.
+pub fn seat_party_spec(
+    world: &mut World,
+    starting: Option<&legaia_game_tables::new_game::StartingParty>,
+    spec: &str,
+) -> Result<Vec<u8>, String> {
+    let slots = parse_party_spec(spec)?;
+    if slots.is_empty() {
+        return Err("empty party spec".to_string());
+    }
+    if let Some(starting) = starting {
+        world.seed_party_members(starting, &slots);
+    }
+    install_party_composition(world, slots.clone());
+    Ok(slots)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

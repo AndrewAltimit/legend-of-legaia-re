@@ -107,6 +107,7 @@
         let text = '';
         try { text = this.rt.play_host_hotkey_notice(id, own ? own() : ''); } catch (_) {}
         if (text) this._hotkeyNotice(text);
+        if (typeof window.__playSyncDebugBoxes === 'function') window.__playSyncDebugBoxes();
       };
       this._hotkeyNotice = (text) => {
         if (typeof window.__playShowNotice === 'function') window.__playShowNotice(text);

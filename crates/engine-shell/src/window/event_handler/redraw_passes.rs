@@ -590,7 +590,7 @@ impl PlayWindowApp {
                 // battle-entry flame-atlas blit; with the atlas resident the
                 // textured quad draws, and leaving the outline on stamps a
                 // bright rectangle over every effect in normal play.
-                let lines = if std::env::var_os("LEGAIA_DIAG_FX").is_some() {
+                let lines = if self.fx_outline {
                     let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
                     match r.upload_lines(&pos, &col, &idx) {
                         Ok(m) => Some(m),

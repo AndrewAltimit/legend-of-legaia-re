@@ -7,7 +7,9 @@
 //! menu* box and its battle tools are: nothing here is written to a settings
 //! file, so a developer tool cannot come back on by itself on a later start.
 //! The browser play page's twins are its dev-menu box, Auto-battle box,
-//! *Overworld markers* box, *Retail battle cadence* box and Minigame list.
+//! *Overworld markers* box, *Retail battle cadence* box, Minigame list,
+//! *Effect outlines* box, Party field, Battle BGM field, Learn spell row and
+//! GameShark box (a file here: a window has no text field).
 
 use super::*;
 use legaia_app_theme::chrome;
@@ -27,12 +29,22 @@ pub(super) enum ToolRow {
     BattleCadence,
     /// The port's overworld markers (`--world-map-markers`).
     OverworldMarkers,
+    /// A wireframe box around every effect sprite (`LEGAIA_DIAG_FX`).
+    EffectOutlines,
+    /// The present party (`--party`); picked, then applied.
+    Party,
+    /// The track a fight plays (`--battle-bgm`); picked, then applied.
+    BattleBgm,
+    /// Teach the lead a spell (`--learn-spell`); picked, then applied.
+    LearnSpell,
+    /// Read and apply a GameShark code file (`--cheat-file`).
+    GameShark,
     /// A press of the window key that enters a minigame or a mode.
     Enter(KeyCode),
 }
 
 /// The rows: control, label, one line of help.
-pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 13] = [
+pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 18] = [
     (
         ToolRow::DevMenu,
         "Developer menu",
@@ -62,6 +74,31 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 13] = [
         ToolRow::OverworldMarkers,
         "Overworld markers",
         "A marker over each place on the world map. Not in the original game.",
+    ),
+    (
+        ToolRow::EffectOutlines,
+        "Effect outlines",
+        "A box around every effect sprite, so a spawn shows when its art is not loaded.",
+    ),
+    (
+        ToolRow::Party,
+        "Party",
+        "Left/Right pick, Cross seat: who fights, in battle order. Empty seats join at the start level.",
+    ),
+    (
+        ToolRow::BattleBgm,
+        "Battle music",
+        "Left/Right pick, Cross use: the track a fight plays from the next fight on.",
+    ),
+    (
+        ToolRow::LearnSpell,
+        "Teach the lead",
+        "Left/Right pick, Cross teach: adds the Seru spell to the first party member's list.",
+    ),
+    (
+        ToolRow::GameShark,
+        "GameShark file",
+        "Cross: apply the --cheat-file codes, or legaia-codes.txt in the settings folder.",
     ),
     (
         ToolRow::Enter(KeyCode::KeyL),
@@ -103,12 +140,45 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 13] = [
 /// The page's rows.
 pub(super) const TOOL_COUNT: usize = TOOL_ROWS.len();
 
-/// The cursor and the last row's refusal.
-#[derive(Debug, Clone, Copy, Default)]
+/// How many rows the plate shows at once; the list scrolls under the cursor.
+const SHOWN: usize = 13;
+
+/// The party rows' picks, in the `--party` spec form.
+const PARTY_PICKS: [&str; 7] = [
+    "vahn",
+    "vahn,noa",
+    "vahn,noa,gala",
+    "noa,vahn,gala",
+    "gala,noa,vahn",
+    "noa",
+    "gala",
+];
+
+/// The spell picks: the player Seru block the Cheats page's Seru grant covers.
+const SPELL_PICKS: std::ops::RangeInclusive<u8> = legaia_engine_cheats::cheats::SERU_SPELL_IDS;
+
+/// The file a Cross on the GameShark row reads when `--cheat-file` named none.
+const DEFAULT_CODES_FILE: &str = "legaia-codes.txt";
+
+/// A battle-music pick: the default theme, no swap, or one battle-bank track.
+fn bgm_pick(i: usize) -> Option<u16> {
+    match i {
+        0 => None,
+        1 => Some(0),
+        i => Some(legaia_engine_system::music_labels::BATTLE_BANK_BGM_IDS[i - 2]),
+    }
+}
+const BGM_PICKS: usize = 2 + legaia_engine_system::music_labels::BATTLE_BANK_BGM_IDS.len();
+
+/// The cursor, each picker's position and the last row's message.
+#[derive(Debug, Clone, Default)]
 pub(super) struct ToolsPage {
     pub(super) cursor: usize,
-    /// Why the last press did nothing.
-    note: Option<&'static str>,
+    party: usize,
+    bgm: usize,
+    spell: usize,
+    /// What the last press did, or why it did nothing.
+    note: Option<String>,
 }
 
 impl ToolsPage {
@@ -116,6 +186,24 @@ impl ToolsPage {
     pub(super) fn move_cursor(&mut self, d: i32) {
         self.cursor = (self.cursor as i32 + d).rem_euclid(TOOL_COUNT as i32) as usize;
         self.note = None;
+    }
+
+    /// Left / Right on a picker row; `false` on any other row.
+    fn pick(&mut self, row: ToolRow, dir: i8) -> bool {
+        let (at, n) = match row {
+            ToolRow::Party => (&mut self.party, PARTY_PICKS.len()),
+            ToolRow::BattleBgm => (&mut self.bgm, BGM_PICKS),
+            ToolRow::LearnSpell => (&mut self.spell, SPELL_PICKS.count()),
+            _ => return false,
+        };
+        *at = (*at as i32 + i32::from(dir)).rem_euclid(n as i32) as usize;
+        self.note = None;
+        true
+    }
+
+    /// The first row the plate shows, keeping the cursor on it.
+    fn first_shown(&self) -> usize {
+        (self.cursor + 1).saturating_sub(SHOWN)
     }
 }
 
@@ -130,25 +218,45 @@ const FLIP_HINT: &str = "L1/R1 or Tab: keys";
 /// What a refused minigame press says.
 const REFUSED: &str = "Not from here: stand in a town, a field or on the world map.";
 
+/// A row's value column.
+enum ToolValue {
+    Switch(bool),
+    Pick(String),
+    Press(&'static str),
+}
+
 impl PlayWindowApp {
-    /// Where the row's switch stands; `None` for an entry row.
-    fn tool_on(&self, row: ToolRow) -> Option<bool> {
+    /// What the row's value column shows.
+    fn tool_value(&self, row: ToolRow) -> ToolValue {
         let world = &self.session.host.world;
-        Some(match row {
+        let page = &self.tools_page;
+        ToolValue::Switch(match row {
             ToolRow::DevMenu => self.dev_menu_on,
             ToolRow::Diagnostics => self.diag_rows,
             ToolRow::DebugCamera => self.field_debug_camera,
             ToolRow::AutoBattle => !world.battle.player_driven,
             ToolRow::BattleCadence => world.toggles.battle_sm_frame_cadence,
             ToolRow::OverworldMarkers => world.toggles.overworld_marker_overlay,
-            ToolRow::Enter(_) => return None,
+            ToolRow::EffectOutlines => self.fx_outline,
+            ToolRow::Party => return ToolValue::Pick(PARTY_PICKS[page.party].replace(',', ", ")),
+            ToolRow::BattleBgm => return ToolValue::Pick(bgm_pick_label(page.bgm)),
+            ToolRow::LearnSpell => {
+                let id = SPELL_PICKS.clone().nth(page.spell).unwrap_or(0x81);
+                return ToolValue::Pick(spell_pick_label(world, id));
+            }
+            ToolRow::GameShark => return ToolValue::Press("Cross: apply"),
+            ToolRow::Enter(_) => return ToolValue::Press("Cross: start"),
         })
     }
 
-    /// Left / Right on the page: a switch flips, an entry row does nothing.
-    pub(super) fn tools_change(&mut self) {
+    /// Left / Right on the page: a picker steps, a switch flips, an entry
+    /// row does nothing.
+    pub(super) fn tools_change(&mut self, dir: i8) {
         let (row, _, _) = TOOL_ROWS[self.tools_page.cursor];
-        if !matches!(row, ToolRow::Enter(_)) {
+        if self.tools_page.pick(row, dir) {
+            return;
+        }
+        if !matches!(row, ToolRow::Enter(_) | ToolRow::GameShark) {
             self.tools_apply();
         }
     }
@@ -176,7 +284,7 @@ impl PlayWindowApp {
             }
             ToolRow::OverworldMarkers => {
                 if self.retail_session() {
-                    self.tools_page.note = Some("Off while Original game only is on.");
+                    self.tools_page.note = Some("Off while Original game only is on.".into());
                     return;
                 }
                 let toggles = &mut self.session.host.world.toggles;
@@ -186,13 +294,71 @@ impl PlayWindowApp {
                     sw.world_map_markers = on;
                 }
             }
+            ToolRow::EffectOutlines => self.fx_outline ^= true,
+            ToolRow::Party => {
+                let spec = PARTY_PICKS[self.tools_page.party];
+                self.tools_page.note = Some(match self.session.seat_party_spec(spec) {
+                    Ok(_) => format!("Party: {}.", spec.replace(',', ", ")),
+                    Err(e) => e,
+                });
+            }
+            ToolRow::BattleBgm => {
+                let pick = bgm_pick(self.tools_page.bgm);
+                self.field_live_opts.battle_bgm = pick;
+                let track = self.field_live_opts.to_live_loop_opts().battle_bgm;
+                self.session.host.world.set_battle_bgm(track);
+                self.tools_page.note = Some(format!(
+                    "From the next fight: {}.",
+                    bgm_pick_label(self.tools_page.bgm)
+                ));
+            }
+            ToolRow::LearnSpell => {
+                let id = SPELL_PICKS
+                    .clone()
+                    .nth(self.tools_page.spell)
+                    .unwrap_or(0x81);
+                let world = &mut self.session.host.world;
+                let label = spell_pick_label(world, id);
+                let lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
+                self.tools_page.note = Some(match world.party.roster.members.get_mut(lead) {
+                    Some(record) => {
+                        legaia_engine_battle::magic_xp::learn_spell_prepend(record, id);
+                        format!("Learned {label}.")
+                    }
+                    None => "No party member to teach yet.".to_string(),
+                });
+            }
+            ToolRow::GameShark => {
+                let path = self.cheat_file.clone().or_else(|| {
+                    crate::launcher::settings_path()
+                        .and_then(|p| p.parent().map(|d| d.join(DEFAULT_CODES_FILE)))
+                });
+                self.tools_page.note = Some(match path {
+                    Some(path) => self.apply_codes_file(&path),
+                    None => format!("No settings folder to find {DEFAULT_CODES_FILE} in."),
+                });
+            }
             ToolRow::Enter(key) => {
                 if self.minigame_key(key, ElementState::Pressed) {
                     self.hotkey_help = false;
                 } else {
-                    self.tools_page.note = Some(REFUSED);
+                    self.tools_page.note = Some(REFUSED.into());
                 }
             }
+        }
+    }
+
+    /// Read a code file and apply it the way the page's GameShark box does.
+    fn apply_codes_file(&mut self, path: &Path) -> String {
+        use legaia_engine_cheats::cheat_applier::{CheatTextFormat, apply_text};
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => return format!("{}: {e}", path.display()),
+        };
+        let world = &mut self.session.host.world;
+        match apply_text(world, &text, CheatTextFormat::for_path(path, &text), false) {
+            Ok(report) => report.summary(),
+            Err(e) => format!("Codes not understood: {e}"),
         }
     }
 
@@ -202,7 +368,7 @@ impl PlayWindowApp {
         let key_ink = chrome::KEY.to_f32();
         let text = chrome::TEXT.to_f32();
         let changed = chrome::CHANGED.to_f32();
-        let height = super::settings_panel::plate_height(TOOL_COUNT, NOTE_LINES);
+        let height = super::settings_panel::plate_height(SHOWN, NOTE_LINES);
         let mut out = Vec::new();
         self.push_scrim(
             &mut out,
@@ -228,7 +394,8 @@ impl PlayWindowApp {
             text,
         );
         let mut y = Y0 + 15;
-        for (i, (row, label, _)) in TOOL_ROWS.iter().enumerate() {
+        let first = self.tools_page.first_shown();
+        for (i, (row, label, _)) in TOOL_ROWS.iter().enumerate().skip(first).take(SHOWN) {
             let focused = i == self.tools_page.cursor;
             if focused && let Some(src) = self.battle_hud_solid_src() {
                 out.push(TextDraw {
@@ -238,15 +405,17 @@ impl PlayWindowApp {
                 });
             }
             put(&mut out, label, (left, y - 2), text);
-            let on = self.tool_on(*row);
-            let shown = match (on, focused) {
-                (Some(on), true) => format!("< {} >", if on { "On" } else { "Off" }),
-                (Some(on), false) => if on { "On" } else { "Off" }.to_string(),
-                (None, true) => "Cross: start".to_string(),
-                (None, false) => String::new(),
+            let value = self.tool_value(*row);
+            let shown = match (&value, focused) {
+                (ToolValue::Switch(on), true) => format!("< {} >", if *on { "On" } else { "Off" }),
+                (ToolValue::Switch(on), false) => if *on { "On" } else { "Off" }.to_string(),
+                (ToolValue::Pick(v), true) => format!("< {v} >"),
+                (ToolValue::Pick(v), false) => v.clone(),
+                (ToolValue::Press(v), true) => v.to_string(),
+                (ToolValue::Press(_), false) => String::new(),
             };
-            let ink = match (on, focused) {
-                (Some(true), _) => changed,
+            let ink = match (&value, focused) {
+                (ToolValue::Switch(true), _) => changed,
                 (_, true) => key_ink,
                 _ => text,
             };
@@ -257,6 +426,7 @@ impl PlayWindowApp {
         let note = self
             .tools_page
             .note
+            .as_deref()
             .unwrap_or(TOOL_ROWS[self.tools_page.cursor].2);
         for line in super::settings_panel::wrap_lines(note, WIDTH - 12, &width)
             .iter()
@@ -270,6 +440,28 @@ impl PlayWindowApp {
     }
 }
 
+/// A battle-music pick's words.
+fn bgm_pick_label(i: usize) -> String {
+    match bgm_pick(i) {
+        None => "Standard theme".into(),
+        Some(0) => "Field track plays on".into(),
+        Some(id) => legaia_engine_system::music_labels::label_for_bgm_id(id)
+            .unwrap_or_else(|| format!("Track {id}")),
+    }
+}
+
+/// A spell pick's name off the disc's table, else its id.
+fn spell_pick_label(world: &legaia_engine_core::world::World, id: u8) -> String {
+    world
+        .menu
+        .text
+        .as_ref()
+        .and_then(|t| t.spell_names.as_ref())
+        .and_then(|n| n.name(id))
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| format!("Spell {id:#04x}"), str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,7 +469,7 @@ mod tests {
     #[test]
     fn the_cursor_wraps_and_a_move_clears_the_refusal() {
         let mut p = ToolsPage {
-            note: Some(REFUSED),
+            note: Some(REFUSED.into()),
             ..Default::default()
         };
         p.move_cursor(-1);
@@ -290,8 +482,31 @@ mod tests {
     /// The page stays on the stage with the row count it carries.
     #[test]
     fn the_plate_fits_the_stage() {
-        let h = super::super::settings_panel::plate_height(TOOL_COUNT, NOTE_LINES);
+        let h = super::super::settings_panel::plate_height(SHOWN, NOTE_LINES);
         assert!(Y0 + h <= legaia_engine_ui::BOOT_UI_STAGE_H as i32, "{h}");
+    }
+
+    /// A pick steps inside its list and leaves other rows alone.
+    #[test]
+    fn a_pick_wraps_its_own_list() {
+        let mut p = ToolsPage::default();
+        assert!(p.pick(ToolRow::Party, -1));
+        assert_eq!(p.party, PARTY_PICKS.len() - 1);
+        assert!(p.pick(ToolRow::BattleBgm, 1));
+        assert_eq!(p.bgm, 1);
+        assert_eq!(bgm_pick(p.bgm), Some(0));
+        assert!(!p.pick(ToolRow::AutoBattle, 1));
+    }
+
+    /// The window of shown rows always holds the cursor.
+    #[test]
+    fn the_cursor_stays_on_the_plate() {
+        let mut p = ToolsPage::default();
+        for _ in 0..TOOL_COUNT {
+            let first = p.first_shown();
+            assert!(p.cursor >= first && p.cursor < first + SHOWN);
+            p.move_cursor(1);
+        }
     }
 
     /// Every help line and the controls line fit the plate, in the disc's
@@ -306,6 +521,20 @@ mod tests {
                 let lines = super::super::settings_panel::wrap_lines(help, WIDTH - 12, &width);
                 assert!(lines.len() <= NOTE_LINES, "{label}: {lines:?}");
                 assert!(width(label) + width("< Off >") <= WIDTH - 12, "{label}");
+            }
+            for i in 0..BGM_PICKS {
+                let v = bgm_pick_label(i);
+                assert!(
+                    width("Battle music") + width(&format!("< {v} >")) <= WIDTH - 12,
+                    "{v}"
+                );
+            }
+            for p in PARTY_PICKS {
+                let v = p.replace(',', ", ");
+                assert!(
+                    width("Party") + width(&format!("< {v} >")) <= WIDTH - 12,
+                    "{v}"
+                );
             }
             let lines = super::super::settings_panel::wrap_lines(REFUSED, WIDTH - 12, &width);
             assert!(lines.len() <= NOTE_LINES, "{lines:?}");

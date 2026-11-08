@@ -252,6 +252,8 @@ impl PlayWindowApp {
             cheats_page: Default::default(),
             scenes_page: Default::default(),
             tools_page: Default::default(),
+            fx_outline: std::env::var_os("LEGAIA_DIAG_FX").is_some(),
+            cheat_file: None,
             dev_menu_on: std::env::var_os("LEGAIA_DEV_MENU").is_some(),
             options_save_error: Default::default(),
             // Armed by `cmd_play_window_with_record` for an interactive

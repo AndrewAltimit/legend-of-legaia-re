@@ -1069,6 +1069,11 @@ pub(super) struct PlayWindowApp {
     pub(super) scenes_page: super::scenes_panel::ScenesPage,
     /// The Tools page's cursor and last refusal (`window::tools_panel`).
     pub(super) tools_page: super::tools_panel::ToolsPage,
+    /// A wireframe box around every effect sprite (`LEGAIA_DIAG_FX`, or the
+    /// Tools page's row): the page's *Effect outlines* box.
+    pub(super) fx_outline: bool,
+    /// The `--cheat-file` the Tools page's GameShark row re-reads.
+    pub(super) cheat_file: Option<std::path::PathBuf>,
     /// The original game's developer menu is up this session: `F12` Tools,
     /// or `LEGAIA_DEV_MENU` at launch.
     pub(super) dev_menu_on: bool,

@@ -457,10 +457,12 @@ keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
 cadence (`LEGAIA_BATTLE_FRAME_CADENCE`) and the overworld markers, as switches
 that last this session only and are written nowhere, then one press for each
 minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
-picker and the trading-card menu. The play page's other debug controls (effect
-outlines, the party, battle-music and spell-learn pickers, the GameShark code
-box) stay launch switches here (`--party`, `--battle-bgm`, `--learn-spell`,
-`--cheat-file`). **Keys** lists every toggle key with its current state (`F11`
+picker and the trading-card menu, then the play page's other debug controls:
+effect outlines, the party, the fight music, teaching the lead a spell, and a
+GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
+folder; the page's box is a text field, a window has none). The list scrolls
+under the cursor. The play page has the debug camera and the diagnostics bar as
+boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
 Config table, and the mouse's camera controls.

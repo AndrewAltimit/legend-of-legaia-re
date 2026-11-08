@@ -725,5 +725,6 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
             debug_seeds.netplay.name.as_deref(),
         ));
     }
+    app.cheat_file = cheat_file.map(Path::to_path_buf);
     Ok(app)
 }

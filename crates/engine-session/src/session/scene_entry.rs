@@ -455,6 +455,13 @@ impl<S: AudioSink> BootSession<S> {
         landing
     }
 
+    /// Seat a party spec on this session ([`crate::party_spec::seat_party_spec`]):
+    /// the `--party` launch switch and the window's Tools row.
+    pub fn seat_party_spec(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+        let starting = self.starting_party.clone();
+        crate::party_spec::seat_party_spec(&mut self.host.world, starting.as_ref(), spec)
+    }
+
     /// Where a save written now would resume
     /// ([`legaia_engine_scene_host::scene_host::SceneHost::current_resume`], the one
     /// derivation the page's card and LGSF writers call too).

@@ -289,7 +289,7 @@ impl PlayWindowApp {
             }
             PanelInput::Confirm if page == PanelPage::Scenes => self.scenes_go(),
             PanelInput::Move(d) if page == PanelPage::Tools => self.tools_page.move_cursor(d),
-            PanelInput::Change(_) if page == PanelPage::Tools => self.tools_change(),
+            PanelInput::Change(dir) if page == PanelPage::Tools => self.tools_change(dir),
             PanelInput::Confirm if page == PanelPage::Tools => self.tools_apply(),
             PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }

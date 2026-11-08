@@ -1294,11 +1294,11 @@ table; a switch with no page twin is a host difference, not a world default.
 | Native switch | Page twin |
 |---|---|
 | `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes. `--retail` and `--psx-render` are also live rows of the window's `F12` panel (*Original game only*, *PlayStation pixel look*), which write `launcher.toml` as the boxes write `legaia.switches`; so are the entry pulse, smarter monsters, the saved-chain Arts list and every gameplay tweak and battle-tuning switch below |
-| `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime |
-| `--cheat-*`, `--cheat-file`, `--cheat-strict` | `cheat_*`, `cheat_apply_codes` (its `strict` argument is the Strict box) |
-| `--battle-bgm` | `set_battle_bgm` |
+| `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime; the spell also a Tools row of the window's `F12` panel (the lead only) |
+| `--cheat-*`, `--cheat-file`, `--cheat-strict` | `cheat_*`, `cheat_apply_codes` (its `strict` argument is the Strict box); the window's Tools page re-reads `--cheat-file` or `legaia-codes.txt`, since a window has no text field |
+| `--battle-bgm` | `set_battle_bgm`, `clear_battle_bgm` (blank); both also a Tools row of the window's `F12` panel |
 | `--no-live-loop` | `set_live_battles` |
-| `--party` | `set_active_party_spec` |
+| `--party` | `set_active_party_spec`; both, and the `F12` Tools row, seat through `party_spec::seat_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
 | `--disc`, `--extracted-root`, `--scene` | the disc picker (`load_disc`; the page reads a `.bin` only) and the scene picker (`enter_field`) |
 | `--save-dir` | none: the page keeps its card rack in browser storage (`localStorage["legaia.card.v1.browser"]`) |
@@ -1479,7 +1479,7 @@ Traps, each of which has produced a false drift report:
 | play clock | Counted per claimed tick (`World::count_play_tick`), so two hosts paired by engine frame show one `TIME`; a free-running host is ahead by the ticks it ran. |
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
-| real-GPU page frames | `--gl egl` on an NVIDIA GB10 drops every textured draw from scattered page frames: the slot cabinet, a venue, a battle stage come back black for one frame while untextured lines, the 2D layers and the trace agree, and which frames moves with `--every`. The same pairs on SwiftShader agree to a few tenths of a percent. A pair that fails on isolated frames with the trace agreeing is re-run on SwiftShader before it is read as drift. |
+| real-GPU page frames | `--gl egl` on an NVIDIA GB10 drops every textured draw from scattered page frames: the slot cabinet, a venue, a battle stage come back black for one frame while untextured lines, the 2D layers and the trace agree, and which frames moves with `--every`. The same pairs on SwiftShader agree to a few tenths of a percent. The pattern is tied to the page's antialiased drawing buffer: the same pairs under `--no-msaa` agree on `--gl egl` too, to a hundredth of a percent in the field and in a fight. A pair that fails on isolated frames with the trace agreeing is re-run with `--no-msaa` (or on SwiftShader) before it is read as drift. |
 | startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
 | startup hang | A native child at 0 CPU that never maps is waiting on a wedged input-method server; scripted windows opt out of XIM ([below](#a-native-child-that-hangs-before-its-window-maps)). |
 
@@ -1681,7 +1681,7 @@ reverse-engineering questions, so they are not on
 | shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`; the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
-| cheats | One `WorldCheats::apply_cheat` call each, from one constructor (`PlayerCheat::from_key`). Every listed cheat is a runtime control on both hosts: the page's Cheats panel, the window's `F12` Cheats page (worked as `CheatControl` says, with no text field), and natively a launch switch too. A GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
+| cheats | One `WorldCheats::apply_cheat` call each, from one constructor (`PlayerCheat::from_key`). Every listed cheat is a runtime control on both hosts: the page's Cheats panel, the window's `F12` Cheats page (worked as `CheatControl` says, with no text field), and natively a launch switch too. GameShark codes are pasted text on the page (`cheat_apply_codes`) and a file natively, by launch switch or the `F12` Tools row, both through `apply_text`. |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |

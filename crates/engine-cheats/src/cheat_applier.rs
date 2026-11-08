@@ -139,6 +139,15 @@ pub enum CheatTextFormat {
 }
 
 impl CheatTextFormat {
+    /// The format of a code file: the extension decides, and a file with
+    /// neither says which by its text ([`Self::sniff`]).
+    pub fn for_path(path: &std::path::Path, text: &str) -> Self {
+        match path.extension().and_then(|s| s.to_str()) {
+            Some(e) if e.eq_ignore_ascii_case("cht") => CheatTextFormat::MednafenCht,
+            _ => CheatTextFormat::sniff(text),
+        }
+    }
+
     /// Guess the format from the text itself: a `.cht` names its codes in
     /// `cheatN_code` keys, a code list is nothing but `AAAAAAAA VVVV` lines,
     /// anything else reads as the GameShark text dump. Hosts that

@@ -304,7 +304,7 @@ sprites in one frame.
 
 | Host | Builder | Gate | Default |
 |---|---|---|---|
-| native `play-window` | `effect_sprite_line_geometry` (`UploadedLines`) | env `LEGAIA_DIAG_FX=1` | off |
+| native `play-window` | `effect_sprite_line_geometry` (`UploadedLines`) | `PlayWindowApp::fx_outline`: env `LEGAIA_DIAG_FX=1`, or the `F12` Tools row | off |
 | browser play page | `play_battle_fx` outline strips (hybrid-flat quads) | `LegaiaRuntime::set_battle_fx_outline(true)` | off |
 
 The gates differ because a WASM module has no process environment to read.

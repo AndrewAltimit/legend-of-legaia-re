@@ -559,6 +559,14 @@ div.play-vis-head { cursor: default; }
             <input type="checkbox" id="play-dev-menu"> Dev menu
           </label>
           <label class="play-dev-menu"
+                 title="The debug orbit vantage instead of the follow camera (the native F3, and the Tools page of its F12 panel). Off every page load.">
+            <input type="checkbox" id="play-debug-camera"> Debug camera
+          </label>
+          <label class="play-dev-menu"
+                 title="The readout bar under the picture (the native F1 and its diagnostic rows, on its Tools page).">
+            <input type="checkbox" id="play-diag-rows" checked> Diagnostics
+          </label>
+          <label class="play-dev-menu"
                  title="Free-angle movement: the movement vector follows the camera azimuth at full angular resolution instead of retail's quantised 8-way remap (the native window's R toggle, persisted like its other options). Simulation knob - off keeps the retail decode.">
             <input type="checkbox" id="play-precise-move"> Free-angle movement
           </label>
@@ -3688,6 +3696,7 @@ div.play-vis-head { cursor: default; }
       if (typeof rt.set_battle_bgm === 'function') {
         const v = battleBgmEl.value.trim();
         if (v !== '') rt.set_battle_bgm(Math.max(0, parseInt(v, 10) || 0));
+        else if (typeof rt.clear_battle_bgm === 'function') rt.clear_battle_bgm();
       }
     } catch (e) { console.warn('battle tools', e); }
   }
@@ -4061,6 +4070,23 @@ div.play-vis-head { cursor: default; }
       keysEl.append(k, t);
     }
   };
+  const debugCamEl = document.getElementById('play-debug-camera');
+  const diagRowsEl = document.getElementById('play-diag-rows');
+  /* The two boxes mirror the keys, so a press of F1 or F3 moves them too. */
+  window.__playSyncDebugBoxes = () => {
+    debugCamEl.checked = !!(view && view.debugCamera);
+    diagRowsEl.checked = !!hudEl && hudEl.style.display !== 'none';
+  };
+  debugCamEl.addEventListener('change', () => {
+    if (view) view._afterHotkey('debug_camera');
+    window.__playSyncDebugBoxes();
+    canvas.focus();
+  });
+  diagRowsEl.addEventListener('change', () => {
+    window.__playHotkeyActions.diag_rows();
+    window.__playSyncDebugBoxes();
+    canvas.focus();
+  });
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
     audio_mute: () => {},
