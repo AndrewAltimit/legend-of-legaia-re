@@ -1523,6 +1523,16 @@ per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
 
+A ghost's cost is not a constant of the walk. Its redraw re-runs the body's whole draw, and on
+lone-member strikes it reads with the body: over the strike films, frames with the engine's two
+planned ghosts against frames without read `.081` hblanks a triangle on Frog (`608`) and `.087` on
+Caruban (`842`). Costed at that slope the step agreement of the thirteen lone-member strike films rises from
+`.64` to `.70` (Caruban `.35` to `.68`), but it does not transfer to a full party:
+`battle_tunnelb_gel_frog_strike`'s planned ghosts on a `608`-triangle body read `9` hblanks each where the slope
+says `52`, and carrying the term lifted the film to step `4` and its camera error from `8.7` to `15.0`
+px. The table's `GHOST_DRAW_COST` stands for that reason; what a ghost costs inside a full party's
+frame, which a lone member's film does not read, is the open half.
+
 <a id="the-table-held-out-against-the-films"></a>
 
 **The table held out against the films.** The monster strike and cast films

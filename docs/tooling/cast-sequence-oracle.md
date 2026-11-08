@@ -368,7 +368,10 @@ the caster stands on.
 `legaia-engine cast-sequence-score` writes `camera.csv` beside the report: **every**
 retail vsync row paired with its engine tick, RAM against RAM, on the segment
 alignment and the game clock the image pairs use, so no display lag. Each row holds
-the pass step, pitch, yaw, the TR trio and the focus pair on both sides. `--camera-only`
+the pass step, pitch, yaw, the TR trio and the focus pair on both sides. A summon module's
+seek arm holds the engine's whole frame, so its still ticks are left out of the pairing's
+offset, as the image pairs leave them: paired one for one they read as a pan the engine
+stopped. `--camera-only`
 writes the file and reads no frame, so a recording whose frames have been deleted
 (or one made with `LEGAIA_DIAG_CAST_SEQ_EVERY` raised to skip them) still scores.
 The driver forwards the flag.

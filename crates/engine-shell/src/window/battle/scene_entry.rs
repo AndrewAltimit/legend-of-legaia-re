@@ -419,14 +419,6 @@ impl PlayWindowApp {
                 "play-window: battle render bound {bound} monster + {party_bound} party mesh(es); \
                  {unregistered_count} field actor mesh(es) un-registered"
             );
-            // What a ghost's redraw costs the frame reads the body's size.
-            for i in 0..self.session.host.world.actors.len() {
-                let tris = self.session.host.world.actors[i]
-                    .tmd_binding
-                    .and_then(|idx| self.battle_rest_vmesh.get(&idx))
-                    .map_or(0, |v| (v.indices.len() / 3).min(usize::from(u16::MAX)) as u16);
-                self.session.host.world.actors[i].battle_body_tris = tris;
-            }
         }
         // Stash the battle VRAM so a mid-battle player summon can inject its
         // creature texture into the slot its seat names

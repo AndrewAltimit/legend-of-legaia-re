@@ -49,9 +49,9 @@ impl World {
         self.battle.frame_cost_state = Some((state, passes));
         let cost = arm_step.map_or_else(
             || {
-                let (parts, _, ghost_cost) = self.battle_frame_load();
+                let (parts, ghosts) = self.battle_frame_load();
                 measured_frame_cost_at(self.party.party_count, state, passes)
-                    .saturating_add(frame_load_cost(parts, ghost_cost))
+                    .saturating_add(frame_load_cost(parts, ghosts))
             },
             cost_of_step,
         );
@@ -63,9 +63,8 @@ impl World {
     /// records', the Mystic Shield's and the stage's) and the after-image
     /// ghosts the draw tick's walk `FUN_80049348` re-draws a body for
     /// ([`legaia_engine_battle::battle_afterimage::plan_ghosts`], the plan
-    /// both hosts draw from), and those ghosts' body redraws in hblanks.
-    /// `(parts, ghosts, ghost_cost)`.
-    pub fn battle_frame_load(&self) -> (u16, u16, u16) {
+    /// both hosts draw from). `(parts, ghosts)`.
+    pub fn battle_frame_load(&self) -> (u16, u16) {
         use legaia_engine_battle::battle_afterimage as ai;
         let c = &self.casting;
         let scene_parts = |s: &legaia_engine_effects::summon::SummonScene| {
@@ -78,7 +77,6 @@ impl World {
             + c.stage_fx.as_ref().map_or(0, scene_parts);
         let per_frame = self.ghost_ring_slots_per_frame();
         let mut ghosts = 0;
-        let mut ghost_cost = 0u16;
         for a in &self.actors {
             // A hidden body (the tint pass's colour word at zero) skips the
             // walk with the rest of its draw (`0x800481CC`).
@@ -88,24 +86,17 @@ impl World {
                 continue;
             }
             let hist = &a.battle_pose_history;
-            let n = ai::plan_ghosts(
+            ghosts += ai::plan_ghosts(
                 a.battle.anim_rate.get(),
                 a.battle_monster_id.is_some(),
                 [0; 3],
                 |d| hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible),
             )
             .len();
-            ghosts += n;
-            ghost_cost = ghost_cost.saturating_add(
-                (n as u16).saturating_mul(legaia_engine_battle_loop::frame_clock::ghost_draw_cost(
-                    a.battle_body_tris,
-                )),
-            );
         }
         (
             u16::try_from(parts).unwrap_or(u16::MAX),
             u16::try_from(ghosts).unwrap_or(u16::MAX),
-            ghost_cost,
         )
     }
 
@@ -1218,11 +1209,11 @@ mod tests {
     #[test]
     fn a_frames_draw_load_raises_its_step() {
         use legaia_engine_battle_loop::frame_clock::{
-            GHOST_DRAW_COST, frame_load_cost, measured_frame_cost, step_of_cost,
+            frame_load_cost, measured_frame_cost, step_of_cost,
         };
         let base = measured_frame_cost(1, 0x20);
         assert_eq!(step_of_cost(base), 2);
-        assert_eq!(step_of_cost(base + frame_load_cost(39, 2 * GHOST_DRAW_COST)), 3);
+        assert_eq!(step_of_cost(base + frame_load_cost(39, 2)), 3);
         assert_eq!(step_of_cost(base + frame_load_cost(16, 0)), 2);
         // A full party's strike stays on step 3 under a burst.
         assert_eq!(
