@@ -1016,6 +1016,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 mod aluru;
+mod astral_slash;
 mod blade_breath;
 mod bloody_horns;
 mod body_kit;
@@ -1076,6 +1077,7 @@ mod water_crystals;
 mod water_hazard;
 mod white_shield;
 pub use aluru::*;
+pub use astral_slash::{ASTRAL_SLASH_BODY, astral_slash_camera};
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,

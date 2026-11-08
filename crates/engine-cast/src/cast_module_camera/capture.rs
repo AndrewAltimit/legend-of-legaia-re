@@ -291,6 +291,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, GLARE_BODY) => Some(glare_camera),
         (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
         (952, super::BLOODY_HORNS_BODY) => Some(super::bloody_horns_camera),
+        (952, super::ASTRAL_SLASH_BODY) => Some(super::astral_slash_camera),
         (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
         (943, crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK) => Some(super::lapis_wave_camera),
         (956, crate::cast_arm_ticks::WATER_HAZARD_TICK) => Some(super::water_hazard_camera),
@@ -349,6 +350,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// |---|---|---|---|
 /// | 0951 | `0x801F77E8` (`0x5B` Scythe Wind) | 3..=5 | `0x801F7CD4`, `0x801F7E08`, `0x801F80B0` |
 /// | 0952 | `0x801F7118` (`0x5C` Bloody Horns) | 3..=6 | `0x801F7624`, `0x801F7798`, `0x801F78EC`, `0x801F7A7C` |
+/// | 0952 | `0x801F6A0C` (`0xB8` Astral Slash) | 3, 4 | `0x801F6F8C`, `0x801F70BC` |
 ///
 /// The first shot of each (arm 2, `0x801F7BCC` / `0x801F74F4`) is built
 /// once. Kiss of Death (PROT 0955) builds every shot once: arm 0 at
@@ -358,6 +360,7 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
     match (entry, body) {
         (951, super::SCYTHE_WIND_BODY) => (3..=5).contains(&phase),
         (952, super::BLOODY_HORNS_BODY) => (3..=6).contains(&phase),
+        (952, super::ASTRAL_SLASH_BODY) => (3..=4).contains(&phase),
         _ => false,
     }
 }
