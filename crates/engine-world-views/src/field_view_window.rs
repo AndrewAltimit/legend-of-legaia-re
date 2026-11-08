@@ -30,17 +30,28 @@ use legaia_engine_scene::field_view_window::{ViewCells, framing_is_retail, view_
 /// the camera swung. Off retail's vantage the object draws and the
 /// per-primitive near reject trims whatever of it sits at the lens.
 pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> bool {
-    !debug_camera
-        && (world.mode == SceneMode::Battle
-            || crate::camera_view::cutscene_owns_camera(world)
-            || framing_is_retail(camera))
+    !debug_camera && (world.mode == SceneMode::Battle || retail_framing(world, camera))
+}
+
+/// Whether this frame frames the field the way retail's own view does, for
+/// the visible-tile crop and the vantage gates: the follow camera at retail
+/// framing ([`framing_is_retail`]), or a scripted shot, which reads none of
+/// the user's follow knobs - the modal timeline's
+/// ([`crate::camera_view::cutscene_owns_camera`]) or a player-holding helper
+/// record's (`World::scripted_shot_holds_camera`, the ending vignettes).
+/// Hosts pass it, cleared under their own debug vantage, as
+/// [`field_view_cells`]'s `retail_framing`.
+pub fn retail_framing(world: &World, camera: &Camera) -> bool {
+    framing_is_retail(camera)
+        || crate::camera_view::cutscene_owns_camera(world)
+        || world.scripted_shot_holds_camera()
 }
 
 /// The field ground's depth rule for this frame, the word both play hosts
 /// stage for their ground shaders (`Renderer::set_field_ground_drop`, the
 /// play page's `setGroundDrop`): `None` keeps retail's ordering-table
-/// buckets, `Some(drop)` depth-tests each flat bucketed cell as the plane
-/// `drop` units below it
+/// buckets, `Some(drop)` depth-tests each bucketed cell as the level plane
+/// `drop` units beyond it
 /// ([`legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP`]).
 ///
 /// The buckets hold at retail's vantage ([`retail_vantage`]) and in every
@@ -60,7 +71,7 @@ pub fn field_ground_drop(world: &World, camera: &Camera, debug_camera: bool) -> 
 ///
 /// - the crop knob is off ([`legaia_engine_core::world::WorldToggles::view_window_crop`],
 ///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
-/// - `retail_framing` is false - the host passes [`framing_is_retail`] and
+/// - `retail_framing` is false - the host passes [`retail_framing`] and
 ///   clears it under its own debug camera. The window is authored for
 ///   retail's frustum, so under a wider or re-aimed view it would open black
 ///   edges the player can see; the crop is the faithful mode's, not a

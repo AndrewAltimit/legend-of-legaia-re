@@ -483,6 +483,14 @@ engine verdict:
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
   ([the npcs channel](#the-npcs-channel)).
+  A walk-on beat's draw flags are seated too: an object actor whose `+0x74`
+  word carries the semi-transparency bit (field-VM `4C D6`) hands its flag
+  byte to the image child (`retail_object_draw_flags`,
+  `LEGAIA_SEAT_OBJECT_FLAGS`, `World::seed_object_draw_flags`).
+  `chitei2_corridor_pillars_lit` stands inside the corridor `P2[0]` brackets,
+  its pillars blending ABR 3 (`image` `.815` to `1.000`); its twin
+  `chitei2_corridor_pillars_before` stands at the corridor's door, the pillars
+  opaque.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -2445,11 +2453,16 @@ landed keeps the engine's walk: pitch reaches `32` at `3` a frame well ahead of
 the translation, and the table no longer says when. `gaza2_card_first_menu`
 `.944` to `.963`, `cort_evolved_card_first_menu` `.932` to `.944`.
 
-The evolved-Cort prompt's residual does not move with its cycler seat: removing
-`LEGAIA_SEAT_CLUT_FX` or moving its hue through `12..44` leaves the frame's score
-and error as they were, where dropping the rect file `LEGAIA_SEAT_VRAM_RECTS`
-takes the frame to `.404`. Which of the two writes the row that frame samples is
-not settled.
+The evolved-Cort prompt's residual does not move with its cycler or scroller
+seats: removing `LEGAIA_SEAT_CLUT_FX` or `LEGAIA_SEAT_VRAM_RECTS`, or moving the
+hue add anywhere through `0..128`, leaves the frame's score and error as they
+were, so the flesh shell's palette is not on that close-up. Nor does the
+leader's idle (the frame's party all hold clip `0`; their displayed cursors
+are the seated ones, and a keyframe either way scores lower). What is left is
+geometry: the arrival column's lower ring a few rows off on the left, and the
+floor edge at the lower right three or four rows low, with the camera pose
+itself on its optimum (a quarter of one frame's increment in any component scores
+lower).
 
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns
@@ -3246,7 +3259,7 @@ Known image differences on a mid-cast frame: the caster's name plate draws over
 retail's flash where the engine's flash covers it, and the engine captions the
 spell name over the caster.
 
-**The idle orbit.** The orbit's yaw is a clock (`-4` per camera step from
+**The idle orbit.** The orbit's yaw is a clock (`-2 * step` a pass from
 whatever azimuth the field left), so an unaligned prompt sample reads the
 capture instant, not the scene. When retail's command-flow byte is one the
 battle tick's orbit runs on (`0x1E` / `0x32` / `0x6E` / `0xFE`, `FUN_801D0748`
@@ -4025,8 +4038,16 @@ every command-menu drive, whose close-up is usually still easing in
 `.904` to `.945`, `evil_medallion_rage_battle` `.972` to `.992`, the four
 `overworld_battle_bg_angle_*` frames to `.999`-`1.000`; no menu capture
 fell). The idle orbit that owns the yaw on the round prompt is the same
-clock: it turns `-4` a pass, and the child seats it the two passes back
-(`v0_1_battle_command_menu` `.976` to `1.000`).
+clock: the battle tick takes `yaw -= step * 2` a pass (`0x801D07B8..0x801D07CC`),
+and the child seats it the two passes back, each on its own step
+(`display_pass_steps`). At the default step that is eight units
+(`v0_1_battle_command_menu` `.976` to `1.000`); the PCSX-Redux boss prompts run
+at step `3`, twelve units, where a fixed eight left the close-up on the
+leader's back a few pixels round (`gaza2_card_first_menu` `.969` to `.995`,
+`cort_evolved_card_first_menu` `.958` to `.986`). A landed pre-seed capture
+(flow `0xFF`, action `0x0A`) has no orbit store to date its yaw, which stands
+eight units short of the yaw counter `ctx[+0x6DA]` at any step; it keeps the
+eight (`nilboa_lava_face_pre_fissure` at step `3`: eight `.999`, twelve `.841`).
 
 **Each pass on its own step.** The two passes the walk-back undoes need not
 share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in
@@ -5551,27 +5572,35 @@ walks of it narrowed `G` to the gap the Done arm saw, which pins `G`.
 
 The image child takes the displayed pose when the replay's endpoints agree on
 the components the walk back moved
-(`BattleCamera::glide_endpoint_matches_walked`). Case 8 on an idle monster
-holds the live pitch and `TR.y` (`0x801D6BFC`), and the replay's strike leaves
-both a few units off retail's (pitch `-23` retail, `-26` replay), so the walk
-leaves those two on the first pass back: a walked one fails the test and drops
-the whole pose. `koru_pre_*` (yaw `3445` to `3496` on case 8, then `3595` on
-case 7; depth `6730` to `5998`) read `image` `.735` one pass back and `.904`
-two; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
+(`BattleCamera::glide_endpoint_matches_walked`). Case 7's pitch is `0` (the
+prologue zeroes the pose, `sh zero,0x10(sp)` at `0x801D58B4`, and the case-7
+base never writes it) and its `TR.y` is `0x500`, so the walk takes both back
+too. Case 8 on an idle monster then holds the live pitch and `TR.y`
+(`0x801D6BFC`), and the replay's strike leaves them a few units off retail's
+(pitch `-23` retail, `-26` replay): an endpoint that is the live value the arm
+found is history, not framing. So a component both tables hold
+(`BattleCamera::framing_held_components`: retail's endpoint on its live value,
+the engine's on its own pose) passes the test and is seated on the displayed
+value whatever the two holds read. `koru_pre_*` (yaw `3445` to `3496` on case
+8, then `3595` on case 7; depth `6730` to `5998`; pitch `4073` to `4061`) read
+`image` `.735` one pass back, `.906` two with the pitch held, and `.976` with it
+walked; `cort_evolved_card_pre_doomsday` (depth `6270` to `5922`) `.820` to
 `.996`, and its patched twin `cort_evolved_pre_doomsday` `.743` to `.937`. A
 target on its knockdown or get-up (case 8 on the held passes too), a framing
 style `2` / `3` and a monster's pull-in keep the one-pass pose.
 
-The three `koru_pre_*` states are one frame: each is the same Done-arm pass of
-Gala's Lightning Storm, saved a vsync after the monster-pick probe rewrote
-Koru's queue, so they score alike to the block. Sweeping the walked-back pose
-through `LEGAIA_RC_ENV_OVERRIDE` (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`) puts the
-best yaw on the walk's own `3595` (`.906`; `25` either side `.84` / `.85`), and
-the best depth near `6125` against the walk's `5998`, a rise to `.921` and no
-further: the focus Y and `TR.y` are sharp at the walk's values. What the
-sweep leaves is the ice crystals behind Koru and the mist band, both standing
-a few rows higher in the engine than Koru does, so the rest of that pass's
-pose is not one component the RAM still holds.
+A retail film of the tail (`koru_strip_forced`, `--monster-pick`, the probe's
+pre-trace camera columns, [cast-sequence oracle](cast-sequence-oracle.md#what-each-side-records))
+confirms the walk: the held pass reads pitch `4058`, yaw `3598`, TR
+`(-113, 1280, 5995)`, focus z `-402`, on a case-7 table `{5, 0}`, `{34, 3292}`,
+`{245, 8192}`, and the exit pass `0x50` steps it by three vsyncs of those
+increments to the Done arm's origin (`4073`, `3496`, `6730`). Each increment is
+`ceil(G / 0xC)` of the gap from the pose a pass before the arm, and
+`G - 6 * ceil(G / 12)` takes most values twice, six units of gap apart, so the
+walk recovers the increment up to that pair: it takes the smaller (pitch `4061`
+for the film's `4058`, depth `5998` for `5995`; TR x on the film's own `-113`).
+Seated on the film's pose the frame reads `.988`; the ice crystals and mist band
+that stood a few rows high in the engine were the held pitch.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and

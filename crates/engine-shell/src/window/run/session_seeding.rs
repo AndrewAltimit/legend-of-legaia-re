@@ -676,6 +676,11 @@ pub(super) fn apply_capture_palette_seeds(session: &mut NativeSession) {
     {
         session.host.world.ambient.vram_rect_seed =
             legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
+        // `LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION=1` (the cast-sequence child):
+        // hold the rects only up to the first action pass, then let them roll
+        // (`AmbientFxState::vram_rect_seed_until_action`).
+        session.host.world.ambient.vram_rect_seed_until_action =
+            std::env::var_os("LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION").is_some();
     }
 
     // `LEGAIA_SEAT_CELL_SOURCES=<file>` (the retail-compare image channel): the

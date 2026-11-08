@@ -112,6 +112,7 @@
   </div>
   <p>The roster panels belong to the round prompt and the browsed windows; the full-width bar to the ring, the attack-mode prompt and the target steps; the AP plate to the ring, the attack-mode prompt and the arts entry. The attack-mode prompt is the ring with its arms swapped: its step opens the <em>Auto</em> and <em>Command</em> chips on the left and right arm seats, sends the other three arms off and keeps everything else where it stands.</p>
   <p><strong>Parked is below the screen, not gone.</strong> When the bar takes over, retail moves the whole panel cluster to <code>y = 230</code>, just under the 228-line display window. The port&rsquo;s stage is 240 lines tall, so it simply emits no panel draws while retail parks them. Inside an action the panels come back for a party-wide target, and a cast module can raise them itself - Orb&rsquo;s heal glides them up so its HP readout counts up in them.</p>
+  <p><strong>The HP readout counts down a quarter a pass.</strong> The number on the bar is the displayed HP <code>+0x172</code>, not the live <code>+0x14C</code>. The head of each actor&rsquo;s node tick <code>FUN_80047430</code> moves a quarter of the outstanding damage <code>+0x10</code> onto it, once per main-loop pass and with no frame-step scaling, so a slow fight running a pass every three vsyncs counts a hit down three times as slowly as a step-1 one. The port runs the ramp with the anim pass on retail&rsquo;s cadence; a per-vsync ramp had Blade Breath&rsquo;s readout landing on the final value while retail&rsquo;s was still rolling.</p>
 </section>
 
 <section class="doc-section" id="combo-cluster" data-doc="-">
@@ -239,7 +240,7 @@
     <li><strong>Target confirm is the bar.</strong> Picking an item closes both windows and the target strip at the foot of the screen appears. It is not a widget of its own: it is the active-actor bar, re-opened by the target step and re-pointed per cursor move.</li>
     <li><strong>The magic window</strong> (<code>0x46</code>) is the same frame with spell content: a leading element icon per row, a two-line description (name, then scope), and two gold tabs top right for the highlighted spell&rsquo;s level and MP cost.</li>
   </ul>
-  <p>Both are composed by <code>engine-ui::battle_item_ui</code> through the shared menu-window chrome and drawn by both hosts. The port does not yet draw the element and Ra-Seru icon cells, the world-anchored target name tag or the magic target step&rsquo;s <em>All</em> plate.</p>
+  <p>Both are composed by <code>engine-ui::battle_item_ui</code> through the shared menu-window chrome and drawn by both hosts. The rows, the hand and the description line sit on the pens the list kernel and the placement table give them, in the menu font&rsquo;s ink&nbsp;7 (ink&nbsp;0 for a disabled row); the breadcrumb tabs are the HUD&rsquo;s own trail, not the window&rsquo;s, and the magic rows draw each spell&rsquo;s element or Ra-Seru icon through the same font escape the pause Magic list uses. At target select the pointed member&rsquo;s name tag is the target-select plaque. Still not drawn: the camera&rsquo;s re-frame onto the target and the magic target step&rsquo;s <em>All</em> plate.</p>
 </section>
 
 <section class="doc-section" id="arts-banner" data-doc="arts-announcement-banner-fun_801e2524--fun_801e2650">

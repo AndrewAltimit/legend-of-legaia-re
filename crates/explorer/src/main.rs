@@ -97,9 +97,21 @@ fn main() -> eframe::Result {
         })),
         ..Default::default()
     };
-    let event_loop = winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event()
-        .build()
-        .map_err(eframe::Error::WinitEventLoop)?;
+    // winit 0.30 has no drag-and-drop on Wayland, so a disc dropped on a
+    // native Wayland window never arrives; with XWayland on offer Explorer
+    // opens as an X11 client, as the launcher does
+    // (`legaia_app_theme::drop_backend`). `LEGAIA_EXPLORER_WAYLAND=1` keeps
+    // it native.
+    let mut builder = winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if legaia_app_theme::drop_backend::prefer_x11_for_drop_from_env(
+        legaia_app_theme::drop_backend::EXPLORER_KEEP_WAYLAND,
+    ) {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        log::info!("Wayland session - opening through XWayland so dropped files arrive");
+        builder.with_x11();
+    }
+    let event_loop = builder.build().map_err(eframe::Error::WinitEventLoop)?;
     let app = eframe::create_native(
         "Legaia Explorer",
         options,

@@ -105,6 +105,7 @@ pub fn resolve_placed_env_draws(
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
             far_corner_order: p.flags & 0x800 != 0,
+            near_reject_exempt: p.floor_corner_nibbles.is_none() && p.flags & 0x20 != 0,
             view_skip: if p.floor_corner_nibbles.is_some() {
                 p.flags & DECORATION_VIEW_SKIP_MASK
             } else {
@@ -127,9 +128,10 @@ pub fn resolve_placed_env_draws(
 /// the *actor*, so a parked actor draws nothing, while a raw `.MAP` walk
 /// resurrects post-story scenery in a cold scene.
 ///
-/// `hidden_records` is `World::hidden_object_records` (flat partition-0
-/// record indices); a draw whose anchor has no bind is untouched (the window
-/// sweep's bindless actors have no script to hide them).
+/// `hidden_records` is `World::hidden_object_records`, looked up by each
+/// draw's own object key ([`placed_object_key`]); a draw whose anchor has no
+/// bind is untouched (the window sweep's bindless actors have no script to
+/// hide them).
 // REF: FUN_8003A55C (bind-time prologue seats the object's actor)
 pub fn retain_visible_placed_draws(
     draws: &mut Vec<EnvDraw>,
@@ -139,11 +141,48 @@ pub fn retain_visible_placed_draws(
     if hidden_records.is_empty() {
         return;
     }
-    draws.retain(|d| {
-        binds
-            .get(&d.anchor)
-            .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
-    });
+    draws
+        .retain(|d| placed_object_key(d, Some(binds)).is_none_or(|k| !hidden_records.contains(&k)));
+}
+
+/// The key a bound placed draw's actor state is found under in the world's
+/// object tables (`World::hidden_object_records`, `object_draw_displacements`,
+/// `object_draw_tints`, ...): the per-object key of the draw's own cell
+/// ([`legaia_engine_field::field_channels::object_instance_key`]), or `None`
+/// for a draw whose anchor has no bind. Retail runs one actor per bound
+/// object (`FUN_8003A55C`), so two objects bound to one record each read
+/// their own.
+// REF: FUN_8003A55C
+pub fn placed_object_key(
+    d: &EnvDraw,
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+) -> Option<usize> {
+    binds?
+        .contains_key(&d.anchor)
+        .then(|| legaia_engine_field::field_channels::object_instance_key(d.cell))
+}
+
+/// The per-object key of a draw a host carries as `(record, cell)`: the bind
+/// record (or a pack map's prop key) and the draw's own cell. A retail record
+/// keys the object on the cell
+/// ([`legaia_engine_field::field_channels::object_instance_key`]); a pack
+/// prop's key ([`crate::expansion_map::PROP_RECORD_BASE`] up) is its own.
+pub fn placed_object_key_of(record: Option<usize>, cell: (u8, u8)) -> Option<usize> {
+    record.map(|r| {
+        if r >= crate::expansion_map::PROP_RECORD_BASE {
+            r
+        } else {
+            legaia_engine_field::field_channels::object_instance_key(cell)
+        }
+    })
+}
+
+/// [`placed_object_key`] for every draw (parallel to `draws`).
+pub fn placed_object_keys(
+    draws: &[EnvDraw],
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+) -> Vec<Option<usize>> {
+    draws.iter().map(|d| placed_object_key(d, binds)).collect()
 }
 
 /// Drop the overworld's story-hidden **placed landmarks** before they resolve
@@ -172,15 +211,17 @@ pub fn retain_visible_landmark_placements(
     }
     placements.retain(|p| {
         p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0
-            || binds
-                .get(&(p.anchor_col, p.anchor_row))
-                .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
+            || !binds.contains_key(&(p.anchor_col, p.anchor_row))
+            || !hidden_records.contains(&legaia_engine_field::field_channels::object_instance_key(
+                (p.col, p.row),
+            ))
     });
 }
 
 /// Per-draw uniform render scale of a placed-object list (parallel to
-/// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
-/// `1.0` for a draw with no bind or no listed scale.
+/// `draws`): the bound actor's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
+/// `1.0` for a draw with no bind or no listed scale. Keyed per object
+/// ([`placed_object_key`]).
 ///
 /// `record_scales` is `World::object_render_scales`. Both hosts fold the
 /// factor into the draw's model matrix after the rotation (`T * R * S`), which
@@ -195,9 +236,8 @@ pub fn placed_render_scales(
     draws
         .iter()
         .map(|d| {
-            binds
-                .and_then(|b| b.get(&d.anchor))
-                .and_then(|b| record_scales.get(&(b.record as usize)))
+            placed_object_key(d, binds)
+                .and_then(|k| record_scales.get(&k))
                 .map_or(1.0, |&s| f32::from(s) / 4096.0)
         })
         .collect()
@@ -206,7 +246,7 @@ pub fn placed_render_scales(
 /// Re-seat every placed draw whose bind record follows the floor
 /// (`World::object_floor_follow_records`) on the floor sample under it - the
 /// Y the field actor tick writes over the `.MAP` sweep's `lut[nibble] + y_off`
-/// once the actor is in view. `floor_y(record, x, z)` is
+/// once the actor is in view. `floor_y(key, x, z)` ([`placed_object_key`]) is
 /// `World::object_floor_follow_y` over the scene's live world; it answers
 /// `None` for a record that keeps its seat. The one kernel both play hosts
 /// run on their placed layer before baking it.
@@ -217,18 +257,19 @@ pub fn follow_floor_placed_draws(
     floor_y: impl Fn(usize, i32, i32) -> Option<i32>,
 ) {
     for d in draws.iter_mut() {
-        let Some(b) = binds.get(&d.anchor) else {
+        let Some(k) = placed_object_key(d, Some(binds)) else {
             continue;
         };
-        if let Some(y) = floor_y(b.record as usize, d.world_x, d.world_z) {
+        if let Some(y) = floor_y(k, d.world_x, d.world_z) {
             d.world_y = y;
         }
     }
 }
 
 /// The bind record each placed draw's actor runs (parallel to `draws`), or
-/// `None` for an unbound draw - the key hosts look a draw's live
-/// `World::object_draw_displacements` entry up by.
+/// `None` for an unbound draw - the key of the record-wide tables (the
+/// scripted-motion streams' [`stream_bound_draws`] and model swaps). A draw's
+/// own actor state is under [`placed_object_keys`].
 pub fn placed_bind_records(
     draws: &[EnvDraw],
     binds: Option<&HashMap<(u8, u8), ObjectBind>>,
@@ -243,11 +284,6 @@ pub fn placed_bind_records(
         .collect()
 }
 
-/// Per-draw scripted displacement of a placed-object list: each draw's bind
-/// record looked up in `record_moves` (`World::object_draw_displacements`),
-/// `[0, 0, 0]` for an unbound or unmoved draw. Both hosts add it to the
-/// draw's translation every frame.
-///
 /// Which placed draws a bind record's scripted-motion stream drives: the
 /// **first** placement of each record, in `.MAP` order. The installer
 /// `FUN_8003A9D4` binds a MAN tail-section-1 stream to the field actor whose
@@ -266,12 +302,15 @@ pub fn stream_bound_draws(records: &[Option<usize>]) -> Vec<bool> {
         .collect()
 }
 
+/// Per-draw scripted displacement of a placed-object list: each draw's
+/// object key ([`placed_object_keys`]) looked up in `record_moves`
+/// (`World::object_draw_displacements`), `[0, 0, 0]` for an unbound or
+/// unmoved draw. Both hosts add it to the draw's translation every frame.
 pub fn placed_draw_displacements(
-    records: &[Option<usize>],
+    keys: &[Option<usize>],
     record_moves: &HashMap<usize, [i32; 3]>,
 ) -> Vec<[i32; 3]> {
-    records
-        .iter()
+    keys.iter()
         .map(|r| {
             r.and_then(|r| record_moves.get(&r).copied())
                 .unwrap_or([0; 3])
@@ -333,8 +372,8 @@ pub fn turn_placed_model(model: &[f32; 16], turn: &[f32; 16]) -> [f32; 16] {
 /// origin by the record's scripted turn ([`turn_placed_model`],
 /// `World::object_draw_turn_matrices`), then translated by its scripted
 /// displacement (`World::object_draw_displacements`) - retail's case-5 draw
-/// reads the actor, not the `.MAP` record. `record` is the draw's bind record
-/// ([`placed_bind_records`]); an unbound, unturned, unmoved draw keeps
+/// reads the actor, not the `.MAP` record. `record` is the draw's object key
+/// ([`placed_object_keys`]); an unbound, unturned, unmoved draw keeps
 /// `model`. The field's placed objects and the overworld's landmarks both go
 /// through it on the native window, which used to spell it twice.
 pub fn live_placed_model(
@@ -444,6 +483,14 @@ pub const PLACED_NEAR_DEPTH: f32 = 160.0;
 /// REF: FUN_8001ADA4
 pub fn placed_origin_near_culled(origin_view_depth: f32) -> bool {
     origin_view_depth < PLACED_NEAR_DEPTH
+}
+
+/// [`placed_origin_near_culled`] for one placed draw: never for a draw whose
+/// record exempts it ([`EnvDraw::near_reject_exempt`], actor `+0x52 & 0x20`).
+///
+/// REF: FUN_8001ADA4
+pub fn placed_draw_near_culled(draw: &EnvDraw, origin_view_depth: f32) -> bool {
+    !draw.near_reject_exempt && placed_origin_near_culled(origin_view_depth)
 }
 
 /// Which of retail's two placed-object sweeps owns a placed draw: `Some(key)`

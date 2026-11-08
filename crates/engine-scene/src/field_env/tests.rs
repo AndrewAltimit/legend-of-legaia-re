@@ -19,6 +19,7 @@ fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
         cell: (0, 0),
         cull_radius: 0,
         far_corner_order: false,
+        near_reject_exempt: false,
         view_skip: 0,
     }
 }
@@ -152,6 +153,7 @@ fn draws_resolve_pack_index_and_floor_y() {
             cell: (2, 3),
             cull_radius: 0,
             far_corner_order: false,
+            near_reject_exempt: false,
             view_skip: 0,
         }]
     );
@@ -165,10 +167,13 @@ fn floor_following_records_drop_their_lift() {
     let env_tmds = vec![10, 11, 12];
     let mut lut = [0i16; 16];
     lut[15] = 480;
+    // One object per cell: each placement on its own tile.
     let mut follows = placement(Some(1), Some(15), 2080);
     follows.anchor_col = 7;
+    follows.col = 7;
     let mut keeps = placement(Some(2), Some(15), -56);
     keeps.anchor_col = 8;
+    keeps.col = 8;
     let free = placement(Some(0), Some(15), 300);
     let mut binds = HashMap::new();
     binds.insert(
@@ -191,7 +196,11 @@ fn floor_following_records_drop_their_lift() {
         draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
         [1600, -536, -180]
     );
-    follow_floor_placed_draws(&mut draws, &binds, |r, _, _| (r == 0).then_some(-480));
+    // The world answers per object: the floor follower is the first draw's.
+    let follower = placed_object_key(&draws[0], Some(&binds)).expect("bound");
+    follow_floor_placed_draws(&mut draws, &binds, |k, _, _| {
+        (k == follower).then_some(-480)
+    });
     assert_eq!(
         draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
         [-480, -536, -180]
@@ -426,4 +435,16 @@ fn a_scaled_tick_is_the_frame_steps_worth_of_unit_ticks() {
         }
         assert_eq!(a.cursor, b.cursor);
     }
+}
+
+/// A record whose `+0x12` carries `0x20` is never near-rejected
+/// (`FUN_8001ADA4`, `0x8001B1CC..0x8001B1D8`); any other placed draw is.
+#[test]
+fn a_flagged_placed_record_is_exempt_from_the_near_reject() {
+    let mut d = tilted_draw(0, 0, 0);
+    assert!(placed_draw_near_culled(&d, 0.0));
+    assert!(!placed_draw_near_culled(&d, 2000.0));
+    d.near_reject_exempt = true;
+    assert!(!placed_draw_near_culled(&d, 0.0));
+    assert!(!placed_draw_near_culled(&d, -423.0));
 }

@@ -14,9 +14,7 @@ pub(super) struct FieldDraws {
     pub(super) terrain_color: TerrainDrawList,
 }
 
-/// One world-map terrain stamp list: the draws, where the decoration run
-/// starts, and each draw's record.
-pub(super) type WorldMapDrawList = (Vec<(usize, Mat4)>, usize, Vec<Option<usize>>);
+pub(super) use super::super::field_render::WorldMapDrawList;
 
 /// The world-map terrain stamps on both bridges.
 pub(super) struct WorldMapDraws {
@@ -197,9 +195,15 @@ impl PlayWindowApp {
                 ),
         } = draws;
         let WorldMapDraws {
-            terrain: (world_map_terrain_draws, deco_start, world_map_terrain_records),
+            terrain:
+                (world_map_terrain_draws, deco_start, world_map_terrain_records, world_map_terrain_keys),
             terrain_color:
-                (world_map_terrain_color_draws, color_deco_start, world_map_terrain_color_records),
+                (
+                    world_map_terrain_color_draws,
+                    color_deco_start,
+                    world_map_terrain_color_records,
+                    world_map_terrain_color_keys,
+                ),
         } = world_map;
         self.meshes = meshes;
         if let Some(d) = self.draw_census.as_mut() {
@@ -267,6 +271,8 @@ impl PlayWindowApp {
         self.world_map_terrain_color_draws = world_map_terrain_color_draws;
         self.world_map_terrain_records = world_map_terrain_records;
         self.world_map_terrain_color_records = world_map_terrain_color_records;
+        self.world_map_terrain_keys = world_map_terrain_keys;
+        self.world_map_terrain_color_keys = world_map_terrain_color_keys;
         self.world_map_deco_start = (deco_start, color_deco_start);
         self.ground_heightfield = world_map_hf;
         self.ground_src = ground_src;

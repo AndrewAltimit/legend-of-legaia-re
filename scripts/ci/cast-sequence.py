@@ -31,6 +31,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -52,9 +53,11 @@ DROP_ENV = {
     "LEGAIA_BATTLE_INFLIGHT", "LEGAIA_BATTLE_MONSTER_CAST", "LEGAIA_DIAG_CAPTURE_TICK",
     "LEGAIA_BATTLE_CAM_ALIGN", "LEGAIA_BATTLE_FRAME_STEP", "LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM",
     "LEGAIA_SEAT_HUD_GLIDES",
-    # One capture instant's cycler and scroller state: seated for a whole run
-    # they hold the arena's palette and texels still (the Cort fight's flesh).
-    "LEGAIA_SEAT_CLUT_FX", "LEGAIA_SEAT_VRAM_RECTS",
+    # One capture instant's cycler state: seated for a whole run it holds the
+    # arena's palette still (the Cort fight's flesh). The scroller rects stay,
+    # held only until the cast's first action pass
+    # (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`).
+    "LEGAIA_SEAT_CLUT_FX",
     # A strike capture's re-seat of its own round: left in, the cast's action
     # seed recentres a fight the re-seat stood elsewhere (a caster recorded on
     # (-978, 339) cast from (1977, 2207)).
@@ -213,6 +216,33 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def state_camera_pose(out: Path) -> str | None:
+    """The state's own live camera, as the retail-compare seed read it from
+    the save's RAM (`rc/report.json`'s camera detail): pitch, yaw, eye and
+    focus. A `--physical` film's gate tick is the state's instant, so this is
+    the pose the engine stands on there. The recording's first row is not:
+    the probe writes it after the first vsync has run, which on a capture-band
+    state can be the pass that builds a module's shot (Lip Kid's Kiss of Death:
+    the state holds TR z `4729` ahead of arm 0, the first row `3943` one step
+    into arm 0's twelve-frame shot), and seated on the gate the engine built
+    that shot again from the later pose, on a smaller increment and a pass
+    longer."""
+    try:
+        with open(out / "rc" / "report.json") as f:
+            states = json.load(f)["states"]
+    except (OSError, ValueError, KeyError):
+        return None
+    detail = next((s.get("detail", {}).get("camera", "") for s in states), "")
+    m = re.match(
+        r"retail pitch/yaw/H=(-?\d+)/(-?\d+)/\d+ eye=\[(-?\d+), (-?\d+), (-?\d+)\] "
+        r"focus=\[(-?\d+), (-?\d+)\]", detail)
+    if not m:
+        return None
+    pitch, yaw, ex, ey, ez, fx, fz = (int(v) for v in m.groups())
+    pitch = pitch - 4096 if pitch >= 2048 else pitch
+    return ",".join(str(v) for v in (pitch, yaw, ex, ey, ez, fx, 0, fz))
+
+
 def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
     """The camera pose on retail's cast begin (`0x28`, or a heal's `0x3C`), as
     `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`: `cam.csv`'s pitch, yaw and eye with
@@ -222,6 +252,8 @@ def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
     (`first_row`) opens on the state's own instant, mid-glide wherever the
     state sat, so it takes the recording's first row; the child seats it on
     the gate's tick."""
+    if first_row and (pose := state_camera_pose(out)):
+        return pose
     begin = (0x28, 0x3C)
     keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
@@ -445,6 +477,8 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    if "LEGAIA_SEAT_VRAM_RECTS" in env:
+        env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -484,8 +518,13 @@ def run_engine(a, out: Path) -> bool:
         # a single-target cast lands on the same seat on both sides, and the
         # victim's voice cue and the framing follow it. A recording older than
         # that field takes --target.
+        # `t` takes an engine slot too: a monster seat (a self-cast such as
+        # Ultra Charge, whose pick stores the caster's own seat) re-keys as the
+        # caster does, a group code (8 / 9) passes through.
         target = int(done.get("cast_target", "-1"))
-        target = target if 0 <= target < 3 else a.target
+        target = target if 0 <= target < 8 else a.target
+        if 3 <= target < 8:
+            target = pc + target - 3
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose

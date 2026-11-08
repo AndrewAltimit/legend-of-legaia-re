@@ -42,6 +42,12 @@ pub(crate) struct Cli {
     /// it, offers the display options, and starts the game on Play.
     #[command(subcommand)]
     pub(crate) cmd: Option<Cmd>,
+    /// With no subcommand: a file to hand the launcher as if it were dropped
+    /// on its window (a disc image, an expansion pack or a memory card). The
+    /// `Legend of Legaia` program passes a file opened with it here
+    /// ("Open with", or a file dropped on the program's icon).
+    #[arg(long, hide = true, value_name = "FILE", conflicts_with = "cmd")]
+    pub(crate) open: Option<PathBuf>,
 }
 
 // `PlayWindow` carries the whole engine-runner option surface - render

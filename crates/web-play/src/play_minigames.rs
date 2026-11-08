@@ -307,7 +307,7 @@ impl LegaiaRuntime {
         match game {
             // The slot machine replaces the VRAM texture with its art pack
             // whenever its resident set decoded (the shared cabinet pass);
-            // a restore is harmless when it drew on the 2D layer instead.
+            // a restore is harmless when it drew nothing of its own.
             ActiveGame::Slot
             | ActiveGame::Baka
             | ActiveGame::Muscle

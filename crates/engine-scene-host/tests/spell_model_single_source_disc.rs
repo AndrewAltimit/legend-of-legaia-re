@@ -113,7 +113,18 @@ fn the_state_machine_charges_the_discs_own_mp_cost() {
         disc_mp,
         "the band debits the disc cost"
     );
-    assert_eq!(w.actors[0].battle.last_mp_cost, disc_mp);
+    // `+0x178` is the readout ramp's accumulator, not the debit: the SM pass
+    // stores live MP and the cost together (`sh s0,0x178(s3)` /
+    // `sh v0,0x150(s3)` at `0x801E4588..0x801E4594`), and the same pass's
+    // node tick `FUN_80047430`, which the frame driver runs after the SM,
+    // moves a quarter of it onto the readout (`0x800475A4..0x80047620`). So
+    // the pass that reaches `MagicPreCastWait` already holds one ramp step.
+    let one_step = legaia_engine_battle_vm::battle_hp_bar::party_mp_step(200, disc_mp as i16);
+    assert_eq!(
+        w.actors[0].battle.last_mp_cost, one_step.pending as u16,
+        "the debit pass's own ramp step"
+    );
+    assert_eq!(w.actors[0].battle.mp_display, Some(one_step.display));
 }
 
 /// The same record's class byte routes the SM. A capture-class id reaches

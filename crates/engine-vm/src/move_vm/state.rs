@@ -171,6 +171,14 @@ pub struct ActorState {
     /// its own tick (op `0x20`) is reached on the same walk exactly when
     /// this is set. The host that runs the parts keeps it current.
     pub walk_successor: bool,
+    /// Engine-side, not an actor word: the BIOS `rand()` seed word
+    /// (`0x80009010`) as the frame's draw reached this part. A default-arm
+    /// ring of shape `4` / `5` (`FUN_80028158`) draws its column jitter from
+    /// the game's one `rand()` stream at draw time; the host that deals the
+    /// frame's draws stores the stream's state here and advances the stream
+    /// past them, so the port's draw replays the same words. `0` where no
+    /// host deals (the field pool, a viewer).
+    pub draw_rand_seed: u32,
 }
 
 impl ActorState {

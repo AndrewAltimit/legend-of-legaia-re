@@ -123,6 +123,68 @@ Settled rows:
 | `hsv_grade_resident_meshes`, `4C E6` | 6 sites | Replaced: the prologue palette mode (`primitive_colour_grade.rs`). |
 | `equip_attack_bonuses` | Battle | Replaced: the hit resolver folds `BattleState::equip_atk` itself (`loop_driver/hits.rs`). |
 | `first_monster_id`, `victory_stage` | Battle | Off the live path: the sequencer poses `ctx[+0x13]`, the leader ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)). |
+| `compass_heading`, op `0x38` | 5966 sites, 95 scenes | Deleted: the arm's one store is the resolved actor's `+0x26` (`0x801DEE6C..0x801DEE8C`), which `face_compass` makes; the hook was a second, unused write. |
+| `model_pool_is_world_map`, `4C 50` | 629 sites; none in mode 15 | Deleted with the `+0x60` field it gated: `FUN_80024E08`'s store to `+0x60` (`0x80024E50`) needs mode word `0xF`, and no image stores `0xF` to `_DAT_8007B83C` (mode 14's INIT `0x8002B904` stores `0`). See [the dead branch](#the-mode-15-branch-of-the-model-set). |
+| `op4c_nd_sub6_field_74_ack`, `4C D6` | `chitei2`, 24 sites | Deleted: the arm (`0x801E2D64..0x801E2DB0`) writes `+0x74` and nothing else, and the VM makes that write. Its blend byte reaches the draw: [below](#the-blend-byte-4c-d6-sets). |
+| `set_inverted_y_mirror`, `4C 37` | 312 sites, 30 scenes | Replaced, and the arm fixed: the VM stores `+0x8E = -player.y` itself and **advances**. Both exits are `j 0x801DF098`; the decompiled `caseD_4` return had read as a yield. |
+| `assign_child_random_offset`, effect spawn | Every `flags & 1` script | Deleted: the pool keeps the offsets in `MasterSlot::child_offsets`, which its own tick reads where retail reads the rewritten record. |
+| `on_movement_step`, `on_render_loop`, `on_child_step_iter`, `on_per_bone_interp`, `on_special_effect_spawn` (`anim_vm`) | Battle | Deleted: nothing called them. Each names a routine ported as its own kernel (`FUN_80047430`, `FUN_80048A08`, `FUN_80049348`, `FUN_8004998C`, `FUN_8004E13C`). |
+| `field_halt_acquire_predicate`, ops `0x38` / `0x43` | Live | Kept at `true`, half modelled: see [the acquire's first clause](#the-halt-acquires-first-clause). |
+| `stub_16`, move op `0x16` | Live | No wire owed: `FUN_80024C80` is `jr ra; nop`. |
+| `keyframe_alloc` / `_init` / `_free`, move ops `0x2C` / `0x30` | Ambient parts; cast modules `0916`, `0921`, `0928`, `0929`, `0931` | Replaced for the capture (`World::step_ambient_fx`, `BattleState::cell_captures`); the op-`0x30` restore is open: [below](#op-0x30-restores-the-captured-rect). |
+| `ext_debug_world`, move ext `0x01` | Live | No wire owed: `FUN_8001A068` is the `EFC %d %d %d` debug-text print. |
+| `ext_emit_ot_packet`, move ext `0x2E` | None | No carrier ([`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)). |
+| `slot_count` | Battle | Not a no-op: the default is the engine's slot-table width, which every host shares. |
+| `BgmDirector::reattach_volume`, op `0x35` sub-op `8` | Live | Left: the replayed record names no stream in any captured state, so retail sounds nothing ([`audio.md`](../subsystems/audio.md)). |
+
+### The mode-15 branch of the model set
+
+`FUN_80024E08` reads the mode word and, on `0xF`, stores the model index into
+`+0x60` and keeps `+0x10`'s `0x00108000` bits (`0x80024E3C..0x80024E50`). Off
+that mode it masks them for the re-stage instead. `+0x60` is the `.MAP` object
+record the re-stage `FUN_80020F88` reads while those bits are set
+([`motion-vm.md`](../subsystems/motion-vm.md)), not a model mirror. Mode 15
+(`MAP MODE`) is never entered. Mode 14's INIT `0x8002B904` stores mode `0`. The
+main loop's mode advance `0x80017A30` stores the table's next-mode word, or
+`0xE` from mode 3 behind `0x8007B8C8`. The 53 `lui` stores and 2 `$gp` stores
+of `_DAT_8007B83C` across SCUS and every based overlay each store a constant
+other than `0xF`, and the debug menu's pick (`0x8007B6E0`) is `2` or `0xE`
+(`0x8001D5F0`, `0x8001D600`). The world map runs as a mode-3 field scene. So
+the branch is dead, and the port drops it.
+
+### The blend byte `4C D6` sets
+
+The field actor draw passes the whole `+0x74` word to `FUN_80043390` as its
+flag word (`lw a1,0x74(s0)` at `0x8001B46C`); the top byte is the primitive
+flags, `0x80000000` semi-transparent and the next two bits the blend mode.
+`chitei2`'s corridor pillars are its only carrier. `World::object_draw_tints`
+returns the whole word, and both hosts draw the forced mode
+([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#4c-d6-the-draws-primitive-flags)).
+
+### The halt acquire's first clause
+
+The acquire on op `0x38`'s halt path (`0x801DEE90..0x801DEF20`) and on op
+`0x43` sub-0/1/A/B tests `(+0x94 != 0 || ctx == player) && (!(+0x10 & 0x400)
+|| scene word != 0)`. The port models the second clause, `arc_target_halted`.
+`+0x94` is the parked motion-op pointer the walk kernel `FUN_8003774C` reads.
+The motion ops seat it, and nothing in the kernel clears it, so the first
+clause refuses only a non-player target that has never been parked. The port
+keeps no `+0x94` seat for placements, so it acquires. Whether any shipped
+record aims a halt-path `38` or an arc at such an actor needs a capture: watch
+the target's `+0x94` at the op.
+
+### Op `0x30` restores the captured rect
+
+`FUN_80019D50` builds each frame's recolour in the `0x1F8003A0` scratch arena
+and uploads that. The op-`0x2C` capture stays as captured, and op `0x30` uploads
+it back (`FUN_800583C8(actor + 0xA0, buf)`, `0x80023AF0..0x80023B10`), which
+undoes the recolour. The port drops a rect's capture when no live part recolours
+it, but it never writes the capture back. The battle carriers are cast modules
+`0916`, `0921`, `0928`, `0929` and `0931`: each part captures a 16x1 or 256x3
+CLUT strip at rows `484..486`, runs its HSV adds, waits `0x00FF` vsyncs, then
+runs `0x30`. Whether a cast is still alive at the end of that wait is a
+cast-timing question. Next step: a cast-sequence film of one of those casts,
+reading VRAM row `486` after the module ends.
 
 ## State no host sets up
 
@@ -222,6 +284,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `RecipientWindowRects::party_compare` | the picker script `0x801E4E84` opens window 36 alone; window 41 is the whole buy flow's and draws through `shop_screen_draws` |
 | `SubScreenInput::sellable_items_available`, `spinner_result` | the shop's mode select runs in the shop session (`shop_cues::shop_root_labels` greys Sell on the same bag scan); the save screen machine opens only the card contexts |
 | `StatusModifiers::immobilised_eva_mult`, `FieldLocomotion::action_params` | tuning defaults written by `Default`, which the tool reads as a zero; the values are the intended ones |
+| `SeqChannel::tempo_step`, `tempo_target`, `tempo_remaining` | the tempo slide `FUN_800649B0` is armed by flag bits `0x40` / `0x80` with `+0xA8` / `+0xAC` / `+0x4E`; SCUS only clears those bits (`0x80064A18`, `0x80064BA8`, `0x80064BC4`) and zeroes those fields (`0x80061E1C..0x80061E4C`, `0x800645F0..0x80064620`). The libsnd accelerando / ritardando setters are not linked, and the disc's ritardandos are tempo metas ([`seq.md`](../formats/seq.md)) |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 ### Open rows

@@ -279,6 +279,41 @@ fn theeder_retargets_both_seats_once_its_ramp_reaches_0x100() {
     assert_eq!(seats[7].target_code, TARGET_CODE_ENEMY_ROW);
 }
 
+/// Arm 11's exit lights every live monster seat with the neutral word
+/// (`0x801F7934..0x801F7978`) and leaves its render flag as the band set it:
+/// the hidden row's colour comes back, so its anim ticks resume for the sweep.
+#[test]
+fn theeder_retarget_exit_lights_the_live_monster_row() {
+    let mut seats = row();
+    for s in &mut seats[3..7] {
+        s.present_04 = 0;
+        s.render_flag = 0xFF;
+    }
+    seats[5].hp = 0;
+    let mut ctx = CastModuleCtx {
+        phase: THEEDER_RETARGET_ARM,
+        ..Default::default()
+    };
+    while ctx.phase == THEEDER_RETARGET_ARM {
+        theeder_tick(
+            &mut ctx,
+            &mut seats,
+            WHO,
+            TheederGeom::default(),
+            &mut TheederFx::default(),
+            |_| None,
+        );
+    }
+    assert_eq!(seats[3].present_04, THEEDER_ROW_LIT_WORD);
+    assert_eq!(seats[4].present_04, THEEDER_ROW_LIT_WORD);
+    assert_eq!(seats[5].present_04, 0, "a fallen seat stays dark");
+    assert!(seats[3..7].iter().all(|s| s.render_flag == 0xFF));
+    assert_ne!(
+        seats[0].present_04, THEEDER_ROW_LIT_WORD,
+        "the party is untouched"
+    );
+}
+
 /// Arm 12 runs its sweep word through one turn at eight times the scalar
 /// a tick (64 ticks) and holds until it has; arm 10 zeroes the word first.
 #[test]

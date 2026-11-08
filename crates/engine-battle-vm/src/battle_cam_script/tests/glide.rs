@@ -328,6 +328,37 @@ fn glide_endpoint_match_skips_the_components_retail_holds() {
     assert!(!menu.glide_endpoint_matches_walked(target, target, live, shown));
 }
 
+/// A component both framings hold - retail's table aims it at its own live
+/// value, the engine's glide at the value it stands on - is history, not a
+/// framing: walked back it passes the gate however far apart the two holds
+/// read, and the displayed value is seated on it. `koru_pre_*`: case 8 holds
+/// retail's pitch at `-23` and the replay's at `-26`, and the frame on screen
+/// stood on case 7's table at `-38`.
+#[test]
+fn a_held_component_takes_the_displayed_value_whatever_the_holds_read() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    steps(&mut cam, 1);
+    let own = cam.pose();
+    let mut target = cam.glide_target();
+    target.pitch = own.pitch;
+    let mut live = target;
+    live.pitch = own.pitch - 3.0;
+    let mut end = target;
+    end.pitch = live.pitch;
+    let mut shown = live;
+    shown.pitch -= 15.0;
+    assert_eq!(cam.framing_held_components(end, target, live) & 1, 1);
+    assert!(cam.glide_endpoint_matches_walked(end, target, live, shown));
+    let mut seated = cam.clone();
+    assert_eq!(seated.seat_pose_components(shown, 1), 1);
+    assert_eq!(seated.pose().pitch, shown.pitch);
+    assert_eq!(seated.pose().yaw, own.yaw, "only the masked component");
+    // Retail's table walking the component is a framing: the gate refuses.
+    end.pitch = live.pitch + 10.0;
+    assert_eq!(cam.framing_held_components(end, target, live) & 1, 0);
+    assert!(!cam.glide_endpoint_matches_walked(end, target, live, shown));
+}
+
 /// With the yaw on retail's endpoint, a focus endpoint a few units off
 /// takes retail's point in the ease: the engine's focus stands as far short
 /// of its own endpoint as retail's live focus stood from its. An endpoint

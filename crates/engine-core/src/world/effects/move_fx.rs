@@ -620,8 +620,16 @@ impl World {
         action_fx.retain(|s| !s.finished());
         self.casting.active_action_fx = action_fx;
         self.flush_battle_bursts();
-        self.tick_mystic_shield_fx(channel_delta);
-        self.tick_stage_fx(channel_delta);
+        // The shield sphere and the boss-stage trees are list nodes of the
+        // same battle pass: one part tick a battle frame, scaled by its step.
+        // Ticked every vsync at a one-vsync step, a mode-4 scroller's period
+        // countdown (`+0xC6` drained by the step, reloaded on the underflow)
+        // fired a third as often as retail's: the shield's rect rolled one
+        // row every three vsyncs where a step-3 frame rolls three.
+        if pass > 0 {
+            self.tick_mystic_shield_fx(fx_delta, pass);
+            self.tick_stage_fx(fx_delta, pass);
+        }
 
         let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;

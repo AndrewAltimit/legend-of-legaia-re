@@ -61,4 +61,43 @@ PAGE_STATE_RULES = [
         "lose the wipe on the frame the menu closes: a flash of the lit field "
         "the window, which composes at the draw, does not show",
     },
+    {
+        "what": "the scene pass stages zeros for a mesh's absent ground refs",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "gl.vertexAttrib4f(this.locGroundRefXz, 0, 0, 0, 0);",
+        "why": "a disabled attribute reads the generic value, (0, 0, 0, 1) by "
+        "default, and the vertex stage keys 'not a ground cell' on zeros: no "
+        "mesh took its link depth, so PSX mode's per-primitive sort was inert "
+        "and the sea covered town01's beach off retail's vantage",
+    },
+    {
+        "what": "an untextured screen primitive's tie nudge is coarser than SwiftShader's sub-pixel grid",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "contains",
+        "source": "f[o + 1] -= 1 / 240 - PSX_TIE_FLAT_NDC_Y;",
+        "why": "a 64th of a row rounded back onto the tie under SwiftShader, so "
+        "every flat band on the PSX canvas (the ending vignettes' letterbox) drew "
+        "a row low in the headless pair runs while a real GPU drew it right",
+    },
+    {
+        "what": "the dome hub draws through the screen-primitive pass",
+        "path": REPO / "site/js/play-minigames.js",
+        "kind": "contains",
+        "source": "hub.pass.drawRuns(0, (runs.length / 3) | 0);",
+        "why": "a 2D-canvas blit of the hub quads resampled the stretched wall "
+        "tiles off the GPU's texel rule (the wall a column left from x = 288) "
+        "and drew the course card's text lighter: 3.55% of every hub frame "
+        "off the window, on SwiftShader and a real GPU alike",
+    },
+    {
+        "what": "the dome hub draws over the screen primitives, under the text",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "before",
+        "source": "if (!skipDraw) this._drawScreenPrims(rt);",
+        "then": "window.LegaiaPlayMinigames.drawHub(rt, this);",
+        "why": "the hub's layer sat over the GL frame and under the page's "
+        "text, the window's order; drawn inside the minigame frame it would "
+        "go under the screen primitives, and on a field frame under the scene",
+    },
 ]

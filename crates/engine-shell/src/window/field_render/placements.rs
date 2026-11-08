@@ -134,6 +134,7 @@ impl PlayWindowApp {
                     * Mat4::from_scale(Vec3::splat(scale));
             props.push(PosedPropDraw {
                 anchor: d.anchor,
+                cell: d.cell,
                 anim_id: d.anim_id,
                 model: t * rot,
                 baked,

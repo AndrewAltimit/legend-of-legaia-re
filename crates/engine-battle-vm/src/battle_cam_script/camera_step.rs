@@ -750,6 +750,11 @@ impl BattleCamera {
     /// holds its pitch at `-23` (the strike's residue) where the replay's
     /// case 8 holds `-26`, while yaw, depth and focus walk to retail's
     /// endpoints exactly.
+    ///
+    /// A component both framings hold ([`Self::framing_held_components`])
+    /// passes too: its endpoint is the live value the arm found, which is
+    /// history and not framing, so the two endpoints may differ by however
+    /// far the two strikes' walks parted.
     pub fn glide_endpoint_matches_walked(
         &self,
         end: BattleCamPose,
@@ -762,14 +767,86 @@ impl BattleCamera {
         }
         let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
         let held_ang = |a: f32, b: f32| ang(a, b) == 0.0;
-        (held_ang(live.pitch, shown.pitch) || ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE)
-            && (held_ang(live.yaw, shown.yaw) || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE)
+        let both_hold = self.framing_held_components(end, target, live);
+        let held = |bit: u8| both_hold & bit != 0;
+        (held_ang(live.pitch, shown.pitch)
+            || held(1)
+            || ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE)
+            && (held_ang(live.yaw, shown.yaw)
+                || held(2)
+                || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE)
             && (0..3).all(|k| {
                 (live.tr[k] == shown.tr[k]
+                    || held(4 << k)
                     || (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE)
                     && (live.focus[k] == shown.focus[k]
+                        || held(32 << k)
                         || (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE)
             })
+    }
+
+    /// The components both framings **hold**, as a mask in [`BattleCamPose`]
+    /// order: retail's table aims the component at its own live value
+    /// (`end == live`), and the engine's glide aims it at the value it
+    /// stands on (`target == pose`). Case 8 on an idle monster holds the
+    /// live camera's pitch and `TR.y` (`0x801D6BFC`), so its endpoint for
+    /// either is whatever the strike band's walk left, not a framing:
+    /// `koru_pre_*` holds pitch `-23` where the replay's holds `-26`.
+    pub fn framing_held_components(
+        &self,
+        end: BattleCamPose,
+        target: BattleCamPose,
+        live: BattleCamPose,
+    ) -> u8 {
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        let ret = [
+            ang(end.pitch, live.pitch) == 0.0,
+            ang(end.yaw, live.yaw) == 0.0,
+            end.tr[0] == live.tr[0],
+            end.tr[1] == live.tr[1],
+            end.tr[2] == live.tr[2],
+            end.focus[0] == live.focus[0],
+            end.focus[1] == live.focus[1],
+            end.focus[2] == live.focus[2],
+        ];
+        let own = [
+            ang(target.pitch, self.pose.pitch) < 0.5,
+            ang(target.yaw, self.pose.yaw) < 0.5,
+            (target.tr[0] - self.pose.tr[0]).abs() < 0.5,
+            (target.tr[1] - self.pose.tr[1]).abs() < 0.5,
+            (target.tr[2] - self.pose.tr[2]).abs() < 0.5,
+            (target.focus[0] - self.pose.focus[0]).abs() < 0.5,
+            (target.focus[1] - self.pose.focus[1]).abs() < 0.5,
+            (target.focus[2] - self.pose.focus[2]).abs() < 0.5,
+        ];
+        (0..8).fold(0u8, |m, k| if ret[k] && own[k] { m | 1 << k } else { m })
+    }
+
+    /// Stand the components in `mask` ([`BattleCamPose`] order) on `shown`:
+    /// a displayed frame's held components, which
+    /// [`Self::align_glide_origin_to`] leaves on the engine's own value when
+    /// the two held endpoints differ ([`Self::framing_held_components`]).
+    /// Returns `mask`.
+    pub fn seat_pose_components(&mut self, shown: BattleCamPose, mask: u8) -> u8 {
+        let nearest = |from: f32, to: f32| {
+            let d = (to - from).rem_euclid(4096.0);
+            from + if d > 2048.0 { d - 4096.0 } else { d }
+        };
+        if mask & 1 != 0 {
+            self.pose.pitch = nearest(self.pose.pitch, shown.pitch);
+        }
+        if mask & 2 != 0 {
+            self.pose.yaw = nearest(self.pose.yaw, shown.yaw);
+        }
+        for k in 0..3 {
+            if mask & (4 << k) != 0 {
+                self.pose.tr[k] = shown.tr[k];
+            }
+            if mask & (32 << k) != 0 {
+                self.pose.focus[k] = shown.focus[k];
+            }
+        }
+        mask
     }
 
     /// Phase-align the glide's **origin** to a retail instant: every driven

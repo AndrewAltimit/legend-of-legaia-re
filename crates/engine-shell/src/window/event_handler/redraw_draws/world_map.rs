@@ -72,6 +72,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     near_z: -1.0,
                     far_z: 0.0,
                     max_ir0: c.ir0,
+                    blend: None,
                 })
         };
         let (deco_start, color_deco_start) = app.world_map_deco_start;
@@ -104,21 +105,19 @@ impl<'m> DrawCtx<'_, 'm> {
             &app.world_map_terrain_color_records,
             wm_models,
         );
-        let wm_live =
-            |records: &[Option<usize>], swaps: &[Option<usize>], i: usize, model: &Mat4| {
-                let record = records.get(i).copied().flatten();
-                let moved =
-                    Mat4::from_cols_array(&legaia_engine_scene::field_env::live_placed_model(
-                        &model.to_cols_array(),
-                        record,
-                        &wm_turns,
-                        &wm_moves,
-                    ));
-                (moved, swaps.get(i).copied().flatten())
-            };
+        let wm_live = |keys: &[Option<usize>], swaps: &[Option<usize>], i: usize, model: &Mat4| {
+            let record = keys.get(i).copied().flatten();
+            let moved = Mat4::from_cols_array(&legaia_engine_scene::field_env::live_placed_model(
+                &model.to_cols_array(),
+                record,
+                &wm_turns,
+                &wm_moves,
+            ));
+            (moved, swaps.get(i).copied().flatten())
+        };
         for (i, (mesh_idx, model)) in app.world_map_terrain_draws.iter().enumerate() {
             let (model, swap) = if i < deco_start {
-                wm_live(&app.world_map_terrain_records, &wm_swaps, i, model)
+                wm_live(&app.world_map_terrain_keys, &wm_swaps, i, model)
             } else {
                 (*model, None)
             };
@@ -137,7 +136,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     cue: if i >= deco_start {
                         deco_cue(mvp)
                     } else {
-                        landmark_cue(app.world_map_terrain_records.get(i))
+                        landmark_cue(app.world_map_terrain_keys.get(i))
                     },
                 });
             }
@@ -147,12 +146,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // field branch's pairing, which this branch lacked.
         for (i, (mesh_idx, model)) in app.world_map_terrain_color_draws.iter().enumerate() {
             let (model, swap) = if i < color_deco_start {
-                wm_live(
-                    &app.world_map_terrain_color_records,
-                    &wm_color_swaps,
-                    i,
-                    model,
-                )
+                wm_live(&app.world_map_terrain_color_keys, &wm_color_swaps, i, model)
             } else {
                 (*model, None)
             };
@@ -171,7 +165,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     cue: if i >= color_deco_start {
                         deco_cue(mvp)
                     } else {
-                        landmark_cue(app.world_map_terrain_color_records.get(i))
+                        landmark_cue(app.world_map_terrain_color_keys.get(i))
                     },
                 });
             }

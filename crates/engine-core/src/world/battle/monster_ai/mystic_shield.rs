@@ -240,10 +240,11 @@ impl World {
         self.battle.monster_ai_state.flag_bd84 = 0;
     }
 
-    /// Advance the Mystic Shield's parts one frame through the move VM -
+    /// Advance the Mystic Shield's parts one battle pass through the move VM -
     /// the part tick `FUN_80021DF4` both parts get from the actor lists like
-    /// every other effect actor. Drops the scene once every part is done.
-    pub(in crate::world) fn tick_mystic_shield_fx(&mut self, channel_delta: u16) {
+    /// every other effect actor, `pass` vsyncs of it (the frame step). Drops
+    /// the scene once every part is done.
+    pub(in crate::world) fn tick_mystic_shield_fx(&mut self, channel_delta: u16, pass: u8) {
         let Some(mut scene) = self.casting.mystic_shield_fx.take() else {
             return;
         };
@@ -258,7 +259,7 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, channel_delta);
         }
-        self.queue_battle_part_scrolls(&mut scene.parts);
+        self.queue_battle_part_scrolls_over(&mut scene.parts, pass);
         if !scene.finished() {
             self.casting.mystic_shield_fx = Some(scene);
         }
@@ -298,7 +299,7 @@ impl World {
     /// Advance the boss-stage effect trees one frame through the part tick
     /// `FUN_80021DF4`, queueing their mode-3 recolours and mode-4 scrolls
     /// onto the battle VRAM like every other battle part.
-    pub(in crate::world) fn tick_stage_fx(&mut self, channel_delta: u16) {
+    pub(in crate::world) fn tick_stage_fx(&mut self, channel_delta: u16, pass: u8) {
         let Some(mut scene) = self.casting.stage_fx.take() else {
             return;
         };
@@ -313,7 +314,7 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, channel_delta);
         }
-        self.queue_battle_part_scrolls(&mut scene.parts);
+        self.queue_battle_part_scrolls_over(&mut scene.parts, pass);
         if !scene.finished() {
             self.casting.stage_fx = Some(scene);
         }

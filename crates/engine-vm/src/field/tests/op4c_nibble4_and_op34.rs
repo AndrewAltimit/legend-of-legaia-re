@@ -147,7 +147,7 @@ fn menu_sub_3_sub_7_no_player_falls_through() {
     let r = step(&mut host, &mut ctx, &[0x4C, 0x37], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(ctx.world_x, 0);
-    assert!(host.inverted_y_writes.is_empty());
+    assert_eq!(ctx.field_8e, 0);
 }
 
 #[test]
@@ -169,11 +169,11 @@ fn menu_sub_3_sub_7_copies_player_coords() {
     assert_eq!(ctx.world_z, 0x89AB);
     assert_eq!(ctx.field_26, 0xCDEF);
     // No bit 0x20000000 → no inverted-Y write.
-    assert!(host.inverted_y_writes.is_empty());
+    assert_eq!(ctx.field_8e, 0);
 }
 
 #[test]
-fn menu_sub_3_sub_7_yields_with_inverted_y_when_flag_set() {
+fn menu_sub_3_sub_7_writes_inverted_y_and_advances_when_flag_set() {
     let mut host = TestHost {
         player_coords: Some(PlayerCoords {
             world_x: 0,
@@ -188,10 +188,12 @@ fn menu_sub_3_sub_7_yields_with_inverted_y_when_flag_set() {
         ..Default::default()
     };
     let r = step(&mut host, &mut ctx, &[0x4C, 0x37], 0);
-    // Inverted-Y branch returns Yield (caseD_4 STATE_RESUME exit).
-    assert_eq!(r, StepResult::Yield { resume_pc: 2 });
-    assert_eq!(host.inverted_y_writes, vec![-0x0010]);
-    // Coords still copied even on the yield path.
+    // The height-law branch stores `+0x8E = -player.y` and leaves through
+    // the same `0x801DF098` exit as the plain copy (`0x801E1040 j
+    // 0x801df098` with the `sh` in its delay slot): it advances. The
+    // decompiled `caseD_4()` return read as a state-resume yield.
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    assert_eq!(ctx.field_8e, -0x0010);
     assert_eq!(ctx.world_y, 0x0010);
 }
 

@@ -66,35 +66,34 @@ pub fn story_hidden_records_for_scene(
     let map_bytes = scene
         .field_map_index(index)
         .and_then(|idx| index.entry_bytes_extended(idx).ok());
-    let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
-        Some(map) => {
-            legaia_engine_field::man_field_scripts::object_script_bind_seats(map, &triggers)
-        }
-        None => triggers
-            .iter()
-            .filter(|t| t.gate == 0)
-            .map(|t| {
-                (
-                    t.record as usize,
-                    (
-                        i16::from(t.tile_x) * 128 + 0x40,
-                        i16::from(t.tile_z) * 128 + 0x40,
-                    ),
-                )
-            })
-            .collect(),
-    };
+    let ladder = scene
+        .field_floor_height_lut(index)
+        .ok()
+        .flatten()
+        .map(|lut| lut.map(|v| v.wrapping_neg()))
+        .unwrap_or_default();
+    let object_binds: Vec<legaia_engine_field::man_field_scripts::ObjectScriptBind> =
+        match map_bytes.as_deref() {
+            Some(map) => legaia_engine_field::man_field_scripts::object_script_bind_objects(
+                map, &triggers, &ladder,
+            ),
+            None => triggers
+                .iter()
+                .filter(|t| t.gate == 0)
+                .map(|t| {
+                    legaia_engine_field::man_field_scripts::ObjectScriptBind::at(
+                        t.record as usize,
+                        (
+                            i16::from(t.tile_x) * 128 + 0x40,
+                            i16::from(t.tile_z) * 128 + 0x40,
+                        ),
+                    )
+                })
+                .collect(),
+        };
     let mut w = legaia_engine_core::world::World::new();
     w.seed_free_roam_story_baseline(&scene.name);
     w.seed_field_channels(&man_file, &man_bytes);
-    w.set_object_bind_rots(
-        map_bytes
-            .as_deref()
-            .map(|map| {
-                legaia_engine_field::man_field_scripts::object_script_bind_rots(map, &triggers)
-            })
-            .unwrap_or_default(),
-    );
     w.seed_object_channels(&man_file, &man_bytes, &object_binds);
     w.hidden_object_records()
 }

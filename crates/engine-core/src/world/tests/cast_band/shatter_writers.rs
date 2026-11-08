@@ -76,6 +76,41 @@ fn zenoir_spares_a_scripted_fight_whose_victim_has_the_boss_byte() {
     assert_eq!(peak[2], 0);
 }
 
+/// Zenoir reads its victim back from the word arm 0 latched, not from the
+/// caster's `+0x1DD`, which arm 8 turns to the enemy-row code `9`: arm 10's
+/// reach test stands on the victim, so the victim is shown for the splash
+/// and a monster far from it stays hidden (`battle_kor_spoon_strike`'s
+/// Dead Bone took arm 11's splash while the reach was read off seat 9).
+#[test]
+fn zenoir_tests_reach_from_the_victim_it_latched() {
+    use legaia_engine_cast::seru_magic_ticks::{ZENOIR_BUMP_ARM, ZENOIR_LATCH_ARM};
+    let mut world = shatter_world();
+    world.casting.module_phase = ZENOIR_LATCH_ARM;
+    world.run_cast_module_code(0x86, 0).expect("PROT 0908 runs");
+    // What arm 8 leaves behind it.
+    world.actors[0].battle.active_target = 9;
+    for (slot, (x, z)) in [(1usize, (-857i16, 499i16)), (2, (98, 28)), (9, (0, 0))] {
+        world.actors[slot].move_state.world_x = x;
+        world.actors[slot].move_state.world_z = z;
+    }
+    for i in 1..5 {
+        world.actors[i].battle.render_flag = 0xFF;
+    }
+    world.casting.module_phase = ZENOIR_BUMP_ARM;
+    for _ in 0..4000 {
+        if world.casting.module_phase != ZENOIR_BUMP_ARM {
+            break;
+        }
+        world.run_cast_module_code(0x86, 0).expect("PROT 0908 runs");
+    }
+    assert_ne!(world.casting.module_phase, ZENOIR_BUMP_ARM, "arm 10 ran");
+    assert_eq!(world.actors[1].battle.render_flag, 0, "the victim is shown");
+    assert_eq!(
+        world.actors[2].battle.render_flag, 0xFF,
+        "a monster 1185 units off the victim stays hidden"
+    );
+}
+
 /// Gimard's settle arm dissolves the creature on its own seat.
 #[test]
 fn gimard_settle_arm_breaks_up_the_creature() {

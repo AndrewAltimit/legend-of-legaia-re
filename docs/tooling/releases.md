@@ -92,7 +92,9 @@ legaia-tools-<version>-<target>/
 
 `Legend of Legaia` on Linux and Windows is the `legaia-launch` stub
 (`crates/engine-shell/src/bin/legaia-launch.rs`): it starts
-`command-line-tools/legaia-engine` with the same arguments - on Linux by
+`command-line-tools/legaia-engine` with the same arguments (a lone file
+argument, from "Open with" or a drop on the icon, becomes `--open <file>`
+for the launcher) - on Linux by
 `exec`, so a terminal sees the engine's own output and exit status; on
 Windows as a GUI-subsystem child ([below](#windows-the-console-window)). The
 engine stays in the tools folder because it is also the archive's largest

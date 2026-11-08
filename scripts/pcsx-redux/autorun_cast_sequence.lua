@@ -140,7 +140,16 @@
 --                        anim cursor (+0x22C -> +0x68), the ground pair and
 --                        the per-action damage total +0x00: the retail
 --                        timeline of whatever the party played on the way to
---                        the cast (a combo's per-clip cadence)
+--                        the cast (a combo's per-clip cadence); and the
+--                        battle camera: the live pitch / yaw, TR trio and
+--                        focus trio (stored negated) with the depth word
+--                        ctx[+0x6D0] and all nine {step, endpoint} records
+--                        of the tween table ctx[+0x118C]
+--   LEGAIA_PRE_SHOTS     1 = with LEGAIA_PRE_TRACE, also take a frame each
+--                        vsync before the inject while the action state is
+--                        a strike / return / Done one (0x1E..0x20, 0x50..0x5A)
+--                        (pre_NNNNN.raw, named in pre.csv's shot column):
+--                        which pass's pose the display shows
 --   LEGAIA_PARK          quit when the action state and the module phase
 --                        have not moved for this
 --                        many vsyncs after the inject (900): a cast the
@@ -184,6 +193,7 @@ local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
 local PARK         = probe.getenv_num("LEGAIA_PARK", 900)
 local PRE_TRACE    = probe.getenv_num("LEGAIA_PRE_TRACE", 0) ~= 0
+local PRE_SHOTS    = probe.getenv_num("LEGAIA_PRE_SHOTS", 0) ~= 0
 local RAM_AT = {}
 for v in string.gmatch(probe.getenv("LEGAIA_RAM_AT", ""), "[^,]+") do
     RAM_AT[tonumber(v)] = true
@@ -414,6 +424,31 @@ local function guard_seats()
     return table.concat(t, ",")
 end
 
+-- pre.csv's camera columns: the live pose, the depth word ctx[+0x6D0] and
+-- the tween table's nine {step, endpoint} records as `step:end` pairs joined
+-- by `/`; then, under LEGAIA_PRE_SHOTS, a frame in the strike / return / Done
+-- states (its file name, or empty).
+local function pre_cam_cols(cx, st7, elapsed)
+    local tw = {}
+    for k = 0, 8 do
+        tw[#tw + 1] = string.format("%d:%d", s16(cx + 0x118C + k * 4), s16(cx + 0x118C + k * 4 + 2))
+    end
+    local shot = ""
+    if PRE_SHOTS and ((st7 >= 0x1E and st7 <= 0x20) or (st7 >= 0x50 and st7 <= 0x5A)) then
+        local ok, ss = pcall(PCSX.GPU.takeScreenShot)
+        if ok and ss ~= nil then
+            shot = string.format("pre_%05d.raw", elapsed)
+            local fh = io.open(probe.out_path(shot), "wb")
+            if fh ~= nil then fh:write(tostring(ss.data)); fh:close() else shot = "" end
+        end
+    end
+    return string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s",
+        u16(0x8007B790) % 4096, u16(0x8007B792) % 4096,
+        s32(0x800840B8), s32(0x800840BC), s32(0x800840C0),
+        -s32(0x80089118), -s32(0x8008911C), -s32(0x80089120),
+        s16(cx + 0x6D0), table.concat(tw, "/"), shot)
+end
+
 local function take_shot(elapsed)
     local ok, ss = pcall(PCSX.GPU.takeScreenShot)
     if not ok or ss == nil then return "", 0, 0, 0 end
@@ -425,6 +460,31 @@ local function take_shot(elapsed)
     if ss.bpp == "BPP_24" or (tonumber(ss.bpp) or 16) > 16 then bpp = 24 end
     shots = shots + 1
     return name, tonumber(ss.width) or 320, tonumber(ss.height) or 240, bpp
+end
+
+-- One pre.csv row (LEGAIA_PRE_TRACE): the battle state, each seat's clip and
+-- stand, and the camera (pre_cam_cols).
+local function pre_trace_row(cx, st7, acting, elapsed)
+    if pre == nil then return end
+    local cols = {}
+    for s = 0, 3 do
+        local a = actor(s)
+        if a ~= nil then
+            local node = u32(a + 0x22C)
+            local x, z = u16(a + 0x34), u16(a + 0x38)
+            if x >= 0x8000 then x = x - 0x10000 end
+            if z >= 0x8000 then z = z - 0x10000 end
+            local last = s == 3 and u16(a + 0x14C) or u16(a)
+            cols[#cols + 1] = string.format("%d,%d,%d,%d,%d,%d,%d",
+                u8(a + 0x1D9), u8(a + 0x1DA), u8(a + 0x21D),
+                ptr_ok(node) and u16(node + 0x68) or -1, x, z, last)
+        else
+            cols[#cols + 1] = "-1,-1,-1,-1,0,0,0"
+        end
+    end
+    pre:row("%d,%d,%d,%d,%d,%d,%d,%d,%s,%s", elapsed, u8(cx + 6), st7, acting,
+        probe.read_scratch_u8(0x1F800393), u16(cx + 0x6DA), u8(cx + 0x15),
+        u32(cx + 0x87C), table.concat(cols, ","), pre_cam_cols(cx, st7, elapsed))
 end
 
 probe.run({
@@ -464,7 +524,8 @@ probe.run({
             pre = probe.csv_open(probe.out_path("pre.csv"),
                 "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
                 "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
-                "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+                "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp," ..
+                "pitch,yaw,trx,try,trz,fx,fy,fz,c6d0,tween,shot")
         end
         -- LEGAIA_WATCH_W="addr,addr": who stores these bytes (breakpoint core).
         local watch_w = probe.getenv("LEGAIA_WATCH_W", "")
@@ -656,27 +717,7 @@ probe.run({
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
-        if pre ~= nil and not injected and in_battle then
-            local cols = {}
-            for s = 0, 3 do
-                local a = actor(s)
-                if a ~= nil then
-                    local node = u32(a + 0x22C)
-                    local x, z = u16(a + 0x34), u16(a + 0x38)
-                    if x >= 0x8000 then x = x - 0x10000 end
-                    if z >= 0x8000 then z = z - 0x10000 end
-                    local last = s == 3 and u16(a + 0x14C) or u16(a)
-                    cols[#cols + 1] = string.format("%d,%d,%d,%d,%d,%d,%d",
-                        u8(a + 0x1D9), u8(a + 0x1DA), u8(a + 0x21D),
-                        ptr_ok(node) and u16(node + 0x68) or -1, x, z, last)
-                else
-                    cols[#cols + 1] = "-1,-1,-1,-1,0,0,0"
-                end
-            end
-            pre:row("%d,%d,%d,%d,%d,%d,%d,%d,%s", elapsed, u8(cx + 6), st7, acting,
-                probe.read_scratch_u8(0x1F800393), u16(cx + 0x6DA), u8(cx + 0x15),
-                u32(cx + 0x87C), table.concat(cols, ","))
-        end
+        if not injected and in_battle then pre_trace_row(cx, st7, acting, elapsed) end
         if not injected then return end
         if SAVE_INJECT and not inject_saved then
             inject_saved = true

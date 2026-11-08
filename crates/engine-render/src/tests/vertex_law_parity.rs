@@ -24,12 +24,12 @@ use crate::shaders::{COLOR_MESH_SHADER_SRC, VRAM_MESH_SHADER_SRC, compose_scene_
 const STAGE_W: f32 = 320.0;
 const STAGE_H: f32 = 240.0;
 
-fn page_vertex_glsl() -> String {
+pub(super) fn page_vertex_glsl() -> String {
     let consts = js_consts(&site_js("webgl-shaders.js"));
     es300_to_450(&template(&consts, "VS_SRC"))
 }
 
-fn no_fetch() -> Box<super::shader_eval::ImageFetch> {
+pub(super) fn no_fetch() -> Box<super::shader_eval::ImageFetch> {
     Box::new(|name, _, _| panic!("vertex stage fetched from {name}"))
 }
 
@@ -40,35 +40,35 @@ fn mat(m: &[f32; 16]) -> Val {
 
 /// One frame's vertex-stage state, in the engine's terms.
 #[derive(Clone, Copy, Debug)]
-struct Frame {
-    mvp: [f32; 16],
+pub(super) struct Frame {
+    pub(super) mvp: [f32; 16],
     /// The overworld's `clip.w`-to-`SZ` factor (0 = off the overworld).
-    curve: f32,
-    snap: bool,
+    pub(super) curve: f32,
+    pub(super) snap: bool,
     /// `(enable, sz_per_w, ot_shift, near_otz)` of the near reject.
-    prim_near: [f32; 4],
+    pub(super) prim_near: [f32; 4],
     /// The field ground's drop (`Renderer::set_field_ground_drop`), 0 =
     /// retail's buckets.
-    ground_drop: f32,
+    pub(super) ground_drop: f32,
 }
 
 /// One vertex of one primitive.
 #[derive(Clone, Copy, Debug)]
-struct Vertex {
-    pos: [f32; 3],
-    colour: [u8; 3],
+pub(super) struct Vertex {
+    pub(super) pos: [f32; 3],
+    pub(super) colour: [u8; 3],
     /// The continent cell `[x0, z0, x1, z1]` / `[y00, y10, y01, y11]`, zero
     /// off the continent.
-    fa: [f32; 4],
-    fb: [f32; 4],
+    pub(super) fa: [f32; 4],
+    pub(super) fb: [f32; 4],
     /// The primitive's corners (`c0.w` = corner count, 0 = no owner).
-    corners: [[f32; 4]; 4],
+    pub(super) corners: [[f32; 4]; 4],
 }
 
 /// `(clip x, y, w, rejected)`, the packet colour in bytes, and the view
 /// depth the depth write keys on (native: read back off clip `z` through the
 /// matrix's depth row; page: `v_depth_w`).
-type VOut = ([f32; 3], bool, [f32; 3], f32);
+pub(super) type VOut = ([f32; 3], bool, [f32; 3], f32);
 
 /// The `w` whose normalised depth is `ndc` under `m`'s depth row, inverting
 /// the shaders' `depth_affine` (`ndc = a + b / w`).
@@ -89,7 +89,7 @@ fn rejected(clip: &[f32]) -> bool {
     clip == [2.0, 2.0, 2.0, 1.0]
 }
 
-fn run_native(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
+pub(super) fn run_native(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
     m.set_uniform("mvp", mat(&f.mvp));
     m.set_uniform("flags", Val::f(&[0.0, 1.0, 0.0, f.curve]));
     m.set_uniform(
@@ -154,7 +154,7 @@ fn run_native(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
     )
 }
 
-fn run_page(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
+pub(super) fn run_page(m: &mut Machine<'_>, f: &Frame, v: &Vertex) -> VOut {
     const IDENTITY: [f32; 16] = [
         1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
@@ -387,13 +387,15 @@ fn the_psx_snap_truncates_onto_the_stage_grid() {
     assert!(n > 20, "the grid covers the stage: {n} vertices checked");
 }
 
-/// The field ground off retail's vantage: a flat bucketed cell - far-bucket
-/// (its `z` pair swapped) or sorted (unswapped) - is depth-tested on both
-/// hosts as the plane `drop` units below it along the pixel's ray,
-/// `w * (h + drop) / h` for an eye `h` above the floor
-/// (`legaia_engine_scene::field_ground::dropped_floor_w`), with `x`, `y`
-/// and `w` untouched. A sloped cell and an unmarked mesh keep their depth;
-/// at drop 0 nothing moves.
+/// The field ground off retail's vantage: a far-bucket cell - flat (its `z`
+/// pair swapped) or sloped (its `x` pair swapped) - and a flat sorted cell
+/// are depth-tested on both hosts as the level plane `drop` units beyond the
+/// cell's corner farthest from the eye, along each vertex's ray:
+/// `w * (h + drop) / d` for an eye `h` from that corner and the vertex `d`
+/// from the eye's height (`legaia_engine_scene::field_ground::dropped_floor_w`
+/// / `dropped_floor_ref`; `d = h` on a flat cell), with `x`, `y` and `w`
+/// untouched. A sloped sorted cell and an unmarked mesh keep their depth; at
+/// drop 0 nothing moves.
 #[test]
 fn the_dropped_floor_depth_agrees_on_both_hosts() {
     let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
@@ -401,17 +403,21 @@ fn the_dropped_floor_depth_agrees_on_both_hosts() {
     let mut mn = Machine::new(&native, no_fetch());
     let mut mp = Machine::new(&page, no_fetch());
     let drop = 8.0;
-    let mut n = 0;
+    let (mut n, mut sloped) = (0, 0);
     for mvp in [camera(0.0, 2400.0), camera(0.7, 6000.0)] {
         // The test camera's eye height: its clip `y` row is `-sy * y + 40`.
         let eye_y = 40.0 / -mvp[5];
         for (k, v) in vertices().into_iter().enumerate() {
             let y = v.pos[1];
             let (x0, z0) = (v.pos[0] - 64.0, v.pos[2] - 64.0);
-            let (fa, fb, flat) = match k % 4 {
+            // The sloped cells' far corner sits 30 units past the vertex, on
+            // the far side of it from the eye.
+            let far = y + 30.0 * (y - eye_y).signum();
+            let (fa, fb, dropped) = match k % 5 {
                 0 => ([x0, z0 + 128.0, x0 + 128.0, z0], [y; 4], true),
                 1 => ([x0, z0, x0 + 128.0, z0 + 128.0], [y; 4], true),
-                2 => ([x0 + 128.0, z0, x0, z0 + 128.0], [y, y + 30.0, y, y], false),
+                2 => ([x0 + 128.0, z0, x0, z0 + 128.0], [y, far, y, y], true),
+                3 => ([x0, z0, x0 + 128.0, z0 + 128.0], [y, far, y, y], false),
                 _ => ([0.0; 4], [0.0; 4], false),
             };
             let v = Vertex {
@@ -447,27 +453,28 @@ fn the_dropped_floor_depth_agrees_on_both_hosts() {
                 b.0.iter().zip(&plain.0).all(|(p, q)| near(*p, *q)),
                 "page moved x / y / w"
             );
-            if flat {
-                let h = (eye_y - y).abs();
-                let want = plain.0[2] * (h + drop) / h.max(1.0);
-                for (host, got) in [("native", a.3), ("page", b.3)] {
-                    assert!(
-                        (got - want).abs() <= 1e-3 * want,
-                        "{host}: cell {k} depth {got}, the dropped floor is {want}"
-                    );
+            let want = if dropped {
+                let floor_y = if k % 5 == 2 { far } else { y };
+                let h = (floor_y - eye_y).abs();
+                let d = (floor_y - eye_y).signum() * (y - eye_y);
+                if k % 5 == 2 {
+                    sloped += 1;
+                    assert!(d < h, "the vertex sits nearer the eye than its far corner");
+                } else {
+                    n += 1;
                 }
-                n += 1;
-            } else if k % 4 == 3 {
+                plain.0[2] * (h + drop) / d.max(1.0)
+            } else {
+                plain.0[2]
+            };
+            for (host, got) in [("native", a.3), ("page", b.3)] {
                 assert!(
-                    (a.3 - plain.0[2]).abs() <= 1e-3 * plain.0[2],
-                    "an unmarked mesh moved"
-                );
-                assert!(
-                    (b.3 - plain.0[2]).abs() <= 1e-3 * plain.0[2],
-                    "an unmarked mesh moved"
+                    (got - want).abs() <= 1e-3 * want,
+                    "{host}: cell {k} depth {got}, want {want}"
                 );
             }
         }
     }
     assert!(n > 20, "{n} flat cells checked");
+    assert!(sloped > 10, "{sloped} sloped far-bucket cells checked");
 }

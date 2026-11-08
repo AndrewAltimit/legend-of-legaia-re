@@ -158,6 +158,7 @@ impl Settings {
     }
 
     /// Load from `path`; a missing or unreadable file gives the defaults.
+    /// [`Settings::open`] is the start-up form that also keeps a broken file.
     pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
@@ -165,12 +166,79 @@ impl Settings {
             .unwrap_or_default()
     }
 
+    /// Load from `path` at start-up. A missing file is the first run and
+    /// gives the defaults quietly. A file that does not parse is set aside
+    /// as `settings.json.broken` ([`legaia_app_theme::settings_file`]) so
+    /// the next save cannot overwrite the recent list and preferences in it,
+    /// and the result carries the sentence that tells the user. When the
+    /// file cannot be read or moved, [`Opened::keep_file`] is `false`: the
+    /// app then runs on the defaults without writing over it.
+    pub fn open(path: &Path) -> Opened {
+        use legaia_app_theme::settings_file::{set_aside, set_aside_notice};
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Opened::fresh(),
+            Err(e) => {
+                return Opened {
+                    settings: Self::default(),
+                    notice: Some(set_aside_notice(path, &e.to_string(), None)),
+                    keep_file: false,
+                };
+            }
+        };
+        let err = match serde_json::from_str(&text) {
+            Ok(settings) => {
+                return Opened {
+                    settings,
+                    ..Opened::fresh()
+                };
+            }
+            Err(e) => e,
+        };
+        log::warn!("settings: {} does not parse ({err})", path.display());
+        let (kept, keep_file) = match set_aside(path) {
+            Ok(kept) => (Some(kept), true),
+            Err(e) => {
+                log::warn!("settings: could not set {} aside ({e})", path.display());
+                (None, false)
+            }
+        };
+        Opened {
+            settings: Self::default(),
+            notice: Some(set_aside_notice(path, &err.to_string(), kept.as_deref())),
+            keep_file,
+        }
+    }
+
+    /// Write the settings, whole or not at all
+    /// ([`legaia_app_theme::settings_file::write_atomic`]).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, json)
+        legaia_app_theme::settings_file::write_atomic(path, json.as_bytes())
+    }
+}
+
+/// What [`Settings::open`] found.
+#[derive(Debug)]
+pub struct Opened {
+    pub settings: Settings,
+    /// A sentence for the user when the file was not usable.
+    pub notice: Option<String>,
+    /// Whether later saves may write the file (`false` when it could be
+    /// neither read nor moved aside).
+    pub keep_file: bool,
+}
+
+impl Opened {
+    fn fresh() -> Self {
+        Self {
+            settings: Settings::default(),
+            notice: None,
+            keep_file: true,
+        }
     }
 }
 
@@ -214,6 +282,38 @@ mod tests {
             Settings::default()
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A settings file that does not parse is moved aside, not overwritten
+    /// by the defaults the next save writes, and the user is told where it
+    /// went; a good file and a missing one open quietly.
+    #[test]
+    fn a_broken_settings_file_is_kept_and_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let fresh = Settings::open(&path);
+        assert!(fresh.notice.is_none() && fresh.keep_file);
+        let s = Settings {
+            skip_png: true,
+            ..Default::default()
+        };
+        s.save(&path).unwrap();
+        let good = Settings::open(&path);
+        assert_eq!(good.settings, s);
+        assert!(good.notice.is_none());
+        let broken = r#"{"recent": ["/x/disc.bin"], "skip_png": tru"#;
+        std::fs::write(&path, broken).unwrap();
+        let opened = Settings::open(&path);
+        assert_eq!(opened.settings, Settings::default());
+        assert!(opened.keep_file);
+        let notice = opened.notice.unwrap();
+        let kept = dir.path().join("settings.json.broken");
+        assert!(notice.contains(&kept.display().to_string()), "{notice}");
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), broken);
+        // The defaults the app now saves land beside the backup.
+        opened.settings.save(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), broken);
+        assert_eq!(Settings::load(&path), Settings::default());
     }
 
     #[test]

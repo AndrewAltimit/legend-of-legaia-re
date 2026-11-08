@@ -153,7 +153,7 @@ fn main() -> Result<()> {
             .cmd
             .expect("launcher play args name a subcommand"),
         Some(cmd) => cmd,
-        None => match launcher_window::run()? {
+        None => match launcher_window::run(cli.open)? {
             Some(args) => Cli::parse_from(args)
                 .cmd
                 .expect("launcher play args name a subcommand"),

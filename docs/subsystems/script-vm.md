@@ -1450,7 +1450,17 @@ fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
 0x200,0]` - the >0x100-wide two-page split is exercised by every use) →
 shrink-to-corner (`0x14`, scale `0x700`) → credit-name sprite strips
 (`0x10`, all 218 records CLUT row 475); `edlast` is the credits crawl and
-the only letterbox consumer. Sub-0x12 is not a widget op, so the 311 above
+the only letterbox consumer.
+
+The widgets are scene content. Each spawn is a node on actor list 0
+(`FUN_80020DE0(descriptor, _DAT_8007C34C)`, `0x801F891C` for the panel), and
+a scene load frees every scene node on that list. Walking the list in the
+mednafen ending states: `ending_panel_corner` (`edteien`) holds the mask, the
+panel and two credit sprites; `ending_scene_load_gap`, the load into
+`edbylon`, holds only the three persistent head nodes; and
+`ending_vignette_biron` holds the one mask `edbylon`'s own record spawned. The
+port drops the widget host in `World::man_load_actor_reset`; kept, a
+vignette's corner panel drew the next scene's VRAM at `(512, 0)` over it. Sub-0x12 is not a widget op, so the 311 above
 leave it out; `asset field-op-census --only "43 12"` finds twelve clean
 sites over eleven MAN carriers - every ending vignette but `edlast` - each
 directly before a `0x13` panel with the same payload, so it is what stages
@@ -2352,7 +2362,9 @@ per [cutscene.md § per-actor channels](cutscene.md#per-actor-channels---the-vig
   [script-vm-menuctrl § nE sub-3](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers).
 - **Player-coord copy `CC <id> 37`** (op `0x4C` n3 sub-7, asm `0x801E0FB0..0x801E1044`): copies the
   **player's** position + facing into the target context - the "materialize a parked companion at
-  the player" primitive that precedes a walk-out choreography.
+  the player" primitive that precedes a walk-out choreography. A target carrying the height law
+  `0x20000000` also takes `+0x8E = -player.y`, so it stays at the player's height; the op advances
+  on both paths (`j 0x801DF098`).
 - **Off-map park**: `A3 <id> 7F 7F` (cross-context MoveTo) or `CC <id> 51 7F 7F ..` (n5 sub-1
   run-to-tile) sends an actor to tile `(127,127)` = world `(16320,16320)`, the corner sentinel every
   cold-parked placement also rests at. Parked actors stay resident (their contexts keep ticking);

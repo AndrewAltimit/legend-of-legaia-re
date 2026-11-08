@@ -725,9 +725,9 @@ pub fn battle_multi_readout_plates(
         .collect()
 }
 
-/// The **target-select** plaque (placement record `0x29`): the monster name
-/// the open target cursor rests on, or `None` while no
-/// picker's cursor is on the enemy row.
+/// The **target-select** plaque (placement record `0x29`): the name the open
+/// target cursor rests on - a monster under a picker's enemy-row cursor, or
+/// the party member an item / spell target step points at - or `None`.
 ///
 /// Retail's target-cursor arm of `FUN_801D5854` (`0x801D5B28..0x801D5BAC`)
 /// resolves the acting actor's target `+0x1DD`, measures that monster's name
@@ -746,8 +746,17 @@ pub fn battle_target_select_plaque(
     world: &legaia_engine_core::world::World,
 ) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
-    if battle_command_surface(world) == Some(CommandSurface::ItemAllAllies) {
-        return Some(("All Allies".to_string(), None));
+    match battle_command_surface(world) {
+        Some(CommandSurface::ItemAllAllies) => return Some(("All Allies".to_string(), None)),
+        // A party target: the item target step `0x12` and the spell target
+        // step `0x1B` both open record `0x29` (`29/0`), and the arm measures
+        // the target's name payload `+0x1BC` whichever side it is on -
+        // `battle_item_target_gaza2_retail` holds `Vahn` at plate x `211`,
+        // the `0xE8 - w/2` seat of his 27-px name.
+        Some(CommandSurface::ItemTarget(Some(slot)) | CommandSurface::SpellTarget(Some(slot))) => {
+            return Some((party_member_name(world, slot), None));
+        }
+        _ => {}
     }
     let b = &world.battle;
     let picker: Option<&TargetPickerSession> = b

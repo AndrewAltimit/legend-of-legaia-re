@@ -953,18 +953,36 @@ preset included. Under a drop:
   The shaders recover the eye from the draw's own matrix (`eye_of_matrix` /
   `eyeOfMatrix`). `conc`'s shadow strips, six units down, still paint over the
   floor; a mesh buried deeper is hidden;
-- a **sloped** far-bucket cell keeps the far slice, since the cliff faces it
-  rises against are what hide it;
+- a **sloped** far-bucket cell is depth-tested as the level plane `8` units
+  beyond its corner farthest from the eye (`field_ground::dropped_floor_ref`):
+  the ray through each corner meets it `(h + drop) / d` times as deep, `d` the
+  corner's distance from the eye's height, and a plane is affine in `1 / w` on
+  screen, so the corners' depths again interpolate it exactly. A cell rising a
+  cliff's height between tiers (`town01`'s `(30, 38)` by the cave mouth) is
+  tested as its foot's floor, so the cliff face recessed behind it still
+  paints over it;
 - a **sloped** sorted cell keeps its own per-pixel depth.
+
+No far-bucket cell keeps the far slice under a drop. A sloped one left there
+while the flat cells around it take real depth loses to every flat cell and
+mesh behind it: `town01`'s plateau cell `(32, 23)`, a 32-unit ramp, showed
+the beach 192 units below it - its flat cell `(35, 17)` and the rock pile on
+it - as a pale quad with a dark hole beside the player whenever the camera
+looked past it toward the sea (player at `(30, 22)`, orbit `2.7`, tilt
+`-0.5`).
 
 Natively the word rides the scene-lights block (`Renderer::set_field_ground_drop`,
 `ground_drop_param` in the WGSL); the play page stages it as `u_ground_drop`
 (`play_render_ground_drop` -> `setGroundDrop`). The retail-compare corpus
 frames at retail's vantage, so its frames keep the buckets. Pins:
 `the_dropped_floor_depth_agrees_on_both_hosts` (`engine-render`
-`tests/vertex_law_parity.rs`) and `the_ground_drops_only_off_retail_vantage_on_the_field`.
+`tests/vertex_law_parity.rs`), `the_ground_drops_only_off_retail_vantage_on_the_field`,
+and the disc-gated `town01_plateau_ground_holds_against_the_beach_at_every_yaw`
+(`tests/field_ground_drop_sweep_disc.rs`), which runs the ground around that
+spot through the native vertex stage at every yaw of the follow camera and
+fails when a cell farther along a pixel's ray wins the pixel.
 The play window reproduces a swung view with `LEGAIA_CAPTURE_FIELD_KNOBS=orbit,tilt,zoom`
-on a capture run, and `LEGAIA_DIAG_NO_GROUND_DROP` stages the buckets
+(and a spot with `LEGAIA_START_TILE=x,z`) on a capture run, and `LEGAIA_DIAG_NO_GROUND_DROP` stages the buckets
 whatever the vantage.
 
 ### No draw channel is gated on object-grid bit `0x0800`
@@ -1980,7 +1998,7 @@ worked case: once system flag `0x141` is up their bind prologues run
 `38 83 00` / `38 87 00` and seat them at tiles `(22, 46)` / `(27, 45)`, so a
 retail state holds them at yaw `0x600` / `0xE00` where the `.MAP` authored
 `320` / `4000`. The port seeds each object-bind context's angles from its
-object (`man_field_scripts::object_script_bind_rots`), lets op `0x38` and
+object (`man_field_scripts::object_script_bind_objects`), lets op `0x38` and
 `4C 48` move them, and both hosts turn a placed draw about its origin by the
 difference (`World::object_draw_turn_matrices`,
 `field_env::turn_placed_model`) before the scripted displacement
@@ -2012,8 +2030,8 @@ so every later write to `+0x16` replaces it: op `4C 42`'s immediate mirror
 stores `-(+0x8E)` ahead of both floor arms (`0x8003BC50..0x8003BC64`) and
 leaves a law object whose script never writes `+0x8E` at `Y = 0` (the bind
 clears the slot, `0x8003A8D4`). The port seats each object-bind context's Y
-from its first object (`man_field_scripts::object_script_bind_heights`,
-`World::set_object_bind_heights`), and `World::object_draw_displacements`
+from its own object (`man_field_scripts::object_script_bind_objects`), and
+`World::object_draw_displacements`
 reports the actor's Y **less that seat**, since both hosts add the
 displacement to a draw that already stands on it. `suimon`'s water is the
 case: partition-0 records 5..9 raise `31 1D` and park `+0x8E` at
@@ -2370,6 +2388,18 @@ neighbour's box and blinks it out. Both hosts solve "wall between lens and
 player" per fragment with the
 [camera-occlusion fade](#camera-occlusion-fade-see-through-walls-opt-in-enhancement).
 
+### A cutscene scene's stub meshes
+
+A scene that only ever plays a cutscene can ship a map whose rooms have nothing to draw.
+`taiku2` reuses `taiku`'s whole `.MAP` (the same object grid, terrain cells and teleports, the save statue at tile `(76, 12)` included), but its own pack (PROT 426) replaces 78 of the 123 room meshes `taiku`'s pack carries with a three-vertex, `32`-unit stub - the rooms its arrival beat never frames. The tower round the save room is pack slots `48..=51` in `taiku` and stubs in `taiku2`; the throne room the beat plays in keeps its meshes.
+
+The port draws what the disc holds, so a free roam in `taiku2` shows the rooms' floors (the ground layer, which comes from the walk grid) with no walls, and `taiku` draws the same room whole.
+Retail never shows those rooms in `taiku2`: the scene is a [pass-through](engine.md#pass-through-scenes), and the scene picker now plays it as one. A retail capture of the save room (`taiku_field_card_walk`, the player poked onto the `(71, 34)` teleport into it) matches the port's `taiku` frame.
+
+The arrival beat's first dialogue line pans the camera low past the throne-room stair block at tile `(48, 20)`, and black slabs cover up to 85% of the lower three quarters of the frame for about a thousand frames. Retail draws the same slabs.
+The block is pack slot 63 (PROT 426 `+0xC0B0`), one object of two groups: four textured treads (mode `0x3D`) and six untextured flat quads (group mode `0x29`, every colour word `0x28000000`, flat black) for the block's inner risers and walls. They face the eye on that pan, sit well clear of the near cut, and are not stubs, so nothing rejects them.
+`taiku2_field_door_hop` run on PCSX-Redux with no pad input, sampled every 50 frames, shows the slabs at the same places on the same shots as the port at a 301-tick offset: the black share of the lower three quarters of the frame runs `0.21 -> 0.84 -> 0.20` in both, within five points, clean and PSX framing alike.
+
 ### The field pass culls back faces
 
 Retail rejects the back faces of every field mesh. Each per-prim handler
@@ -2453,7 +2483,21 @@ Ravine walk-in (`nilboa`, the Delilas intro) parks its cutscene camera inside
 an additive mist shell (placement at `(11840, 0, 13784)`); retail holds that
 actor at view depth `-423`.
 
-Both hosts ask `field_env::placed_origin_near_culled` per placed draw with
+The `+0x52 & 0x20` exemption comes from the `.MAP` object record: the
+restage `FUN_80020F88` copies the record's `+0x12 & 0x3E8` into `+0x52`
+(`0x80021004..0x80021010`) for an actor carrying `+0x10 & 0x8000`, which
+every placed object does (the copy under `+0x10 & 0x100000` masks with
+`0x380` instead and drops the bit). The port carries it as
+`EnvDraw::near_reject_exempt` (record `+0x12 & 0x20`, placed objects only),
+and both hosts pass it through `field_env::placed_draw_near_culled` (the
+native window via each placed draw's `CellKey`, the play page by the
+draw's `placeIdx`). `edkorout`'s two sky shells at `(8512, 8000)` carry it:
+in the credits' window shot their origin sits beside the eye, and a retail
+film of that shot shows the sky through the window (`+0x52 = 0x20` on both
+in its RAM) where the port, rejecting them, drew black.
+
+Both hosts ask `field_env::placed_origin_near_culled` (through
+`placed_draw_near_culled` where the draw is known) per placed draw with
 the origin's clip `w` under the frame's camera - the native placed, colour
 and posed-prop passes, and the play page's placed draws through the
 `field_placed_near_culled` export - and only from **retail's vantage**

@@ -213,6 +213,27 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
     <li><strong>Effect colour</strong> (op <code>0x34</code> sub-0): a separate ramp on the effect layer, driven in the crawl gaps. It is <em>not</em> a screen fade - the capture holds the lit tableau across it.</li>
     <li id="sepia-grade"><strong>Sepia grade.</strong> <code>opdeene</code> / <code>opstati</code> / <code>opurud</code> render gold because four CLUT-cell cyclers in the scene&rsquo;s effect scripts rewrite the CLUT rects <code>(0, 473, 320, 2)</code> and <code>(0, 476, 320, 34)</code> as <code>L = max(r,g,b) &rarr; (L, (L&middot;247)&gt;&gt;8, L&gt;&gt;1)</code> - a palette-space luminance collapse, not a per-frame tint and not a depth cue. The engine applies the same law in its mesh shaders (<code>Renderer::set_palette_grade</code>), pixel-matched on the villager tableau. A packet built at draw time keeps its colour, because it is made after the rewrite and outside the resident meshes it walks: the caption sprites above are such packets, so both hosts&rsquo; shaders skip the grade for them. Detail on <a href="cutscene-internals.html#grade">internals</a>.</li>
   </ul>
+  <h3 id="ending-credits">The ending credits</h3>
+  <p>The credits are the same machinery run the other way round: each <code>ed*</code> scene&rsquo;s entry script spawns one long vignette record, and the ending theme plays on across every scene change.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One scene change in the credits, left to right in time. The ending theme runs across the whole span. A vignette plays with the pad held, its record ends in the scene-change packet, the streaming actor's hand-off takes 72 vsyncs, then the field init holds a black screen for 130 vsyncs before the next vignette starts. The port holds the same 130 black vsyncs while the credits theme plays, so the vignettes stay on the music.">
+      <rect class="dg-node-accent" x="20" y="16" width="820" height="30" rx="4"/><text class="dg-label" x="430" y="36">ending theme: one track, playing across every load</text>
+      <rect class="dg-node" x="20" y="70" width="250" height="52" rx="5"/><text class="dg-label" x="145" y="92">vignette</text><text class="dg-sub" x="145" y="110">record runs, pad held</text>
+      <rect class="dg-node" x="280" y="70" width="170" height="52" rx="5"/><text class="dg-label" x="365" y="92">hand-off</text><text class="dg-sub" x="365" y="110">72 vsyncs</text>
+      <rect class="dg-node-warn" x="460" y="70" width="200" height="52" rx="5"/><text class="dg-label" x="560" y="92">black: field init</text><text class="dg-sub" x="560" y="110">130 vsyncs</text>
+      <rect class="dg-node" x="670" y="70" width="170" height="52" rx="5"/><text class="dg-label" x="755" y="92">next vignette</text><text class="dg-sub" x="755" y="110">new scene</text>
+      <text class="dg-edge-label" x="560" y="146" text-anchor="middle">retail: the load itself, whatever the scene&rsquo;s size</text>
+      <text class="dg-edge-label" x="560" y="166" text-anchor="middle">port: loads at once, then holds the same 130 black</text>
+    </svg>
+    <figcaption>One of the eight scene changes, as a per-vsync film of retail reads it. Without the hold the port reached the last vignette some 17 seconds ahead of the score.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>The pad is held.</strong> Retail raises the player&rsquo;s engaged bit for as long as a vignette runs, so no walk input reaches the field; the port&rsquo;s helper pad lock does the same, and the mouse camera knobs and the distance preset sit out while the vignette&rsquo;s shot owns the camera.</li>
+    <li><strong>Each scene load is a black hold.</strong> Between two vignettes retail spends its field init on a black screen: a per-vsync film reads exactly 130 vsyncs at all eight changes, whatever the size of the scene it loads. The port loads at once, which put the last vignette some 17 seconds ahead of the music, so while the credits theme plays a scene change holds the frame black for those 130 vsyncs. Everywhere else a load stays instant.</li>
+    <li><strong>Screen widgets belong to the scene.</strong> The masks, panels and credit sprites are nodes on the scene&rsquo;s actor list, so a load frees them; kept, a vignette&rsquo;s corner panel drew the next scene&rsquo;s video memory over it.</li>
+    <li><strong>A record waits where retail waits.</strong> Besides waiting for a clip to end, a record can spin on an actor&rsquo;s morph envelope (the lily closing in <code>edlast</code>) or on an NPC still mid-arc (the white flash in <code>eddoman</code>); the port holds the record in both places, so each shot lasts as long as in the retail film.</li>
+    <li><strong>The window shot.</strong> In <code>edkorout</code> the camera glides through a wall to the sky: a scripted shot keeps the eye depth&rsquo;s sign through zero, and the two sky shells outside carry the map flag that exempts them from the near-eye object cut, so the sky shows through the window instead of black.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="rim-elm-day" data-doc="rim-elms-day-before-the-hunt">

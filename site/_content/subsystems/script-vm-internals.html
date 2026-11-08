@@ -155,7 +155,7 @@
       <tr><td><code>C</code></td><td>5</td><td>Shutter blackout: two black bars close, hold and open</td></tr>
       <tr><td><code>D</code> / <code>F</code></td><td>6</td><td>Screen frame: a <code>w</code>-wide opaque band round the screen in one colour, bevelled at the inner corners</td></tr>
       <tr><td><code>E</code></td><td>2</td><td>Retire the first live screen frame</td></tr>
-      <tr><td><code>10..15</code></td><td>21 / 12 / 14 / 14 / 10 / 14</td><td>Screen widgets of the ending scenes: sprite, iris mask, VRAM rect copy, image panel, panel move / scale, letterbox</td></tr>
+      <tr><td><code>10..15</code></td><td>21 / 12 / 14 / 14 / 10 / 14</td><td>Screen widgets of the ending scenes: sprite, iris mask, VRAM rect copy, image panel, panel move / scale, letterbox. They are scene content: each is a node on the scene&rsquo;s actor list, so a scene load frees them (kept, a vignette&rsquo;s corner panel drew the next scene&rsquo;s VRAM over it)</td></tr>
       <tr><td><code>16+</code></td><td>-</td><td>Halts at PC</td></tr>
     </tbody>
   </table>

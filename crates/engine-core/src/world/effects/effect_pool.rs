@@ -237,6 +237,42 @@ impl World {
         self.mode != legaia_engine_mode::mode::SceneMode::Battle
     }
 
+    /// The battle frame's draw takes its `rand()` words from the game's one
+    /// stream: each jittered default-arm ring (`FUN_80028158` shapes `4` /
+    /// `5`, three words a column) draws as the render pass reaches it, after
+    /// the frame's tick passes. Ozma's closing arms build dozens of them a
+    /// frame (`0x800289FC` / `0x80028A80` / `0x80028AAC`, about 24 words a
+    /// vsync in a retail watch of the seed word `0x80009010`). Each such part
+    /// keeps the stream's word as its draw seed and the stream steps past its
+    /// draws, so the ring's spikes change frame to frame on retail's words
+    /// and every later deal (a `--rand-track` pass included) stands where
+    /// retail's does.
+    ///
+    /// PORT: FUN_80028158 (the jittered rings' `jal 0x80056798`, drawn on the
+    /// world stream)
+    pub(in crate::world) fn deal_battle_draw_rands(&mut self) {
+        let mut state = self.rng_state;
+        let mut next = |n: u32| {
+            let seed = state;
+            for _ in 0..n {
+                state = legaia_engine_system::rand::world_lcg_step(state);
+            }
+            seed
+        };
+        for scene in self
+            .casting
+            .active_summon
+            .iter_mut()
+            .chain(self.casting.active_move_fx.iter_mut())
+            .chain(self.casting.active_action_fx.iter_mut())
+            .chain(self.casting.mystic_shield_fx.iter_mut())
+            .chain(self.casting.stage_fx.iter_mut())
+        {
+            scene.deal_draw_rands(&mut next);
+        }
+        self.rng_state = state;
+    }
+
     /// This frame's draw-kind-4 geometry - every live node whose model is
     /// its emitter's per-frame output, each composed like a mesh part: the
     /// ribbons ([`Self::active_effect_ribbons`], battle only), the `0x4000`

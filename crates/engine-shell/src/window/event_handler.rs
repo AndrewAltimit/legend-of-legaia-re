@@ -162,7 +162,9 @@ impl ApplicationHandler for PlayWindowApp {
                 ..
             } => {
                 // A chat line being typed takes every key, Escape included.
-                if !self.netplay_text_key(code, state, text.as_deref()) {
+                if !self.netplay_text_key(code, state, text.as_deref())
+                    && !self.typed_help_key(code, state, text.as_deref())
+                {
                     self.handle_keyboard(evl, code, state);
                 }
             }

@@ -1452,3 +1452,82 @@ fn only_the_sweep_arms_rearm_their_shot_every_pass() {
         ));
     }
 }
+
+/// Call Wave tints its caster through the charge: arm 1 raises the soft red
+/// arm `7` of the tint SM (`0x801F6D98`), arms 2 and 3 drop it on their
+/// passes (`0x801F6E44`, `0x801F6E7C`); Big Wave's branch never writes it.
+#[test]
+fn call_wave_tints_the_caster_red_through_the_charge() {
+    let mut st = ModuleCamState::default();
+    let mut seats = seats();
+    seats.action = 0x55;
+    let a1 = wave_camera(&mut st, 1, seats);
+    assert_eq!(a1.caster_write.render_flag, Some(7));
+    assert!(wave_camera(&mut st, 2, seats).hold);
+    st.countdown.0 = 1;
+    assert_eq!(
+        wave_camera(&mut st, 2, seats).caster_write.render_flag,
+        Some(0)
+    );
+    st.countdown.0 = 1;
+    assert_eq!(
+        wave_camera(&mut st, 3, seats).caster_write.render_flag,
+        Some(0)
+    );
+    seats.action = 0x56;
+    for arm in [0, 4] {
+        assert!(wave_camera(&mut st, arm, seats).caster_write.is_empty());
+    }
+}
+
+/// Guilty Cross's cut to the victim hides the caster by its colour word and
+/// releases its clip-8 loop window (`0x801F6F08..0x801F6F1C`); the cut back
+/// shows it again (`0x801F7320`) and the last arm restores every live seat.
+#[test]
+fn guilty_cross_cut_hides_the_caster_and_releases_its_loop() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 1;
+    let a2 = guilty_cross_camera(&mut st, 2, seats());
+    assert_eq!(a2.caster_write.colour, Some(0));
+    assert!(a2.caster_write.loop_release);
+    assert_eq!(a2.victim_write.colour, Some(0x2008_0200));
+    st.countdown.0 = 1;
+    let a4 = guilty_cross_camera(&mut st, 4, seats());
+    assert_eq!(a4.caster_write.colour, Some(0x2008_0200));
+    st.countdown.0 = 1;
+    let a5 = guilty_cross_camera(&mut st, 5, seats());
+    assert!(a5.others_live_only);
+    assert_eq!(
+        (a5.others_write.render_flag, a5.others_write.rate),
+        (Some(0), Some(8))
+    );
+    // A held pass writes nothing.
+    st.countdown.0 = 1 << 12;
+    assert!(
+        guilty_cross_camera(&mut st, 2, seats())
+            .caster_write
+            .is_empty()
+    );
+}
+
+/// Cort's two terminal arms flush past their countdown test, so the decoded
+/// flush runs on the pass alone.
+#[test]
+fn cort_terminal_flushes_sit_past_their_gates() {
+    assert_eq!(super::summon_holds::gate_va(938, 4), Some(0x801F_7210));
+    assert!(0x801F_7220 > super::summon_holds::gate_va(938, 4).unwrap());
+    assert!(0x801F_7870 > super::summon_holds::gate_va(940, 7).unwrap());
+}
+
+/// Big Wave's arm-6 halt walk misses the two arm-5 records whose handles the
+/// module never kept, the floor-wide water sheet among them.
+#[test]
+fn big_wave_arm_six_spares_the_unkept_water_sheet() {
+    assert!(capture_arm_flushes_pool(946, 6));
+    assert_eq!(
+        capture_arm_flush_spares(946, 6),
+        &[0x801F_7AA8, 0x801F_7B0C]
+    );
+    assert!(capture_arm_flush_spares(946, 5).is_empty());
+    assert!(capture_arm_flush_spares(938, 2).is_empty());
+}

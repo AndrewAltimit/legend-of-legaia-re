@@ -34,11 +34,23 @@ impl World {
         // steps it (PROT 0909's arm 0 is its stager's).
         let phase_entry = ctx.phase;
         let caster_slot = self.battle_ctx.active_actor;
-        let victim_slot = self
+        let live_victim = self
             .actors
             .get(caster_slot as usize)
             .map(|a| a.battle.active_target)
             .unwrap_or(0);
+        // PROT 0908's prologue takes its victim from the caster's `+0x1DD`
+        // on arm 0 alone, which latches it into the module word `0x801F8BA8`
+        // (`0x801F6B6C..0x801F6B74`); every later arm reads it back from
+        // there (`lw s3,-0x7458(v0)` at `0x801F6A5C`). Arm 8 then turns the
+        // caster's `+0x1DD` to the enemy-row code `9`, so a live read from
+        // arm 9 on named no seat: arm 10 tested reach from an empty slot's
+        // pair and arm 11 lost its finisher to the splash.
+        let victim_slot = if entry == 908 && phase_entry != ticks_a::ZENOIR_LATCH_ARM {
+            self.casting.module_cam.victim_slot.unwrap_or(live_victim)
+        } else {
+            live_victim
+        };
         let seat_slot = self.casting.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
 
         // The kernels index a retail-shaped seat row (`seat_map`): these
@@ -1298,11 +1310,16 @@ impl World {
                     // Retail tests once a pass, four vsyncs of `0x40` apart: from
                     // `0x100` on, so the ray's first swing past the victim
                     // misses and the hit waits for the centre crossing at
-                    // `0x800`, 32 vsyncs in.
+                    // `0x800`, 32 vsyncs in. The pass ramps the word first
+                    // (`0x801F7ADC..0x801F7AF0`) and builds its ray from the
+                    // ramped word, so the test is on the word this tick's ramp
+                    // reaches: read before it, the `0x800` crossing struck a
+                    // pass late.
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
-                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8)
-                    {
+                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8.wrapping_add(
+                            ticks_a::theeder_ramp_per_tick(ticks_a::THEEDER_SWEEP_ARM),
+                        )) {
                         use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
                         };

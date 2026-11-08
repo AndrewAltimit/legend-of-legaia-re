@@ -278,6 +278,7 @@ impl<'m> DrawCtx<'_, 'm> {
                         near_z: 0.0,
                         far_z: grid::grid_cue_far_z(),
                         max_ir0: grid::grid_cue_max_ir0(),
+                        blend: None,
                     }),
             });
         }
@@ -296,6 +297,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 near_z: -1.0,
                 far_z: 0.0,
                 max_ir0: w,
+                blend: None,
             });
             for copy_b in [false, true] {
                 let rows = legaia_engine_scene_host::scene_host::backdrop_slot_1_basis(
@@ -519,6 +521,7 @@ impl<'m> DrawCtx<'_, 'm> {
                             near_z: -1.0,
                             far_z: 0.0,
                             max_ir0,
+                            blend: None,
                         });
                     }
                 }

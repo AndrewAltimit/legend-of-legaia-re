@@ -53,6 +53,7 @@ impl Sequencer {
             voices_seen: false,
             flush_pos: 0,
             pending: Vec::new(),
+            voice0_adsr2_zeroed: None,
             next_pending_id: 0,
             pump_wait: None,
         }
@@ -274,6 +275,7 @@ impl Sequencer {
     pub(super) fn silence_all(&mut self, spu: &mut Spu) {
         self.release_lost_voices(spu);
         self.pending.clear();
+        self.voice0_adsr2_zeroed = None;
         for note in self.active.drain(..) {
             if (note.voice as usize) < spu.voices.len() {
                 spu.voices[note.voice as usize].key_off();

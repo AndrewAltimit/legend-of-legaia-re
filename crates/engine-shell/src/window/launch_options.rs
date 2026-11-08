@@ -366,6 +366,11 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_OBJECT_FLAGS=<record>:<byte>,..`: a retail state's drawn
+    /// actors' `+0x74` primitive-flag bytes (semi-transparency enable + ABR,
+    /// field-VM `4C D6`), written over the placed objects' contexts on the
+    /// capture frame (`World::seed_object_draw_flags`).
+    pub seat_object_flags: Vec<(usize, u8)>,
     /// `LEGAIA_SEAT_OBJECT_CLIPS=<record>:<clip>:<cursor>:<flags>:<rate>;..`:
     /// a retail state's drawn actors' clip words
     /// (`legaia_parity::retail_compare::retail_object_clips`), written over
@@ -1241,6 +1246,16 @@ impl ScreenshotConfig {
                     .first()
                     .copied()
             }),
+            seat_object_flags: std::env::var("LEGAIA_SEAT_OBJECT_FLAGS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (r, b) = e.split_once(':')?;
+                            Some((r.trim().parse().ok()?, b.trim().parse().ok()?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')
@@ -1621,14 +1636,18 @@ mod key_script_tests {
     /// comparison at all.
     #[test]
     fn every_handler_key_is_nameable() {
-        // The handler is `handle_key` plus its arms, one file per key family.
-        let src = [
+        // The handler is `handle_key` plus its arms, one file per key family;
+        // each file's test module (keys named to test a predicate, not
+        // handled) is left out.
+        let src: String = [
             include_str!("event_handler/keyboard.rs"),
             include_str!("event_handler/keyboard/debug_spawn_keys.rs"),
             include_str!("event_handler/keyboard/minigame_keys.rs"),
             include_str!("event_handler/keyboard/option_keys.rs"),
         ]
-        .concat();
+        .iter()
+        .map(|f| f.split("#[cfg(test)]").next().unwrap_or(f))
+        .collect();
         let mut names: Vec<String> = ["Up", "Down", "Left", "Right", "Enter", "Space", "RShift"]
             .iter()
             .map(|s| s.to_string())

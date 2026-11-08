@@ -1596,6 +1596,19 @@ trio, and the module's stager `0x801F8EAC` seats `0x801F90B0` on its caller
 `theeder_stager_spawns`; the two fades fire as
 [presentation calls](#presentation-calls).
 
+Arm 11's exit lights the monster row again: every live seat `3..7` takes the
+neutral word `+0x04 = 0x20080200` behind its HP test
+(`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The
+draw tick's tint pass refreshes each node's colour word `+0x74` off it, so the
+node tick's zero-colour skip lets the row's anims run through the sweep: a
+retail recording walks the victim's idle from arm 12's first pass and commits
+its reaction clip on the hit pass, and the port, which left the row dark, held
+the victim frozen and rang its reaction cue a pass late. Arm 12's pass ramps
+the word first (`0x801F7ADC..0x801F7AF0`) and builds and tests its ray from
+the ramped word, so the `0x800` crossing strikes on the pass that reaches it;
+the port's per-tick ramp tests the word its tick's ramp reaches
+(`theeder_pass_tested`).
+
 Arms 10 to 12 are ramps on `ctx[+0x6D8]`. Arm 10 zeroes it (`0x801F7768`).
 Arm 11 adds `(step * scalar) >> 1` a pass and holds below `0x100`
 (`0x801F778C..0x801F77BC`) before it retargets and zeroes the word. Arm 12
@@ -1827,6 +1840,16 @@ The director `cast_module_camera::zenoir_direct` carries every arm's gate:
 | 10 | countdown (`0x801F797C`) | the creature moves onto the victim's body pair, and every live monster seat whose ground pair lies under a Manhattan `0x400` of it is shown (`0x801F7A2C..0x801F7A9C`): the seats arm 11's splash can strike |
 | 11 | the creature's `+0x36` falls to `-0x12B` (`0x801F7BA8`) | the finisher; `scalar * 192` |
 | 12 | countdown (`0x801F8294`) | `0xFF` directly |
+
+The victim every arm names is the one arm 0 latched: the prologue reads the
+caster's `+0x1DD` on arm 0 alone and stores it into the module word
+`0x801F8BA8` (`0x801F6B6C..0x801F6B74`), and every later arm reads it back
+from there (`0x801F6A5C`). Arm 8 turns the caster's `+0x1DD` to the enemy-row
+code `9`, so a live read past it names no seat. The port reads the latch
+(`World::run_cast_module_code`); read live, arm 10's reach stood on an empty
+slot's pair and arm 11 struck the victim with the splash's two thirds and a
+monster out of reach with the rest (`battle_kor_spoon_strike`, Dead Bone
+`999` to `776` where retail leaves it whole, its cues the film's three extras).
 
 Arms 9..12 move the creature's height themselves (`8 * scalar * delta` a
 pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
@@ -3130,6 +3153,16 @@ HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
 Retail runs the cast's arms 1 to 4 at frame step `4` (the lips and the burst records fill the frame) and arm 5, the victim alone, at `2`; the engine takes those steps from the capture band's table (`cast_module_frame_step::CAPTURE_ARM_STEPS`). With the roll held on retail's draw (`--rand-at 0x70:4`) the film reads `.859` on the ordinary step and `.886` on these (module phase 1 `.692` to `.826`, phase 2 under the pull-in `.649` to `.689`). Arm 0's table and countdown at the film's gate are the replay's, which is what keeps arm 1 a pass long. Grade `capture`.
 
+The roll decides the cast's sound as well as its outcome. Only the hit leg cues: a
+`--physical` film of `battle_map02_lip_kid_kiss_of_death_mid_cast` records no cue on
+retail's side, where the miss left every HP as it was, and the engine's own stream rolled a
+hit (`9999` to `9998` on the victim) and played three (`0x5C`, then `0x17` twice, from arm 5's
+first pass). Held on retail's word (`--rand-at 0x70:4`: the arm-4 draw reads `7791`, odd,
+the miss) the engine plays none, and arm 5 reads `.809` to `.914`, the Done tail `.804` to
+`.902`. The `battle_map01_lippian_kiss_of_death_mid_cast` film is the hit: five cues on each
+side, matched. The difference was the replay's `rand()` stream, a seat of the harness, not
+the cast. Grade `capture`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn
@@ -3469,6 +3502,8 @@ than holding its own: the script is what walks a card in.
 `+0x4C` / `-0x4C` with cue `0x22`. A step past `0x158` lands on `0x10C` and one below
 `-0x23` on `0x28`, so it stops at both ends. The cursor `0x801FA2AC` eases a third of
 the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
+The module is entered once a pass, so a press is one step; the port runs a pass as a
+frame step of one-vsync ticks and feeds the pad to the first alone.
 Arm 6's pick is the handle whose `+0x14` equals `(target - 0x28) * 192 / 76 - 0x120`.
 
 **The two sprites** are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
@@ -3757,7 +3792,17 @@ the burst `0x800786C4` on the sphere, retires it and clears the word.
 
 Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shield`
 in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
-since the cast scene is retired when the next action opens. The records are read
+since the cast scene is retired when the next action opens.
+
+The two parts are list nodes of the battle pass, so they take one part tick a
+battle frame, `step` vsyncs of it, like the cast's own parts. The scroller's
+period countdown shows why it matters: `FUN_80021DF4` drains `+0xC6` by the step
+and rolls the rect `(i16)+0xCE * step` rows on the pass the counter underflows,
+reloading the period `2`. A step-3 or step-4 pass fires every pass (one row a
+vsync); a one-vsync tick fires every third (a row every three vsyncs), and an
+engine that ticked the scene every vsync left the sphere's colour bands a third
+as fast as retail's - blue where retail's sphere stands purple. The boss-stage
+effect trees (`CastFxState::stage_fx`) run on the same pass. The records are read
 off the disc's executable (`DiscTables::scus`). The Guilty Cross and Mystic
 Circle captures hold the sphere from an earlier turn, which their seed raises
 ([retail-compare](../tooling/retail-compare.md#the-mystic-shield-a-capture-already-holds)).
@@ -3843,11 +3888,24 @@ three units). The bodies without that store keep the half turn
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
   ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+  Guilty Cross's arm-2 pass, the cut to the victim, hides the caster by its colour
+  word as well as its flag (`sw zero,0x4(s5)`), shows the victim on the neutral
+  word and clears the caster's loop counter `+0x21B` and budget `+0x176`
+  (`0x801F6F08..0x801F6F1C`): Cort's clip 8 leaves the loop window it held since
+  arm 0 and runs to its end, where it parks until arm 5 plays it out into the idle.
+  Arm 4's pass shows the caster again (`0x801F7320`) and arm 5's puts every seat with
+  HP back on the neutral word, flag `0` and rate `8` (`0x801F73C4..0x801F7418`).
+  The colour word is also what PROT 0940's shield sphere keys on, so the sphere is
+  off while Cort is hidden.
 - **0961 drifts**, stored before each gate tests the countdown, with
   `s = scalar * delta`: arm 1 TR z `+s`, TR y `-s/4`, pitch `+s/8`; arm 2 in
   `0xB5` TR y and pitch `+delta`, TR z `+s`; arm 3 TR z `+3s`, TR y `-s`,
   pitch `+s/8`; arm 6 TR z `+s`; and the terminal arm's
   `ctx[+0x6DA] = 0x780`.
+- **0946** Call Wave tints its caster through the charge: arm 1 stores the soft red
+  arm `7` of the tint SM into `caster[+0x21C]` (`0x801F6D8C..0x801F6D98`), and arms 2
+  and 3 store `0` on their passes (`0x801F6E44`, `0x801F6E7C`), after which arm 0 of
+  the SM eases the body home. Big Wave's branch makes no such store.
 - **0946** arm 0 forks the two choreographies off a per-seat word retail
   toggles on every cast (the port keys on the action id). With
   `z = ctx[+0x6D0]`: Call Wave cuts to `(0, 0x600, 2z)` and pans to `z/2` then
@@ -3858,6 +3916,14 @@ three units). The bodies without that store keep the half turn
   animation rate `+0x21D` beside its stage store (`0x801F6BFC..0x801F6C08`;
   `zeto_big_wave_mid_cast` holds Zeto at `4`), so Zeto sways at half speed
   until the Done arm's restore; the port halves it on the same store.
+  Arm 6's halt walk (`0x801F7174..0x801F71A8`) sets the halt bit on the 32 words of
+  the handle table `0x801F7F30` only, and arm 5 keeps the handles of seven of its nine
+  calls (`+0x44..+0x5C`, each stored in the next call's delay slot): the eighth's
+  `0x801F7AA8` is overwritten by the ninth's call and the ninth's `0x801F7B0C` is never
+  stored. Both run on into arm 7, and `0x801F7B0C` is the floor-wide water sheet (radius
+  `4096` on the caster) the party stands in through the hit
+  (`capture_arm_flush_spares`); halted with the rest, the engine's arm 7 showed the
+  dark arena floor.
   Arm 7's way out is the party's hit (`0x801F7398..0x801F74A8`): the fold lands
   there, each struck seat's rate halved and its heading `caster[+0x46] + 0x800`.
   The restore of the stage byte `ctx[+0x278]` (`0x801F7638`) sits behind that same
@@ -4911,7 +4977,13 @@ unkillable - a solid yellow or white screen for the rest of the band.
 Where the decoder could not split an arm's sites around a ported countdown
 gate, the gate's `bgtz` VA (`summon_holds::gate_va`) does: a site past it
 fires on the pass alone, as in retail (PROT 0919 arm 7's three fades, which
-otherwise flashed white a countdown early).
+otherwise flashed white a countdown early). Cort's Mystic Circle (PROT 0938) has
+the same shape in its terminal arm 4: the flush `0x801F7220` sits past the
+countdown's `bgtz` at `0x801F7210`, and fired on the arm's first tick it halted
+the floor circle and light columns arm 3's pass had just seated, two ticks after
+they went in, where retail draws them through the arm's `192` vsyncs. Mystic
+Shield's arm 7 (PROT 0940, flush `0x801F7870` past `0x801F7868`) is listed for
+the same reason.
 Arms that share their code fork on a reload of the phase byte: PROT 0918's
 arms 18 and 19 both enter at `0x801F8698`, and only arm 19 gets past
 `lbu v1,0x0(s6)` / `li v0,0x12` / `bne` (`0x801F878C..0x801F8794`) to the

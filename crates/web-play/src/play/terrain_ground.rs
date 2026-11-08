@@ -80,8 +80,10 @@ impl LegaiaRuntime {
         let h = self.scene_host.host()?;
         legaia_engine_world_views::field_view_window::field_view_cells(
             &h.world,
-            legaia_engine_scene::field_view_window::framing_is_retail(self.scene_host.camera())
-                && !debug_camera,
+            legaia_engine_world_views::field_view_window::retail_framing(
+                &h.world,
+                self.scene_host.camera(),
+            ) && !debug_camera,
         )
     }
 

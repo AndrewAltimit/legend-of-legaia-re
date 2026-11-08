@@ -96,17 +96,32 @@ const TITLE: &str = "Legend of Legaia";
 /// under [`DIRECT_ENV`] with a good remembered disc), or `None` when the
 /// launcher already finished - the user quit, or the game ran in a child
 /// process.
-pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
+///
+/// `opened` is a file the player opened the game with (`--open`, from the
+/// `Legend of Legaia` program's "Open with" or a drop on its icon): the
+/// window takes it as if it were dropped on it, once it is open.
+pub(crate) fn run(opened: Option<PathBuf>) -> Result<Option<Vec<OsString>>> {
     console::detach_if_double_clicked();
-    let settings_file = launcher::settings_path();
+    // Resolved now: the launcher moves into the data directory below.
+    let opened = opened.map(|p| std::path::absolute(&p).unwrap_or(p));
+    let mut settings_file = launcher::settings_path();
     let loaded = match settings_file.as_deref() {
-        Some(f) => LauncherSettings::load(f),
+        Some(f) => {
+            let opened = launcher::open_settings(f);
+            if !opened.keep_file {
+                // Neither readable nor movable: run on the defaults and
+                // leave the file as it is rather than write over it.
+                settings_file = None;
+            }
+            opened.settings
+        }
         None => Ok(LauncherSettings::default()),
     };
     let settings = loaded.as_ref().cloned().unwrap_or_default();
     let decision = launcher::decide(loaded, launcher::validate_disc);
     enter_data_dir();
     if let LaunchDecision::Play(info) = &decision
+        && opened.is_none()
         && std::env::var_os(DIRECT_ENV).is_some_and(|v| !v.is_empty() && v != "0")
     {
         log::info!("launcher: booting {} directly", info.bin.display());
@@ -122,6 +137,7 @@ pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
         }
     };
     let mut app = LauncherApp::new(disc, problem, settings, settings_file);
+    app.opened = opened;
     let event_loop = match picker_event_loop() {
         Ok(l) => l,
         Err(e) => no_window(&format!("{e:#}")),
@@ -257,22 +273,17 @@ mod console {
 
 /// Build the launcher's event loop.
 ///
-/// winit 0.30 delivers `DroppedFile` on X11, Windows and macOS but has no
-/// drag-and-drop on Wayland at all, so a disc dropped on a native Wayland
-/// window is silently ignored. The launcher is one small window that needs
-/// nothing Wayland-specific, so on a Wayland session that also offers
-/// XWayland (`DISPLAY` set) it opens as an X11 client instead: the compositor
-/// bridges a drag from a Wayland file manager into XWayland, and the drop
-/// arrives. The game itself runs in a fresh process on the default backend.
+/// On a Wayland session that also offers XWayland the launcher opens as an
+/// X11 client, because winit 0.30 has no drag-and-drop on Wayland
+/// ([`legaia_app_theme::drop_backend`]); Legaia Explorer makes the same
+/// choice. The game itself runs in a fresh process on the default backend.
 /// `LEGAIA_LAUNCHER_WAYLAND=1` keeps the launcher native (no drop; the file
 /// dialog and the typed path still work).
 fn picker_event_loop() -> Result<EventLoop<()>> {
     let mut builder = EventLoop::builder();
     #[cfg(all(unix, not(target_os = "macos")))]
-    if prefer_x11_for_drop(
-        std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()),
-        std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty()),
-        std::env::var_os("LEGAIA_LAUNCHER_WAYLAND").is_some(),
+    if legaia_app_theme::drop_backend::prefer_x11_for_drop_from_env(
+        legaia_app_theme::drop_backend::LAUNCHER_KEEP_WAYLAND,
     ) {
         use winit::platform::x11::EventLoopBuilderExtX11;
         log::info!(
@@ -281,12 +292,6 @@ fn picker_event_loop() -> Result<EventLoop<()>> {
         builder.with_x11();
     }
     builder.build().context("create event loop")
-}
-
-/// Whether the launcher should open through XWayland (see `picker_event_loop`).
-#[cfg_attr(any(not(unix), target_os = "macos"), allow(dead_code))]
-fn prefer_x11_for_drop(wayland: bool, x11: bool, keep_wayland: bool) -> bool {
-    wayland && x11 && !keep_wayland
 }
 
 // --- Palette -----------------------------------------------------------
@@ -464,6 +469,10 @@ struct LauncherApp {
     settings_file: Option<PathBuf>,
     options: OptionsState,
     focus: Item,
+    /// Where Tab left each column ([`Self::switch_column`]): the button,
+    /// and the option or key row, focused when the other column was
+    /// entered, so Tab back returns to the same place.
+    left_at: (Item, Option<Item>),
     panel: Panel,
     /// The option list's first visible line (see [`option_lines`]).
     opt_scroll: usize,
@@ -472,6 +481,9 @@ struct LauncherApp {
     /// The typed path was tried and failed: the next character or paste
     /// starts over rather than adding to it.
     typed_tried: bool,
+    /// The help-box text a file dragged over the window replaced
+    /// ([`drop_hint`]), put back if the drag leaves without a drop.
+    hover_saved: Option<Option<Vec<Message>>>,
     /// The last failed game's report, for Ctrl+C.
     failure_report: Option<String>,
     /// Held once used: on X11 the copied text lives in this process, and the
@@ -479,6 +491,9 @@ struct LauncherApp {
     clipboard: Option<arboard::Clipboard>,
     /// Path typed into the window (fallback when no file dialog is available).
     typed: String,
+    /// A file the game was opened with (`--open`), taken as a drop once the
+    /// window is open ([`Self::open_path`]).
+    opened: Option<PathBuf>,
     modifiers: ModifiersState,
     /// Last cursor position, in surface pixels.
     cursor: Option<(f64, f64)>,
@@ -536,13 +551,16 @@ impl LauncherApp {
             settings_file,
             options,
             focus,
+            left_at: (focus, None),
             panel,
             opt_scroll: 0,
             status: None,
             typed_tried: false,
+            hover_saved: None,
             failure_report: None,
             clipboard: None,
             typed: String::new(),
+            opened: None,
             modifiers: ModifiersState::empty(),
             cursor: None,
             game: None,
@@ -648,6 +666,18 @@ impl LauncherApp {
             GOOD,
         )]);
         self.win.request_redraw();
+    }
+
+    /// Take a dropped (or `--open`ed) file: an expansion pack, a memory
+    /// card, else a disc image.
+    fn open_path(&mut self, path: &Path) {
+        if launcher::expansion_pack_path(path).is_some() {
+            self.try_expansion(path);
+        } else if launcher::is_card_file(path) {
+            self.try_card(path);
+        } else {
+            self.try_disc(path);
+        }
     }
 
     fn try_disc(&mut self, path: &Path) {
@@ -1097,7 +1127,19 @@ impl LauncherApp {
     }
 
     fn open_data_folder(&mut self) {
-        let dir = std::env::current_dir().unwrap_or_default();
+        // The game runs in the launcher's working directory (the data
+        // directory, or where the launcher started when that could not be
+        // made), so that is where its saves are.
+        let dir = match std::env::current_dir() {
+            Ok(d) => d,
+            Err(e) => {
+                self.status = Some(vec![(
+                    format!("Could not tell which folder the saves are in: {e}"),
+                    WARN,
+                )]);
+                return;
+            }
+        };
         // The path either way: a file manager may open behind this window,
         // or not at all on a desktop with none set.
         self.status = Some(vec![match open_folder(&dir) {
@@ -1382,12 +1424,31 @@ impl LauncherApp {
         self.opt_scroll = (self.opt_scroll as i32 + lines).clamp(0, max) as usize;
     }
 
-    /// Tab: jump between the button column and the option rows.
+    /// Tab: jump between the button column and the option rows, back to
+    /// where the focus was in that column when it last left it (the first
+    /// option or key row, and *Play*, before then).
     fn switch_column(&mut self) {
+        let order = self.order();
+        let usable = |i: &Item| order.contains(i);
         self.focus = match self.focus {
-            Item::Opt(_) | Item::Bind(_) | Item::BindReset => Item::Play,
-            _ if self.panel == Panel::Options => Item::Opt(OPTION_ROWS[0].1),
-            _ => Item::Bind(0),
+            right @ (Item::Opt(_) | Item::Bind(_) | Item::BindReset) => {
+                self.left_at.1 = Some(right);
+                Some(self.left_at.0)
+                    .filter(usable)
+                    .or_else(|| order.iter().copied().find(|i| BUTTONS.contains(i)))
+                    .unwrap_or(Item::Play)
+            }
+            button => {
+                self.left_at.0 = button;
+                let first = if self.panel == Panel::Options {
+                    Item::Opt(OPTION_ROWS[0].1)
+                } else {
+                    Item::Bind(0)
+                };
+                // A row of the other page (the panel switched since) or one
+                // that is gone does not count.
+                self.left_at.1.filter(usable).unwrap_or(first)
+            }
         };
         self.reveal_focus();
     }
@@ -1885,6 +1946,11 @@ impl ApplicationHandler for LauncherApp {
         if self.game.is_none() && self.win.window.is_none() {
             self.open_window(evl);
         }
+        if self.win.window.is_some()
+            && let Some(path) = self.opened.take()
+        {
+            self.open_path(&path);
+        }
     }
 
     fn about_to_wait(&mut self, evl: &ActiveEventLoop) {
@@ -1901,14 +1967,24 @@ impl ApplicationHandler for LauncherApp {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.win.request_redraw(),
             WindowEvent::RedrawRequested => self.redraw(evl),
-            WindowEvent::DroppedFile(p) => {
-                if launcher::expansion_pack_path(&p).is_some() {
-                    self.try_expansion(&p);
-                } else if launcher::is_card_file(&p) {
-                    self.try_card(&p);
-                } else {
-                    self.try_disc(&p);
+            // While a file is dragged over the window, the help box says
+            // what a drop will do with it; leaving puts the old text back.
+            WindowEvent::HoveredFile(p) => {
+                if self.hover_saved.is_none() {
+                    self.hover_saved = Some(self.status.take());
                 }
+                self.status = Some(vec![(drop_hint(&p), GOOD)]);
+                self.win.request_redraw();
+            }
+            WindowEvent::HoveredFileCancelled => {
+                if let Some(old) = self.hover_saved.take() {
+                    self.status = old;
+                }
+                self.win.request_redraw();
+            }
+            WindowEvent::DroppedFile(p) => {
+                self.hover_saved = None;
+                self.open_path(&p);
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             // A scripted capture shows the scripted focus, not whatever row
@@ -2596,6 +2672,19 @@ fn short_folder(dir: &Path) -> String {
     }
 }
 
+/// What dropping `path` on the window will do, shown while it is dragged
+/// over: the routing [`LauncherApp::open_path`] applies to the drop.
+fn drop_hint(path: &Path) -> String {
+    let name = file_name_of(path);
+    if launcher::expansion_pack_path(path).is_some() {
+        format!("Drop to play with the expansion pack {name}.")
+    } else if launcher::is_card_file(path) {
+        format!("Drop to load the saves on the memory card {name}.")
+    } else {
+        format!("Drop to use {name} as the disc.")
+    }
+}
+
 /// *Change disc*'s help while another remembered disc is on offer: the disc
 /// card already shows the current one.
 fn change_disc_help(offer: &DiscInfo) -> String {
@@ -2627,7 +2716,7 @@ fn problem_status(p: &DiscProblem, offer: Option<&DiscInfo>) -> Vec<Message> {
 fn problem_headline(p: &DiscProblem) -> &'static str {
     match p {
         DiscProblem::NotSet => "Choose your Legend of Legaia (USA) disc image",
-        DiscProblem::BadSettings(_) => "The saved settings could not be read",
+        DiscProblem::BadSettings { .. } => "The saved settings could not be read",
         DiscProblem::Missing(_) => "There is no file there",
         DiscProblem::Moved(_) => "The disc used last time is no longer there",
         DiscProblem::Unreadable { .. } => "That file is not a usable disc image",
@@ -2640,7 +2729,9 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
     match p {
         DiscProblem::Missing(p) | DiscProblem::Moved(p) => Some(p),
         DiscProblem::Unreadable { path, .. } | DiscProblem::WrongDisc { path, .. } => Some(path),
-        DiscProblem::NotSet | DiscProblem::BadSettings(_) => None,
+        // The card shows where the unreadable file now is.
+        DiscProblem::BadSettings { path, kept, .. } => Some(kept.as_deref().unwrap_or(path)),
+        DiscProblem::NotSet => None,
     }
 }
 
@@ -2648,7 +2739,18 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
 fn problem_message(p: &DiscProblem) -> Vec<Message> {
     let (why, hint): (String, String) = match p {
         DiscProblem::NotSet => return Vec::new(),
-        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again.".into()),
+        // The box is small: the file's name, not its folder (the log and
+        // the terminal line carry the whole path).
+        DiscProblem::BadSettings { why, kept, .. } => (
+            sentence(why),
+            match kept {
+                Some(k) => format!(
+                    "The old file was kept as {}. Choose the disc again.",
+                    file_name_of(k)
+                ),
+                None => "That file is left as it is. Choose the disc again.".into(),
+            },
+        ),
         DiscProblem::Missing(_) | DiscProblem::Moved(_) => (
             "It may have been moved, renamed, or be on a drive that is not connected.".into(),
             "Choose it again where it is now.".into(),
@@ -2659,9 +2761,10 @@ fn problem_message(p: &DiscProblem) -> Vec<Message> {
                 "Choose the .bin of a raw dump (2352-byte sectors), or the .cue beside it.".into()
             }),
         ),
-        DiscProblem::WrongDisc { reason, .. } => (
+        DiscProblem::WrongDisc { reason, fix, .. } => (
             sentence(reason),
-            "A randomized or translated USA disc works too.".into(),
+            fix.clone()
+                .unwrap_or_else(|| "Choose the image of the Legend of Legaia (USA) disc.".into()),
         ),
     };
     vec![(why, WARN), (hint, DIM)]
@@ -3067,7 +3170,45 @@ mod tests {
         app.switch_column();
         assert_eq!(app.focus, Item::Opt(OPTION_ROWS[0].1));
         app.switch_column();
-        assert_eq!(app.focus, Item::Play);
+        assert_eq!(app.focus, start, "Tab back returns to the button it left");
+    }
+
+    /// A file dragged over the window is named with what a drop does, by
+    /// the same routing the drop takes.
+    #[test]
+    fn drop_hint_follows_the_drop_routing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            drop_hint(Path::new("/g/Legend of Legaia (USA).cue")),
+            "Drop to use Legend of Legaia (USA).cue as the disc."
+        );
+        assert!(drop_hint(Path::new("/g/story.lxpack")).contains("expansion pack story.lxpack"));
+        assert!(drop_hint(Path::new("/g/epsxe.mcr")).contains("memory card epsxe.mcr"));
+        std::fs::write(dir.path().join("pack.toml"), "").unwrap();
+        assert!(drop_hint(dir.path()).contains("expansion pack"));
+    }
+
+    /// Tab keeps the player's place in each column: an option row walked to
+    /// and a button walked to both come back on the next Tab.
+    #[test]
+    fn tab_returns_to_where_each_column_was_left() {
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.focus = Item::Expansion;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Opt(OPTION_ROWS[0].1));
+        let row = Item::Opt(OPTION_ROWS[5].1);
+        app.focus = row;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Expansion);
+        app.focus = Item::Panel;
+        app.switch_column();
+        assert_eq!(app.focus, row);
+        app.switch_column();
+        assert_eq!(app.focus, Item::Panel);
+        // On the Controls page an option row is not a place to return to.
+        app.panel = Panel::Controls;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Bind(0));
     }
 
     #[test]
@@ -3080,6 +3221,11 @@ mod tests {
                 .cmd
                 .is_none()
         );
+        // `--open` (the game program's "Open with") is the launcher's alone.
+        let opened = Cli::try_parse_from(["legaia-engine", "--open", "/g/l.bin"]).unwrap();
+        assert!(opened.cmd.is_none());
+        assert_eq!(opened.open.as_deref(), Some(Path::new("/g/l.bin")));
+        assert!(Cli::try_parse_from(["legaia-engine", "--open", "/g/l.bin", "config"]).is_err());
         let info = DiscInfo {
             path: "/g/l.cue".into(),
             bin: "/g/l.bin".into(),
@@ -3214,17 +3360,6 @@ mod tests {
     }
 
     #[test]
-    fn picker_uses_xwayland_only_on_a_wayland_session_with_x11() {
-        assert!(prefer_x11_for_drop(true, true, false));
-        assert!(!prefer_x11_for_drop(true, true, true), "opt-out honoured");
-        assert!(!prefer_x11_for_drop(true, false, false), "no XWayland");
-        assert!(
-            !prefer_x11_for_drop(false, true, false),
-            "plain X11 already drops"
-        );
-    }
-
-    #[test]
     fn typed_path_quotes_are_stripped() {
         assert_eq!(clean_typed_path("  \"/a b/c.bin\" "), "/a b/c.bin");
         assert_eq!(clean_typed_path("'/a/c.cue'"), "/a/c.cue");
@@ -3279,7 +3414,11 @@ mod tests {
         let path = PathBuf::from("/home/player/Games/Legend of Legaia (USA).bin");
         let problems = [
             DiscProblem::NotSet,
-            DiscProblem::BadSettings("expected `=`, found newline at line 1".into()),
+            DiscProblem::BadSettings {
+                path: "/home/player/.config/legaia-engine/launcher.toml".into(),
+                why: "expected `=`, found newline, line 1".into(),
+                kept: Some("/home/player/.config/legaia-engine/launcher.toml.broken".into()),
+            },
             DiscProblem::Missing(path.clone()),
             DiscProblem::Moved(path.clone()),
             DiscProblem::WrongDisc {
@@ -3287,6 +3426,24 @@ mod tests {
                 reason: "it is the Europe release (SCES_019.44); the engine runs the USA disc \
                          (SCUS_942.54)"
                     .into(),
+                fix: Some("A randomized or translated copy of the USA disc works too.".into()),
+            },
+            DiscProblem::WrongDisc {
+                path: path.clone(),
+                reason: "it is not a PlayStation game disc (it has no SYSTEM.CNF boot file)".into(),
+                fix: Some("Choose the image of the Legend of Legaia (USA) game disc.".into()),
+            },
+            DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: "PROT.DAT, the file that holds the game's data, is missing from it".into(),
+                fix: Some(legaia_app_theme::disc_text::DAMAGED_FIX.into()),
+            },
+            DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: "its game program SCUS_942.54 is damaged (it is not a PlayStation \
+                         program)"
+                    .into(),
+                fix: Some(legaia_app_theme::disc_text::DAMAGED_FIX.into()),
             },
         ];
         // A remembered disc offered back, under each problem and in the

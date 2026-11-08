@@ -10,9 +10,17 @@ use legaia_engine_mode::mode::SceneMode;
 /// `World::tick` advances it: the action SM runs one pass a battle frame
 /// (`World::battle_sm_pass_due`), so a loop that never moves the clock
 /// would run it once.
+///
+/// On retail's cadence the readout ramp belongs to the anim pass that
+/// `World::tick` runs after the SM (`World::tick_battle_anim_pass`), which
+/// this harness skips, so it runs the ramp itself.
 fn live_tick(w: &mut World) -> Option<legaia_engine_battle_vm::battle_action::StepOutcome> {
     w.clock.display_frames += 1;
-    w.live_battle_tick()
+    let out = w.live_battle_tick();
+    if w.toggles.battle_sm_frame_cadence {
+        w.tick_battle_hp_bars();
+    }
+    out
 }
 
 fn take_commit_begin(w: &mut World) -> bool {

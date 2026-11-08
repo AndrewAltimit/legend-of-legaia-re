@@ -142,7 +142,11 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
             self.world.field_vm.executing_object,
         ) {
             (Some(slot), _) => Some(crate::world::MorphOwner::Placement(slot)),
-            (None, Some(record)) => Some(crate::world::MorphOwner::Object(record)),
+            // The morph lanes are the record's meshes', whichever of its
+            // objects armed them.
+            (None, Some(key)) => Some(crate::world::MorphOwner::Object(
+                self.world.object_key_record(key),
+            )),
             (None, None) => None,
         };
         if let Some(owner) = owner {
@@ -215,13 +219,10 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     // REF: FUN_801DE840 (0x801E23EC), FUN_800204F8
     fn op4c_n8_subc_field_68_is_zero(&self, ctx: &FieldCtx) -> bool {
         let w = &*self.world;
-        if let Some(record) = w.field_vm.executing_object
+        if let Some(key) = w.field_vm.executing_object
             && let Some(p) = w
-                .props
-                .bank
-                .props
-                .values()
-                .find(|p| p.record == usize::from(record))
+                .object_key_anchor(usize::from(key))
+                .and_then(|a| w.props.bank.props.get(&a))
         {
             return p.anim.cursor == 0;
         }

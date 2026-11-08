@@ -516,13 +516,19 @@ impl World {
         // again after this tick's damage lands (below).
         self.apply_final_heal_revives();
 
-        // One frame of HP-bar ramp before the SM steps, so the `0x51` settle
-        // check (`FUN_801E7250`) sees this frame's bar movement. Retail's
-        // caller for `FUN_80047430` is not in the dumped corpus, so the
-        // cadence is the port's choice; the arithmetic is not
-        // (`legaia_engine_battle_vm::battle_hp_bar`).
+        // One frame of HP-bar ramp. The ramp is the head of the actor anim
+        // tick `FUN_80047430` (`0x800474E8..0x80047638`, before the cursor
+        // advance), a node of the main-loop pass: it moves a quarter of the
+        // accumulator once a **pass**, unscaled by the frame step. On
+        // retail's cadence it therefore runs with the anim pass, after the
+        // SM (`World::tick_battle_anim_pass`), so a step-`3` fight's readout
+        // counts down over three vsyncs a quarter, and the `0x51` settle
+        // check reads the previous pass's bar. On the per-vsync cadence it
+        // keeps its seat here, ahead of the SM.
         // REF: FUN_80047430
-        self.tick_battle_hp_bars();
+        if !cadence {
+            self.tick_battle_hp_bars();
+        }
 
         // The death-spoils caption (HUD element `0x5B`) holds for the rest of
         // the action that raised it (`legaia_engine_battle::battle_steal`).

@@ -74,6 +74,16 @@ struct KnownDivergence {
 /// sibling capture proving the fresh-entry arrangement (e.g. the rikuroa
 /// `pre_caruban` state pins retail's own entry seats byte-equal to the
 /// engine's).
+/// The conc3 inn-stay arrival record, shared by its four `vis` entries.
+const CONC3_INN_ARRIVAL: &str = "post-arrival-record capture: the conc innkeeper sets 0x53C and \
+     changes scene to CONC3; conc3's P1[0] spawns P2[9] (44 59 at +0x90) only while 0x53C is \
+     set and 0x5F7 clear (75 3C / 75 F7 at +0x85 / +0x8C). P2[9] is the wake-up cutscene: \
+     after its fade it parks P1[8] / P1[7] / P1[23] / P1[9] (A3 2A/29/39/2B 7F 7F at \
+     +0xAF..+0xBB), sets 0x3F9, and sets 0x5F7 before idling. The capture holds 0x53C, 0x3F9 \
+     and 0x5F7 all set, so a cold entry against its bank skips the spawn and seats the four - \
+     as retail's own entry with that bank does. The engine's run of the arrival record parks \
+     them (engine-scene-host conc3_inn_arrival_disc.rs)";
+
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "son_field_door_hop",
@@ -439,6 +449,30 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
                oracle's flag channel too (its install passes clear the region-selector \
                bands 0x19B..0x1AA / 0x527..0x52E that later passes re-set by position), \
                so the fix needs the oracle's entry model reworked with it",
+    },
+    KnownDivergence {
+        label: "conc3_field_inn_night",
+        key: "vis:7",
+        class: "b",
+        note: CONC3_INN_ARRIVAL,
+    },
+    KnownDivergence {
+        label: "conc3_field_inn_night",
+        key: "vis:8",
+        class: "b",
+        note: CONC3_INN_ARRIVAL,
+    },
+    KnownDivergence {
+        label: "conc3_field_inn_night",
+        key: "vis:9",
+        class: "b",
+        note: CONC3_INN_ARRIVAL,
+    },
+    KnownDivergence {
+        label: "conc3_field_inn_night",
+        key: "vis:23",
+        class: "b",
+        note: CONC3_INN_ARRIVAL,
     },
 ];
 

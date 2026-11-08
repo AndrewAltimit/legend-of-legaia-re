@@ -187,6 +187,11 @@ moving NPC or a story-gated paint can block a planned leg; the probe then
 sidesteps, and a leg that stays blocked ends the run with the states it
 already saved.
 
+A scene change need not be a door. `conc3` is `conc` after the inn's stay: the
+innkeeper (`conc` P1[9]) loads it from the Yes of the stay picker, so
+`asset scene-nav` lists it under the partition-1 record with no partition-2 slot,
+and a route reaches it with a `TALK` line (`conc3_field_inn_night`).
+
 When the walk is not the point, [`autorun_door_hop.lua`](../../scripts/pcsx-redux/autorun_door_hop.lua)
 crosses a chain of doors by holding the player on each door's walk-on tile
 (the `.MAP` kind-1 gate-1 records `plan_walk_route.py` reads). The door's own

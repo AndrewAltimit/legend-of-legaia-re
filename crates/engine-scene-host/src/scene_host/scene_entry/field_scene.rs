@@ -416,6 +416,17 @@ impl SceneHost {
                 // `0x3000` in a live capture and not on the disc.
                 // PORT: FUN_80017BEC (scene-load call site)
                 legaia_engine_field::field_regions::refresh_object_grid_marks(&mut bytes);
+                // The map init stamps the fallback window's kind-1 tiles too,
+                // or the walk-on dispatch's cell filter would refuse every
+                // `.PCH` record. The window is the one the trigger lookup reads.
+                // PORT: FUN_8003AEB0 (fallback-window stamp call site)
+                if let Some(scene) = self.scene.as_ref()
+                    && let Ok((_, fallback)) = scene.field_tile_triggers(&self.index)
+                {
+                    legaia_engine_field::field_regions::stamp_fallback_walk_on_cells(
+                        &mut bytes, &fallback,
+                    );
+                }
                 // The object-descriptor region (`+0x0000..0x4000`) stays
                 // resident: the sub-area window sweep indexes it on every
                 // camera re-centre, not just at load.
@@ -479,21 +490,30 @@ impl SceneHost {
         let picker_arrival = match (operand, picker_arrivals.as_deref()) {
             (None, Some(ranked)) if !ranked.is_empty() => {
                 let spots: Vec<(i16, i16)> = ranked.iter().map(|a| a.world_xz()).collect();
-                // Never seat a picker visit on a tile the first tick's
-                // stale-tile compare would fire: a kind-0 pad or a gate-1
-                // walk-on trigger (an exit, or the arrival's cutscene beat).
-                let mut avoid = teleport_tiles.clone();
-                avoid.extend(
-                    self.field_triggers
-                        .0
-                        .iter()
-                        .chain(self.field_triggers.1.iter())
-                        .filter(|t| t.gate == 1)
-                        .map(|t| (t.tile_x, t.tile_z)),
-                );
-                self.world
-                    .picker_arrival_seat(&spots, &avoid)
-                    .map(|(i, seat)| (ranked[i].clone(), seat, i))
+                if self.picker_pass_through(ranked) {
+                    // A pass-through scene's arrival is seated as the door
+                    // seats it: on its trigger tile, unrescued, so the first
+                    // tick spawns the beat retail plays there
+                    // (`Self::picker_pass_through`).
+                    Some((ranked[0].clone(), spots[0], 0))
+                } else {
+                    // Never seat a picker visit on a tile the first tick's
+                    // stale-tile compare would fire: a kind-0 pad or a gate-1
+                    // walk-on trigger (an exit, or the arrival's cutscene
+                    // beat).
+                    let mut avoid = teleport_tiles.clone();
+                    avoid.extend(
+                        self.field_triggers
+                            .0
+                            .iter()
+                            .chain(self.field_triggers.1.iter())
+                            .filter(|t| t.gate == 1)
+                            .map(|t| (t.tile_x, t.tile_z)),
+                    );
+                    self.world
+                        .picker_arrival_seat(&spots, &avoid)
+                        .map(|(i, seat)| (ranked[i].clone(), seat, i))
+                }
             }
             _ => None,
         };
@@ -967,22 +987,28 @@ impl SceneHost {
                     // (`actor[+0x50] = trigger[2]`), making partition-0
                     // records resolvable cross-context targets - the town01
                     // Mei walk-on beat pokes the Vahn's-house door object as
-                    // channel `0x01`. Spawn one poke-target channel per bind
-                    // (bind-time `0x24`/`0x25` prologues pre-run inside).
-                    // Falls back to the gate-0 trigger tiles when the scene
-                    // has no readable `.MAP` object layer.
+                    // channel `0x01`. Spawn one channel per bound object -
+                    // two objects on one record are two contexts - seated on
+                    // the object's own position, angles and height against
+                    // the ladder the scene installed above (bind-time
+                    // `0x24`/`0x25` prologues pre-run inside). Falls back to
+                    // the gate-0 trigger tiles when the scene has no
+                    // readable `.MAP` object layer.
                     // REF: FUN_8003A55C, FUN_8003C83C
-                    let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
+                    let ladder = self.world.terrain.floor_height_lut;
+                    let object_binds: Vec<
+                        legaia_engine_field::man_field_scripts::ObjectScriptBind,
+                    > = match map_bytes.as_deref() {
                         Some(map) => {
-                            legaia_engine_field::man_field_scripts::object_script_bind_seats(
-                                map, &triggers,
+                            legaia_engine_field::man_field_scripts::object_script_bind_objects(
+                                map, &triggers, &ladder,
                             )
                         }
                         None => triggers
                             .iter()
                             .filter(|t| t.gate == 0)
                             .map(|t| {
-                                (
+                                legaia_engine_field::man_field_scripts::ObjectScriptBind::at(
                                     t.record as usize,
                                     (
                                         i16::from(t.tile_x) * 128 + 0x40,
@@ -1008,31 +1034,6 @@ impl SceneHost {
                             ),
                         );
                     }
-                    self.world.set_object_bind_rots(
-                        map_bytes
-                            .as_deref()
-                            .map(|map| {
-                                legaia_engine_field::man_field_scripts::object_script_bind_rots(
-                                    map, &triggers,
-                                )
-                            })
-                            .unwrap_or_default(),
-                    );
-                    // Each bind's seat Y (`ladder[nibble] + y_off`), against
-                    // the ladder the scene installed above: a height write
-                    // on the actor is absolute, and the draw measures it
-                    // from here (`World::object_draw_displacements`).
-                    let ladder = self.world.terrain.floor_height_lut;
-                    self.world.set_object_bind_heights(
-                        map_bytes
-                            .as_deref()
-                            .map(|map| {
-                                legaia_engine_field::man_field_scripts::object_script_bind_heights(
-                                    map, &triggers, &ladder,
-                                )
-                            })
-                            .unwrap_or_default(),
-                    );
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

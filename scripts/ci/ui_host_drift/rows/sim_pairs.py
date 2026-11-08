@@ -702,6 +702,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["muscle_surface"],
     },
     {
+        "what": "Muscle Dome hub screens, native vs play page - the page "
+        "blitted the hub quads onto a 2D canvas with its own clip, gradient "
+        "and shade, and differed from the window on 3.55% of every hub "
+        "frame. Both hosts draw the one decomposition "
+        "(`minigame_hud::muscle_hub_sprites`): the window through its sprite "
+        "atlas, the page as screen primitives over the hub's own VRAM",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/minigames/muscle_dome.rs",
+                "muscle_hub_sprite_draws",
+            ),
+            "web": (WEB_PLAY_ARENA, "muscle_hub_sprites"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["muscle_hub_sprites"],
+    },
+    {
         "what": "Muscle Dome camera, native vs play page - both hosts draw "
         "the dome under the surface camera's matrix (`DomeCamera::vp_raw`), "
         "never a host-side orbit framing",
@@ -1201,14 +1218,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "whether a frame crops at all is a policy (knob, retail framing, field "
         "mode, no cutscene, a focus the region box holds). Both hosts ask the "
         "one `field_view_window::field_view_cells` entry with "
-        "`framing_is_retail`, so a host that cropped under its own rule would "
+        "`retail_framing` (retail's vantage, or a cutscene or helper record's "
+        "scripted shot owning the camera), so a host that cropped under its own rule would "
         "black out cells the other draws",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_view_cells", "framing_is_retail"],
+        "symbols": ["field_view_cells", "retail_framing"],
     },
     {
         "what": "visible-tile crop of the terrain list, native vs play page - "

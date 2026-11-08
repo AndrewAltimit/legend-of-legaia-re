@@ -639,6 +639,12 @@ pub(crate) const WALK_PARK_TIMEOUT: u32 = 2400;
 /// the record then steps past by width.
 pub const NPC_CLIP_SPIN_TIMEOUT: u32 = 600;
 
+/// Spin bound for a record waiting on an actor's morph envelope ADVANCE bit
+/// (`AD <id> 0B`). An envelope drains one lane at a time, and a seven-lane
+/// close at a slow down-ramp runs most of a thousand frames; past the bound
+/// the record steps on by width, as for a held clip.
+pub const MORPH_ADVANCE_SPIN_TIMEOUT: u32 = 3600;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {

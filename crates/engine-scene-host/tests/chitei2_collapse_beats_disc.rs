@@ -214,3 +214,41 @@ fn the_hologram_panels_go_dark_once_the_generator_is_down_or_skip() {
         "the hologram panels draw black at full blend: {dark:?}"
     );
 }
+
+/// `P2[0]` (`CC 05..0B D6 03`, the walk-on tiles `(101, 110..112)` and
+/// `(105, 94..95)`) raises the semi-transparency bit and ABR 3 in the
+/// colour word of the pillar objects between the camera and the corridor;
+/// `P2[1]` (`D6 04`, one tile further out) drops it. The placed-object
+/// draws read the whole word, so the pillars blend.
+#[test]
+fn the_corridor_pillars_turn_translucent_on_the_walk_on_or_skip() {
+    let Some(root) = extracted_root() else { return };
+    let mut host = chitei2(&root);
+    let semi = |host: &SceneHost| -> Vec<usize> {
+        let mut v: Vec<usize> = host
+            .world
+            .object_draw_tints()
+            .into_iter()
+            .filter(|&(_, (word, _))| word >> 24 == 0x83)
+            .map(|(r, _)| r)
+            // The record keys; each also answers under its object's key.
+            .filter(|&r| r < legaia_engine_field::field_channels::OBJECT_INSTANCE_KEY_BASE)
+            .collect();
+        v.sort_unstable();
+        v
+    };
+    assert!(semi(&host).is_empty(), "nothing blends before the walk-on");
+    // Flat record of P2[0]: past partitions 0 (49) and 1 (30).
+    host.world.field_vm.pending_record_spawns.push(79);
+    for _ in 0..30 {
+        host.tick().expect("tick");
+    }
+    let lit = semi(&host);
+    eprintln!("[ran] semi-transparent records after P2[0]: {lit:?}");
+    assert_eq!(lit.len(), 7, "P2[0] names seven contexts: {lit:?}");
+    host.world.field_vm.pending_record_spawns.push(80);
+    for _ in 0..30 {
+        host.tick().expect("tick");
+    }
+    assert!(semi(&host).is_empty(), "P2[1] drops the bit again");
+}

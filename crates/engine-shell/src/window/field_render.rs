@@ -19,13 +19,24 @@ pub(super) use floor_wave::*;
 /// shaded light-source variant (`field_lit.meshes`) rather than `meshes`.
 pub(super) const LIT_VARIANT_TAG: usize = 1 << 30;
 
+/// One world-map terrain stamp list: the draws, where the decoration run
+/// starts, each draw's record and each draw's object key
+/// (`field_env::placed_object_key_of`).
+pub(super) type WorldMapDrawList = (
+    Vec<(usize, Mat4)>,
+    usize,
+    Vec<Option<usize>>,
+    Vec<Option<usize>>,
+);
+
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_scene::field_env::placed_window_key`]), and each draw's
 /// grid cell + cull radius for the visible-tile crop
 /// ([`legaia_engine_scene::field_view_window::CellKey`]), and each draw's bind
-/// record ([`legaia_engine_scene::field_env::placed_bind_records`] - the key of
-/// its live scripted displacement), all parallel.
+/// record ([`legaia_engine_scene::field_env::placed_bind_records`]; with the
+/// cell, the key of its live actor state through
+/// [`legaia_engine_scene::field_env::placed_object_key_of`]), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,

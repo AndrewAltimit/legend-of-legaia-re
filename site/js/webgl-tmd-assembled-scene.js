@@ -547,6 +547,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (!haveGround && !havePlacements) return;
 
     gl.useProgram(this.program);
+    /* A mesh with no ground cells leaves a_ground_ref_xz / _y disabled and the
+     * vertex stage reads the generic value, whose GL default is (0, 0, 0, 1),
+     * not the zeros engine-render's flat_a / flat_b carry on every mesh. The
+     * shader's "not a ground cell" test is `a_ground_ref_xz == vec4(0.0)`, so
+     * under the default no mesh took its link depth (primMeanW) and PSX mode's
+     * per-primitive sort was inert on the page. Generic values are context
+     * state, not VAO state: stage the zeros every frame. */
+    if (this.locGroundRefXz >= 0) gl.vertexAttrib4f(this.locGroundRefXz, 0, 0, 0, 0);
+    if (this.locGroundRefY >= 0) gl.vertexAttrib4f(this.locGroundRefY, 0, 0, 0, 0);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
     /* Assembled VPs add the retail screen-X mirror on top of the per-model
@@ -650,6 +659,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let nclipOn = this.nclipCull;
     /* Whether the whole-draw far bucket (`u_far_slice`) is staged. */
     let farOn = false;
+    /* Whether a placement's forced ABE (`u_force_semi`) is staged. */
+    let forceOn = 0;
     /* The opaque draws - the ground, then every placement - as one
      * closure, so the SSAO pre-pass can issue them a second time into its
      * G-buffer under the same uniforms (the trackers above carry across
@@ -716,6 +727,13 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
             meanDepth = wantMean;
           }
           eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+          /* A placement whose colour word forces ABE (`forceSemi`, the ABR
+           * mode) defers its blending texels to the blend pass. */
+          const wantForce = p.forceSemi !== undefined ? 1 : 0;
+          if (wantForce !== forceOn && this.locForceSemi) {
+            gl.uniform1i(this.locForceSemi, wantForce);
+            forceOn = wantForce;
+          }
           /* A far-bucket placement (the battle ground grid) writes its depth
            * into the far slice, behind everything else on the frame. */
           const wantFar = !!p.farBucket;
@@ -727,6 +745,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         }
       }
       if (farOn) gl.uniform1i(this.locFarSlice, 0);
+      if (forceOn) { gl.uniform1i(this.locForceSemi, 0); forceOn = 0; }
       /* Hand the frame-global cue back before the blend pass / next frame. */
       if (cueOn !== undefined && cueOn !== this.cueParams) {
         this._setCue(this.cueParams);
@@ -753,7 +772,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let blendMean = -1;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
-      if (!m || !m.semiRanges || m.indexCount === 0 || list.length === 0) continue;
+      if (!m || m.indexCount === 0 || list.length === 0) continue;
+      if (!m.semiRanges && !list.some((p) => p.forceSemi !== undefined)) continue;
       if (!blendOn) {
         gl.enable(gl.BLEND);
         gl.depthMask(false);
@@ -797,6 +817,17 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           blendMean = wantMean;
         }
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+        /* A forced placement blends its whole opaque range in its own mode
+         * (textured prims their STP texels only); its semi tail would draw
+         * those prims twice. */
+        if (p.forceSemi !== undefined) {
+          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 1);
+          this._setSemiBlend(p.forceSemi);
+          gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 0);
+          continue;
+        }
+        if (!m.semiRanges) continue;
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);

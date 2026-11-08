@@ -495,8 +495,15 @@ impl Renderer {
                     // blended far-to-near, regardless of draw boundaries.
                     // Equal keys (one OT bucket) draw later-submitted-first,
                     // the retail LIFO bucket order (`AddPrim` prepends).
-                    let any_semi = scene.draws.iter().any(|d| d.mesh.has_semi_prims())
-                        || scene.color_draws.iter().any(|d| d.mesh.has_semi_prims());
+                    let forced = |cue: Option<crate::DrawCue>| cue.and_then(|c| c.blend);
+                    let any_semi = scene
+                        .draws
+                        .iter()
+                        .any(|d| d.mesh.has_semi_prims() || forced(d.cue).is_some())
+                        || scene
+                            .color_draws
+                            .iter()
+                            .any(|d| d.mesh.has_semi_prims() || forced(d.cue).is_some());
                     if self.semi_blend.get() && any_semi {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
@@ -509,7 +516,28 @@ impl Renderer {
                             scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
                         let mut list = self.blend_list.borrow_mut();
                         list.clear();
+                        // A draw whose colour word forces ABE blends its
+                        // whole opaque range instead of its own semi tail.
+                        let centre = |(lo, hi): ([f32; 3], [f32; 3])| {
+                            [
+                                (lo[0] + hi[0]) * 0.5,
+                                (lo[1] + hi[1]) * 0.5,
+                                (lo[2] + hi[2]) * 0.5,
+                            ]
+                        };
                         for (i, draw) in scene.draws.iter().enumerate() {
+                            if let Some(mode) = forced(draw.cue) {
+                                psx_blend::push_forced_draw(
+                                    &mut list,
+                                    false,
+                                    i as u32,
+                                    &draw.mvp,
+                                    centre(draw.mesh.bounds),
+                                    mode,
+                                    draw.mesh.index_count,
+                                );
+                                continue;
+                            }
                             psx_blend::push_draw_prims(
                                 &mut list,
                                 false,
@@ -519,6 +547,18 @@ impl Renderer {
                             );
                         }
                         for (i, draw) in scene.color_draws.iter().enumerate() {
+                            if let Some(mode) = forced(draw.cue) {
+                                psx_blend::push_forced_draw(
+                                    &mut list,
+                                    true,
+                                    i as u32,
+                                    &draw.mvp,
+                                    centre(draw.mesh.bounds),
+                                    mode,
+                                    draw.mesh.index_count,
+                                );
+                                continue;
+                            }
                             psx_blend::push_draw_prims(
                                 &mut list,
                                 true,

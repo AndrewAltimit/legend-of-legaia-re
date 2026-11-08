@@ -1103,7 +1103,7 @@ impl World {
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         let bc = std::mem::take(&mut self.field_bytecode);
         self.field_vm.executing_channel = (!object).then_some(channels[ci].placement_index as u8);
-        self.field_vm.executing_object = object.then_some(channels[ci].ctx.script_id);
+        self.field_vm.executing_object = object.then_some(channels[ci].placement_index as u16);
         let res = {
             let mut host = FieldHostImpl { world: self };
             vm::field::step(&mut host, &mut channels[ci].ctx, &bc, pc)
@@ -1121,7 +1121,7 @@ impl World {
             self.npcs.motions.remove(&slot);
         }
         if clip_control {
-            self.set_object_prop_flags(c.ctx.script_id, c.ctx.local_flags);
+            self.set_object_prop_flags(c.placement_index as u16, c.ctx.local_flags);
         }
         self.field_vm.channels = channels;
         self.field_bytecode = bc;

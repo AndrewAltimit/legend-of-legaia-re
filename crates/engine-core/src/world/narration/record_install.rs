@@ -290,6 +290,9 @@ impl World {
             let binds = std::mem::take(&mut self.field_vm.object_channel_binds);
             let mut obj =
                 legaia_engine_field::field_channels::spawn_object_channels(man_file, man, &binds);
+            // A retired object's actor is gone; the respawn does not bring
+            // it back.
+            obj.retain(|c| !self.field_vm.retired_objects.contains(&c.placement_index));
             self.seat_object_channel_rots(&mut obj);
             self.field_vm.channels.extend(obj);
             self.field_vm.object_channel_binds = binds;

@@ -62,9 +62,15 @@ pub struct FieldRender {
     /// the native play-window asks per frame.
     pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
     /// Per-placement bind record (parallel to [`Self::placements`], `None` =
-    /// unbound): the key [`LegaiaRuntime::field_placement_live_models`] looks
-    /// a script's live object turn and displacement up by.
+    /// unbound): the key of the record-wide tables - the scripted-motion
+    /// streams' model swaps ([`field_env::placed_model_swaps`]).
     pub placement_records: Vec<Option<usize>>,
+    /// Per-placement object key (parallel to [`Self::placements`], `None` =
+    /// unbound, [`field_env::placed_object_keys`]): the key
+    /// [`LegaiaRuntime::field_placement_live_models`] and the other
+    /// per-placement masks look the draw's own actor up by - one actor per
+    /// bound object, as retail runs them.
+    pub placement_keys: Vec<Option<usize>>,
     /// Bulk terrain-tile draws (ground / decor tiles). `FLAG_PLACED` records
     /// are excluded - they are already drawn, posed, by the placement layer
     /// (the native window's `resolve_field_terrain_draws` rule).
@@ -333,6 +339,24 @@ pub fn build_field_render(
         }
         r
     };
+    // Each draw's own actor: the overworld's landmarks through the walk
+    // map's binds, the decorations after them unbound, a pack map's props
+    // under their own keys.
+    let placement_keys = if is_world_map {
+        let wm_binds = scene.field_object_binds(index).ok().flatten();
+        let mut k = field_env::placed_object_keys(
+            &placements[..decoration_start.min(placements.len())],
+            wm_binds.as_ref(),
+        );
+        k.resize(placements.len(), None);
+        k
+    } else {
+        let mut k = field_env::placed_object_keys(&placements, binds.as_ref());
+        if let Some(o) = scene.overrides.as_ref() {
+            o.fill_prop_records(placements.iter().map(|d| d.anchor), &mut k);
+        }
+        k
+    };
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -359,6 +383,7 @@ pub fn build_field_render(
         placements,
         window_keys,
         placement_records,
+        placement_keys,
         terrain,
         ground,
         floor_lut,

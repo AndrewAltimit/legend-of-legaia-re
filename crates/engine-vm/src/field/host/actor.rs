@@ -35,24 +35,16 @@ pub trait FieldActorHost {
         let _ = (ctx, world_x, world_z, is_player);
     }
 
-    /// Op `0x38` simple path: one entry of the **compass heading table**.
-    /// When `op1 & 0x7F == 0`, the original copies
-    /// `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx.field_26`, the
-    /// actor's heading. The host owns the table - this method takes the
-    /// `index = op0 & 0xF` and returns the u16 to write. Returning `None`
-    /// keeps `ctx.field_26` unchanged (the VM still advances PC).
-    fn compass_heading(&self, index: u8) -> Option<u16> {
-        let _ = index;
-        None
-    }
-
     /// Op `0x38` simple path, the actor-facing half: the compass-LUT entry
     /// `index` (`op0 & 0xF`) lands in the **resolved actor's** `+0x26` - the
     /// heading its renderer draws it at. `player` is `true` for the extended
     /// target `0xF8`, which retail's prologue resolves to the player object
     /// (`FUN_8003C83C`) rather than to the context the caller passed. The
-    /// actor is host state, so the host owns the write; called before
-    /// [`Self::compass_heading`]'s context write.
+    /// actor is host state, so the host owns the write. It is the arm's only
+    /// write: retail stores the entry into the resolved actor's `+0x26`
+    /// (`0x801DEE6C..0x801DEE8C`, `sh v0,0x26(s5)`) and nothing else, so a
+    /// host whose resolved actor is the executing context writes
+    /// `ctx.field_26` here.
     ///
     /// REF: FUN_801DE840 (case 0x38), FUN_8003C83C
     ///
@@ -227,9 +219,16 @@ pub trait FieldActorHost {
     /// - `ctx.model_id` (actor `+0x64`) = the model index.
     /// - `ctx.move_id` (actor `+0x5c`) = 0.
     /// - `ctx.flags` (actor `+0x10`) clears draw-flag bit `0x1000`.
-    /// - when the world-map model pool is active ([`model_pool_is_world_map`],
-    ///   retail game-mode global `_DAT_8007B83C == 0xF`) the index is mirrored
-    ///   into `ctx.model_id_high` (actor `+0x60`).
+    ///
+    /// The primitive's other branch (`0x80024E38..0x80024E50`) is not ported:
+    /// on the mode word `_DAT_8007B83C == 0xF` it stores the index into
+    /// `+0x60` - the `.MAP` object-record index the re-stage `FUN_80020F88`
+    /// reads while `+0x10` carries `0x8000` / `0x100000` - instead of
+    /// masking those bits. Mode 15 (`MAP MODE`) is never entered: its INIT
+    /// `0x8002B904` stores mode `0` (`sh zero`), the only route to it is
+    /// mode 14, and no store of `0xF` to the word exists in any image (every
+    /// `lui` / `$gp` writer's source is a constant other than `0xF`, the
+    /// debug menu's two picks are `2` and `0xE`).
     ///
     /// Note `high` (the wrapper's value-pool selection, `value >= 0xF0`) is a
     /// concern of the dispatch and of pool-base resolution, **not** of this
@@ -247,28 +246,12 @@ pub trait FieldActorHost {
     /// yet; it is left as a follow-up. Hosts that own actor meshes override
     /// this method to re-stage after the state writes land.
     ///
-    /// [`model_pool_is_world_map`]: Self::model_pool_is_world_map
-    ///
     /// PORT: FUN_80024e08
     fn set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
         let _ = high; // wrapper/dispatch concern; the primitive ignores it.
         ctx.model_id = value as u16; // actor +0x64
         ctx.move_id = 0; // actor +0x5c
         ctx.flags &= 0xffff_efff; // actor +0x10, clear draw-flag bit 0x1000
-        if self.model_pool_is_world_map() {
-            // Retail branch `_DAT_8007B83C == 0xF`: mirror the id into +0x60.
-            ctx.model_id_high = value as u16;
-        }
-    }
-
-    /// Is the world-map model pool active? Mirrors the retail game-mode global
-    /// `_DAT_8007B83C == 0xF` that gates the `+0x60` model-index mirror in the
-    /// set-actor-model primitive ([`set_actor_model`]). Default is
-    /// `false` (general field mode); the world-map host overrides it to `true`.
-    ///
-    /// [`set_actor_model`]: Self::set_actor_model
-    fn model_pool_is_world_map(&self) -> bool {
-        false
     }
 
     /// Op 0x4C outer-nibble-8 sub-0xC - conditional jump on `ctx.field_68 == 0`.
@@ -282,17 +265,6 @@ pub trait FieldActorHost {
     fn op4c_n8_subc_field_68_is_zero(&self, ctx: &FieldCtx) -> bool {
         ctx.field_68 == 0
     }
-
-    /// Op 0x4C outer-nibble-D sub-6 - `ctx.field_74` bitfield mutation.
-    ///
-    /// 3-byte instruction `[4C, 0xD6, b1]`. The original at line 7028 writes:
-    /// - if `b1 == 4`: clear the top bit only (`field_74 &= 0x7FFFFFFF`)
-    /// - else: clear bits `0x83000000`, then set bit `0x80000000` and OR in
-    ///   `(b1 as u32) << 24` (low byte of `b1` into the top byte of `field_74`).
-    ///
-    /// Pure ctx mutation - host hook is a side-effect-only ack. Halt at PC
-    /// (the dump exits via `goto LAB_801e00bc`).
-    fn op4c_nd_sub6_field_74_ack(&mut self) {}
 
     /// Op 0x4C outer-nibble-C sub-0 - **randomise the clip phase**.
     ///

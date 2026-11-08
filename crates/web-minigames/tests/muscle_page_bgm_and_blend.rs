@@ -12,8 +12,10 @@
 //!    packet is `B - F` with F the white knockout palette times the quad's
 //!    Gouraud colour `c / 128`. Drawn at full strength whatever the colour,
 //!    the score tally's rows still at level 0 knocked solid black boxes out
-//!    of the ringside still. Both pages draw hub quads through the one
-//!    `js/canvas-abr.js`.
+//!    of the ringside still. The minigames page draws hub quads through
+//!    `js/canvas-abr.js`; the play page draws them as screen primitives,
+//!    whose shader modulates the texel by the colour before the blend, and
+//!    keeps no canvas path for them at all.
 //!
 //! No Sony bytes: this only reads the repo's own JS and HTML.
 
@@ -70,26 +72,31 @@ fn a_subtractive_hub_quad_is_scaled_by_its_colour_on_both_pages() {
     let abr = site("js/canvas-abr.js");
     assert!(abr.contains("function withAbr(g, abr, draw, rgb)"));
     assert!(abr.contains("subtractLevel(rgb)"));
-    for (js, html) in [
-        ("js/minigame-muscle.js", "_content/minigames.html"),
-        ("js/play-minigames.js", "_content/play.html"),
-    ] {
-        let src = site(js);
-        assert!(
-            src.contains("window.LegaiaCanvasAbr"),
-            "{js} draws hub quads through the shared canvas-abr.js"
-        );
-        assert!(
-            !src.contains("function withAbr("),
-            "{js} keeps no private copy of the blend"
-        );
-        let page = site(html);
-        let abr_at = page
-            .find("js/canvas-abr.js")
-            .expect("page loads canvas-abr.js");
-        let own_at = page
-            .find(&format!("\"{js}\""))
-            .expect("page loads its script");
-        assert!(abr_at < own_at, "{html} loads canvas-abr.js first");
-    }
+    // The play page: the engine's hub primitives through the screen-primitive
+    // pass (`psxTextureBlend` scales the texel by the quad colour, then the
+    // ABR equation blends it), and no 2D-canvas blitter beside it.
+    let play = site("js/play-minigames.js");
+    assert!(play.contains("rt.play_mg_muscle_hub_prims_stage()"));
+    assert!(
+        !play.contains("LegaiaCanvasAbr") && !play.contains("drawImage("),
+        "the play page keeps no second rasteriser for the hub"
+    );
+    let (js, html) = ("js/minigame-muscle.js", "_content/minigames.html");
+    let src = site(js);
+    assert!(
+        src.contains("window.LegaiaCanvasAbr"),
+        "{js} draws hub quads through the shared canvas-abr.js"
+    );
+    assert!(
+        !src.contains("function withAbr("),
+        "{js} keeps no private copy of the blend"
+    );
+    let page = site(html);
+    let abr_at = page
+        .find("js/canvas-abr.js")
+        .expect("page loads canvas-abr.js");
+    let own_at = page
+        .find(&format!("\"{js}\""))
+        .expect("page loads its script");
+    assert!(abr_at < own_at, "{html} loads canvas-abr.js first");
 }

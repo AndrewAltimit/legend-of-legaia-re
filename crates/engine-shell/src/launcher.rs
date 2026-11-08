@@ -179,13 +179,99 @@ impl LauncherSettings {
         toml::from_str(&text).with_context(|| format!("parse {}", path.display()))
     }
 
-    /// Write the settings file, creating its directory.
+    /// Write the settings file, creating its directory. The write lands
+    /// whole or not at all ([`legaia_app_theme::settings_file::write_atomic`]),
+    /// so a crash mid-save cannot leave a file the next start must set aside.
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
         }
         let text = toml::to_string(self).context("serialise launcher settings")?;
-        std::fs::write(path, text).with_context(|| format!("write {}", path.display()))
+        legaia_app_theme::settings_file::write_atomic(path, text.as_bytes())
+            .with_context(|| format!("write {}", path.display()))
+    }
+}
+
+/// What [`open_settings`] found in the settings file at start-up.
+#[derive(Debug)]
+pub struct OpenedSettings {
+    /// The settings, or the [`DiscProblem::BadSettings`] the picker shows.
+    pub settings: std::result::Result<LauncherSettings, DiscProblem>,
+    /// Whether the launcher may write the file from here on. `false` when it
+    /// could be neither read nor set aside: writing the defaults over it
+    /// would lose what is in it.
+    pub keep_file: bool,
+}
+
+/// Read the settings file at start-up. A missing file is the first run. A
+/// file that does not parse is renamed to `launcher.toml.broken`
+/// ([`legaia_app_theme::settings_file::set_aside`]) so the defaults this
+/// start saves cannot overwrite the discs, switches and card in it, and the
+/// problem names the backup.
+pub fn open_settings(path: &Path) -> OpenedSettings {
+    use legaia_app_theme::settings_file::set_aside;
+    let bad = |why: String, kept: Option<PathBuf>| DiscProblem::BadSettings {
+        path: path.to_path_buf(),
+        why,
+        kept,
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return OpenedSettings {
+                settings: Ok(LauncherSettings::default()),
+                keep_file: true,
+            };
+        }
+        Err(e) => {
+            return OpenedSettings {
+                settings: Err(bad(e.to_string(), None)),
+                keep_file: false,
+            };
+        }
+    };
+    let err = match toml::from_str::<LauncherSettings>(&text) {
+        Ok(s) => {
+            return OpenedSettings {
+                settings: Ok(s),
+                keep_file: true,
+            };
+        }
+        Err(e) => e,
+    };
+    let why = toml_error_summary(&err, &text);
+    log::warn!("launcher: {} does not parse ({why})", path.display());
+    match set_aside(path) {
+        Ok(kept) => {
+            log::info!(
+                "launcher: kept the unreadable settings as {}",
+                kept.display()
+            );
+            OpenedSettings {
+                settings: Err(bad(why, Some(kept))),
+                keep_file: true,
+            }
+        }
+        Err(e) => {
+            log::warn!("launcher: could not set {} aside ({e})", path.display());
+            OpenedSettings {
+                settings: Err(bad(why, None)),
+                keep_file: false,
+            }
+        }
+    }
+}
+
+/// A TOML parse error in one line: the parser's message and the line it is
+/// on (its own display is a multi-line source excerpt).
+fn toml_error_summary(err: &toml::de::Error, text: &str) -> String {
+    let msg = err.message().trim().replace('\n', "; ");
+    match err.span() {
+        Some(span) => {
+            let line = text[..span.start.min(text.len())].matches('\n').count() + 1;
+            format!("{msg}, line {line}")
+        }
+        None => msg,
     }
 }
 
@@ -205,8 +291,14 @@ pub struct DiscInfo {
 pub enum DiscProblem {
     /// No disc has been chosen yet (first run).
     NotSet,
-    /// The settings file exists but is unreadable or malformed.
-    BadSettings(String),
+    /// The settings file exists but is unreadable or malformed; `kept` is
+    /// where [`open_settings`] moved it (`None`: it stays and is not
+    /// written over).
+    BadSettings {
+        path: PathBuf,
+        why: String,
+        kept: Option<PathBuf>,
+    },
     /// No file at this path.
     Missing(PathBuf),
     /// The remembered disc's file is gone (moved, renamed, drive unplugged).
@@ -219,8 +311,14 @@ pub enum DiscProblem {
         reason: String,
         fix: Option<String>,
     },
-    /// A readable PlayStation disc, but not Legend of Legaia (USA).
-    WrongDisc { path: PathBuf, reason: String },
+    /// A readable disc image, but not Legend of Legaia (USA). `fix` is what
+    /// to do instead when the reason has one of its own (another release of
+    /// the game: the USA one is needed; not a game disc at all).
+    WrongDisc {
+        path: PathBuf,
+        reason: String,
+        fix: Option<String>,
+    },
 }
 
 impl fmt::Display for DiscProblem {
@@ -229,9 +327,10 @@ impl fmt::Display for DiscProblem {
             DiscProblem::NotSet => {
                 write!(f, "Choose your Legend of Legaia (USA) disc image to start.")
             }
-            DiscProblem::BadSettings(why) => write!(
+            DiscProblem::BadSettings { path, why, kept } => write!(
                 f,
-                "The saved launcher settings could not be read ({why}). Choose the disc again."
+                "{} Choose the disc again.",
+                legaia_app_theme::settings_file::set_aside_notice(path, why, kept.as_deref())
             ),
             DiscProblem::Missing(p) => write!(f, "There is no file at {}", p.display()),
             DiscProblem::Moved(p) => write!(
@@ -241,17 +340,27 @@ impl fmt::Display for DiscProblem {
             ),
             DiscProblem::Unreadable { path, reason, fix } => {
                 write!(f, "{} is not a usable disc image: {reason}", path.display())?;
+                if fix.is_some() && !reason.trim_end().ends_with(['.', '!', '?']) {
+                    f.write_str(".")?;
+                }
                 match fix {
                     Some(fix) => write!(f, " {fix}"),
                     None => Ok(()),
                 }
             }
-            DiscProblem::WrongDisc { path, reason } => {
+            DiscProblem::WrongDisc { path, reason, fix } => {
                 write!(
                     f,
                     "{} is not Legend of Legaia (USA): {reason}",
                     path.display()
-                )
+                )?;
+                if fix.is_some() && !reason.trim_end().ends_with(['.', '!', '?']) {
+                    f.write_str(".")?;
+                }
+                match fix {
+                    Some(fix) => write!(f, " {fix}"),
+                    None => Ok(()),
+                }
             }
         }
     }
@@ -277,9 +386,15 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
         reason,
         fix: None,
     };
-    let wrong = |reason: String| DiscProblem::WrongDisc {
+    let wrong = |reason: String, fix: Option<&str>| DiscProblem::WrongDisc {
         path: path.to_path_buf(),
         reason,
+        fix: fix.map(str::to_string),
+    };
+    let damaged = |reason: String| DiscProblem::Unreadable {
+        path: path.to_path_buf(),
+        reason,
+        fix: Some(legaia_app_theme::disc_text::DAMAGED_FIX.into()),
     };
     if path.is_dir() {
         return Err(unreadable(
@@ -305,28 +420,50 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
             fix: Some(legaia_app_theme::disc_text::INCOMPLETE_FIX.into()),
         });
     }
-    let vfs =
-        legaia_engine_scene::vfs::DiscVfs::open(&bin).map_err(|e| unreadable(format!("{e:#}")))?;
-    let cnf = vfs
-        .read("SYSTEM.CNF")
-        .map_err(|_| wrong("no SYSTEM.CNF - not a PlayStation game disc".into()))?;
-    let detected = psx_iso::region::parse(&cnf).map_err(|e| wrong(format!("{e:#}")))?;
+    // The reader's own chain repeats the path the message already names;
+    // its root cause is the part a player can act on.
+    let vfs = legaia_engine_scene::vfs::DiscVfs::open(&bin).map_err(|e| {
+        unreadable(format!(
+            "it could not be read as a disc ({})",
+            e.root_cause()
+        ))
+    })?;
+    let cnf = vfs.read("SYSTEM.CNF").map_err(|_| {
+        wrong(
+            "it is not a PlayStation game disc (it has no SYSTEM.CNF boot file)".into(),
+            Some("Choose the image of the Legend of Legaia (USA) game disc."),
+        )
+    })?;
+    let detected = psx_iso::region::parse(&cnf).map_err(|e| {
+        damaged(format!(
+            "its boot file SYSTEM.CNF does not name a program ({})",
+            e.root_cause()
+        ))
+    })?;
     if !detected.executable.eq_ignore_ascii_case(USA_EXECUTABLE) {
-        return Err(wrong(format!(
-            "it is the {} release ({}); the engine runs the USA disc ({USA_EXECUTABLE})",
-            detected.region.name(),
-            detected.executable,
-        )));
+        return Err(wrong(
+            format!(
+                "it is the {} release ({}); the engine runs the USA disc ({USA_EXECUTABLE})",
+                detected.region.name(),
+                detected.executable,
+            ),
+            Some("A randomized or translated copy of the USA disc works too."),
+        ));
     }
     if !vfs.exists("PROT.DAT") {
-        return Err(wrong("PROT.DAT is missing from the disc".into()));
+        return Err(damaged(
+            "PROT.DAT, the file that holds the game's data, is missing from it".into(),
+        ));
     }
-    let exe = vfs
-        .read(USA_EXECUTABLE)
-        .map_err(|e| unreadable(format!("cannot read {USA_EXECUTABLE}: {e:#}")))?;
+    let exe = vfs.read(USA_EXECUTABLE).map_err(|e| {
+        damaged(format!(
+            "its game program {USA_EXECUTABLE} cannot be read ({})",
+            e.root_cause()
+        ))
+    })?;
     if !exe.starts_with(b"PS-X EXE") {
-        return Err(unreadable(format!(
-            "{USA_EXECUTABLE} is damaged (no PS-X EXE header)"
+        return Err(damaged(format!(
+            "its game program {USA_EXECUTABLE} is damaged (it is not a PlayStation program)"
         )));
     }
     Ok(DiscInfo {
@@ -370,16 +507,16 @@ pub enum LaunchDecision {
     Prompt(DiscProblem),
 }
 
-/// Decide from the loaded settings (or the error loading them) whether to
-/// play straight away. `validate` is [`validate_disc`] in the binary and a
-/// stub in tests.
+/// Decide from the loaded settings (or the problem loading them,
+/// [`open_settings`]) whether to play straight away. `validate` is
+/// [`validate_disc`] in the binary and a stub in tests.
 pub fn decide(
-    settings: Result<LauncherSettings>,
+    settings: std::result::Result<LauncherSettings, DiscProblem>,
     validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
 ) -> LaunchDecision {
     let settings = match settings {
         Ok(s) => s,
-        Err(e) => return LaunchDecision::Prompt(DiscProblem::BadSettings(format!("{e:#}"))),
+        Err(p) => return LaunchDecision::Prompt(p),
     };
     let Some(disc) = settings.disc else {
         return LaunchDecision::Prompt(DiscProblem::NotSet);
@@ -393,8 +530,9 @@ pub fn decide(
 }
 
 /// Remember `info` as the disc to boot next time (and the newest recent disc).
+/// A settings file that does not parse is an error, not replaced.
 pub fn remember(settings_file: &Path, info: &DiscInfo) -> Result<()> {
-    let mut s = LauncherSettings::load(settings_file).unwrap_or_default();
+    let mut s = LauncherSettings::load(settings_file)?;
     s.remember_disc(&info.path);
     s.save(settings_file)
 }
@@ -1829,6 +1967,7 @@ mod tests {
             Err(DiscProblem::WrongDisc {
                 path: p.to_path_buf(),
                 reason: "boots SLUS_000.01".into(),
+                fix: None,
             })
         });
         match d {
@@ -1841,10 +1980,15 @@ mod tests {
 
     #[test]
     fn bad_settings_reprompts() {
-        let d = decide(Err(anyhow::anyhow!("garbage")), |p| Ok(ok_info(p)));
+        let bad = DiscProblem::BadSettings {
+            path: SETTINGS_FILE.into(),
+            why: "garbage".into(),
+            kept: None,
+        };
+        let d = decide(Err(bad), |p| Ok(ok_info(p)));
         assert!(matches!(
             d,
-            LaunchDecision::Prompt(DiscProblem::BadSettings(_))
+            LaunchDecision::Prompt(DiscProblem::BadSettings { .. })
         ));
     }
 
@@ -2037,12 +2181,32 @@ mod tests {
     fn malformed_settings_file_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join(SETTINGS_FILE);
-        std::fs::write(&f, "disc = [not toml").unwrap();
+        let broken = "disc = \"/games/legaia.bin\"\nrecent_discs = [not toml\n";
+        std::fs::write(&f, broken).unwrap();
         assert!(LauncherSettings::load(&f).is_err());
-        assert!(matches!(
-            decide(LauncherSettings::load(&f), |p| Ok(ok_info(p))),
-            LaunchDecision::Prompt(DiscProblem::BadSettings(_))
-        ));
+        // `remember` refuses rather than writing a fresh file over it.
+        assert!(remember(&f, &ok_info(Path::new("/g/new.bin"))).is_err());
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), broken);
+        let opened = open_settings(&f);
+        assert!(opened.keep_file);
+        let kept = dir.path().join("launcher.toml.broken");
+        let problem = match decide(opened.settings, |p| Ok(ok_info(p))) {
+            LaunchDecision::Prompt(p @ DiscProblem::BadSettings { .. }) => p,
+            other => panic!("expected BadSettings, got {other:?}"),
+        };
+        // The old file is kept whole under the name the message gives, and
+        // the settings the launcher now saves land beside it.
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), broken);
+        let text = problem.to_string();
+        assert!(text.contains(&kept.display().to_string()), "{text}");
+        assert!(text.contains("line 2"), "{text}");
+        assert!(!text.contains('\n'), "{text}");
+        remember(&f, &ok_info(Path::new("/g/new.bin"))).unwrap();
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), broken);
+        // A good file and no file open as they are.
+        assert!(matches!(open_settings(&f).settings, Ok(s) if s.disc.is_some()));
+        let none = open_settings(&dir.path().join("absent.toml"));
+        assert!(matches!(none.settings, Ok(s) if s == LauncherSettings::default()));
     }
 
     #[test]

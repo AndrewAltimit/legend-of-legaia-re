@@ -62,7 +62,13 @@ RAM**: keep the directory out of the repo.
 
 The engine child drops the state's own capture seeds as well as its gate and
 drive, its re-seat among them: a strike state's re-seat left in stood the
-caster `3500` units from the ground retail recorded.
+caster `3500` units from the ground retail recorded. The scroller rects
+(`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
+cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
+roll. A scrolled page's phase is time since its scroller started, which a pre-cast
+state carries and the engine's fresh battle does not: the Cort states whose shield
+was raised a turn earlier start the sphere's bands where retail's stand, and
+`cort_guilty_cross` reads `.801` against `.611` without the seed.
 
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
@@ -180,9 +186,15 @@ writes `pre.csv`, one row per in-battle vsync **before** the inject: the
 action state, the acting seat, the frame step, the yaw counter `ctx[+0x6DA]`,
 the strike cursor `ctx[+0x15]`, and for seats `0..3` the committed and staged
 clip, the rate `+0x21D`, the node cursor, the live pair and the per-action
-total `+0x00` (seat 3's live HP). A monster-pick run from a `*_first_menu`
+total `+0x00` (seat 3's live HP), then the battle camera: the live pitch, yaw,
+TR trio and focus trio, the depth word `ctx[+0x6D0]` and the tween table's nine
+`step:end` records. `LEGAIA_PRE_SHOTS=1` adds a frame (`pre_NNNNN.raw`, named in
+the row) on each vsync of a strike, return or Done state (`0x1E..0x20`,
+`0x50..0x5A`). A monster-pick run from a `*_first_menu`
 state therefore records every party turn on the way to the cast - the retail
-timeline of a combo the capture only holds the end of. The run uses the recompiler (`--fast`) unless a
+timeline of a combo the capture only holds the end of, and the camera through
+its Done tail (`koru_strip_forced` with `--monster-pick --retail-only` films
+Gala's Lightning Storm into the Done arm the `koru_pre_*` states hold). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
 
@@ -237,11 +249,18 @@ in the driver): `cam.csv`'s pitch, yaw and eye with `body.csv`'s focus. This is 
 seat of the harness and moves no game state. Without it `0x28` and `0x29` score
 wherever the child's camera happened to stand; with it their framing tracks retail's to
 a couple of units, and the opening's error is the frame's own. A `--physical` film opens
-on the state's own instant, mid-glide wherever the state sat, so it takes the recording's
-first row instead and seats it on the gate's tick: its drive plays the round through the
-cast's own `0x28` first, which would take the seat there. On
-`battle_map01_lippian_kiss_of_death_mid_cast` the first row stands at TR z `3404`, where the
-child's glide stood at `4204`.
+on the state's own instant, mid-glide wherever the state sat, so it seats on the gate's tick
+the camera the state's own RAM holds, as the retail-compare seed read it (`rc/report.json`'s
+camera detail, `state_camera_pose`): its drive plays the round through the cast's own `0x28`
+first, which would take the seat there. The recording's first row is not that instant: the
+probe writes it once the first vsync has run, and on a capture-band state that vsync can
+hold a module's pass. `battle_map02_lip_kid_kiss_of_death_mid_cast` sits in `0x70` ahead of
+PROT 0955's arm 0 at TR z `4729`; the first row stands at `3943`, one step-`3` pass into arm
+0's twelve-frame shot (increment `262`). Seated on that row, the engine's arm 0 built its
+shot again from `3943`, on an increment of `197`. Seated on the state, it builds retail's
+`262`. The state seat lifts the `battle_map01_lippian_kiss_of_death_mid_cast` film from
+`.885` to `.905` (arm 1's pull-in `.689` to `.762`) and the Lip Kid film's arm 0 from `.677`
+to `.716`; a recording older than the report falls back on the first row.
 
 **The ground carries the facing.** An earlier actor of retail's round leaves its seat
 turned, and the range law measures a target by its body pair, the pose centroid turned by
@@ -763,6 +782,12 @@ adds its reaction-channel entry). What the recordings on
   clip cue `0x80` (ring `0x21C`, the router from `FUN_800508DC`) sounds on arm
   10's first pass. The engine lands it on the same pass
   (`World::apply_summon_pre_hits`).
+- **Zenoir's splash on a seat out of reach.** The kill phase's three extras on
+  `battle_kor_spoon_strike` and `battle_tower_swordie_strike` were the second
+  monster's reaction: the port read the module's victim off the caster's
+  `+0x1DD`, which arm 8 turns to `9`, where retail reads the word arm 0 latched
+  ([PROT 0908](../subsystems/cast-module.md#prot-0908-zenoir)). The film's HP
+  columns showed it first: retail's seat `4` holds its HP through arm 12.
 - **Theeder's reaction.** The module's sweep stages the victim's reaction when
   the ray reaches the seat, about 33 ticks into arm 12 (`0x801F7D38`). The fold
   lands on that tick's hit, so the reaction and its cues start there.
@@ -868,6 +893,11 @@ alone. The corpus's `*_summon_mid_cast` states are mednafen captures that
 PCSX-Redux cannot load, but their child commands seed the cast. That is
 enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
+- **A cast that wipes the party has no Done band.** Koru's Dead End Crisis
+  (`0xA1`) from `nilboa_koru_pre_dead_end_crisis`, whose party is Vahn alone,
+  runs its module phases `0..6` and then leaves for `0x22` and the game-over
+  flow `0x3C`, so the probe reports a park and there is nothing to pair. A film
+  of it needs a state whose party outlives the cast.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
 - **A cast longer than `LEGAIA_MAX_SHOTS` (default `1500` grabs) is cut.** At
@@ -911,7 +941,12 @@ fight gave the caster (the formation row's order, which `--filter`'s report name
 `seat=`). The probe writes the target the cast began on to `done.txt`
 (`cast_target`), and the engine child lands a single-target cast there
 (`,t<slot>` on `LEGAIA_BATTLE_MONSTER_CAST`): the victim's voice cue and every
-victim shot follow it.
+victim shot follow it. The slot is the engine's, so a monster target (a self-cast:
+Koru's Ultra Charge, whose pick stores `+0x1DD = 3`) is re-keyed as the caster is,
+`party_count + seat - 3`. Left on the retail number it named no engine actor in
+a one-member party, the cast fell back to the spell's own class, and the near-camera
+ghost pass and the HUD read a party target: Vahn drew solid in front of Koru, with
+his plate up, where retail ghosts him and shows Koru's alone.
 
 A cast with a pad-driven hold needs `LEGAIA_PARK` past it: Fatal Decision's arm 6
 holds about `1200` vsyncs on an undecided party victim, which the default bound

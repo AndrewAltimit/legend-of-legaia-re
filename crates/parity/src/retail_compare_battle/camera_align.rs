@@ -177,6 +177,10 @@ pub(super) fn turning_shot_rate(case: u8) -> Option<i32> {
 /// `0x50` seeds it with (`li v0,0x3c` / `sh v0,0x2(s7)` at `0x801E5F24..28`,
 /// `0x96` when `ctx[+0x15]` is set, `0x801E5F38..3C`).
 const DONE_TIMER: u32 = 0x6D8;
+
+/// Case 7's eye height `TR.y` (`li v0,0x500` / `sh v0,0x1a(sp)` at
+/// `0x801D65E4..0x801D65E8`).
+const CASE7_TR_Y: f32 = 1280.0;
 const DONE_TIMER_SEEDS: [u16; 2] = [0x3C, 0x96];
 
 /// Whether a `0x51` capture holds the Done arm's own pass: the arm `0x50`
@@ -220,15 +224,23 @@ pub(super) fn done_arm_pass(ram: &[u8], ctx: u32, action_state: u8) -> bool {
 ///
 /// Case 7's endpoints are its base (`0x801D65DC..0x801D6694`): the yaw is case
 /// 8's (both reduce to `ctx[+0x6DA] - actor[+0x46] - 0x700`, `0x801D6708` /
-/// `0x801D67EC` + `0x801D693C`), `TR = (0, 0x500, prescale(ctx[+0x6D0]))`, and
-/// the focus the midpoint `(a + b) >> 1` of the actor's and the target's body
-/// pairs `+0x3C` / `+0x40` (live `+0x36` for Y). The pitch and `TR.y` stay
-/// on `one_back`: case 8 on an idle monster holds both from the live camera
-/// (`0x801D6BFC`), the replay's own strike leaves them a few units off
-/// retail's, and a walked component there fails the image child's endpoint
-/// test (`BattleCamera::glide_endpoint_matches_walked`), which drops the whole
-/// displayed pose (`cort_evolved_card_pre_doomsday`: `TR.y` `1290` walked to
-/// `1296` reads `.605`, held `.965`).
+/// `0x801D67EC` + `0x801D693C`), `TR = (0, 0x500, prescale(ctx[+0x6D0]))`, the
+/// focus the midpoint `(a + b) >> 1` of the actor's and the target's body
+/// pairs `+0x3C` / `+0x40` (live `+0x36` for Y), and the pitch `0`: the
+/// prologue zeroes the pose (`sh zero,0x10(sp)` at `0x801D58B4`) and the case-7
+/// base below a style `2` never writes it. Case 8 on an idle monster then
+/// holds the pitch and `TR.y` the exit pass left (`0x801D6BFC`), so the
+/// Done-arm RAM reads them on the held pass's table one exit step on, and the
+/// walk takes that step back as it does the rest. A retail film from
+/// `koru_strip_forced` through Gala's Lightning Storm reads the held pass at
+/// pitch `4058` on case 7's table `{5, 0}`, and the exit pass at `4073`; the
+/// image child seats a held component whatever the two holds read
+/// (`BattleCamera::framing_held_components`).
+///
+/// The increment the walk recovers is not always unique: `G - 6 * ceil(G / 12)`
+/// takes most values twice, `6` units of gap apart, and the walk takes the
+/// smaller (`koru_pre_*`: pitch `4061` beside the film's `4058`, depth `5998`
+/// beside `5995`; TR x `-113` on the film's own value).
 ///
 /// `None` (the one-pass pose stands) off an Attack, on case 8, on a framing
 /// style `2` / `3` and on a monster's pull-in (`ctx[+0x243]`), none of which
@@ -299,13 +311,13 @@ pub(super) fn done_arm_strike_walk_back(
         }
         v - (g1.signum() * fs1 * ((big + d - 1) / d)) as f32
     };
-    let yaw_gap = (end8.yaw - one_back.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+    let wrapped = |gap: f32| (gap + 2048.0).rem_euclid(4096.0) - 2048.0;
     Some(legaia_engine_camera::projection::BattleCamPose {
-        pitch: one_back.pitch,
-        yaw: back(one_back.yaw, yaw_gap).rem_euclid(4096.0),
+        pitch: back(one_back.pitch, wrapped(-one_back.pitch)).rem_euclid(4096.0),
+        yaw: back(one_back.yaw, wrapped(end8.yaw - one_back.yaw)).rem_euclid(4096.0),
         tr: [
             back(one_back.tr[0], -one_back.tr[0]),
-            one_back.tr[1],
+            back(one_back.tr[1], CASE7_TR_Y - one_back.tr[1]),
             back(one_back.tr[2], tr_z - one_back.tr[2]),
         ],
         focus: [

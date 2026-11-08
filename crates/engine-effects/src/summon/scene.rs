@@ -455,6 +455,27 @@ impl SummonScene {
 
     /// Whether part `p` draws: running, and not hidden by
     /// [`Self::diag_hidden`].
+    /// Deal the frame's draw-time `rand()` words to the parts that take
+    /// them, in list order (the draw walks the part list as the render
+    /// dispatcher does): each jittered default-arm part
+    /// ([`crate::effect_default_arm::default_arm_rand_draws`]) stores the
+    /// stream word `next` hands back before its draws, and `next` is then
+    /// stepped past them.
+    pub fn deal_draw_rands(&mut self, mut next: impl FnMut(u32) -> u32) {
+        let Self {
+            parts, diag_hidden, ..
+        } = self;
+        for p in parts.iter_mut() {
+            if p.finished || p.tag.is_some_and(|t| diag_hidden.contains(&t)) {
+                continue;
+            }
+            let n = crate::effect_default_arm::default_arm_rand_draws(&p.state);
+            if n != 0 {
+                p.state.draw_rand_seed = next(n);
+            }
+        }
+    }
+
     fn drawn(&self, p: &SummonPartRuntime) -> bool {
         !p.finished && !p.tag.is_some_and(|t| self.diag_hidden.contains(&t))
     }

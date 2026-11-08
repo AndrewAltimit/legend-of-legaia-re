@@ -581,6 +581,27 @@ impl World {
                 .any(|tl| tl.stepped && !tl.is_done())
     }
 
+    /// `true` while a script record that holds the player has an op-`0x45`
+    /// shot staged in the camera globals.
+    ///
+    /// The modal timeline's shots reach the hosts through the cutscene arm
+    /// ([`Self::cutscene_timeline_active`]); a concurrent helper record's do
+    /// not - retail has one set of globals, and the port renders a helper's
+    /// beats through the follow arm, which reads those globals. The ending
+    /// vignettes (`edteien` .. `edlast`, each one long `0x44`-spawned record)
+    /// and `jouine`'s evolved-Cort arrival frame every shot that way. The
+    /// staged set is the port's mirror of retail's staging block: op `0x45`
+    /// configure merges into it and APPLY, which composes the follow pose
+    /// back over it, empties it.
+    ///
+    /// The user's follow knobs (the distance preset, orbit, tilt and zoom)
+    /// read this to stay out of a scripted shot: a shot is a framing the
+    /// script authored, and scaling its eye depth by the `Far` preset showed
+    /// the whole of the Sky Gardens island where retail frames the hedge maze.
+    pub fn scripted_shot_holds_camera(&self) -> bool {
+        !self.camera.state.params.is_empty() && self.script_context_engages_player()
+    }
+
     /// `true` while a dialogue engagement owns the pad and the player.
     ///
     /// The engine has **two** dialogue channels and either one can be live on

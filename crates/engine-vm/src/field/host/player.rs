@@ -66,22 +66,13 @@ pub trait FieldPlayerHost {
     ///
     /// When the host returns `Some(coords)`, the VM:
     /// - copies `world_x / world_y / world_z / field_26` onto `ctx`,
-    /// - if `ctx.flags & 0x20000000` is set, additionally calls
-    ///   [`Self::set_inverted_y_mirror`] with `-player.world_y` and returns
-    ///   `OpResume::StateResume` (the `caseD_4` exit - the state-resume
-    ///   subsystem decides whether to advance or halt),
-    /// - otherwise returns `OpResume::Advance` (normal PC += 2).
+    /// - if `ctx.flags & 0x20000000` is set, additionally writes
+    ///   `ctx.field_8e = -player.world_y` (`0x801E103C..0x801E1044`),
+    /// - advances PC by 2 on every path (the arm leaves through
+    ///   `0x801DF098`; the decompiled `caseD_4` exit is not a halt).
     fn fetch_player_coords(&self, ctx: &FieldCtx) -> Option<PlayerCoords> {
         let _ = ctx;
         None
-    }
-
-    /// Side-effect for Op 0x4C sub-3 sub-7's bit-`0x20000000` branch.
-    ///
-    /// Writes the inverted-Y value at `ctx[+0x8e]`. Hosts that don't track
-    /// `+0x8e` separately can ignore this.
-    fn set_inverted_y_mirror(&mut self, ctx: &mut FieldCtx, inverted_y: i16) {
-        let _ = (ctx, inverted_y);
     }
 
     /// Op 0x4C outer-nibble-C sub-0xE - write `_DAT_8007B6AC`.

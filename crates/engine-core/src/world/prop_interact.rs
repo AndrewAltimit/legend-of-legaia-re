@@ -79,26 +79,31 @@ impl World {
         self.tick_object_actor_heights();
     }
 
+    /// The prop object `key`'s actor draws: the bank entry at the bind's key
+    /// tile ([`Self::object_key_anchor`]).
+    fn object_prop_mut(
+        &mut self,
+        key: u16,
+    ) -> Option<&mut legaia_engine_scene::field_env::PropAnimState> {
+        let anchor = self.object_key_anchor(usize::from(key))?;
+        self.props.bank.props.get_mut(&anchor)
+    }
+
     /// A cross-context `A2 <record> <clip>` ExecMove landing on a placed
-    /// prop's actor: bind `clip` to every prop that record's actor draws,
+    /// prop's actor: bind `clip` to the prop object `key`'s actor draws
+    /// (a key of [`legaia_engine_field::field_channels::object_channel_keys`]),
     /// cursor at zero (the anim tick's forced re-point), under the actor's
     /// live `+0x62` control word (`flags`) and `+0x6A` rate (`rate`, kept
     /// when zero). The windowed and browser hosts pose posed props from the
     /// bank, so both draw the clip.
     ///
     /// REF: FUN_800204F8 (the re-point at `0x8002057C..0x800205A8`)
-    pub(crate) fn play_object_prop_clip(&mut self, record: u16, clip: u8, flags: u16, rate: i16) {
+    pub(crate) fn play_object_prop_clip(&mut self, key: u16, clip: u8, flags: u16, rate: i16) {
         let meta = self.props.bank.clip_meta(clip);
-        for p in self
-            .props
-            .bank
-            .props
-            .values_mut()
-            .filter(|p| p.record == usize::from(record))
-        {
+        if let Some(p) = self.object_prop_mut(key) {
             if p.anim.anim_id != clip {
                 let Some((frames, scaled, div)) = meta else {
-                    continue;
+                    return;
                 };
                 p.anim.anim_id = clip;
                 p.anim.frames = frames.max(1);
@@ -120,14 +125,8 @@ impl World {
     /// without a clip poke.
     ///
     /// REF: FUN_800204F8
-    pub(crate) fn set_object_prop_flags(&mut self, record: u16, flags: u16) {
-        for p in self
-            .props
-            .bank
-            .props
-            .values_mut()
-            .filter(|p| p.record == usize::from(record))
-        {
+    pub(crate) fn set_object_prop_flags(&mut self, key: u16, flags: u16) {
+        if let Some(p) = self.object_prop_mut(key) {
             p.anim.flags = flags;
         }
     }
@@ -149,7 +148,7 @@ impl World {
     /// REF: FUN_800204F8, FUN_801DE840
     pub(crate) fn poke_object_prop_words(
         &mut self,
-        record: u16,
+        key: usize,
         flags: (u16, u16),
         rate: (i16, i16),
     ) {
@@ -158,18 +157,25 @@ impl World {
         if changed == 0 && new_rate.is_none() {
             return;
         }
-        for p in self
-            .props
-            .bank
-            .props
-            .values_mut()
-            .filter(|p| p.record == usize::from(record))
-        {
+        if let Some(p) = self.object_prop_mut(key as u16) {
             p.anim.flags = (p.anim.flags & !changed) | (flags.1 & changed);
             if let Some(r) = new_rate {
                 p.anim.rate = r;
             }
         }
+    }
+
+    /// `true` while placed object `record`'s prop plays a clip that has not
+    /// latched its end (`+0x62 & 0x100`): not held (`0x2`), end latch down.
+    /// What a record's `AD <id> 08` spin on a door's swing waits for.
+    // REF: FUN_800204F8 (0x800206E4..0x8002072C)
+    pub fn object_prop_clip_running(&self, record: u16) -> bool {
+        use legaia_engine_scene::field_env::{ANIM_END, ANIM_HOLD};
+        self.props
+            .bank
+            .props
+            .values()
+            .any(|p| p.record == usize::from(record) && p.anim.flags & (ANIM_END | ANIM_HOLD) == 0)
     }
 
     /// Capture alignment: write a placed object's clip cursor and control
@@ -465,7 +471,7 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
-        let own_record = self.props.bank.props.get(&anchor).map(|p| p.record);
+        let own_record = self.object_key_at_anchor(anchor);
         // Where the record's own `23 <x> <z>` seated the prop this slice.
         let mut own_seat: Option<(i32, i32)> = None;
         {
@@ -659,8 +665,8 @@ impl World {
                 } else {
                     None
                 };
-                let step = if let Some(record) = object_target {
-                    let mut target_ctx = host.world.object_prop_ctx(record);
+                let step = if let Some(key) = object_target {
+                    let mut target_ctx = host.world.object_prop_ctx(key);
                     let r = vm::field::step_with_caller(
                         &mut host,
                         &mut target_ctx,
@@ -669,7 +675,7 @@ impl World {
                         &id.bytecode,
                         id.pc,
                     );
-                    host.world.store_object_prop_ctx(record, &target_ctx);
+                    host.world.store_object_prop_ctx(key, &target_ctx);
                     r
                 } else {
                     let ctx = if player_target {
@@ -826,16 +832,12 @@ impl World {
     ///
     /// The displacement is the object-bind channel's, measured from its bind
     /// seat, as [`Self::object_draw_displacements`] measures it for the draw;
-    /// like the draw it carries every placement the record binds.
+    /// like the draw it carries that object alone.
     ///
     /// REF: FUN_801CFC40
     pub(crate) fn sync_prop_colliders_to_object_actors(&mut self) {
         if self.props.colliders.is_empty() {
             return;
-        }
-        let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
-        for &(record, pos) in &self.field_vm.object_channel_binds {
-            seeds.entry(record).or_insert(pos);
         }
         let moves: Vec<(usize, (i32, i32))> = self
             .field_vm
@@ -843,7 +845,11 @@ impl World {
             .iter()
             .filter(|c| c.object_bind)
             .filter_map(|c| {
-                let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let (sx, sz) = self
+                    .field_vm
+                    .object_binds_by_key
+                    .get(&c.placement_index)?
+                    .seat;
                 let d = (
                     i32::from(c.ctx.world_x as i16) - i32::from(sx),
                     i32::from(c.ctx.world_z as i16) - i32::from(sz),
@@ -857,20 +863,16 @@ impl World {
                 (d != applied).then_some((c.placement_index, (d.0 - applied.0, d.1 - applied.1)))
             })
             .collect();
-        for (record, (dx, dz)) in moves {
-            let shift = self.props.object_shifts.entry(record).or_insert((0, 0));
+        for (key, (dx, dz)) in moves {
+            let shift = self.props.object_shifts.entry(key).or_insert((0, 0));
             *shift = (shift.0 + dx, shift.1 + dz);
-            let anchors: Vec<((u8, u8), (i32, i32))> = self
-                .props
-                .bank
-                .props
-                .iter()
-                .filter(|(_, p)| p.record == record)
-                .map(|(&a, p)| (a, p.world))
-                .collect();
-            for (anchor, world) in anchors {
-                self.seat_prop(anchor, (world.0 + dx, world.1 + dz));
-            }
+            let Some(anchor) = self.object_key_anchor(key) else {
+                continue;
+            };
+            let Some(world) = self.props.bank.props.get(&anchor).map(|p| p.world) else {
+                continue;
+            };
+            self.seat_prop(anchor, (world.0 + dx, world.1 + dz));
         }
     }
 
@@ -892,26 +894,27 @@ impl World {
         // ([`Self::prop_collider_exempt`]): an opened door stops blocking, and
         // a door its record closes again (`32 00`) blocks again.
         prop.cflags = ctx.flags;
-        let record = prop.record;
         // A record's own `31 03` retires the object: its draw leaves with the
         // hidden-record set, which reads the channel.
         if ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
+            && let Some(key) = self.object_key_at_anchor(anchor)
             && let Some(ch) = self
                 .field_vm
                 .channels
                 .iter_mut()
-                .find(|c| c.object_bind && c.placement_index == record)
+                .find(|c| c.object_bind && c.placement_index == key)
         {
             ch.ctx.flags |= legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
         }
     }
 
-    /// The flat MAN record of the placed object a cross-context target byte
+    /// The object key of the placed object a cross-context target byte
     /// names, when that object has a prop in the bank: `FUN_8003C83C` walks
     /// the actor list for `+0x50 == target`, and a bound object's `+0x50` is
-    /// its gate-0 trigger's flat record index (`FUN_8003A55C`). A target the
-    /// placement channels claim first is not an object; with no channel list
-    /// (a prop run before the channels spawn) the id is the record itself.
+    /// its gate-0 trigger's flat record index (`FUN_8003A55C`) - the walk
+    /// answers the first object the record binds. A target the placement
+    /// channels claim first is not an object; with no channel list (a prop
+    /// run before the channels spawn) the id is the record itself.
     ///
     /// REF: FUN_8003C83C, FUN_8003A55C
     pub(crate) fn cross_context_object_prop(&self, target: u8) -> Option<usize> {
@@ -927,25 +930,45 @@ impl World {
                 if !c.object_bind {
                     return None;
                 }
-                usize::from(c.ctx.script_id)
+                c.placement_index
             }
             None => usize::from(target),
         };
-        self.props
-            .bank
-            .props
-            .values()
-            .any(|p| p.record == record)
+        self.object_key_anchor(record)
+            .is_some_and(|a| self.props.bank.props.contains_key(&a))
             .then_some(record)
     }
 
-    /// A context standing for placed object `record`'s actor: its `+0x62`
+    /// The key of the object whose prop stands at `anchor` (the first, when
+    /// several objects share the key tile); with no binds installed, the
+    /// prop's record.
+    pub(crate) fn object_key_at_anchor(&self, anchor: (u8, u8)) -> Option<usize> {
+        if !self.field_vm.object_binds_by_key.is_empty() {
+            return self
+                .field_vm
+                .channels
+                .iter()
+                .filter(|c| c.object_bind)
+                .map(|c| c.placement_index)
+                .find(|k| {
+                    self.field_vm
+                        .object_binds_by_key
+                        .get(k)
+                        .is_some_and(|b| b.key_tile == anchor)
+                });
+        }
+        self.props.bank.props.get(&anchor).map(|p| p.record)
+    }
+
+    /// A context standing for placed object `key`'s actor: its `+0x62`
     /// clip-control word, `+0x10` flag word and `+0x6A` rate, read from the
     /// object's prop.
-    pub(crate) fn object_prop_ctx(&self, record: usize) -> FieldCtx {
-        let p = self.props.bank.props.values().find(|p| p.record == record);
+    pub(crate) fn object_prop_ctx(&self, key: usize) -> FieldCtx {
+        let p = self
+            .object_key_anchor(key)
+            .and_then(|a| self.props.bank.props.get(&a));
         FieldCtx {
-            script_id: record as u16,
+            script_id: self.object_key_record(key as u16),
             local_flags: p.map_or(0, |p| p.anim.flags),
             flags: p.map_or(0, |p| p.cflags),
             field_6a: p.map_or(0, |p| p.anim.rate),
@@ -955,16 +978,13 @@ impl World {
         }
     }
 
-    /// Write an op's result on [`Self::object_prop_ctx`] back onto every prop
+    /// Write an op's result on [`Self::object_prop_ctx`] back onto the prop
     /// the object draws and onto its object-bind channel, so the anim tick and
     /// the collision layer read the new words on the next frame.
-    pub(crate) fn store_object_prop_ctx(&mut self, record: usize, ctx: &FieldCtx) {
-        for p in self
-            .props
-            .bank
-            .props
-            .values_mut()
-            .filter(|p| p.record == record)
+    pub(crate) fn store_object_prop_ctx(&mut self, key: usize, ctx: &FieldCtx) {
+        if let Some(p) = self
+            .object_key_anchor(key)
+            .and_then(|a| self.props.bank.props.get_mut(&a))
         {
             p.anim.flags = ctx.local_flags;
             p.cflags = ctx.flags;
@@ -976,7 +996,7 @@ impl World {
             .field_vm
             .channels
             .iter_mut()
-            .find(|c| c.object_bind && usize::from(c.ctx.script_id) == record)
+            .find(|c| c.object_bind && c.placement_index == key)
         {
             c.ctx.local_flags = ctx.local_flags;
             c.ctx.flags = ctx.flags;
@@ -1328,7 +1348,10 @@ mod tests {
             interact: false,
             solid: true,
         });
-        w.field_vm.object_channel_binds = vec![(4, (2112, 2496))];
+        w.install_object_binds(&[legaia_engine_field::man_field_scripts::ObjectScriptBind {
+            key_tile: anchor,
+            ..legaia_engine_field::man_field_scripts::ObjectScriptBind::at(4, (2112, 2496))
+        }]);
         w.field_vm
             .channels
             .push(legaia_engine_field::field_channels::FieldChannel {

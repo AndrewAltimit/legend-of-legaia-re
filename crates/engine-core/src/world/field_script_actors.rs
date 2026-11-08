@@ -231,6 +231,7 @@ impl World {
             arc: spawn.arc,
             watcher,
             release_channel,
+            halt: true,
         });
         true
     }
@@ -247,6 +248,31 @@ impl World {
     /// `true` while `actor` is mid scripted arc.
     pub fn script_arc_live(&self, actor: ScriptActorRef) -> bool {
         self.script_actors.arcs.iter().any(|a| a.actor == actor)
+    }
+
+    /// `true` while `actor` is mid scripted arc **and** still carries the
+    /// arc's halt bit `+0x10 & 0x400` - what the field VM's busy gate
+    /// (`0x801DE90C..0x801DE944`) and the arc acquire's refusal read.
+    // REF: FUN_801DE840
+    pub fn script_arc_halts(&self, actor: ScriptActorRef) -> bool {
+        self.script_actors
+            .arcs
+            .iter()
+            .any(|a| a.actor == actor && a.halt)
+    }
+
+    /// The halt clear `32 <id> 0A` (`ctx[+0x10] &= ~0x400`) on an arced
+    /// actor: the bit drops, the arc helper keeps flying it to its landing.
+    // REF: FUN_801DE840 (op 0x32)
+    pub fn clear_script_arc_halt(&mut self, actor: ScriptActorRef) {
+        for a in self
+            .script_actors
+            .arcs
+            .iter_mut()
+            .filter(|a| a.actor == actor)
+        {
+            a.halt = false;
+        }
     }
 
     /// `true` while a live arc's release watcher runs the follow camera: a
@@ -280,7 +306,7 @@ impl World {
     /// REF: FUN_801DE840 (the op-`0x43` sub-`0`/`1`/`0xA`/`0xB` acquire)
     pub fn script_arc_target_halted(&self, ext: Option<u8>) -> bool {
         self.resolve_script_actor(ext)
-            .is_some_and(|actor| self.script_arc_live(actor))
+            .is_some_and(|actor| self.script_arc_halts(actor))
     }
 
     /// Advance every scripted arc one field frame: the arc helper's

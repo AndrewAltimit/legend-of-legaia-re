@@ -242,10 +242,13 @@ void main() { o_color = texture(u_layer, v_uv); }
   class ScreenPrimPass {
     /* `renderer` is the live TmdRenderer: this pass borrows its GL context,
      * its uploaded VRAM texture and its ABR blend table rather than keeping
-     * a second copy of any of the three. */
-    constructor(renderer) {
+     * a second copy of any of the three. `texture`, when given, is a VRAM
+     * texture of the same R16UI shape to sample instead of the renderer's
+     * (the dome hub's own, play-minigames.js `drawHub`). */
+    constructor(renderer, texture) {
       const gl = renderer.gl;
       this.renderer = renderer;
+      this.texture = texture || null;
       this.gl = gl;
       this.program = compileScreenPrimProgram(gl);
       this.locVram = gl.getUniformLocation(this.program, 'u_vram');
@@ -309,7 +312,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       gl.bindVertexArray(this.vao);
       gl.useProgram(this.program);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture || this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
       /* The log-depth scale the mesh program wrote this frame: a depth-tested
        * corner goes back to its w through the engine's own (a, b). */

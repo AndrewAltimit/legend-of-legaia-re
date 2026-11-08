@@ -2792,6 +2792,26 @@ topics = ["field", "chitei2", "Karisto", "story flags", "card boot", "probe stat
 
 [[scenarios]]
 slot = 255
+label = "chitei2_corridor_pillars_before"
+backup_fingerprint = "a32aa09e809c6378ba18a306bcc1b6f56201c442a2060a6033898a5355fd1e4b"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "Underground Octam, the east corridor's west door, arrived through deroa's door record 3. RETAIL disc: chitei2_field_card_boot crossed chitei2 -> deroa -> chitei2 by player-tile pokes onto the door trigger tiles (50,18) and (43,112) (the door records ran as the disc wrote them), saved 90 field vsyncs after the arrival at (11968, 13888). The corridor pillars P0[5..11] draw opaque."
+topics = ["field", "chitei2", "4C D6", "semi-transparency", "poked position"]
+
+[[scenarios]]
+slot = 255
+label = "chitei2_corridor_pillars_lit"
+backup_fingerprint = "4bdd22844e65c7d80281d0b892170715145856c9e9bc25ad5db1da2e3582b5db"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "chitei2_corridor_pillars_before, then the player poked across walk-on tiles (100,110) (P2[1], 4C D6 04) and (101,110) (P2[0], 4C D6 03) to stand on (102,110); saved 120 vsyncs later. The pillars P0[5..11] carry +0x74 = 0xC3/0xD3808080: semi-transparent, ABR 3, the party visible through them."
+topics = ["field", "chitei2", "4C D6", "semi-transparency", "poked position"]
+
+[[scenarios]]
+slot = 255
 label = "retona_field_card_boot"
 backup_fingerprint = "cb69ed5a9435041e9dabc83d29627aa7b7111446896305e9494178ffa63fcca3"
 phase = "field"
@@ -7415,3 +7435,246 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "garmel"
 topics = ["battle", "enemy attack", "garmel", "harvest"]
+
+[[scenarios]]
+label = "chitei2_cort_pre_mystic_shield"
+backup_fingerprint = "b17e5d00fce47e10982808417126bb85863604186d053cd0a511209858f0cd50"
+description = "chitei2 battle: Cort (monster id 180) is about to cast Mystic Shield (spell 0xAC, module 0940) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 888 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Mystic Shield", "chitei2", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_chitei2_cort_mystic_shield_mid_cast"
+backup_fingerprint = "100d4537fbc07e37d159de0c1bc9013575d13583ea803bf2ca0c8f2b2181f300"
+description = "chitei2 battle: Cort (monster id 180) mid-cast Mystic Shield (spell 0xAC, module 0940): category 2, action state 0x70. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 895 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Mystic Shield", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "chitei2_cort_pre_guilty_cross"
+backup_fingerprint = "c9a5d964712194b5119e8de3bdd720cd5b5ef810c928cf4e52f35adb0f50b94b"
+description = "chitei2 battle: Cort (monster id 180) is about to cast Guilty Cross (spell 0x37, module 0944) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 4104 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Guilty Cross", "chitei2", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_chitei2_cort_guilty_cross_mid_cast"
+backup_fingerprint = "6427aaa95c636e9a9f879df482bb883c07274dbe97a9df643c674642556fe555"
+description = "chitei2 battle: Cort (monster id 180) mid-cast Guilty Cross (spell 0x37, module 0944): category 2, action state 0x70. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 4111 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Guilty Cross", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "chitei2_cort_pre_mystic_circle"
+backup_fingerprint = "a1ca284462c06c63aca07c15c93ec49dbf7c01d987f03ff42fa9a8a90f97de24"
+description = "chitei2 battle: Cort (monster id 180) is about to cast Mystic Circle (spell 0xB7, module 0938) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 6425 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Mystic Circle", "chitei2", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_chitei2_cort_mystic_circle_mid_cast"
+backup_fingerprint = "bd30e4154e7b7ee47569f727581e4cbca7c1dd225ddf386ec5925a71a9c1f1bc"
+description = "chitei2 battle: Cort (monster id 180) mid-cast Mystic Circle (spell 0xB7, module 0938): category 2, action state 0x70. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 6432 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Cort", "Mystic Circle", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "rugi_berserker_2_pre_spore_gas"
+backup_fingerprint = "55a25fbe2b54c6997f1ee88646537ec94df802adf4c8d06ca727d53554d795c8"
+description = "rugi battle: Berserker $2 (monster id 173) is about to cast Spore Gas (spell 0x4F, module 0939) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 3024 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Berserker $2", "Spore Gas", "rugi", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_rugi_berserker_2_spore_gas_mid_cast"
+backup_fingerprint = "77daa139ab7d7a91570551a74edc309145d263dae3ffc4fe601a5b3d83b2663f"
+description = "rugi battle: Berserker $2 (monster id 173) mid-cast Spore Gas (spell 0x4F, module 0939): category 2, action state 0x6F. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 3025 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Berserker $2", "Spore Gas", "rugi", "harvest"]
+
+[[scenarios]]
+label = "rugi_berserker_3_pre_spore_gas"
+backup_fingerprint = "da903a34f6741b58bdc9f6fae27528feb5373d86487edc3c99939c06e9b874d5"
+description = "rugi battle: Berserker $3 (monster id 174) is about to cast Spore Gas (spell 0x4F, module 0939) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 19283 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Berserker $3", "Spore Gas", "rugi", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_rugi_berserker_3_spore_gas_mid_cast"
+backup_fingerprint = "b521bf63c00d9d0e5b0f0be2c23209c5bbc684bf1dd6abe494a25211ad866778"
+description = "rugi battle: Berserker $3 (monster id 174) mid-cast Spore Gas (spell 0x4F, module 0939): category 2, action state 0x6F. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 19284 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Berserker $3", "Spore Gas", "rugi", "harvest"]
+
+[[scenarios]]
+label = "nilboa_koru_pre_dead_end_crisis"
+backup_fingerprint = "da19e7a37c05901d64b7af0f5ea6248a60f2b4bf38a8112c933cb94d78192c78"
+description = "nilboa battle: Koru (monster id 182) is about to cast Dead End Crisis (spell 0xA1, module 0961) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 4823 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Dead End Crisis", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_koru_dead_end_crisis_mid_cast"
+backup_fingerprint = "571f0d3c7a9d7eb8f08c6a8347d006afca4b01f34907947672ddbeb5df461a1a"
+description = "nilboa battle: Koru (monster id 182) mid-cast Dead End Crisis (spell 0xA1, module 0961): category 2, action state 0x6F. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 4824 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Dead End Crisis", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_koru_pre_blade_breath"
+backup_fingerprint = "f1d955700cd6e52a7f1d4df557af4040040474add0d99d25433aee7ad50b59ac"
+description = "nilboa battle: Koru (monster id 182) is about to cast Blade Breath (spell 0xA2, module 0962) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 591 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Blade Breath", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_koru_blade_breath_mid_cast"
+backup_fingerprint = "8d7e720822d5fd4708d30e6fd2c50e4c66bd2003be34183306ae7c2c79ad221f"
+description = "nilboa battle: Koru (monster id 182) mid-cast Blade Breath (spell 0xA2, module 0962): category 2, action state 0x6F. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 592 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Blade Breath", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_koru_pre_thunder_needle"
+backup_fingerprint = "ddd294a10a73feef0dbab4160f51ee4232ea7419016c61c1c647bbeba923c432"
+description = "nilboa battle: Koru (monster id 182) is about to cast Thunder Needle (spell 0xA3, module 0962) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 1584 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Thunder Needle", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_koru_thunder_needle_mid_cast"
+backup_fingerprint = "dd240be427872446c5d316b52c31210b8a28072d6c6b09ac26aac7abf8aabf1e"
+description = "nilboa battle: Koru (monster id 182) mid-cast Thunder Needle (spell 0xA3, module 0962): category 2, action state 0x6F. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 1585 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Thunder Needle", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_koru_pre_gigaton_press"
+backup_fingerprint = "38098ed1fac98bca5a6834628b65b4e5184318583791a434056fd183b3cd5bc4"
+description = "nilboa battle: Koru (monster id 182) is about to cast Gigaton Press (spell 0xA4, module 0962) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 2665 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Gigaton Press", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_koru_gigaton_press_mid_cast"
+backup_fingerprint = "6ce41b2d052cf1db83bb45aa813960ebfcd83285f38fec3e784acd9f5dcd81e6"
+description = "nilboa battle: Koru (monster id 182) mid-cast Gigaton Press (spell 0xA4, module 0962): category 2, action state 0x6F. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 2666 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Gigaton Press", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_koru_pre_ultra_charge"
+backup_fingerprint = "313147ce5ca05fefab332c96869bee8003f7661a4f4069efd081adedd4b32794"
+description = "nilboa battle: Koru (monster id 182) is about to cast Ultra Charge (spell 0xA5, module 0962) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 3655 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Ultra Charge", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_koru_ultra_charge_mid_cast"
+backup_fingerprint = "81f60eca579b451513018fc60cb6b6ef3a19af5276925283b8e1d85befe3a8ea"
+description = "nilboa battle: Koru (monster id 182) mid-cast Ultra Charge (spell 0xA5, module 0962): category 2, action state 0x6F. RETAIL disc: nilboa_field_door_hop played forward (so the party is that state's, Vahn alone, not the story fight's), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 3656 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Ultra Charge", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "garmel_zeto_pre_poisonous_bubbles"
+backup_fingerprint = "7a9f29f747538fd779751c38b232b46045ce830e97382bfa8c0299eb0b283b3a"
+description = "garmel battle: Zeto (monster id 75) is about to cast Poisonous Bubbles (spell 0x28) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 19977 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Poisonous Bubbles", "garmel", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_garmel_zeto_poisonous_bubbles_mid_cast"
+backup_fingerprint = "f2a38235c3c990c7e6b8ea8e8487630396e3aac4d13ea7a0f582d4c6407d66ec"
+description = "garmel battle: Zeto (monster id 75) mid-cast Poisonous Bubbles (spell 0x28): category 2, action state 0x2B. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 19984 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Poisonous Bubbles", "garmel", "harvest"]
+
+[[scenarios]]
+label = "garmel_zeto_pre_call_wave"
+backup_fingerprint = "d4907a88c90c7b6f634315c3816a2ccca034bda050cd630279b1ef2acf9bbf26"
+description = "garmel battle: Zeto (monster id 75) is about to cast Call Wave (spell 0x55, module 0946) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 1260 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Call Wave", "garmel", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_garmel_zeto_call_wave_mid_cast"
+backup_fingerprint = "59a590f3ce51e52c63cb6b3a8927de44e4808e5af5fdbcbd3b1a63e7d07e58db"
+description = "garmel battle: Zeto (monster id 75) mid-cast Call Wave (spell 0x55, module 0946): category 2, action state 0x70. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 1267 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Call Wave", "garmel", "harvest"]
+
+[[scenarios]]
+label = "garmel_zeto_pre_big_wave"
+backup_fingerprint = "ab3eb41288623555d67ba91d00fb405044ac3df164f7b1b698b078c51a55bf83"
+description = "garmel battle: Zeto (monster id 75) is about to cast Big Wave (spell 0x56, module 0946) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); no write to the action queue. Saved 2720 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Big Wave", "garmel", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_garmel_zeto_big_wave_mid_cast"
+backup_fingerprint = "327f57aad09ce051d4183f4dec1fc11cdd45ddb16a1124cadcd64792ae1af359"
+description = "garmel battle: Zeto (monster id 75) mid-cast Big Wave (spell 0x56, module 0946): category 2, action state 0x70. RETAIL disc: garmel_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), monster HP cut to a third at round prompts from round 2 (LEGAIA_WOUND, LEGAIA_WOUND_EVERY), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the cast is the AI's own. Saved 2727 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy cast", "Zeto", "Big Wave", "garmel", "harvest"]
+
+[[scenarios]]
+label = "conc3_field_inn_night"
+backup_fingerprint = "990e976b329ae61413494b599a401692bbe3b7bc4cf304f85ca079f6535318b3"
+description = "conc3 (Conkram (Past, 3)) field state: the party in the inn room after the stay, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 1 (conc_field_card_boot), then autorun_walk_route.lua: walk to (2496, 12250), TALK facing Z+ to the innkeeper (conc P1[9]), Yes at the stay picker, which loads conc3 (conc's door list carries this scene change in partition 1, with no partition-2 slot). Saved 2691 vsyncs in, after 60 Cross presses and every walk press left the player at (1984, 12352): whether the pad has control here is not established."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "conc3", "walk route", "scene coverage"]

@@ -221,6 +221,31 @@ fn the_held_height_reaches_the_placement_context() {
     assert_eq!(w.field_vm.channels[0].ctx.world_y as i16, -480);
 }
 
+/// `4C 37` on a placement that carries the height law: the arm copies the
+/// player's position onto the context and, with `0x20000000` raised, stores
+/// `+0x8E = -player.y` (`0x801E103C..0x801E1044`), so the height arm then
+/// holds the placement at the player's height rather than at the `+0x8E` it
+/// parked at. The op advances on that path as on the plain copy.
+#[test]
+fn a_player_coords_copy_holds_a_height_law_placement_at_the_players_y() {
+    let mut w = world_with_placement();
+    let slot = w.player_actor_slot.unwrap() as usize;
+    w.actors[slot].move_state.world_x = 6 * 128 + 64;
+    w.actors[slot].move_state.world_y = -200;
+    w.actors[slot].move_state.world_z = 2 * 128 + 64;
+    let mut c = plank_channel(4);
+    c.ctx.flags = 0x2000_0000;
+    c.ctx.field_8e = 480;
+    let mut host = FieldHostImpl { world: &mut w };
+    let r = field_step_routed(&mut host, &mut c.ctx, &[0x4C, 0x37], 0);
+    assert!(matches!(r, FieldStepResult::Advance { next_pc: 2 }));
+    assert_eq!(c.ctx.field_8e, 200);
+    w.field_vm.channels.push(c);
+    w.tick_field_npc_heights();
+    assert_eq!(w.field_vm.channels[0].ctx.world_y as i16, -200);
+    assert_eq!(w.field_npc_render_y(4, 6 * 128 + 64, 2 * 128 + 64), -200);
+}
+
 /// The player's held height: `B1 F8 1D` raises its `0x20000000`, and a
 /// `CC F8 42 <value> <ticks>` tween of its `+0x8E` then carries its Y on the
 /// scheduler law; `CC F8 DA` drops the law and snaps it back to the floor.
@@ -263,7 +288,8 @@ fn a_player_height_tween_lifts_the_player() {
 fn a_ramped_roll_write_turns_a_placed_object() {
     let mut w = world_with_placement();
     w.field_vm.executing_channel = None;
-    w.field_vm.executing_object = Some(0x12);
+    // The executing object is named by its channel key.
+    w.field_vm.executing_object = Some(9);
     let mut c = plank_channel(9);
     c.object_bind = true;
     c.ctx.script_id = 0x12;

@@ -225,11 +225,14 @@ table above, riding the host's INTERVAL envelope for arms `0x0A..0x0C` and
 running `0x14..0x16` itself - and draws
 `legaia_engine_ui::ringside_backdrop::ringside_still_quads` at its level,
 first in the hub's list, then the ROUND banner over it on arms `0x15` /
-`0x16`. The quads resolve onto the still's sheet **through their texture
-pages** (`StillDraw::from_quad`), and the sheet is laid down band by band at
-the loader's own rects (`still_sheet_rgba` over `backread_slice_rect`): the
-native window bakes both stills into its hub atlas, and the play page serves
-them as hub sheet `8`. The standalone minigames page draws the same pair under
+`0x16`, through the one decomposition both play hosts draw
+(`legaia_engine_screens::minigame_hud::muscle_hub_sprites`). The quads resolve
+onto the still's sheet **through their texture pages** (`StillDraw::from_quad`),
+and the sheet is laid down band by band at the loader's own rects
+(`still_sheet_rgba` over `backread_slice_rect`): the native window bakes both
+stills into its hub atlas, and the play page samples them out of the hub's own
+VRAM image (`ringside_backdrop::hub_vram`, the bands written at the same rects
+from `(384, 0)`) through a 15-bit page, as retail's packets do. The standalone minigames page draws the same pair under
 its INTERVAL screen (HUD sheet `7`, `muscle_interval_still_json`): it replays a
 `HubBackdrop` beside the INTERVAL envelope and the tally roll to the screen's
 tick, picks the variant through `still_prot_index` over the fighter's HP as
@@ -259,13 +262,15 @@ walk through `muscle_first_visit_json` and hands over to its own ROUND banner
 at arm `0x15`.
 
 The shade is subtractive (`B - F`, draw-mode tpage `0x46`), and all three
-hosts subtract it. The browser pages read back the pixels their 2D layer
-already holds and subtract the Gouraud ramp row by row, clamped at zero
-(`subtractShade` in `play-minigames.js` and `minigame-muscle.js`). The native
-window draws one row per display line through the sprite pass's `ABR 2`
-pipeline (`OverlayBlendSpan` in `legaia-engine-render`), which switches
-equation mid-list, so the shade stays between the wall tiles and the screens
-over them.
+hosts subtract it, one row per display line at that row's Gouraud value, which
+the GPU blends at the framebuffer's 5 bits (`F >> 3` steps). The play hosts
+take the rows from `muscle_hub_sprites`: the native window through the sprite
+pass's `ABR 2` pipeline (`OverlayBlendSpan` in `legaia-engine-render`), which
+switches equation mid-list, the play page as flat `ABR 2` screen primitives;
+either way the shade stays between the wall tiles and the screens over them.
+The standalone minigames page reads back the pixels its 2D layer already
+holds and subtracts the ramp row by row, clamped at zero (`subtractShade` in
+`minigame-muscle.js`).
 
 The subtraction runs at the framebuffer's 5 bits. The packet's draw mode
 `0x46` leaves dither off, so the GPU drops the Gouraud value's low 3 bits

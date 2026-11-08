@@ -257,9 +257,14 @@ const LOG_DEPTH_RANGE = 24.0;
  * takes that tie is the window's fill rule. The canvas's drawing buffer runs
  * bottom-up, so its rule hands a flat edge's tie to the row under the GPU's and
  * every sprite draws a row low, its last texel row past the art. A 64th of a stage
- * row up, coarser than the rasteriser's sub-pixel grid, gives the tie back. The 3D
+ * row up gives a textured primitive's tie back on a real GPU; any more shifts the
+ * texels a rotated quad samples (the battle intro's shards). An untextured one
+ * takes an eighth: a 64th rounds back onto the tie on SwiftShader's coarser
+ * sub-pixel grid, where every flat band (the ending vignettes' letterbox, the
+ * slot machine's panels) drew a row low while a real GPU drew it right. The 3D
  * pass draws into a framebuffer object, which agrees with the window already. */
 const PSX_TIE_NDC_Y = 2 / 240 / 64;
+const PSX_TIE_FLAT_NDC_Y = 2 / 240 / 8;
 
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {
@@ -519,8 +524,10 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
  * (fieldDroppedFloorW), so a face buried under the floor does not paint
  * over it from a camera retail never had. */
 uniform float u_ground_drop;
+/* Off retail's vantage every far-bucket cell, sloped included, leaves the
+ * slice for the dropped floor (fieldDroppedFloorScale). */
 bool fieldFarBucket(vec4 fa) {
-  return u_curve <= 0.0 && fa.x > fa.z;
+  return u_curve <= 0.0 && u_ground_drop <= 0.0 && fa.x > fa.z;
 }
 /* A flat far-bucket cell carries a swapped z pair (fa.y > fa.w) and goes into
  * the same far slice, so a decal authored under the floor plane paints over
@@ -562,20 +569,27 @@ vec3 eyeOfMatrix(mat4 m) {
   if (abs(det) < 1.0e-20) return vec3(0.0);
   return -(r0.w * c13 + r1.w * cross(r3.xyz, r0.xyz) + r3.w * cross(r0.xyz, r1.xyz)) / det;
 }
-/* Off retail's vantage (u_ground_drop > 0): the factor a flat bucketed cell's
- * view depth takes so it is depth-tested as the plane u_ground_drop units
- * below it along each pixel's ray, (h + drop) / h for an eye h above the
- * floor (legaia_engine_scene::field_ground::dropped_floor_w, engine-render's
- * field_dropped_floor_depth); -1 on any other vertex. A sloped far-bucket
- * cell keeps the far slice, a sloped sorted cell its own depth. */
-float fieldDroppedFloorScale(mat4 m, vec4 fa, vec4 fb) {
+/* Off retail's vantage (u_ground_drop > 0): the factor a bucketed cell's
+ * view depth takes so it is depth-tested as the level plane u_ground_drop
+ * units beyond its corner farthest from the eye, along each pixel's ray:
+ * (h + drop) / d for an eye h from that corner and a vertex d from the eye's
+ * height, d = h on a flat cell (legaia_engine_scene::field_ground::
+ * dropped_floor_w / dropped_floor_ref, engine-render's
+ * field_dropped_floor_depth); -1 on any other vertex. Every far-bucket cell
+ * takes it, a sorted cell only when flat (a sloped one keeps its own
+ * depth). py is the vertex's own height. */
+float fieldDroppedFloorScale(mat4 m, vec4 fa, vec4 fb, float py) {
   if (u_ground_drop <= 0.0 || u_curve > 0.0) return -1.0;
-  bool flatFar = fa.y > fa.w && fa.x <= fa.z;
+  bool isFar = fa.y > fa.w || fa.x > fa.z;
   bool sorted = fa.z > fa.x && fa.w > fa.y;
-  if (!(flatFar || sorted)) return -1.0;
-  if (fb.x != fb.y || fb.x != fb.z || fb.x != fb.w) return -1.0;
-  float h = abs(eyeOfMatrix(m).y - fb.x);
-  return (h + u_ground_drop) / max(h, 1.0);
+  if (!(isFar || sorted)) return -1.0;
+  bool isFlat = fb.x == fb.y && fb.x == fb.z && fb.x == fb.w;
+  if (sorted && !isFlat) return -1.0;
+  float e = eyeOfMatrix(m).y;
+  float lo = min(min(fb.x, fb.y), min(fb.z, fb.w));
+  float hi = max(max(fb.x, fb.y), max(fb.z, fb.w));
+  float floorY = abs(hi - e) > abs(lo - e) ? hi : lo;
+  return (abs(floorY - e) + u_ground_drop) / max(sign(floorY - e) * (py - e), 1.0);
 }
 float fieldSortedCellW(mat4 m, vec4 fa, vec4 fb) {
   if (u_curve > 0.0 || u_ground_drop > 0.0 || fa.z <= fa.x || fa.w <= fa.y) return -1.0;
@@ -734,10 +748,10 @@ void main() {
   /* A ground cell carries its own bucket (above, or the far bucket). */
   if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
-  /* Off retail's vantage a flat bucketed cell is depth-tested as the floor a
-   * few units lower (fieldDroppedFloorScale); the scale is constant over the
-   * cell, so the per-corner depth interpolates exactly. */
-  float dropS = fieldDroppedFloorScale(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  /* Off retail's vantage a bucketed cell is depth-tested as the level floor a
+   * few units beyond it (fieldDroppedFloorScale); a plane is affine in 1/w on
+   * screen, so the per-corner depth interpolates it exactly. */
+  float dropS = fieldDroppedFloorScale(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y, a_position.y);
   if (dropS > 0.0 && gl_Position.w > 0.0) {
     vec2 dab = depthAffine(u_mvp * u_model);
     v_depth_w = gl_Position.w * dropS;
@@ -780,6 +794,9 @@ uniform int u_use_flat_colors;
  * bit is set: STP=0 texels draw opaque even inside a semi-transparent prim.
  * Untextured (flat-colour) prims have no STP; the whole prim blends. */
 uniform int u_semi_pass;
+/* 1 = the draw's colour word forces ABE on every prim (FUN_80043390's
+ * primitive-flag byte, field-VM 4C D6); the blend mode is the pass's. */
+uniform int u_force_semi;
 /* Distance haze far colour over 128 (retail SetFarColor): 0x100 / 128 = 2.0
  * for the continent ground, 0xD0 / 128 for a decoration. */
 uniform float u_haze_far;
@@ -1342,7 +1359,7 @@ void main() {
 
   /* Prim semi-transparency enable: the TMD group mode byte's ABE bit, packed
    * by the mesh builders into bit 15 of the per-vertex TSB attribute. */
-  bool prim_semi = (tsb & 0x8000u) != 0u;
+  bool prim_semi = (tsb & 0x8000u) != 0u || u_force_semi != 0;
 
   /* Untextured (flat/gouraud) prim path: the prim carries no UVs, so it would
    * sample empty VRAM and discard. Take its TMD packet colour instead and

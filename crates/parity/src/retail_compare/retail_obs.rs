@@ -194,6 +194,10 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// Drawn field actors' semi-transparency flag bytes
+    /// ([`retail_object_draw_flags`]), handed to the image child as
+    /// `LEGAIA_SEAT_OBJECT_FLAGS`.
+    pub object_flags: Vec<(u16, u8)>,
     /// Drawn field actors' clip words ([`retail_object_clips`]), handed to
     /// the image child as `LEGAIA_SEAT_OBJECT_CLIPS`.
     pub object_clips: Vec<ObjectClipSeed>,
@@ -455,6 +459,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            object_flags: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_draw_flags(ram)
+            } else {
+                Vec::new()
+            },
             player_clip: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_player_clip(ram)
             } else {
@@ -626,6 +635,16 @@ impl RetailObs {
             env.push((
                 "LEGAIA_SEAT_TURNING_PARTS",
                 turning_parts_env(&self.turning_parts),
+            ));
+        }
+        if !self.object_flags.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_OBJECT_FLAGS",
+                self.object_flags
+                    .iter()
+                    .map(|(r, b)| format!("{r}:{b}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
             ));
         }
         if !self.object_models.is_empty() {

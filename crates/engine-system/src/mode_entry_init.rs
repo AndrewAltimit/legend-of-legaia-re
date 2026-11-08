@@ -224,6 +224,26 @@ pub const FIELD_BGM_TWO_PART_ID: u32 = 0x814;
 /// disc.
 pub const FIELD_BGM_TWO_PART_STREAMS: [u32; 2] = [0x428, 0x422];
 
+/// Vsyncs one field MAIN INIT (game mode `0x02`) holds the screen between
+/// two scenes of the credits chain - measured, not a script wait.
+///
+/// The init `FUN_801D6704` is one synchronous call: its CD reads and LZS
+/// decodes, then a busy loop that runs the BGM poller `FUN_800243F0` until
+/// the requested and loaded indices agree (`0x801D72D4..0x801D731C`), and
+/// only then the store of mode `3` (`0x801D7484`). No frame count bounds it;
+/// its length is the load. A PCSX-Redux film of the whole credits chain
+/// reads mode `0x02` for exactly `130` vsyncs at each of its eight scene
+/// changes (`edteien` -> `edbylon` .. `edson` -> `edlast`), whatever the
+/// size of the destination's block (240 KB to 680 KB), after the streaming
+/// actor's `0x46`-frame hand-off.
+///
+/// The port's loads are instant and stay so in play; the credits are the
+/// place where the gap is visible, because the ending theme plays across
+/// every one of those loads (the credits latch, `_DAT_8007B9B8`). Skipping
+/// the eight holds puts the last vignette about 17 seconds ahead of the
+/// score.
+pub const CREDITS_FIELD_INIT_HOLD_VSYNCS: u16 = 130;
+
 /// Retail's sound slot for the two-part track: the `0x80091508 + slot * 12`
 /// table row `FUN_8001E54C` installs into and the `0x8007051C + slot * 16`
 /// sequence record `FUN_80026478` starts. Its VAB id is `10` and its SPU base

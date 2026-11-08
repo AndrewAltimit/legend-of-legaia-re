@@ -126,7 +126,15 @@ pub struct RetailSeqPosition {
     /// walk build is folded to the larger side (`0x800682B8..0x800682E8` in
     /// `FUN_80067E9C`). A state saved in Monaural is rendered that way.
     pub mono: bool,
+    /// The flush's silent-history write index `_DAT_801CE204 & 0xF` at the
+    /// state. libsnd steps it once a calc from boot, so the render stands its
+    /// own run on the phase that puts it here at the state's instant
+    /// ([`legaia_engine_audio::Sequencer::set_silent_ring_phase`]).
+    pub silent_phase: u8,
 }
+
+/// The flush's silent-history write index (`_DAT_801CE204`).
+pub const LIBSND_SILENT_RING_INDEX: u32 = 0x801C_E204;
 
 /// libsnd's monaural flag (`SsSetMono`), read as a halfword against `1` by
 /// the voice-volume chain (`lh v1,-0x1cd0(v1)` at `0x800682BC`).
@@ -175,6 +183,7 @@ pub fn retail_position(ram: &[u8], bank: &TrackBank, entry: &[u8]) -> Result<Ret
         event,
         wait,
         mono,
+        silent_phase: (rd32(LIBSND_SILENT_RING_INDEX) & 0xF) as u8,
     })
 }
 
@@ -192,10 +201,14 @@ pub fn render_aligned(
     stems: Option<&Path>,
     seq_vols: Option<&[u8]>,
 ) -> Result<Vec<i16>> {
-    let mut d = TraceBgmDirector::new();
-    d.master_vol = pos.seq_vol;
-    d.start_owned_vab(pos.track, entry);
-    d.spu_mut().mono = pos.mono;
+    let fresh = || {
+        let mut d = TraceBgmDirector::new();
+        d.master_vol = pos.seq_vol;
+        d.start_owned_vab(pos.track, entry);
+        d.spu_mut().mono = pos.mono;
+        d
+    };
+    let mut d = fresh();
     let step = |d: &mut TraceBgmDirector, carry: &mut f64, out: Option<&mut Vec<i16>>| {
         let spu: *mut Spu = d.spu_mut();
         if let Some(s) = d.sequencer_mut() {
@@ -217,6 +230,7 @@ pub fn render_aligned(
     let mut left = if exact { EXACT_PASS_SEARCH } else { pass };
     let mut prev_next = 0;
     let budget = if exact { 60 * 3600 } else { 60 * 1800 };
+    let mut stepped = 0usize;
     for _ in 0..budget {
         let (next, wait) = d
             .sequencer()
@@ -239,10 +253,22 @@ pub fn render_aligned(
         }
         prev_next = next;
         step(&mut d, &mut carry, None);
+        stepped += 1;
     }
     if !found {
         let seq = d.sequencer().map(|s| (s.next_event(), s.loop_count()));
         bail!("the sequencer never reached {pos:?}; it stands at {seq:?}");
+    }
+    // The run is deterministic, so it is run again from a silent history
+    // phased to arrive where the state's stands: which flush a silent voice
+    // is let go on, and so which voice a later note takes, depends on it.
+    d = fresh();
+    if let Some(s) = d.sequencer_mut() {
+        s.set_silent_ring_phase(usize::from(pos.silent_phase) + 16 - stepped % 16);
+    }
+    carry = 0.0;
+    for _ in 0..stepped {
+        step(&mut d, &mut carry, None);
     }
     if verbose {
         let at = d.sequencer().map(|s| (s.next_event(), s.pump_wait()));

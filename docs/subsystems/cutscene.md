@@ -1818,6 +1818,28 @@ locomotion while the bit is up (`0x801D1694..0x801D16A0`, PROT 0897). The engine
 lock reproduces this, and the chapter-1 ladder's ending scenes score no walk rung for that
 reason.
 
+#### The credits hold for each scene load
+
+Between two vignettes retail spends a field MAIN INIT on a black screen. A
+per-vsync PCSX-Redux film of the whole chain reads each scene change the same
+way: the scene-change packet, the streaming actor's `0x46`-frame hand-off
+(72 vsyncs; 92 into `eddoman`), then game mode `0x02` for exactly `130`
+vsyncs at all eight changes, whatever the destination block's size (240 KB
+to 680 KB). The init `FUN_801D6704` is one synchronous call - its reads and
+decodes, then a loop running the BGM poller `FUN_800243F0` until requested
+and loaded indices agree (`0x801D72D4..0x801D731C`) - and stores mode `3` at
+`0x801D7484` only after it; no frame count bounds it.
+
+The port loads at once. In the credits that is not invisible: the ending
+theme plays across every load (the credits latch `_DAT_8007B9B8`), and the
+eight skipped holds put the last vignette about 17 seconds ahead of the
+score. So under the latch (`AudioState::credits_latch`, raised by the
+theme's start) a named scene change arms `World::field_init_hold` for
+`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`, the measured length - a figure,
+not a disassembled count): `SceneHost::tick` runs none of the scene and both
+hosts draw the frame black (`screen_layers`). Everywhere else the load stays
+instant.
+
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
 `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait.
 The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped
@@ -1960,6 +1982,39 @@ cross-context op. Unit-covered by
 `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
 `chapter1_hub_depth_oracle` drives the jou castle door through this path to
 `SceneEntered("jouina")`.
+
+**An arced NPC parks the next op aimed at it.** Against a placement the halt-acquire is the
+scripted arc (`World::start_field_script_arc`), and the busy gate is modelled as retail runs
+it: a cross-context op whose target placement still carries the arc's halt bit holds the record
+at that op until the arc lands (`World::script_arc_halts`). `eddoman` `P2[7]` arcs placement
+`0x16` over 36 frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it with `B3 16 0A`; held
+there, its white flash stays up as long as the retail film's.
+
+The gate reads the bit (`+0x10 & 0x400`, `0x801DE90C`), not the arc. The halt clear `32 <id> 0A`
+is exempt from it (`0x801DE8E0..0x801DE904`) and lowers the bit while the arc helper flies on, so
+the ops after it drive the actor mid-flight (`World::clear_script_arc_halt`). `edson` `P2[0]`
+flies both Seru across its aerial shot on 470- and 370-frame arcs, waits for the 320-frame glide
+(`4C CD`), then clears both halts (`B2 0C 0A`, `B2 0D 0A`) and re-stages them at once: the shot
+lasts the glide, about 300 vsyncs in the retail film, not the arcs (disc-gated
+`edson_aerial_shot_disc`).
+
+**Two more spins hold the record.** Besides the clip end latch (`AD <id> 08`), a record spins on
+an actor's morph envelope ADVANCE bit (`AD <id> 0B`, `+0x62 & 0x800`), which the ramp envelope
+`FUN_80020740` raises when the lanes have drained; the record holds there while the world runs
+that actor's envelope (`MORPH_ADVANCE_SPIN_TIMEOUT` bounds it). `edlast`'s lily closes that way
+(`AC 00 0A`, `AB 00 0D`, `AC 00 0B`, `AD 00 0B`) and holds the shot about 520 vsyncs. And the
+clip a `4C 51` seat names is bound at the op, as `A2` ExecMove's is, so a seat followed by
+`AD <id> 08` waits for that clip: `edkorout` `P2[0]` seats placement 9 on move `21` and waits
+about 95 vsyncs for it before move `22` ([`script-vm-menuctrl.md`](script-vm-menuctrl.md#sub-1-the-seat-binds-its-move-clip)).
+The end-latch spin on a placed object waits on that object's own clip: `edbylon` `P2[19]` swings
+the dojo door (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`) and holds the door shot with
+`AC 04 08` / `AD 04 08` for the 30-frame swing, about 60 vsyncs, before the pull-back
+(`World::object_prop_clip_running`; disc-gated `edbylon_door_spin_disc`).
+
+A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
+for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
+the sign, as GTE `TR` does: the same window shot glides the depth through zero, the lens passing
+through the wall to the sky.
 
 ### The op `0x4C 0x12` tint (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
 

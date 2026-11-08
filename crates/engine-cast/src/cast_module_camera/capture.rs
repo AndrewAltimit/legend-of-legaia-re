@@ -623,6 +623,7 @@ pub fn guilty_cross_camera(
     }
     let hold = st.countdown.drain_above(0);
     let mut shot = None;
+    let mut arm = CaptureCamArm::default();
     if !hold {
         match phase {
             1 => st.countdown.add(1 << 7),
@@ -634,11 +635,41 @@ pub fn guilty_cross_camera(
                     focus: focus_on(v),
                     frames: 1,
                 });
+                // The cut to the victim hides the caster and shows the victim
+                // by colour word as well as flag (the tick port's), and lets
+                // the caster's clip-8 loop window go (`0x801F6F08..0x801F6F1C`:
+                // `sw zero,0x4(s5)`, `sw 0x20080200,0x4(s6)`, `sb zero,0x21b(s5)`,
+                // `sh zero,0x176(s5)`), so the clip runs on to its end and parks.
+                arm.caster_write = CaptureSeatWrite {
+                    colour: Some(0),
+                    loop_release: true,
+                    ..Default::default()
+                };
+                arm.victim_write = CaptureSeatWrite {
+                    colour: Some(GUILTY_CROSS_NEUTRAL),
+                    ..Default::default()
+                };
             }
             3 => st.countdown.add(1 << 8),
             4 => {
                 st.countdown.add(0xC0);
                 shot = Some(behind_caster(1));
+                // The cut back shows the caster again (`0x801F7320`).
+                arm.caster_write = CaptureSeatWrite {
+                    colour: Some(GUILTY_CROSS_NEUTRAL),
+                    ..Default::default()
+                };
+            }
+            5 => {
+                // Every seat with HP back on the neutral word, flag `0` and
+                // rate `8` (`0x801F73C4..0x801F7418`, seats `0..7`).
+                arm.others_write = CaptureSeatWrite {
+                    colour: Some(GUILTY_CROSS_NEUTRAL),
+                    render_flag: Some(0),
+                    rate: Some(8),
+                    ..Default::default()
+                };
+                arm.others_live_only = true;
             }
             _ => {}
         }
@@ -648,9 +679,12 @@ pub fn guilty_cross_camera(
         drift,
         hold,
         next: None,
-        ..Default::default()
+        ..arm
     }
 }
+
+/// The neutral colour word PROT 0944's arms store to show a seat.
+const GUILTY_CROSS_NEUTRAL: u32 = 0x2008_0200;
 
 /// PROT 0962's `0xA5` body (evolved Cort's Ultra Charge).
 pub const ULTRA_CHARGE_BODY: u32 = 0x801F_69D8;
@@ -992,6 +1026,10 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         hold: true,
         ..Default::default()
     };
+    let tint = |flag: u8| CaptureSeatWrite {
+        render_flag: Some(flag),
+        ..Default::default()
+    };
     match phase {
         0 => {
             st.countdown.0 = 0;
@@ -1003,20 +1041,36 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         }
         1 => {
             st.countdown.add(1 << 8);
-            pass(Some(shot(0, z / 2, 0x100)), Some(2))
+            // Call Wave's charge tint: the caster's `+0x21C = 7`, the soft
+            // red arm of the tint SM (`li v0,0x7` / `sb v0,0x21c(s4)` at
+            // `0x801F6D8C..0x801F6D98`, `s4` the caster).
+            CaptureCamArm {
+                caster_write: tint(7),
+                ..pass(Some(shot(0, z / 2, 0x100)), Some(2))
+            }
         }
         2 => {
             if gate(st) {
                 return held;
             }
             st.countdown.add(0x60);
-            pass(Some(shot(0, z, 0x40)), Some(3))
+            // The tint off once the pan's word is spent (`sb zero,0x21c(s4)`
+            // at `0x801F6E44`), so arm 0 of the tint SM eases the body home
+            // through arm 3.
+            CaptureCamArm {
+                caster_write: tint(0),
+                ..pass(Some(shot(0, z, 0x40)), Some(3))
+            }
         }
         3 => {
             if gate(st) {
                 return held;
             }
-            pass(None, None)
+            // The same clear again on the way out (`0x801F6E7C`).
+            CaptureCamArm {
+                caster_write: tint(0),
+                ..pass(None, None)
+            }
         }
         4 => {
             st.countdown.add(1 << 6);

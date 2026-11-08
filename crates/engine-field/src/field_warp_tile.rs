@@ -259,6 +259,96 @@ pub fn cell_admits_walk_on(cell: u16) -> bool {
     cell & WALK_ON_CELL_MASK != 0
 }
 
+/// The `.MAP` trigger tables the crossing reads, each as `(primary,
+/// fallback)`: retail's `FUN_801D5630` queries the `+0x10000` table, then the
+/// `+0x12000` one.
+#[derive(Debug, Clone, Copy)]
+pub struct WalkOnTables<'a> {
+    /// Kind-1 walk-on records.
+    pub kind1: (&'a [TileTrigger], &'a [TileTrigger]),
+    /// Kind-0 intra-scene teleports.
+    pub kind0: (&'a [IntraSceneTeleport], &'a [IntraSceneTeleport]),
+}
+
+/// What one changed-tile crossing does (`0x801D2100..0x801D227C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WalkOnCrossing {
+    /// The kind-1 record the lookup returned, which `FUN_8003BDE0` receives as
+    /// `(x, z, record, gate)`. The lookup takes the first record on the tile
+    /// whatever its gate; the dispatcher then does nothing for gate `0`
+    /// (`beq a3,zero` at `0x8003BDF0`) and spawns for any other gate.
+    pub kind1: Option<TileTrigger>,
+    /// The kind-0 destination the crossing arms the warp with.
+    pub warp: Option<(u8, u8)>,
+}
+
+impl WalkOnCrossing {
+    /// The kind-1 record when it spawns: the gate is non-zero.
+    pub fn spawned(&self) -> Option<TileTrigger> {
+        self.kind1.filter(|t| t.gate != 0)
+    }
+}
+
+/// The changed-tile arm of `FUN_801D1EC4`: the player crossed into `tile`,
+/// whose object-index word is `cell`.
+///
+/// Both lookups sit behind the cell filter ([`cell_admits_walk_on`],
+/// `0x801D2140`) and the player's movement lock (`0x801D214C`); a crossing
+/// either fails is spent with no lookup at all. The fallback table is read only
+/// on tiles the filter admits, and the trigger-presence stamp of
+/// `FUN_80017BEC` marks only the primary table's tiles, so a fallback record on
+/// an unmarked tile never runs. A kind-1 hit and a kind-0 hit on the same tile
+/// both run, the kind-1 dispatch first.
+///
+/// PORT: FUN_801D1EC4 (the changed-tile arm, `0x801D2100..0x801D227C`)
+/// REF: FUN_801D5630, FUN_8003BDE0, FUN_80017BEC
+pub fn walk_on_crossing(
+    cell: u16,
+    locked: bool,
+    tile: (u8, u8),
+    tables: &WalkOnTables<'_>,
+) -> WalkOnCrossing {
+    if !cell_admits_walk_on(cell) || locked {
+        return WalkOnCrossing::default();
+    }
+    WalkOnCrossing {
+        kind1: walk_on_kind1(tile, tables),
+        warp: crate::field_regions::lookup_intra_scene_teleport(
+            tables.kind0.0,
+            tables.kind0.1,
+            tile.0,
+            tile.1,
+        )
+        .map(|t| (t.dest_x, t.dest_z)),
+    }
+}
+
+/// The kind-1 lookup at `tile` (`FUN_801D5630(1, x, z)`): the first record on
+/// the tile, primary table first, whatever its gate.
+pub fn walk_on_kind1(tile: (u8, u8), tables: &WalkOnTables<'_>) -> Option<TileTrigger> {
+    crate::field_regions::lookup_tile_trigger(tables.kind1.0, tables.kind1.1, tile.0, tile.1)
+}
+
+/// The same-tile arm (`0x801D2090..0x801D20F8`): while the re-poll bit
+/// `0x1F800394 & 0x80000` stands, the player standing on `tile` re-runs its
+/// kind-1 record every frame. Retail looks the record up first and then tests
+/// the movement lock; there is no cell filter and no kind-0 lookup on this
+/// arm. The caller tests the re-poll bit.
+///
+/// PORT: FUN_801D1EC4 (the same-tile arm, `0x801D2090..0x801D20F8`)
+pub fn walk_on_repoll(
+    locked: bool,
+    tile: (u8, u8),
+    tables: &WalkOnTables<'_>,
+) -> Option<TileTrigger> {
+    if locked {
+        return None;
+    }
+    walk_on_kind1(tile, tables)
+}
+
+use crate::field_regions::{IntraSceneTeleport, TileTrigger};
+
 #[cfg(test)]
 mod tests {
     use super::*;

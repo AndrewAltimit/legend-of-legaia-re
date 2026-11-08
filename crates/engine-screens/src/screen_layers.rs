@@ -274,6 +274,11 @@ pub fn compose_screen_prims(
     if let Some(level) = pause_wipe {
         over.push(level_fade(level));
     }
+    // A field MAIN INIT hold (`World::field_init_hold`): retail is in mode
+    // `0x02`, drawing nothing over the black the departure left.
+    if world.field_init_hold > 0 {
+        over.push(level_fade(0xFF));
+    }
     // The field overlay's screen-effect washes (op `0x34` sub-0 ->
     // `FUN_80024EE4`), split at the text layer.
     let (pushes_under, pushes_over) =
@@ -403,6 +408,39 @@ mod tests {
             tags(&over),
             vec![100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
         );
+    }
+
+    /// A vignette's black borders stay black over an op-`0x34` wash linked
+    /// behind them: `eddoman`'s white flash (`34 02 FF FF FF 3C 00`) pushes at
+    /// bucket `8` (`FUN_80024EE4`, `OT + a0 * 4`) and the mask widget links
+    /// its borders at `OT + 0x1c`, bucket `7`, so the borders draw after it.
+    #[test]
+    fn the_mask_borders_draw_over_a_bucket_eight_wash() {
+        let mut w = World::new();
+        w.presentation.fx.mask_rect([0, 0x10, 0x140, 0xCC, 0]);
+        w.presentation.fx_frame = w.presentation.fx.tick(1, |_| false);
+        let mut under = screen_fx_prims(&w);
+        let borders = under.len();
+        assert!(borders > 0);
+        let (wash, over) = screen_prim::screen_effect_push_prims_split(&[(8, 1, 0xFF_FFFF)]);
+        assert!(over.is_empty(), "a bucket-8 wash is under the text");
+        under.extend(wash);
+        let order = screen_prim::order_primitives(&under);
+        assert_eq!(order[0], borders, "the wash draws first");
+        assert!(order[1..].iter().all(|&i| i < borders));
+    }
+
+    /// A field MAIN INIT hold draws the frame black, over everything.
+    #[test]
+    fn a_field_init_hold_blacks_the_frame() {
+        let mut w = World::new();
+        let menu = MenuRuntime::new(std::env::temp_dir());
+        w.field_init_hold = 10;
+        let (_, over) = compose_screen_prims(&w, &menu, None, HostScreenPrims::default());
+        assert_eq!(over, vec![level_fade(0xFF)]);
+        w.field_init_hold = 0;
+        let (_, over) = compose_screen_prims(&w, &menu, None, HostScreenPrims::default());
+        assert!(over.is_empty());
     }
 
     /// The pause wipe lands in the `over` tail, after the transition.

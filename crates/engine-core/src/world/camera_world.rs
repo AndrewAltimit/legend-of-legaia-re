@@ -97,6 +97,10 @@ impl CameraWorld for World {
         World::field_player_movement_locked(self)
     }
 
+    fn scripted_shot_holds_camera(&self) -> bool {
+        World::scripted_shot_holds_camera(self)
+    }
+
     fn ledge_hop_active(&self) -> bool {
         self.locomotion.ledge_hop.is_some()
     }

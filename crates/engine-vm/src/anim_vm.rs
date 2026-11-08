@@ -2,8 +2,8 @@
 //!
 //! REF: FUN_80024CFC - the actor spawn that seats a record; its stores are [`spawn_init`], which carries the tag.
 //! REF: FUN_8004AD80 - the staged-animation commit. Its real ports are the rate-write arms (`legaia_engine_battle_vm::battle_anim_rate`), the dynamic-art arm ([`AnimRuntime`]'s record select), the art bank select (`legaia_actor_formats::battle_char_assembly`) and the death-spoils arm (`legaia_engine_battle::battle_steal`). The per-kind [`Host`] hooks here are no-op defaults, and they run every tick where retail runs its kind ladder once per commit.
-//! REF: FUN_80047430 - the battle-actor anim tick; ported arms live in `legaia_engine_battle_vm::battle_hp_bar` and `legaia_actor_formats::battle_char_assembly::animation`. [`Host::on_movement_step`] is a no-op default.
-//! REF: FUN_80048A08 - the battle-actor draw (pose decode + TMD submit). [`Host::on_render_loop`] is a no-op default; nothing here ports it.
+//! REF: FUN_80047430 - the battle-actor anim tick; ported arms live in `legaia_engine_battle_vm::battle_hp_bar` and `legaia_actor_formats::battle_char_assembly::animation`.
+//! REF: FUN_80048A08 - the battle-actor draw (pose decode + TMD submit), ported as `legaia_engine_battle_vm::battle_actor_draw`; nothing here ports it.
 //! REF: FUN_80049348 - the after-image walk, ported as `legaia_engine_battle::battle_afterimage`.
 //! REF: FUN_8004E13C - the art-mode latch, ported at its `+0x243` store in `legaia_engine_core::world::actors`.
 //!

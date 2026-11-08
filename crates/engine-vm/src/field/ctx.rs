@@ -33,10 +33,6 @@ pub struct FieldCtx {
     pub move_id: u16,
     /// `+0x5E` - set to `0xFFFE` by op 0x22.
     pub field_5e: u16,
-    /// `+0x60` - high-pool model-index mirror. Written by the set-actor-model
-    /// primitive (op 0x4C outer-nibble-5 sub-0, `FUN_80024e08`) only when the
-    /// high model pool is selected; read by the re-stage `FUN_80020F88`.
-    pub model_id_high: u16,
     /// `+0x64` - active model index (into the global TMD pool). Written by the
     /// set-actor-model primitive (op 0x4C outer-nibble-5 sub-0, `FUN_80024e08`);
     /// consumed by the re-stage `FUN_80020F88` to resolve the actor's mesh.

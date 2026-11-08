@@ -80,6 +80,7 @@
     </tbody>
   </table>
   </div>
+  <p>A neighbour in the same nibble is not a camera arm: <code>4C 37</code> (issued as <code>CC &lt;id&gt; 37</code>) copies the player&rsquo;s position and facing onto another actor - the &ldquo;materialise a parked companion at the player&rdquo; step before a walk-out. A target held at a scripted height rather than on the floor also has that height set to the player&rsquo;s, so it appears level with him.</p>
 </section>
 
 <section class="doc-section" id="nibble-7" data-doc="-">
@@ -142,7 +143,7 @@
 
 <section class="doc-section" id="nibble-45" data-doc="-">
   <h2>Nibbles 4 and 5: ramps, held heights and the seat</h2>
-  <p>Nibble 4 is one pattern, <code>[4C, 4s, value:u16, ticks:u16]</code>: with <code>ticks</code> zero the slot <code>s</code> is written at once; otherwise a scheduled actor ramps it from its current value over <code>ticks</code> frames and <strong>the script never waits on it</strong>. The slots cover the actor&rsquo;s speed and draw scale, its held height, its position halves, its drawn heading, the floor ladder, three globals and an audio duck (a fraction of the configured level, which the port runs as its BGM duck). Sub 5 is the one 11-byte form.</p>
+  <p>Nibble 4 is one pattern, <code>[4C, 4s, value:u16, ticks:u16]</code>: with <code>ticks</code> zero the slot <code>s</code> is written at once; otherwise a scheduled actor ramps it from its current value over <code>ticks</code> frames and <strong>the script never waits on it</strong>. The slots cover the actor&rsquo;s speed and draw scale, its held height, its position halves, its drawn heading, the floor ladder, three globals and an audio duck (a fraction of the configured level, which the port runs as its BGM duck). Sub 5 is the one 11-byte form. A ramp runs on whichever actor the op names, the player or any NPC or object: a cutscene can hide a character at scale <code>0</code> and grow it back in, the way Gi Delilas steps into the Shadow Gate confrontation.</p>
   <p><strong>Held height.</strong> Sub 2 writes the actor&rsquo;s height slot <code>+0x8E</code>. An actor with flag bit <code>0x20000000</code> takes <code>Y = -(+0x8E)</code> every frame in the per-actor tick&rsquo;s height arm instead of the ground sample, and the arm sits ahead of both floor arms, so the held height follows the actor wherever it moves. A placed object is drawn at its actor, and the height is absolute rather than an offset from its map seat - this is how a script lifts or drops scenery (a collapsing dungeon&rsquo;s boulders tween down to the stairs) and how a walking boss can stay at a fixed altitude while its motion stream walks it. The tween lands on whichever actor the op names - a placement as readily as an object: Octam&rsquo;s underground bridge collapses this way, its planks parked level with the ledges and then tweened down into the chasm while a look turn tips each one over. The port runs the arm for its placement NPCs (<code>World::tick_field_npc_heights</code>) and steps their height tweens (<code>World::npcs.slot_ramps</code>), and both play hosts draw from it. The same arm holds the player&rsquo;s height while its script raises the law, and subs 3 and 4 tween an actor&rsquo;s X and Z angles the same way, tipping objects, townsfolk and the player as the scene asks - in Rugi&rsquo;s portal beat the player tips nearly flat and is set upright again.</p>
   <h3>Sub 1 of nibble 5: the seat binds its move clip</h3>
   <p><code>[4C, 51, x, z, depth, move_id]</code> is a seat, not a walk: no walk kernel is armed. On the actor the op resolves (the executing context, or a cross-context target), the arm writes four things in order:</p>
@@ -169,7 +170,7 @@
     </svg>
     <figcaption>The clip binds on every path that reaches the op - the install pre-run, a cutscene&rsquo;s cross-context poke and a live channel alike. A party member is seated with a depth byte in <code>0x8_</code>, so its clip id resolves through the party locomotion bank; any other depth plays a scene-bank clip.</figcaption>
   </figure>
-  <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
+  <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and binds the clip at the op itself, so a script line that waits for the seated clip to finish waits for the right one, and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
 </section>
 
 <section class="doc-section" id="nibble-cd" data-doc="-">
@@ -191,6 +192,7 @@
       <tr><td><code>4C D0 x y</code></td><td>press-a-button prompt: a blinking cursor at <code>(x, y)</code> holds the script until confirm or cancel is pressed (Tetsu's lessons)</td></tr>
       <tr><td><code>4C D3</code></td><td>timed-flag scheduler (14 bytes)</td></tr>
       <tr><td><code>4C D4</code> / <code>D5</code></td><td>set / clear the VRAM semi-transparency bit over a rectangle</td></tr>
+      <tr><td><code>4C D6 mode</code></td><td>make an actor's whole draw semi-transparent in blend <code>mode</code> (<code>4</code> turns it off): the top byte of its colour word, which the primitive dispatcher ORs into every packet. Only Underground Octam (<code>chitei2</code>) uses it, fading the pillars between the camera and a corridor while the party walks it</td></tr>
       <tr><td><code>4C D8</code></td><td>synchronous morph-actor spawn (9 bytes)</td></tr>
     </tbody>
   </table>

@@ -157,18 +157,19 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
 // A flat far-bucket cell (`fa.y > fa.w`, its z pair swapped) goes into the
 // same slice: a decal authored under the floor plane (`conc`'s shadow strips,
 // six units down) paints over it, as it does over retail's far bucket.
-// Off retail's vantage (`ground_drop_param() > 0`) a flat far-bucket cell
-// takes the dropped floor instead (`field_dropped_floor_depth`); a sloped one
-// keeps the slice.
+// Off retail's vantage (`ground_drop_param() > 0`) every far-bucket cell,
+// flat or sloped, takes the dropped floor instead
+// (`field_dropped_floor_depth`): a sloped one left in the slice behind flat
+// cells that have left it would let them paint over it from behind.
 const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
-fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32, py: f32) -> vec4<f32> {
     if (sz_scale > 0.0 || clip.w <= 0.0) {
         return clip;
     }
-    if (fa.y > fa.w && fa.x <= fa.z && ground_drop_param() > 0.0) {
-        return field_dropped_floor_depth(clip, fb);
-    }
     if (fa.x > fa.z || fa.y > fa.w) {
+        if (ground_drop_param() > 0.0) {
+            return field_dropped_floor_depth(clip, fb, py);
+        }
         return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
     }
     return clip;
@@ -190,21 +191,30 @@ fn eye_of_matrix(m: mat4x4<f32>) -> vec3<f32> {
 }
 
 // The field ground off retail's vantage (`ground_drop_param()`, staged by
-// `Renderer::set_field_ground_drop`): a flat bucketed cell is depth-tested as
-// the plane `drop` units below it, along each pixel's own ray
-// (`legaia_engine_scene::field_ground::dropped_floor_w`) - a decal on or just
-// under the floor still paints over it, a mesh buried deeper stays hidden.
-// The ray from an eye `h` above the floor meets that plane `(h + drop) / h`
-// times as deep, a factor constant over the cell, so the corners' depths
-// interpolate exactly. `fb` holds the corners' heights; a sloped cell keeps
-// its own depth.
-fn field_dropped_floor_depth(clip: vec4<f32>, fb: vec4<f32>) -> vec4<f32> {
+// `Renderer::set_field_ground_drop`): a bucketed cell is depth-tested as the
+// level plane `drop` units beyond its corner farthest from the eye, along
+// each pixel's own ray (`legaia_engine_scene::field_ground::dropped_floor_w` /
+// `dropped_floor_ref`) - a decal on or just under the floor still paints over
+// it, a mesh buried deeper stays hidden. `fb` holds the corners' heights, `py`
+// the vertex's own. The ray from the eye through the vertex meets the plane
+// `(h + drop) / d` times as deep, `h` the eye's distance from the reference
+// corner and `d` the vertex's from the eye's height (`d = h` on a flat cell);
+// a plane is affine in `1 / w` on screen, so the corners' depths
+// interpolate it exactly.
+fn field_dropped_floor_depth(clip: vec4<f32>, fb: vec4<f32>, py: f32) -> vec4<f32> {
     let drop = ground_drop_param();
-    if (drop <= 0.0 || clip.w <= 0.0 || fb.x != fb.y || fb.x != fb.z || fb.x != fb.w) {
+    if (drop <= 0.0 || clip.w <= 0.0) {
         return clip;
     }
-    let h = abs(eye_of_matrix(u.mvp).y - fb.x);
-    let w = clip.w * (h + drop) / max(h, 1.0);
+    let e = eye_of_matrix(u.mvp).y;
+    let lo = min(min(fb.x, fb.y), min(fb.z, fb.w));
+    let hi = max(max(fb.x, fb.y), max(fb.z, fb.w));
+    var floor_y = lo;
+    if (abs(hi - e) > abs(lo - e)) {
+        floor_y = hi;
+    }
+    let toward = sign(floor_y - e);
+    let w = clip.w * (abs(floor_y - e) + drop) / max(toward * (py - e), 1.0);
     let ab = depth_affine(u.mvp);
     return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / w) * clip.w, clip.w);
 }
@@ -221,14 +231,18 @@ fn field_dropped_floor_depth(clip: vec4<f32>, fb: vec4<f32>) -> vec4<f32> {
 // `SZ` is `clip.w` times the base matrix's scale
 // (`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). Off the field
 // (`sz_scale > 0`, the overworld's key) nothing moves. Off retail's vantage
-// the bucket gives way to the dropped floor (`field_dropped_floor_depth`).
+// a flat cell's bucket gives way to the dropped floor
+// (`field_dropped_floor_depth`), a sloped one's to its own per-pixel depth.
 const FIELD_SZ_PER_W: f32 = 6.0;
-fn field_sorted_cell_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+fn field_sorted_cell_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32, py: f32) -> vec4<f32> {
     if (sz_scale > 0.0 || clip.w <= 0.0 || fa.z <= fa.x || fa.w <= fa.y) {
         return clip;
     }
     if (ground_drop_param() > 0.0) {
-        return field_dropped_floor_depth(clip, fb);
+        if (fb.x != fb.y || fb.x != fb.z || fb.x != fb.w) {
+            return clip;
+        }
+        return field_dropped_floor_depth(clip, fb, py);
     }
     let w0 = (u.mvp * vec4<f32>(fa.x, fb.x, fa.y, 1.0)).w;
     let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
@@ -282,8 +296,8 @@ fn vs_main(
     // ahead of the pixel snap - retail bends SY before the packet is written.
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
-    clip = field_far_bucket_depth(clip, flat_a, flat_b, u.flags.w);
-    clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
+    clip = field_far_bucket_depth(clip, flat_a, flat_b, u.flags.w, position.y);
+    clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w, position.y);
     // A ground cell carries its own bucket (the two above); only a mesh
     // primitive links at its corners.
     if (all(flat_a == vec4<f32>(0.0))) {
@@ -759,7 +773,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // pass - defer them. Gated on the semi-blend flag (`flags.y`, default on),
     // the same flag the CPU-side blend pass keys off; when it is off the prim
     // draws fully opaque.
-    if u.flags.y >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
+    // `flags.y >= 1.5`: the draw's colour word forces ABE on every prim.
+    if u.flags.y >= 0.5 && ((tsb & 0x8000u) != 0u || u.flags.y >= 1.5)
+        && ((word >> 15u) & 1u) == 1u {
         discard;
     }
 

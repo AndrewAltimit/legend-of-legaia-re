@@ -1122,6 +1122,16 @@ last repeat - alongside `0x4` - never survives into the next frame. And because
 settle leaves both bits standing and is therefore called **twice** in one frame,
 while one that settles clears both and is called once.
 
+**Nothing in retail arms the tempo slide.** In `SCUS_942.54` the bits `0x40` /
+`0x80` are only ever cleared (`0x80064A18`, `0x80064BA8`, `0x80064BC4`, the
+slide's own settle), and the slide's step `+0x4E`, target `+0xAC` and count
+`+0xA8` are only zeroed by the two open inits (`0x80061E1C..0x80061E4C`,
+`0x800645F0..0x80064620`) and decremented by the tick (`0x800649FC`). libsnd's
+accelerando / ritardando setters are not linked. The disc's ritardandos are
+written as tempo metas ([`seq.md`](../formats/seq.md)). The ported tick
+(`seq_calc::tempo_slide_tick`) is therefore exercised by `note-trace` and the
+tests alone, and no host owes it an arming call.
+
 **The sign of a step field selects the rate mode, not the direction.** Both the
 volume slide (`+0x4C`) and the tempo slide (`+0x4E`) read a signed step and
 branch on `blez`. A **positive** step means "move one unit every `step` ticks" -
@@ -1298,7 +1308,7 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 
 | Function | Role |
 |---|---|
-| `FUN_80066B00()` | **The voice-allocation scan** (winner lands at `_DAT_801CE362`). Ascending scan over the `_DAT_801CDB50` records: the **first** unreserved + envelope-silent voice wins, scan stops. Else steal the minimum-priority voice with priority `<=` the request (threshold starts at the tone `prior`, tightens per lower priority seen); ties: lowest envelope, then largest age. No candidate → returns the voice count as an out-of-range sentinel; the note is **dropped**. On success every age increments, the winner's resets and adopts the request priority. `0x63` is the sentinel 99 "no voice", not a loop count. |
+| `FUN_80066B00()` | **The voice-allocation scan** (winner lands at `_DAT_801CE362`). Ascending scan over the `_DAT_801CDB50` records: the **first** unreserved + envelope-silent voice wins, scan stops. Else steal the minimum-priority voice with priority `<=` the request (threshold starts at the tone `prior`, tightens per lower priority seen); ties: lowest envelope, then largest age. No candidate → returns the voice count as an out-of-range sentinel; the note is **dropped** ([with a stray store](#a-dropped-layer-zeroes-voice-0s-staged-adsr2)). On success every age increments, the winner's resets and adopts the request priority. `0x63` is the sentinel 99 "no voice", not a loop count. |
 | `FUN_80065BAC()` | **Per-frame voice flush** (SsSeqCalc tier). Advances ring index `_DAT_801CE204`, clears the new ring word, services each voice via `FUN_8006C9A8`, records envelope-silent voices into `_DAT_801CE208[ring]`; voices silent across all 16 ring words get the in-use marker cleared (marker-2 → reverb release `FUN_8006A7A4`). Stages per-voice vol/pitch/addr/ADSR attrs per the `_DAT_801CE060` flag bits through `FUN_8006C048`, flushes sounding/key-on/key-off masks to the SPU, zeroes the sounding + key-on accumulators. It does not choose voices. |
 | `FUN_800675C8()` | **Key-OFF / release sweep** (no callees, pure state). Scans sounding voices, clears the per-voice flag `_DAT_801CE060`, sets the key-off accumulator `_DAT_801CDB4C/4E`, updates the sounding mask `_DAT_801CE248/24A`. |
 | `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
@@ -1336,6 +1346,33 @@ Provenance: per-instruction read of the dumps' disassembly sections, and
 [the keying differential](#the-keying-differential). `see ghidra/scripts/funcs/80066b00.txt`,
 `80065bac.txt`, `80065978.txt`, `80066308.txt`, `8006688c.txt`, `8006861c.txt`,
 `80067e9c.txt`.
+
+<a id="the-silent-historys-phase"></a>
+**The silent history's phase.** The flush steps its ring index `_DAT_801CE204` once a calc, from
+boot, whatever plays (`0x80065BAC..0x80065BE4`), and the release test ANDs the fixed words `0..14`
+(`0x80065CA4..0x80065CB4`): word `15` is written and never read. So a voice that falls silent
+with the index at `14` or below is let go after fifteen flushes if its run stays clear of word
+`15` and after sixteen if it crosses it. A run from a fresh index frees such voices a vsync
+apart from retail's, and the next note-on takes another voice: on `2013` from
+`theeder_summon_mid_cast` retail keys `6, 8, 9` where a run from index `0` keys `6, 9, 10`
+(voice `8` silent since index `0` on retail's side, since `9` on the port's). The voice numbers
+are all that moves; [the keying differential](#the-keying-differential) seats the state's index
+on both sides, and run from index `0` it reads about twice the `voice` rows across the library's
+tracks. The [track render](#real-retail-pcm) runs its score again from the phase that lands on
+the state's index. The phase changes no PCM row: no state's score contends for a voice there.
+
+<a id="a-dropped-layer-zeroes-voice-0s-staged-adsr2"></a>
+**A dropped layer zeroes voice 0's staged ADSR2.** When the scan finds no voice it returns
+the voice count, and its tail still stores to the winner's record: `sh zero,-0x2486(at)` at
+`0x80066D74` is `rec + 0x2A` of record `24`, one past the table at `0x801CDB50` (stride
+`0x36`), which is `0x801CE08A`: the ADSR2 word of voice `0`'s shadow registers at `0x801CE080`.
+A voice-0 note-on staged earlier in the same calc (`FUN_80065978` writes the shadow and raises
+the voice's flag `0x30`) then goes out at the next flush with ADSR2 `0`, a sustain rising at the
+fastest rate and an instant release, where the tone holds `5FC8`; a voice-0 note-on staged after
+the drop writes the shadow afresh. The retail interpreter shows the store on
+`s2_rimelm_town01`'s `2064`: at calc `12651` the note-on's `0x80065B50` writes `5FC8` and the
+scan's `0x80066D74` writes `0` over it. Port: `Sequencer::note_dropped`, which zeroes the ADSR2 of
+the voice-0 key-on it finds staged; `2064` reads alike in every channel but `level`.
 
 **A note-on keys one voice per covering tone.** `FUN_80068568` walks the
 program's tones on its page (count `0x801CE348`, page `0x801CE34F`) and records
@@ -3364,15 +3401,21 @@ contention a state cannot show on demand. `--filter`, `--vsyncs`, `--all-states`
 (retail's voice records and both sides' voices at one vsync). Disc-gated test:
 `parity/tests/seq_differential_disc.rs`.
 
-Over every track the library holds, four minutes each, it reads zero in `key`, `release` and
-`sound` but for the two rows below, and `voice` on about one vsync in six hundred. Every
-such voice row is a tail ending inside one vsync's lag on one side.
+Both sides run their flushes from the state's own silent-history index `_DAT_801CE204`
+([below](#the-silent-historys-phase)): the harness leaves retail's where the RAM holds it and
+stands the port's beside it (`Sequencer::set_silent_ring_phase`).
+
+Over every track the library holds, four minutes each, it reads zero in `key` and `release`,
+`sound` on four vsyncs of one track, and `voice` on about one vsync in twelve hundred, nearly all
+of them on `2068`. Every such voice row is a tail ending inside one vsync's lag on one side: on `2068` a
+release reaches zero a vsync apart on the two sides (level `1` against `0`), so the next note
+takes the next free voice up.
 
 What it leaves open:
 
-- `2064`, one key-on in `s2_rimelm_town01`'s run, retail's voice reading ADSR2 `0` where the tone
-  holds `5FC8`. No retail mechanism is named yet.
-- `2013`, four single-vsync rows of a held voice sounding on retail's side alone.
+- `2013`, four single-vsync rows of a held voice sounding on one side alone, two each way: a
+  one-shot sample ending on a vsync boundary, a sample or two apart under the two sides' KON
+  lag estimates.
 - A note past the table's front. A key more than five octaves under its tone's centre reads
   `DAT_8007A940` at a negative index, into libspu's globals; track `2030` keys these. Retail's words there
   are mostly zero and the port reads zero, so the voice keys and does not move

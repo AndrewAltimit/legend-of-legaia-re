@@ -72,6 +72,14 @@ pub(super) fn enter_raw(host: &mut SceneHost, name: &str) -> bool {
     host.world.dialog.inline = None;
     host.world.cutscene.timeline = None;
     host.world.field_vm.helper_contexts.clear();
+    // The same for the credits latch (`_DAT_8007B9B8`): `edteien`'s entry
+    // script starts the ending theme and raises it, and under it every
+    // committed scene change holds 130 vsyncs for the field init's load. In
+    // retail only a reset clears it, so no scene after the credits is ever
+    // played with it up; carried through the sweep it put that hold on every
+    // later scene's exit and walk (`kor3`, `jagaroom` lost rungs).
+    host.world.audio.credits_latch = false;
+    host.world.field_init_hold = 0;
     let r = if is_world_map_scene(name) {
         host.enter_world_map_scene(name)
     } else {

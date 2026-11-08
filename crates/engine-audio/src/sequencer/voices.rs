@@ -84,6 +84,7 @@ impl Sequencer {
             return;
         }
         let Some(voice) = self.alloc_voice(spu, prio) else {
+            self.note_dropped();
             log::trace!(
                 "sequencer: no free voice for ch{} key{} (active={})",
                 channel,
@@ -101,6 +102,11 @@ impl Sequencer {
         // flush period never sounds.
         let id = self.next_pending_id;
         self.next_pending_id = self.next_pending_id.wrapping_add(1);
+        if voice == 0 {
+            // The key-on stages the tone's ADSR into the shadow afresh
+            // (`FUN_80065978`), over anything an earlier drop stored there.
+            self.voice0_adsr2_zeroed = None;
+        }
         let key_on_stamp = spu
             .voices
             .get(voice as usize)
@@ -135,6 +141,24 @@ impl Sequencer {
         });
     }
 
+    /// A layer the allocation scan found no voice for. `FUN_80066B00`'s
+    /// failure path still stores to the winner's record, `sh zero` at
+    /// `rec + 0x2A` (`0x80066D74`) with the winner the out-of-range voice
+    /// count: record `24` of the `0x36`-byte table at `0x801CDB50`, whose
+    /// `+0x2A` is `0x801CE08A`, the ADSR2 word of voice `0`'s shadow
+    /// registers at `0x801CE080`. A voice-0 key-on staged earlier in the same
+    /// calc then goes out with ADSR2 `0` - its sustain rises at the fastest
+    /// rate instead of decaying, and its release is instant; one staged later
+    /// writes the shadow afresh.
+    fn note_dropped(&mut self) {
+        self.voice0_adsr2_zeroed = self
+            .pending
+            .iter()
+            .rev()
+            .find(|p| p.voice == 0)
+            .map(|p| p.id);
+    }
+
     /// Write every staged key-on - retail's per-vsync flush
     /// (`FUN_80065BAC` handing the key-on accumulator to `FUN_8006B854`).
     /// Layers whose note was released, stolen or re-keyed since they were
@@ -167,6 +191,10 @@ impl Sequencer {
                 self.active.swap_remove(idx);
                 continue;
             }
+            if voice == 0 && self.voice0_adsr2_zeroed == Some(p.id) {
+                let v = &mut spu.voices[0];
+                v.adsr_cfg = crate::spu::adsr::AdsrConfig::from_words(v.adsr_cfg.raw.0, 0);
+            }
             self.voice_keys_seen[voice] = spu.voices[voice].key_on_count();
             // A key-on carries the note's own pitch: retail keeps no channel
             // wheel. Only a bend that reached this note since it was staged
@@ -196,6 +224,7 @@ impl Sequencer {
             note.key_on_stamp = spu.voices.get(voice).map_or(0, |v| v.key_on_count());
             note.pending = None;
         }
+        self.voice0_adsr2_zeroed = None;
         // `FUN_80065BAC` writes the KON mask after its per-voice loop, and every
         // voice with a staged register costs a `FUN_8006C048` call first.
         let staged = (self.staged_voices | keyed).count_ones();

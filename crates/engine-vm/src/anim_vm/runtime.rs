@@ -95,16 +95,15 @@ pub enum AnimEvent {
 /// branch so the engine can supply per-kind behaviour without having
 /// to re-classify in user code.
 ///
-/// The five helper hooks below name routines that sit **around**
-/// `FUN_8004AD80`, not inside it. The retail call graph (every `jal` read
-/// off the SCUS disassembly): the battle-actor anim tick `FUN_80047430`
-/// calls the commit `FUN_8004AD80` (`0x80047A3C`, `0x80047B54`); the
-/// afterimage draw `FUN_80049348` calls the battle-actor draw
-/// `FUN_80048A08`, which calls the pose decoder `FUN_8004998C`; and the
-/// commit's only call among them is the solo-action freeze `FUN_8004E13C`.
-/// (This doc used to say `FUN_8004AD80` calls all five.) The hooks are
-/// default no-ops; engines that model any of them call them from wherever
-/// their own pipeline reaches the equivalent point.
+/// The routines that sit **around** `FUN_8004AD80` are not hooks here.
+/// The retail call graph (every `jal` read off the SCUS disassembly): the
+/// battle-actor anim tick `FUN_80047430` calls the commit `FUN_8004AD80`
+/// (`0x80047A3C`, `0x80047B54`); the afterimage draw `FUN_80049348` calls
+/// the battle-actor draw `FUN_80048A08`, which calls the pose decoder
+/// `FUN_8004998C`; and the commit's only call among them is the solo-action
+/// freeze `FUN_8004E13C`. Each is ported as its own kernel in the crate that
+/// owns its state (see the module's `REF:` lines), so the runtime calls none
+/// of them back.
 ///
 /// `on_opaque_record` remains the catch-all fallback - every per-kind
 /// method defaults to routing through it, so existing host
@@ -174,61 +173,6 @@ pub trait Host {
     /// reads but no kind-specific sub-state mutates.
     fn on_other_kind(&mut self, actor: u8, byte: u8, record: &[u8], frame_counter: u32) -> bool {
         self.on_opaque_record(actor, RecordKind::Other(byte.into()), record, frame_counter)
-    }
-
-    /// Battle-actor animation tick - host-trait abstraction of
-    /// `FUN_80047430`: advances the clip cursor `+0x68` by the rate
-    /// `+0x78` scaled by the anim-rate byte `+0x21D`
-    /// (`0x80047704..0x80047764`), loops on `+0x85` / `+0x86` against
-    /// `+0x176`, and calls the commit `FUN_8004AD80`. (Formerly described
-    /// as a world-position "movement step".)
-    ///
-    /// Default no-op so engines without a movement pipeline still
-    /// build.
-    fn on_movement_step(&mut self, actor: u8, record: &[u8], frame_index: u16) {
-        let _ = (actor, record, frame_index);
-    }
-
-    /// Battle-actor draw - host-trait abstraction of `FUN_80048A08`:
-    /// decodes the pose through `FUN_8004998C` (`jal` at `0x80048A84`) and
-    /// submits the meshes through the TMD renderer `FUN_8002735C`
-    /// (`0x80048FE4`). It reads neither `+0x84` nor `+0x86`, which an
-    /// earlier version of this doc said it looped on.
-    fn on_render_loop(&mut self, actor: u8, record: &[u8]) {
-        let _ = (actor, record);
-    }
-
-    /// Afterimage (ghost) draw - host-trait abstraction of
-    /// `FUN_80049348`: with step `8 / +0x21D`
-    /// ([`ACTOR_LOD_STEP_OFFSET`]; `lod_step` is that folded value, see
-    /// [`ActorAnimState::lod_step_factor`]) it walks the pose-history
-    /// slots, skipping any whose `+0x1FB[i]` byte is below `0x11`, and
-    /// draws each as a tinted copy of the actor - it loads the history
-    /// frame `+0x17A[i]` into `+0x68` and record `+0x234[i]` into `+0x4C`,
-    /// then calls `FUN_80048A08` (`0x8004950C`). It is not a child-actor chain walk.
-    /// Ported for the engine as `legaia_engine_battle::battle_afterimage`.
-    fn on_child_step_iter(&mut self, actor: u8, lod_step: u8) {
-        let _ = (actor, lod_step);
-    }
-
-    /// Per-bone keyframe interpolator - host-trait abstraction of
-    /// `FUN_8004998C`. Unpacks the two `[i16; 3]` vectors per bone
-    /// from the nested per-frame data, lerps by
-    /// `sub_frame_factor / 16`, writes the result into the GPU OT
-    /// scratch buffer.
-    fn on_per_bone_interp(&mut self, actor: u8, record: &[u8], sub_frame_factor: u8) {
-        let _ = (actor, record, sub_frame_factor);
-    }
-
-    /// Solo-action freeze - host-trait abstraction of `FUN_8004E13C`:
-    /// sets `+0x21C = 1` on every living slot of the seven at
-    /// `DAT_801C9370` that is neither the active slot (`ctx+0x13`) nor its
-    /// `+0x1DD` target, and stores its argument at `ctx+0x243`
-    /// (`0x8004E2C0`); its RNG draws land in the battle context
-    /// (`ctx+0x6DA`, `ctx+0x26D`), not in an actor. Not an effect spawn,
-    /// as this hook's name still says.
-    fn on_special_effect_spawn(&mut self, actor: u8, effect_id: u8) {
-        let _ = (actor, effect_id);
     }
 }
 

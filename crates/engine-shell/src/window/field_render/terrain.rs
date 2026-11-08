@@ -51,9 +51,9 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> (Vec<(usize, Mat4)>, usize, Vec<Option<usize>>) {
+    ) -> super::WorldMapDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), 0, Vec::new());
+            return (Vec::new(), 0, Vec::new(), Vec::new());
         };
         // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
         // index`, the `block_start - 2` entry the runtime resolves through
@@ -105,8 +105,8 @@ impl PlayWindowApp {
         // The landmarks keep their bind record (a kingdom MAN's object
         // records tint them - map02's walls around Jeremi draw half-dark), the
         // decorations have none.
-        let (mut draws, mut records) = if landmarks.is_empty() {
-            (Vec::new(), Vec::new())
+        let (mut draws, mut records, mut keys) = if landmarks.is_empty() {
+            (Vec::new(), Vec::new(), Vec::new())
         } else {
             let l = self.resolve_placement_draws(
                 res,
@@ -117,7 +117,13 @@ impl PlayWindowApp {
                 None,
                 binds.as_ref(),
             );
-            (l.0, l.4)
+            // Each landmark's own actor (`field_env::placed_object_key_of`).
+            let keys =
+                l.4.iter()
+                    .zip(&l.3)
+                    .map(|(&r, c)| legaia_engine_scene::field_env::placed_object_key_of(r, c.cell))
+                    .collect();
+            (l.0, l.4, keys)
         };
         let deco_start = draws.len();
         if !deco.is_empty() {
@@ -127,7 +133,8 @@ impl PlayWindowApp {
             );
         }
         records.resize(draws.len(), None);
-        (draws, deco_start, records)
+        keys.resize(draws.len(), None);
+        (draws, deco_start, records, keys)
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.

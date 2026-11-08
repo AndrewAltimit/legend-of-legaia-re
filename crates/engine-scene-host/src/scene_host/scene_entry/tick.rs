@@ -138,6 +138,20 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // A field MAIN INIT hold under the credits latch: the scene is loaded
+        // and none of it runs until the load retail spends in mode `0x02` is
+        // over. The audio keeps time on its own clock, as the console's
+        // sequencer interrupt does.
+        // REF: FUN_801D6704 (the init, `0x801D72D4..0x801D7484`)
+        if self.world.field_init_hold > 0 {
+            let dt = self
+                .world
+                .clock
+                .display_frame_step
+                .clamp(1, u16::from(u8::MAX));
+            self.world.field_init_hold = self.world.field_init_hold.saturating_sub(dt);
+            return Ok(SceneTickEvent::Stepped);
+        }
         let was_battle = matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle);
         let _ = self.world.tick();
         self.measure_fog_volume_light();
@@ -288,6 +302,10 @@ impl SceneHost {
             // record - this is how the opening chain's `map01` fly-in and the
             // natural `town01` opening launch.
             self.spawn_arrival_trigger_record(entry_x, entry_z);
+            if self.world.audio.credits_latch {
+                self.world.field_init_hold =
+                    legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS;
+            }
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         // GAP-1: overworld-portal scene transition. The world-map entity SM

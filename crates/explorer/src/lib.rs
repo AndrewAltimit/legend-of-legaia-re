@@ -60,6 +60,25 @@ pub const KINDS: [&str; 12] = [
     "Unidentified",
 ];
 
+/// Which of several dropped paths the window opens: the first that can be
+/// a source (a disc image, a `.cue`, an extracted folder) rather than an
+/// expansion pack or a memory card ([`library::not_a_source`]), else the
+/// first, so its own message says what it is. A `.bin` dropped with its
+/// `.cue` opens the `.cue`, which names the `.bin`.
+pub fn pick_drop(dropped: &[PathBuf]) -> Option<&PathBuf> {
+    let is_cue = |p: &PathBuf| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("cue"));
+    let sources: Vec<&PathBuf> = dropped
+        .iter()
+        .filter(|p| library::not_a_source(p).is_none())
+        .collect();
+    sources
+        .iter()
+        .copied()
+        .find(|p| is_cue(p))
+        .or(sources.first().copied())
+        .or(dropped.first())
+}
+
 /// What a `legaia_disc_audit` category holds, in the words of someone who has
 /// not read the format pages. A disc-wide classification by what the entry
 /// mostly is: a scene's model stream carries textures too, which its tabs
@@ -153,10 +172,10 @@ pub struct Explorer {
 impl Explorer {
     /// A fresh state with settings from `settings_path` (or defaults).
     pub fn new(settings_path: Option<PathBuf>) -> Self {
-        let settings = settings_path
-            .as_deref()
-            .map(Settings::load)
-            .unwrap_or_default();
+        let opened = settings_path.as_deref().map(Settings::open);
+        let notice = opened.as_ref().and_then(|o| o.notice.clone());
+        let settings_path = settings_path.filter(|_| opened.as_ref().is_none_or(|o| o.keep_file));
+        let settings = opened.map(|o| o.settings).unwrap_or_default();
         Self {
             settings,
             settings_path,
@@ -168,7 +187,7 @@ impl Explorer {
             analysis: None,
             analyzing: None,
             settings_save_failed: false,
-            error: None,
+            error: notice,
             status: None,
         }
     }

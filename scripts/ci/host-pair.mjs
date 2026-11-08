@@ -70,6 +70,9 @@ export const SCENES = {
   battle: { scene: 'map01', ticks: 900, every: 30, battle: 30, taps: every(300, 890, 40, 'Cross') },
   results: { scene: 'map01', ticks: 3600, every: 60, battle: 30, taps: every(300, 3590, 20, 'Cross') },
   cast: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3] },
+  /* The round prompt's Begin, then the command ring's Item window (Up), its cursor,
+   * back out, the Magic direction, and an item picked: engine-screens' battle windows. */
+  battle_menus: { scene: 'map01', ticks: 640, every: 10, battle: 30, taps: [[380, 'Cross'], [420, 'Up'], [450, 'Down'], [470, 'Down'], [500, 'Circle'], [530, 'Right'], [560, 'Circle'], [590, 'Up'], [620, 'Cross']] },
   /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
   arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
   /* The retock innkeeper (placement 26, the 240 G stay): the field-VM inn record's prompt,
@@ -77,6 +80,18 @@ export const SCENES = {
   inn: { scene: 'retock', ticks: 900, every: 30, talk: { tick: 30, slot: 26 }, taps: every(90, 890, 30, 'Cross') },
   /* Pause menu Save on the world map (saving works anywhere there): slot, block, Yes. */
   save: { scene: 'map01', ticks: 720, every: 30, taps: savePause() },
+  /* Off retail's vantage over sloped ground: the player seated at town01 tile (30, 22) and
+   * the follow knobs held at orbit 2.7, tilt -0.5, the view past the plateau ramp toward the
+   * sea (the field ground's dropped-floor rule, docs/subsystems/renderer.md). */
+  town_slope: { scene: 'town01', ticks: 120, every: 10, seat: [30 * 128 + 0x40, 22 * 128 + 0x40], knobs: [2.7, -0.5, 1.0] },
+  town_seat: { scene: 'town01', ticks: 120, every: 10, seat: [30 * 128 + 0x40, 22 * 128 + 0x40] },
+  /* Dungeons: Snowdrift Cave and Drake Castle's mist entrance. */
+  cave_walk: { scene: 'cave01', ticks: 300, every: 30, hold: walk },
+  dolk_walk: { scene: 'dolk', ticks: 300, every: 30, hold: walk },
+  /* Ending vignettes under the cutscene's own camera lock (no picker entry: the page enters
+   * them from its running scene). */
+  ed_bylon: { scene: 'edbylon', viaTown: true, ticks: 900, every: 30 },
+  ed_korout: { scene: 'edkorout', viaTown: true, ticks: 900, every: 30 },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */
 const mgPad = () => {
@@ -122,6 +137,8 @@ SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'nati
 const MODES = {
   retail: { native: ['--retail', '--psx-render'], boxes: ['play-retail-mode', 'play-psx-render'] },
   enhanced: { native: [], boxes: [] },
+  psx_only: { native: ['--psx-render'], boxes: ['play-psx-render'] },
+  retail_only: { native: ['--retail'], boxes: ['play-retail-mode'] },
   /* Enhanced with one pass off on both hosts: splits a pixel difference by the pass behind it. */
   no_ssao: { native: ['--no-ssao'], boxes: [], unboxes: ['play-ssao'] },
   no_lighting: { native: ['--no-dynamic-lighting'], boxes: [], unboxes: ['play-dyn-light'] },
@@ -150,6 +167,8 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   const env = { ...process.env, LEGAIA_SWEEP_TRACE: '1', LEGAIA_CAPTURE_NO_PRESENT: '1', LEGAIA_AUDIO_DETACHED: '1' };
   if (sc.talk) env.LEGAIA_CAPTURE_TALK = `${sc.talk.slot}@${sc.talk.tick}`;
   if (sc.shop) env.LEGAIA_CAPTURE_SHOP = `${sc.shop.idx}@${sc.shop.tick}`;
+  if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
+  if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
@@ -158,13 +177,15 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   return fs.readdirSync(dir).filter((f) => /^tick_\d+\.png$/.test(f)).sort();
 }
 
-const traceFrame = (text) => { const m = /^\s*frame: (\d+),/m.exec(text || ''); return m ? +m[1] : null; };
+const traceFrame = (text) => { const m = /^\s*frames?: (\d+),/m.exec(text || ''); return m ? +m[1] : null; };
 
 /* In the page: step, and at each wanted tick hand back the composite and the trace. */
 async function pageRun(cfg) {
   const rt = window.__playRuntime;
   const sc = cfg.sc;
-  const btn = document.querySelector(`[data-scene="${sc.scene || 'town01'}"]`);
+  /* A scene the picker does not list (the ending vignettes) is entered from town01's. */
+  const pick = document.querySelector(`[data-scene="${sc.scene || 'town01'}"]`);
+  const btn = pick || document.querySelector('[data-scene="town01"]');
   if (!btn) throw new Error('no scene button ' + sc.scene);
   for (const id of cfg.boxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (!el.checked) el.click(); }
   for (const id of cfg.unboxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (el.checked) el.click(); }
@@ -174,6 +195,15 @@ async function pageRun(cfg) {
   const view = window.__playView;
   view.stop();
   view.setPaused(true);
+  if (!pick) view.enter(sc.scene);
+  if (sc.seat && !rt.play_debug_seat(sc.seat[0], sc.seat[1])) throw new Error('seat refused');
+  /* The native side's LEGAIA_DIAG_FOLLOW_KNOBS: the knobs written raw, every frame. */
+  const holdKnobs = () => {
+    if (!sc.knobs) return;
+    rt.play_camera_set_orbit(sc.knobs[0]);
+    rt.play_camera_tilt_by(sc.knobs[1] - rt.play_camera_tilt());
+    rt.play_camera_zoom_by(sc.knobs[2] / rt.play_camera_zoom());
+  };
   if (cfg.ssaoView) view.renderer.ssaoDebug = true;
   if (cfg.lgsf) {
     const bin = atob(cfg.lgsf);
@@ -211,6 +241,7 @@ async function pageRun(cfg) {
     if (sc.warp && sc.warp.tick === n + 1) {
       if (sc.warp.sub === 0) rt.play_fishing_start(); else rt.play_mg_debug_warp(sc.warp.sub);
     }
+    holdKnobs();
     padAt(n + 1); /* the native script names the world frame the tick ends on, and step n ends on n + 1 */
     if (wanted.has(n)) {
       P.vt += 1000 / 60;
@@ -371,9 +402,10 @@ async function main() {
     const rows = [];
     for (const f of r.out) {
       const nt = fs.readFileSync(path.join(dir, 'native', `tick_${String(f.tick).padStart(5, '0')}.trace`), 'utf8');
-      /* A card landing enters a scene from the page's running one first, so the audio
-       * record starts a command apart; both fields say only that. */
-      const d = traceDiff(nt, f.trace).filter((l) => !sc.card || !/^audio_recent|^\d+,\s+\|\s+\d+,$|^\d{10,},\s+\|\s+\d{10,},$/.test(l));
+      /* A card landing, or a scene the picker does not list, enters from the page's
+       * running scene first, so the audio record starts a command apart; both fields
+       * say only that. */
+      const d = traceDiff(nt, f.trace).filter((l) => !(sc.card || sc.viaTown) || !/^audio_recent|^\d+,\s+\|\s+\d+,$|^\d{10,},\s+\|\s+\d{10,},$/.test(l));
       fs.writeFileSync(path.join(dir, `${String(f.tick).padStart(5, '0')}-page.trace`), f.trace);
       if (d.length) { traceOff++; if (!firstTrace) firstTrace = { tick: f.tick, d }; }
       sum += f.score;

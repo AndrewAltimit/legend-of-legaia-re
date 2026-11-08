@@ -1122,7 +1122,7 @@ found wrong, the file that has to hold it, and what it looks like when it does
 not: the winding handed back with the cull, the intro readback declared ahead
 of the ticks, the screen primitives' tie nudge, the hall's ambient tree taken
 off the world on leaving a dance, the screen layers composed on a pause-menu
-tick. A row is `contains` (the line is there) or `before` (the line is there,
+tick, zeros staged for a mesh's absent ground refs. A row is `contains` (the line is there) or `before` (the line is there,
 ahead of another). It is a pin on a known defect and does not generalise.
 
 ## Two JavaScript-side gates
@@ -1370,7 +1370,8 @@ scripts/ci/host-pair.mjs --site <site> --engine target/release-test/legaia-engin
 
 `--mode` takes `retail`, `enhanced`, or `enhanced` with one pass off on both
 hosts (`no_ssao`, `no_lighting`, `no_fog`, `no_fade`), which splits a pixel
-difference by the pass behind it, or `fog_bloom`, the two passes that default
+difference by the pass behind it, `psx_only` or `retail_only` (one of retail mode's two
+switches), which splits it by rasterisation and gameplay rules, or `fog_bloom`, the two passes that default
 off turned on for both hosts. The window has no switch that turns either on, so
 that run writes them into the options file of its own working directory; the
 `fog_walk` scene (the Ravine) carries a fog bank for it. `LEGAIA_SSAO_VIEW=1`
@@ -1400,6 +1401,10 @@ a scratch directory only.
 | Scenes | Reach |
 |---|---|
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
+| `town_slope`, `town_seat` | town01 with the player seated at tile (30, 22) (`LEGAIA_SEAT` / `play_debug_seat`): the first with the follow knobs held at orbit 2.7, tilt -0.5 (`LEGAIA_DIAG_FOLLOW_KNOBS` / the page's knob setters), the view past the plateau ramp to the sea off retail's vantage; the second at retail's |
+| `battle_menus` | a fight's round prompt, the command ring's Item window and its cursor, the empty Magic window, an item used |
+| `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
+| `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
 | `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
@@ -1408,7 +1413,7 @@ a scratch directory only.
 
 A card landing enters from the page's running scene first, so its audio record starts a
 command apart and the actor table is longer; `monkey_fight`, `late_*` and the rest filter
-that one record, and a `bindings` line on such a run says so rather than a difference.
+that one record, as do the `ed_*` scenes, which the page enters from town01's, and a `bindings` line on such a run says so rather than a difference.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
@@ -1434,6 +1439,8 @@ the world was right and the picture was not:
 | A pass the other host never runs | The window ran ambient occlusion in the minigame venues, under the field camera on a frame the duel and the pond draw through their own, and with no actor draws marked; the page's venues never reach the pass. Both ask `ssao_scope::ssao_applies` |
 | A cut on half a buffer | The page cut the dance hall's triangles by the GPU's span rule but not the marker block, which holds the animated props: on the camera track's far poses the stage curtain, seen from behind, covered the whole frame for about a hundred ticks |
 | A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
+| A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
+| A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive now takes an eighth of a row; a textured one keeps the 64th, since more shifts the texels the battle intro's rotated shards sample |
 
 ## Pairing frames: what a screenshot adds
 
@@ -1689,8 +1696,9 @@ reverse-engineering questions, so they are not on
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
-| dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F & !7`, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
+| dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F >> 3` steps, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
 | pause wipe, first frames | Two the [host pair](#the-host-pair-run) reads and neither host is yet shown right on: the window draws no party HUD under the opening wipe where the page dims it, and on the frame the menu spawns the window shows the lit field for one frame where the page shows the menu. The windmill's semi-transparent blades also read darker under the window's wipe than under the page's. No retail state sits in a wipe. |
+| dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |

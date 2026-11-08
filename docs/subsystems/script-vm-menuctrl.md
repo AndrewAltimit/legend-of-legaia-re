@@ -526,7 +526,7 @@ Jump table at `0x801CEFC8`.
 | 2 | `[4C D2 channel]` | Resolve the channel via `FUN_8003C83C`; when nothing answers, spawn the placement through `FUN_8003A1E4` inside the `*(_DAT_801C6EA4) + 8` bracket. PC += 3 (arm `0x801E2B7C`). |
 | 3 | 14 bytes | `SCHEDULE_TIMED_FLAGS` - [below](#4c-d3-the-timed-flag-scheduler). |
 | 4 / 5 | `[4C D4|D5 x_lo x_hi y_lo y_hi]` | [VRAM STP-bit set / clear](#0x4c-nibble-d-sub-4--sub-5---vram-stp-bit-setclear). |
-| 6 | `[4C D6 b1]` | `ctx.field_74`: `b1 == 4` clears the top bit only, else sets `0x80000000` and shifts `b1` into the top byte - the draw's blend argument ([`field-locomotion.md`](field-locomotion.md)). PC += 3 (arm `0x801E2D64`). `chitei2` P2[0]/[1] and P2[9]/[10] run it over the corridor lights. |
+| 6 | `[4C D6 b1]` | `ctx.field_74`: `b1 == 4` clears the top bit only, else sets `0x80000000` and shifts `b1` into the top byte - the draw's primitive flags, semi-transparency in ABR `b1` ([below](#4c-d6-the-draws-primitive-flags)). PC += 3 (arm `0x801E2D64`). |
 | 7 | `[4C D7]` | Retire every cutscene camera mover `FUN_801DC0BC` on actor list 0 via `FUN_8003CF40`; PC += 2 (arm `0x801E2DB4`). |
 | 8 | 9 bytes | Synchronous morph-actor spawn - [below](#what-the-0x4c-0xd8-spawner-builds). |
 | 9 | `[4C D9 v:i16]` | Raise the height law: `+0x10 \|= 0x20000000`, `+0x8E = v` (`9999` takes the live `-(+0x16)`), `+0x16 = -v`; PC += 4 (`0x801E2E28..0x801E2E6C`). |
@@ -555,6 +555,25 @@ Port: `World::sweep_field_channel_lifetimes`, called from both field tick arms.
 A retired placement parks in the hide box and leaves the channel set;
 `crates/engine-scene-host/tests/field_placement_retire_disc.rs` runs both paths
 through `SceneHost::tick`.
+
+#### `4C D6`: the draw's primitive flags
+
+The actor draw passes the whole `+0x74` word to the prim dispatcher
+`FUN_80043390` (`lw a1,0x74(s0)` at `0x8001B46C`). Its low 24 bits are the
+depth cue's far colour; its top byte is ORed into every packet the dispatcher
+builds - bit 31 into the command's semi-transparency bit, bits 24..=25 into
+each textured packet's texpage ABR ([`renderer-port.md`](renderer-port.md#semi-transparency)).
+A non-zero top byte also engages the cue with `IR0 = +0x78 | 1`
+(`0x800433C0..0x800433CC`), which at a zero `+0x78` is the identity.
+
+`chitei2` is the only carrier. Its walk-on records bracket two corridors: `P2[0]`
+(tiles `(101, 110..112)`, `(105, 94..95)` and siblings) runs `CC <ch> D6 03` over
+the pillar objects `P0[5..11]` standing between the camera and the corridor,
+and `P2[1]`, one tile further out on each side, runs `D6 04`; `P2[9]` / `P2[10]`
+do the same for `P0[5, 6, 12, 13, 16]`. Inside, the pillars draw ABR 3
+(`B + F/4`), so the party shows through them. The retail state
+`chitei2_corridor_pillars_lit` holds it ([retail-compare](../tooling/retail-compare.md#the-seeding-model)),
+and `World::object_draw_tints` hands the word to both hosts.
 
 #### `4C D3`: the timed-flag scheduler
 
@@ -1022,7 +1041,9 @@ beside its tree with `4C 51 AA 30 00 2A` on its pre-fight arm (system flag
 its header clip `39`; and `korout` `P2[3]` seats Noa and Gala with walk
 clips `10` and `15` before the `C1` compass legs walk them up the bridge.
 Port: `FieldHostImpl::run_to_tile` writes the bit, the mask and `+0x5C` on
-every NPC arm and raises the clip cue on the cross-context arm, and the seat's
+every NPC arm, binds the clip at the op (`bind_npc_scene_clip`, the binder an
+`A2` ExecMove reaches, so a record's end-latch spin on the seated clip waits for
+it) and raises the clip cue on the cross-context arm, and the seat's
 floor re-sample drops any height the placement held (`World::seat_npc_floor_resample`:
 `town01` `P2[5]` seats Mei in Vahn's house after `P2[4]` left her gliding at her
 own door, and she stands on the house floor); the
@@ -1101,7 +1122,7 @@ scheduled actor; **the script never waits on it**.
 
 | Sub | Slot | Notes |
 |---|---|---|
-| 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). |
+| 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). The ramp (`0x801E118C`) runs on whichever actor the op resolved, placements and objects included: `stone` P2[6] hides Gi Delilas with `CC 13 40 00 00 00 00` and grows him in with `CC 13 40 00 10 08 00`. |
 | 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. The actor's X Euler angle, which the actor draw composes. |

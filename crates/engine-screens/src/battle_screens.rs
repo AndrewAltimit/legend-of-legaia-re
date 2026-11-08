@@ -262,20 +262,13 @@ pub fn battle_hud_frame_draws(
             solid_src: inputs.solid_src,
             surface: (surface_w, surface_h),
             chrome: inputs.chrome,
-            // The actor-name plaque shares its top-left seat with the item
-            // window's Begin | <name> | Item breadcrumb trail, and retail
-            // parks the plaque while that window is up (the
-            // battle_item_window capture shows the crumbs alone), so the
-            // frame draws one or the other, never both.
-            // The commit-confirm screen parks it too, under the lone
-            // `Begin` tab (`bh::battle_begin_tab_alone`).
+            // The commit-confirm screen parks the plaque under the lone
+            // `Begin` tab (`bh::battle_begin_tab_alone`). The item window
+            // keeps it: its `Begin | <name> | Item` trail is records 1,
+            // `0x1A` and `0x0C`, the HUD's own trail.
             plaque: plaque
                 .as_ref()
-                .filter(|_| {
-                    w.battle.item_menu.is_none()
-                        && !bh::battle_begin_tab_alone(w)
-                        && !bh::battle_run_tab_alone(w)
-                })
+                .filter(|_| !bh::battle_begin_tab_alone(w) && !bh::battle_run_tab_alone(w))
                 .map(|(_, n)| n.as_str()),
             plaque_badge: bh::battle_plaque_element_badge(w),
             banner: banner.as_deref(),
@@ -371,20 +364,16 @@ pub fn battle_chrome_sprite_draws(
         );
     }
     let mut out = battle_hud_frame_draws(inputs, surface_w, surface_h).sprites;
-    // The battle item window's chrome (both packet-pinned 9-slice windows,
-    // the breadcrumb tabs and the hand cursor) rides the same atlas layer as
-    // the rest of the menu chrome.
+    // The battle item window's chrome (both packet-pinned 9-slice windows
+    // and the hand cursor) rides the same atlas layer as the rest of the
+    // menu chrome; its breadcrumb trail is the HUD's.
     if let (Some(rects), Some(model)) = (
         inputs.chrome,
         legaia_engine_battle_hud::battle_item_menu_model(w),
     ) {
         out.extend(crate::with_battle_item_frame(&model, |frame| {
             legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
-                inputs.font,
-                rects,
-                frame,
-                origin,
-                scale,
+                rects, frame, origin, scale,
             )
         }));
     }
@@ -853,7 +842,7 @@ pub fn battle_text_draws(
         }
     } else if w.battle.item_menu.is_some() {
         // Retail's item window (state 0x3C): the packet-pinned list +
-        // description windows with breadcrumbs and the hand cursor. Text half
+        // description windows and the hand cursor. Text half
         // here; the window chrome + hand ride `battle_chrome_sprite_draws`.
         if let Some(model) = legaia_engine_battle_hud::battle_item_menu_model(w) {
             out.extend(crate::with_battle_item_frame(&model, |frame| {

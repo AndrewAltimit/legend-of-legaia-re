@@ -945,9 +945,9 @@ pub fn call_args(s: &ActorState) -> Option<(u32, u32, [u8; 0x24])> {
     ))
 }
 
-/// The BIOS `rand()` stream (`FUN_80056798`, A0 `0x2F`) from a fixed seed -
-/// the port rebuilds the jittered shapes from one seed a draw rather than
-/// sharing the game's RNG state.
+/// The BIOS `rand()` stream (`FUN_80056798`, A0 `0x2F`) from seed word
+/// `seed`: the draw replays the words the game's stream held when its frame's
+/// draw reached the part ([`ActorState::draw_rand_seed`]).
 fn bios_rand(seed: u32) -> impl FnMut() -> u32 {
     let mut s = seed;
     move || {
@@ -966,7 +966,7 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
         packed,
         &src,
         &crate::effect_ribbon::RetailTrig,
-        bios_rand(0),
+        bios_rand(s.draw_rand_seed),
         0,
     )?;
     // A node the model draw sends to the shatter renderer (`+0x7A` up,
@@ -980,6 +980,36 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
     }
     let mesh = vram_mesh(&decode(&b), s.field_72, &colour);
     (!mesh.indices.is_empty()).then_some(mesh)
+}
+
+/// How many `rand()` words the node's default-arm build draws: three a column
+/// on the jittered shapes `4` / `5` (`0x800289F4`, `0x80028A78`,
+/// `0x80028AA4`), none on any other. The words a frame's draw takes from the
+/// game's stream, which a host deals ahead of the draw
+/// ([`ActorState::draw_rand_seed`]).
+///
+/// PORT: FUN_80028158 (`0x800288AC..0x80028B04`, the jittered column loop's draws)
+pub fn default_arm_rand_draws(s: &ActorState) -> u32 {
+    let Some((mode, packed, src)) = call_args(s) else {
+        return 0;
+    };
+    if !matches!((mode >> 3) & 0xF, 4 | 5) {
+        return 0;
+    }
+    let mut n = 0u32;
+    let _ = build(
+        0x8000_0000 + SCRATCH_OFFSET,
+        mode,
+        packed,
+        &src,
+        &crate::effect_ribbon::RetailTrig,
+        || {
+            n += 1;
+            0
+        },
+        0,
+    );
+    n
 }
 
 /// The default-arm draw of a part, in the same `(world_pos, rot)` form a
@@ -1248,6 +1278,35 @@ mod tests {
         // Radial vertex order: v2 is a quarter of the way out.
         let (v0, v1, v2) = (d.verts[0], d.verts[1], d.verts[2]);
         assert_eq!(v2[0], v0[0] + ((v1[0] - v0[0]) >> 2));
+    }
+
+    /// The draw count a host deals is three words a column on the jittered
+    /// shapes and none on the others; the draw replays the dealt seed.
+    #[test]
+    fn rand_draws_are_three_a_column_and_the_draw_replays_its_seed() {
+        let mut s = ActorState {
+            move_substate: DRAW_KIND_MULTI,
+            field_9e: 4 << 3,
+            field_72: 0x1000,
+            field_74: 0xC900_0000,
+            ..Default::default()
+        };
+        s.set_actor_u16(0x9C, 8);
+        s.set_actor_u32(0xA0, 0x00FF_FFFF);
+        s.set_actor_u32(0xA4, 0x0010_1010);
+        s.set_actor_u16(0xB4, 64);
+        s.set_actor_u16(0xB6, 32);
+        s.set_actor_u16(0xBC, 0x1000);
+        s.set_actor_u16(0xBE, 0x1000);
+        assert_eq!(default_arm_rand_draws(&s), 24);
+        let a = default_arm_vram_mesh(&s).expect("a mesh").positions;
+        s.draw_rand_seed = 0x1234_5678;
+        let b = default_arm_vram_mesh(&s).expect("a mesh").positions;
+        assert_ne!(a, b, "another seed jitters the spikes elsewhere");
+        let c = default_arm_vram_mesh(&s).expect("a mesh").positions;
+        assert_eq!(b, c, "one seed, one shape");
+        s.field_9e = 0;
+        assert_eq!(default_arm_rand_draws(&s), 0);
     }
 
     /// Shapes 4 / 5 draw three `rand()` values a column and jitter the

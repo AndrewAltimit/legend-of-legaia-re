@@ -78,7 +78,7 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
     if let Some(dir) = settings.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    std::fs::write(settings, toml::to_string(&table)?)
+    legaia_app_theme::settings_file::write_atomic(settings, toml::to_string(&table)?.as_bytes())
         .with_context(|| format!("writing {}", settings.display()))
 }
 

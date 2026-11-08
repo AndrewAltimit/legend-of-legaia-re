@@ -582,10 +582,12 @@ impl PlayWindowApp {
         // The field's primitives link at their own corners' depth
         // (`set_draw_order` per draw), on the field frame alone: the world
         // map, battle and the minigame venues keep their own rules.
-        r.set_field_prim_order(matches!(
-            self.session.host.world.mode,
-            legaia_engine_mode::mode::SceneMode::Field
-        ));
+        r.set_field_prim_order(
+            matches!(
+                self.session.host.world.mode,
+                legaia_engine_mode::mode::SceneMode::Field
+            ) && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
+        );
         // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
         // table, applied by retail's overworld prim leaves), scaled for
         // this frame's camera - the same kernel the browser play page
@@ -676,8 +678,10 @@ impl PlayWindowApp {
                 // bloom stand-in), scaled by the mood's glow.
                 let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
                     &self.session.host.world,
-                    legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
-                        && !self.field_debug_camera,
+                    legaia_engine_world_views::field_view_window::retail_framing(
+                        &self.session.host.world,
+                        &self.session.camera,
+                    ) && !self.field_debug_camera,
                 );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
                     &legaia_engine_screens::field_frame::field_glow_lights(

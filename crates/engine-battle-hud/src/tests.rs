@@ -470,10 +470,10 @@ fn item_window_shows_panels_and_its_target_step_shows_the_pointed_bar() {
         None,
         "browsing: the bar is parked"
     );
-    assert!(
-        !battle_begin_tab_visible(&w),
-        "the item window draws its own trail"
-    );
+    // Step 5 keeps records 1 and `0x1A` (`01/3 .. 1A/3`) and opens `0x0C`:
+    // the HUD's trail, `Begin | <name> | Item`.
+    assert!(battle_begin_tab_visible(&w), "the trail is the HUD's");
+    assert_eq!(battle_breadcrumb_third_tab(&w).as_deref(), Some("Item"));
     assert_eq!(battle_ring_ap_plate_value(&w), None);
     assert_eq!(battle_command_chips(&w), None);
 
@@ -491,6 +491,11 @@ fn item_window_shows_panels_and_its_target_step_shows_the_pointed_bar() {
         battle_readout_bar_slot(&w),
         Some(0),
         "target step: the bar names the pointed member, not the actor"
+    );
+    // Step `0x12` opens record `0x29` for the pointed member too.
+    assert_eq!(
+        battle_target_select_plaque(&w).map(|(n, _)| n),
+        Some(party_member_name(&w, 0))
     );
 }
 

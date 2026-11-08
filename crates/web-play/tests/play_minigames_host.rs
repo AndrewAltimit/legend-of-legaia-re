@@ -279,11 +279,16 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
         hub["quads"].as_array().is_some_and(|q| !q.is_empty()),
         "the intro card must be up on the first leg: {hub}"
     );
-    assert_eq!(rt.play_mg_muscle_hub_sheet_dims(4).len(), 2);
-    let dims = rt.play_mg_muscle_hub_sheet_dims(4);
+    // The hub draws through the page's screen-primitive pass over a VRAM of
+    // its own: the two hub pages decode into it, and the frame's draws stage.
+    assert_eq!(rt.play_mg_muscle_hub_vram_key(), 0);
+    assert_eq!(rt.play_mg_muscle_hub_vram().len(), 1024 * 512 * 2);
+    let n = rt.play_mg_muscle_hub_prims_stage();
+    assert!(n > 0, "the intro card stages screen primitives");
+    assert_eq!(rt.play_mg_muscle_hub_prim_indices().len(), n as usize * 6);
     assert_eq!(
-        rt.play_mg_muscle_hub_sheet_rgba(4, 0).len(),
-        (dims[0] * dims[1] * 4) as usize
+        rt.play_mg_muscle_hub_prim_vertex_bytes().len(),
+        n as usize * 4 * 48
     );
     // The hub's first visit (intro strip, title, course card, ROUND card)
     // covers the leg, and draws on the hub layer; the leg's own HUD is the

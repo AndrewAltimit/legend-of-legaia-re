@@ -182,6 +182,12 @@ pub fn resume_card_load(
     save: legaia_save::SaveFile,
     save_scene: &str,
 ) -> ResumeLanding {
+    // A card load runs from the title, behind the executable reload that
+    // follows the credits, so the credits latch (`_DAT_8007B9B8`) is down:
+    // a load after watching the ending must not hold its scene changes for
+    // the credits' field-init load.
+    host.card_load_world().audio.credits_latch = false;
+    host.card_load_world().field_init_hold = 0;
     host.card_load_world().load_story_flags(&save);
     let current = host.card_load_running_scene();
     let landing = land_save(save_scene, current.as_deref(), |scene| {
@@ -313,6 +319,24 @@ mod tests {
             );
             assert!(host.hydrated);
         }
+    }
+
+    #[test]
+    fn card_load_after_the_credits_drops_the_credits_latch() {
+        let save = legaia_engine_core::world::World::default().save_full();
+        let mut world = legaia_engine_core::world::World::default();
+        world.audio.credits_latch = true;
+        world.field_init_hold = 40;
+        let mut host = ProbeHost {
+            world,
+            running: Some("edlast".into()),
+            enterable: &["town01"],
+            seen_at_entry: Vec::new(),
+            hydrated: false,
+        };
+        let _ = resume_card_load(&mut host, save, "town01");
+        assert!(!host.world.audio.credits_latch);
+        assert_eq!(host.world.field_init_hold, 0);
     }
 
     #[test]

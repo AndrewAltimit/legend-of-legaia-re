@@ -655,6 +655,36 @@ impl World {
                     tl.pc = pc + insn.size;
                     continue;
                 }
+                // The VM prologue's busy gate (`0x801DE90C..0x801DE944`): a
+                // cross-context op whose target carries the halt bit
+                // `+0x10 & 0x400` returns the unadvanced PC, so the record
+                // waits there. An NPC halt-acquire (`C3 <id> 0/1 ..`, the
+                // scripted arc) raises that bit on its target until the arc's
+                // release helper `0x801D5D60` lands it; the acquire itself
+                // advances, and the record parks at its next op aimed at the
+                // arced actor. `eddoman` P2[7] arcs placement `0x16` over 36
+                // frames (`C3 16 01 68 63 46 00 24 00`) and then verifies it
+                // with `B3 16 0A`: holding there is what keeps its white flash
+                // up as long as the retail film does. The halt clear
+                // `32 <id> 0A` is exempt (`0x801DE8E0..0x801DE904`) and lowers
+                // the bit while the arc flies on, so the ops after it run
+                // mid-flight: `edson` P2[0] clears both Seru arcs
+                // (`B2 0C 0A`, `B2 0D 0A`) and re-stages them at once, and
+                // its aerial shot lasts the camera glide, not the arcs.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_801D5D60
+                if let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                    && let Ok(slot) = u8::try_from(channels[ci].placement_index)
+                {
+                    let arced =
+                        legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(slot);
+                    if opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A) {
+                        host.world.clear_script_arc_halt(arced);
+                    } else if host.world.script_arc_halts(arced) {
+                        tl.frames = tl.frames.saturating_sub(1);
+                        break;
+                    }
+                }
                 // An NPC end-latch spin (`AD <id> 08`) re-tests on game frames
                 // only. The placement's anim tick latches `+0x62 & 0x100`
                 // after the record's script slice (the placements tick on
@@ -1308,7 +1338,7 @@ impl World {
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
                     host.world.field_vm.executing_object = channels[ci]
                         .object_bind
-                        .then_some(channels[ci].ctx.script_id);
+                        .then_some(channels[ci].placement_index as u16);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
                     // drives them beat by beat. A poke from the owner is the
@@ -1354,9 +1384,10 @@ impl World {
                     // A poke at a placed object's clip words reaches the
                     // clip it already plays - no `A2` needs to follow.
                     if channels[ci].object_bind {
+                        let key = channels[ci].placement_index;
                         let c = &channels[ci].ctx;
                         host.world.poke_object_prop_words(
-                            c.script_id,
+                            key,
                             (clip_words.0, c.local_flags),
                             (clip_words.1, c.field_6a),
                         );
@@ -1516,11 +1547,46 @@ impl World {
                     )
                     && next_pc == pc
                     && target.is_some_and(|(_, ci)| {
-                        !channels[ci].object_bind
-                            && host
-                                .world
+                        if channels[ci].object_bind {
+                            // A placed object's spin waits on its prop's own
+                            // clip: `edbylon` P2[19] swings the dojo door
+                            // (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`)
+                            // and holds the shot on it with `AC 04 08` /
+                            // `AD 04 08` before the pull-back.
+                            host.world
+                                .object_prop_clip_running(channels[ci].ctx.script_id)
+                        } else {
+                            host.world
                                 .npc_clip_cursor_bound(channels[ci].placement_index as u8)
+                        }
                     });
+                // Morph end spin (`AD <id> 0B`): the record waits on the
+                // poked actor's envelope ADVANCE bit `+0x62 & 0x800`, which
+                // the ramp envelope `FUN_80020740` raises when its lanes have
+                // drained (or, under HOLD, peaked). `edlast`'s lily closes on
+                // it: `AC 00 0A` drops HOLD, `AB 00 0D` re-primes the lanes,
+                // `AC 00 0B` clears the bit and `AD 00 0B` holds the shot on
+                // the flower while the seven lanes unwind - about 520 frames
+                // in the retail film, where a step-past cut to the pull-back
+                // at once. Held only while the world runs that actor's
+                // envelope, bounded like the clip spin.
+                // REF: FUN_80020740, FUN_801DE840 (op 0x2D)
+                let morph_spin = op == 0x2D
+                    && opcode_byte & 0x80 != 0
+                    && tl.bytecode.get(pc + 2) == Some(&11)
+                    && matches!(
+                        kind,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                    )
+                    && next_pc == pc
+                    && target.is_some_and(|(_, ci)| {
+                        host.world.channel_morph_envelope_live(&channels[ci])
+                    });
+                if morph_spin && tl.npc_clip_spin_frames < MORPH_ADVANCE_SPIN_TIMEOUT {
+                    tl.npc_clip_spin_frames += 1;
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 if npc_clip_spin && tl.npc_clip_spin_frames < NPC_CLIP_SPIN_TIMEOUT {
                     tl.npc_clip_spin_frames += 1;
                     tl.frames = tl.frames.saturating_sub(1);

@@ -141,6 +141,25 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   (`launch::play_args`). A game started from either program is the same game,
   and a switch added to the launcher needs nothing here. The enhancement
   options live in the game's `legaia-options.toml`, which both starts read.
+- **Dropped files on Wayland.** winit 0.30 has no Wayland drag-and-drop, so
+  on a Wayland session that also offers XWayland Explorer opens as an X11
+  client, as the launcher does (`legaia_app_theme::drop_backend`), and a disc
+  dropped from a Wayland file manager arrives. `LEGAIA_EXPLORER_WAYLAND=1`
+  keeps the window native, where only the dialogs and the typed path open a
+  disc.
+- **What a drop opens.** While files are dragged over the window a frame and
+  a line say what a drop opens. Of several dropped paths the first that can
+  be a source opens (a `.cue` over its `.bin`, `pick_drop`), and the status
+  line says the rest were left. An expansion pack (`.lxpack`, a folder with
+  `pack.toml`) or a memory card (`library::CARD_EXTENSIONS`) is named for what
+  it is and sent to the game's launcher (`library::not_a_source`), instead of
+  being refused as a broken disc image.
+- **Settings.** `settings.json` in the platform config folder
+  (`LEGAIA_EXPLORER_SETTINGS` overrides the path). One that does not parse is
+  renamed to `settings.json.broken` and named on the error banner, never
+  overwritten by the defaults; one that can be neither read nor moved is left
+  alone and not written. Every save lands whole (temp file, then rename):
+  `legaia_app_theme::settings_file`.
 - **UI-free model.** `Explorer` (loading, selection, background classification
   and analysis), `ExtractJob`, `media` and the exporters have no egui
   dependency, so `tests/smoke.rs` drives them headlessly.

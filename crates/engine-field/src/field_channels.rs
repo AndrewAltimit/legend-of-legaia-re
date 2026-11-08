@@ -62,6 +62,11 @@ pub struct FieldChannel {
     /// Partition-1 record index (`1..N1`; record 0 is the scene controller).
     /// Also the key `FieldNpcState::positions` and the
     /// windowed host's NPC clip players track.
+    ///
+    /// On an object-bind channel ([`Self::object_bind`]) this is the
+    /// object's key ([`object_channel_keys`]): the flat record for the first
+    /// object the record binds, a per-object key past
+    /// [`OBJECT_INSTANCE_KEY_BASE`] for the rest.
     pub placement_index: usize,
     /// The context. `script_id` carries the retail id
     /// (`partition-0 count + placement_index`); `world_x`/`world_z` seed from
@@ -82,11 +87,10 @@ pub struct FieldChannel {
     /// writes the trigger's **flat** record index into the actor's script id
     /// (`actor[+0x50] = trigger[2]`), so partition-0 records ARE resolvable
     /// cross-context targets - the `town01` Mei walk-on beat pokes the
-    /// Vahn's-house door object as channel `0x01` this way. Object channels
-    /// are poke targets only: the engine does not step them autonomously
-    /// (their interaction bodies are driven by the touch/interact dispatch),
-    /// and their state never writes through to the placement-keyed NPC
-    /// surfaces (`FieldNpcState::positions`).
+    /// Vahn's-house door object as channel `0x01` this way. One channel per
+    /// bound object, as retail runs one actor per object; their state never
+    /// writes through to the placement-keyed NPC surfaces
+    /// (`FieldNpcState::positions`).
     pub object_bind: bool,
 }
 
@@ -194,47 +198,100 @@ fn placement_channel(p0_count: usize, p: &ActorPlacement) -> FieldChannel {
     }
 }
 
+/// The first key of the per-object range: an object-bind channel that is
+/// not the first its record binds is keyed `OBJECT_INSTANCE_KEY_BASE +` its
+/// tile index ([`object_instance_key`]). Past every flat record (a byte) and
+/// below a pack map's prop keys (`0x1_0000`).
+pub const OBJECT_INSTANCE_KEY_BASE: usize = 0x1000;
+
+/// The per-object key of the bound object on `.MAP` tile `tile`
+/// ([`crate::man_field_scripts::ObjectScriptBind::tile`]): the key a host
+/// looks a placed draw's actor state up by, from the draw's own cell. One
+/// object per tile, so one actor per key.
+pub fn object_instance_key(tile: (u8, u8)) -> usize {
+    OBJECT_INSTANCE_KEY_BASE + usize::from(tile.1) * 0x80 + usize::from(tile.0)
+}
+
+/// The channel key of each bind ([`FieldChannel::placement_index`] of an
+/// object-bind channel): the flat record for the **first** object a record
+/// binds - the actor `FUN_8003C83C`'s first-match walk answers for that id -
+/// and [`object_instance_key`] for every later one.
+pub fn object_channel_keys(binds: &[crate::man_field_scripts::ObjectScriptBind]) -> Vec<usize> {
+    let mut seen = std::collections::BTreeSet::new();
+    binds
+        .iter()
+        .map(|b| {
+            if seen.insert(b.record) {
+                b.record
+            } else {
+                object_instance_key(b.tile)
+            }
+        })
+        .collect()
+}
+
 /// Spawn a [`FieldChannel`] per `.MAP` **object bind**, mirroring the retail
 /// scene-init object walk (`FUN_8003A55C`): each bound object's actor gets
 /// the gate-0 trigger's **flat** MAN record index as its script id
 /// (`actor[+0x50] = trigger[2]`, the `sh t3,0x50(s0)` at `0x8003a8c4`), the
-/// record base as its bytecode buffer (`actor[+0x90]`) and the record's
-/// first-opcode offset as its entry PC (`actor[+0x9E]`). This is the id
-/// space that makes partition-0 records resolvable cross-context targets
-/// through the `FUN_8003C83C` actor-list walk.
+/// record base as its bytecode buffer (`actor[+0x90]`), the record's
+/// first-opcode offset as its entry PC (`actor[+0x9E]`), and the object's
+/// seat, angles and height. This is the id space that makes partition-0
+/// records resolvable cross-context targets through the `FUN_8003C83C`
+/// actor-list walk.
 ///
-/// `binds` carries `(flat_record_index, contact_centre)` pairs (see
-/// [`crate::man_field_scripts::object_script_binds`]). Binds whose flat
-/// record cannot be spanned are skipped. Spawn these AFTER the placement
-/// channels: a flat index `>= N0` aliases a placement channel's script id,
-/// and [`resolve_target`]'s first-match walk must keep the placement.
+/// One channel per bind, in bind order: objects sharing a record are each
+/// their own context, keyed by [`object_channel_keys`]; the walk answers a
+/// shared id with the first, which is the first the sweep spawned.
+///
+/// A record index at or past the MAN's record count (`header +0x22`, the
+/// three partition counts summed) still spawns: the sweep keeps the SCUS
+/// default record `0x80073EE8` as the script (`0x8003A774..0x8003A87C`, the
+/// offset-table read is skipped) and writes the index as the script id all
+/// the same. That record is zeros - no name, no clip, a first byte no
+/// prologue runs - so the context is inert, but it is an actor the id
+/// resolves to: `edbalden` binds five objects to records past its 14. A
+/// bind whose in-range record cannot be spanned is skipped. Spawn these
+/// AFTER the
+/// placement channels: a flat index `>= N0` aliases a placement channel's
+/// script id, and [`resolve_target`]'s first-match walk must keep the
+/// placement.
 // REF: FUN_8003A55C (object-bind context: +0x50 script id, +0x90/+0x9E script)
 // REF: FUN_8003C83C
 pub fn spawn_object_channels(
     man_file: &ManFile,
     man: &[u8],
-    binds: &[(usize, (i16, i16))],
+    binds: &[crate::man_field_scripts::ObjectScriptBind],
 ) -> Vec<FieldChannel> {
+    let records: usize = man_file
+        .header
+        .partition_counts
+        .iter()
+        .map(|&n| n.max(0) as usize)
+        .sum();
     let mut out = Vec::new();
-    for &(flat, (cx, cz)) in binds {
+    for (b, key) in binds.iter().zip(object_channel_keys(binds)) {
+        let flat = b.record;
         if flat > u16::MAX as usize {
             continue;
         }
-        let Some((record_offset, pc0, _len)) =
-            crate::man_field_scripts::flat_record_span(man_file, man, flat)
-        else {
-            continue;
+        // Past the record count: the default record, which runs nothing.
+        let (record_offset, pc0, done) = if flat >= records {
+            (man.len(), 0, true)
+        } else {
+            match crate::man_field_scripts::flat_record_span(man_file, man, flat) {
+                Some((record_offset, pc0, _len)) => (record_offset, pc0, false),
+                None => continue,
+            }
         };
-        if out
-            .iter()
-            .any(|c: &FieldChannel| c.ctx.script_id == flat as u16)
-        {
-            continue;
-        }
         let ctx = FieldCtx {
             script_id: flat as u16,
-            world_x: cx as u16,
-            world_z: cz as u16,
+            world_x: b.seat.0 as u16,
+            world_y: b.seat_y as u16,
+            world_z: b.seat.1 as u16,
+            field_24: b.rot[0] as i16,
+            field_26: b.rot[1],
+            field_28: b.rot[2] as i16,
             // Retail inits the `+0x94` payload slot to `-1` (`FUN_8003A55C`).
             saved_pc: 0xFFFF_FFFF,
             // Unit render scale from `actor_free` - see `spawn_channels`.
@@ -242,11 +299,11 @@ pub fn spawn_object_channels(
             ..FieldCtx::default()
         };
         out.push(FieldChannel {
-            placement_index: flat,
+            placement_index: key,
             ctx,
             record_offset,
             pc: pc0,
-            done: false,
+            done,
             object_bind: true,
         });
     }

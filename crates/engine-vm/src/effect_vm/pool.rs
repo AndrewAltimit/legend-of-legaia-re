@@ -433,9 +433,8 @@ impl Pool {
         // Retail stores these into `record[+2]` / `record[+6]` - i.e., it
         // scribbles back into the resident *script* buffer. The port keeps
         // the catalog immutable: the rewrites land in
-        // `master.child_offsets` (consumed by [`Pool::tick_retail`]) and are
-        // also surfaced through a host hook so engines can mirror them into
-        // per-child render state.
+        // `master.child_offsets`, which [`Pool::tick_retail`] reads where
+        // retail reads the scribbled record.
         //
         // The remainder is the C-style `%` (truncated toward zero) the MIPS
         // `div` produces; a BIOS `rand()` draw is never negative, so it only
@@ -443,14 +442,13 @@ impl Pool {
         // 1 instead of crashing.
         let _ = children; // record fields are read back through the catalog.
         let spread = script.spread.max(1);
-        for child_idx in 0..script.child_count {
+        for _ in 0..script.child_count {
             let modulus = (spread as i32) << 1;
             let raw_x = host.next_random();
             let raw_z = host.next_random();
             let dx = (raw_x % modulus - spread as i32) as i16;
             let dz = (raw_z % modulus - spread as i32) as i16;
             self.master_slots[slot].child_offsets.push((dx, dz));
-            host.assign_child_random_offset(slot, child_idx, dx, dz);
         }
 
         Some(slot)

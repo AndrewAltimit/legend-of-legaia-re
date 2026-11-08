@@ -193,6 +193,40 @@ impl PlayWindowApp {
         true
     }
 
+    /// A key whose press types `?` on the player's layout: the panel too.
+    /// [`Self::help_key`]'s `/` is the physical key that carries `?` on a US
+    /// layout; on a German (`Shift+ß`) or French (`Shift+,`) layout `?` sits
+    /// elsewhere, and only the typed text finds it. The release of that key
+    /// is taken as well, so the pad never sees half a press.
+    pub(in crate::window) fn typed_help_key(
+        &mut self,
+        code: KeyCode,
+        state: ElementState,
+        text: Option<&str>,
+    ) -> bool {
+        match state {
+            ElementState::Pressed if types_question_mark(code, text) => {
+                if self.help_key_held != Some(code) {
+                    self.help_key_held = Some(code);
+                    if self.hotkey_help {
+                        self.hotkey_help = false;
+                    } else {
+                        self.open_panel();
+                    }
+                }
+                true
+            }
+            ElementState::Released
+                if self.help_key_held == Some(code)
+                    && !matches!(code, KeyCode::F12 | KeyCode::Slash) =>
+            {
+                self.help_key_held = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// `F2`: master audio mute. The shared edit flipped the engine-only
     /// `muted` option and the persist pushed it into the mixer's master gate
     /// (output silenced; sequencer + SPU keep ticking so unmute stays in
@@ -435,5 +469,29 @@ impl PlayWindowApp {
                 "off (retail 8-way remap)"
             }
         );
+    }
+}
+
+/// Whether a press of `code` that typed `text` is the `?` of a layout where
+/// it is not on the physical `/` key ([`PlayWindowApp::help_key`] has that
+/// one, and `F12`).
+fn types_question_mark(code: KeyCode, text: Option<&str>) -> bool {
+    text == Some("?") && !matches!(code, KeyCode::F12 | KeyCode::Slash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `?` opens the panel wherever the layout puts it; the US key stays
+    /// `help_key`'s, and a key that types anything else is left to the pad.
+    #[test]
+    fn question_mark_is_found_by_what_it_types() {
+        // German: Shift+ß, the physical `-` key; French: Shift+, on `M`.
+        assert!(types_question_mark(KeyCode::Minus, Some("?")));
+        assert!(types_question_mark(KeyCode::KeyM, Some("?")));
+        assert!(!types_question_mark(KeyCode::Slash, Some("?")));
+        assert!(!types_question_mark(KeyCode::Minus, Some("ß")));
+        assert!(!types_question_mark(KeyCode::KeyM, None));
     }
 }

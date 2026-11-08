@@ -177,13 +177,41 @@ impl FieldHostImpl<'_> {
             }
             return;
         }
-        if sub != 0
-            || ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
-        {
+        if sub != 0 {
             return;
         }
+        // Sub-0: the `+0x72` render scale. The arm (`0x801E118C..0x801E11A8`
+        // in PROT 0897) is the sub-2 shape on another word: `a0 = s5` (the
+        // resolved actor), `a1 = &s5+0x72`, start `lhu +0x72`, kind 2, end
+        // and ticks on the stack, then the scheduler exit `0x801E205C`
+        // (`jal 0x8003C5F0`). So any actor the op resolves grows or shrinks,
+        // not only the player: `stone` P2[6] hides Gi with `CC 13 40 00 00
+        // 00 00` and brings him in with `CC 13 40 00 10 08 00`, and a
+        // player-only ramp left him at scale 0 for the whole confrontation.
         use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
         let total = i32::from(ticks);
+        if ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) {
+            if let Some(record) = self.world.field_vm.executing_object {
+                self.world.schedule_object_ramp(
+                    record,
+                    legaia_engine_field::object_tint::ObjectRampSlot::Scale72,
+                    i32::from(ctx.field_72),
+                    i32::from(target),
+                    ticks,
+                );
+            } else if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+                self.world.npcs.slot_ramps.install(Ramp {
+                    dest: RAMP_DEST_SCALE,
+                    owner: u32::from(slot),
+                    start: i32::from(ctx.field_72),
+                    end: i32::from(target),
+                    total,
+                    remaining: total,
+                    kind: RampKind::U16,
+                });
+            }
+            return;
+        }
         self.world.locomotion.player_scale_ramps.install(Ramp {
             dest: RAMP_DEST_SCALE,
             owner: u32::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
@@ -525,6 +553,7 @@ impl FieldHostImpl<'_> {
             // legs) plays its walk clip instead of gliding in the idle.
             self.world.carry_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
+            self.bind_run_clip(ctx, slot, move_id);
             self.world.seat_npc_floor_resample(slot, ctx.flags);
             return;
         }
@@ -597,8 +626,30 @@ impl FieldHostImpl<'_> {
                 }
                 self.world.carry_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
+                self.bind_run_clip(ctx, slot, move_id);
                 self.world.seat_npc_floor_resample(slot, ctx.flags);
             }
+        }
+    }
+
+    /// The `4C 51` NPC arm's clip bind, at the op: byte `+4` into `+0x5C`
+    /// with `+0x5E = -2`, then `FUN_800204F8` (`0x801E1A8C..0x801E1AB4`) -
+    /// the same binder an `A2` ExecMove reaches, so the clip's cursor (and
+    /// the end latch `+0x62 & 0x100` a record spins on) belongs to the world
+    /// from the seat on, not from the host's next cue drain. `edkorout`'s
+    /// window shot needs it: `P2[0]` seats placement 9 on move `21`
+    /// (`CC 09 51 BB 45 05 15`), clears its end latch and spins `AD 09 08`
+    /// until that clip ends - about 95 vsyncs in a retail log of the actor's
+    /// `+0x68` cursor - before it plays move `22`; with no world cursor the
+    /// spin stepped past at once and every later beat ran 95 vsyncs early.
+    /// REF: FUN_800204F8, FUN_801DE840 (`0x801E1A68..0x801E1AB4`)
+    fn bind_run_clip(&mut self, ctx: &mut FieldCtx, slot: u8, move_id: u8) {
+        let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
+        if let Some(flags) =
+            self.world
+                .bind_npc_scene_clip(slot, move_id, party_bank, ctx.local_flags, ctx.field_6a)
+        {
+            ctx.local_flags = flags;
         }
     }
 }

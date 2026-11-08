@@ -42,7 +42,7 @@ impl SceneHost {
         let Some(trigger) = legaia_engine_field::field_regions::lookup_tile_trigger(
             &primary, &fallback, tile_x, tile_z,
         )
-        .filter(|t| t.gate == 1) else {
+        .filter(|t| t.gate != 0) else {
             return;
         };
         if self
@@ -93,7 +93,7 @@ impl SceneHost {
     /// records to the entity SM and spawn only beat records. A clean
     /// fall-through walk from the record's true `pc0`; `false` on a bad span.
     // REF: FUN_8003BDE0
-    fn p2_record_is_portal(
+    pub(super) fn p2_record_is_portal(
         man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record: usize,
@@ -145,7 +145,13 @@ impl SceneHost {
                     self.last_trigger_tile = Some(landing_tile);
                     // The landing calls `FUN_8003BDE0` straight (no clip
                     // reset - that store is the changed-tile arm's).
-                    self.dispatch_kind1_walk_on(query_tile, false, false);
+                    let hit = legaia_engine_field::field_warp_tile::walk_on_kind1(
+                        query_tile,
+                        &self.walk_on_tables(),
+                    );
+                    if let Some(trigger) = hit {
+                        self.dispatch_kind1_walk_on(trigger, false, false);
+                    }
                     return;
                 }
             }
@@ -217,8 +223,14 @@ impl SceneHost {
             // under the player's movement lock (`0x801D2090..0x801D20F8`).
             // Rim Elm's "stand here and press" beats (`town01` P2[12..14]
             // and their `town0b..0e` twins) poll the pad this way.
-            if self.world.flags.story_flags & repoll != 0 && !locked {
-                self.dispatch_kind1_walk_on(tile, on_world_map, false);
+            if self.world.flags.story_flags & repoll != 0
+                && let Some(trigger) = legaia_engine_field::field_warp_tile::walk_on_repoll(
+                    locked,
+                    tile,
+                    &self.walk_on_tables(),
+                )
+            {
+                self.dispatch_kind1_walk_on(trigger, on_world_map, false);
             }
             return;
         }
@@ -239,15 +251,44 @@ impl SceneHost {
         // dispatching there re-raised `0x393`, and P1[0] re-spawned P2[16]
         // forever. (A modal timeline or conversation is consumed the same
         // way, earlier in this dispatcher.)
-        if locked || self.world.script_context_engages_player() {
+        if self.world.script_context_engages_player() {
             return;
         }
-        self.dispatch_kind1_walk_on(tile, on_world_map, true);
+        // Both lookups sit behind the crossed cell's trigger-presence bits
+        // (`cell & 0x600`, `0x801D2140`), which `FUN_80017BEC` stamps from the
+        // primary table alone: a fallback-window record on a tile the primary
+        // table does not name never runs. Without a grid (a synthetic fixture)
+        // every tile is admitted.
+        // REF: FUN_80017BEC
+        let cell = self
+            .world
+            .terrain
+            .object_cells
+            .get(usize::from(tile.1) * 0x80 + usize::from(tile.0))
+            .copied()
+            .unwrap_or(legaia_engine_field::field_warp_tile::WALK_ON_CELL_MASK);
+        let crossing = legaia_engine_field::field_warp_tile::walk_on_crossing(
+            cell,
+            locked,
+            tile,
+            &self.walk_on_tables(),
+        );
+        if let Some(trigger) = crossing.kind1 {
+            self.dispatch_kind1_walk_on(trigger, on_world_map, true);
+        }
         // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
         // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
         // both spawn its record and teleport.
-        if !on_world_map {
-            self.dispatch_intra_scene_teleport(tile);
+        if !on_world_map && let Some(dest) = crossing.warp {
+            self.dispatch_intra_scene_teleport(tile, dest);
+        }
+    }
+
+    /// The scene's `.MAP` trigger tables as the crossing kernel reads them.
+    fn walk_on_tables(&self) -> legaia_engine_field::field_warp_tile::WalkOnTables<'_> {
+        legaia_engine_field::field_warp_tile::WalkOnTables {
+            kind1: (&self.field_triggers.0, &self.field_triggers.1),
+            kind0: (&self.field_intra_teleports.0, &self.field_intra_teleports.1),
         }
     }
 
@@ -258,18 +299,26 @@ impl SceneHost {
     /// `clip_reset` is the changed-tile arm's store under `_DAT_8007B6A8`;
     /// the same-tile re-run and the warp landing call `FUN_8003BDE0`
     /// without it.
-    fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool, clip_reset: bool) {
-        let (primary, fallback) = &self.field_triggers;
-        let Some(trigger) = legaia_engine_field::field_regions::lookup_tile_trigger(
-            primary, fallback, tile.0, tile.1,
-        )
-        .filter(|t| t.gate == 1) else {
-            return;
-        };
+    ///
+    /// `trigger` is the first record on the tile, whatever its gate: the
+    /// lookup does not filter, and `FUN_8003BDE0` spawns for any non-zero gate
+    /// (`beq a3,zero` at `0x8003BDF0`). A gate-0 record is an object bind that
+    /// spawns nothing here, and it hides a later record on the same tile.
+    fn dispatch_kind1_walk_on(
+        &mut self,
+        trigger: legaia_engine_field::field_regions::TileTrigger,
+        on_world_map: bool,
+        clip_reset: bool,
+    ) {
+        let tile = (trigger.tile_x, trigger.tile_z);
         // Under `_DAT_8007B6A8` a kind-1 hit also resets the clip base to
-        // idle (`0x801D218C..0x801D21BC`).
+        // idle (`0x801D218C..0x801D21BC`), after the dispatch call whatever
+        // its gate.
         if clip_reset {
             self.world.field_walk_on_clip_reset();
+        }
+        if trigger.gate == 0 {
+            return;
         }
         let Some(man_bytes) = self.field_man_cache.clone() else {
             return;
@@ -319,31 +368,13 @@ impl SceneHost {
     /// [`Self::dispatch_walk_on_trigger`] the frame the timer runs out.
     ///
     /// PORT: FUN_801D1EC4 (kind-0 arm, `0x801d21c0..0x801d2268`)
-    fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8)) {
-        let (primary, fallback) = &self.field_intra_teleports;
-        let Some(tp) = legaia_engine_field::field_regions::lookup_intra_scene_teleport(
-            primary, fallback, tile.0, tile.1,
-        ) else {
-            return;
-        };
-        let Some(slot) = self.world.player_actor_slot else {
-            return;
-        };
-        let Some(actor) = self.world.actors.get(slot as usize) else {
-            return;
-        };
-        // Retail skips the teleport while the player's movement-disabled flag
-        // (`+0x10 & 0x80000`) is set - an encounter / cutscene owns the body.
-        if actor.move_state.flags & 0x0008_0000 != 0 {
-            return;
-        }
-        self.world.arm_field_warp((tp.dest_x, tp.dest_z));
+    fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8), dest: (u8, u8)) {
+        self.world.arm_field_warp(dest);
         log::info!(
-            "field: intra-scene warp armed at ({},{}) -> world {:?} tile {:?}",
+            "field: intra-scene warp armed at ({},{}) -> world {:?}",
             tile.0,
             tile.1,
-            tp.dest_world(),
-            tp.dest_tile(),
+            legaia_engine_field::field_warp_tile::landing_world(dest),
         );
     }
 }

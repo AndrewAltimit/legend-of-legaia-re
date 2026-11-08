@@ -608,6 +608,11 @@ impl World {
         {
             return;
         }
+        // The node tick's head: the HP / MP readout ramp, once a pass
+        // (`FUN_80047430` `0x800474E8..0x80047638`, ahead of the cursor
+        // advance and the hit walk).
+        // PORT: FUN_80047430 (the readout ramp's cadence)
+        self.tick_battle_hp_bars();
         // What the previous pass's draw stored, for this frame's readout
         // (`BattleState::readout_trios`).
         self.battle.readout_trios = (0..self.actors.len())
@@ -679,6 +684,8 @@ impl World {
         // has not seeded yet included (the draw stores every drawn actor's).
         self.seed_battle_seats();
         self.refresh_battle_body_pairs();
+        // ... and the render pass's own `rand()` draws (the jittered rings).
+        self.deal_battle_draw_rands();
         // The same draw sheds the burning bodies' puffs (the tail of
         // `FUN_8004998C`, `0x8004A5FC..0x8004A8D8`) at the pose and ground
         // the pass left, on the frame driver's accumulator `ctx[+0x328]`,

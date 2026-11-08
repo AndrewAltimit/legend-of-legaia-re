@@ -236,7 +236,7 @@ fn the_arrival_seats_the_flesh_hue_cycler() {
     let channel_delta = legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA;
     let mut adds = Vec::new();
     for _ in 0..6 {
-        world.tick_stage_fx(channel_delta);
+        world.tick_stage_fx(channel_delta, 1);
         let fx = std::mem::take(&mut world.battle.cell_fx);
         adds.extend(fx.into_iter().map(|f| {
             assert_eq!(f.rect, (32, 479, 16, 1), "the flesh palette");

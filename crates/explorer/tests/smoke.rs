@@ -43,6 +43,37 @@ fn state_builds_without_a_window() {
     );
 }
 
+/// A dropped expansion pack or memory card is named for what it is (they
+/// belong to the game's launcher), and of several dropped paths the window
+/// opens the one that can be a source, the `.cue` over its `.bin`.
+#[test]
+fn dropped_packs_and_cards_are_named_and_a_source_is_picked() {
+    use legaia_explorer::{library, pick_drop};
+    let dir = scratch("drops");
+    let pack_dir = dir.join("my-pack");
+    std::fs::create_dir_all(&pack_dir).unwrap();
+    std::fs::write(pack_dir.join("pack.toml"), "").unwrap();
+    for (p, word) in [
+        (dir.join("story.lxpack"), "expansion pack"),
+        (pack_dir.clone(), "expansion pack"),
+        (pack_dir.join("pack.toml"), "expansion pack"),
+        (dir.join("epsxe.MCR"), "memory card"),
+        (dir.join("duck.gme"), "memory card"),
+    ] {
+        std::fs::write(&p, b"").ok();
+        let e = library::validate(&p).unwrap_err().to_string();
+        assert!(e.contains(word), "{}: {e}", p.display());
+    }
+    assert!(library::not_a_source(&dir.join("Legaia.bin")).is_none());
+    let bin = dir.join("Legaia.bin");
+    let cue = dir.join("Legaia.cue");
+    let card = dir.join("card.mcr");
+    assert_eq!(pick_drop(&[card.clone(), bin.clone()]), Some(&bin));
+    assert_eq!(pick_drop(&[bin.clone(), cue.clone()]), Some(&cue));
+    assert_eq!(pick_drop(std::slice::from_ref(&card)), Some(&card));
+    assert_eq!(pick_drop(&[]), None);
+}
+
 /// A disc image cut short by a copy says so, whether the cut falls inside the
 /// disc's file list or among its files, and the whole image passes the same
 /// check. The copies are scratch files, removed with the test's folder.

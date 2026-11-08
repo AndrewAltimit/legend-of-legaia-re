@@ -176,6 +176,30 @@ fn the_silent_history_lets_a_held_voice_go() {
     assert!(flushes >= SILENT_RING_LEN - 1);
 }
 
+/// Where the history's index stands when a voice falls silent decides the
+/// count: the release test ANDs the fixed words `0..15`, so a run that crosses
+/// the unread word `15` takes a flush more.
+#[test]
+fn the_silent_historys_phase_decides_fifteen_or_sixteen_flushes() {
+    let flushes_from = |phase: usize| {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let spu = Spu::new();
+        seq.set_silent_ring_phase(phase);
+        occupy(&mut seq, 2);
+        seq.forget_silence(2);
+        let mut flushes = 0;
+        while seq.voice_held != 0 {
+            seq.read_envelopes(&spu);
+            flushes += 1;
+        }
+        flushes
+    };
+    // Written from word 0 (index 15 before the first flush): words 0..=14.
+    assert_eq!(flushes_from(SILENT_RING_LEN - 1), SILENT_RING_LEN - 1);
+    // Written from word 9: 9..=14, the unread 15, then 0..=8.
+    assert_eq!(flushes_from(8), SILENT_RING_LEN);
+}
+
 /// A sequencer started over tails another one left: they count by their envelope
 /// and hold no mark.
 #[test]
@@ -970,6 +994,44 @@ fn a_note_released_before_the_flush_never_keys() {
     assert_eq!(keys_written(&spu), 1, "a flushed note keys");
     seq.fire_channel(&mut spu, 0, off);
     assert_eq!(keys_written(&spu), 1);
+}
+
+/// A dropped layer zeroes voice 0's staged ADSR2: `FUN_80066B00`'s failure
+/// path stores to record `24`, which is voice 0's shadow ADSR2 word. Only a
+/// voice-0 key-on staged ahead of the drop in the same flush carries it.
+#[test]
+fn a_dropped_note_zeroes_voice_0s_staged_adsr2() {
+    let on = ChannelMessage::NoteOn {
+        key: 60,
+        velocity: 100,
+    };
+    let crowd = |seq: &mut Sequencer| {
+        seq.voice_held = 0xFF_FFFF;
+        seq.voice_env = [0x4000; 24];
+        seq.voice_prio = [10; 24];
+    };
+    // The drop after voice 0's key-on: ADSR2 goes out as 0.
+    let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+    let mut spu = Spu::new();
+    seq.fire_channel(&mut spu, 0, on);
+    assert_eq!(seq.active[0].voice, 0);
+    crowd(&mut seq);
+    seq.fire_channel(&mut spu, 1, on);
+    assert_eq!(seq.active.len(), 1, "the second note found no voice");
+    seq.flush_key_ons(&mut spu);
+    assert_eq!(spu.voices[0].adsr_cfg.raw, (0x80FF, 0));
+
+    // The drop ahead of it: the key-on stages the tone's ADSR afresh.
+    let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+    let mut spu = Spu::new();
+    crowd(&mut seq);
+    seq.fire_channel(&mut spu, 1, on);
+    seq.voice_held = 0;
+    seq.voice_env = [0; 24];
+    seq.fire_channel(&mut spu, 0, on);
+    assert_eq!(seq.active[0].voice, 0);
+    seq.flush_key_ons(&mut spu);
+    assert_eq!(spu.voices[0].adsr_cfg.raw, (0x80FF, 0x5FC0));
 }
 
 /// The sample clock flushes once per [`FLUSH_SAMPLES`]: a note due at

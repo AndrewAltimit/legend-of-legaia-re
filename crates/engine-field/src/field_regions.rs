@@ -474,6 +474,27 @@ pub fn refresh_object_grid_marks(map: &mut [u8]) {
     }
 }
 
+/// Stamp the fallback window's kind-1 tiles into the object grid: the map
+/// init's walk over the `+0x12000` window's kind-1 records, which ORs
+/// [`CELL_BIND_OWNED`] (`0x400`) into each record's cell
+/// (`0x8003AFA8..0x8003B018`). [`refresh_object_grid_marks`] stamps the
+/// primary table's tiles; this is what lets the walk-on dispatch's cell filter
+/// admit a fallback-window record at all. Kind-0 and kind-2 fallback records
+/// are not stamped. `fallback` is the window's kind-1 list as the lookup reads
+/// it; a record off the grid is skipped (retail writes past the grid).
+///
+/// PORT: FUN_8003AEB0 (the fallback-window stamp, `0x8003AFA8..0x8003B018`)
+pub fn stamp_fallback_walk_on_cells(map: &mut [u8], fallback: &[TileTrigger]) {
+    for t in fallback {
+        let o = MAP_OBJECT_INDEX_OFFSET + usize::from(t.tile_x) * 2 + usize::from(t.tile_z) * 0x100;
+        if t.tile_x >= 0x80 || t.tile_z >= 0x80 || o + 1 >= map.len() {
+            continue;
+        }
+        let cell = u16::from_le_bytes([map[o], map[o + 1]]) | CELL_BIND_OWNED;
+        map[o..o + 2].copy_from_slice(&cell.to_le_bytes());
+    }
+}
+
 /// Object-cell bit that marks a tile as **owned by the scene-init bind sweep**
 /// (`legaia_scene_formats::field_objects::CELL_BIND_OWNED`, stamped by `FUN_8003AEB0`
 /// from the gate-0 bind triggers). The window sweep skips any placement whose

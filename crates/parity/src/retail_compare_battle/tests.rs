@@ -900,7 +900,10 @@ fn a_done_capture_on_the_seeded_countdown_is_the_arm_pass() {
 /// behind the Done arm's origin. `koru_pre_*`'s words (Gala on Koru, step 3):
 /// one pass back on case 8 is yaw `3496`, depth `6730`, focus z `-342`; case 7
 /// (yaw `3300`, depth `prescale(5120) = 8192`, focus the midpoint `-233`) takes
-/// them to `3595`, `5998`, `-399`. Pitch and `TR.y` stay.
+/// them to `3595`, `5998`, `-399`, and the pitch, which case 7 aims at `0`,
+/// from `4073` to `4061` (a retail film of the tail reads `4058` on the held
+/// pass: the walk's increment is the smaller of two the gap allows). `TR.y`
+/// already stands on case 7's `0x500`.
 #[test]
 fn a_done_arm_capture_walks_the_strike_exit_on_case_7() {
     use legaia_engine_camera::projection::BattleCamPose;
@@ -930,7 +933,14 @@ fn a_done_arm_capture_walks_the_strike_exit_on_case_7() {
     assert_eq!(p.yaw, 3595.0);
     assert_eq!(p.tr, [-113.0, 1280.0, 5998.0]);
     assert_eq!(p.focus, [10.0, 0.0, -399.0]);
-    assert_eq!(p.pitch, 4073.0, "case 8 holds the live pitch");
+    assert_eq!(p.pitch, 4061.0, "case 7 walked the pitch toward 0");
+    // An eye height off case 7's `0x500` walks back away from it.
+    let high = BattleCamPose {
+        tr: [-74.0, 1290.0, 6730.0],
+        ..one_back
+    };
+    let p = done_arm_strike_walk_back(&ram, ctx, high, [3, 3]).expect("case 7");
+    assert_eq!(p.tr[1], 1296.0);
     // A target on its knockdown kept case 8 on the held passes.
     put8(&mut ram, koru + 0x1D9, 4);
     assert!(done_arm_strike_walk_back(&ram, ctx, one_back, [3, 3]).is_none());

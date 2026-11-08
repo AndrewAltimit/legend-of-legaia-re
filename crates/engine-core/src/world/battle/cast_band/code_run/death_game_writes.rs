@@ -32,9 +32,16 @@ impl World {
             let category = self.retail_actor_category(caster_slot);
             self.route_battle_cue(0x44, category);
         }
-        st.death_game.pad.right = self.input.just_pressed(PadButton::Right);
-        st.death_game.pad.left = self.input.just_pressed(PadButton::Left);
-        st.death_game.pad.confirm = self.input.just_pressed(PadButton::Cross);
+        // Retail enters the module once a pass and arm 5 reads the pad word
+        // once (`0x8007B874` against `0x2000` / `0x8000`, a `0x4C` step a
+        // press). A pass here is a frame step of one-vsync ticks
+        // (`World::module_pass`) that all see the same edge, so only the
+        // first reads it: fed to each, one press walked the pointer three
+        // cards at step `3`, and the middle two cards could not be picked.
+        let first = !self.casting.module_pass_repeat;
+        st.death_game.pad.right = first && self.input.just_pressed(PadButton::Right);
+        st.death_game.pad.left = first && self.input.just_pressed(PadButton::Left);
+        st.death_game.pad.confirm = first && self.input.just_pressed(PadButton::Cross);
         // The arms read each card's live point: its own script walks it in
         // (`lhu v0,0x16(a0)` at `0x801F823C`, the `lwl` / `lwr` copy at
         // `0x801F8B7C`).

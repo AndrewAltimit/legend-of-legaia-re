@@ -295,6 +295,9 @@ impl PlayWindowApp {
                         .world
                         .seed_player_clip(c.clip, c.cursor, c.flags, c.rate);
                 }
+                for &(record, byte) in &sc.seat_object_flags {
+                    self.session.host.world.seed_object_draw_flags(record, byte);
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host
@@ -504,16 +507,20 @@ impl PlayWindowApp {
             let world = &mut self.session.host.world;
             let mask = match (world.battle.camera.as_mut(), target) {
                 (Some(cam), Some(target)) => {
-                    let shown = match displayed {
+                    let (shown, held) = match displayed {
                         // Judged on the components the walk back moved: one
                         // retail holds still reads the same either way
                         // (`BattleCamera::glide_endpoint_matches_walked`).
+                        // A component both framings hold takes the displayed
+                        // value whatever the two endpoints read: it is the
+                        // strike walk's leftover, not a framing
+                        // (`BattleCamera::framing_held_components`).
                         Some((shown, _))
                             if cam.glide_endpoint_matches_walked(end, target, live, shown) =>
                         {
-                            shown
+                            (shown, cam.framing_held_components(end, target, live))
                         }
-                        _ => live,
+                        _ => (live, 0),
                     };
                     // A capture-band module's own shot still walking (`0x70`
                     // arms no framing; a slot-B arm built the table once)
@@ -523,7 +530,8 @@ impl PlayWindowApp {
                     // (`BattleCamera::align_module_shot`). Otherwise the
                     // glide's origin.
                     let mut glide = cam.clone();
-                    let by_glide = glide.align_glide_origin_to(shown, end, target);
+                    let by_glide = glide.align_glide_origin_to(shown, end, target)
+                        | glide.seat_pose_components(shown, held);
                     let mut shot = cam.clone();
                     let by_shot = shot.align_module_shot(live, end);
                     if by_shot.count_ones() > by_glide.count_ones() {
@@ -749,8 +757,10 @@ impl PlayWindowApp {
         // rectangle moves.
         let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
-                && !self.field_debug_camera,
+            legaia_engine_world_views::field_view_window::retail_framing(
+                &self.session.host.world,
+                &self.session.camera,
+            ) && !self.field_debug_camera,
         );
         self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());

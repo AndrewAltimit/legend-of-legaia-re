@@ -34,17 +34,4 @@ pub trait EffectHost {
     /// `0x13`) - the move-VM actor spawner, run as a side call ahead of the
     /// ordinary effect spawn. Default no-op.
     fn handle_summon(&mut self, _effect_id: u8, _world_pos: [i16; 3], _angle: u16) {}
-
-    /// Per-child-sprite random offset, computed by [`Pool::spawn`](super::Pool::spawn)
-    /// when `flags & 0x01` is set. The retail code scribbles these back into
-    /// the script bytes; the port exposes them to the host so engines
-    /// store them next to their per-child render state. Default no-op.
-    fn assign_child_random_offset(
-        &mut self,
-        _slot: usize,
-        _child_idx: u8,
-        _dx_world: i16,
-        _dz_world: i16,
-    ) {
-    }
 }
