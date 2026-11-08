@@ -843,6 +843,19 @@ The `.MAP` file's `+0x10000..+0x12000` region is a per-tile trigger block. For k
 
 The per-tile lookup `FUN_801D5630(kind, x, z)` scans the `+0x10000` block first and **falls back to the `+0x12000` window**. Port: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs), `IntraSceneTeleport`, `RegionTable`, and [`Scene::field_tile_triggers`](../../crates/engine-scene/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
+#### The region-type mask is a latch
+
+`_DAT_8007B8F4` (bit `n` set when a type-`n` kind-3 box holds a tile) is what field-VM op `0x42` mode 0 tests, and scene system scripts use it as a **room selector**: each pass tests the room bits in turn and installs the first room whose bit is set and whose band flag is clear - its floor ladder (`4C 9E`), view window (`0x46`) and oscillators (`4C 90`). See also [the region selector band](../tooling/retail-compare.md#the-region-selector-band-and-the-entry-order).
+
+A walk does not rewrite the mask. A five-form reference scan of every code image finds its writers inside three routines only - `FUN_800180EC` (`0x80018114` / `0x80018148`), the zone query `FUN_801DBA20` (`0x801DBA68`) and `FUN_801DE234` (`0x801DE24C`) - reached from:
+
+- the re-centres `FUN_80017DD4` / `FUN_80017EC8`: field init (`0x801D6ECC` / `0x801D6F28`), the warp landing (`0x801D1FE0`), the leader swap (`0x801D2BC0`), the scripted player moves (`0x801DEC9C`, `0x801E1A58`, `0x801E31A8`);
+- `FUN_800180EC` from the MAN load (`0x8003B7E4`) and from `[4C 3D]` (`0x801E1118`);
+- the zone queries through `FUN_801DE3E0`: the MAN load (`0x8003B800`), `[4C 38]`, `[4C 39]`, `[4C C4]`, the warp landing (`0x801D1FF4`, at the destination halved) and the leader swap;
+- the player tick `FUN_801D1344` per frame, only while scratchpad bit 22 is raised (`0x801D17E4..0x801D1830`, at `(coord + 0x40) >> 7`).
+
+So the mask names the room the player last *landed* in. That matters where two rooms' boxes overlap. `conc`'s southern hall (type 2, tiles `x 45..56`, `z 99..123`) shares its west and east edge columns with type-3 boxes, and those columns are open floor. A mask holding both bits makes the selector install the hall on one pass and its neighbour on the next, for as long as the player stands there: rungs 1..3 jump by 256 / 512 / 1280 units a pass. Retail never builds that mask from a walk; the port's former per-tile refresh did, and with the free-roam camera drawing the whole map every tier of the town jumped with the ladder. Port: `World::requery_region_mask_per_frame`, `World::zone_query_region_mask`; regression `crates/engine-scene-host/tests/conc_room_ladder_latch_disc.rs`.
+
 #### The walk-on dispatcher `FUN_801D1EC4`
 
 `FUN_801D1EC4` (PROT 0897, `0x801D1EC4..0x801D2294`) is reached once per frame from the settle's tail. It is one routine with two halves keyed on the warp timer `_DAT_8007B6B0`.

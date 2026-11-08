@@ -4561,8 +4561,10 @@ A field entry script typically carries a one-hot **region selector** in
 walks op `0x42` mode 0 over the region-type mask `_DAT_8007B8F4` and, on a
 region whose bit is not yet the selected one, clears the band, sets that
 region's bit and re-applies its view window (op `0x46`) and camera region.
-The bit therefore records where the player stood the last time the system
-loop ran a pass - and the system SM `FUN_801DA51C` runs no pass while a
+The bit therefore records the mask the system loop last read - a latch of
+where the player last landed, not of the tile underfoot
+([field-locomotion](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)) -
+and the system SM `FUN_801DA51C` runs no pass while a
 record holds the player ([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)).
 
 `cort_evolved_approach_cutscene` holds `0x19F` while `jouind P2[4]` has Vahn
@@ -4793,16 +4795,17 @@ region the entry loop reads as `0x19D`. The captures hold `0x19F`, the loop's
 type-4 arm (`42 00 04` at `+0x15E`, set at `+0x1F6`).
 
 The region is recoverable where the spot is not. The region-type mask
-`_DAT_8007B8F4` is rebuilt by the field's per-tile refresh, and a fight leaves
-it as the field left it: on every battle capture that does hold a snapshot,
+`_DAT_8007B8F4` is a latch - rebuilt where the player last landed, not on each
+tile crossing ([field-locomotion](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)) -
+and a fight leaves it as the field left it: on every battle capture that does hold a snapshot,
 the scene's `.MAP` region table rebuilds the captured mask at the snapshot's
 tile. The
 seven snapshot-less states read `0x11` - a type-0 box inside the type-4 east
 half of the village - while their entry operand `(3776, 11712)` is a tile of
-mask `0x09`. So the player walked east before the fight, and the seed stands
+mask `0x09`. So the player last landed in the east half before the fight, and the seed stands
 it on the tile nearest the entry operand whose regions rebuild the captured
 mask (`RetailObs::seat_battle_on_region`; the report's `seat` detail names the
-tile). That is the region the player stood in, not the position: nothing in
+tile). That is the region the player last landed in, not the position: nothing in
 the state records the latter, and nothing a battle channel reads depends on
 it.
 
