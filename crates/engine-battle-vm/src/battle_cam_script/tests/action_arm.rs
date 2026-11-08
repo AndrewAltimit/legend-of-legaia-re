@@ -234,7 +234,9 @@ fn a_party_melee_keeps_both_combatants_in_frame() {
 /// The yaw counter's per-action ladder, driven through the shared entry
 /// on the action-state edges: round begin `0`, seed `0x800`, Attack entry
 /// `0x200`, and a party swing's commit re-seed `0x280` / `0xA80`. The
-/// strike loop's own entry stores nothing.
+/// strike loop's own entry stores nothing. The state fed is the one the
+/// newest pass ran, and a rung that pass's own arm stores (the seed, round
+/// begin) lands over its drift: the pass ends on the rung.
 #[test]
 fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
     let mut slot: Option<BattleCamera> = None;
@@ -259,12 +261,16 @@ fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
         );
     };
     // Retail's counter advances one unit per display frame, so each fed
-    // frame pair adds 2 on top of the seed (the creating frame elapses
-    // nothing).
+    // frame pair adds 2 past the rung a pass before (the creating frame
+    // elapses nothing).
     feed(&mut slot, 0x00, true);
     assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0, "round begin");
     feed(&mut slot, 0x0C, true);
-    assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0x802);
+    assert_eq!(
+        slot.as_ref().unwrap().action_yaw_base(),
+        0x800,
+        "the seed pass ends on 0x800"
+    );
     feed(&mut slot, 0x14, true);
     assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0x202);
     feed(&mut slot, 0x16, true);
@@ -296,7 +302,7 @@ fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
     assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0x204);
     // Round begin zeroes it again.
     feed(&mut monster, 0x00, false);
-    assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 2);
+    assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0);
 }
 
 /// The seed pass and the band entry can land inside one host tick, so

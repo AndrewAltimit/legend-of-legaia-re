@@ -86,6 +86,7 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             action_yaw_drift: 0,
+            pending_yaw_seed: None,
             last_action_state: 0,
             acting_body: None,
             spell_cam: None,
@@ -248,9 +249,14 @@ impl BattleCamera {
             self.pose.pitch = 0.0;
             self.pose.tr[1] = MAGIC_EXIT_EYE_Y;
         }
+        // The state seen is the one the newest pass ran
+        // (`World::battle_camera_state`). A rung that pass's own arm stores
+        // lands after its prologue drift (`0x801E29E4..0x801E2A24` runs ahead
+        // of the state switch), so the pass ends on the rung itself
+        // ([`Self::advance_to`]).
         if state == 0x00 {
-            self.action_yaw = 0;
-            self.action_yaw_drift = 0;
+            // The round-begin arm (`0x801E2B40`).
+            self.pending_yaw_seed = Some(0);
             return;
         }
         // The seed pass `0x0C` opens every category's band; `0x50` (Done)
@@ -260,10 +266,18 @@ impl BattleCamera {
         // Came through the seed pass: from outside the action bands, or from
         // the seed states themselves (`0x0C..0x14`).
         let via_seed = !in_action(prev) || prev < ATTACK_BAND_FIRST;
-        if in_attack(state) && via_seed {
+        if state == ACTION_SEED_STATE {
+            // The `0x0C` arm stores `0x800` (`0x801E2CF8`) on its one pass.
+            self.pending_yaw_seed = Some(0x800);
+        } else if in_attack(state) && via_seed {
+            // ... and its Attack branch `0x200` over it (`0x801E2F20`), on
+            // that pass, which this one's drift follows.
+            self.pending_yaw_seed = None;
             self.action_yaw = 0x200;
             self.action_yaw_drift = 0;
         } else if in_action(state) && !in_action(prev) {
+            // The seed pass ran inside an earlier tick.
+            self.pending_yaw_seed = None;
             self.action_yaw = 0x800;
             self.action_yaw_drift = 0;
         }
@@ -297,6 +311,7 @@ impl BattleCamera {
         if prev.is_some_and(|p| p != count) {
             self.action_yaw = i32::from(coin & 1) * 0x800 + 0x280;
             self.action_yaw_drift = 0;
+            self.pending_yaw_seed = None;
         }
     }
 
@@ -313,6 +328,7 @@ impl BattleCamera {
     pub fn set_action_yaw_base(&mut self, yaw: i32) {
         self.action_yaw = yaw & 0xFFFF;
         self.action_yaw_drift = 0;
+        self.pending_yaw_seed = None;
     }
 
     /// How far the prologue drift has carried the yaw counter since it was
@@ -1384,6 +1400,9 @@ impl BattleCamera {
                 self.advance_pass_counters(step);
                 self.step_once();
             }
+            // No pass fell on this tick: the pass that stored the rung has
+            // drifted already.
+            self.land_yaw_seed();
             return;
         }
         self.advance_pass_counters(elapsed);
@@ -1391,6 +1410,15 @@ impl BattleCamera {
         while self.frame_accum >= step {
             self.frame_accum -= step;
             self.step_once();
+        }
+    }
+
+    /// Store the rung [`Self::observe_action_state`] saw the newest pass
+    /// store, over the drift that pass's prologue added.
+    fn land_yaw_seed(&mut self) {
+        if let Some(seed) = self.pending_yaw_seed.take() {
+            self.action_yaw = seed;
+            self.action_yaw_drift = 0;
         }
     }
 
@@ -1419,6 +1447,7 @@ impl BattleCamera {
             self.action_yaw = self.action_yaw.wrapping_add(d) & 0xFFFF;
             self.action_yaw_drift += d;
         }
+        self.land_yaw_seed();
         // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
         // `8 * frame_step` on EVERY call (`lbu v0,0x7f(a2)` off `0x1F800314`,
         // the step byte `0x1F800393`, then `sll v0,v0,0x3` at
