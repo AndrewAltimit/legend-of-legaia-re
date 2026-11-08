@@ -3689,6 +3689,26 @@ cast's offset on Theeder, `-13.1` on Nighto, `-11.7` on Orb, `-11.8` on Swordie 
 shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
 drive and of the band ahead of the module that the window covers, not emulator variance.
 
+<a id="a-state-inside-a-drive-hold"></a>
+**A state that stands inside a drive hold reads as a whole-cast shift.** Run over every mid-cast
+mednafen state rather than the ten the driver lists, most casts read as above, with the voice
+`+7` to `+18` vsyncs late against a residual fitted window by window. A few read very low
+because the whole cast sits one rigid distance from retail's, which no fit within a frame step can
+reach, and the distance is a property of where the state stands, not of the sound:
+
+| State | Whole-cast shift (engine against retail) | Where the state stands (frame-stepped) |
+|---|---|---|
+| `vera_summon_mid_cast` | `-24.5` vsyncs | arm 3, `29` vsyncs ahead of arm 4 behind the `XA7` seek; the seed's drive is idle, so the port skips the hold |
+| `iota_summon_mid_cast`, `puera_summon_mid_cast` | `-24` vsyncs | the same hold |
+| `mule_summon_mid_cast` | `-60.5` vsyncs | arm 0 with the side-band stage `4`, its drop `55` vsyncs on |
+| `jedo_summon_mid_cast` | `+82` vsyncs | arm 2 with the stage `8`, its drop `33` vsyncs on |
+
+The seed stands the engine on the state's arm with an idle drive and a full side-band token
+(`World::tick_sideband_token` restarts its count): neither the seek in flight nor the part of the read
+already done is in RAM as a time the seed can place. These rows score the seed's instant, so a low number there
+is not a defect of the cast's sound. A rigid shift of the residual against the engine's recording
+(a window-by-window correlation scan) separates the two readings: a true sound difference has no single shift.
+
 **A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
 `bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue
 as soon as the drive was idle, while the countdown still held the arm, and the voice started `0.59` s early

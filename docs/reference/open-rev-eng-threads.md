@@ -503,7 +503,12 @@ the mednafen-fitted model holds it `22` (Nova, Freed) to `30` (Orb) ticks. The
 the wait itself, but what the poll's pass starts (Nova's vortex, Orb's star
 burst) then runs that much behind, and the arm after the poll scores `.32`
 (Nova) and `.48` (Orb) on frames that otherwise match. Which drive is right is a
-real console's seek time; the frames are not evidence either way.
+real console's seek time; the frames are not evidence either way. The disassembly settles
+the order and not the length: the module's seek is `FUN_8003EAE4` (`FUN_8005C160(2, ...)`, the
+`CdlSetloc`, then `FUN_8005C034(0x15, ...)`, `CdlSeekL`, `0x8003EB50..0x8003EB6C`) and its poll
+`FUN_8003F2B8(1)` is a bare `CdSync(1)` against `CdlComplete` (`jal 0x8005BE8C`, `0x8003F2FC`), with no
+constant between them. How long the arm holds is the drive's answer, and mednafen's `CalcSeekTime`
+(the law the port's model takes) is that emulator's measured drive.
 
 ### Why does Theeder's score not subtract out of its recording?
 
@@ -559,6 +564,10 @@ the port's battle step is its cost model's, `2` through Big Wave's reactions whe
 `4`, and `4` through Zenoir's kill phase where retail alternates `3` and `4`, so a lag on the
 port's step moves half the cues the wrong way. It is not ported. What closes it: the battle
 frame step itself on those arms (the cost ring's table), after which the lag is the step.
+Held on the port's own step from the arms' current cost rows, the same run reads Big Wave's
+tenth percentile `0.478` to `0.522`, Zenoir's `0.682` to `0.329`, Swordie's `0.774` to
+`0.332` and Theeder's `0.342` to `0.308`, the medians unmoved: the table still names a step
+retail does not run through the kill phases.
 
 ## Title / boot / overlays
 
