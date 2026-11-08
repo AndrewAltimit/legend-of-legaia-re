@@ -3502,6 +3502,8 @@ than holding its own: the script is what walks a card in.
 `+0x4C` / `-0x4C` with cue `0x22`. A step past `0x158` lands on `0x10C` and one below
 `-0x23` on `0x28`, so it stops at both ends. The cursor `0x801FA2AC` eases a third of
 the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
+The module is entered once a pass, so a press is one step; the port runs a pass as a
+frame step of one-vsync ticks and feeds the pad to the first alone.
 Arm 6's pick is the handle whose `+0x14` equals `(target - 0x28) * 192 / 76 - 0x120`.
 
 **The two sprites** are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
