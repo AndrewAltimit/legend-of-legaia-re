@@ -105,6 +105,7 @@ mod field_shake_tremor_disc;
 mod field_spawn_ashore_disc;
 mod field_spawn_reachability_disc;
 mod field_static_window_disc;
+mod field_system_caller_halt_bypass_disc;
 mod field_unspawned_actor_draw_disc;
 mod field_xa_prestage_disc;
 mod first_town_run;

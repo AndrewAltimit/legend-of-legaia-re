@@ -26,7 +26,7 @@ flowchart TD
     FETCH --> EXT{"Bit 0x80 set?"}
     EXT -- "yes" --> RES["Resolve target id byte<br/>FUN_8003C83C"]
     RES -- "no such actor" --> SKIP["Return pc + 1"]
-    RES -- "target halted" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
+    RES -- "target halted,<br/>caller not the system script" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
     RES -- "ok" --> DEC
     EXT -- "no" --> DEC{"Decode byte & 0x7F"}
     DEC -- "0x21..0x4F" --> ARM["Opcode arm<br/>may sub-dispatch on an operand"]
@@ -536,8 +536,11 @@ if (*pbVar43 & 0x80) {
             return pc_offset + 1;
         }
     }
-    // Halt-flag check (with op 0x32 carve-out)
-    if (ctx_ptr[+0x10] & 0x400 && /* not opcode 0x32 with bit 0x400 */) {
+    // Halt-flag check (with op 0x32 carve-out). The refusal exempts a
+    // system-script caller and a non-zero `*(_DAT_801C6EA4 + 8)`.
+    if (ctx_ptr[+0x10] & 0x400 /* and not opcode 0x32 with bit 0x400 */
+        && *(u16*)(_DAT_801C6EA4 + 8) == 0
+        && caller[+0x50] != 0xFB) {             // caller = the original a2
         return pc_offset;                       // halted, don't dispatch
     }
     pbVar47 = pbVar43 + 2;                      // operands start at +2
@@ -548,6 +551,8 @@ switch (*pbVar43 & 0x7f) {
     // 43 unique opcodes 0x21-0x4F (with gaps at 0x27-0x2A)
 }
 ```
+
+The halt test reads the **caller** for its exemption (`lhu v1,0x50(s1)` at `0x801DE938`, `s1` the context the dispatcher was entered with), so the scene's system script lands a seat or flag op on an actor mid-walk while any other record waits. `conc2`'s entry script parks the plaza's light shaft (partition-0 record 11) with `A3 0B 7F 7F` while the shaft's bind-prologue compass walk (`37 02 01`) still holds `0x400`; retail RAM holds it at `(16192, 16320)`, parked and then walked its two steps. Port: `legaia_engine_vm::field::step_from_caller`.
 
 The high bit (0x80) of an opcode means "this instruction targets a different script context" - `*(pbVar43+1)` is the script ID, resolved through `func_0x8003C83C` to a context pointer. The original (caller's) context is preserved; the dispatch operates on the resolved one.
 

@@ -1063,7 +1063,12 @@ impl World {
     /// the save crystal.
     ///
     /// The player (`0xF8`) and the system context (`0xFB`) take the ordinary
-    /// step, as does an id no channel carries.
+    /// step, as does an id no channel carries. A halted target does not
+    /// refuse the op: the dispatcher's halted-target early-out exempts a
+    /// system-context caller (`0x801DE938..0x801DE940`), so `conc2`'s entry
+    /// script parks its light shaft (`A3 0B 7F 7F`) while the shaft's own
+    /// compass walk still holds `0x400`, and the walk lands it one step on
+    /// from the hide box, where retail RAM holds it (`(16192, 16320)`).
     ///
     /// REF: FUN_801DE840 (cases 0x23, 0x2B, 0x2C, 0x4C nibble 3), FUN_8003C83C
     fn step_field_cross_context_actor_op(&mut self) -> Option<FieldStepResult> {
@@ -1097,9 +1102,13 @@ impl World {
         let bc = std::mem::take(&mut self.field_bytecode);
         self.field_vm.executing_channel = (!object).then_some(channels[ci].placement_index as u8);
         self.field_vm.executing_object = object.then_some(channels[ci].placement_index as u16);
+        // The caller is the system context (`+0x50 == 0xFB`), which the
+        // dispatcher lets through a halted target: a placed object mid-walk
+        // still takes the seat (`conc2`'s light shaft, parked by `A3 0B 7F 7F`
+        // while its bind prologue's compass walk runs).
         let res = {
             let mut host = FieldHostImpl { world: self };
-            vm::field::step(&mut host, &mut channels[ci].ctx, &bc, pc)
+            vm::field::step_from_caller(&mut host, &mut channels[ci].ctx, 0xFB, &bc, pc)
         };
         self.field_vm.executing_channel = None;
         self.field_vm.executing_object = None;

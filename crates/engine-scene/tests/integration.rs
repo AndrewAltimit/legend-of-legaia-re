@@ -57,6 +57,7 @@ mod spell_catalog_disc;
 mod stager_lba_footprint_disc;
 mod stream_file_real;
 mod system_flag_census_disc;
+mod system_script_halted_object_targets_disc;
 mod talk_face_acquire_bind_disc;
 mod town01_entry_script;
 mod town01_p1_arm_sites;
