@@ -133,6 +133,8 @@ body.play-embedded.xw-preview .play-screen, body.play-embedded.xw-preview .play-
 /* The expansion workbench's 3D preview (`?xwpreview=1`): the picture is
    looked at and clicked to pick tiles, so no veil dims it. */
 body.xw-preview .play-focus-veil { display: none; }
+/* A frame that only shows a battle (the art and magic pages) owes no click-to-play prompt. */
+body.play-showcase .play-focus-veil { display: none; }
 /* The on-screen pad (touch-pad.js): over the picture, above the focus veil,
    translucent so the scene stays readable. Only its buttons take pointer
    input; a touch anywhere else still reaches the canvas (camera drag). */
@@ -2479,19 +2481,28 @@ div.play-vis-head { cursor: default; }
     lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
   } : null;
   /* `?cast=<spell id>[&target=<seat>][&scene=<label>][&embed=1]`: open a
-   * battle straight off the disc load and cast that spell in it - the
-   * magic page embeds this, so a Seru's whole cast (the creature, the
-   * module's effect layer, its camera) plays through this runtime, the same
-   * battle every other fight here runs. `debug_seed_inflight_cast` hands
-   * the spell to the lead (engine actor 0) on the first command prompt, and
-   * `debug_force_battle` opens the scene's first rollable formation (the
+   * battle straight off the disc load and cast that spell in it. `?art=<arrows>
+   * &char=<name>` is its twin: the arts page plays one art for that character.
+   * The art and magic pages embed this (js/battle-stage.js), so an art or a
+   * Seru's whole cast (the creature, the module's effect layer, its camera,
+   * the battle HUD) plays through this runtime, the same battle every other
+   * fight here runs. `debug_seed_inflight_cast` / `debug_seed_inflight_art`
+   * hand the action to the lead (engine actor 0) on the first command prompt,
+   * and `debug_force_battle` opens the scene's first rollable formation (the
    * native `LEGAIA_BATTLE_INFLIGHT` + forced-encounter seams). `target` is a
    * retail seat: `3` the first monster (the default), `0` the lead. */
-  const castPending = embedQuery.has('cast') ? {
-    spell: parseInt(embedQuery.get('cast'), embedQuery.get('cast').startsWith('0x') ? 16 : 10),
-    target: embedQuery.has('target') ? parseInt(embedQuery.get('target'), 10) : 3,
-    scene: embedQuery.get('scene') || 'map01',
-  } : null;
+  function parseLaunch(get, has) {
+    const target = has('target') ? parseInt(get('target'), 10) : 3;
+    const scene = get('scene') || 'map01';
+    if (has('cast')) {
+      return { kind: 'cast', spell: parseInt(get('cast'), get('cast').startsWith('0x') ? 16 : 10), target, scene };
+    }
+    if (has('art')) {
+      return { kind: 'art', arrows: get('art'), char: get('char') || 'vahn', target, scene };
+    }
+    return null;
+  }
+  let castPending = parseLaunch((k) => embedQuery.get(k), (k) => embedQuery.has(k));
   /* `?xwpreview=1`: the expansion workbench's 3D preview frames this page
    * (js/play-expansion-live.js); it shows the picture alone, as `embed=1`. */
   if (embedQuery.get('embed') === '1' || embedQuery.get('xwpreview') === '1') {
@@ -2501,6 +2512,7 @@ div.play-vis-head { cursor: default; }
       const screen = document.getElementById('play-screen');
       if (!screen) return;
       document.body.classList.add('play-embedded');
+      if (embedQuery.has('cast') || embedQuery.has('art')) document.body.classList.add('play-showcase');
       if (embedQuery.get('xwpreview') === '1') document.body.classList.add('xw-preview');
       if (screen.parentElement !== document.body) document.body.prepend(screen);
       for (const el of Array.from(document.body.children)) {
@@ -2512,18 +2524,39 @@ div.play-vis-head { cursor: default; }
   }
   function startPendingCast() {
     const req = castPending;
-    if (!req || isNaN(req.spell) || !runtime) return;
+    if (!req || !runtime) return;
+    if (req.kind === 'cast' && isNaN(req.spell)) return;
     enter(req.scene);
     const rt = runtime;
+    const target = isNaN(req.target) ? 3 : req.target;
     try {
-      /* A party that outlives the cast, so the fight is the spell's. */
+      /* A party that outlives the action, so the fight is the spell's or art's. */
       if (typeof rt.cheat_apply === 'function') rt.cheat_apply('level', 99, '');
-      rt.debug_seed_inflight_cast(0, req.spell & 0xFF, isNaN(req.target) ? 3 : req.target);
-      if (!rt.debug_force_battle(-1)) console.warn('cast launch: no formation in ' + req.scene);
-    } catch (e) { console.warn('cast launch', e); }
+      if (req.kind === 'art') {
+        /* The card's character, every art known, so the real builder runs the
+         * string: the art plays exactly as an entered one would. */
+        const reason = rt.set_active_party_spec(req.char);
+        if (reason) console.warn('art launch: ' + reason);
+        if (typeof rt.cheat_apply === 'function') rt.cheat_apply('arts', 0, '');
+        rt.debug_seed_inflight_art(0, req.arrows, target);
+      } else {
+        rt.debug_seed_inflight_cast(0, req.spell & 0xFF, target);
+      }
+      if (!rt.debug_force_battle(-1)) console.warn('battle launch: no formation in ' + req.scene);
+    } catch (e) { console.warn('battle launch', e); }
     canvas.focus();
   }
   window.__playCastAgain = startPendingCast;
+  /* `query` is the embedding page's parameter object (`{cast, target}` or
+   * `{art, char, target}`): replace whatever this frame is fighting with it,
+   * on the running engine, instead of reloading the page. */
+  window.__playLaunch = (query) => {
+    const q = query || {};
+    const next = parseLaunch((k) => (q[k] == null ? null : String(q[k])), (k) => q[k] != null);
+    if (!next) return;
+    castPending = next;
+    startPendingCast();
+  };
 
   function startPendingMinigame() {
     const req = minigamePending;

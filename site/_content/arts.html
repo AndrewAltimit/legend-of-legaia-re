@@ -54,6 +54,7 @@
 <script src="js/webgl-tmd-frame-state.js"></script>
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/mesh-view.js"></script>
+<script src="js/battle-stage.js"></script>
 <script src="js/audio-toggle.js"></script>
 <script src="js/legaia-sfx.js"></script>
 <script src="js/arts-viewer.js"></script>
@@ -121,22 +122,35 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
 
 <section class="doc-section" id="arts-motion">
   <h2>Watch the arts</h2>
-  <p>Pick a character below, then click any art card to play it here. The chip row under the model plays the character's other battle clips - idle, walk, flinches, knockdown, block and the four weapon swings. Drag to orbit.</p>
-  <div class="arts-controls">
-    <label class="arts-trail-label" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
-      <input type="checkbox" id="arts-trail-toggle"> after-image trail
-    </label>
-    <label class="arts-trail-label" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
-      <input type="checkbox" id="arts-smooth-toggle" checked> smooth motion
-    </label>
-    <button id="arts-glb-btn" class="btn-accent" type="button" disabled
-            title="Download the selected character's assembled battle model with every battle animation (the labeled action bank: idle, walk, flinches, knockdown, block + the four weapon swings + all arts) baked in as named glTF animations. Needs a loaded disc.">Download .glb with all battle animations</button>
-  </div>
+  <p>Pick a character below, then click any art card to watch it here, in a real battle: the character's model, the enemy, the stage, the camera, and the voice, run by the game engine on your disc. The toggle flips to the bare model, where you can orbit it and play the character's other battle clips - idle, walk, flinches, knockdown, block and the four weapon swings. An art plays once, then the character's idle plays once and holds.</p>
   <p class="arts-legend-note arts-legend-note-dim">The model here wears the default gear. To watch the same clips on a character you have dressed - weapon in hand, every action and art in one strip - use the <a href="characters.html">characters page</a>.</p>
-  <div class="arts-stage" id="arts-stage" hidden>
-    <canvas id="arts-canvas" class="arts-canvas" width="720" height="420"></canvas>
-    <div class="arts-actions" id="arts-actions"
-         title="The character's battle action bank + the four direction-command weapon swings - the non-art clips the .glb download also carries. Retail has no separate run clip; Walk / Approach is the locomotion the battle engine plays."></div>
+  <div class="arts-stage stage-root" id="arts-stage" hidden data-view="scene">
+    <div class="arts-controls">
+      <span><span class="stage-toggle-label">View</span>
+      <span class="stage-toggle" id="arts-stage-toggle" role="group" aria-label="View: full battle or model only">
+        <button type="button" data-view="scene" title="The art in a battle, run by the game engine">Full battle</button>
+        <button type="button" data-view="mesh" title="The character's model and clips on their own">Model only</button>
+      </span></span>
+      <label class="arts-trail-label" data-stage-view="mesh" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
+        <input type="checkbox" id="arts-trail-toggle"> after-image trail
+      </label>
+      <label class="arts-trail-label" data-stage-view="mesh" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
+        <input type="checkbox" id="arts-smooth-toggle" checked> smooth motion
+      </label>
+      <button id="arts-glb-btn" class="btn-accent" type="button" disabled
+              title="Download the selected character's assembled battle model with every battle animation (the labeled action bank: idle, walk, flinches, knockdown, block + the four weapon swings + all arts) baked in as named glTF animations. Needs a loaded disc.">Download .glb with all battle animations</button>
+      <button id="arts-battle-again" type="button" data-stage-view="scene" title="Start a fresh battle and play the art again">&#8635; play again</button>
+    </div>
+    <div data-stage-view="mesh">
+      <canvas id="arts-canvas" class="arts-canvas" width="720" height="420"></canvas>
+      <div class="arts-actions" id="arts-actions"
+           title="The character's battle action bank + the four direction-command weapon swings - the non-art clips the .glb download also carries. Retail has no separate run clip; Walk / Approach is the locomotion the battle engine plays."></div>
+    </div>
+    <div class="battle-stage" data-stage-view="scene">
+      <div class="battle-stage-poster" id="arts-battle-poster">Pick an art below to watch it in battle.</div>
+      <iframe id="arts-battle" hidden allow="autoplay; fullscreen" title="The selected art in a battle"></iframe>
+      <div class="battle-stage-boot" id="arts-battle-boot" hidden></div>
+    </div>
     <div class="arts-now" id="arts-now"></div>
     <div class="arts-note" id="arts-note"></div>
   </div>
@@ -199,7 +213,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <div class="about-body">
   <h3>Playback</h3>
   <p>
-    With a disc loaded, every art card plays that art on the character's battle model, posed from the on-disc keyframes. The voice shout rides along as in retail: each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>). Retail rolls a random channel from the art's candidate pool each time; this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
+    With a disc loaded, every art card plays that art in a real battle, run by the game engine, with the character, the enemy, the stage, the camera and the voice. The Model only view shows the same art on the bare battle model, posed from the on-disc keyframes at the game's own pace: an art commits with the battle's clock slowed to half (regular arts) or a quarter (Hyper, Super and Miracle), which is what lines the swing up with its shout. The voice shout rides along as in retail: each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>). Retail rolls a random channel from the art's candidate pool each time; this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
   </p>
   <p>
     <strong>Hyper Arts play no shout in retail</strong> - each fires a stereo fanfare from the character's fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>), coin-flipped between the art's own pair of channels; Super and Miracle Arts open with the same bank's generic fanfare. Every per-art channel was verified against a live instrumented battle.
@@ -342,6 +356,9 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
         file: 'arts-file', status: 'arts-status', stage: 'arts-stage',
         now: 'arts-now', note: 'arts-note', panels: 'arts-panels', canvas: 'arts-canvas',
         trail: 'arts-trail-toggle', glb: 'arts-glb-btn', actions: 'arts-actions',
+        battle: 'arts-battle', battleAgain: 'arts-battle-again',
+        stageRoot: 'arts-stage', stageToggle: 'arts-stage-toggle',
+        battleBoot: 'arts-battle-boot', battlePoster: 'arts-battle-poster',
       })
     : null;
   // Smooth (interpolated) playback, default on; off = retail stepping.
