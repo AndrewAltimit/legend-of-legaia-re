@@ -109,6 +109,12 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     let s1 = rt.play_npc_clip_states();
     assert_eq!(s0, s1, "reads must not advance the playhead");
 
+    // A placement's spawn-time clip phase (`FUN_8003A1E4`) waits for the clip's
+    // bind and lands on the first tick, at `(rand() % frames) << 4`: the step
+    // is measured from there.
+    rt.tick_frame().expect("tick");
+    let s0 = rt.play_npc_clip_states();
+
     // Pick an entry with a live multi-frame clip.
     let cat: serde_json::Value = serde_json::from_str(&rt.play_npc_catalog_json()).unwrap();
     let npcs = cat["npcs"].as_array().unwrap();
