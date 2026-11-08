@@ -161,7 +161,7 @@ pub struct StartingLevelReport {
 /// Same-size in-place edits in `SCUS_942.54` across the seed routine `FUN_800560B4`
 /// and the starting-party template:
 /// - the seed loop's displayed-level literal + store, so it writes `+0x130 = level`
-///   (keeping magic rank `+0x131 = 1`) into **every** party record;
+///   (keeping the write-only `+0x131 = 1`) into **every** party record;
 /// - each growth-capable slot's eight `u16` template stats (Vahn / Noa / Gala),
 ///   recomputed to the level via the disc's own growth curves, so the displayed
 ///   level the loop stamps and the stats stay coherent across the roster (the 4th
@@ -196,7 +196,7 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
     // the next-level threshold (+0x4) and current experience (+0x0, via one $t0 preload
     // + one store per growth slot) make every character's readouts + progression
     // coherent, and the loop's level literal + stores set the displayed-level cell
-    // +0x130 (keeping magic rank +0x131 at 1) so the character actually reads as
+    // +0x130 (keeping the write-only +0x131 at 1) so the character actually reads as
     // level N. The three experience stores all source $t0 (the shared preload) and
     // dropping the per-slot threshold reloads leaves $v0 holding reach(N+1) for the
     // unmodified Noa/Gala +0x4 stores downstream.

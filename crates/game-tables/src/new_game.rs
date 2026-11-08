@@ -156,16 +156,16 @@ pub const LIVE_RECORD_0_XP_OFFSET: u32 = 0x5C8;
 /// Byte stride between live per-character records (`0x80084708 + n * 0x414`).
 pub const LIVE_RECORD_STRIDE: u32 = 0x414;
 
-/// RAM address of the seed routine's per-slot level/magic-rank literal: the
+/// RAM address of the seed routine's per-slot level literal: the
 /// `addiu $v0, $zero, 1` at `0x800561C4` in `FUN_800560B4`'s record-init loop. The
 /// two stores after it write the byte to the live record's **displayed-level cell
-/// `+0x130`** and the magic-rank cell `+0x131`, so vanilla seeds every slot at level
-/// 1 / rank 1. The displayed combat level is read from `+0x130` directly (it is *not*
+/// `+0x130`** and the write-only byte `+0x131`, so vanilla seeds every slot at level
+/// 1 (and `+0x131 = 1`, which nothing reads). The displayed combat level is read from `+0x130` directly (it is *not*
 /// re-derived from cumulative experience at a New Game - confirmed live: a record
 /// with level-10 experience + stats but `+0x130 == 1` still shows "LV 1"). The
 /// starting-level randomizer rewrites this literal to `(1 << 8) | level` and the
 /// first store to a `sh` ([`LEVEL_STORE_VA`]) so the halfword sets `+0x130 = level`
-/// while leaving magic rank `+0x131` at 1.
+/// while leaving the write-only `+0x131` at 1.
 pub const LEVEL_SEED_VA: u32 = 0x8005_61C4;
 
 /// RAM address of the first level/magic store in the seed loop (vanilla
@@ -627,8 +627,12 @@ pub const MAX_STATS_OFFSET: u32 = 0x11C;
 /// Record-relative offset of the displayed combat level (see [`LEVEL_SEED_VA`]).
 pub const LEVEL_OFFSET: u32 = 0x130;
 
-/// Record-relative offset of the magic-rank counter (`+0x131`).
-pub const MAGIC_RANK_OFFSET: u32 = 0x131;
+/// Record-relative offset of the second byte the seed loop writes (`+0x131`).
+///
+/// Write-only: the seed's `sb` at `0x800561C8` is the only instruction on the
+/// disc that touches it, so it carries no runtime meaning (it is *not* a
+/// magic-rank counter - see `docs/formats/new-game-table.md`).
+pub const SEEDED_UNREAD_OFFSET: u32 = 0x131;
 
 /// Record-relative offset of the live display name the seed routine `strcpy`s
 /// out of the template's name field.
@@ -671,7 +675,7 @@ pub struct SeededHalfword {
 ///
 /// **Halfword stores only.** The routine also performs writes this return type
 /// cannot carry, and callers must not treat the list as the full effect of a
-/// New Game seed: the level / magic-rank bytes at `+0x130` / `+0x131`
+/// New Game seed: the level byte `+0x130` and the write-only `+0x131`
 /// (`800561c4`..`800561cc`, both `sb` of literal `1`), the per-slot `sb 0xFF`
 /// at `0x8007BDBC + n` (`80056124`..`80056134`), and the pre-loop
 /// `sw zero,0xa9c(gp)` plus the `sb zero` pair at `0x8007B64A` / `0x8007B64C`.
