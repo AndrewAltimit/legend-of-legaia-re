@@ -243,6 +243,9 @@ const GLOW_RADIUS: i16 = 0x400;
 const SHADOW_RADIUS: i16 = 0x100;
 /// The glow's flag word: additive (`0x801D6BB8`, ABR `1`).
 const GLOW_FLAG_WORD: u32 = 0x9900_0000;
+/// The 5-bit level of the disc's patch texel (`0xB9CE`, read off the state's
+/// VRAM at `(960, 256)` `(0..2, 0xF0..0xF2)` through CLUT `0x7F84`).
+const DISC_PATCH_TEXEL: u16 = 14;
 /// The lift keeping a coplanar disc above the floor in a depth-tested host.
 const DISC_DEPTH_LIFT: f32 = 2.5;
 
@@ -835,9 +838,13 @@ impl BakaDuelScene {
             .extend(std::iter::repeat_n(u32::MAX, mesh.positions.len()));
         self.uvs.extend_from_slice(&mesh.uvs);
         self.cba_tsb.extend_from_slice(&mesh.cba_tsb);
-        self.colors.extend_from_slice(&mesh.colors);
+        // The packets sample the builder's fixed patch: page `(960, 256)` CLUT
+        // row 510 index `2`, `0xB9CE`, level `14` of `31`. The duel VRAM does
+        // not hold that page, so the fill carries `texel * colour / 128`.
         for c in &mesh.colors {
-            self.flat_rgba.extend_from_slice(&[c[0], c[1], c[2], 0]);
+            let fill = c.map(|v| (u16::from(v) * DISC_PATCH_TEXEL / 16) as u8);
+            self.colors.push(fill);
+            self.flat_rgba.extend_from_slice(&[fill[0], fill[1], fill[2], 0]);
         }
         for &i in &mesh.indices {
             self.indices.push(start as u32 + i);
