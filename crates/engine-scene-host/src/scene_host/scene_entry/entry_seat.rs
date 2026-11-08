@@ -20,8 +20,8 @@ pub enum PickerSeat {
     /// No arrival qualified (or the scene has none): the cold-entry
     /// resolver's seat ([`legaia_engine_core::world::World::resolve_cold_field_spawn`]).
     ColdFallback {
-        /// Ranked arrivals the scene has (all rejected), `0` for a scene no
-        /// door leads into.
+        /// Ranked arrivals and own seats the scene has (all rejected, or
+        /// passed over for the cold seat), `0` for a scene with neither.
         arrivals: usize,
         /// The world `(x, z)` seat the resolver chose.
         seat: (i16, i16),
@@ -146,13 +146,6 @@ pub const PICKER_SEAT_OVERRIDES: &[(&str, PickerSeatRule)] = &[
             step: (0, 0),
         },
     ),
-    // Zeto's Dungeon: its one arrival is a map01 script's hide-box warp
-    // (0x7F, 0x7F), and the cold seat lands on the grass beside the
-    // entrance path, off any floor the walls bound. The path is the walled
-    // strip x = 0x14..0x15, z = 0x05..0x07 below the gate's triggers
-    // (z = 0x08), whose gap leads back out to map01; (0x14, 0x06) stands
-    // on it a tile clear of them.
-    ("garmel", PickerSeatRule::Tile { tile: (0x14, 0x06) }),
 ];
 
 /// The [`PICKER_SEAT_OVERRIDES`] row for `scene`.
@@ -277,11 +270,15 @@ impl SceneHost {
     /// scripted warp; the tile most sites share; disc order). Once the
     /// destination's walkability grid is loaded the entry takes the first
     /// arrival [`legaia_engine_core::world::World::picker_arrival_seat`]
-    /// accepts, faces the party along its sector, and otherwise falls back to
-    /// [`legaia_engine_core::world::World::resolve_cold_field_spawn`] - the
-    /// scenes no door leads into (the ending cutscenes) keep that seat, and
-    /// so does Rim Elm ([`legaia_game_tables::new_game::OPENING_SCENE`]),
-    /// whose cold seat is retail's own New Game spawn.
+    /// accepts and faces the party along its sector. When every arrival is
+    /// rejected, or none exists, the scene's own player seats
+    /// ([`ArrivalCatalog::own_seats`]: a `MOVE_TO` or `4C 51` poke on the
+    /// player in its scripts) are tried the same way - the ending's `town0e`,
+    /// which retail enters from an FMV hand-off, seats where its epilogue
+    /// stands the hero. Only then does the entry fall back to
+    /// [`legaia_engine_core::world::World::resolve_cold_field_spawn`], as Rim
+    /// Elm ([`legaia_game_tables::new_game::OPENING_SCENE`]) always does: its
+    /// cold seat is retail's own New Game spawn.
     ///
     /// A no-op returning `false` when an entry operand is already armed (a
     /// door, a resume, a host's explicit seat wins) or while the opening chain
@@ -310,10 +307,16 @@ impl SceneHost {
             self.pending_picker_arrivals = Some(Vec::new());
             return true;
         }
+        // The scene's own player seats follow the inbound arrivals: the
+        // second resort for a scene no door's arrival seats (the ending's
+        // `town0e`, entered from an FMV that carries no entry tile).
         let ranked = if scene == legaia_game_tables::new_game::OPENING_SCENE {
             Vec::new()
         } else {
-            self.arrival_catalog().ranked(scene)
+            let catalog = self.arrival_catalog();
+            let mut ranked = catalog.ranked(scene);
+            ranked.extend(catalog.own_seats(scene).iter().cloned());
+            ranked
         };
         self.pending_picker_arrivals = Some(ranked);
         true
@@ -337,6 +340,11 @@ impl SceneHost {
     /// floors with no walls ([`renderer.md`](../../../../../docs/subsystems/renderer.md#a-cutscene-scenes-stub-meshes)).
     // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
     pub(super) fn picker_pass_through(&self, ranked: &[SceneArrival]) -> bool {
+        // Only the inbound arrivals: a scene's own seats are no door.
+        let ranked: Vec<&SceneArrival> = ranked
+            .iter()
+            .filter(|a| a.class != legaia_engine_scene::scene_arrivals::ArrivalClass::OwnSeat)
+            .collect();
         if ranked.is_empty() {
             return false;
         }

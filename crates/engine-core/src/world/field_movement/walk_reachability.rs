@@ -254,10 +254,7 @@ impl World {
     /// reaches fewer than three map edges (never the open space around a
     /// map, where the cutscene arrivals parked at tile `(0x7F, 0x7F)` stand)
     /// and spans at least [`PICKER_ARRIVAL_MIN_REGION_SUBCELLS`] sub-cells
-    /// (never a sealed pocket). A door tile is routinely a wall cell (a door
-    /// is a gap in a wall) or a trigger tile, so an arrival that fails is
-    /// replaced by the nearest sub-cell centre that passes, within
-    /// [`SEAT_RESCUE_RADIUS_SUBCELLS`]. An arrival is tried two ways:
+    /// (never a sealed pocket). An arrival is tried two ways:
     ///
     /// 1. By retail's own standing rule, the collision grid's wall bits
     ///    ([`Self::field_tile_is_wall`], regions per
@@ -269,6 +266,17 @@ impl World {
     ///    ([`Self::field_spawn_is_valid`]). This covers the towns whose wall
     ///    grid leaves the land beyond their gates open to the map edges, so
     ///    no wall-bit region there is a room.
+    ///
+    /// A door tile is routinely a wall cell (a door is a gap in a wall) or a
+    /// trigger tile, so an arrival neither rule takes is replaced by the
+    /// nearest **whole tile** within [`SEAT_RESCUE_RADIUS_SUBCELLS`] whose
+    /// four sub-cells pass both rules at once (on the authored floor and in a
+    /// walled room), seated at its centre; else the nearest sub-cell centre
+    /// passing both, else the wall rule, else the floor rule. The whole-tile
+    /// tier keeps a rescue off the door frame: `garmel`'s entrance tile is the
+    /// gate-1 trigger of its arrival beat, and the wall rule alone takes a
+    /// sub-cell of the jamb beside it, where the whole-tile tier finds the
+    /// hall one tile in.
     ///
     /// Unlike the cold resolver it does not demand the scene's *largest*
     /// region: a dungeon whose floors are disconnected rooms is entered
@@ -285,14 +293,14 @@ impl World {
             return None;
         }
         let stride = FIELD_GRID_STRIDE * 2;
-        let wall_free = |sx: i32, sz: i32| self.field_subcell_wall_free(sx, sz);
-        let wall_regions = self.subcell_components_edged(&wall_free);
-        let floor_regions = self.field_walk_components_edged();
         // The tile quantisation the trigger dispatchers use (`world >> 7`).
         let on_avoided_tile = |x: i16, z: i16| -> bool {
             let (tx, tz) = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
             avoid_tiles.iter().any(|&(kx, kz)| (kx, kz) == (tx, tz))
         };
+        let wall_free = |sx: i32, sz: i32| self.field_subcell_wall_free(sx, sz);
+        let wall_regions = self.subcell_components_edged(&wall_free);
+        let floor_regions = self.field_walk_components_edged();
         // Inside an enclosed region of `regions` big enough to be a room.
         let in_room = |(labels, sizes, edges): &(Vec<u16>, Vec<u32>, Vec<[bool; 4]>),
                        x: i16,
@@ -322,13 +330,44 @@ impl World {
         let good_by_floor = |x: i16, z: i16| {
             usable(x, z) && self.field_spawn_is_valid(x, z) && in_room(&floor_regions, x, z)
         };
-        // The arrival itself when it qualifies, else the nearest sub-cell
-        // centre that does, ring by ring (row-major within a ring) out to the
-        // seat-rescue radius.
+        // A rescued seat is a derived one, so its first tier is a whole tile
+        // held to both rules - every sub-cell on the authored floor and in a
+        // walled room - seated at the tile centre, retail's own
+        // `(tile << 7) + 0x40` seat. A door frame or the jamb beside a
+        // doorway passes the wall rule on a sub-cell or two, never on a whole
+        // tile.
+        let good_by_both = |x: i16, z: i16| good_by_walls(x, z) && self.field_spawn_is_valid(x, z);
+        let whole_tile = |tx: i32, tz: i32| -> bool {
+            (0..2).all(|j| {
+                (0..2).all(|i| {
+                    good_by_both(
+                        (tx * 128 + i * 64 + 32) as i16,
+                        (tz * 128 + j * 64 + 32) as i16,
+                    )
+                })
+            })
+        };
+        // The nearest whole tile, by distance from the arrival's tile, out to
+        // the seat-rescue radius (half as many tiles as sub-cells).
+        let nearest_tile = |x: i16, z: i16| -> Option<(i16, i16)> {
+            let (tx0, tz0) = ((x as i32) >> 7, (z as i32) >> 7);
+            let r = SEAT_RESCUE_RADIUS_SUBCELLS / 2;
+            let mut ring: Vec<(i32, i32)> = (-r..=r)
+                .flat_map(|dz| (-r..=r).map(move |dx| (dx, dz)))
+                .filter(|&d| d != (0, 0))
+                .collect();
+            ring.sort_by_key(|&(dx, dz)| dx * dx + dz * dz);
+            ring.into_iter().find_map(|(dx, dz)| {
+                let (tx, tz) = (tx0 + dx, tz0 + dz);
+                ((0..FIELD_GRID_STRIDE as i32).contains(&tx)
+                    && (0..FIELD_GRID_STRIDE as i32).contains(&tz)
+                    && whole_tile(tx, tz))
+                .then_some(((tx * 128 + 0x40) as i16, (tz * 128 + 0x40) as i16))
+            })
+        };
+        // The nearest sub-cell centre that is `good`, ring by ring (row-major
+        // within a ring) out to the seat-rescue radius.
         let nearest = |x: i16, z: i16, good: &dyn Fn(i16, i16) -> bool| -> Option<(i16, i16)> {
-            if good(x, z) {
-                return Some((x, z));
-            }
             let (sx0, sz0) = ((x as i32) >> 6, (z as i32) >> 6);
             for r in 1..=SEAT_RESCUE_RADIUS_SUBCELLS {
                 for dz in -r..=r {
@@ -349,10 +388,18 @@ impl World {
             }
             None
         };
+        // The arrival itself when either rule takes it; else the nearest
+        // rescue, the strictest rule first.
         arrivals.iter().enumerate().find_map(|(i, &(x, z))| {
-            nearest(x, z, &good_by_walls)
-                .or_else(|| nearest(x, z, &good_by_floor))
-                .map(|seat| (i, seat))
+            let seat = if good_by_walls(x, z) || good_by_floor(x, z) {
+                Some((x, z))
+            } else {
+                nearest_tile(x, z)
+                    .or_else(|| nearest(x, z, &good_by_both))
+                    .or_else(|| nearest(x, z, &good_by_walls))
+                    .or_else(|| nearest(x, z, &good_by_floor))
+            };
+            seat.map(|seat| (i, seat))
         })
     }
 

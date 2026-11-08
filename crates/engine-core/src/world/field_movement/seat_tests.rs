@@ -197,3 +197,23 @@ fn picker_arrival_seat_takes_the_first_enclosed_standable_arrival() {
     assert!((seat.0 - pad.0).abs() <= 128 && (seat.1 - pad.1).abs() <= 128);
     assert_eq!(w.picker_arrival_seat(&[outside], &[]), None);
 }
+
+/// An arrival on an avoided tile (a doorway's walk-on trigger) is rescued
+/// onto the centre of the nearest **whole** standable tile, retail's own
+/// `(tile << 7) + 0x40` seat, not onto a sub-cell of the door frame.
+#[test]
+fn picker_arrival_rescue_takes_a_whole_tile_centre() {
+    let walls: Vec<(usize, usize)> = (0..FIELD_GRID_STRIDE)
+        .flat_map(|c| (0..FIELD_GRID_STRIDE).map(move |r| (c, r)))
+        .filter(|&(c, r)| !((10..30).contains(&c) && (10..30).contains(&r)))
+        .collect();
+    let w = scene(&walls);
+    let door = (20 * 128 + 64, 20 * 128 + 64);
+    let (i, seat) = w
+        .picker_arrival_seat(&[door], &[(20, 20)])
+        .expect("the trigger arrival steps off");
+    assert_eq!(i, 0);
+    // The nearest whole tile (distance 1; the first of the four in ring
+    // order) at its centre.
+    assert_eq!(seat, (20 * 128 + 0x40, 19 * 128 + 0x40));
+}
