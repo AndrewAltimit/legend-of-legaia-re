@@ -29,6 +29,8 @@ fn open_host() -> Option<SceneHost> {
 
 /// `P2[19]`'s `AD 04 08` (record-relative PC).
 const DOOR_SPIN_PC: usize = 0x2A0;
+/// The closing swing's spin (`AB 04 07`, `AC 04 01`, `AB 04 03`, `AD 04 08`).
+const DOOR_CLOSE_SPIN_PC: usize = 0x393;
 
 #[test]
 fn edbylon_credits_record_waits_for_the_door_swing() {
@@ -42,7 +44,8 @@ fn edbylon_credits_record_waits_for_the_door_swing() {
     };
     host.enter_field_scene("edbylon", 0).expect("enter edbylon");
     let (mut at, mut past) = (None, None);
-    for t in 0..1500u32 {
+    let (mut close_at, mut close_past) = (None, None);
+    for t in 0..3000u32 {
         let _ = host.tick();
         let Some(pc) = host
             .world
@@ -59,9 +62,23 @@ fn edbylon_credits_record_waits_for_the_door_swing() {
         }
         if past.is_none() && pc > DOOR_SPIN_PC {
             past = Some(t);
+        }
+        if close_at.is_none() && pc == DOOR_CLOSE_SPIN_PC {
+            close_at = Some(t);
+        }
+        if close_past.is_none() && pc > DOOR_CLOSE_SPIN_PC {
+            close_past = Some(t);
             break;
         }
     }
+    let (Some(a), Some(p)) = (close_at, close_past) else {
+        panic!("P2[19] reaches and leaves the closing spin ({close_at:?}, {close_past:?})");
+    };
+    assert!(
+        (50..=70).contains(&(p - a)),
+        "the second AD 04 08 holds for the closing swing: AC 04 08 clears the latch the first swing left; held {} ticks",
+        p - a
+    );
     eprintln!("[edbylon] door spin from tick {at:?} to {past:?}");
     let (Some(a), Some(p)) = (at, past) else {
         panic!("P2[19] reaches and leaves the door spin (at {at:?}, past {past:?})");

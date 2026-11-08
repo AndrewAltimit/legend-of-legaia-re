@@ -165,6 +165,25 @@ impl World {
         }
     }
 
+    /// Carry the object's clip end latch onto its channel's copy of the
+    /// control word before a script op runs on that channel. The clip tick
+    /// `FUN_800204F8` latches `+0x62 & 0x100` on the actor's one word; the
+    /// port's tick writes the prop's copy and the context copy never saw it,
+    /// so `AC <id> 08` found nothing to clear and the prop's latch survived.
+    /// `edbylon`'s second door swing clears the latch left by the first and
+    /// spins on it, and the spin then passed at once.
+    ///
+    /// REF: FUN_800204F8 (0x800206E4..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C)
+    pub(crate) fn mirror_object_end_latch(&self, key: usize, word: &mut u16) {
+        use legaia_engine_scene::field_env::ANIM_END;
+        let Some(anchor) = self.object_key_anchor(key) else {
+            return;
+        };
+        if let Some(p) = self.props.bank.props.get(&anchor) {
+            *word = (*word & !ANIM_END) | (p.anim.flags & ANIM_END);
+        }
+    }
+
     /// `true` while placed object `record`'s prop plays a clip that has not
     /// latched its end (`+0x62 & 0x100`): not held (`0x2`), end latch down.
     /// What a record's `AD <id> 08` spin on a door's swing waits for.
