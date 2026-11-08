@@ -630,14 +630,15 @@ impl World {
                     }
                     continue;
                 }
-                // An op aimed at another actor (`C7 <id> ..` walk, `B8 <id>`
-                // turn, `CC <id> 85` acquire) runs on the record's own context,
-                // which stands in for the target, so the target's park
-                // (`+0x10 |= 0x400`) lands on it. In retail the target's
-                // walk kernel clears that bit on the leg's terminal frame
-                // (`FUN_8003774C`); the runner plays no leg for another actor,
-                // so it keeps the record's own halt state across the op, as
-                // the talk runner does. Left up, the bit held the record's
+                // An op aimed at another actor that no arm below routes to
+                // that actor (an id no placement or object answers, an op on
+                // an object with no word routing) runs on the record's own
+                // context, which stands in for the target, so a park the op
+                // raises (`+0x10 |= 0x400`) lands on it. In retail the
+                // target's walk kernel clears that bit on the leg's terminal
+                // frame (`FUN_8003774C`), so the runner keeps the record's own
+                // halt state across the op, as the talk runner does. Left
+                // up, the bit held the record's
                 // next op on any actor at the dispatcher's halted-target
                 // early-out (`0x801DE90C..0x801DE944`) until the park
                 // timeout, and the prop's flag word carried it into every
@@ -647,6 +648,32 @@ impl World {
                 // REF: FUN_8003774C, FUN_801DE840 (0x801DE90C..0x801DE944)
                 let other_target = b & 0x80 != 0 && !player_target;
                 let own_halt = (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum);
+                // A motion op aimed at a **placement** moves that placement:
+                // `FUN_8003C83C` resolves the id to the NPC, the arm raises
+                // its halt bit and hands the leg to its walk kernel, and the
+                // record runs on past the op. The record's next op on the
+                // same NPC waits at the dispatcher's halted-target early-out
+                // until the kernel lands the leg (the halt clear `B2 <id> 0A`
+                // is exempt). `koin3`'s dance-hall door turns its doorman
+                // with `B8 26 80 14`, `jiji`'s counters walk and turn their
+                // keeper, `stone`'s and `vell`'s records walk and face their
+                // cast. Stepped on the record's own context, nobody moved.
+                // REF: FUN_8003C83C, FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C
+                let npc_slot = other_target
+                    .then(|| vm::field::peek_extended(&id.bytecode, id.pc))
+                    .flatten()
+                    .and_then(|t| host.world.placement_slot_for_target(t));
+                if let Some(slot) = npc_slot {
+                    let halt_clear = b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A);
+                    if !halt_clear && host.world.npc_leg_in_flight(slot) {
+                        parked = true;
+                        break;
+                    }
+                    if let Some(next_pc) = host.world.run_placement_motion_op(&id.bytecode, id.pc) {
+                        id.pc = next_pc;
+                        continue;
+                    }
+                }
                 // An actor-word op aimed at another **placed object** lands on
                 // that object's words, not on the record's own: `tower`'s floor
                 // doors open the partner door one floor away with `AC <id> 07`,
@@ -1032,22 +1059,19 @@ impl World {
     }
 }
 
-/// The actor-word ops a prop run routes onto another placed object
-/// ([`World::cross_context_object_prop`]): the clip-control word `+0x62`
-/// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the flag word `+0x10` (`31` /
-/// `32` / `33`) and the rate `+0x6A` (`4C 41`). Any other op on an object
-/// keeps the stand-in context.
 /// The placement slot a prop record's cross-context op at `pc` reaches, when
 /// the op is one of the actor-word ops the prop runner routes onto the NPC's
-/// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, a
-/// clip-control `AB` / `AC` / `AD`, or a class-bit `B1` / `B2` - but not the
+/// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, an
+/// `A3 <id> x z` or `CC <id> 51 ..` seat, a clip-control `AB` / `AC` /
+/// `AD`, or a class-bit `B1` / `B2` - but not the
 /// retire (`3`), engage (`8`) or halt (`0xA`) bits, whose side effects the
 /// runner models elsewhere or not at all. `None` for any other op, and for a
 /// target no placement channel carries.
 fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
     let b = *bytecode.get(pc)?;
     let routed = match b & 0x7F {
-        0x22 | 0x2B..=0x2D => true,
+        0x22 | 0x23 | 0x2B..=0x2D => true,
+        0x4C => bytecode.get(pc + 2) == Some(&0x51),
         0x31 | 0x32 => bytecode
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
@@ -1093,7 +1117,11 @@ fn step_npc_word_op(
         .iter()
         .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
     else {
-        return FieldStepResult::Advance { next_pc: id.pc + 3 };
+        let width = legaia_scene_formats::field_disasm::decode(&id.bytecode, id.pc)
+            .map_or(3, |insn| insn.size);
+        return FieldStepResult::Advance {
+            next_pc: id.pc + width,
+        };
     };
     let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
     host.world.field_vm.executing_channel = Some(slot);
@@ -1106,12 +1134,31 @@ fn step_npc_word_op(
         id.pc,
     );
     host.world.field_vm.executing_channel = None;
+    // A seat (`A3 <id> x z`, `CC <id> 51 x z ..`) lands on the NPC's
+    // `+0x14` / `+0x18` at once, ending any leg it had in flight.
+    let before = host
+        .world
+        .field_vm
+        .channels
+        .get(ci)
+        .map(|c| (c.ctx.world_x, c.ctx.world_z));
+    if before != Some((target_ctx.world_x, target_ctx.world_z)) {
+        let pos = (target_ctx.world_x as i16, target_ctx.world_z as i16);
+        host.world.npcs.positions.insert(slot, pos);
+        host.world.npcs.motions.remove(&slot);
+        host.world.npcs.glide_legs.remove(&slot);
+    }
     if let Some(c) = host.world.field_vm.channels.get_mut(ci) {
         c.ctx = target_ctx;
     }
     r
 }
 
+/// The actor-word ops a prop run routes onto another placed object
+/// ([`World::cross_context_object_prop`]): the clip-control word `+0x62`
+/// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the flag word `+0x10` (`31` /
+/// `32` / `33`) and the rate `+0x6A` (`4C 41`). Any other op on an object
+/// keeps the stand-in context.
 fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
     match bytecode.get(pc).map(|b| b & 0x7F) {
         Some(0x2B..=0x2D | 0x31..=0x33) => true,

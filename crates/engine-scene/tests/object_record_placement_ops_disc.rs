@@ -6,9 +6,11 @@
 //! into the doorway with `AC 26 07`, `AB 26 03`, `B2 26 18`, `A2 26 35`,
 //! `AD 26 08`. The prop runner (`World::step_prop_interaction`) sends these
 //! ops to the placement's own context; this census lists every carrier of the
-//! shape so the routing has a denominator: an `A2` ExecMove, an `AB` / `AC` /
-//! `AD` clip-control op, or a `B1` / `B2` class bit other than retire (`3`),
-//! engage (`8`) and halt (`0xA`), aimed at an id in `N0..N0 + N1`.
+//! shape so the routing has a denominator. Word ops: an `A2` ExecMove, an `A3`
+//! or `CC .. 51` seat, an `AB` / `AC` / `AD` clip-control op, or a `B1` / `B2`
+//! class bit other than retire (`3`), engage (`8`) and halt (`0xA`). Motion
+//! ops: a compass walk, turn, walk-to-tile or face-at, handed to the
+//! placement's walk kernel. Both aimed at an id in `N0..N0 + N1`.
 //!
 //! Every scene's bundle MAN is walked, each partition-0 record from its own
 //! first-opcode offset, clean decodes only.
@@ -29,13 +31,26 @@ fn extracted_dir() -> Option<PathBuf> {
         .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
-/// Whether the decoded op is one the prop runner routes onto a placement.
+/// Whether the decoded op is one the prop runner routes onto a placement's
+/// words.
 fn routed(opcode: u8, body: &[u8], pc: usize) -> bool {
     match opcode {
-        0x22 | 0x2B..=0x2D => true,
+        0x22 | 0x23 | 0x2B..=0x2D => true,
+        0x4C => body.get(pc + 2) == Some(&0x51),
         0x31 | 0x32 => body
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
+        _ => false,
+    }
+}
+
+/// Whether the decoded op is a motion leg the prop runner hands the
+/// placement's walk kernel: a compass walk (`37` / `41`), a turn (`38`), a
+/// walk-to-tile (`47`) or a face-at (`4C 85` / `8E` / `8F`).
+fn motion(opcode: u8, body: &[u8], pc: usize) -> bool {
+    match opcode {
+        0x37 | 0x38 | 0x41 | 0x47 => true,
+        0x4C => matches!(body.get(pc + 2), Some(0x85 | 0x8E | 0x8F)),
         _ => false,
     }
 }
@@ -51,8 +66,8 @@ fn object_records_that_drive_a_placements_clip() {
         return;
     };
     let index = ProtIndex::open_extracted(&ex).expect("open ProtIndex");
-    // (scene, P0 record, P1 placement) -> routed ops
-    let mut sites: BTreeMap<(String, usize, usize), usize> = BTreeMap::new();
+    // (scene, P0 record, P1 placement) -> (word ops, motion ops)
+    let mut sites: BTreeMap<(String, usize, usize), (usize, usize)> = BTreeMap::new();
     for name in index.cdname_scene_names() {
         let Ok(scene) = Scene::load(&index, &name) else {
             continue;
@@ -76,8 +91,17 @@ fn object_records_that_drive_a_placements_clip() {
                         let Some(t) = insn.extended.map(usize::from) else {
                             continue;
                         };
-                        if (n0..n0 + n1).contains(&t) && routed(insn.opcode, body, insn.pc) {
-                            *sites.entry((name.clone(), r, t - n0)).or_default() += 1;
+                        if !(n0..n0 + n1).contains(&t) {
+                            continue;
+                        }
+                        let (word, legs) = (
+                            routed(insn.opcode, body, insn.pc),
+                            motion(insn.opcode, body, insn.pc),
+                        );
+                        if word || legs {
+                            let e = sites.entry((name.clone(), r, t - n0)).or_default();
+                            e.0 += usize::from(word);
+                            e.1 += usize::from(legs);
                         }
                     }
                     Err((_, e)) => {
@@ -89,14 +113,20 @@ fn object_records_that_drive_a_placements_clip() {
             }
         }
     }
-    for ((scene, r, slot), n) in &sites {
-        eprintln!("[census] {scene} P0[{r}] -> P1[{slot}]: {n} ops");
+    for ((scene, r, slot), (word, legs)) in &sites {
+        eprintln!("[census] {scene} P0[{r}] -> P1[{slot}]: {word} word ops, {legs} motion ops");
     }
     assert!(
         sites
             .get(&("koin3".to_string(), 3, 2))
-            .is_some_and(|&n| n > 0),
-        "koin3's dance-hall door drives its doorman's clip"
+            .is_some_and(|&(word, legs)| word > 0 && legs > 0),
+        "koin3's dance-hall door drives and turns its doorman"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|((s, _, _), &(_, legs))| s == "jiji" && legs > 0),
+        "jiji's counters walk their keeper"
     );
     let scenes: std::collections::BTreeSet<&str> =
         sites.keys().map(|(s, _, _)| s.as_str()).collect();

@@ -11,6 +11,11 @@
 //! the record on `B2 0C 18` until the park timeout, and the greeting never
 //! opened. Every touch then froze the player for the timeout.
 //!
+//! The leg now runs on the keeper: `FUN_8003C83C` resolves `0x0C` to the
+//! placement, its walk kernel walks it to tile `(88, 30)`, and the record's
+//! `B2 0C 18` waits at the dispatcher's halted-target early-out
+//! (`0x801DE90C..0x801DE944`) until the keeper lands.
+//!
 //! Disc-gated: skips and passes without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_scene_host::scene_host::SceneHost;
@@ -48,6 +53,16 @@ fn the_inn_counter_greets_after_walking_its_keeper() {
         .collect();
     anchors.sort_unstable();
     let anchor = *anchors.first().expect("jiji binds the inn counter");
+    let keeper = host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .find(|c| !c.object_bind && c.ctx.script_id == 0x0C)
+        .map(|c| c.placement_index as u8)
+        .expect("jiji seats the keeper as channel 0x0C");
+    // `C7 0C 58 1E 32`: tile (88, 30), centred.
+    let counter = (88 * 128 + 64, 30 * 128 + 64);
     // The player stands in the counter's box, as one who walked up to it.
     host.world.seat_player_at_tile(88, 28);
     assert!(
@@ -74,6 +89,11 @@ fn the_inn_counter_greets_after_walking_its_keeper() {
     assert!(
         greeted,
         "the greeting's box opened within 240 ticks (run parked at {pc:?})"
+    );
+    assert_eq!(
+        host.world.npcs.positions.get(&keeper).copied(),
+        Some(counter),
+        "the keeper walked to the counter before the greeting"
     );
 
     // Page through the greeting and its picker. The party's purse is short
