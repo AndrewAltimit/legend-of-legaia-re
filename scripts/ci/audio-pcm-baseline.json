@@ -88,7 +88,7 @@
     },
     "theeder_summon_mid_cast": {
       "cast_corr": 0.7116,
-      "cast_level": -0.4261
+      "cast_level": 0.4045
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
@@ -98,7 +98,7 @@
     },
     "zenoir_summon_mid_cast": {
       "cast_corr": 0.9977,
-      "cast_level": 1.3826
+      "cast_level": 0.0866
     },
     "zeto_big_wave_mid_cast": {
       "cast_corr": 0.986,
