@@ -102,6 +102,19 @@ pub fn write_camera_csv(retail: &Side, engine: &Side, out: &Path) -> Result<bool
             .unwrap_or(t)
     };
     let to_engine: BTreeMap<usize, usize> = align(&rs, &es).into_iter().collect();
+    // A module's seek arm holds the engine's whole frame (`drive_seek_arm`,
+    // `CD-seek waits`): its still ticks are the emulator-less wait the image
+    // pairing absorbs, and paired one for one they read as a framing error.
+    let frozen = |t: u64| -> bool {
+        let Ok(i) = engine.rows.binary_search_by_key(&t, |x| x.t) else {
+            return false;
+        };
+        let row = &engine.rows[i];
+        i > 0
+            && row.drive.is_some_and(|d| row.phase == d.seek_arm)
+            && row.display_frames.is_some()
+            && engine.rows[i - 1].display_frames == row.display_frames
+    };
     let mut csv = String::from(
         "vsync,tick,key,into,r_step,e_step,r_pitch,r_yaw,r_trx,r_try,r_trz,r_fx,r_fz,\
          e_pitch,e_yaw,e_trx,e_try,e_trz,e_fx,e_fz\n",
@@ -115,7 +128,14 @@ pub fn write_camera_csv(retail: &Side, engine: &Side, out: &Path) -> Result<bool
         };
         let (rseg, eseg) = (&rs[ri], &es[ei]);
         let into = game(row.t).saturating_sub(game(rseg.start));
-        let tick = (eseg.start + into).min(eseg.end);
+        let mut tick = eseg.start;
+        let mut live = 0;
+        while live < into && tick < eseg.end {
+            tick += 1;
+            if !frozen(tick) {
+                live += 1;
+            }
+        }
         let (Some(a), Some(b)) = (rp.get(&row.t), ep.get(&tick)) else {
             continue;
         };

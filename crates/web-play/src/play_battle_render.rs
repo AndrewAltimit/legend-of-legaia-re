@@ -617,6 +617,15 @@ impl LegaiaRuntime {
             ground.is_some(),
             faces.len()
         ));
+        // What a ghost's redraw costs the frame reads the body's size.
+        if let Some(host) = self.scene_host.host_mut() {
+            for a in &actors {
+                if let Some(actor) = host.world.actors.get_mut(a.actor_idx) {
+                    actor.battle_body_tris =
+                        (a.mesh.mesh.indices.len() / 3).min(usize::from(u16::MAX)) as u16;
+                }
+            }
+        }
         self.battle_render = Some(BattleRender {
             vram,
             backdrop,

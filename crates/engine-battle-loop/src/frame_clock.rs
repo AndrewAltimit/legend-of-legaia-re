@@ -51,6 +51,11 @@ impl FrameCostRing {
         }
     }
 
+    /// The newest entry: what the last pass's frame cost.
+    pub fn newest(&self) -> u16 {
+        self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)]
+    }
+
     /// The step the ring's entries read now, before another push: what the
     /// pass that last stored here left for the next one. A newest entry on
     /// the clamp `0x2BC` stands for a raw duration of `0x2D0` or more, which
@@ -169,12 +174,27 @@ pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u
     }
 }
 
-/// Hblanks one after-image ghost adds to a frame: the draw tick's walk
-/// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
-/// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two
-/// ghosts raise a lone member's `0x20` frame by `37` and `35` on the frames
-/// they appear, before any effect part is live.
+/// Hblanks one after-image ghost adds to a frame where the body's size is not
+/// known to the world: the draw tick's walk `FUN_80049348` re-runs the body's
+/// whole object draw `FUN_80048A08` per ghost, so a ghost costs what the body's
+/// draw does ([`ghost_draw_cost`]). Read off `battle_vell_nighto_49_strike`.
 pub const GHOST_DRAW_COST: u16 = 36;
+
+/// Hblanks per drawn triangle one ghost's body redraw costs, in `1/1024`ths:
+/// the strike films of a lone member whose monster ghosts on its strike clip
+/// read `(frames with ghosts - frames without) / ghosts / triangles` `.081`
+/// (Frog, `608`), `.087` (Caruban, `842`), and the ring over `k` fit on half the
+/// films and scored on the other holds `.075` to `.100`.
+pub const GHOST_DRAW_COST_PER_TRI_Q10: u32 = 87;
+
+/// What one ghost of a body of `tris` triangles costs a frame.
+pub const fn ghost_draw_cost(tris: u16) -> u16 {
+    if tris == 0 {
+        GHOST_DRAW_COST
+    } else {
+        ((tris as u32 * GHOST_DRAW_COST_PER_TRI_Q10) >> 10) as u16
+    }
+}
 
 /// Hblanks one live move-VM effect part adds to a frame (its tick
 /// `FUN_80021DF4` and its sprite or mesh draw). Read off the lone-member strike
@@ -184,13 +204,14 @@ pub const GHOST_DRAW_COST: u16 = 36;
 pub const EFFECT_PART_COST: u16 = 2;
 
 /// What a frame's draw load adds over [`measured_frame_cost`]: `parts` live
-/// effect parts and `ghosts` after-image ghosts. The base rows of the strike
-/// states `0x1E..=0x20` are the recordings' frames with no part live, so a
-/// strike's burst and a special clip's ghosts are what lift its frames.
-pub const fn frame_load_cost(parts: u16, ghosts: u16) -> u16 {
+/// effect parts and the after-image ghosts' summed redraws `ghost_cost`
+/// ([`ghost_draw_cost`]). The base rows of the strike states `0x1E..=0x20` are
+/// the recordings' frames with no part live, so a strike's burst and a special
+/// clip's ghosts are what lift its frames.
+pub const fn frame_load_cost(parts: u16, ghost_cost: u16) -> u16 {
     parts
         .saturating_mul(EFFECT_PART_COST)
-        .saturating_add(ghosts.saturating_mul(GHOST_DRAW_COST))
+        .saturating_add(ghost_cost)
 }
 
 /// The cost a frame an arm table names its step for leaves in the ring, so the

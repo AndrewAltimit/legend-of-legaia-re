@@ -730,6 +730,10 @@ pub struct Actor {
     /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
     pub tmd_binding: Option<usize>,
+    /// Triangles of the battle body this actor draws (`0` until a host binds
+    /// its mesh): what an after-image ghost's redraw costs
+    /// ([`legaia_engine_battle_loop::frame_clock::ghost_draw_cost`]).
+    pub battle_body_tris: u16,
 
     /// Actor kind classifier. Retail equivalent: the `u16` at `actor[+0x3C]`
     /// written by `FUN_801D77F4` (overlay actor allocator). Zero means
