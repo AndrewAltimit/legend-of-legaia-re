@@ -1768,6 +1768,23 @@ scripted boost profile live: record ATK 288 / UDF 222 / INT 220 install as
 360 / 444 / 247 (`x5/4`, `x2`, `x9/8`), against the random encounter's
 17 / 15 / 10 installing as 17 / 25 / 12.
 
+**Arm 0's credits.** Once both words are drawn, arm 0 credits the outcome
+(`0x801F6D30..0x801F6F28`), the resist word first: a resisted cast adds `4` to
+the caster's XP word for the spell and points `0x800774AC` at the line
+`0x801F8528` ("No effect."); otherwise the victim's name `+0x1BC` goes into the
+buffer `0x801F8544` (`FUN_8003CA78`), and the confuse leg adds `8` and appends
+`0x801F8518` while the kill leg adds `0xC`, appends `0x801F8500` and adds one
+to the caster's record `+0x9C` (`0x801F6F0C..0x801F6F18`). Each XP add is
+skipped while the special-battle word `_DAT_8007BAC0` is up. Arm 13 raises the
+message bar on its pass, ahead of the fork (`FUN_801D8DE8(0x5B, 0)` at
+`0x801F7DDC`, `ctx[+0x18] = 0x5B`), so every outcome shows its line. The body
+holds no damage call, so the cast folds nothing: `capture`, the cast-sequence
+recording of a confused Nighto on `party_basic_attack_vs_gobu_gobu` holds the
+Gobu Gobu's `+0x14C` at 76 through the whole cast. Port:
+`World::nighto_verdict` (the credits, `NightoOutcome::arm0_credit`), the fold
+waived for a party's cast, and the bar from
+[`World::apply_cast_kill_results`](#instant-kills-records-and-result-lines).
+
 **Arm gates.** Every counted arm drains the halfword `ctx[+0x6D8]` by the
 frame product and holds while it reads non-negative; the director
 `cast_module_camera::nighto_direct` carries them and the body runs on the pass.
@@ -2194,6 +2211,50 @@ shards; a scripted Berserker reaches the list test every tick and is never
 written. The write-up is
 [`glitches/status-and-damage.md`](../reference/glitches/status-and-damage.md#zenoir-leaves-a-lone-golem-in-pieces).
 
+### Instant kills: records and result lines
+
+<a id="instant-kills-records-and-result-lines"></a>
+
+Five modules can kill without a damage roll, and each adds one to the
+caster's Monsters Defeated word (record `+0x9C`, the record picked by
+`0x8007BD10[ctx[+0x13]]`; [save-record.md](../formats/save-record.md#the-battle-records-words))
+itself. A sweep of the 64 images for `sw` with offset `0x664` finds these
+five and no others.
+
+| Module | Store | When |
+|---|---|---|
+| 0907 Nighto | `0x801F6F18` | arm 0, the kill leg ([above](#prot-0907-nighto)) |
+| 0916 Aluru | `0x801F7E58` | arm `0x11`'s kill pass |
+| 0918 Kemaro | `0x801F881C` | arm `0x12`, when the roll reaches the victim's HP (`sltu` at `0x801F87C8`), before the clamp |
+| 0924 Ultimate Rave | `0x801F758C` | arm 9's pass on the kill path (head-table word 9, `0x801F7480`) |
+| 0931 Jedo | `0x801F8658` | arm 29's pass off a scripted fight, once per monster seat with HP (`0x801F8558..0x801F8658`) |
+
+The other credit site is the monster death arm of `FUN_8004AD80`
+(`0x8004B184..0x8004B1F4`), which needs the victim to finish a tag-4 entry on
+zero HP. Four of the five never stage one: Nighto and Aluru put the victim
+into the defeat fade or hide it, Kemaro puts it back on idle, Jedo fades the
+row. So each of their kills counts once. Ultimate Rave's arm 10 does stage the
+knockdown (`+0x1DA = +0x1F1`, `+0x1DC += 1` at `0x801F76A4..0x801F76B0`) on
+zero HP, so its kill also reaches the death arm and counts twice (`inference`
+from the disassembly; no capture of the one-in-128 kill).
+
+Two of them compose a result line at run time and raise it on the message
+bar (element `0x5B`, [battle-hud.md](battle-hud.md#the-bottom-message-bar-record-0x5b)):
+the victim's name copied into a module buffer (`FUN_8003CA78`) with the
+module's tail appended (`FUN_8003CAC4`). The same sweep for `FUN_8003CAC4`
+calls finds these two besides PROT 0941's and 0954's.
+
+| Module | Composed | Raised |
+|---|---|---|
+| 0907 Nighto | arm 0, by outcome ([above](#prot-0907-nighto)) | arm 13's pass, every outcome (`0x801F7DDC`) |
+| 0916 Aluru | arm `0x11`'s kill pass, tail `0x801F8FEC` | arm `0x13`'s last pass on the kill path (`0x801F87BC`) |
+
+Port: `World::apply_cast_kill_results` on each module pass (Kemaro's credit
+rides its fold, `World::fold_cast`); the line goes up through
+`World::raise_composed_message_bar`, which reads the tail off the resident
+image and leaves the name to the HUD, so it carries the twin letter the
+plaques print. Test: `world::tests::cast_band::kill_records`.
+
 ### PROT 0916 (Aluru)
 
 <a id="prot-0916-aluru"></a>
@@ -2227,8 +2288,8 @@ overlay string at `0x801F8FEC` into `0x801F9014` (`FUN_8003CA78` /
 `FUN_8003CAC4` at `0x801F7E54` / `0x801F7E64`), with `0x800774AC` pointed at
 it, which is the "has been annihilated" window a retail Done band shows under
 the magic-level banner; the same pass adds one to the caster's record `+0x9C`
-(`0x801F7E48..0x801F7E58`). The port raises no `0x5B` (its battle banner is
-one slot) and leaves `+0x9C` alone. The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
+(`0x801F7E48..0x801F7E58`). Both are ported
+([instant kills](#instant-kills-records-and-result-lines)). The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
 leaves for `0x13` (`0x801F85A8`), steps on to arm `0x14` and stores `0xFF`
 once the victim has settled.
 

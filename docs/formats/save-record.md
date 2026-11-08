@@ -205,9 +205,9 @@ they do.
 | Offset | Page label | Writer |
 |---|---|---|
 | `+0x98` | Knockouts | The battle cue walker `FUN_800508DC`, once per character cry it reaches, ahead of the mute and CD gates (`0x800509BC..0x800509EC`). |
-| `+0x9C` | Monsters Defeated | A monster's death arm in `FUN_8004AD80`, for the seat holding the action when it is a party seat, behind the arm's own `+0x1DC` bit 3 (`0x8004B184..0x8004B1F4`); and the instant-kill arms of the cast modules (Jedo's at `0x801F8658`). |
+| `+0x9C` | Monsters Defeated | A monster's death arm in `FUN_8004AD80`, for the seat holding the action when it is a party seat, behind the arm's own `+0x1DC` bit 3 (`0x8004B184..0x8004B1F4`); and the five instant-kill arms of the cast modules (Nighto, Aluru, Kemaro, Ultimate Rave, Jedo), whose victims never reach the death arm except Ultimate Rave's, which counts twice ([cast-module.md](../subsystems/cast-module.md#instant-kills-records-and-result-lines)). |
 | `+0xE8` | Max Damage | The combo readout pass `FUN_801E805C`, keeping the larger of the word and the string total `DAT_8007BD14` (`0x801E8964..0x801E897C`). |
-| `+0xEC` | Max Hits | The same pass, keeping the larger of the word and the hit count `ctx[+0x273]` (`0x801E89B8..0x801E89D0`). |
+| `+0xEC` | Max Hits | The same pass, keeping the larger of the word and the hit count `ctx[+0x273]` (`0x801E89B8..0x801E89D0`), on a party seat's Attack only; the count's pushes are the melee body's, the effect children's and the cast modules' popups (`FUN_801F44A0`). |
 
 `+0x9C` was once read as a magic-rank counter off a save pair taken across a
 rank-up: the same cast had felled a monster.

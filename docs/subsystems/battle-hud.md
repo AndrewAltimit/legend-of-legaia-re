@@ -1244,7 +1244,18 @@ stores, and the engine raises the bar on the pass that leaves the arm that way
 (Big Wave leaves Call Wave's arm 0 for arm 4 without the raise). A site whose
 exit does not fold (PROT 0953's charge branch, the 0955 cell's conditional
 outcomes), and a line empty in the image (a buffer the module composes at run
-time: PROT 0916, 0943), are not raised.
+time), are not raised by the decode.
+
+Two of those buffers are composed by hand: Nighto's and Aluru's result lines,
+the victim's name followed by the module's tail ("... has been annihilated.",
+"... is confused.", or Nighto's "No effect." alone). Aluru's goes up only on
+a kill, on its last arm, and is the window a retail Done band shows under the
+magic-level banner; Nighto's goes up on its arm 13 for every outcome. Where
+each is composed and raised: [cast-module.md](cast-module.md#instant-kills-records-and-result-lines).
+The caption carries its subject's slot rather than the name
+(`StealCaption::subject`), and `battle_message_bar` prints the name the
+plaques print, twin letter included, ahead of the tail. Both hosts draw it
+through `engine-screens`, like every other bar line.
 
 Glare (PROT 0940, body `0x801F69F8`) raises the same element with its own
 line: the module image's `0xC1 k` " has turned to stone." for the petrified
