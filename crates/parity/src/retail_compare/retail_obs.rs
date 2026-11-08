@@ -281,6 +281,9 @@ pub struct ActorFacing {
     /// wanders stood at the capture instant - time and stream history since
     /// the entry, which no seed replays.
     pub ambient: bool,
+    /// The stream's first heading op, for the `LEGAIA_RC_FACING_DUMP`
+    /// diagnostic (a wander `0x18` is `rand()` history, a ramp `0x04` time).
+    pub ambient_op: Option<u8>,
 }
 
 impl RetailObs {

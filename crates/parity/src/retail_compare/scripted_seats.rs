@@ -181,6 +181,7 @@ mod tests {
             model: 100,
             flags: 0,
             ambient: false,
+            ambient_op: None,
         };
         let seats = scripted_seats(
             &beats,

@@ -1180,7 +1180,7 @@ impl World {
         } else {
             self.talk_face_target(bind)
         };
-        let (Some((tx, tz)), Some(&(x, z))) = (target, self.npcs.positions.get(&slot)) else {
+        let (Some((tx, tz)), Some((x, z))) = (target, self.placement_seat(slot)) else {
             return true;
         };
         // A never-posed NPC stands at the retail spawn default `0` (engine
@@ -1685,6 +1685,20 @@ impl World {
             actor.move_state.render_26 = yaw as i16;
         }
         id.face_ramp = if done { None } else { Some(ramp) };
+    }
+
+    /// Where placement `slot` stands: its surfaced position, or the seat its
+    /// own context holds. A placement with no text and no prologue seat that
+    /// moved it never gets a surfaced position, yet retail's actor stands
+    /// there all the same and its face-at legs run: `jagaroom` `P1[2..=7]`,
+    /// the statues turned onto the centre by `CC <id> 85 00 00 26`.
+    fn placement_seat(&self, slot: u8) -> Option<(i16, i16)> {
+        self.npcs.positions.get(&slot).copied().or_else(|| {
+            self.channel_view()
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                .map(|c| (c.ctx.world_x as i16, c.ctx.world_z as i16))
+        })
     }
 
     /// Where the actor a talk's face-at bind names stands: the channel whose

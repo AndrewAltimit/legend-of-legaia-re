@@ -361,6 +361,43 @@ fn a_spawn_prologue_own_face_at_turns_the_placement() {
     assert!(w.npcs.face_legs.is_empty());
 }
 
+/// A placement with no surfaced position still turns: the leg reads the seat
+/// its own context holds. `jagaroom` `P1[2..=7]`, text-free statues whose
+/// prologue seat lands on their spawn tile, face the centre placement this
+/// way (`CC <id> 85 00 00 26`).
+#[test]
+fn a_face_at_turns_a_placement_with_no_surfaced_position() {
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    let man = vec![0x25, 0xCC, 0x10, 0x85, 0x00, 0x00, 0x16, 0x21, 0x25, 0x21];
+    let ch = |slot: usize, id: u16, off: usize, x: u16, z: u16| FieldChannel {
+        placement_index: slot,
+        ctx: FieldCtx {
+            script_id: id,
+            world_x: x,
+            world_z: z,
+            ..FieldCtx::default()
+        },
+        record_offset: off,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    };
+    w.field_vm.channels = vec![ch(3, 0x10, 0, 6336, 5184), ch(9, 0x16, 8, 5056, 1472)];
+    w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    w.npcs.positions.insert(9, (5056, 1472));
+    w.pre_run_field_channel_prologues();
+    assert!(w.npcs.face_legs.contains_key(&3), "the leg is armed");
+    assert!(!w.npcs.positions.contains_key(&3), "no surfaced position");
+    w.tick_field_npc_motions();
+    // Retail's `+0x26` is `0x0D8`, the engine heading `0x800` round from it.
+    assert_eq!(w.npcs.headings.get(&3), Some(&0x8D8));
+}
+
 /// A turn holds its NPC for the record's next op on it: the halt-acquire arm
 /// raises the target's `0x400` for the ramp, and the dispatcher prologue
 /// returns any later cross-context op on that actor at its own PC until the

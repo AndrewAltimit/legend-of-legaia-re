@@ -587,13 +587,27 @@ pub(super) fn sample_engine(
             .get(s as usize)
             .map(|a| a.move_state.render_26.wrapping_sub(0x800))
     });
-    let n0 = session
+    let man = session
         .host
         .scene
         .as_ref()
-        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
-        .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten());
+    let man_file = man
+        .as_ref()
+        .and_then(|man| legaia_scene_formats::man_section::parse(man).ok());
+    let n0 = man_file
+        .as_ref()
         .map(|mf| mf.header.partition_counts[0].max(0) as u16);
+    // Placements no script or walk has given a live position: they stand on
+    // their MAN seat with the spawn heading.
+    let spawn_placements: Vec<(u8, i16, i16)> = match (&man_file, &man) {
+        (Some(mf), Some(man)) => mf
+            .actor_placements(man)
+            .into_iter()
+            .filter_map(|p| Some((u8::try_from(p.index).ok()?, p.world_x, p.world_z)))
+            .collect(),
+        _ => Vec::new(),
+    };
     let world = &session.host.world;
     if std::env::var_os("LEGAIA_RC_NPC_Y").is_some()
         && let Some(n0) = n0
@@ -639,13 +653,18 @@ pub(super) fn sample_engine(
             );
         }
     }
+    // Every placement: a live position when one has surfaced, otherwise its
+    // MAN seat (a script-only placement never surfaces one, and `FUN_8003A1E4`
+    // seats its actor there all the same).
     let npc_facings = n0
         .map(|n0| {
-            world
-                .npcs
-                .positions
+            let live = world.npcs.positions.iter().map(|(&slot, &p)| (slot, p));
+            let seated = spawn_placements
                 .iter()
-                .map(|(&slot, &(x, z))| {
+                .filter(|(slot, _, _)| !world.npcs.positions.contains_key(slot))
+                .map(|&(slot, x, z)| (slot, (x, z)));
+            live.chain(seated)
+                .map(|(slot, (x, z))| {
                     let h = world.npcs.heading(slot);
                     (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
                 })

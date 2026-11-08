@@ -251,10 +251,11 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         };
         if dump {
             eprintln!(
-                "facing {}: flat {}{} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                "facing {}: flat {}{} op {:#04x} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
                 retail.scene,
                 a.flat,
                 if a.ambient { " (ambient)" } else { "" },
+                a.ambient_op.unwrap_or(0),
                 a.flags,
                 a.model,
                 a.x,
