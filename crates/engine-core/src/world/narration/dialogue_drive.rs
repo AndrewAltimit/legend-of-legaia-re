@@ -192,6 +192,15 @@ impl World {
             return;
         }
 
+        // The dialog SM runs from the talker's actor tick, once per game
+        // frame (`FrameClock::script_slice_due`): between two game frames
+        // the record's ops wait. The box above reads the pad every vsync.
+        // REF: FUN_8002519C, FUN_80039B7C
+        if !self.clock.script_slice_due() {
+            self.dialog.inline = Some(id);
+            return;
+        }
+
         // No box open: step the VM until the next text segment or an end.
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.

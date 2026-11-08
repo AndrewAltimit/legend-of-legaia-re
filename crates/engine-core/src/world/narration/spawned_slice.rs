@@ -23,7 +23,17 @@ impl World {
             tl.frames = 0;
         }
         tl.frames = tl.frames.saturating_add(1);
+        // A context's first slice runs on the tick that installed it: the
+        // spawn happens inside a game frame in retail (a trigger, a talk, a
+        // record's `44`), and the walk reaches the new actor in that frame.
+        let first_slice = !tl.stepped;
         tl.stepped = true;
+        // A spawned record's actor steps from the actor-list walk, once per
+        // game frame (`FrameClock::script_slice_due`): between two game
+        // frames its ops do not run and no park it sits in resumes, and the
+        // vsync spends nothing of the anti-hang cap.
+        // REF: FUN_8002519C, FUN_8003BDE0
+        let due = first_slice || self.clock.script_slice_due();
         // The player's poked scene-bank clip plays one engine tick per
         // slice, parked or not - retail's clip tick runs every frame.
         // On the game-frame grid the countdown spends the frame step once a
@@ -58,6 +68,15 @@ impl World {
             match flag_set {
                 // Still waiting (the channel's bit is still up) and within the
                 // park budget: hold the PC on the flag-test op another tick.
+                _ if !due => {
+                    tl.channel_wait = Some(wait);
+                    self.field_vm.channels = channels;
+                    self.field_vm.stepping_view.clear();
+                    self.cutscene.in_timeline = false;
+                    self.field_vm.in_spawned_record_slice = false;
+                    tl.frames = tl.frames.saturating_sub(1);
+                    return false;
+                }
                 Some(true) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
@@ -92,7 +111,7 @@ impl World {
         // REF: FUN_8003BDE0
         if let Some(width) = tl.player_wait.take() {
             tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
-            if tl.player_move_frames > 0 || self.player_script_arc_live() {
+            if tl.player_move_frames > 0 || self.player_script_arc_live() || !due {
                 tl.player_wait = Some(width);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
@@ -404,9 +423,16 @@ impl World {
             }
             tl.pc = resume_pc;
         }
+        if !due {
+            tl.frames = tl.frames.saturating_sub(1);
+        }
         {
             let mut host = FieldHostImpl { world: self };
-            let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
+            let mut budget = if due {
+                CUTSCENE_TIMELINE_STEP_BUDGET
+            } else {
+                0
+            };
             while budget > 0 {
                 budget -= 1;
                 let pc = tl.pc;

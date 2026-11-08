@@ -1281,6 +1281,7 @@ impl World {
     /// ([`crate::world::AudioState::bgm_entry_latch`]).
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
         let last = self.run_field_frame_slice();
+        self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;
         last
@@ -1293,6 +1294,16 @@ impl World {
         // Retail's pre-loop guard: a context whose PC sits on a text /
         // terminator byte executes nothing at all this frame.
         if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
+            return None;
+        }
+        // The system SM runs from the actor-list walk, once per game frame
+        // (`FrameClock::script_slice_due`). The install's own pass (the
+        // first slice after a load) runs whenever it comes.
+        // REF: FUN_8002519C, FUN_801DA51C, FUN_8003AB2C
+        if !self.clock.script_slice_due()
+            && !self.field_vm.system_install_pass
+            && !self.audio.bgm_field_init_open
+        {
             return None;
         }
         // The system script is driven by the SYSTEM entity's tick
@@ -1476,6 +1487,7 @@ impl World {
             }
         }
         // The load-frame run is the install's slice: the entry latch ends.
+        self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;
     }

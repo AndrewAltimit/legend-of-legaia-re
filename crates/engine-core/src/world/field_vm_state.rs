@@ -213,6 +213,13 @@ pub struct FieldVmState {
     /// [`crate::world::World::step_field_frame_slice`].
     // REF: FUN_801DA51C
     pub system_pass_open: bool,
+    /// The system script's install slice is still owed: retail's install
+    /// (`FUN_8003AB2C`) runs the freshly loaded script's first pass inside
+    /// the load, whatever the frame, so the first slice after a
+    /// `load_field_script` runs on the tick that comes, game frame or not
+    /// (`World::step_field_frame_slice`). Ended by that slice or by the
+    /// scene entry's own pre-run.
+    pub system_install_pass: bool,
     /// The script-counter **slot table** at `0x801C6460` (signed halfwords).
     ///
     /// Written by field-VM `4C CA` (set), `4C CB` (add) and `4C CC`
@@ -272,6 +279,7 @@ impl FieldVmState {
             actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
+            system_install_pass: false,
             slot_table: [0; 256],
             player_field_42: 0,
         }

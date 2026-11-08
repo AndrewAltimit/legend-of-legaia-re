@@ -238,6 +238,28 @@ runs the field-VM slice (`FUN_80039B7C`), bit `0x400` the walk kernel
 (`FUN_8003774C`), a non-zero `+0x80` the motion VM (`FUN_80038158`), and
 `+0x5C > 0` / bit `0x1000` the move-table VM.
 
+A "frame" here is a **game frame**, not a vsync. The walk runs once per pass of
+the frame loop, and a pass spans the adaptive frame step `DAT_1F800393` vsyncs
+(2 in a town or dungeon, 3 on the overworld and in heavy scenes, 4 at the
+worst). A PCSX-Redux count of `FUN_801DE840` entries against vsyncs
+([`autorun_field_script_cadence.lua`](../../scripts/pcsx-redux/autorun_field_script_cadence.lua))
+finds every dispatcher entry on a vsync the walk ran on, one walk every
+`DAT_1F800393` vsyncs, across `bubu2`, `dolk2`, `jiji`, `map01`, `nilboa`,
+`stone` (whose step moves between 3 and 4 inside the capture) and `town0b`. A
+field scene never runs at step 1: the scene loader `FUN_801D6704` floors the
+step at 2. A script context therefore runs one slice every `DAT_1F800393`
+vsyncs, and an op that times itself credits the step's worth at each visit
+(op `0x4A` adds `DAT_1F800393` to `ctx[+0x54]`).
+
+The port steps every script runner - the system script, spawned records, the
+prop runner and the talk runner - on the game frames only
+(`FrameClock::script_slice_due`). Three things run on the tick that comes, as
+retail runs them inside the frame that caused them: a freshly loaded system
+script's install slice, a freshly spawned record's first slice, and the
+dialog box, which reads the pad every vsync. A park a record sits in (a
+player arc, a walk leg, a halt-bit wait) resumes on the next game frame, not
+on a vsync between two.
+
 The slice itself is the run-until-yield loop inside `FUN_80039B7C` (its
 run-to-**text** sibling is `FUN_8003CF7C`): call `FUN_801DE840`, write the
 returned PC back to `ctx[+0x9E]`, and repeat while the opcode byte still has

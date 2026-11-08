@@ -464,6 +464,16 @@ impl World {
             }
         }
 
+        // The record's ops run on game frames only: the object's actor
+        // steps its context from the actor-list walk
+        // (`FrameClock::script_slice_due`). The box above and the player's
+        // legs read the pad and spend on every vsync.
+        // REF: FUN_8002519C, FUN_80039B7C
+        if !self.clock.script_slice_due() {
+            self.dialog.inline = Some(id);
+            return;
+        }
+
         // No box: sync the prop's live state into the context (the per-frame
         // anim tick may have latched the clip's end since the last slice),
         // then run a VM slice.
