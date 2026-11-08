@@ -323,6 +323,50 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let before = st.countdown.0;
     let held = hold_step(PUERA, st, phase);
+    match phase {
+        // `li v1,8; sb v1,0x21d(s1)`, `lbu; addiu 1; sb 0x1da` bare
+        // (`0x801F6EE4..0x801F6EF4`): clip 1 at rate 8, committed at clip 0's
+        // natural end.
+        5 if !held => {
+            st.creature_stage = Some(1);
+            st.creature_rate = Some(8);
+        }
+        // Every pass while clip 1 reads a cursor of `0x1C0` or more, and on
+        // the pass, the arm parks it: rate `0`, cursor `0x1D0`
+        // (`0x801F7070..0x801F7114`).
+        7 if !held
+            || (st.creature_clip == Some(1) && st.creature_frame.is_some_and(|f| f >= 0x1C0)) =>
+        {
+            st.creature_seek = Some(0x1D0);
+            st.creature_rate = Some(0);
+        }
+        // Arm 8 walks the cursor back to the clip's head a frame product a
+        // pass (`0x801F7118..0x801F7178`), then rate 8, `+0x1DA += 1` and the
+        // bump (`0x801F7180..0x801F719C`): clip 2 at once.
+        8 if held => {
+            if let Some(f) = st.creature_frame {
+                st.creature_seek = Some(f.saturating_sub(SPEED_SCALAR as u16));
+            }
+        }
+        8 => {
+            st.creature_stage = Some(2);
+            st.creature_restage = true;
+            st.creature_rate = Some(8);
+        }
+        // The two bumped stages (`j 0x801F7184` at `0x801F727C`,
+        // `0x801F7FFC..0x801F8020`) and arm 10's bare `4` (`0x801F7284`),
+        // which waits for clip 3's natural end.
+        9 if !held => {
+            st.creature_stage = Some(3);
+            st.creature_restage = true;
+        }
+        10 if !held => st.creature_stage = Some(4),
+        18 if !held => {
+            st.creature_stage = Some(5);
+            st.creature_restage = true;
+        }
+        _ => {}
+    }
     let mut base = if held {
         ArmDirection::HOLD
     } else {
@@ -404,6 +448,36 @@ fn puera_pass(phase: u8) -> ArmDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// PROT 0922's creature bytes, off the arms the disassembly places them
+    /// on: arm 5's bare `1` at rate 8, arm 7's park at `0x1D0`, the bumped
+    /// `2` and `3` of arms 8 and 9, arm 10's bare `4` and arm 18's bump.
+    #[test]
+    fn puera_stages_its_clips_on_the_arms_that_store_them() {
+        let seats = ModuleCamSeats::default();
+        let pass = |phase, st: &mut ModuleCamState| {
+            st.countdown.0 = 0;
+            let _ = puera_direct(st, phase, seats);
+        };
+        let mut st = ModuleCamState::default();
+        pass(5, &mut st);
+        assert_eq!(
+            (st.creature_stage, st.creature_restage, st.creature_rate),
+            (Some(1), false, Some(8))
+        );
+        st = ModuleCamState::default();
+        pass(7, &mut st);
+        assert_eq!((st.creature_seek, st.creature_rate), (Some(0x1D0), Some(0)));
+        st = ModuleCamState::default();
+        pass(9, &mut st);
+        assert_eq!((st.creature_stage, st.creature_restage), (Some(3), true));
+        st = ModuleCamState::default();
+        pass(10, &mut st);
+        assert_eq!((st.creature_stage, st.creature_restage), (Some(4), false));
+        st = ModuleCamState::default();
+        pass(18, &mut st);
+        assert_eq!((st.creature_stage, st.creature_restage), (Some(5), true));
+    }
 
     #[test]
     fn puera_rings_are_on_their_radii() {

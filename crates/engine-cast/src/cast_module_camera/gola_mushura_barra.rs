@@ -155,7 +155,11 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
                 return held(d);
             }
             st.countdown.0 += S << 7;
-            let yaw = st.live_yaw.map_or(0, i32::from);
+            // The shot reads the yaw global after this pass's drift
+            // (`0x801F74F0..0x801F74FC`, read back at `0x801F7630`): its yaw
+            // gap is zero, so the yaw lane never walks and the drift of arm
+            // `0xE` runs on it.
+            let yaw = st.live_yaw.map_or(0, i32::from) + 4 * P;
             let shot = match (st.target_code, st.target_aim) {
                 (Some(code), Some(a)) if code >= 8 => cut(
                     [0x80, yaw],
@@ -588,5 +592,23 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             finish(caption(shot, ModuleCaption::Cleared))
         }
         _ => ArmDirection::HOLD,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Arm `0xD`'s exit shot reads the yaw global after the pass's own drift
+    /// (`0x801F74F0..0x801F74FC`, read back at `0x801F7630`), so its yaw gap
+    /// is zero and arm `0xE`'s drift runs on.
+    #[test]
+    fn gola_gola_hit_exit_yaw_includes_the_pass_drift() {
+        let mut st = ModuleCamState {
+            live_yaw: Some(1000),
+            ..Default::default()
+        };
+        let d = gola_gola_direct(&mut st, GOLA_GOLA_HIT_ARM, ModuleCamSeats::default());
+        assert_eq!(d.shot.expect("exit shot").angles[1], (1000 + 4 * P) as i16);
     }
 }

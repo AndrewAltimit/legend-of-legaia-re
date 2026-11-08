@@ -60,8 +60,9 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// The commit path names no module, so the rule is the band's; a module joins
 /// this list once its director's stage stores carry their `+0x1DC` bumps
 /// (`ModuleCamState::creature_restage`), which an at-once commit hides.
-const CLIP_GATED_MODULES: [u32; 18] = [
-    918, 920, 907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931, 932, 933, 934,
+const CLIP_GATED_MODULES: [u32; 22] = [
+    905, 910, 911, 918, 922, 920, 907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931,
+    932, 933, 934,
 ];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`

@@ -12,6 +12,8 @@
 use super::*;
 use legaia_engine_battle_loop::barra_flight::*;
 
+use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
+
 impl World {
     /// Apply PROT 0917's arm `phase` writes for one pass of its director;
     /// `passed` is whether the arm's gate let it through, `before` the word
@@ -93,6 +95,9 @@ impl World {
             6 if passed => {
                 if let Some(a) = self.actors.get_mut(v) {
                     set_y_z(a, drop.wrapping_neg(), Some(0));
+                    // `srl v0,v0,0x1; sb v0,0x21d(s3)` (`0x801F7338..0x801F7344`):
+                    // the victim's rate halves until arm 0xD's landing.
+                    a.battle.anim_rate = AnimRate(a.battle.anim_rate.get() >> 1);
                 }
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                     set_y_z(a, 0, Some(0));
@@ -157,6 +162,10 @@ impl World {
                 }
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                     a.battle.render_color = SHOWN_TINT;
+                    // `sll v1,v1,0x1; sb v1,0x21d(s4)` (`0x801F7B84..0x801F7B88`):
+                    // clip 3 and its natural end into clip 4 run at twice the
+                    // creature's rate.
+                    a.battle.anim_rate = AnimRate(a.battle.anim_rate.get().wrapping_shl(1));
                 }
             }
             0xD | 0xE => {
@@ -173,8 +182,11 @@ impl World {
                 {
                     let y = if passed {
                         // `sh zero,0x36(s3)` / `sh zero,0x44(s3)`
-                        // (`0x801F7DE4..0x801F7DEC`): landed, upright.
+                        // (`0x801F7DE4..0x801F7DEC`): landed, upright, and
+                        // `sll v0,v0,0x1; sb v0,0x21d(s3)` (`0x801F7EA4..
+                        // 0x801F7EA8`) gives back arm 6's halving.
                         a.battle.render_pitch = 0;
+                        a.battle.anim_rate = AnimRate(a.battle.anim_rate.get().wrapping_shl(1));
                         0
                     } else {
                         self.casting.module_cam.ramp.clamp(-0x8000, 0) as i16

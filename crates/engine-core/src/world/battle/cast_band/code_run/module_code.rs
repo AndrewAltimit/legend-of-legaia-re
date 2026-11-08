@@ -1713,6 +1713,21 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // A tick body that seats its creature and stages its clip on one pass
+        // (PROT 0910's arm 2, `sb s8,0x1da` / `sb s8,0x1dc` at
+        // `0x801F6DB0..0x801F6DB4` right behind the installer): the host seats
+        // after this tick and the installer zeroes the clip bytes, so the store
+        // waits with the director's for the seat there is
+        // (`Self::apply_seru_seat_writes`).
+        if self.casting.summon_actor_slot != Some(seat_slot)
+            && (self.casting.summon_seat_owed.is_some()
+                || self.casting.pending_summon_spawn.is_some())
+            && seat.staged_anim != seat_orig.staged_anim
+            && seat.staged_anim != 0
+        {
+            self.casting.module_cam.creature_stage = Some(seat.staged_anim);
+            self.casting.module_cam.creature_restage = seat.restage & 1 != 0;
+        }
         // PROT 0903's depth stores: arm 10's pass parks the walk-in's
         // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -
         // re-runs the target-size framing `FUN_801F0348` (`jal` at

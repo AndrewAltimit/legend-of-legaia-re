@@ -578,6 +578,12 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 facing: g,
             });
             st.countdown.add(180);
+            // The seat's stores (`0x801F730C..0x801F733C`): rate `8`, then
+            // `+0x1DA += 1` with the `+0x1DC` bump, so clip 1 commits at once
+            // and arm 8's bare `2` waits for its natural end.
+            st.creature_stage = Some(1);
+            st.creature_restage = true;
+            st.creature_rate = Some(8);
             // `FUN_8003541C(0, 0, name, 0xAC - w / 2, 0x96, ..)` at
             // `0x801F727C`, the spell table's `+8` name, ahead of the seat.
             ArmDirection {
@@ -601,7 +607,13 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             // count `0xFF`), so it plays out into the hover clip.
             st.creature_loop_release = true;
             if st.countdown.drain_non_negative() {
-                st.creature_stage = Some(2);
+                // Arm 5's bumped `1` is still waiting for the seat the host
+                // makes after that pass, and for its commit on the seated
+                // creature: retail's anim tick has committed it by now, and
+                // this bare store only queues the next clip.
+                if st.creature_stage.is_none() && st.creature_clip.is_some_and(|c| c >= 1) {
+                    st.creature_stage = Some(2);
+                }
                 return ArmDirection::HOLD.nudged(drift);
             }
             st.countdown.add(112);
@@ -1120,12 +1132,44 @@ mod tests {
         );
     }
 
+    /// PROT 0905's arm 5 seats the creature with clip 1 at rate 8 and the
+    /// bump; the host lands them after the seat, so a following arm-8 hold
+    /// must not write over them.
+    #[test]
+    fn vera_arm_5_stages_clip_1_with_the_bump() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = -1;
+        let _ = vera_direct(&mut st, 5, seats());
+        assert_eq!(st.creature_stage, Some(1));
+        assert!(st.creature_restage);
+        assert_eq!(st.creature_rate, Some(8));
+        st.countdown.0 = SPEED_SCALAR * 2;
+        assert!(vera_direct(&mut st, 8, seats()).hold);
+        assert_eq!(st.creature_stage, Some(1));
+    }
+
+    /// Arm 8 queues the hover clip only once the bumped clip 1 has committed.
+    #[test]
+    fn vera_arm_8_waits_for_clip_1() {
+        let mut st = ModuleCamState {
+            creature_clip: Some(0),
+            ..Default::default()
+        };
+        st.countdown.0 = SPEED_SCALAR * 2;
+        assert!(vera_direct(&mut st, 8, seats()).hold);
+        assert_eq!(st.creature_stage, None);
+        st.creature_clip = Some(1);
+        assert!(vera_direct(&mut st, 8, seats()).hold);
+        assert_eq!(st.creature_stage, Some(2));
+    }
+
     /// PROT 0905's arm 8 stages hover clip 2 on every held pass and leaves
     /// the exit's clip 3 to the body.
     #[test]
     fn vera_arm_8_holds_the_hover_clip() {
         let mut st = ModuleCamState::default();
         st.countdown.0 = SPEED_SCALAR * 2;
+        st.creature_clip = Some(1);
         assert!(vera_direct(&mut st, 8, seats()).hold);
         assert_eq!(st.creature_stage.take(), Some(2));
         while vera_direct(&mut st, 8, seats()).hold {

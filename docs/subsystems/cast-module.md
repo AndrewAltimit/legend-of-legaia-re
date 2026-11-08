@@ -1701,6 +1701,12 @@ out; the exit stages clip `3`. Ports: the tick body's `VERA_HIDE_ARM` and
 `VERA_CAST_ARM`, and the director's held-pass clip
 (`ModuleCamState::creature_stage`).
 
+Arm 5's pass stages clip `1` beside the seat with the `+0x1DC` bump and rate `8`
+(`0x801F730C..0x801F733C`), so the creature opens on clip `1`; arm 8's bare `2`
+then waits for that clip's natural end, which PROT 0905's place on the band's
+clip-gated list gives it. The host seats the creature after the pass, so the
+director holds its bare `2` until the bumped clip has committed.
+
 ### PROT 0906 (Gizam)
 
 Gizam's tick parks in a phase hole: no arm answers phase 5, and only stager
@@ -1970,6 +1976,12 @@ climbing word `w`).
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>
+
+Arm 2 seats the creature and stages clip `1` with the bump on one pass
+(`sb s8,0x1DA` / `sb s8,0x1DC`, `0x801F6DB0..0x801F6DB4`, right behind the
+installer); the host seats after the tick, so `World::run_cast_module_code` carries a
+store made while a seat is owed or pending onto the next pass, as a director's is.
+Arm 3's bare clip `0` then waits for clip `1`'s natural end (the clip-gated list).
 
 The cast opens on two **opaque** panels that cover the whole frame and fall
 away along a diagonal cut. Both are drawn by the module's own builders, which
@@ -2557,6 +2569,10 @@ byte still up (`8`, one pass into the sustain).
 
 <a id="prot-0918-0922-and-0927-directors"></a>
 
+Gola Gola's arm `0xD` exit shot reads the yaw global back after the pass's own
+drift (`0x801F74F0..0x801F74FC`, the read at `0x801F7630`), so its yaw gap is
+zero and the drift of arm `0xE` runs on it (`gola_gola_direct`).
+
 Kemaro (`0x90`), Puera (`0x94`) and Juggernaut (`0x99`) run a director
 over their hold tables that carries every camera write of the body, read off
 each image's own disassembly: the `FUN_801D829C` cuts on the arms' passes,
@@ -2604,6 +2620,13 @@ not clip `5`'s lunge toward the camera.
 ground grid off the screen
 ([battle-stage-camera.md](battle-stage-camera.md#near-colour-and-depth-cue)),
 which is the black stage of Juggernaut's summoning.
+
+**Puera's clips.** Arm 5 stages clip `1` bare at rate `8`
+(`0x801F6EE4`); arm 7 parks it at cursor `0x1D0` at rate `0`, every pass once
+the cursor reads `0x1C0` or more (`0x801F7070..0x801F7114`); arm 8 walks the
+cursor back a frame product a pass and leaves clip `2` with the bump at rate
+`8` (`0x801F7180..0x801F719C`); arm 9 bumps clip `3`, arm 10 stores `4` bare
+and arm 18 bumps `5` (`0x801F8000`). Port: `cast_module_camera::puera_direct`.
 
 Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
 stores on alternate passes), Kemaro's arm-12 absolute pose store and the
@@ -2814,7 +2837,10 @@ out) while `w <= 0xA0`, the victim on it from `0x51`, and its pass sets the
 victim `drop` under the creature. Arm 9 turns both round a circle,
 `z = 2 sin 8w`, `y = cos 8w - 0x1000`, the victim `drop` off it along the
 radius, both pitched `+0x44 = 8w`, and its pass leaves them at `y = -0x800`,
-pitched `0xC00` into the dive. Arm `0xB` lowers both `8 p` a pass and its
+pitched `0xC00` into the dive. Arm `0xC`'s pass doubles the creature's rate
+`+0x21D` (`sll v1,v1,1` at `0x801F7B84`), so clip `3` runs out into clip `4`
+in time; arm 6's pass halves the victim's rate (`0x801F7338`) and arm `0xD`'s
+landing gives it back (`0x801F7EA4`). Arm `0xB` lowers both `8 p` a pass and its
 pass tints both green (`+0x21C = 8`, the presentation tick's arm 8) and cuts
 onto the creature (focus `z = 2 drop`); arm `0xC`'s pass hangs both at
 `y = -0x2000` and takes the tint off. Arm `0xD` drops the victim `16 p` a
