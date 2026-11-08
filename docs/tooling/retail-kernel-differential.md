@@ -444,3 +444,6 @@ both tinted legs' category byte and the CD-XA voice leg. The animation cue walke
 (`anim_cue_walk`) matches `walk_anim_cues`, and its tally showed what the host dropped: each character cry the
 walk reaches bumps the seat's record `+0x98` before the mute and CD gates (`0x800509BC..0x800509EC`), the word the
 records page prints as Knockouts. Nothing in the port wrote it, so the page read `0` for ever.
+The death arm's credit `0x8004B184..0x8004B29C` (`defeat_credit`) had no port either: a monster's death bumps
+the record `+0x9C` of the party seat holding the action, once, behind the arm's own `+0x1DC` bit 3. That word is
+the records page's Monsters Defeated, not the magic-rank counter it was once read as.

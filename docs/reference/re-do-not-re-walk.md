@@ -425,6 +425,21 @@ cells (`+0x106` / `+0x10A`) right after a level-up, which reads as a refill
 grant ([level-up.md](../subsystems/level-up.md)). A write that lands *near* an event is not a write
 *by* it; a frame-window capture cannot separate the two, only the routine's store set can.
 
+### Record `+0x9C` is not a magic-rank counter
+
+**Tempting reading.** A save pair taken across a magic rank-up moves record `+0x9C` from `9` to
+`10` beside the spell's XP and level bytes, which reads as a rank counter.
+
+**Why it is wrong.**
+
+- **Disassembly.** A monster's death arm in `FUN_8004AD80` bumps `+0x9C` (`sw 0x664` off the save
+  block at `0x8004B1F4`) for the party seat holding the action, and Jedo's instant-kill arm bumps it
+  once per monster it fells. The records page `FUN_801ED710` prints the word under Monsters Defeated.
+  No rank-up path writes it.
+
+**What is true.** The pair's cast felled a monster. The rank lives in the spell-level array
+`+0x161..` ([save-record.md](../formats/save-record.md#the-battle-records-words)).
+
 ### The flash ramp is the Arts announcement banner
 
 **Tempting reading.** `FUN_801E2650` scales a percent into grey, replicates it into RGB, picks GP0

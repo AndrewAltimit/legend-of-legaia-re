@@ -221,6 +221,7 @@ impl World {
         // The monster-death arm: previous entry tagged 4, monster seat, HP 0.
         // It runs whatever bit 2 staged - it re-installs the entry itself.
         if playing == 4 && hp_zero && !is_party {
+            let victim_flags = a.battle.flag_bits.0;
             a.battle.flag_bits.set(ANIM_FLAG_ROOT_LATCH);
             // `sb v1,0x21c(s1)` with `v1 = 2` at `0x8004B66C`: the body enters
             // the defeat fade, whose lanes step to black while the actor holds
@@ -254,6 +255,25 @@ impl World {
                 );
             }
             if slot >= party {
+                // The Monsters Defeated word of the member holding the action
+                // (`0x8004B184..0x8004B1F4`), once per death: the arm's own
+                // `+0x1DC` bit 3 gates it, as it does the cue.
+                let acting = self.battle_ctx.active_actor;
+                let seat = if usize::from(acting) < party {
+                    acting
+                } else {
+                    legaia_engine_battle::battle_steal::PARTY_SEATS
+                };
+                if let Some(seat) =
+                    legaia_engine_battle::battle_steal::defeat_credit(seat, victim_flags)
+                {
+                    let rslot = self.party_roster_slot(usize::from(seat));
+                    if let Some(rec) = self.party.roster.members.get_mut(rslot) {
+                        let mut r = rec.battle_records();
+                        r.monsters_defeated = r.monsters_defeated.wrapping_add(1);
+                        rec.set_battle_records(r);
+                    }
+                }
                 self.resolve_monster_death_spoils(slot);
             }
             if seru_staged {

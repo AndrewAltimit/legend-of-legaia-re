@@ -524,7 +524,7 @@ The persistent party record: stride `0x414` per character at `0x80084708 + n*0x4
 | `+0x00` | Cumulative XP, u32. |
 | `+0x04` | Next-level threshold, u32, rewritten by `FUN_801E9504` (`365 -> 730` across one level-up). |
 | `+0x08..+0x98` | u32 per-spell experience array (36 entries), parallel to the two byte arrays below. |
-| `+0x9C` | Magic-rank mirror. |
+| `+0x9C` | Monsters Defeated, u32: bumped by a monster's death arm for the member holding the action ([records words](../formats/save-record.md#the-battle-records-words)). |
 | `+0xF4..+0x100` | "Active abilities" 16-byte block, ORed into the global mask `0x80074358..0x80074368`. |
 | `+0x104..+0x10E` | HP / MP / AP as `(max, cur)` u16 pairs: maxima at `+0x104` / `+0x108` / `+0x10C`, currents at `+0x106` / `+0x10A` / `+0x10E`. AP is the arts gauge; the AGL stat is the adjacent `+0x110` / `+0x122`. |
 | `+0x110..+0x11A` | Stat maxima capped by the aggregator (`+0x110` at `280`, `+0x112..+0x11A` at `999`). |
@@ -576,12 +576,12 @@ Vahn's record across a single character-level event (Noa and Gala are byte-ident
 | `+0x11C..+0x122` | 6 x u8 | `67/1C/13/10/16/0B -> 6B/20/15/12/1A/0F` | Per-stat increments `+4 +4 +2 +2 +4 +4`. |
 | `+0x130` | u8 | `0x02 -> 0x03` | Displayed level. |
 
-Across a single magic-rank-up event:
+Across a single magic-rank-up event (the cast also felled a monster):
 
 | Offset | Width | Before -> after | Reading |
 |---|---|---|---|
 | `+0x08` | u32 | `0x30 -> 0x3C` | `spell_counter[0]`, +12. |
-| `+0x9C` | u8 | `0x09 -> 0x0A` | Magic-rank mirror. |
+| `+0x9C` | u32 | `0x09 -> 0x0A` | Monsters Defeated: the cast's kill, not the rank. |
 | `+0x10A` | u16 | `0x1B -> 0x11` | MP current: the cast that earned the rank. |
 | `+0x161` | u8 | `0x02 -> 0x03` | Spell-level byte. |
 

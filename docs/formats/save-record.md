@@ -194,6 +194,24 @@ actor (`+0x14C != 0`) whose action category is the attack/arts band
 and `engine-core` runs both leaves from the live battle flow - see
 [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
+## The battle-records words
+
+The records page `FUN_801ED710` prints four per-character `u32` words, capped at
+999 on screen only. Retail addresses them off the save block `0x80084140`, so
+each displacement there is the record offset plus `0x5C8`. Each has its writers
+in battle code, and the port (`legaia_save::BattleRecords`) writes them where
+they do.
+
+| Offset | Page label | Writer |
+|---|---|---|
+| `+0x98` | Knockouts | The battle cue walker `FUN_800508DC`, once per character cry it reaches, ahead of the mute and CD gates (`0x800509BC..0x800509EC`). |
+| `+0x9C` | Monsters Defeated | A monster's death arm in `FUN_8004AD80`, for the seat holding the action when it is a party seat, behind the arm's own `+0x1DC` bit 3 (`0x8004B184..0x8004B1F4`); and the instant-kill arms of the cast modules (Jedo's at `0x801F8658`). |
+| `+0xE8` | Max Damage | The combo readout pass `FUN_801E805C`, keeping the larger of the word and the string total `DAT_8007BD14` (`0x801E8964..0x801E897C`). |
+| `+0xEC` | Max Hits | The same pass, keeping the larger of the word and the hit count `ctx[+0x273]` (`0x801E89B8..0x801E89D0`). |
+
+`+0x9C` was once read as a magic-rank counter off a save pair taken across a
+rank-up: the same cast had felled a monster.
+
 ## Cheat-database citations
 
 Every offset above is named after an empirical write target in the
@@ -266,8 +284,8 @@ store two instructions later - and read nowhere. A displacement sweep over
 displacements off the `0x80084140` block the menu overlay addresses records
 through) returns that single store, and no halfword or word access spans
 `+0x130..+0x131` either - every level reader in the corpus is a `lbu` at `+0x130`
-/ `0x6f8`. The magic-rank counter is a different byte, capture-pinned at record
-`+0x9C` ([battle.md](../subsystems/battle.md)). The runtime accessor
+/ `0x6f8`. Nor is `+0x9C` a rank counter, as it was once read: it is the
+Monsters Defeated word ([below](#the-battle-records-words)). The runtime accessor
 `legaia_save::CharacterRecord::magic_rank()` reads this byte, so it is in fact the
 **level** byte under a legacy name, and `level()` / `set_level()` read and write the
 same byte. `+0x100` is not a level cell: it is word 3 of the ability bitfield

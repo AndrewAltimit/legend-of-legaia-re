@@ -23,6 +23,7 @@ mod common;
 mod confuse;
 mod dance_floor;
 mod death_spoils;
+mod defeat_credit;
 mod dialog_pager;
 mod element_change;
 mod encounter_roll;

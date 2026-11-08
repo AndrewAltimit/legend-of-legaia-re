@@ -253,7 +253,7 @@ pub fn horn_seat_xp_gain(hp: u16, max_hp: u16, status_word_nonzero: bool) -> u32
 /// slot-7 tail credits XP per hit as for every damaging summon); any other
 /// fight takes the arm at `0x801F8558`, which strikes nothing and instead, for
 /// each monster seat `3..=6` whose HP `+0x14C` is non-zero, bumps the caster's
-/// magic-rank counter (record `+0x9C`, `0x801F8658`), sets the seat's `+0x21C`
+/// Monsters Defeated word (record `+0x9C`, `0x801F8658`), sets the seat's `+0x21C`
 /// to `0xC8`, and adds `3` to the cast spell's XP word (`0x801F86C0`) behind
 /// the special-battle word.
 ///

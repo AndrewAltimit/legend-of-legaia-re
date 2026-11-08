@@ -683,8 +683,8 @@ impl CharacterRecord {
     /// "Magic Rank, level derived from XP" reading is superseded for the level
     /// question, and the adjacent `+0x131` is not the magic-rank byte: the new-game
     /// seed's `sb $v0, 0x6f9($s0)` at `0x800561C8` is its only writer on the disc and
-    /// nothing reads it, while the magic-rank counter is capture-pinned at record
-    /// `+0x9C`. See `docs/formats/save-record.md`.
+    /// nothing reads it. `+0x9C`, once read as a rank counter, is the Monsters
+    /// Defeated word ([`BattleRecords`]). See `docs/formats/save-record.md`.
     pub fn magic_rank(&self) -> u8 {
         self.level()
     }

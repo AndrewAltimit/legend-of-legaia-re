@@ -104,6 +104,26 @@ impl StealBand {
     }
 }
 
+/// Retail's party seats: `ctx[+0x13] < 3` is a party member holding the action.
+pub const PARTY_SEATS: u8 = 3;
+
+/// The `+0x1DC` bit a monster's death arm raises at its end (`0x8004B670`).
+/// The defeat credit and the defeat cue both sit behind it, so they land on the
+/// first pass of the finished knockdown only.
+pub const DEATH_ARM_DONE: u8 = 0x08;
+
+/// Which party seat a monster's death credits on its record's Monsters Defeated
+/// word (`+0x9C`): the seat holding the action, `ctx[+0x13]`, when it is a party
+/// seat and the victim's `+0x1DC` bit 3 is still clear. `None` credits nobody -
+/// a monster that holds the action (a Confused monster's blow, a counter) earns
+/// the party nothing.
+///
+// PORT: FUN_8004AD80 (`0x8004B184..0x8004B1F4`: `lbu +0x1DC`, `andi 8`, the
+// `ctx[+0x13] < 3` test and the `lw` / `addiu 1` / `sw 0x664` off the save block)
+pub fn defeat_credit(acting_seat: u8, victim_flags: u8) -> Option<u8> {
+    (victim_flags & DEATH_ARM_DONE == 0 && acting_seat < PARTY_SEATS).then_some(acting_seat)
+}
+
 /// Everything the steal-attack leg reads besides the band and the rand.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StealAttackInputs {

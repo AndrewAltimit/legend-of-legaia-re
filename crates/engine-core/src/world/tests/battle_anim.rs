@@ -1872,3 +1872,34 @@ fn a_hidden_body_sheds_no_impact_sprites() {
     assert_eq!(w.rng_state, before, "a hidden body is not decoded");
     assert_eq!(w.actors[0].battle.impact_state, 2);
 }
+
+/// A monster's finished knockdown on zero HP credits the member holding the
+/// action on its record's Monsters Defeated word (`+0x9C`), once: the death
+/// arm's own `+0x1DC` bit 3 gates the credit on the passes after the first,
+/// and a monster holding the action credits nobody.
+#[test]
+fn a_monster_death_credits_the_acting_member() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.enter_battle(2, 1);
+    let monster = usize::from(world.party.party_count);
+    let clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    world.set_actor_battle_action_clips(monster, std::sync::Arc::new(clips));
+    world.actors[monster].battle_monster_id = Some(0x40);
+    world.actors[monster].battle.hp = 0;
+    world.battle_ctx.active_actor = 1;
+    let rslot = world.party_roster_slot(1);
+    for _ in 0..3 {
+        world.finish_battle_reaction(monster, 4);
+    }
+    let defeated =
+        |w: &World, r: usize| w.party.roster.members[r].battle_records().monsters_defeated;
+    assert_eq!(defeated(&world, rslot), 1, "one credit per death");
+    assert_eq!(defeated(&world, world.party_roster_slot(0)), 0);
+
+    // A monster holding the action credits nobody.
+    world.actors[monster].battle.flag_bits = legaia_engine_battle_vm::battle_action::ActorFlags(0);
+    world.battle_ctx.active_actor = monster as u8;
+    world.finish_battle_reaction(monster, 4);
+    assert_eq!(defeated(&world, rslot), 1);
+}
