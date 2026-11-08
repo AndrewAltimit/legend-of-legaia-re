@@ -932,6 +932,15 @@ impl WallTable {
     }
 }
 
+/// Forget the remembered unreachable components at a new hop. [`UNREACHED`] is
+/// keyed on the scene, flags and avoid set, not on the NPC bodies a search
+/// stood against, so a failure remembered on one walk can steer a later
+/// one: `tunnelb`'s crossing planned straight to a corner another run's
+/// bodies had left unreached and stalled on a wall.
+pub(super) fn forget_unreached() {
+    UNREACHED.with(|u| u.borrow_mut().clear());
+}
+
 thread_local! {
     static PLAN_MEMO: std::cell::RefCell<PlanMemo> = std::cell::RefCell::new(PlanMemo::default());
     static WALL_TABLE: std::cell::Cell<Option<WallTable>> = const { std::cell::Cell::new(None) };

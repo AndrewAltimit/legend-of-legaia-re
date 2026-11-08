@@ -187,6 +187,9 @@ pub(super) fn released(session: &NativeSession) -> bool {
 /// A beat that reaches the milestone it is played for stops there, fight or
 /// no fight: `chitei2` P2[11] sets the `0x470` its milestone waits on, then
 /// stages a battle that belongs to the next stretch.
+/// Ticks after a committed fight's battle before the idle count starts.
+const AFTER_BATTLE_SETTLE_TICKS: usize = 12;
+
 pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
     if !matches!(r, Run::Released) || !session.host.world.field_scripts_held_for_battle() {
         return r;
@@ -200,6 +203,18 @@ pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
         if session.host.world.mode == SceneMode::Battle {
             if let Some(r) = drain_battle(session) {
                 return r;
+            }
+            // The post-fight record starts a few ticks after the mode returns
+            // (`tunnelc` P1[4], five after Xain's battle, the tick the release
+            // count below reaches its four idle ticks): idle is not counted
+            // until it has had the time to spawn.
+            for _ in 0..AFTER_BATTLE_SETTLE_TICKS {
+                session.host.world.set_pad(0);
+                match session.tick() {
+                    Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+                    Ok(_) => {}
+                    Err(e) => return Run::Error(format!("{e:#}")),
+                }
             }
             return run_while_moving(session, DEEP_EXIT_TICKS);
         }
