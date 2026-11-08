@@ -101,7 +101,7 @@ pub(super) fn run_escape<H: BattleActionHost + ?Sized>(
 ///   copies the monster's name into it (`FUN_8003CA78` / `FUN_8003CAC4` -
 ///   host-side rendering concerns), and opens the run UI banner
 ///   (`FUN_801D8DE8(0x43, 0)` - surfaced as `ui_element(0x43, 0)`).
-pub(super) fn capture_takedown<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
+pub fn capture_takedown<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
     let anim = monster_action_by_tag(host, slot, WALK_TAG);
     if let Some(actor) = host.actor_mut(slot) {
         if let Some(anim) = anim {

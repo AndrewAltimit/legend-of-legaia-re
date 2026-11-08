@@ -508,3 +508,6 @@ monster at seat `7` keeps its rate, where the port restored its own compacted sl
 `FUN_8004AD80` that the restore undoes walk the same seven (`0x8004B740`, `0x8004BB74`), and the port slowed every
 actor; both now walk the table's seats. The monster arm's record table is `0x801C9348`, ten words ahead of the actor
 table.
+The action SM's HP-bar settle check `FUN_801E7250` (`hp_bar_settle`), the capture takedown `FUN_801E7824`
+(`capture_takedown`) and the side-band transfer sequencer `FUN_801F17F8` (`stream_slot`, its libcd calls logged
+against the steps `StreamSlotSm` hands its host) match over every formation, target code and stage.

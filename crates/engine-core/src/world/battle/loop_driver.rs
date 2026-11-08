@@ -139,6 +139,30 @@ impl World {
         self.battle_ctx = ctx;
     }
 
+    /// The action SM's `0x51` HP-bar settle check on its own
+    /// (`legaia_engine_battle_vm::battle_action::hp_bar_drain_pending`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E7250
+    pub fn battle_hp_bar_drain_pending(&mut self) -> bool {
+        let ctx = self.battle_ctx.clone();
+        let host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::hp_bar_drain_pending(&host, &ctx)
+    }
+
+    /// The capture takedown the action SM's state `0x68` runs on a captured
+    /// monster's seat, on its own
+    /// (`legaia_engine_battle_vm::battle_action::capture_takedown`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E7824
+    pub fn battle_capture_takedown(&mut self, slot: u8) {
+        let mut host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::capture_takedown(&mut host, slot);
+    }
+
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
     /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`].
     ///

@@ -18,7 +18,7 @@ const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX_PTR: u32 = 0x8007_BD24;
 const CTX: u32 = 0x8012_0000;
 const ACTORS: u32 = 0x801C_9370;
-/// Per-monster art-record tables, monster `k` (seat `3 + k`) at `+k*4`.
+/// Monster records (clip pointers from `+0x4C`), monster `k` (seat `3 + k`) at `+k*4`.
 const MONSTER_RECORDS: u32 = 0x801C_9348;
 const CLIPS: u8 = 6;
 
