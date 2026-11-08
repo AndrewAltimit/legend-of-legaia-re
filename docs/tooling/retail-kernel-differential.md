@@ -476,6 +476,11 @@ and the port's stays at its end: the channels sit on the target either way. A ze
 `div` (`0x80020B84`) has no `break` guard, so the R3000's quotient ships, `-1` for a non-negative difference and `1`
 for a negative one, and the first tick clamps onto the target; the port had divided by one, and a frame step above
 one then overflowed the channel. No shipped template has a zero duration.
+The two scans of a caster's learned-spell list in the battle overlay (`spell_list_scans`), the killing blow's
+already-known Seru test `FUN_801E91E8` and the summon return's "No effect." pass `FUN_801F3C34`, match over lists of
+every length and every gate once the first compares as the bytes do: `id - 0x80` is a word (`0x801E92B0`), so an id
+below `0x80` goes negative and matches no token, where the port's byte subtract wrapped it onto a token of `0x80`
+or more. A Seru id is small and a list holds spell ids, so no game reaches it.
 The field VM's context stores (`field_ctx`), every distinct instruction on the disc run on a context of generated
 bytes with `step` beside it, found three: op `0x4B` writing its keyframe count over `+0x6D` (the face-rotation byte)
 where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit in its two tile bytes `+0x8C` /

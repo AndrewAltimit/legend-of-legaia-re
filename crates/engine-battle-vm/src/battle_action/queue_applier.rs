@@ -688,8 +688,12 @@ pub fn learned_seru_position(token: u8, pending: bool, spell_ids: &[u8]) -> u8 {
     if !pending {
         return 1;
     }
+    // The compare is a word compare of `id - 0x80` (`addiu v0,v0,-0x80` at
+    // `0x801E92B0`) against the token's byte: an id below `0x80` goes
+    // negative and matches nothing, where a byte subtract would wrap it
+    // onto a token of `0x80` or more.
     for (i, &c) in spell_ids.iter().enumerate() {
-        if token == c.wrapping_sub(0x80) {
+        if i32::from(token) == i32::from(c) - 0x80 {
             return (i as u8).wrapping_add(1);
         }
     }
