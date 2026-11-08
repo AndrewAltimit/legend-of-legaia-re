@@ -7,8 +7,10 @@
 //! the disc says what a frame costs. Each entry is the step one recording
 //! (`scripts/ci/cast-sequence.py`, `meta.csv`'s `step`, the Gobu Gobu fight, the
 //! value the arm spends the most vsyncs on) on the emulator's cost model. An arm
-//! too short to read takes the arm before it; a `0` is an arm no recording has
-//! reached.
+//! one battle frame long reads that frame's length in vsyncs instead: the `step`
+//! column lags the frame that set it, and the arm's one pass drains by that
+//! length (Gimard's arm 7 reads `1, 1, 1, 4` and drains `32`). An arm too short
+//! to read takes the arm before it; a `0` is an arm no recording has reached.
 //!
 //! What the reading is good for and where it stops is on that page. In short, a
 //! whole-screen arm reads the same in every fight, an arm that shows the stage
@@ -22,21 +24,21 @@
 /// `(PROT entry, step by module phase)`.
 const ARM_STEPS: &[(u32, &[u8])] = &[
     // gimard
-    (903, &[0, 0, 1, 1, 4, 4, 1, 1, 4, 4, 4, 4, 4]),
+    (903, &[0, 0, 1, 1, 4, 4, 1, 4, 4, 4, 4, 4, 4]),
     // theeder
     (904, &[0, 0, 1, 1, 1, 4, 3, 3, 3, 4, 4, 3, 4, 4, 4]),
     // vera
     (905, &[0, 0, 2, 2, 4, 4, 4, 4, 4, 4, 4]),
     // gizam
-    (906, &[0, 0, 0, 1, 1, 4, 4, 3, 3, 4, 4, 4, 4, 4, 2]),
+    (906, &[0, 0, 0, 1, 1, 4, 4, 3, 4, 4, 4, 4, 4, 4, 2]),
     // nighto
     (907, &[0, 0, 0, 1, 1, 4, 3, 4, 3, 3, 3, 4, 4, 4, 4, 4]),
     // zenoir
     (908, &[0, 0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // viguro
-    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4]),
+    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 3, 4, 4, 4, 4]),
     // swordie
-    (910, &[0, 0, 1, 4, 4, 4, 3, 4, 4, 4, 4]),
+    (910, &[0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // orb
     (911, &[0, 0, 1, 4, 4, 3, 3, 3, 3, 3, 4]),
     // freed
@@ -48,7 +50,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     (
         913,
         &[
-            0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 3,
+            0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 3,
         ],
     ),
     // gola
@@ -72,7 +74,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // slippery
     (920, &[0, 0, 1, 3, 3, 3, 4, 4, 4, 4, 4]),
     // iota
-    (921, &[0, 0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4]),
+    (921, &[0, 0, 1, 2, 4, 4, 4, 4, 4, 4, 4, 4]),
     // puera
     (
         922,
@@ -132,7 +134,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     (
         934,
         &[
-            0, 0, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3,
+            0, 0, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 4, 4, 3,
         ],
     ),
 ];
