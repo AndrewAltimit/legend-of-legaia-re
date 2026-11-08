@@ -754,3 +754,25 @@ fn text_site_separates_dialog_from_operand_runs_and_unwalked_text() {
     );
     assert!(apply_text_edits(&man, &[edit(hi)]).is_ok());
 }
+
+#[test]
+fn partition0_scene_change_is_found_from_its_own_header() {
+    // Partition-0 header `[n=1]["AB"][attr]` (pc0 = 4), then `25`, a
+    // `4A 10 00` wait and the scene change: an overworld's object-bound
+    // entrance. The partition-1 formula (pc0 = 7) starts on the wait's
+    // `00` operand and desyncs before the `0x3F`.
+    let mut rec = vec![0x01, b'A', b'B', 0x00, 0x25, 0x4A, 0x10, 0x00];
+    rec.extend(scene_change_op(94, b"garmel", 0x14, 0x09, 0x04));
+    rec.extend([0x26, 0xFF, 0xFF]);
+    let man = build_man_parts(&[rec], &[], &[]);
+    let sites = scene_change_sites(&man);
+    assert_eq!(sites.len(), 1, "the partition-0 site is found");
+    assert_eq!(sites[0].partition, 0);
+    assert_eq!(sites[0].name, "garmel");
+    assert_eq!(
+        (sites[0].entry_x, sites[0].entry_z, sites[0].dir),
+        (0x14, 0x09, 0x04)
+    );
+    assert_eq!(site_record_slots(&man, &sites), vec![Some(0)]);
+    assert_eq!(site_p2_slots(&man, &sites), vec![None]);
+}
