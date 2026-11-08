@@ -1066,8 +1066,12 @@ after `+0x6E` starts with that leg, not after it. `map01`'s cave-mouth record
 walks the player out of the cave this way; the disassembler prints the op as
 `Yield (Standard)`, which is its dispatch class, not what it does. A record
 that waits for a player gesture pokes the clip and spins on its end latch
-(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
-scene bank the spin lasts the clip's frames. A talk's lead waits on the
+(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and the spin lasts the clip's
+frames whichever bank it binds from: `FUN_800204F8` raises the latch at the end
+of a pass for a clamped clip and a looping one alike (`0x800206E4..0x8002072C`,
+grade: disassembly), and the bank only picks the pointer (`0x80020524..0x800205A8`).
+`town01`'s Tetsu scene waits 14 vsyncs on `A2 F8 04` under the party-bank bit,
+a 7-frame clip at rate 8 (grade: capture). A talk's lead waits on the
 talker's **own** latch the same way (`2C 08` / `2D 08`); where the port holds
 no clip cursor for that talker the wait is a clip of no length and the
 record runs on from the op behind it, since the grant and the flag a chest

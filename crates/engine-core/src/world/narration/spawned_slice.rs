@@ -1235,13 +1235,18 @@ impl World {
                         // the clip base and is picked + bound at once.
                         let pick = host.world.field_player_script_clip(move_id);
                         // The end latch a following `AD F8 08` waits on lands
-                        // when a scene-bank clip has played its frames; a
-                        // party-bank clip (the locomotion loops) is not timed.
+                        // when the clip has played its frames, whichever
+                        // bank it binds from: `FUN_800204F8` latches at the
+                        // end of a pass for a clamp and a wrap alike
+                        // (`0x800206E4..0x8002072C`).
+                        use legaia_engine_field::field_player_clip::ClipBank;
                         tl.player_clip_ticks = match pick.bound() {
-                            Some((
-                                legaia_engine_field::field_player_clip::ClipBank::Scene,
-                                record,
-                            )) => host.world.player_scene_clip_end_ticks(record),
+                            Some((ClipBank::Scene, record)) => {
+                                host.world.player_scene_clip_end_ticks(record)
+                            }
+                            Some((ClipBank::Party, record)) => {
+                                host.world.player_party_clip_end_ticks(record)
+                            }
                             _ => 0,
                         };
                         // Cue the scripted player clip: the windowed host

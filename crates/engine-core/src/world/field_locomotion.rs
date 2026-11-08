@@ -301,6 +301,13 @@ pub struct FieldLocomotion {
     /// cursor from when a script pokes a scene-bank clip onto it
     /// (`World::bind_npc_scene_clip`).
     pub scene_clip_meta: Vec<(u16, bool, u8)>,
+    /// `(frame count, blend gate, step divisor)` of every record of the
+    /// party locomotion bundle (PROT 0874 section 1), indexed by record -
+    /// the leader's bank strided by [`legaia_engine_field::field_player_clip::party_bank_slot`]'s
+    /// base. Seeded by the scene host from the disc, so the end latch of a
+    /// party-bank clip a script pokes onto the player is timed on every
+    /// host, a headless one included. Empty with no bundle.
+    pub party_clip_meta: Vec<(u16, bool, u8)>,
     /// The player's clip rate `actor+0x6A`: `8` from every frame the pad step
     /// runs (`FUN_801D01B0` stamps it), else what a cutscene's `CC F8 41`
     /// set (halved, floor `1`). The player's picked clip steps at it.
@@ -402,6 +409,7 @@ impl FieldLocomotion {
             player_move_cues: Vec::new(),
             scene_clip_ticks: Vec::new(),
             scene_clip_meta: Vec::new(),
+            party_clip_meta: Vec::new(),
             player_clip_rate: legaia_engine_field::field_anim::CLIP_RATE as i16,
             clip_base: legaia_engine_field::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_field::field_player_clip::BASE_IDLE as i16,
