@@ -513,11 +513,7 @@ fn the_menu_framings_are_retails() {
             i32::from(tr[0]),
             i32::from(tr[1]),
             raw,
-            [
-                -i32::from(foc[0]),
-                -i32::from(foc[1]),
-                -i32::from(foc[2]),
-            ],
+            [-i32::from(foc[0]), -i32::from(foc[1]), -i32::from(foc[2])],
         );
         let got = (
             pose.pitch as i32,

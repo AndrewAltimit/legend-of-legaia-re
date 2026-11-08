@@ -82,7 +82,10 @@ fn the_glide_stepper_is_retails() {
             };
             let total = g.total;
             let step_out = g.step(step);
-            let written = (cpu.mem.rd16(handle + 0xA) as i16, cpu.mem.rd16(handle + 0xC) as i16);
+            let written = (
+                cpu.mem.rd16(handle + 0xA) as i16,
+                cpu.mem.rd16(handle + 0xC) as i16,
+            );
             match step_out {
                 GlideStep::Moving { pos, remaining } => {
                     moved += 1;

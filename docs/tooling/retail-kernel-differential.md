@@ -526,3 +526,15 @@ player) as retail leaves `+0x74` / `+0x78`; the tile warp `0x23` lands its tile,
 context it names. What the first pass still counts as left to the host is the floor sample and the cull a warp
 calls, and the cross-context ops whose target state the port keeps off the context: the rotate `B8` and arc `C3`
 legs' halt bit and ramps, `4C C3`'s re-seat on the placement, and the player-aimed `3E` / `4C DA` / `4C E3` stores.
+The per-art attack camera `FUN_801D71B8` (`attack_camera`), every character, art id, selector and animation cursor,
+matches `attack_camera_framing`, and found the art `0x1A` arms' writes to the target's additive fade `+0x226`
+(`0x801D7BCC..0x801D7C2C`, cleared at `0x801D7408` / `0x801D7768` / `0x801D7C4C`) with no port: the target of a
+Super Art's opening window never dimmed under it, and the tint pass's `+0x226` arm read `0` for ever.
+The framing cases of `FUN_801D5854` against `framing_case_pose` and the pure poses (`battle_framing`) found case 7's
+midpoint truncating where the bytes floor (`0x801D662C`) and its pull-in missing the staged id `0x11`; case 8 off Close
+skipping its target arms even in a scripted fight once the results word `_DAT_8007BD2C` is up (`0x801D69CC..0x801D69EC`),
+Normal not walking the live yaw on by `4 * step / 3` at the battle-over signal (`0x801D6978..0x801D69A4`), and the
+scripted tail off Close (`0x801D6E84..0x801D6EDC`, live pitch and height over a fixed depth `0x600`) unported; and the
+far framing's box, whose midpoint floors, built over fallen seats where the walk gates on live HP (`0x801D7000`). Cases
+0, 1 and 3 match. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
+typewriter count `FUN_80036044` (`glyph_count`) and the cast dispatchers `FUN_801F1ED4` / `FUN_801F2160` (`cast_dispatch`) match.

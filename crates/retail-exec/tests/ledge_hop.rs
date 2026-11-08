@@ -32,7 +32,8 @@ fn a_ledge_hops_where_retail_hops() {
         .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
     cpu.mem.wr32(MAP_PTR, MAP);
     cpu.stub(SWEEP, 0);
-    let arcs: Rc<RefCell<Vec<(i16, i16, i16, u32, u32)>>> = Rc::default();
+    type Arc = (i16, i16, i16, u32, u32);
+    let arcs: Rc<RefCell<Vec<Arc>>> = Rc::default();
     {
         let arcs = arcs.clone();
         cpu.hook(ARC, move |r, m| {
@@ -88,8 +89,8 @@ fn a_ledge_hops_where_retail_hops() {
                 (-1, -1),
             ][rng.below(11) as usize];
             let (x, z) = (
-                0x400 + rng.below(0x3400) as i16 & !1,
-                0x400 + rng.below(0x3400) as i16 & !1,
+                (0x400 + rng.below(0x3400) as i16) & !1,
+                (0x400 + rng.below(0x3400) as i16) & !1,
             );
             let floor = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
             cpu.mem.wr16(ACTOR + 0x14, x as u16);

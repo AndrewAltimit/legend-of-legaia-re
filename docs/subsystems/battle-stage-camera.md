@@ -1333,15 +1333,18 @@ it in four places, each making the action shots calmer as it rises:
 | case 7 pull-in `0x801D6724` | allowed | - | - |
 | case 8 `0x801D6958..0x801D69EC`: yaw | built | built | the live `_DAT_8007B792` |
 | case 8's dead- / live-target arms | run | skipped | skipped |
+| case 8 yaw at the battle-over signal | built | live `_DAT_8007B792` + `4 * step / 3` | live |
 | `FUN_801D71B8` call `0x801D7138` | run | run | skipped |
 
 Case 8 keeps its arms on Normal / Far in a scripted fight (`ctx[+0x287]`) once
-the results phase word `_DAT_8007BD2C` is non-zero.
+the results phase word `_DAT_8007BD2C` is non-zero. A scripted fight off Close
+also takes the tail at `0x801D6E84`: at the battle-over signal the shot holds
+the live pitch and height over the fixed depth `0x600`.
 
 Port: `World::toggles.battle_camera`, pushed by `engine-core::options::apply_to_world`
-on both hosts and read through `BattleCamera::set_camera_option`. Two parts are
-not carried: the scripted-fight exception above, and the skipped setup-band
-orbit store (the port runs one orbit for both of retail's writers).
+on both hosts and read through `BattleCamera::set_camera_option`. One part is
+not carried: the skipped setup-band orbit store (the port runs one orbit for
+both of retail's writers).
 
 <a id="the-battle-frame-step-is-the-frames-own-cost"></a>
 

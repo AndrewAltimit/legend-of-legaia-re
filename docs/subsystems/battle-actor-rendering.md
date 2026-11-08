@@ -33,7 +33,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | `+0x1EF..+0x1F3` | Reaction-clip map, one slot per action tag `2/3/4/5/0xB`. |
 | `+0x21C` | Render flag (`1` solo-commit bystander dim, `2` capture / defeat fade, `0xC8` cursor dim). |
 | `+0x21D` | Animation-rate scalar, normal `8`. |
-| `+0x226` | Additive fade. |
+| `+0x226` | Additive fade, written by the per-art camera's art `0x1A` arms (`FUN_801D71B8`). |
 | `+0x22C` / `+0x230` | Radius source for the distance fade / mesh pointer. |
 
 | Port piece | Where |
