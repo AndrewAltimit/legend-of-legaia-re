@@ -995,6 +995,17 @@ state has no cue voice sounding at its first sample (no voice record owned `0x21
 whole-window energy ratio, and the [`cast` channel](../subsystems/audio.md#the-cast-channel),
 which renders it, reads `+0.01` dB.
 
+### Retail does not park a key-on behind an SPU transfer
+
+`FUN_8006B854` forks on `_DAT_8007AF38 & 1` into shadow accumulators instead of the KON
+register, and the word reads like a transfer-busy flag, so a retail key-on trailing the
+port's by a vsync or three (a key-on census on `rugi`, the extra key-on on `dolk2_market_noa`,
+one held note in `theeder_summon_mid_cast`) read as a mask parked behind a busy DMA. The
+word is libspu's event-queueing switch and its only store in any image is `SpuInit`'s zero,
+and a PCSX-Redux watch of the calc and every KON write finds each KON inside the calc that
+staged it ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
+Modelling SPU transfer timing would move no key-on.
+
 ### The cue funnels' de-dup word is not dead
 
 `0x8007B724` read as `-1` for the whole of a mode, because the search for its writers

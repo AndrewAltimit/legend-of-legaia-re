@@ -528,12 +528,14 @@ to a frame step. What is left is the score's held notes, not its keying and not 
 So retail keyed one note of that score a vsync later than a run from the top does. Standing the held
 notes on the state's SPU instead (decoder, pitch counter, envelope, one vsync short of the match for
 the port's KON lead) moved the cast row to `0.79` but cost the clean track rows a little, and it was
-not kept. What closes it: the frame the game ran around that key-on - a state or a PCSX-Redux
-key-on watch (`autorun_kon_cycle_watch.lua`) on the battle that leads into this cast, to see whether
-the calc skipped or doubled a vsync there, or whether `FUN_8006B854` parked that KON behind a busy SPU
-transfer (`_DAT_8007AF38 & 1`, the branch at `0x8006B88C`), which defers a key-on by whole vsyncs and
-which the port does not model. The silent history's phase is ruled out: seated on the state's index,
-the keying differential reads no `key` or `voice` row on `2013` and the cast row does not move.
+not kept. Two readings are ruled out. The silent history's phase: seated on the state's index,
+the keying differential reads no `key` or `voice` row on `2013` and the cast row does not move. A
+parked KON: the KON path never defers ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
+A skipped calc would put retail's voice ahead, not behind, and the calc runs once a vsync wherever it
+has been watched. What is left is a calc doubled in one vsync, or a voice whose playback stood still
+for one (a re-key or a pitch write on the same voice). What closes it: a state from the battle that
+leads into this cast, run under `autorun_seq_calc_clock.lua` with a watch on that voice's pitch and
+KON bits; the library holds no state of that fight before the cast.
 
 ### When does a ring cue sound against the frame that pushed it?
 

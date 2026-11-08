@@ -1544,7 +1544,7 @@ The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the r
 | `FUN_8006954C(mode)` | SPU transfer/DMA reset | ORs `0xB0000` into `SPUCNT`, warm-transfers 0x10 bytes via `FUN_800697E0`, and spins `FUN_8006A078` settle delays while polling for the reset to settle; on timeout logs `"SPU_T/O:%s"` (`wait` / `reset`). |
 | `FUN_80062228()` | voice-block hardware clear | Zeroes the 24-voice register block from `0x1F801C00` and the reverb work area at `0x1F801D80`, then `FUN_80065FE8` (all-voice reset). The SPU half of a full audio-subsystem reset. |
 | `FUN_800699AC()` | SPU DMA settle+kick | `FUN_8006A078` settle then `FUN_8005BD30(0xF0000009, 0x20)` - kicks the SPU DMA channel for a zero-fill sweep. |
-| `FUN_8006B854(mode, mask24)` | `SpuSetKey` (KON/KOFF) | Writes a 24-bit voice mask to the SPU **KOFF** register (`_DAT_8007AF40 +0x18C/+0x18E`, `mode==0`) or **KON** (`+0x188/+0x18A`, `mode==1`). When the transfer-busy flag `_DAT_8007AF38 & 1` is set it stages the mask into shadow accumulators (`_DAT_801CE518..51E`, `_DAT_8007AB00/AB04`) for a deferred flush instead of touching hardware. |
+| `FUN_8006B854(mode, mask24)` | `SpuSetKey` (KON/KOFF) | Writes a 24-bit voice mask to the SPU **KOFF** register (`_DAT_8007AF40 +0x18C/+0x18E`, `mode==0`) or **KON** (`+0x188/+0x18A`, `mode==1`). Under `_DAT_8007AF38 & 1` it would stage the mask into shadow accumulators (`_DAT_801CE518..51E`, `_DAT_8007AB00/AB04`) for a later flush; that is libspu's event-queueing mode, and Legaia never enters it ([below](#a-key-on-is-never-deferred)). |
 
 Provenance: `see ghidra/scripts/funcs/800693d8.txt`, `8006954c.txt`, `80062228.txt`, `800699ac.txt`, `8006b854.txt`.
 
@@ -2153,10 +2153,8 @@ Not modelled:
   drain are collapsed) - fine because the playback layer reads SPU RAM directly
   during voice ticks. The model preserves the *API shape*
   (`set_transfer_start_units_8` / `set_direction` / `write`) so the libspu
-  callers map cleanly. One measurable consequence: retail parks a KON mask
-  while a transfer is busy, which the [key-on
-  census](#count-the-key-ons-not-the-edges) sees as a lag of up to three
-  vsyncs.
+  callers map cleanly. No key-on waits on a transfer in retail either
+  ([below](#a-key-on-is-never-deferred)).
 
 ## SFX bank + scheduler
 
@@ -3220,9 +3218,10 @@ comparison honest:
 - **Match key-on for key-on, with retail's lag.** Each retail KON takes the
   nearest unclaimed engine key-on up to three vsyncs earlier or one later.
   The engine writes a key-on at the flush of the vsync its note fires in;
-  retail's can trail that, because `FUN_8006B854` parks the mask while an SPU
-  transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`,
-  enough on a sparse score to put a strict alignment on the wrong bar.
+  on `rugi` the census's KON rows trail that by up to three vsyncs, enough on a
+  sparse score to put a strict alignment on the wrong bar. The window is the
+  alignment's tolerance, not a mechanism: retail's KON is written inside the
+  calc that staged it ([below](#a-key-on-is-never-deferred)).
   Matching key-ons rather than the census's `note` rows keeps a layered
   program, one note keying two voices on both sides, from penalising the
   right offset.
@@ -3248,10 +3247,28 @@ score issues reaches the KON register. The same holds across the field states
 cold-booted from a memory card, the Gobu Gobu battle (`2026`), the title menu
 (`2065`) and the minigames - the casino floor (`2018`), the Baka Fighter duel
 (`2055`), the dance (`2060`), the fishing pond (`2017`) - with one exception:
-`dolk2_market_noa` reads `358` against `357`. Its odd key-on is a note whose
-note-off lands while retail's KON is still parked behind the busy transfer;
-the key-off path of `FUN_8006B854` clears the parked bit, and the port models
-no SPU transfer.
+`dolk2_market_noa` reads `358` against `357`. Its odd key-on is not explained:
+it is not a KON parked behind a transfer ([below](#a-key-on-is-never-deferred)),
+and the state is on the patched-disc audit's re-shoot list
+([measurement threads](../reference/open-rev-eng-threads.md#measurement--tooling)).
+
+<a id="a-key-on-is-never-deferred"></a>
+**A key-on is never deferred.** `FUN_8006B854` (`SpuSetKey`) has a second path
+under `_DAT_8007AF38 & 1` (the branch at `0x8006B88C`) that writes the mask into
+shadow words for a later flush instead of the KON register, and `FUN_8006A7C8`
+has the same fork for the voice attributes. The word is libspu's event-queueing
+switch, not a transfer-busy flag, and nothing turns it on: across SCUS and every
+based overlay image its one store is `SpuInit`'s `sw zero` (`FUN_800693D8`,
+`0x800694B8`), with no gp-relative, `lui`-pair or base-plus-displacement writer
+(`find-address-word-refs.py`, `find-gp-relative-refs.py --va 0x8007af38`). A
+PCSX-Redux run agrees
+([`autorun_seq_calc_clock.lua`](../../scripts/pcsx-redux/autorun_seq_calc_clock.lua)):
+on `rugi_field_card_boot` (1200 vsyncs) and across `s4_rimelm_door_transition`'s
+scene load (900 vsyncs) the calc `FUN_80062F98` runs exactly once a vsync, and
+every KON (168 and 102 of them) comes from the flush (`ra = 0x80065F7C`) within
+`17300` cycles of its calc's entry, under a twentieth of a vsync. The port's
+key-on at its own flush is therefore retail's, and no residual of a key-on
+census or of the cast channel is a parked mask.
 
 The sequencer rules the census pins, each of which moves the count when
 broken: every tone layered over a key keys a voice
