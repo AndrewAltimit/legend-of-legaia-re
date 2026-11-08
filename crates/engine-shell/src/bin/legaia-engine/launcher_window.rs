@@ -26,6 +26,10 @@
 //!   green, the original's own dim (`OptionRow::original_value`).
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
+//! - **Recent.** The remembered discs, the saves on the game's own card and
+//!   on card 2, and the remembered memory cards, as one list: a disc or card
+//!   is picked or forgotten, a save starts the game on it
+//!   (`--resume-save`, without the title screen).
 //! - **Saves folder** opens the data directory; its second action (or a
 //!   dropped `.mcr` / `.mcd` / `.gme` / `.mcs`) mounts an emulator memory
 //!   card as the save screen's card 2 (`--card`, `LauncherSettings::card`):
@@ -81,7 +85,7 @@ use winit::window::WindowId;
 /// Debug aid: when set, the launcher writes its first frame to this PNG and
 /// exits (lets a headless check see the screen without a human).
 const SCREENSHOT_ENV: &str = "LEGAIA_LAUNCHER_SCREENSHOT";
-/// With [`SCREENSHOT_ENV`]: open the right panel on `controls`.
+/// With [`SCREENSHOT_ENV`]: open the right panel on `controls` or `recent`.
 const PANEL_ENV: &str = "LEGAIA_LAUNCHER_PANEL";
 /// With [`SCREENSHOT_ENV`]: focus option row N (0-based, clamped), so a
 /// capture can show the list scrolled.
@@ -300,24 +304,24 @@ fn picker_event_loop() -> Result<EventLoop<()>> {
 // The shared dark palette (`legaia_app_theme`), which Explorer's dark theme
 // draws in too.
 
-use legaia_app_theme::DARK as P;
+use legaia_app_theme::Role;
 
-const INK: [f32; 4] = P.ink.to_f32();
-const DIM: [f32; 4] = P.ink_dim.to_f32();
-const FAINT: [f32; 4] = P.ink_faint.to_f32();
-const GOLD: [f32; 4] = P.accent.to_f32();
-const GOOD: [f32; 4] = P.good.to_f32();
-const WARN: [f32; 4] = P.warn.to_f32();
-const ON_GOLD: [f32; 4] = P.on_accent.to_f32();
-const BODY: [f32; 4] = P.ground.to_f32();
-const BAND: [f32; 4] = P.band.to_f32();
-const CARD: [f32; 4] = P.card.to_f32();
-const FOCUS: [f32; 4] = P.hover.to_f32();
-const BUTTON: [f32; 4] = P.raised.to_f32();
-const PRIMARY: [f32; 4] = P.accent_fill.to_f32();
-const PRIMARY_FOCUS: [f32; 4] = P.accent_fill_focus.to_f32();
-const RULE: [f32; 4] = P.rule.to_f32();
-const KEY: [f32; 4] = legaia_app_theme::chrome::KEY.to_f32();
+const INK: Role = Role::Ink;
+const DIM: Role = Role::InkDim;
+const FAINT: Role = Role::InkFaint;
+const GOLD: Role = Role::Accent;
+const GOOD: Role = Role::Good;
+const WARN: Role = Role::Warn;
+const ON_GOLD: Role = Role::OnAccent;
+const BODY: Role = Role::Ground;
+const BAND: Role = Role::Band;
+const CARD: Role = Role::Card;
+const FOCUS: Role = Role::Hover;
+const BUTTON: Role = Role::Raised;
+const PRIMARY: Role = Role::AccentFill;
+const PRIMARY_FOCUS: Role = Role::AccentFillFocus;
+const RULE: Role = Role::Rule;
+const KEY: Role = legaia_app_theme::chrome::KEY;
 
 /// Virtual stage the screen is laid out on; scaled up by an integer factor
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.
@@ -414,14 +418,19 @@ enum Item {
     Bind(u8),
     /// The Controls page's last row: every key back on its default.
     BindReset,
+    /// The button that opens the Recent page.
+    Recent,
+    /// A row of the Recent page: an index into [`LauncherApp::recent`].
+    RecentRow(usize),
 }
 
-const BUTTONS: [Item; 7] = [
+const BUTTONS: [Item; 8] = [
     Item::Play,
     Item::Online,
     Item::ChooseDisc,
     Item::Expansion,
     Item::Panel,
+    Item::Recent,
     Item::DataFolder,
     Item::Quit,
 ];
@@ -431,10 +440,55 @@ const BUTTONS: [Item; 7] = [
 enum Panel {
     Options,
     Controls,
+    Recent,
+}
+
+/// What a row of the Recent page acts on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecentKind {
+    /// A remembered disc image: Enter uses it.
+    Disc(PathBuf),
+    /// A remembered memory card: Enter mounts it (or takes it out).
+    Card(PathBuf),
+    /// Open the file dialog for a new memory card.
+    NewCard,
+    /// A save on a card: Enter starts the game on it.
+    Save(launcher::SaveRow),
+    /// A line that does nothing (the empty note under a heading).
+    Note,
+}
+
+/// One row of the Recent page.
+struct RecentEntry {
+    label: String,
+    value: String,
+    value_ink: Role,
+    help: String,
+    kind: RecentKind,
+}
+
+impl RecentEntry {
+    /// A line with no action.
+    fn note(text: &str) -> Self {
+        Self {
+            label: text.to_string(),
+            value: String::new(),
+            value_ink: DIM,
+            help: String::new(),
+            kind: RecentKind::Note,
+        }
+    }
+}
+
+/// One line of the Recent page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecentLine {
+    Heading(&'static str),
+    Row(usize),
 }
 
 /// A line of the help box with its ink.
-type Message = (String, [f32; 4]);
+type Message = (String, Role);
 
 /// A game the launcher started.
 struct Running {
@@ -456,6 +510,15 @@ struct LauncherApp {
     /// switches to: the next remembered disc that still validates
     /// ([`launcher::next_recent_disc`]).
     recent_offer: Option<DiscInfo>,
+    /// A disc image found in the usual folders on a first run
+    /// ([`launcher::find_disc`]), offered until a disc is chosen.
+    found_disc: Option<DiscInfo>,
+    /// The Recent page's rows and lines ([`Self::build_recent`]), rebuilt
+    /// each time the page opens or a row changes something.
+    recent: Vec<RecentEntry>,
+    recent_lines: Vec<RecentLine>,
+    /// The Recent page's first visible line.
+    recent_scroll: usize,
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
@@ -469,6 +532,8 @@ struct LauncherApp {
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
+    /// The palette the screen draws in ([`Self::resolve_theme`]).
+    dark: bool,
     focus: Item,
     /// Where Tab left each column ([`Self::switch_column`]): the button,
     /// and the option or key row, focused when the other column was
@@ -522,6 +587,7 @@ impl LauncherApp {
         let options = OptionsState::load_or_default(Path::new(launcher::OPTIONS_FILE));
         let panel = match std::env::var(PANEL_ENV).as_deref() {
             Ok("controls") => Panel::Controls,
+            Ok("recent") => Panel::Recent,
             _ => Panel::Options,
         };
         let focus = if disc.is_some() {
@@ -538,6 +604,10 @@ impl LauncherApp {
             disc: None,
             problem,
             recent_offer: None,
+            found_disc: None,
+            recent: Vec::new(),
+            recent_lines: Vec::new(),
+            recent_scroll: 0,
             expansion: settings
                 .expansion
                 .as_deref()
@@ -550,6 +620,7 @@ impl LauncherApp {
             card: settings.card.as_deref().map(launcher::inspect_card),
             settings,
             settings_file,
+            dark: true,
             options,
             focus,
             left_at: (focus, None),
@@ -574,6 +645,22 @@ impl LauncherApp {
         };
         app.set_disc(disc);
         app.refresh_recent_offer();
+        if app.panel == Panel::Recent {
+            app.build_recent();
+        }
+        // The first run only: a player who already has the dump need not
+        // hunt for it. A disc used before is offered instead when one is
+        // remembered, and a remembered disc that broke keeps its reason.
+        if app.disc.is_none()
+            && app.recent_offer.is_none()
+            && matches!(app.problem, Some(DiscProblem::NotSet) | None)
+        {
+            app.found_disc =
+                launcher::find_disc(&launcher::disc_search_dirs(), launcher::validate_disc);
+            if let Some(found) = &app.found_disc {
+                log::info!("launcher: found a disc image at {}", found.path.display());
+            }
+        }
         let offer = app
             .disc
             .is_none()
@@ -610,12 +697,32 @@ impl LauncherApp {
         if self.atlas.is_some() {
             return;
         }
+        let rgba = (!self.dark).then(|| self.font.atlas_rgba_without_shadow());
+        let (w, h) = self.font.atlas_dimensions();
         if let Some(r) = self.win.renderer() {
-            match r.upload_font(&self.font) {
+            let uploaded = match &rgba {
+                // Black letter shadows smear into dark ink on a light card.
+                Some(pixels) => r.upload_font_atlas(pixels, w, h),
+                None => r.upload_font(&self.font),
+            };
+            match uploaded {
                 Ok(a) => self.atlas = Some(a),
                 Err(e) => log::error!("launcher font upload: {e:#}"),
             }
         }
+    }
+
+    /// Pick the palette from the *Menu colours* row and the desktop.
+    fn resolve_theme(&mut self) {
+        use winit::window::Theme;
+        let window_dark = self
+            .win
+            .window
+            .as_deref()
+            .and_then(|w| w.theme())
+            .map(|t| t == Theme::Dark);
+        self.dark =
+            legaia_app_theme::resolve_dark(self.options.ui_theme.forced_dark(), window_dark);
     }
 
     fn save_settings(&mut self) {
@@ -901,7 +1008,7 @@ impl LauncherApp {
     /// Start the game and close the window while it runs.
     /// Start the game; `online` opens its Multiplayer screen once the
     /// field is up (`--multiplayer`).
-    fn play(&mut self, evl: &ActiveEventLoop, online: bool) {
+    fn play(&mut self, evl: &ActiveEventLoop, online: bool, resume: Option<&Path>) {
         let Some(info) = self.disc.clone() else {
             self.status = Some(vec![(
                 "Choose your Legend of Legaia (USA) disc image first.".into(),
@@ -930,7 +1037,7 @@ impl LauncherApp {
             self.save_settings();
             self.refresh_recent_offer();
         }
-        match spawn_game(&info, &self.settings, online) {
+        match spawn_game(&info, &self.settings, online, resume) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
                 self.game = Some(g);
@@ -1008,6 +1115,7 @@ impl LauncherApp {
                 (STAGE_H - HEADER_GIVE) as f64,
             )));
         }
+        self.resolve_theme();
         self.atlas = None;
         self.upload_font();
         self.opened_at = Instant::now();
@@ -1049,8 +1157,8 @@ impl LauncherApp {
                 PadNav::Horizontal(d) => self.horizontal(d, evl),
                 PadNav::Page(d) => self.step_option(d * (VISIBLE_LINES as i32 - 2)),
                 PadNav::Back => {
-                    if self.panel == Panel::Controls {
-                        self.leave_controls();
+                    if self.panel != Panel::Options {
+                        self.leave_page();
                     }
                 }
                 PadNav::Activate(d) => self.activate(self.focus, d, evl),
@@ -1071,6 +1179,8 @@ impl LauncherApp {
             Item::Opt(_) => self.activate(self.focus, dir, evl),
             Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
             Item::Bind(_) | Item::BindReset => {}
+            Item::RecentRow(_) if dir < 0 => self.focus = Item::Recent,
+            Item::RecentRow(_) => {}
             _ if dir > 0 => self.switch_column(),
             _ => {}
         }
@@ -1250,10 +1360,13 @@ impl LauncherApp {
     fn activate(&mut self, item: Item, dir: i8, evl: &ActiveEventLoop) {
         self.focus = item;
         match item {
-            Item::Play => self.play(evl, false),
-            Item::Online => self.play(evl, true),
+            Item::Play => self.play(evl, false, None),
+            Item::Online => self.play(evl, true, None),
             Item::ChooseDisc if dir < 0 => self.step_recent_disc(),
-            Item::ChooseDisc => self.browse(),
+            Item::ChooseDisc => match self.found_disc.clone() {
+                Some(found) if self.disc.is_none() => self.try_disc(&found.path),
+                _ => self.browse(),
+            },
             Item::Expansion if dir < 0 => self.clear_expansion(),
             Item::Expansion => self.next_expansion(),
             Item::Panel => {
@@ -1265,8 +1378,23 @@ impl LauncherApp {
                         Panel::Controls
                     }
                     Panel::Controls => Panel::Options,
+                    Panel::Recent => {
+                        self.rebind = KeyRebindSession::new(Mapping::load_or_default(Path::new(
+                            launcher::INPUT_FILE,
+                        )));
+                        Panel::Controls
+                    }
                 };
             }
+            Item::Recent => {
+                if self.panel == Panel::Recent {
+                    self.panel = Panel::Options;
+                } else {
+                    self.build_recent();
+                    self.panel = Panel::Recent;
+                }
+            }
+            Item::RecentRow(row) => self.activate_recent(row, dir, evl),
             Item::Bind(row) => {
                 self.rebind.begin_bind(row);
                 self.status = None;
@@ -1339,13 +1467,324 @@ impl LauncherApp {
         ]);
     }
 
-    /// Back from the Controls page to the options; a focus on one of its rows
-    /// goes to the button that opened it.
-    fn leave_controls(&mut self) {
+    /// Back from the Controls or Recent page to the options; a focus on one
+    /// of its rows goes to the button that opened it.
+    fn leave_page(&mut self) {
         self.panel = Panel::Options;
-        if matches!(self.focus, Item::Bind(_) | Item::BindReset) {
-            self.focus = Item::Panel;
+        match self.focus {
+            Item::Bind(_) | Item::BindReset => self.focus = Item::Panel,
+            Item::RecentRow(_) => self.focus = Item::Recent,
+            _ => {}
         }
+    }
+
+    // --- The Recent page ------------------------------------------------
+
+    /// Rebuild the Recent page's rows from the settings, the cards and the
+    /// saves on them.
+    fn build_recent(&mut self) {
+        let mut rows = Vec::new();
+        let mut lines = Vec::new();
+        let mut row = |entry: RecentEntry, lines: &mut Vec<RecentLine>| {
+            lines.push(RecentLine::Row(rows.len()));
+            rows.push(entry);
+        };
+        // Saves: the game's own card, then card 2, each newest first as far
+        // as a card can say. A card keeps no dates; the longest-played save
+        // is the one a player left off on.
+        let own = launcher::own_card_path();
+        let mut groups: Vec<(&'static str, String, Vec<launcher::SaveRow>)> = vec![(
+            "Continue your game",
+            "your own card".to_string(),
+            launcher::list_saves(&own),
+        )];
+        if let Some(card) = &self.settings.card {
+            groups.push((
+                "Continue from card 2",
+                file_name_of(card),
+                launcher::list_saves(card),
+            ));
+        }
+        for (heading, card_name, mut saves) in groups {
+            lines.push(RecentLine::Heading(heading));
+            if saves.is_empty() {
+                row(
+                    RecentEntry::note(if heading == "Continue your game" {
+                        "No saves yet."
+                    } else {
+                        "No Legend of Legaia saves on this card."
+                    }),
+                    &mut lines,
+                );
+            }
+            saves.sort_by_key(|s| std::cmp::Reverse(s.play_time_seconds));
+            for save in saves {
+                let mut value = save.location.clone();
+                let time = save.play_time();
+                if !time.is_empty() {
+                    if !value.is_empty() {
+                        value.push(' ');
+                    }
+                    value.push_str(&time);
+                }
+                row(
+                    RecentEntry {
+                        label: format!("{} Lv {}", save.name, save.level),
+                        value,
+                        value_ink: DIM,
+                        help: format!(
+                            "Enter starts the game on this save, without the title screen. {} on \
+                             {card_name}.",
+                            save.number.map_or_else(
+                                || format!("Block {}", save.cell + 1),
+                                |n| format!("Save {n:02}")
+                            ),
+                        ),
+                        kind: RecentKind::Save(save),
+                    },
+                    &mut lines,
+                );
+            }
+        }
+        // Discs.
+        lines.push(RecentLine::Heading("Discs"));
+        let mut discs: Vec<PathBuf> = self.settings.recent_discs.clone();
+        if let Some(d) = self.settings.disc.as_ref().filter(|d| !discs.contains(d)) {
+            discs.insert(0, d.clone());
+        }
+        // The disc in use leads; the rest keep newest-first.
+        if let Some(cur) = self.disc.as_ref().map(|d| d.path.clone())
+            && let Some(i) = discs.iter().position(|p| *p == cur)
+        {
+            let d = discs.remove(i);
+            discs.insert(0, d);
+        }
+        if discs.is_empty() {
+            row(RecentEntry::note("No disc chosen yet."), &mut lines);
+        }
+        for path in discs {
+            let in_use = self.disc.as_ref().is_some_and(|d| d.path == path);
+            let (value, ink, help) = if in_use {
+                (
+                    "In use".to_string(),
+                    GOOD,
+                    "The disc Play starts. Delete forgets it.".to_string(),
+                )
+            } else {
+                match launcher::validate_disc(&path) {
+                    Ok(_) => (
+                        "Ready".to_string(),
+                        INK,
+                        "Enter switches to this disc. Delete forgets it.".to_string(),
+                    ),
+                    Err(p) => (
+                        match p {
+                            DiscProblem::Missing(_) | DiscProblem::Moved(_) => "Not found",
+                            _ => "Not usable",
+                        }
+                        .to_string(),
+                        WARN,
+                        format!("{p} Delete forgets it."),
+                    ),
+                }
+            };
+            row(
+                RecentEntry {
+                    label: file_name_of(&path),
+                    value,
+                    value_ink: ink,
+                    help: format!("{help} {}", path.display()),
+                    kind: RecentKind::Disc(path),
+                },
+                &mut lines,
+            );
+        }
+        // Memory cards.
+        lines.push(RecentLine::Heading("Memory cards"));
+        let mut cards: Vec<PathBuf> = self.settings.recent_cards.clone();
+        if let Some(c) = self.settings.card.as_ref().filter(|c| !cards.contains(c)) {
+            cards.insert(0, c.clone());
+        }
+        for path in cards {
+            let mounted = self.settings.card.as_ref() == Some(&path);
+            let (value, ink, help) = if mounted {
+                (
+                    "Card 2".to_string(),
+                    GOOD,
+                    "Mounted as card 2. Enter or Delete takes it out.".to_string(),
+                )
+            } else {
+                match launcher::inspect_card(&path) {
+                    Ok(info) => (
+                        format!("{} saves", info.saves),
+                        INK,
+                        "Enter mounts this card as card 2. Delete forgets it.".to_string(),
+                    ),
+                    Err(why) => (
+                        if path.exists() {
+                            "Not usable"
+                        } else {
+                            "Not found"
+                        }
+                        .to_string(),
+                        WARN,
+                        format!("{why} Delete forgets it."),
+                    ),
+                }
+            };
+            row(
+                RecentEntry {
+                    label: file_name_of(&path),
+                    value,
+                    value_ink: ink,
+                    help: format!("{help} {}", path.display()),
+                    kind: RecentKind::Card(path),
+                },
+                &mut lines,
+            );
+        }
+        row(
+            RecentEntry {
+                label: "Mount a memory card...".to_string(),
+                value: String::new(),
+                value_ink: DIM,
+                help: "Choose an emulator memory card (.mcr, .mcd, .gme, .mcs). Its saves load \
+                       and save in place, as card 2."
+                    .to_string(),
+                kind: RecentKind::NewCard,
+            },
+            &mut lines,
+        );
+        self.recent = rows;
+        self.recent_lines = lines;
+        self.recent_scroll = 0;
+    }
+
+    /// Enter, a click: use the row. Right-click, Shift+Enter: the row's
+    /// Delete.
+    fn activate_recent(&mut self, index: usize, dir: i8, evl: &ActiveEventLoop) {
+        if dir < 0 {
+            self.forget_recent(index);
+            return;
+        }
+        let Some(entry) = self.recent.get(index) else {
+            return;
+        };
+        match entry.kind.clone() {
+            RecentKind::Note => {}
+            RecentKind::Disc(path) => {
+                if self.disc.as_ref().is_some_and(|d| d.path == path) {
+                    self.status = Some(vec![("This disc is already in use.".into(), DIM)]);
+                } else {
+                    self.try_disc(&path);
+                    self.after_recent_change(Item::Play);
+                }
+            }
+            RecentKind::Card(path) => {
+                if self.settings.card.as_ref() == Some(&path) {
+                    self.clear_card();
+                } else {
+                    self.try_card(&path);
+                }
+                self.after_recent_change(Item::RecentRow(index));
+            }
+            RecentKind::NewCard => {
+                self.browse_card();
+                self.after_recent_change(Item::RecentRow(index));
+            }
+            RecentKind::Save(save) => {
+                // In the data directory: a file the game is handed, not a save.
+                let file =
+                    std::path::absolute("continue.lgsf").unwrap_or_else(|_| "continue.lgsf".into());
+                match launcher::write_continue_file(&save.card, save.cell, &file) {
+                    Ok(()) => self.play(evl, false, Some(&file)),
+                    Err(e) => {
+                        self.status =
+                            Some(vec![(format!("Could not read that save: {e:#}"), WARN)]);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Delete, right-click: take a disc or a card off the remembered lists.
+    fn forget_recent(&mut self, index: usize) {
+        let Some(kind) = self.recent.get(index).map(|e| e.kind.clone()) else {
+            return;
+        };
+        match kind {
+            RecentKind::Disc(path) => {
+                if self.disc.as_ref().is_some_and(|d| d.path == path) {
+                    self.status = Some(vec![(
+                        "This is the disc in use. Change disc... replaces it.".into(),
+                        DIM,
+                    )]);
+                    return;
+                }
+                self.settings.recent_discs.retain(|p| *p != path);
+                if self.settings.disc.as_ref() == Some(&path) {
+                    self.settings.disc = None;
+                }
+                self.save_settings();
+                self.refresh_recent_offer();
+            }
+            RecentKind::Card(path) => {
+                if self.settings.card.as_ref() == Some(&path) {
+                    self.clear_card();
+                }
+                self.settings.recent_cards.retain(|p| *p != path);
+                self.save_settings();
+            }
+            RecentKind::Save(_) | RecentKind::NewCard | RecentKind::Note => return,
+        }
+        self.after_recent_change(Item::Recent);
+    }
+
+    /// Rows changed: rebuild them and keep the focus on `want` when it is
+    /// still there, else on the page's button.
+    fn after_recent_change(&mut self, want: Item) {
+        self.build_recent();
+        self.focus = match want {
+            Item::RecentRow(i) if i >= self.recent.len() => Item::Recent,
+            _ => want,
+        };
+    }
+
+    /// The first row of the Recent page that does something.
+    fn first_recent_row(&self) -> Item {
+        self.recent
+            .iter()
+            .position(|e| e.kind != RecentKind::Note)
+            .map_or(Item::Recent, Item::RecentRow)
+    }
+
+    /// Scroll the Recent page so the focused row is in view, with its
+    /// heading when it opens a group.
+    fn reveal_recent(&mut self) {
+        let Item::RecentRow(row) = self.focus else {
+            return;
+        };
+        let Some(idx) = self
+            .recent_lines
+            .iter()
+            .position(|l| *l == RecentLine::Row(row))
+        else {
+            return;
+        };
+        let top = if idx > 0 && matches!(self.recent_lines[idx - 1], RecentLine::Heading(_)) {
+            idx - 1
+        } else {
+            idx
+        };
+        let max = self.recent_lines.len().saturating_sub(VISIBLE_LINES);
+        self.recent_scroll = if top < self.recent_scroll {
+            top
+        } else if idx >= self.recent_scroll + VISIBLE_LINES {
+            idx + 1 - VISIBLE_LINES
+        } else {
+            self.recent_scroll
+        }
+        .min(max);
     }
 
     /// `Delete` (or `Backspace` with nothing typed) on an option row: put
@@ -1357,6 +1796,10 @@ impl LauncherApp {
         }
         if self.focus == Item::DataFolder {
             self.clear_card();
+            return;
+        }
+        if let Item::RecentRow(i) = self.focus {
+            self.forget_recent(i);
             return;
         }
         if let Item::Opt(row) = self.focus
@@ -1376,6 +1819,11 @@ impl LauncherApp {
             row.value(&self.options, &self.settings)
         );
         self.status = None;
+        if row == OptionRow::Theme {
+            self.resolve_theme();
+            self.atlas = None;
+            self.upload_font();
+        }
         if row == OptionRow::Preset {
             // One switch over both files.
             self.save_options();
@@ -1396,6 +1844,13 @@ impl LauncherApp {
                 v.extend((0..BIND_ROWS).map(Item::Bind));
                 v.push(Item::BindReset);
             }
+            Panel::Recent => v.extend(
+                self.recent
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| e.kind != RecentKind::Note)
+                    .map(|(i, _)| Item::RecentRow(i)),
+            ),
         }
         v
     }
@@ -1428,6 +1883,9 @@ impl LauncherApp {
 
     /// Scroll the option list so the focused row is in view.
     fn reveal_focus(&mut self) {
+        if self.panel == Panel::Recent {
+            self.reveal_recent();
+        }
         let Item::Opt(row) = self.focus else { return };
         let lines = option_lines();
         if let Some(idx) = lines.iter().position(|l| *l == Line::Row(row)) {
@@ -1437,6 +1895,11 @@ impl LauncherApp {
 
     /// Scroll the option list by `lines` (negative is up), clamped.
     fn scroll_options(&mut self, lines: i32) {
+        if self.panel == Panel::Recent {
+            let max = self.recent_lines.len().saturating_sub(VISIBLE_LINES) as i32;
+            self.recent_scroll = (self.recent_scroll as i32 + lines).clamp(0, max) as usize;
+            return;
+        }
         let max = option_lines().len().saturating_sub(VISIBLE_LINES) as i32;
         self.opt_scroll = (self.opt_scroll as i32 + lines).clamp(0, max) as usize;
     }
@@ -1448,7 +1911,7 @@ impl LauncherApp {
         let order = self.order();
         let usable = |i: &Item| order.contains(i);
         self.focus = match self.focus {
-            right @ (Item::Opt(_) | Item::Bind(_) | Item::BindReset) => {
+            right @ (Item::Opt(_) | Item::Bind(_) | Item::BindReset | Item::RecentRow(_)) => {
                 self.left_at.1 = Some(right);
                 Some(self.left_at.0)
                     .filter(usable)
@@ -1457,10 +1920,10 @@ impl LauncherApp {
             }
             button => {
                 self.left_at.0 = button;
-                let first = if self.panel == Panel::Options {
-                    Item::Opt(OPTION_ROWS[0].1)
-                } else {
-                    Item::Bind(0)
+                let first = match self.panel {
+                    Panel::Options => Item::Opt(OPTION_ROWS[0].1),
+                    Panel::Controls => Item::Bind(0),
+                    Panel::Recent => self.first_recent_row(),
                 };
                 // A row of the other page (the panel switched since) or one
                 // that is gone does not count.
@@ -1527,18 +1990,24 @@ impl LauncherApp {
                 Item::ChooseDisc => {
                     if self.disc.is_some() {
                         "Change disc..."
+                    } else if self.found_disc.is_some() {
+                        "Use this disc"
                     } else {
                         "Choose disc..."
                     }
                 }
                 Item::Panel => match self.panel {
-                    Panel::Options => "Controls",
-                    Panel::Controls => "Back to options",
+                    Panel::Controls => "Options",
+                    _ => "Controls",
+                },
+                Item::Recent => match self.panel {
+                    Panel::Recent => "Options",
+                    _ => "Recent",
                 },
                 Item::Expansion => &expansion_label,
                 Item::DataFolder => "Saves folder",
                 Item::Quit => "Quit",
-                Item::Opt(_) | Item::Bind(_) | Item::BindReset => "",
+                Item::Opt(_) | Item::Bind(_) | Item::BindReset | Item::RecentRow(_) => "",
             };
             let label = fit_button_label(c, label, r.w);
             c.text_centered(r, &label, ink);
@@ -1580,6 +2049,7 @@ impl LauncherApp {
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
             Panel::Controls => self.controls_panel(c, panel, hits),
+            Panel::Recent => self.recent_panel(c, panel, hits),
         }
     }
 
@@ -1603,6 +2073,10 @@ impl LauncherApp {
             }
             (None, Some(p)) => (WARN, problem_headline(p).into()),
         };
+        let (accent, head) = match (&self.disc, &self.found_disc) {
+            (None, Some(_)) => (GOLD, "Found your disc image".to_string()),
+            _ => (accent, head),
+        };
         c.rect(Rect::new(card.x, card.y, 3, card.h), accent);
         c.text(card.x + 10, card.y + 6, "Disc", FAINT);
         let tx = card.x + 10 + c.width("Disc") + 10;
@@ -1610,7 +2084,7 @@ impl LauncherApp {
         let inner = card.x + card.w - 8 - tx;
         let (line, ink) = if !self.typed.is_empty() {
             (format!("Path: {}_", self.typed), GOLD)
-        } else if let Some(d) = &self.disc {
+        } else if let Some(d) = self.disc.as_ref().or(self.found_disc.as_ref()) {
             (d.path.display().to_string(), DIM)
         } else {
             match &self.problem {
@@ -1624,6 +2098,7 @@ impl LauncherApp {
         // A path keeps its end (the file name); a sentence wraps.
         let is_path = !self.typed.is_empty()
             || self.disc.is_some()
+            || self.found_disc.is_some()
             || self
                 .problem
                 .as_ref()
@@ -1694,7 +2169,6 @@ impl LauncherApp {
                 FAINT
             } else {
                 legaia_app_theme::chrome::option_value(&value, row.original_value().as_deref())
-                    .to_f32()
             };
             let shown = if focused {
                 format!("< {value} >")
@@ -1782,6 +2256,75 @@ impl LauncherApp {
         }
     }
 
+    fn recent_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        let scroll = self
+            .recent_scroll
+            .min(self.recent_lines.len().saturating_sub(VISIBLE_LINES));
+        let mut y = panel.y + LIST_INSET;
+        for line in self.recent_lines.iter().skip(scroll).take(VISIBLE_LINES) {
+            let index = match *line {
+                RecentLine::Heading(h) => {
+                    c.rect(Rect::new(panel.x + 4, y, panel.w - 14, ROW_PITCH - 1), BAND);
+                    c.text(panel.x + 8, y, h, GOLD);
+                    y += ROW_PITCH;
+                    continue;
+                }
+                RecentLine::Row(i) => i,
+            };
+            let entry = &self.recent[index];
+            let item = Item::RecentRow(index);
+            let r = Rect::new(panel.x + 4, y - 1, panel.w - 14, ROW_PITCH);
+            let focused = self.focus == item;
+            if entry.kind != RecentKind::Note {
+                hits.push((item, r));
+                if focused {
+                    c.rect(r, FOCUS);
+                    c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+                }
+            }
+            let ink = if entry.kind == RecentKind::Note {
+                FAINT
+            } else {
+                INK
+            };
+            // The shorter side keeps its whole width; the longer one is cut
+            // in the middle, so a file name keeps its end and a save row
+            // its play time.
+            let room = panel.w - 24;
+            let gap = 8;
+            let (lw, vw) = (c.width(&entry.label), c.width(&entry.value));
+            let (label_room, value_room) = if lw + vw + gap <= room {
+                (lw, vw)
+            } else if vw <= room / 2 {
+                (room - vw - gap, vw)
+            } else if lw <= room / 2 {
+                (lw, room - lw - gap)
+            } else {
+                (room / 2 - gap / 2, room / 2 - gap / 2)
+            };
+            let label = c.ellipsize_middle(&entry.label, label_room);
+            let value = c.ellipsize_middle(&entry.value, value_room);
+            c.text(panel.x + 10, y, &label, ink);
+            let vw = c.width(&value);
+            c.text(panel.x + panel.w - 14 - vw, y, &value, entry.value_ink);
+            y += ROW_PITCH;
+        }
+        if self.recent_lines.len() > VISIBLE_LINES {
+            let track = Rect::new(
+                panel.x + panel.w - 6,
+                panel.y + LIST_INSET,
+                2,
+                VISIBLE_LINES as i32 * ROW_PITCH,
+            );
+            c.rect(track, RULE);
+            let n = self.recent_lines.len() as i32;
+            let thumb_h = (track.h * VISIBLE_LINES as i32 / n).max(8);
+            let max = n - VISIBLE_LINES as i32;
+            let thumb_y = track.y + (track.h - thumb_h) * scroll as i32 / max.max(1);
+            c.rect(Rect::new(track.x, thumb_y, track.w, thumb_h), DIM);
+        }
+    }
+
     fn help_text(&self) -> String {
         match self.focus {
             Item::Play => {
@@ -1792,6 +2335,13 @@ impl LauncherApp {
                 } else {
                     "Choose your disc image first.".into()
                 }
+            }
+            Item::ChooseDisc if self.disc.is_none() && self.found_disc.is_some() => {
+                let found = self.found_disc.as_ref().expect("just checked");
+                format!(
+                    "Enter uses {}, found in your folders. Ctrl+O or Shift+Enter picks another.",
+                    file_name_of(&found.path)
+                )
             }
             Item::ChooseDisc => match (&self.disc, &self.recent_offer) {
                 (Some(_), Some(offer)) => change_disc_help(offer),
@@ -1833,13 +2383,21 @@ impl LauncherApp {
                 Some(_) => self.expansion_problem().unwrap_or_default(),
             },
             Item::Panel => match self.panel {
-                Panel::Options => "See and change the keyboard keys. In the game, F12 or \
-                                   Select+Start opens settings, cheats, scenes and the key list."
-                    .into(),
                 Panel::Controls => "Back to the options. Right or Tab goes to the keys. In the \
                                     game, F12 lists the toggle keys too."
                     .into(),
+                _ => "See and change the keyboard keys. In the game, F12 or Select+Start opens \
+                      settings, cheats, scenes, tools and the key list."
+                    .into(),
             },
+            Item::Recent => "Discs and memory cards used before, and the saves on them: \
+                             continue a save without the title screen."
+                .into(),
+            Item::RecentRow(i) => self
+                .recent
+                .get(i)
+                .map(|e| e.help.clone())
+                .unwrap_or_default(),
             Item::Bind(row) => match self.awaiting_key() {
                 Some(_) => waiting_message(self.rebind_button_label(row)),
                 None => format!(
@@ -1905,6 +2463,7 @@ impl LauncherApp {
         };
         let stage = self.stage();
         let mut canvas = Canvas {
+            palette: legaia_app_theme::palette(self.dark),
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
@@ -1946,6 +2505,7 @@ impl LauncherApp {
         let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
         // Re-run the layout to get the rectangles (cheap: a few hundred quads).
         let mut canvas = Canvas {
+            palette: legaia_app_theme::palette(self.dark),
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
@@ -2030,7 +2590,7 @@ impl ApplicationHandler for LauncherApp {
                 }
             }
             WindowEvent::CursorLeft { .. } => self.cursor = None,
-            WindowEvent::MouseWheel { delta, .. } if self.panel == Panel::Options => {
+            WindowEvent::MouseWheel { delta, .. } if self.panel != Panel::Controls => {
                 let lines = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => -y.round() as i32,
                     winit::event::MouseScrollDelta::PixelDelta(p) => {
@@ -2076,7 +2636,11 @@ impl ApplicationHandler for LauncherApp {
                     && (dir > 0
                         || matches!(
                             item,
-                            Item::Opt(_) | Item::Expansion | Item::ChooseDisc | Item::DataFolder
+                            Item::Opt(_)
+                                | Item::Expansion
+                                | Item::ChooseDisc
+                                | Item::DataFolder
+                                | Item::RecentRow(_)
                         ))
                 {
                     self.activate(item, dir, evl);
@@ -2119,8 +2683,8 @@ impl ApplicationHandler for LauncherApp {
                         if typing {
                             self.typed.clear();
                             self.typed_tried = false;
-                        } else if self.panel == Panel::Controls {
-                            self.leave_controls();
+                        } else if self.panel != Panel::Options {
+                            self.leave_page();
                         } else {
                             evl.exit();
                         }
@@ -2266,6 +2830,8 @@ fn stage_for((w, h): (u32, u32)) -> Stage {
 
 /// Quads in stage coordinates, emitted in surface pixels.
 struct Canvas<'a> {
+    /// The palette every role resolves in.
+    palette: &'static legaia_app_theme::Palette,
     font: &'a legaia_font::Font,
     solid: (u32, u32, u32, u32),
     /// Set the built-in font 6 px a character instead of its 8 (its glyphs
@@ -2276,17 +2842,17 @@ struct Canvas<'a> {
 }
 
 impl Canvas<'_> {
-    fn fill_surface(&mut self, color: [f32; 4]) {
+    fn fill_surface(&mut self, color: Role) {
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, self.stage.surface.1),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
     /// A band `h` stage rows tall at stage row `y`, across the whole
     /// surface (the margins beside the stage included).
-    fn full_width(&mut self, y: i32, h: i32, color: [f32; 4]) {
+    fn full_width(&mut self, y: i32, h: i32, color: Role) {
         let s = self.stage.scale;
         let top = self.stage.origin.1 + y * s;
         let bottom = top + h.max(0) * s;
@@ -2298,23 +2864,23 @@ impl Canvas<'_> {
                 (bottom - top.max(0)).max(0) as u32,
             ),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
     /// A band from the surface's top edge down to stage row `bottom`,
     /// across the whole surface: the header in a window taller than the
     /// stage reaches the top instead of floating under a dark margin.
-    fn band_to_top(&mut self, bottom: i32, color: [f32; 4]) {
+    fn band_to_top(&mut self, bottom: i32, color: Role) {
         let h = self.stage.origin.1 + bottom * self.stage.scale;
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, h.max(0) as u32),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
-    fn rect(&mut self, r: Rect, color: [f32; 4]) {
+    fn rect(&mut self, r: Rect, color: Role) {
         let s = self.stage.scale;
         self.draws.push(TextDraw {
             dst: (
@@ -2324,11 +2890,11 @@ impl Canvas<'_> {
                 (r.h.max(0) * s) as u32,
             ),
             src: self.solid,
-            color,
+            color: self.palette.get(color).to_f32(),
         });
     }
 
-    fn outline(&mut self, r: Rect, color: [f32; 4]) {
+    fn outline(&mut self, r: Rect, color: Role) {
         self.rect(Rect::new(r.x, r.y, r.w, 1), color);
         self.rect(Rect::new(r.x, r.y + r.h - 1, r.w, 1), color);
         self.rect(Rect::new(r.x, r.y, 1, r.h), color);
@@ -2355,14 +2921,15 @@ impl Canvas<'_> {
         if self.condense { x * 3 / 4 } else { x }
     }
 
-    fn text(&mut self, x: i32, y: i32, text: &str, color: [f32; 4]) {
+    fn text(&mut self, x: i32, y: i32, text: &str, color: Role) {
         self.text_scaled(x, y, text, color, 1);
     }
 
-    fn text_scaled(&mut self, x: i32, y: i32, text: &str, color: [f32; 4], k: i32) {
+    fn text_scaled(&mut self, x: i32, y: i32, text: &str, color: Role, k: i32) {
         let s = self.stage.scale;
         let layout = self.font.layout_ascii(&Self::clean(text));
-        for d in legaia_engine_ui::text_draws_for(&layout, (0, 0), color) {
+        for d in legaia_engine_ui::text_draws_for(&layout, (0, 0), self.palette.get(color).to_f32())
+        {
             self.draws.push(TextDraw {
                 dst: (
                     self.stage.origin.0 + (x + self.pitch(d.dst.0) * k) * s,
@@ -2375,7 +2942,7 @@ impl Canvas<'_> {
         }
     }
 
-    fn text_centered(&mut self, r: Rect, text: &str, color: [f32; 4]) {
+    fn text_centered(&mut self, r: Rect, text: &str, color: Role) {
         let w = self.width(text);
         self.text(r.x + (r.w - w) / 2, r.y + (r.h - 12) / 2, text, color);
     }
@@ -2432,6 +2999,30 @@ impl Canvas<'_> {
 
     /// `text` cut to `max_w` pixels by dropping characters from its end
     /// behind `...` - for a name, whose start says what it is.
+    /// `text` cut in the middle to `max_w`: the end of a file name (a seed,
+    /// `(Track 2)`, a translation's tag) is usually what tells two apart.
+    fn ellipsize_middle(&self, text: &str, max_w: i32) -> String {
+        if self.width(text) <= max_w {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        for keep in (2..chars.len()).rev() {
+            let head = keep.div_ceil(2);
+            let tail = keep - head;
+            let shown: String = chars[..head]
+                .iter()
+                .chain(std::iter::once(&'.'))
+                .chain(std::iter::once(&'.'))
+                .chain(std::iter::once(&'.'))
+                .chain(chars[chars.len() - tail..].iter())
+                .collect();
+            if self.width(&shown) <= max_w {
+                return shown;
+            }
+        }
+        String::from("...")
+    }
+
     fn ellipsize_right(&self, text: &str, max_w: i32) -> String {
         if self.width(text) <= max_w {
             return text.to_string();
@@ -2452,11 +3043,19 @@ impl Canvas<'_> {
 /// Start the game in a child process, its output copied into
 /// [`launcher::GAME_LOG`] (in the data directory) as well as to this
 /// process's own stdout / stderr, so a terminal still shows it.
-fn spawn_game(info: &DiscInfo, settings: &LauncherSettings, online: bool) -> Result<Running> {
+fn spawn_game(
+    info: &DiscInfo,
+    settings: &LauncherSettings,
+    online: bool,
+    resume: Option<&Path>,
+) -> Result<Running> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe().context("locate the legaia-engine executable")?;
     let mut cmd = Command::new(&exe);
-    cmd.args(launcher::play_args_with(info, settings));
+    match resume {
+        Some(save) => cmd.args(launcher::play_args_continuing(info, settings, save)),
+        None => cmd.args(launcher::play_args_with(info, settings)),
+    };
     if online {
         cmd.arg("--multiplayer");
     }
@@ -2805,7 +3404,7 @@ fn sentence(s: &str) -> String {
 
 /// The rows the buttons take: the last two (the saves folder and Quit) share
 /// one, so the help box under them keeps room for a whole message.
-const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 1;
+const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 2;
 
 /// Button `i`'s rect: one full-width row each, except the last two, which
 /// split the bottom row.
@@ -2835,19 +3434,25 @@ fn fit_button_label(c: &Canvas, label: &str, w: i32) -> String {
 const BUTTON_LABEL_MARGIN: i32 = 3;
 
 fn button_rect(i: usize) -> Rect {
-    let last_row = BUTTON_ROWS - 1;
-    let y = COLUMNS_Y + (i as i32).min(last_row) * BUTTON_PITCH;
-    if (i as i32) < last_row {
-        return Rect::new(LEFT_X, y, LEFT_W, BUTTON_H);
+    // The first four buttons take a row each; the rest pair up, two to a
+    // row (Controls / Recent, Saves folder / Quit).
+    let i = i as i32;
+    if i < FULL_BUTTONS {
+        return Rect::new(LEFT_X, COLUMNS_Y + i * BUTTON_PITCH, LEFT_W, BUTTON_H);
     }
+    let paired = i - FULL_BUTTONS;
+    let y = COLUMNS_Y + (FULL_BUTTONS + paired / 2) * BUTTON_PITCH;
     let half = (LEFT_W - 4) / 2;
-    let x = if (i as i32) == last_row {
+    let x = if paired % 2 == 0 {
         LEFT_X
     } else {
         LEFT_X + LEFT_W - half
     };
     Rect::new(x, y, half, BUTTON_H)
 }
+
+/// How many of [`BUTTONS`] take a whole row.
+const FULL_BUTTONS: i32 = 4;
 
 /// The help box under the buttons.
 fn help_rect() -> Rect {
@@ -2962,7 +3567,7 @@ fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
 /// reminder keeps its line, the last row text may reach, and whether every
 /// line fits.
 struct HelpLayout {
-    lines: Vec<(Vec<String>, [f32; 4])>,
+    lines: Vec<(Vec<String>, Role)>,
     footer: bool,
     bottom: i32,
     /// Read by the fit test; the window draws what fits either way.
@@ -2972,7 +3577,7 @@ struct HelpLayout {
 
 fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
     let help = help_rect();
-    let lines: Vec<(Vec<String>, [f32; 4])> = msg
+    let lines: Vec<(Vec<String>, Role)> = msg
         .iter()
         .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
         .collect();
@@ -3056,6 +3661,7 @@ mod tests {
 
     fn canvas(font: &legaia_font::Font) -> Canvas<'_> {
         Canvas {
+            palette: legaia_app_theme::palette(true),
             font,
             solid: (0, 0, 1, 1),
             condense: true,
@@ -3775,7 +4381,7 @@ mod tests {
         app.switch_column();
         assert_eq!(app.focus, Item::Bind(0));
         assert!(app.order().contains(&Item::BindReset));
-        app.leave_controls();
+        app.leave_page();
         assert_eq!(app.focus, Item::Panel);
         assert!(!app.order().contains(&Item::Bind(0)));
     }

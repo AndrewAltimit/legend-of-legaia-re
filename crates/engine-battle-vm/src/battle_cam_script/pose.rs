@@ -166,10 +166,12 @@ pub fn menu_raw_z(bbox: Option<FormationBox>) -> i32 {
 /// un-entered min/max accumulators degenerate to.
 pub fn menu_framing(bbox: Option<FormationBox>, yaw: f32) -> BattleCamPose {
     let focus = match bbox {
+        // `sra v0,v0,0x1`, a floor, on the halfword sums (`0x801D70B4`,
+        // `0x801D70D4`).
         Some(b) => [
-            (b.min[0] + b.max[0]) * 0.5,
+            ((b.min[0] as i32 + b.max[0] as i32) >> 1) as f32,
             0.0,
-            (b.min[1] + b.max[1]) * 0.5,
+            ((b.min[1] as i32 + b.max[1] as i32) >> 1) as f32,
         ],
         None => [0.0; 3],
     };

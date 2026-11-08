@@ -474,6 +474,9 @@ impl World {
     /// PORT: FUN_80053CB8 (`0x800541D0..0x80054274`, via
     /// [`vm::battle_action::miracle_marker_armed`])
     pub(in crate::world) fn miracle_marker_armed_for(&self, roster_slot: u8) -> bool {
+        if self.battle.art_seed_ra_seru {
+            return true;
+        }
         let Some(record) = self.party.roster.members.get(roster_slot as usize) else {
             return false;
         };

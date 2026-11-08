@@ -11,7 +11,6 @@
 //! the page shows on its status line.
 
 use super::*;
-use legaia_app_theme::chrome;
 use legaia_engine_cheats::cheats::{
     CheatControl, PLAYER_CHEAT_LIST, PlayerCheat, WorldCheats, cheat_help, cheat_switch_on,
     cheat_switch_to,
@@ -175,10 +174,10 @@ impl PlayWindowApp {
 
     /// The Cheats page's draws, in stage pixels.
     pub(super) fn cheats_stage_draws(&self) -> Vec<TextDraw> {
-        let heading = chrome::HEADING.to_f32();
-        let key_ink = chrome::KEY.to_f32();
-        let text = chrome::TEXT.to_f32();
-        let changed = chrome::CHANGED.to_f32();
+        let heading = self.chrome().heading;
+        let key_ink = self.chrome().key;
+        let text = self.chrome().text;
+        let changed = self.chrome().changed;
         let world = &self.session.host.world;
         let items = world.item_name_pairs();
         let height = super::settings_panel::plate_height(CHEAT_ROWS, NOTE_LINES);
@@ -213,7 +212,7 @@ impl PlayWindowApp {
                 out.push(TextDraw {
                     dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
                     src,
-                    color: legaia_app_theme::DARK.hover.to_f32(),
+                    color: self.chrome().hover,
                 });
             }
             put(&mut out, label, (left, y - 2), text);

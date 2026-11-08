@@ -138,10 +138,13 @@ impl LegaiaRuntime {
     /// through the boot system-UI underlay.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
         let cutscene = self.drawn_cutscene_view();
+        // Native's gate: the shadow links per primitive on the field frame alone.
+        let field = self
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.mode == legaia_engine_mode::mode::SceneMode::Field);
         self.host_view_at(self.field_pass_box())
-            .map(|v| {
-                v.drop_shadow_prims(cutscene, self.play_field_prim_order() && self.psx_render())
-            })
+            .map(|v| v.drop_shadow_prims(cutscene, field && self.psx_render()))
             .unwrap_or_default()
     }
 

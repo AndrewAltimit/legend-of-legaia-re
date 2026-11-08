@@ -55,7 +55,7 @@ pub const WHITE_LUMA: f64 = 230.0;
 
 /// The longest display lag retail shows (`2 *` the largest frame step the
 /// band runs on, `4`).
-const MAX_LAG: u64 = 8;
+pub(crate) const MAX_LAG: u64 = 8;
 
 /// Game frames a retail grab's screen fade stands behind the RAM when only
 /// the other ordering table links the fade's quad ([`Row::fade_back`]): one,
@@ -168,7 +168,7 @@ impl Segment {
     }
 }
 
-fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
+pub(crate) fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let mut lines = text.lines();
     let header: Vec<String> = lines
@@ -189,7 +189,7 @@ fn parse_csv(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
         .collect())
 }
 
-fn field<T: std::str::FromStr>(r: &BTreeMap<String, String>, k: &str) -> Option<T> {
+pub(crate) fn field<T: std::str::FromStr>(r: &BTreeMap<String, String>, k: &str) -> Option<T> {
     r.get(k).and_then(|v| v.parse().ok())
 }
 
@@ -262,6 +262,12 @@ impl Side {
     /// fall while the previous actor's `0x51` plays out. Those leading rows
     /// are dropped first, or that actor's Done band would end the cast's
     /// recording before it began.
+    /// Without the first `n` rows of the recording.
+    pub fn drop_leading(mut self, n: usize) -> Self {
+        self.rows.drain(..n.min(self.rows.len()));
+        self
+    }
+
     pub fn first_action_only(mut self) -> Self {
         let lead = self
             .rows
@@ -1377,11 +1383,25 @@ pub struct CastSequenceArgs {
     /// ([`DriveWait`]).
     #[arg(long)]
     pub strict_drive: bool,
+    /// Engine rows to drop from the recording's start: a gate film's ticks
+    /// still on the state the retail side's first row has already left
+    /// (the driver counts them from `cam.csv`, [`Side::drop_leading`]).
+    #[arg(long, default_value_t = 0)]
+    pub engine_skip: usize,
+    /// Write only `camera.csv`: no frame is read, so a recording whose frames
+    /// have been deleted still scores its camera.
+    #[arg(long)]
+    pub camera_only: bool,
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?.first_action_only();
-    let engine = Side::read(&a.engine)?;
+    let engine = Side::read(&a.engine)?.drop_leading(a.engine_skip);
+    std::fs::create_dir_all(&a.out)?;
+    crate::cast_sequence_camera::write_camera_csv(&retail, &engine, &a.out)?;
+    if a.camera_only {
+        return Ok(());
+    }
     let mut report = compare_with(&a.label, &retail, &engine, a.retail_lag, !a.strict_drive)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
@@ -1521,6 +1541,14 @@ mod tests {
         };
         let kept = side.first_action_only().rows;
         assert_eq!(kept.iter().map(|r| r.t).collect::<Vec<_>>(), [3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn a_gate_film_can_drop_its_leading_rows_on_the_state() {
+        let kept = side(&[(0, 3, 5)]).drop_leading(3);
+        assert_eq!(kept.rows.len(), 2);
+        assert_eq!(kept.rows[0].t, 103);
+        assert!(side(&[(0, 3, 2)]).drop_leading(3).rows.is_empty());
     }
 
     #[test]

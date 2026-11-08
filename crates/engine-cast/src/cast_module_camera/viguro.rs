@@ -103,7 +103,11 @@ pub fn viguro_charge_ring(centre: [i16; 2], w: i32) -> [[i16; 3]; 16] {
 fn viguro_drain_holds(st: &mut ModuleCamState) -> bool {
     st.countdown.drain();
     st.countdown.0 = i32::from(st.countdown.0 as i16);
-    st.countdown.0 >= 0
+    let held = st.countdown.0 >= 0;
+    if !held {
+        st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+    }
+    held
 }
 
 /// The enemy row's framing point, `FUN_801DCEAC(9, ..)`'s negated centroid

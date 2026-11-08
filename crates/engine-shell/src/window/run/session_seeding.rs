@@ -16,13 +16,8 @@ pub(super) fn apply_cheat_file(
 ) -> Result<()> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    // The extension decides; a file with neither says which by its text -
-    // the same sniff the play page's pasted code list goes through.
     use legaia_engine_cheats::cheat_applier::{CheatTextFormat, apply_text};
-    let format = match path.extension().and_then(|s| s.to_str()) {
-        Some(e) if e.eq_ignore_ascii_case("cht") => CheatTextFormat::MednafenCht,
-        _ => CheatTextFormat::sniff(&text),
-    };
+    let format = CheatTextFormat::for_path(path, &text);
     let report = apply_text(world, &text, format, strict)?;
     eprintln!(
         "Cheat report ({} entries, {} writes; {} applied, {} unmapped, {} unknown):",
@@ -945,47 +940,24 @@ pub(super) fn seed_demo_battle(session: &mut NativeSession, player_battle: bool)
 /// cheats have settled, so the actor reseed reads final records). The
 /// flag overrides whatever composition the boot save carried.
 pub(super) fn install_party_spec(session: &mut NativeSession, spec: &str) -> Result<()> {
-    let slots = parse_party_spec(spec)?;
-    // Seed the roster slots the spec names before installing the
-    // composition. `--seed-party` seeds retail's New Game roster, which is
-    // Vahn alone (correct for the early game), so a `--party vahn,noa,gala`
-    // asked three battle ordinals to resolve to roster slots 1 and 2 that
-    // did not exist: both HUD panels read `P2 0/0` / `P3 0/0` and neither
-    // actor got a live HP / SPD mirror. Fill them from the same SCUS
-    // template rows retail seeds those characters from when they join.
-    // Records already carrying stats (a loaded save) are left alone.
-    if let Some(starting) = session.starting_party.clone() {
-        let seeded = session
-            .host
-            .world
-            .seed_party_members(&starting, &slots.clone());
-        if seeded > 0 {
-            log::info!(
-                "play-window: --party seeded {seeded} roster slot(s) from the SCUS \
-                     new-game template"
-            );
-        }
-    } else {
+    if session.starting_party.is_none() {
         log::warn!(
             "play-window: --party cannot seed absent roster slots - the SCUS \
                  starting-party template was not readable from this boot source"
         );
     }
-    let world = &mut session.host.world;
-    // The composition, the battle stat fold and the MP ceiling the battle
-    // HUD draws: the install the browser page shares.
-    legaia_engine_session::party_spec::install_party_composition(world, slots.clone());
-    if world.party.active_party.len() != slots.len() {
+    let slots = session
+        .seat_party_spec(spec)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    let seated = &session.host.world.party.active_party;
+    if seated.len() != slots.len() {
         log::warn!(
             "play-window: --party {spec}: kept the first {} of {slots:?} \
                  (3 on-screen positions)",
-            world.party.active_party.len()
+            seated.len()
         );
     }
-    log::info!(
-        "play-window: present party = {:?} (roster slots, battle order)",
-        world.party.active_party
-    );
+    log::info!("play-window: present party = {seated:?} (roster slots, battle order)");
     Ok(())
 }
 

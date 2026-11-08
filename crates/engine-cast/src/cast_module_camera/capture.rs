@@ -152,6 +152,10 @@ pub struct CaptureCamArm {
     /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34])
     /// + 0x800` into `+0x46` (PROT 0957's arm 5, `0x801F75A4..0x801F75CC`).
     pub party_faces_caster: bool,
+    /// Units a vsync every party seat is pulled along its bearing from the
+    /// caster plus `0x800`, on every pass of the arm:
+    /// PROT 0938's `0x4E` arm 1 (`0x801F74C0..0x801F7564`).
+    pub party_shove: Option<i16>,
     /// The pass seats [`crate::cast_module_camera::STORM_SCATTER_PAIRS`] pairs of
     /// [`crate::cast_module_camera::STORM_SCATTER_RECORDS`] on `rand()` points
     /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 255`, `z = 0x100`.
@@ -291,6 +295,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, GLARE_BODY) => Some(glare_camera),
         (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
         (952, super::BLOODY_HORNS_BODY) => Some(super::bloody_horns_camera),
+        (952, super::ASTRAL_SLASH_BODY) => Some(super::astral_slash_camera),
         (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
         (943, crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK) => Some(super::lapis_wave_camera),
         (956, crate::cast_arm_ticks::WATER_HAZARD_TICK) => Some(super::water_hazard_camera),
@@ -302,6 +307,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (961, DEAD_END_CRISIS_BODY) => Some(dead_end_crisis_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
+        (938, super::CHAOS_BREATH_BODY) => Some(super::chaos_breath_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
@@ -316,6 +322,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
         (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
+        (950, super::SHADOW_BREAK_BODY) => Some(super::shadow_break_camera),
         (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (942, super::DARK_TYPHOON_BODY) => Some(super::dark_typhoon_camera),
@@ -349,6 +356,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// |---|---|---|---|
 /// | 0951 | `0x801F77E8` (`0x5B` Scythe Wind) | 3..=5 | `0x801F7CD4`, `0x801F7E08`, `0x801F80B0` |
 /// | 0952 | `0x801F7118` (`0x5C` Bloody Horns) | 3..=6 | `0x801F7624`, `0x801F7798`, `0x801F78EC`, `0x801F7A7C` |
+/// | 0952 | `0x801F6A0C` (`0xB8` Astral Slash) | 3, 4 | `0x801F6F8C`, `0x801F70BC` |
 ///
 /// The first shot of each (arm 2, `0x801F7BCC` / `0x801F74F4`) is built
 /// once. Kiss of Death (PROT 0955) builds every shot once: arm 0 at
@@ -358,6 +366,7 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
     match (entry, body) {
         (951, super::SCYTHE_WIND_BODY) => (3..=5).contains(&phase),
         (952, super::BLOODY_HORNS_BODY) => (3..=6).contains(&phase),
+        (952, super::ASTRAL_SLASH_BODY) => (3..=4).contains(&phase),
         _ => false,
     }
 }
@@ -391,8 +400,13 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// The bodies of 0946..0948, 0953, 0959 and 0960 clear `ctx[+0x0D]` without the
-/// store ([`capture_exit_clears_style`]).
+/// Three bodies zero the counter instead (`sh zero,0x2(base)` beside `sb
+/// zero,0xd`): PROT 0959 Megaton Press (`0x801F8214`), PROT 0960 Plasma Strike
+/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). Retail films of all three read the
+/// counter `0` on `0x71`, and the first Done pass adds its drift.
+///
+/// The bodies of 0946..0948 and 0953 clear `ctx[+0x0D]` without the store
+/// ([`capture_exit_clears_style`]).
 pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
     const YAW: i32 = 0x780;
     match (entry, body) {
@@ -409,6 +423,8 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
         | (963, 0x801F_6A20)
         | (964, 0x801F_69D8 | 0x801F_88EC)
         | (966, SINGLE_BODY) => Some(YAW),
+        (959, super::MEGATON_PRESS_BODY)
+        | (960, super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY) => Some(0),
         _ => None,
     }
 }
@@ -421,8 +437,19 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// only through its arm 2 (`0x801F7B44`) and stores the `1` back on that arm's
 /// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
 /// body clears it on its last arm (`0x801F72CC`).
+///
+/// Three more bodies of split modules finish with no `sb zero,0xd` at all,
+/// where their module's other body has one: PROT 0945's Water Column (`0x54`,
+/// `0x801F6EDC`, finishing at `0x801F769C..0x801F76C4`), PROT 0938's Chaos
+/// Breath (`0x4E`, `0x801F726C`) and PROT 0940's Slime Divide (`0x50` / `0xAE`,
+/// `0x801F78B8`). A film of Water Column reads the half turn: the Done band's
+/// yaw endpoint `4177` against `ctx[+0x6DA] - facing = 2129`.
 pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962) && !(entry == 941 && action == 0x51)
+    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+        && !matches!(
+            (entry, action),
+            (938, 0x4E) | (940, 0x50 | 0xAE) | (941, 0x51) | (945, 0x54)
+        )
 }
 
 /// The module-resident countdown word a directed capture body gates its arms
@@ -921,8 +948,7 @@ pub fn mystic_circle_camera(
         3 => Some(drift(0, 0, -29, 96)),
         _ => None,
     };
-    st.countdown.0 -= DRAIN;
-    let hold = st.countdown.0 > 0;
+    let hold = st.countdown.holds_after_drain(DRAIN, 0);
     let mut shot = None;
     if !hold {
         match phase {
@@ -1327,7 +1353,7 @@ fn terio_reach(base: i16, table: i16) -> i16 {
 ///   its victim (`h = heading(victim -> caster) + 0x800`), a cut - pitch
 ///   `0x20`, yaw `0x400 - h`, TR `(0, 0x600, depth)` - the latch cleared, and
 ///   phase 4. Arm 4 (`0x801F6FA0`): pitch `-0x40`, yaw `0x600 - h`, TR
-///   `(0x200, 0xA00, depth / 3)` over `0x50` frames, `+= scalar * 80`. Arm 5:
+///   `(0x200, 0xA00, depth / 6)` over `0x50` frames, `+= scalar * 80`. Arm 5:
 ///   held, then pitch `0`, yaw `0x800 - h`, TR `(0, 0x550, depth)` over
 ///   `0x40`, `+= scalar << 6`. Arm 6 drains every pass (spawning the trail
 ///   parts) and, once spent, pulls out to TR `(0, 0x550, 0x2800)` over
@@ -1452,7 +1478,7 @@ pub fn terio_punch_camera(
             step(
                 shot(
                     [-0x40, yaw_from(0x600, h), 0],
-                    [0x200, 0xA00, depth / 3],
+                    [0x200, 0xA00, depth / 6],
                     0x50,
                 ),
                 Some(5),
@@ -1575,6 +1601,27 @@ mod slime_divide_tests {
         let mut st = ModuleCamState::default();
         let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
         assert_eq!(arm0.tr, [0, 0x400, 0x800]);
+    }
+}
+
+#[cfg(test)]
+mod exit_style_tests {
+    use super::capture_exit_clears_style;
+
+    /// A body with no `sb zero,0xd` leaves state `0x70`'s style `1` standing
+    /// and the Done band frames half a turn round; the other body of the same
+    /// module clears it.
+    #[test]
+    fn a_split_module_keys_the_style_clear_on_the_body_its_action_runs() {
+        assert!(!capture_exit_clears_style(945, 0x54), "Water Column");
+        assert!(capture_exit_clears_style(945, 0xBA), "all-stats surge");
+        assert!(!capture_exit_clears_style(938, 0x4E), "Chaos Breath");
+        assert!(capture_exit_clears_style(938, 0xB7), "Mystic Circle");
+        assert!(!capture_exit_clears_style(940, 0x50), "Slime Divide");
+        assert!(!capture_exit_clears_style(940, 0xAE), "Slime Divide");
+        assert!(capture_exit_clears_style(940, 0x3C), "Glare");
+        assert!(!capture_exit_clears_style(941, 0x51), "Steal");
+        assert!(capture_exit_clears_style(941, 0xB9), "Stone Circle");
     }
 }
 

@@ -21,6 +21,9 @@ pub(super) struct OverlayDraws {
     pub save_chrome_blend: Vec<legaia_engine_render::OverlayBlendSpan>,
     /// The opening caption quad.
     pub caption_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    /// The window's chrome when it draws light, from its own atlas; empty
+    /// when it rides the glyph layer.
+    pub chrome_draw_vec: Vec<TextDraw>,
 }
 
 /// The frame's effect meshes (built and uploaded here, drawn in the scene
@@ -157,7 +160,10 @@ impl PlayWindowApp {
         }
         // The window's own chrome (quit prompt, hotkey notice, hotkey help)
         // last, so nothing in the text layer covers it.
-        hud.extend(self.window_chrome_draws(w, h));
+        let mut chrome_draw_vec = self.window_chrome_draws(w, h);
+        if self.chrome_dark || self.chrome_atlas.is_none() {
+            hud.append(&mut chrome_draw_vec);
+        }
 
         // Boot-phase sprite overlay: alternates between the
         // publisher-logos atlas (during PublisherLogos) and
@@ -278,6 +284,7 @@ impl PlayWindowApp {
             save_chrome_draw_vec,
             save_chrome_blend,
             caption_draw_vec,
+            chrome_draw_vec,
         }
     }
 
@@ -331,7 +338,13 @@ impl PlayWindowApp {
         // one decision both hosts take (`battle_fx::battle_world_scale`).
         let fx_scale =
             legaia_engine_session::battle_fx::battle_world_scale(&self.session.host.world);
-        let fx_cam = if fx_scale != 1.0 {
+        // The pond's own surface camera (`FishingScene::vp_raw`) draws the
+        // venue; the effects on it (the lure rings, the catch bursts) share
+        // that view. The field follow camera the world resolves under a
+        // fishing session is a different projection.
+        let fx_cam = if let Some(g) = self.fishing_gpu.as_ref() {
+            g.mvp
+        } else if fx_scale != 1.0 {
             cam * Mat4::from_scale(Vec3::splat(fx_scale))
         } else {
             cam
@@ -459,7 +472,7 @@ impl PlayWindowApp {
             // `HostView::pack_mode_world_prims` kernel as the page.
             pack_mode_world: self.host_view().pack_mode_world_prims(),
         };
-        let (mut under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
+        let (mut under, mut over) = legaia_engine_screens::screen_layers::compose_screen_prims(
             &self.session.host.world,
             &self.menu_runtime,
             self.session.pause_wipe().fade_level(),
@@ -473,6 +486,12 @@ impl PlayWindowApp {
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.
         under.extend(self.netplay_prims());
+        // The composited tail draws after the text pass, over the 2D panels:
+        // while the `F12` panel is up it goes beneath the panel's scrim, so a
+        // title art or a battle banner does not paint across the settings.
+        if self.hotkey_help {
+            under.append(&mut over);
+        }
         (over, under)
     }
 }

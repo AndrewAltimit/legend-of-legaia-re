@@ -51,6 +51,7 @@ impl World {
         let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };
+        self.integrate_battle_part_cyclers(&mut scene.parts, pass);
         {
             // Borrow split: the move-VM host borrows the rest of `World` (sin
             // LUT etc.) while the scene's part states live in `scene`, taken out

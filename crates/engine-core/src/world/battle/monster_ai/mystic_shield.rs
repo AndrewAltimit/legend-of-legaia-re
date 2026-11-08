@@ -248,6 +248,7 @@ impl World {
         let Some(mut scene) = self.casting.mystic_shield_fx.take() else {
             return;
         };
+        self.integrate_battle_part_cyclers(&mut scene.parts, pass);
         {
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -303,6 +304,7 @@ impl World {
         let Some(mut scene) = self.casting.stage_fx.take() else {
             return;
         };
+        self.integrate_battle_part_cyclers(&mut scene.parts, pass);
         {
             let mut host = MoveVmHostImpl {
                 world: self,

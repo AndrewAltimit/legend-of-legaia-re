@@ -55,6 +55,7 @@ impl PlayWindowApp {
             scene_res: Some(scene_res),
             win: EngineWindow::new(),
             font_atlas: None,
+            chrome_atlas: None,
             publisher_logos: None,
             pending_publisher_logos_atlas: publisher_logos_atlas_data,
             title_screen: None,
@@ -91,6 +92,8 @@ impl PlayWindowApp {
             coplanar_env_offsets: std::collections::HashMap::new(),
             field_terrain_color_draws: Vec::new(),
             world_map_terrain_draws: Vec::new(),
+            world_map_terrain_far: Vec::new(),
+            world_map_terrain_color_far: Vec::new(),
             world_map_terrain_color_draws: Vec::new(),
             world_map_terrain_records: Vec::new(),
             world_map_terrain_color_records: Vec::new(),
@@ -249,6 +252,11 @@ impl PlayWindowApp {
             launch_switches: None,
             cheats_page: Default::default(),
             scenes_page: Default::default(),
+            tools_page: Default::default(),
+            chrome_dark: true,
+            fx_outline: std::env::var_os("LEGAIA_DIAG_FX").is_some(),
+            cheat_file: None,
+            dev_menu_on: std::env::var_os("LEGAIA_DEV_MENU").is_some(),
             options_save_error: Default::default(),
             // Armed by `cmd_play_window_with_record` for an interactive
             // window only.

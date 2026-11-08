@@ -47,7 +47,16 @@ impl World {
         if ext == Some(0xF8) {
             return self.player_actor_slot.map(|_| ScriptActorRef::Player);
         }
-        self.field_vm.executing_channel.map(ScriptActorRef::Npc)
+        // The talk runner steps a talker's own op with no channel marked
+        // executing: no target byte, or a target byte naming the talker.
+        let talker = self
+            .dialog
+            .stepping_inline_npc
+            .filter(|&slot| ext.is_none_or(|t| self.placement_slot_for_target(t) == Some(slot)));
+        self.field_vm
+            .executing_channel
+            .or(talker)
+            .map(ScriptActorRef::Npc)
     }
 
     /// A script actor's live `+0x14..+0x18`, raw retail Y-down.

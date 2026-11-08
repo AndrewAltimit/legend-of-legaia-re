@@ -3634,6 +3634,10 @@ placement by the flat record index `+0x50` (`N0 + slot`, `FUN_8003A1E4`), and
 is scored only when the engine holds that placement within 96 units of
 retail's position - a placement in the wrong place is the position's miss,
 not the heading's - and not on the off-map park seat, where nothing is drawn.
+A placement no script or walk has surfaced a position for stands on its MAN seat
+and is not scored, since a story-history park of an undrawn marker or a captured talk
+reads as a miss there; `LEGAIA_RC_FACING_DUMP` lists those as `facing-seated` lines, and
+across the field corpus only two non-ambient rows there part from retail.
 The detail lists every heading more than a sixteenth turn off with both
 values, and tags the party-bank placements (`+0x10 & 0x01000000`). Set
 `LEGAIA_RC_FACING_DUMP` to print every matched pair.
@@ -4027,7 +4031,7 @@ own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|
-| under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| under `lag` ticks into its state, or a retake landing on the state's first pass (which still draws the state before it) | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327`, and a party seat's first strike-loop pass (`battle_garmel_party_noa_lizard_tail_open`) read `.615` on the approach's last frame against `.940` at the gate |
 | a monster's clip age, the same shot | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); retaken, both `battle_gimard_tail_fire_*` frames fell, and the monster strikes split both ways (`battle_jouind_gilium_lv3_strike` `.850` to `.953`, `battle_vozz_gizam_strike` `.964` to `.921`) |
 | `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |

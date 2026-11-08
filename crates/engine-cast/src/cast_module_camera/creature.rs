@@ -112,7 +112,7 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
         }
         1 => {
             if st.countdown.0 > 0 {
-                st.countdown.drain();
+                st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
                 return ArmDirection::PASS.nudged(push);
             }
             ArmDirection::PASS

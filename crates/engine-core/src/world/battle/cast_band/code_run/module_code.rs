@@ -392,7 +392,7 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 || entry == 935 {
+            if entry == 944 || entry == 935 || entry == 938 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             // PROT 0964's strike picks its opening record off the last roll.
@@ -1713,6 +1713,21 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // A tick body that seats its creature and stages its clip on one pass
+        // (PROT 0910's arm 2, `sb s8,0x1da` / `sb s8,0x1dc` at
+        // `0x801F6DB0..0x801F6DB4` right behind the installer): the host seats
+        // after this tick and the installer zeroes the clip bytes, so the store
+        // waits with the director's for the seat there is
+        // (`Self::apply_seru_seat_writes`).
+        if self.casting.summon_actor_slot != Some(seat_slot)
+            && (self.casting.summon_seat_owed.is_some()
+                || self.casting.pending_summon_spawn.is_some())
+            && seat.staged_anim != seat_orig.staged_anim
+            && seat.staged_anim != 0
+        {
+            self.casting.module_cam.creature_stage = Some(seat.staged_anim);
+            self.casting.module_cam.creature_restage = seat.restage & 1 != 0;
+        }
         // PROT 0903's depth stores: arm 10's pass parks the walk-in's
         // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -
         // re-runs the target-size framing `FUN_801F0348` (`jal` at
@@ -1974,6 +1989,37 @@ impl World {
                     }
                 }
             }
+            // PROT 0938's breath pushes the whole party row back, a seat at a
+            // time along its bearing from the caster, on every pass of arm 1.
+            if let Some(units) = arm.party_shove {
+                let (cx, cz) = self
+                    .actors
+                    .get(usize::from(caster_slot))
+                    .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
+                for slot in 0..self.party.party_count {
+                    let Some(a) = self.actors.get_mut(usize::from(slot)) else {
+                        continue;
+                    };
+                    let heading = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                        cz,
+                        cx,
+                        a.move_state.world_z,
+                        a.move_state.world_x,
+                    )
+                    .wrapping_add(0x800)
+                        & 0xFFF;
+                    let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+                    // Retail's `2 * step` a frame is `2` a vsync here.
+                    let by = i32::from(units);
+                    let dx = ((i32::from(sin) * by) >> 12) as i16;
+                    let dz = ((i32::from(cos) * by) >> 12) as i16;
+                    a.move_state.world_x = a.move_state.world_x.wrapping_add(dx);
+                    a.move_state.world_z = a.move_state.world_z.wrapping_add(dz);
+                    if let Some((bx, bz)) = a.battle.seat {
+                        a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+                    }
+                }
+            }
             if let Some(level) = arm.parts_level
                 && let Some(scene) = self.casting.active_summon.as_mut()
             {
@@ -2023,14 +2069,15 @@ impl World {
                 && let Some(roll) =
                     self.capture_module_roll_site(shape, usize::from(site), caster_slot, 0)
             {
-                // The shape-A clamp and the HP / bar writes. The two hits
-                // that strike the victim down (arms 7 and `0x0D`; arm 7
-                // stages its `+0x1F1` knockdown beside it) go through the
-                // safe-clamp hit arm the fold lands a cast with, the victim's
-                // reaction included; arm `0x0F`'s barrage restages nothing.
+                // The shape-A clamp and the HP / bar writes. Arms 7 and `0x0D`
+                // go through the safe-clamp hit arm the fold lands a cast with.
+                // Only arm 7 stages a reaction (`+0x1F1` at `0x801F7278`): the
+                // body's other `+0x1DA` stores are arm `0x0A`, `0x0F` and `0x11`,
+                // so arm `0x0D` lands on a victim still parked in its get-up
+                // clip, and arm `0x0F`'s barrage restages nothing.
                 if site < 2 {
                     self.apply_effect_child_hit(0, roll.max(0));
-                    if roll > 0 {
+                    if site == 0 && roll > 0 {
                         let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
                         self.queue_battle_reaction(0, survives);
                     }

@@ -146,6 +146,7 @@ pub(super) fn pad_hop(
         }
         None => doors,
     };
+    super::path_planner::forget_unreached();
     HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let avoid = hazards(session, dest);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {

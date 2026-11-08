@@ -185,8 +185,7 @@ pub fn evil_seru_magic_camera(
     };
     // Arm 22 re-arms its `0x24`-frame shot every pass, before its gate.
     let held_shot = (phase == 22).then(|| fixed([-0x50, 0], [-0x14, 0x1228, 0], -0x400, 0x24));
-    st.countdown.0 -= DRAIN;
-    if st.countdown.0 > 0 {
+    if st.countdown.holds_after_drain(DRAIN, 0) {
         return CaptureCamArm {
             shot: held_shot.flatten(),
             drift,

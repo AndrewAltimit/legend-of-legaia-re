@@ -1211,15 +1211,35 @@ The characters, arts, magic, NPC and shop pages pose one body at a time through
 **The rate.** The battle anim tick `FUN_80047430` advances a body's 12.4
 cursor by `(step * actor[+0x21D] * entry[+0x78]) >> 1` a battle frame of `step`
 vsyncs ([battle-actor-rendering.md](battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)):
-at the normal `+0x21D = 8` that is `rate / 4` keyframes a vsync, `15 * rate` a
-second, whatever the frame step. A retail film holds it: Vahn's rate-`1` idle
-(9 keyframes) steps its cursor `8` sixteenths every 2-vsync frame and loops in
-36 vsyncs (`dolk_gimard`'s `rates.csv`, seat 0, clip 0). The battle-form clips on
-the characters and arts pages, and their `.glb` timelines, play at that rate.
-Only a Slowed actor's idle (`>> 2`) runs at half of it. A summon's clips stay
-at half the law on the magic page: under the cast's load the battle frame
-runs 5 to 7 vsyncs with the step clamped at 4, so a retail film reads
-Zenoir's rate-`1` clip one keyframe every 5 to 7 vsyncs.
+`1.875 * scale * rate` keyframes a second, whatever the frame step. At the
+normal scale `8` that is `15 * rate`, which the idle, the walk and the weapon
+swings play at; a retail film holds it (Vahn's rate-`1` idle, 9 keyframes, steps
+its cursor `8` sixteenths every 2-vsync frame and loops in 36 vsyncs in
+`dolk_gimard`'s `rates.csv`, seat 0, clip 0), and only a Slowed actor's idle
+(`>> 2`) runs at half of it.
+
+An art record does not play at scale `8`. The anim commit `FUN_8004AD80` drops
+every slot's `+0x21D` to `4` when an art constant (id `>= 0x1B`) commits, or `2`
+while `ctx[+0x243]` is set, and the special starter `0x1A` sets it: Hyper, Super
+and Miracle Arts run at scale `2`, regular arts at scale `4`
+(`0x8004BB64..0x8004BBA8`; capture `minigame_muscle_dome_retail_skeleton_hyper_arts`
+and `_tornado_flame` hold `+0x21D = 2`, `ctx[+0x243] = 1` with the art clip
+committed, and `rim_elm_gimard_victory`, a regular art queued behind its `0x19` starter, holds `ctx[+0x243] = 0`).
+So a regular art reads `7.5 * rate` keyframes a second and a fanfare art
+`3.75 * rate`. The arts page and its `.glb` timelines use that law:
+`art_anim_scale` in `crates/web-viewer/src/arts_view.rs` reads the record's commit
+through `battle_anim_rate::staged_commit_rate_effect`, keyed on the fanfare channel
+that is present exactly on the records staging `0x1A`, and sends the page the
+record's `scale`. A summon's clips stay at half the law on the magic page:
+under the cast's load the battle frame runs 5 to 7 vsyncs with the step clamped at
+4, so a retail film reads Zenoir's rate-`1` clip one keyframe every 5 to 7 vsyncs.
+
+An art clip and its voice shout leave together: `MeshView` starts its clock in
+`setPlaying`, and the page fires the shout right after, so a first keyframe and the
+first sample of the shout are one display frame apart at most. Art clips, action
+clips and casts are one-shots on the mesh view (`loop: false`), with the idle
+played once afterwards and held; the monsters and shop specimen viewers keep
+looping because a chosen clip is what they are for.
 
 **Between keyframes.** Retail blends: the decoder `FUN_8004998C` draws the
 cursor's keyframe blended toward the next by the cursor's low nibble
@@ -1246,14 +1266,30 @@ out of `summon.dat` and plays its keyframe clips: the creature alone. A cast in
 a fight is also the cast module's effect layer - the spawn records, emitters,
 fades, washes, CLUT cycles, tints - plus its camera and its cry, and all of that
 is the module's code ([cast-module.md](cast-module.md#what-the-port-runs)),
-which needs a battle to run in. So the page's "Watch the whole cast in battle"
-button frames the play page's runtime with `play.html?cast=<id>&target=<seat>&embed=1`:
-on the disc load the page enters `map01` (or `scene=`), raises the party's level,
-seeds the cast on engine actor 0 (`debug_seed_inflight_cast`, the native
-`LEGAIA_BATTLE_INFLIGHT` seam) and opens the scene's first formation
-(`debug_force_battle`). The frame boots off the shared disc cache, as the
-minigames page's Muscle Dome frame does, and runs with the visitor's play-page
-options. What the engine leaves out of a module is what the frame leaves out.
+which needs a battle to run in. So the page's default view is the full battle:
+the shared slot `site/js/battle-stage.js` frames the play page's runtime with
+`play.html?cast=<id>&target=<seat>&embed=1`; on the disc load the page enters
+`map01` (or `scene=`), raises the party's level, seeds the cast on engine actor 0
+(`debug_seed_inflight_cast`, the native `LEGAIA_BATTLE_INFLIGHT` seam) and opens
+the scene's first formation (`debug_force_battle`). The frame boots off the shared
+disc cache, as the minigames page's Muscle Dome frame does, and runs with the
+visitor's play-page options. What the engine leaves out of a module is what the
+frame leaves out.
+
+The Tactical Arts page uses the same slot with
+`play.html?art=<arrows>&char=<name>&target=<seat>&embed=1`, which seats that
+character (`set_active_party_spec`), learns every art, and hands the entered arrows
+to `debug_seed_inflight_art`: they run through the same queue builder and strike
+loop as a typed entry, with the Ra-Seru marker up and a Spirit and monster-HP
+floor so a Super or Miracle string is not refused or cut short.
+
+The slot holds at most one engine. The view toggle remembers its choice per page
+(`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and
+tears the frame down when the model view is shown, so the two views do not both
+hold a runtime. A selection debounces and re-uses the running engine through
+`__playLaunch`, replacing the previous fight in place; if the frame has no engine
+after 90 seconds, or the disc is not in the shared cache, the page falls back to
+the model with the reason in its note line.
 
 ## Equipment loadout viewer (`equipment_view`)
 

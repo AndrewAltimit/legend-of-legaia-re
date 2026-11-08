@@ -14,6 +14,9 @@
 //! [`disc_text`] is the wording they share for a disc image that was cut
 //! short.
 //!
+//! [`resolve_dark`] picks a palette for a program with a theme setting: the
+//! player's choice, else the desktop's preference.
+//!
 //! [`icons`] carries the two programs' icons (`icons/`, drawn by
 //! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
 //! executable from a build script. [`release_layout`] is where the release
@@ -196,7 +199,7 @@ pub const LIGHT: Palette = Palette {
     band: Rgb(244, 244, 248),
     card: Rgb(250, 250, 252),
     stripe: Rgb(234, 235, 242),
-    raised: Rgb(230, 231, 238),
+    raised: Rgb(231, 231, 239),
     hover: Rgb(214, 217, 230),
     pressed: Rgb(246, 226, 180),
     open: Rgb(222, 224, 234),
@@ -238,35 +241,189 @@ pub mod spacing {
     pub const CHROME_LINE_GAP: i32 = 4;
 }
 
-/// The play window's own chrome over the game (dark always: it sits on a
-/// scrim over whatever the game draws).
-pub mod chrome {
-    use super::{DARK, Rgb};
-    /// Headings and prompts (*Press Esc again to quit*, the key hint).
-    pub const HEADING: Rgb = DARK.accent;
-    /// Key names in the help panel, and a toggle's notice line.
-    pub const KEY: Rgb = DARK.info;
-    /// Body text of the help panel.
-    pub const TEXT: Rgb = DARK.ink;
-    /// A setting's state the original game does not have (an enhancement
-    /// in effect), in the help panel; the launcher draws such a value in
-    /// the same green.
-    pub const CHANGED: Rgb = DARK.good;
+/// A colour by what it is for, so a surface drawn in either palette names
+/// the role and resolves it at draw time ([`Palette::get`]). The launcher's
+/// software canvas and the play window's chrome draw by role; Explorer maps
+/// the same palette onto egui.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Ground,
+    Band,
+    Card,
+    Raised,
+    Hover,
+    Rule,
+    Ink,
+    InkDim,
+    InkFaint,
+    Accent,
+    AccentFill,
+    AccentFillFocus,
+    OnAccent,
+    Good,
+    Warn,
+    Info,
+}
 
-    /// The ink an option row's value takes, one rule for the launcher's list
+impl Palette {
+    /// The colour `role` takes in this palette.
+    pub const fn get(&self, role: Role) -> Rgb {
+        match role {
+            Role::Ground => self.ground,
+            Role::Band => self.band,
+            Role::Card => self.card,
+            Role::Raised => self.raised,
+            Role::Hover => self.hover,
+            Role::Rule => self.rule,
+            Role::Ink => self.ink,
+            Role::InkDim => self.ink_dim,
+            Role::InkFaint => self.ink_faint,
+            Role::Accent => self.accent,
+            Role::AccentFill => self.accent_fill,
+            Role::AccentFillFocus => self.accent_fill_focus,
+            Role::OnAccent => self.on_accent,
+            Role::Good => self.good,
+            Role::Warn => self.warn,
+            Role::Info => self.info,
+        }
+    }
+}
+
+/// The play window's own chrome over the game (its `F12` panel and its
+/// notice lines), in either palette: light chrome sits on a light scrim.
+pub mod chrome {
+    use super::{DARK, LIGHT, Palette, Role};
+
+    /// Headings and prompts (*Press Esc again to quit*, the key hint).
+    pub const HEADING: Role = Role::Accent;
+    /// Key names in the help panel, and a toggle's notice line.
+    pub const KEY: Role = Role::Info;
+    /// Body text of the help panel.
+    pub const TEXT: Role = Role::Ink;
+    /// A setting's state the original game does not have, in the help panel;
+    /// the launcher draws such a value in the same green.
+    pub const CHANGED: Role = Role::Good;
+
+    /// The chrome's inks, resolved for one palette.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Inks {
+        pub palette: &'static Palette,
+        pub heading: [f32; 4],
+        pub key: [f32; 4],
+        pub text: [f32; 4],
+        pub changed: [f32; 4],
+        pub faint: [f32; 4],
+        pub hover: [f32; 4],
+        pub rule: [f32; 4],
+        /// The plate under chrome text, RGB: the palette's ground.
+        pub scrim: [f32; 3],
+    }
+
+    /// The chrome's inks on a dark or a light surface.
+    pub const fn inks(dark: bool) -> Inks {
+        let palette: &'static Palette = if dark { &DARK } else { &LIGHT };
+        let g = palette.ground.to_f32();
+        Inks {
+            palette,
+            heading: palette.get(HEADING).to_f32(),
+            key: palette.get(KEY).to_f32(),
+            text: palette.get(TEXT).to_f32(),
+            changed: palette.get(CHANGED).to_f32(),
+            faint: palette.ink_faint.to_f32(),
+            hover: palette.hover.to_f32(),
+            rule: palette.rule.to_f32(),
+            scrim: [g[0], g[1], g[2]],
+        }
+    }
+
+    /// The role an option row's value takes, one rule for the launcher's list
     /// and the play window's settings page so a value reads the same in
     /// both: the original game's own value dim, any other value of a row the
     /// original has green (an enhancement, a fix or a tweak in effect). A row
     /// with no original counterpart (window size, time of day, volumes) reads
     /// green when `On`, dim when `Off`, and in the accent otherwise.
-    pub fn option_value(value: &str, original: Option<&str>) -> Rgb {
+    pub fn option_value(value: &str, original: Option<&str>) -> Role {
         match (value, original) {
-            (v, Some(o)) if v == o => DARK.ink_dim,
+            (v, Some(o)) if v == o => Role::InkDim,
             (_, Some(_)) => CHANGED,
             ("On", None) => CHANGED,
-            ("Off", None) => DARK.ink_dim,
-            _ => DARK.accent,
+            ("Off", None) => Role::InkDim,
+            _ => Role::Accent,
         }
+    }
+}
+
+/// Which palette a program with a theme setting draws in: `forced` when the
+/// player chose one, else what the window system reports (`window_dark`, from
+/// winit's `Window::theme`, which is unsupported on X11), else the desktop's
+/// preference ([`desktop_prefers_dark`]), else dark, as the launcher has
+/// always been.
+pub fn resolve_dark(forced: Option<bool>, window_dark: Option<bool>) -> bool {
+    forced
+        .or(window_dark)
+        .or_else(desktop_prefers_dark)
+        .unwrap_or(true)
+}
+
+/// The desktop's light / dark preference where the window system does not
+/// carry it (Linux, X11 above all): `GTK_THEME`, then GNOME's `color-scheme`,
+/// then KDE's colour scheme. `None` when none says. Read once; a program
+/// picks its palette up at start.
+pub fn desktop_prefers_dark() -> Option<bool> {
+    static CACHED: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(linux_desktop_dark)
+}
+
+fn linux_desktop_dark() -> Option<bool> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    if let Ok(t) = std::env::var("GTK_THEME") {
+        let t = t.to_ascii_lowercase();
+        if let Some(dark) = theme_name_dark(&t) {
+            return Some(dark);
+        }
+    }
+    let out = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .stderr(std::process::Stdio::null())
+        .output();
+    if let Ok(o) = out
+        && o.status.success()
+    {
+        let s = std::string::String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
+        if s.contains("dark") {
+            return Some(true);
+        }
+        if s.contains("light") {
+            return Some(false);
+        }
+        // 'default' on a desktop that also sets the older theme name.
+        let name = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+            .stderr(std::process::Stdio::null())
+            .output();
+        if let Ok(n) = name {
+            let n = std::string::String::from_utf8_lossy(&n.stdout).to_ascii_lowercase();
+            return theme_name_dark(&n);
+        }
+    }
+    let home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
+    let kde = std::fs::read_to_string(home.join("kdeglobals")).ok()?;
+    let line = kde.lines().find(|l| l.starts_with("ColorScheme="))?;
+    theme_name_dark(&line.to_ascii_lowercase())
+}
+
+/// Whether a theme name says dark or light; `None` when it says neither.
+fn theme_name_dark(name: &str) -> Option<bool> {
+    if name.contains("dark") {
+        Some(true)
+    } else if name.contains("light") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -276,11 +433,11 @@ mod tests {
 
     #[test]
     fn option_values_read_alike_in_both_lists() {
-        assert_eq!(chrome::option_value("Off", Some("Off")), DARK.ink_dim);
-        assert_eq!(chrome::option_value("On", Some("Off")), DARK.good);
-        assert_eq!(chrome::option_value("On", None), DARK.good);
-        assert_eq!(chrome::option_value("Off", None), DARK.ink_dim);
-        assert_eq!(chrome::option_value("Auto", None), DARK.accent);
+        assert_eq!(chrome::option_value("Off", Some("Off")), Role::InkDim);
+        assert_eq!(chrome::option_value("On", Some("Off")), Role::Good);
+        assert_eq!(chrome::option_value("On", None), Role::Good);
+        assert_eq!(chrome::option_value("Off", None), Role::InkDim);
+        assert_eq!(chrome::option_value("Auto", None), Role::Accent);
     }
 
     /// Every role an egui or canvas surface draws text or a fill under.
@@ -329,6 +486,24 @@ mod tests {
     fn both_palettes_meet_text_contrast() {
         check(&DARK, "dark");
         check(&LIGHT, "light");
+    }
+
+    #[test]
+    fn the_player_choice_outranks_the_window_and_the_desktop() {
+        assert!(!resolve_dark(Some(false), Some(true)));
+        assert!(resolve_dark(Some(true), Some(false)));
+        assert!(!resolve_dark(None, Some(false)));
+        assert_eq!(theme_name_dark("adwaita:dark"), Some(true));
+        assert_eq!(theme_name_dark("breezelight"), Some(false));
+        assert_eq!(theme_name_dark("'default'"), None);
+    }
+
+    #[test]
+    fn chrome_inks_follow_the_palette() {
+        let (d, l) = (chrome::inks(true), chrome::inks(false));
+        assert_eq!(d.text, DARK.ink.to_f32());
+        assert_eq!(l.text, LIGHT.ink.to_f32());
+        assert!(d.scrim[0] < 0.2 && l.scrim[0] > 0.9);
     }
 
     #[test]

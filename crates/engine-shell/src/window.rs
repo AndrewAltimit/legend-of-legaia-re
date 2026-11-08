@@ -82,6 +82,7 @@ mod settings_panel;
 mod str_player;
 #[path = "window/title_save_draws.rs"]
 mod title_save_draws;
+mod tools_panel;
 pub use netplay::NetLaunch;
 
 pub use record::cmd_record;

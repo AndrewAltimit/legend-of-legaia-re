@@ -165,6 +165,8 @@ impl PlayWindowApp {
         }
         if let Some(a) = font_opt {
             self.font_atlas = Some(a);
+            self.chrome_atlas = None;
+            self.ensure_chrome_atlas();
         }
         self.upload_ui_atlases();
         legaia_engine_render::profile::startup("ui atlases");

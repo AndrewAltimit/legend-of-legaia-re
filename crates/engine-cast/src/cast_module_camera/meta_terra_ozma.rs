@@ -94,6 +94,7 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             st.countdown.0 -= D;
             let swing = d(-4 * D, 0, 0, 12 * D, -12 * D);
             if st.countdown.0 < 0x41 {
+                st.countdown.drain_rest(D);
                 with_drift(ArmDirection::PASS, swing)
             } else {
                 held(swing)
@@ -131,7 +132,7 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0x100, 0x800], [-0x23C, -0x100, 0x800], [0; 3], 1),
         ),
         8 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             cut([0, 0x800], [-0x23C, 0xC00, 0], [0; 3], 0x100)
         }
         9 => arm(
@@ -232,11 +233,15 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
         META_HIT_ARM => arm(st, 0x120, d(0, 0, 0, 0, D), ArmDirection::PASS),
         META_LAST_ARM => {
             let dz = d(0, 0, 0, 0, D);
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 st.countdown.0 -= D;
             }
             if !st.row_settled || st.countdown.0 > 0 {
                 return held(dz);
+            }
+            if drained {
+                st.countdown.drain_rest(D);
             }
             st.yaw_base = 0;
             st.creature_loop_release = true;
@@ -297,7 +302,7 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         3 => arm(st, 0x20, None, ArmDirection::PASS),
         4 => arm(st, 0x60, None, cut([0, 0x800], [0, 0x700, 0], [0; 3], 1)),
         5 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             cut([-0xC0, 0x800], [0, 0x700, 0x118F], [0; 3], 0x60)
         }
         6 => arm(
@@ -375,7 +380,7 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             )
         }
         0xF => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             with_drift(ArmDirection::PASS, d(0, 0, 0, -3 * D, 8 * D))
         }
         0x10 => {
@@ -597,7 +602,7 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             )
         }
         0x11 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             with_drift(ArmDirection::PASS, d(D, 0, 0, 0, 8 * D))
         }
         0x12 => arm(
@@ -607,7 +612,7 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             cut([0x180, 0x900], [0, 0x1000, 0x1000], at, 1),
         ),
         0x13 | 0x16 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             with_drift(ArmDirection::PASS, if phase == 0x13 { flare } else { sink })
         }
         0x14 => arm(st, 0x100, flare, ArmDirection::PASS),

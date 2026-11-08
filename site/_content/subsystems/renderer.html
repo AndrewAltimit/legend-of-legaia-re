@@ -286,11 +286,43 @@
 <section class="doc-section" id="psx-mode">
   <h2>Faithful and default are different axes</h2>
   <p>Shading - which polygon is which colour - defaults to retail. The PS1's rasterisation artefacts default off and sit one switch away. The enhancements default on in the play hosts and leave the faithful render pixel-identical when switched off.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two independent switches give four renders. Across: rasterisation, clean or PlayStation. Up: shading, retail or enhanced. Clean rasterisation with enhanced shading is the default. PlayStation rasterisation with enhanced shading is --psx-render. Clean rasterisation with retail shading is --retail, the launcher's Original game only. PlayStation rasterisation with retail shading is both flags, the launcher's Original look, and the picture the retail comparison scores.">
+      <defs><marker id="re-ax-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="16" y="24">shading</text>
+      <text class="dg-label dg-start" x="16" y="92">enhanced</text>
+      <text class="dg-sub dg-start" x="16" y="110">mood, lamps, glow</text>
+      <text class="dg-label dg-start" x="16" y="222">retail</text>
+      <text class="dg-sub dg-start" x="16" y="240">baked colour word</text>
+      <path class="dg-edge-dim" d="M150 280 V36" marker-end="url(#re-ax-ah)"/>
+      <path class="dg-edge-dim" d="M150 280 H744" marker-end="url(#re-ax-ah)"/>
+      <rect class="dg-node-accent" x="170" y="42" width="270" height="104" rx="5"/>
+      <text class="dg-label" x="305" y="76">The default</text>
+      <text class="dg-sub" x="305" y="98">launcher: Look and feel = Enhanced</text>
+      <text class="dg-sub" x="305" y="116">sharp at any window size</text>
+      <rect class="dg-node" x="460" y="42" width="270" height="104" rx="5"/>
+      <text class="dg-label" x="595" y="76">--psx-render</text>
+      <text class="dg-sub" x="595" y="98">launcher: PlayStation pixel look</text>
+      <text class="dg-sub" x="595" y="116">320x240, wobble and dither, lit</text>
+      <rect class="dg-node" x="170" y="164" width="270" height="104" rx="5"/>
+      <text class="dg-label" x="305" y="198">--retail</text>
+      <text class="dg-sub" x="305" y="220">launcher: Original game only</text>
+      <text class="dg-sub" x="305" y="238">the original's colours, drawn sharp</text>
+      <rect class="dg-node-ok" x="460" y="164" width="270" height="104" rx="5"/>
+      <text class="dg-label" x="595" y="198">--retail --psx-render</text>
+      <text class="dg-sub" x="595" y="220">launcher: Look and feel = Original</text>
+      <text class="dg-sub" x="595" y="238">what the retail comparison scores</text>
+      <text class="dg-edge-label" x="305" y="302" text-anchor="middle">clean (the default)</text>
+      <text class="dg-edge-label" x="595" y="302" text-anchor="middle">PlayStation (opt-in)</text>
+      <text class="dg-edge-label" x="744" y="322" text-anchor="end">rasterisation</text>
+    </svg>
+    <figcaption>Two switches, not one slider. The simulation does not move with either: damage, RNG and scripts are the same in all four. Semi-transparency and affine texturing are the same in all four too, because they are retail in every cell.</figcaption>
+  </figure>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Retail is</th><th>What it gates</th></tr></thead>
     <tbody>
-      <tr><td><code>set_psx_mode</code> (<code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>the GTE register limits, sub-pixel vertex snap and 4&times;4 ordered 15-bit dither, nothing else</td></tr>
+      <tr><td><code>set_psx_mode</code> (<code>--psx-render</code>, <code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>the GTE register limits, sub-pixel vertex snap, each field primitive's draw at its <a href="renderer-port.html#field-link-order">ordering-table link</a> and 4&times;4 ordered 15-bit dither, nothing else</td></tr>
       <tr><td><code>set_semi_blend</code></td><td>on</td><td>on</td><td>semi-transparency; off draws water and glows solid</td></tr>
       <tr><td>Affine UVs</td><td>always</td><td>always</td><td>a static shader qualifier, not a switch</td></tr>
       <tr><td>Enhanced lighting (<code>I</code>)</td><td>on in both play hosts</td><td>off</td><td>time-of-day mood, lamp lights at glowing props, emissive primitives, halos</td></tr>

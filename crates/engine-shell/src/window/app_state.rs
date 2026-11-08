@@ -233,10 +233,13 @@ pub(in crate::window) fn escape_quits(
 pub(in crate::window) const STARTUP_HINT_DURATION: std::time::Duration =
     std::time::Duration::from_secs(12);
 
-/// The start-up key hint's line: a player who opens the window from Explorer
-/// or a file manager is told nowhere else that `F12` opens the settings.
-pub(in crate::window) const STARTUP_HINT_TEXT: &str =
-    "F12 or Select+Start: settings - Esc twice quits";
+/// The start-up key hint's line: a keyboard player who opens the window from
+/// Explorer or a file manager is told nowhere else which key confirms, that
+/// `F12` opens the settings, or how to leave. `cross` and `circle` are the
+/// keys those buttons are on now.
+pub(in crate::window) fn startup_hint_line(cross: &str, circle: &str) -> String {
+    format!("{cross}: confirm  {circle}: back  F12: settings  Esc twice: quit")
+}
 
 /// The one-line key hint a player's window shows when it opens. Armed only
 /// for an interactive window (`cmd_play_window_with_record`, no
@@ -260,6 +263,12 @@ impl StartupHint {
     /// done.
     pub(in crate::window) fn dismiss(&mut self) {
         self.dismissed = true;
+    }
+
+    /// Armed and not yet dismissed (the panel opened): what a screen that
+    /// waits for the player asks, without starting the clock.
+    pub(in crate::window) fn live(&self) -> bool {
+        self.armed && !self.dismissed
     }
 
     /// Whether the hint draws on a frame at `now`; the first call that
@@ -287,6 +296,9 @@ pub(super) struct PlayWindowApp {
     pub(super) scene_res: Option<SceneResources>,
     pub(super) win: EngineWindow,
     pub(super) font_atlas: Option<UploadedFontAtlas>,
+    /// The font without its shadow, for the chrome's light plate; uploaded
+    /// only while the chrome draws light.
+    pub(super) chrome_atlas: Option<UploadedFontAtlas>,
     /// Publisher-logos atlas (built once from PROT 0895). `None` if the
     /// disc isn't loaded or init.pak doesn't parse.
     pub(super) publisher_logos: Option<PublisherLogosAssets>,
@@ -540,6 +552,11 @@ pub(super) struct PlayWindowApp {
     /// (`field_env::placed_object_key_of`), parallel to the draws: the key
     /// its actor's live seat, turn and tint are read by.
     pub(super) world_map_terrain_keys: Vec<Option<usize>>,
+    /// Each world-map terrain draw's far-corner link (the record's flag
+    /// `0x800`, [`legaia_engine_scene::field_env::EnvDraw::far_corner_order`]).
+    pub(super) world_map_terrain_far: Vec<bool>,
+    /// [`Self::world_map_terrain_far`] for the colour bridge.
+    pub(super) world_map_terrain_color_far: Vec<bool>,
     /// [`Self::world_map_terrain_keys`] for the colour bridge.
     pub(super) world_map_terrain_color_keys: Vec<Option<usize>>,
     /// Where the decoration layer starts in `world_map_terrain_draws` /
@@ -1062,6 +1079,20 @@ pub(super) struct PlayWindowApp {
     pub(super) cheats_page: super::cheats_panel::CheatsPage,
     /// The `F12` panel's Scenes page: its cursor.
     pub(super) scenes_page: super::scenes_panel::ScenesPage,
+    /// The Tools page's cursor and last refusal (`window::tools_panel`).
+    pub(super) tools_page: super::tools_panel::ToolsPage,
+    /// A wireframe box around every effect sprite (`LEGAIA_DIAG_FX`, or the
+    /// Tools page's row): the page's *Effect outlines* box.
+    pub(super) fx_outline: bool,
+    /// The `--cheat-file` the Tools page's GameShark row re-reads.
+    pub(super) cheat_file: Option<std::path::PathBuf>,
+    /// The window chrome draws in the dark palette: `legaia-options.toml`'s
+    /// `ui_theme`, else the desktop's preference. Resolved when the window
+    /// opens and when the row changes.
+    pub(super) chrome_dark: bool,
+    /// The original game's developer menu is up this session: `F12` Tools,
+    /// or `LEGAIA_DEV_MENU` at launch.
+    pub(super) dev_menu_on: bool,
     /// The options file would not save: said on the settings page.
     pub(super) options_save_error: std::cell::RefCell<Option<String>>,
     /// The start-up line pointing at that panel ([`StartupHint`]).

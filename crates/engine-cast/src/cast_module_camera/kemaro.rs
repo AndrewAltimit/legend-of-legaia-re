@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn kemaro_arm_13_spawns_once() {
         let mut st = ModuleCamState {
-            countdown: ModuleCountdown(SPEED_SCALAR * 30),
+            countdown: ModuleCountdown(SPEED_SCALAR * 30, 0),
             ..Default::default()
         };
         let seats = ModuleCamSeats::default();

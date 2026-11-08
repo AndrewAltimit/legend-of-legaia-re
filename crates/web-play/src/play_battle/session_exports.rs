@@ -57,22 +57,20 @@ impl LegaiaRuntime {
     /// stats are left alone. Returns an empty string on success, else the
     /// reason. Caps at the three on-screen positions.
     pub fn set_active_party_spec(&mut self, spec: &str) -> String {
-        let slots = match legaia_engine_session::party_spec::parse_party_spec(spec) {
-            Ok(s) if !s.is_empty() => s,
-            Ok(_) => return "empty party spec".to_string(),
-            Err(e) => return e,
-        };
         let Some(host) = self.scene_host.host_mut() else {
             return "no disc loaded".to_string();
         };
-        if let Some(defaults) = host.new_game_defaults.as_ref() {
-            let starting = defaults.party.clone();
-            host.world.seed_party_members(&starting, &slots);
+        // The new-game template as the page holds it; the seat itself is the
+        // native window's `--party` and Tools row's.
+        let starting = host.new_game_defaults.as_ref().map(|d| d.party.clone());
+        match legaia_engine_session::party_spec::seat_party_spec(
+            &mut host.world,
+            starting.as_ref(),
+            spec,
+        ) {
+            Ok(_) => String::new(),
+            Err(e) => e,
         }
-        // The composition, the battle stat fold and the MP ceiling the HUD
-        // draws: the install the native `--party` flag shares.
-        legaia_engine_session::party_spec::install_party_composition(&mut host.world, slots);
-        String::new()
     }
 
     /// The present party as a JSON array of roster slots in battle order.
@@ -117,6 +115,16 @@ impl LegaiaRuntime {
         self.battle_bgm = Some(bgm_id);
         if let Some(h) = self.scene_host.host_mut() {
             h.world.set_battle_bgm((bgm_id != 0).then_some(bgm_id));
+        }
+    }
+
+    /// Back to the shipped battle theme: what clearing the Battle BGM field
+    /// promises and what the native window's Standard pick does.
+    pub fn clear_battle_bgm(&mut self) {
+        self.battle_bgm = None;
+        if let Some(h) = self.scene_host.host_mut() {
+            let track = legaia_engine_core::live_loop::LiveLoopOpts::playable().battle_bgm;
+            h.world.set_battle_bgm(track);
         }
     }
 
@@ -262,6 +270,33 @@ impl LegaiaRuntime {
                 target,
                 ground: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
                 idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+            });
+        true
+    }
+
+    /// Play one Tactical Art the moment the next battle's first command
+    /// prompt opens, through the real queue builder and strike loop.
+    /// `arrows` is the entered string as `1` Left, `2` Right, `3` Down, `4` Up
+    /// (the arts card's `directions`, any separator). The art viewer's full
+    /// scene: pair with [`Self::debug_force_battle`]; `target` is a retail
+    /// seat, `3` the first monster.
+    pub fn debug_seed_inflight_art(&mut self, caster: u8, arrows: &str, target: u8) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let sequence: Vec<u8> = arrows
+            .bytes()
+            .filter(|b| (b'1'..=b'4').contains(b))
+            .map(|b| b - b'0')
+            .collect();
+        if sequence.is_empty() {
+            return false;
+        }
+        host.world.battle.inflight_art_seed =
+            Some(legaia_engine_battle_loop::battle_state::InflightArtSeed {
+                caster,
+                sequence,
+                target,
             });
         true
     }

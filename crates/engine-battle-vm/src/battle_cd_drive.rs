@@ -115,6 +115,26 @@ impl CdDrive {
         self.lba = to;
     }
 
+    /// Issue the module's own seek from the arm's blocking `CdlSetloc`. The
+    /// library's wait on the drive ends with the physical seek, ahead of the
+    /// logical seek's tail, so a `CdlSeekL` issued out of [`Self::ready`] drops
+    /// what is left of that tail and starts at once. Orb's arm 1 leaves `35`
+    /// vsyncs after the selector's `XA27` seek issues, Theeder's `24`, Swordie's
+    /// `23` (`scripts/mednafen/drive-timeline.py`), each the seek without its
+    /// logical `2`; the poll arm's own `CdSync(1)` does wait for the tail.
+    pub fn seek_when_ready(&mut self, to: u32) {
+        if self.ready() {
+            self.busy = 0;
+        }
+        self.seek(to);
+    }
+
+    /// `CdControl` accepts a new command: nothing is left in flight but the
+    /// logical seek's tail.
+    pub fn ready(&self) -> bool {
+        self.busy <= LOGICAL_SEEK_VSYNCS
+    }
+
     /// One vsync passes.
     pub fn tick(&mut self) {
         self.busy = self.busy.saturating_sub(1);
@@ -170,6 +190,20 @@ mod tests {
             d.tick();
         }
         assert!(d.idle());
+    }
+
+    #[test]
+    fn the_arms_setloc_takes_the_drive_at_the_physical_seeks_end() {
+        let mut d = CdDrive::at(SIDE_BAND_LBA);
+        d.seek(clip_lba(0x1A).unwrap());
+        for _ in 0..d.busy - LOGICAL_SEEK_VSYNCS {
+            assert!(!d.ready());
+            d.tick();
+        }
+        assert!(d.ready() && !d.idle());
+        d.seek_when_ready(clip_lba(0xC).unwrap());
+        // The new seek carries none of the old logical tail.
+        assert_eq!(d.busy, seek_vsyncs(XA_FILE_LBA[26], XA_FILE_LBA[12]));
     }
 
     #[test]

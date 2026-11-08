@@ -1374,6 +1374,11 @@ impl World {
                     // after the sweep never play.
                     channels[ci].ctx.flags &= !0x400;
                     let before = (channels[ci].ctx.world_x, channels[ci].ctx.world_z);
+                    if channels[ci].object_bind {
+                        let key = channels[ci].placement_index;
+                        host.world
+                            .mirror_object_end_latch(key, &mut channels[ci].ctx.local_flags);
+                    }
                     let clip_words = (channels[ci].ctx.local_flags, channels[ci].ctx.field_6a);
                     let r = vm::field::step_with_caller(
                         &mut host,

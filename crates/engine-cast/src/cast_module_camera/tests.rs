@@ -22,6 +22,7 @@ fn seats() -> ModuleCamSeats {
         depth_raw: 0,
         caster_latch: 0,
         victim_radius: 0,
+        caster_scale: 0x1000,
     }
 }
 
@@ -749,7 +750,8 @@ fn terio_punch_charges_then_punches_on_its_latch() {
     assert_eq!((arms[0].latch, arms[0].skips_fold), (Some(0), false));
     let shots: Vec<_> = arms.iter().filter_map(|a| a.shot).collect();
     assert_eq!(shots[0].angles[0], 0x20);
-    assert_eq!(shots[1].tr, [0x200, 0xA00, 0x200]);
+    // `depth / 6`: the divide is `0x2AAAAAAB` (`0x801F6FA0..0x801F7000`).
+    assert_eq!(shots[1].tr, [0x200, 0xA00, 0x100]);
     assert_eq!(shots.last().unwrap().tr, [0, 0x550, 0x2800]);
     assert!(capture_camera_director(953, SINGLE_BODY).is_some());
     // The strike is arm 7's way out of its gate, the party turned and halved.
@@ -823,7 +825,9 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(964, 0x801F_88EC), Some(0x780));
     assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
-    assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), None);
+    assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), Some(0));
+    assert_eq!(capture_exit_yaw_base(960, 0x801F_69D8), Some(0));
+    assert_eq!(capture_exit_yaw_base(960, 0x801F_74E4), Some(0));
 }
 
 /// PROT 0907's arm 10 holds on the creature's loop counter `+0x21B`
@@ -1188,7 +1192,7 @@ fn mule_arm_kills_follow_the_parked_handles() {
 #[test]
 fn palma_arm_4_pans_from_its_stored_origin() {
     let mut st = ModuleCamState {
-        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK, 0),
         live_pitch_tr: Some((0x30, [0x10, 0x20, 0x1900])),
         live_yaw: Some(0x100),
         ..Default::default()
@@ -1201,7 +1205,7 @@ fn palma_arm_4_pans_from_its_stored_origin() {
     assert_eq!(0x1900 + i32::from(drift.tr_z), 0x2000);
     // No live pose fed: nothing to land, the pan sets out where it stands.
     let mut st = ModuleCamState {
-        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK, 0),
         ..Default::default()
     };
     assert!(palma_direct(&mut st, 4, seats()).drift.is_none());
@@ -1570,4 +1574,28 @@ fn big_wave_arm_six_spares_the_unkept_water_sheet() {
     );
     assert!(capture_arm_flush_spares(946, 5).is_empty());
     assert!(capture_arm_flush_spares(938, 2).is_empty());
+}
+
+/// A gate that opens on a tick inside a battle-frame pass drains the pass's
+/// remaining ticks as well: retail takes the whole `scalar * delta` in one
+/// `subu` before the test, so the re-arm that follows adds to the residue of
+/// the whole pass (PROT 0903 arm 7: `1536 - 32`, not `- 8`).
+#[test]
+fn a_gate_opening_mid_pass_drains_the_rest_of_the_pass() {
+    // A held tick drains one tick's worth.
+    let mut cd = ModuleCountdown(32, 3);
+    assert!(cd.drain_above(0));
+    assert_eq!(cd.0, 32 - MODULE_DRAIN_PER_TICK);
+    // The opening tick drains the rest; the pass's total is `4 * P`.
+    let mut cd = ModuleCountdown(MODULE_DRAIN_PER_TICK, 3);
+    assert!(!cd.drain_above(0));
+    assert_eq!(cd.0, -3 * MODULE_DRAIN_PER_TICK);
+    // The last tick of a pass owes nothing.
+    let mut cd = ModuleCountdown(MODULE_DRAIN_PER_TICK, 0);
+    assert!(!cd.drain_above(0));
+    assert_eq!(cd.0, 0);
+    // A one-drain arm takes the whole pass on its only tick.
+    let mut cd = ModuleCountdown(1536, 3);
+    cd.pass_drain(MODULE_DRAIN_PER_TICK);
+    assert_eq!(cd.0, 1536 - 4 * MODULE_DRAIN_PER_TICK);
 }

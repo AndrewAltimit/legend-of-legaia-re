@@ -258,8 +258,11 @@ fn a_spawn_point_driven_off_screen_breaks_the_line() {
     let line = p.line_frame_retail(|w| Some(if w == spawn { (0x161, 120) } else { (100, 150) }));
     assert!(line.is_none(), "the break frame draws no line");
     assert_eq!(p.phase(), PondPhase::Snapped);
+    // A hooked in-water frame also seats its lure ring (`0x801D39A4`).
+    let mut events = p.take_events();
+    events.retain(|e| !matches!(e, legaia_engine_fishing::fishing::PondEvent::LureRing(..)));
     assert_eq!(
-        p.take_events(),
+        events,
         vec![legaia_engine_fishing::fishing::PondEvent::Snapped]
     );
     assert_eq!(p.take_spent_lures().len(), 1, "one lure spent");

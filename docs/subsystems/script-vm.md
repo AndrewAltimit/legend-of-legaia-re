@@ -1013,6 +1013,27 @@ talk advances past the op, and a later cross-context op on the walking
 placement waits for the landing - `town0c` `P1[21]`'s two `C1 3B` legs in
 the queen-bee beat.
 
+The talk runner keeps one stand-in context for the record, and a cross-context
+op reaches the target only where the runner routes it there, so each op the
+dispatcher prologue swaps onto another actor needs a route. The routes are the
+walk (`C7 <id>`, the leg `rayman` and `doman` stage helpers with), the seat
+(`A3 <id> x z`, including the `7F 7F` hide tile), and the flag word (`B1` /
+`B2 <id> <bit>`, sharing `World::poke_channel_cflag` with the system script, so
+bit 8 engages the target and a placed object's word is written too). `CC <id>
+A0` / `A1` read the target's words for the same reason: `retock` `P1[46]` raises
+bit 0 with `B1 0D 00` and tests it with `CC 0D A0 00 05 00`. A talker naming its
+own id keeps its own context, and bit 3 (the retire) and bit 10 (halt) stay off
+this route. Every placement leg holds later cross-context ops on that actor, a
+walk-kernel `motions` leg included; `B2 <id> 0A` is the op's one carve-out
+(`0x801DE90C..0x801DE944`).
+
+A talk that engages another context has done its work, so the raw `0x21` after
+it ends the talk and no first text segment is shown in its place. `uru`'s
+sleepers (`P1[7..=14]`) tick a counter, run `B1 2E 08` and end, and the spirit
+`P1[25]` speaks, one block per engagement. The press that closes a script box
+is spent for the tick (`DialogState::input_consumed`), as a talk box's is, so
+it does not read as a new talk with whoever the player faces.
+
 A walk is exclusive. The park leaves the target's halt bit `0x400` set until
 the kernel lands it, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
 returns with the PC still on any cross-context op whose target carries

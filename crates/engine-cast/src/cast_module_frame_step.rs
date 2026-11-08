@@ -6,9 +6,14 @@
 //! (`docs/subsystems/battle-stage-camera.md`, "The frame step"), and nothing on
 //! the disc says what a frame costs. Each entry is the step one recording
 //! (`scripts/ci/cast-sequence.py`, `meta.csv`'s `step`, the Gobu Gobu fight, the
-//! value the arm spends the most vsyncs on) on the emulator's cost model. An arm
-//! too short to read takes the arm before it; a `0` is an arm no recording has
-//! reached.
+//! value the arm spends the most vsyncs on) on the emulator's cost model. Some
+//! arms one battle frame long read that frame's length in vsyncs instead, since
+//! the `step` column lags the frame that set it: Gimard's arm 7 reads
+//! `1, 1, 1, 4` and its one pass drains `32`. Iota's arm 4 and Viguro's arm 10
+//! show the same shape and keep the modal reading: on Iota's the longer frame
+//! lands the camera on retail's rows and still lowers the film's image score,
+//! for a reason not yet found. An arm too short to read takes the arm before it;
+//! a `0` is an arm no recording has reached.
 //!
 //! What the reading is good for and where it stops is on that page. In short, a
 //! whole-screen arm reads the same in every fight, an arm that shows the stage
@@ -22,13 +27,13 @@
 /// `(PROT entry, step by module phase)`.
 const ARM_STEPS: &[(u32, &[u8])] = &[
     // gimard
-    (903, &[0, 0, 1, 1, 4, 4, 1, 1, 4, 4, 4, 4, 4]),
+    (903, &[0, 0, 1, 1, 4, 4, 1, 4, 4, 4, 4, 4, 4]),
     // theeder
     (904, &[0, 0, 1, 1, 1, 4, 3, 3, 3, 4, 4, 3, 4, 4, 4]),
     // vera
     (905, &[0, 0, 2, 2, 4, 4, 4, 4, 4, 4, 4]),
     // gizam
-    (906, &[0, 0, 0, 1, 1, 4, 4, 3, 3, 4, 4, 4, 4, 4, 2]),
+    (906, &[0, 0, 0, 1, 1, 4, 4, 3, 4, 4, 4, 4, 4, 4, 2]),
     // nighto
     (907, &[0, 0, 0, 1, 1, 4, 3, 4, 3, 3, 3, 4, 4, 4, 4, 4]),
     // zenoir
@@ -36,7 +41,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // viguro
     (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4]),
     // swordie
-    (910, &[0, 0, 1, 4, 4, 4, 3, 4, 4, 4, 4]),
+    (910, &[0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // orb
     (911, &[0, 0, 1, 4, 4, 3, 3, 3, 3, 3, 4]),
     // freed
@@ -48,7 +53,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     (
         913,
         &[
-            0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 3,
+            0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 3,
         ],
     ),
     // gola
@@ -132,7 +137,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     (
         934,
         &[
-            0, 0, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3,
+            0, 0, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 4, 4, 3,
         ],
     ),
 ];
@@ -272,6 +277,66 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x54, &[(1, 4), (2, 4), (4, 4), (5, 4), (6, 4), (7, 3)]),
     // water_crystals
     (0x59, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    // chaos_flare
+    (
+        0x36,
+        &[
+            (1, 3),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (8, 4),
+            (9, 4),
+            (10, 4),
+            (11, 2),
+        ],
+    ),
+    // terio_punch
+    (0x5D, &[(5, 4), (6, 4), (7, 4), (8, 4)]),
+    // bull_charge
+    (0x5E, &[(2, 4)]),
+    // melt_spray
+    (0x6F, &[(1, 3), (3, 4), (4, 4)]),
+    // water_hazard
+    (0x71, &[(1, 4), (2, 4), (3, 4)]),
+    // thunder_storm: every arm `4` on all three fights
+    (0x77, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 4)]),
+    // bloody_horns (Xain's cast, `battle_tunnelc_xain_strike --monster-pick`)
+    (0x5C, &[(3, 4), (4, 4), (5, 4)]),
+    // megaton_press: the duel's pull-ins and the closing dive read `4`
+    (
+        0x7A,
+        &[
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 3),
+            (7, 3),
+            (9, 4),
+            (10, 4),
+            (11, 4),
+            (12, 3),
+            (15, 4),
+        ],
+    ),
+    // plasma_strike
+    (
+        0x7B,
+        &[
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (9, 4),
+            (11, 4),
+            (13, 4),
+            (14, 4),
+        ],
+    ),
     // white_shield
     (0x60, &[(1, 4), (2, 4), (3, 3)]),
     // power_charge
@@ -342,6 +407,8 @@ mod tests {
         assert_eq!(capture_arm_frame_step(0x57, 0), None);
         assert_eq!(capture_arm_frame_step(0x57, 200), None);
         assert_eq!(capture_arm_frame_step(0x76, 5), None);
+        // Thunder Storm runs every arm at `4` in all three fights recorded.
+        assert_eq!(capture_arm_frame_step(0x77, 4), Some(4));
         // Steal draws next to nothing; a cast no film records keeps the default.
         assert_eq!(capture_arm_frame_step(0x51, 2), Some(3));
         assert_eq!(capture_arm_frame_step(0x01, 1), None);

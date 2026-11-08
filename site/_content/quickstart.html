@@ -1,11 +1,22 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · quick start</div>
   <h1>Quick start</h1>
-  <p class="lede">Everything on this site runs in the browser, but the project is also a set of command-line tools you can run on your own machine: pull the assets off your disc, play the engine natively, patch a copy, or open the game's code in Ghidra. This page gets you from a download to a running tool in a few commands.</p>
+  <p class="lede">The fastest route to the game takes no terminal: the site runs in your browser, and the desktop release starts with a double-click. This page shows those routes first, then the command-line tools under them: pull the assets off your disc, run the engine with every option, patch a copy, or open the game's code in Ghidra.</p>
 </header>
 
+<section class="doc-section" id="pick-a-route">
+  <h2>Pick a route</h2>
+  <p>All of them need one thing from you: a <a href="guides/desktop-apps.html#disc-image">disc image of your own copy</a>, a <code>.bin</code> file made from the game disc. Nothing is bundled with any of them.</p>
+  <div class="card-grid cols-3">
+    <a class="card" href="play.html"><span class="card-title">In this browser</span><span class="card-body">Nothing to install. Pick your <code>.bin</code> and press New Game. Saves stay in the browser.</span></a>
+    <a class="card" href="guides/desktop-apps.html"><span class="card-title">Desktop app</span><span class="card-body">Download, unpack, double-click <em>Legend of Legaia</em>. It asks for your disc once. No terminal.</span></a>
+    <a class="card" href="tooling/rom-patcher.html"><span class="card-title">On an emulator or console</span><span class="card-body">Patch a copy of your disc in the browser: randomizer, fixes, tuning. Plays wherever the disc does.</span></a>
+  </div>
+  <p>The numbered steps below are for the command-line tools. You can stop here if you only want to play.</p>
+</section>
+
 <section class="doc-section" id="at-a-glance">
-  <h2>At a glance</h2>
+  <h2>The command-line path</h2>
   <div class="flow">
     <span class="num">0</span><span class="layer">Nothing to install</span><span class="desc">The viewer, media browser, play page and ROM patcher run in this tab.</span><span class="crate"><a href="#no-install">below</a></span>
     <span class="num">1</span><span class="layer">Get the tools</span><span class="desc">Download a release archive, or build from source with Cargo.</span><span class="crate"><a href="#build">below</a></span>
@@ -35,14 +46,14 @@
   <p>Two ways in. Take the prebuilt binaries if you just want to run the tools; build from source if you intend to change them.</p>
 
   <h3>Download a release</h3>
-  <p>Every tagged release publishes one archive per platform on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases">Releases page</a>, carrying the whole toolset - engine, viewer, extractor and patcher - plus a <code>SHA256SUMS</code> manifest. No Rust toolchain needed.</p>
+  <p>Every tagged release publishes one archive per platform on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases">Releases page</a>, carrying the whole toolset - engine, viewer, extractor and patcher - plus a <code>SHA256SUMS</code> manifest. No Rust toolchain needed. The top of the unpacked folder holds only what you double-click; every command-line program is in its <code>command-line-tools</code> folder.</p>
 <pre><code>sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz
-cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
+cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu/command-line-tools
 ./legaia-extract --version</code></pre>
   <ul>
-    <li><code>x86_64-unknown-linux-gnu</code> (<code>.tar.gz</code>, glibc 2.28 or newer)</li>
-    <li><code>aarch64-unknown-linux-gnu</code> (<code>.tar.gz</code>, Linux on ARM)</li>
+    <li><code>x86_64-unknown-linux-gnu</code> (<code>.tar.gz</code>, glibc 2.28 or newer, with a <code>Legend of Legaia</code> launcher)</li>
+    <li><code>aarch64-unknown-linux-gnu</code> (<code>.tar.gz</code>, Linux on ARM, with the same launcher)</li>
     <li><code>x86_64-pc-windows-gnu</code> (<code>.zip</code>, Windows, with a <code>Legend of Legaia.exe</code> launcher)</li>
     <li><code>universal-apple-darwin</code> (<code>.tar.gz</code>, macOS 11 or newer, Apple silicon and Intel, with a <code>Legend of Legaia.app</code>)</li>
   </ul>
@@ -54,7 +65,7 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
 cd legend-of-legaia-re
 cargo build --release
 cargo test --workspace --profile release-test</code></pre>
-  <p class="hint">Commands on this page use the release-archive form (<code>./tool</code>). From a source build the same binaries live under <code>target/release/</code>. Tests that need a real disc skip when <code>LEGAIA_DISC_BIN</code> is unset; CI runs the same way.</p>
+  <p class="hint">Commands on this page use the release-archive form (<code>./tool</code>, run from <code>command-line-tools</code>). From a source build the same binaries live under <code>target/release/</code>. Tests that need a real disc skip when <code>LEGAIA_DISC_BIN</code> is unset; CI runs the same way.</p>
 </section>
 
 <section class="doc-section" id="extract">

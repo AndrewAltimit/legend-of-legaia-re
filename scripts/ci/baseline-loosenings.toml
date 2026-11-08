@@ -1080,3 +1080,35 @@ changes = [
   ["counts/bundle/gzip_bytes", 7072853, 7085636],
   ["counts/bundle/play_gzip_bytes", 4937227, 4947923],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Battle reactions end on the pass the cursor crosses the clip's end (FUN_80047430 0x80047A48..0x80047B58), bisected to that commit for every row below except moldy worm and Gimard victory. Earlier rounds finish a pass sooner, so a still's replay reaches its strike state on another pass: mad bird's attacker stands one walk step on (81,406 facing 2193 against retail's 81,417 facing 2137) and its film holds at .9425 to .9392. The Delilas row is a patched mod state on the same replay phase. Moldy worm and Gimard victory move with the display retake staying out of a state's first pass, a harness rule."
+changes = [
+  ["states/battle_dohaty_nova_v2_strike/image", 0.998, 0.993],
+  ["states/battle_map03_moldy_worm_strike/image", 1.0, 0.998],
+  ["states/battle_tunnela_mad_bird_strike/camera", 1.0, 0.991],
+  ["states/delilas_gi_spirit_artifact/camera", 1.0, 0.875],
+  ["states/delilas_gi_spirit_artifact/image", 0.969, 0.633],
+  ["states/rim_elm_gimard_victory/image", 0.969, 0.967],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Gap wave 35. The bundles grow about 10 KB gzip with the wave's new code: the Astral Slash, Chaos Breath and Shadow Break camera directors, the talk-runner routes, the fishing ring and the one-play art clock. The per-frame wasm figures rise under 0.3%; the native allocation figures rise by a few of 1300 to 1830 allocations a frame on the world map and within a tenth elsewhere."
+changes = [
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124741, 124812],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 112479, 112669],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 111975, 112214],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 165615, 165745],
+  ["counts/bundle/gzip_bytes", 7085636, 7095145],
+  ["counts/bundle/play_gzip_bytes", 4947923, 4958538],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1279.3, 1279.4],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1313.2, 1313.3],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4580.8, 4581.0],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1406.4, 1406.5],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1497.9, 1498.2],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1828.8, 1831.8],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.7, 1210.9],
+  ["counts/native/world_map/retail/allocs_per_frame", 1714.0, 1717.0],
+]

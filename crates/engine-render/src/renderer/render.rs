@@ -139,7 +139,7 @@ impl Renderer {
             RenderTarget::Scene(scene) => {
                 self.stage_scene_uniforms(scene);
                 self.stage_scene_lights_and_shadows(scene);
-                let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
+                let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(4);
                 if let Some(s) = scene.overlay_sprites {
                     overlays.push(s);
                 }
@@ -147,6 +147,9 @@ impl Renderer {
                     overlays.push(s);
                 }
                 if let Some(t) = scene.overlay_text {
+                    overlays.push(t);
+                }
+                if let Some(t) = scene.overlay_chrome {
                     overlays.push(t);
                 }
                 if !overlays.is_empty() {
@@ -664,7 +667,7 @@ impl Renderer {
                         set_scene_vp(&mut rp);
                         self.draw_screen_overlay_runs(&mut rp, scene.vram, true);
                     }
-                    let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
+                    let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(4);
                     if let Some(s) = scene.overlay_sprites {
                         overlays.push(s);
                     }
@@ -672,6 +675,9 @@ impl Renderer {
                         overlays.push(s);
                     }
                     if let Some(t) = scene.overlay_text {
+                        overlays.push(t);
+                    }
+                    if let Some(t) = scene.overlay_chrome {
                         overlays.push(t);
                     }
                     if !overlays.is_empty() {

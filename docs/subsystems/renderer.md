@@ -24,7 +24,7 @@ culling, the port's render passes and knobs. How a pixel gets its colour is
   through the GTE light. The port does both by default on both hosts
   ([Lighting](#lighting)).
 - **Rasterisation defaults to clean.** `Renderer::set_psx_mode` is opt-in and
-  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row) and 15-bit dither only. Affine UVs are unconditional, and
+  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row), the GTE register limits on field corners, each field primitive's draw at its ordering-table link and 15-bit dither only. Affine UVs are unconditional, and
   they are the faithful behaviour
   ([knobs](#rendering-knobs-what-is-faithful-what-is-a-choice)).
 - **Simulation is faithful with no opt-out.**
@@ -2948,7 +2948,7 @@ axes, so each knob states both:
 
 | Knob | Renderer default | Play hosts | Which side is retail | Gates |
 |---|---|---|---|---|
-| `Renderer::set_psx_mode` | off | off (`LEGAIA_PSX_RENDER=1`, the page's "PSX rasterisation" box) | *on* | vertex snap + 15-bit dither, and nothing else |
+| `Renderer::set_psx_mode` | off | off (`--psx-render`, `LEGAIA_PSX_RENDER=1`, the page's "PSX rasterisation" box) | *on* | vertex snap, GTE register limits, field draw order by ordering-table link, 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | on | on | *on* | ABE semi-transparency; independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | off | on (`I`, `--no-dynamic-lighting`, the page's "Enhanced lighting" box) | *off*, pixel-identical | enhanced lighting: mood, point lights, emissives, glow |
 | `Renderer::set_dyn_shadows` | on | on (`Y`, `--no-dyn-shadows`, "Lamp shadows") | inert while dynamic lighting is off | the point-light shadow maps only |

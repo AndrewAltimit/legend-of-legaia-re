@@ -491,6 +491,8 @@ pub fn pond_event_cues(e: &legaia_engine_fishing::fishing::PondEvent) -> Vec<u16
             );
             cues
         }
-        PondEvent::Splash | PondEvent::Snapped | PondEvent::Recast => Vec::new(),
+        PondEvent::Splash | PondEvent::Snapped | PondEvent::Recast | PondEvent::LureRing(..) => {
+            Vec::new()
+        }
     }
 }

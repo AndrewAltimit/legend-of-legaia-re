@@ -2,6 +2,7 @@
 //! entrances and the map-mode actors.
 
 use super::*;
+use legaia_engine_render::DRAW_ORDER_FAR_CORNER;
 
 impl<'m> DrawCtx<'_, 'm> {
     /// The world map: the ground heightfield, the placed landmarks (live
@@ -22,6 +23,8 @@ impl<'m> DrawCtx<'_, 'm> {
             color_draws,
             clip_marks,
             color_clip_marks,
+            order_marks,
+            color_order_marks,
             ..
         } = out;
         // World-map continent = two layers, both in the shared
@@ -130,6 +133,9 @@ impl<'m> DrawCtx<'_, 'm> {
             };
             if let Some(mesh) = store.meshes.get(mesh_idx) {
                 let mvp = cam * model;
+                if app.world_map_terrain_far.get(i).copied().unwrap_or(false) {
+                    order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
+                }
                 draws.push(SceneDraw {
                     mesh,
                     mvp,
@@ -159,6 +165,14 @@ impl<'m> DrawCtx<'_, 'm> {
             };
             if let Some(mesh) = store.color_meshes.get(mesh_idx) {
                 let mvp = cam * model;
+                if app
+                    .world_map_terrain_color_far
+                    .get(i)
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    color_order_marks.push((color_draws.len(), DRAW_ORDER_FAR_CORNER));
+                }
                 color_draws.push(ColorSceneDraw {
                     mesh,
                     mvp,

@@ -255,6 +255,29 @@
 <section class="doc-section" id="fidelity">
   <h2>Fidelity and enhancements</h2>
   <p>In the faithful mode no toggle changes damage, drops, AP costs, encounter rates or story flags, and every parity measurement runs against that mode. Enhancements are explicit toggles, bit-identical to retail when off, so flipping one never touches replays or oracles. Defaults follow the better experience: a knob still defaulting to retail marks an enhanced side that is maturing, not a policy of restraint.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The retail simulation of damage, RNG, scripts and saves produces the faithful frame. The parity oracles, replays and retail comparison measure that frame. Enhancement toggles are layered after it and only change what the play hosts show, so a toggle cannot move an oracle.">
+      <defs><marker id="en-fid-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="16" y="34" width="190" height="72" rx="5"/>
+      <text class="dg-label" x="111" y="62">retail simulation</text><text class="dg-sub" x="111" y="82">damage, RNG, scripts, saves</text>
+      <rect class="dg-node" x="248" y="34" width="170" height="72" rx="5"/>
+      <text class="dg-label" x="333" y="62">faithful frame</text><text class="dg-sub" x="333" y="82">no toggle on</text>
+      <rect class="dg-node" x="460" y="34" width="190" height="72" rx="5"/>
+      <text class="dg-label" x="555" y="56">enhancement toggles</text><text class="dg-sub" x="555" y="76">lighting, fog, see-through</text><text class="dg-sub" x="555" y="92">walls, camera, movement</text>
+      <rect class="dg-node-ok" x="692" y="34" width="172" height="72" rx="5"/>
+      <text class="dg-label" x="778" y="62">what you see</text><text class="dg-sub" x="778" y="82">window or browser</text>
+      <rect class="dg-node-ok" x="228" y="162" width="210" height="72" rx="5"/>
+      <text class="dg-label" x="333" y="190">parity oracles</text><text class="dg-sub" x="333" y="210">replays, retail comparison</text>
+      <path class="dg-edge" d="M206 70 H246" marker-end="url(#en-fid-ah)"/>
+      <path class="dg-edge" d="M418 70 H458" marker-end="url(#en-fid-ah)"/>
+      <path class="dg-edge" d="M650 70 H690" marker-end="url(#en-fid-ah)"/>
+      <path class="dg-edge" d="M333 106 V160" marker-end="url(#en-fid-ah)"/>
+      <path class="dg-edge-dim" d="M438 198 H778 V108" marker-end="url(#en-fid-ah)"/>
+      <text class="dg-edge-label" x="342" y="138">measured here</text>
+      <text class="dg-edge-label" x="608" y="190" text-anchor="middle">every toggle off = this path, bit for bit</text>
+    </svg>
+    <figcaption>Enhancements sit after the point the oracles measure, so switching one on cannot move a measurement, and switching all of them off gives the faithful frame back. How the two render switches combine is drawn on the <a href="renderer.html#psx-mode">renderer page</a>.</figcaption>
+  </figure>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Effect</th></tr></thead>
@@ -263,6 +286,7 @@
       <tr><td>Lamp shadows (<code>Y</code>)</td><td>on</td><td>shadow maps for the lighting&rsquo;s point lights; inert while lighting is off</td></tr>
       <tr><td>Volumetric ground fog (<code>F9</code>)</td><td>off while the look matures</td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
       <tr><td>Bloom (<code>F10</code>)</td><td>off</td><td>bright pixels - lamp halos, glowing props, lit windows, sunlit sky - bleed a soft glow, stronger at night; the HUD never blooms</td></tr>
+      <tr><td>Ambient occlusion (<code>Home</code>, <code>--no-ssao</code>)</td><td><strong>on</strong></td><td>contact shadows over opaque scene geometry from a depth + normal pre-pass, with shading kept forward; character meshes occlude the ground but receive none, and replays, the retail comparison and Retail-faithful force it off</td></tr>
       <tr><td>See-through walls (<code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle around them</td></tr>
       <tr><td>Leading-edge wall probes, solid NPCs, live NPCs</td><td><strong>on</strong></td><td>retail&rsquo;s three-probe collision footprint, NPC collision and the villagers&rsquo; ambient wander</td></tr>
       <tr><td>Ledge-hop landing guard</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>refuses a field ledge hop whose landing the walk could not leave; retail tests no landing, and a diagonal step-up can box the player in for good</td></tr>
@@ -275,6 +299,7 @@
       <tr><td>Mono output (<code>downmix_mono</code> in the options file; the launcher and play page row)</td><td>off</td><td>engine-only full downmix of the finished mix, voice and movie audio included; the in-game Monaural row is separate and retail-exact (per-voice fold, movie and voice audio left stereo)</td></tr>
       <tr><td>Field run button</td><td>retail + one</td><td>retail&rsquo;s <code>Cross | R1</code> plus Square</td></tr>
       <tr><td>Free-angle movement (<code>R</code>)</td><td>off</td><td>free-angle locomotion instead of retail&rsquo;s 4 / 8-way quantisation</td></tr>
+      <tr><td>Action movement (<code>--action-movement</code>)</td><td>off</td><td>a platformer field controller in place of the walk: momentum, sprint, Square to jump and double jump, R2 to dash; every pad lock still holds</td></tr>
       <tr><td>Camera distance (<code>T</code>), debug orbit (<code>F3</code>), drag / tilt / zoom</td><td><code>Far</code> / off / identity</td><td>framing only; the follow-camera knobs and the distance preset sit out while a scripted shot owns the camera (a cutscene timeline, or a staged shot such as the ending credits&rsquo; vignettes), and a double-click resets the knobs to the retail shot</td></tr>
       <tr><td>Retail battle cadence</td><td>on</td><td>the whole battle pass once a battle frame, retail&rsquo;s cadence, instead of once a vsync; off runs the per-vsync pass</td></tr>
       <tr><td>Saved-chain Arts list</td><td>off</td><td>the command ring&rsquo;s Arts arm opens the port&rsquo;s saved-chain list instead of retail&rsquo;s per-press directional input</td></tr>
@@ -283,6 +308,7 @@
       <tr><td>Run-away EXP</td><td>off</td><td>a successful escape banks 5% of the fled fight&rsquo;s EXP into every party member - the patcher&rsquo;s <code>--flee-exp</code></td></tr>
       <tr><td>EXP rate</td><td><code>1x</code></td><td>scales every monster&rsquo;s EXP reward, <code>0.5x</code> to <code>5x</code> - the patcher&rsquo;s <code>--exp-scale</code></td></tr>
       <tr><td>Fortress battles fix</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>Jette&rsquo;s Absolute Fortress ignores the Floating Castle&rsquo;s stale &ldquo;no battles&rdquo; flag; a save without the flag plays the same either way</td></tr>
+      <tr><td>Tetsu spar order fix</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>a spar fought before the measuring still lets the hunters return to Rim Elm</td></tr>
       <tr><td>Boss casts respect jewels</td><td>off</td><td>the boss cinematic casts honour elemental jewels and guards - the patcher&rsquo;s <code>--jewel-fix</code></td></tr>
       <tr><td>Battle freeze guard</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>a party HP readout stuck short of live HP is re-seeded, so the battle&rsquo;s wait on it (the state-<code>0x51</code> softlock) cannot hold</td></tr>
       <tr><td>Bonus equipment drops</td><td>off</td><td>a 5% roll after each won battle grants one random piece of equipment on top of the normal drop - the patcher&rsquo;s <code>--equipment-drops</code></td></tr>

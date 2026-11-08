@@ -149,11 +149,13 @@ impl LegaiaRuntime {
     }
 
     /// Whether this frame's draws link per primitive
-    /// (`Renderer::set_field_prim_order`): the field frame alone.
+    /// (`Renderer::set_field_prim_order`): the field frame and the world
+    /// map, whose landmarks and actors go through the same draw kernels.
     pub fn play_field_prim_order(&self) -> bool {
+        use legaia_engine_mode::mode::SceneMode;
         self.scene_host
             .host()
-            .is_some_and(|h| h.world.mode == legaia_engine_mode::mode::SceneMode::Field)
+            .is_some_and(|h| matches!(h.world.mode, SceneMode::Field | SceneMode::WorldMap))
     }
 
     /// Per-terrain-draw `DRAW_ORDER_*` word (`1` = farthest corner), parallel

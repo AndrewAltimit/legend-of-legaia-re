@@ -410,7 +410,9 @@ pub fn plasma_strike_tick(
 ) -> CastTickStep {
     run_tick(ctx, PLASMA_STRIKE_ARMS, |c| match c.phase {
         PLASMA_STRIKE_CONFIRM_PHASE => {
-            stage_clip(caster, PLASMA_STRIKE_CONFIRM_CLIP);
+            // `li v0,0xD; sb v0,0x1da(s2)` at `0x801F7ADC`: the byte alone, no
+            // `+0x1DC` bump, so the clip goes in at the playing clip's end.
+            caster.staged_anim = PLASMA_STRIKE_CONFIRM_CLIP;
             // Hold the phase until the commit mirrors the id into `+0x1D9`.
             caster.playing_anim != PLASMA_STRIKE_CONFIRM_CLIP
         }

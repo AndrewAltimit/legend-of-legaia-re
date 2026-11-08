@@ -411,6 +411,8 @@ impl World {
         self.battle.spoils_frames = 0;
         self.battle.result_windows_glide = None;
         self.battle.inflight_seed = None;
+        self.battle.inflight_art_seed = None;
+        self.battle.art_seed_ra_seru = false;
         self.battle.active_formation = None;
         self.battle.command = None;
         self.battle.item_menu = None;

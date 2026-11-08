@@ -206,6 +206,27 @@ fn hit_reaction_knockdown_then_getup_then_idle() {
     );
 }
 
+/// On retail's cadence a reaction clip's natural end sits behind the advance
+/// that crossed it (`0x80047A48..0x80047B58`): the pass that finishes the clip
+/// lands on the idle at its first keyframe, not one pass later on the held
+/// last frame, so state `0x20`'s hold lets go a pass sooner.
+#[test]
+fn a_reaction_ends_on_the_pass_its_cursor_crosses_the_end() {
+    let mut world = reaction_test_world(false);
+    world.mode = SceneMode::Battle;
+    world.toggles.battle_sm_frame_cadence = true;
+    world.queue_battle_reaction(0, true);
+    assert_eq!(world.actors[0].battle_reaction, Some(2));
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    world.battle.anim_pass_vsyncs = 2;
+    world.tick_battle_anim_pass();
+    assert_eq!(world.actors[0].battle_reaction, None, "the same pass");
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
+    );
+}
+
 #[test]
 fn hit_reaction_light_flinch_without_getup() {
     // A surviving target with no get-up entry plays the light flinch

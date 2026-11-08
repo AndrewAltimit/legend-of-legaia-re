@@ -1576,9 +1576,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       frameCount: clip.frames | 0,
       frames: Int32Array.from(frames),
       // The record's own retail rate byte: FUN_80047430 advances the 12.4
-      // cursor by (step * 8 * rate) >> 1 a battle frame of `step` vsyncs,
-      // rate/4 keyframes a vsync (only a Slowed actor's idle runs at half).
-      fps: clip.rate ? 15 * clip.rate : 15,
+      // cursor by (step * scale * rate) >> 1 a battle frame of `step` vsyncs,
+      // scale being the actor's +0x21D (an art's commit drops it to 4 or 2,
+      // everything else plays at 8): 1.875 * scale * rate keyframes a second.
+      fps: clip.rate ? 1.875 * (clip.scale || 8) * clip.rate : 15,
       // An art translates the actor (flips, lunges): frame the whole clip.
       fitAll: clipKindOf(clip) === 'art',
     });

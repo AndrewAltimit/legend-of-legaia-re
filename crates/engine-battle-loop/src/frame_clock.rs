@@ -51,6 +51,11 @@ impl FrameCostRing {
         }
     }
 
+    /// The newest entry: what the last pass's frame cost.
+    pub fn newest(&self) -> u16 {
+        self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)]
+    }
+
     /// The step the ring's entries read now, before another push: what the
     /// pass that last stored here left for the next one. A newest entry on
     /// the clamp `0x2BC` stands for a raw duration of `0x2D0` or more, which

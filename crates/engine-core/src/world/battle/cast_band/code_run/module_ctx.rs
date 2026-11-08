@@ -76,6 +76,11 @@ impl World {
             depth_raw: self.battle.camera_frame_height as i32,
             caster_latch: self.caster_latch(caster_slot).unwrap_or(0),
             victim_radius: self.battle_body_radius(victim_slot),
+            caster_scale: self
+                .actors
+                .get(caster_slot as usize)
+                .and_then(|a| a.battle.render_scale)
+                .unwrap_or(0x1000),
         }
     }
 
@@ -112,6 +117,7 @@ impl World {
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         let map = self.cast_seat_map();
         legaia_engine_cast::cast_module_ticks::CastModuleCtx {
+            pass_rest: self.casting.module_cam.countdown.1,
             // Retail's `ctx[+0]` is the **party** count, not the actor count:
             // `0x8004B3F0` loads it as the bound of a loop that turns
             // `DAT_8007BD10[i]` - the present-party char-id list - into a

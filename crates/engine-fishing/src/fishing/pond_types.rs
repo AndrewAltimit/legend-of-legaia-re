@@ -125,6 +125,10 @@ pub enum PondEvent {
     Landed(i32),
     /// The line snapped.
     Snapped,
+    /// Seat a ring at the lure, `(x, z)`: the landing (`0x801D29B4`) and, in
+    /// the water, every frame of a live reel pull or a hooked fish
+    /// (`0x801D39A4`), retail's trail of rings behind a reeled float.
+    LureRing(i16, i16),
     /// The session returned to the idle shore: a resolved fight was
     /// dismissed, or an empty line was reeled all the way in. Hosts seed the
     /// auxiliary recast banner off it.

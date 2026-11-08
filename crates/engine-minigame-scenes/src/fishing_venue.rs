@@ -238,8 +238,11 @@ pub const RIPPLE_RECORD_A_VA: u32 = 0x801D_8ED8;
 /// VA of the ripple record the roll spawns on `rand() & 1 == 0`
 /// (`addiu a2,a2,-0x70bc` at `0x801D23F8`).
 pub const RIPPLE_RECORD_B_VA: u32 = 0x801D_8F44;
+/// VA of the ring the lure seats where it lands and behind a reeled float
+/// (`addiu a2,a2,-0x76D4` at `0x801D2934` and `0x801D39A0`).
+pub const LANDING_RING_RECORD_VA: u32 = 0x801D_892C;
 
-/// The ambient ripple's two part records, as the fishing overlay holds them:
+/// The ambient ripple's two part records and the lure's ring, as the fishing overlay holds them:
 /// the move-buffer format `[i16 model_sel][u16 reserved][bytecode]`. Both
 /// select library mesh `0`, but their bytecode turns the part into a
 /// render-mode-4 default-arm node (move-VM op `0x13`), whose geometry is the
@@ -257,20 +260,25 @@ impl RippleRecords {
     /// Bytes kept past record B's start - its bytecode ends at op `0x08`
     /// well inside this.
     const TAIL: usize = 0x100;
+    /// The ring's index in [`Self::parts`], lowest VA first.
+    const LANDING: usize = 0;
+    const RECORD_A: usize = 1;
+    const RECORD_B: usize = 2;
 
-    /// Cut both records out of the fishing overlay's as-loaded image (PROT
+    /// Cut the records out of the fishing overlay's as-loaded image (PROT
     /// 0972 at `base_va`). `None` when the image does not reach them.
     pub fn from_overlay(loaded: &[u8], base_va: u32) -> Option<Self> {
-        let a = RIPPLE_RECORD_A_VA.checked_sub(base_va)? as usize;
-        let b = (RIPPLE_RECORD_B_VA - RIPPLE_RECORD_A_VA) as usize;
+        let first = LANDING_RING_RECORD_VA.checked_sub(base_va)? as usize;
+        let a = (RIPPLE_RECORD_A_VA - LANDING_RING_RECORD_VA) as usize;
+        let b = (RIPPLE_RECORD_B_VA - LANDING_RING_RECORD_VA) as usize;
         let bytes = loaded
-            .get(a..(a + b + Self::TAIL).min(loaded.len()))?
+            .get(first..(first + b + Self::TAIL).min(loaded.len()))?
             .to_vec();
         if bytes.len() <= b + 4 {
             return None;
         }
-        let parts = legaia_overlay_images::summon_overlay::parse_records_at(&bytes, &[0, b]);
-        (parts.len() == 2).then_some(Self { bytes, parts })
+        let parts = legaia_overlay_images::summon_overlay::parse_records_at(&bytes, &[0, a, b]);
+        (parts.len() == 3).then_some(Self { bytes, parts })
     }
 }
 
@@ -317,10 +325,23 @@ impl FishingVenue {
     /// record, 0x1000)` call (`0x801D23FC`), which seats the part and runs
     /// its first move-VM slice.
     fn spawn_ripple(&mut self, variant: u32, pos: [i16; 3], rot: [i16; 3]) {
+        self.seat_ring(
+            if variant != 0 {
+                RippleRecords::RECORD_A
+            } else {
+                RippleRecords::RECORD_B
+            },
+            pos,
+            rot,
+        );
+    }
+
+    /// Seat one of [`RippleRecords`]'s parts as `FUN_80021B04` does.
+    fn seat_ring(&mut self, part: usize, pos: [i16; 3], rot: [i16; 3]) {
         let Some(rec) = self.ripple_records.as_ref() else {
             return;
         };
-        let part = &rec.parts[if variant != 0 { 0 } else { 1 }];
+        let part = &rec.parts[part];
         let scene = self.ripple_fx.get_or_insert_with(|| {
             legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &rec.bytes, 0, pos)
         });
@@ -636,6 +657,11 @@ pub fn tick_venue_actors(
                 None => v.line = None,
             },
             PondEvent::Snapped => v.line = None,
+            // The ring is seated on the water plane: `sh zero,0x16(a0)` at
+            // `0x801D39B8` on the in-water arm, the trio zeroed on landing.
+            PondEvent::LureRing(x, z) => {
+                v.seat_ring(RippleRecords::LANDING, [x, 0, z], [0, 0, 0]);
+            }
             PondEvent::Splash | PondEvent::Recast => {}
         }
     }
@@ -809,7 +835,11 @@ mod tests {
         // halts on its first op), not a pool placeholder.
         let base = legaia_minigame_formats::fishing_species::FISHING_OVERLAY_BASE_VA;
         let mut image = vec![0u8; (RIPPLE_RECORD_B_VA - base) as usize + 0x200];
-        for va in [RIPPLE_RECORD_A_VA, RIPPLE_RECORD_B_VA] {
+        for va in [
+            LANDING_RING_RECORD_VA,
+            RIPPLE_RECORD_A_VA,
+            RIPPLE_RECORD_B_VA,
+        ] {
             let o = (va - base) as usize;
             // model_sel 0, reserved 0, then op 0x08 (halt).
             image[o + 4] = 0x08;

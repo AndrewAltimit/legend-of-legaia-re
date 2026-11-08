@@ -2326,3 +2326,6 @@ is a gapless partition - is on
 
 Reading: two records on one camera-relative plane fight in the depth buffer and darken the frame. `ot-raster.py` on a retail table reproduces the screen with both layers drawn in chain order, and retail's two layers sit two buckets apart, but pushing one of them back moved the score by little because the cause was elsewhere: the textures those layers sample scrolled at three times retail's speed, and a part the arm kills stood on the screen. Measure the pages' shift against a retail VRAM before reading a depth order into a frame's colour.
 
+### Thunder Storm's bright centre as a ribbon drawn several times
+
+Reading: the render dispatcher stores the built ribbon into every slot of the node's model list (`0x8001B08C..0x8001B0B4`), so a list longer than one would draw each ray that many times, which would explain retail's centre standing about `40` of luma above the engine's through PROT 0957's arms 4 to 6. A RAM image of arm 4 (`LEGAIA_RAM_AT`, `battle_noaru_gilium_lv2_thunder_storm_mid_cast`) holds a count word of `1` in all six `0x801FA194` nodes' `+0x44` lists, one slot each. The gap is still open: hiding the ribbons takes the centre from `165` to `75` and hiding the scatter moves it by a unit or two, so the ribbons are what falls short, by some other route. `--rand-track` does not move the film.

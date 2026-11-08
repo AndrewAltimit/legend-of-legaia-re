@@ -5,7 +5,7 @@ use super::super::super::*;
 
 impl PlayWindowApp {
     /// `K` / `U` / `L` / `P` / `O` / `M` / `B`: the minigame entries and the fishing exchange. `true` when one took the key.
-    pub(super) fn minigame_key(&mut self, code: KeyCode, state: ElementState) -> bool {
+    pub(in crate::window) fn minigame_key(&mut self, code: KeyCode, state: ElementState) -> bool {
         self.key_dance(code, state)
             || self.key_dance_how_to(code, state)
             || self.key_fishing(code, state)

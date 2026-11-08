@@ -579,6 +579,7 @@ impl World {
         let fx_step = self.move_vm.ramp_ratio.max(1) * pass;
         let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
         for scene in action_fx.iter_mut().filter(|_| pass > 0) {
+            self.integrate_battle_part_cyclers(&mut scene.parts, pass);
             let mut host = MoveVmHostImpl {
                 world: self,
                 current_slot: None,
@@ -634,6 +635,7 @@ impl World {
         let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;
         };
+        self.integrate_battle_part_cyclers(&mut scene.parts, 1);
         {
             let mut host = MoveVmHostImpl {
                 world: self,

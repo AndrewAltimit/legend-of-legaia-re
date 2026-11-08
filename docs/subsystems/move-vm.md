@@ -401,7 +401,11 @@ allocates `w * h * 2` bytes via `FUN_80017888` into `+0xA8`; otherwise it uses
 the inline buffer at `+0xAC`. `FUN_8005842C` then fills the buffer from the
 descriptor at `+0xA0` - the operands are a VRAM rect and the call captures it,
 which is what the mode-3 CLUT-cell cycler recolours every frame
-(`engine-field::clut_cell_fx`).
+(`engine-field::clut_cell_fx`). The cycler's integrate sits ahead of the
+part's VM call in `FUN_80021DF4` (`0x800226D8..0x80022868` before the `jal`
+at `0x80022BA4`), so a rate an op stores takes effect on the next pass: a
+program of `+32` / `-32` rate stores walks its triangle top and bottom on the
+pass after the op (`World::integrate_battle_part_cyclers` for battle parts).
 
 `0x30` calls `FUN_800583C8(actor + 0xA0, buf)` with the heap buffer at `+0xA8`
 or the inline one at `+0xAC`, clears `+0x9C`, and joins the `0x22` epilogue

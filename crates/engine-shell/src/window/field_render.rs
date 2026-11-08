@@ -28,6 +28,7 @@ pub(super) type WorldMapDrawList = (
     usize,
     Vec<Option<usize>>,
     Vec<Option<usize>>,
+    Vec<bool>,
 );
 
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor

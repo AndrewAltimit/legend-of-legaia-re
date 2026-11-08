@@ -247,14 +247,32 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
     let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
     for a in &retail.actor_facings {
         let Some(&(e, ex, ez)) = engine.npc_facings.get(&a.flat) else {
+            if dump && let Some(&(e, ex, ez)) = engine.npc_seated_facings.get(&a.flat) {
+                eprintln!(
+                    "facing-seated {}: flat {}{} op {:#04x} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                    retail.scene,
+                    a.flat,
+                    if a.ambient { " (ambient)" } else { "" },
+                    a.ambient_op.unwrap_or(0),
+                    a.flags,
+                    a.model,
+                    a.x,
+                    a.z,
+                    a.facing & 0xFFF,
+                    ex,
+                    ez,
+                    e & 0xFFF
+                );
+            }
             continue;
         };
         if dump {
             eprintln!(
-                "facing {}: flat {}{} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                "facing {}: flat {}{} op {:#04x} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
                 retail.scene,
                 a.flat,
                 if a.ambient { " (ambient)" } else { "" },
+                a.ambient_op.unwrap_or(0),
                 a.flags,
                 a.model,
                 a.x,

@@ -874,6 +874,14 @@ impl World {
             |w: &Self, b: legaia_engine_system::input::PadButton| routed && w.input.just_pressed(b);
         let confirm = pressed(self, legaia_engine_system::input::PadButton::Cross)
             || pressed(self, legaia_engine_system::input::PadButton::Circle);
+        // One Cross / Circle edge per tick feeds one reader: this box took it,
+        // so the talk probe later in the frame does not. A press that closed
+        // the last box of an engaged context otherwise re-opened the talk
+        // with whoever the player faces - `uru`'s sleepers, whose every talk
+        // engages the spirit `P1[25]`, then looped on each press.
+        if confirm {
+            self.dialog.input_consumed = true;
+        }
         if panel.menu_active() {
             let mut moved = false;
             if pressed(self, legaia_engine_system::input::PadButton::Up) {

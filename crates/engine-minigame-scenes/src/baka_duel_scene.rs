@@ -233,6 +233,33 @@ impl BakaDuelAssets {
     }
 }
 
+/// `FUN_801D6BB8`'s colour pair: the glow's warm centre (`0x80A0C0`), the
+/// shadow's neutral one (`0x808080`) and the shared rim (`0x070707`).
+const GLOW_INNER: u32 = 0x0080_A0C0;
+const SHADOW_INNER: u32 = 0x0080_8080;
+const DISC_OUTER: u32 = 0x0007_0707;
+/// The glow's and the shadow's radii, `0x400` and `0x100`.
+const GLOW_RADIUS: i16 = 0x400;
+const SHADOW_RADIUS: i16 = 0x100;
+/// The glow's flag word: additive (`0x801D6BB8`, ABR `1`).
+const GLOW_FLAG_WORD: u32 = 0x9900_0000;
+/// The 5-bit level of the disc's patch texel (`0xB9CE`, read off the state's
+/// VRAM at `(960, 256)` `(0..2, 0xF0..0xF2)` through CLUT `0x7F84`).
+const DISC_PATCH_TEXEL: u16 = 14;
+/// The lift keeping a coplanar disc above the floor in a depth-tested host.
+const DISC_DEPTH_LIFT: f32 = 2.5;
+
+/// The floor's cued colour for a lattice corner's `SZ`: the near word
+/// `0xE0` toward the far colour `0x20` by `IR0 = SZ >> 2`. The `mtc2` load is
+/// unclamped, so a far corner runs past the far colour and the output
+/// saturates (`minigame_baka_fighter_retail_fight`'s far row holds `SZ` `16672`).
+fn floor_cue_colour(sz: i32) -> u8 {
+    const NEAR: i32 = 0xE0;
+    const FAR: i32 = 0x20;
+    let ir0 = legaia_engine_battle_vm::battle_ground_grid::grid_ir0_raw(sz);
+    (NEAR + (((FAR - NEAR) * ir0) >> 12)).clamp(0, 255) as u8
+}
+
 /// One TMD out of the PROT 1203 stage pack (descriptor type `0x02`).
 fn stage_tmd(entry: &[u8], index: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
     use legaia_container_formats::{DecodeMode, decode, pack, parse_player_lzs};
@@ -329,6 +356,10 @@ pub struct BakaDuelScene {
     /// The three party fighters of the player-select lineup, by roster id.
     lineup: Vec<Range<usize>>,
     floor: Range<usize>,
+    /// The epilogue's warm floor glow at the focus (`FUN_801D6BB8` mode `1`).
+    glow: Range<usize>,
+    /// Each fighter's drop shadow (`FUN_801D6BB8` mode `0`).
+    shadows: [Range<usize>; 2],
     walls: Vec<(Range<usize>, StagePlacement)>,
     /// Sprite-arm quad instances, four vertices each.
     impact_sprites: Vec<Range<usize>>,
@@ -371,6 +402,8 @@ impl BakaDuelScene {
             clear_fighter: 0..0,
             lineup: Vec::new(),
             floor: 0..0,
+            glow: 0..0,
+            shadows: [0..0, 0..0],
             walls: Vec::new(),
             impact_sprites: Vec::new(),
             impact_meshes: Vec::new(),
@@ -401,6 +434,21 @@ impl BakaDuelScene {
         let floor_start = s.base.len();
         s.push_floor();
         s.floor = floor_start..s.base.len();
+        s.glow = s.push_disc(legaia_engine_effects::effect_default_arm::ground_disc_mesh(
+            GLOW_INNER,
+            DISC_OUTER,
+            GLOW_RADIUS,
+            GLOW_FLAG_WORD,
+        ));
+        for slot in 0..2 {
+            s.shadows[slot] =
+                s.push_disc(legaia_engine_effects::effect_default_arm::ground_disc_mesh(
+                    SHADOW_INNER,
+                    DISC_OUTER,
+                    SHADOW_RADIUS,
+                    legaia_engine_effects::effect_default_arm::SHADOW_FLAG_WORD,
+                ));
+        }
         for roster in 0..SELECT_LINEUP.len() {
             let r = match assets.fighters.get(roster).and_then(|a| a.as_ref()) {
                 Some(a) => s.push_tmd(&a.tmd, &a.raw, 1.0),
@@ -678,9 +726,13 @@ impl BakaDuelScene {
         let arena = legaia_engine_minigames::baka_cabinet::draws_arena(state);
         let floor = self.floor.clone();
         if arena {
-            self.positions[floor.clone()].copy_from_slice(&self.base[floor]);
+            self.positions[floor.clone()].copy_from_slice(&self.base[floor.clone()]);
+            self.cue_floor(fight.duel_camera(), floor);
+            let focus_x = fight.duel_camera().view().focus[0];
+            self.place_disc(self.glow.clone(), [focus_x, 0.0, 0.0]);
         } else {
             self.collapse(floor);
+            self.collapse(self.glow.clone());
         }
         if legaia_engine_minigames::baka_cabinet::front_end(state) {
             self.pose_front_end(assets, fight, arena);
@@ -777,6 +829,77 @@ impl BakaDuelScene {
         }
     }
 
+    /// Append one ground disc: fill geometry on the floor plane, collapsed
+    /// until posed.
+    fn push_disc(&mut self, mesh: legaia_tmd::mesh::VramMesh) -> Range<usize> {
+        let start = self.base.len();
+        self.base.extend_from_slice(&mesh.positions);
+        self.object_ids
+            .extend(std::iter::repeat_n(u32::MAX, mesh.positions.len()));
+        self.uvs.extend_from_slice(&mesh.uvs);
+        self.cba_tsb.extend_from_slice(&mesh.cba_tsb);
+        // The packets sample the builder's fixed patch: page `(960, 256)` CLUT
+        // row 510 index `2`, `0xB9CE`, level `14` of `31`. The duel VRAM does
+        // not hold that page, so the fill carries `texel * colour / 128`.
+        for c in &mesh.colors {
+            let fill = c.map(|v| (u16::from(v) * DISC_PATCH_TEXEL / 16) as u8);
+            self.colors.push(fill);
+            self.flat_rgba
+                .extend_from_slice(&[fill[0], fill[1], fill[2], 0]);
+        }
+        for &i in &mesh.indices {
+            self.indices.push(start as u32 + i);
+            self.untextured_indices.push(start as u32 + i);
+        }
+        start..self.base.len()
+    }
+
+    /// Seat a ground disc on `point`, lifted off the plane it is coplanar with.
+    fn place_disc(&mut self, range: Range<usize>, point: [f32; 3]) {
+        for i in range {
+            let b = self.base[i];
+            self.positions[i] = [
+                b[0] + point[0],
+                b[1] + point[1] - DISC_DEPTH_LIFT,
+                b[2] + point[2],
+            ];
+        }
+    }
+
+    /// The floor's per-vertex depth cue: the emitter `FUN_801CEB84` loads
+    /// `IR0 = SZ >> 2` for each lattice corner (`0x801CEEC4..0x801CEF4C`) and
+    /// runs `DPCS` from the scratch colour word the epilogue stores
+    /// (`0x801D1FCC`: `0xE0E0E0` near, far colour `0x20`). As in the battle
+    /// grid the `mtc2` is unclamped, so the cue runs past the far colour and
+    /// the output clamp bounds it.
+    ///
+    /// PORT: FUN_801CEB84 (`DPCS` per lattice corner)
+    fn cue_floor(
+        &mut self,
+        camera: &legaia_engine_minigames::baka_duel::DuelCamera,
+        floor: Range<usize>,
+    ) {
+        let mut changed = false;
+        for i in floor {
+            let c = floor_cue_colour(camera.eye_depth(self.base[i]).max(0.0) as i32);
+            let rgb = [c, c, c];
+            if self.colors[i] != rgb {
+                self.colors[i] = rgb;
+                changed = true;
+            }
+            let px: &mut [u8; 4] = (&mut self.flat_rgba[i * 4..i * 4 + 4])
+                .try_into()
+                .expect("four bytes");
+            if px[..3] != rgb {
+                px[..3].copy_from_slice(&rgb);
+                changed = true;
+            }
+        }
+        if changed {
+            self.attr_generation = self.attr_generation.wrapping_add(1);
+        }
+    }
+
     /// The duel proper: both fighters, their ghosts, the cameo, the walls
     /// and the impact parts.
     fn pose_duel(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
@@ -786,6 +909,12 @@ impl BakaDuelScene {
         let r = camera_rotation(view.pitch, view.yaw, view.roll);
         let fwd = [r[2], r[6], r[10]];
         for slot in 0..2 {
+            let shadow = self.shadows[slot].clone();
+            if fight.seat_retired(slot) {
+                self.collapse(shadow);
+            } else {
+                self.place_disc(shadow, fight.fighter_position(slot));
+            }
             let Some(asset) = assets
                 .fighters
                 .get(self.roster[slot])
@@ -1220,5 +1349,23 @@ impl BakaDuelSurface {
             assets.apply_wink(&mut vram, i);
         }
         Some(vram)
+    }
+}
+
+#[cfg(test)]
+mod floor_cue_tests {
+    use super::floor_cue_colour;
+
+    /// `IR0 = SZ >> 2` from the near word `0xE0` toward far `0x20`, unclamped
+    /// past the far colour by the `mtc2` and bounded by the output clamp. The
+    /// far lattice row of `minigame_baka_fighter_retail_fight` holds `SZ`
+    /// `16672` and reads near the far colour.
+    #[test]
+    fn the_floor_cue_is_sz_over_four_from_near_to_far() {
+        assert_eq!(floor_cue_colour(0), 0xE0);
+        assert_eq!(floor_cue_colour(0x2000), 0x80);
+        assert_eq!(floor_cue_colour(0x4000), 0x20);
+        assert_eq!(floor_cue_colour(16672), 0x1C);
+        assert_eq!(floor_cue_colour(0x7000), 0);
     }
 }

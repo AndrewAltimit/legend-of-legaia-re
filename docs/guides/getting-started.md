@@ -35,7 +35,12 @@ own expansion pack, which points at your disc rather than carrying any of it. Ev
 on a disc image *you* supply - a raw Mode 2/2352 `.bin` dump of your own
 *Legend of Legaia* (USA) disc, `SCUS-94254`. A `.cue` sheet is accepted
 anywhere a disc image is: the referenced `BINARY` track is resolved
-automatically.
+automatically. To make one from the game disc, read it with a tool that keeps
+whole 2352-byte sectors: ImgBurn's *Create image file from disc* on Windows,
+`cdrdao read-cd --read-raw` then `toc2cue` on Linux and macOS. A 2048-byte
+`.iso` leaves out the movie and voice sectors and is refused. The site's
+[desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html#disc-image)
+has the full table of what each kind of file does.
 
 Commands below use the bare `./tool` form, as run from a terminal inside the
 archive's `command-line-tools` folder. If you build from source instead, the

@@ -209,7 +209,11 @@ pub fn megaton_press_camera(
             w -= SPEED_SCALAR << 5;
             arm.hit_site = Some(2);
         }
-        st.countdown.0 > 0
+        let held = st.countdown.0 > 0;
+        if !held {
+            st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+        }
+        held
     } else {
         st.countdown.drain_above(0)
     };

@@ -41,7 +41,10 @@ pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 // the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
 // as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
-    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
+    // The overworld keeps `flags.w` for its curve: its order word rides in
+    // `flags.z / 2`, above the occlusion bit.
+    let z_word = u32(u.flags.z / 2.0);
+    if ((u.flags.w >= 0.0 && z_word == 0u) || c0.w < 2.5 || clip.w <= 0.0) {
         return clip;
     }
     let m = u.mvp;
@@ -57,13 +60,19 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
         far = max(far, w3);
         n = 4.0;
     }
-    let order = u32(round(-u.flags.w)) - 1u;
+    let order = select(u32(round(-u.flags.w)), z_word, u.flags.w >= 0.0) - 1u;
     var mean_w = w / n;
     if ((order & 1u) != 0u) {
         mean_w = far;
     }
     if ((order & 2u) != 0u) {
-        mean_w = max(mean_w - 320.0 / 6.0, 1.0);
+        // Ten buckets are `320` `SZ` units: `320 / 6` port units on the field's
+        // 6x scale, `320 / flags.w` on the overworld's frame scale.
+        var near = 320.0 / 6.0;
+        if (u.flags.w > 0.0) {
+            near = 320.0 / u.flags.w;
+        }
+        mean_w = max(mean_w - near, 1.0);
     }
     if (mean_w <= 0.0) {
         return clip;

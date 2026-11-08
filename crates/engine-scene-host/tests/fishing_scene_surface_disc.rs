@@ -232,3 +232,51 @@ fn the_pond_water_heaves_on_the_swell() {
     assert!(distinct.len() >= 3, "phases {distinct:?}");
     eprintln!("[ran] pond swell: {moved} of {n} ground corners heave, {held} hold");
 }
+
+/// A ring's texels resolve to real colour in the pond's VRAM. The rings
+/// sample the boot-resident atlas (page `(960, 256)`, CLUT row `(64, 510)`)
+/// that no venue TIM uploads: a venue VRAM built without it holds zeros
+/// there, every ring reads a transparent palette entry, and the ring draws
+/// nothing on either host.
+#[test]
+fn the_rings_sample_the_boot_resident_atlas() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    use legaia_engine_minigame_scenes::fishing_scene::FishingSceneAssets;
+    let mut host = SceneHost::open_disc(&disc).expect("open disc");
+    host.load_scene("town01").expect("town01");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .expect("fishing overlay in static map");
+    let raw = host.index.entry_bytes_extended(rec.prot_index).unwrap();
+    let loaded = static_overlay::as_loaded(&raw, rec).unwrap();
+    assert!(host.enter_fishing_from_overlay(&loaded));
+    let mesh = (0..600)
+        .find_map(|_| {
+            legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(&mut host);
+            let m = host.world.minigames.fishing_venue.ripple_world_mesh();
+            (!m.positions.is_empty()).then_some(m)
+        })
+        .expect("a ring seats within 600 frames");
+    let assets = FishingSceneAssets::load(&host.index, 0, [0; 3]).expect("venue loads");
+    let vram = assets.vram().as_u16();
+    let lit = (0..mesh.uvs.len())
+        .filter(|&i| {
+            let [u, v] = mesh.uvs[i].map(usize::from);
+            let [cba, tsb] = mesh.cba_tsb[i].map(usize::from);
+            let (px, py) = ((tsb & 0xF) * 64, ((tsb >> 4) & 1) * 256);
+            let word = vram[(py + v) * 1024 + px + u / 4] as usize;
+            let index = (word >> ((u & 3) * 4)) & 0xF;
+            let (cx, cy) = ((cba & 0x3F) * 16, (cba >> 6) & 0x1FF);
+            vram[cy * 1024 + cx + index] != 0
+        })
+        .count();
+    assert!(
+        lit > 0,
+        "no ring vertex resolves to a coloured texel in {} vertices",
+        mesh.uvs.len()
+    );
+    eprintln!("[ran] {lit}/{} ring vertices sample colour", mesh.uvs.len());
+}

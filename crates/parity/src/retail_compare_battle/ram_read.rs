@@ -1254,8 +1254,16 @@ impl RetailBattle {
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),
+            // A queue of bare direction swings was entered too: it rebuilds
+            // through `Command`, where `Auto` would build its own queue and
+            // play another action (`battle_rikuroa_party_vahn_chain_open`
+            // holds `0E 0F 0E` and Auto's replay struck a single art clip).
             arts_queue: active.is_some_and(|p| {
-                (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
+                let starter = (0..0x10)
+                    .any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A));
+                starter
+                    || (matches!(game_anchors::u8_at(ram, ctx + 7), 0x1E..=0x20)
+                        && matches!(game_anchors::u8_at(ram, p + 0x1DF), 0x0C..=0x0F))
             }),
             acting_gauge: active.map(|p| {
                 (

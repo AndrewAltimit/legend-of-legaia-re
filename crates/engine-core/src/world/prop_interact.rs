@@ -165,6 +165,25 @@ impl World {
         }
     }
 
+    /// Carry the object's clip end latch onto its channel's copy of the
+    /// control word before a script op runs on that channel. The clip tick
+    /// `FUN_800204F8` latches `+0x62 & 0x100` on the actor's one word; the
+    /// port's tick writes the prop's copy and the context copy never saw it,
+    /// so `AC <id> 08` found nothing to clear and the prop's latch survived.
+    /// `edbylon`'s second door swing clears the latch left by the first and
+    /// spins on it, and the spin then passed at once.
+    ///
+    /// REF: FUN_800204F8 (0x800206E4..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C)
+    pub(crate) fn mirror_object_end_latch(&self, key: usize, word: &mut u16) {
+        use legaia_engine_scene::field_env::ANIM_END;
+        let Some(anchor) = self.object_key_anchor(key) else {
+            return;
+        };
+        if let Some(p) = self.props.bank.props.get(&anchor) {
+            *word = (*word & !ANIM_END) | (p.anim.flags & ANIM_END);
+        }
+    }
+
     /// `true` while placed object `record`'s prop plays a clip that has not
     /// latched its end (`+0x62 & 0x100`): not held (`0x2`), end latch down.
     /// What a record's `AD <id> 08` spin on a door's swing waits for.
@@ -1119,6 +1138,11 @@ pub(in crate::world) fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usi
         0x31 | 0x32 => bytecode
             .get(pc + 2)
             .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
+        // `B4 <id> 1x` / `2x` (the attached light and its re-script) and
+        // `3x` (the ambient-tree install at `s5 + 0x14`).
+        0x34 => bytecode
+            .get(pc + 2)
+            .is_some_and(|sub| matches!(sub >> 4, 1..=3)),
         _ => false,
     };
     if !routed {
@@ -1173,6 +1197,14 @@ pub(in crate::world) fn step_npc_word_op(
         };
     };
     let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
+    // Op `34 3x` reads the actor's live `+0x14` / `+0x18`; a leg moves the
+    // drawn placement, not this context.
+    if b & 0x7F == 0x34
+        && let Some(&(x, z)) = host.world.npcs.positions.get(&slot)
+    {
+        target_ctx.world_x = x as u16;
+        target_ctx.world_z = z as u16;
+    }
     // The port keeps a placement's legs in its own leg state, which the
     // caller has already tested (`World::npc_leg_in_flight`); a halt bit the
     // channel's context still carries from an earlier leg or acquire is not
@@ -1198,7 +1230,8 @@ pub(in crate::world) fn step_npc_word_op(
         .get(ci)
         .map(|c| (c.ctx.world_x, c.ctx.world_z));
     let reseat = b & 0x7F == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0xC3);
-    if reseat || before != Some((target_ctx.world_x, target_ctx.world_z)) {
+    let effect_op = b & 0x7F == 0x34;
+    if reseat || (!effect_op && before != Some((target_ctx.world_x, target_ctx.world_z))) {
         let pos = (target_ctx.world_x as i16, target_ctx.world_z as i16);
         host.world.npcs.positions.insert(slot, pos);
         host.world.npcs.motions.remove(&slot);

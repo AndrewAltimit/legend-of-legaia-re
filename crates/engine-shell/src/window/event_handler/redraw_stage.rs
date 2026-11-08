@@ -586,6 +586,7 @@ impl PlayWindowApp {
             matches!(
                 self.session.host.world.mode,
                 legaia_engine_mode::mode::SceneMode::Field
+                    | legaia_engine_mode::mode::SceneMode::WorldMap
             ) && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
         );
         // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s

@@ -106,6 +106,9 @@ pub struct ModuleCamSeats {
     /// size its depth by (PROT 0929's arm-16 exit: `10 * r`, at most
     /// `0x1800`).
     pub victim_radius: i16,
+    /// The caster's model scale `*(caster[+0x22C]) + 0x72`: PROT 0938's
+    /// breath seats its records at it.
+    pub caster_scale: u16,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -343,8 +346,16 @@ pub struct ModuleFollow {
 }
 
 /// A module's countdown word.
+///
+/// `.1` is the pass's rest: the one-vsync ticks of the current battle-frame
+/// pass still owed after this one (`World::module_pass` sets it). Retail
+/// drains the whole pass's product in the one `subu` the arm opens with, so
+/// an arm that hands over on tick `i` of a pass has drained `delta` ticks'
+/// worth by then, not `i + 1`: [`Self::drain_rest`] on the leaving tick, and
+/// the gate shapes below apply it themselves on the tick the gate opens. The
+/// re-arm that follows adds to (or stores over) the true residue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ModuleCountdown(pub i32);
+pub struct ModuleCountdown(pub i32, pub u8);
 
 impl ModuleCountdown {
     /// `sw (scalar << shift), countdown` - the arming store.
@@ -362,19 +373,42 @@ impl ModuleCountdown {
         self.0 -= MODULE_DRAIN_PER_TICK;
     }
 
+    /// The rest of the pass's drain, on the tick an arm leaves
+    /// ([`Self`], `.1`): `drain` per tick left in the pass.
+    pub fn drain_rest(&mut self, drain: i32) {
+        self.0 -= drain * i32::from(self.1);
+    }
+
+    /// One drain plus the rest of the pass, for an arm that always leaves on
+    /// this pass (a one-drain arm with no gate).
+    pub fn pass_drain(&mut self, drain: i32) {
+        self.0 -= drain;
+        self.drain_rest(drain);
+    }
+
+    /// `word -= drain`, then hold while the word stays above `threshold`;
+    /// the tick the gate opens drains the rest of the pass.
+    pub fn holds_after_drain(&mut self, drain: i32, threshold: i32) -> bool {
+        self.0 -= drain;
+        if self.0 > threshold {
+            true
+        } else {
+            self.drain_rest(drain);
+            false
+        }
+    }
+
     /// Drain, then report whether the word is still above `threshold` - the
     /// `subu; slt/bgtz` gate every counted arm opens with.
     pub fn drain_above(&mut self, threshold: i32) -> bool {
-        self.drain();
-        self.0 > threshold
+        self.holds_after_drain(MODULE_DRAIN_PER_TICK, threshold)
     }
 
     /// Drain, then report whether the word is still non-negative - the
     /// `subu; bgez` form of the gate (PROT 0905), which holds one pass longer
     /// than [`Self::drain_above`]`(0)` on a word that lands on zero.
     pub fn drain_non_negative(&mut self) -> bool {
-        self.drain();
-        self.0 >= 0
+        self.holds_after_drain(MODULE_DRAIN_PER_TICK, -1)
     }
 }
 
@@ -1016,6 +1050,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 mod aluru;
+mod astral_slash;
 mod blade_breath;
 mod bloody_horns;
 mod body_kit;
@@ -1023,6 +1058,7 @@ mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 mod capture_spawns;
+mod chaos_breath;
 mod chaos_flare;
 pub mod creature;
 mod creature_spawns;
@@ -1058,6 +1094,7 @@ mod puera;
 mod rolling_flare;
 mod scythe_wind;
 mod seru;
+mod shadow_break;
 mod spoon;
 mod spore_gas;
 mod steal;
@@ -1076,6 +1113,7 @@ mod water_crystals;
 mod water_hazard;
 mod white_shield;
 pub use aluru::*;
+pub use astral_slash::{ASTRAL_SLASH_BODY, astral_slash_camera};
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
@@ -1088,6 +1126,7 @@ pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_c
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
+pub use chaos_breath::{CHAOS_BREATH_BODY, chaos_breath_camera};
 pub use chaos_flare::{
     CHAOS_FLARE_BODY, CHAOS_FLARE_BURST_RECORDS, CHAOS_FLARE_CHARGE_RECORDS, chaos_flare_camera,
 };
@@ -1144,6 +1183,10 @@ pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
+pub use shadow_break::{
+    SHADOW_BREAK_BLADES, SHADOW_BREAK_BODY, SHADOW_BREAK_BURST_RECORD, SHADOW_BREAK_FALL_RECORD,
+    SHADOW_BREAK_OPENING_RECORD, SHADOW_BREAK_RISE, shadow_break_camera, shadow_break_ring,
+};
 pub use spoon::*;
 pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
 pub use steal::{STEAL_BODY, steal_camera};

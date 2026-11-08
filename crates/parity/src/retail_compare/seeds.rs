@@ -25,14 +25,21 @@ pub fn retail_ambient_heading(ram: &[u8], n: u32) -> bool {
 /// (`+0x10 & 0x80`, a heading op in the variant its PC sits in), whatever
 /// holds it now: an engaged wanderer stopped where its walks left it.
 pub fn retail_stream_turns(ram: &[u8], n: u32) -> bool {
+    retail_stream_heading_op(ram, n).is_some()
+}
+
+/// The first heading op of the variant node `n`'s ambient stream PC sits in
+/// (`None` when the node runs no ambient stream or the variant never turns
+/// it): which op makes `+0x26` stream history.
+pub fn retail_stream_heading_op(ram: &[u8], n: u32) -> Option<u8> {
     use legaia_scene_formats::man_motion::op_width;
     let flags = game_anchors::u32_at(ram, n + 0x10);
     if flags & 0x80 == 0 {
-        return false;
+        return None;
     }
     let stream = game_anchors::u32_at(ram, n + 0x80);
     if !(0x8000_0000..0x8020_0000).contains(&stream) {
-        return false;
+        return None;
     }
     let pc = stream + u32::from(game_anchors::u16_at(ram, n + 0x84));
     // The variant whose code holds the PC.
@@ -55,23 +62,21 @@ pub fn retail_stream_turns(ram: &[u8], n: u32) -> bool {
         }
         header = end;
     }
-    let Some(mut at) = code else {
-        return false;
-    };
+    let mut at = code?;
     for _ in 0..256 {
         if at >= 0x8020_0000 {
             break;
         }
         let op = game_anchors::u8_at(ram, at);
         if AMBIENT_HEADING_OPS.contains(&op) {
-            return true;
+            return Some(op);
         }
         match (op, op_width(op)) {
             (0x01, _) | (_, None) => break,
             (_, Some(w)) => at += w as u32,
         }
     }
-    false
+    None
 }
 
 /// The heading `+0x26` of every actor the field actor tick (`FUN_8003BC08`)
@@ -93,6 +98,7 @@ pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
                 model: game_anchors::i16_at(ram, n + 0x64),
                 flags: game_anchors::u32_at(ram, n + 0x10),
                 ambient: retail_ambient_heading(ram, n),
+                ambient_op: retail_stream_heading_op(ram, n),
             })
         })
         .collect()

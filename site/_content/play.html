@@ -133,6 +133,8 @@ body.play-embedded.xw-preview .play-screen, body.play-embedded.xw-preview .play-
 /* The expansion workbench's 3D preview (`?xwpreview=1`): the picture is
    looked at and clicked to pick tiles, so no veil dims it. */
 body.xw-preview .play-focus-veil { display: none; }
+/* A frame that only shows a battle (the art and magic pages) owes no click-to-play prompt. */
+body.play-showcase .play-focus-veil { display: none; }
 /* The on-screen pad (touch-pad.js): over the picture, above the focus veil,
    translucent so the scene stays readable. Only its buttons take pointer
    input; a touch anywhere else still reaches the canvas (camera drag). */
@@ -459,8 +461,8 @@ div.play-vis-head { cursor: default; }
     Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
     This is the project's from-scratch rewrite of the game engine compiled to WebAssembly - not a
     video and not an emulator. Pick your disc image, choose New Game or a town, and take the controls.
-    Most of the game plays - towns, battles, menus, minigames, saves - with the occasional bug; the
-    <a href="#what-works">map below</a> says what works and what is still rough. To play the original
+    The whole game plays, New Game to the credits - towns, battles, menus, minigames, saves - with the
+    occasional bug; the <a href="#what-works">list below</a> says what works and what is still rough. To play the original
     with mods instead, patch your disc with the <a href="tooling/rom-patcher.html">ROM patcher</a>
     and run it in your usual emulator.
   </p>
@@ -472,7 +474,8 @@ div.play-vis-head { cursor: default; }
       <label for="play-file">Disc:</label>
       <input type="file" id="play-file" accept=".bin">
       <span class="play-status" id="play-status">
-        No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy. It is read
+        No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy
+        (<a href="guides/desktop-apps.html#disc-image">how to make one</a>). It is read
         locally, nothing is uploaded; a disc loaded on another page here is picked up automatically.
       </span>
       <button type="button" id="play-copy-report" class="btn btn-ghost play-report-btn"
@@ -557,6 +560,14 @@ div.play-vis-head { cursor: default; }
           <label class="play-dev-menu"
                  title="Overlay the retail developer menu on the running scene (the native window's LEGAIA_DEV_MENU opt-in). Edits your own session only; off every page load by design - nothing in a link or in storage can carry it.">
             <input type="checkbox" id="play-dev-menu"> Dev menu
+          </label>
+          <label class="play-dev-menu"
+                 title="The debug orbit vantage instead of the follow camera (the native F3, and the Tools page of its F12 panel). Off every page load.">
+            <input type="checkbox" id="play-debug-camera"> Debug camera
+          </label>
+          <label class="play-dev-menu"
+                 title="The readout bar under the picture (the native F1 and its diagnostic rows, on its Tools page).">
+            <input type="checkbox" id="play-diag-rows" checked> Diagnostics
           </label>
           <label class="play-dev-menu"
                  title="Free-angle movement: the movement vector follows the camera azimuth at full angular resolution instead of retail's quantised 8-way remap (the native window's R toggle, persisted like its other options). Simulation knob - off keeps the retail decode.">
@@ -1041,8 +1052,7 @@ div.play-vis-head { cursor: default; }
   </p>
   <p>
     <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue.
-    <em>Scene picker</em> drops you straight into any town, field or dungeon - the best-supported
-    mode. You arrive where the game's own doors land you: a town's gate from the world map, a
+    <em>Scene picker</em> drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
     dungeon's door from the room before it; the few scenes no door leads into (Rim Elm, which the
     game itself starts in Vahn's yard, and some cutscene-only maps) start at a standable spot
     inside the map instead. The <em>save bar</em> resumes a session you exported earlier, or a real memory-card
@@ -1126,19 +1136,19 @@ div.play-vis-head { cursor: default; }
       own backdrop, with the theme starting when the fight does. Start leaves any minigame
       (a dome round is left the battle's way, by Run).</li>
   </ul>
-  <h3>Not here yet</h3>
+  <h3>Still rough</h3>
   <ul>
-    <li><strong>The overworld's placed figures.</strong> Retail binds each world-map placement
-      to its own actor model, and which model is still open, so neither host draws one. The
-      <em>Overworld markers</em> box shows each town, port and encounter zone as a coloured
-      post instead, depth-tested against the terrain. The
-      <a href="world-overview.html">world overview</a> shows the continents.</li>
+    <li><strong>It is not frame-identical to the original.</strong> Game state matches almost
+      everywhere; the picture is where the distance is, most of all mid-battle. The
+      <a href="subsystems/engine.html#status">engine page</a> says what is measured.</li>
+    <li><strong>Overworld debug.</strong> The world map draws its ground, landmarks and actors as
+      the game does; retail's top-view debug camera is not ported. The <em>Overworld markers</em>
+      box adds a coloured post for each town, port and encounter zone, an aid of the port's own.
+      The <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
   <p class="hint">
     The camera is retail's follow camera, framed per scene from the scene's own camera-region
-    records, with see-through walls for whatever blocks the view. In caves the
-    floor sampler can disagree with the visible ground - tracked with the
-    <a href="reference/open-rev-eng-threads.html">open questions</a>.
+    records, with see-through walls for whatever blocks the view.
   </p>
 </section>
 
@@ -2471,19 +2481,28 @@ div.play-vis-head { cursor: default; }
     lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
   } : null;
   /* `?cast=<spell id>[&target=<seat>][&scene=<label>][&embed=1]`: open a
-   * battle straight off the disc load and cast that spell in it - the
-   * magic page embeds this, so a Seru's whole cast (the creature, the
-   * module's effect layer, its camera) plays through this runtime, the same
-   * battle every other fight here runs. `debug_seed_inflight_cast` hands
-   * the spell to the lead (engine actor 0) on the first command prompt, and
-   * `debug_force_battle` opens the scene's first rollable formation (the
+   * battle straight off the disc load and cast that spell in it. `?art=<arrows>
+   * &char=<name>` is its twin: the arts page plays one art for that character.
+   * The art and magic pages embed this (js/battle-stage.js), so an art or a
+   * Seru's whole cast (the creature, the module's effect layer, its camera,
+   * the battle HUD) plays through this runtime, the same battle every other
+   * fight here runs. `debug_seed_inflight_cast` / `debug_seed_inflight_art`
+   * hand the action to the lead (engine actor 0) on the first command prompt,
+   * and `debug_force_battle` opens the scene's first rollable formation (the
    * native `LEGAIA_BATTLE_INFLIGHT` + forced-encounter seams). `target` is a
    * retail seat: `3` the first monster (the default), `0` the lead. */
-  const castPending = embedQuery.has('cast') ? {
-    spell: parseInt(embedQuery.get('cast'), embedQuery.get('cast').startsWith('0x') ? 16 : 10),
-    target: embedQuery.has('target') ? parseInt(embedQuery.get('target'), 10) : 3,
-    scene: embedQuery.get('scene') || 'map01',
-  } : null;
+  function parseLaunch(get, has) {
+    const target = has('target') ? parseInt(get('target'), 10) : 3;
+    const scene = get('scene') || 'map01';
+    if (has('cast')) {
+      return { kind: 'cast', spell: parseInt(get('cast'), get('cast').startsWith('0x') ? 16 : 10), target, scene };
+    }
+    if (has('art')) {
+      return { kind: 'art', arrows: get('art'), char: get('char') || 'vahn', target, scene };
+    }
+    return null;
+  }
+  let castPending = parseLaunch((k) => embedQuery.get(k), (k) => embedQuery.has(k));
   /* `?xwpreview=1`: the expansion workbench's 3D preview frames this page
    * (js/play-expansion-live.js); it shows the picture alone, as `embed=1`. */
   if (embedQuery.get('embed') === '1' || embedQuery.get('xwpreview') === '1') {
@@ -2493,6 +2512,7 @@ div.play-vis-head { cursor: default; }
       const screen = document.getElementById('play-screen');
       if (!screen) return;
       document.body.classList.add('play-embedded');
+      if (embedQuery.has('cast') || embedQuery.has('art')) document.body.classList.add('play-showcase');
       if (embedQuery.get('xwpreview') === '1') document.body.classList.add('xw-preview');
       if (screen.parentElement !== document.body) document.body.prepend(screen);
       for (const el of Array.from(document.body.children)) {
@@ -2504,18 +2524,39 @@ div.play-vis-head { cursor: default; }
   }
   function startPendingCast() {
     const req = castPending;
-    if (!req || isNaN(req.spell) || !runtime) return;
+    if (!req || !runtime) return;
+    if (req.kind === 'cast' && isNaN(req.spell)) return;
     enter(req.scene);
     const rt = runtime;
+    const target = isNaN(req.target) ? 3 : req.target;
     try {
-      /* A party that outlives the cast, so the fight is the spell's. */
+      /* A party that outlives the action, so the fight is the spell's or art's. */
       if (typeof rt.cheat_apply === 'function') rt.cheat_apply('level', 99, '');
-      rt.debug_seed_inflight_cast(0, req.spell & 0xFF, isNaN(req.target) ? 3 : req.target);
-      if (!rt.debug_force_battle(-1)) console.warn('cast launch: no formation in ' + req.scene);
-    } catch (e) { console.warn('cast launch', e); }
+      if (req.kind === 'art') {
+        /* The card's character, every art known, so the real builder runs the
+         * string: the art plays exactly as an entered one would. */
+        const reason = rt.set_active_party_spec(req.char);
+        if (reason) console.warn('art launch: ' + reason);
+        if (typeof rt.cheat_apply === 'function') rt.cheat_apply('arts', 0, '');
+        rt.debug_seed_inflight_art(0, req.arrows, target);
+      } else {
+        rt.debug_seed_inflight_cast(0, req.spell & 0xFF, target);
+      }
+      if (!rt.debug_force_battle(-1)) console.warn('battle launch: no formation in ' + req.scene);
+    } catch (e) { console.warn('battle launch', e); }
     canvas.focus();
   }
   window.__playCastAgain = startPendingCast;
+  /* `query` is the embedding page's parameter object (`{cast, target}` or
+   * `{art, char, target}`): replace whatever this frame is fighting with it,
+   * on the running engine, instead of reloading the page. */
+  window.__playLaunch = (query) => {
+    const q = query || {};
+    const next = parseLaunch((k) => (q[k] == null ? null : String(q[k])), (k) => q[k] != null);
+    if (!next) return;
+    castPending = next;
+    startPendingCast();
+  };
 
   function startPendingMinigame() {
     const req = minigamePending;
@@ -3688,6 +3729,7 @@ div.play-vis-head { cursor: default; }
       if (typeof rt.set_battle_bgm === 'function') {
         const v = battleBgmEl.value.trim();
         if (v !== '') rt.set_battle_bgm(Math.max(0, parseInt(v, 10) || 0));
+        else if (typeof rt.clear_battle_bgm === 'function') rt.clear_battle_bgm();
       }
     } catch (e) { console.warn('battle tools', e); }
   }
@@ -4061,6 +4103,23 @@ div.play-vis-head { cursor: default; }
       keysEl.append(k, t);
     }
   };
+  const debugCamEl = document.getElementById('play-debug-camera');
+  const diagRowsEl = document.getElementById('play-diag-rows');
+  /* The two boxes mirror the keys, so a press of F1 or F3 moves them too. */
+  window.__playSyncDebugBoxes = () => {
+    debugCamEl.checked = !!(view && view.debugCamera);
+    diagRowsEl.checked = !!hudEl && hudEl.style.display !== 'none';
+  };
+  debugCamEl.addEventListener('change', () => {
+    if (view) view._afterHotkey('debug_camera');
+    window.__playSyncDebugBoxes();
+    canvas.focus();
+  });
+  diagRowsEl.addEventListener('change', () => {
+    window.__playHotkeyActions.diag_rows();
+    window.__playSyncDebugBoxes();
+    canvas.focus();
+  });
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
     audio_mute: () => {},

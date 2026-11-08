@@ -98,7 +98,11 @@ fn theeder_bolt_hold(seat: ModuleSeat, height: i16) -> ArmDirection {
 fn drain_halfword(st: &mut ModuleCamState) -> bool {
     st.countdown.drain();
     st.countdown.0 = i32::from(st.countdown.0 as i16);
-    st.countdown.0 >= 0
+    let held = st.countdown.0 >= 0;
+    if !held {
+        st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+    }
+    held
 }
 
 /// PROT 0904 (Theeder) - the camera and countdown half of the tick
@@ -234,8 +238,12 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
             ArmDirection::PASS
         }
         14 => {
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 st.countdown.drain();
+            }
+            if drained && st.countdown.0 <= 0 {
+                st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
             }
             gate(st.countdown.0 > 0)
         }
@@ -467,10 +475,7 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 ..ArmDirection::PASS
             }
         }
-        5 => {
-            st.countdown.drain();
-            gate(st.countdown.0 > 0)
-        }
+        5 => gate(st.countdown.drain_above(0)),
         6 => {
             st.countdown.0 = SPEED_SCALAR * GIZAM_ATTACK_WAIT;
             // The spell name (`FUN_8003541C` at `0x801F6E34`).
@@ -535,8 +540,12 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
         }
         14 => {
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 st.countdown.drain();
+            }
+            if drained && st.countdown.0 <= 0 {
+                st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
             }
             gate(st.countdown.0 > 0)
         }
@@ -570,6 +579,7 @@ mod tests {
             depth_raw: 0,
             caster_latch: 0,
             victim_radius: 0,
+            caster_scale: 0x1000,
         }
     }
 

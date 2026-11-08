@@ -363,6 +363,37 @@ An injected cast seats the caster's clip and cursor on its begin
 (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
 the caster stands on.
 
+## The camera channel
+
+`legaia-engine cast-sequence-score` writes `camera.csv` beside the report: **every**
+retail vsync row paired with its engine tick, RAM against RAM, on the segment
+alignment and the game clock the image pairs use, so no display lag. Each row holds
+the pass step, pitch, yaw, the TR trio and the focus pair on both sides. A summon module's
+seek arm holds the engine's whole frame, so its still ticks are left out of the pairing's
+offset, as the image pairs leave them: paired one for one they read as a pan the engine
+stopped. `--camera-only`
+writes the file and reads no frame, so a recording whose frames have been deleted
+(or one made with `LEGAIA_DIAG_CAST_SEQ_EVERY` raised to skip them) still scores.
+The driver forwards the flag.
+
+[`cast-camera-rank.py`](../../scripts/ci/cast-camera-rank.py) reads a directory of films
+and ranks them by the camera error instead of the image score: per film the first
+row past `--px` pixels, the error held for `--sustain` rows per channel, and two pixel
+columns, the mean displacement of six world probes around retail's focus projected
+through each side's pose. `raw px` is the pair's own error. `law px` takes the best
+engine tick within one frame step of the pair, so a pass boundary that fell a vsync
+apart reads as pacing, not as a framing error. A shot that dollies through the eye (TR z
+below `800` on a module's fly-by) counts zero rather than an unbounded number. Two
+directories compare, by film name.
+
+Read the top of the list against the mechanisms it has held: a capture body with no
+camera director holds the pose `0x6F` left (a `law px` in the tens across whole arms);
+a finishing arm that stores the wrong yaw counter leaves a Done-band yaw error that
+grows along the ease; a film that opens inside a module arm or in `0x71` carries the
+state's seated pose, not the arm's tween, and its first segment is the harness's, not
+the game's. An engine seat at another `acting` seat than the retail recording is a
+pairing artefact as well. These are read off the film, not the score.
+
 ## The pairing rule
 
 Frames pair on the action-SM clock, never on wall time:
@@ -662,7 +693,11 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`). `LEGAIA_DIAG_CAPTURE_TICK` pushes the
   child's frame past the recording. A first `0x1E` is not that round: the drive
   may replay rounds until its target and clip match, and a recording started on
-  an earlier one reads as a strike that "lands nothing".
+  an earlier one reads as a strike that "lands nothing". A retail recording whose
+  first row has already left the state (`cam.csv` differs from the seated pose) is a
+  pass ahead of the gate tick, so the score drops the engine's leading rows on that
+  pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
+  that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
 
 A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
 `0x3E`), which the probe also takes as the recording's start: before it did, a

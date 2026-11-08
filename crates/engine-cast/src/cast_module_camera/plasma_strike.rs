@@ -215,10 +215,10 @@ pub fn plasma_strike_camera(
                 }
             }
         }
-        8 | 0x0A => st.countdown.drain(),
+        8 | 0x0A => st.countdown.pass_drain(MODULE_DRAIN_PER_TICK),
         0x0C => {
             arm.drift = Some(drift(0, -(s >> 1), 0, 0, -s));
-            st.countdown.drain();
+            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
         }
         0x0D => {
             arm.drift = Some(drift(0, -(s >> 1), 0, 0, -s));

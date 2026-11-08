@@ -58,6 +58,20 @@ fn render_cell(
     sz_scale: f32,
     refs: bool,
     texel: u16,
+    far: FarBucket,
+) -> (Vec<f32>, Vec<[u8; 4]>) {
+    render_cell_flags(device, queue, sz_scale, 0.0, refs, texel, far)
+}
+
+/// [`render_cell`] with `flags.z` set: the world map's order word above the
+/// occlusion bit.
+fn render_cell_flags(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    sz_scale: f32,
+    flags_z: f32,
+    refs: bool,
+    texel: u16,
     far_bucket: FarBucket,
 ) -> (Vec<f32>, Vec<[u8; 4]>) {
     // The cell: x in -100..100, z in 400..600, rising from y -80 at the near
@@ -109,6 +123,7 @@ fn render_cell(
     let mut uniforms = [0f32; 64];
     uniforms[..16].copy_from_slice(&mvp());
     uniforms[16 + 4 * 4 + 3] = sz_scale;
+    uniforms[16 + 4 * 4 + 2] = flags_z;
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("flat depth test shader"),
@@ -594,6 +609,36 @@ fn a_shell_quad_sorts_as_its_corners_mean() {
     let spread = drawn.iter().cloned().fold(f32::MIN, f32::max)
         - drawn.iter().cloned().fold(f32::MAX, f32::min);
     assert!(spread > 1.0e-4, "per-pixel spread {spread}");
+}
+
+/// The world map keeps `flags.w` for its curve, so its order word rides in
+/// `flags.z / 2`: the same links, the ten buckets scaled by the frame's
+/// `SZ` per unit.
+#[test]
+fn a_world_map_prim_order_word_picks_its_link() {
+    let Some((device, queue)) = headless_device() else {
+        return;
+    };
+    let a = FAR / (FAR - NEAR);
+    let b = -NEAR * FAR / (FAR - NEAR);
+    let scale = 3.0_f32;
+    for (word, want_w) in [(4.0, 600.0), (6.0, 500.0 - 320.0 / scale)] {
+        let (flat, _) = render_cell_flags(
+            &device,
+            &queue,
+            scale,
+            word,
+            false,
+            0x7FFF,
+            FarBucket::MeanPrim,
+        );
+        let drawn: Vec<f32> = flat.iter().copied().filter(|&d| d < 1.0).collect();
+        assert!(!drawn.is_empty());
+        let want = a + b / want_w;
+        for d in &drawn {
+            assert!((d - want).abs() < 1.0e-5, "word {word}: {d} against {want}");
+        }
+    }
 }
 
 /// `flags.w = -2`, `DRAW_ORDER_FAR_CORNER`: a field prim of a record carrying

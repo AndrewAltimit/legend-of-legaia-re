@@ -270,6 +270,14 @@ impl World {
         if reaction.is_none() {
             a.battle.queued_anim = st.staged_anim;
         }
+        // The caster's `+0x1DC` bump: bit 0 commits the staged byte on the next
+        // anim pass (`0x800478F4`), restarting a clip that is staged over itself.
+        // PROT 0959's arms 5 and 6 bump with `+0x1DA` unchanged
+        // (`0x801F7038`, `0x801F7120`), which holds Che's clip `0x0A` off its end.
+        let commit_now = !creature
+            && slot == self.battle_ctx.active_actor
+            && st.restage & 1 != 0
+            && reaction.is_none();
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.render_color = st.present_04;
@@ -318,6 +326,9 @@ impl World {
         }
         if let Some(entry) = reaction {
             self.commit_battle_reaction_entry(slot as usize, entry);
+        }
+        if commit_now {
+            self.commit_staged_battle_anim_at_boundary(slot as usize);
         }
     }
 

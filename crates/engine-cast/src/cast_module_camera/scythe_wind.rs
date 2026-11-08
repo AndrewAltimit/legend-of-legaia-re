@@ -176,6 +176,8 @@ pub fn scythe_wind_camera(
             arm.shot = Some(sweep(focus_on(body), c.facing, cd, 0x900, 0xE00));
             if (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled {
                 arm.hold = true;
+            } else {
+                st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
             }
         }
         _ => {}

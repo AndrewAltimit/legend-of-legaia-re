@@ -414,6 +414,9 @@ fn battle_end_cam_inputs(
     inputs.action = script::ActionFraming {
         party_slot: party,
         battle_over: true,
+        // The sequencer's phase word has left `0` within the first pass
+        // (`0 -> 2 -> 4 -> 5`), and a party wipe starts at `5`.
+        results_word: true,
         char_id: roster.map_or(0, |r| r + 1),
         anim_id: seq.pose_id.unwrap_or(0),
         ..inputs.action
@@ -472,7 +475,8 @@ pub fn battle_formation_box(world: &World) -> Option<script::FormationBox> {
     let pc = world.party.party_count as usize;
     let mut bbox: Option<script::FormationBox> = None;
     for (i, a) in world.actors.iter().enumerate() {
-        if !(i < pc || a.battle_monster_id.is_some()) {
+        // The live-HP halfword `+0x14C` gates each seat (`0x801D7000`).
+        if !(i < pc || a.battle_monster_id.is_some()) || a.battle.hp == 0 {
             continue;
         }
         script::FormationBox::extend(
@@ -629,12 +633,22 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
     Some(script::AttackCamChannels {
         character,
         art_id: a.battle.latched_anim,
-        arm_select: a.battle.hit_count_bound,
+        // `+0x21B`, the clip's loop counter (`0x8004BDF4`, the tick's window
+        // stores at `0x800477E8` / `0x8004783C`): the arms that read it fork
+        // an art's shots on the loops still to run, so it reads the player's
+        // live budget on a party seat rather than the summon creature's
+        // mirror (`World::mirrors_loop_counter`).
+        // PORT: FUN_801D71B8 (`0x801D7308`, `actor[+0x21B]`)
+        arm_select: a
+            .battle_animation
+            .as_ref()
+            .map_or(a.battle.hit_count_bound, |p| p.loop_cycles_remaining()),
         anim_frame: a
             .battle_animation
             .as_ref()
             .map(|p| p.cursor_sixteenths() as i16)
             .unwrap_or(0),
+        target_slot: a.battle.active_target,
     })
 }
 
@@ -781,6 +795,8 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
     let party = usize::from(acting_slot) < world.party.party_count as usize;
     script::ActionFraming {
         party_slot: party,
+        scripted: world.battle_ctx.scripted_fight != 0,
+        results_word: false,
         battle_over: false,
         depth_raw: world.battle.camera_frame_height as i32,
         yaw_base: 0,
@@ -900,6 +916,18 @@ impl World {
             tracks.as_ref(),
             &mut self.rng_state,
         );
+        // The per-art arms write their target's additive fade `+0x226`.
+        let fades = self
+            .battle
+            .camera
+            .as_mut()
+            .map(|c| c.take_target_fades())
+            .unwrap_or_default();
+        for (slot, write, step) in fades {
+            if let Some(t) = self.actors.get_mut(usize::from(slot)) {
+                t.battle.additive_fade = write.apply(t.battle.additive_fade, step);
+            }
+        }
         // The SM's pass hands the shot in once a battle frame; it holds
         // until the camera's step for that frame arms it.
         if !self
@@ -1081,6 +1109,29 @@ mod tests {
     /// shot follows the cursor across monsters and hands back to the ring's
     /// close-up when the cursor closes. The engine used to read the cursor
     /// as the far Begin / Run framing.
+    /// The far framing's walk gates each seat on live HP (`0x801D7000`): a
+    /// fallen member or monster leaves the box.
+    #[test]
+    fn a_fallen_seat_leaves_the_formation_box() {
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 1;
+        world.actors.resize_with(3, Default::default);
+        world.actors[0].move_state.world_z = -800;
+        world.actors[0].battle.hp = 10;
+        for (slot, x, hp) in [(1usize, 500i16, 10u16), (2, 900, 0)] {
+            let a = &mut world.actors[slot];
+            a.move_state.world_x = x;
+            a.move_state.world_z = 700;
+            a.battle_monster_id = Some(1);
+            a.battle.hp = hp;
+        }
+        let b = battle_formation_box(&world).expect("two seats stand");
+        assert_eq!((b.min, b.max), ([0.0, -800.0], [500.0, 700.0]));
+    }
+
     #[test]
     fn the_attack_cursor_frames_the_member_toward_its_target() {
         use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
@@ -1094,11 +1145,13 @@ mod tests {
             world.actors.resize_with(3, Default::default);
         }
         world.actors[0].move_state.world_z = -800;
+        world.actors[0].battle.hp = 100;
         for (slot, x) in [(1usize, -600i16), (2, 600)] {
             let a = &mut world.actors[slot];
             a.move_state.world_x = x;
             a.move_state.world_z = 800;
             a.battle.liveness = 1;
+            a.battle.hp = 100;
         }
         let picker = |first: bool| {
             let mut monsters = [SlotState::alive(false, false); 5];

@@ -17,6 +17,27 @@ const fn spawn(record: u32, anchor: SpawnAnchor) -> ModuleSpawn {
         anchor,
     }
 }
+const E950_AB_0: [ModuleSpawn; 1] = [spawn(
+    super::SHADOW_BREAK_OPENING_RECORD,
+    SpawnAnchor::Caster { y: 0 },
+)];
+const E950_AB_2: [ModuleSpawn; 2] = [
+    spawn(super::SHADOW_BREAK_BLADES[0], SpawnAnchor::Caster { y: 0 }),
+    spawn(super::SHADOW_BREAK_BLADES[1], SpawnAnchor::Caster { y: 0 }),
+];
+const E950_AB_8: [ModuleSpawn; 3] = [
+    spawn(super::SHADOW_BREAK_RISE[0], SpawnAnchor::Caster { y: 0 }),
+    spawn(super::SHADOW_BREAK_RISE[1], SpawnAnchor::Caster { y: 0 }),
+    spawn(super::SHADOW_BREAK_RISE[2], SpawnAnchor::Caster { y: 0 }),
+];
+const E950_AB_9: [ModuleSpawn; 1] = [spawn(
+    super::SHADOW_BREAK_FALL_RECORD,
+    SpawnAnchor::Caster { y: 0 },
+)];
+const E950_AB_10: [ModuleSpawn; 1] = [spawn(
+    super::SHADOW_BREAK_BURST_RECORD,
+    SpawnAnchor::Caster { y: 0 },
+)];
 const E966_2: [ModuleSpawn; 4] = [
     // 0x801F6E98
     spawn(
@@ -872,6 +893,10 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         935..=937 | 939 | 953 => true,
+        // Chaos Breath seats its two records through its director; Mystic
+        // Circle's tables are the image's own.
+        938 if body == Some(super::CHAOS_BREATH_BODY) => true,
+        950 if body == Some(super::SHADOW_BREAK_BODY) => true,
         964 => true,
         947 | 948 => true,
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
@@ -917,7 +942,8 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         935..=937 | 939 | 953 => true,
         964 => true,
-        938 => body == Some(0x801F_69EC),
+        938 => matches!(body, Some(0x801F_69EC | super::CHAOS_BREATH_BODY)),
+        950 if body == Some(super::SHADOW_BREAK_BODY) => true,
         940 => matches!(body, Some(0x801F_7240 | super::GLARE_BODY)),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=949 => true,
@@ -981,6 +1007,9 @@ pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
         // 2 seated (`0x801F9B28`, count `0x801F9D2C`) and halts each
         // (`0x801F8B14..0x801F8B60`). No other body in PROT 0955 seats the
         // record.
+        // Shadow Break's arm 9 halts arm 2's first record through its handle
+        // `0x801F86D0` (`0x801F74A0..0x801F74B0`).
+        (950, 9) => &[super::SHADOW_BREAK_BLADES[0]],
         (955, 2) => &[super::KISS_OF_DEATH_PASS_RECORD],
         // Terio Punch's arm 6 walks the trail's handle list (`0x801F7E98`,
         // count `0x801F8098`) on its passing pass and halts each
@@ -1064,6 +1093,8 @@ pub fn capture_arm_flush_spares(prot_entry: u32, phase: u8) -> &'static [u32] {
 pub fn capture_arm_flushes_pool_for(prot_entry: u32, phase: u8, action: u8) -> bool {
     match prot_entry {
         940 if action == GLARE_ACTION => phase == 1,
+        // Arm 12's pass is Shadow Break's `FUN_80050E74` (`0x801F7920`).
+        950 if action == 0xAB => phase == 12,
         _ => capture_arm_flushes_pool(prot_entry, phase),
     }
 }
@@ -1089,6 +1120,15 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0938's per-arm tables are Mystic Circle's; Chaos Breath's two
+        // records are its director's.
+        (938, _) if action == 0x4E => &[],
+        // PROT 0950's per-arm tables are Shadow Break's alone.
+        (950, 0) if action == 0xAB => &E950_AB_0,
+        (950, 2) if action == 0xAB => &E950_AB_2,
+        (950, 8) if action == 0xAB => &E950_AB_8,
+        (950, 9) if action == 0xAB => &E950_AB_9,
+        (950, 10) if action == 0xAB => &E950_AB_10,
         // PROT 0940's per-arm tables are Mystic Shield's; Glare seats its
         // sphere on arm 0 alone.
         (940, 0) if action == GLARE_ACTION => &E940_GLARE_0,

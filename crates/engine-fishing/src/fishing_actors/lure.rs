@@ -267,6 +267,35 @@ impl LureActor {
         }
     }
 
+    /// The lure's sink, after the reel pull: close in the height is capped by
+    /// the record, further out a Light or Normal lure rises under the pull and
+    /// snaps back to its depth when it reaches the surface band; a Heavy lure
+    /// holds. The height never goes negative. `lure` is `_DAT_80084450`.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D2F44..0x801D3080`)
+    pub fn sink_step(&mut self, record: i32, lure: u32, fs: i32) {
+        if record < 0x190 {
+            self.y_fixed = self.y_fixed.min((record - 0xFA) << 8);
+        } else {
+            let (factor, floor, reset) = match lure {
+                0 => (0x600, 0x1400, 0x1900),
+                1 => (0x500, 0x5000, 0x5A00),
+                _ => (0, i32::MIN, 0),
+            };
+            if factor != 0 {
+                let mut scaled = self.pull.wrapping_mul(factor);
+                if scaled < 0 {
+                    scaled += 0x1FFF;
+                }
+                self.y_fixed -= (scaled >> 13).wrapping_mul(fs);
+                if self.y_fixed < floor {
+                    self.y_fixed = reset;
+                }
+            }
+        }
+        self.y_fixed = self.y_fixed.max(0);
+    }
+
     /// The rod sway: the D-pad sets the target to `+-0x100`, which otherwise
     /// falls back `4` a frame-step; the sway follows it at `0x10`.
     ///

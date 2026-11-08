@@ -88,11 +88,11 @@
       this.state = null;      /* set_cast() JSON for the current cast */
       this.currentId = null;
       this.fitAll = false;
+      /* The full battle vs bare mesh slot (js/battle-stage.js). */
+      this.stage = els.battleStage || null;
       /* Null = use the WASM default. Overridable so the framing can be swept
        * and measured against the rendered pixels rather than tuned by eye. */
       this.frameOutlierK = null;
-      /* Whether the in-engine battle frame is open (openBattle). */
-      this.battleOpen = false;
       try {
         this.fitAll = window.localStorage.getItem(FIT_KEY) === '1';
       } catch (e) { /* private mode */ }
@@ -143,8 +143,9 @@
         prog.done(`Ready - ${ready}`);
         /* The bar fades; leave the fact behind in the status line itself. */
         if (this.els.statusLive) this.els.statusLive.textContent = ready;
-        /* Open on Meta (0x9E) - the summon the page is named for. */
-        this.play(0x9E);
+        /* In the battle view the first card click starts the engine; the
+         * model view opens on Meta (0x9E), the summon the page is named for. */
+        if (!this.stage || !this.stage.isScene) this.play(0x9E);
       } catch (err) {
         prog.fail(`Failed to decode: ${err.message || err}`);
         console.error(err);
@@ -179,19 +180,40 @@
       }
     }
 
-    /* Show cast `spellId`: build the mesh, list its clips, play the full cast
-     * sequence (every phase clip back to back). */
+    /* Select cast `spellId`: the selection drives whichever view is showing -
+     * the full-scene battle launches through the shared stage; the mesh view
+     * builds and plays the model. */
     play(spellId) {
       if (!this.ready) return;
       const st = JSON.parse(this.api.set_cast(spellId));
       this.state = st;
       this.currentId = spellId;
+      /* Highlight the active card. */
+      document.querySelectorAll('.summon-card-playing')
+        .forEach((el) => el.classList.remove('summon-card-playing'));
+      const btn = document.querySelector(`.summon-card[data-spell="${spellId}"]`);
+      if (btn) btn.classList.add('summon-card-playing');
       if (!st.ok) {
         this.els.now.textContent = `${hex2(spellId)}: ${st.why || 'did not decode'}`;
         this.els.note.textContent = '';
         if (this.els.glbBtn) this.els.glbBtn.disabled = true;
+        if (this.stage) this.stage.clear(`${hex2(spellId)} did not decode on this disc.`);
         return;
       }
+      /* A decoded cast is on the page - the .glb download can act on it. */
+      if (this.els.glbBtn) this.els.glbBtn.disabled = false;
+      if (this.stage && this.stage.isScene) {
+        this._label('the whole cast, in battle', 'played by the engine');
+        this._launchBattle();
+      } else {
+        this._showMesh();
+      }
+    }
+
+    /* Build the mesh of the selected cast and play it (the mesh view). */
+    _showMesh() {
+      const st = this.state;
+      if (!st || !st.ok) return;
       if (!this.view) {
         /* These bodies are tall and thin, and MeshView frames on the posed
          * AABB's half-diagonal - so a generous camera distance leaves the
@@ -231,23 +253,40 @@
       this._renderClips(st);
       this._renderFx(st);
       this.playSequence();
-      /* A decoded cast is on the canvas - the .glb download can act on it. */
-      if (this.els.glbBtn) this.els.glbBtn.disabled = false;
+    }
+
+    /* Hand the selection to the engine, or say why it can't play. */
+    _launchBattle() {
+      if (!this.stage) return;
       /* Id 0x98's module (PROT 0926) is a stub with no tick arm in retail
        * (docs/subsystems/cast-module.md): nothing would play. */
-      const castable = !NO_CAST_MODULE.has(spellId);
-      if (this.els.battleBtn) {
-        this.els.battleBtn.disabled = !castable;
-        this.els.battleBtn.title = castable ? (this.els.battleBtn.dataset.title || '')
-          : 'This cast has no module in the game - its slot is a stub with no tick arm, so a battle would show nothing.';
+      if (NO_CAST_MODULE.has(this.currentId)) {
+        this.stage.clear('This cast has no module in the game - its slot is a stub with no tick arm, so a battle would show nothing.');
+        return;
       }
-      /* A battle already open follows the card: cast the new spell there. */
-      if (this.battleOpen && castable) this.openBattle();
-      /* Highlight the active card. */
-      document.querySelectorAll('.summon-card-playing')
-        .forEach((el) => el.classList.remove('summon-card-playing'));
-      const btn = document.querySelector(`.summon-card[data-spell="${spellId}"]`);
-      if (btn) btn.classList.add('summon-card-playing');
+      const target = (this.state && this.state.element === 'light') ? '0' : '3';
+      this.stage.request({ cast: '0x' + this.currentId.toString(16), target });
+    }
+
+    /* The toggle moved. Mesh: make the model current; battle: the stage has
+     * relaunched the selection by itself. */
+    onViewChange(view, reason) {
+      if (view === 'mesh') {
+        if (this.view) this.view.setSuspended(false);
+        if (this.state && this.state.ok) {
+          this._showMesh();
+          if (this.currentId != null) this._label('whole cast', this.els.note.textContent);
+        } else if (this.ready) {
+          this.play(0x9E);
+        }
+        if (reason) this.els.note.textContent = reason;
+      } else {
+        if (this.view) { this.view.setPlaying(false); this.view.setSuspended(true); }
+        if (this.currentId != null && this.state && this.state.ok) {
+          this._label('the whole cast, in battle', 'played by the engine');
+          this._launchBattle();
+        }
+      }
     }
 
     _renderClips(st) {
@@ -307,6 +346,7 @@
         frames,
         fps: fpsForRate(k.rate),
         fitAll: this.fitAll,
+        loop: false,   /* a cast is one play, then the body holds */
       });
       this._armCamera();
       this.view.setPlaying(true);
@@ -333,6 +373,7 @@
         frames,
         fps: fpsForRate(clips.length ? clips[0].rate : 0),
         fitAll: this.fitAll,
+        loop: false,
       });
       this._armCamera();
       this.view.setPlaying(true);
@@ -394,51 +435,9 @@
       this._follow();
     }
 
-    /* The whole cast, in the engine. The model above is the creature's own
-     * keyframes; a fight's cast is also the module's effect layer (beams,
-     * rings, flashes, washes, CLUT cycles, tints), its camera and its cry,
-     * all of it the cast module's code (docs/subsystems/cast-module.md). So
-     * this frames the play page's runtime with `?cast=`: the same battle the
-     * play page fights, on map01's first formation, with the lead casting
-     * the spell through the native `LEGAIA_BATTLE_INFLIGHT` seam. The frame
-     * loads the disc from the shared cache, as the minigames page's Muscle
-     * Dome frame does. A cure (light element) targets the lead. */
-    openBattle() {
-      const f = this.els.battle;
-      if (!f || this.currentId == null) return;
-      const st = this.state || {};
-      const q = new URLSearchParams({
-        cast: '0x' + this.currentId.toString(16),
-        target: st.element === 'light' ? '0' : '3',
-        embed: '1',
-      });
-      this.battleOpen = true;
-      f.hidden = false;
-      if (this.els.battleNote) this.els.battleNote.hidden = false;
-      if (this.els.battleAgain) this.els.battleAgain.hidden = false;
-      if (this.els.battleClose) this.els.battleClose.hidden = false;
-      f.src = 'play.html?' + q.toString();
-      f.addEventListener('load', () => { try { f.focus(); } catch (e) { /* cross-origin */ } }, { once: true });
-    }
-
-    /* Cast again in the open frame: a fresh battle on the same runtime. */
+    /* Cast again: a fresh battle on the same engine. */
     castAgain() {
-      const f = this.els.battle;
-      if (!f || !this.battleOpen) return;
-      const w = f.contentWindow;
-      if (w && typeof w.__playCastAgain === 'function') w.__playCastAgain();
-      else this.openBattle();
-    }
-
-    closeBattle() {
-      const f = this.els.battle;
-      this.battleOpen = false;
-      if (!f) return;
-      f.removeAttribute('src');
-      f.hidden = true;
-      if (this.els.battleNote) this.els.battleNote.hidden = true;
-      if (this.els.battleAgain) this.els.battleAgain.hidden = true;
-      if (this.els.battleClose) this.els.battleClose.hidden = true;
+      if (this.stage) this.stage.again();
     }
 
     /* Bake the current cast's summon model + every phase clip (as named glTF
@@ -486,13 +485,18 @@
       gallery: ids.gallery ? $(ids.gallery) : null,
       grid: ids.grid ? $(ids.grid) : null,
       glbBtn: ids.glb ? $(ids.glb) : null,
-      battle: ids.battle ? $(ids.battle) : null,
-      battleBtn: ids.battleBtn ? $(ids.battleBtn) : null,
       battleAgain: ids.battleAgain ? $(ids.battleAgain) : null,
-      battleClose: ids.battleClose ? $(ids.battleClose) : null,
-      battleNote: ids.battleNote ? $(ids.battleNote) : null,
+      battleStage: null,
     };
+    if (ids.battle && window.BattleStage) {
+      els.battleStage = new window.BattleStage({
+        frame: $(ids.battle), root: $(ids.stageRoot), toggle: $(ids.stageToggle),
+        boot: $(ids.battleBoot), poster: $(ids.battlePoster),
+        storageKey: 'legaia-stage-view:magic',
+      });
+    }
     const app = new SummonViewerApp(els);
+    if (els.battleStage) els.battleStage.onViewChange = (v, r) => app.onViewChange(v, r);
     /* .glb download: the current cast's summon model + its phase clips,
      * baked in WASM and saved via Blob + anchor (nothing is uploaded).
      * Disabled until a cast is on the canvas (see play()). */
@@ -527,12 +531,7 @@
         if (msg) setTimeout(() => { els.glbBtn.textContent = prev; }, 1500);
       });
     }
-    if (els.battleBtn) {
-      els.battleBtn.dataset.title = els.battleBtn.title;
-      els.battleBtn.addEventListener('click', () => app.openBattle());
-    }
     if (els.battleAgain) els.battleAgain.addEventListener('click', () => app.castAgain());
-    if (els.battleClose) els.battleClose.addEventListener('click', () => app.closeBattle());
     const fitToggle = ids.fit ? $(ids.fit) : null;
     if (fitToggle) {
       fitToggle.checked = app.fitAll;

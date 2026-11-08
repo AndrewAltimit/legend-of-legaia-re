@@ -244,6 +244,7 @@ fn the_shared_camera_settles_on_the_per_art_framing() {
         art_id: 0x1A,
         arm_select: 5,
         anim_frame: 0x80,
+        target_slot: 3,
     }));
     assert_ne!(
         unarmed, armed,
@@ -300,6 +301,7 @@ fn an_unarmed_art_id_leaves_case_six_standing() {
                 art_id: 0x1B,
                 arm_select: 0,
                 anim_frame: 0x40,
+                target_slot: 3,
             }),
         };
         drive(&mut slot, true, inputs, frames, Some(&table));

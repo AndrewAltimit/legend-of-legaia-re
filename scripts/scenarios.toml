@@ -7687,3 +7687,266 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "conc3"
 topics = ["field", "conc3", "walk route", "scene coverage"]
+
+[[scenarios]]
+label = "battle_garmel_party_noa_lizard_tail_open"
+backup_fingerprint = "2b8b2156a12287de5ec0b5dc8d4070bbbaf3ca84cf260bddcc762ed6b0a7ba00"
+description = "garmel battle, formation [64, 11], party strike: Noa, Lizard Tail (Down-Up-Down... entered 4 3 4), six vsyncs into the strike loop: the attacker on idle clip 0 with the first swing 0x0F staged. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 2485 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_party_noa_lizard_tail_mid"
+backup_fingerprint = "a88829dd2d562b27f1746e3da2790d886cb15387f3399b51513994943011b47e"
+description = "garmel battle, formation [64, 11], party strike: Noa, Lizard Tail, thirty vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 2509 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_party_gala_flying_knee_mid"
+backup_fingerprint = "ee6e282ce2cd6fa6c6a4ffd40e5cf18e68b829487ff66ac7cc2c45b21b3cbabd"
+description = "garmel battle, formation [64, 11], party strike: Gala, Flying Knee Attack, thirty vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3823 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_party_vahn_hyper_elbow_mid"
+backup_fingerprint = "43847a54ab9689b614b3a3f0958cfbb31d5685764b29edf1f0d19c3fdde080f1"
+description = "garmel battle, formation [64, 11], party strike: Vahn, Hyper Elbow, thirty vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3169 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_party_vahn_tornado_flame_open"
+backup_fingerprint = "b70cda86a7f57c82652e3eae18a9626dde540b2c2b444595dd5787b9eebef2cd"
+description = "garmel battle, formation [64, 11], party strike: Vahn, Tornado Flame (Hyper), six vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 7253 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_party_noa_frost_breath_open"
+backup_fingerprint = "bf48df5b93e8109dd4b9676838b84329f20a7a9c4b8b4eba35a5a1de843aa6f6"
+description = "garmel battle, formation [64, 11], party strike: Noa, Frost Breath (Hyper), six vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 6438 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_vahn_chain_open"
+backup_fingerprint = "a99eef4667a4f42fa3918c2f4876c1b292696c871f07454a54ee868e496c8f0f"
+description = "jou battle, formation [27, 27, 27], party strike: Vahn, a raw 4-arrow chain (Down Right Up Left), six vsyncs into the strike loop, late-game equipment. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3172 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_vahn_chain_late"
+backup_fingerprint = "5100db9e7a4f4b46ba2de213741e8fd5a9f61ebee6bb84cd9d484db690e08703"
+description = "jou battle, formation [27, 27, 27], party strike: Vahn, the same chain, sixty vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3226 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_noa_chain_mid"
+backup_fingerprint = "de456ebc54a9cd9eb38be4616a743248322ce4c83076f1db59e502173f58bfd0"
+description = "jou battle, formation [27, 27, 27], party strike: Noa, a raw 4-arrow chain (Up Up Left Down), thirty vsyncs in. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3671 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_gala_chain_open"
+backup_fingerprint = "e1a7c64eecbb716d849cc2a51512cfb3ce7c300a7a64b36ffd8e474398fd9ca2"
+description = "jou battle, formation [27, 27, 27], party strike: Gala, a raw 4-arrow chain, six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3996 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_gala_chain_mid"
+backup_fingerprint = "60e557c2033b7d81685eeb71514704897d8650bc855683ade166937a732f1e79"
+description = "jou battle, formation [27, 27, 27], party strike: Gala, the same chain, thirty vsyncs in. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 4020 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_party_gala_flying_knee_mid"
+backup_fingerprint = "e872755ba9e8bffe2c9431b7181b199ace0f255c2b9c82f7728364e38ca48e44"
+description = "ropeway battle, formation [83, 62], party strike: Gala, Flying Knee Attack, thirty vsyncs in, the second monster (Orb) a near-camera ghost. RETAIL disc: ropeway_field_route_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3018 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_party_gala_flying_knee_late"
+backup_fingerprint = "cf06ae7e9fb841e1829fb3c52d849e10cbf42955e632dde8acc6cca7d37a4f51"
+description = "ropeway battle, formation [83, 62], party strike: Gala, the same art, sixty vsyncs in. RETAIL disc: ropeway_field_route_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3048 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_party_noa_sonic_javelin_open"
+backup_fingerprint = "0e8b151eb3f81eb200cc699b2a0d227d6d41eab9822b1533cef01ede338bb22f"
+description = "ropeway battle, formation [83, 62], party strike: Noa, Sonic Javelin, six vsyncs into the strike loop. RETAIL disc: ropeway_field_route_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 4060 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_party_vahn_slash_kick_mid"
+backup_fingerprint = "697675e1cf926df4244db5ad655061404a6410302c77553f28a0306feaeb1d99"
+description = "ropeway battle, formation [83, 62], party strike: Vahn, Slash Kick, thirty vsyncs in. RETAIL disc: ropeway_field_route_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 4465 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa_party_vahn_chain_open"
+backup_fingerprint = "c433f00d995545697b7b61594beac55d243be8f4a63a3a5724f25cb5c0f72aa2"
+description = "rikuroa battle, formation [46, 28], party strike: Vahn alone, a raw Low-High-Low chain, six vsyncs into the strike loop (camera focus differs from the engine). RETAIL disc: rikuroa_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 2760 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "arts", "rikuroa", "harvest"]
+
+
+[[scenarios]]
+label = "battle_jou_nightmare_forced_strike"
+backup_fingerprint = "aa4c5e88ab75b29198ffdd609ad3c8fd8c13b24b6f6c822b280ecb69b07b871e"
+description = "SYNTHETIC formation on the jou stage: Nightmare (121) physical strike. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 1683 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_nightmare_forced_fatal_decision_mid_cast"
+backup_fingerprint = "0545f7d20a4c156253e8dfffc96a309b576bc2656a6a69b2dc03b6d64cd41236"
+description = "SYNTHETIC formation on the jou stage: Nightmare (121) mid-cast Fatal Decision (0x5F, module band). RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 3227 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_mad_golem_forced_strike"
+backup_fingerprint = "c2a2332cdd672a09240af9ea5199e40511c993f41a2d129b76754fb75c458a9a"
+description = "SYNTHETIC formation on the jou stage: Mad Golem (130) physical strike. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 7254 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_mad_golem_forced_earthcrush_mid_cast"
+backup_fingerprint = "933c2ee0787c82fda0cd7edd439ca502eb6c64dd0ebf29dfc14a3036517eddd7"
+description = "SYNTHETIC formation on the jou stage: Mad Golem (130) mid-cast Earthcrush (0x66). RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 1899 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_lamia_forced_strike"
+backup_fingerprint = "39ffaea025492955ddcef948a2f7597a4b441ed6695bd1bfba678f75d9277f37"
+description = "SYNTHETIC formation on the jou stage: Lamia (133) physical strike. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 22672 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_slippery_forced_strike"
+backup_fingerprint = "2194fd35d3bdea1daab2d234c8acef8381ca5de163aa16eaf250029b66de5895"
+description = "SYNTHETIC formation on the jou stage: Slippery (150) physical strike, the forced formation partner. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_WANT_FORCE (the concnow-only formation written over MAN row 0, region rows pointed at it, since no walkable concnow state exists), party and monster HP poked at round prompts (LEGAIA_TOUGH=2, LEGAIA_WOUND, LEGAIA_FINISH); the action is the AI's own. Saved 22291 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
+topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
+
+
+[[scenarios]]
+label = "battle_jou_party_vahn_tri_somersault_super_open"
+backup_fingerprint = "bfbe7535d122494ef15495c084ed312f49a48344b6aec71e29cfb4eb242126a8"
+description = "jou battle, formation [27,27,27], party strike: Vahn, Tri-Somersault (Super Art entered on the pad, 4 3 4 4 4 3 4), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 5357 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_noa_dragon_fangs_super_open"
+backup_fingerprint = "eec44eab40cb123426e2db3eb8fca2b718f8d0f9526001cee43dec7c7ded2aaa"
+description = "jou battle, formation [27,27,27], party strike: Noa, Dragon Fangs (Super Art, 4 3 4 4 4 3 3), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 6516 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_gala_super_ironhead_super_open"
+backup_fingerprint = "66d6a9ae14c07c75f5004e678a044f03763f792edf4809e4adf6c492a4819f10"
+description = "jou battle, formation [27,27,27], party strike: Gala, Super Ironhead (Super Art, 3 4 1 4 4 3 3), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 7461 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+
+[[scenarios]]
+label = "battle_garmel_party_gala_thunder_punch_open"
+backup_fingerprint = "e9895738722e6409a51d96f38833ba54a54be4d82419856ee055481c95364f6f"
+description = "garmel battle, formation [64,11], party strike: Gala, Thunder Punch (Hyper Art, 2 2 1), six vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS, formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 3744 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "hyper art", "garmel", "harvest"]

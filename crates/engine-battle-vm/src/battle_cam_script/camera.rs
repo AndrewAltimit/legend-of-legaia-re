@@ -234,6 +234,8 @@ pub(super) const ACTION_DONE_STATE: u8 = 0x50;
 /// The Battle Camera option's Close value (`_DAT_800846C0 == 0`), the one
 /// every dynamic arm of the action shots runs under.
 pub const CAMERA_OPTION_CLOSE: u8 = 0;
+/// The Battle Camera option's Normal value (`_DAT_800846C0 == 1`).
+pub const CAMERA_OPTION_NORMAL: u8 = 1;
 /// The Battle Camera option's Far value (`_DAT_800846C0 == 2`).
 pub const CAMERA_OPTION_FAR: u8 = 2;
 
@@ -379,6 +381,8 @@ pub(super) struct AttackChannel {
     pub(super) ctx: crate::battle_attack_camera::AttackCamCtx,
     /// The acting actor's channels this frame.
     pub(super) actor: Option<AttackCamChannels>,
+    /// What the arms wrote to their targets' `+0x226`, for the host.
+    pub(super) target_fades: Vec<(u8, crate::battle_attack_camera::TargetFade, u8)>,
 }
 
 /// The `FUN_801D9D30` shake, as the engine holds it.

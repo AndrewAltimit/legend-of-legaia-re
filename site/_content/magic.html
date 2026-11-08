@@ -7,6 +7,7 @@
 <script src="js/webgl-tmd-frame-state.js"></script>
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/mesh-view.js"></script>
+<script src="js/battle-stage.js"></script>
 <script src="js/summon-view.js"></script>
 
 <style>
@@ -40,12 +41,6 @@ canvas.magic-canvas:active { cursor: grabbing; }
   background: transparent; color: var(--text);
 }
 .magic-battle-bar button:hover:not(:disabled) { border-color: var(--accent); }
-.magic-battle-bar button:disabled { opacity: 0.45; cursor: default; }
-.magic-battle-frame {
-  display: block; width: 100%; max-width: 720px; margin: 0.6rem 0 0;
-  aspect-ratio: 4 / 3; border: 1px solid var(--border); border-radius: 4px; background: #000;
-}
-.magic-battle-frame[hidden], .magic-battle-note[hidden] { display: none; }
 .magic-battle-note { color: var(--text-muted); font-size: 0.85rem; max-width: 720px; }
 .summon-clips { margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .summon-clips:empty { display: none; }
@@ -106,35 +101,42 @@ body.magic-live .magic-status-idle { display: none; }
 
 <section class="doc-section" id="stage">
   <h2>Watch the cast</h2>
-  <p>Click a card in either list below to play its cast here. The chip row plays the cast one phase at a time, or the whole thing back to back; drag to orbit. The small tiles under the model are the effect textures the spell streams in while it plays.</p>
-  <div class="magic-controls">
-    <label class="magic-fit-label" title="Off: frame the summon's own body and follow it, so the creature fills the canvas - a part thrown far from the body (Meta's sword) may sit outside the frame. On: fit the whole cast, so everything stays visible at the cost of drawing the body small, because these casts travel a long way.">
-      <input type="checkbox" id="magic-fit-toggle"> frame the whole cast
-    </label>
-    <label class="magic-fit-label" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
-      <input type="checkbox" id="magic-smooth-toggle" checked> smooth motion
-    </label>
-    <button id="magic-glb-btn" class="btn-accent" type="button" disabled
-            title="Download the selected cast's summon model with every phase clip baked in as named glTF animations - the real model, textures and on-disc keyframes, ready for Blender or three.js. Baked entirely in your browser; nothing is uploaded. Needs a loaded disc and a selected cast.">Download .glb with the cast animations</button>
-  </div>
-  <div class="magic-stage" id="magic-stage" hidden>
-    <canvas id="magic-canvas" class="magic-canvas" width="720" height="440"></canvas>
-    <div class="summon-clips" id="magic-clips"
-         title="The cast's phases - the per-part keyframe entries in the summon's actor record, in the record's own table order. 'whole cast' plays them back to back."></div>
+  <p>Click a card in either list below to watch it cast here, in a real battle: the creature, the summoning effects, the camera and the sound, run by the game engine on your disc. The toggle flips to the bare model, where you can orbit the creature and step through the cast's phases.</p>
+  <div class="magic-stage stage-root" id="magic-stage" hidden data-view="scene">
+    <div class="magic-controls">
+      <span><span class="stage-toggle-label">View</span>
+      <span class="stage-toggle" id="magic-stage-toggle" role="group" aria-label="View: full battle or model only">
+        <button type="button" data-view="scene" title="The whole cast in a battle, run by the game engine">Full battle</button>
+        <button type="button" data-view="mesh" title="The creature's model and its own keyframes, on its own">Model only</button>
+      </span></span>
+      <label class="magic-fit-label" data-stage-view="mesh" title="Off: frame the summon's own body and follow it, so the creature fills the canvas - a part thrown far from the body (Meta's sword) may sit outside the frame. On: fit the whole cast, so everything stays visible at the cost of drawing the body small, because these casts travel a long way.">
+        <input type="checkbox" id="magic-fit-toggle"> frame the whole cast
+      </label>
+      <label class="magic-fit-label" data-stage-view="mesh" title="On: blend between keyframes on every display frame (an enhancement). Off: retail stepping - the game's own cursor, moved once a battle frame and blended only to its 1/16-keyframe step.">
+        <input type="checkbox" id="magic-smooth-toggle" checked> smooth motion
+      </label>
+      <button id="magic-glb-btn" class="btn-accent" type="button" disabled
+              title="Download the selected cast's summon model with every phase clip baked in as named glTF animations - the real model, textures and on-disc keyframes, ready for Blender or three.js. Baked entirely in your browser; nothing is uploaded. Needs a loaded disc and a selected cast.">Download .glb with the cast animations</button>
+    </div>
+    <div data-stage-view="mesh">
+      <canvas id="magic-canvas" class="magic-canvas" width="720" height="440"></canvas>
+      <div class="summon-clips" id="magic-clips"
+           title="The cast's phases - the per-part keyframe entries in the summon's actor record, in the record's own table order. 'whole cast' plays them back to back."></div>
+    </div>
+    <div class="battle-stage" data-stage-view="scene">
+      <div class="battle-stage-poster" id="magic-battle-poster">Pick a spell below to watch it cast in battle.</div>
+      <iframe id="magic-battle" hidden allow="autoplay; fullscreen" title="The selected cast in a battle"></iframe>
+      <div class="battle-stage-boot" id="magic-battle-boot" hidden></div>
+    </div>
     <div class="magic-now" id="magic-now"></div>
     <div class="magic-note" id="magic-note"></div>
-    <div class="summon-fx" id="magic-fx"
+    <div class="summon-fx" data-stage-view="mesh" id="magic-fx"
          title="The cast's own FX texture pages - the 4bpp pages summon.dat streams into VRAM while the spell plays, decoded through their CLUT row."></div>
-    <div class="magic-battle-bar">
-      <button id="magic-battle-btn" type="button" disabled
-              title="Open a battle in the game engine (the play page's runtime, on this disc) and cast the selected spell in it: the creature, the summoning effects, the camera and the sound, as the fight plays them.">&#9654; Watch the whole cast in battle</button>
-      <button id="magic-battle-again" type="button" hidden title="Start a fresh battle and cast the spell again">&#8635; cast again</button>
-      <button id="magic-battle-close" type="button" hidden title="Stop the battle and close it">&#10005; close</button>
+    <div class="magic-battle-bar" data-stage-view="scene">
+      <button id="magic-battle-again" type="button" title="Start a fresh battle and cast the spell again">&#8635; cast again</button>
     </div>
-    <iframe id="magic-battle" class="magic-battle-frame" hidden
-            allow="autoplay; fullscreen" title="The selected cast in a battle"></iframe>
-    <p class="magic-battle-note" id="magic-battle-note" hidden>
-      The model above is the creature's own keyframes and nothing else. In a fight the cast is far more: summoning beams, floor rings, fire and flashes, washes over the screen, the camera's moves and the cry. Those are the cast module's work, so this frame runs the game engine itself - the same battle the <a href="play.html">play page</a> fights, opened on the world map's first formation with your lead casting the spell. It uses your play-page options. What the engine does not draw yet is listed on the <a href="subsystems/cast-module.html#port">cast module page</a>.
+    <p class="magic-battle-note" data-stage-view="scene">
+      The engine fights this cast on the world map's first formation with your lead casting the spell, the same battle the <a href="play.html">play page</a> fights, with your play-page options. What the engine does not draw yet is listed on the <a href="subsystems/cast-module.html#port">cast module page</a>.
     </p>
   </div>
 </section>
@@ -142,7 +144,7 @@ body.magic-live .magic-status-idle { display: none; }
 <section class="doc-section" id="ra-seru">
   <h2>Ra-Seru summons</h2>
   <p>
-    The seven big summons - Meta, Ozma and Terra on the party's arms, plus Horn, Jedo, Palma and Mule from the Ra-Seru eggs. Each is a <strong>bespoke</strong> body: unlike every other cast, its model matches no enemy in the game, and its textures and animation live in a slot of their own. Click one to orbit it.
+    The seven big summons - Meta, Ozma and Terra on the party's arms, plus Horn, Jedo, Palma and Mule from the Ra-Seru eggs. Each is a <strong>bespoke</strong> body: unlike every other cast, its model matches no enemy in the game, and its textures and animation live in a slot of their own. Click one to watch it cast.
   </p>
   <p class="summon-placeholder">Meta &middot; Ozma &middot; Terra &middot; Horn &middot; Jedo &middot; Palma &middot; Mule - load a disc to see them.</p>
   <div class="summon-grid" id="magic-gallery"></div>
@@ -225,9 +227,9 @@ body.magic-live .magic-status-idle { display: none; }
     clips: 'magic-clips', fx: 'magic-fx', fit: 'magic-fit-toggle',
     glb: 'magic-glb-btn',
     gallery: 'magic-gallery', grid: 'magic-grid',
-    battle: 'magic-battle', battleBtn: 'magic-battle-btn',
-    battleAgain: 'magic-battle-again', battleClose: 'magic-battle-close',
-    battleNote: 'magic-battle-note',
+    battle: 'magic-battle', battleAgain: 'magic-battle-again',
+    stageRoot: 'magic-stage', stageToggle: 'magic-stage-toggle',
+    battleBoot: 'magic-battle-boot', battlePoster: 'magic-battle-poster',
   });
   if (window.MeshView && MeshView.attachSmoothToggle) {
     MeshView.attachSmoothToggle(document.getElementById('magic-smooth-toggle'));

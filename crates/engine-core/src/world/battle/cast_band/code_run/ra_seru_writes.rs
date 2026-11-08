@@ -38,6 +38,10 @@ const OZMA_LAST_FLASH_FRAMES: i16 = 0xC0;
 /// The fade call in arm `0x18`'s hit block.
 const OZMA_LADDER_FADE_SITE: u32 = 0x801F_907C;
 
+/// PROT 0931's arm-6 ring records, the `+8` / `+0xC` / `+0x10` handles of the
+/// block at `0x801F964C` (seated by `FUN_80050ED4` at `0x801F6D88..0x801F6DC8`).
+const JEDO_ARM7_RING_RECORDS: [u32; 3] = [0x801F_8B68, 0x801F_8BC0, 0x801F_8C18];
+
 impl World {
     /// `(engine slot, row index)` of each living monster, in seat order.
     pub(super) fn ra_seru_row(&self, monster_count: u8) -> Vec<(usize, usize)> {
@@ -237,6 +241,26 @@ impl World {
                     self.actors.get_mut(usize::from(creature)),
                 ) {
                     a.move_state.world_z = c.z;
+                }
+            }
+            // Arm 7 shrinks the three rings it keeps by handle (records
+            // `0x801F8B68`, `0x801F8BC0`, `0x801F8C18`) on every pass: the drained
+            // word `<< 12` over `192` into each part's `+0x72`
+            // (`0x801F7354..0x801F73B0`), and the pass halts them.
+            (7, _) => {
+                let w = self.casting.module_cam.countdown.0 - if passed { 0x20 } else { 0 };
+                if let Some(scene) = self.casting.active_summon.as_mut() {
+                    for part in &mut scene.parts {
+                        if part
+                            .tag
+                            .is_some_and(|t| JEDO_ARM7_RING_RECORDS.contains(&t))
+                        {
+                            part.state.field_72 = ((w.max(0) << 12) / 192) as u16;
+                            if passed {
+                                part.finished = true;
+                            }
+                        }
+                    }
                 }
             }
             // Arm 23's pass shows the row, frozen on its last pose, and stands

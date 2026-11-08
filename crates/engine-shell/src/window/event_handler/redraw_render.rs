@@ -162,12 +162,18 @@ impl PlayWindowApp {
             save_chrome_draw_vec,
             save_chrome_blend,
             caption_draw_vec,
+            chrome_draw_vec,
         } = self.build_overlay_draws(w, h, cam);
         let overlay = TextOverlay {
             atlas,
             draws: &hud,
             blend: &[],
         };
+        let chrome_overlay = self.chrome_atlas.as_ref().map(|atlas| TextOverlay {
+            atlas,
+            draws: &chrome_draw_vec,
+            blend: &[],
+        });
         let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
             atlas: &p.atlas,
             draws: &logo_draw_vec,
@@ -275,6 +281,9 @@ impl PlayWindowApp {
             overlay_sprites: sprites_slot_1,
             overlay_sprites_2: sprites_slot_2,
             overlay_text: Some(&overlay),
+            overlay_chrome: chrome_overlay
+                .as_ref()
+                .filter(|_| !chrome_draw_vec.is_empty()),
             clear_color: scene_clear,
         };
         legaia_engine_render::profile::mark("drawlist");

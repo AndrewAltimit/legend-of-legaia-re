@@ -586,7 +586,11 @@ The epilogue draws stage model `0` - the patterned wall with its lattice fence a
 
 The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in PROT 0898) relocated: the same `0x200`-pitch cells of four quarter quads on the `(832, 0)` page's `(0xC0, 0xC0)` window, over the `6 x 6` window the init seeds at `0x1F8003F8` / `0x1F8003FA` (`0x801CF20C..0x801CF218`). It is gated off only when the pitch drops below `-0x4F` (`0x801D20B4..0x801D20C4`).
 
-`FUN_801D6BB8` draws a flat marker at a world point (the combat tick passes each fighter's position, the epilogue the focus X) - the actor drop shadow.
+The emitter's per-vertex colour is the `DPCS` depth cue the battle grid uses: `IR0 = SZ >> 2` (`0x801CEEC4..0x801CEF4C`, the `mtc2` unclamped) from the scratch colour word toward the far colour, both stored by the epilogue (`0x801D1FCC`: `0x8007B7B0 = 0xE0E0E0`, far `0x202020`). `minigame_baka_fighter_retail_fight`'s lattice holds `SZ` `16672` on its far row, whose colour runs to the far word.
+
+`FUN_801D6BB8` draws one `FUN_80028158` ground disc at a world point (mode `1`, the XZ plane, `0x18` columns, flag word through `FUN_80043390`). The combat tick passes each fighter's position with colours `0x808080` / `0x070707`, radius `0x100`, flag `0x8A000000` (subtractive): the drop shadow. The epilogue passes the focus X with `0x80A0C0` / `0x070707`, radius `0x400`, flag `0x99000000` (additive): the warm pool of light on the floor.
+
+Port: `BakaDuelScene::cue_floor`, the `glow` and `shadows` ranges over `effect_default_arm::ground_disc_mesh`. Both discs sample the builder's patch texel (`0xB9CE`, level `14` of `31`, CLUT row 510 of the system page), which the duel VRAM does not hold, so the port's fill carries `texel * colour / 128`. `0x99` has no bank bit: bits `0x04000000` and `0x20000000` are clear, so the handler is the plain depth-cued bank. Against `minigame_baka_fighter_retail_fight` the floor stays about `+30` brighter than retail on rows above the fighters.
 
 ### In the port
 
@@ -596,7 +600,6 @@ The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in
 - `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_scene_formats::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when a rung seats a new opponent, and poses them.
 
-The drop shadow `FUN_801D6BB8` is the one piece of the arena the surface does not draw.
 
 | Host | How it draws the surface |
 |---|---|

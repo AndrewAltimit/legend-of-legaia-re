@@ -233,6 +233,11 @@ pub struct CastModuleCtx {
     /// `ctx+0x279` - the **module phase**, the second phase space riding
     /// under battle phase `0x70`.
     pub phase: u8,
+    /// The one-vsync ticks of the current battle-frame pass still owed after
+    /// this one ([`crate::cast_module_camera::ModuleCountdown`], `.1`): a
+    /// body's gate that opens on this tick drains them too, so the re-arm
+    /// adds to retail's residue. Not a retail field.
+    pub pass_rest: u8,
     /// `ctx+0x0D` - the band's own "this cast is finished" byte, which every
     /// PROT 0955 body clears in its terminal arm (`sb zero,0xd(ctx)`).
     pub ctx_0d: u8,

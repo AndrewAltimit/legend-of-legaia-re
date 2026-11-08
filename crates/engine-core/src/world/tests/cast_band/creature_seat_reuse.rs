@@ -98,3 +98,27 @@ fn the_creature_seats_fade_end_keeps_its_staged_clip() {
     assert_eq!(b.render_flag, 0);
     assert!(b.flag_bits.has(ActorFlags::WINDUP_DONE));
 }
+
+/// PROT 0903's arm 11 pass stores `+0x21C = 2` and `+0x225 = 2` on the
+/// creature (`0x801F75E4..0x801F75E8`), which opens the tint pass's fade gate
+/// on its walking clip, and the drained word stops the node ticking.
+#[test]
+fn gimards_creature_fades_on_its_walking_clip() {
+    let mut world = module_code_world();
+    world.arm_summon_stager(0, 0x81);
+    world.seat_summon_actor(9);
+    {
+        let b = &mut world.actors[9].battle;
+        b.current_anim = 1;
+        b.render_flag = STATE_DEFEAT_FADE;
+        b.render_color = 0x0802_0080;
+    }
+    for _ in 0..0x100 {
+        world.tick_battle_impact_fx();
+        if world.actors[9].battle.render_color == 0 {
+            break;
+        }
+    }
+    assert_eq!(world.actors[9].battle.render_color, 0);
+    assert!(world.battle_node_colour_is_zero(9));
+}

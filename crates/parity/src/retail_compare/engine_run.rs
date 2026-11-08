@@ -43,6 +43,9 @@ pub struct EngineObs {
     /// Each partition-1 placement's heading (retail space) and position,
     /// keyed by its retail flat MAN index (`N0 + slot`).
     pub npc_facings: BTreeMap<u16, (i16, i16, i16)>,
+    /// The same for a placement with no surfaced position: where it stands
+    /// by its MAN seat. `LEGAIA_RC_FACING_DUMP` lists these; no channel scores them.
+    pub npc_seated_facings: BTreeMap<u16, (i16, i16, i16)>,
 }
 
 /// Records which track the field VM starts.
@@ -587,13 +590,27 @@ pub(super) fn sample_engine(
             .get(s as usize)
             .map(|a| a.move_state.render_26.wrapping_sub(0x800))
     });
-    let n0 = session
+    let man = session
         .host
         .scene
         .as_ref()
-        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
-        .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten());
+    let man_file = man
+        .as_ref()
+        .and_then(|man| legaia_scene_formats::man_section::parse(man).ok());
+    let n0 = man_file
+        .as_ref()
         .map(|mf| mf.header.partition_counts[0].max(0) as u16);
+    // Placements no script or walk has given a live position: they stand on
+    // their MAN seat with the spawn heading.
+    let spawn_placements: Vec<(u8, i16, i16)> = match (&man_file, &man) {
+        (Some(mf), Some(man)) => mf
+            .actor_placements(man)
+            .into_iter()
+            .filter_map(|p| Some((u8::try_from(p.index).ok()?, p.world_x, p.world_z)))
+            .collect(),
+        _ => Vec::new(),
+    };
     let world = &session.host.world;
     if std::env::var_os("LEGAIA_RC_NPC_Y").is_some()
         && let Some(n0) = n0
@@ -652,6 +669,20 @@ pub(super) fn sample_engine(
                 .collect()
         })
         .unwrap_or_default();
+    // Placements no script or walk has surfaced a position for: the facing
+    // dump's rows, not scored.
+    let npc_seated_facings = n0
+        .map(|n0| {
+            spawn_placements
+                .iter()
+                .filter(|(slot, _, _)| !world.npcs.positions.contains_key(slot))
+                .map(|&(slot, x, z)| {
+                    let h = world.npcs.heading(slot);
+                    (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     EngineObs {
         scene,
         mode,
@@ -675,5 +706,6 @@ pub(super) fn sample_engine(
         script: None,
         player_facing,
         npc_facings,
+        npc_seated_facings,
     }
 }

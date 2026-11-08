@@ -40,6 +40,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = "release-test"
+# Ticks `gate_film_skip` may drop: a frame step of 4 plus an overrun.
+MAX_GATE_FILM_SKIP = 8
 # `LEGAIA_CAST_SEQ_EXE` scores another build (a before / after pair) without
 # rebuilding over the one in the tree.
 EXE = Path(os.environ.get("LEGAIA_CAST_SEQ_EXE") or REPO / "target" / PROFILE / "legaia-engine")
@@ -611,12 +613,16 @@ def score(a, out: Path) -> int:
            "--label", out.name, "--strip", str(a.strip)]
     if a.retail_lag is not None:
         cmd += ["--retail-lag", str(a.retail_lag)]
+    if a.physical and (skip := gate_film_skip(out)):
+        cmd += ["--engine-skip", str(skip)]
     if a.sound_tolerance is not None:
         cmd += ["--sound-tolerance", str(a.sound_tolerance)]
     if a.strict_drive:
         cmd += ["--strict-drive"]
+    if a.camera_only:
+        cmd += ["--camera-only"]
     r = subprocess.run(cmd, cwd=REPO)
-    if r.returncode == 0:
+    if r.returncode == 0 and not a.camera_only:
         rep = json.loads((out / "report.json").read_text())
         print(f"[score] {out.name}: mean {rep['mean_within']:.3f} over {rep['valid_pairs']} pairs "
               f"(min {rep['min_within']:.3f}; white {rep['white_pairs']}, dark {rep['dark_pairs']}, "
@@ -646,6 +652,44 @@ def resident_patch_of(label: str) -> str | None:
         if sc.get("label") == label:
             return sc.get("resident_patch")
     return None
+
+
+def gate_film_skip(out: Path) -> int:
+    """Engine ticks a gate film spends on the state before the pass retail's first
+    row already holds.
+
+    The two sides' first rows do not fall in the same place of a frame step: the
+    retail recording starts at the save, a vsync into the state's frame or on its
+    boundary, and the engine's gate tick is the seat. Counted on the pose, the
+    leading rows on the seated pose (engine `cam.csv` row 0): a recording whose
+    first row has already left it drops the engine's leading rows. A harness
+    alignment over the camera channel, measured to help strike openings.
+    """
+    def lead(rows: list[dict], first: list[str]) -> int:
+        n = 0
+        for r in rows:
+            if [r[k] for k in POSE_COLS] != first:
+                break
+            n += 1
+        return n
+
+    POSE_COLS = ("pitch", "yaw", "try", "trz")
+    try:
+        with open(out / "engine" / "cam.csv") as f:
+            engine = list(csv.DictReader(f))
+        with open(out / "retail" / "cam.csv") as f:
+            retail = list(csv.DictReader(f))
+    except FileNotFoundError:
+        return 0
+    if not engine:
+        return 0
+    first = [engine[0][k] for k in POSE_COLS]
+    # A retail first row still on the state has not run its first pass, as the
+    # engine's gate tick has not; only a recording whose first row has left the
+    # state is a pass ahead.
+    # One frame at most separates the two: a held camera (Jette's Shadow Break
+    # stands still for its first arms) would otherwise count them all.
+    return min(lead(engine, first), MAX_GATE_FILM_SKIP) if lead(retail, first) == 0 else 0
 
 
 def main() -> int:
@@ -734,6 +778,8 @@ def main() -> int:
                     help="both sides: every living monster's HP at the inject / first prompt, "
                          "so the cast's whole damage shows in the HP columns")
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--camera-only", action="store_true",
+                    help="score only the camera channel (camera.csv); no frame is read")
     a = ap.parse_args()
     if a.spell is None and not a.physical:
         ap.error("--spell is required without --physical")

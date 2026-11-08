@@ -46,12 +46,25 @@
   'use strict';
 
   const CHAR_SLOT = { Vahn: 0, Noa: 1, Gala: 2, Terra: 3 };
-  /* FUN_80047430 advances the 12.4 cursor by (step * 8 * rate) >> 1 a battle
-   * frame of `step` vsyncs: rate/4 keyframes a vsync, 15 * rate a second. A
-   * retail film reads Vahn's rate-1 idle looping its 9 keyframes in 36 vsyncs
-   * (docs/subsystems/battle-actor-rendering.md). Only a Slowed actor's idle
-   * runs at half that. */
-  const fpsForRate = (rate) => (rate > 0 ? 15 * rate : 15);
+  /* FUN_80047430 advances the 12.4 cursor by (step * scale * rate) >> 1 a
+   * battle frame of `step` vsyncs, `scale` being the actor's animation-rate
+   * byte +0x21D: 1.875 * scale * rate keyframes a second, whatever the step.
+   * The idle and the swings play at the normal scale 8 (15 * rate; a retail
+   * film reads Vahn's rate-1 idle looping its 9 keyframes in 36 vsyncs,
+   * docs/subsystems/battle-actor-rendering.md). An art does not: its commit
+   * drops the byte to 4, or 2 under the special starter (FUN_8004AD80,
+   * 0x8004BB64..0x8004BBA8), and the record's `scale` field carries the
+   * engine's reading of that (arts_view.rs `art_anim_scale`). */
+  const fpsForRate = (rate, scale) => (rate > 0 ? 1.875 * (scale || 8) * rate : 15);
+
+  /* Keyframes per second of a chain of segments that each play at their own
+   * rate: total frames over total time, so the whole chain takes as long as
+   * its segments do one after another. */
+  function chainFps(segs) {
+    let time = 0, frames = 0;
+    for (const s of segs) { time += s.frames / s.fps; frames += s.frames; }
+    return time > 0 ? frames / time : segs[0].fps;
+  }
 
   /* Retail draws a delayed translucent after-image of the character during
    * an art, tinted per character: Vahn RED, Noa GREEN, Gala BLUE (a PSX ABE
@@ -131,6 +144,8 @@
     /* els: { canvas, status, stage, now, note } (DOM elements). */
     constructor(els) {
       this.els = els;
+      this.stage = els.battleStage || null;   /* battle / mesh slot */
+      this.lastArt = null;    /* the selected card, for the view toggle */
       this.api = null;        /* LegaiaArts */
       this.view = null;       /* MeshView */
       this.charState = null;  /* set_character() JSON for the current char */
@@ -224,11 +239,34 @@
        * FUN_8004AD80 cue, capture-pinned per art (record fanfare_channel). */
       this.fanfare = (this.charState.fanfare && window.LegaiaSfx
         && this.api.art_fanfare_pcm_i16) ? this.charState.fanfare : null;
+      /* A new character clears the selection: nothing of the last card is
+       * left to play, whichever view shows. */
+      this.lastArt = null;
+      if (this.stage && this.stage.isScene) {
+        /* The running battle plays on until the next card, on the same
+         * engine; only the prompt changes. */
+        this.els.now.textContent = `${name} - pick an art`;
+        this.els.note.textContent = '';
+        return true;
+      }
+      return this._showMesh();
+    }
+
+    /* Build the model and drop into its idle (the mesh view). */
+    _showMesh() {
       if (!this.view) {
-        this.view = new window.MeshView(this.els.canvas, {
-          cam: { yaw: -Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
-          zoom: { min: 1.2, max: 6 },
-        });
+        try {
+          this.view = new window.MeshView(this.els.canvas, {
+            cam: { yaw: -Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
+            zoom: { min: 1.2, max: 6 },
+          });
+        } catch (err) {
+          this.els.now.textContent = err && err.noWebgl2
+            ? 'This browser has no WebGL2 - the model cannot draw.'
+            : `Renderer failed: ${(err && err.message) || err}`;
+          console.error(err);
+          return false;
+        }
       }
       this.view.uploadVram(this.api.vram_bytes());
       /* TmdRenderer binds UVs as u8 texels and cba/tsb as u16 pairs; the
@@ -247,6 +285,39 @@
       this._renderActions();
       this.playIdle();
       return true;
+    }
+
+    /* The toggle moved. Mesh: build the model, replay the selection; battle:
+     * freeze the model and launch the selection. */
+    onViewChange(view, reason) {
+      if (view === 'mesh') {
+        if (this.view) this.view.setSuspended(false);
+        if (this.ready) {
+          this._showMesh();
+          if (this.lastArt) this.playArt(this.lastArt);
+        }
+        if (reason) this.els.note.textContent = reason;
+      } else {
+        if (this.view) { this.view.setPlaying(false); this.view.setSuspended(true); }
+        if (this.lastArt) this.playArt(this.lastArt);
+        else this.els.now.textContent = `${this.charName} - pick an art`;
+      }
+    }
+
+    /* Hand the selected card to the engine (the battle view). */
+    _launchArt(art) {
+      const dirs = art.directions || [];
+      this.els.now.textContent = `${this.charName} - ${art.name}, in battle`;
+      this.els.note.textContent = 'played by the engine, on its own battle clock';
+      if (!dirs.length) {
+        this.stage.clear(`"${art.name}" has no input string to play.`);
+        return;
+      }
+      this.stage.request({
+        art: dirs.join(''),
+        char: (this.charName || 'vahn').toLowerCase(),
+        target: '3',
+      });
     }
 
     /* Chip row for the battle action bank (record[0] slots + weapon swings) -
@@ -292,10 +363,12 @@
         fps: fpsForRate(a.rate),
         /* Walk / knockdown clips translate the actor: frame the whole clip. */
         fitAll: true,
+        loop: false,
+        onEnd: () => this.playIdle(),
       });
       this.view.setPlaying(true);
       this.els.now.textContent = `${this.charName} - ${a.label}`;
-      this.els.note.textContent = `action bank clip, ${a.frames} keyframes @ rate ${a.rate}`;
+      this.els.note.textContent = `action bank clip, ${a.frames} keyframes @ rate ${a.rate}, played once`;
     }
 
     /* Fire the art strike cue on the clip frames `frames` (a Set).
@@ -341,7 +414,7 @@
     playIdle(note) {
       if (!this.ready || !this.view) return;
       this.currentArt = null;
-      this._armCues(null);          /* the idle loop is silent */
+      this._armCues(null);          /* the idle is silent */
       this._trailCfg = null;
       this.view.setTrail(null);     /* no after-image outside an art */
       const idle = this.charState.idle;
@@ -366,7 +439,10 @@
      * back to the idle loop with a visible note when the art has no
      * decodable clip on this disc. */
     playArt(art) {
-      if (!this.ready || !this.view) return;
+      if (!this.ready) return;
+      this.lastArt = art;
+      if (this.stage && this.stage.isScene) { this._launchArt(art); return; }
+      if (!this.view) return;
       const bank = this.charState.arts;
       const first = resolveArt(bank, art);
       if (first < 0) {
@@ -379,7 +455,8 @@
         return;
       }
       /* Concatenate the chain's segments into one clip. Segments share the
-       * rig width; playback rate follows the first segment's rate byte. */
+       * rig width. Each segment commits on its own rate byte and scale, so the
+       * joined clip's rate is the one that keeps the chain's total duration. */
       const parts = this.charState.part_count;
       const segs = chain.map((i) => this.api.art_pose_frames(i));
       let total = 0;
@@ -399,10 +476,32 @@
       }
       this._armCues(cues);
       this.currentArt = art.name;
-      /* VOICE: play THIS art's shout as the art begins executing. The channel
+      /* Per-character tinted after-image echoes (the retail arts trail).
+       * The config is kept either way; the user toggle gates the draw. */
+      this._trailCfg = {
+        tint: TRAIL_TINT[this.charName] || [1, 1, 1],
+        echoes: TRAIL_ECHOES,
+      };
+      this.view.setTrail(this.trailEnabled ? this._trailCfg : null);
+      this.view.setAnimation({
+        partCount: parts,
+        frameCount: total / (parts * 6),
+        frames,
+        fps: chainFps(chain.map((i, k) => ({
+          frames: segs[k].length / (parts * 6),
+          fps: fpsForRate(bank[i].rate, bank[i].scale),
+        }))),
+        /* Arts translate the actor (flips, lunges): frame the whole clip. */
+        fitAll: true,
+        loop: false,
+        onEnd: () => this.playIdle(`"${art.name}" finished.`),
+      });
+      this.view.setPlaying(true);
+      /* VOICE: play THIS art's shout as the art begins executing (after the clip clock starts). The channel
        * is the real FUN_8004C140 pool member the WASM resolved for this record
        * (`voice_channel`); registered lazily per (character, channel) so each
-       * distinct clip is decoded once. Fired once per activation, not per loop.
+       * distinct clip is decoded once. Fired once per activation: the clip clock starts in setPlaying just above, so
+       * voice and first keyframe leave together.
        * Some arts have no arts-voice entry (retail plays them silent). */
       const voiceCh = this.voice ? bank[first].voice_channel : null;
       if (this.voice && voiceCh != null && window.LegaiaSfx) {
@@ -433,22 +532,6 @@
         }
         if (LegaiaSfx.hasPcm(key)) LegaiaSfx.playPcm(key, 'arts.fanfare');
       }
-      /* Per-character tinted after-image echoes (the retail arts trail).
-       * The config is kept either way; the user toggle gates the draw. */
-      this._trailCfg = {
-        tint: TRAIL_TINT[this.charName] || [1, 1, 1],
-        echoes: TRAIL_ECHOES,
-      };
-      this.view.setTrail(this.trailEnabled ? this._trailCfg : null);
-      this.view.setAnimation({
-        partCount: parts,
-        frameCount: total / (parts * 6),
-        frames,
-        fps: fpsForRate(bank[first].rate),
-        /* Arts translate the actor (flips, lunges): frame the whole clip. */
-        fitAll: true,
-      });
-      this.view.setPlaying(true);
       const dev = bank[first].name && norm(bank[first].name) !== norm(art.name)
         ? ` (dev name "${bank[first].name}")` : '';
       const segNote = chain.length > 1 ? `, ${chain.length} chained segments` : '';
@@ -465,7 +548,7 @@
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}${fanfareNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}, battle scale ${bank[first].scale != null ? bank[first].scale : 8}${segNote}${voiceNote}${fanfareNote}`;
     }
 
     /* Bake the selected character's assembled battle mesh + its WHOLE
@@ -494,8 +577,21 @@
       now: $(ids.now), note: $(ids.note),
       glbBtn: ids.glb ? $(ids.glb) : null,
       actions: ids.actions ? $(ids.actions) : null,
+      battleStage: null,
     };
+    if (ids.battle && window.BattleStage) {
+      els.battleStage = new window.BattleStage({
+        frame: $(ids.battle), root: $(ids.stageRoot), toggle: $(ids.stageToggle),
+        boot: $(ids.battleBoot), poster: $(ids.battlePoster),
+        storageKey: 'legaia-stage-view:arts',
+      });
+    }
     const app = new ArtsViewerApp(els);
+    if (els.battleStage) {
+      els.battleStage.onViewChange = (v, r) => app.onViewChange(v, r);
+      const againBtn = ids.battleAgain ? $(ids.battleAgain) : null;
+      if (againBtn) againBtn.addEventListener('click', () => els.battleStage.again());
+    }
     /* Trail toggle: reflect the persisted preference, flip live on change. */
     const trailToggle = ids.trail ? $(ids.trail) : null;
     if (trailToggle) {

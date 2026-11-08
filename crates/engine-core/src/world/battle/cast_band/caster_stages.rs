@@ -346,6 +346,18 @@ impl World {
                     );
                     self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
                 }
+                // Shadow Break's ring follows the arm's first call.
+                if run.prot_entry == 950
+                    && arm == 10
+                    && spell_id == 0xAB
+                    && let Some(c) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let ring = cmc::shadow_break_ring(
+                        (c.move_state.world_x, c.move_state.world_z),
+                        c.battle.facing_angle & 0xFFF,
+                    );
+                    self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
+                }
                 let spawns = cmc::capture_arm_spawns_in(
                     run.prot_entry,
                     arm,

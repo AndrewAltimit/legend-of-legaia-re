@@ -332,17 +332,7 @@ impl World {
             }
             // A finished one-shot action clip falls back to the idle loop -
             // except defeat, which holds its final (downed) keyframe.
-            let restore_idle = {
-                let a = &self.actors[i];
-                a.battle_action_clips.is_some()
-                    && a.battle_reaction.is_none()
-                    && a.battle_pose
-                        != Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
-                    && matches!(&a.battle_animation, Some(p) if p.finished())
-            };
-            if restore_idle {
-                self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
-            }
+            self.restore_idle_after_action_clip(i);
             // A Stone or Numb body on its idle stands frozen: the tick skips
             // the whole advance (`0x80047638..0x800476D4`, jumping to the
             // epilogue at `0x800480B0`).
@@ -367,7 +357,7 @@ impl World {
                 || self.casting.summon_actor_slot == Some(i as u8))
                 && self.actors[i]
                     .battle_node_colour_zero
-                    .unwrap_or_else(|| self.battle_body_hidden(i))
+                    .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
             {
                 continue;
             }
@@ -743,7 +733,7 @@ impl World {
                 )
                 .map(|p| p.view_z >= legaia_engine_battle_vm::battle_actor_tick::NEAR_REJECT_DEPTH);
             if drawn_deep == Some(true) {
-                let zero = self.battle_body_hidden(i);
+                let zero = self.battle_node_colour_is_zero(i);
                 self.actors[i].battle_node_colour_zero = Some(zero);
             }
         }
@@ -772,7 +762,11 @@ impl World {
         foreign: &mut [u32],
     ) {
         if commit_after {
+            let reaction_done = self.finish_reaction_at_natural_end(i);
             self.commit_staged_battle_anim(i);
+            if reaction_done {
+                self.restore_idle_after_action_clip(i);
+            }
         }
         if hits {
             self.walk_battle_node_hits(i, foreign);
@@ -782,6 +776,44 @@ impl World {
             self.battle.anim_slice_commits.get_mut(i),
         ) {
             *c = a.battle_clip_commits;
+        }
+    }
+
+    /// A reaction clip whose cursor crossed its end on this pass takes the
+    /// natural-end path now, in the slice of the advance that finished it: the
+    /// node tick commits after the advance (`0x80047A48..0x80047B58`), so the
+    /// next entry stands on its first keyframe the pass the old clip ended, and
+    /// state `0x20`'s reaction hold reads the idle on the pass after. The check
+    /// at the head of the next slice held every reaction a pass longer on its
+    /// last frame, and each strike's Done band with it.
+    ///
+    /// PORT: FUN_80047430 (`0x80047A48..0x80047B58`, the natural end)
+    fn finish_reaction_at_natural_end(&mut self, i: usize) -> bool {
+        let finished =
+            self.actors
+                .get(i)
+                .and_then(|a| match (a.battle_reaction, &a.battle_animation) {
+                    (Some(tag), Some(p)) if p.finished() => Some(tag),
+                    _ => None,
+                });
+        let Some(tag) = finished else {
+            return false;
+        };
+        self.finish_battle_reaction(i, tag);
+        true
+    }
+
+    /// A finished one-shot falls back to the idle loop, except defeat, which
+    /// holds its final (downed) keyframe.
+    fn restore_idle_after_action_clip(&mut self, i: usize) {
+        let restore = self.actors.get(i).is_some_and(|a| {
+            a.battle_action_clips.is_some()
+                && a.battle_reaction.is_none()
+                && a.battle_pose != Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
+                && matches!(&a.battle_animation, Some(p) if p.finished())
+        });
+        if restore {
+            self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
         }
     }
 

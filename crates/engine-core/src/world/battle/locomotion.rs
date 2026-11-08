@@ -486,6 +486,17 @@ impl World {
                 // The approach drive above already walked this clip.
                 continue;
             }
+            // The root-motion term sits in the node's tick, which a zero
+            // colour word skips (`0x800474D4..0x800474E0`): a creature whose
+            // fade has drained stands where it stopped.
+            if (self.actors[i].battle_monster_id.is_some()
+                || self.casting.summon_actor_slot == Some(i as u8))
+                && self.actors[i]
+                    .battle_node_colour_zero
+                    .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
+            {
+                continue;
+            }
             self.drive_playing_root_motion(i, dt);
         }
     }

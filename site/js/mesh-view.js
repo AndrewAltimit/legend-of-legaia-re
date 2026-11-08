@@ -184,6 +184,11 @@
         retailStep: Math.max(1, meta.retailStep | 0 || 2),
         sampler: null,
         parts: new Float32Array(meta.partCount * 6),
+        /* Opt-out: `loop: false` plays the clip once and holds its last pose,
+         * firing `onEnd` once. A looping clip (the default) has no end. */
+        loop: meta.loop !== false,
+        onEnd: typeof meta.onEnd === 'function' ? meta.onEnd : null,
+        ended: false,
         /* Opt-in: fit the camera over EVERY frame of the clip rather than
          * frame 0 only - action clips (battle arts) translate the actor far
          * from the rest stance mid-clip. */
@@ -449,6 +454,20 @@
       c.addEventListener('dblclick', onDbl);
     }
 
+    /* Stop drawing while the page shows another view (no RAF, no GPU work)
+     * and resume where the camera was. */
+    setSuspended(on) {
+      const s = !!on;
+      if (s === !!this._suspended) return;
+      this._suspended = s;
+      if (s) {
+        if (this._raf) cancelAnimationFrame(this._raf);
+        this._raf = 0;
+      } else if (!this._raf) {
+        this._raf = requestAnimationFrame(this._loop);
+      }
+    }
+
     _loop() {
       const dpr = window.devicePixelRatio || 1;
       const w = (this.canvas.clientWidth || 640) * dpr;
@@ -461,6 +480,7 @@
       if (this.anim && this.playing && this.anim.frameCount > 1) {
         this._advance((performance.now() - this._startMs) / 1000);
       }
+      if (this._suspended) { this._raf = 0; return; }
       /* Orbit UX: drag rotates rather than pans, so panX/panY stay 0. */
       this.renderer.render(
         this.cam.yaw, this.cam.pitch, this.cam.distance,
@@ -473,8 +493,11 @@
      * the whole keyframe. `onFrame` fires once per keyframe either way. */
     _advance(secs) {
       const A = this.anim;
-      const t = secs * this._rate();
-      const f = Math.floor(t) % A.frameCount;
+      const last = A.frameCount - 1;
+      const raw = secs * this._rate();
+      /* A one-shot stops on the last keyframe: never blends back to frame 0. */
+      const t = A.loop ? raw : Math.min(raw, last);
+      const f = A.loop ? Math.floor(t) % A.frameCount : Math.floor(t);
       if (A.sampler) {
         let key;
         if (this.smooth) {
@@ -487,6 +510,7 @@
           const vs = Math.floor(secs * VSYNC_HZ * (this.speed || 1) + 1e-6);
           const gf = vs - (vs % A.retailStep);
           key = Math.floor(gf * (A.fps * 16) / VSYNC_HZ + 1e-6);
+          if (!A.loop) key = Math.min(key, last * 16);
           if (key === this._lastSample) return;
           A.sampler.sample_retail(key, A.parts);
         }
@@ -502,6 +526,12 @@
       if (f !== this._lastPosedFrame) {
         this._lastPosedFrame = f;
         if (typeof this.onFrame === 'function') this.onFrame(f);
+      }
+      if (!A.loop && raw >= last && !A.ended) {
+        A.ended = true;
+        this.playing = false;
+        this._frameOverride = last;
+        if (A.onEnd) A.onEnd();
       }
     }
 

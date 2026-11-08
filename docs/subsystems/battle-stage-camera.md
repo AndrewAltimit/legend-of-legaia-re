@@ -1305,7 +1305,8 @@ Port: `battle_attack_camera` runs the thirteen arm bodies and owns the ramp
 quartet; `battle_cam_script`'s Action phase steps the live pose toward whatever
 the arms produce, each frame, on the arm's own duration. Both hosts feed it the
 same three per-actor channels: `actor[+0x1DB]` as `BattleActor::latched_anim`,
-`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` as the battle
+`actor[+0x21B]` (the clip's loop counter: the Hyper Art arms fork their shots on the
+loops still to run, read off the animation player's window budget), and `actor[+0x22C][+0x68]` as the battle
 animation player's cursor in retail's own sixteenths, sub-keyframe bits included
 (`cursor_sixteenths`). The cast driver's case `0xA` reads the same word
 ([below](#the-cast-drivers-clip-clock)).
@@ -1333,15 +1334,18 @@ it in four places, each making the action shots calmer as it rises:
 | case 7 pull-in `0x801D6724` | allowed | - | - |
 | case 8 `0x801D6958..0x801D69EC`: yaw | built | built | the live `_DAT_8007B792` |
 | case 8's dead- / live-target arms | run | skipped | skipped |
+| case 8 yaw at the battle-over signal | built | live `_DAT_8007B792` + `4 * step / 3` | live |
 | `FUN_801D71B8` call `0x801D7138` | run | run | skipped |
 
 Case 8 keeps its arms on Normal / Far in a scripted fight (`ctx[+0x287]`) once
-the results phase word `_DAT_8007BD2C` is non-zero.
+the results phase word `_DAT_8007BD2C` is non-zero. A scripted fight off Close
+also takes the tail at `0x801D6E84`: at the battle-over signal the shot holds
+the live pitch and height over the fixed depth `0x600`.
 
 Port: `World::toggles.battle_camera`, pushed by `engine-core::options::apply_to_world`
-on both hosts and read through `BattleCamera::set_camera_option`. Two parts are
-not carried: the scripted-fight exception above, and the skipped setup-band
-orbit store (the port runs one orbit for both of retail's writers).
+on both hosts and read through `BattleCamera::set_camera_option`. One part is
+not carried: the skipped setup-band orbit store (the port runs one orbit for
+both of retail's writers).
 
 <a id="the-battle-frame-step-is-the-frames-own-cost"></a>
 
@@ -1518,6 +1522,16 @@ A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
+
+A ghost's cost is not a constant of the walk. Its redraw re-runs the body's whole draw, and on
+lone-member strikes it reads with the body: over the strike films, frames with the engine's two
+planned ghosts against frames without read `.081` hblanks a triangle on Frog (`608`) and `.087` on
+Caruban (`842`). Costed at that slope the step agreement of the thirteen lone-member strike films rises from
+`.64` to `.70` (Caruban `.35` to `.68`), but it does not transfer to a full party:
+`battle_tunnelb_gel_frog_strike`'s planned ghosts on a `608`-triangle body read `9` hblanks each where the slope
+says `52`, and carrying the term lifted the film to step `4` and its camera error from `8.7` to `15.0`
+px. The table's `GHOST_DRAW_COST` stands for that reason; what a ghost costs inside a full party's
+frame, which a lone member's film does not read, is the open half.
 
 <a id="the-table-held-out-against-the-films"></a>
 

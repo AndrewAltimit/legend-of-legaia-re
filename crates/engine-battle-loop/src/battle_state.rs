@@ -18,6 +18,22 @@ use legaia_engine_mode::mode::SceneMode;
 /// round's command band and initiative walk and hands the caster straight to
 /// the action SM's Magic band, so a capture of the summon band compares
 /// against the same band rather than against a round prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// The Tactical Arts twin of [`InflightCastSeed`]: the caster's entered arrow
+/// string (direction bytes `1..=4`, the same `sequence` the arts screen
+/// commits) dispatched at the battle's first command prompt, through the real
+/// queue builder and strike loop. A **debug affordance** behind the site's
+/// art viewer, not a player surface.
+pub struct InflightArtSeed {
+    /// Battle ordinal of the caster (a party seat).
+    pub caster: u8,
+    /// The entered arrows, one byte per direction: `1` Left, `2` Right,
+    /// `3` Down, `4` Up.
+    pub sequence: Vec<u8>,
+    /// Retail's `+0x1DD` target byte, as [`InflightCastSeed::target`].
+    pub target: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InflightCastSeed {
     /// Battle ordinal of the caster (a party seat).
@@ -463,6 +479,14 @@ pub struct BattleState {
     /// way into a capture taken mid-cast ([`InflightCastSeed`]). `None` on
     /// every ordinary fight; consumed (taken) by the live loop.
     pub inflight_seed: Option<InflightCastSeed>,
+    /// A debug seed that plays one Tactical Art the moment the battle's first
+    /// command prompt opens ([`InflightArtSeed`]). `None` on every ordinary
+    /// fight; consumed (taken) by the live loop.
+    pub inflight_art_seed: Option<InflightArtSeed>,
+    /// Set by a dispatched [`InflightArtSeed`]: the builder reads the Ra-Seru
+    /// marker as up for this fight, so a Miracle or Super string plays without
+    /// its story gear. Cleared at battle teardown.
+    pub art_seed_ra_seru: bool,
     /// A debug seed that makes monster seat `.0` cast spell `.1` the next
     /// time its turn comes up, in place of the AI's pick - the retail
     /// comparison corpus's way into a capture taken mid monster cast (the
@@ -1379,6 +1403,8 @@ impl BattleState {
             flow: legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::round_flow::RoundFlow::default(),
             inflight_seed: None,
+            inflight_art_seed: None,
+            art_seed_ra_seru: false,
             forced_monster_cast: None,
             forced_monster_target: None,
             cue_clut_seed: None,

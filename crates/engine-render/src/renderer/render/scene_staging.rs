@@ -393,7 +393,13 @@ impl Renderer {
                 flags[1] = 2.0;
             }
             if let Some(o) = order {
-                flags[3] = -1.0 - f32::from(o);
+                if flags[3] > 0.0 {
+                    // The overworld's curve holds `flags.w`, so its primitive
+                    // order rides above `flags.z`'s occlusion bit.
+                    flags[2] += 2.0 * (1.0 + f32::from(o));
+                } else {
+                    flags[3] = -1.0 - f32::from(o);
+                }
             }
             if let Some(mode) = nclip {
                 flags[0] = (mode & !crate::DRAW_WORD_MEAN_DEPTH).min(2) as f32;

@@ -10,13 +10,38 @@
     <li><b>Download</b><span>One archive for your system from the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases" target="_blank" rel="noopener">Releases page</a>.</span></li>
     <li><b>Unpack</b><span>Extract the archive to a folder of its own; keep the files together.</span></li>
     <li><b>Start</b><span><em>Legaia Explorer</em> to explore the disc, <em>Legend of Legaia</em> to play.</span></li>
-    <li><b>Pick your disc once</b><span>Your USA <code>.bin</code> (or <code>.cue</code>). Both programs remember it.</span></li>
+    <li><b>Pick your disc once</b><span>Your USA <code>.bin</code> (or <code>.cue</code>; <a href="#disc-image">how to make one</a>). Both programs remember it.</span></li>
   </ol>
   <div class="notice">
     <div class="notice-title">Bring your own disc - nothing is uploaded</div>
     <p>The download contains only the project's own compiled programs: <strong>no game data</strong>. Both apps read a disc image <em>you</em> supply - a raw Mode&nbsp;2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>, or the <code>.cue</code> sheet beside it. They read it on your computer and write only into folders you choose; nothing is sent anywhere.</p>
   </div>
   <p>The two pages these programs grew out of go further: <a href="extracting-assets.html">Extracting assets</a> has the command-line route for every asset type, and <a href="playing-and-viewing.html">Playing and viewing</a> has every option of the port. Prefer no install at all? The same engine runs in the browser on the <a href="../play.html">play page</a>.</p>
+</section>
+
+<section class="doc-section" id="disc-image">
+  <h2>Before you start: a disc image</h2>
+  <p>A disc image is one file holding everything on the game CD. You make it once, from your own disc, with a PC that has a CD or DVD drive. The important part is that the drive reads <strong>whole sectors</strong> (2352 bytes each), because the game's movies and voices sit in sectors an ordinary 2048-byte copy leaves out.</p>
+  <ul class="bullets">
+    <li><strong>Windows</strong> - in ImgBurn, choose <em>Create image file from disc</em> and keep the default <code>.bin</code> output, which writes a <code>.cue</code> beside it.</li>
+    <li><strong>Linux and macOS</strong> - cdrdao reads raw sectors, and its <code>toc2cue</code> writes the <code>.cue</code>. Replace <code>/dev/sr0</code> with your drive:
+      <div class="cli"><code>cdrdao read-cd --read-raw --device /dev/sr0 \
+    --driver generic-mmc-raw \
+    --datafile legaia.bin legaia.toc</code></div>
+      <div class="cli"><code>toc2cue legaia.toc legaia.cue</code></div></li>
+  </ul>
+  <p>The launcher and Explorer check the file when you pick it and say what is wrong, so you do not need to work this out in advance:</p>
+  <table class="compact">
+    <thead><tr><th>You have</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>A raw <code>.bin</code>, with or without its <code>.cue</code></td><td>Accepted. The browser page takes the <code>.bin</code> itself; the desktop apps take either.</td></tr>
+      <tr><td>A randomized or translated copy of the USA disc</td><td>Accepted: it still boots the USA executable.</td></tr>
+      <tr><td>A 2048-byte <code>.iso</code></td><td>Refused. It has no movie or voice sectors; make the image again as above.</td></tr>
+      <tr><td><code>.chd</code>, <code>.pbp</code>, ECM or a zip</td><td>Refused, and named. Unpack it to a <code>.bin</code> first (for <code>.chd</code>, <code>chdman extractcd</code>).</td></tr>
+      <tr><td>A PAL or Japanese disc</td><td>Refused by the game, which targets the USA release (<code>SCUS-94254</code>). Explorer still opens it for browsing.</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Different dumping programs can write a different whole-file hash for the same disc, so an <code>[unknown]</code> line from <code>disc-extract verify</code> is not by itself a bad dump. What decides whether the game runs is the check above.</p>
 </section>
 
 <section class="doc-section" id="download">
@@ -119,7 +144,7 @@
     <img src="../img/desktop/explorer-extract.jpg" width="1280" height="800" alt="The Extract tab after a finished run: output folder, the folded Options row, a full progress bar, the step-by-step log and an Open output folder button" loading="lazy">
     <figcaption>The <em>Extract</em> tab writes exactly what <code>legaia-extract --all-textures</code> produces.</figcaption>
   </figure>
-  <p>Choose an output folder (Explorer proposes one beside the disc image), open <em>Options</em> if you want to leave a step out, and start (<em>Every texture as PNG</em> stays ticked unless you clear it: it is what puts the disc's textures in the folder); a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
+  <p>Choose an output folder (Explorer proposes one beside the disc image), open <em>Options</em> if you want to leave a step out, and start (<em>Every texture as PNG, in a tim_scan folder</em> stays ticked unless you clear it: it is what puts every texture on the disc in the folder); a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
 
   <h3 id="explorer-play">Play, and the rest of the window</h3>
   <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. Everything you set in the game's launcher (below) applies to a game started from Explorer too: the display options, the gameplay tweaks and the expansion pack. Play needs the USA disc image and the <code>command-line-tools</code> folder beside Explorer; when it is greyed out, hover it to see why (on another region's disc the disc line also says <em>Play needs the USA disc</em>). If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
@@ -156,16 +181,39 @@
 
   <h3 id="port-launcher">The launcher</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Play online, Change disc, Expansion pack, Controls, Saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar, opening on the Look and feel row, then Display and Enhancements" loading="lazy">
+    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Play online, Change disc, Expansion pack, Controls, Recent, Saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar, opening on the Look and feel row, then Display and Enhancements" loading="lazy">
     <figcaption>The launcher. Once it knows your disc it letters itself in the game's own font.</figcaption>
   </figure>
   <ol class="steps">
-    <li><b>Choose disc...</b><span>Pick your <code>.bin</code> or <code>.cue</code> (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drag it onto the window, or type or paste its path (<kbd>Ctrl</kbd>+<kbd>V</kbd>). It is checked and remembered, together with the last few discs you used: right-click <em>Choose disc...</em> or press <kbd>Shift</kbd>+<kbd>Enter</kbd> on it to switch back to one (a retail disc beside a randomized copy, say).</span></li>
+    <li><b>Choose disc...</b><span>On a first run the launcher looks in Downloads, the Desktop, Documents and its own folder for a dump named for the game and offers it (<em>Found your disc image</em>). Otherwise pick your <code>.bin</code> or <code>.cue</code> (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drag it onto the window, or type or paste its path (<kbd>Ctrl</kbd>+<kbd>V</kbd>). It is checked and remembered, together with the last few discs you used: right-click <em>Choose disc...</em> or press <kbd>Shift</kbd>+<kbd>Enter</kbd> on it to switch back to one (a retail disc beside a randomized copy, say).</span></li>
+    <li><b>Recent</b><span>The discs and memory cards used before, with their state, and the saves on your cards: <kbd>Enter</kbd> on a save starts the game on it without the title screen.</span></li>
     <li><b>Options</b><span>Turn the enhancements on or off before you start, in a scrolling list grouped as Display, Enhancements, Play, Gameplay tweaks, Battle tuning, Sound and Original game; they are the same settings the in-game keys below change.</span></li>
     <li><b>Play</b><span>The game opens on the title screen and the launcher closes.</span></li>
   </ol>
   <p>If nothing can draw the window at all, a message box says so: the usual fix is the latest driver for your graphics card, and a remote desktop session can cause it too. If the game stops with an error, the launcher comes back and says how it ended; <kbd>Ctrl</kbd>+<kbd>C</kbd> then copies a report to paste into a bug report, with the end of the log and your home folder cut out of it. Explorer's error banner has a <em>Copy report</em> button for the same text.</p>
-  <p>The disc card at the top says whether the disc is ready, or what is wrong with it: moved, not a disc image, another region's disc (a PAL or Japanese disc is refused; a randomized or translated USA disc is fine), or a damaged or partial dump, with the advice to dump it again. A file that is not a raw <code>.bin</code> is named for what it is - a 2048-byte <code>.iso</code>, a compressed <code>.chd</code>, a zip, a <code>.cue</code> whose <code>.bin</code> was renamed - with what to choose instead. The help box under the buttons explains whichever row is focused. The arrow keys move, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse works too, and so does a controller: D-pad to move, Cross to press, Triangle for what a right-click does, L1 / R1 to page the options, Start to play. An option you changed carries a small gold dot, and <kbd>Delete</kbd> (or a middle-click) puts it back on its default. A value drawn green is one the original game does not have - an enhancement or a fix in effect - and a dim one is the original&rsquo;s; the help box names the original&rsquo;s value under a row that departs from it. The launcher and the game window each reopen where you last left them, as Explorer does, unless that spot is no longer on a connected monitor. <em>Controls</em> shows your key bindings, and <em>Saves folder</em> opens the folder your saves and settings live in. To keep playing saves from another emulator, drop its memory card (<code>.mcr</code>, <code>.mcd</code>, <code>.srm</code>, <code>.gme</code>, <code>.mcs</code>) on the launcher, or right-click <em>Saves folder</em> and pick it: the launcher says how many Legend of Legaia saves it holds, the game shows it as card 2 on the load and save screens, and saves back into it. <kbd>Delete</kbd> on the button takes it off again. The launcher remembers the last few cards: right-click <em>Saves folder</em> again to step to the next one you used, and past the last of them it asks for a file.</p>
+  <table class="compact">
+    <thead><tr><th>To</th><th>Keyboard or mouse</th><th>Controller</th></tr></thead>
+    <tbody>
+      <tr><td>Move between controls</td><td>Arrow keys</td><td>D-pad or left stick</td></tr>
+      <tr><td>Change an option</td><td><kbd>Left</kbd> / <kbd>Right</kbd></td><td>D-pad left / right</td></tr>
+      <tr><td>Press a button</td><td><kbd>Enter</kbd>, <kbd>Space</kbd> or click</td><td>Cross</td></tr>
+      <tr><td>The second action (previous disc, an option back)</td><td><kbd>Shift</kbd>+<kbd>Enter</kbd> or right-click</td><td>Triangle</td></tr>
+      <tr><td>Page through the options</td><td><kbd>Page Up</kbd> / <kbd>Page Down</kbd></td><td>L1 / R1</td></tr>
+      <tr><td>Put an option back on its default</td><td><kbd>Delete</kbd> or middle-click</td><td>-</td></tr>
+      <tr><td>Start the game</td><td><em>Play</em></td><td>Start</td></tr>
+      <tr><td>Leave <em>Controls</em> or <em>Recent</em></td><td><kbd>Esc</kbd></td><td>Circle</td></tr>
+      <tr><td>Quit</td><td><kbd>Esc</kbd> on the main screen</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>The disc card</strong> at the top says whether the disc is ready, or what is wrong with it: moved, not a disc image, another region's disc, or a damaged or partial dump. A file that is not a raw <code>.bin</code> is named for what it is, with what to choose instead (<a href="#disc-image">the table above</a>).</li>
+    <li><strong>The help box</strong> under the buttons explains whichever row is focused.</li>
+    <li><strong>Colours</strong> - an option you changed carries a small gold dot. A value drawn green is one the original game does not have, an enhancement or a fix in effect; a dim one is the original&rsquo;s. The help box names the original&rsquo;s value under a row that departs from it.</li>
+    <li><strong><em>Controls</em></strong> shows your key bindings. <strong><em>Saves folder</em></strong> opens the folder your saves and settings live in.</li>
+    <li><strong>Windows</strong> - the launcher and the game window each reopen where you last left them, as Explorer does, unless that spot is no longer on a connected monitor.</li>
+  </ul>
+  <h4 id="port-memory-card">Saves from another emulator</h4>
+  <p>Drop the emulator's memory card (<code>.mcr</code>, <code>.mcd</code>, <code>.srm</code>, <code>.gme</code>, <code>.mcs</code>) on the launcher, or right-click <em>Saves folder</em> and pick it. The launcher says how many Legend of Legaia saves it holds, the game shows it as card 2 on the load and save screens, and saves back into it. <kbd>Delete</kbd> on the button takes it off again. The launcher remembers the last few cards: right-click <em>Saves folder</em> again to step to the next one you used, and past the last of them it asks for a file.</p>
   <p>The first row, <em>Look and feel</em>, is one switch over the rest: <em>Enhanced</em> is the first-start set, <em>Original</em> plays as on a PlayStation, and it reads <em>Custom</em> once you move a row (<kbd>Delete</kbd> on it restores Enhanced).</p>
   <p><em>PlayStation pixel look</em> draws the console's own 320x240 picture, magnified, with its wobbling vertices and colour dithering; <em>Original game only</em> starts the game exactly as the original looks and moves - every enhancement off for that session, your settings kept for next time. If the game ever stops with an error or crashes, the launcher comes back and says how it ended, the reason its log gives and where that log is; if the disc went missing meanwhile, it asks for the disc again.</p>
 
@@ -184,29 +232,33 @@
       <tr><td>Right <kbd>Shift</kbd></td><td>Select</td></tr>
     </tbody>
   </table>
+  <p class="hint">The browser play page starts with a different layout, so moving between the two means relearning a few keys: WASD walks there as well as the arrows, and <kbd>X</kbd> is Circle, <kbd>C</kbd> Triangle, <kbd>V</kbd> Square and <kbd>E</kbd> R1. <kbd>Z</kbd> is Cross on both.</p>
   <p>To change a key, open <em>Controls</em> in the launcher, press <kbd>Right</kbd> or <kbd>Tab</kbd> to reach the table, press <kbd>Enter</kbd> on a button and then press its new key. A key another button was on swaps with it; <em>All keys back to default</em> is the last row. <em>Key Config</em> on the in-game Options screen edits the same keys. The mouse turns the camera: drag to orbit around your character, scroll to zoom, double-click to put the game's own framing back.</p>
   <p><kbd>Esc</kbd> <strong>twice</strong> quits. The first press only shows <em>Press Esc again to quit</em> at the bottom left, so a stray key does not lose an unsaved game; save in the game first.</p>
 
   <h3 id="port-toggles">Display toggles and the F12 panel</h3>
   <figure class="diagram">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The F12 panel's four pages in order. F12, the question-mark key or Select plus Start opens Settings; Tab, L1 or R1 steps to Cheats, then Scenes, then Keys, and on round to Settings. The game is held still while the panel is open; Esc, F12, Circle or Start closes it.">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The F12 panel's five pages in order. F12, the question-mark key or Select plus Start opens Settings; Tab, L1 or R1 steps to Cheats, then Scenes, then Tools, then Keys, and on round to Settings. The game is held still while the panel is open; Esc, F12, Circle or Start closes it.">
       <defs><marker id="da-f12-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-sub dg-start" x="20" y="22">F12 / ? / Select+Start opens; Tab, L1 or R1 steps; Esc, F12, Circle or Start closes. The game holds still.</text>
-      <rect class="dg-node-accent" x="20" y="40" width="190" height="64" rx="5"/>
-      <text class="dg-label" x="115" y="64">Settings</text><text class="dg-sub" x="115" y="82">every launcher row, live</text>
-      <rect class="dg-node" x="240" y="40" width="190" height="64" rx="5"/>
-      <text class="dg-label" x="335" y="64">Cheats</text><text class="dg-sub" x="335" y="82">the play page's cheat list</text>
-      <rect class="dg-node" x="460" y="40" width="190" height="64" rx="5"/>
-      <text class="dg-label" x="555" y="64">Scenes</text><text class="dg-sub" x="555" y="82">go to any town or field</text>
-      <rect class="dg-node" x="680" y="40" width="180" height="64" rx="5"/>
-      <text class="dg-label" x="770" y="64">Keys</text><text class="dg-sub" x="770" y="82">toggle keys and bindings</text>
-      <path class="dg-edge" d="M210 72 H238" marker-end="url(#da-f12-ah)"/>
-      <path class="dg-edge" d="M430 72 H458" marker-end="url(#da-f12-ah)"/>
-      <path class="dg-edge" d="M650 72 H678" marker-end="url(#da-f12-ah)"/>
-      <path class="dg-edge-dim" d="M770 104 V128 H115 V106" marker-end="url(#da-f12-ah)"/>
+      <rect class="dg-node-accent" x="20" y="40" width="152" height="64" rx="5"/>
+      <text class="dg-label" x="96" y="64">Settings</text><text class="dg-sub" x="96" y="82">every launcher row</text>
+      <rect class="dg-node" x="190" y="40" width="152" height="64" rx="5"/>
+      <text class="dg-label" x="266" y="64">Cheats</text><text class="dg-sub" x="266" y="82">the play page's list</text>
+      <rect class="dg-node" x="360" y="40" width="152" height="64" rx="5"/>
+      <text class="dg-label" x="436" y="64">Scenes</text><text class="dg-sub" x="436" y="82">go to any town</text>
+      <rect class="dg-node" x="530" y="40" width="152" height="64" rx="5"/>
+      <text class="dg-label" x="606" y="64">Tools</text><text class="dg-sub" x="606" y="82">debug and minigames</text>
+      <rect class="dg-node" x="700" y="40" width="160" height="64" rx="5"/>
+      <text class="dg-label" x="780" y="64">Keys</text><text class="dg-sub" x="780" y="82">keys and bindings</text>
+      <path class="dg-edge" d="M172 72 H188" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge" d="M342 72 H358" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge" d="M512 72 H528" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge" d="M682 72 H698" marker-end="url(#da-f12-ah)"/>
+      <path class="dg-edge-dim" d="M780 104 V128 H96 V106" marker-end="url(#da-f12-ah)"/>
       <text class="dg-edge-label" x="442" y="142" text-anchor="middle">and round again</text>
     </svg>
-    <figcaption>The panel&rsquo;s pages. <em>Scenes</em> takes your party and bag to the picked scene, seated as the play page seats a picked scene; it refuses on the title, in a menu, a fight, a movie or a minigame, and says why.</figcaption>
+    <figcaption>The panel&rsquo;s pages. <em>Tools</em> holds the session-only debug switches (developer menu, diagnostics, debug camera, auto-battle, battle cadence, overworld markers, effect outlines), one press for each minigame, the game-mode picker and the card menu, and the party, fight-music, teach-a-spell and GameShark-file controls. <em>Scenes</em> takes your party and bag to the picked scene, seated as the play page seats a picked scene; it refuses on the title, in a menu, a fight, a movie or a minigame, and says why.</figcaption>
   </figure>
   <figure class="screenshot">
     <img src="../img/desktop/port-settings.jpg" width="960" height="720" alt="The F12 panel over a dimmed town on its Settings page: fullscreen, camera distance, reduce flashing, the lighting rows, fog, see-through walls, free-angle movement and the volumes, with the focused row's help below" loading="lazy">
@@ -214,7 +266,7 @@
   </figure>
   <figure class="screenshot">
     <img src="../img/desktop/port-help.jpg" width="960" height="720" alt="The F12 panel over a dimmed town on its Keys page: every toggle key with its current state, with the states the original game does not have in green, then the pad key bindings and the mouse controls" loading="lazy">
-    <figcaption><kbd>F12</kbd> (or <kbd>?</kbd>, or <kbd>Select</kbd> + <kbd>Start</kbd> on a controller) opens the settings page above. <kbd>Tab</kbd>, <kbd>L1</kbd> or <kbd>R1</kbd> flips to the <strong>Cheats</strong> page (the browser play page's cheat list, applied while you play), then to the <strong>Scenes</strong> page (the play page's scene list: pick a town, field area or overworld and Cross goes there with your party), then to this page, which lists every toggle key with its current state (fullscreen on <kbd>F11</kbd> too), which key is Cross, Circle, Start and the rest, and what the mouse does; a state the original game does not have is drawn green, as on the launcher. Press it again to close.</figcaption>
+    <figcaption><kbd>F12</kbd> (or <kbd>?</kbd>, or <kbd>Select</kbd> + <kbd>Start</kbd> on a controller) opens the settings page above. <kbd>Tab</kbd>, <kbd>L1</kbd> or <kbd>R1</kbd> flips to the <strong>Cheats</strong> page (the browser play page's cheat list, applied while you play), then to the <strong>Scenes</strong> page (the play page's scene list: pick a town, field area or overworld and Cross goes there with your party), then to <strong>Tools</strong>, then to this page, which lists every toggle key with its current state (fullscreen on <kbd>F11</kbd> too), which key is Cross, Circle, Start and the rest, and what the mouse does; a state the original game does not have is drawn green, as on the launcher. Press it again to close.</figcaption>
   </figure>
   <p>The port adds a few enhancements over the original, each on its own key (and on the <a href="#port-launcher">launcher</a>), each with the original look one press away. A press shows the toggle's new state at the bottom left for a moment. For its first twelve seconds the window says <em>F12 or Select+Start: settings - Esc twice quits</em> in the same place, until you open the panel.</p>
   <table>

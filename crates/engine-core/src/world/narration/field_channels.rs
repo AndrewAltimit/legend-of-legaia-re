@@ -779,6 +779,10 @@ impl World {
                     self.npcs.rotate_legs.remove(&slot);
                     self.npcs.face_legs.insert(slot, ramp);
                 }
+                if let Some(ci) = target.filter(|&ci| channels[ci].object_bind) {
+                    let key = channels[ci].placement_index;
+                    self.mirror_object_end_latch(key, &mut channels[ci].ctx.local_flags);
+                }
                 let object_words = target
                     .filter(|&ci| channels[ci].object_bind)
                     .map(|ci| (ci, channels[ci].ctx.local_flags, channels[ci].ctx.field_6a));

@@ -437,15 +437,12 @@ impl World {
             // its placement the same way: the halt-acquire arm of `B8 <id>`
             // and the `CC <id> 85` face-at raise the same `0x400`.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+            // The halt-clear `B2 <id> 0A` is the op's one carve-out
+            // (`0x801DE90C..0x801DE944`).
+            let halt_clear = b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A);
             let walking_target = ext_target
                 .and_then(|t| host.world.placement_slot_for_target(t))
-                .filter(|slot| {
-                    let n = &host.world.npcs;
-                    n.glide_legs.contains_key(slot)
-                        || n.rotate_legs.contains_key(slot)
-                        || n.face_legs.contains_key(slot)
-                        || host.world.leg_landed_this_frame(*slot)
-                });
+                .filter(|slot| !halt_clear && host.world.npc_leg_in_flight(*slot));
             if walking_target.is_some() {
                 break;
             }
@@ -465,6 +462,64 @@ impl World {
                     id.visited[id.pc] = true;
                 }
                 id.pc += 4;
+                id.park_frames = 0;
+                continue;
+            }
+            // A walk-to-tile aimed at a placement (`C7 <id> <tx> <tz> <mode>`):
+            // the walk kernel moves the TARGET toward the tile and the record
+            // runs on past the op (`s7 = 4` in the delay slot at `0x801DF030`;
+            // only a player target parks the caller). On the talk's stand-in
+            // context it walked nobody: `rayman`'s and `doman`'s talks stage
+            // their helpers this way.
+            // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
+            if b == 0xC7
+                && ext_target.is_some()
+                && let Some(next_pc) = host.world.run_placement_motion_op(&id.bytecode, id.pc)
+            {
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc = next_pc;
+                id.park_frames = 0;
+                continue;
+            }
+            // A cross-context `B1` / `B2 <id> <bit>`: the dispatcher prologue
+            // swaps the resolved actor into `s5`, so the write lands on the
+            // TARGET's `+0x10`. The class bits are read off that word every
+            // frame (`0x20000000` the height law, `0x200000` the shadow drop,
+            // `0x1000000` the clip bank), and raising bit 8 engages the target
+            // the same way the system script's write does. Run on the talk's
+            // stand-in context it reached nobody: `bubu1`'s and `balden`'s
+            // talks hide their helpers and hand the scene over this way. The
+            // retire (bit 3) is `field_step_routed`'s and the halt bit (bit
+            // 10) stays with the stand-in; a talker naming itself keeps its
+            // own context.
+            // REF: FUN_801DE840 (cases 0x31 / 0x32, 0x801DE894..0x801DE8B4), FUN_8003C83C
+            if matches!(b, 0xB1 | 0xB2)
+                && let Some(target) = ext_target
+                && let Some(&bit) = id.bytecode.get(id.pc + 2)
+                && !matches!(bit & 0x1F, 3 | 0xA)
+                && host.world.placement_slot_for_target(target)
+                    != host.world.dialog.stepping_inline_npc
+                && host.world.poke_channel_cflag(b, target, bit & 0x1F)
+            {
+                // Handing the scene to another context is the pass's effect,
+                // like a record spawn: the raw `0x21` after it is the real
+                // end, not a prologue that failed to reach its box. `uru`'s
+                // sleepers (`P1[7..=14]`) tick a counter, raise `B1 2E 08`
+                // and end, and the spirit `P1[25]` speaks; falling back to
+                // the talker's first segment opened the sleeper's own line
+                // over the spirit's.
+                if b == 0xB1
+                    && bit & 0x1F == 8
+                    && host.world.placement_slot_for_target(target).is_some()
+                {
+                    id.spawned = true;
+                }
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc += 3;
                 id.park_frames = 0;
                 continue;
             }
@@ -641,10 +696,41 @@ impl World {
             .then(|| crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc))
             .flatten()
             .filter(|&slot| Some(slot) != talker);
+            // A seat aimed at another placement (`A3 <id> x z`) lands on its
+            // `+0x14` / `+0x18`, as the prop runner steps it; on the talker's
+            // stand-in the actor stayed put. `town01`'s blackboard tour
+            // parks villagers with `A3 <id> 7F 7F` and `town0c` / `tunnelc` /
+            // `balden` place helpers for the next beat.
+            // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC), FUN_8003C83C
+            // `B4 <id> ..` lights and ambient installs are the same shape:
+            // the arm works off the swapped-in `s5`. `jagaroom` `P1[8]`,
+            // `nilboa` `P1[6]` and `noaru` `P1[6]` stage them on their helpers.
+            let seat_target = (matches!(op, 0x23 | 0x34) && !player_seat)
+                .then(|| {
+                    crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc)
+                })
+                .flatten()
+                .filter(|&slot| Some(slot) != talker);
+            // `CC <id> A0|A1` skips on a bit of the TARGET's `+0x10` / `+0x62`
+            // (`retock` P1[46] pairs `B1 0D 00` with `CC 0D A0 00 05 00`): the
+            // test reads the channel the `B1` above just wrote, placed object
+            // or placement. Its own halt bit is not the test's business.
+            // REF: FUN_801DE840 (0x801E2568)
+            let target_word_test = (op == 0x4C
+                && matches!(id.bytecode.get(id.pc + 2), Some(&0xA0 | &0xA1)))
+            .then_some(ext_target)
+            .flatten()
+            .filter(|&t| t != 0xFB && t != legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+            .and_then(|t| {
+                legaia_engine_field::field_channels::resolve_target(
+                    &host.world.field_vm.channels,
+                    t,
+                )
+            });
             // The NPC's own leg holds its halt bit: the op waits at the
             // dispatcher's halted-target early-out until the kernel lands it.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
-            if let Some(slot) = actor_target
+            if let Some(slot) = actor_target.or(seat_target)
                 && host.world.npc_leg_in_flight(slot)
             {
                 break;
@@ -687,9 +773,17 @@ impl World {
                     }
                 }
                 r
-            } else if let Some(slot) = reseat.or(actor_target) {
+            } else if let Some(slot) = reseat.or(actor_target).or(seat_target) {
                 host.world.dialog.stepping_inline_npc = None;
                 crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
+            } else if let Some(ci) = target_word_test {
+                let saved = (id.ctx.flags, id.ctx.local_flags);
+                let c = &host.world.field_vm.channels[ci].ctx;
+                id.ctx.flags = c.flags & !0x400;
+                id.ctx.local_flags = c.local_flags;
+                let r = field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+                (id.ctx.flags, id.ctx.local_flags) = saved;
+                r
             } else if let Some(t) = other_seat {
                 let mut other = id.ctx.clone();
                 other.flags &= !legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
@@ -1180,7 +1274,7 @@ impl World {
         } else {
             self.talk_face_target(bind)
         };
-        let (Some((tx, tz)), Some(&(x, z))) = (target, self.npcs.positions.get(&slot)) else {
+        let (Some((tx, tz)), Some((x, z))) = (target, self.placement_seat(slot)) else {
             return true;
         };
         // A never-posed NPC stands at the retail spawn default `0` (engine
@@ -1685,6 +1779,20 @@ impl World {
             actor.move_state.render_26 = yaw as i16;
         }
         id.face_ramp = if done { None } else { Some(ramp) };
+    }
+
+    /// Where placement `slot` stands: its surfaced position, or the seat its
+    /// own context holds. A placement with no text and no prologue seat that
+    /// moved it never gets a surfaced position, yet retail's actor stands
+    /// there all the same and its face-at legs run: `jagaroom` `P1[2..=7]`,
+    /// the statues turned onto the centre by `CC <id> 85 00 00 26`.
+    fn placement_seat(&self, slot: u8) -> Option<(i16, i16)> {
+        self.npcs.positions.get(&slot).copied().or_else(|| {
+            self.channel_view()
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                .map(|c| (c.ctx.world_x as i16, c.ctx.world_z as i16))
+        })
     }
 
     /// Where the actor a talk's face-at bind names stands: the channel whose

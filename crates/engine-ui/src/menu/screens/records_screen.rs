@@ -56,7 +56,8 @@
 //! (`window/dev_menu.rs`) and the browser play page behind its session-only
 //! Dev-menu checkbox (`web-play/src/play_dev_menu.rs`). Both feed the six
 //! per-character counters through [`RecordCounters`], the play clock from
-//! `World::clock.play_time_seconds`, the battle / escape tallies from
+//! `World::clock.records_play_seconds` (`_DAT_800845DC`, written by op
+//! `4C EE`), the battle / escape tallies from
 //! `PartyState::record_tally` (counted by `World::enter_battle` and the Run
 //! roll's success arm) and the treasure pair from the world's
 //! script-counter slots. The end-of-game soft reset draws the same page.

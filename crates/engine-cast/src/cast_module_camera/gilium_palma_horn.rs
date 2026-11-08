@@ -172,7 +172,7 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
                 cut([0, 0], [0, 0x2000, 0x2000], [0; 3], 1),
             ),
             0x12 => {
-                st.countdown.0 -= GILIUM_DRAIN;
+                st.countdown.pass_drain(GILIUM_DRAIN);
                 cut([0x200, 0], [0, 0x400, 0x2000], [0; 3], 0x40)
             }
             0x13 => pass(gated(st, z(0), 0x200)?, ArmDirection::PASS),
@@ -403,6 +403,7 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             if park_wait(st, phase) {
                 return held(d);
             }
+            st.countdown.drain_rest(P);
             st.creature_seek = Some(0xF0);
             st.creature_loop_arm = true;
             with_drift(cut([0, 0x800], [0xC00, 0x480, 0x200], [0; 3], 1), d)
@@ -482,12 +483,16 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         }
         PALMA_SETTLE_PHASE => {
             let mut d = None;
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 st.countdown.0 -= P;
                 d = Some(drift(0, 0, 0, 0, P));
             }
             if !st.row_settled || st.countdown.0 > 0 {
                 return held(d);
+            }
+            if drained {
+                st.countdown.drain_rest(P);
             }
             finish(with_drift(ArmDirection::PASS, d))
         }
@@ -561,7 +566,7 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             caption(ArmDirection::PASS, ModuleCaption::SpellName)
         }
         5 | 6 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             ArmDirection::PASS
         }
         7 => {

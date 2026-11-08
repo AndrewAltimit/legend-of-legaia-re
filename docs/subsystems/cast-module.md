@@ -538,9 +538,19 @@ exactly the arms its `sltiu` allows and stops on the terminal arm with no
 - *Most capture bodies end on three stores:* the busy result cleared,
   `sb zero,0xd` (the framing style) and `0x780` into the yaw counter
   `ctx[+0x6DA]` (Zora's Glare at `0x801F7208` in PROT 0940, for one). PROT
-  0946..0948, 0953, 0959 and 0960 clear the style without the yaw store. PROT
+  0946..0948 and 0953 clear the style without the yaw store. Three bodies zero
+  the counter beside the style clear: PROT 0959's Megaton Press
+  (`sh zero,0x2(v1)` at `0x801F8214`, the base `ctx + 0x6D8`) and PROT 0960's
+  Plasma Strike (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`), so the Done
+  band's case 6 frames from a counter of zero (retail films of all three read `0`
+  on `0x71`). PROT
   0935..0937, 0939 and 0962 hold neither, so the Done band after them frames
-  from half a turn round.
+  from half a turn round. Three bodies of split modules hold neither either,
+  where the other body of their module has both: PROT 0945's Water Column
+  (`0x54`, `0x801F6EDC`), PROT 0938's Chaos Breath (`0x4E`, `0x801F726C`) and
+  PROT 0940's Slime Divide (`0x50` / `0xAE`, `0x801F78B8`). A film of Water
+  Column reads the half turn in its Done band's yaw endpoint
+  (`ctx[+0x6DA] - facing + 0x800`).
 
 **Two store forms write the phase.** Every player-Seru tick materialises a
 pointer to `ctx + 0x279` in its prologue (`addiu s6, s1, 0x279` at
@@ -576,6 +586,18 @@ arms. The frame step is adaptive and changes inside a cast (the audio frame
 driver rewrites `DAT_1F800393` per frame, see [`audio.md`](audio.md)), so a
 dwell is the seed divided by the *sum* of per-pass drains. Measured dwells are
 in [measured arm timing](#measured-arm-timing).
+
+A pass takes the whole drain before its test. The arm subtracts the product in
+one `subu`, tests the word, and an add-form re-arm keeps what is left, so a
+passing pass leaves the next arm `seed - drain * delta` plus the residue. A
+one-drain arm with no gate spends `delta` frames of the next arm's span: Ozma's
+arm 17 drains once (`subu` at `0x801F7F20`) and arm 18 re-tests the same word
+(`bgtz` at `0x801F7FA4`), so arm 18 runs `512 - 4 = 508`, one step-`4` pass short
+of the `512` its arm 16 re-arm reads, and Gimard's arm 7 enters arm 8 on `1504`
+of `1536`. The port's module ticks are one vsync each (`World::module_pass` runs
+`delta` of them a pass), so `ModuleCountdown` carries the pass's remaining ticks
+and a gate that opens mid-pass drains them too, as the one-drain arms do
+(`pass_drain`).
 
 The band timer `ctx[+0x6D8]` is a context word, not a module word. A
 player-Seru cast finds it at `120` (`0x78`) on its first tick and the sustain
@@ -796,6 +818,16 @@ the total lands in live HP on the fourth beat. The guard ladder is the kernel's
 inlined copy, keyed on the attacking monster's element, so a Luminous Jewel
 halves the cast against light-element Gaza
 ([melee ladder](battle-formulas.md#underdog-rewrite-chip-floor-and-cap)).
+
+The body arms its own camera. Arm 2 turns the caster onto the victim's body
+pair (`0x801F6D58`) and frames the caster at pitch `0x40`, yaw `0xA00 - facing`,
+TR `(0, 0x500, 0x600)` over `0xC` frames (`0x801F6DE8`), seeding the countdown
+`scalar << 6`. Arm 3 re-aims on the caster every pass (`0x801F6F8C`): yaw
+`cd / 8 + 0xBC0 - facing`, TR z `0x700 - cd / 2`, writing back both pairs. Arm 4
+frames the victim's body pair (`0x801F70BC`): yaw `cd / 32 + 0xB80 - facing`, TR z
+`0x900 - cd / 8`. A retail film of `battle_kor_gaza_165_astral_slash_mid_cast`
+reads the arms pass for pass; `cast_module_camera::astral_slash_camera` is the
+port.
 
 **Port.** `World::run_cast_module_code` parks the caster's strike index on arm
 2 and marks the band's fold as owed nothing (`module_skips_fold`), so the
@@ -1154,7 +1186,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | DATA |
 | `801F81DC` | 910 (`summon_swordie`) | per-slash damage applier, three `jal`s from the tick; rolls `FUN_801DD0AC(0x12, 7)`, run-time cap, writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call (residue in 908, 910) | DATA |
-| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
+| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; arms 2..4 arm the module camera and hold both pairs; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body via the trampoline; damage roll (bypass); writes HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278` | PORT |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | PORT (spawn-only) |
@@ -1506,7 +1538,7 @@ re-arms literals. Four arms do not fit one word:
 
 **Slime Divide's camera** (`slime_divide_camera`, PROT 0940 `0x801F78B8`): arm 0 cuts to the caster over `0xC` frames at `TR (0, 0x300, 0x600)` (`0xAE`: `(0, 0x400, 0x800)`), and arm 1, once its gate passes, lifts to pitch `0x100` at TR z `0x1000` over `0x100`. Arms 2 and 3 frame nothing.
 
-**Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. The finishing arm shows the caster again.
+**Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. Arm 4 adds `step * scalar` to the TR z global `0x800840C0` every pass ahead of its gate (`0x801F6FD0..0x801F7014`), so the shot pulls back through the hits. The finishing arm shows the caster again.
 
 **Spore Gas's cloud** is arm 1's: on the gate the arm hides the victim and seats nine
 records `0x190` ahead of the caster at height `-0x1C2` (`0x801F6C60..0x801F6E24`), stepping
@@ -1695,6 +1727,12 @@ creature's hover clip `2` and zeroes `+0x21B` / `+0x176`
 out; the exit stages clip `3`. Ports: the tick body's `VERA_HIDE_ARM` and
 `VERA_CAST_ARM`, and the director's held-pass clip
 (`ModuleCamState::creature_stage`).
+
+Arm 5's pass stages clip `1` beside the seat with the `+0x1DC` bump and rate `8`
+(`0x801F730C..0x801F733C`), so the creature opens on clip `1`; arm 8's bare `2`
+then waits for that clip's natural end, which PROT 0905's place on the band's
+clip-gated list gives it. The host seats the creature after the pass, so the
+director holds its bare `2` until the bumped clip has committed.
 
 ### PROT 0906 (Gizam)
 
@@ -1965,6 +2003,12 @@ climbing word `w`).
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>
+
+Arm 2 seats the creature and stages clip `1` with the bump on one pass
+(`sb s8,0x1DA` / `sb s8,0x1DC`, `0x801F6DB0..0x801F6DB4`, right behind the
+installer); the host seats after the tick, so `World::run_cast_module_code` carries a
+store made while a seat is owed or pending onto the next pass, as a director's is.
+Arm 3's bare clip `0` then waits for clip `1`'s natural end (the clip-gated list).
 
 The cast opens on two **opaque** panels that cover the whole frame and fall
 away along a diagonal cut. Both are drawn by the module's own builders, which
@@ -2552,6 +2596,10 @@ byte still up (`8`, one pass into the sustain).
 
 <a id="prot-0918-0922-and-0927-directors"></a>
 
+Gola Gola's arm `0xD` exit shot reads the yaw global back after the pass's own
+drift (`0x801F74F0..0x801F74FC`, the read at `0x801F7630`), so its yaw gap is
+zero and the drift of arm `0xE` runs on it (`gola_gola_direct`).
+
 Kemaro (`0x90`), Puera (`0x94`) and Juggernaut (`0x99`) run a director
 over their hold tables that carries every camera write of the body, read off
 each image's own disassembly: the `FUN_801D829C` cuts on the arms' passes,
@@ -2599,6 +2647,13 @@ not clip `5`'s lunge toward the camera.
 ground grid off the screen
 ([battle-stage-camera.md](battle-stage-camera.md#near-colour-and-depth-cue)),
 which is the black stage of Juggernaut's summoning.
+
+**Puera's clips.** Arm 5 stages clip `1` bare at rate `8`
+(`0x801F6EE4`); arm 7 parks it at cursor `0x1D0` at rate `0`, every pass once
+the cursor reads `0x1C0` or more (`0x801F7070..0x801F7114`); arm 8 walks the
+cursor back a frame product a pass and leaves clip `2` with the bump at rate
+`8` (`0x801F7180..0x801F719C`); arm 9 bumps clip `3`, arm 10 stores `4` bare
+and arm 18 bumps `5` (`0x801F8000`). Port: `cast_module_camera::puera_direct`.
 
 Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
 stores on alternate passes), Kemaro's arm-12 absolute pose store and the
@@ -2725,7 +2780,7 @@ half its reach (`World::apply_jedo_writes`). Arm 26's cut takes its TR y off the
 living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). Terra's arm `0xC` cut takes the same
 middle (`0x801F7C70..0x801F7DA4`), which is what keeps the orbiting row in the
 whirl's centre through arm `0xE`. A retail recording's
-`creature.csv` reads these directly.
+`creature.csv` reads these directly. Jedo's arm 7 shrinks its three rings every pass, the drained word `<< 12` over `192` into each part's scale `+0x72` (`0x801F7354..0x801F73B0`), and its pass halts them (`JEDO_ARM7_RING_RECORDS`, `World::apply_jedo_writes`).
 
 Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+0x21C = 0xC8`, `0x801F81E0..0x801F825C`): the reaction arm 15 staged has to tick, and its cue reaches the screen on arm 17.
 
@@ -2809,7 +2864,10 @@ out) while `w <= 0xA0`, the victim on it from `0x51`, and its pass sets the
 victim `drop` under the creature. Arm 9 turns both round a circle,
 `z = 2 sin 8w`, `y = cos 8w - 0x1000`, the victim `drop` off it along the
 radius, both pitched `+0x44 = 8w`, and its pass leaves them at `y = -0x800`,
-pitched `0xC00` into the dive. Arm `0xB` lowers both `8 p` a pass and its
+pitched `0xC00` into the dive. Arm `0xC`'s pass doubles the creature's rate
+`+0x21D` (`sll v1,v1,1` at `0x801F7B84`), so clip `3` runs out into clip `4`
+in time; arm 6's pass halves the victim's rate (`0x801F7338`) and arm `0xD`'s
+landing gives it back (`0x801F7EA4`). Arm `0xB` lowers both `8 p` a pass and its
 pass tints both green (`+0x21C = 8`, the presentation tick's arm 8) and cuts
 onto the creature (focus `z = 2 drop`); arm `0xC`'s pass hangs both at
 `y = -0x2000` and takes the tint off. Arm `0xD` drops the victim `16 p` a
@@ -3915,7 +3973,7 @@ State `0x70` runs the module through `FUN_801F2160` and leaves for `0x71` when
 that returns zero (`0x801E50C8..0x801E50E8`). The camera holds the pose
 `0x6F`'s last case-6 pass left and moves only where the module moves it. Port:
 `cast_module_camera::capture_camera_director`, keyed on `(entry, body)`. The
-exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
+finishing arm's yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 (`capture_exit_yaw_base`, which lists the bodies and their store sites). So is the
 style clear beside it: `0x70` stores style `1` each pass and the finishing arm's
 `sb zero,0xd` undoes it, so the Done band's case 6 frames from the default side, not
@@ -3930,6 +3988,8 @@ three units). The bodies without that store keep the half turn
 | 0962 `0xA5` Ultra Charge, `0x801F69D8` | arm 0's `0xC`-frame shot behind the caster (TR y `0xC00` when the formation's first monster is `0xB5`, `0x240` otherwise; TR z `0xC00`); arm 1's TR z drift of `scalar * delta` | `0x801F89AC`, seeded `scalar * 0x180`. The body has no other port, so the director owns the phase (`0 -> 1 -> 0xFF`) |
 | 0961 `0xA1` / `0xB4` Dead End Crisis / Final Crisis, `0x801F69D8` | four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`: arm 0 behind it (TR y `0x800` in formation `0xB5`, `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in `0xB5`), arm 5's return (TR y `0x800`); drifts below | `0x801F82E4`; the phase chain is ported (`DEAD_END_CRISIS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
+| 0938 `0x4E` Chaos Breath, `0x801F726C` | arm 0's `0x100`-frame shot on the caster (pitch `-0x40`, TR `(0, depth / 3, depth / 2)`, the caster turned on the row's centroid), arm 1's `0x100`-frame pull-out (pitch `0x40`, TR `(0, depth / 2, 3 * depth)`); records `0x801F7BC8` at the model scale and `0x801F7C40` ahead; every arm-1 pass pulls the party row in `2 * step` | `0x801F8040`, the `CHAOS_BREATH` table |
+| 0950 `0xAB` Shadow Break, `0x801F6A24` | arm 0's `0xC`-frame shot, the party hidden through arms 1 and 2 and shown on 2's pass, `0x20`-frame cut (pitch `0x180`, TR `(0, -0x200, 0x600)`) and three one-frame cuts on the caster (arms 4, 6, 7); each arm's TR z, TR y, pitch and yaw drift ahead of its gate; arm 2's blades, arm 8's rise, arm 9's fall with its blade halt, arm 10's burst and a thirteen-point ring of three records; arm 11 fades every record | `ROLLING_FLARE_SWEEP` table |
 | 0946 Call Wave `0x55` / Big Wave `0x56`, `0x801F69FC` (`SINGLE_BODY`) | below | `0x801F7F20`; the director owns the phase and finishes the module at arm 8 |
 | 0953 Terio Punch, `0x801F69FC` (`SINGLE_BODY`) | below | - |
 | 0957 `0x77` Thunder Storm, `0x801F6A14` | [below](#prot-0957-thunder-storm) | `0x801FA278`, seeded `0x600`, drained `8 * delta`; the director owns the phase |
@@ -4120,6 +4180,8 @@ dive (focus z `+2s`, TR z `+28s`, the caster walked `-s/4` in z), arm
 `0xE`'s rise of the victim back to the floor and arm `0xF`'s cut to its
 landing. Arm `0x11` stands the pair at `z = 0x200` / `-0x200`. The anim-rate
 stores ride the same seat writes; the director's table carries each one.
+
+The body's `+0x1DA` stores are arm 4 (`0x0A`, `0x801F6F40`), arm 7's victim knockdown (`0x801F7278`), arm `0x0A` (one up, `0x801F768C`), arm `0x0F` (`0`, `0x801F7FDC`) and arm `0x11` (the victim, `0x801F81AC`). Arms 5 and 6 bump `+0x1DC` with the byte unchanged (`0x801F7038`, `0x801F7120`): bit 0 commits the staged byte, so clip `0x0A` restarts on each and is still playing through arm 10. Only arm 7 stages a reaction, so the hits at `0x801F7A90` and `0x801F7EBC` land on the victim still parked in its get-up clip and sound nothing. `nivora_duel_pre_megaton_press` reads `.647` to `.730` with cues `.46` to `1.00`; `--rand-track` `.671` to `.772`. Grade `disassembly` + `capture`.
 
 Arm `0xF` lands a hit (`FUN_801DD6B4(0x30)`) on every pass the threshold word
 stands at or above the countdown, and lowers the word `scalar << 5` each
@@ -4783,6 +4845,18 @@ rate `4` and releases that window (`sb zero,0x21B` / `sh zero,0x176` at
 `0x801F75E0..0x801F75E4`), so clip 0 runs on to its natural end and arm 7's
 wait for clip 2 lands. Without the release the window rewound clip 0 on
 frames 0..1 for some two thousand vsyncs.
+
+A module that lets its creature go stores `+0x21C = 2` with `+0x225 = 2`
+beside it on seat 7 (Gimard `0x801F75E4`, Vera `0x801F7BD8`, Nighto `0x801F7E5C`,
+Zenoir `0x801F7D94`, Viguro `0x801F78F8`, Mushura `0x801F7D98`, Barra `0x801F7FE4`,
+Palma `0x801F7CA8`, Ozma `0x801F9184`). The `+0x225` store opens arm 2's fade gate
+in the tint pass whatever clip plays, so Gimard's walk fades as it goes, and the
+drained word stops the node ticking: `FUN_80047430`'s zero-colour skip takes a
+drained defeat fade as well as the hide. The creature halts where its colour ends
+(`CREATURE_FADE_MODULES`, `World::battle_node_colour_is_zero`). Kemaro's lone `2` at
+`0x801F89B0` keeps the clip gate. PROT 0930's arm 3 hides its creature on the same
+pass as the seat (`0x801F6EB8..0x801F6EC0`), behind its CD poll, so Horn's creature
+holds its first frames until arm 4's way out shows it.
 
 The creature's clips are the cast record's own, not its archive twin's: the
 installer hands the record's part table to the node (`0x801F1DCC`) and scans

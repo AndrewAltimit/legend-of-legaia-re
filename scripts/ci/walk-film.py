@@ -19,7 +19,8 @@ CAMERA = ["pitch", "yaw", "h", "eye_x", "eye_y", "eye_z", "focus_x", "focus_z"]
 
 def read(path):
     with open(path) as f:
-        return [{k: int(v) for k, v in r.items()} for r in csv.DictReader(f)]
+        # A non-numeric column (the engine's scene name) stays a string.
+        return [{k: int(v) if v.lstrip("-").isdigit() else v for k, v in r.items()} for r in csv.DictReader(f)]
 
 
 def passes(rows):
