@@ -127,6 +127,15 @@ impl BattleCamera {
         self.pose.tr[2] += f32::from(tr_z);
     }
 
+    /// A straight word store into the TR z global `0x800840C0`, in its own
+    /// units: the pose takes it as it stands, and a landed cut keeps it.
+    pub fn store_module_tr_z(&mut self, tr_z: i32) {
+        self.pose.tr[2] = tr_z as f32;
+        if let Some(g) = self.module_glide.as_mut().filter(|g| g.landed()) {
+            g.target.tr[2] = tr_z as f32;
+        }
+    }
+
     /// The same direct write into the TR x global `0x800840B8` (PROT 0920's
     /// arm 7 pan), added to the pose as it stands.
     pub fn nudge_module_tr_x(&mut self, tr_x: i16) {

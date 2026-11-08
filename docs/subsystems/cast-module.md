@@ -2769,7 +2769,12 @@ drains it is not identified.
 
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
-through the inverse of the tween's prescale; Meta's arm-6 and Ozma's arms 5..9
+through the inverse of the tween's prescale. The builder keeps its endpoints in
+halfwords, so a stored word past `0x7FFF` lands as a word store beside the cut
+(`ArmDirection::tr_z_store`): Barra's arms 3 and 4 store `0xFFFF` (`sw` at
+`0x801F6E68` / `0x801F6F3C`), which arms 4 and 5 pull in to `0x800` and `0xC00`,
+and as a halfword endpoint it wrapped to `-13109` and the pull ran on past
+`-68000`; Meta's arm-6 and Ozma's arms 5..9
 TR y stores are not carried. Palma's arm 4 exit stores before it pans: the
 pass runs its per-pass stores at the word it reached, then TR x `-0x2000` and
 TR z `0x2000` straight (`0x801F7418..0x801F7424`), and only then arms its

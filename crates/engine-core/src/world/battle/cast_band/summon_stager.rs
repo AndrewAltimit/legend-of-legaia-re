@@ -238,6 +238,11 @@ impl World {
             let (pose, raw_z) = shot.pose();
             cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
         }
+        if let Some(z) = run.as_ref().and_then(|r| r.tr_z_store)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.store_module_tr_z(z);
+        }
         if let Some(d) = run
             .as_ref()
             .filter(|r| r.capture_drift_after_shot)

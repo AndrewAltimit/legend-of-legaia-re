@@ -370,6 +370,7 @@ impl World {
         }
         run.capture_drift = direction.and_then(|d| d.drift);
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
+        run.tr_z_store = direction.and_then(|d| d.tr_z_store);
         let mut capture_held = false;
         let mut capture_arm = None;
         let mut capture_vram_move = None;

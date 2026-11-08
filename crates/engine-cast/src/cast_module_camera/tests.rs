@@ -190,6 +190,30 @@ fn barra_climbs_until_tr_y_reaches_0x800() {
     assert_eq!(holds, (0x800 - 0x400) / MODULE_DRAIN_PER_TICK);
 }
 
+/// Arms 3 and 4 store TR z `0xFFFF` as a word: a straight store beside the
+/// cut, which a halfword shot endpoint cannot carry.
+#[test]
+fn barra_stores_its_far_tr_z_as_a_word() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0;
+    let arm3 = barra_direct(&mut st, 3, seats());
+    assert!(!arm3.hold);
+    assert_eq!(arm3.tr_z_store, Some(0xFFFF));
+    assert_eq!(arm3.shot.expect("arm 3 cuts").tr, [0, 0x400, 0]);
+    // Arm 4 pulls the word in by `p << 7` a pass, then stores it again.
+    let mut passes = 0;
+    let arm4 = loop {
+        let d = barra_direct(&mut st, 4, seats());
+        if !d.hold {
+            break d;
+        }
+        assert_eq!(d.tr_z_store, None);
+        passes += 1;
+    };
+    assert_eq!(passes, (0xFFFF - 0x801) / (MODULE_DRAIN_PER_TICK << 7));
+    assert_eq!(arm4.tr_z_store, Some(0xFFFF));
+}
+
 /// Mystic Shield's arm 0 frames the caster from behind and seeds the
 /// countdown; arm 1 holds on it and re-arms `scalar << 8` as it passes. The
 /// `cort_mystic_shield_mid_cast` capture's word (`496` left in arm 1) is

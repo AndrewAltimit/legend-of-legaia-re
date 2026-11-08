@@ -430,6 +430,11 @@ pub struct ArmDirection {
     /// The chained streak ribbons (`FUN_801E1D98`) the arm draws on this
     /// pass (PROT 0909's arm-11 bolt and arm-12 ring), for this tick only.
     pub ribbons: Option<capture::CastRibbonRing>,
+    /// A straight store of the TR z global `0x800840C0` this pass, in the
+    /// global's own (prescaled) units, landed after [`Self::shot`]. The tween
+    /// builder holds its endpoints in halfwords, so a stored word past
+    /// `0x7FFF` cannot ride a cut (Barra's `0xFFFF` in arms 3 and 4).
+    pub tr_z_store: Option<i32>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -949,6 +954,7 @@ impl ArmDirection {
         drift: None,
         drift_after_shot: false,
         ribbons: None,
+        tr_z_store: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -966,6 +972,7 @@ impl ArmDirection {
         drift: None,
         drift_after_shot: false,
         ribbons: None,
+        tr_z_store: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
