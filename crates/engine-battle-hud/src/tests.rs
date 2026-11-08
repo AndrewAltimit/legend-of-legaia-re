@@ -914,3 +914,21 @@ fn death_game_labels_centre_each_cards_two_lines() {
         assert_eq!((*x, *y), (col as i32 * 0x4C + 0x30 - (width >> 1), wy));
     }
 }
+
+/// A line a cast module composes at run time leads with its subject's
+/// display name (Nighto's and Aluru's victim, `FUN_8003CA78` of `+0x1BC`
+/// ahead of the module's tail); a line without a subject stands alone.
+#[test]
+fn the_message_bar_leads_a_composed_line_with_its_subject() {
+    let mut w = battle_world(3);
+    w.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
+        text: " tail.".into(),
+        owner: 0,
+        subject: Some(3),
+    });
+    assert_eq!(battle_message_bar(&w).as_deref(), Some("Gimard tail."));
+    if let Some(c) = w.battle.steal_caption.as_mut() {
+        c.subject = None;
+    }
+    assert_eq!(battle_message_bar(&w).as_deref(), Some(" tail."));
+}

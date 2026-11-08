@@ -88,8 +88,10 @@ const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
 const OZMA_LADDER_FADE_DECODED_SITE: u32 = 0x801F_907C;
 /// Modules whose message-bar raise a hand port already makes: PROT 0940
 /// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
-/// composed line) and 0954 (Fatal Decision, ported whole).
-const MESSAGE_BARS_PORTED_BY_HAND: [u32; 3] = [940, 941, 954];
+/// composed line), 0954 (Fatal Decision, ported whole) and the two that
+/// compose a victim's line in arm 0 or arm `0x11` and raise it arms later,
+/// 0907 (Nighto) and 0916 (Aluru) (`World::apply_cast_kill_results`).
+const MESSAGE_BARS_PORTED_BY_HAND: [u32; 5] = [907, 916, 940, 941, 954];
 /// Module bodies whose message-bar raise a hand port makes because the
 /// decode cannot see the branch it sits on: PROT 0955's Kiss of Death raises
 /// its line on the roll's miss leg only, and both legs leave arm 4 for arm 5.
@@ -634,7 +636,9 @@ impl World {
     /// roster's names, under the acting seat. The bar spawns at seat A and
     /// glides to seat B ([`legaia_engine_battle_loop::battle_state::BattleState::message_bar_glide`]).
     /// A line that is empty in the image is a buffer the module composes at
-    /// run time, which this does not model; nothing is raised for it.
+    /// run time; nothing is raised for it here. PROT 0907's and 0916's are
+    /// composed by hand ([`Self::raise_composed_message_bar`], from
+    /// [`Self::apply_cast_kill_results`]).
     ///
     /// PORT: FUN_801D8DE8 (element `0x5B` raised by a cast module arm, mode `0`)
     /// PROT 0956's arm-2 caption on the victim it marks
@@ -658,7 +662,16 @@ impl World {
         }
     }
 
-    pub(crate) fn raise_module_message_bar(&mut self, entry: u32, va: u32) {
+    /// Raise the message bar with a line a module composes at run time: the
+    /// `subject` actor's display name (`+0x1BC`, copied into the module's
+    /// buffer by `FUN_8003CA78`) followed by the line at `va` in module
+    /// `entry`'s image (appended by `FUN_8003CAC4`), or the line alone with
+    /// no subject. The HUD resolves the name
+    /// (`engine-battle-hud::battle_message_bar`). Nothing is raised without
+    /// the module's image.
+    ///
+    /// REF: FUN_8003CA78, FUN_8003CAC4
+    pub(crate) fn raise_composed_message_bar(&mut self, entry: u32, va: u32, subject: Option<u8>) {
         let Some(raw) = self
             .casting
             .effect_pool
@@ -674,10 +687,15 @@ impl World {
         self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
             text,
             owner: self.battle_ctx.active_actor,
+            subject,
         });
         self.battle.message_bar_glide = Some(
             legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
         );
+    }
+
+    pub(crate) fn raise_module_message_bar(&mut self, entry: u32, va: u32) {
+        self.raise_composed_message_bar(entry, va, None);
     }
 }
 

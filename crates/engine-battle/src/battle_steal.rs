@@ -284,6 +284,14 @@ pub struct StealCaption {
     pub text: String,
     /// `battle_ctx.active_actor` when it was raised.
     pub owner: u8,
+    /// An actor whose display name (`+0x1BC`) leads the line: a module that
+    /// composes its line at run time copies the victim's name into its
+    /// buffer and appends its own string (`FUN_8003CA78` then `FUN_8003CAC4`,
+    /// PROT 0907 / 0916). The name is the HUD's to resolve, since it carries
+    /// the twin letter the plaques use; `None` for a line that stands alone.
+    ///
+    /// REF: FUN_8003CA78 (the name copy), FUN_8003CAC4 (the tail append)
+    pub subject: Option<u8>,
 }
 
 #[cfg(test)]

@@ -480,6 +480,11 @@ pub const ULTIMATE_RAVE_TERMINAL_ARM: u8 = 11;
 /// `0x801F74D4` and arm 11's entry at `0x801F7764`.
 pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 10;
 
+/// PROT 0924's arm 9 (head-table word 9, `0x801F7480`): on its pass the kill
+/// path adds one to the caster's Monsters Defeated word (`0x801F7544..
+/// 0x801F758C`), any other path puts up the module's title.
+pub const ULTIMATE_RAVE_TITLE_ARM: u8 = 9;
+
 /// PROT 0924's arm-0 verdict: `rand() & 0x7F == 0` raises the kill word
 /// `0x801F7C4C` (`0x801F6B0C..0x801F6B2C`), so one cast in 128 kills.
 pub fn ultimate_rave_kill_verdict(roll: u32) -> bool {

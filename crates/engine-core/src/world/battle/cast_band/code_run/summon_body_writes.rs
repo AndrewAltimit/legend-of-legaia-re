@@ -57,6 +57,77 @@ impl World {
         }
     }
 
+    /// The instant-kill arms' records and result lines, on the pass that
+    /// leaves the arm. Each adds one to the caster's Monsters Defeated word
+    /// (record `+0x9C`, indexed by `0x8007BD10[ctx[+0x13]]`) itself, because
+    /// none of these victims plays its knockdown, so the death arm of
+    /// `FUN_8004AD80` never credits them:
+    ///
+    /// | module | arm | credit | message bar |
+    /// |---|---|---|---|
+    /// | 0907 Nighto | 0 (the verdict draw, [`Self::nighto_verdict`]) | the kill leg (`0x801F6F0C`) | arm 13's pass (`0x801F7DDC`) for every outcome: the victim's name and " is confused." / " has been annihilated.", or "No effect." alone |
+    /// | 0916 Aluru | `0x11`, the kill pass (`0x801F7E48`) | the kill | arm `0x13`'s pass to `0xFF` on the kill (`0x801F87BC`): the victim's name and its line `0x801F8FEC` |
+    /// | 0918 Kemaro | `0x12`, a roll reaching the victim's HP (`0x801F8810`) | in the fold ([`Self::fold_cast`]) | - |
+    /// | 0924 Ultimate Rave | 9, the kill path (`0x801F7580`) | the kill | - |
+    /// | 0931 Jedo | 29 off a scripted fight (`0x801F864C`) | each monster seat with HP | - |
+    ///
+    /// Ultimate Rave is the one that also stages its victim's knockdown
+    /// (`+0x1DA = +0x1F1` at `0x801F76A4`) on HP `0`, so its kill reaches the
+    /// death arm as well and counts twice.
+    ///
+    /// REF: FUN_8004AD80 (the death arm's credit, `0x8004B184..0x8004B1F4`)
+    /// PORT: overlay_summon_nighto_0907_801f69e8 (the `0x5B` raise at `0x801F7DDC`)
+    /// PORT: overlay_summon_aluru_0916_801f69f8 (`0x801F7E48..0x801F7E70`, `0x801F87B8..0x801F87D0`)
+    /// PORT: overlay_stager_ultimate_rave_0924_801f6a18 (`0x801F7544..0x801F758C`)
+    /// PORT: overlay_summon_jedo_0931_801f6a58 (`0x801F8558..0x801F8658`)
+    pub(in crate::world::battle::cast_band) fn apply_cast_kill_results(
+        &mut self,
+        entry: u32,
+        phase_in: u8,
+        passed: bool,
+        caster_slot: u8,
+        victim_slot: u8,
+    ) {
+        use legaia_engine_cast::cast_module_camera as cam;
+        use legaia_engine_cast::seru_magic_ticks as sm;
+        if !passed || caster_slot >= self.party.party_count {
+            return;
+        }
+        let st = self.casting.module_cam;
+        let victim = st.victim_slot.unwrap_or(victim_slot);
+        let killed = st.kill == Some(true);
+        match entry {
+            907 if phase_in == sm::NIGHTO_FORK_ARM => {
+                if let Some(credit) = self.casting.module_nighto_outcome.map(|o| o.arm0_credit()) {
+                    self.raise_composed_message_bar(
+                        entry,
+                        credit.line,
+                        credit.named.then_some(victim),
+                    );
+                }
+            }
+            cam::ALURU_ENTRY if killed && phase_in == cam::ALURU_BLAST_ARM => {
+                self.credit_monster_defeated(caster_slot);
+            }
+            cam::ALURU_ENTRY if killed && phase_in == cam::ALURU_SPREAD_ARM => {
+                self.raise_composed_message_bar(entry, cam::ALURU_KILL_LINE, Some(victim));
+            }
+            legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY
+                if killed
+                    && phase_in
+                        == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_TITLE_ARM =>
+            {
+                self.credit_monster_defeated(caster_slot);
+            }
+            JEDO_ENTRY if self.battle_ctx.scripted_fight == 0 && phase_in == cam::JEDO_HIT_ARM => {
+                for _ in self.living_monster_slots() {
+                    self.credit_monster_defeated(caster_slot);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// PROT 0916's part kills and tint stores.
     ///
     /// | Arm | Edge | Store |

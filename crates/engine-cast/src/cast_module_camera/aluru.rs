@@ -518,6 +518,13 @@ pub const ALURU_KILL_THRESHOLD: u32 = 8;
 /// `0x801F6E84`).
 pub const ALURU_KILL_XP: u32 = 0xC;
 
+/// The tail arm `0x11`'s kill pass appends to the victim's name for the
+/// message bar (`FUN_8003CAC4(0x801F9014, 0x801F8FEC)` at `0x801F7E64`); arm
+/// `0x13` raises the bar on its way to `0xFF` (`0x801F87BC`).
+///
+/// REF: FUN_8003CAC4
+pub const ALURU_KILL_LINE: u32 = 0x801F_8FEC;
+
 /// PROT 0916's arm-0 verdict: `true` kills. `roll` is the `FUN_80056798`
 /// draw, `None` where the arm skips it - a scripted fight
 /// (`ctx[+0x287]`) against a record with `+0x20` set and a victim without

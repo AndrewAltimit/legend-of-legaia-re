@@ -96,7 +96,11 @@ impl World {
         })
     }
 
-    /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6D28`, PROT 0907 arm 0)
+    /// The draw also runs arm 0's credits
+    /// ([`legaia_engine_cast::seru_magic_ticks::NightoOutcome::arm0_credit`]):
+    /// the spell XP and, on a kill, the caster's Monsters Defeated word.
+    ///
+    /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6F28`, PROT 0907 arm 0)
     pub(in crate::world::battle::cast_band) fn nighto_verdict(
         &mut self,
         caster_slot: u8,
@@ -131,6 +135,16 @@ impl World {
             extra_roll,
         });
         self.casting.module_nighto_outcome = Some(outcome);
+        // Arm 0's tail on the same pass: the spell XP for the outcome, the
+        // kill leg's Monsters Defeated credit. The cast folds nothing (the
+        // module rolls no damage), so this is the cast's whole gain.
+        if caster_slot < self.party.party_count {
+            let credit = outcome.arm0_credit();
+            self.accrue_summon_spell_xp(caster_slot, spell_id, credit.spell_xp);
+            if credit.defeated {
+                self.credit_monster_defeated(caster_slot);
+            }
+        }
         outcome
     }
 

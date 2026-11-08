@@ -267,12 +267,7 @@ impl World {
                 if let Some(seat) =
                     legaia_engine_battle::battle_steal::defeat_credit(seat, victim_flags)
                 {
-                    let rslot = self.party_roster_slot(usize::from(seat));
-                    if let Some(rec) = self.party.roster.members.get_mut(rslot) {
-                        let mut r = rec.battle_records();
-                        r.monsters_defeated = r.monsters_defeated.wrapping_add(1);
-                        rec.set_battle_records(r);
-                    }
+                    self.credit_monster_defeated(seat);
                 }
                 self.resolve_monster_death_spoils(slot);
             }
@@ -310,6 +305,23 @@ impl World {
             // A dead actor whose chain has nowhere to go holds its frame.
             None if playing == 4 && hp_zero => {}
             None => Self::end_battle_reaction(&mut self.actors[slot]),
+        }
+    }
+
+    /// One more on party seat `seat`'s Monsters Defeated word (record
+    /// `+0x9C`, `lw` / `addiu 1` / `sw 0x664` off `0x80084140` indexed by
+    /// `0x8007BD10[seat]`). Two kinds of site make the store: the death arm
+    /// above, and the instant-kill arms of the cast modules
+    /// (`World::credit_cast_kill`). A seat past the party has no record.
+    pub(in crate::world) fn credit_monster_defeated(&mut self, seat: u8) {
+        if seat >= self.party.party_count {
+            return;
+        }
+        let rslot = self.party_roster_slot(usize::from(seat));
+        if let Some(rec) = self.party.roster.members.get_mut(rslot) {
+            let mut r = rec.battle_records();
+            r.monsters_defeated = r.monsters_defeated.wrapping_add(1);
+            rec.set_battle_records(r);
         }
     }
 

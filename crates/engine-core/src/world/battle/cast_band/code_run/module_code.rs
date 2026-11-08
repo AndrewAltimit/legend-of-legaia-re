@@ -1350,6 +1350,11 @@ impl World {
                         Vec::new()
                     };
                     let nighto_outcome = if entry == 907 {
+                        // The body holds no damage call, so a party's cast
+                        // folds nothing: retail's Gobu Gobu keeps its 76 HP
+                        // through a confused Nighto
+                        // (`party_basic_attack_vs_gobu_gobu`, cast 0x85).
+                        self.casting.module_skips_fold |= caster_slot < self.party.party_count;
                         self.nighto_verdict(caster_slot, victim_slot, spell_id)
                     } else {
                         ticks_a::NightoOutcome::ConfuseResisted
@@ -2065,6 +2070,13 @@ impl World {
             caster_slot,
             victim_slot,
             seat_slot,
+        );
+        self.apply_cast_kill_results(
+            entry,
+            phase_in,
+            ctx.phase != phase_in,
+            caster_slot,
+            victim_slot,
         );
         if entry == 908 {
             self.apply_summon_pre_hits(

@@ -127,6 +127,20 @@ pub fn nighto_outcome(roll: &NightoRoll) -> NightoOutcome {
     }
 }
 
+/// What PROT 0907's arm 0 credits for its outcome
+/// ([`NightoOutcome::arm0_credit`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NightoCredit {
+    /// Added to the caster's XP word for the cast spell.
+    pub spell_xp: u32,
+    /// One more on the caster's Monsters Defeated word.
+    pub defeated: bool,
+    /// The module VA of the message bar's line (or its tail).
+    pub line: u32,
+    /// The victim's name leads the line.
+    pub named: bool,
+}
+
 /// Which way PROT 0907's arm-13 fork went, and whether the resist word
 /// suppressed its writes.
 ///
@@ -155,7 +169,58 @@ pub enum NightoOutcome {
     ConfuseResisted,
 }
 
+/// The line PROT 0907's arm 0 leaves in `0x800774AC` for a resisted cast
+/// (`0x801F6DA8..0x801F6DB0`, stored straight at `0x801F6F28`).
+pub const NIGHTO_RESIST_LINE: u32 = 0x801F_8528;
+
+/// The tail arm 0 appends to the victim's name on the confuse leg
+/// (`FUN_8003CAC4` at `0x801F6E48`).
+pub const NIGHTO_CONFUSE_LINE: u32 = 0x801F_8518;
+
+/// The tail arm 0 appends to the victim's name on the kill leg
+/// (`FUN_8003CAC4` at `0x801F6EC4`).
+pub const NIGHTO_KILL_LINE: u32 = 0x801F_8500;
+
 impl NightoOutcome {
+    /// What PROT 0907's arm 0 credits once it has both words
+    /// (`0x801F6D30..0x801F6F28`): the spell XP it adds to the caster's word
+    /// for the cast spell (`+0x5D0`: `+4` resisted at `0x801F6D9C`, `+8` on
+    /// the confuse leg at `0x801F6E38`, `+0xC` on the kill leg at
+    /// `0x801F6EB4`, each skipped when the special-battle word is up), whether
+    /// it adds one to the caster's Monsters Defeated word (`+0x9C`, the kill
+    /// leg only, `0x801F6F0C..0x801F6F18`), and the message bar's line: the
+    /// module VA and whether the victim's name leads it (`FUN_8003CA78` of
+    /// `+0x1BC` into the buffer `0x801F8544` ahead of the tail).
+    ///
+    /// The resist word is tested first, so a resisted kill credits as a
+    /// resist.
+    ///
+    /// REF: FUN_8003CA78, FUN_8003CAC4 (the line's name copy and tail append)
+    pub fn arm0_credit(self) -> NightoCredit {
+        if self.resisted() {
+            NightoCredit {
+                spell_xp: 4,
+                defeated: false,
+                line: NIGHTO_RESIST_LINE,
+                named: false,
+            }
+        } else if self.deadly() {
+            NightoCredit {
+                spell_xp: 0xC,
+                defeated: true,
+                line: NIGHTO_KILL_LINE,
+                named: true,
+            }
+        } else {
+            NightoCredit {
+                spell_xp: 8,
+                defeated: false,
+                line: NIGHTO_CONFUSE_LINE,
+                named: true,
+            }
+        }
+    }
+
     /// Did the kill word read zero? This is the arm-13 fork, and nothing
     /// else.
     pub fn deadly(self) -> bool {

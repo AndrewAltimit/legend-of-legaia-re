@@ -10,6 +10,7 @@ mod band_flow;
 mod creature_seat_reuse;
 mod fight_kind_gates;
 mod hit_folds;
+mod kill_records;
 mod module_completion;
 mod module_geometry;
 mod module_rumble;
