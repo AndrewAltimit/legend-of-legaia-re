@@ -249,7 +249,7 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. The recorded
 /// `creature.csv` of each cast reads the seat's node first on the arm after.
-/// PROT 0913 (`0x801F6D14`) and 0914 (`0x801F6C98`) poll the creature stream
+/// PROT 0910 (`0x801F6CDC`), 0913 (`0x801F6D14`) and 0914 (`0x801F6C98`) poll the creature stream
 /// (`FUN_8003F2B8(1)`, `bne` to the busy return) right ahead of the
 /// installer, on the arm that is also the module's CD poll, so they seat as
 /// the poll lets the arm through: seated on entry, the creature stood in the
@@ -259,8 +259,8 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// it keeps the entry seat.
 /// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
 /// pass, so it seats as it is entered and the hide lands on the seat.
-pub const SEATS_ON_PASS: [u32; 17] = [
-    904, 905, 907, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
+pub const SEATS_ON_PASS: [u32; 18] = [
+    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -295,5 +295,14 @@ mod seat_due_tests {
     fn vera_seats_as_arm_five_jumps_to_eight() {
         assert!(!seat_due(Some(905), 5, 5));
         assert!(seat_due(Some(905), 5, 8));
+    }
+
+    /// PROT 0910's arm 2 is its CD poll and its seat: `FUN_8003F2B8(1)`
+    /// returns busy (`bne` at `0x801F6CE4`) ahead of `jal 0x801F19EC` at
+    /// `0x801F6D10`, so the creature waits out the modelled drive.
+    #[test]
+    fn swordie_seats_as_its_poll_lets_arm_two_through() {
+        assert!(!seat_due(Some(910), 2, 2));
+        assert!(seat_due(Some(910), 2, 3));
     }
 }
