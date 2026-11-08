@@ -153,6 +153,7 @@ mod tests {
             },
             depth_raw: 0xC00,
             victim_radius: 0x200,
+            caster_scale: 0x1000,
             ..Default::default()
         };
         let a0 = water_column_camera(&mut st, 0, seats);

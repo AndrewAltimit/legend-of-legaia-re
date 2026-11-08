@@ -392,7 +392,7 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 || entry == 935 {
+            if entry == 944 || entry == 935 || entry == 938 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             // PROT 0964's strike picks its opening record off the last roll.
@@ -1986,6 +1986,37 @@ impl World {
                         && !(arm.party_skip_victim && slot == victim_slot)
                     {
                         self.apply_capture_seat_writes(slot, arm.party_write);
+                    }
+                }
+            }
+            // PROT 0938's breath pushes the whole party row back, a seat at a
+            // time along its bearing from the caster, on every pass of arm 1.
+            if let Some(units) = arm.party_shove {
+                let (cx, cz) = self
+                    .actors
+                    .get(usize::from(caster_slot))
+                    .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
+                for slot in 0..self.party.party_count {
+                    let Some(a) = self.actors.get_mut(usize::from(slot)) else {
+                        continue;
+                    };
+                    let heading = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                        cz,
+                        cx,
+                        a.move_state.world_z,
+                        a.move_state.world_x,
+                    )
+                    .wrapping_add(0x800)
+                        & 0xFFF;
+                    let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+                    // Retail's `2 * step` a frame is `2` a vsync here.
+                    let by = i32::from(units);
+                    let dx = ((i32::from(sin) * by) >> 12) as i16;
+                    let dz = ((i32::from(cos) * by) >> 12) as i16;
+                    a.move_state.world_x = a.move_state.world_x.wrapping_add(dx);
+                    a.move_state.world_z = a.move_state.world_z.wrapping_add(dz);
+                    if let Some((bx, bz)) = a.battle.seat {
+                        a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
                     }
                 }
             }

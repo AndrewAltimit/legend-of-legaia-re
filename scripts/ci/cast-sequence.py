@@ -40,6 +40,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = "release-test"
+# Ticks `gate_film_skip` may drop: a frame step of 4 plus an overrun.
+MAX_GATE_FILM_SKIP = 8
 # `LEGAIA_CAST_SEQ_EXE` scores another build (a before / after pair) without
 # rebuilding over the one in the tree.
 EXE = Path(os.environ.get("LEGAIA_CAST_SEQ_EXE") or REPO / "target" / PROFILE / "legaia-engine")
@@ -685,7 +687,9 @@ def gate_film_skip(out: Path) -> int:
     # A retail first row still on the state has not run its first pass, as the
     # engine's gate tick has not; only a recording whose first row has left the
     # state is a pass ahead.
-    return lead(engine, first) if lead(retail, first) == 0 else 0
+    # One frame at most separates the two: a held camera (Jette's Shadow Break
+    # stands still for its first arms) would otherwise count them all.
+    return min(lead(engine, first), MAX_GATE_FILM_SKIP) if lead(retail, first) == 0 else 0
 
 
 def main() -> int:

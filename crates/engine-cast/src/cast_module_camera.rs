@@ -106,6 +106,9 @@ pub struct ModuleCamSeats {
     /// size its depth by (PROT 0929's arm-16 exit: `10 * r`, at most
     /// `0x1800`).
     pub victim_radius: i16,
+    /// The caster's model scale `*(caster[+0x22C]) + 0x72`: PROT 0938's
+    /// breath seats its records at it.
+    pub caster_scale: u16,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -1024,6 +1027,7 @@ mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 mod capture_spawns;
+mod chaos_breath;
 mod chaos_flare;
 pub mod creature;
 mod creature_spawns;
@@ -1090,6 +1094,7 @@ pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_c
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
+pub use chaos_breath::{CHAOS_BREATH_BODY, chaos_breath_camera};
 pub use chaos_flare::{
     CHAOS_FLARE_BODY, CHAOS_FLARE_BURST_RECORDS, CHAOS_FLARE_CHARGE_RECORDS, chaos_flare_camera,
 };

@@ -22,6 +22,7 @@ fn seats() -> ModuleCamSeats {
         depth_raw: 0,
         caster_latch: 0,
         victim_radius: 0,
+        caster_scale: 0x1000,
     }
 }
 

@@ -166,6 +166,7 @@ mod tests {
             },
             depth_raw: 3000,
             victim_radius: 300,
+            caster_scale: 0x1000,
             action: 0x58,
             ..Default::default()
         }

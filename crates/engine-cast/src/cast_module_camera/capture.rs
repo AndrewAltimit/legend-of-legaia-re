@@ -152,6 +152,10 @@ pub struct CaptureCamArm {
     /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34])
     /// + 0x800` into `+0x46` (PROT 0957's arm 5, `0x801F75A4..0x801F75CC`).
     pub party_faces_caster: bool,
+    /// Units a vsync every party seat is pulled along its bearing from the
+    /// caster plus `0x800`, on every pass of the arm:
+    /// PROT 0938's `0x4E` arm 1 (`0x801F74C0..0x801F7564`).
+    pub party_shove: Option<i16>,
     /// The pass seats [`crate::cast_module_camera::STORM_SCATTER_PAIRS`] pairs of
     /// [`crate::cast_module_camera::STORM_SCATTER_RECORDS`] on `rand()` points
     /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 255`, `z = 0x100`.
@@ -303,6 +307,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (961, DEAD_END_CRISIS_BODY) => Some(dead_end_crisis_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
+        (938, super::CHAOS_BREATH_BODY) => Some(super::chaos_breath_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),

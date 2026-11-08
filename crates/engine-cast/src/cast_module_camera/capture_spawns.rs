@@ -872,6 +872,9 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         935..=937 | 939 | 953 => true,
+        // Chaos Breath seats its two records through its director; Mystic
+        // Circle's tables are the image's own.
+        938 if body == Some(super::CHAOS_BREATH_BODY) => true,
         964 => true,
         947 | 948 => true,
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
@@ -917,7 +920,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         935..=937 | 939 | 953 => true,
         964 => true,
-        938 => body == Some(0x801F_69EC),
+        938 => matches!(body, Some(0x801F_69EC | super::CHAOS_BREATH_BODY)),
         940 => matches!(body, Some(0x801F_7240 | super::GLARE_BODY)),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=949 => true,
@@ -1089,6 +1092,9 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0938's per-arm tables are Mystic Circle's; Chaos Breath's two
+        // records are its director's.
+        (938, _) if action == 0x4E => &[],
         // PROT 0940's per-arm tables are Mystic Shield's; Glare seats its
         // sphere on arm 0 alone.
         (940, 0) if action == GLARE_ACTION => &E940_GLARE_0,
