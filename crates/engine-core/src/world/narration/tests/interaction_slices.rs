@@ -744,3 +744,41 @@ fn a_press_a_script_box_takes_is_not_a_talk() {
     w.step_helper_contexts();
     assert!(w.dialog.input_consumed, "the box spent the press");
 }
+
+/// `B4 <id> 3x` in a talk installs the ambient tree on the named actor, not
+/// on the talker: the arm reads the swapped-in actor's `+0x14` / `+0x18` and
+/// a `34 1x` light seats on it. `jagaroom`, `nilboa` and `noaru` stage these
+/// on their helpers.
+#[test]
+fn a_talks_effect_ops_land_on_the_named_placement() {
+    let mut w = talk_world_with_target();
+    run_talk(
+        &mut w,
+        vec![
+            0xB4, 0x26, 0x10, 0x20, 0x20, 0x00, 0x6A, 0x03, 0x88, 0x01, 0x80, 0x00, 0x00,
+            0x00, // light
+            0x21,
+        ],
+    );
+    assert_eq!(
+        w.script_actors
+            .lights
+            .iter()
+            .map(|l| l.parent)
+            .collect::<Vec<_>>(),
+        vec![legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(2)],
+        "the light seats on placement 0x26"
+    );
+}
+
+/// The Records page prints `_DAT_800845DC`, which only op `4C EE` (`edlast`)
+/// writes: a retail run reads zero there until the ending.
+#[test]
+fn the_play_clock_snapshot_is_the_records_word() {
+    let mut w = World::new();
+    w.install_field_player(0);
+    w.clock.play_time_seconds = 4242;
+    w.start_inline_dialogue(vec![0x4C, 0xEE, 0x21]);
+    w.step_inline_dialogue(false, false, false);
+    assert_eq!(w.clock.records_play_seconds, 4242);
+}

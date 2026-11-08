@@ -16,6 +16,10 @@ pub struct FrameClock {
     ///
     /// REF: FUN_80016B6C
     pub play_time_seconds: u32,
+    /// The play time the Records page prints (`_DAT_800845DC`, in whole
+    /// seconds here): zero until op `4C EE` copies the running counter into
+    /// it, in `edlast`. The page's only reader is `FUN_801ED710`.
+    pub records_play_seconds: u32,
     /// Ticks (vsyncs) of the play counter not yet folded into
     /// [`Self::play_time_seconds`], `0..60`. Retail keeps the counter in
     /// vsyncs and divides at display time; the port keeps seconds plus this
@@ -148,6 +152,7 @@ impl FrameClock {
     pub fn new() -> Self {
         Self {
             play_time_seconds: 0,
+            records_play_seconds: 0,
             play_tick_phase: 0,
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,

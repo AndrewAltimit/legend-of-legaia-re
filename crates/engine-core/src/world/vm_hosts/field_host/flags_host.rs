@@ -68,6 +68,13 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
         self.world.system_flag_clear(idx);
     }
 
+    // Op `4C EE` (`edlast`): `_DAT_800845DC = _DAT_80084570`, the frozen play
+    // time the ending's Records page prints while the counter runs on.
+    // REF: FUN_801ED710
+    fn snapshot_play_clock(&mut self) {
+        self.world.clock.records_play_seconds = self.world.clock.play_time_seconds;
+    }
+
     fn system_flag_test(&self, idx: u16) -> bool {
         self.world.script_system_flag_test(idx)
     }

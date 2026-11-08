@@ -321,7 +321,7 @@ The live game state a save is composed from: the save write copies `0x1A18` byte
 | `0x800845B8` | u32 | `4C D3` clock **duration** (`+0x478`); non-zero = running. |
 | `0x800845BC` | u32 | `4C D3` clock **threshold** (`+0x47C`). |
 | `0x800845C0` | u32 | `4C D3` clock **flag pair** (`+0x480`): expiry flag in the high half, below-threshold flag in the low half. Played memory-card saves hold `0x03960382` after the Floating Castle and `0x00070007` after the Fortress collapse. |
-| `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
+| `0x800845DC` | u32 | Records-page play time (`FUN_801ED710`), zero until op `4C EE` copies `_DAT_80084570` into it in `edlast`; `0` in played retail states with the live counter running. Engine: `FrameClock::records_play_seconds`. |
 | `0x80084624` / `0x80084628` / `0x8008462C` | 3 x i16/i32 | World-map **return triple**, stored by the region re-read `FUN_801D9E1C` (row `0x8007BD60`). `0x80084628` is also written by field-VM op `0x4C` nibble-8 sub-8. |
 | `0x800846C4` | u32 | Saved **Auto / Command** battle-preference word - inside the saved block, alongside the button-mask config at `0x800846D0`. |
 | `0x800846D0..DC` | 4 × u32 | Button-mask config words: `0x44` Cross\|L1, `0x21` Circle\|L2, `0x10` Triangle, `0x48` Cross\|R1 (the field run button, tested against the held mask `_DAT_8007B850`). Seeded once by the new-game data init `FUN_80034A6C`; inside the saved block; no other writer. |

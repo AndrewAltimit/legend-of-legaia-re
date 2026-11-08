@@ -702,7 +702,10 @@ impl World {
             // parks villagers with `A3 <id> 7F 7F` and `town0c` / `tunnelc` /
             // `balden` place helpers for the next beat.
             // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC), FUN_8003C83C
-            let seat_target = (op == 0x23 && !player_seat)
+            // `B4 <id> ..` lights and ambient installs are the same shape:
+            // the arm works off the swapped-in `s5`. `jagaroom` `P1[8]`,
+            // `nilboa` `P1[6]` and `noaru` `P1[6]` stage them on their helpers.
+            let seat_target = (matches!(op, 0x23 | 0x34) && !player_seat)
                 .then(|| {
                     crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc)
                 })

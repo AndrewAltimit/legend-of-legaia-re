@@ -135,7 +135,7 @@ pub fn records_draws_for_world(
             world.party.record_tally.battles,
             world.party.record_tally.escapes,
         ),
-        world.clock.play_time_seconds,
+        world.clock.records_play_seconds,
         (slots[0], slots[1]),
     );
     ui::records_screen_draws_for(font, &records_view(&model), pen)
