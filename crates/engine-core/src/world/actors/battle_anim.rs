@@ -357,7 +357,7 @@ impl World {
                 || self.casting.summon_actor_slot == Some(i as u8))
                 && self.actors[i]
                     .battle_node_colour_zero
-                    .unwrap_or_else(|| self.battle_body_hidden(i))
+                    .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
             {
                 continue;
             }
@@ -733,7 +733,7 @@ impl World {
                 )
                 .map(|p| p.view_z >= legaia_engine_battle_vm::battle_actor_tick::NEAR_REJECT_DEPTH);
             if drawn_deep == Some(true) {
-                let zero = self.battle_body_hidden(i);
+                let zero = self.battle_node_colour_is_zero(i);
                 self.actors[i].battle_node_colour_zero = Some(zero);
             }
         }

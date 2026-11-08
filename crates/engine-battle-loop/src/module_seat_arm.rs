@@ -197,7 +197,13 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F70A0..0x801F70CC` (Z: see above).
         929 => seat(Lit(0), Keep, 0x800),
         // `0x801F6EA0..0x801F6EB4`.
-        930 => seat(Lit(0), Lit(0x800), 0x800).rate(2),
+        // `0x801F6EA0..0x801F6EC0`, the hide with it: arm 4's way out shows the
+        // creature, and a hidden seat holds its first frames (the walker's
+        // zero-colour skip).
+        930 => seat(Lit(0), Lit(0x800), 0x800)
+            .rate(2)
+            .colour(0)
+            .tint(0xFF, 0),
         // `0x801F6E3C..0x801F6E60`.
         931 => seat(Lit(0), Lit(-0x800), 0).rate(4),
         // `0x801F6EC4..0x801F6EE8`.
@@ -259,8 +265,8 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// it keeps the entry seat.
 /// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
 /// pass, so it seats as it is entered and the hide lands on the seat.
-pub const SEATS_ON_PASS: [u32; 18] = [
-    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
+pub const SEATS_ON_PASS: [u32; 19] = [
+    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930, 931, 932, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -276,6 +282,16 @@ pub fn seat_due(prot_entry: Option<u32>, arm: u8, phase: u8) -> bool {
 #[cfg(test)]
 mod seat_due_tests {
     use super::*;
+
+    /// PROT 0930's seat arm hides the creature it stands (`0x801F6EB8..
+    /// 0x801F6EC0`), behind its CD poll (`0x801F6D90`).
+    #[test]
+    fn horn_seats_on_its_pass_and_hidden() {
+        assert!(!seat_due(Some(930), 3, 3));
+        let w = seat_arm_write(930).expect("seat row");
+        assert_eq!(w.colour, Some(0));
+        assert_eq!(w.tint, Some((0xFF, 0)));
+    }
 
     /// A gate ahead of the installer holds the seat to the arm's pass; an arm
     /// with none seats as it is entered.

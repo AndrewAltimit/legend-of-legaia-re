@@ -9,6 +9,13 @@ use legaia_engine_mode::mode::SceneMode;
 /// fight's stage (`sltiu v0,a0,0x84` at `0x80046F04`, then
 /// `jal 0x800513F0` at `0x80046F74` while `ctx[+0x11]` is clear).
 pub(crate) const ENTRY_STAGE_LOAD_COUNTER: u32 = 0x84;
+/// The modules whose arms store `+0x21C = 2` and `+0x225 = 2` together on
+/// their creature: Gimard `0x801F75E4`, Vera `0x801F7BD8`, Nighto `0x801F7E5C`,
+/// Zenoir `0x801F7D94`, Viguro `0x801F78F8`, Mushura `0x801F7D98`, Barra
+/// `0x801F7FE4`, Palma `0x801F7CA8`, Ozma `0x801F9184`. Kemaro's `2`
+/// (`0x801F89B0`) stands alone and keeps arm 2's clip gate.
+const CREATURE_FADE_MODULES: [u32; 9] = [903, 905, 907, 908, 909, 915, 917, 928, 934];
+
 /// The stage loader's entry fade-in length (`li v0,0x14` at `0x80051CFC`).
 pub(crate) const BATTLE_ENTRY_FADE_FRAMES: i16 = 0x14;
 /// The id both entry fades are spawned with (`li a1,0x1`), their OT layer.
@@ -1041,6 +1048,16 @@ impl World {
             })
             .collect();
         let creature_seat = self.casting.summon_actor_slot.map(usize::from);
+        // A module that fades its creature stores `+0x225 = 2` beside the
+        // flag (`sb v0,0x21c` / `sb v0,0x225` on seat 7), which opens arm 2's
+        // gate for a clip other than the idle or knockdown: Gimard's walk
+        // fades as it goes, and stops when its word reaches zero.
+        let creature_fades = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .and_then(|st| self.cast_module_for(st.spell_id))
+            .is_some_and(|e| CREATURE_FADE_MODULES.contains(&e));
         for (i, (a, (on_knockdown, cached_knockdown))) in
             self.actors.iter_mut().zip(knockdown).enumerate()
         {
@@ -1096,7 +1113,11 @@ impl World {
                 } else {
                     cached_knockdown.unwrap_or(0xFF)
                 },
-                captured: b.capture_state != 0,
+                captured: b.capture_state != 0
+                    || (creature_fades
+                        && creature_seat == Some(i)
+                        && b.render_flag
+                            == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE),
             };
             let (next, fx) = tint_sm_step(b.render_flag, words, fade, 1);
             b.render_color = next.color;

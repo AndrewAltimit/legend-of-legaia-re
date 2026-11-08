@@ -4815,6 +4815,18 @@ rate `4` and releases that window (`sb zero,0x21B` / `sh zero,0x176` at
 wait for clip 2 lands. Without the release the window rewound clip 0 on
 frames 0..1 for some two thousand vsyncs.
 
+A module that lets its creature go stores `+0x21C = 2` with `+0x225 = 2`
+beside it on seat 7 (Gimard `0x801F75E4`, Vera `0x801F7BD8`, Nighto `0x801F7E5C`,
+Zenoir `0x801F7D94`, Viguro `0x801F78F8`, Mushura `0x801F7D98`, Barra `0x801F7FE4`,
+Palma `0x801F7CA8`, Ozma `0x801F9184`). The `+0x225` store opens arm 2's fade gate
+in the tint pass whatever clip plays, so Gimard's walk fades as it goes, and the
+drained word stops the node ticking: `FUN_80047430`'s zero-colour skip takes a
+drained defeat fade as well as the hide. The creature halts where its colour ends
+(`CREATURE_FADE_MODULES`, `World::battle_node_colour_is_zero`). Kemaro's lone `2` at
+`0x801F89B0` keeps the clip gate. PROT 0930's arm 3 hides its creature on the same
+pass as the seat (`0x801F6EB8..0x801F6EC0`), behind its CD poll, so Horn's creature
+holds its first frames until arm 4's way out shows it.
+
 The creature's clips are the cast record's own, not its archive twin's: the
 installer hands the record's part table to the node (`0x801F1DCC`) and scans
 its tags (`FUN_80054CB0(record, 4)`, `0x801F1D1C`). Only the TMD and texture

@@ -15,6 +15,9 @@ use legaia_engine_battle_vm::battle_actor_tick as tick;
 use legaia_engine_battle_vm::battle_actor_tint as tint;
 use legaia_engine_camera::projection::BattleCamPose;
 
+/// `+0x21C` of the capture / defeat fade, `FUN_80050120`'s arm 2.
+const RENDER_FLAG_DEFEAT_FADE: u8 = 2;
+
 /// The body radius a party seat carries at `*(actor[+0x22C]) + 0x58`:
 /// `640` on 212 of the 213 party seats read across the catalogued battle
 /// states (the tint pass's depth-cue half-range is `radius / 2`). A monster
@@ -459,6 +462,20 @@ impl World {
             a.battle.render_flag == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
                 && a.battle.render_color == 0
         })
+    }
+
+    /// Whether the tint pass leaves actor `actor_idx`'s node colour word `+0x74`
+    /// at zero in its low 24 bits: the hide, or a defeat fade (`+0x21C = 2`)
+    /// that has drained `+0x04` to nothing, since `FUN_8004A908` packs the
+    /// lanes alone. PROT 0903's arm 11 pass raises that fade on its creature
+    /// (`0x801F75E0..0x801F75E4`): retail's Gimard stops walking on the pass
+    /// its word reaches zero.
+    // REF: FUN_8004A908 (`beq` on the zero lanes keeps only the top byte)
+    pub(in crate::world) fn battle_node_colour_is_zero(&self, actor_idx: usize) -> bool {
+        self.battle_body_hidden(actor_idx)
+            || self.actors.get(actor_idx).is_some_and(|a| {
+                a.battle.render_flag == RENDER_FLAG_DEFEAT_FADE && a.battle.render_color == 0
+            })
     }
 }
 
