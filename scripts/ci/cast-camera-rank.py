@@ -50,7 +50,7 @@ def project(p, pitch, yaw, tr, focus):
 def read(film: Path):
     rows = []
     # The engine's own camera per tick: a row's error is also read one or two
-    # ticks either side, so a frame boundary that fell a vsync apart is not
+    # ticks either side (up to one frame step), so a frame boundary that fell a vsync apart is not
     # scored as a framing error ("phase-robust" below).
     eng = {}
     ecam = film / "engine" / "cam.csv"
@@ -87,7 +87,8 @@ def read(film: Path):
             px = probe_px(ep, ey, et, ef)
             # Phase-robust: the smallest error within two ticks of the pair.
             robust = px
-            for off in (-2, -1, 1, 2):
+            span = max(g("r_step"), g("e_step"), 2) - 1
+            for off in range(-span, span + 1):
                 c = eng.get(g("tick") + off)
                 if c:
                     robust = min(robust, probe_px(c[0], c[1], (c[2], c[3], c[4]), (c[5], c[6])))

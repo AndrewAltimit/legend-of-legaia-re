@@ -73,7 +73,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
   </ul>
 </section>
 
-<section class="doc-section" id="pairing" data-doc="the-pairing-rule,the-game-clock,the-camera-against-the-step">
+<section class="doc-section" id="pairing" data-doc="the-pairing-rule,the-game-clock,the-camera-against-the-step,the-camera-channel">
   <h2>Pairing frames on the game's clock</h2>
   <p>Frames pair on the action state machine's clock, never on wall time.</p>
   <figure class="diagram">
@@ -103,6 +103,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
     <li><strong>Display lag.</strong> A retail grab shows the frame built two game frames earlier, so it is keyed on the row two frame-counter bumps back; on an on-time frame that is <code>2 &times; step</code> vsyncs. A frame that overran keeps its image up for every vsync it ran over, which a vsync rule would have scored against the wrong arm.</li>
     <li><strong>The game clock.</strong> Retail's frame driver picks a step from the slowest of the last sixteen frames, capped at <code>4</code>, but a heavy effect frame can still cost <code>5</code> to <code>12</code> vsyncs. Its timers drain one step regardless, so on wall vsyncs a retail arm runs long while its game time does not. The probe's frame counter turns each run of one counter value into one frame of its step, and that clock is what the engine's lengths match: Gilium's summon band is <code>2423</code> wall vsyncs, <code>2240</code> on the game clock, and <code>2244</code> engine ticks.</li>
     <li><strong>The score.</strong> Each pair is scored with the corpus metric (<code>within</code>, the share of 8&times;8 blocks within 24 per channel). Pairs whose retail frame is a white flash or a fade are counted apart, and the cast's number is the mean over the rest.</li>
+    <li><strong>The camera channel.</strong> The score writes <code>camera.csv</code>, every retail vsync paired with its engine tick, and <code>cast-camera-rank.py</code> ranks a directory of films by the camera error it holds for several rows, as pixels through the GTE projection: a <em>raw</em> column and a <em>law</em> column that allows one frame step of pacing.</li>
     <li><strong>The camera against the step.</strong> The camera files on both sides, read at the score's own pairs, are the camera's error frame by frame. Run beside <code>--retail-steps</code>, the two split it: what the seated run closes is the frame step's, what it leaves is the framing law's or the seat's.</li>
   </ul>
 </section>

@@ -538,7 +538,11 @@ exactly the arms its `sltiu` allows and stops on the terminal arm with no
 - *Most capture bodies end on three stores:* the busy result cleared,
   `sb zero,0xd` (the framing style) and `0x780` into the yaw counter
   `ctx[+0x6DA]` (Zora's Glare at `0x801F7208` in PROT 0940, for one). PROT
-  0946..0948, 0953, 0959 and 0960 clear the style without the yaw store. PROT
+  0946..0948 and 0953 clear the style without the yaw store. Three bodies zero
+  the counter beside the style clear: PROT 0959's Megaton Press
+  (`sh zero,0x2(v1)` at `0x801F8214`, the base `ctx + 0x6D8`) and PROT 0960's
+  Plasma Strike (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`), so the Done
+  band's case 6 frames from a counter of zero. PROT
   0935..0937, 0939 and 0962 hold neither, so the Done band after them frames
   from half a turn round. Three bodies of split modules hold neither either,
   where the other body of their module has both: PROT 0945's Water Column
@@ -801,6 +805,16 @@ the total lands in live HP on the fourth beat. The guard ladder is the kernel's
 inlined copy, keyed on the attacking monster's element, so a Luminous Jewel
 halves the cast against light-element Gaza
 ([melee ladder](battle-formulas.md#underdog-rewrite-chip-floor-and-cap)).
+
+The body arms its own camera. Arm 2 turns the caster onto the victim's body
+pair (`0x801F6D58`) and frames the caster at pitch `0x40`, yaw `0xA00 - facing`,
+TR `(0, 0x500, 0x600)` over `0xC` frames (`0x801F6DE8`), seeding the countdown
+`scalar << 6`. Arm 3 re-aims on the caster every pass (`0x801F6F8C`): yaw
+`cd / 8 + 0xBC0 - facing`, TR z `0x700 - cd / 2`, writing back both pairs. Arm 4
+frames the victim's body pair (`0x801F70BC`): yaw `cd / 32 + 0xB80 - facing`, TR z
+`0x900 - cd / 8`. A retail film of `battle_kor_gaza_165_astral_slash_mid_cast`
+reads the arms pass for pass; `cast_module_camera::astral_slash_camera` is the
+port.
 
 **Port.** `World::run_cast_module_code` parks the caster's strike index on arm
 2 and marks the band's fold as owed nothing (`module_skips_fold`), so the
@@ -1159,7 +1173,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | DATA |
 | `801F81DC` | 910 (`summon_swordie`) | per-slash damage applier, three `jal`s from the tick; rolls `FUN_801DD0AC(0x12, 7)`, run-time cap, writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call (residue in 908, 910) | DATA |
-| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
+| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; arms 2..4 arm the module camera and hold both pairs; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body via the trampoline; damage roll (bypass); writes HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278` | PORT |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | PORT (spawn-only) |
@@ -3946,7 +3960,7 @@ State `0x70` runs the module through `FUN_801F2160` and leaves for `0x71` when
 that returns zero (`0x801E50C8..0x801E50E8`). The camera holds the pose
 `0x6F`'s last case-6 pass left and moves only where the module moves it. Port:
 `cast_module_camera::capture_camera_director`, keyed on `(entry, body)`. The
-exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
+finishing arm's yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 (`capture_exit_yaw_base`, which lists the bodies and their store sites). So is the
 style clear beside it: `0x70` stores style `1` each pass and the finishing arm's
 `sb zero,0xd` undoes it, so the Done band's case 6 frames from the default side, not
