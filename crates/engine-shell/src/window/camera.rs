@@ -905,12 +905,14 @@ mod battle_cam_shared_tests {
         world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
+        vahn.battle.hp = 100;
         vahn.move_state.world_x = 0;
         vahn.move_state.world_y = 0;
         vahn.move_state.world_z = -800;
         vahn.move_state.render_26 = 0;
         let mut tetsu = legaia_engine_core::world::Actor::default();
         tetsu.active = true;
+        tetsu.battle.hp = 100;
         tetsu.move_state.world_z = 800;
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
@@ -980,6 +982,7 @@ mod battle_cam_shared_tests {
         world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
+        vahn.battle.hp = 100;
         // An off-axis seat: neither on the arena centre line nor square to it.
         vahn.move_state.world_x = 600;
         vahn.move_state.world_z = -775;
@@ -987,6 +990,7 @@ mod battle_cam_shared_tests {
         vahn.battle.facing_angle = BATTLE_46;
         let mut tetsu = legaia_engine_core::world::Actor::default();
         tetsu.active = true;
+        tetsu.battle.hp = 100;
         tetsu.move_state.world_x = -400;
         tetsu.move_state.world_z = 900;
         tetsu.battle_monster_id = Some(1);
@@ -1049,9 +1053,11 @@ mod battle_cam_shared_tests {
         world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
+        vahn.battle.hp = 100;
         vahn.move_state.world_z = -800;
         let mut tetsu = legaia_engine_core::world::Actor::default();
         tetsu.active = true;
+        tetsu.battle.hp = 100;
         tetsu.move_state.world_x = 600;
         tetsu.move_state.world_z = 900;
         // A live combatant the world knows about, whose mesh this host has
@@ -1103,9 +1109,11 @@ mod battle_cam_shared_tests {
         world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
+        vahn.battle.hp = 100;
         vahn.move_state.world_z = -800;
         let mut tetsu = legaia_engine_core::world::Actor::default();
         tetsu.active = true;
+        tetsu.battle.hp = 100;
         tetsu.move_state.world_z = 800;
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
@@ -1165,6 +1173,7 @@ mod battle_cam_shared_tests {
         world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
+        vahn.battle.hp = 100;
         world.actors = vec![vahn];
         assert_eq!(battle_cam_inputs(&world).shake_amplitude, 0);
         world.camera.shake_amplitude = 9;

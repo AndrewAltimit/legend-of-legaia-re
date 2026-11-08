@@ -1100,6 +1100,29 @@ mod tests {
     /// shot follows the cursor across monsters and hands back to the ring's
     /// close-up when the cursor closes. The engine used to read the cursor
     /// as the far Begin / Run framing.
+    /// The far framing's walk gates each seat on live HP (`0x801D7000`): a
+    /// fallen member or monster leaves the box.
+    #[test]
+    fn a_fallen_seat_leaves_the_formation_box() {
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 1;
+        world.actors.resize_with(3, Default::default);
+        world.actors[0].move_state.world_z = -800;
+        world.actors[0].battle.hp = 10;
+        for (slot, x, hp) in [(1usize, 500i16, 10u16), (2, 900, 0)] {
+            let a = &mut world.actors[slot];
+            a.move_state.world_x = x;
+            a.move_state.world_z = 700;
+            a.battle_monster_id = Some(1);
+            a.battle.hp = hp;
+        }
+        let b = battle_formation_box(&world).expect("two seats stand");
+        assert_eq!((b.min, b.max), ([0.0, -800.0], [500.0, 700.0]));
+    }
+
     #[test]
     fn the_attack_cursor_frames_the_member_toward_its_target() {
         use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
