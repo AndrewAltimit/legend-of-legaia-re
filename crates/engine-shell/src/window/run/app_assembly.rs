@@ -249,6 +249,8 @@ impl PlayWindowApp {
             launch_switches: None,
             cheats_page: Default::default(),
             scenes_page: Default::default(),
+            tools_page: Default::default(),
+            dev_menu_on: std::env::var_os("LEGAIA_DEV_MENU").is_some(),
             options_save_error: Default::default(),
             // Armed by `cmd_play_window_with_record` for an interactive
             // window only.

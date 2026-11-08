@@ -11,8 +11,9 @@
 //! `World::set_pad` a raw PSX pad word and the pump republishes it unchanged -
 //! see that function for the two layouts and why they are not the same word.
 //!
-//! Without the variable nothing here runs and no draw is produced, so the
-//! default build is unchanged.
+//! The `F12` panel's Tools page throws the same switch for the session
+//! ([`PlayWindowApp::set_dev_menu`]). Off, nothing here runs and no draw is
+//! produced, so the default build is unchanged.
 //!
 //! # The Records page
 //!
@@ -38,9 +39,15 @@ use legaia_engine_screens::dev_menu::{
 use legaia_engine_system::pad::retail_packed;
 
 impl PlayWindowApp {
-    /// Whether the developer menu is enabled for this run.
-    pub(super) fn dev_menu_enabled() -> bool {
-        std::env::var_os("LEGAIA_DEV_MENU").is_some()
+    /// Turn the developer menu on or off for this session (the `F12` Tools
+    /// page). Off drops the menu and whatever it had drawn.
+    pub(super) fn set_dev_menu(&mut self, on: bool) {
+        self.dev_menu_on = on;
+        if !on {
+            self.dev_menu = None;
+            self.dev_menu_records = false;
+            self.dev_menu_draws.clear();
+        }
     }
 
     /// Advance the developer menu one frame and rebuild its draw list.
@@ -53,7 +60,7 @@ impl PlayWindowApp {
         // The overworld's developer panel chords ride the same opt-in: they
         // bind L1 over retail's map-display arm, so no player path may arm
         // them (`World::set_world_map_dev_panel_chords`).
-        let enabled = Self::dev_menu_enabled();
+        let enabled = self.dev_menu_on;
         self.session
             .host
             .world

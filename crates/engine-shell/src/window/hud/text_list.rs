@@ -88,6 +88,7 @@ impl PlayWindowApp {
                 crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
                 crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
                 crate::window::settings_panel::PanelPage::Scenes => self.scenes_stage_draws(),
+                crate::window::settings_panel::PanelPage::Tools => self.tools_stage_draws(),
                 crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
             });
         }

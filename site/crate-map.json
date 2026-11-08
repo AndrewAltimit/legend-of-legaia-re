@@ -4166,6 +4166,7 @@
     "engine-battle-hud",
     "engine-battle-loop",
     "engine-battle-vm",
+    "engine-camera",
     "engine-cast",
     "engine-core",
     "engine-dialog",

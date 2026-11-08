@@ -1062,6 +1062,11 @@ pub(super) struct PlayWindowApp {
     pub(super) cheats_page: super::cheats_panel::CheatsPage,
     /// The `F12` panel's Scenes page: its cursor.
     pub(super) scenes_page: super::scenes_panel::ScenesPage,
+    /// The Tools page's cursor and last refusal (`window::tools_panel`).
+    pub(super) tools_page: super::tools_panel::ToolsPage,
+    /// The original game's developer menu is up this session: `F12` Tools,
+    /// or `LEGAIA_DEV_MENU` at launch.
+    pub(super) dev_menu_on: bool,
     /// The options file would not save: said on the settings page.
     pub(super) options_save_error: std::cell::RefCell<Option<String>>,
     /// The start-up line pointing at that panel ([`StartupHint`]).

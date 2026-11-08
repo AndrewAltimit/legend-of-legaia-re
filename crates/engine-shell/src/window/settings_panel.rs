@@ -10,7 +10,7 @@
 //! still under the panel, except in a multiplayer session, whose peers would
 //! stall: there `F12` shows the key list alone and takes no pad input. The
 //! pages run Settings, Cheats (`window::cheats_panel`), Scenes
-//! (`window::scenes_panel`), then the key list.
+//! (`window::scenes_panel`), Tools (`window::tools_panel`), then the key list.
 //!
 //! The browser play page has no twin of this page and needs none: its
 //! *Visual enhancements* panel and sound sliders sit beside the canvas, in
@@ -132,6 +132,8 @@ pub(super) enum PanelPage {
     Cheats,
     /// Go to another scene (`window::scenes_panel`).
     Scenes,
+    /// Debug switches and minigame entries (`window::tools_panel`).
+    Tools,
     Keys,
 }
 
@@ -286,6 +288,9 @@ impl PlayWindowApp {
                 self.scenes_move(i32::from(dir) * super::scenes_panel::PAGE_STEP)
             }
             PanelInput::Confirm if page == PanelPage::Scenes => self.scenes_go(),
+            PanelInput::Move(d) if page == PanelPage::Tools => self.tools_page.move_cursor(d),
+            PanelInput::Change(_) if page == PanelPage::Tools => self.tools_change(),
+            PanelInput::Confirm if page == PanelPage::Tools => self.tools_apply(),
             PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
@@ -295,7 +300,8 @@ impl PlayWindowApp {
         self.panel_page = match self.panel_page {
             PanelPage::Settings => PanelPage::Cheats,
             PanelPage::Cheats => PanelPage::Scenes,
-            PanelPage::Scenes => PanelPage::Keys,
+            PanelPage::Scenes => PanelPage::Tools,
+            PanelPage::Tools => PanelPage::Keys,
             PanelPage::Keys => PanelPage::Settings,
         };
         if self.panel_page == PanelPage::Scenes {

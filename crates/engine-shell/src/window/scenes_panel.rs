@@ -127,7 +127,7 @@ const HELP_H: i32 = 12;
 /// The note line budget under the rows.
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Left/Right page  Cross go";
-const FLIP_HINT: &str = "L1/R1 or Tab: keys";
+const FLIP_HINT: &str = "L1/R1 or Tab: tools";
 
 impl PlayWindowApp {
     /// Why a jump cannot be made now, if it cannot.
