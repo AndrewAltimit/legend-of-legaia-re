@@ -240,7 +240,7 @@ A downed party member's chain is knockdown, entry `7`, entry `8`; entry `8` re-c
 **Engine.** `engine-core::world::battle::clip_ladder` ports the ladder as a pure kernel (`commit_tag_ladder`) and runs it on the reaction channel:
 
 - A hit commits the `+0x1EF` / `+0x1F1` entry (the `FUN_80054CB0` map: last match wins, a missing knockdown takes the flinch entry).
-- The ladder's staged entry is committed at the clip's natural end; the downed party chain and the monster-death arm (latch, spoils via `battle_steal`, Seru get-up) follow the table.
+- The ladder's staged entry is committed at the clip's natural end, in the slice of the advance that crossed it (`0x80047A48..0x80047B58`): a reaction's last pass is the pass that lands the next entry on its first keyframe, and state `0x20`'s hold reads the idle on the following pass. The downed party chain and the monster-death arm (latch, spoils via `battle_steal`, Seru get-up) follow the table.
 - The root-motion drive reads the latch in `battle.flag_bits`, not "a knockdown is playing".
 
 Differences from retail: the port stages the reaction inside the hit, ahead of the combo total's HP write, so the tag-`4` row is evaluated at the knockdown's natural end on the landed HP instead of at its commit. The tag-`2` rewrite changes the clip's tag, not the disc entry, and the `+0x56` bump has no engine field.

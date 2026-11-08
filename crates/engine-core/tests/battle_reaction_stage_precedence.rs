@@ -126,14 +126,8 @@ fn the_reaction_still_chains_to_get_up_when_nothing_is_staged() {
     world.queue_battle_reaction(0, true);
     // Run the one-shot knockdown to its end.
     world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
-    world.tick_battle_animations();
-    assert!(
-        world.actors[0]
-            .battle_animation
-            .as_ref()
-            .unwrap()
-            .finished()
-    );
+    // The natural end sits behind the advance in the node tick
+    // (`0x80047A48..0x80047B58`), so the chain lands on the same pass.
     world.tick_battle_animations();
     assert_eq!(playing(&world), Some(5), "knockdown chains into get-up");
     assert_eq!(world.actors[0].battle_reaction, Some(5));
