@@ -212,7 +212,7 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
                 }
                 if port_field(&seeded, name) == p {
                     // The port left it to the host, which `Inert` is not.
-                    *missed.entry(label.clone()).or_default() += 1;
+                    *missed.entry(format!("{label} {name}")).or_default() += 1;
                 } else {
                     wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
                 }
@@ -350,4 +350,231 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(ran > 1000, "{ran}");
+}
+
+/// The `4C 81` tint is the op the port hands its host, which keeps the pair in
+/// `actor_tints` rather than on a context. Stepped by the real `World` in all
+/// three forms (the running placement's own `4C 81`, `CC <id> 81` on another
+/// placement, `CC F8 81` on the player), with the actor's tint seeded as the
+/// context's `+0x74` / `+0x78`: does the tint land where retail leaves the
+/// two words? A tween's ramp is `FUN_8003C5F0`, an executable call stubbed
+/// here, so what is compared is the immediate write and the colour a tween
+/// writes first (`0x801E1FC4..0x801E2068`).
+#[test]
+fn a_tint_lands_where_retail_tints_the_actor() {
+    use legaia_engine_field::object_tint::{ActorTint, ActorTintKey};
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The 24-bit colour read.
+    cpu.hook(0x8003_CEB8, |r, m| {
+        let a = r.r[4];
+        r.r[2] = u32::from(m.rd8(a)) | u32::from(m.rd8(a + 1)) << 8 | u32::from(m.rd8(a + 2)) << 16;
+    });
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x5449_4E54);
+    let (mut ran, mut immediate) = (0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in corpus() {
+        if label != "4C 81" {
+            continue;
+        }
+        for _ in 0..4 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let mut ctx = FieldCtx::default();
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                match name {
+                    // Running, not halted, and not the player's own context.
+                    "flags" => v &= !0x0100_0400,
+                    "script_id" => v = rng.below(0x40),
+                    "field_74" => v &= 0x00FF_FFFF,
+                    "field_78" if rng.below(3) == 0 => v = 0,
+                    _ => {}
+                }
+                if width == 1 {
+                    v &= 0xFF;
+                } else if width == 2 {
+                    v &= 0xFFFF;
+                }
+                wr(&mut cpu, off, width, v);
+                seat(&mut ctx, name, v);
+            }
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let mut w = legaia_engine_core::world::World::new();
+            w.field_vm.executing_channel = Some(0);
+            let key = match (script[pc] & 0x80 != 0).then(|| script[pc + 1]) {
+                None => ActorTintKey::Npc(0),
+                Some(0xF8) => ActorTintKey::Player,
+                Some(0xFB) => continue,
+                Some(t) => {
+                    let mut tctx = ctx.clone();
+                    tctx.script_id = u16::from(t);
+                    w.field_vm
+                        .channels
+                        .push(legaia_engine_field::field_channels::FieldChannel {
+                            placement_index: 5,
+                            ctx: tctx,
+                            record_offset: 0,
+                            pc: 0,
+                            done: true,
+                            object_bind: false,
+                        });
+                    ActorTintKey::Npc(5)
+                }
+            };
+            w.field_vm.actor_tints.insert(
+                key,
+                ActorTint {
+                    colour: ctx.field_74,
+                    blend: ctx.field_78,
+                    ..Default::default()
+                },
+            );
+            w.field_ctx = ctx;
+            w.field_bytecode = script.clone();
+            w.field_pc = pc;
+            let _ = w.step_field();
+            ran += 1;
+            let t = w
+                .field_vm
+                .actor_tints
+                .get(&key)
+                .copied()
+                .unwrap_or_default();
+            let retail = (rd(&mut cpu, 0x74, 4), rd(&mut cpu, 0x78, 2));
+            let port = (t.colour, u32::from(t.blend));
+            if t.blend_ramp.is_none() {
+                immediate += 1;
+            }
+            if retail != port {
+                let e = differ
+                    .entry(format!("{:02x?}", &script[pc..(pc + 10).min(script.len())]))
+                    .or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!("{key:?}: retail {retail:x?} port {port:x?}");
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(ran > 500 && immediate > 100, "{ran} {immediate}");
+}
+
+/// `0x23`, the tile warp, stepped by the real `World` on the running
+/// placement and, prefixed, on another placement's channel: the tile, the
+/// world pair and the walk byte land on the context the op names. Not
+/// compared: `+0x16`, the floor sample (an executable call, stubbed here), and
+/// `+0x10` bit 1, which the cull `FUN_801D79E8` the arm calls raises and the
+/// port's per-frame cull owns. The player form `A3 F8` moves the player.
+#[test]
+fn a_tile_warp_lands_on_the_context_it_names() {
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x5741_5250);
+    let (mut own, mut other) = (0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in corpus() {
+        if label != "23" || (script[pc] & 0x80 != 0 && matches!(script[pc + 1], 0xF8 | 0xFB)) {
+            continue;
+        }
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(SCRIPT, &script);
+        cpu.mem.wr32(CTX + 0x94, SCRIPT);
+        let mut ctx = FieldCtx::default();
+        for (name, off, width) in FIELDS {
+            let mut v = rng.next();
+            match name {
+                "flags" => v &= !0x0100_0400,
+                "script_id" => v = rng.below(0x40),
+                _ => {}
+            }
+            if width == 1 {
+                v &= 0xFF;
+            } else if width == 2 {
+                v &= 0xFFFF;
+            }
+            wr(&mut cpu, off, width, v);
+            seat(&mut ctx, name, v);
+        }
+        if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+            continue;
+        }
+        let mut w = legaia_engine_core::world::World::new();
+        w.field_vm.executing_channel = Some(0);
+        let cross = script[pc] & 0x80 != 0;
+        if cross {
+            let mut tctx = ctx.clone();
+            tctx.script_id = u16::from(script[pc + 1]);
+            w.field_vm
+                .channels
+                .push(legaia_engine_field::field_channels::FieldChannel {
+                    placement_index: 5,
+                    ctx: tctx,
+                    record_offset: 0,
+                    pc: 0,
+                    done: true,
+                    object_bind: false,
+                });
+            other += 1;
+        } else {
+            own += 1;
+        }
+        w.field_ctx = ctx;
+        w.field_bytecode = script.clone();
+        w.field_pc = pc;
+        let _ = w.step_field();
+        let c = if cross {
+            w.field_vm.channels[0].ctx.clone()
+        } else {
+            w.field_ctx.clone()
+        };
+        let mut wrong = Vec::new();
+        for (name, off, width) in FIELDS {
+            let (mut r, mut p) = (rd(&mut cpu, off, width), port_field(&c, name));
+            match name {
+                "world_y" | "script_id" => continue,
+                "flags" => {
+                    r &= !2;
+                    p &= !2;
+                }
+                _ => {}
+            }
+            if r != p {
+                wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
+            }
+        }
+        if !wrong.is_empty() {
+            let e = differ
+                .entry(format!("{:02x?}", &script[pc..(pc + 4).min(script.len())]))
+                .or_default();
+            e.0 += 1;
+            if e.0 == 1 {
+                e.1 = wrong.join(", ");
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(own > 100 && other > 500, "{own} {other}");
 }

@@ -520,3 +520,9 @@ centroid, and one frozen in the ice stayed in it. The nineteen cases' shots and 
 drawn member, or a slot code on cases `9` / `0xB` naming a seat not drawn, stops on the aim's `break`.
 The auto-command preseed `FUN_801DA34C` and its write-back `FUN_801DA59C` (`auto_command`), over every seat, roster
 order and gauge pair, and the effect-placement clamp `FUN_801DF570` (`approach_clamp`) match.
+Two more host-handed ops are stepped on the real `World` against where it keeps their writes. The tint `4C 81`
+lands in `actor_tints` in all three forms (the running placement, `CC <id> 81` on another, `CC F8 81` on the
+player) as retail leaves `+0x74` / `+0x78`; the tile warp `0x23` lands its tile, world pair and walk byte on the
+context it names. What the first pass still counts as left to the host is the floor sample and the cull a warp
+calls, and the cross-context ops whose target state the port keeps off the context: the rotate `B8` and arc `C3`
+legs' halt bit and ramps, `4C C3`'s re-seat on the placement, and the player-aimed `3E` / `4C DA` / `4C E3` stores.
