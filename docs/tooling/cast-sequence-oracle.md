@@ -662,7 +662,11 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`). `LEGAIA_DIAG_CAPTURE_TICK` pushes the
   child's frame past the recording. A first `0x1E` is not that round: the drive
   may replay rounds until its target and clip match, and a recording started on
-  an earlier one reads as a strike that "lands nothing".
+  an earlier one reads as a strike that "lands nothing". A retail recording whose
+  first row has already left the state (`cam.csv` differs from the seated pose) is a
+  pass ahead of the gate tick, so the score drops the engine's leading rows on that
+  pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
+  that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
 
 A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
 `0x3E`), which the probe also takes as the recording's start: before it did, a

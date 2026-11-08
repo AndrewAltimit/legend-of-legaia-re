@@ -262,6 +262,12 @@ impl Side {
     /// fall while the previous actor's `0x51` plays out. Those leading rows
     /// are dropped first, or that actor's Done band would end the cast's
     /// recording before it began.
+    /// Without the first `n` rows of the recording.
+    pub fn drop_leading(mut self, n: usize) -> Self {
+        self.rows.drain(..n.min(self.rows.len()));
+        self
+    }
+
     pub fn first_action_only(mut self) -> Self {
         let lead = self
             .rows
@@ -1377,11 +1383,16 @@ pub struct CastSequenceArgs {
     /// ([`DriveWait`]).
     #[arg(long)]
     pub strict_drive: bool,
+    /// Engine rows to drop from the recording's start: a gate film's ticks
+    /// still on the state the retail side's first row has already left
+    /// (the driver counts them from `cam.csv`, [`Side::drop_leading`]).
+    #[arg(long, default_value_t = 0)]
+    pub engine_skip: usize,
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?.first_action_only();
-    let engine = Side::read(&a.engine)?;
+    let engine = Side::read(&a.engine)?.drop_leading(a.engine_skip);
     let mut report = compare_with(&a.label, &retail, &engine, a.retail_lag, !a.strict_drive)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
@@ -1521,6 +1532,14 @@ mod tests {
         };
         let kept = side.first_action_only().rows;
         assert_eq!(kept.iter().map(|r| r.t).collect::<Vec<_>>(), [3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn a_gate_film_can_drop_its_leading_rows_on_the_state() {
+        let kept = side(&[(0, 3, 5)]).drop_leading(3);
+        assert_eq!(kept.rows.len(), 2);
+        assert_eq!(kept.rows[0].t, 103);
+        assert!(side(&[(0, 3, 2)]).drop_leading(3).rows.is_empty());
     }
 
     #[test]
