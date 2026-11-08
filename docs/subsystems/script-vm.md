@@ -988,11 +988,14 @@ The **cross-context form** (`0x80`-flagged op + target byte, e.g.
 dispatcher saves the yield-op pointer into the target's `+0x94` and sets its
 `0x400` walk bit (`0x801DEFC0..0x801DF054`). Whether the *poking record* waits
 depends on the target. `li s7,4` sits in the delay slot at `0x801DF030`, so
-the record advances past the op for every target; only a **player** target
-also parks the caller (`0x801DF034..0x801DF044`), which then resumes when the
-player arrives. A record that walks an NPC runs on, and its next cross-context
-op on that NPC waits at the dispatcher's halted-target refusal until the leg
-lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
+the record advances past the op for every target. A **player** target also
+raises the caller's halt and seats the op on it (`0x801DF034..0x801DF044`), but
+the runner keeps stepping a halted caller (grade: capture, `town01`
+`s3_rimelm_freeroam`: the record runs past `C7 F8 12 1A 33` in the frame the
+walk starts at vsync 460, and sits on its next player op until the walk lands at
+553). So a record that walks the player runs on like one that walks an NPC,
+and its next cross-context op on that target waits at the dispatcher's
+halted-target refusal until the leg lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
 they overlap. The refusal holds from the op right after the walk, in the same
 frame: `dolk2`'s market beat (`P2[11]`) runs `C7 1F 46 5B 32` and then the
 `B3 1F 0A` halt-bit verify, which keeps Noa's "Vahn..." line back until she

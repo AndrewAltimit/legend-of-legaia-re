@@ -454,12 +454,12 @@ fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
 #[test]
 fn a_second_player_walk_waits_for_the_first_to_land() {
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
-    // Two contexts each walk the player (`C7 F8 tx tz mode`) then SET a
-    // flag. Retail's walk park leaves the player's halt bit `0x400` set
-    // until the kernel lands it, and the dispatcher refuses the second
-    // context's cross-context op on a halted target
-    // (`0x801DE90C..0x801DE944`) - the walks run one after the other,
-    // never against each other.
+    // Two contexts each walk the player (`C7 F8 tx tz mode`). Retail's
+    // walk leaves the player's halt bit `0x400` set until the kernel lands
+    // it, and the dispatcher refuses the second context's cross-context op
+    // on a halted target (`0x801DE90C..0x801DE944`) - the walks run one
+    // after the other, never against each other. Each record runs on past
+    // its walk, so the flag behind the op proves the walk started.
     let first = vec![0xC7, 0xF8, 0x12, 0x10, 0x33, 0x50, 0x0C, 0x4A, 0xFF, 0x7F];
     let second = vec![0xC7, 0xF8, 0x10, 0x10, 0x33, 0x50, 0x0D, 0x4A, 0xFF, 0x7F];
     let mut w = World::default();
@@ -475,14 +475,15 @@ fn a_second_player_walk_waits_for_the_first_to_land() {
         .push(CutsceneTimeline::new(second, 0));
     let target_first = (0x12 * 0x80 + 0x40, 0x10 * 0x80 + 0x40);
     let mut first_x = Vec::new();
+    let second_start = 0x10 * 0x80 + 0x40;
     for _ in 0..400 {
         w.step_helper_contexts();
         first_x.push(w.actors[0].move_state.world_x);
-        if w.system_flag_test(0x0D) {
+        if w.system_flag_test(0x0D) && w.actors[0].move_state.world_x == second_start {
             break;
         }
     }
-    assert!(w.system_flag_test(0x0C), "the first walk landed");
+    assert!(w.system_flag_test(0x0C), "the first walk started");
     assert!(w.system_flag_test(0x0D), "the second walk ran after it");
     assert!(
         first_x.contains(&target_first.0),

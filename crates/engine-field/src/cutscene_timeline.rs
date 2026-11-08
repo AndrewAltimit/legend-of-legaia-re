@@ -378,6 +378,9 @@ pub struct CutsceneTimeline {
     /// between the two.
     // REF: FUN_8003BC08, FUN_8003774C
     pub player_landed_hold: bool,
+    /// The record ended (`0x21`) with a `C7 F8` leg still in flight: the
+    /// slice only finishes the walk until it lands, then the record ends.
+    pub finish_after_walk: bool,
     /// The NPC placements whose walk, turn or face-at leg landed on the last
     /// game frame - [`Self::player_landed_hold`] for NPCs.
     pub npc_landed_hold: Vec<u8>,
@@ -584,6 +587,7 @@ impl CutsceneTimeline {
             npc_facings: Vec::new(),
             npc_faces: Vec::new(),
             player_landed_hold: false,
+            finish_after_walk: false,
             npc_landed_hold: Vec::new(),
             park_landed: None,
             player_clip_ticks: 0,

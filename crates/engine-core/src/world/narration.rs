@@ -782,6 +782,43 @@ impl World {
         self.cutscene.capped.push(cap);
     }
 
+    /// Seat the player on the walk-leg target (the walk kernel's end state).
+    pub(super) fn seat_player_on_walk_leg_target(&mut self, target: (i16, i16)) {
+        if let Some(p) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(p as usize)
+        {
+            actor.move_state.world_x = target.0;
+            actor.move_state.world_z = target.1;
+        }
+        self.snap_player_y_unless_settling();
+    }
+
+    /// A record that ended behind a `C7 F8` leg still in flight keeps its
+    /// slot until the player lands: retail's walk kernel finishes the leg
+    /// on its own (`FUN_8003BC08`), and the port's leg lives on the record.
+    fn hold_finished_record_for_walk(
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        if tl.done && tl.walk_wait.is_some() {
+            tl.done = false;
+            tl.finish_after_walk = true;
+        }
+    }
+
+    /// A record that ends with a `C7 F8` leg still in flight: retail's walk
+    /// kernel lands the player on its own after the record is gone
+    /// (`FUN_8003BC08`). The port's leg lives on the record, so a record the
+    /// anti-hang cap or a scene change ends seats the player on the target
+    /// here rather than leave them mid-walk.
+    fn land_player_walk_past_record(
+        &mut self,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        if let Some(walk) = tl.walk_wait.take() {
+            self.seat_player_on_walk_leg_target(walk.target);
+        }
+    }
+
     // REF: FUN_8003BDE0
     pub fn step_cutscene_timeline(&mut self) {
         let Some(mut tl) = self.cutscene.timeline.take() else {
@@ -1101,7 +1138,9 @@ impl World {
         // retail's turn belongs to the NPC's own walk kernel and finishes
         // without the record, so land it on its compass entry here rather
         // than leave the actor frozen mid-ramp.
+        Self::hold_finished_record_for_walk(&mut tl);
         if tl.done {
+            self.land_player_walk_past_record(&mut tl);
             for mut face in std::mem::take(&mut tl.npc_faces) {
                 for _ in 0..WALK_PARK_TIMEOUT {
                     if self.step_npc_face_leg(face.slot, &mut face.ramp) {
@@ -1273,6 +1312,12 @@ impl World {
         let dropped = contexts.iter().any(|tl| tl.done);
         for tl in contexts.iter().filter(|tl| tl.done) {
             self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
+        }
+        for tl in contexts.iter_mut() {
+            Self::hold_finished_record_for_walk(tl);
+        }
+        for tl in contexts.iter_mut().filter(|tl| tl.done) {
+            self.land_player_walk_past_record(tl);
         }
         contexts.retain(|tl| !tl.done);
         self.field_vm.helper_contexts = contexts;

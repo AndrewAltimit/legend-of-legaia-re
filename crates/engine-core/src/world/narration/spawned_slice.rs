@@ -149,64 +149,34 @@ impl World {
         // dropping these left Mei OFFSCREEN (top corner of the shot) for the
         // whole conversation.
         // REF: FUN_8003774C (case 0x47), FUN_8003BC08 (0x400 walk-bit tick)
+        // The player's leg runs under the record, it does not park it:
+        // retail's `C7 F8` arm advances past the op for every target
+        // (`li s7,4` at `0x801DF030`) and the halt it raises on the caller
+        // (`0x801DF034..0x801DF044`) does not stop the runner. A capture
+        // reads the record already past the op on the frame the walk starts
+        // (`town01`, `s3_rimelm_freeroam`: vsync 460 for a walk that lands
+        // at 553). The record's next cross-context op on the player waits
+        // on the player's halt bit, as behind a compass leg (`glide_hold`).
+        let mut player_walk_landed = false;
         if let Some(mut walk) = tl.walk_wait.take() {
             walk.frames += 1;
             // The player's leg is stepped here, on the game-frame grid
-            // (`0x80 * DAT_1F800393 / (4 << bits)` a frame); an NPC's runs on
-            // the motion tick, which keeps the same grid.
-            let mut landed_now = false;
-            let arrived = match walk.slot {
-                Some(slot) => !self.npcs.motions.contains_key(&slot),
-                None if grid == 0 => false,
-                None => {
-                    landed_now =
-                        self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
-                    landed_now
-                }
-            };
-            if !arrived && walk.frames < WALK_PARK_TIMEOUT {
+            // (`0x80 * DAT_1F800393 / (4 << bits)` a frame).
+            let landed = grid != 0
+                && self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
+            if landed {
+                player_walk_landed = true;
+            } else if walk.frames < WALK_PARK_TIMEOUT {
+                // A leg in flight is playout, not a hang: it does not count
+                // toward the anti-hang frame cap (`tower` P2[2]'s
+                // `C7 F8 0D 45` covers ~7500 units at 4 a tick).
+                tl.frames = tl.frames.saturating_sub(1);
                 tl.walk_wait = Some(walk);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                // A walk park is real playout progress, not a hang: don't let
-                // it accumulate toward the anti-hang frame cap (a long leg -
-                // tower P2[2]'s `C7 F8 0D 45` covers ~7500 units at 4/tick -
-                // would otherwise burn the cap mid-walk and the forced
-                // completion would skip the record's trailing flag latches).
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
+            } else {
+                // Safety timeout: seat the player on the tile.
+                self.seat_player_on_walk_leg_target(walk.target);
+                player_walk_landed = true;
             }
-            // Arrived (or safety timeout: snap to the target so the
-            // choreography stays coherent) - resume past the yield.
-            if !arrived {
-                match walk.slot {
-                    Some(slot) => {
-                        self.npcs.motions.remove(&slot);
-                        self.npcs.positions.insert(slot, walk.target);
-                    }
-                    None => {
-                        if let Some(p) = self.player_actor_slot
-                            && let Some(actor) = self.actors.get_mut(p as usize)
-                        {
-                            actor.move_state.world_x = walk.target.0;
-                            actor.move_state.world_z = walk.target.1;
-                        }
-                        self.snap_player_y_unless_settling();
-                    }
-                }
-            }
-            if grid_live && (landed_now || grid == 0) {
-                tl.park_landed = Some(walk.resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = walk.resume_pc;
         }
         // Player compass walk (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops `0x37` /
         // `0x41` against the player anchor): the walk kernel translates the
@@ -233,7 +203,24 @@ impl World {
             tl.player_landed_hold = false;
             tl.npc_landed_hold.clear();
         }
-        let mut glide_hold = tl.player_landed_hold;
+        if tl.finish_after_walk {
+            self.field_vm.channels = channels;
+            self.field_vm.stepping_view.clear();
+            self.cutscene.in_timeline = false;
+            self.field_vm.in_spawned_record_slice = false;
+            if tl.walk_wait.is_none() {
+                tl.finish_after_walk = false;
+                tl.done = true;
+                return true;
+            }
+            tl.frames = tl.frames.saturating_sub(1);
+            return false;
+        }
+        let mut glide_hold = tl.player_landed_hold || tl.walk_wait.is_some();
+        if player_walk_landed {
+            tl.player_landed_hold = true;
+            glide_hold = true;
+        }
         if let Some(mut glide) = tl.player_glide.take() {
             if grid == 0 {
                 tl.player_glide = Some(glide);
@@ -823,9 +810,9 @@ impl World {
                                     // at `0x80037BEC`).
                                     m.state.approach = b2 >> 4;
                                 }
-                                // The record runs on past an NPC walk (`li
-                                // s7,4` in the delay slot at `0x801DF030`);
-                                // only a player target parks the caller.
+                                // The record runs on past the walk (`li s7,4`
+                                // in the delay slot at `0x801DF030`), the
+                                // player's as well as an NPC's.
                                 tl.npc_walks.retain(|&w| w != s);
                                 tl.npc_walks.push(s);
                                 tl.pc = pc + 5;
@@ -842,25 +829,32 @@ impl World {
                             continue;
                         }
                         // The kernel takes the player's first step in the
-                        // frame that armed the park, after the script slice.
+                        // frame that armed the leg, after the script slice;
+                        // the record runs on past the op.
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.pc = pc + 5;
+                        glide_hold = true;
                         if grid > 0
                             && grid_live
                             && host
                                 .world
                                 .step_player_walk_leg((tx, tz), speed, grid, b2 >> 4)
                         {
-                            tl.park_landed = Some(pc + 5);
-                            break;
+                            tl.player_landed_hold = true;
+                        } else {
+                            tl.walk_wait =
+                                Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
+                                    slot,
+                                    target: (tx, tz),
+                                    resume_pc: pc + 5,
+                                    speed,
+                                    approach: b2 >> 4,
+                                    frames: 0,
+                                });
                         }
-                        tl.walk_wait = Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
-                            slot,
-                            target: (tx, tz),
-                            resume_pc: pc + 5,
-                            speed,
-                            approach: b2 >> 4,
-                            frames: 0,
-                        });
-                        break;
+                        continue;
                     }
                 }
                 // Halt clear on an NPC (`B2 <id> 0A`, op 0x32 bit 10): the
