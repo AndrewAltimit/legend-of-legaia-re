@@ -3,6 +3,7 @@
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
 
 mod ambient_motion;
+mod anim_cue_walk;
 mod arrange;
 mod arts_gauge;
 mod arts_queue;

@@ -438,3 +438,9 @@ The region scan `FUN_80017FBC` under the attribute refresh `FUN_800180EC`, and t
 `FUN_801DBA20` over the box the refresh latched (`region_scan`), match `refresh_region_attributes` and
 `zone_query` on every field scene's region table, at tiles on and around every record edge, off the grid and in
 world-map mode.
+
+The battle cue router `FUN_8004FE5C` (`sfx_cue_route`) matches `route_sfx_cue` over the ring, the dedupe word,
+both tinted legs' category byte and the CD-XA voice leg. The animation cue walker `FUN_800508DC`
+(`anim_cue_walk`) matches `walk_anim_cues`, and its tally showed what the host dropped: each character cry the
+walk reaches bumps the seat's record `+0x98` before the mute and CD gates (`0x800509BC..0x800509EC`), the word the
+records page prints as Knockouts. Nothing in the port wrote it, so the page read `0` for ever.

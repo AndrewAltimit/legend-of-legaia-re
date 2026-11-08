@@ -1369,6 +1369,38 @@ fn a_committed_swing_plays_its_animation_cue_track() {
     assert_eq!(row[4], 2, "the party literal category");
 }
 
+/// A character's cry on its cue track (`0xD7` / `0xE7` / `0xF7`) counts once on
+/// the seat's record `+0x98`, the records page's Knockouts word, whether or not
+/// the cry is muted: `FUN_800508DC` bumps it ahead of both gates.
+#[test]
+fn a_cry_on_the_cue_track_counts_a_knockout() {
+    for muted in [false, true] {
+        let mut world = World::new();
+        world.load_party(legaia_save::Party::zeroed(4));
+        world.enter_battle(1, 1);
+        if muted {
+            let rec = &mut world.party.roster.members[0];
+            let mut bits = rec.ability_bits();
+            bits[5] |= 0x20;
+            rec.set_ability_bits(bits);
+        }
+        let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+        clips[0] = Some(pose_test_clip(0, 2, 0));
+        clips[0x0C] = Some(cue_track_clip(0x0C, &[(0, 0xE7), (2, 0x1A), (4, 0xD7)]));
+        world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+        world.actors[0].battle.queued_anim = 0x0C;
+        world.commit_staged_battle_anim(0);
+        for _ in 0..12 {
+            world.tick_battle_animations();
+        }
+        assert_eq!(
+            world.party.roster.members[0].battle_records().knockouts,
+            2,
+            "muted {muted}"
+        );
+    }
+}
+
 #[test]
 fn the_art_name_label_closes_when_the_art_clip_hands_off() {
     // FUN_8004AD80: an art constant's commit opens the label; the commit

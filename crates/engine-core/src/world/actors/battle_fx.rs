@@ -243,6 +243,19 @@ impl World {
         {
             a.battle_anim_cue_cursor = walk.cursor;
         }
+        // Each cry the walk reached bumps the seat's record `+0x98`, the
+        // records page's Knockouts word (`lw` / `addiu 1` / `sw 0x660` off the
+        // save block at `0x800509E0..0x800509EC`), ahead of the mute and CD
+        // gates.
+        let rslot = self.party_roster_slot(i);
+        if party
+            && walk.shout_tally > 0
+            && let Some(rec) = self.party.roster.members.get_mut(rslot)
+        {
+            let mut r = rec.battle_records();
+            r.knockouts = r.knockouts.wrapping_add(walk.shout_tally);
+            rec.set_battle_records(r);
+        }
         for emit in walk.emits {
             match emit {
                 AnimCueEmit::Route { id, slot } => self.route_battle_cue(id, slot),
