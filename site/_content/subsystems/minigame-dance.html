@@ -22,6 +22,7 @@
   <h2>Getting there</h2>
   <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 106</code> (sub-id 6) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
   <p>This is the one sub-id where the loader&rsquo;s index arithmetic steps: sub-ids of 6 and above add two, so sub-id 6 resolves to PROT 0980 rather than 0978. A disc-wide walk of every scene puts every dance door in the casino scene <code>koin3</code>; the hall&rsquo;s own scene module <code>other7</code> carries no genuine warp.</p>
+  <p>The hall sits behind a members-only door at the end of the <code>koin3</code> corridor. Its doorman asks for a Gold Card: answering Yes with the card in the bag raises the flag the door tests, and from then on the door swings open on contact. Without it, walking into the door has the doorman step into the doorway and push the player back; the door does not open. See <a href="field-locomotion.html#prop-door-rides">prop-door rides</a>.</p>
   <p class="dg-note">The tick routine has no direct caller: it is the tick word of a static actor template the init spawns, reached every frame through the actor-pool walk.</p>
 </section>
 
