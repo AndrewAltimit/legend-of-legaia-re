@@ -600,6 +600,7 @@ pub(crate) fn capture_yaw_done(
     world: &legaia_engine_core::world::World,
     height: u16,
     yaw: Option<u16>,
+    lead: bool,
 ) -> bool {
     let Some(yaw) = yaw else {
         return true;
@@ -616,11 +617,21 @@ pub(crate) fn capture_yaw_done(
     let per_unit = (16 * u16::from(step))
         / legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step).max(1);
     let want = i32::from(yaw) - i32::from(capture_ramp_left(world, height) / per_unit.max(1));
+    // `lead`: the poll this hold releases is the one the next SM pass makes,
+    // and that pass drifts the counter in its prologue first
+    // (`0x801E29E4..0x801E2A24`), so the counter `0x6E` leaves on is the one
+    // the pass will have reached. A `0x70` capture's counter was read inside
+    // the band and stood back by its ticks there, which already counts it.
+    let inc = if lead {
+        i32::from(legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step))
+    } else {
+        0
+    };
     world
         .battle
         .camera
         .as_ref()
-        .is_none_or(|c| c.action_yaw_base() >= want)
+        .is_none_or(|c| c.action_yaw_base() + inc >= want)
 }
 
 /// The module ticks a `0x70` capture's band spends before its arm gate
@@ -1332,7 +1343,7 @@ impl BattleDrive {
                             height, accum, yaw, ..
                         } if state == 0x6E => {
                             capture_accum_done(world, height, accum)
-                                && capture_yaw_done(world, height, yaw)
+                                && capture_yaw_done(world, height, yaw, false)
                         }
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
                             capture_ramp_done(world, height)
@@ -1740,7 +1751,7 @@ impl BattleDrive {
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !((accum_stale || capture_accum_done(world, height, accum))
-                && capture_yaw_done(world, height, yaw)));
+                && capture_yaw_done(world, height, yaw, want != 0x70)));
         // `0x6F` ramps the depth before it polls (`0x801E4FFC..0x801E5014`,
         // then `FUN_8003F2B8(1)`), so the pass that leaves the state has
         // ramped too: retail's depth on entering `0x70` is the exit pass's.

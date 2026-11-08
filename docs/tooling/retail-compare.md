@@ -2822,7 +2822,15 @@ the battle-frame cadence; on that cadence the replay's fixed step can still land
 its last ramp up to a pass short of retail's own mixed-step lattice, so the
 depth is stood on retail's before arm 0 cuts on it), its accumulator has run as far through `0x6E` as
 retail's (less what the `0x6F` frames still to come add), and the yaw counter
-agrees. The yaw matters under retail's ease-out camera: the three Delilas
+agrees. The counter is compared as the releasing pass will leave it: that
+pass drifts it in the SM's prologue before its poll, so a hold released on
+the counter's current value let `0x6E` out one drift late
+(`battle_rugi_berserker_2_spore_gas_mid_cast` read counter `2076` against
+retail's `2072`, its case-6 yaw endpoint `4` off and outside the glide
+alignment, camera `.940`; released on the pass's value it reads `2072` and
+`1.000`, and `battle_map01_gomboo_steal_mid_cast` `.986` to `1.000`). A `0x70`
+capture's counter is stood back by its ticks inside the band, which already
+counts that pass, and keeps the plain compare. The yaw matters under retail's ease-out camera: the three Delilas
 specials (`che_delilas_megaton_press_mid_cast` and its two siblings) sit `34`
 frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
