@@ -540,10 +540,11 @@ pub fn step_from_caller<H: FieldHost>(
         //   **mode-24 minigame door-warp**, not a scene change: `sub_id =
         //   op0 - 100` selects a code overlay (`FUN_8003EBE4(sub_id + 0x4D)`
         //   in the mode-24 init), and the arm calls no scene-change packet at
-        //   all. See `host.minigame_door_warp`. The original clears the
-        //   player ctx's bit `0x80000`; we mirror that on the active ctx
-        //   (which is the player at the time scripts call this) and let the
-        //   host own the mode transition.
+        //   all. See `host.minigame_door_warp`. The original clears bit
+        //   `0x80000` on the player object, not on the context running the
+        //   script (a door's or a croupier's), so that write is the host's
+        //   (`host.release_player_walk_lock`); the host also owns the mode
+        //   transition.
         0x3E => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -558,7 +559,7 @@ pub fn step_from_caller<H: FieldHost>(
                 }
             } else {
                 let sub_id = op0 - 100;
-                ctx.flags &= !0x80000;
+                host.release_player_walk_lock();
                 host.minigame_door_warp(sub_id);
                 StepResult::Advance {
                     next_pc: pc + header_size + 5,
