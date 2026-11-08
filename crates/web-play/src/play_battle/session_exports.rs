@@ -274,6 +274,33 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Play one Tactical Art the moment the next battle's first command
+    /// prompt opens, through the real queue builder and strike loop.
+    /// `arrows` is the entered string as `1` Left, `2` Right, `3` Down, `4` Up
+    /// (the arts card's `directions`, any separator). The art viewer's full
+    /// scene: pair with [`Self::debug_force_battle`]; `target` is a retail
+    /// seat, `3` the first monster.
+    pub fn debug_seed_inflight_art(&mut self, caster: u8, arrows: &str, target: u8) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let sequence: Vec<u8> = arrows
+            .bytes()
+            .filter(|b| (b'1'..=b'4').contains(b))
+            .map(|b| b - b'0')
+            .collect();
+        if sequence.is_empty() {
+            return false;
+        }
+        host.world.battle.inflight_art_seed =
+            Some(legaia_engine_battle_loop::battle_state::InflightArtSeed {
+                caster,
+                sequence,
+                target,
+            });
+        true
+    }
+
     /// Make the monster in engine battle `seat` cast `spell_id` on its next
     /// turn instead of the AI's pick - the browser twin of the native
     /// window's `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` debug seam

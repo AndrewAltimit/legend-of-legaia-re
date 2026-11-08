@@ -173,7 +173,11 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             return None;
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
-        let character = legaia_engine_battle::battle_arts::character_for_slot(a);
+        // The name table is the caster's own, by character: a seat is not a
+        // roster slot when another member leads the party.
+        let character = legaia_engine_battle::battle_arts::character_for_slot(
+            world.party_roster_slot(usize::from(a)) as u8,
+        );
         // An expansion pack art's bytes name the pack art.
         actor.battle.params[..staged].iter().rev().find_map(|&b| {
             if let Some(name) = world.expansion_pack_art_name(a, b) {

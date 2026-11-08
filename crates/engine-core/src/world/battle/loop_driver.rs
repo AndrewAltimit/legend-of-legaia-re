@@ -422,6 +422,21 @@ impl World {
         {
             self.dispatch_inflight_seed(seed);
         }
+        // The same seam for one Tactical Art: the seat runs the string
+        // through the real queue builder from this first prompt.
+        if self.battle.inflight_art_seed.is_some()
+            && self.battle.command.is_some()
+            && self.battle.flow
+                == legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt
+            && self
+                .battle
+                .camera
+                .as_ref()
+                .is_none_or(|c| c.entry_sweep_counter().is_none())
+            && let Some(seed) = self.battle.inflight_art_seed.take()
+        {
+            self.dispatch_inflight_art_seed(seed);
+        }
         // The same seam for a monster caster: the forced cast's seat takes
         // the round's first turn from the prompt.
         if self.battle.forced_monster_cast_at_prompt

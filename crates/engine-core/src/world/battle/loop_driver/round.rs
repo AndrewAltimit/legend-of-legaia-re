@@ -10,6 +10,13 @@ use super::*;
 /// took the seat (Rage) its turn has no command of its own.
 const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 
+/// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
+/// grants its caster: the 99 a Miracle Art costs covers every string.
+const ART_SEED_SPIRIT: u16 = 99;
+/// The HP floor a dispatched art seed gives every monster, so that a chain's
+/// later strikes have something to land on.
+const ART_SEED_MONSTER_HP: u16 = 60_000;
+
 impl World {
     /// Turn cycling for the live loop - retail's round machine, keyed on the
     /// action SM idling at `EndOfAction`.
@@ -405,6 +412,59 @@ impl World {
         {
             a.battle.active_target = t;
         }
+    }
+
+    /// Consume an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed):
+    /// close the command surfaces, enter the round's execution band and run
+    /// the entered arrows through [`Self::dispatch_pending_party_action`]'s
+    /// art arm, so the string goes through the real builder and strike loop.
+    /// A demonstration seam: the caster's Spirit pays for the longest string,
+    /// the Ra-Seru marker stands up for this fight, and every monster holds
+    /// enough HP that a chain is not cut short by its first kill.
+    pub(in crate::world) fn dispatch_inflight_art_seed(
+        &mut self,
+        seed: legaia_engine_battle_loop::battle_state::InflightArtSeed,
+    ) {
+        use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
+        use legaia_engine_battle_vm::battle_cue_group::MONSTER_SLOT_FIRST;
+        let party_count = self.party.party_count.max(1);
+        let (target_row, target_slot) = if seed.target < MONSTER_SLOT_FIRST {
+            (CursorRow::Ally, seed.target)
+        } else {
+            (CursorRow::Enemy, seed.target - MONSTER_SLOT_FIRST)
+        };
+        self.battle.command = None;
+        self.battle.spell_menu = None;
+        self.battle.item_menu = None;
+        self.battle.arts_menu = None;
+        self.battle.arts_input = None;
+        self.battle.round_flow.phase = RoundPhase::Execute;
+        self.battle
+            .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+        self.battle.art_seed_ra_seru = true;
+        for (slot, a) in self.actors.iter_mut().enumerate() {
+            if a.battle.liveness == 0 {
+                continue;
+            }
+            if (slot as u8) < party_count {
+                if slot == usize::from(seed.caster) {
+                    a.battle.spirit_gauge = a.battle.spirit_gauge.max(ART_SEED_SPIRIT);
+                    a.battle.action_category = 3;
+                }
+            } else {
+                a.battle.max_hp = a.battle.max_hp.max(ART_SEED_MONSTER_HP);
+                a.battle.hp = a.battle.hp.max(ART_SEED_MONSTER_HP);
+            }
+        }
+        self.dispatch_pending_party_action(
+            seed.caster,
+            PendingPartyAction::Art {
+                sequence: seed.sequence,
+                target_row,
+                target_slot,
+            },
+        );
     }
 
     /// Stand each listed battle slot on the forced cast's ground. A fight that

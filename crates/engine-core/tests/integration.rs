@@ -126,6 +126,7 @@ mod host_parity_camera_kernels;
 mod hub_entry_sub_panel_disc;
 mod hub_entry_sub_panel_env;
 mod hub_entry_sub_panel_world;
+mod inflight_art_seed;
 mod inline_clip_latch;
 mod inn_stay_field_vm_disc;
 mod item_catalog_disc;
