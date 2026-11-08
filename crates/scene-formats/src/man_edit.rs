@@ -692,14 +692,8 @@ pub fn move_to_sites(man: &[u8]) -> Vec<MoveToSite> {
             if start >= man.len() {
                 continue;
             }
-            let pc0 = if p == 2 {
-                match p2_pc0(man, start) {
-                    Some(v) => v,
-                    None => continue,
-                }
-            } else {
-                let locals = *man.get(start).unwrap_or(&0) as usize;
-                1 + locals * 2 + 4
+            let Some(pc0) = record_pc0(man, p, start) else {
+                continue;
             };
             let end = starts
                 .iter()

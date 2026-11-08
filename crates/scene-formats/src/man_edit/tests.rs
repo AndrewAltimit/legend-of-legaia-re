@@ -756,6 +756,21 @@ fn text_site_separates_dialog_from_operand_runs_and_unwalked_text() {
 }
 
 #[test]
+fn partition0_move_to_is_found_from_its_own_header() {
+    // Partition-0 header `[n=1]["AB"][attr]` (pc0 = 4), then `25`, a
+    // `4A 10 00` wait and a `23 x z` warp. The partition-1 formula (pc0 = 7)
+    // starts on the wait's `00` operand and desyncs before the `0x23`.
+    let rec = vec![
+        0x01, b'A', b'B', 0x00, 0x25, 0x4A, 0x10, 0x00, 0x23, 0x12, 0x34, 0x26, 0xFF, 0xFF,
+    ];
+    let man = build_man_parts(&[rec], &[], &[]);
+    let sites = move_to_sites(&man);
+    assert_eq!(sites.len(), 1, "the partition-0 warp is found");
+    assert_eq!(sites[0].partition, 0);
+    assert_eq!(sites[0].tile(), (0x12, 0x34));
+}
+
+#[test]
 fn partition0_scene_change_is_found_from_its_own_header() {
     // Partition-0 header `[n=1]["AB"][attr]` (pc0 = 4), then `25`, a
     // `4A 10 00` wait and the scene change: an overworld's object-bound
