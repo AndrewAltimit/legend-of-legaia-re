@@ -29,6 +29,7 @@ pub fn fishing_banner_frame(world: &World, banners: &mut FishingBanners) -> Vec<
             PondEvent::Landed(_) => banners.on_landed(),
             PondEvent::Snapped => banners.on_snapped(),
             PondEvent::Recast => banners.on_recast(),
+            PondEvent::LureRing(..) => {}
         }
     }
     banners.service_frame(1)

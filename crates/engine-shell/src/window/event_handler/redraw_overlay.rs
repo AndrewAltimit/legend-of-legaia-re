@@ -466,7 +466,7 @@ impl PlayWindowApp {
             // `HostView::pack_mode_world_prims` kernel as the page.
             pack_mode_world: self.host_view().pack_mode_world_prims(),
         };
-        let (mut under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
+        let (mut under, mut over) = legaia_engine_screens::screen_layers::compose_screen_prims(
             &self.session.host.world,
             &self.menu_runtime,
             self.session.pause_wipe().fade_level(),
@@ -480,6 +480,12 @@ impl PlayWindowApp {
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.
         under.extend(self.netplay_prims());
+        // The composited tail draws after the text pass, over the 2D panels:
+        // while the `F12` panel is up it goes beneath the panel's scrim, so a
+        // title art or a battle banner does not paint across the settings.
+        if self.hotkey_help {
+            under.append(&mut over);
+        }
         (over, under)
     }
 }

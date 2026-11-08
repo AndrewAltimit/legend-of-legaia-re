@@ -844,7 +844,8 @@ impl BakaDuelScene {
         for c in &mesh.colors {
             let fill = c.map(|v| (u16::from(v) * DISC_PATCH_TEXEL / 16) as u8);
             self.colors.push(fill);
-            self.flat_rgba.extend_from_slice(&[fill[0], fill[1], fill[2], 0]);
+            self.flat_rgba
+                .extend_from_slice(&[fill[0], fill[1], fill[2], 0]);
         }
         for &i in &mesh.indices {
             self.indices.push(start as u32 + i);

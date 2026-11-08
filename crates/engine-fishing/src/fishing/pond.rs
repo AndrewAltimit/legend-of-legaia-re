@@ -223,6 +223,18 @@ impl PondSession {
         }
     }
 
+    /// The in-water tail's ring: a reel pull or a hooked fish seats one at the
+    /// lure each frame, at the point last frame's tail left (`0x801D3978..0x801D39C4`).
+    fn push_reel_ring(&mut self) {
+        let Some(l) = self.lure_actor.as_ref() else {
+            return;
+        };
+        if l.pull != 0 || self.phase == PondPhase::Hooked {
+            self.events
+                .push(PondEvent::LureRing(l.tracked.0, l.tracked.2));
+        }
+    }
+
     /// The in-water tail of the lure tick: the sway off the held pad and the
     /// record off the new position.
     fn end_lure_frame(&mut self, input: PondInput, fs: i32) {
@@ -469,6 +481,10 @@ impl PondSession {
                     // here (the same event that advances the retail SM to
                     // state 0x19).
                     self.casts += 1;
+                    if let Some(l) = self.lure_actor.as_ref() {
+                        self.events
+                            .push(PondEvent::LureRing(l.tracked.0, l.tracked.2));
+                    }
                     self.band = BandCheck::default();
                     self.cadence.reset();
                     self.lure_probe = Default::default();
@@ -562,6 +578,7 @@ impl PondSession {
                         self.phase = PondPhase::Hooked;
                     }
                 }
+                self.push_reel_ring();
                 self.end_lure_frame(input, fs);
                 // An empty line reeled in (`record < 0x136`, `0x801D3C68`).
                 if self.phase == PondPhase::Waiting && self.line_record < LAND_RECORD {
@@ -607,6 +624,7 @@ impl PondSession {
                 // `0x801D3968`).
                 self.last_swim = frame.swim;
                 self.lateral = (self.lateral + ((frame.swim.0 / 2) >> 8)).clamp(-0x400, 0x400);
+                self.push_reel_ring();
                 self.end_lure_frame(input, fs);
                 // The lure tick's tail measures the record, then a fish run
                 // far out strains the line (`record >= 0x899`:

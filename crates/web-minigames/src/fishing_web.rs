@@ -641,6 +641,7 @@ impl LegaiaMinigames {
                     self.fishing_banners.on_snapped();
                     out.push(r#"{"e":"snapped"}"#.to_string());
                 }
+                PondEvent::LureRing(..) => {}
                 PondEvent::Recast => {
                     self.fishing_banners.on_recast();
                     out.push(r#"{"e":"recast"}"#.to_string());
