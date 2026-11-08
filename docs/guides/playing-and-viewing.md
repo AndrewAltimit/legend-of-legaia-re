@@ -51,8 +51,8 @@ On Linux and Windows a disc image, expansion pack or memory card opened with
 arrives in the launcher as if it were dropped on its window.
 
 The launcher is one screen: a disc card at the top, the actions on the left
-(*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Controls*,
-*Expansion pack...*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
+(*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Expansion
+pack...*, *Controls*, *Recent*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
 focused, and the options on the right. Once a disc validates, the screen is
 lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
@@ -73,7 +73,7 @@ falling to 1x.
 | Ctrl+O | open the file dialog |
 | typing, Ctrl+V | enter or paste a disc path (Enter uses it, Esc clears it) |
 | Ctrl+C | copy the report of a game that stopped with an error, for a bug report |
-| Esc | leave the controls page, or quit |
+| Esc | leave the Controls or Recent page, or quit |
 
 While a file is dragged over the window, the help box says what dropping it
 will do: use it as the disc, play with it as an expansion pack, or load the
@@ -122,6 +122,15 @@ leaves out the streamed movie and voice sectors), a compressed `.chd`, an
 EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
 was renamed - in which case the one `.bin` beside it is named.
 
+On a first run the launcher looks for a dump before asking for one: in its own
+folder, Downloads, the Desktop, Documents and the home folder, and each of
+those folders' direct subfolders, for a `.bin` or `.cue` named for the game (or
+sitting in a folder named for it) that passes the check below. One that does is
+offered on the disc card (*Found your disc image*), with *Choose disc...*
+reading *Use this disc*: `Enter` adopts it, `Ctrl+O` or `Shift+Enter` picks
+another file. Nothing else on the machine is read and nothing is written unless
+it is adopted.
+
 A disc that passes is remembered in `launcher.toml` in the platform config
 directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
 Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
@@ -154,6 +163,16 @@ the newest one that still passes in place of the advice to choose again.
 *Play* moves the disc it starts to the head of the list, and so does a game
 started from Legaia Explorer (`legaia-engine launch --disc`).
 
+*Recent* opens a page in place of the options, in three groups:
+
+| Group | Row | `Enter` | `Delete`, `Shift+Enter`, right-click |
+|---|---|---|---|
+| Discs | every remembered disc: *In use*, *Ready* or *Not found* | switch to it | forget it |
+| Continue a save | every save on the game's own card and on card 2, by leader, level, place and play time | start the game on it, without the title screen (`play-window --resume-save`) | - |
+| Memory cards | every remembered card, and *Mount a memory card...* | mount it as card 2, or take it out | forget it |
+
+`Esc`, Circle or the page's *Options* button goes back to the options.
+
 ### Options
 
 The option list holds the engine's enhancement knobs, so none of them needs a
@@ -165,7 +184,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 A controller works the launcher the way it works the game's menus: the D-pad
 or left stick moves the focus and steps an option, Cross presses, Triangle is
 the right-click (an option a value back, the previous disc on *Choose
-disc...*), Circle leaves the *Controls* page, Start plays a ready disc, and
+disc...*), Circle leaves the *Controls* or *Recent* page, Start plays a ready disc, and
 L1 / R1 page the option list. Key rebinding stays a keyboard task.
 
 The first row, *Look and feel*, speaks for every row below it except the
@@ -425,14 +444,23 @@ nothing else, so the next Play starts the way this game ended, as the play
 page remembers its boxes. While *Original game only* is on, the rows it holds
 read *Original* and do not change, as on the launcher. `L1` / `R1` (`Tab`)
 flip to the **Cheats** page ([below](#cheats)), then to the **Scenes** page,
-then to the **Keys** page. **Scenes** is the play page's scene list: every
+then to the **Tools** page, then to the **Keys** page. **Scenes** is the play page's scene list: every
 town, field area and overworld, grouped as on the page, opened on the scene you
 stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `Enter` goes there with your party and bag, seated and staged as a
 `--scene` launch or the play page's list seats and stages it (the scene's
 free-roam visit, entered through one of its doors). It refuses on the
 title and in the pause menu, in a fight, a movie or a minigame, and says so
-under the rows. **Keys** lists every toggle key with its current state (`F11`
+under the rows. **Tools** holds what otherwise takes a launch switch or a
+keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
+(`F1`), the debug camera (`F3`), auto-battle (`--no-player-battle`), the battle
+cadence (`LEGAIA_BATTLE_FRAME_CADENCE`) and the overworld markers, as switches
+that last this session only and are written nowhere, then one press for each
+minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
+picker and the trading-card menu. The play page's other debug controls (effect
+outlines, the party, battle-music and spell-learn pickers, the GameShark code
+box) stay launch switches here (`--party`, `--battle-bgm`, `--learn-spell`,
+`--cheat-file`). **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
 Config table, and the mouse's camera controls.

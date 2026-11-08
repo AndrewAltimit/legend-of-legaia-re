@@ -17,7 +17,7 @@ pub(crate) use legaia_save::emu::MountedCard;
 /// The port-1 card's file inside the save directory: a raw 128 KiB `.mcr`,
 /// the same container the browser play page keeps in its storage for port 1
 /// and the one any PSX emulator or memory-card tool reads.
-pub(crate) const PORT_ONE_CARD_FILE: &str = "memcard1.mcr";
+pub(crate) use crate::launcher::PORT_ONE_CARD_FILE;
 
 /// Mount the window's own card for **port 1**.
 ///

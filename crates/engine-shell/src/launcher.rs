@@ -498,6 +498,103 @@ fn image_cut_short(bin: &Path) -> Option<String> {
     disc_text::incomplete_image(std::fs::metadata(bin).ok()?.len(), needed)
 }
 
+/// The folders [`find_disc`] looks in on a first run: the program's own
+/// folder (the release archive, a disc beside the game), then the places a
+/// downloaded dump lands. Nothing else on the machine is read, and nothing
+/// is written.
+pub fn disc_search_dirs() -> Vec<PathBuf> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf));
+    // A desktop with no user-dirs configuration reports no Downloads.
+    let home = dirs::home_dir();
+    let mut dirs: Vec<PathBuf> = [
+        exe_dir,
+        dirs::download_dir().or_else(|| home.as_ref().map(|h| h.join("Downloads"))),
+        dirs::desktop_dir().or_else(|| home.as_ref().map(|h| h.join("Desktop"))),
+        dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents"))),
+        home.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    dirs.dedup();
+    dirs
+}
+
+/// How many entries of one folder [`find_disc`] reads, and how many of a
+/// root's subfolders it opens: a bound, so a huge Downloads folder never
+/// slows the launcher's first screen.
+const FIND_DISC_ENTRY_LIMIT: usize = 4096;
+const FIND_DISC_SUBFOLDER_LIMIT: usize = 256;
+/// How many candidates [`find_disc`] checks with `validate`.
+const FIND_DISC_CANDIDATE_LIMIT: usize = 8;
+
+/// Whether `path` can be a dump of this game by its name: a `.cue` or `.bin`
+/// with "legaia" in its own name or in the name of the folder holding it.
+fn looks_like_legaia_dump(path: &Path) -> bool {
+    let ext_ok = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("bin") || e.eq_ignore_ascii_case("cue"));
+    let legaia = |p: Option<&std::ffi::OsStr>| {
+        p.and_then(|n| n.to_str())
+            .is_some_and(|n| n.to_ascii_lowercase().contains("legaia"))
+    };
+    ext_ok && (legaia(path.file_name()) || legaia(path.parent().and_then(Path::file_name)))
+}
+
+/// A disc image in `dirs` (each folder and its direct subfolders) that passes
+/// `validate` ([`validate_disc`] in the binary). Offered, never adopted, on a
+/// first run, so a player who already has the dump in Downloads presses
+/// Enter instead of hunting through a file dialog. Only files named for the
+/// game are checked. A `.cue` is preferred to the `.bin` beside it.
+pub fn find_disc(
+    dirs: &[PathBuf],
+    validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
+) -> Option<DiscInfo> {
+    fn scan(dir: &Path, out: &mut Vec<PathBuf>, sub: Option<&mut Vec<PathBuf>>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut sub = sub;
+        for e in rd.flatten().take(FIND_DISC_ENTRY_LIMIT) {
+            let path = e.path();
+            if path.is_dir() {
+                if let Some(s) = sub.as_deref_mut()
+                    && s.len() < FIND_DISC_SUBFOLDER_LIMIT
+                {
+                    s.push(path);
+                }
+            } else if looks_like_legaia_dump(&path) {
+                out.push(path);
+            }
+        }
+    }
+    let mut candidates = Vec::new();
+    for dir in dirs {
+        let mut sub = Vec::new();
+        scan(dir, &mut candidates, Some(&mut sub));
+        for s in &sub {
+            scan(s, &mut candidates, None);
+        }
+        if candidates.len() >= FIND_DISC_CANDIDATE_LIMIT {
+            break;
+        }
+    }
+    candidates.sort_by_key(|p| {
+        let bin = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("bin"));
+        (bin, p.clone())
+    });
+    candidates
+        .iter()
+        .take(FIND_DISC_CANDIDATE_LIMIT)
+        .find_map(|p| validate(p).ok())
+}
+
 /// What the launcher does on start-up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchDecision {
@@ -700,6 +797,20 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     args
 }
 
+/// [`play_args_with`] starting on the save in `save_file` instead of the
+/// title screen: the Recent page's *Continue*.
+pub fn play_args_continuing(
+    info: &DiscInfo,
+    settings: &LauncherSettings,
+    save_file: &Path,
+) -> Vec<std::ffi::OsString> {
+    let mut args = play_args_with(info, settings);
+    args.retain(|a| a != "--boot-ui");
+    args.push("--resume-save".into());
+    args.push(save_file.into());
+    args
+}
+
 /// The file extensions of the memory-card containers the game mounts
 /// (`legaia_save::emu::detect`): raw `.mcr` / `.mcd` / `.srm`, DexDrive
 /// `.gme`, single-save `.mcs`.
@@ -753,6 +864,85 @@ pub fn inspect_card(path: &Path) -> std::result::Result<CardInfo, String> {
         format: card.view.format.label(),
         saves,
     })
+}
+
+/// The game's own memory card's file in its save directory; the window
+/// mounts it in port 1. The launcher's Recent page lists the saves on it.
+pub const PORT_ONE_CARD_FILE: &str = "memcard1.mcr";
+/// The save directory the launcher starts the game with, relative to
+/// [`data_dir`].
+pub const SAVES_DIR: &str = "saves";
+
+/// The game's own card, relative to [`data_dir`] (the game's working
+/// directory).
+pub fn own_card_path() -> PathBuf {
+    Path::new(SAVES_DIR).join(PORT_ONE_CARD_FILE)
+}
+
+/// One save on a card, as the launcher's Recent page lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveRow {
+    /// The card the save is on.
+    pub card: PathBuf,
+    /// The block's grid cell on that card (`MountedCard::save_at`).
+    pub cell: u8,
+    /// The party leader's display name.
+    pub name: String,
+    pub level: u8,
+    /// Where the save was written (the banner name, else the scene label).
+    pub location: String,
+    pub play_time_seconds: u32,
+}
+
+impl SaveRow {
+    /// `H:MM:SS`, or empty for a save that kept no play time.
+    pub fn play_time(&self) -> String {
+        if self.play_time_seconds == 0 {
+            return String::new();
+        }
+        let t = self.play_time_seconds;
+        format!("{}:{:02}:{:02}", t / 3600, t / 60 % 60, t % 60)
+    }
+}
+
+/// Every Legend of Legaia save on the card at `path`, in grid order. A card
+/// that does not mount lists nothing.
+pub fn list_saves(path: &Path) -> Vec<SaveRow> {
+    let Ok(card) = legaia_save::emu::MountedCard::open(path) else {
+        return Vec::new();
+    };
+    (0..15u8)
+        .filter_map(|cell| {
+            let (sf, resume) = card.save_at(cell)?;
+            let leader = sf.leader_summary()?;
+            let location = if resume.location.is_empty() {
+                resume.scene.clone()
+            } else {
+                resume.location.clone()
+            };
+            Some(SaveRow {
+                card: path.to_path_buf(),
+                cell,
+                name: leader.name,
+                level: leader.level,
+                location,
+                play_time_seconds: sf.ext_v2.play_time_seconds,
+            })
+        })
+        .collect()
+}
+
+/// Write the save in `cell` of the card at `card` to `dest` as the LGSF file
+/// `--resume-save` reads: what the Recent page's *Continue* starts the game
+/// on, leaving the card itself alone.
+pub fn write_continue_file(card: &Path, cell: u8, dest: &Path) -> Result<()> {
+    let card = legaia_save::emu::MountedCard::open(card)
+        .with_context(|| format!("mount {}", card.display()))?;
+    let (sf, resume) = card
+        .save_at(cell)
+        .with_context(|| format!("no save in block {}", cell + 1))?;
+    std::fs::write(dest, sf.write_with_resume(&resume))
+        .with_context(|| format!("write {}", dest.display()))
 }
 
 /// An expansion pack the launcher checked ([`inspect_expansion`]).
@@ -1790,6 +1980,69 @@ pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf as Pb;
+
+    #[test]
+    fn find_disc_prefers_named_files_and_a_cue_over_its_bin() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("Other.bin"), b"x").unwrap();
+        let sub = root.join("Legend of Legaia (USA)");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("disc.bin"), b"x").unwrap();
+        std::fs::write(sub.join("disc.cue"), b"x").unwrap();
+        let accept_all = |p: &Path| {
+            Ok(DiscInfo {
+                path: p.to_path_buf(),
+                bin: p.to_path_buf(),
+                executable: USA_EXECUTABLE.into(),
+            })
+        };
+        let found = find_disc(&[root.to_path_buf()], accept_all).expect("found");
+        assert_eq!(found.path.file_name().unwrap(), "disc.cue");
+        let none = find_disc(&[root.to_path_buf()], |p| {
+            Err(DiscProblem::Missing(p.to_path_buf()))
+        });
+        assert_eq!(none, None);
+        assert_eq!(find_disc(&[Pb::from("/does/not/exist")], accept_all), None);
+    }
+
+    #[test]
+    fn continuing_replaces_the_title_with_the_save() {
+        let info = DiscInfo {
+            path: "/g/l.bin".into(),
+            bin: "/g/l.bin".into(),
+            executable: USA_EXECUTABLE.into(),
+        };
+        let s = LauncherSettings::default();
+        let args = play_args_continuing(&info, &s, Path::new("/d/continue.lgsf"));
+        assert!(!args.iter().any(|a| a == "--boot-ui"), "{args:?}");
+        let i = args.iter().position(|a| a == "--resume-save").unwrap();
+        assert_eq!(args[i + 1], "/d/continue.lgsf");
+    }
+
+    #[test]
+    fn a_save_row_times_its_play_and_a_bad_card_lists_nothing() {
+        let row = SaveRow {
+            card: "c".into(),
+            cell: 0,
+            name: "Vahn".into(),
+            level: 5,
+            location: "Rim Elm".into(),
+            play_time_seconds: 3661,
+        };
+        assert_eq!(row.play_time(), "1:01:01");
+        assert_eq!(
+            SaveRow {
+                play_time_seconds: 0,
+                ..row
+            }
+            .play_time(),
+            ""
+        );
+        assert!(list_saves(Path::new("/does/not/exist.mcr")).is_empty());
+    }
+
     use super::*;
 
     /// A disc image cut short by a copy is named for that, with what to do,
