@@ -564,6 +564,38 @@ pub fn camera_block_from_env(
     legaia_engine_field::camera_zone::CameraZoneConfig::from_retail_block(&bytes)
 }
 
+/// The field VM's script-counter slot table (`0x801C6460`, 256 signed
+/// halfwords) as `LEGAIA_SEAT_SLOT_TABLE`: `slot:value` for each non-zero
+/// slot, `,`-joined, or `-` when every slot reads zero. The child holds the
+/// table each tick up to its capture, as the seed holds it through its
+/// settle window, so a script timer does not run the warm-up as game time.
+pub fn slot_table_env(table: &[i16; 256]) -> String {
+    let s = table
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v != 0)
+        .map(|(i, v)| format!("{i}:{v}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    if s.is_empty() { "-".to_string() } else { s }
+}
+
+/// Inverse of [`slot_table_env`]: unnamed slots read zero. `None` on a
+/// malformed entry or a slot past the table.
+pub fn slot_table_from_env(v: &str) -> Option<[i16; 256]> {
+    let mut table = [0i16; 256];
+    let v = v.trim();
+    if v == "-" {
+        return Some(table);
+    }
+    for e in v.split(',') {
+        let (i, x) = e.split_once(':')?;
+        let i: usize = i.trim().parse().ok()?;
+        *table.get_mut(i)? = x.trim().parse().ok()?;
+    }
+    Some(table)
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -598,5 +630,18 @@ mod morph_weight_seed_tests {
         }];
         assert_eq!(floor_bobs_from_env(&floor_bobs_env(&bobs)), bobs);
         assert!(floor_bobs_from_env("").is_empty());
+    }
+
+    #[test]
+    fn slot_tables_round_trip_the_environment_form() {
+        let mut table = [0i16; 256];
+        assert_eq!(slot_table_env(&table), "-");
+        assert_eq!(slot_table_from_env("-"), Some(table));
+        table[1] = 30;
+        table[255] = -100;
+        assert_eq!(slot_table_env(&table), "1:30,255:-100");
+        assert_eq!(slot_table_from_env(&slot_table_env(&table)), Some(table));
+        assert_eq!(slot_table_from_env("256:1"), None);
+        assert_eq!(slot_table_from_env("1"), None);
     }
 }

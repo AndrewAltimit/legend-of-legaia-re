@@ -416,6 +416,11 @@ pub struct ScreenshotConfig {
     /// written over the engine's on the capture frame - `-6` in a state
     /// whose player had opened the map display since the scene loaded.
     pub seat_curve_bias: Option<i16>,
+    /// `LEGAIA_SEAT_SLOT_TABLE=slot:value,..`: a retail state's field-VM
+    /// script-counter table (`0x801C6460`,
+    /// `legaia_engine_capture::field_seeds::slot_table_env`), held on every
+    /// tick up to the capture as the headless seed holds it.
+    pub seat_slot_table: Option<Box<[i16; 256]>>,
     /// `LEGAIA_SEAT_PAGE_MARK=frame`: which frame of the dialogue page
     /// mark's two-frame strip a retail state's displayed frame shows
     /// (`legaia_parity::retail_compare::retail_page_mark`), seated on the
@@ -1218,6 +1223,10 @@ impl ScreenshotConfig {
             seat_curve_bias: std::env::var("LEGAIA_SEAT_CURVE_BIAS")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            seat_slot_table: std::env::var("LEGAIA_SEAT_SLOT_TABLE")
+                .ok()
+                .and_then(|v| legaia_engine_capture::field_seeds::slot_table_from_env(&v))
+                .map(Box::new),
             seat_page_mark: std::env::var("LEGAIA_SEAT_PAGE_MARK")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

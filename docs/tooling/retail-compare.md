@@ -501,7 +501,11 @@ engine verdict:
   once its counter holds `240`, and `minigame_fishing_pcsx` is captured
   with the counter there: a warm-up on a free-running stream rolled it,
   spawned `P2[18]` and flew the cart back (`0x5A3`, `0x467` up, `0x466`
-  down) where retail had not rolled yet. Ambient animation and water CLUT-walk phases cannot be
+  down) where retail had not rolled yet. The image child holds the counter
+  table the same way: the seed hands it over as `LEGAIA_SEAT_SLOT_TABLE`
+  (`field_seeds::slot_table_env`), and the window writes it back before
+  every tick up to its capture, so a timer the frame's scripts count towards
+  stands where retail's stood on both halves of the score. Ambient animation and water CLUT-walk phases cannot be
   phase-aligned. The one phase the channel does align is the field
   party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
   window outlasts the `0x28`-frame near idle, while a card-load state is

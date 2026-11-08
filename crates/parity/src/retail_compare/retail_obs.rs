@@ -715,6 +715,15 @@ impl RetailObs {
         if let Some([p, y, h]) = self.seat_angles {
             env.push(("LEGAIA_SEAT_ANGLES", format!("{p},{y},{h}")));
         }
+        // The script counters the seed holds through its settle window
+        // (`hold_slot_table`): RAM outside the save window, so the child's
+        // card load cannot bring them either.
+        if let Some(slots) = &self.slot_table {
+            env.push((
+                "LEGAIA_SEAT_SLOT_TABLE",
+                legaia_engine_capture::field_seeds::slot_table_env(slots),
+            ));
+        }
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
