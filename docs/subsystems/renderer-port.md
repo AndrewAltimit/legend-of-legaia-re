@@ -335,6 +335,16 @@ cabinets. With them `concend_field_door_hop` reads `1.000` (`.942` per pixel), w
 the sky's quads link among the far ridge's and cover them. `ropeway_field_route_walk`
 reads `.990` (`.979`), and its Octam trees are that same ordering.
 
+The overworld keeps per-pixel depth. Its actors and landmarks go through the
+same draw kernels as a town's (`FUN_8001ADA4`, `FUN_80043390`), so the rules
+above hold there too, but the vertex stage's `flags.w` lane carries the
+overworld curvature scale on the world map and the draw-order word on the
+field, and switching the order on for the world map flattens the bend. The
+difference shows where an actor stands inside a landmark's footprint: a
+retail state with the player poked onto Conkram's tile (`map03` `(66, 103)`,
+inside decoration cell 459's walls) draws him over the town's plaza, the
+engine's depth test buries all but his hair.
+
 Not modelled: a walking NPC's `0x800000` (the sampler runs only for actors whose
 tick reaches it, which the port does not track per actor), a posed prop's record
 flag `0x800`, and the order inside one bucket (retail's last-linked-first). A

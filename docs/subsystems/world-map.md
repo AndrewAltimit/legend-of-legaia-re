@@ -2460,7 +2460,14 @@ posed: the native window through the posed-prop pass the field's doors use
 (`resolve_world_map_draws` leaves them out of the static stamps), the page by
 carrying the bind's clip id on the landmark (`build_field_render`). Drawn
 unposed, Conkram's lid lay flat in front of the town; posed off both prologue
-arms at once, it lay over the town. Disc-gated:
+arms at once, it lay over the town. The other two pick their arm on a flag
+the same way: `map02`'s three stamps test `0x1D5` (`71 D5 05 00`), set
+holding frame 0 (`4C 35`) and clear looping the clip, and `map01` record 409
+snaps to frame 0 and then, with `0x27B` set (`72 7B 05 00`), to its last
+frame (`4C 36`). Every retail `map02` state in the library has `0x1D5` up and
+holds the stamps at `+0x62 = 0x1F`, cursor `0`; a `map01` state with `0x27B`
+up holds record 409 at `+0x62 = 0x9F`, cursor `304` (frame 19 of 20). The
+engine's bank reads the same words in the image child. Disc-gated:
 `crates/engine-scene-host/tests/map03_conkram_shell_disc.rs`,
 `crates/web-play/tests/map03_conkram_shell_page.rs`.
 

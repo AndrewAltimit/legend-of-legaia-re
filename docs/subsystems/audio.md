@@ -361,7 +361,11 @@ the poller acknowledges the first ([script-vm.md](script-vm.md#the-stream-gates-
 and then starts `2070`. `2070` is the scene's home track: its cutscene
 records `P2[7]` and `P2[8]` each switch to their own track and back to
 `2070`. The engine requests both starts on the first frame and sounds
-`2070`, on a picker visit and on the FMV 8 hand-off alike.
+`2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` is
+sound-test track 70, `M122` "Blessed Rim Elm" (extraction `1060`), the
+ending's arrangement, not the town theme `M14B` (`2016`) that `town01`
+plays, so the picked epilogue village does not sound like the one the
+story starts in ([music tracks](../reference/music-tracks.md)).
 
 ### Which track a scene plays
 
