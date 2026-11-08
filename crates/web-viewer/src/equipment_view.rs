@@ -94,6 +94,16 @@ fn entry_bytes<'a>(
     prot.get(off..end.min(prot.len()))
 }
 
+/// The animation-rate byte a loadout clip plays under: an art clip's commit
+/// slows the clock, every other clip keeps the normal `8`
+/// (`crate::arts_view::commit_anim_scale`).
+fn equipped_clip_scale(clip: &loadout::EquippedClip) -> u8 {
+    match &clip.art {
+        Some(a) => crate::arts_view::commit_anim_scale(a.anim_id, a.kind != "regular"),
+        None => legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL,
+    }
+}
+
 /// Resolve the character's player battle file out of the disc and hand off
 /// to the shared loadout kernel, logging any tolerated decode degradation
 /// (a texture pool or clip bank that didn't parse) to the console.
@@ -307,6 +317,7 @@ impl LegaiaViewer {
                     "kind": clip.kind.tag(),
                     "frames": clip.anim.frame_count,
                     "rate": clip.anim.rate,
+                    "scale": equipped_clip_scale(clip),
                 });
                 if let Some(a) = &clip.art {
                     v["art"] = serde_json::json!({
@@ -530,7 +541,7 @@ impl LegaiaViewer {
             .iter()
             .map(|clip| legaia_actor_formats::character_gltf::CharacterClip {
                 name: clip.label.clone(),
-                fps: fps_for_rate(clip.anim.rate),
+                fps: fps_for_rate(clip.anim.rate) * f32::from(equipped_clip_scale(clip)) / 8.0,
                 anim: &clip.anim,
             })
             .collect();

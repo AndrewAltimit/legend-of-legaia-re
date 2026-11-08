@@ -121,6 +121,27 @@ fn fanfare_channel_for(cslot: usize, anim_id: u8) -> Option<u8> {
     })
 }
 
+/// The retail time scale an art record plays under: the animation-rate byte
+/// `actor[+0x21D]` its commit leaves on the actor. `FUN_80047430` advances the
+/// clip cursor by `step * scale * rate >> 1` sixteenths a frame, so the clip
+/// reads at `1.875 * scale * rate` keyframes a second. An art constant commits
+/// at `2` when the special starter `0x1A` armed `ctx[+0x243]` (Hyper, Super,
+/// Miracle: exactly the records the fanfare block runs on) and at `4` for a
+/// regular art; ids below `0x1B` stay at the normal `8`.
+fn art_anim_scale(anim_id: u8, fanfare_channel: Option<u8>) -> u8 {
+    commit_anim_scale(anim_id, fanfare_channel.is_some())
+}
+
+/// [`art_anim_scale`] for a caller that knows the art's kind rather than its
+/// fanfare channel: `special_starter` is true for Hyper, Super and Miracle.
+pub(crate) fn commit_anim_scale(anim_id: u8, special_starter: bool) -> u8 {
+    use legaia_engine_battle_vm::battle_anim_rate as rl;
+    match rl::staged_commit_rate_effect(anim_id, true, special_starter) {
+        rl::CommitRateEffect::StrikeSlow { rate } => rate,
+        _ => rl::RATE_NORMAL,
+    }
+}
+
 /// One character's fully-decoded view bundle, cached on the host so the
 /// per-buffer accessors don't re-run the assembly.
 struct LoadedCharacter {
@@ -640,6 +661,9 @@ impl LegaiaArts {
                             "name": a.name,
                             "combo": a.combo,
                             "rate": a.rate,
+                            // The animation-rate byte the commit plays this
+                            // art under: see `art_anim_scale`.
+                            "scale": art_anim_scale(a.anim_id, a.fanfare_channel),
                             "base": a.uses_base_archive,
                             "ok": a.anim.is_some(),
                             "frames": a.anim.as_ref().map(|x| x.frame_count).unwrap_or(0),
@@ -941,9 +965,11 @@ impl LegaiaArts {
                 name = format!("{name} (0x{:02X})", a.anim_id);
             }
             used_names.push(name.clone());
+            // Art records run under the slowed clock their commit sets.
+            let scale = f32::from(art_anim_scale(a.anim_id, a.fanfare_channel));
             clips.push(legaia_actor_formats::character_gltf::CharacterClip {
                 name,
-                fps: fps_for_rate(a.rate),
+                fps: fps_for_rate(a.rate) * scale / 8.0,
                 anim,
             });
         }
@@ -1000,5 +1026,26 @@ impl LegaiaArts {
             .and_then(|c| c.fanfare_clip(channel as u8))
             .map(|v| v.pcm.clone())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::art_anim_scale;
+
+    #[test]
+    fn a_regular_art_plays_at_half_speed() {
+        assert_eq!(art_anim_scale(0x27, None), 4);
+    }
+
+    #[test]
+    fn a_fanfare_art_plays_at_quarter_speed() {
+        assert_eq!(art_anim_scale(0x1C, Some(2)), 2);
+        assert_eq!(art_anim_scale(0x2B, Some(1)), 2);
+    }
+
+    #[test]
+    fn a_non_art_id_keeps_the_normal_rate() {
+        assert_eq!(art_anim_scale(0x0E, None), 8);
     }
 }
