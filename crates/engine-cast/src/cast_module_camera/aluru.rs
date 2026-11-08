@@ -514,6 +514,10 @@ pub const ALURU_KILL_BASE: u32 = 0x11;
 /// below it kills.
 pub const ALURU_KILL_THRESHOLD: u32 = 8;
 
+/// The spell XP arm 0's kill path credits the caster (`addiu v1,v1,0xc` at
+/// `0x801F6E84`).
+pub const ALURU_KILL_XP: u32 = 0xC;
+
 /// PROT 0916's arm-0 verdict: `true` kills. `roll` is the `FUN_80056798`
 /// draw, `None` where the arm skips it - a scripted fight
 /// (`ctx[+0x287]`) against a record with `+0x20` set and a victim without

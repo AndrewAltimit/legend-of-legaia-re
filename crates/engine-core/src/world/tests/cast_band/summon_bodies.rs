@@ -137,6 +137,26 @@ fn the_aluru_damage_path_leaves_the_hit_to_the_fold() {
     assert_eq!(peak[1], 0, "a damaged victim is not broken up");
 }
 
+/// A kill trains the spell: arm 0's kill path adds `0xC` to the caster's XP
+/// word for the cast spell (`0x801F6E7C..0x801F6E88`); a verdict that spares
+/// the victim credits nothing.
+#[test]
+fn the_aluru_kill_verdict_credits_the_spell_xp() {
+    use legaia_engine_battle::magic_xp::spell_xp;
+    let mut seen = [false; 2];
+    for seed in 0..64u32 {
+        let mut world = aluru_world(None);
+        roster_with_spell(&mut world, ALURU, 1);
+        world.rng_state = seed;
+        let _ = world.run_cast_module_code(ALURU, 0);
+        let kill = world.casting.module_cam.kill.expect("drawn");
+        let xp = spell_xp(&world.party.roster.members[0], 0);
+        assert_eq!(xp, if kill { 0xC } else { 0 }, "seed {seed}");
+        seen[usize::from(kill)] = true;
+    }
+    assert_eq!(seen, [true, true], "both verdicts reached");
+}
+
 /// The verdict is drawn once, off the world's `rand()` stream; a scripted
 /// fight against a `+0x20` record skips the draw and never kills.
 #[test]

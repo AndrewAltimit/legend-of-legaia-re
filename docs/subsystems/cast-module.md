@@ -2211,11 +2211,24 @@ them every pass spread by `(i16)ctx[+0x6D8] / 24` rows, until it passes
 Arm `0` draws the module's verdict into `0x801F9010` (`0` kills): `rand() %
 (0x11 - level) < 8` kills, where `level` is the caster's level for the spell;
 a scripted fight (`ctx[+0x287]`) against a record with `+0x20` set skips the
-draw and never kills, unless the victim carries `+0x16E` bit `4`. The kill
+draw and never kills, unless the victim carries `+0x16E` bit `4`. A kill
+trains the spell on the same pass: the arm adds `0xC` to the caster's XP word
+for the cast spell (`+0x5D0` off `0x80084140`, `0x801F6E7C..0x801F6E88`; the
+slot the `+0x13D` search found, `0x20` when it found none) unless the
+special-battle word `_DAT_8007BAC0` is up. The kill waives the fold, so this is
+the cast's whole gain, and on an unlearned spell it is what the level check at
+`0x36` levels on, raising the "magic level increased" banner. The kill
 path zeroes the victim's HP on arm `0x11`'s pass (`0x801F7E14`), breaks it up
 through arm `0x13` (`+0x1BA += 2 * frame * scalar` on the victim,
 `0x801F81AC`) and stores `0xFF` as that arm ends, raising banner element
-`0x5B`. The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
+`0x5B` (`FUN_801D8DE8(0x5B, 0)` at `0x801F87BC`, `ctx[+0x18] = 0x5B`). Its
+line is composed on arm `0x11`'s kill pass: the victim's name `+0x1BC` and the
+overlay string at `0x801F8FEC` into `0x801F9014` (`FUN_8003CA78` /
+`FUN_8003CAC4` at `0x801F7E54` / `0x801F7E64`), with `0x800774AC` pointed at
+it, which is the "has been annihilated" window a retail Done band shows under
+the magic-level banner; the same pass adds one to the caster's record `+0x9C`
+(`0x801F7E48..0x801F7E58`). The port raises no `0x5B` (its battle banner is
+one slot) and leaves `+0x9C` alone. The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
 leaves for `0x13` (`0x801F85A8`), steps on to arm `0x14` and stores `0xFF`
 once the victim has settled.
 

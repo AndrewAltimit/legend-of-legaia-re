@@ -16,9 +16,18 @@ impl World {
     /// Nighto's: the scripted-fight byte and the victim record's `+0x20`,
     /// unless the victim carries `+0x16E` bit `4`.
     ///
+    /// A kill trains the spell on the same pass: the arm adds `0xC` to the
+    /// caster's XP word for the cast spell (`lw` / `addiu v1,v1,0xc` / `sw` on
+    /// `+0x5D0` off `0x80084140` at `0x801F6E7C..0x801F6E88`, the slot the
+    /// `+0x13D` search found, `0x20` when it found none) unless the
+    /// special-battle word `_DAT_8007BAC0` is up (`0x801F6E38..0x801F6E40`).
+    /// The kill waives the fold, so no finisher tail credits anything else;
+    /// this is what the level check at `0x36` reads, and on an unlearned
+    /// spell's first cast it raises the "magic level increased" banner.
+    ///
     /// [`ModuleCamState::kill`]: legaia_engine_cast::cast_module_camera::ModuleCamState::kill
     ///
-    /// REF: overlay_summon_aluru_0916_801f69f8 (`0x801F6D44..0x801F6E44`)
+    /// REF: overlay_summon_aluru_0916_801f69f8 (`0x801F6D44..0x801F6E88`)
     pub(in crate::world::battle::cast_band) fn draw_aluru_verdict(
         &mut self,
         caster_slot: u8,
@@ -41,7 +50,11 @@ impl World {
                 & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
                 == 0;
         let roll = (!skipped).then(|| self.next_rand());
-        self.casting.module_cam.kill = Some(cam::aluru_kill_verdict(roll, level));
+        let kill = cam::aluru_kill_verdict(roll, level);
+        self.casting.module_cam.kill = Some(kill);
+        if kill {
+            self.accrue_summon_spell_xp(caster_slot, spell_id, cam::ALURU_KILL_XP);
+        }
     }
 
     /// PROT 0916's part kills and tint stores.
