@@ -88,6 +88,49 @@ impl World {
         }
     }
 
+    /// The combo readout's fold into the acting member's Max Damage and Max
+    /// Hits words (`FUN_801E805C`, `0x801E88D4..0x801E89D8`), run each battle
+    /// frame after the hits: the readout pass is the action SM's prologue,
+    /// and a running maximum reads the same a frame either side.
+    ///
+    /// REF: FUN_801E805C (kernel `battle_value_readout::fold_combo_records`)
+    pub(in crate::world) fn fold_combo_records(&mut self) {
+        let ctx = &self.battle_ctx;
+        if !ctx.combo_readout_up {
+            return;
+        }
+        let acting = ctx.active_actor;
+        let party = self.party.party_count;
+        let Some(category) = self
+            .actors
+            .get(usize::from(acting))
+            .map(|a| a.battle.action_category)
+        else {
+            return;
+        };
+        // An engine slot past the party is a monster seat: retail's `>= 3`.
+        let seat = if acting < party { acting } else { 3 };
+        let (total, pushes) = (ctx.combo_total, ctx.readout_pushes);
+        let rslot = self.party_roster_slot(usize::from(acting));
+        let Some(rec) = self.party.roster.members.get_mut(rslot) else {
+            return;
+        };
+        let mut r = rec.battle_records();
+        let (d, h) = legaia_engine_battle_vm::battle_value_readout::fold_combo_records(
+            true,
+            seat,
+            category,
+            total,
+            pushes,
+            (r.max_damage, r.max_hits),
+        );
+        if (d, h) != (r.max_damage, r.max_hits) {
+            r.max_damage = d;
+            r.max_hits = h;
+            rec.set_battle_records(r);
+        }
+    }
+
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
         self.begin_battle_hit_pass();
         for i in 0..self.actors.len() {
@@ -735,6 +778,8 @@ impl World {
         if attacker < self.party.party_count {
             self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
         }
+        // The ring push itself (`0x801EDDD8..0x801EDDE4`), whoever swings.
+        self.battle_ctx.readout_pushes = self.battle_ctx.readout_pushes.wrapping_add(1);
         let defense = self.battle.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -1551,6 +1596,11 @@ impl World {
         };
         let total = a.battle.damage_accum;
         a.battle.damage_accum = 0;
+        // `sw a1,BD14` and the readout flag `0x78` at `0x801EEA64..0x801EEA78`,
+        // ahead of any test of the total: the readout pass opens the cluster
+        // on the flag, and the records fold reads the total.
+        self.battle_ctx.combo_total = total;
+        self.battle_ctx.combo_readout_up = true;
         if total == 0 {
             return;
         }

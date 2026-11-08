@@ -447,3 +447,8 @@ records page prints as Knockouts. Nothing in the port wrote it, so the page read
 The death arm's credit `0x8004B184..0x8004B29C` (`defeat_credit`) had no port either: a monster's death bumps
 the record `+0x9C` of the party seat holding the action, once, behind the arm's own `+0x1DC` bit 3. That word is
 the records page's Monsters Defeated, not the magic-rank counter it was once read as.
+The combo readout's fold `0x801E88D4..0x801E89D8` (`combo_records`) completes the records page: while the cluster
+is up and a party seat holds an Attack, the member's Max Damage and Max Hits words keep the larger of themselves
+and the string total `DAT_8007BD14` and the push count `ctx[+0x273]`. Neither had a port, nor did the push count
+and the total the action seed zeroes (`0x801E2C3C..0x801E2C4C`, with the cast readout cursor `ctx[+0x262]` the port
+also carried on across actions).

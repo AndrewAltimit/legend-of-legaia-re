@@ -887,6 +887,13 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    // `sb zero,0x273` / `sb zero,0x262` / `sw zero,BD14` at
+    // `0x801E2C3C..0x801E2C4C`: the ring's push count, the cast readout
+    // cursor and the string total start every action at `0`.
+    ctx.readout_pushes = 0;
+    ctx.cast_readout_cursor = 0;
+    ctx.combo_total = 0;
+    ctx.combo_readout_up = false;
     // `FUN_801E6D84`, the seed's plate routine, reads the target code here,
     // ahead of any cast begin's rewrite.
     let seat = ctx.active_actor;

@@ -1903,3 +1903,42 @@ fn a_monster_death_credits_the_acting_member() {
     world.finish_battle_reaction(monster, 4);
     assert_eq!(defeated(&world, rslot), 1);
 }
+
+/// The combo readout folds a party Attack's landed string into the acting
+/// member's Max Damage and Max Hits words, keeping the larger, and a monster's
+/// string or a cast folds nothing (`FUN_801E805C`, `0x801E88D4..0x801E89D8`).
+#[test]
+fn a_landed_string_folds_into_the_records() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.enter_battle(2, 1);
+    let monster = world.party.party_count;
+    world.actors[usize::from(monster)].battle.hp = 1000;
+    world.actors[usize::from(monster)].battle.max_hp = 1000;
+    world.battle_ctx.active_actor = 1;
+    world.actors[1].battle.action_category = 3;
+    world.battle_ctx.readout_pushes = 4;
+    world.actors[usize::from(monster)].battle.damage_accum = 321;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let rslot = world.party_roster_slot(1);
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
+
+    // A smaller string keeps the record.
+    world.battle_ctx.readout_pushes = 2;
+    world.actors[usize::from(monster)].battle.damage_accum = 50;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
+
+    // A cast's total folds nothing.
+    world.actors[1].battle.action_category = 2;
+    world.battle_ctx.readout_pushes = 9;
+    world.actors[usize::from(monster)].battle.damage_accum = 900;
+    world.apply_combo_total(monster);
+    world.fold_combo_records();
+    let r = world.party.roster.members[rslot].battle_records();
+    assert_eq!((r.max_damage, r.max_hits), (321, 4));
+}

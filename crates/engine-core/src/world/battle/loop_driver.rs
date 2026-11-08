@@ -508,6 +508,7 @@ impl World {
         if anim_vsyncs > 0 {
             self.tick_battle_hit_events();
         }
+        self.fold_combo_records();
 
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
         // state 0x50 *before* the liveness count resolves a wipe. Run it

@@ -1013,6 +1013,22 @@ pub struct BattleActionCtx {
     /// `(slot + 1) & 7` back (`0x801E18E8` / `0x801E18FC`).
     /// Kernel: [`crate::battle_cast_census::effect_child_hit`].
     pub cast_readout_cursor: u8,
+    /// `[+0x273]` - the damage-number ring's pushes this action: every hit
+    /// that reaches the melee damage body (`0x801EDDE4`) and every
+    /// effect-child hit (`0x801E1918`). Zeroed by the action seed
+    /// (`0x801E2C3C`); the combo readout's Max Hits fold reads it
+    /// ([`crate::battle_value_readout::fold_combo_records`]).
+    pub readout_pushes: u8,
+    /// `DAT_8007BD14` - the string total the melee kernel last landed on its
+    /// target's HP (`0x801EEA78`), a battle-overlay global carried here because
+    /// the action seed zeroes it (`0x801E2C4C`). The Max Damage fold reads it.
+    pub combo_total: u32,
+    /// `[+0x271]` - the combo cluster is up: raised when the readout pass opens
+    /// placement record `0x50` (`0x801D93F8`) on a landed total, cleared when
+    /// the cluster closes. The port raises it at the landing and drops it at
+    /// the next action seed; the fold it gates is a running maximum, so the
+    /// frames between the close and the seed change nothing.
+    pub combo_readout_up: bool,
     /// `[+0x16]` - the **Attack x2 pass counter** the War God Icon's pair
     /// runs on.
     ///

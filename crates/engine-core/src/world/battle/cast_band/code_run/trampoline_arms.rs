@@ -386,6 +386,8 @@ impl World {
             a.battle.liveness = 0;
         }
         self.battle_ctx.cast_readout_cursor = cursor;
+        // `ctx[+0x273] += 1` at `0x801E1918`: an effect-child hit is a push.
+        self.battle_ctx.readout_pushes = self.battle_ctx.readout_pushes.wrapping_add(1);
         hit.applied
     }
 }
