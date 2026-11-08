@@ -386,7 +386,7 @@ impl World {
             // typed ailments and the raw bits only the raw side carries -
             // the Rage arm's `0x380` delegation group among them.
             status: self.raw_status_word(actor_idx as u8),
-            fade: 0,
+            fade: b.additive_fade,
             radius,
             view_z,
             seat,

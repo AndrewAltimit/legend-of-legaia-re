@@ -147,6 +147,47 @@ pub struct AttackCamFraming {
     pub pose: CameraPose,
     /// `FUN_801D829C`'s fourth argument.
     pub duration_frames: u16,
+    /// What the arm does to the target's additive fade `+0x226`.
+    pub target_fade: TargetFade,
+}
+
+/// The arms' write to the target's additive-fade byte `+0x226`, which the
+/// battle tint pass reads (`0x8004AD0C`). Only the art `0x1A` arms touch it:
+/// the swing's opening window ramps the target up and the arm's other branch
+/// clears it (`0x801D7408`, `0x801D7768`, `0x801D7C4C`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TargetFade {
+    /// The arm leaves the byte alone.
+    #[default]
+    Keep,
+    /// `sb zero,0x226(target)`.
+    Clear,
+    /// The block after the tween call at `0x801D7BCC`.
+    Ramp,
+}
+
+impl TargetFade {
+    /// Ceiling on the ramp (`sltiu v0,0x61`, then `li v0,0x60`).
+    pub const RAMP_CAP: u8 = 0x60;
+    /// Ramp per frame step (`sll v0,v0,0x3` on `DAT_1F800393`).
+    pub const RAMP_SCALE: u8 = 8;
+
+    /// The byte this write leaves. The sum is stored as a byte before the
+    /// ceiling test reads it back (`0x801D7BF8`, `0x801D7C14`).
+    pub fn apply(self, cur: u8, frame_step: u8) -> u8 {
+        match self {
+            Self::Keep => cur,
+            Self::Clear => 0,
+            Self::Ramp => {
+                let stored = cur.wrapping_add(frame_step.wrapping_mul(Self::RAMP_SCALE));
+                if stored > Self::RAMP_CAP {
+                    Self::RAMP_CAP
+                } else {
+                    stored
+                }
+            }
+        }
+    }
 }
 
 /// Run the per-art attack camera for one frame.
@@ -180,6 +221,7 @@ pub fn attack_camera_framing(
     let track = |t: usize| phase.track_value(table, t).unwrap_or(0);
     let f = actor.anim_frame;
     let s = actor.arm_select;
+    let mut target_fade = TargetFade::Keep;
 
     // The ramp reads the arms share. `ramp` is a byte, so every scaling of it
     // fits an i16 without care; the accumulator is a 32-bit word whose low
@@ -201,12 +243,16 @@ pub fn attack_camera_framing(
                 if let Some(push) = anim_push(f) {
                     apply_anim_push(&mut p, cursor, push);
                 }
+                // `j 0x801D7BC4` shares Gala's ramp.
+                target_fade = TargetFade::Ramp;
                 6
             } else if s < 2 {
                 // `0x801D7418` falls into character 3's late block.
+                target_fade = TargetFade::Clear;
                 gala_late_arm(&mut p, ctx, track(4));
                 1
             } else {
+                target_fade = TargetFade::Clear;
                 threshold_arm(&mut p, ctx, 0, track(2), track(3));
                 1
             }
@@ -258,12 +304,15 @@ pub fn attack_camera_framing(
                 p.dist[0] = p.dist[0].wrapping_sub(0x100);
                 p.rot[0] = p.rot[0].wrapping_add(track(0));
                 p.rot[1] = p.rot[1].wrapping_add(track(13));
+                target_fade = TargetFade::Ramp;
                 6
             } else if f < 0x90 {
+                target_fade = TargetFade::Clear;
                 threshold_arm(&mut p, ctx, 0, track(2), track(3));
                 1
             } else {
                 // Rejoins the shared block at `0x801D7D4C` with row 14.
+                target_fade = TargetFade::Clear;
                 gala_late_arm(&mut p, ctx, track(14));
                 1
             }
@@ -318,11 +367,14 @@ pub fn attack_camera_framing(
                 p.dist[2] = p.dist[2].wrapping_sub(track(19).wrapping_add(r));
                 p.rot[0] = p.rot[0].wrapping_add(track(0));
                 p.rot[1] = p.rot[1].wrapping_add(track(17));
+                target_fade = TargetFade::Ramp;
                 6
             } else if f < 0xA0 {
+                target_fade = TargetFade::Clear;
                 threshold_arm(&mut p, ctx, 0, track(2), track(3));
                 1
             } else {
+                target_fade = TargetFade::Clear;
                 gala_late_arm(&mut p, ctx, track(4));
                 1
             }
@@ -427,6 +479,7 @@ pub fn attack_camera_framing(
     Some(AttackCamFraming {
         pose: p,
         duration_frames: dur,
+        target_fade,
     })
 }
 

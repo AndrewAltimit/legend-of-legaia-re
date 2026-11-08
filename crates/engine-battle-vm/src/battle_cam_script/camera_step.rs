@@ -140,7 +140,7 @@ impl BattleCamera {
         let tracks = self.attack.tracks.as_ref()?;
         let a = self.actor;
         let world = |v: f32| (v as i32) as u16;
-        attack_camera_framing(
+        let framing = attack_camera_framing(
             AttackCamActor {
                 character: c.character,
                 art_id: c.art_id,
@@ -151,7 +151,18 @@ impl BattleCamera {
             },
             &mut self.attack.ctx,
             tracks,
-        )
+        )?;
+        self.attack
+            .target_fades
+            .push((c.target_slot, framing.target_fade, self.frame_step));
+        Some(framing)
+    }
+
+    /// The target-fade writes the arms made since the last call, as
+    /// `(slot, write, frame step)`. The actors are the host's, so it applies
+    /// them to each target's `+0x226`.
+    pub fn take_target_fades(&mut self) -> Vec<(u8, crate::battle_attack_camera::TargetFade, u8)> {
+        std::mem::take(&mut self.attack.target_fades)
     }
 
     /// Install the case-6 context inputs the [`BattleCamPhase::Action`]
@@ -297,9 +308,8 @@ impl BattleCamera {
     ///   per-frame `ctx[+0x6DA]` drift - and its idle-orbit store - on Far;
     /// - case 7's pull-in (`0x801D6724..0x801D6730`) needs Close;
     /// - case 8 (`0x801D6958..0x801D69EC`) holds the live yaw on Far and,
-    ///   on Normal or Far, skips its dead- and live-target arms for an
-    ///   ordinary fight (the `_DAT_8007BD2C` / `ctx[+0x287]` exception that
-    ///   keeps them in a scripted one is not carried);
+    ///   on Normal or Far, skips its dead- and live-target arms unless a
+    ///   scripted fight has reached the results sequence;
     /// - the per-art attack camera's call (`0x801D7138..0x801D7144`) is
     ///   skipped on Far.
     pub fn set_camera_option(&mut self, option: u8) {
@@ -487,6 +497,31 @@ impl BattleCamera {
         self.target = target;
     }
 
+    /// The pose and raw depth framing case `case` (`6`, `7` or `8`) would
+    /// hand `FUN_801D829C` on the camera as it stands, with no glide armed.
+    /// The kernel differential reads it; the step uses the same three bodies.
+    pub fn framing_case_pose(&mut self, case: u8) -> Option<(BattleCamPose, i32)> {
+        match case {
+            6 => Some((self.action_pose(), self.live_action_framing().raw_z())),
+            7 => Some((self.recover_pose(), self.recover_raw_z())),
+            8 => Some(self.action_end_pose()),
+            _ => None,
+        }
+    }
+
+    /// Seat the counters the framing cases read off the context. A harness
+    /// seam for the differential, which seeds them from retail's words.
+    pub fn seat_framing_counters(
+        &mut self,
+        ctx: crate::battle_attack_camera::AttackCamCtx,
+        yaw: i32,
+        body: Option<[f32; 2]>,
+    ) {
+        self.attack.ctx = ctx;
+        self.action_yaw = yaw;
+        self.acting_body = body;
+    }
+
     /// Case 7's framing for the live actor / target pair, on the live yaw
     /// counter and the live camera yaw (which its one-way unwrap reads).
     ///
@@ -498,7 +533,7 @@ impl BattleCamera {
     /// `battle_melee_hit_spark` capture reads `+0x1D9 = 0x11` under the
     /// latched `+0x1DB = 0x27`, mid-way into the pulled-in pose). The port's
     /// actor keeps the raw staged id, so the same test is "the latched id is
-    /// the SpecialStarter or an art constant". A monster seat pulls in on
+    /// the SpecialStarter `0x11` or an art constant". A monster seat pulls in on
     /// `ctx[+0x243] != 0` - the last committed clip's header byte - which the
     /// engine does not carry, so a monster's two-shot never pulls in here.
     /// The acting actor as cases 7 and 8 read it: X / Z from the body pair
@@ -532,9 +567,9 @@ impl BattleCamera {
     fn recover_pull_in(&self) -> bool {
         self.option == CAMERA_OPTION_CLOSE
             && if self.action.party_slot {
-                self.attack
-                    .actor
-                    .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART)
+                self.attack.actor.is_some_and(|c| {
+                    c.art_id == 0x11 || c.art_id >= crate::battle_attack_camera::FIRST_ART
+                })
             } else {
                 self.live_action_framing().solo
             }
@@ -567,43 +602,62 @@ impl BattleCamera {
         let f = self.live_action_framing();
         let actor = self.body_actor();
         let mut pose = action_end_framing(actor, self.target, f, self.pose.yaw);
-        if self.option == CAMERA_OPTION_FAR {
-            // `sh a0,0x12(sp)` with the live `_DAT_8007B792` (`0x801D696C`).
-            pose.yaw = self.pose.yaw;
-        }
-        if self.option != CAMERA_OPTION_CLOSE {
-            return (pose, f.depth_raw);
-        }
-        let Some(t) = self.target.filter(|t| !t.live) else {
-            // A standing target takes the live-target arm. Only a real
-            // target slot reaches it (`actor[+0x1DD] < 8`, `0x801D6BFC`).
-            if let Some(t) = self.target {
-                let raw_z = apply_live_target_reframe(&mut pose, t, f.depth_raw, self.pose);
-                return (pose, raw_z);
+        let mut raw_z = f.depth_raw;
+        // The Battle Camera option's yaw (`0x801D6958..0x801D69A4`): Far holds
+        // the live yaw; Normal on the battle-over signal holds it and walks it
+        // on by `4 * step / 3`.
+        match self.option {
+            CAMERA_OPTION_FAR => pose.yaw = self.pose.yaw,
+            CAMERA_OPTION_NORMAL if f.battle_over => {
+                let step = i64::from(self.frame_step) * 4;
+                pose.yaw = self.pose.yaw + ((step * 0x5555_5556) >> 32) as f32;
             }
-            return (pose, f.depth_raw);
-        };
-        // Both dead-target arms start from the target-facing yaw.
-        let yaw = dead_target_yaw(t.facing, self.attack.ctx.phase_cursor, f);
-        if t.node_gone || t.lone_defeat {
-            // The stand-off arm adds the live ladder rather than zeroing it.
-            let yaw = yaw + self.action_yaw;
-            let raw_z = apply_node_gone_reframe(&mut pose, actor, yaw, f.body_radius);
-            return (pose, raw_z);
+            _ => {}
         }
-        // Stored straight over the unwrapped base (`sh v1,0x12(sp)`); the
-        // tween builder's shortest-arc adjust takes it from there.
-        pose.yaw = yaw.rem_euclid(4096) as f32;
-        // The death re-frame owns the yaw ladder too: `sh zero,0x4(t0)` with
-        // `t0 = ctx + 0x6D6` zeroes `ctx[+0x6DA]` before the fork.
-        self.action_yaw = 0;
-        self.action_yaw_drift = 0;
-        let ramp = self.attack.ctx.death_ramp;
-        if apply_death_reframe(&mut pose, f.depth_raw, ramp, t.world[1]) {
-            self.attack.ctx.death_ramp = 0;
-            return (pose, f.depth_raw);
+        // `0x801D69A8..0x801D69EC`: the target arms run for a real target
+        // on Close, or off Close in a scripted fight once the results word
+        // `_DAT_8007BD2C` is non-zero.
+        if let Some(t) = self.target
+            && (self.option == CAMERA_OPTION_CLOSE || (f.results_word && f.scripted))
+        {
+            if t.live {
+                raw_z = apply_live_target_reframe(&mut pose, t, f.depth_raw, self.pose);
+            } else {
+                // Both dead-target arms start from the target-facing yaw.
+                let yaw = dead_target_yaw(t.facing, self.attack.ctx.phase_cursor, f);
+                if t.node_gone || t.lone_defeat {
+                    // The stand-off arm adds the live ladder rather than
+                    // zeroing it.
+                    let yaw = yaw + self.action_yaw;
+                    raw_z = apply_node_gone_reframe(&mut pose, actor, yaw, f.body_radius);
+                } else {
+                    // Stored straight over the unwrapped base (`sh v1,0x12(sp)`);
+                    // the tween builder's shortest-arc adjust takes it from there.
+                    pose.yaw = yaw.rem_euclid(4096) as f32;
+                    // The death re-frame owns the yaw ladder too: `sh
+                    // zero,0x4(t0)` with `t0 = ctx + 0x6D6` zeroes `ctx[+0x6DA]`
+                    // before the fork.
+                    self.action_yaw = 0;
+                    self.action_yaw_drift = 0;
+                    let ramp = self.attack.ctx.death_ramp;
+                    if apply_death_reframe(&mut pose, f.depth_raw, ramp, t.world[1]) {
+                        self.attack.ctx.death_ramp = 0;
+                    } else {
+                        raw_z = f.depth_raw - 4 * i32::from(ramp);
+                    }
+                }
+            }
         }
-        (pose, f.depth_raw - 4 * i32::from(ramp))
+        // The tail at `0x801D6E84`, on every path: off Close in a scripted
+        // fight the battle-over signal holds the live pitch and height over
+        // a fixed depth.
+        if f.scripted && self.option != CAMERA_OPTION_CLOSE && f.battle_over {
+            pose.pitch = self.pose.pitch;
+            pose.tr[1] = self.pose.tr[1];
+            raw_z = 0x600;
+            pose.tr[2] = prescale_tr_z(raw_z);
+        }
+        (pose, raw_z)
     }
 
     /// Which framing owns the camera this frame. Hosts export it so what the

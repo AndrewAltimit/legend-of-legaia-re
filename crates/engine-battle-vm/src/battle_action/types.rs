@@ -545,6 +545,9 @@ pub struct BattleActor {
     /// inflictors reset it to `0x1000`. `FUN_80050120` arm 0 drains it by
     /// `0x20` per frame back to `0` once the colour word has eased neutral.
     pub render_blend: u32,
+    /// `+0x226` - the additive fade the tint pass reads (`0x8004AD0C`),
+    /// written only by the per-art attack camera's art `0x1A` arms.
+    pub additive_fade: u8,
     /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,

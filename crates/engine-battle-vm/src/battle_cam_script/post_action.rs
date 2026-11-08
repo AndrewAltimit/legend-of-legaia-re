@@ -180,10 +180,11 @@ pub fn recover_framing(
         pitch,
         yaw: unwrap_forward(yaw + RECOVER_YAW_BIAS, camera_yaw),
         tr: [0.0, tr_y, prescale_tr_z(tr_z_raw)],
+        // `sra v0,v0,0x1`, a floor, on the halfword sum (`0x801D662C`).
         focus: [
-            (actor.world[0] + other[0]) * 0.5,
-            (actor.world[1] + other[1]) * 0.5,
-            (actor.world[2] + other[2]) * 0.5,
+            ((actor.world[0] as i32 + other[0] as i32) >> 1) as f32,
+            ((actor.world[1] as i32 + other[1] as i32) >> 1) as f32,
+            ((actor.world[2] as i32 + other[2] as i32) >> 1) as f32,
         ],
     }
 }

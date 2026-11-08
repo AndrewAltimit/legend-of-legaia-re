@@ -4387,6 +4387,7 @@ dependencies = [
  "legaia-engine-battle-hud",
  "legaia-engine-battle-loop",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-cast",
  "legaia-engine-core",
  "legaia-engine-dialog",

@@ -55,6 +55,8 @@ pub struct AttackCamChannels {
     /// `actor[+0x22C][+0x68]` - the animation cursor in sixteenths of a
     /// keyframe.
     pub anim_frame: i16,
+    /// `actor[+0x1DD]` - the target whose `+0x226` the arms write.
+    pub target_slot: u8,
 }
 
 /// The non-pose inputs `FUN_801D5854` case `6` reads out of the battle
@@ -110,6 +112,12 @@ pub struct ActionFraming {
     /// (`+0x87`, stored by `FUN_8004E13C` at `0x8004E2C0`). On a monster's
     /// strike it is case 7's pull-in gate (`0x801D6770`).
     pub solo: bool,
+    /// `ctx[+0x287] != 0` - the scripted-fight flag, which case 8 reads off
+    /// Close (`0x801D69D8`, `0x801D6E90`).
+    pub scripted: bool,
+    /// `_DAT_8007BD2C != 0` - the results sequence's phase word has left its
+    /// first value. Only case 8 reads it off Close (`0x801D69CC`).
+    pub results_word: bool,
 }
 
 impl Default for ActionFraming {
@@ -128,6 +136,8 @@ impl Default for ActionFraming {
             ramp: 0,
             body_radius: PARTY_BODY_RADIUS,
             solo: false,
+            scripted: false,
+            results_word: false,
         }
     }
 }

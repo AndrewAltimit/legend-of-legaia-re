@@ -414,6 +414,9 @@ fn battle_end_cam_inputs(
     inputs.action = script::ActionFraming {
         party_slot: party,
         battle_over: true,
+        // The sequencer's phase word has left `0` within the first pass
+        // (`0 -> 2 -> 4 -> 5`), and a party wipe starts at `5`.
+        results_word: true,
         char_id: roster.map_or(0, |r| r + 1),
         anim_id: seq.pose_id.unwrap_or(0),
         ..inputs.action
@@ -635,6 +638,7 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
             .as_ref()
             .map(|p| p.cursor_sixteenths() as i16)
             .unwrap_or(0),
+        target_slot: a.battle.active_target,
     })
 }
 
@@ -781,6 +785,8 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
     let party = usize::from(acting_slot) < world.party.party_count as usize;
     script::ActionFraming {
         party_slot: party,
+        scripted: world.battle_ctx.scripted_fight != 0,
+        results_word: false,
         battle_over: false,
         depth_raw: world.battle.camera_frame_height as i32,
         yaw_base: 0,
@@ -900,6 +906,18 @@ impl World {
             tracks.as_ref(),
             &mut self.rng_state,
         );
+        // The per-art arms write their target's additive fade `+0x226`.
+        let fades = self
+            .battle
+            .camera
+            .as_mut()
+            .map(|c| c.take_target_fades())
+            .unwrap_or_default();
+        for (slot, write, step) in fades {
+            if let Some(t) = self.actors.get_mut(usize::from(slot)) {
+                t.battle.additive_fade = write.apply(t.battle.additive_fade, step);
+            }
+        }
         // The SM's pass hands the shot in once a battle frame; it holds
         // until the camera's step for that frame arms it.
         if !self
