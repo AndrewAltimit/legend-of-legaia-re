@@ -5,10 +5,13 @@
 //! Generated actors at every phase - ahead of the delay, inside the ramp,
 //! held, expiring, held for ever - with negative delays, out-of-range
 //! channels, every frame step and clocks near the halfword ends. The push is
-//! read off a hook on the emitter.
+//! read off a hook on the emitter. The last test loads the block the way the
+//! spawn does, `FUN_80020B00` from a template, and plays the fade to its end
+//! and, for some, some 40000 vsyncs past it, against `FadeState`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::actor_colour_tween::{ColourTween, step_colour_tween};
+use legaia_engine_system::fade::{FadeState, FadeTemplate};
 use legaia_engine_system::fade_ramp::{FadeRamp, tick_fade_ramp};
 use psx_retail_exec::{A0, A1, A2, Stop};
 use std::cell::RefCell;
@@ -16,6 +19,8 @@ use std::rc::Rc;
 
 const TWEEN: u32 = 0x801D_DC20;
 const FADE_TICK: u32 = 0x8002_5000;
+const FADE_LOAD: u32 = 0x8002_0B00;
+const TEMPLATE: u32 = 0x8013_1000;
 const EMITTER: u32 = 0x8002_4EE4;
 const DELTA: u32 = 0x1F80_0393;
 const ACTOR: u32 = 0x8013_0000;
@@ -200,4 +205,107 @@ fn the_fade_actor_accumulates_clamps_and_finishes_as_retail() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     eprintln!("{drawn} drawn, {finished} finished");
     assert!(drawn > 50_000 && finished > 200, "{drawn} {finished}");
+}
+
+/// A fade loaded from its template and played frame by frame: what the quad
+/// shows each vsync, against `FadeState::load` and `step_vsyncs`, which keep
+/// the ramp as `elapsed / duration` and hand `FUN_80020C14`'s block to the
+/// tick each frame. Some fades run about 40000 vsyncs past the ramp, where
+/// retail's halfword duration count wraps positive and the port's elapsed
+/// count stays at its end. A zero duration divides by zero in the loader
+/// (`div` at `0x80020B84`, no `break` guard): the R3000 leaves `-1` in `lo`
+/// for a non-negative difference and `1` for a negative one, a delta whose
+/// sign always says "overshot", so the first tick lands on the target.
+#[test]
+fn a_loaded_fade_shows_what_retail_shows_to_its_end_and_past_it() {
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.hardware_zero_div = true;
+    let pushes = emitter(&mut cpu);
+    let mut rng = Rng(0x4C4F_4144);
+    let (mut failures, mut frames, mut long, mut zero) = (Vec::new(), 0u64, 0, 0);
+    for case in 0..3_000 {
+        let rgb = |rng: &mut Rng| std::array::from_fn(|_| rng.below(0x100) as i16);
+        let duration = match rng.below(9) {
+            0 => 0,
+            1 => 1,
+            2 => -(rng.below(0x40) as i16) - 1,
+            _ => 1 + rng.below(0x100) as i16,
+        };
+        let t = FadeTemplate {
+            kind: rng.below(4) as i16,
+            duration,
+            start_rgb: rgb(&mut rng),
+            end_rgb: rgb(&mut rng),
+            mode: [
+                rng.below(0x10) as i16,
+                match rng.below(3) {
+                    0 => -1,
+                    1 => rng.below(4) as i16,
+                    _ => rng.below(0x200) as i16,
+                },
+                rng.below(8) as i16,
+            ],
+        };
+        let words = [
+            t.kind,
+            t.duration,
+            0,
+            t.start_rgb[0],
+            t.start_rgb[1],
+            t.start_rgb[2],
+            0,
+            t.end_rgb[0],
+            t.end_rgb[1],
+            t.end_rgb[2],
+            t.mode[0],
+            t.mode[1],
+            t.mode[2],
+        ];
+        for (i, w) in words.iter().enumerate() {
+            cpu.mem.wr16(TEMPLATE + 2 * i as u32, *w as u16);
+        }
+        cpu.mem.load(ACTOR, &[0u8; 0x100]);
+        cpu.mem.wr32(ACTOR + 0x10, 0x10);
+        assert_eq!(
+            cpu.call(FADE_LOAD, &[ACTOR + 0x7C, TEMPLATE]),
+            Stop::Returned
+        );
+        let mut fade = FadeState::load(&t);
+        let run = if case % 50 == 0 { 40_000 } else { 600 };
+        long += usize::from(run > 600);
+        zero += usize::from(duration == 0);
+        for frame in 0..run {
+            let dt = 1 + rng.below(3) as u8;
+            cpu.mem.wr8(DELTA, dt);
+            pushes.borrow_mut().clear();
+            assert_eq!(cpu.call(FADE_TICK, &[ACTOR]), Stop::Returned);
+            let retail = pushes.borrow().first().map(|p| p.2);
+            let gone = cpu.mem.rd32(ACTOR + 0x10) & 8 != 0;
+            let alive = fade.step_vsyncs(dt);
+            let port = (alive && fade.visible()).then(|| {
+                let [r, g, b] = fade.rgb();
+                u32::from(r) | u32::from(g) << 8 | u32::from(b) << 16
+            });
+            frames += 1;
+            if (retail, gone) != (port, !alive) {
+                if failures.len() < 12 {
+                    failures.push(format!(
+                        "case {case} {t:?} frame {frame} dt {dt}: retail {retail:x?} gone {gone} \
+                         port {port:x?} gone {}",
+                        !alive
+                    ));
+                }
+                break;
+            }
+            if gone {
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    eprintln!("{frames} frames, {long} long, {zero} zero-duration");
+    assert!(long > 30 && zero > 200, "{long} {zero}");
 }

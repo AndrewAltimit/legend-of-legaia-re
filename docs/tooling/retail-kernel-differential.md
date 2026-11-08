@@ -470,7 +470,12 @@ The overlay colour tween `FUN_801DDC20` (`colour_tween`) found the port taking t
 where the bytes take `clock - delay` as a halfword (`0x801DDCC4..0x801DDCD8`): a negative delay with the clock past
 `0x7FFF` lerped from a progress `0x10000` too large. The field VM's screen-effect arm seats delay `0`, so no shipped
 script reaches it. The SCUS fade actor's tick `FUN_80025000` over its step `FUN_80020C14` matches `tick_fade_ramp`
-at every phase.
+at every phase. Loaded from a template through `FUN_80020B00` and played out, a fade shows on every vsync what
+`FadeState` shows, including some 40000 vsyncs past its ramp, where retail's halfword duration count wraps positive
+and the port's stays at its end: the channels sit on the target either way. A zero duration differed. The loader's
+`div` (`0x80020B84`) has no `break` guard, so the R3000's quotient ships, `-1` for a non-negative difference and `1`
+for a negative one, and the first tick clamps onto the target; the port had divided by one, and a frame step above
+one then overflowed the channel. No shipped template has a zero duration.
 The field VM's context stores (`field_ctx`), every distinct instruction on the disc run on a context of generated
 bytes with `step` beside it, found three: op `0x4B` writing its keyframe count over `+0x6D` (the face-rotation byte)
 where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit in its two tile bytes `+0x8C` /
