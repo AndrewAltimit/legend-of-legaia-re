@@ -424,9 +424,18 @@ movement, smarter monsters, the saved-chain Arts list, the tweaks and tuning,
 nothing else, so the next Play starts the way this game ended, as the play
 page remembers its boxes. While *Original game only* is on, the rows it holds
 read *Original* and do not change, as on the launcher. `L1` / `R1` (`Tab`)
-flip to the **Cheats** page ([below](#cheats)), then to the **Keys** page: every toggle key with its current state (`F11`
-fullscreen among them), the key each pad button is on (Cross, Circle, Start,
-...), read from the live Key Config table, and the mouse's camera controls.
+flip to the **Cheats** page ([below](#cheats)), then to the **Scenes** page,
+then to the **Keys** page. **Scenes** is the play page's scene list: every
+town, field area and overworld, grouped as on the page, opened on the scene you
+stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
+`Enter` goes there with your party and bag, seated and staged as a
+`--scene` launch or the play page's list seats and stages it (the scene's
+free-roam visit, entered through one of its doors). It refuses on the
+title and in the pause menu, in a fight, a movie or a minigame, and says so
+under the rows. **Keys** lists every toggle key with its current state (`F11`
+fullscreen among them; `End` only while an expansion pack is loaded), the key
+each pad button is on (Cross, Circle, Start, ...), read from the live Key
+Config table, and the mouse's camera controls.
 `Esc`, `F12`, Circle or Start close the panel. A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line

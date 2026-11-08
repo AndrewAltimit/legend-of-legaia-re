@@ -248,6 +248,7 @@ impl PlayWindowApp {
             settings_scroll: 0,
             launch_switches: None,
             cheats_page: Default::default(),
+            scenes_page: Default::default(),
             options_save_error: Default::default(),
             // Armed by `cmd_play_window_with_record` for an interactive
             // window only.

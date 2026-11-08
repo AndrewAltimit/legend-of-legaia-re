@@ -132,7 +132,7 @@ const HELP_H: i32 = 12;
 /// The help / outcome line budget under the rows.
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Left/Right choose  Cross apply";
-const FLIP_HINT: &str = "L1/R1 or Tab: keys";
+const FLIP_HINT: &str = "L1/R1 or Tab: scenes";
 
 impl PlayWindowApp {
     /// Left / Right on the Cheats page: pick a value; a switch flips.

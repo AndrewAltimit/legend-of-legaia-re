@@ -1834,7 +1834,7 @@ impl LauncherApp {
             },
             Item::Panel => match self.panel {
                 Panel::Options => "See and change the keyboard keys. In the game, F12 or \
-                                   Select+Start opens settings and the key list."
+                                   Select+Start opens settings, cheats, scenes and the key list."
                     .into(),
                 Panel::Controls => "Back to the options. Right or Tab goes to the keys.".into(),
             },

@@ -6,10 +6,11 @@
 //! game does not have, and writes the same `legaia-options.toml`, so a change
 //! made in either place is the one the other shows. Up / Down pick a row,
 //! Left / Right change it, Cross steps it; `L1` / `R1` (or `Tab`) flip to the
-//! key list, Circle, Start, `F12` or `Esc` close the panel. The game holds
+//! next page, Circle, Start, `F12` or `Esc` close the panel. The game holds
 //! still under the panel, except in a multiplayer session, whose peers would
 //! stall: there `F12` shows the key list alone and takes no pad input. The
-//! pages run Settings, Cheats (`window::cheats_panel`), then the key list.
+//! pages run Settings, Cheats (`window::cheats_panel`), Scenes
+//! (`window::scenes_panel`), then the key list.
 //!
 //! The browser play page has no twin of this page and needs none: its
 //! *Visual enhancements* panel and sound sliders sit beside the canvas, in
@@ -129,6 +130,8 @@ pub(super) enum PanelPage {
     #[default]
     Settings,
     Cheats,
+    /// Go to another scene (`window::scenes_panel`).
+    Scenes,
     Keys,
 }
 
@@ -278,6 +281,11 @@ impl PlayWindowApp {
             PanelInput::Move(d) if page == PanelPage::Cheats => self.cheats_page.move_cursor(d),
             PanelInput::Change(dir) if page == PanelPage::Cheats => self.cheats_change(dir),
             PanelInput::Confirm if page == PanelPage::Cheats => self.cheats_apply(),
+            PanelInput::Move(d) if page == PanelPage::Scenes => self.scenes_move(d),
+            PanelInput::Change(dir) if page == PanelPage::Scenes => {
+                self.scenes_move(i32::from(dir) * super::scenes_panel::PAGE_STEP)
+            }
+            PanelInput::Confirm if page == PanelPage::Scenes => self.scenes_go(),
             PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
@@ -286,9 +294,13 @@ impl PlayWindowApp {
     pub(super) fn flip_panel(&mut self) {
         self.panel_page = match self.panel_page {
             PanelPage::Settings => PanelPage::Cheats,
-            PanelPage::Cheats => PanelPage::Keys,
+            PanelPage::Cheats => PanelPage::Scenes,
+            PanelPage::Scenes => PanelPage::Keys,
             PanelPage::Keys => PanelPage::Settings,
         };
+        if self.panel_page == PanelPage::Scenes {
+            self.scenes_page_shown();
+        }
     }
 
     /// Step the row under the cursor and push it to everything that reads it,

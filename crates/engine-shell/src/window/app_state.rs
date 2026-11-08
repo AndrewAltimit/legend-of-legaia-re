@@ -1060,6 +1060,8 @@ pub(super) struct PlayWindowApp {
     pub(super) settings_scroll: usize,
     /// The Cheats page's cursor, picks and last outcome.
     pub(super) cheats_page: super::cheats_panel::CheatsPage,
+    /// The `F12` panel's Scenes page: its cursor.
+    pub(super) scenes_page: super::scenes_panel::ScenesPage,
     /// The options file would not save: said on the settings page.
     pub(super) options_save_error: std::cell::RefCell<Option<String>>,
     /// The start-up line pointing at that panel ([`StartupHint`]).

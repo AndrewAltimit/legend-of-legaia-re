@@ -87,6 +87,7 @@ impl PlayWindowApp {
             stage.extend(match self.panel_page() {
                 crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
                 crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
+                crate::window::settings_panel::PanelPage::Scenes => self.scenes_stage_draws(),
                 crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
             });
         }
@@ -117,13 +118,16 @@ impl PlayWindowApp {
     /// state, read off the shared table so a new hotkey lists itself, laid
     /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
-        use legaia_engine_session::hotkeys::HOST_HOTKEYS;
+        use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
         // Each row's state, and whether it is one the original game does
         // not have (the launcher's original values, shared through
         // `hotkey_original_state`): that state is drawn green.
         let mut states: Vec<Option<(usize, bool)>> = Vec::new();
         let mut entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
+            // `End` reloads an `--expansion` pack; with none loaded the row
+            // names a key that only says there is nothing to reload.
+            .filter(|&&(hk, _)| hk != HostHotkey::ReloadPack || self.pack_reload.is_some())
             .map(|&(hk, _)| {
                 let line = if hk.is_action() {
                     states.push(None);

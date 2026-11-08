@@ -151,6 +151,7 @@ impl PlayWindowApp {
                     match self.panel_page() {
                         PanelPage::Settings => self.change_setting(1),
                         PanelPage::Cheats => self.cheats_apply(),
+                        PanelPage::Scenes => self.scenes_go(),
                         PanelPage::Keys => {}
                     }
                 }
