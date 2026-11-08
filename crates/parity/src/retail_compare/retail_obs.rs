@@ -217,6 +217,10 @@ pub struct RetailObs {
     /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
     /// child as `LEGAIA_SEAT_WALKERS`.
     pub walkers: Vec<WalkerSeed>,
+    /// Every ambient stream's live state in actor-list order
+    /// ([`retail_ambient_streams`]): what a run resuming from the state, so
+    /// its `rand()` stream can match retail's, seats after the settle.
+    pub ambient_streams: Vec<RetailAmbientStream>,
     /// Placements a finished partition-2 beat left on a script-literal tile
     /// ([`scripted_seats`]): set by the corpus run, which holds the scene's
     /// MAN; seated, position only, by the headless seed and by the image
@@ -442,6 +446,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            ambient_streams: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_ambient_streams(ram)
+            } else {
+                Vec::new()
+            },
             morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_morphs(ram)
             } else {
@@ -532,6 +541,24 @@ pub(super) const SLOT_TABLE_VA: u32 = 0x801C_6460;
 /// every frame (`map03`'s cart clock, `4E 00 41 01 ..` once its counter
 /// holds `240`) would otherwise roll the warm-up's ticks as game time. Held,
 /// each tick draws the value retail's next draw would.
+/// Stand every ambient stream where the capture holds it and put the world
+/// `rand()` stream on the capture's seed: after this a tick draws what
+/// retail's next tick draws. The ambient-stream analogue of
+/// [`hold_rand_seed`], for a run that lets the stream run on past the seat
+/// (the walk film and its test).
+pub fn seat_ambient_streams(session: &mut NativeSession, retail: &RetailObs) {
+    let world = &mut session.host.world;
+    let order: Vec<u16> = retail.ambient_streams.iter().map(|s| s.seat.flat).collect();
+    world.seed_ambient_order(&order);
+    for s in &retail.ambient_streams {
+        world.seed_ambient_walker(s.seat.flat, s.x, s.z, s.heading);
+        world.seed_ambient_stream(&s.seat);
+    }
+    if let Some(seed) = retail.rand_seed {
+        world.rng_state = seed;
+    }
+}
+
 pub(crate) fn hold_rand_seed(session: &mut NativeSession, retail: &RetailObs) {
     if let Some(seed) = retail.rand_seed {
         session.host.world.rng_state = seed;

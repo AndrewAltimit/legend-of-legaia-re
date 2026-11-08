@@ -37,6 +37,12 @@ Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
 pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
 the step, so the two meet on every second row.
 
+The engine side also seats every wanderer's ambient stream and the world seed
+from the state's RAM (`retail_compare::retail_ambient_streams`,
+`World::seed_ambient_stream`), and `engine.csv` carries the seed word in its
+`rng` column against retail's `walk_film.csv` `rng`: the free-walk stretch agrees
+draw for draw until an engage or a touch separates the two runs.
+
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.
 

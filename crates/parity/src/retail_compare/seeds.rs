@@ -605,6 +605,59 @@ pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
         .collect()
 }
 
+/// One actor's ambient stream exactly as the RAM holds it on the state's
+/// newest tick: the stream state a retail-seeded run resumes, and the seat
+/// and raw heading it resumes from. [`retail_walkers`] holds the *displayed*
+/// seat for the image; this is the live one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailAmbientStream {
+    pub seat: legaia_engine_core::world::AmbientStreamSeat,
+    pub x: i16,
+    pub z: i16,
+    pub heading: u16,
+}
+
+/// The default-move arena `0x801C6470`, one `[move, anim, phase, _]` record
+/// per actor keyed by `+0x50`.
+const DEFAULT_MOVE_ARENA: u32 = 0x801C_6470;
+
+/// Every actor node running an ambient stream (`+0x10 & 0x80`, a live
+/// `+0x80` stream pointer), in actor-list order. Its order, walked with the
+/// lists head to tail, is the tick order retail's `FUN_8002519C` runs and so
+/// the order the streams' `rand()` draws land in.
+pub fn retail_ambient_streams(ram: &[u8]) -> Vec<RetailAmbientStream> {
+    let player = game_anchors::player_ptr(ram);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x10) & 0x80 != 0)
+        .filter(|&n| (0x8000_0000..0x8020_0000).contains(&game_anchors::u32_at(ram, n + 0x80)))
+        .map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            let selector = game_anchors::u16_at(ram, n + 0x86);
+            let arena = DEFAULT_MOVE_ARENA + u32::from(flat) * 4;
+            RetailAmbientStream {
+                seat: legaia_engine_core::world::AmbientStreamSeat {
+                    flat,
+                    selector: selector & 0x0FFF,
+                    pc: game_anchors::u16_at(ram, n + 0x84),
+                    cursor: u16::from(game_anchors::u8_at(ram, n + 0x8B))
+                        | (u16::from(game_anchors::u8_at(ram, n + 0xB7)) << 8),
+                    wander_dir: ((selector >> 11) & 6) as u8,
+                    wander_phase: game_anchors::u8_at(ram, arena + 2),
+                    default_move: [
+                        game_anchors::u8_at(ram, arena),
+                        game_anchors::u8_at(ram, arena + 1),
+                    ],
+                },
+                x: game_anchors::i16_at(ram, n + 0x14),
+                z: game_anchors::i16_at(ram, n + 0x18),
+                heading: game_anchors::u16_at(ram, n + 0x26),
+            }
+        })
+        .collect()
+}
+
 /// Where a walker stood `lag` game frames before the RAM's tick.
 ///
 /// The actor-list tick iterator `FUN_8002519C` copies each node's `+0x14`

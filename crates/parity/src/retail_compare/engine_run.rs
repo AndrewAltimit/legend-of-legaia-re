@@ -114,6 +114,9 @@ pub enum SeedOrder {
     FlagsFirst,
 }
 
+/// A step run on the seated session after the settle window.
+pub type AfterSettle<'a> = &'a mut dyn FnMut(&mut NativeSession) -> Result<()>;
+
 /// Seed through the engine's own card-load order ([`SeedOrder::Resume`]).
 pub fn run_engine(extracted: &Path, retail: &RetailObs) -> Result<EngineObs> {
     run_engine_with(extracted, retail, SeedOrder::Resume)
@@ -126,7 +129,24 @@ pub fn run_engine_with(
     retail: &RetailObs,
     order: SeedOrder,
 ) -> Result<EngineObs> {
-    seed_and_settle(extracted, retail, order, None, None)
+    seed_and_settle(extracted, retail, order, None, None, None)
+}
+
+/// [`run_engine`] with `after` run on the seated session once the settle
+/// window has passed, before the final sample.
+pub fn run_engine_then(
+    extracted: &Path,
+    retail: &RetailObs,
+    after: AfterSettle<'_>,
+) -> Result<EngineObs> {
+    seed_and_settle(
+        extracted,
+        retail,
+        SeedOrder::Resume,
+        None,
+        None,
+        Some(after),
+    )
 }
 
 /// [`run_engine`] with the audio director attached (over a device-less
@@ -139,7 +159,14 @@ pub fn run_engine_listening(
     retail: &RetailObs,
 ) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
     let mut audio = crate::audio_sweep::EngineAudio::default();
-    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, None, Some(&mut audio))?;
+    let obs = seed_and_settle(
+        extracted,
+        retail,
+        SeedOrder::Resume,
+        None,
+        Some(&mut audio),
+        None,
+    )?;
     Ok((obs, audio))
 }
 
@@ -151,7 +178,14 @@ pub fn run_engine_listening_with(
 ) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
     let mut audio = crate::audio_sweep::EngineAudio::default();
     audio.cue_probe = probe;
-    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, None, Some(&mut audio))?;
+    let obs = seed_and_settle(
+        extracted,
+        retail,
+        SeedOrder::Resume,
+        None,
+        Some(&mut audio),
+        None,
+    )?;
     Ok((obs, audio))
 }
 
@@ -175,6 +209,7 @@ pub fn run_engine_listening_through_door(
         SeedOrder::Resume,
         Some(door),
         Some(&mut audio),
+        None,
     )?;
     Ok((obs, audio))
 }
@@ -259,6 +294,7 @@ fn seed_and_settle(
     order: SeedOrder,
     door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
     mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
+    after: Option<AfterSettle<'_>>,
 ) -> Result<EngineObs> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
@@ -375,6 +411,10 @@ fn seed_and_settle(
             retail.scene, g.flat_index, g.pc, g.op, g.wait, g.glide_left
         );
     }
+    // The warm-up re-asserts retail's seed before each tick
+    // ([`hold_rand_seed`]); the wanderers run on their own stream meanwhile,
+    // so their picks are not one value repeated for the whole window.
+    session.host.world.npcs.ambient_rng_detour = retail.rand_seed.map(|s| s ^ 0x5A5A_5A5A);
     for t in 1..=deadline {
         if let Some(g) = &gate {
             let pad = g.advance_pad(&session.host.world, t);
@@ -470,6 +510,7 @@ fn seed_and_settle(
             }
         }
     }
+    session.host.world.npcs.ambient_rng_detour = None;
     session.host.world.input.set_pad(0);
     let script = gate.as_ref().map(|g| ScriptPhase {
         pc: g.pc,
@@ -516,6 +557,9 @@ fn seed_and_settle(
     };
     if let Some(film) = super::walk_film::WalkFilm::from_env() {
         film.run(&mut session, retail)?;
+    }
+    if let Some(after) = after {
+        after(&mut session)?;
     }
     let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);
     obs.script = script;

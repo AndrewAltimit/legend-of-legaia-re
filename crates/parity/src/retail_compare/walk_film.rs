@@ -60,6 +60,9 @@ impl WalkFilm {
         session.host.world.npcs.animate = true;
         session.host.world.locomotion.run_default =
             std::env::var_os("LEGAIA_RC_WALK_RUN").is_some();
+        // The wanderers' stream state and the world's seed, so a film's
+        // `rng` column and its `rand()`-driven NPCs track retail's.
+        super::seat_ambient_streams(session, retail);
         let g = &mut session.camera.globals.0;
         let c = &retail.camera;
         g[0] = i32::from(c.pitch);
@@ -70,7 +73,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng"
         )?;
         let n0 = session
             .host
@@ -117,7 +120,7 @@ impl WalkFilm {
                 .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -139,6 +142,7 @@ impl WalkFilm {
                 u8::from(world.scene_transition_hold.is_some()),
                 u8::from(world.script_context_engages_player()),
                 tint,
+                world.rng_state,
             )?;
         }
         session.host.world.input.set_pad(0);
