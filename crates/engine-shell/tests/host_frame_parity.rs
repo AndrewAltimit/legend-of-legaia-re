@@ -229,7 +229,16 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         while let Some(&(at, sub_id, key)) = sc.warps.get(next_warp)
             && t + 1 >= at
         {
-            assert!(w.press_key(key), "native minigame key {key}");
+            // A practice game's length is `rand()`, so the seat may have
+            // closed already; the leave press only means "leave", which the
+            // page's `play_pack_mode_exit` does and native's toggle key would
+            // otherwise read as "open".
+            let leave_noop = sub_id == MODE_LEAVE
+                && w.session_mut().host.world.mode
+                    != legaia_engine_mode::mode::SceneMode::Expansion;
+            if !leave_noop {
+                assert!(w.press_key(key), "native minigame key {key}");
+            }
             warp_frames.push((f, sub_id));
             next_warp += 1;
         }

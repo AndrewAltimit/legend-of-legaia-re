@@ -331,6 +331,19 @@ impl World {
         true
     }
 
+    /// The placement spawner's clip-phase draw (`FUN_8003A1E4`,
+    /// `0x8003A404..0x8003A454`): a placement whose header names a move
+    /// (`+0x5C > 0`) binds the clip (`FUN_800204F8`), draws one `rand()` and
+    /// seats its cursor at `(rand() % frames) << 4`. The clip is not bound
+    /// here yet, so the draw waits in [`FieldNpcState::phase_draws`] for the
+    /// host's bind, the same hand-off as op `4C C0`.
+    ///
+    /// PORT: FUN_8003A1E4 (`0x8003A410`, the spawn-time clip phase)
+    pub(crate) fn draw_placement_spawn_phase(&mut self, slot: u8) {
+        let draw = self.next_rand();
+        self.npcs.phase_draws.insert(slot, draw);
+    }
+
     /// Seat a waiting op-`4C C0` draw on NPC `slot`'s bound cursor.
     fn seat_npc_phase_draw(&mut self, slot: u8) {
         let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {

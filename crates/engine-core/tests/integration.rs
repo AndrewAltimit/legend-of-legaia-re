@@ -17,6 +17,7 @@ mod ambient_mode4_scroll_disc;
 mod ambient_part_pool_disc;
 mod ambient_runtime_install;
 mod ambient_touch_wake;
+mod ambient_world_stream;
 mod animation_chain;
 mod arts_banner_ladder;
 mod arts_spirit_charge;

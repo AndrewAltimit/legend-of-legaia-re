@@ -333,6 +333,27 @@ pub(crate) use legaia_engine_field::man_field_scripts::field_npc_walk_step_speed
 pub(crate) const FIELD_NPC_MOTION_PROGRAM: [u8; 1] =
     [legaia_engine_motion_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
 
+/// One ambient stream's retail live state, read straight out of a capture's
+/// actor node: what [`crate::world::World::seed_ambient_stream`] writes so a
+/// retail-seeded walker resumes its stream where the capture stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AmbientStreamSeat {
+    /// The actor's flat MAN index, `+0x50`.
+    pub flat: u16,
+    /// The live variant's selector, `+0x86 & 0xFFF`.
+    pub selector: u16,
+    /// The op cursor, `+0x84`: bytes past the stream's first variant header.
+    pub pc: u16,
+    /// `+0x8B | +0xB7 << 8`.
+    pub cursor: u16,
+    /// The wander's heading-LUT index, `+0x86` bits 12-13 (`0`, `2`, `4`, `6`).
+    pub wander_dir: u8,
+    /// `0x801C6470[+0x50]` byte 2, the wander phase.
+    pub wander_phase: u8,
+    /// `0x801C6470[+0x50]` bytes 0-1, the default-move record.
+    pub default_move: [u8; 2],
+}
+
 /// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
 /// the second motion VM (`FUN_80038158` ops `0x04` / `0x0D`), driven by the
 /// [`legaia_engine_motion_vm::ambient_motion::AmbientMotion`] port.

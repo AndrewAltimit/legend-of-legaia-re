@@ -718,3 +718,16 @@ fn replay_lands_every_synthetic_site_on_its_compass_point() {
         }
     }
 }
+
+#[test]
+fn a_wander_draw_counts_and_steps_the_lent_seed() {
+    let mut vm = AmbientMotion::new(1, 0).with_position(704, 704);
+    vm.rng = 0x5EED_0001;
+    vm.tick(&[0x18, 1, 1, 10, 10], 1);
+    assert_eq!(vm.rand_draws, 1);
+    assert_eq!(
+        vm.rng,
+        legaia_engine_system::rand::world_lcg_step(0x5EED_0001),
+        "the seed the host lent, one LCG step on"
+    );
+}

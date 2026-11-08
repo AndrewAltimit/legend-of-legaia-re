@@ -43,12 +43,7 @@ impl World {
     /// entry, which no seed replays. The walker's motion channel is moved
     /// with it, so its next step starts from the seat.
     pub fn seed_ambient_walker(&mut self, flat: u16, x: i16, z: i16, heading: u16) {
-        let Some(slot) = self
-            .channel_view()
-            .iter()
-            .find(|c| !c.object_bind && c.ctx.script_id == flat)
-            .and_then(|c| u8::try_from(c.placement_index).ok())
-        else {
+        let Some(slot) = self.ambient_seat_slot(flat) else {
             return;
         };
         if !self.npcs.positions.contains_key(&slot) {
@@ -64,6 +59,121 @@ impl World {
             chan.vm.z = z;
             chan.vm.heading = heading;
         }
+    }
+
+    /// Capture alignment for a retail-seeded run: resume the walker `seat`
+    /// names where the capture holds its stream - the live variant, op
+    /// cursor, cursor word, wander phase and direction and default-move
+    /// record. `false` when no ambient channel answers `seat.flat` or its
+    /// live variant.
+    // REF: FUN_80038158
+    pub fn seed_ambient_stream(&mut self, seat: &crate::world::AmbientStreamSeat) -> bool {
+        use legaia_scene_formats::man_motion;
+        let Some(slot) = self.ambient_seat_slot(seat.flat) else {
+            return false;
+        };
+        let Some(man) = self.field_vm.channels_man.clone() else {
+            return false;
+        };
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+            return false;
+        };
+        let Ok(bind) = u8::try_from(seat.flat) else {
+            return false;
+        };
+        let Some(rec) = man_motion::motion_records(&man, &man_file)
+            .into_iter()
+            .find(|r| r.bindings.iter().any(|b| b.actor_id == bind))
+        else {
+            return false;
+        };
+        let Some(variant) = man_motion::stream_variants(&man, &rec)
+            .into_iter()
+            .find(|v| v.selector & 0x0FFF == seat.selector & 0x0FFF)
+        else {
+            return false;
+        };
+        let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
+            return false;
+        };
+        let Some(live) = chan
+            .variants
+            .iter()
+            .position(|(sel, _)| *sel == variant.selector)
+        else {
+            return false;
+        };
+        let Some(code_pc) =
+            usize::from(seat.pc).checked_sub(variant.code_offset - rec.stream_offset)
+        else {
+            return false;
+        };
+        chan.live = Some(live);
+        chan.vm.pc = code_pc as u16;
+        chan.vm.cursor = seat.cursor;
+        chan.vm.wander_dir = seat.wander_dir;
+        chan.vm.wander_phase = seat.wander_phase;
+        chan.vm.default_move = seat.default_move;
+        true
+    }
+
+    /// Capture alignment: tick the ambient channels in the actor-list order
+    /// `flats` (flat MAN indices, head to tail) a capture holds, which is
+    /// load history no seed replays. A channel `flats` does not name keeps
+    /// its slot order after them.
+    pub fn seed_ambient_order(&mut self, flats: &[u16]) {
+        let slots: Vec<u8> = flats
+            .iter()
+            .filter_map(|&flat| self.ambient_seat_slot(flat))
+            .collect();
+        self.npcs.ambient_order = slots;
+    }
+
+    /// Move ambient channel `slot` to the tail of
+    /// [`FieldNpcState::ambient_order`]: a `4C D2` re-seat allocates a fresh
+    /// node and links it after the list's last (`FUN_80020454`).
+    ///
+    /// [`FieldNpcState::ambient_order`]: crate::world::FieldNpcState::ambient_order
+    pub(crate) fn relink_ambient_at_tail(&mut self, slot: u8) {
+        self.npcs.ambient_order.retain(|&s| s != slot);
+        if self.npcs.ambient.contains_key(&slot) {
+            self.npcs.ambient_order.push(slot);
+        }
+    }
+
+    /// The `0x23` / `4C 51` NPC arm's list relink: `FUN_801D81E0` unlinks the
+    /// actor (`FUN_800204A4`) and links it back at the tail of the placement
+    /// list (`FUN_80020454`, the head `_DAT_8007C354`), at `0x801DECD0` and
+    /// `0x801E1AA4`. Executed in a scene-entry spawn prologue, the running
+    /// placement is itself the list's tail and the slots past it are not
+    /// linked yet, so a relink of the running slot changes nothing and any
+    /// other lands just before the first unspawned slot.
+    ///
+    /// PORT: FUN_801D81E0
+    pub(crate) fn relink_placement_for_seat(&mut self, slot: u8) {
+        let Some(running) = self.field_vm.prerun_running_slot else {
+            self.relink_ambient_at_tail(slot);
+            return;
+        };
+        if slot == running || !self.npcs.ambient.contains_key(&slot) {
+            return;
+        }
+        self.npcs.ambient_order.retain(|&s| s != slot);
+        let at = self
+            .npcs
+            .ambient_order
+            .iter()
+            .position(|&s| s > running)
+            .unwrap_or(self.npcs.ambient_order.len());
+        self.npcs.ambient_order.insert(at, slot);
+    }
+
+    /// The placement slot an ambient seat's flat MAN index names.
+    fn ambient_seat_slot(&self, flat: u16) -> Option<u8> {
+        self.channel_view()
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == flat)
+            .and_then(|c| u8::try_from(c.placement_index).ok())
     }
 
     /// Capture alignment for the retail comparison
@@ -240,13 +350,6 @@ impl World {
             // the channel's `+0x10` word starts with it - the gate the
             // motion-pause kick (`Self::kick_field_npc_motion_pause`) tests.
             vm.actor_flags |= legaia_engine_field::motion_pause::MOVING_CLASS;
-            // Per-actor RNG stream: retail draws from one global `rand()`,
-            // so identical neighbours never step in lockstep. Deriving the
-            // seed from the slot keeps that property and keeps a replay
-            // deterministic.
-            vm.rng = 0x9E37_79B9u32
-                .wrapping_mul(u32::from(slot).wrapping_add(1))
-                .wrapping_add(0x1234_5678);
             let walks = variants.iter().any(|(_, code)| stream_has_walk_op(code));
             let defers = rec
                 .bindings
@@ -264,6 +367,31 @@ impl World {
                 },
             );
         }
+        // Spawn order: `FUN_8003AEB0` seats the placements in partition
+        // order and each new node links at the list's tail.
+        self.npcs.ambient_order = self.npcs.ambient.keys().copied().collect();
+    }
+
+    /// The ambient channels in tick order: [`FieldNpcState::ambient_order`],
+    /// then any channel a test inserted without one, in slot order.
+    ///
+    /// [`FieldNpcState::ambient_order`]: crate::world::FieldNpcState::ambient_order
+    fn ambient_tick_order(&self) -> Vec<u8> {
+        let mut seen = [false; 256];
+        let mut order = Vec::with_capacity(self.npcs.ambient.len());
+        for slot in self
+            .npcs
+            .ambient_order
+            .iter()
+            .copied()
+            .chain(self.npcs.ambient.keys().copied())
+        {
+            if self.npcs.ambient.contains_key(&slot) && !seen[usize::from(slot)] {
+                seen[usize::from(slot)] = true;
+                order.push(slot);
+            }
+        }
+        order
     }
 
     /// Step every NPC's ambient facing channel one **actor game tick** and
@@ -326,7 +454,7 @@ impl World {
         } else {
             None
         };
-        let slots: Vec<u8> = self.npcs.ambient.keys().copied().collect();
+        let slots = self.ambient_tick_order();
         let mut globals_in = self.flags.story_flags;
         // Retail's engaged bit `+0x10 & 0x80000`. The engine raises the word
         // itself only on a touch post and reads a script context's
@@ -464,8 +592,18 @@ impl World {
                     global_suppress: suppressed,
                 },
             );
+            // The ops draw from the one process-wide seed: lend the world's
+            // stream for the tick and take it back
+            // ([`legaia_engine_field::camera::Camera::tick_on_stream`] is
+            // the same seam).
+            // REF: FUN_80056798
             if plan.dispatch.run_scripted && !defer {
+                vm.rng = self.npcs.ambient_rng_detour.unwrap_or(self.rng_state);
                 vm.tick_with(code, speed, &blocking);
+                match &mut self.npcs.ambient_rng_detour {
+                    Some(detour) => *detour = vm.rng,
+                    None => self.rng_state = vm.rng,
+                }
             } else {
                 vm.moved = false;
                 vm.tick_ramps(speed);
@@ -812,7 +950,9 @@ impl World {
                 vm.blend = blend;
             }
             let tint_in = (vm.tint, vm.blend);
+            vm.rng = self.rng_state;
             vm.tick_with(code, speed, &probe);
+            self.rng_state = vm.rng;
             let tint_out = (vm.tint, vm.blend);
             let effects = std::mem::take(&mut vm.effects);
             if tint_out != tint_in

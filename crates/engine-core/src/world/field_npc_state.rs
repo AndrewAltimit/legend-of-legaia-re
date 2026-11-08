@@ -230,6 +230,25 @@ pub struct FieldNpcState {
     /// tick by [`crate::world::World::tick_field_npc_ambient`]. Without it a standing town
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
+    /// The slots of [`Self::ambient`] in actor-list order, the order the
+    /// streams tick and so the order their `rand()` draws land in.
+    ///
+    /// Retail's actor list `_DAT_8007C354` is a tail-appended chain
+    /// (`FUN_80020454` links each new node after the last, `FUN_800204A4`
+    /// unlinks one) that `FUN_8002519C` walks head to tail. The spawn loop
+    /// `FUN_8003AEB0` seats placements in partition order at scene entry; a
+    /// `4C D2` re-seat (`FUN_8003A1E4`) links a fresh node at the tail; and
+    /// the `0x23` / `4C 51` seat ops relink the seated actor to the tail
+    /// (`FUN_801D81E0`) - see `World::relink_placement_for_seat`.
+    /// A retired slot keeps its place but skips its tick until `4C D2` moves it.
+    pub ambient_order: Vec<u8>,
+    /// A separate `rand()` stream for the ambient channels' draws while it
+    /// is `Some`, taking them off `World::rng_state`. Only the retail
+    /// comparison's warm-up sets it: that loop re-asserts the capture's seed
+    /// before every tick so a scripted roll reads retail's next value, and a
+    /// wanderer drawing from the re-asserted seed would make the same pick
+    /// every tick. A real run leaves it `None`.
+    pub ambient_rng_detour: Option<u32>,
     /// The scripted-motion streams bound to **placed objects**: MAN
     /// tail-section-1 records whose `actor_id` is a partition-0 record index
     /// (`FUN_8003A9D4` matches it against `+0x50`, which a `.MAP` object's
@@ -378,6 +397,8 @@ impl FieldNpcState {
             glide_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
+            ambient_order: Vec::new(),
+            ambient_rng_detour: None,
             object_ambient: std::collections::BTreeMap::new(),
             object_models: std::collections::BTreeMap::new(),
             looks: Default::default(),
