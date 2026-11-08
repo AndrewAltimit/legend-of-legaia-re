@@ -518,3 +518,5 @@ Terra framed at the wrong depth on cases `2` and `4`. It also built the group fr
 the aim counts a monster by its colour word `+0x04` (`0x801DCF54`): one faded out after its death left the
 centroid, and one frozen in the ice stayed in it. The nineteen cases' shots and hand-offs match. A group with no
 drawn member, or a slot code on cases `9` / `0xB` naming a seat not drawn, stops on the aim's `break`.
+The auto-command preseed `FUN_801DA34C` and its write-back `FUN_801DA59C` (`auto_command`), over every seat, roster
+order and gauge pair, and the effect-placement clamp `FUN_801DF570` (`approach_clamp`) match.

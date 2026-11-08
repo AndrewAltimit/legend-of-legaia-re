@@ -5,12 +5,14 @@
 mod ambient_motion;
 mod anim_cue_walk;
 mod anim_rate_restore;
+mod approach_clamp;
 mod arrange;
 mod arts_gauge;
 mod arts_queue;
 mod arts_roll;
 mod arts_voice;
 mod auto_combo;
+mod auto_command;
 mod baka_fight;
 mod battle_gauge;
 mod battle_item;
