@@ -156,6 +156,56 @@ fn aim_press(
     PadButton::Cross.mask()
 }
 
+/// The pad a player gives a monster's Death Game (PROT 0957, action `0x76`)
+/// while its pointer is up (arm 5), `None` outside it.
+///
+/// The roulette is the player's to steer whoever cast it: four cards dealt
+/// face up, thirteen swaps in plain sight, then a pick on the pad
+/// (`legaia_engine_cast::cast_module_camera::death_game_camera`). Paging on
+/// with Cross takes the leftmost card, and against the stacked deal of
+/// monster `0x9E` (`jouind`'s F19 trio: three of the four cards are "the
+/// victim falls") that is a member lost at full HP three times in four, every
+/// cast - a party at level 55 wiped twelve reloads running. A player follows
+/// the one good card through the shuffle; the hand reads where it ended and
+/// walks the pointer onto it: the caster's fall first, then both healed, then
+/// both bled.
+fn death_game_pad(w: &legaia_engine_core::world::World) -> Option<u16> {
+    // `legaia_engine_cast::cast_module_camera::DEATH_GAME_PROT`.
+    if w.casting.module_running_entry != Some(957)
+        || w.casting.capture_spell != Some(0x76)
+        || w.casting.module_phase != 5
+    {
+        return None;
+    }
+    let g = &w.casting.module_cam.death_game;
+    let rank = |v: u8| match v {
+        2 => 0,
+        4 => 1,
+        3 => 2,
+        _ => 3,
+    };
+    let best = (0..4)
+        .filter(|&i| g.live[i])
+        .min_by_key(|&i| rank(g.table[i]))?;
+    let column = (i32::from(g.cards[best][0]) + 0x120) / 0xC0;
+    let at = (i32::from(g.target) - 0x28) / 0x4C;
+    if std::env::var_os("LEGAIA_FGL_DG_DEBUG").is_some() {
+        eprintln!(
+            "      [death-game] table {:?} live {:?} xs {:?} best {best} column {column} at {at} target {} word {:?}",
+            g.table,
+            g.live,
+            g.cards.map(|c| c[0]),
+            g.target,
+            g.digit_word
+        );
+    }
+    Some(match column.cmp(&at) {
+        std::cmp::Ordering::Greater => PadButton::Right.mask(),
+        std::cmp::Ordering::Less => PadButton::Left.mask(),
+        std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+    })
+}
+
 pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
@@ -164,6 +214,9 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &session.host.world;
     check_aimed_dispatch(w);
+    if let Some(pad) = death_game_pad(w) {
+        return pad;
+    }
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();
     }
