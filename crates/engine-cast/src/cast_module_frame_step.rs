@@ -6,11 +6,14 @@
 //! (`docs/subsystems/battle-stage-camera.md`, "The frame step"), and nothing on
 //! the disc says what a frame costs. Each entry is the step one recording
 //! (`scripts/ci/cast-sequence.py`, `meta.csv`'s `step`, the Gobu Gobu fight, the
-//! value the arm spends the most vsyncs on) on the emulator's cost model. An arm
-//! one battle frame long reads that frame's length in vsyncs instead: the `step`
-//! column lags the frame that set it, and the arm's one pass drains by that
-//! length (Gimard's arm 7 reads `1, 1, 1, 4` and drains `32`). An arm too short
-//! to read takes the arm before it; a `0` is an arm no recording has reached.
+//! value the arm spends the most vsyncs on) on the emulator's cost model. Some
+//! arms one battle frame long read that frame's length in vsyncs instead, since
+//! the `step` column lags the frame that set it: Gimard's arm 7 reads
+//! `1, 1, 1, 4` and its one pass drains `32`. Iota's arm 4 and Viguro's arm 10
+//! show the same shape and keep the modal reading: on Iota's the longer frame
+//! lands the camera on retail's rows and still lowers the film's image score,
+//! for a reason not yet found. An arm too short to read takes the arm before it;
+//! a `0` is an arm no recording has reached.
 //!
 //! What the reading is good for and where it stops is on that page. In short, a
 //! whole-screen arm reads the same in every fight, an arm that shows the stage
@@ -36,7 +39,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // zenoir
     (908, &[0, 0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // viguro
-    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 3, 4, 4, 4, 4]),
+    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4]),
     // swordie
     (910, &[0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // orb
@@ -74,7 +77,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // slippery
     (920, &[0, 0, 1, 3, 3, 3, 4, 4, 4, 4, 4]),
     // iota
-    (921, &[0, 0, 1, 2, 4, 4, 4, 4, 4, 4, 4, 4]),
+    (921, &[0, 0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4]),
     // puera
     (
         922,
