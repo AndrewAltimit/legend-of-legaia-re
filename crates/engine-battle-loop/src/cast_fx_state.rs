@@ -355,6 +355,10 @@ pub struct CastFxState {
     /// step of one-vsync ticks (`World::module_pass`), and what an arm does
     /// once a pass, such as a per-pass spawn call, runs on the first alone.
     pub module_pass_repeat: bool,
+    /// The camera-global drift the newest module tick wrote (each tick's
+    /// own, cleared before it runs). An arm that hands over mid-pass owes the
+    /// rest of the pass's drift (`World::module_pass`).
+    pub module_tick_drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -582,6 +586,7 @@ impl CastFxState {
             capture_pass_mark: None,
             module_handover_waits: false,
             module_pass_repeat: false,
+            module_tick_drift: None,
             caster_stages: None,
             caster_size_store: None,
             pending_move_fx_spawn: None,

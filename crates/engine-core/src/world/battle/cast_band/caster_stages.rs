@@ -415,6 +415,7 @@ impl World {
                 // retail's order: the arm's drift, then its pass stores, then
                 // the shot its builder tweens from them (PROT 0959, 0960).
                 if let Some(d) = run.capture_drift {
+                    self.casting.module_tick_drift = Some(d);
                     cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
                     if d.tr_x != 0 {
                         cam.drift_module_tr_x(d.tr_x);
@@ -441,6 +442,7 @@ impl World {
                     cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
                 }
                 if let Some(d) = run.capture_drift {
+                    self.casting.module_tick_drift = Some(d);
                     cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
                     if d.tr_x != 0 {
                         cam.drift_module_tr_x(d.tr_x);

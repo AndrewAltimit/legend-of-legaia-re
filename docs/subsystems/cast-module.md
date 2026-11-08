@@ -3845,6 +3845,15 @@ holds the band after a hand-over until the tick that opens the next battle
 frame; the arms keep their one-vsync drains, so an arm's own span is
 unchanged. On retail's cadence the pass is already a frame.
 
+The pass that hands over still drifts the camera globals by `k * delta` before
+it stores the phase (Gola Gola's arm `0xB` adds `yaw += 4 p` and only then tests
+the park). The port's pass stops on the tick that hands over, so on a step-`4`
+pass that tick drifted a quarter of retail's: Gola's arm 12 opened `96` yaw units
+short and stood `128` short to the band's end. `World::module_pass` re-applies
+the handing-over tick's own drift (`CastFxState::module_tick_drift`) for the
+ticks of the pass it does not run. A body-paced director's first tick in an arm
+carries the new arm's drift (`drift_after_shot`), which is left out.
+
 ### The Mystic Shield effect
 
 <a id="the-mystic-shield-effect"></a>
