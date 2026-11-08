@@ -186,3 +186,162 @@ fn a_held_pad_walks_where_retail_walks() {
         "{moved} {slid} {stopped}"
     );
 }
+
+const ACTOR_COUNT: u32 = 0x8007_B6B8;
+const ACTOR_TABLE: u32 = 0x801C_93C8;
+const TOUCH: u32 = 0x801D_5B5C;
+const FLAG_TOUCH: u32 = 0x8003_D038;
+
+/// One tick of a held pad among seated actors: `FUN_801CFC40`'s moving-class
+/// and static-class boxes under the walk's three probes, with the broad-phase
+/// list already built, against `World::step_field_locomotion` on the port's
+/// NPC and prop channels. The touch and flag posts are stubbed; what is
+/// compared is where the player ends up.
+#[test]
+fn a_held_pad_stops_on_actors_where_retail_stops() {
+    use legaia_engine_core::world::FieldPropCollider;
+    let Some(mut cpu) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    cpu.mem.wr32(MAP_PTR, MAP);
+    cpu.mem.wr32(PLAYER_PTR, ACTOR);
+    cpu.mem.wr32(SCENE_PTR, SCENE);
+    cpu.mem.wr32(RUN_BUTTON, 0x80);
+    cpu.stub(TOUCH, 0);
+    cpu.stub(FLAG_TOUCH, 0);
+    cpu.mem.load(GRID, &vec![0u8; GRID_LEN]);
+    cpu.mem.load(MAP + 0x8000, &vec![0u8; GRID_LEN * 2]);
+    let mut w = World::new();
+    w.actors = vec![Actor::default(); 2];
+    w.actors[0].active = true;
+    w.player_actor_slot = Some(0);
+    w.locomotion.leading_edge_wall_probes = true;
+    w.terrain.collision_grid = vec![0; GRID_LEN];
+    w.load_field_object_cells(&vec![0u8; GRID_LEN * 2]);
+    w.npcs.solid = true;
+    let mut rng = Rng(0x4143_544F);
+    let (mut moved, mut stopped) = (0u32, 0u32);
+    let mut failures = Vec::new();
+    for round in 0..80_000 {
+        let (x, z) = (
+            (0x800 + rng.below(0x1000) as i16) & !1,
+            (0x800 + rng.below(0x1000) as i16) & !1,
+        );
+        let held: u32 = [0x1000, 0x2000, 0x4000, 0x8000][rng.below(4) as usize];
+        cpu.mem.wr16(ACTOR + 0x14, x as u16);
+        cpu.mem.wr16(ACTOR + 0x18, z as u16);
+        cpu.mem.wr16(ACTOR + 0x26, 0x123);
+        cpu.mem.wr32(ACTOR + 0x10, 0);
+        cpu.mem.wr16(ACTOR + 0x72, 0x1000);
+        cpu.mem.wr16(STEP_DELTA, 0);
+        cpu.mem.wr16(STEP_DELTA + 4, 0);
+        cpu.mem.wr32(PAD_HELD, held);
+        cpu.mem.wr32(PAD_EDGE, 0);
+        cpu.mem.wr32(RUN_DEFAULT, 0);
+        cpu.mem.wr8(SLOW_SCENE, 0);
+        cpu.mem.wr8(CAMERA_MODE, 0x40);
+        cpu.mem.wr8(FRAME_STEP, 1);
+        cpu.mem.wr8(SCENE + 0x61, 0);
+        cpu.mem.wr32(SCRATCH_FLAGS, 0);
+        cpu.mem.wr32(gp + OCTANT, 0);
+
+        w.npcs.positions.clear();
+        w.props.colliders.clear();
+        let n = rng.below(5);
+        cpu.mem.wr32(ACTOR_COUNT, n);
+        for i in 0..n {
+            let a = 0x8014_0000 + i * 0x100;
+            cpu.mem.wr32(ACTOR_TABLE + i * 4, a);
+            let (ax, az) = (
+                x + rng.below(0x100) as i16 - 0x80,
+                z + rng.below(0x100) as i16 - 0x80,
+            );
+            cpu.mem.wr16(a + 0x14, ax as u16);
+            cpu.mem.wr16(a + 0x18, az as u16);
+            // The record of a static-class object lies at `id * 0x20`.
+            let id = 0x40 + i;
+            cpu.mem.wr16(a + 0x60, id as u16);
+            let rec = MAP + id * 0x20;
+            let moving = rng.below(2) == 0;
+            let interact = rng.below(2) == 0;
+            let flags = if moving { 0x0002_0000 } else { 0 } | if interact { 0x4000_0000 } else { 0 };
+            cpu.mem.wr32(a + 0x10, flags);
+            if moving {
+                w.npcs.positions.insert(i as u8, (ax, az));
+            } else {
+                let (b6, be, b7, bf) = (
+                    rng.below(4) as i8 - 2,
+                    rng.below(8) as i8 - 4,
+                    rng.below(4) as i8 - 2,
+                    rng.below(8) as i8 - 4,
+                );
+                let corner = rng.below(2) == 0;
+                let (h0, h4) = (rng.below(0x40) as i16, rng.below(0x40) as i16);
+                cpu.mem.wr8(rec + 6, b6 as u8);
+                cpu.mem.wr8(rec + 0xE, be as u8);
+                cpu.mem.wr8(rec + 7, b7 as u8);
+                cpu.mem.wr8(rec + 0xF, bf as u8);
+                cpu.mem.wr16(rec, h0 as u16);
+                cpu.mem.wr16(rec + 4, h4 as u16);
+                cpu.mem.wr16(a + 0x52, if corner { 8 } else { 0 });
+                let mut cx = i32::from(b6) * 0x80 + i32::from(be) * 0x10;
+                let mut cz = i32::from(b7) * 0x80 + i32::from(bf) * 0x10;
+                if corner {
+                    cx -= i32::from(h0);
+                    cz += i32::from(h4);
+                }
+                w.props.colliders.push(FieldPropCollider {
+                    anchor: None,
+                    center: (cx + i32::from(ax), cz + i32::from(az)),
+                    live: (i32::from(ax), i32::from(az)),
+                    moving_box: false,
+                    interact,
+                    solid: true,
+                });
+            }
+        }
+        assert_eq!(cpu.call(WALK, &[ACTOR]), Stop::Returned, "round {round}");
+        let retail = (cpu.mem.rd16(ACTOR + 0x14) as i16, cpu.mem.rd16(ACTOR + 0x18) as i16);
+        {
+            let ms = &mut w.actors[0].move_state;
+            ms.world_x = x;
+            ms.world_z = z;
+            ms.render_26 = 0x123i16.wrapping_add(0x800);
+            ms.flags = 0;
+            ms.field_72 = 0x1000;
+        }
+        w.locomotion.camera_mode_byte = Some(0x40);
+        w.locomotion.camera_azimuth = 0;
+        w.move_vm.ramp_ratio = 1;
+        w.clock.frame_step = 1;
+        let mut mask = 0u16;
+        for (bit, button) in [
+            (0x1000u32, PadButton::Up),
+            (0x2000, PadButton::Right),
+            (0x4000, PadButton::Down),
+            (0x8000, PadButton::Left),
+        ] {
+            if held & bit != 0 {
+                mask |= button.mask();
+            }
+        }
+        w.set_pad(mask);
+        w.step_field_locomotion();
+        let ms = &w.actors[0].move_state;
+        let port = (ms.world_x, ms.world_z);
+        if retail != port && failures.len() < 20 {
+            failures.push(format!(
+                "round {round} at ({x}, {z}) held {held:#x} n {n}: retail {retail:?} port {port:?}"
+            ));
+        }
+        if retail != (x, z) {
+            moved += 1;
+        } else {
+            stopped += 1;
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(moved > 20_000 && stopped > 5_000, "{moved} {stopped}");
+}

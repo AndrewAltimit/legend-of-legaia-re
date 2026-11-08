@@ -155,7 +155,15 @@ pub const FROZEN_IDLE_STATUS_BITS: u16 = 0x0404;
 /// status bit first (`0x800476D8..0x800476E4`) and only then the idle id, so
 /// an unstatused actor's idle advances as fast as any clip.
 pub fn scaled_anim_step(base_step: u32, rate: AnimRate, slowed_idle: bool) -> u32 {
+    // Retail's cursor is in sixteenths of a keyframe (`sra v1,t1,0x2` /
+    // `sra v1,t1,0x1` at `0x8004772C` / `0x8004775C`), so a quotient below a
+    // sixteenth is dropped: a Slowed idle at rate `2` on a rate-`1` clip does
+    // not advance. A base step of a whole number of sixteenths floors on
+    // that unit; anything else, a host's direct step, scales exactly.
     let mult = u32::from(rate.0) * if slowed_idle { 1 } else { 2 };
+    if base_step % 16 == 0 {
+        return ((base_step / 16) * mult / 8) * 16;
+    }
     base_step * mult / 8
 }
 

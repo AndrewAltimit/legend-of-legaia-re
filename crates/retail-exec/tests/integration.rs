@@ -4,6 +4,7 @@
 
 mod ambient_motion;
 mod anim_cue_walk;
+mod anim_cursor;
 mod anim_rate_restore;
 mod approach_clamp;
 mod arrange;
@@ -72,6 +73,7 @@ mod muscle_contest;
 mod nighto_roll;
 mod object_spawn;
 mod ozma_ladder;
+mod pose_decoder;
 mod passive_sweep;
 mod puera_crystals;
 mod queue_head;
@@ -97,6 +99,7 @@ mod stream_slot;
 mod summon_roll_sites;
 mod text_width;
 mod tint_ease;
+mod tint_sm;
 mod turn_pick;
 mod unequip;
 mod validator;
