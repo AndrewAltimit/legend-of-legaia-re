@@ -146,3 +146,60 @@ pub fn write_camera_csv(retail: &Side, engine: &Side, out: &Path) -> Result<bool
     std::fs::write(out.join("camera.csv"), csv)?;
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(dir: &Path, name: &str, body: &str) {
+        std::fs::write(dir.join(name), body).unwrap();
+    }
+
+    #[test]
+    fn every_retail_row_pairs_on_the_segment_clock() {
+        let root = std::env::temp_dir().join(format!("cam-channel-{}", std::process::id()));
+        let (r, e) = (root.join("retail"), root.join("engine"));
+        std::fs::create_dir_all(&r).unwrap();
+        std::fs::create_dir_all(&e).unwrap();
+        write(
+            &r,
+            "meta.csv",
+            "vsync,st7,phase,step,acting,shot\n10,40,0,2,0,s\n11,40,0,2,0,\n12,41,0,2,0,\n13,41,0,2,0,\n",
+        );
+        write(
+            &r,
+            "cam.csv",
+            "vsync,st7,phase,step,pitch,yaw,trx,try,trz\n\
+             10,40,0,2,1,100,0,1280,4000\n11,40,0,2,1,101,0,1280,4000\n\
+             12,41,0,2,2,200,0,1280,4000\n13,41,0,2,2,201,0,1280,4000\n",
+        );
+        write(
+            &r,
+            "body.csv",
+            "vsync,fx,fz\n10,5,6\n11,5,6\n12,7,8\n13,7,8\n",
+        );
+        write(
+            &e,
+            "meta.csv",
+            "tick,st7,phase,acting\n100,40,0,0\n101,40,0,0\n102,41,0,0\n",
+        );
+        write(
+            &e,
+            "cam.csv",
+            "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step\n\
+             100,40,0,1,100,0,1280,4000,5,0,6,0,2\n101,40,0,1,101,0,1280,4000,5,0,6,0,2\n\
+             102,41,0,2,210,0,1280,4000,7,0,8,0,2\n",
+        );
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let (a, b) = (Side::read(&r).unwrap(), Side::read(&e).unwrap());
+        assert!(write_camera_csv(&a, &b, &out).unwrap());
+        let text = std::fs::read_to_string(out.join("camera.csv")).unwrap();
+        let rows: Vec<&str> = text.lines().skip(1).collect();
+        assert_eq!(rows.len(), 4);
+        assert!(rows[0].starts_with("10,100,state_0x28,0,"));
+        // Past the engine segment's end: clamped to its last tick.
+        assert!(rows[3].starts_with("13,102,state_0x29,1,"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+}

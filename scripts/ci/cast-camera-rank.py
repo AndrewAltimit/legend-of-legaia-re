@@ -14,7 +14,10 @@ Two directories compare: the second's films pair with the first's by name, and
 the table gains a before / after column. "law px" is the
 sustained error with each row taking the best of the engine ticks within two of its
 pair, so a pass boundary a vsync apart does not read as a framing error; "raw px"
-is the pair's own. A film's pixels are the mean displacement
+is the pair's own. A film whose two sides act on different seats is marked `[seat]`
+and left out of the means; a film opening inside a module arm or the exit band has its
+first segment dropped and is marked `[opener]`, because that segment is the seat of the
+harness, not the game. A film's pixels are the mean displacement
 of six world probes around retail's focus under each side's pitch, yaw, TR trio and
 focus. See `docs/tooling/cast-sequence-oracle.md`, "The camera channel".
 """
@@ -109,14 +112,42 @@ def sustained(values, window):
     return max(min(values[i:i + window]) for i in range(len(values) - window + 1))
 
 
+def opener_len(rows) -> int:
+    """Rows of a film that opens inside a module arm or the capture exit: the
+    state's seated pose stands in for an arm the engine replayed from there
+    (harness, not game); see the camera channel docs."""
+    lead = rows[0]["key"]
+    if not lead.startswith(("capture", "module", "state_0x71", "state_0x50", "state_0x51")):
+        return 0
+    n = 0
+    while n < len(rows) and rows[n]["key"] == lead:
+        n += 1
+    return n
+
+
+def seat_mismatch(film: Path, rows) -> bool:
+    """The film's two sides are acting on different seats."""
+    meta = lambda p, k: {int(r[k]): r["acting"] for r in csv.DictReader(open(film / p / "meta.csv"))}
+    try:
+        rm, em = meta("retail", "vsync"), meta("engine", "tick")
+    except (OSError, KeyError):
+        return False
+    pairs = [(rm.get(r["v"]), em.get(r["t"])) for r in rows]
+    pairs = [p for p in pairs if None not in p]
+    return bool(pairs) and sum(a != b for a, b in pairs) > len(pairs) / 2
+
+
 def summary(film: Path, px_limit: float, window: int):
     rows = read(film)
     if not rows:
         return None
+    skip = opener_len(rows)
+    mismatch = seat_mismatch(film, rows)
+    rows = rows[skip:] or rows
     first = next((r for r in rows if r["px"] > px_limit), None)
     worst = max(rows, key=lambda r: r["px"])
     out = {
-        "film": film.name, "rows": len(rows),
+        "film": film.name, "rows": len(rows), "harness_lead": skip, "seat_mismatch": mismatch,
         "mean_px": sum(r["px"] for r in rows) / len(rows),
         "sus_px": sustained([r["px"] for r in rows], window),
         "max_px": worst["px"],
@@ -165,18 +196,18 @@ def main() -> int:
     print(hdr)
     for s in ranked:
         line = (f"{s['sus_robust']:7.2f} {s['sus_px']:7.2f} {s['mean_px']:6.2f} {s['max_px']:6.1f}  {s['sus_dyaw']:5d} {s['sus_dpitch']:4d} "
-                f"{s['sus_dtrz']:5d} {s['sus_dfocus']:4d}  {where(s['first']):<24} {s['film']}")
+                f"{s['sus_dtrz']:5d} {s['sus_dfocus']:4d}  {where(s['first']):<24} {s['film']}{' [seat]' if s['seat_mismatch'] else ''}{' [opener]' if s['harness_lead'] else ''}")
         if after:
             b = after.get(s["film"])
             line = f"{(format(b['sus_px'], '7.2f') if b else '      -')} " + line
         print(line)
     if after:
-        common = [n for n in base if n in after]
+        common = [n for n in base if n in after and not base[n]["seat_mismatch"]]
         n = max(len(common), 1)
         print(f"# mean sustained law px over {len(common)} films: "
               f"{sum(base[f]['sus_robust'] for f in common) / n:.3f} -> {sum(after[f]['sus_robust'] for f in common) / n:.3f}")
     else:
-        print(f"# {len(base)} films, mean sustained law px {sum(s['sus_robust'] for s in base.values()) / max(len(base), 1):.3f}")
+        print(f"# {len(base)} films, mean sustained law px {sum(s['sus_robust'] for s in base.values() if not s['seat_mismatch']) / max(sum(1 for s in base.values() if not s['seat_mismatch']), 1):.3f}")
     return 0
 
 
