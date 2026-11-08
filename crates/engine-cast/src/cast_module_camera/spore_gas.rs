@@ -3,6 +3,7 @@
 //!
 //! See `ghidra/scripts/funcs/overlay_cast_spore_gas_0939_801f69d8.txt`.
 
+use super::capture::CaptureDrift;
 use super::v_windhash::{HIDDEN, SHOWN, seat};
 use super::{
     CaptureCamArm, CaptureSeatWrite, ModuleCamSeats, ModuleCamState, ModuleSeat, ModuleShot,
@@ -55,7 +56,7 @@ pub const fn spore_gas_hit_spawn() -> super::ModuleSpawn {
 /// | 1 (`0x801F6BC8`) | once the gate passes: pitch `0x200`, TR `(0, 0x200, 0xC00)`, `0x50` frames | `+= scalar * 0x50` |
 /// | 2 (`0x801F6E34`) | once the gate passes: pitch `-0x40`, TR `(0, 0x400, 0x1000)`, `0x40` frames | `+= scalar << 6` |
 /// | 3 (`0x801F6ED4`) | once the gate passes: caster hidden, victim shown and turned on the caster; a cut on it: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x500, 0x400)` | `+= scalar << 7` |
-/// | 4 (`0x801F6FD0`) | the hits; leaves on the gate | - |
+/// | 4 (`0x801F6FD0`) | TR z `+= step * scalar` every pass; the hits; leaves on the gate | - |
 /// | `0xFF` (`0x801F746C`) | the caster shown again | - |
 ///
 /// The phase chain is [`crate::cast_module_ticks::SPORE_GAS_CHAIN`]; this
@@ -69,6 +70,15 @@ pub fn spore_gas_camera(
 ) -> CaptureCamArm {
     let (c, v) = (seats.caster, seats.victim);
     let mut arm = CaptureCamArm::default();
+    if phase == 4 {
+        // Every pass of arm 4 pulls TR z back `step * scalar` ahead of its
+        // gate (`0x801F6FD0..0x801F7014`, the store into `0x800840C0`).
+        arm.drift = Some(CaptureDrift {
+            tr_z: SPEED_SCALAR as i16,
+            ..Default::default()
+        });
+        arm.drift_first = true;
+    }
     if (1..=4).contains(&phase) && st.countdown.drain_above(0) {
         arm.hold = true;
         return arm;
@@ -174,6 +184,19 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn arm_four_pulls_tr_z_back_while_it_holds() {
+        // `0x801F6FD0..0x801F7014`: TR z `+= step * scalar` before the gate.
+        // Retail's `teien_berserker_pre_spore_gas` film rises `8` a vsync.
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = 1 << 20;
+        let held = spore_gas_camera(&mut st, 4, seats());
+        assert!(held.hold);
+        assert_eq!(held.drift.map(|d| d.tr_z), Some(SPEED_SCALAR as i16));
+        assert!(held.drift_first);
+        assert!(spore_gas_camera(&mut st, 2, seats()).drift.is_none());
     }
 
     #[test]

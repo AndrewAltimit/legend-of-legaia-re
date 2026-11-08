@@ -1348,7 +1348,7 @@ fn terio_reach(base: i16, table: i16) -> i16 {
 ///   its victim (`h = heading(victim -> caster) + 0x800`), a cut - pitch
 ///   `0x20`, yaw `0x400 - h`, TR `(0, 0x600, depth)` - the latch cleared, and
 ///   phase 4. Arm 4 (`0x801F6FA0`): pitch `-0x40`, yaw `0x600 - h`, TR
-///   `(0x200, 0xA00, depth / 3)` over `0x50` frames, `+= scalar * 80`. Arm 5:
+///   `(0x200, 0xA00, depth / 6)` over `0x50` frames, `+= scalar * 80`. Arm 5:
 ///   held, then pitch `0`, yaw `0x800 - h`, TR `(0, 0x550, depth)` over
 ///   `0x40`, `+= scalar << 6`. Arm 6 drains every pass (spawning the trail
 ///   parts) and, once spent, pulls out to TR `(0, 0x550, 0x2800)` over
@@ -1473,7 +1473,7 @@ pub fn terio_punch_camera(
             step(
                 shot(
                     [-0x40, yaw_from(0x600, h), 0],
-                    [0x200, 0xA00, depth / 3],
+                    [0x200, 0xA00, depth / 6],
                     0x50,
                 ),
                 Some(5),

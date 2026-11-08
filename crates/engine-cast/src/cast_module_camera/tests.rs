@@ -749,7 +749,8 @@ fn terio_punch_charges_then_punches_on_its_latch() {
     assert_eq!((arms[0].latch, arms[0].skips_fold), (Some(0), false));
     let shots: Vec<_> = arms.iter().filter_map(|a| a.shot).collect();
     assert_eq!(shots[0].angles[0], 0x20);
-    assert_eq!(shots[1].tr, [0x200, 0xA00, 0x200]);
+    // `depth / 6`: the divide is `0x2AAAAAAB` (`0x801F6FA0..0x801F7000`).
+    assert_eq!(shots[1].tr, [0x200, 0xA00, 0x100]);
     assert_eq!(shots.last().unwrap().tr, [0, 0x550, 0x2800]);
     assert!(capture_camera_director(953, SINGLE_BODY).is_some());
     // The strike is arm 7's way out of its gate, the party turned and halved.
