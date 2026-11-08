@@ -184,6 +184,15 @@
   <h3 id="auto-command"><code>+0x1A7</code> / <code>+0x1B7</code> are the Auto command strings</h3>
   <p>The battle command menu's <strong>Auto</strong> replays the 16-byte action queue the player last confirmed, parked here between turns. Which band is used is decided by the actor's action gauge (base gauge strictly below live gauge takes the primary band <code>+0x1A7</code>). The two legs are asymmetric: the primary read falls back to <code>+0x1B7</code> when its head byte is zero, the secondary read zero-fills instead, and the write-back overwrites exactly one band, only for a live actor using the attack/arts command. Readers <code>FUN_801DA34C</code> / <code>FUN_801DA59C</code> in the battle overlay address them off the live-state window (<code>0x80084140 + slot &times; 0x414 + 0x76F</code> / <code>+0x77F</code>), which sits <code>0x5C8</code> below the record base.</p>
 
+  <h3 id="battle-records"><code>+0x98</code> / <code>+0x9C</code> / <code>+0xE8</code> / <code>+0xEC</code> are the battle records</h3>
+  <p>The records page prints four per-character words, each written in battle: <strong>Knockouts</strong>
+  (<code>+0x98</code>) counts the character's cries the battle cue walker <code>FUN_800508DC</code> reaches;
+  <strong>Monsters Defeated</strong> (<code>+0x9C</code>) counts monster deaths while the character holds the action
+  (<code>FUN_8004AD80</code>'s death arm, and instant-kill Seru arms such as Jedo's); <strong>Max Damage</strong>
+  (<code>+0xE8</code>) and <strong>Max Hits</strong> (<code>+0xEC</code>) keep the largest string total and hit
+  count the combo readout <code>FUN_801E805C</code> has shown for one of the character's Attacks. <code>+0x9C</code> was once
+  read as a magic-rank counter off a save pair whose rank-up cast had also felled a monster.</p>
+
   <details class="disclosure">
     <summary>Evidence for each note</summary>
     <div class="disclosure-body">
