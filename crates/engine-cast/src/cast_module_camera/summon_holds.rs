@@ -348,22 +348,28 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
     let Some(a) = table.iter().find(|a| a.arm == phase) else {
         return false;
     };
+    let rest = i32::from(st.countdown.1);
     let cd = &mut st.countdown.0;
+    // The drain the gate opened on, for the rest of the pass.
+    let mut opened = 0;
     let held = match a.gate {
         Gate::Open => false,
         Gate::Count(d) => {
             *cd -= d;
+            opened = d;
             *cd > 0
         }
         Gate::CountPositive(d) => {
             if *cd > 0 {
                 *cd -= d;
+                opened = d;
             }
             *cd > 0
         }
         Gate::Drain(d) => {
             if *cd > 0 {
                 *cd -= d;
+                opened = d;
             }
             false
         }
@@ -373,6 +379,7 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
         }
         Gate::RampDown { per_tick, drain } => {
             *cd -= drain;
+            opened = drain;
             if st.ramp < per_tick {
                 false
             } else {
@@ -383,6 +390,7 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
         Gate::Settle(d) => {
             if *cd > 0 {
                 *cd -= d;
+                opened = d;
             }
             if *cd > 0 {
                 true
@@ -396,6 +404,7 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
     if held {
         return true;
     }
+    st.countdown.0 -= opened * rest;
     match a.rearm {
         Some(Rearm::Set(v)) => st.countdown.0 = v,
         Some(Rearm::Add(v)) => st.countdown.0 += v,

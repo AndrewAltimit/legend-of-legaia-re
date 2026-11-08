@@ -72,8 +72,7 @@ pub fn lapis_wave_camera(
         3 | 4 => Some(FAST),
         _ => None,
     };
-    st.countdown.0 -= 1;
-    if st.countdown.0 > 0 {
+    if st.countdown.holds_after_drain(1, 0) {
         arm.hold = true;
         return arm;
     }

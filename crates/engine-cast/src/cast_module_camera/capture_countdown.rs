@@ -92,10 +92,7 @@ impl ArmCountdown {
     /// word is still positive - the `bgtz` every gate here uses).
     pub fn holds(&self, cd: &mut ModuleCountdown) -> bool {
         match self.drain {
-            Some(d) => {
-                cd.0 -= d;
-                cd.0 > 0
-            }
+            Some(d) => cd.holds_after_drain(d, 0),
             None => false,
         }
     }

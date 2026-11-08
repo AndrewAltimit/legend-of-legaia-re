@@ -587,6 +587,18 @@ driver rewrites `DAT_1F800393` per frame, see [`audio.md`](audio.md)), so a
 dwell is the seed divided by the *sum* of per-pass drains. Measured dwells are
 in [measured arm timing](#measured-arm-timing).
 
+A pass takes the whole drain before its test. The arm subtracts the product in
+one `subu`, tests the word, and an add-form re-arm keeps what is left, so a
+passing pass leaves the next arm `seed - drain * delta` plus the residue. A
+one-drain arm with no gate spends `delta` frames of the next arm's span: Ozma's
+arm 17 drains once (`subu` at `0x801F7F20`) and arm 18 re-tests the same word
+(`bgtz` at `0x801F7FA4`), so arm 18 runs `512 - 4 = 508`, one step-`4` pass short
+of the `512` its arm 16 re-arm reads, and Gimard's arm 7 enters arm 8 on `1504`
+of `1536`. The port's module ticks are one vsync each (`World::module_pass` runs
+`delta` of them a pass), so `ModuleCountdown` carries the pass's remaining ticks
+and a gate that opens mid-pass drains them too, as the one-drain arms do
+(`pass_drain`).
+
 The band timer `ctx[+0x6D8]` is a context word, not a module word. A
 player-Seru cast finds it at `120` (`0x78`) on its first tick and the sustain
 state `0x35` drains it by the frame step; a capture-class cast leaves it at

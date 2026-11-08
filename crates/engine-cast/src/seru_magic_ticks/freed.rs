@@ -182,6 +182,9 @@ pub fn freed_tick(
         if gated && *settle > 0 {
             return CastArmStep::Hold;
         }
+        if gated {
+            settle_rest(settle, c.pass_rest);
+        }
         let out = match arm {
             0 => {
                 c.ctx_278 = 0;

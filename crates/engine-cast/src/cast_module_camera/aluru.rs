@@ -374,8 +374,10 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
         }
         10 => {
-            st.countdown.drain();
-            if st.countdown.0 >= s * ALURU_SPREAD_END {
+            if st
+                .countdown
+                .holds_after_drain(MODULE_DRAIN_PER_TICK, s * ALURU_SPREAD_END - 1)
+            {
                 return ArmDirection::HOLD;
             }
             shot(

@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn puera_arm_12_follows_every_held_pass() {
         let mut st = ModuleCamState {
-            countdown: ModuleCountdown(SPEED_SCALAR << 6),
+            countdown: ModuleCountdown(SPEED_SCALAR << 6, 0),
             ..Default::default()
         };
         let a = puera_direct(&mut st, 12, ModuleCamSeats::default());

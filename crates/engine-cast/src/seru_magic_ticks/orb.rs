@@ -210,6 +210,7 @@ pub fn orb_tick(
             if *settle > 0 {
                 return CastArmStep::Hold;
             }
+            settle_rest(settle, c.pass_rest);
             let (sin, cos) = legaia_engine_system::trig::trig12(pos.facing);
             pos.x = pos.x.wrapping_add((i32::from(sin) >> 3) as i16);
             pos.z = pos.z.wrapping_add((i32::from(cos) >> 3) as i16);
@@ -224,6 +225,7 @@ pub fn orb_tick(
             if *settle > 0 {
                 return CastArmStep::Hold;
             }
+            settle_rest(settle, c.pass_rest);
             // `0x801F77D8..0x801F7824`: every occupied party seat (the
             // per-seat character byte `0x8007BD10[seat]`) back to render
             // flag `0` and lit with the bright word, which the tint pass

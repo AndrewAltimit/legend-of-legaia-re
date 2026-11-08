@@ -23,8 +23,7 @@ pub const S: i32 = SPEED_SCALAR;
 /// `true` (hold) while the word is still positive (`bgtz` to the busy
 /// return). On `false` the caller runs the exit and re-arms.
 pub fn counted(st: &mut ModuleCamState, drain: i32) -> bool {
-    st.countdown.0 -= drain;
-    st.countdown.0 > 0
+    st.countdown.holds_after_drain(drain, 0)
 }
 
 /// The gate shape that drains only a positive word (`if (cd > 0) { cd -=
@@ -32,8 +31,7 @@ pub fn counted(st: &mut ModuleCamState, drain: i32) -> bool {
 /// exit at once. Returns `(hold, drained)`.
 pub fn counted_if_positive(st: &mut ModuleCamState, drain: i32) -> (bool, bool) {
     if st.countdown.0 > 0 {
-        st.countdown.0 -= drain;
-        (st.countdown.0 > 0, true)
+        (st.countdown.holds_after_drain(drain, 0), true)
     } else {
         (false, false)
     }

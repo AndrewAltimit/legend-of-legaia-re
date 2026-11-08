@@ -101,6 +101,8 @@ pub fn rolling_flare_camera(
             if held || !st.victim_settled {
                 arm.hold = true;
             } else {
+                // The pass's first drain, the one ahead of the shot.
+                st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
                 arm.caster_reach = Some(REST_REACH);
             }
         }

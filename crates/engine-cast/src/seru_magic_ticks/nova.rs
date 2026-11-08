@@ -126,6 +126,7 @@ pub fn nova_tick(
             if *settle > 0 {
                 return CastArmStep::Hold;
             }
+            settle_rest(settle, c.pass_rest);
         }
         let out = match arm {
             0 => {
@@ -180,6 +181,7 @@ pub fn nova_tick(
                 if *settle > 0 {
                     return CastArmStep::Hold;
                 }
+                settle_rest(settle, c.pass_rest);
                 if let Some(v) = seats.get_mut(victim_seat as usize)
                     && (v.flags & FLAG_NON_TARGETABLE) == 0
                 {

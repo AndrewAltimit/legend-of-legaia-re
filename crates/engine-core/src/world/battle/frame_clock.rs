@@ -788,6 +788,11 @@ impl World {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
             self.casting.module_tick_drift = None;
+            // The one-vsync ticks of the pass still owed after this one: an
+            // arm leaving on this tick has drained `delta` ticks' worth by
+            // retail's clock (the whole pass's product in one `subu`), and
+            // its re-arm adds to that residue.
+            self.casting.module_cam.countdown.1 = delta - 1 - i;
             live = tick(self);
             if !live || self.casting.module_phase != phase {
                 if !cadence && live && self.casting.module_phase != phase {

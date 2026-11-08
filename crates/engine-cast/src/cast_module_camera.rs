@@ -346,8 +346,16 @@ pub struct ModuleFollow {
 }
 
 /// A module's countdown word.
+///
+/// `.1` is the pass's rest: the one-vsync ticks of the current battle-frame
+/// pass still owed after this one (`World::module_pass` sets it). Retail
+/// drains the whole pass's product in the one `subu` the arm opens with, so
+/// an arm that hands over on tick `i` of a pass has drained `delta` ticks'
+/// worth by then, not `i + 1`: [`Self::drain_rest`] on the leaving tick, and
+/// the gate shapes below apply it themselves on the tick the gate opens. The
+/// re-arm that follows adds to (or stores over) the true residue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ModuleCountdown(pub i32);
+pub struct ModuleCountdown(pub i32, pub u8);
 
 impl ModuleCountdown {
     /// `sw (scalar << shift), countdown` - the arming store.
@@ -365,19 +373,42 @@ impl ModuleCountdown {
         self.0 -= MODULE_DRAIN_PER_TICK;
     }
 
+    /// The rest of the pass's drain, on the tick an arm leaves
+    /// ([`Self`], `.1`): `drain` per tick left in the pass.
+    pub fn drain_rest(&mut self, drain: i32) {
+        self.0 -= drain * i32::from(self.1);
+    }
+
+    /// One drain plus the rest of the pass, for an arm that always leaves on
+    /// this pass (a one-drain arm with no gate).
+    pub fn pass_drain(&mut self, drain: i32) {
+        self.0 -= drain;
+        self.drain_rest(drain);
+    }
+
+    /// `word -= drain`, then hold while the word stays above `threshold`;
+    /// the tick the gate opens drains the rest of the pass.
+    pub fn holds_after_drain(&mut self, drain: i32, threshold: i32) -> bool {
+        self.0 -= drain;
+        if self.0 > threshold {
+            true
+        } else {
+            self.drain_rest(drain);
+            false
+        }
+    }
+
     /// Drain, then report whether the word is still above `threshold` - the
     /// `subu; slt/bgtz` gate every counted arm opens with.
     pub fn drain_above(&mut self, threshold: i32) -> bool {
-        self.drain();
-        self.0 > threshold
+        self.holds_after_drain(MODULE_DRAIN_PER_TICK, threshold)
     }
 
     /// Drain, then report whether the word is still non-negative - the
     /// `subu; bgez` form of the gate (PROT 0905), which holds one pass longer
     /// than [`Self::drain_above`]`(0)` on a word that lands on zero.
     pub fn drain_non_negative(&mut self) -> bool {
-        self.drain();
-        self.0 >= 0
+        self.holds_after_drain(MODULE_DRAIN_PER_TICK, -1)
     }
 }
 

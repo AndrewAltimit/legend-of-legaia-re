@@ -216,7 +216,7 @@ mod tests {
         let seats = ModuleCamSeats::default();
         let mut st = ModuleCamState {
             target_aim: Some(party_group()),
-            countdown: ModuleCountdown(0x100),
+            countdown: ModuleCountdown(0x100, 0),
             ..Default::default()
         };
         let d = spoon_direct(&mut st, 8, seats);

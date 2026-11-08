@@ -1192,7 +1192,7 @@ fn mule_arm_kills_follow_the_parked_handles() {
 #[test]
 fn palma_arm_4_pans_from_its_stored_origin() {
     let mut st = ModuleCamState {
-        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK, 0),
         live_pitch_tr: Some((0x30, [0x10, 0x20, 0x1900])),
         live_yaw: Some(0x100),
         ..Default::default()
@@ -1205,7 +1205,7 @@ fn palma_arm_4_pans_from_its_stored_origin() {
     assert_eq!(0x1900 + i32::from(drift.tr_z), 0x2000);
     // No live pose fed: nothing to land, the pan sets out where it stands.
     let mut st = ModuleCamState {
-        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK, 0),
         ..Default::default()
     };
     assert!(palma_direct(&mut st, 4, seats()).drift.is_none());
@@ -1574,4 +1574,28 @@ fn big_wave_arm_six_spares_the_unkept_water_sheet() {
     );
     assert!(capture_arm_flush_spares(946, 5).is_empty());
     assert!(capture_arm_flush_spares(938, 2).is_empty());
+}
+
+/// A gate that opens on a tick inside a battle-frame pass drains the pass's
+/// remaining ticks as well: retail takes the whole `scalar * delta` in one
+/// `subu` before the test, so the re-arm that follows adds to the residue of
+/// the whole pass (PROT 0903 arm 7: `1536 - 32`, not `- 8`).
+#[test]
+fn a_gate_opening_mid_pass_drains_the_rest_of_the_pass() {
+    // A held tick drains one tick's worth.
+    let mut cd = ModuleCountdown(32, 3);
+    assert!(cd.drain_above(0));
+    assert_eq!(cd.0, 32 - MODULE_DRAIN_PER_TICK);
+    // The opening tick drains the rest; the pass's total is `4 * P`.
+    let mut cd = ModuleCountdown(MODULE_DRAIN_PER_TICK, 3);
+    assert!(!cd.drain_above(0));
+    assert_eq!(cd.0, -3 * MODULE_DRAIN_PER_TICK);
+    // The last tick of a pass owes nothing.
+    let mut cd = ModuleCountdown(MODULE_DRAIN_PER_TICK, 0);
+    assert!(!cd.drain_above(0));
+    assert_eq!(cd.0, 0);
+    // A one-drain arm takes the whole pass on its only tick.
+    let mut cd = ModuleCountdown(1536, 3);
+    cd.pass_drain(MODULE_DRAIN_PER_TICK);
+    assert_eq!(cd.0, 1536 - 4 * MODULE_DRAIN_PER_TICK);
 }

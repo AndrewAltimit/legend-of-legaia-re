@@ -101,7 +101,11 @@ fn nighto_leg_countdown(st: &mut ModuleCamState, per_scalar: i32) {
 fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
     st.countdown.drain();
     st.countdown.0 = i32::from(st.countdown.0 as i16);
-    st.countdown.0 >= 0
+    let held = st.countdown.0 >= 0;
+    if !held {
+        st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+    }
+    held
 }
 
 /// PROT 0907 (Nighto) - the camera and countdown half of the tick
@@ -317,7 +321,7 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         }
         14 => {
             nighto_leg_countdown(st, NIGHTO_KILL_SETTLE_PER_SCALAR);
-            st.countdown.drain();
+            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
             st.countdown.0 = i32::from(st.countdown.0 as i16);
             ArmDirection::PASS
         }

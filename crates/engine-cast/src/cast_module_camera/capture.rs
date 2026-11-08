@@ -948,8 +948,7 @@ pub fn mystic_circle_camera(
         3 => Some(drift(0, 0, -29, 96)),
         _ => None,
     };
-    st.countdown.0 -= DRAIN;
-    let hold = st.countdown.0 > 0;
+    let hold = st.countdown.holds_after_drain(DRAIN, 0);
     let mut shot = None;
     if !hold {
         match phase {

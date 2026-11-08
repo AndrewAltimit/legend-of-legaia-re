@@ -147,8 +147,12 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             })
         }
         2 => {
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 st.countdown.drain();
+                if st.countdown.0 <= 0 {
+                    st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+                }
             }
             if st.countdown.0 > 0 {
                 ArmDirection::HOLD
@@ -227,7 +231,7 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             }
         }
         7 => {
-            st.countdown.drain();
+            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
             ArmDirection::shot(ModuleShot {
                 angles: [0x140, yaw_from(0x940, creature.facing), 0],
                 tr: [0, 0x340, 0xA00],
@@ -523,7 +527,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
         }
         1 => {
-            st.countdown.drain();
+            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
             ArmDirection::shot(ModuleShot {
                 angles: [-0x60, yaw_from(0x9F4, f), 0],
                 tr: [0, 0x580, 0x80],
@@ -739,7 +743,11 @@ const ZENOIR_LIFT_PER_PRODUCT: i32 = 8;
 fn zenoir_drain_holds(st: &mut ModuleCamState) -> bool {
     st.countdown.drain();
     st.countdown.0 = i32::from(st.countdown.0 as i16);
-    st.countdown.0 >= 0
+    let held = st.countdown.0 >= 0;
+    if !held {
+        st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+    }
+    held
 }
 
 /// PROT 0908 (Zenoir) - the camera and countdown half of the tick
@@ -863,6 +871,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if st.creature_clip == Some(0) {
                 return ArmDirection::HOLD;
             }
+            st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
             // `FUN_80019B28(victim, creature) + 0x800` onto the creature's
             // `+0x46` (`0x801F7360`): it turns to face the victim.
             let facing = heading(v, creature).wrapping_add(0x800) & 0xFFF;

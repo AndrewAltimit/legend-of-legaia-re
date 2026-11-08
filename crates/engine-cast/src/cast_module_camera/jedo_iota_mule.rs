@@ -136,7 +136,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0, 0x800], [0, 0x1600, 0xB00], at6, 1)
         }
         8 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             st.creature_stage = Some(2);
             cut([-0x140, 0x800], [0, 0x1400, 0x900], at6, 0x40)
         }
@@ -156,7 +156,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             )
         }
         11 | 17 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             if phase == 11 {
                 cut([-0xC0, 0x700], [0, 0x1600, 0xA0], at4, 0x100)
             } else {
@@ -236,6 +236,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if frame_wait(st, phase, 0x120) {
                 return ArmDirection::HOLD;
             }
+            st.countdown.drain_rest(D);
             ArmDirection::PASS
         }
         23 | 24 => {
@@ -262,7 +263,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0, 0], [0, i32::from(st.row_tr_y), 0], [0; 3], 1)
         }
         27 => {
-            st.countdown.0 -= D;
+            st.countdown.pass_drain(D);
             with_drift(ArmDirection::PASS, Some(drift(0, 0, 0, 0, 48 * D)))
         }
         28 => {
@@ -363,7 +364,7 @@ pub fn iota_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0, 0x800], [0, 0x400, 0x4E20], [0; 3], 1)
         }
         4 => {
-            st.countdown.drain();
+            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
             cut([-0x118, 0x800], [0, 0x400, 0x200], [0; 3], 0x118)
         }
         5 => {
@@ -718,12 +719,16 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         }
         19 => {
             let mut d = drift(0, P / 8, 0, 0, 0);
-            if st.countdown.0 > 0 {
+            let drained = st.countdown.0 > 0;
+            if drained {
                 d.tr_z = P as i16;
                 st.countdown.0 -= P;
             }
             if !st.row_settled || st.countdown.0 > 0 {
                 return held(Some(d));
+            }
+            if drained {
+                st.countdown.drain_rest(P);
             }
             finish(with_drift(ArmDirection::PASS, Some(d)))
         }

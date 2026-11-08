@@ -245,6 +245,12 @@ pub const SETTLE_DRAIN_PER_TICK: i32 =
 /// The scalar the arms shift into their countdown re-arms (`lbu 0x37D`).
 pub(super) const SETTLE_SCALAR: i32 = legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL as i32;
 
+/// The rest of a battle-frame pass's drain on a settle word, on the tick its
+/// gate opens ([`CastModuleCtx::pass_rest`]).
+pub(super) fn settle_rest(cd: &mut i32, rest: u8) {
+    *cd -= SETTLE_DRAIN_PER_TICK * i32::from(rest);
+}
+
 /// The gated drain the settle arms of PROT 0909, 0912 and 0913 open with
 /// (`lw; blez; subu; sw; bgtz`): a word already spent is left alone, a live
 /// one drains, and the arm holds while it is still positive.

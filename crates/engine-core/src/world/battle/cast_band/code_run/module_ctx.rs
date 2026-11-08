@@ -117,6 +117,7 @@ impl World {
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         let map = self.cast_seat_map();
         legaia_engine_cast::cast_module_ticks::CastModuleCtx {
+            pass_rest: self.casting.module_cam.countdown.1,
             // Retail's `ctx[+0]` is the **party** count, not the actor count:
             // `0x8004B3F0` loads it as the bound of a loop that turns
             // `DAT_8007BD10[i]` - the present-party char-id list - into a
