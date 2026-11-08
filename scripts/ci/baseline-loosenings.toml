@@ -1112,3 +1112,29 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.7, 1210.9],
   ["counts/native/world_map/retail/allocs_per_frame", 1714.0, 1717.0],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The field motion VM's rand draws now come from the shared world stream in retail's actor-list order, and the placement spawner draws each clip phase from it (FUN_8003A1E4, ff2014063), so each tick-locked bench run is dealt a different scene. Attributed by build: the build before that commit measures the old baseline on every row and the commit measures the new one (the browser rows exactly, the native rows within 0.3). The world map's counts already moved with the stream before it (LEGAIA_RNG_SEED sweep: 366 or 374 draws, 1717 to 1864 allocations a frame, no code change), town01 became stream-dependent with it (45 or 46 draws, 1156 to 1263 allocations across seeds), and town01's retail allocations fell while the world map's rose, which is a re-deal rather than a new per-frame cost. The battle and summon rows are 0.1 of noise inside the room. The bundle rows are code: ff2014063 adds 2242 bytes gzip to the play bundle and 1177 to the tool bundle, and the later commits on the branch 266 and 117."
+changes = [
+  ["counts/browser/town01/enhanced/gl_draws_per_frame", 90.24, 90.29],
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 221.86, 221.87],
+  ["counts/bundle/gzip_bytes", 7095145, 7096439],
+  ["counts/bundle/play_gzip_bytes", 4958538, 4961046],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4454.0, 4454.1],
+  ["counts/native/battle/retail/allocs_per_frame", 1227.0, 1227.1],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1260.2, 1260.3],
+  ["counts/native/town01/retail/draws_per_frame", 45, 46],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1498.2, 1539.0],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1831.8, 1887.1],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.9, 1238.8],
+  ["counts/native/world_map/retail/allocs_per_frame", 1717.0, 1766.1],
+  ["counts/native/world_map/retail/draws_per_frame", 366, 374],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The placement spawner and field wander now draw from the shared world rand stream (ff2014063), which moves the ambient falling-streak particles this patched-disc state's frame shows. Comparing the frame from the build before that commit with the current one, the changed pixels are the streaks and their immediate neighbours; the position, camera, NPC and flag channels hold at 1.0."
+changes = [
+  ["states/rikuroa_post_caruban/image", 0.996, 0.994],
+]
