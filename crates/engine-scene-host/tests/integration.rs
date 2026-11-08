@@ -122,6 +122,7 @@ mod hub_tables_disc;
 mod inline_dialogue_vm_no_panic_disc;
 mod jouind_object_morph_cflag_disc;
 mod jouine_arc_held_height_disc;
+mod koin3_gold_card_door_disc;
 mod kor3_self_face_acquire_disc;
 mod kor5_genesis_figure_height_disc;
 mod kor5_old_deez_seat_disc;

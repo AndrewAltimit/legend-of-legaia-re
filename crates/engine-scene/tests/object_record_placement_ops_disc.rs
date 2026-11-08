@@ -1,0 +1,107 @@
+//! Disc-gated census: the object (partition-0) records that drive a
+//! **placement's** actor words with a cross-context op.
+//!
+//! A door, counter or switch record often animates an NPC beside it - the
+//! `koin3` dance-hall door (`P0[3]`) steps its doorman (`P1[2]`, id `0x26`)
+//! into the doorway with `AC 26 07`, `AB 26 03`, `B2 26 18`, `A2 26 35`,
+//! `AD 26 08`. The prop runner (`World::step_prop_interaction`) sends these
+//! ops to the placement's own context; this census lists every carrier of the
+//! shape so the routing has a denominator: an `A2` ExecMove, an `AB` / `AC` /
+//! `AD` clip-control op, or a `B1` / `B2` class bit other than retire (`3`),
+//! engage (`8`) and halt (`0xA`), aimed at an id in `N0..N0 + N1`.
+//!
+//! Every scene's bundle MAN is walked, each partition-0 record from its own
+//! first-opcode offset, clean decodes only.
+//!
+//! Skip-passes without disc data (CLAUDE.md convention).
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use legaia_engine_scene::man_census::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{DisasmError, LinearWalker, man_script_spans};
+
+fn extracted_dir() -> Option<PathBuf> {
+    ["extracted", "../extracted", "../../extracted"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
+}
+
+/// Whether the decoded op is one the prop runner routes onto a placement.
+fn routed(opcode: u8, body: &[u8], pc: usize) -> bool {
+    match opcode {
+        0x22 | 0x2B..=0x2D => true,
+        0x31 | 0x32 => body
+            .get(pc + 2)
+            .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
+        _ => false,
+    }
+}
+
+#[test]
+fn object_records_that_drive_a_placements_clip() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(ex) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&ex).expect("open ProtIndex");
+    // (scene, P0 record, P1 placement) -> routed ops
+    let mut sites: BTreeMap<(String, usize, usize), usize> = BTreeMap::new();
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        let Some(c) = scene_man_carriers(&index, &scene).into_iter().next() else {
+            continue;
+        };
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&c.payload) else {
+            continue;
+        };
+        let n0 = mf.header.partition_counts[0].max(0) as usize;
+        let n1 = mf.header.partition_counts[1].max(0) as usize;
+        for (p, r, start, pc0, len) in man_script_spans(&mf, &c.payload) {
+            if p != 0 {
+                continue;
+            }
+            let body = &c.payload[start..start + len];
+            for step in LinearWalker::new(body, pc0) {
+                match step {
+                    Ok(insn) => {
+                        let Some(t) = insn.extended.map(usize::from) else {
+                            continue;
+                        };
+                        if (n0..n0 + n1).contains(&t) && routed(insn.opcode, body, insn.pc) {
+                            *sites.entry((name.clone(), r, t - n0)).or_default() += 1;
+                        }
+                    }
+                    Err((_, e)) => {
+                        if !matches!(e, DisasmError::EndOfStream { .. }) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for ((scene, r, slot), n) in &sites {
+        eprintln!("[census] {scene} P0[{r}] -> P1[{slot}]: {n} ops");
+    }
+    assert!(
+        sites
+            .get(&("koin3".to_string(), 3, 2))
+            .is_some_and(|&n| n > 0),
+        "koin3's dance-hall door drives its doorman's clip"
+    );
+    let scenes: std::collections::BTreeSet<&str> =
+        sites.keys().map(|(s, _, _)| s.as_str()).collect();
+    assert!(
+        scenes.len() > 1,
+        "the shape is not koin3's alone: {scenes:?}"
+    );
+}

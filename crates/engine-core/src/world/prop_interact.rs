@@ -665,7 +665,24 @@ impl World {
                 } else {
                     None
                 };
-                let step = if let Some(key) = object_target {
+                // An actor-word op aimed at a **placement** (a partition-1 NPC)
+                // lands on that NPC's context: its `+0x62` clip-control word,
+                // its `+0x10` bank bit and its clip. `koin3`'s dance-hall door
+                // (P0[3]) has its doorman (P1[2], id `0x26`) step across the
+                // doorway - `AC 26 07`, `AB 26 03`, `AC 26 01`, `B2 26 18`,
+                // `A2 26 35`, `AC 26 08` / `AD 26 08` - and the door itself
+                // never moves unless the Gold Card flags let the record reach
+                // its own `2B 03`. Stepped on the door's own context, the
+                // doorman's clip bits drove the door's clip, which then looped
+                // its swing for the rest of the visit, and the doorman stood
+                // still.
+                // REF: FUN_8003C83C, FUN_800204F8
+                let npc_target = (other_target && object_target.is_none())
+                    .then(|| npc_word_op_slot(host.world, &id.bytecode, id.pc))
+                    .flatten();
+                let step = if let Some(slot) = npc_target {
+                    step_npc_word_op(&mut host, &mut id, slot)
+                } else if let Some(key) = object_target {
                     let mut target_ctx = host.world.object_prop_ctx(key);
                     let r = vm::field::step_with_caller(
                         &mut host,
@@ -1020,6 +1037,81 @@ impl World {
 /// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the flag word `+0x10` (`31` /
 /// `32` / `33`) and the rate `+0x6A` (`4C 41`). Any other op on an object
 /// keeps the stand-in context.
+/// The placement slot a prop record's cross-context op at `pc` reaches, when
+/// the op is one of the actor-word ops the prop runner routes onto the NPC's
+/// own context ([`step_npc_word_op`]): an `A2 <id> <clip>` ExecMove, a
+/// clip-control `AB` / `AC` / `AD`, or a class-bit `B1` / `B2` - but not the
+/// retire (`3`), engage (`8`) or halt (`0xA`) bits, whose side effects the
+/// runner models elsewhere or not at all. `None` for any other op, and for a
+/// target no placement channel carries.
+fn npc_word_op_slot(world: &World, bytecode: &[u8], pc: usize) -> Option<u8> {
+    let b = *bytecode.get(pc)?;
+    let routed = match b & 0x7F {
+        0x22 | 0x2B..=0x2D => true,
+        0x31 | 0x32 => bytecode
+            .get(pc + 2)
+            .is_some_and(|bit| !matches!(bit & 0x1F, 3 | 8 | 0xA)),
+        _ => false,
+    };
+    if !routed {
+        return None;
+    }
+    let t = vm::field::peek_extended(bytecode, pc)?;
+    if t == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || t == 0xFB {
+        return None;
+    }
+    let ci = legaia_engine_field::field_channels::resolve_target(&world.field_vm.channels, t)?;
+    let ch = &world.field_vm.channels[ci];
+    if ch.object_bind {
+        return None;
+    }
+    u8::try_from(ch.placement_index).ok()
+}
+
+/// Step one actor-word op of a prop record on placement `slot`'s own context
+/// (the channel retail's `FUN_8003C83C` resolves the target byte to), with
+/// the channel marked executing so an `A2` binds the NPC's clip. The NPC
+/// anim tick moves that context's `+0x62` with the clip
+/// ([`World::tick_npc_clips`]), so an `AD <id> 08` end-latch spin waits on
+/// the NPC's own clip; with no clip cursor bound to the NPC nothing would
+/// latch the bit, and the spin is taken as a clip of no length.
+///
+/// REF: FUN_8003C83C, FUN_800204F8
+fn step_npc_word_op(
+    host: &mut FieldHostImpl<'_>,
+    id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    slot: u8,
+) -> FieldStepResult {
+    let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
+    if b & 0x7F == 0x2D && !host.world.npc_clip_cursor_bound(slot) {
+        return FieldStepResult::Advance { next_pc: id.pc + 3 };
+    }
+    let Some(ci) = host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
+    else {
+        return FieldStepResult::Advance { next_pc: id.pc + 3 };
+    };
+    let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
+    host.world.field_vm.executing_channel = Some(slot);
+    let r = vm::field::step_with_caller(
+        host,
+        &mut target_ctx,
+        &mut id.ctx,
+        false,
+        &id.bytecode,
+        id.pc,
+    );
+    host.world.field_vm.executing_channel = None;
+    if let Some(c) = host.world.field_vm.channels.get_mut(ci) {
+        c.ctx = target_ctx;
+    }
+    r
+}
+
 fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
     match bytecode.get(pc).map(|b| b & 0x7F) {
         Some(0x2B..=0x2D | 0x31..=0x33) => true,

@@ -45,6 +45,7 @@ mod model_bank_disc;
 mod motion_flag_census_disc;
 mod move_vm_ext_size_uru2_disc;
 mod npc_dialog_tree_disc;
+mod object_record_placement_ops_disc;
 mod op49_sub_op_census;
 mod op49_window_census_disc;
 mod opdeene_narration;
