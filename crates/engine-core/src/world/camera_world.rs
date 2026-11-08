@@ -49,6 +49,10 @@ impl CameraWorld for World {
         &self.terrain.map_region_block
     }
 
+    fn region_attributes(&self) -> legaia_engine_field::field_regions::RegionAttributes {
+        self.terrain.region_attributes
+    }
+
     fn zone_table(&self) -> &[u8] {
         &self.terrain.zone_table
     }
