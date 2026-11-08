@@ -1021,33 +1021,49 @@ impl World {
 
     /// PORT-adjacent driver for `FUN_80051078` / `FUN_80050BB8` (the kernels
     /// live in `legaia_engine_battle_vm::battle_separation`): one all-pairs
-    /// separation pass in the retail visitation order, on the line after the
-    /// action SM step - retail's exact call slot (`FUN_80046A20`).
+    /// separation pass, on the line after the action SM step - retail's exact
+    /// call slot (`FUN_80046A20`).
     ///
-    /// Retail's liveness test reads the slot pointer plus the actor's
-    /// `+0x4` word; the engine substitutes its `liveness` halfword (the
-    /// `+0x4` render word is not faithfully maintained here). Overlap is
-    /// measured on the **seat** pairs and the nudge moves the **live**
-    /// pairs, exactly as the kernel's field mapping documents. Radii:
-    /// [`Self::battle_separation_radius`].
+    /// The pass walks retail's seven table seats, party `0..=2` and monsters
+    /// from `3`, through [`SeatMap`](legaia_engine_battle_vm::battle_slot::SeatMap):
+    /// a fifth monster sits at retail seat `7`, which the driver never visits.
+    /// Its gate is each seat's colour word `+0x04` (`lw v0,0x4(v0)` /
+    /// `beq v0,zero` at `0x800510B4..0x800510DC`), not HP: a fallen member
+    /// lying on the stage and a monster still fading are pushed and push,
+    /// and a body a cast has hidden is not. The engine's resting word is `0`
+    /// under flag `0` where retail's is the neutral `0x20080200`, so a zero
+    /// word only reads as retail's zero under a raised `+0x21C`, and a row the
+    /// fight left empty is retail's zeroed seat. Overlap is
+    /// measured on the **seat** pairs and the nudge moves the **live** pairs,
+    /// exactly as the kernel's field mapping documents. Radii:
+    /// [`Self::battle_separation_radius`]. The pass is order-free: the test
+    /// reads only seats and radii, and the nudges add.
+    ///
+    /// Public as the seam the retail-kernel differential drives.
     ///
     /// REF: FUN_80051078, FUN_80050BB8, FUN_80046A20
-    pub(in crate::world) fn tick_battle_separation(&mut self) {
+    pub fn tick_battle_separation(&mut self) {
         use legaia_engine_battle_vm::battle_separation::{
             SEPARATION_SLOTS, SepActor, push_apart, separation_pass,
         };
-        let n = self.actors.len().min(SEPARATION_SLOTS);
-        if n < 2 {
-            return;
-        }
+        let seats = legaia_engine_battle_vm::battle_slot::SeatMap::new(self.party.party_count);
+        // Engine slot of each retail seat the driver walks.
+        let mut slot_of = [None; SEPARATION_SLOTS];
         let mut alive = [false; SEPARATION_SLOTS];
         let mut seps = [SepActor::default(); SEPARATION_SLOTS];
-        for (i, sep) in seps.iter_mut().enumerate().take(n) {
-            let a = &self.actors[i];
-            alive[i] = a.battle.liveness != 0;
-            let radius = self.battle_separation_radius(i);
-            let seat = self.battle_seat_of(i);
-            *sep = SepActor {
+        for r in 0..SEPARATION_SLOTS {
+            let Some(e) = seats.engine(r as u8).map(usize::from) else {
+                continue;
+            };
+            let Some(a) = self.actors.get(e) else {
+                continue;
+            };
+            slot_of[r] = Some(e);
+            // An empty row (`active` down) is retail's zeroed seat.
+            alive[r] = a.active && (a.battle.render_color != 0 || a.battle.render_flag == 0);
+            let radius = self.battle_separation_radius(e);
+            let seat = self.battle_seat_of(e);
+            seps[r] = SepActor {
                 radius,
                 x: seat.0,
                 z: seat.1,
@@ -1072,10 +1088,12 @@ impl World {
             };
             push_apart(ai, aj, sin, cos);
         });
-        for (i, sep) in seps.iter().enumerate().take(n) {
-            let ms = &mut self.actors[i].move_state;
-            ms.world_x = sep.acc_x as i16;
-            ms.world_z = sep.acc_z as i16;
+        for (r, sep) in seps.iter().enumerate() {
+            if let Some(e) = slot_of[r] {
+                let ms = &mut self.actors[e].move_state;
+                ms.world_x = sep.acc_x as i16;
+                ms.world_z = sep.acc_z as i16;
+            }
         }
     }
 }

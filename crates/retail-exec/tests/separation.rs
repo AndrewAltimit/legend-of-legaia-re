@@ -100,3 +100,124 @@ fn the_separation_nudge_is_the_retail_nudge() {
     }
     assert!(pushed > 2_000 && clear > 2_000, "{pushed} {clear}");
 }
+
+const DRIVER: u32 = 0x8005_1078;
+/// Retail's resting colour word, which the port holds as `0` under flag `0`.
+const NEUTRAL_WORD: u32 = 0x2008_0200;
+
+/// The driver `FUN_80051078` over the actor table against
+/// `World::tick_battle_separation`: every party size and formation, seats
+/// crowded so pairs overlap, each body standing, down and drawn, hidden by a
+/// cast (`+0x04 = 0`, `+0x21C = 0xFF`) or faded out (`+0x04 = 0`, flag `2`).
+/// Retail's gate is the colour word `+0x04` (`0x800510B4..0x800510DC`), not HP.
+#[test]
+fn the_separation_driver_is_the_retail_driver() {
+    use legaia_engine_core::world::World;
+    use legaia_save::Party;
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.wr32(SIN_PTR, SINE_TABLE);
+    cpu.mem.wr32(COS_PTR, SINE_TABLE + 0x800);
+    let actor = |seat: u32| 0x8013_0000 + seat * 0x400;
+    let rec = |seat: u32| 0x8014_0000 + seat * 0x100;
+    for seat in 0..7 {
+        cpu.mem.wr32(ACTORS + seat * 4, actor(seat));
+        cpu.mem.wr32(actor(seat) + 0x22C, rec(seat));
+    }
+    let mut rng = Rng(0x5345_5044);
+    let (mut failures, mut down_drawn, mut moved) = (Vec::new(), 0, 0);
+    for round in 0..20_000 {
+        let party = 1 + rng.below(3) as u8;
+        let monsters = 1 + rng.below(5) as u8;
+        let mut w = World::new();
+        w.load_party(Party::zeroed(3));
+        w.enter_battle(party, monsters);
+        w.party.active_party = if rng.below(4) == 0 {
+            vec![0, 3, 1][..usize::from(party)].to_vec()
+        } else {
+            vec![0, 1, 2][..usize::from(party)].to_vec()
+        };
+        for seat in 0..7 {
+            cpu.mem.wr32(actor(seat) + 4, 0);
+        }
+        let n = usize::from(party + monsters);
+        let mut seeds = Vec::new();
+        for e in 0..n {
+            let retail = if e < usize::from(party) {
+                e as u32
+            } else {
+                3 + (e - usize::from(party)) as u32
+            };
+            let mut c = |s: u32| (rng.below(2 * s + 1) as i32 - s as i32) as i16;
+            let (x, z) = (c(0x100), c(0x100));
+            let (lx, lz) = (c(0x400), c(0x400));
+            let hp = [0u16, 1, 300][rng.below(3) as usize];
+            // (port colour, port flag): resting, tinted, hidden, faded out,
+            // fading.
+            let (colour, flag) = [
+                (0u32, 0u8),
+                (0x0040_1004, 0),
+                (0, 0xFF),
+                (0, 2),
+                (0x1008_0100, 2),
+            ][rng.below(5) as usize];
+            let word = if colour == 0 && flag == 0 {
+                NEUTRAL_WORD
+            } else {
+                colour
+            };
+            let radius = if e < usize::from(party) {
+                if w.party.active_party[e] == 3 {
+                    0x400
+                } else {
+                    0x280
+                }
+            } else {
+                [0x20i16, 0x40, 0x80, 0xC0, 0x100][rng.below(5) as usize]
+            };
+            let a = actor(retail);
+            cpu.mem.wr32(a + 4, word);
+            cpu.mem.wr16(rec(retail) + 0x58, radius as u16);
+            cpu.mem.wr16(a + 0x3C, x as u16);
+            cpu.mem.wr16(a + 0x40, z as u16);
+            cpu.mem.wr16(a + 0x34, lx as u16);
+            cpu.mem.wr16(a + 0x38, lz as u16);
+            cpu.mem.wr16(a + 0x14C, hp);
+            let b = &mut w.actors[e];
+            b.battle.hp = hp;
+            b.battle.liveness = hp;
+            b.battle.render_color = colour;
+            b.battle.render_flag = flag;
+            b.battle.seat = Some((x, z));
+            if e >= usize::from(party) {
+                b.battle.render_radius = Some(radius);
+            }
+            b.move_state.world_x = lx;
+            b.move_state.world_z = lz;
+            if hp == 0 && word != 0 {
+                down_drawn += 1;
+            }
+            seeds.push((retail, x, z, lx, lz, hp, colour, flag, radius));
+        }
+        assert_eq!(cpu.call(DRIVER, &[]), Stop::Returned);
+        w.tick_battle_separation();
+        for (e, s) in seeds.iter().enumerate() {
+            let a = actor(s.0);
+            let retail = (cpu.mem.rd16(a + 0x34) as i16, cpu.mem.rd16(a + 0x38) as i16);
+            let port = (
+                w.actors[e].move_state.world_x,
+                w.actors[e].move_state.world_z,
+            );
+            moved += i32::from(retail != (s.3, s.4));
+            if retail != port && failures.len() < 8 {
+                failures.push(format!(
+                    "round {round} party {party} seat {e}: retail {retail:?} port {port:?} seeds {seeds:x?}"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(down_drawn > 5_000 && moved > 5_000, "{down_drawn} {moved}");
+}

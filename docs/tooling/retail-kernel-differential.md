@@ -495,3 +495,9 @@ guard left from when the op started a walk, where the arm writes it like any til
 the cull hides the actor. `town01`'s blackboard tour parks the villagers round the map that way and re-seats them
 with `CC <id> C3`, which the talk runner then ran on the talker's own context; both now land on the placement. The
 player arm keeps the guard, unmeasured against the follow camera.
+The separation driver `FUN_80051078`, run over the actor table against `World::tick_battle_separation`
+(`separation`), found two. Its gate is each seat's colour word `+0x04` (`0x800510B4..0x800510DC`), where the
+port read HP: a fallen member lying on the stage and a monster still in its defeat fade push and are pushed, and
+a body a cast has hidden is not. And it walks retail's seven seats, party `0..=2` and monsters from `3`, so a
+fifth monster at seat `7` is never separated; the port walked its own compacted slots and took it in behind a
+smaller party.
