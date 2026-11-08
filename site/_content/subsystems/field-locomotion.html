@@ -205,6 +205,50 @@
   <h3 id="room-mask">The room you landed in, not the tile you stand on</h3>
   <p>A scene&rsquo;s system script often picks the current room from the <strong>region-type mask</strong> (<code>_DAT_8007B8F4</code>, one bit per kind-3 region box over the player): each pass it installs the first room whose bit is set - that room&rsquo;s floor-height ladder, view window and floor oscillators. Retail writes the mask only when the player <em>lands</em> somewhere: a re-centre (scene entry, a door warp, a scripted player move, the leader swap), a camera-zone query, <code>[4C 3D]</code>, or every frame while a script holds scratchpad bit 22. A walk never rewrites it.</p>
   <p>That is what keeps overlapping rooms apart. <code>conc</code>&rsquo;s southern hall shares one open column with the room on each side; a mask rebuilt per tile held both rooms&rsquo; bits there, and the selector installed the two ladders on alternate passes - every floor tier jumping hundreds of units a frame, the whole town shaking while the player stood by the wall. The port now latches the mask where retail does.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Top: conc's southern hall, a type-2 region box, overlaps a type-3 room box on each side by one open column. The player lands in the hall through a door, which writes the mask with the hall's bit only, then walks west onto the shared column. Bottom left, a mask rebuilt on every tile: on the shared column it holds both bits, so the room selector installs the hall's floor ladder and the neighbour's on alternate passes and the floor tiers jump. Bottom right, retail's latch: the walk writes nothing, the mask keeps the hall's bit from the landing, and the hall's ladder stays installed.">
+      <defs><marker id="flw-latch-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="24">conc, top down: three region boxes in a row (bit n = region type n)</text>
+      <rect class="dg-node" x="40" y="40" width="210" height="80" rx="4"/>
+      <text class="dg-label" x="130" y="76">west room</text><text class="dg-sub" x="130" y="94">type 3, bit 0x08</text>
+      <rect class="dg-node" x="610" y="40" width="210" height="80" rx="4"/>
+      <text class="dg-label" x="730" y="76">east room</text><text class="dg-sub" x="730" y="94">type 3, bit 0x08</text>
+      <rect class="dg-node-accent" x="220" y="40" width="420" height="80" rx="4"/>
+      <text class="dg-label" x="430" y="70">southern hall</text><text class="dg-sub" x="430" y="88">type 2, bit 0x04</text>
+      <rect class="dg-node-warn" x="220" y="40" width="30" height="80" rx="2"/>
+      <rect class="dg-node-warn" x="610" y="40" width="30" height="80" rx="2"/>
+      <text class="dg-sub" x="235" y="138">shared column</text>
+      <text class="dg-sub" x="625" y="138">shared column</text>
+      <circle class="dg-node-ok" cx="500" cy="104" r="7"/>
+      <text class="dg-sub dg-start" x="512" y="108">landed: 0x04</text>
+      <path class="dg-edge" d="M492 104 H246" marker-end="url(#flw-latch-ah)"/>
+      <text class="dg-edge-label" x="370" y="99" text-anchor="middle">walk west</text>
+      <circle class="dg-node-ok" cx="235" cy="104" r="7"/>
+
+      <rect class="dg-group" x="20" y="164" width="400" height="180" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="188">mask rebuilt on every tile</text>
+      <text class="dg-sub dg-start" x="34" y="206">(the port before the latch)</text>
+      <rect class="dg-node-warn" x="34" y="220" width="372" height="28" rx="4"/>
+      <text class="dg-sub" x="220" y="239">on the shared column: mask = 0x0C (both bits)</text>
+      <rect class="dg-node" x="34" y="262" width="176" height="44" rx="4"/>
+      <text class="dg-sub" x="122" y="280">pass n: hall ladder</text><text class="dg-sub" x="122" y="296">installed</text>
+      <rect class="dg-node" x="230" y="262" width="176" height="44" rx="4"/>
+      <text class="dg-sub" x="318" y="280">pass n+1: west room</text><text class="dg-sub" x="318" y="296">ladder installed</text>
+      <path class="dg-edge" d="M210 276 H228" marker-end="url(#flw-latch-ah)"/>
+      <path class="dg-edge-dim" d="M318 306 V318 H122 V308" marker-end="url(#flw-latch-ah)"/>
+      <text class="dg-sub dg-start" x="34" y="336">floor tiers jump every pass: the town shakes</text>
+
+      <rect class="dg-group" x="440" y="164" width="400" height="180" rx="6"/>
+      <text class="dg-label dg-start" x="454" y="188">the mask is a latch (retail)</text>
+      <text class="dg-sub dg-start" x="454" y="206">written only where the player lands</text>
+      <rect class="dg-node-ok" x="454" y="220" width="372" height="28" rx="4"/>
+      <text class="dg-sub" x="640" y="239">on the shared column: mask = 0x04, from the landing</text>
+      <rect class="dg-node" x="454" y="262" width="372" height="44" rx="4"/>
+      <text class="dg-sub" x="640" y="280">every pass: hall ladder stays installed</text><text class="dg-sub" x="640" y="296">the west room's bit waits for the next landing</text>
+      <text class="dg-sub dg-start" x="454" y="336">writers: re-centres, MAN load, zone queries, [4C 3D]</text>
+    </svg>
+    <figcaption>Why <code>conc</code> held still in retail and shook in the port. The selector installs the first room whose bit is set and whose band flag is clear, so a mask holding two rooms&rsquo; bits flips between their floor ladders; a latch only ever holds the room of the last landing.</figcaption>
+  </figure>
   <h3 id="prop-door-rides">Prop-door rides: lifts and swinging doors</h3>
   <p>Every door bound to an object rides on its own record: retail&rsquo;s touch post only marks the touched actor (<code>+0x10 |= 0x100</code>), and that mark is what lets the context runner step the actor&rsquo;s script, so contact hands the touch to the prop runner, which executes the whole record - both doors, both walks and the jump between them. Sol Tower&rsquo;s floor lifts show the shape; every pair is the same record with the partner id, the walk tiles and the landing changed.</p>
   <figure class="diagram">
