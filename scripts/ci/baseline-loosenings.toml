@@ -1092,3 +1092,23 @@ changes = [
   ["states/delilas_gi_spirit_artifact/image", 0.969, 0.633],
   ["states/rim_elm_gimard_victory/image", 0.969, 0.967],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Gap wave 35. The bundles grow about 10 KB gzip with the wave's new code: the Astral Slash, Chaos Breath and Shadow Break camera directors, the talk-runner routes, the fishing ring and the one-play art clock. The per-frame wasm figures rise under 0.3%; the native allocation figures rise by a few of 1300 to 1830 allocations a frame on the world map and within a tenth elsewhere."
+changes = [
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124741, 124812],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 112479, 112669],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 111975, 112214],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 165615, 165745],
+  ["counts/bundle/gzip_bytes", 7085636, 7095145],
+  ["counts/bundle/play_gzip_bytes", 4947923, 4958538],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1279.3, 1279.4],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1313.2, 1313.3],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4580.8, 4581.0],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1406.4, 1406.5],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1497.9, 1498.2],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1828.8, 1831.8],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.7, 1210.9],
+  ["counts/native/world_map/retail/allocs_per_frame", 1714.0, 1717.0],
+]
