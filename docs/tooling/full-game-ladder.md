@@ -1162,7 +1162,10 @@ The **beats pass** runs once per scene visit - in the pad tier, again when
 the story came back to the scene with new flags (`retona`: the Songi fight,
 the `P0[1]` -> P2[17] hop to `map02` and P2[10]'s carry back, then the summit
 scene P2[18], before the summit's wall switches P2[4] / P2[5] open the way
-down) - when the scene is the target and its
+down; the flags it compares leave out the scene-transition scratch band
+`0x522..=0x531`, which every scene's system loop moves as it watches the
+player, and are read a game frame after the pass ends, once the scene's own
+scripts have taken the frame they are owed) - when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
 approaches every boss stager whose park gate is clear (the touch dispatch runs
 its placement record) - every round, until a contact gains nothing, since a

@@ -63,6 +63,33 @@ pub(super) fn wiped(session: &NativeSession) -> Option<String> {
     (w.game_over_hold || w.game_over).then(|| format!("party wiped: {}", battle_snapshot(session)))
 }
 
+/// Let the scene's scripts take the game frame they are owed before the hand
+/// reads the flags a beats pass left: the field scripts step once per game
+/// frame (`FrameClock::script_slice_due`), so a flag the scene's own loop
+/// raises on the frame the pass ended lands up to a frame step later. Read
+/// before it, the next hop saw the flag appear and played the whole pass
+/// again (`station`'s `0x19E` / `0x528`).
+pub(super) fn settle_game_frame(session: &mut NativeSession) {
+    for _ in 0..4 {
+        let _ = session.tick();
+        if session.host.world.clock.game_tick_fired {
+            break;
+        }
+    }
+}
+
+/// `flags` less the scene-transition scratch band `0x522..=0x531`: every
+/// field scene's system loop sets and clears it as it watches the player
+/// (`docs/subsystems/script-vm.md`), so a change there is no new story for
+/// a scene's beats to play.
+fn story_flags(flags: &BTreeSet<u16>) -> BTreeSet<u16> {
+    flags
+        .iter()
+        .copied()
+        .filter(|f| !(0x522..=0x531).contains(f))
+        .collect()
+}
+
 pub(super) fn flags_of_world(session: &NativeSession) -> BTreeSet<u16> {
     let mut out = BTreeSet::new();
     for (i, b) in session.host.world.flags.system_flags.iter().enumerate() {
@@ -521,7 +548,7 @@ pub(super) fn traverse(
                     && beaten.contains(&cur)
                     && beaten_flags
                         .get(&cur)
-                        .is_some_and(|f| *f != flags_of_world(session))
+                        .is_some_and(|f| story_flags(f) != story_flags(&flags_of_world(session)))
                 {
                     beaten.remove(&cur);
                 }
@@ -542,6 +569,9 @@ pub(super) fn traverse(
                     BEAT_TARGET.with(|t| *t.borrow_mut() = None);
                     let left =
                         left.map_err(|b| format!("in {cur}, playing beats (after {e}): {b}"))?;
+                    if left.is_none() {
+                        settle_game_frame(session);
+                    }
                     beaten_flags.insert(cur.clone(), flags_of_world(session));
                     trail.push(format!("[{}]", log.join("; ")));
                     if let Some(s) = left {
