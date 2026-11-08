@@ -511,3 +511,10 @@ table.
 The action SM's HP-bar settle check `FUN_801E7250` (`hp_bar_settle`), the capture takedown `FUN_801E7824`
 (`capture_takedown`) and the side-band transfer sequencer `FUN_801F17F8` (`stream_slot`, its libcd calls logged
 against the steps `StreamSlotSm` hands its host) match over every formation, target code and stage.
+The cast camera script `FUN_801DC0A0` (`spell_cam`), run case by case with the tween builder hooked and the group
+aim `FUN_801DCEAC` live, against `spell_cam_inputs` and `spell_cam_case`, found the input builder sizing a slot
+target with the party radius: retail reads the target's node `+0x58` (`0x801DC35C`, `0x801DC4B8`), so a monster or
+Terra framed at the wrong depth on cases `2` and `4`. It also built the group from the monsters not hidden, where
+the aim counts a monster by its colour word `+0x04` (`0x801DCF54`): one faded out after its death left the
+centroid, and one frozen in the ice stayed in it. The nineteen cases' shots and hand-offs match. A group with no
+drawn member, or a slot code on cases `9` / `0xB` naming a seat not drawn, stops on the aim's `break`.

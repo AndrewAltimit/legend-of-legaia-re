@@ -644,15 +644,13 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
 /// (`CastFxState::move_fx_streak`); the engine does not fly it
 /// (`FUN_801E09F8`'s homing is render-track), so a projectile shot frames
 /// the launch rather than the flame in flight, and the caster's own pair
-/// stands in before any terminator. The target's body radius is the party
-/// value; the monster pick's `+0x21` first magic slot is the catalog's first
-/// live one.
+/// stands in before any terminator. The target's body radius is its node's
+/// (`World::battle_separation_radius`); the monster pick's `+0x21` first
+/// magic slot is the catalog's first live one.
 ///
 /// REF: FUN_801DC0A0, FUN_801DCEAC, FUN_801F0348
 pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamInputs {
-    use legaia_engine_battle_vm::battle_target_group::{
-        GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim,
-    };
+    use legaia_engine_battle_vm::battle_target_group::{GroupSlot, target_group_aim};
     let seats = world.battle_seat_map();
     let Some(a) = world.actors.get(usize::from(slot)) else {
         return script::SpellCamInputs {
@@ -676,12 +674,15 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
             .actors
             .get(usize::from(code))
             .map_or(script::SpellCamTarget::None, |t| {
+                // The target's node radius `+0x22C -> +0x58`
+                // (`0x801DC35C`, `0x801DC4B8`), a monster's or Terra's
+                // as much as a party seat's.
                 script::SpellCamTarget::Slot {
                     world: [
                         f32::from(t.move_state.world_x),
                         f32::from(t.move_state.world_z),
                     ],
-                    radius: script::PARTY_BODY_RADIUS,
+                    radius: i32::from(world.battle_separation_radius(usize::from(code))),
                 }
             })
     } else {
@@ -700,8 +701,11 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
             let Some(t) = world.actors.get(usize::from(engine)) else {
                 continue;
             };
-            let live = seats.is_party(engine)
-                || (t.battle_monster_id.is_some() && t.battle.render_flag != RENDER_FLAG_HIDDEN);
+            // A party seat counts by its roster id `DAT_8007BD10[seat]`
+            // (`0x801DCF34`), a monster seat by its colour word `+0x04`
+            // (`0x801DCF54`): a monster faded out after its death drops
+            // out of the group, and one frozen in the ice stays in it.
+            let live = seats.is_party(engine) || world.battle_body_drawn(usize::from(engine));
             *out = GroupSlot {
                 live,
                 x: t.move_state.world_x,

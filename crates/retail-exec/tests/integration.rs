@@ -80,6 +80,7 @@ mod sfx_cue_route;
 mod sfx_drain;
 mod shop_quantity;
 mod slot_machine;
+mod spell_cam;
 mod spell_list_scans;
 mod spirit_cleanup;
 mod spoils;

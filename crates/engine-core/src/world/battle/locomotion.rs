@@ -1003,7 +1003,7 @@ impl World {
     /// size class `<< 5` (`0x800518C4..0x800518D4`).
     ///
     /// REF: FUN_800513F0
-    pub(in crate::world) fn battle_separation_radius(&self, slot: usize) -> i16 {
+    pub(crate) fn battle_separation_radius(&self, slot: usize) -> i16 {
         let s = slot as u8;
         if s < self.party.party_count {
             if self.battle_party_char_id(s) == TERRA_ROSTER_ID {
@@ -1017,6 +1017,18 @@ impl World {
                 .and_then(|a| a.battle.render_radius)
                 .unwrap_or(i16::from(self.battle_size_class_of(s)) << 5)
         }
+    }
+
+    /// Whether battle body `slot`'s colour word `+0x04` is non-zero: the
+    /// gate the separation driver `FUN_80051078` and the group aim
+    /// `FUN_801DCEAC` put on a seat, whatever its HP. The engine's resting
+    /// word is `0` under flag `0` where retail's is the neutral `0x20080200`,
+    /// so a zero word only reads as retail's zero under a raised `+0x21C`;
+    /// a row the fight left empty (`active` down) is retail's zeroed seat.
+    pub(crate) fn battle_body_drawn(&self, slot: usize) -> bool {
+        self.actors
+            .get(slot)
+            .is_some_and(|a| a.active && (a.battle.render_color != 0 || a.battle.render_flag == 0))
     }
 
     /// PORT-adjacent driver for `FUN_80051078` / `FUN_80050BB8` (the kernels
@@ -1059,8 +1071,7 @@ impl World {
                 continue;
             };
             slot_of[r] = Some(e);
-            // An empty row (`active` down) is retail's zeroed seat.
-            alive[r] = a.active && (a.battle.render_color != 0 || a.battle.render_flag == 0);
+            alive[r] = self.battle_body_drawn(e);
             let radius = self.battle_separation_radius(e);
             let seat = self.battle_seat_of(e);
             seps[r] = SepActor {
