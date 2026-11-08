@@ -1305,7 +1305,8 @@ Port: `battle_attack_camera` runs the thirteen arm bodies and owns the ramp
 quartet; `battle_cam_script`'s Action phase steps the live pose toward whatever
 the arms produce, each frame, on the arm's own duration. Both hosts feed it the
 same three per-actor channels: `actor[+0x1DB]` as `BattleActor::latched_anim`,
-`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` as the battle
+`actor[+0x21B]` (the clip's loop counter: the Hyper Art arms fork their shots on the
+loops still to run, read off the animation player's window budget), and `actor[+0x22C][+0x68]` as the battle
 animation player's cursor in retail's own sixteenths, sub-keyframe bits included
 (`cursor_sixteenths`). The cast driver's case `0xA` reads the same word
 ([below](#the-cast-drivers-clip-clock)).

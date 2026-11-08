@@ -52,6 +52,7 @@ or its frame is a fade.
 | enemy attacks | per monster: its physical attack, plus each magic attack id its record carries (`+0x21..=+0x23`) | the acting seat `ctx[+0x13]` is that monster's, with category `3` in the attack band, or category `2` with that spell id queued at `+0x1DF` |
 | enemy magic attacks | the distinct ids of the row above | as above, any monster |
 | player casts | the named summon-band spells `0x81..=0xA0` of the [spell table](../formats/spell-table.md) | a party seat acts with that id queued, category `1` or `2` |
+| party strikes | each character's direction chain and Hyper Art | a party seat in the attack band, category `3`: the first queued byte a swing (`0x0C..=0x0F`, a chain) or the Hyper Art starter (`0x1A`) |
 | cast modules | the slot-B images PROT `0903..=0966` | an acting cast pages the module ([below](#which-module-a-cast-pages)) |
 | mode classes | the corpus classes | a state of the class |
 | menu screens | every player-reachable id of the [sub-screen table](../subsystems/save-screen.md#sub-screen-function-pointer-table), the title family (word clear) and the map display (game mode `0x0D`) | a menu state's sub-screen word `DAT_801E46A4` |
@@ -150,7 +151,7 @@ carries the movement-disabled bit `0x80000` at `+0x10` (an event holds it) takes
 all, so no roll fires there either way (`concnow_field_door_hop_settled`,
 `chapter2_garmel_pre_zeto`).
 
-Party strikes are not a census dimension yet, and they are where a harvest finds
+Party strikes are the census's thinnest dimension and where a harvest finds
 the most new reading: a command ring with `LEGAIA_PARTY_ARTS` set (per seat, a
 `,` list of arts as art-data tokens, `1` Left, `2` Right, `3` Down, `4` Up, cycled
 over the rounds) takes Attack, enters the art and commits, and each seat's strike

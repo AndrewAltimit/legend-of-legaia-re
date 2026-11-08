@@ -238,6 +238,11 @@ def build(census: dict, baseline: dict) -> dict:
         if spell_name.get(sid):
             pc.add(sid, f"0x{sid:02X} {spell_name[sid]}")
 
+    ps = dims["party_strikes"] = Coverage("party strikes (character, chain / Hyper Art)")
+    for cid, cname in ((1, "Vahn"), (2, "Noa"), (3, "Gala")):
+        ps.add((cid, "chain"), f"{cname}: direction chain")
+        ps.add((cid, "hyper"), f"{cname}: Hyper Art")
+
     cm = dims["cast_modules"] = Coverage("slot-B cast modules")
     module_spells = defaultdict(list)
     for s in disc["spells"]:
@@ -289,6 +294,14 @@ def build(census: dict, baseline: dict) -> dict:
         if not acting:
             continue
         q = b["queued_action"]
+        if b["active_monster"] is None and b["category"] == 3 and b["band"] == "attack":
+            seat = b["active_seat"]
+            if seat is not None and seat < len(b["party"]):
+                # The first queue byte: a swing opens a chain, 0x1A a Hyper Art.
+                if 0x0C <= q <= 0x0F:
+                    ps.cover((b["party"][seat], "chain"), lab, sco)
+                elif q == 0x1A:
+                    ps.cover((b["party"][seat], "hyper"), lab, sco)
         if b["active_monster"] is not None:
             m = b["active_monster"]
             if b["category"] == 3 and b["band"] == "attack":
@@ -322,7 +335,7 @@ def render(result: dict, worklist_rows: int) -> str:
         n, h, s = d.counts()
         out.append(f"| {d.name} | {n} | {h} ({h / n:.0%}) | {s} ({s / n:.0%}) |" if n else f"| {d.name} | 0 | - | - |")
     for key in ("enemy_attacks", "monsters", "enemy_spells", "scene_walk", "cast_modules",
-                "player_casts", "menu_screens", "battle_surfaces", "mode_classes"):
+                "player_casts", "party_strikes", "menu_screens", "battle_surfaces", "mode_classes"):
         d = dims[key]
         un = d.uncovered()
         out += ["", f"## Uncovered {d.name} ({len(un)})", ""]

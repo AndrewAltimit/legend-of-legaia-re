@@ -7909,3 +7909,44 @@ expected_active_scene = "jou"
 ram_poked = ["MAN formation row 0 and region rows (forced formation), party and monster HP at round prompts"]
 topics = ["battle", "enemy attack", "synthetic formation", "harvest"]
 
+
+[[scenarios]]
+label = "battle_jou_party_vahn_tri_somersault_super_open"
+backup_fingerprint = "bfbe7535d122494ef15495c084ed312f49a48344b6aec71e29cfb4eb242126a8"
+description = "jou battle, formation [27,27,27], party strike: Vahn, Tri-Somersault (Super Art entered on the pad, 4 3 4 4 4 3 4), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 5357 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_noa_dragon_fangs_super_open"
+backup_fingerprint = "eec44eab40cb123426e2db3eb8fca2b718f8d0f9526001cee43dec7c7ded2aaa"
+description = "jou battle, formation [27,27,27], party strike: Noa, Dragon Fangs (Super Art, 4 3 4 4 4 3 3), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 6516 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_party_gala_super_ironhead_super_open"
+backup_fingerprint = "66d6a9ae14c07c75f5004e678a044f03763f792edf4809e4adf6c492a4819f10"
+description = "jou battle, formation [27,27,27], party strike: Gala, Super Ironhead (Super Art, 3 4 1 4 4 3 3), six vsyncs into the strike loop. RETAIL disc: jou_field_card_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS after two Spirit rounds (the gauge), formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 7461 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "super art", "jou", "harvest"]
+
+
+[[scenarios]]
+label = "battle_garmel_party_gala_thunder_punch_open"
+backup_fingerprint = "e9895738722e6409a51d96f38833ba54a54be4d82419856ee055481c95364f6f"
+description = "garmel battle, formation [64,11], party strike: Gala, Thunder Punch (Hyper Art, 2 2 1), six vsyncs into the strike loop. RETAIL disc: garmel_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS, formation row picked by LEGAIA_WANT, party and monster HP restored at round prompts. Saved 3744 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
+topics = ["battle", "party strike", "hyper art", "garmel", "harvest"]
