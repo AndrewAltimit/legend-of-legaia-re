@@ -515,6 +515,29 @@ impl MonsterAnimPlayer {
         self.tick_rated_vsyncs(rate, slowed_idle, 1)
     }
 
+    /// The whole keyframe the cursor would read after one more
+    /// [`Self::tick_rated_vsyncs`] advance, without moving it: the frame the
+    /// anim tick's bit-0 cut pro-rates by, which retail takes on the advanced
+    /// cursor before the natural-end test (`FUN_80047430` `0x800478F4` sits
+    /// past the rate advance). The loop window is not applied; a finished
+    /// one-shot reads its held frame.
+    pub fn frame_after_vsyncs(
+        &self,
+        rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
+        slowed_idle: bool,
+        vsyncs: u8,
+    ) -> i16 {
+        if !self.looping && self.finished {
+            return self.current_frame();
+        }
+        let step = legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(
+            self.step * u32::from(vsyncs.max(1)),
+            rate,
+            slowed_idle,
+        );
+        ((self.phase + step) >> PHASE_FRAC_BITS) as i16
+    }
+
     /// [`Self::tick_rated`] over a pass of `vsyncs` vsyncs: retail's advance
     /// multiplies the frame step `DAT_1F800393` into the product before the
     /// shift (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`), so
@@ -859,6 +882,23 @@ mod one_shot_tests {
         assert_eq!(f2.bone_outputs[0].0[0], 20);
         assert!(f2.finished);
         assert!(!p.take_natural_end());
+    }
+
+    #[test]
+    fn frame_after_reads_the_next_advance_without_moving_the_cursor() {
+        // The bit-0 cut (`FUN_80047430` `0x800478F4`) pro-rates on the cursor
+        // after the pass's advance; the peek must not move the clip.
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(8)).unwrap();
+        p.step = 256;
+        let rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate::default();
+        for vsyncs in [1, 2] {
+            let before = p.current_frame();
+            let peek = p.frame_after_vsyncs(rate, false, vsyncs);
+            assert_eq!(p.current_frame(), before, "the peek left the cursor alone");
+            assert!(peek > before);
+            let _ = p.tick_rated_vsyncs(rate, false, vsyncs);
+            assert_eq!(peek, p.current_frame());
+        }
     }
 
     #[test]

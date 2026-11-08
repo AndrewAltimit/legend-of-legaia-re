@@ -991,8 +991,46 @@ impl World {
         {
             return;
         }
+        // The outgoing clip's cut displacement. The kernel's stage ORs `5`
+        // into the defender's `+0x1DC`, and its next anim tick takes bit 0
+        // straight to the cut (`0x800478F4..0x800478F8` -> `0x80047940`): the
+        // clip it is leaving moves it along its facing by that entry's
+        // `+0x0E`, pro-rated by the cursor's whole frame, unless the entry's
+        // `+0x76` event lock is set (`+0x228` taken as clear, as on the
+        // attacker's event path). So a guarding party member struck mid-block
+        // slides back the share of the block it played, every hit of a
+        // string: `jou_theeder_v3_strike`'s Vahn steps `(-39, -134)` on each
+        // re-commit, and the attacker's walk follows him.
+        // The engine installs the reaction now, where retail's tick first
+        // advances the outgoing cursor once more and cuts on that frame.
+        let vsyncs = self.battle.anim_pass_vsyncs.max(1);
+        let cut = self.actors.get(target_i).and_then(|a| {
+            let p = a.battle_animation.as_ref()?;
+            let step = p.end_root_step();
+            let locked = p.hit_source().is_some_and(|s| s.event_lock != 0);
+            // A one-shot the engine holds past its natural end has had its
+            // whole `+0x0E` already; retail committed the queued clip there,
+            // and that clip is what the cut would read.
+            if p.finished() {
+                return None;
+            }
+            let frame = p.frame_after_vsyncs(a.battle.anim_rate, false, vsyncs);
+            (step != 0 && !locked).then(|| (step, frame, p.frame_count().min(255) as u8))
+        });
         self.commit_battle_reaction_entry(target_i, entry);
         self.turn_defender_to_attacker(target_i, attacker_i);
+        // The cut runs on the tick after the stage, so it steps along the
+        // heading the stage just turned the defender onto.
+        // PORT: FUN_80047430 (`0x80047940..0x80047A28`, the bit-0 cut)
+        if let Some((step, frame, frames)) = cut {
+            let a = &mut self.actors[target_i];
+            let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
+            let (dx, dz) = legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
+                sin, cos, step, frame, frames,
+            );
+            a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+            a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
+        }
     }
 
     /// The bearing half of [`Self::commit_melee_reaction`], which the Mystic
