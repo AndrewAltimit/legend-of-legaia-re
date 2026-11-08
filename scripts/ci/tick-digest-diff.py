@@ -16,7 +16,8 @@ The field compass (`az=`) is left out of the comparison: the child settles its
 field before its window assembles the camera's render bias, so the two read
 different compasses through the settle and agree again from the first window
 tick, before any fight is armed. See `docs/tooling/retail-compare.md`
-("The image child plays the same fight").
+("The image child plays the same fight"). The gate words that follow it (`eng=`,
+`gm=`, `sc=`, `pl=`, `pg=`) are `scripts/ci/gate-replay.py`'s, and are left out with it.
 """
 
 import re
@@ -26,7 +27,7 @@ import sys
 def sessions(path):
     out = []
     for line in open(path, encoding="utf-8"):
-        line = re.sub(r" az=\d+", "", line.rstrip("\n"))
+        line = re.sub(r" az=\d+( eng=\d+ gm=\d+ sc=\S* pl=\S+ pg=\S+)?", "", line.rstrip("\n"))
         pid, frame, rest = line.split(" ", 2)
         if frame == "0" or not out or out[-1][0] != pid:
             out.append((pid, []))
