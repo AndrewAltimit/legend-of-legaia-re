@@ -4,6 +4,7 @@
 
 mod ambient_motion;
 mod anim_cue_walk;
+mod anim_rate_restore;
 mod arrange;
 mod arts_gauge;
 mod arts_queue;

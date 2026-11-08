@@ -501,3 +501,10 @@ port read HP: a fallen member lying on the stage and a monster still in its defe
 a body a cast has hidden is not. And it walks retail's seven seats, party `0..=2` and monsters from `3`, so a
 fifth monster at seat `7` is never separated; the port walked its own compacted slots and took it in behind a
 smaller party.
+The action SM's anim-rate restore `FUN_801E93C8` (`anim_rate_restore`), run over every party size and formation
+with the acting seat on a plain or an art clip, or a monster whose staged record's `+0x87` is up or down, matches
+the gate and the `+0x21C` latch clear, and found the same seat walk: it restores retail's seven seats, so a fifth
+monster at seat `7` keeps its rate, where the port restored its own compacted slots. The arts slow-motion arms of
+`FUN_8004AD80` that the restore undoes walk the same seven (`0x8004B740`, `0x8004BB74`), and the port slowed every
+actor; both now walk the table's seats. The monster arm's record table is `0x801C9348`, ten words ahead of the actor
+table.

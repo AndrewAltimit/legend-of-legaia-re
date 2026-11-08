@@ -11,6 +11,17 @@ use legaia_engine_mode::mode::SceneMode;
 const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
 
 impl World {
+    /// The engine slots behind retail's seven battle table seats (party
+    /// `0..=2`, monsters from `3`), in seat order, for a walk retail bounds at
+    /// seven: a fifth monster sits at seat `7`, outside every such walk.
+    pub(in crate::world) fn battle_table_seats(&self) -> Vec<usize> {
+        let seats = legaia_engine_battle_vm::battle_slot::SeatMap::new(self.party.party_count);
+        (0..7u8)
+            .filter_map(|r| seats.engine(r).map(usize::from))
+            .filter(|&e| e < self.actors.len())
+            .collect()
+    }
+
     /// What a frame of seated clip cursors moves with them, re-derived the
     /// way the pass that poses the bodies derives it: every body pair
     /// `+0x3C..+0x40` (the live pair plus the new pose's centroid) and the
@@ -1157,8 +1168,12 @@ impl World {
             let is_party = self.actors[i].battle_monster_id.is_none();
             match rl::staged_commit_rate_effect(q, is_party, marker) {
                 rl::CommitRateEffect::StarterFreeze => {
-                    for a in self.actors.iter_mut() {
-                        a.battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);
+                    // Both arms walk retail's seven table seats
+                    // (`sltiu v0,s2,0x7` at `0x8004B740`, the `+0x1C` bound
+                    // at `0x8004BB74`): a fifth monster, at seat `7`, keeps
+                    // its rate, as the restore `FUN_801E93C8` leaves it.
+                    for e in self.battle_table_seats() {
+                        self.actors[e].battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);
                     }
                     self.actors[i].battle.anim_rate = rl::AnimRate(rl::RATE_QUARTER);
                     // The same arm raises the Arts announcement banner. Retail
@@ -1198,8 +1213,8 @@ impl World {
                     }
                 }
                 rl::CommitRateEffect::StrikeSlow { rate } => {
-                    for a in self.actors.iter_mut() {
-                        a.battle.anim_rate = rl::AnimRate(rate);
+                    for e in self.battle_table_seats() {
+                        self.actors[e].battle.anim_rate = rl::AnimRate(rate);
                     }
                 }
                 rl::CommitRateEffect::None => {}

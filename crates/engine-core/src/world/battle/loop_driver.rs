@@ -126,6 +126,19 @@ impl World {
         self.battle_ctx = ctx;
     }
 
+    /// The action SM's anim-rate restore on its own, as its tail runs it
+    /// (`legaia_engine_battle_vm::battle_action::restore_action_anim_rates`).
+    ///
+    /// Public as the seam the retail-kernel differential drives.
+    ///
+    /// REF: FUN_801E93C8
+    pub fn restore_battle_anim_rates(&mut self) {
+        let mut ctx = self.battle_ctx.clone();
+        let mut host = BattleHostImpl { world: self };
+        legaia_engine_battle_vm::battle_action::restore_action_anim_rates(&mut host, &mut ctx);
+        self.battle_ctx = ctx;
+    }
+
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
     /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`].
     ///
