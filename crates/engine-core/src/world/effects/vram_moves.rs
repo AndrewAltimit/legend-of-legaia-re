@@ -161,24 +161,6 @@ impl World {
         // `3` in a battle and tripled every battle scroller's speed.
         let step = vsyncs.max(1);
         for part in parts.iter_mut().filter(|p| !p.finished) {
-            // The mode-3 arm: a `0x4000` part's HSV adds integrate every
-            // tick, and from its second armed frame on it recolours the rect
-            // its op `0x2C` captured (PROT 0929's arm-14 part `0x801F95A8`
-            // hue-cycles the scanline backdrop's CLUT row 488).
-            if part.state.move_submode == legaia_engine_effects::summon::RenderMode::Particle.raw()
-            {
-                let delta = self.move_vm.ramp_ratio.max(1) * step;
-                if part.state.field_9c == 1 {
-                    let d = &part.state.keyframe_desc;
-                    self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
-                }
-                if let Some(fx) =
-                    legaia_engine_field::clut_cell_fx::mode3_integrate(&mut part.state, delta)
-                {
-                    self.battle.cell_fx.push(fx);
-                }
-                continue;
-            }
             if part.state.move_submode != legaia_engine_field::vram_scroll::RENDER_MODE_SCROLL {
                 continue;
             }
@@ -186,6 +168,44 @@ impl World {
                 legaia_engine_field::vram_scroll::mode4_integrate(&mut part.state, step)
             {
                 self.battle.vram_scrolls.push(fx);
+            }
+        }
+    }
+
+    /// The mode-3 arm of the part tick for every live part of a battle
+    /// effect scene: a `0x4000` part's HSV adds integrate each pass, and from
+    /// its second armed frame on it recolours the rect its op `0x2C` captured
+    /// (PROT 0929's arm-14 part `0x801F95A8` hue-cycles the scanline
+    /// backdrop's CLUT row 488). Retail's arm (`0x800226D8..0x80022868`) sits
+    /// in `FUN_80021DF4` ahead of the part's `FUN_80023070` call
+    /// (`0x80022BA4`), so a host calls this before the scene's VM pass: a rate
+    /// an op stores takes effect on the next pass, and the triangle a loop of
+    /// `+32` / `-32` rate stores walks keeps its top and bottom.
+    ///
+    /// PORT: FUN_80021DF4 (the mode-3 arm, `0x800226D8..0x80022868`, on the
+    /// battle effect lists)
+    pub(crate) fn integrate_battle_part_cyclers(
+        &mut self,
+        parts: &mut [legaia_engine_effects::summon::SummonPartRuntime],
+        vsyncs: u8,
+    ) {
+        if self.mode != SceneMode::Battle {
+            return;
+        }
+        let delta = self.move_vm.ramp_ratio.max(1) * vsyncs.max(1);
+        for part in parts.iter_mut().filter(|p| !p.finished) {
+            if part.state.move_submode != legaia_engine_effects::summon::RenderMode::Particle.raw()
+            {
+                continue;
+            }
+            if part.state.field_9c == 1 {
+                let d = &part.state.keyframe_desc;
+                self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
+            }
+            if let Some(fx) =
+                legaia_engine_field::clut_cell_fx::mode3_integrate(&mut part.state, delta)
+            {
+                self.battle.cell_fx.push(fx);
             }
         }
     }
