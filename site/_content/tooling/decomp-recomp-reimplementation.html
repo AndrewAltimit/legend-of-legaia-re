@@ -52,59 +52,44 @@
 
 <section class="doc-section" id="timeline" data-doc="one-game-two-ports-the-same-months">
   <h2>One game, two ports, the same months</h2>
-  <p>Both projects started in spring 2026, within weeks of each other, so the histories can be read side by side. Dates below come from each project's commit log.</p>
+  <p>Both projects started in spring 2026, within weeks of each other, and both are still going. Three threads run through them: getting the game playable from start to finish, matching the original, and letting people change it. Dates come from each project's commit log.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 1000 216" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three lanes. The PSXRecomp framework starts in April and is still developing. The Legaia recomp, a fork of PSXRecomp, is a sliver in July: its own commits span three days. The Legaia engine, this reimplementation, starts in May and reaches the credits on pad input in October.">
-      <g class="dg-edge-label" text-anchor="middle" style="font-size:12px">
-        <text x="150" y="22">Apr</text><text x="259" y="22">May</text><text x="372" y="22">Jun</text><text x="481" y="22">Jul</text><text x="594" y="22">Aug</text><text x="707" y="22">Sep</text><text x="816" y="22">Oct</text><text x="929" y="22">Nov</text>
-      </g>
-      <g style="stroke:var(--border);stroke-width:1">
-        <line x1="150" y1="30" x2="150" y2="206"/><line x1="259" y1="30" x2="259" y2="206"/><line x1="372" y1="30" x2="372" y2="206"/><line x1="481" y1="30" x2="481" y2="206"/><line x1="594" y1="30" x2="594" y2="206"/><line x1="707" y1="30" x2="707" y2="206"/><line x1="816" y1="30" x2="816" y2="206"/><line x1="929" y1="30" x2="929" y2="206"/>
-      </g>
-      <text class="dg-label dg-start" x="8" y="65" style="font-size:13px">PSXRecomp</text><text class="dg-sub dg-start" x="8" y="81">recompiler framework</text>
-      <text class="dg-label dg-start" x="8" y="121" style="font-size:13px">Legaia recomp</text><text class="dg-sub dg-start" x="8" y="137">fork of PSXRecomp</text>
-      <text class="dg-label dg-start" x="8" y="177" style="font-size:13px">Legaia engine</text><text class="dg-sub dg-start" x="8" y="193">this reimplementation</text>
-
-      <path d="M186 68 H543" style="stroke:var(--warn);stroke-width:8;stroke-linecap:round;fill:none"/>
-      <path d="M551 68 H985" style="stroke:var(--warn);stroke-width:3;stroke-dasharray:3 6;fill:none"/>
-      <rect x="535" y="118" width="9" height="16" rx="2" style="fill:var(--warn)"/>
-      <path d="M274 180 H985" style="stroke:var(--dg-accent);stroke-width:8;stroke-linecap:round;fill:none"/>
-
-      <g class="cs-dot">
-        <circle cx="186" cy="68" r="11"/><text x="186" y="72">1</text>
-        <circle cx="306" cy="68" r="11"/><text x="306" y="72">2</text>
-        <circle cx="459" cy="68" r="11"/><text x="459" y="72">3</text>
-        <circle cx="572" cy="126" r="11"/><text x="572" y="130">4</text>
-        <circle cx="274" cy="180" r="11"/><text x="274" y="184">5</text>
-        <circle cx="339" cy="180" r="11"/><text x="339" y="184">6</text>
-        <circle cx="368" cy="154" r="11"/><text x="368" y="158">7</text>
-        <circle cx="809" cy="180" r="11"/><text x="809" y="184">8</text>
-        <circle cx="874" cy="180" r="11"/><text x="874" y="184">9</text>
-        <circle cx="922" cy="154" r="11"/><text x="922" y="158">10</text>
-      </g>
-      <path d="M368 165 V174 M922 165 V174" style="stroke:var(--dg-accent);stroke-width:1.5"/>
-      <path d="M561 126 H547" style="stroke:var(--warn);stroke-width:1.5"/>
+    <svg viewBox="0 0 1000 314" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three shared threads: playing the game, fidelity and modding. PSXRecomp and the Legaia recomp, and the Legaia engine, each run a track through all three threads. Numbered points are listed below the figure.">
+      <path d="M186 13 H214" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="224" y="17" style="font-size:12.5px">PSXRecomp and the Legaia recomp</text>
+      <path d="M520 13 H548" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="558" y="17" style="font-size:12.5px">The Legaia engine (this project)</text>
+      <g class="dg-edge-label" text-anchor="middle" style="font-size:12px"><text x="150" y="42">Apr</text><text x="259" y="42">May</text><text x="372" y="42">Jun</text><text x="481" y="42">Jul</text><text x="594" y="42">Aug</text><text x="707" y="42">Sep</text><text x="816" y="42">Oct</text><text x="929" y="42">Nov</text></g>
+      <rect x="4" y="58" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="92" style="font-size:13px">Playing the game</text><text class="dg-sub dg-start" x="14" y="109">start to finish</text><rect x="4" y="144" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="178" style="font-size:13px">Fidelity</text><text class="dg-sub dg-start" x="14" y="195">matching retail</text><rect x="4" y="230" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="264" style="font-size:13px">Modding</text><text class="dg-sub dg-start" x="14" y="281">changing the game</text>
+      <g style="stroke:var(--border);stroke-width:1"><line x1="150" y1="50" x2="150" y2="306"/><line x1="259" y1="50" x2="259" y2="306"/><line x1="372" y1="50" x2="372" y2="306"/><line x1="481" y1="50" x2="481" y2="306"/><line x1="594" y1="50" x2="594" y2="306"/><line x1="707" y1="50" x2="707" y2="306"/><line x1="816" y1="50" x2="816" y2="306"/><line x1="929" y1="50" x2="929" y2="306"/></g>
+      <path d="M186 82 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 112 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 168 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 198 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 254 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 284 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/>
+      <g class="cs-dot cs-dot-r"><circle cx="317" cy="82" r="11"/><text x="317" y="86">1</text><circle cx="540" cy="82" r="11"/><text x="540" y="86">2</text><circle cx="302" cy="168" r="11"/><text x="302" y="172">5</text><circle cx="540" cy="168" r="11"/><text x="540" y="172">6</text><circle cx="416" cy="254" r="11"/><text x="416" y="258">9</text><circle cx="958" cy="254" r="11"/><text x="958" y="258">10</text></g>
+      <g class="cs-dot"><circle cx="339" cy="112" r="11"/><text x="339" y="116">3</text><circle cx="874" cy="112" r="11"/><text x="874" y="116">4</text><circle cx="335" cy="198" r="11"/><text x="335" y="202">7</text><circle cx="809" cy="198" r="11"/><text x="809" y="202">8</text><circle cx="368" cy="284" r="11"/><text x="368" y="288">11</text><circle cx="525" cy="284" r="11"/><text x="525" y="288">12</text><circle cx="922" cy="284" r="11"/><text x="922" y="288">13</text></g>
     </svg>
-    <figcaption>The solid amber line ends where the local copy of the Legaia recomp does; the framework has continued since. This repository's history opens with a first release, so its work starts somewhat before point 5.</figcaption>
+    <figcaption>Both tracks continue past the right edge. This repository's history opens with a first release, so its work starts somewhat before May.</figcaption>
   </figure>
   <div class="cs-legend">
-    <div><h3>PSXRecomp and the Legaia recomp</h3><ol start="1">
-      <li>The recompiler proven on the PS1 BIOS.</li>
-      <li><em>Tomba!</em> boots, then reaches gameplay.</li>
-      <li>Widescreen and further renderer backends, framework-wide.</li>
-      <li>The Legaia recomp, a fork of PSXRecomp: overlay cache, then CD and XA fixes. Field, battle and summons run.</li>
+    <div><h3>Playing the game</h3><ol start="1">
+      <li><span class="cs-who cs-who-r">Recomp</span> <em>Tomba!</em> reaches gameplay on the framework.</li>
+      <li><span class="cs-who cs-who-r">Recomp</span> Legaia runs field, battles and summons.</li>
+      <li><span class="cs-who">Engine</span> A walkable overworld, with collision and encounters.</li>
+      <li><span class="cs-who">Engine</span> A run on pad input alone reaches the credits.</li>
     </ol></div>
-    <div><h3>The Legaia engine (this project)</h3><ol start="5">
-      <li>First release: Rust workspace, format docs, Ghidra tooling.</li>
-      <li>A walkable overworld, with collision and encounters.</li>
-      <li>The disc patcher and randomizer, on the same parsers.</li>
-      <li>The full-game ladder, retail corpus and soak harness.</li>
-      <li>A run on pad input alone reaches the credits.</li>
-      <li>Expansion packs, game modes and netplay.</li>
+    <div><h3>Fidelity</h3><ol start="5">
+      <li><span class="cs-who cs-who-r">Recomp</span> Hardware accuracy: SPU envelopes, vblank pacing on guest cycles.</li>
+      <li><span class="cs-who cs-who-r">Recomp</span> Legaia's CD and XA sequencing in battle.</li>
+      <li><span class="cs-who">Engine</span> Audio oracles: PCM parity and bit-exact XA.</li>
+      <li><span class="cs-who">Engine</span> The full-game ladder, retail corpus and soak harness.</li>
+    </ol></div>
+    <div><h3>Modding</h3><ol start="9">
+      <li><span class="cs-who cs-who-r">Recomp</span> Widescreen and new renderer backends, framework-wide.</li>
+      <li><span class="cs-who cs-who-r">Recomp</span> A modding SDK, in development.</li>
+      <li><span class="cs-who">Engine</span> The disc patcher and randomizer, for the retail game.</li>
+      <li><span class="cs-who">Engine</span> Language packs on the same patcher.</li>
+      <li><span class="cs-who">Engine</span> Expansion packs, game modes and netplay.</li>
     </ol></div>
   </div>
-  <p><strong>Read plainly, the recomp wins on time to game by a wide margin.</strong> The Legaia recomp's own commits span three days. They stand on three months of framework work, and that framework also carries <em>Tomba!</em> and <em>Mega Man X6</em>. The reimplementation needed about five months from its first release to reach the credits, and it is an engine for this one game. Nothing else on this page undoes that.</p>
-  <p>What the timeline also shows is the order value arrives. The reimplementation produced useful things long before it was a game: format docs, viewers and a disc patcher, each useful on its own before the engine could play the story. Those docs helped the other project too. The fork's README credits them, saying they "materially shortened the investigation and guided the runtime's overlay-cache fixes". And once the engine existed, what came next were things no translated binary offers cheaply, like expansion packs that name monsters and quests instead of addresses.</p>
+  <p><strong>The two projects come at the same goals in different orders.</strong> A recomp starts with the original's own code, so retail behaviour is there from the first frame and the work goes into making the hardware model right. That is the quickest way to play a game as it was, and the framework behind it already carries <em>Tomba!</em> and <em>Mega Man X6</em> as well. The engine started with nothing running, and built up both the playthrough and its fidelity one mechanism at a time against retail captures.</p>
+  <p>Modding has been a thread of its own on both sides, and the kinds of mod differ. Disc patches like the randomizer change the retail game's own bytes, so they arrived early, before the engine could play the story. Language packs followed on the same tooling. Expansion packs came later because they need the engine: they name monsters, maps and quests rather than addresses.</p>
+  <p>The two have also helped each other throughout. The recomp's README credits this project's docs, saying they "materially shortened the investigation and guided the runtime's overlay-cache fixes", and <a href="recomp-differential.html">the recomp is one of this project's best references</a> for what retail actually does.</p>
 </section>
 
 <section class="doc-section" id="ledger" data-doc="what-each-route-gives-you-and-what-takes-extra-work">
@@ -165,10 +150,10 @@
   <p>These come from the two Legaia ports. Each cost something on both sides, in a different place.</p>
   <div class="cs-exhibits">
     <article>
-      <h3>An item that freezes the game</h3>
-      <div class="cs-side cs-recomp"><span>Recomp</span><p>Using a Healing Leaf deadlocked. Legaia's CD callback can wait for a vblank from inside an exception handler, and the runtime scheduled none there. One fix in the hardware model also cleared Spirit actions, Hyper Arts and summons.</p></div>
-      <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>That bug cannot exist, since no libcd runs. The cost that came with it was missing too: retail battle frames <a href="../subsystems/battle-stage-camera.html">run long during a CD-XA clip</a>, five to seven vsyncs. The engine played them at the normal rate until that was measured and modelled.</p></div>
-      <p class="cs-moral">A recomp's bugs tend to be global and fixed once. A reimplementation's costs are local and found one at a time.</p>
+      <h3>Battle items and CD audio</h3>
+      <div class="cs-side cs-recomp"><span>Recomp</span><p>Legaia's CD callback can wait for a vblank from inside an exception handler, an unusual pattern that showed up on battle items. Handling it in the hardware model fixed items, Spirit actions, Hyper Arts and summons together.</p></div>
+      <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>No libcd runs here, so that pattern never arises. The timing that comes with it was missing too: retail battle frames <a href="../subsystems/battle-stage-camera.html">run long during a CD-XA clip</a>, five to seven vsyncs. The engine played them at the normal rate until that was measured and modelled.</p></div>
+      <p class="cs-moral">A fix in a recomp's hardware model reaches the whole game at once. A reimplementation's fixes are local and found one at a time.</p>
     </article>
     <article>
       <h3>Code that is not in the executable</h3>
@@ -263,10 +248,10 @@
   <h2>What this case cannot show</h2>
   <ul class="bullets">
     <li><strong>It is one game</strong>, and a heavily data-driven one, which flatters this route.</li>
-    <li><strong>The two efforts are not equal in attention.</strong> The Legaia recomp is days of work on a general framework. This repository has been about nothing else. Neither side has logged hours, so no labour comparison is possible.</li>
+    <li><strong>The two efforts are shaped differently.</strong> PSXRecomp is a general framework serving several games, and this repository is about one. Neither side has logged hours, so no labour comparison is possible.</li>
     <li><strong>There is no third column.</strong> As far as this project knows there is no public decompilation of Legaia, so that route is argued from other games.</li>
     <li><strong>"Reaches the credits" is not "identical to retail".</strong> Parity is measured over what the corpus has sampled, and it <a href="retail-compare.html">is still being worked on</a>.</li>
-    <li><strong>A recomp's state moves.</strong> What is described here is the Legaia recomp as last published, and the framework has continued since.</li>
+    <li><strong>Both projects are moving.</strong> This is a snapshot, and the modding comparison in particular will change as the recomp's work ships.</li>
     <li><strong>The author has a side.</strong> This page is written by the project it argues for. The links are there so that you can check.</li>
   </ul>
 </section>
@@ -293,10 +278,13 @@
 
   figure.diagram .cs-dot circle { fill: var(--bg-raised); stroke: var(--dg-accent); stroke-width: 1.5; }
   figure.diagram .cs-dot text { fill: var(--text-bright); font-size: 12px; font-weight: 600; text-anchor: middle; }
-  .cs-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2rem; margin: 0 0 1.2rem; font-size: 0.92rem; }
+  .cs-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1.4rem; margin: 0 0 1.2rem; font-size: 0.92rem; }
   .cs-legend h3 { margin: 0 0 0.3rem; font-size: 0.92rem; }
-  section.doc-section .cs-legend ol { margin: 0; padding-left: 1.8rem; line-height: 1.55; list-style: decimal outside; }
-  section.doc-section .cs-legend li { display: list-item; padding-left: 0.2rem; margin: 0; }
+  section.doc-section .cs-legend ol { margin: 0; padding-left: 1.6rem; line-height: 1.45; list-style: decimal outside; }
+  section.doc-section .cs-legend li { display: list-item; padding-left: 0.1rem; margin: 0 0 0.45rem; }
+  .cs-who { display: block; width: fit-content; font-family: var(--font-mono); font-size: 0.68rem; color: var(--dg-accent); }
+  .cs-who-r { color: var(--warn); }
+  figure.diagram .cs-dot-r circle { stroke: var(--warn); }
   section.doc-section .cs-legend li::before { content: none; }
 
   .cs-key { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0.6rem 0 0.8rem; padding: 0; color: var(--text-muted); font-size: 0.86rem; }

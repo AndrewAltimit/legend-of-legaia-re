@@ -22,9 +22,15 @@ A port is a result, not a method: a PC port can be built on a decompilation, a r
 
 ## One game, two ports, the same months
 
-From each project's commit log. PSXRecomp: recompiler proven on the BIOS (April 2026), *Tomba!* gameplay (May), widescreen and renderer backends (June and July), the Legaia recomp, a fork of PSXRecomp (July). This repository: first release (May 2026), walkable overworld and the disc patcher (May), full-game ladder and retail corpus (September), a run on pad input reaching the credits and expansion packs (October). The repository's history opens with a first release, so its work starts somewhat earlier.
+Both projects started in spring 2026 and both are still going. Three threads run through them, with dates from each project's commit log.
 
-The recomp wins on time to game by a wide margin. The Legaia recomp's own commits span three days, on three months of framework work that also carries other games. The reimplementation needed about five months from first release to reach the credits and is an engine for one game. Its useful output arrived earlier and in another form: format docs, viewers and a patcher. The fork's README credits those docs with having "materially shortened the investigation".
+| Thread | PSXRecomp and the Legaia recomp | The Legaia engine |
+|---|---|---|
+| **Playing the game** | *Tomba!* gameplay (May); Legaia field, battles and summons (July) | Walkable overworld (May); a pad-only run reaches the credits (October) |
+| **Fidelity** | Hardware accuracy (May onward); Legaia's CD and XA sequencing (July) | Audio oracles (May); ladder, retail corpus, soak harness (September) |
+| **Modding** | Widescreen and renderer backends (June, July); a modding SDK in development | Disc patcher and randomizer (May, June); language packs (July); expansion packs (October) |
+
+The two come at the same goals in different orders. A recomp starts with the original's code, so retail behaviour is there from the first frame and the work goes into the hardware model; it is the quickest way to play a game as it was. The engine started with nothing running and built up both the playthrough and its fidelity one mechanism at a time. Modding differs in kind: disc patches change the retail game's bytes and arrived early, and expansion packs need the engine. The recomp's README credits this project's docs with having "materially shortened the investigation", and the recomp is one of this project's best references.
 
 ## What each route gives you and what takes extra work
 
@@ -46,7 +52,7 @@ The last row is not a legal claim. No court has settled any of this; the nearest
 
 ## The same problems, paid for differently
 
-- **An item that freezes the game.** On the recomp, a Healing Leaf deadlocked because the runtime scheduled no vblank during an exception handler; one hardware-model fix also cleared Spirit actions, Hyper Arts and summons. The engine runs no libcd, so it cannot have that bug, and it also lacked what came with it: battle frames that [run long during a CD-XA clip](subsystems/battle-stage-camera.md), which had to be measured and modelled.
+- **Battle items and CD audio.** Legaia's CD callback can wait for a vblank inside an exception handler; handling that in the recomp's hardware model fixed battle items, Spirit actions, Hyper Arts and summons together. The engine runs no libcd, so that pattern never arises, and it also lacked the timing that comes with it: battle frames that [run long during a CD-XA clip](subsystems/battle-stage-camera.md), which had to be measured and modelled.
 - **Code that is not in the executable.** The translator sees the boot executable, so overlays are captured as they load, then compiled or interpreted. Here they are [extracted from the disc](tooling/static-overlay-pipeline.md) and read once, at the price of [address aliasing](reference/overlay-va-aliases.md).
 - **A bug no local test could see.** The GTE model passed a sweep that agreed with it. The recomp's real input and output pairs exposed the signed 11-bit saturation of the screen-coordinate FIFO, through the [recomp differential](tooling/recomp-differential.md).
 
@@ -73,7 +79,7 @@ The routes combine. This project uses a recomp as an oracle, Ghidra's output as 
 
 ## What this case cannot show
 
-It is one heavily data-driven game, which flatters this route. The two efforts differ in attention and neither logged hours, so no labour comparison is possible. As far as this project knows there is no public decompilation of Legaia. Reaching the credits is not being identical to retail. The recomp's state moves. And this page is written by the project it argues for.
+It is one heavily data-driven game, which flatters this route. PSXRecomp is a general framework and this repository serves one game, and neither logged hours, so no labour comparison is possible. As far as this project knows there is no public decompilation of Legaia. Reaching the credits is not being identical to retail. Both projects are moving, so this is a snapshot. And this page is written by the project it argues for.
 
 ## See also
 
