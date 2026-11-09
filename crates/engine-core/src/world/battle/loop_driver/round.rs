@@ -10,6 +10,15 @@ use super::*;
 /// took the seat (Rage) its turn has no command of its own.
 const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 
+/// SM passes from the round's last `0x5A` to the next round's `0x14` pick
+/// and its `0x1E` prompt: the `0x5A` pass, the `0xFF` arm that stores the flow
+/// byte `0x14` (`0x801E67F0..0x801E67F4`), and two passes with the byte at
+/// `0x14`. `4` vsyncs at flow `0x14` on each sparring-fight round, after a
+/// `0x5A` and a `0xFF` pass of two vsyncs each, `capture`.
+///
+/// REF: FUN_801E295C (states `0x5A` / `0xFF`), FUN_801D0748 (`0x14`)
+pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 4;
+
 /// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
 /// grants its caster: the 99 a Miracle Art costs covers every string.
 const ART_SEED_SPIRIT: u16 = 99;
@@ -82,10 +91,10 @@ impl World {
                 if let Some(next) = pick {
                     self.dispatch_battle_turn(next);
                 } else {
-                    self.end_battle_round();
-                    // A DoT can down the last member of a side; the round
-                    // start re-checks before it opens a prompt.
-                    self.begin_battle_round();
+                    // The round's last `0x5A` pass stores `0xFF`, and the
+                    // boundary runs its frames before the next round's
+                    // `0x14` pick ([`RoundFlow::boundary_hold`]).
+                    self.battle.round_flow.boundary_hold = ROUND_BOUNDARY_FRAMES;
                 }
             }
         }
@@ -669,8 +678,9 @@ impl World {
             // next advance moves on; advancing `active_actor` also moves
             // the no-speed walk past it. The status duration ticks once per
             // round at the round start (`tick_status_effects`), so the
-            // affliction still wears off. The SM stays at EndOfAction (no
-            // action armed) - exactly the "skipped turn" outcome. A monster's
+            // affliction still wears off. The turn is armed with no action
+            // and runs the Done band below - a retail turn always reaches
+            // `0x50`. A monster's
             // pick decided its action anyway (the AI runs at the pick,
             // whatever the status word); nothing arms it, and the category
             // it wrote is dropped so no strike path reads it.
@@ -680,6 +690,10 @@ impl World {
             {
                 a.battle.action_category = 0;
             }
+            // The turn itself still runs: every pick reaches `0x50`
+            // through the seed, and the Done band's `0x51` holds the next
+            // turn back for its countdown and the pick's side-band stage.
+            self.arm_party_no_command(next);
             return;
         }
         if next >= party_count {

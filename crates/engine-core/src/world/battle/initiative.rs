@@ -22,6 +22,9 @@ pub struct ParkedTurn {
     pick: Option<(u8, u16)>,
     /// A picked monster's decided action.
     pub(crate) monster: Option<(u8, MonsterAction)>,
+    /// The action end's pick (`0x50`) ran and is parked, even when it found
+    /// no key left: `0x5A` must not draw again.
+    picked_at_action_end: bool,
 }
 
 impl World {
@@ -57,7 +60,74 @@ impl World {
     /// The round start's pick (`FUN_801DA780`'s tail): made and parked for
     /// the round's first dispatch.
     pub(in crate::world) fn park_round_start_pick(&mut self) {
+        self.parked_turn.picked_at_action_end = false;
         self.parked_turn.pick = self.initiative_pick_and_decide();
+        self.seed_sideband_for_pick(self.parked_turn.pick);
+    }
+
+    /// The re-pick state `0x50` makes, once the action's damage has landed:
+    /// `0x801E5C74..0x801E5D4C` counts the living, un-Stoned actors of both
+    /// sides and calls `FUN_801DABA4` when any is left (its side scans then
+    /// clear the seed if a side stands empty). The pick and the monster AI it runs
+    /// happen here, and are parked for the dispatch that `0x5A` makes
+    /// ([`Self::cycle_battle_turn`]).
+    ///
+    /// REF: FUN_801E295C (`0x801E5D58`, the state-`0x50` re-pick)
+    pub(in crate::world) fn pick_at_action_end(&mut self) {
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
+        if self.battle.round_flow.phase != RoundPhase::Execute {
+            return;
+        }
+        if (0..self.actors.len() as u8).all(|i| self.actor_effectively_defeated(i)) {
+            return;
+        }
+        self.parked_turn.pick = self.initiative_pick_and_decide();
+        self.parked_turn.picked_at_action_end = true;
+        self.seed_sideband_for_pick(self.parked_turn.pick);
+    }
+
+    /// `FUN_801DABA4`'s seed of the side-band applier stage `ctx[+0x276]`
+    /// and its base slot `ctx[+0x277]`: the stage is raised to `1` on every
+    /// pick, a side scanned empty drops it again (`0x801DADEC` /
+    /// `0x801DAE74`), and the base is rewritten only for a pick that took a
+    /// live key (`beq v0,zero,0x801DB108`), a party pick's being
+    /// `(char - 1) * 3` and a monster's `record[+0x1C] * 3`.
+    ///
+    /// The engine's streams are resident, so the seed stands for the reads'
+    /// CD time ([`Self::tick_sideband_token`]). The Done band's `0x51` floor
+    /// and `0x0B` hold wait on it, which is what makes every action's
+    /// fade-down `76` vsyncs at frame step `2` rather than `62`
+    /// (`docs/subsystems/battle-action-exit-gates.md`).
+    ///
+    /// REF: FUN_801DABA4 (`0x801DAD64..0x801DAE74`, `0x801DAED4..0x801DB0F4`)
+    pub(in crate::world) fn seed_sideband_for_pick(&mut self, pick: Option<(u8, u16)>) {
+        if !self.battle_both_sides_alive() {
+            self.battle_ctx.menu_open = 0;
+            self.casting.sideband_read_left = None;
+            return;
+        }
+        if let Some((slot, key)) = pick
+            && key != 0
+        {
+            let party = self.party.party_count.max(1);
+            self.battle_ctx.summon_frame_idx = if slot < party {
+                (self.party_roster_slot(usize::from(slot)) as u8).wrapping_mul(3)
+            } else {
+                self.actors
+                    .get(usize::from(slot))
+                    .and_then(|a| a.battle_monster_id)
+                    .and_then(|id| self.tables.monster_catalog.get(id))
+                    .map_or(self.battle_ctx.summon_frame_idx, |d| {
+                        d.readef_group.wrapping_mul(3)
+                    })
+            };
+        }
+        self.battle_ctx.menu_open = 1;
+        self.casting.sideband_read_left = Some(
+            legaia_engine_battle_vm::battle_action::sideband_turn_seed_vsyncs(
+                self.battle_ctx.summon_frame_idx,
+            ),
+        );
     }
 
     /// The action the last pick decided for the monster it picked, parked
@@ -84,7 +154,11 @@ impl World {
     /// pick and the key it spent.
     pub(in crate::world) fn next_turn_pick(&mut self) -> Option<(u8, u16)> {
         if let Some(p) = self.parked_turn.pick.take() {
+            self.parked_turn.picked_at_action_end = false;
             return Some(p);
+        }
+        if std::mem::take(&mut self.parked_turn.picked_at_action_end) {
+            return None;
         }
         self.initiative_pick_and_decide()
     }

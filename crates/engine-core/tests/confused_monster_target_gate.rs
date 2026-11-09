@@ -155,7 +155,7 @@ fn an_unconfused_monster_only_ever_arms_a_party_target() {
     let mut armed = 0usize;
     for seed in SEEDS {
         let mut w = battle_world(seed);
-        let actions = armed_actions(&mut w, PARTY, 600, false);
+        let actions = armed_actions(&mut w, PARTY, 1800, false);
         assert!(
             !actions.is_empty(),
             "seed {seed:#x}: monster slot {PARTY} never armed an action"
@@ -195,7 +195,7 @@ fn a_confused_monster_swings_at_its_own_band() {
              is vacuous"
         );
 
-        let actions = armed_actions(&mut w, PARTY, 600, true);
+        let actions = armed_actions(&mut w, PARTY, 1800, true);
         assert!(
             !actions.is_empty(),
             "seed {seed:#x}: the confused monster never armed an action"

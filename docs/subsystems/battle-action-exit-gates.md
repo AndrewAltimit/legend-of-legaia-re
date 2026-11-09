@@ -118,6 +118,21 @@ The test details (`0x801E60B8..0x801E6148`):
 
 Port: `done::done_fade_down`, written against the value; the `0x96` override rides on `BattleActionCtx::levelup_banner_element`.
 
+### The side-band stage sets the band's length
+
+An ordinary action's `0x51` runs `76` vsyncs at frame step `2`, not the `62` the countdown alone gives. The difference is the turn pick's side-band read. `FUN_801DABA4`, which state `0x50` calls for the next turn (`0x801E5D58`; a side standing empty clears the seed at `0x801DADEC` / `0x801DAE74`), raises the stage byte `ctx[+0x276] = 1` (`0x801DAD6C`) and seeds the base slot `ctx[+0x277]` from the picked actor. `FUN_801F12D0` then requests and consumes the group's two side-band slots, one `CdRead` a slot:
+
+| Measured on the town01 sparring fight, every turn | Vsyncs |
+|---|---|
+| `0x50` pass that raises the stage, to the first pass that reads it down | `64` (one pass stretched to three vsyncs reads `68`) |
+| Stage byte reading `2`, then `3`, then `4` | `30`, `2`, `30` |
+| `0x51`, countdown `60` by `2`s (`31` passes) with the floor reached at `0xC` while the stage is up | `62` + the stage's tail |
+| `0x51` total | `76` |
+
+The floor is the same gate described above: the countdown reaches `0xC` while the read is still running, waits there, and the last twelve frames run after the stage drops. A monster or party pick with no live key (the last actor of the round) keeps the stale base and still raises the stage, so the last `0x51` of a round is the same length; a pick with a side wiped drops the seed and only the plain countdown remains.
+
+Port: `World::pick_at_action_end` runs the pick and `seed_sideband_for_pick` raises `BattleActionCtx::menu_open`, the stage byte, with the slot time of [`battle_action::sideband_turn_seed_vsyncs`](../../crates/engine-battle-vm/src/battle_action/summon.rs). The read itself does not exist in the port, because the side-band is resident, but its time stays: the band's dwell, the `0x0B` hold and the `0x35` clamp all wait on it.
+
 ### What `FUN_801E7250` measures
 
 See `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`. It reads the acting actor's active-target slot `actor[+0x1DD]` and branches on the target class:

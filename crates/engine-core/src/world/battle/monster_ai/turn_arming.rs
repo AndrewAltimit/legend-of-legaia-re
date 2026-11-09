@@ -191,9 +191,11 @@ impl World {
                 }
                 self.maybe_confuse_retarget(slot);
             }
-            // A scripted boss charging: the turn passes with no action
-            // armed, as a blocked actor's does (`active_actor` is set).
-            MonsterAction::Wait => {}
+            // A monster with nothing to do (the sparring partner's
+            // scripted rounds, a boss charging): category `0`, which the
+            // seed sends straight to the Done band - `0x0A`, `0x0C`, `0x50`,
+            // `0x51`, `0x5A` in full (`0x801E2E0C`).
+            MonsterAction::Wait => self.arm_party_no_command(slot),
             MonsterAction::Flee => {
                 // The picker's flee checkpoint fired: arm the Run band
                 // (category 5). The action SM's seed routes a monster-slot

@@ -338,6 +338,13 @@ impl World {
         if host_cursor != pre_cursor && self.battle_ctx.turn_cursor == pre_cursor {
             self.battle_ctx.turn_cursor = host_cursor;
         }
+        // State `0x50`'s re-pick `FUN_801DABA4` writes the context
+        // (`ctx[+0x274..+0x277]`, the round-skip byte), so it runs here,
+        // past the write-back, rather than from the host call inside the
+        // step.
+        if pre_state == legaia_engine_battle_vm::battle_action::ActionState::DoneCleanup.as_byte() {
+            self.pick_at_action_end();
+        }
         // The third: the Spikefish flute's flee (`World::spikefish_outcome`)
         // stores the run band's wait state and its countdown from inside
         // the module, and the SM carries the escape outcome on

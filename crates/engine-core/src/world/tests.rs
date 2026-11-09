@@ -341,6 +341,7 @@ mod battle_special_ai;
 mod battle_special_word;
 mod battle_status;
 mod battle_stone_gaze;
+mod battle_turn_handoff;
 mod battle_turns_items;
 mod battle_tutorial_flow;
 mod battle_ui_cue_routing;
