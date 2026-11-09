@@ -339,6 +339,14 @@ impl World {
                 break;
             }
             if id.pc < id.visited.len() {
+                if !id.visited[id.pc] && std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
+                    eprintln!(
+                        "DIAG talk: world frame {} pc {:#06x} bytes {:02x?}",
+                        host.world.frame,
+                        id.pc,
+                        &id.bytecode[id.pc..(id.pc + 8).min(id.bytecode.len())]
+                    );
+                }
                 id.visited[id.pc] = true;
             }
             // The `0x80`-prefix target byte, when this op carries one. Retail

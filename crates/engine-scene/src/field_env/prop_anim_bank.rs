@@ -322,6 +322,23 @@ impl PropAnimBank {
     /// PORT: FUN_800204F8 (binder half)
     pub fn bind_actor_clip(&mut self, target: u8, anim_id: u8, fallback_frames: u16) {
         let meta = self.clip_meta(anim_id);
+        self.bind_actor_clip_meta(target, anim_id, meta, fallback_frames);
+    }
+
+    /// [`Self::bind_actor_clip`] with the clip's metadata given: `(frames,
+    /// step scaling, divisor)`. The player's party-bank clips (`+0x10 &
+    /// 0x1000000`) come from the party locomotion bundle, not the scene
+    /// bank this bank's table holds, and the same id names a different clip
+    /// in each.
+    ///
+    /// PORT: FUN_800204F8 (binder half)
+    pub fn bind_actor_clip_meta(
+        &mut self,
+        target: u8,
+        anim_id: u8,
+        meta: Option<(u16, bool, u8)>,
+        fallback_frames: u16,
+    ) {
         let entry = self
             .actor_clips
             .entry(target)

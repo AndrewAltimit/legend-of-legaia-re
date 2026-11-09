@@ -1385,13 +1385,27 @@ impl World {
     }
 
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
+        use legaia_engine_field::field_player_clip::ClipBank;
         let fallback = self.player_clip_frames_hint();
-        self.props.bank.bind_actor_clip(
+        let pick = self.field_player_script_clip(move_id);
+        // A party-bank clip (`B1 F8 18` before the poke) is timed by the
+        // party locomotion bundle; the id means something else in the scene
+        // bank the cursor would otherwise read. `FUN_800204F8` takes the clip
+        // through the bank's pointer either way (`0x80020534..0x8002056C`).
+        let meta = match pick.bound() {
+            Some((ClipBank::Party, record)) => self
+                .locomotion
+                .party_clip_meta
+                .get(usize::from(record))
+                .copied(),
+            _ => self.props.bank.clip_meta(move_id),
+        };
+        self.props.bank.bind_actor_clip_meta(
             legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET,
             move_id,
+            meta,
             fallback,
         );
-        let pick = self.field_player_script_clip(move_id);
         if let Some(id) = self.player_move_cue(&pick) {
             self.locomotion.player_move_cues.push(id);
         }
