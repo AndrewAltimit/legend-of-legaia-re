@@ -35,8 +35,8 @@
 
    Prose measure: paragraphs and lists inside section.doc-section are capped
    at --measure; tables, figures, grids and code blocks use the full column.
-   That holds on the 880px docs column, where the measure is most of the
-   column. A wider column (home, .wide-page) lifts the measure instead - see
+   On the docs column the capped blocks are centred, so visuals extend past
+   the text on both sides. A wider column (home, .wide-page) lifts the measure instead - see
    "Column width policy" beside .content.wide-page. Cap prose with
    var(--measure), never a literal ch / px width, or the wide pages cannot
    lift it.
@@ -110,7 +110,7 @@
   --rail-w:        76px;
   --sidebar-w:     260px;
   --toc-w:         220px;
-  --max-content-w: 880px;
+  --max-content-w: 1060px;
   --radius:        10px;
   --transition:    0.12s ease;
 }
@@ -614,8 +614,8 @@ body.nav-open { overflow: hidden; }
 
 /* ---------- Content column ---------- */
 .content {
-  padding: 2rem 2.4rem 4rem;
-  max-width: calc(var(--max-content-w) + 4.8rem);
+  padding: 2rem 1.5rem 4rem;
+  max-width: calc(var(--max-content-w) + 3rem);
   width: 100%;
   min-width: 0;
   /* Centered in BOTH zones: the explore zone's full-width surface and the
@@ -634,7 +634,8 @@ body.nav-open { overflow: hidden; }
 /* Column width policy. Every block in a column shares one right edge, or the
  * page reads as broken: a 46rem paragraph among 1400px grids and tables looks
  * like half the page failed to load.
- *   docs column (880px)   prose at --measure, which is most of the column.
+ *   docs column (1060px)  prose at --measure, centred, so figures, tables and
+ *                         grids extend past it on both sides.
  *   app pages             home and .wide-page lay out dashboards, grids and
  *                         viewers at up to 1480px, so the measure is lifted
  *                         and intro text, callouts and narrow tables follow
@@ -655,6 +656,24 @@ body.nav-open { overflow: hidden; }
   max-width: var(--max-content-w);
 }
 
+/* Docs column: text sits centred at the measure and is always a little narrower
+ * than the visuals; the percentage is what keeps that true on a laptop, where
+ * the column is not much wider than 61rem. Both properties live here, at a
+ * specificity above each block's own `margin` shorthand, so only the inline
+ * margins move. Text blocks that are direct children are listed; everything
+ * else (figures, tables, grids, code) takes the full column. */
+.zone-docs .content { --measure: min(61rem, 97%); }
+.zone-docs .content > .page-header > *,
+.zone-docs .content section.doc-section > :is(h2, h3, h4, p, ul, ol, blockquote, .callout, .notice, .see-also, .cs-key),
+.zone-docs .content section.doc-section > ul:not(.bullets):not(.next-list):not(.fnref-list):not(.status-list) {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+.zone-docs .content section.doc-section > .table-wrap:has(> table.narrow) { margin-inline: auto; }
+.zone-docs .content section.doc-section > :is(ul.status-list, ol.steps) { max-width: none; }
+.content.prose-page > .page-header,
+.content.prose-page > section.doc-section:not(.breakout) { margin-inline: auto; }
+
 /* Write-up pages: running text, headings, callouts, and lists keep the original
  * reading measure; only the diagrams and the wide mod-catalog table break out to
  * the full 1180px column. */
@@ -664,7 +683,8 @@ body.nav-open { overflow: hidden; }
 .content.dp-page > .page-header,
 .content.dp-page > .notice,
 .content.dp-page section.doc-section > * {
-  max-width: 720px;
+  max-width: var(--max-content-w);
+  margin-inline: auto;
 }
 .content.dp-page section.doc-section > .overlay-strip,
 .content.dp-page section.doc-section > .table-wrap {
@@ -673,6 +693,7 @@ body.nav-open { overflow: hidden; }
 
 @media (max-width: 720px) {
   .content { padding: 1.4rem 1.2rem 3rem; }
+  .zone-docs .content { --measure: none; }
 }
 
 /* ---------- Page header ---------- */
@@ -4074,7 +4095,7 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
    was being sized to. Scoped to the breakpoint so desktop column widths, which
    are computed from the same min-content, do not move.
    Block code keeps its own horizontal scroll - `pre` is already a scroller. */
-@media (max-width: 880px) {
+@media (max-width: 1100px) {
   /* Inherited, so it reaches inline code, links, list items, table cells and
      the bare `ghidra/scripts/funcs/...` paths in running prose alike. `pre`
      is unaffected: `white-space: pre` does not wrap at all, and it carries

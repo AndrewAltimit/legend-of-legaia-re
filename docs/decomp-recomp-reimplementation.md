@@ -45,7 +45,7 @@ The two come at the same goals in different orders. A recomp starts with the ori
 | New rendering | Extra work | Extra work, well served at draw-call level | Built in |
 | New hosts | Extra work | Extra work | Built in |
 | Modding by game concept | Extra work | Extra work, through hooks | Built in |
-| The next game on the console | Extra work: tools carry, work does not | Built in: the framework carries | Poor fit: low layers and method carry |
+| Targeting another game on the same console | Extra work: tools carry, work does not | Built in: the framework carries | Poor fit: low layers and method carry |
 | No original code executing | Poor fit | Poor fit | Built in |
 
 The last row is not a legal claim. No court has settled any of this; the nearest test, Take-Two's case over re3 and reVC, [ended in dismissal](https://torrentfreak.com/take-two-dismisses-claims-against-lead-defendants-in-gta-mods-lawsuit-230405/) with no ruling on the merits.

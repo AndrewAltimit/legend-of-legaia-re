@@ -180,9 +180,11 @@ runs in the docs zone only, on load, on resize and once fonts settle.
 
 ## One right edge per column
 
-Prose is capped at `--measure` (46rem) so a line stays readable. That is right
-on the 880px docs column, where the measure is most of the column, and wrong
-on a wider one: a 46rem paragraph or callout sitting among 1400px grids, tiles
+Prose is capped at `--measure` so a line stays readable. On the 1060px docs
+column it is `min(61rem, 97%)` and the text blocks are centred, so figures,
+tables and grids extend past the text on both sides. The percentage keeps the
+text narrower than the visuals on a laptop, where the column is not much wider
+than 61rem. A cap is wrong on a wider column: a 61rem paragraph or callout sitting among 1400px grids, tiles
 and tables stops at half the page and reads as a section that failed to load.
 Nothing errors, and it is invisible below about 1300px of viewport, where the
 column is not yet wider than the measure.
@@ -191,7 +193,7 @@ Three column shapes, each with one rule for where text ends:
 
 | Column | Pages | Text ends at |
 |---|---|---|
-| Docs (880px) | every docs page not listed below | `--measure` |
+| Docs (1060px) | every docs page not listed below | `--measure`, centred |
 | App (1400 / 1480px) | home, `.wide-page` (`WIDE_PAGES` in `_gen.py`) | the column: `--measure` is `none` |
 | Prose with a breakout | `.wide-page.prose-page` (`PROSE_WIDE_PAGES`), `.dp-page` | the docs column; the named exhibit alone is wide |
 
