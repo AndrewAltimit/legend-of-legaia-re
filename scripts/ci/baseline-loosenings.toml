@@ -1150,7 +1150,7 @@ changes = [
 file = "scripts/ci/cost-baseline.json"
 reason = "world_map enhanced allocations per frame rise from the ambient emitter's one pass per game tick; the count is unchanged at the commit before that change and rises at it, while kilobytes allocated per frame fall. play_gzip_bytes grows with the battle timing and talk timing code on this branch; it is a code size increase, not a data change."
 changes = [
-  ["counts/bundle/play_gzip_bytes", 4958538, 4962042],
+  ["counts/bundle/play_gzip_bytes", 4958538, 4962222],
   ["counts/native/world_map/enhanced/allocs_per_frame", 1831.8, 1901.9],
 ]
 
