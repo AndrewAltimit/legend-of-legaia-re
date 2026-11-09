@@ -35,8 +35,8 @@
 
    Prose measure: paragraphs and lists inside section.doc-section are capped
    at --measure; tables, figures, grids and code blocks use the full column.
-   On the docs column the capped blocks are centred, so visuals extend past
-   the text on both sides. A wider column (home, .wide-page) lifts the measure instead - see
+   On the docs column --measure is none, so text, figures and tables share one
+   width. A wider column (home, .wide-page) lifts the measure instead - see
    "Column width policy" beside .content.wide-page. Cap prose with
    var(--measure), never a literal ch / px width, or the wide pages cannot
    lift it.
@@ -634,8 +634,8 @@ body.nav-open { overflow: hidden; }
 /* Column width policy. Every block in a column shares one right edge, or the
  * page reads as broken: a 46rem paragraph among 1400px grids and tables looks
  * like half the page failed to load.
- *   docs column (1030px at a 1920px window)  prose at --measure, centred, so figures, tables and
- *                         grids extend past it on both sides.
+ *   docs column           1030px at a 1920px window, following the window
+ *                         above that; text and visuals share the width.
  *   app pages             home and .wide-page lay out dashboards, grids and
  *                         viewers at up to 1480px, so the measure is lifted
  *                         and intro text, callouts and narrow tables follow
@@ -644,8 +644,7 @@ body.nav-open { overflow: hidden; }
  *                         (a many-column table). The page keeps the docs
  *                         column and its measure; only section.breakout takes
  *                         the full width, and lifts the measure inside itself.
- * The disc-patching write-ups (.dp-page, below) are the same third shape with
- * their own named breakouts. */
+ */
 .page-home .content,
 .content.wide-page:not(.prose-page),
 .content.prose-page section.doc-section.breakout {
@@ -656,45 +655,13 @@ body.nav-open { overflow: hidden; }
   max-width: var(--max-content-w);
 }
 
-/* Docs column: text sits centred at a fixed share of the column, so the gap to
- * the visuals stays small and proportional at every window width. The column
- * follows the window above 1920px. Both properties live here, at a
- * specificity above each block's own `margin` shorthand, so only the inline
- * margins move. Text blocks that are direct children are listed; everything
- * else (figures, tables, grids, code) takes the full column. */
-.zone-docs .content { --measure: 94.7%; }
-.zone-docs .content > .page-header > * { max-width: none; margin-inline: 0; }
-.zone-docs .content section.doc-section > :is(h2, h3, h4, p, ul, ol, blockquote, .callout, .notice, .see-also, .cs-key),
-.zone-docs .content section.doc-section > ul:not(.bullets):not(.next-list):not(.fnref-list):not(.status-list) {
-  max-width: var(--measure);
-  margin-inline: auto;
-}
-.zone-docs .content section.doc-section > .table-wrap:has(> table.narrow) { margin-inline: auto; }
-.zone-docs .content section.doc-section > :is(ul.status-list, ol.steps) { max-width: none; }
+/* Docs column: the title, text, figures, tables and code share one width. */
+.zone-docs .content { --measure: none; }
 .content.prose-page > .page-header,
 .content.prose-page > section.doc-section:not(.breakout) { margin-inline: auto; }
 
-/* Write-up pages: running text, headings, callouts, and lists keep the original
- * reading measure; only the diagrams and the wide mod-catalog table break out to
- * the full 1180px column. */
-.content.dp-page {
-  max-width: 1180px;
-  --measure: min(calc(var(--max-content-w) * 0.947), 94.7%);
-}
-.content.dp-page > .page-header,
-.content.dp-page > .notice,
-.content.dp-page section.doc-section > * {
-  max-width: var(--max-content-w);
-  margin-inline: auto;
-}
-.content.dp-page section.doc-section > .overlay-strip,
-.content.dp-page section.doc-section > .table-wrap {
-  max-width: 1180px;
-}
-
 @media (max-width: 720px) {
   .content { padding: 1.4rem 1.2rem 3rem; }
-  .zone-docs .content { --measure: none; }
 }
 
 /* ---------- Page header ---------- */
