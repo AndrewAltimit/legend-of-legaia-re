@@ -334,6 +334,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
 
     // Frame 1: Cross opens the target cursor.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
     take_commit_begin(&mut world);
@@ -341,6 +342,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
 
     // Frame 2: Cross confirms the monster; the art runs.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
     take_commit_begin(&mut world);
@@ -482,10 +484,12 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
 
     // Open the target cursor, then confirm.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
     take_commit_begin(&mut world);
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
     take_commit_begin(&mut world);

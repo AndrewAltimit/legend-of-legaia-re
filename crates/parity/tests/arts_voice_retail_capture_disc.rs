@@ -217,7 +217,10 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     let mut sfx = Vec::new();
     for tick in 0..20_000u32 {
         // Edge-triggered sessions: a press frame, then a release frame.
-        let pad = if prev == 0 && session.host.world.mode == SceneMode::Battle {
+        let pad = if prev == 0
+            && session.host.world.mode == SceneMode::Battle
+            && !session.host.world.battle.battle_command_pad_held()
+        {
             hand(&session, &mut typed)
         } else {
             0

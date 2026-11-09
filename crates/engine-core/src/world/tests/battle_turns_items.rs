@@ -158,6 +158,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
 
     // Frame 1: Cross confirms the item -> target select.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
     take_commit_begin(&mut world);
@@ -167,6 +168,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     // goes at the commit (retail's item window consumes it there and the
     // `0x6E` step-back refunds it); the effect waits for the dispatch.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
     take_commit_begin(&mut world);
@@ -262,6 +264,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
 
     // Circle from the item list backs all the way out.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Circle.mask());
     world.tick_battle_item_menu();
     take_commit_begin(&mut world);
@@ -309,6 +312,7 @@ fn opening_the_item_window_moves_the_flow_byte_onto_it() {
         (PadButton::Up, BattleFlowState::ItemWindow),
     ] {
         world.set_pad(0);
+        world.settle_battle_pad_hold();
         world.set_pad(button.mask());
         world.tick_battle_command();
         assert_eq!(world.battle.flow, want, "after {button:?}");

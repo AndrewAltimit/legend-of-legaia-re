@@ -188,7 +188,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
     let mut opened_input = false;
     let mut arts_turns = 0usize;
     for _ in 0..4000 {
-        let pad = if !press {
+        let pad = if !press || w.battle.battle_command_pad_held() {
             0
         } else if let Some(view) = w.arts_input_view() {
             opened_input = true;

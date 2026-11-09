@@ -93,6 +93,11 @@ fn open_fight(tutorial: bool) -> Option<NativeSession> {
 
 /// One press frame, then release frames until the press has been taken.
 fn tap(session: &mut NativeSession, button: PadButton) {
+    // No surface reads the pad while its step's records glide.
+    while session.host.world.battle.battle_command_pad_held() {
+        session.host.world.set_pad(0);
+        session.tick().expect("tick");
+    }
     session.host.world.set_pad(button.mask());
     session.tick().expect("tick");
     session.host.world.set_pad(0);

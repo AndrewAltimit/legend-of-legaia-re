@@ -1372,3 +1372,60 @@ fn victory_drop_roll_matches_the_retail_walk() {
     // The no-reward word skips the seat walk but not the trailing gate.
     assert_eq!(run(&[seat(0x77, 100)], false, true, &[4]), (0, 1));
 }
+
+/// Thirteen melee hits read off the retail kernel `FUN_801EC3E4` mid-fight
+/// (the town01 spar, breakpoints on the two rolls and on `0x801ED5CC`):
+/// the inputs retail held and the `raw` / `guard` it computed, with the LCG
+/// word standing after the attack roll. The port's kernel, fed the same
+/// stream, lands on both sides of every hit.
+///
+/// REF: FUN_801EC3E4
+#[test]
+fn physical_rolls_match_retail_hits_with_retail_rolls() {
+    // (atk, attacker hp, def, power, staged, juggle, angle, distance, guarded,
+    //  word after the attack roll, raw, guard)
+    type Row = (u16, u16, u16, u8, u8, u8, i16, i16, bool, u32, u32, u32);
+    #[rustfmt::skip]
+    const HITS: [Row; 13] = [
+        (24, 180, 28, 20, 0x0c, 1, 0, 30, false, 0x596e573d, 39, 29),
+        (24, 180, 28, 20, 0x0f, 2, 0, 0, false, 0x6ded9a89, 39, 30),
+        (24, 180, 28, 20, 0x0f, 3, 0, 0, false, 0x213d5795, 43, 31),
+        (24, 968, 16, 18, 0x0a, 1, 33, 6, false, 0xe54c1394, 30, 18),
+        (24, 968, 16, 18, 0x08, 1, 0, 0, false, 0x9f039189, 33, 18),
+        (24, 968, 16, 18, 0x08, 1, 50, 4, true, 0x6d0d58c9, 55, 48),
+        (24, 968, 12, 18, 0x09, 1, 0, 0, true, 0xb69520db, 46, 39),
+        (24, 968, 16, 18, 0x08, 1, 18, 4, false, 0xb28827bb, 30, 17),
+        (24, 968, 12, 18, 0x09, 1, 0, 0, false, 0x1c0da114, 31, 13),
+        (24, 968, 16, 22, 0x0b, 1, 0, 0, false, 0xffd6270e, 38, 16),
+        (24, 113, 28, 20, 0x0f, 1, 16, 0, false, 0x32dbf238, 41, 31),
+        (24, 113, 21, 20, 0x0e, 2, 0, 0, false, 0x1aa8bc74, 34, 23),
+        (24, 113, 28, 20, 0x11, 3, 0, 0, false, 0xfafd2b39, 48, 28),
+    ];
+    const A: u32 = 0x41C6_4E6D;
+    const C: u32 = 0x3039;
+    // The multiplier's inverse mod 2^32: one step back from the captured word.
+    const A_INV: u32 = 0xEEB9_EB65;
+    for (i, &(atk, hp, def, power, staged, juggle, angle, dist, guarded, word, raw, guard)) in
+        HITS.iter().enumerate()
+    {
+        let mut state = word.wrapping_sub(C).wrapping_mul(A_INV);
+        let mut rand = || {
+            state = state.wrapping_mul(A).wrapping_add(C);
+            ((state >> 16) & 0x7FFF) as u16
+        };
+        let hit = PhysicalHit {
+            attacker_atk: atk,
+            attacker_hp: hp,
+            defender_def: def,
+            command_scalar: power,
+            staged_anim: staged,
+            affinity_pct: 100,
+            defender_guarding: guarded,
+            combo_scale: juggle,
+            attack_ramp: angle,
+            guard_ramp: dist,
+            ..PhysicalHit::default()
+        };
+        assert_eq!(physical_rolls(&hit, &mut rand), (raw, guard), "hit {i}");
+    }
+}

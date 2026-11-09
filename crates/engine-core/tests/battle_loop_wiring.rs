@@ -77,6 +77,7 @@ fn open_target_cursor(w: &mut World) {
         match session.phase {
             CommandPhase::Targeting { .. } => return,
             CommandPhase::Menu { .. } if session.menu_command() != Some(BattleCommand::Attack) => {
+                w.settle_battle_pad_hold();
                 w.set_pad(InputState::mask_of([PadButton::Left]));
             }
             _ => w.set_pad(InputState::mask_of([PadButton::Cross])),
@@ -108,6 +109,7 @@ fn validator_backed_target_rows_skip_a_downed_monster_slot() {
     );
 
     // Right moves to the next *valid* slot: 5, not the downed 4.
+    w.settle_battle_pad_hold();
     w.set_pad(InputState::mask_of([PadButton::Right]));
     w.tick();
     assert_eq!(
@@ -139,12 +141,14 @@ fn target_cursor_tint_is_stamped_while_picking_and_cleared_on_confirm() {
     assert_eq!(w.actors[acting].battle.active_target, 3);
 
     // Walk the cursor right: the tint follows.
+    w.settle_battle_pad_hold();
     w.set_pad(InputState::mask_of([PadButton::Right]));
     w.tick();
     assert_eq!(w.actors[4].battle.render_flag, CURSOR_FLAG_SELECTED);
     assert_eq!(w.actors[3].battle.render_flag, CURSOR_FLAG_DIMMED);
 
     // Cross #2 confirms: the cursor closes and the clear arm runs.
+    w.settle_battle_pad_hold();
     w.set_pad(InputState::mask_of([PadButton::Cross]));
     w.tick();
     for slot in 3..6 {

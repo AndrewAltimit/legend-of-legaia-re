@@ -114,6 +114,9 @@ impl World {
             *g = false;
         }
         self.battle.round_flow.cursor = prev;
+        // Case `0x10` glides its records whether or not the flow byte moved.
+        // REF: FUN_801D388C (case `0x10`)
+        self.battle.start_surface_hold();
         self.battle.set_battle_flow(Flow::CategoryMenu);
         self.open_battle_command(prev);
     }

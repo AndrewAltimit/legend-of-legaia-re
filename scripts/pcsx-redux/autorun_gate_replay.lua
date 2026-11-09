@@ -76,8 +76,9 @@
 -- until the byte moves: a two-vsync pulse every REPULSE_PERIOD vsyncs, none for
 -- REPULSE_SETTLE vsyncs after the byte last moved (each surface ignores input
 -- that long on entry), at most LEGAIA_GATE_REPULSE_MAX to a beat. The arts entry
--- 0x50 takes a run of presses, so there the pulses replay the beat's presses in
--- order and then keep the last. Each pulse is logged `synthetic_repulse` and
+-- 0x50 takes a run of presses, so there the beat's timed rows are skipped and
+-- the pulses replay its presses in order (a run of one press counting once), then
+-- keep the last. Each pulse is logged `synthetic_repulse` and
 -- counted as synthetic. The synthetic Cross waits until the pulses are spent,
 -- and in battle it only fires on a byte that waits for input.
 --
@@ -186,7 +187,9 @@ for _, b in ipairs(beats) do
         local edge = rising(row[2], before)
         if edge ~= 0 then
             b.press = edge
-            b.presses[#b.presses + 1] = edge
+            -- A run of the same press stands for one: the mash ahead of a
+            -- surface's first live pass, of which one lands at most.
+            if b.presses[#b.presses] ~= edge then b.presses[#b.presses + 1] = edge end
         end
         before = row[2]
     end
@@ -410,7 +413,9 @@ probe.run({
                 pad_mask = b.pad[pad_i][2]
                 pad_i = pad_i + 1
             end
-            mask = pad_mask
+            -- The arts entry's presses are spaced by the repeat below instead:
+            -- a run typed on the engine's clock lands inside retail's hold.
+            mask = (SEQUENCE_FLOW[s.flow] and b.kind == "flow") and 0 or pad_mask
         else
             -- The presses have run out and the gate has not come.
             if wait >= MAX_WAIT then

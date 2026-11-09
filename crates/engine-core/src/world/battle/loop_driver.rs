@@ -463,9 +463,15 @@ impl World {
             || self.battle.arts_input.is_some()
             || self.battle.arts_menu.is_some()
             || self.battle.spell_menu.is_some()
-            || self.battle.item_menu.is_some();
+            || self.battle.item_menu.is_some()
+            || self.battle.round_armed;
         if surface_up && self.battle_command_glide_gate() {
             return None;
+        }
+        // `0xFE`'s arm, on the first dispatched pass after its step landed.
+        if self.battle.round_armed {
+            self.battle.round_armed = false;
+            self.begin_round_execution();
         }
         if self.battle.command.is_none() {
             // Any other state's dispatch empties the park unread.

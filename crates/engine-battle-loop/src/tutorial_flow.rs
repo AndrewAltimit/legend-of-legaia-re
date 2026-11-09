@@ -164,6 +164,12 @@ impl BattleState {
             return false;
         }
         self.flow = next;
+        // Every `ctx[+0x06]` edge into a surface runs a sub-draw step, and
+        // each step's records glide: the pad is not read until they land.
+        // REF: FUN_801D0748 (each `jal 0x801D388C`, the gate at `0x801D0B2C`)
+        if next != BattleFlowState::Idle {
+            self.start_surface_hold();
+        }
         let Some(tut) = self.tutorial.as_mut() else {
             return false;
         };

@@ -189,7 +189,8 @@ fn drive_art(rig: &mut dyn Rig) -> Vec<legaia_engine_battle::battle_events::Batt
     let mut arts_turns = 0usize;
     for _ in 0..4000 {
         let w = rig.world();
-        let pad = if !press {
+        // No surface reads the pad while its step's records glide.
+        let pad = if !press || w.battle.battle_command_pad_held() {
             0
         } else if let Some(view) = w.arts_input_view() {
             opened_input = true;

@@ -130,6 +130,7 @@ fn a_typed_super_raises_the_banner_and_the_host_read_draws_it() {
     // --- Walk into a battle. ---
     let mut entered = false;
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
@@ -225,6 +226,7 @@ fn a_typed_super_raises_the_banner_and_the_host_read_draws_it() {
             0
         };
         let input_was_open = w.battle.arts_input_active();
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         press = !press;
         w.tick();

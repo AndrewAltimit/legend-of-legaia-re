@@ -67,6 +67,7 @@ fn open_target_cursor(w: &mut World) {
     ));
     // Cross opens the single-enemy target picker.
     w.set_pad(0);
+    w.settle_battle_pad_hold();
     w.set_pad(PadButton::Cross.mask());
     w.tick_battle_arts_menu();
     take_commit_begin(w);
@@ -90,6 +91,7 @@ fn cursor_slot(w: &World) -> u8 {
 
 fn press(w: &mut World, button: PadButton) {
     w.set_pad(0);
+    w.settle_battle_pad_hold();
     w.set_pad(button.mask());
     w.tick_battle_arts_menu();
     take_commit_begin(w);
@@ -345,6 +347,7 @@ fn attack_cursor_opens_on_the_current_target() {
         phase: CommandPhase::AttackMode { cursor: 0 },
     });
     w.set_pad(0);
+    w.settle_battle_pad_hold();
     w.set_pad(PadButton::Left.mask());
     w.tick_battle_command();
     w.set_pad(0);

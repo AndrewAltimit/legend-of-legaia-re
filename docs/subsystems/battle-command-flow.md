@@ -992,7 +992,10 @@ suppressed by a box - then reaches the countdown section at `0x801F71F0`:
 ```
 
 The rate cancels, so the hold is 360 vsyncs; a press skips it once the
-sign-off box has gone. The same routine serves the wrong-lesson rewinds,
+sign-off box has gone. The tail stores `0xC8` over the flow byte (a value no
+`FUN_801D0748` case tests), so `0x14` never reaches `0x1E` and no prompt
+opens; `World::begin_battle_round` runs the tail instead of the round's
+setup and leaves the flow at `Idle`. The same routine serves the wrong-lesson rewinds,
 where the expiry's re-injected Cancel is what backs the player out of the
 rejected menu. On the completion path the expiry raises side-band phase `3`,
 whose arm ticks the teardown staging `FUN_80025358` and counts `ctx[+0x6CE]`

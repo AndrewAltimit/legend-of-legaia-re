@@ -700,8 +700,19 @@ Differences from retail:
 - the `ctx[+0x26A]` term of the exit is not modelled;
 - `Run` sliding off the right edge as the ring opens is not drawn;
 - the steps past the ring - the windows, the attack-mode prompt, the target
-  cursors, the commit confirm - draw at rest and hold no pad. Their glides
-  are the same kernel over their own records.
+  cursors, the commit confirm - draw at rest. Their records still cost the
+  hold: every `ctx[+0x06]` edge runs a sub-draw step whose records glide
+  sixteen vsyncs (every step the menu SM runs has at least one pair with
+  mode bit 1 clear; the `0x50` screen's own presses use the empty step
+  `0x0B` and hold nothing). The port keeps the hold alone, as
+  `BattleState::surface_hold_glide`, raised by `BattleState::set_battle_flow`
+  on every edge into a surface, and by the commit that walks to the next
+  member's ring without moving the byte. `0xFE`'s step counts too: `Begin` and
+  the `0x32` Run confirm store it and the action SM starts on the pass after
+  the records land (`BattleState::round_armed`, `World::arm_round_execution`);
+- a press the item, magic or arts window would read on the first dispatched
+  pass after its hold is not parked for it. Only the ring's surfaces read
+  `World::take_command_pad_buffer`.
 
 #### Action-phase openers
 

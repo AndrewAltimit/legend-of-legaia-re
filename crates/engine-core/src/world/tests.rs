@@ -26,13 +26,26 @@ fn live_tick(w: &mut World) -> Option<legaia_engine_battle_vm::battle_action::St
 fn take_commit_begin(w: &mut World) -> bool {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
     let Some(cmd) = w.battle.command.as_mut() else {
-        return false;
+        return land_armed_round(w);
     };
     if !matches!(cmd.phase, CommandPhase::CommitConfirm { .. }) {
         return false;
     }
     cmd.phase = CommandPhase::BeginRound;
     w.tick_battle_command();
+    land_armed_round(w);
+    true
+}
+
+/// Start an armed round here: the hold `0xFE`'s step costs is out of these
+/// tests' way (`World::arm_round_execution`, `round_prompt_gate` pins it).
+fn land_armed_round(w: &mut World) -> bool {
+    if !w.battle.round_armed {
+        return false;
+    }
+    w.battle.round_armed = false;
+    w.battle.release_command_pad_hold();
+    w.begin_round_execution();
     true
 }
 

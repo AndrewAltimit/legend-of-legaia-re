@@ -179,6 +179,21 @@ impl World {
         if self.battle_sideband_holds_round() {
             return;
         }
+        // The sparring fight's last lesson done: the side-band's completion
+        // tail stores the flow byte `0xC8` over this `0x14` before the arm
+        // runs (`FUN_801F6B70`'s tail, retail shows `0x14 -> 0xC8`), so no
+        // sweep or prompt runs: the sign-off and its hold own the frames left.
+        // REF: PROT 0967 (completion tail)
+        if self
+            .battle
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| t.lesson == 4 && !t.finished)
+        {
+            self.battle.run_sparring_completion_tail();
+            self.battle.set_battle_flow(BattleFlowState::Idle);
+            return;
+        }
         // An expansion fight's refill wave tops up the freed monster seats
         // as the round opens, ahead of the sweep and the initiative seed so
         // the arrivals take their turns this round (never without a pack).
@@ -562,13 +577,52 @@ impl World {
                         Some(PendingPartyAction::Run);
                 }
             }
-            self.begin_round_execution();
+            self.arm_round_execution();
             return;
         }
         match self.next_member_owing_command(Some(actor)) {
-            Some(next) => self.open_battle_command(next),
+            // The commit's sub-draw step (Spirit's `0x11`, an attack's
+            // `0x0E`, ...) glides its records whether or not the flow byte
+            // moved, and a Spirit walking on to the next member's ring does
+            // not move it.
+            // REF: FUN_801D0748 (the commit idiom), FUN_801D388C
+            Some(next) => {
+                self.battle.start_surface_hold();
+                self.open_battle_command(next);
+            }
             None => self.open_commit_confirm(actor),
         }
+    }
+
+    /// Wait out the pad hold a command surface opens under, as a player
+    /// would: the menu SM reads no press until its step's records land
+    /// (`BattleState::battle_command_pad_held`), so a scripted press sent
+    /// inside the hold is lost.
+    pub fn settle_battle_pad_hold(&mut self) {
+        for _ in 0..64 {
+            if !self.battle.battle_command_pad_held() && !self.battle.round_armed {
+                return;
+            }
+            self.set_pad(0);
+            self.tick();
+        }
+    }
+
+    /// Retail's `Begin` / `Run` confirm: `ctx[+0x06] = 0xFE` is stored with
+    /// sub-draw step `0x24` / `0x29` / `0x25`, whose records glide, and the
+    /// `0xFE` arm that restarts the action SM runs only on the pass after
+    /// they land - so the round starts once the hold has gone. A battle no
+    /// pad drives has no surface to hold and begins at once.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D3190..0x801D31DC`, `0x801D1150`)
+    pub(in crate::world) fn arm_round_execution(&mut self) {
+        if !self.battle.player_driven {
+            self.begin_round_execution();
+            return;
+        }
+        self.battle.command = None;
+        self.battle.start_surface_hold();
+        self.battle.round_armed = true;
     }
 
     /// Raise the party-wide commit-confirm screen (retail `ctx[+0x06] =

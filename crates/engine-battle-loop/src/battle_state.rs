@@ -647,6 +647,15 @@ pub struct BattleState {
     /// on the one sixteen-vsync step. `None` before a round's first ring
     /// (the `legaia_engine_battle_hud::battle_ring_*` helpers and the plate offsets).
     pub ring_open_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The glide every other surface's sub-draw step costs. `FUN_801D388C`
+    /// runs a step on each `ctx[+0x06]` edge and each glides its records
+    /// sixteen vsyncs, and the port draws those surfaces at rest, so this
+    /// is the pad hold alone. Started by [`BattleState::start_surface_hold`];
+    /// the prompt's and the ring's own glides also carry their hold.
+    pub surface_hold_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// `ctx[+0x06] = 0xFE` stored and its step's records still gliding: the
+    /// `0xFE` arm (the action SM's start) runs on the first dispatched pass.
+    pub round_armed: bool,
     /// What the glide stepper returned on this tick's pass - retail's `s0`
     /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
     /// Non-zero while a tracked glide is in flight and on the pass it lands;
@@ -1431,6 +1440,8 @@ impl BattleState {
             module_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
+            surface_hold_glide: None,
+            round_armed: false,
             widget_glide_return: 0,
             widget_glide_latch: 0,
             command_pad_buffer: None,

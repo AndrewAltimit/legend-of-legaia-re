@@ -95,8 +95,8 @@ pulse lands on a released tick and is absorbed, leaving two on, two off. At the 
   `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A`, `0x64`, `0x6E`, `0x78`), repeats its last logged
   press until the byte moves: a two-vsync pulse every 8 vsyncs, none within 18 vsyncs of the
   byte's last move (a surface ignores the pad for that long after it opens). The arts entry
-  `0x50` takes a run of presses, so there the pulses replay the beat's logged presses in
-  order and then keep the last. Each pulse is one `synthetic_repulse` row, with the press and
+  `0x50` takes a run of presses, so there the beat's timed rows are skipped and the pulses
+  replay its logged presses in order (a run of one press counting once), then keep the last. Each pulse is one `synthetic_repulse` row, with the press and
   the byte it found, and one count in `synth`. A beat adds at most `--repulse-max` pulses
   (16 by default, 0 for none); once they are spent the synthetic Cross above applies, then
   the timeout below.
@@ -145,21 +145,22 @@ own `gap`).
   solid hold gives retail a single edge, which lands before `0x28` shows and is lost; that
   is why a widened press keeps its released tick.
 
-With every surface gated the fight replays to its end. The surfaces past the ring differ
-from the engine by a hold the engine does not have: each opens on retail with a glide of
-sixteen vsyncs during which the pad is not read ([the stepper's return](../subsystems/battle-hud.md#the-steppers-return-holds-the-pad)),
-and the engine holds the pad only for the round prompt and the ring. The engine's logged
-press lands inside that hold on retail, so each of the prompt, the target cursor, the item
-target confirm, the commit confirm and the arts entry costs one repeated press on retail:
-that is the whole of the synthetic input in the fight, and the arts entry's arrows.
+With every surface gated the fight replays to its end. Every surface holds the pad for its
+glide on both sides ([the stepper's return](../subsystems/battle-hud.md#the-steppers-return-holds-the-pad)):
+the engine dispatches on the eighteenth tick after the flow byte moves and retail about two
+vsyncs later, on its two-vsync pass.
 
-| Surface entered | Engine ticks to the next press | Retail vsyncs to the next surface |
+| Surface entered | Engine ticks to the next surface | Retail vsyncs to the next surface |
 |---|---|---|
 | `0x1E` round prompt, `0x28` ring | 17, 18 | 20, 20 |
-| `0x78`, `0x5A`, `0x6E` | 3, 4, 4 | 20, 20, 20 |
-| `0x3C` window, `0x64` target confirm | 4, 4 | 22, 20 |
-| `0x50` arts entry (five presses) | 10 | 52 |
-| `0xFE` armed, to the action start | 1 | 20 |
+| `0x78`, `0x5A`, `0x6E` | 18, 18, 18 | 20, 20, 20 |
+| `0x3C` window, `0x64` target confirm | 18, 18 | 20 to 22, 20 |
+| `0x50` arts entry | 18 | 20 |
+| `0xFE` armed, to the action start | 19 | 20 |
+
+The arts entry takes its typed presses after that hold, and the replay spaces them by the
+repeat rule; the engine presses in consecutive ticks, which retail's two-vsync pass would
+drop, so the arrows are the replay's own timing.
 
 A round's actions run the same states on both sides with the same dwell, except at the
 close of each: `0x51` holds 62 ticks on the engine against 76 vsyncs on retail, and retail
@@ -170,10 +171,16 @@ round and the HP changes follow them.
 
 Retail's first-round box waits for a press and otherwise closes on its own hold, as does
 the sign-off box at the end of the fight. With no Cross offered, retail spends 364 vsyncs
-in `0x14` and 427 in `0xC8` before the fight closes. Retail ends the spar from the action
-SM's `0xFF` through flow `0x14` to `0xC8`; the engine raises `TurnPrompt` with no session
-open for 70 ticks and leaves. The replay's last prompt gate closes `cut` there, which is
-that difference and not a stall.
+in `0x14` and 427 in `0xC8` before the fight closes (the sign-off's 360 and the teardown's
+67); a press skips the 360 on both sides. The completion tail stores `0xC8` over the round
+start, and the engine's flow rests on `Idle` there, with no prompt up. The replay's last
+prompt gate closes `cut`, which is that end and not a stall.
+
+The hits themselves are one kernel on both sides: the thirteen melee hits read off
+`FUN_801EC3E4` in this fight, fed through `physical_rolls` with retail's stats and the
+same `rand()` draws, give retail's `raw` and `guard` on every hit
+(`physical_rolls_match_retail_hits_with_retail_rolls`). The two sides' damage differs only
+where the rolls and the swing counts differ, and those follow the stream.
 
 See also [`full-game-ladder.md`](full-game-ladder.md), [`walk-film.md`](walk-film.md),
 [`pcsx-redux-automation.md`](pcsx-redux-automation.md).

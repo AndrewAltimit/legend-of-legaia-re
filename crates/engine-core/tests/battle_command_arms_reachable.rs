@@ -70,6 +70,7 @@ fn build_world() -> World {
 /// One press frame followed by one release frame - every battle session reads
 /// `just_pressed`, so a held mask is one event, not many.
 fn tap(w: &mut World, button: PadButton) {
+    w.settle_battle_pad_hold();
     w.set_pad(InputState::mask_of([button]));
     w.tick();
     w.set_pad(0);
@@ -86,6 +87,7 @@ fn monster_hp_total(w: &World) -> u32 {
 fn enter_battle(w: &mut World) {
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {

@@ -383,7 +383,7 @@ impl World {
             Some(Resolution::StepBack) => self.step_back_battle_command(session.actor),
             // The commit-confirm screen (`0x6E`): Begin plays the round out,
             // Reselect walks the member cursor back to the last member's ring.
-            Some(Resolution::BeginRound) => self.begin_round_execution(),
+            Some(Resolution::BeginRound) => self.arm_round_execution(),
             Some(Resolution::Reselect) => self.reselect_battle_commands(session.actor),
             None => {
                 // Still selecting - keep the session open for the next frame.

@@ -175,3 +175,97 @@ fn the_ring_reads_no_pad_until_its_arms_land() {
     );
     assert!(!world.battle.round_flow.committed(0), "no commit either");
 }
+
+/// Every other surface holds the pad the same way: each `ctx[+0x06]` edge
+/// runs a sub-draw step whose records glide sixteen vsyncs, and the state's
+/// arm does not run until they land (`0x801D0B2C`).
+#[test]
+fn the_attack_mode_prompt_reads_no_pad_until_its_step_lands() {
+    let mut world = prompt_world();
+    for _ in 0..16 {
+        tick(&mut world, 0);
+    }
+    tick(&mut world, PadButton::Left.mask()); // Begin
+    for _ in 0..18 {
+        tick(&mut world, 0);
+    }
+    tick(&mut world, PadButton::Left.mask()); // Attack
+    tick(&mut world, 0);
+    assert!(matches!(
+        world.battle.command.as_ref().map(|c| &c.phase),
+        Some(CommandPhase::AttackMode { .. })
+    ));
+    assert!(world.battle.battle_command_pad_held());
+    // Auto, under the hold: dropped.
+    tick(&mut world, PadButton::Left.mask());
+    assert!(matches!(
+        world.battle.command.as_ref().map(|c| &c.phase),
+        Some(CommandPhase::AttackMode { .. })
+    ));
+    for _ in 0..18 {
+        tick(&mut world, 0);
+    }
+    assert!(!world.battle.battle_command_pad_held());
+    tick(&mut world, PadButton::Left.mask());
+    assert!(
+        matches!(
+            world.battle.command.as_ref().map(|c| &c.phase),
+            Some(CommandPhase::Targeting { .. })
+        ),
+        "Auto taken once the prompt's step has landed"
+    );
+}
+
+/// `Begin` stores `0xFE` under step `0x24`, and the `0xFE` arm that starts
+/// the action SM runs only once its records have landed.
+#[test]
+fn begin_starts_the_round_after_its_step_lands() {
+    let mut world = prompt_world();
+    world.battle.round_prompt_glide = None;
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::BeginRound,
+    });
+    world.battle_ctx.action_state = 0x33;
+    tick(&mut world, 0);
+    assert!(world.battle.command.is_none());
+    assert!(world.battle.round_armed, "0xFE stored");
+    for _ in 0..15 {
+        tick(&mut world, 0);
+        assert!(world.battle.round_armed, "held under the step's records");
+        assert_eq!(world.battle_ctx.action_state, 0x33);
+    }
+    tick(&mut world, 0);
+    tick(&mut world, 0);
+    tick(&mut world, 0);
+    assert!(!world.battle.round_armed, "the 0xFE arm ran");
+}
+
+/// A last lesson done: the completion tail takes the frame over the round
+/// start, as retail's `0x14 -> 0xC8` does, and no prompt opens.
+#[test]
+fn the_last_lesson_ends_the_spar_with_no_round_prompt() {
+    use legaia_engine_battle::battle_tutorial::BattleTutorial;
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+    let mut world = prompt_world();
+    world.battle.command = None;
+    world.battle.round_prompt_glide = None;
+    let mut tut = BattleTutorial::new();
+    for _ in 0..4 {
+        tut.advance_lesson();
+    }
+    world.battle.tutorial = Some(tut);
+    world.begin_battle_round();
+    assert_eq!(
+        world.battle.flow,
+        Flow::Idle,
+        "retail stores 0xC8, not 0x1E"
+    );
+    assert!(
+        world.battle.command.is_none(),
+        "no Begin | Run under the sign-off"
+    );
+    assert!(world.battle.tutorial.as_ref().is_some_and(|t| t.finished));
+}
