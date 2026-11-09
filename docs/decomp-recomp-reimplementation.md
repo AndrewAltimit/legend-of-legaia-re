@@ -22,23 +22,25 @@ A port is a result, not a method: a PC port can be built on a decompilation, a r
 
 ## One game, two ports, the same months
 
-From each project's commit log. PSXRecomp: recompiler proven on the BIOS (April 2026), *Tomba!* gameplay (May), widescreen and renderer backends (June and July), the Legaia branch (July). This repository: first release (May 2026), walkable overworld and the disc patcher (May), full-game ladder and retail corpus (September), a run on pad input reaching the credits and expansion packs (October). The repository's history opens with a first release, so its work starts somewhat earlier.
+From each project's commit log. PSXRecomp: recompiler proven on the BIOS (April 2026), *Tomba!* gameplay (May), widescreen and renderer backends (June and July), the Legaia recomp, a fork of PSXRecomp (July). This repository: first release (May 2026), walkable overworld and the disc patcher (May), full-game ladder and retail corpus (September), a run on pad input reaching the credits and expansion packs (October). The repository's history opens with a first release, so its work starts somewhat earlier.
 
-The recomp wins on time to game by a wide margin. The Legaia branch's own commits span three days, on three months of framework work that also carries other games. The reimplementation needed about five months from first release to reach the credits and is an engine for one game. Its useful output arrived earlier and in another form: format docs, viewers and a patcher. The fork's README credits those docs with having "materially shortened the investigation".
+The recomp wins on time to game by a wide margin. The Legaia recomp's own commits span three days, on three months of framework work that also carries other games. The reimplementation needed about five months from first release to reach the credits and is an engine for one game. Its useful output arrived earlier and in another form: format docs, viewers and a patcher. The fork's README credits those docs with having "materially shortened the investigation".
 
-## What comes with the route and what has to be earned
+## What each route gives you and what takes extra work
+
+**Built in** is part of taking the route, **extra work** is reachable at a cost, and a **poor fit** works against the route.
 
 | You want | Decompilation | Static recompilation | Reimplementation |
 |---|---|---|---|
-| The whole game running | Earned: all the code plus a platform layer | Comes, once the runtime exists and code is found | Earned, and arrives last |
-| Retail quirks and timing | Comes, with timing up to the platform layer | Comes, if the hardware model is right | Earned, one at a time |
-| Assurance the code is right | Comes when matching | Comes; the runtime carries the risk | Against the grain: measured, never proved |
-| Rules a person can read | Earned after the match | Against the grain | Comes |
-| New rendering | Earned | Earned, well served at draw-call level | Comes |
-| New hosts | Earned | Earned | Comes |
-| Modding by game concept | Earned | Earned, through hooks | Comes |
-| The next game on the console | Earned: tools carry, work does not | Comes: the framework carries | Against the grain: low layers and method carry |
-| No original code executing | Against the grain | Against the grain | Comes |
+| The whole game running | Extra work: all the code plus a platform layer | Built in, once the runtime exists and code is found | Extra work, and arrives last |
+| Retail quirks and timing | Built in, with timing up to the platform layer | Built in, if the hardware model is right | Extra work, one at a time |
+| Assurance the code is right | Built in when matching | Built in; the runtime carries the risk | Poor fit: measured, never proved |
+| Rules a person can read | Extra work after the match | Poor fit | Built in |
+| New rendering | Extra work | Extra work, well served at draw-call level | Built in |
+| New hosts | Extra work | Extra work | Built in |
+| Modding by game concept | Extra work | Extra work, through hooks | Built in |
+| The next game on the console | Extra work: tools carry, work does not | Built in: the framework carries | Poor fit: low layers and method carry |
+| No original code executing | Poor fit | Poor fit | Built in |
 
 The last row is not a legal claim. No court has settled any of this; the nearest test, Take-Two's case over re3 and reVC, [ended in dismissal](https://torrentfreak.com/take-two-dismisses-claims-against-lead-defendants-in-gta-mods-lawsuit-230405/) with no ruling on the merits.
 

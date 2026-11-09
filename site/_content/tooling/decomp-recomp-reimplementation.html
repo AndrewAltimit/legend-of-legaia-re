@@ -54,16 +54,16 @@
   <h2>One game, two ports, the same months</h2>
   <p>Both projects started in spring 2026, within weeks of each other, so the histories can be read side by side. Dates below come from each project's commit log.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 1000 216" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three lanes. The PSXRecomp framework starts in April and is still developing. Legaia on the recomp is a sliver in July: the Legaia branch's own commits span three days. This reimplementation starts in May and reaches the credits on pad input in October.">
+    <svg viewBox="0 0 1000 216" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three lanes. The PSXRecomp framework starts in April and is still developing. The Legaia recomp, a fork of PSXRecomp, is a sliver in July: its own commits span three days. The Legaia engine, this reimplementation, starts in May and reaches the credits on pad input in October.">
       <g class="dg-edge-label" text-anchor="middle" style="font-size:12px">
         <text x="150" y="22">Apr</text><text x="259" y="22">May</text><text x="372" y="22">Jun</text><text x="481" y="22">Jul</text><text x="594" y="22">Aug</text><text x="707" y="22">Sep</text><text x="816" y="22">Oct</text><text x="929" y="22">Nov</text>
       </g>
       <g style="stroke:var(--border);stroke-width:1">
         <line x1="150" y1="30" x2="150" y2="206"/><line x1="259" y1="30" x2="259" y2="206"/><line x1="372" y1="30" x2="372" y2="206"/><line x1="481" y1="30" x2="481" y2="206"/><line x1="594" y1="30" x2="594" y2="206"/><line x1="707" y1="30" x2="707" y2="206"/><line x1="816" y1="30" x2="816" y2="206"/><line x1="929" y1="30" x2="929" y2="206"/>
       </g>
-      <text class="dg-label dg-start" x="8" y="65" style="font-size:13px">PSXRecomp</text><text class="dg-sub dg-start" x="8" y="81">the framework</text>
-      <text class="dg-label dg-start" x="8" y="121" style="font-size:13px">Legaia on it</text><text class="dg-sub dg-start" x="8" y="137">the fork's own work</text>
-      <text class="dg-label dg-start" x="8" y="177" style="font-size:13px">This port</text><text class="dg-sub dg-start" x="8" y="193">reimplementation</text>
+      <text class="dg-label dg-start" x="8" y="65" style="font-size:13px">PSXRecomp</text><text class="dg-sub dg-start" x="8" y="81">recompiler framework</text>
+      <text class="dg-label dg-start" x="8" y="121" style="font-size:13px">Legaia recomp</text><text class="dg-sub dg-start" x="8" y="137">fork of PSXRecomp</text>
+      <text class="dg-label dg-start" x="8" y="177" style="font-size:13px">Legaia engine</text><text class="dg-sub dg-start" x="8" y="193">this reimplementation</text>
 
       <path d="M186 68 H543" style="stroke:var(--warn);stroke-width:8;stroke-linecap:round;fill:none"/>
       <path d="M551 68 H985" style="stroke:var(--warn);stroke-width:3;stroke-dasharray:3 6;fill:none"/>
@@ -85,72 +85,72 @@
       <path d="M368 165 V174 M922 165 V174" style="stroke:var(--dg-accent);stroke-width:1.5"/>
       <path d="M561 126 H547" style="stroke:var(--warn);stroke-width:1.5"/>
     </svg>
-    <figcaption>The solid amber line ends where the local copy of the Legaia branch does; the framework has continued since. This repository's history opens with a first release, so its work starts somewhat before point 5.</figcaption>
+    <figcaption>The solid amber line ends where the local copy of the Legaia recomp does; the framework has continued since. This repository's history opens with a first release, so its work starts somewhat before point 5.</figcaption>
   </figure>
   <div class="cs-legend">
-    <ol start="1">
+    <div><h3>PSXRecomp and the Legaia recomp</h3><ol start="1">
       <li>The recompiler proven on the PS1 BIOS.</li>
       <li><em>Tomba!</em> boots, then reaches gameplay.</li>
       <li>Widescreen and further renderer backends, framework-wide.</li>
-      <li>A Legaia fork: overlay cache, then CD and XA fixes. Field, battle and summons run.</li>
-    </ol>
-    <ol start="5">
+      <li>The Legaia recomp, a fork of PSXRecomp: overlay cache, then CD and XA fixes. Field, battle and summons run.</li>
+    </ol></div>
+    <div><h3>The Legaia engine (this project)</h3><ol start="5">
       <li>First release: Rust workspace, format docs, Ghidra tooling.</li>
       <li>A walkable overworld, with collision and encounters.</li>
       <li>The disc patcher and randomizer, on the same parsers.</li>
       <li>The full-game ladder, retail corpus and soak harness.</li>
       <li>A run on pad input alone reaches the credits.</li>
       <li>Expansion packs, game modes and netplay.</li>
-    </ol>
+    </ol></div>
   </div>
-  <p><strong>Read plainly, the recomp wins on time to game by a wide margin.</strong> The Legaia branch's own commits span three days. They stand on three months of framework work, and that framework also carries <em>Tomba!</em> and <em>Mega Man X6</em>. The reimplementation needed about five months from its first release to reach the credits, and it is an engine for this one game. Nothing else on this page undoes that.</p>
+  <p><strong>Read plainly, the recomp wins on time to game by a wide margin.</strong> The Legaia recomp's own commits span three days. They stand on three months of framework work, and that framework also carries <em>Tomba!</em> and <em>Mega Man X6</em>. The reimplementation needed about five months from its first release to reach the credits, and it is an engine for this one game. Nothing else on this page undoes that.</p>
   <p>What the timeline also shows is the order value arrives. The reimplementation produced useful things long before it was a game: format docs, viewers and a disc patcher, each useful on its own before the engine could play the story. Those docs helped the other project too. The fork's README credits them, saying they "materially shortened the investigation and guided the runtime's overlay-cache fixes". And once the engine existed, what came next were things no translated binary offers cheaply, like expansion packs that name monsters and quests instead of addresses.</p>
 </section>
 
-<section class="doc-section" id="ledger" data-doc="what-comes-with-the-route-and-what-has-to-be-earned">
-  <h2>What comes with the route, and what has to be earned</h2>
-  <p>Every route has something it gets almost by definition and a long list it has to pay for.</p>
-  <p class="cs-key"><span class="cs-p cs-come">&#9679; Comes with the route</span> <span class="cs-p cs-earn">&#9680; Earned by work</span> <span class="cs-p cs-against">&#9675; Against the grain</span></p>
+<section class="doc-section" id="ledger" data-doc="what-each-route-gives-you-and-what-takes-extra-work">
+  <h2>What each route gives you, and what takes extra work</h2>
+  <p>Each route gives you some things simply by taking it. Most of the rest can be had with extra work, and a few things go against how the route works.</p>
+  <div class="cs-key"><div><span class="cs-p cs-come">&#9679; Built in</span> part of taking the route</div><div><span class="cs-p cs-earn">&#9680; Extra work</span> reachable, at a cost</div><div><span class="cs-p cs-against">&#9675; Poor fit</span> works against the route</div></div>
   <div class="table-wrap cs-ledger">
     <table>
       <thead><tr><th>You want</th><th>Decompilation</th><th>Static recompilation</th><th>Reimplementation</th></tr></thead>
       <tbody>
         <tr><th>The whole game running</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>All the code, plus a platform layer.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Comes</span>Once the runtime exists and the code is found.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Earned</span>The last thing to arrive.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>All the code, plus a platform layer.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>Once the runtime exists and the code is found.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Extra work</span>The last thing to arrive.</td></tr>
         <tr><th>Retail quirks and timing</th>
-          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Comes</span>In the logic; timing depends on the platform layer.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Comes</span>If the hardware model is right.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Earned</span>Found and measured one at a time.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Built in</span>In the logic; timing depends on the platform layer.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>If the hardware model is right.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Extra work</span>Found and measured one at a time.</td></tr>
         <tr><th>Assurance the code is right</th>
-          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Comes</span>When matching: a byte match per function.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Comes</span>Translation is mechanical. The runtime carries the risk.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Against</span>Measured over samples, never proved.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Built in</span>When matching: a byte match per function.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>Translation is mechanical. The runtime carries the risk.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>Measured over samples, never proved.</td></tr>
         <tr><th>Rules a person can read</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Naming and typing, after the match.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Against</span>Generated C. Machine state stays visible.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Comes</span>Written that way, tagged with the retail address.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Naming and typing, after the match.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>Generated C. Machine state stays visible.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Written that way, tagged with the retail address.</td></tr>
         <tr><th>New rendering</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Replace the draw path in source.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Well served at the draw-call level: PSXRecomp has widescreen and new backends.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Comes</span>The renderer is the engine's own.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Replace the draw path in source.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Well served at the draw-call level: PSXRecomp has widescreen and new backends.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The renderer is the engine's own.</td></tr>
         <tr><th>New hosts</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Port the platform layer.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Earned</span>The C is portable; the runtime is per host.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Comes</span>A design input. Here, a window and a browser tab.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Port the platform layer.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The C is portable; the runtime is per host.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>A design input. Here, a window and a browser tab.</td></tr>
         <tr><th>Modding by game concept</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Source edits, easier as names land.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Earned</span>Hooks. N64Recomp's are <a href="https://readonlymemo.com/n64-recompiled-interview-majoras-mask-emulation-native-pc-port/" target="_blank" rel="noopener">"almost as easy as directly modifying the decompilation"</a> when one exists.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Comes</span><a href="../formats/expansion-pack.html">TOML</a> naming monsters, maps and quests.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Source edits, easier as names land.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Hooks. N64Recomp's are <a href="https://readonlymemo.com/n64-recompiled-interview-majoras-mask-emulation-native-pc-port/" target="_blank" rel="noopener">"almost as easy as directly modifying the decompilation"</a> when one exists.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span><a href="../formats/expansion-pack.html">TOML</a> naming monsters, maps and quests.</td></tr>
         <tr><th>The next game on the console</th>
-          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Earned</span>The tools carry. The work does not.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Comes</span>The framework carries. A game adds config and fixes.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Against</span>The <a href="reusing-for-other-ps1-games.html">low layers and the method</a> carry. The engine does not.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The tools carry. The work does not.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>The framework carries. A game adds config and fixes.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>The <a href="reusing-for-other-ps1-games.html">low layers and the method</a> carry. The engine does not.</td></tr>
         <tr><th>No original code executing</th>
-          <td data-r="Decompilation"><span class="cs-p cs-against">&#9675; Against</span>The source is derived from it.</td>
-          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Against</span>It is the original, translated.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Comes</span>No MIPS executes.</td></tr>
+          <td data-r="Decompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>The source is derived from it.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>It is the original, translated.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>No MIPS executes.</td></tr>
       </tbody>
     </table>
   </div>
@@ -263,10 +263,10 @@
   <h2>What this case cannot show</h2>
   <ul class="bullets">
     <li><strong>It is one game</strong>, and a heavily data-driven one, which flatters this route.</li>
-    <li><strong>The two efforts are not equal in attention.</strong> The recomp's Legaia branch is days of work on a general framework. This repository has been about nothing else. Neither side has logged hours, so no labour comparison is possible.</li>
+    <li><strong>The two efforts are not equal in attention.</strong> The Legaia recomp is days of work on a general framework. This repository has been about nothing else. Neither side has logged hours, so no labour comparison is possible.</li>
     <li><strong>There is no third column.</strong> As far as this project knows there is no public decompilation of Legaia, so that route is argued from other games.</li>
     <li><strong>"Reaches the credits" is not "identical to retail".</strong> Parity is measured over what the corpus has sampled, and it <a href="retail-compare.html">is still being worked on</a>.</li>
-    <li><strong>A recomp's state moves.</strong> What is described here is the Legaia branch as last published, and the framework has continued since.</li>
+    <li><strong>A recomp's state moves.</strong> What is described here is the Legaia recomp as last published, and the framework has continued since.</li>
     <li><strong>The author has a side.</strong> This page is written by the project it argues for. The links are there so that you can check.</li>
   </ul>
 </section>
@@ -294,11 +294,12 @@
   figure.diagram .cs-dot circle { fill: var(--bg-raised); stroke: var(--dg-accent); stroke-width: 1.5; }
   figure.diagram .cs-dot text { fill: var(--text-bright); font-size: 12px; font-weight: 600; text-anchor: middle; }
   .cs-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2rem; margin: 0 0 1.2rem; font-size: 0.92rem; }
+  .cs-legend h3 { margin: 0 0 0.3rem; font-size: 0.92rem; }
   section.doc-section .cs-legend ol { margin: 0; padding-left: 1.8rem; line-height: 1.55; list-style: decimal outside; }
   section.doc-section .cs-legend li { display: list-item; padding-left: 0.2rem; margin: 0; }
   section.doc-section .cs-legend li::before { content: none; }
 
-  .cs-key { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0 0.8rem; }
+  .cs-key { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0.6rem 0 0.8rem; padding: 0; color: var(--text-muted); font-size: 0.86rem; }
   .cs-p { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid; font-family: var(--font-mono); font-size: 0.72rem; white-space: nowrap; }
   .cs-come { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
   .cs-earn { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
