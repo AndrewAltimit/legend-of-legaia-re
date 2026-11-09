@@ -11,6 +11,8 @@
 --                               (default 90; 0 = never press).
 --      LEGAIA_GATE_MAX_WAIT     vsyncs a beat may wait before the run stops
 --                               (default 1800).
+--      LEGAIA_GATE_REPULSE_MAX  extra pulses a waiting battle beat may add
+--                               (default 16; 0 = none).
 --
 -- The plan is text, one record a line:
 --   BEAT idx kind value length   a beat of `length` engine ticks closing on
@@ -66,6 +68,14 @@
 -- they answer. In battle a late beat holds no input, and the synthetic Cross
 -- rule applies to it as to an engaged beat.
 --
+-- A beat closing on an `act` or `flow` gate whose presses have run out, with the
+-- command flow on a byte that waits for input, repeats the beat's last press
+-- until the byte moves: a two-vsync pulse every REPULSE_PERIOD vsyncs, none for
+-- REPULSE_SETTLE vsyncs after the byte last moved (the ring ignores input that
+-- long on entry), at most LEGAIA_GATE_REPULSE_MAX to a beat. Each pulse is
+-- logged `synthetic_repulse` and counted as synthetic. The synthetic Cross waits
+-- until the pulses are spent.
+--
 -- Outputs: gate_beats.csv (one row a beat), gate_replay.csv (one row a vsync),
 -- gate_events.csv (every synthetic press and unexpected gate).
 
@@ -95,6 +105,12 @@ local SYNTH_PAGE_AFTER = 30
 local FIELD_MODE = 3
 local CROSS = probe.BTN.CROSS
 local SYNTH_PERIOD, SYNTH_HOLD = 30, 2
+local REPULSE_MAX = probe.getenv_num("LEGAIA_GATE_REPULSE_MAX", 16)
+local REPULSE_PERIOD, REPULSE_SETTLE = 8, 18
+-- ctx[+0x06] bytes that sit waiting for a press: the prompt, ring, escape, item,
+-- magic, arts, target, target confirm and attack-mode states.
+local INPUT_FLOW = { [0x1E] = true, [0x28] = true, [0x32] = true, [0x3C] = true,
+    [0x46] = true, [0x50] = true, [0x5A] = true, [0x64] = true, [0x78] = true }
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -140,6 +156,26 @@ if PLAN ~= "" then
     end
 end
 assert(#beats > 0, "gate replay: no beats in plan " .. PLAN)
+
+-- The bits newly down in `mask` given the word before it.
+local function rising(mask, before)
+    local r = 0
+    for bit = 0, 15 do
+        local f = 2 ^ bit
+        if math.floor(mask / f) % 2 == 1 and math.floor(before / f) % 2 == 0 then r = r + f end
+    end
+    return r
+end
+
+-- Each beat's last press: what a waiting battle beat repeats.
+for _, b in ipairs(beats) do
+    local before = 0
+    for _, row in ipairs(b.pad) do
+        local edge = rising(row[2], before)
+        if edge ~= 0 then b.press = edge end
+        before = row[2]
+    end
+end
 PCSX.log(string.format("[gate-replay] %d beats from %s", #beats, PLAN))
 
 local fbeats = assert(io.open(probe.out_path("gate_beats.csv"), "w"))
@@ -163,6 +199,7 @@ local door_hold = false
 local pager_prev, pages_seen = nil, 0
 local act_prev, act_counts = nil, {}
 local flow_prev, flow_counts = nil, {}
+local flow_moved_at = 0
 local held, done = {}, false
 
 local function press_dropped(b, from_i)
@@ -246,6 +283,25 @@ local function gate_status(b, s, el)
     return nil
 end
 
+-- A waiting battle beat's repeated press: the mask to hold this vsync (0 between
+-- pulses), or nil when the beat is not repeating one.
+local function repulse(b, s, el, wait)
+    local eligible = b.press and (b.kind == "flow" or b.kind == "act") and INPUT_FLOW[s.flow]
+    local pulses = b.pulses or 0
+    if not eligible or REPULSE_MAX <= 0 then return nil end
+    if b.pulse_at and el - b.pulse_at < SYNTH_HOLD then return b.press end
+    if pulses >= REPULSE_MAX then return nil end
+    if wait >= REPULSE_PERIOD and el - flow_moved_at >= REPULSE_SETTLE
+        and (b.pulse_at == nil or el - b.pulse_at >= REPULSE_PERIOD) then
+        b.pulses, b.pulse_at = pulses + 1, el
+        synth_count = synth_count + 1
+        event(el, b.idx, "synthetic_repulse",
+            string.format("wait=%d press=%04x flow=%02x", wait, b.press, s.flow))
+        return b.press
+    end
+    return 0
+end
+
 local function close_beat(el, s, status)
     local b = beats[cur]
     local waited = math.max(0, el - beat_start - b.len)
@@ -292,6 +348,7 @@ probe.run({
         act_prev = s.act
         if s.flow ~= -1 and s.flow ~= flow_prev then
             flow_counts[s.flow] = (flow_counts[s.flow] or 0) + 1
+            flow_moved_at = el
         end
         flow_prev = s.flow
 
@@ -349,8 +406,12 @@ probe.run({
                     mask = dpad(pad_mask)
                 end
             end
+            local pulse = repulse(b, s, el, wait)
+            if pulse ~= nil and pulse ~= 0 then
+                mask, synth = pulse, 1
+            end
             local after = s.pager == PAGE_WAIT and math.min(SYNTH_AFTER, SYNTH_PAGE_AFTER) or SYNTH_AFTER
-            if (s.engaged == 1 or s.battle == 1) and SYNTH_AFTER > 0 and wait >= after then
+            if pulse == nil and (s.engaged == 1 or s.battle == 1) and SYNTH_AFTER > 0 and wait >= after then
                 local phase = (wait - after) % SYNTH_PERIOD
                 if phase == 0 then
                     synth_count = synth_count + 1

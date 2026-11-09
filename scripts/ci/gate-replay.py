@@ -26,7 +26,7 @@ DPAD = 0x00F0
 AXES = ("+x", "-x", "+z", "-z")
 PAGE_WAIT = "19"
 ACT_GATES = ("0a",)
-FLOW_GATES = {"TurnPrompt": "1e"}
+FLOW_GATES = {"TurnPrompt": "1e", "CategoryMenu": "28", "ItemWindow": "3c", "CommitBegin": "6e"}
 LCG_A, LCG_C, LCG_MAX = 0x41C64E6D, 0x3039, 200_000
 FIELD_KV = re.compile(rb" (\w+)=(\S+)")
 
@@ -204,20 +204,28 @@ def seek_spot(rows, kind, value, t):
 
 def stretched_masks(rows, until, min_press):
     """The per-tick pad words, each button press held at least `min_press` ticks
-    (a press one tick long can fall between two of retail's game passes)."""
+    (a press one tick long can fall between two of retail's game passes) with a
+    released tick kept after every widened press, so a run of pulses stays
+    separate edges. A pulse that lands on that released tick is absorbed."""
     masks = [tick_int(r["pad"]) for r in rows[:until]]
     if min_press <= 1:
         return masks
-    out = masks[:]
+    out = [0] * len(masks)
     for bit in range(16):
         b = 1 << bit
-        for t, m in enumerate(masks):
-            if m & b and (t == 0 or not masks[t - 1] & b):
-                run = 1
-                while t + run < until and masks[t + run] & b:
-                    run += 1
-                for k in range(run, min(min_press, until - t)):
-                    out[t + k] |= b
+        t = 0
+        while t < len(masks):
+            if not masks[t] & b:
+                t += 1
+                continue
+            run = 1
+            while t + run < len(masks) and masks[t + run] & b:
+                run += 1
+            hold = max(run, min_press)
+            end = min(t + hold, len(masks))
+            for k in range(t, end):
+                out[k] |= b
+            t = end + (1 if hold > run else 0)
     return out
 
 
@@ -273,6 +281,28 @@ def read_csv(path):
         return list(csv.DictReader(f))
 
 
+def print_rows(rows):
+    widths = [max(len(r[c]) for r in rows) for c in range(len(rows[0]))]
+    for r in rows:
+        print("  ".join(v.rjust(w) for v, w in zip(r, widths)))
+
+
+def page_waits(beats, gates_csv):
+    """Per page gate: the tick each side reached the wait (pg=19 against the
+    pager state 0x19), the difference, and the part of it this page added."""
+    out = [["beat", "page", "E tick", "R vsync", "delta", "step"]]
+    for b in gates_csv:
+        i = int(b["beat"])
+        start, end, kind, value = beats[i]
+        if kind != "page" or b["status"] != "gate":
+            continue
+        vs, ve = int(b["vsync_start"]), int(b["vsync_end"])
+        out.append([str(i), value, str(end), str(ve), f"{ve - end:+d}", f"{ve - vs - (end - start):+d}"])
+    if len(out) > 1:
+        print("page waits:")
+        print_rows(out)
+
+
 def table(rows, beats, gates_csv, events_csv, retail_rows):
     by_vsync = {int(r["vsync"]): r for r in retail_rows}
     hdr = ["beat", "gate", "E", "R", "gap", "wait", "drop", "pos diff", "E rng", "R rng", "synth", "status"]
@@ -294,9 +324,7 @@ def table(rows, beats, gates_csv, events_csv, retail_rows):
         gate = f"{kind}={value}" if value != "-" else kind
         out.append([str(i), gate, str(el), str(ve - vs), f"{ve - vs - el:+d}", b["waited"],
                     b["dropped_presses"], diff, erng, rrng, b["synthetic"], b["status"]])
-    widths = [max(len(r[c]) for r in out) for c in range(len(hdr))]
-    for r in out:
-        print("  ".join(v.rjust(w) for v, w in zip(r, widths)))
+    print_rows(out)
     if events_csv:
         print("events (synthetic input and timeouts):")
         for e in events_csv:
@@ -313,6 +341,7 @@ def main():
     ap.add_argument("--iso", default=os.environ.get("LEGAIA_DISC_BIN"))
     ap.add_argument("--max-wait", type=int, default=1800, help="vsyncs a beat may wait")
     ap.add_argument("--synth-after", type=int, default=90, help="vsyncs of waiting before a synthetic Cross, 0 for none")
+    ap.add_argument("--repulse-max", type=int, default=16, help="extra pulses a waiting battle beat may add, 0 for none")
     ap.add_argument("--min-dwell", type=int, default=3, help="engaged runs shorter than this are not gates")
     ap.add_argument("--min-press", type=int, default=2, help="hold every press at least N ticks (1 = the log as written)")
     ap.add_argument("--no-waypoints", action="store_true", help="beat only on state gates, not the walk's turns")
@@ -331,7 +360,7 @@ def main():
         frames = int(until * 1.5) + a.max_wait * 2
         timeout = max(180, frames // 25)
         env = dict(os.environ, LEGAIA_GATE_PLAN=str(plan), LEGAIA_GATE_MAX_WAIT=str(a.max_wait),
-                   LEGAIA_GATE_SYNTH_AFTER=str(a.synth_after))
+                   LEGAIA_GATE_SYNTH_AFTER=str(a.synth_after), LEGAIA_GATE_REPULSE_MAX=str(a.repulse_max))
         subprocess.run(
             ["timeout", "--kill-after=5", str(timeout), "bash", str(REPO / "scripts/pcsx-redux/run_probe.sh"),
              "--fast", "--headless", "--iso", a.iso, "--scenario", a.scenario,
@@ -343,6 +372,7 @@ def main():
     retail_rows = read_csv(out / "gate_replay.csv")
     events = read_csv(out / "gate_events.csv")
     table(rows, beats, beat_rows, events, retail_rows)
+    page_waits(beats, beat_rows)
     if len(beat_rows) < len(beats):
         print(f"retail closed {len(beat_rows)} of {len(beats)} beats")
     return 0

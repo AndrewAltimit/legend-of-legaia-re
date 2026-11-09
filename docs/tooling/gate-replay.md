@@ -40,7 +40,7 @@ these changes between two ticks:
 | `warp` | player moved over 300 units (Manhattan) in one tick | the same, between two vsyncs |
 | `page=N` | the open box's window reaching state `0x19` (the digest's `pg=`) | `_DAT_801F2734` reaching `0x19`; the Nth since the last gate that was neither a page nor a waypoint |
 | `pos=X/Z` | a walk's turn: a d-pad change to another held direction, settled for 8 ticks, at least 96 units from the last turn | the player within 24 units of the spot (status `gate`), or past it (`passed`), or engaged first (`cut`) |
-| `flow=XX:N`, `act=XX:N` | the Nth entry into the round prompt `0x1E` (`World::battle.flow`) or the action start `0x0A` (`battle_ctx.action_state`) | the same bytes, `ctx[+0x06]` and `ctx[+0x07]` |
+| `flow=XX:N`, `act=XX:N` | the Nth entry into a command-flow state (`World::battle.flow`: the round prompt `0x1E`, the ring `0x28`, the item window `0x3C`, the commit `0x6E`) or the action start `0x0A` (`battle_ctx.action_state`) | the same bytes, `ctx[+0x06]` and `ctx[+0x07]` |
 
 The engaged, scene, warp, page and waypoint gates are not cut inside a battle, where
 the field player record says nothing, and an engaged run shorter than three ticks
@@ -64,8 +64,10 @@ starts where retail really is.
 
 ## Replaying a beat
 
-Each beat's pad rows are relative to its opening gate, and each press is held at least
-two ticks (`--min-press`). At the closing gate:
+Each beat's pad rows are relative to its opening gate. A press is held at least two ticks
+(`--min-press`) and a widened press keeps one released tick after it, so a run of pulses
+stays separate edges. The engine's one-on, one-off mash has no room for both: every second
+pulse lands on a released tick and is absorbed, leaving two on, two off. At the closing gate:
 
 - **Retail reaches it first.** The beat ends and its remaining rows are dropped; the
   `drop` column counts the Cross presses among them.
@@ -82,6 +84,14 @@ two ticks (`--min-press`). At the closing gate:
   prompt the replay's presses did not reach is the usual cause, so the probe gives a
   two-vsync Cross every 30 vsyncs until the gate comes. Each is a `synthetic_cross`
   row and counted in `synth`: a finding, not a repair.
+- **A battle press did not take.** A beat closing on a `flow` or `act` gate, whose rows
+  have run out while the command flow sits on a byte that waits for input (`0x1E`, `0x28`,
+  `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A`, `0x64`, `0x78`), repeats its last logged press
+  until the byte moves: a two-vsync pulse every 8 vsyncs, none within 18 vsyncs of the
+  byte's last move (both sides ignore the ring for about that long after entering it).
+  Each pulse is one `synthetic_repulse` row, with the press and the byte it found, and one
+  count in `synth`. A beat adds at most `--repulse-max` pulses (16 by default, 0 for none);
+  once they are spent the synthetic Cross above applies, then the timeout below.
 - **The gate never comes.** After `--max-wait` vsyncs (1800 by default) the run stops with
   status `timeout`, and everything after it is unmeasured.
 
@@ -96,6 +106,11 @@ two ticks (`--min-press`). At the closing gate:
 
 A beat with a small gap and a matching position says the two agree there whatever came
 before it; that is what the resynchronisation buys. A gap in one beat is that beat's own.
+
+A second table, `page waits`, has one row per page gate: the tick the engine's `pg=` reached
+`0x19`, the vsync retail's pager state `_DAT_801F2734` did, their difference (`delta`, which
+carries the drift of the beats before it) and the part this page added (`step`, the beat's
+own `gap`).
 
 ## What the town01 run shows
 
@@ -114,11 +129,19 @@ before it; that is what the resynchronisation buys. A gap in one beat is that be
   six logged Cross pulses until one arrives; with two-tick presses those page turns
   close on the logged presses and the prompt moves on a logged Cross 20 vsyncs in.
 
-The replay stops being meaningful at the second round's command ring. Up in the ring,
-which opens the item window on the engine, does not reach it on retail: retail goes
-from `0x28` to the attack-mode prompt `0x78`, and a Cross alone then cycles the flow
-between the two without reaching the commit, so the rest of the fight needs a menu
-route rather than a stream of presses.
+- Up in the ring opens the item window on retail as on the engine: in `0x28` Up stores
+  `0x3C` (`0x801D1364`), and only Left or confirm reach the attack-mode prompt `0x78`
+  (`0x801D152C..0x801D1608`). From `0x78`, cancel goes back to `0x28`, Right to the arts
+  entry `0x50`, and Left or confirm to the target cursor `0x5A`.
+- Both sides ignore the ring for about 16 ticks after entering it. A mash merged into one
+  solid hold gives retail a single edge, which lands before `0x28` shows and is lost; that
+  is why a widened press keeps its released tick.
+
+With the ring gated, the second and third rounds reach their commits. The replay stops
+being meaningful in the fourth round, whose logged route goes through the arts entry. Its
+Right lands one vsync after retail shows `0x78`, the flow never reaches `0x50`, and Cross
+then alternates the flow between `0x78` and `0x5A` without reaching the commit, until the
+beat times out.
 
 See also [`full-game-ladder.md`](full-game-ladder.md), [`walk-film.md`](walk-film.md),
 [`pcsx-redux-automation.md`](pcsx-redux-automation.md).
