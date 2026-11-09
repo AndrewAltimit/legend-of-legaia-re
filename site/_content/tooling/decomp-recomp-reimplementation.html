@@ -52,42 +52,44 @@
 
 <section class="doc-section" id="timeline" data-doc="one-game-two-ports-the-same-months">
   <h2>One game, two ports, the same months</h2>
-  <p>Both projects started in spring 2026, within weeks of each other, and both are still going. Three threads run through them: getting the game playable from start to finish, matching the original, and letting people change it. Dates come from each project's commit log.</p>
+  <p>PSXRecomp and this project both started in spring 2026, within weeks of each other, and the Legaia recomp builds on PSXRecomp. All three are still going. Three threads run through them: getting the game playable from start to finish, matching the original, and letting people change it. Dates come from each project's commit log.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 1000 314" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three shared threads: playing the game, fidelity and modding. PSXRecomp and the Legaia recomp, and the Legaia engine, each run a track through all three threads. Numbered points are listed below the figure.">
-      <path d="M186 13 H214" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="224" y="17" style="font-size:12.5px">PSXRecomp and the Legaia recomp</text>
-      <path d="M520 13 H548" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="558" y="17" style="font-size:12.5px">The Legaia engine (this project)</text>
-      <g class="dg-edge-label" text-anchor="middle" style="font-size:12px"><text x="150" y="42">Apr</text><text x="259" y="42">May</text><text x="372" y="42">Jun</text><text x="481" y="42">Jul</text><text x="594" y="42">Aug</text><text x="707" y="42">Sep</text><text x="816" y="42">Oct</text><text x="929" y="42">Nov</text></g>
-      <rect x="4" y="58" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="92" style="font-size:13px">Playing the game</text><text class="dg-sub dg-start" x="14" y="109">start to finish</text><rect x="4" y="144" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="178" style="font-size:13px">Fidelity</text><text class="dg-sub dg-start" x="14" y="195">matching retail</text><rect x="4" y="230" width="992" height="76" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="264" style="font-size:13px">Modding</text><text class="dg-sub dg-start" x="14" y="281">changing the game</text>
-      <g style="stroke:var(--border);stroke-width:1"><line x1="150" y1="50" x2="150" y2="306"/><line x1="259" y1="50" x2="259" y2="306"/><line x1="372" y1="50" x2="372" y2="306"/><line x1="481" y1="50" x2="481" y2="306"/><line x1="594" y1="50" x2="594" y2="306"/><line x1="707" y1="50" x2="707" y2="306"/><line x1="816" y1="50" x2="816" y2="306"/><line x1="929" y1="50" x2="929" y2="306"/></g>
-      <path d="M186 82 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 112 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 168 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 198 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 254 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 284 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/>
-      <g class="cs-dot cs-dot-r"><circle cx="317" cy="82" r="11"/><text x="317" y="86">1</text><circle cx="540" cy="82" r="11"/><text x="540" y="86">2</text><circle cx="302" cy="168" r="11"/><text x="302" y="172">5</text><circle cx="540" cy="168" r="11"/><text x="540" y="172">6</text><circle cx="416" cy="254" r="11"/><text x="416" y="258">9</text><circle cx="867" cy="254" r="11"/><text x="867" y="258">10</text></g>
-      <g class="cs-dot"><circle cx="339" cy="112" r="11"/><text x="339" y="116">3</text><circle cx="874" cy="112" r="11"/><text x="874" y="116">4</text><circle cx="335" cy="198" r="11"/><text x="335" y="202">7</text><circle cx="809" cy="198" r="11"/><text x="809" y="202">8</text><circle cx="368" cy="284" r="11"/><text x="368" y="288">11</text><circle cx="525" cy="284" r="11"/><text x="525" y="288">12</text><circle cx="922" cy="284" r="11"/><text x="922" y="288">13</text></g>
+    <svg viewBox="0 0 1000 376" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three shared threads: playing the game, fidelity and modding. The PSXRecomp framework starts in April, the Legaia engine in May and the Legaia recomp, which builds on PSXRecomp, in July. Each has a line through all three threads. Numbered points are listed below the figure.">
+      <path d="M150 15 H178" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="188" y="19" style="font-size:12.5px">PSXRecomp (framework)</text>
+      <path d="M390 15 H418" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="428" y="19" style="font-size:12.5px">Legaia recomp (built on PSXRecomp)</text>
+      <path d="M700 15 H728" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="738" y="19" style="font-size:12.5px">Legaia engine (this project)</text>
+      <g class="dg-edge-label" text-anchor="middle" style="font-size:12px"><text x="150" y="46">Apr</text><text x="259" y="46">May</text><text x="372" y="46">Jun</text><text x="481" y="46">Jul</text><text x="594" y="46">Aug</text><text x="707" y="46">Sep</text><text x="816" y="46">Oct</text><text x="929" y="46">Nov</text></g>
+      <rect x="4" y="60" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="104" style="font-size:13px">Playing the game</text><text class="dg-sub dg-start" x="14" y="121">start to finish</text><rect x="4" y="164" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="208" style="font-size:13px">Fidelity</text><text class="dg-sub dg-start" x="14" y="225">matching retail</text><rect x="4" y="268" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="312" style="font-size:13px">Modding</text><text class="dg-sub dg-start" x="14" y="329">changing the game</text>
+      <g style="stroke:var(--border);stroke-width:1"><line x1="150" y1="54" x2="150" y2="368"/><line x1="259" y1="54" x2="259" y2="368"/><line x1="372" y1="54" x2="372" y2="368"/><line x1="481" y1="54" x2="481" y2="368"/><line x1="594" y1="54" x2="594" y2="368"/><line x1="707" y1="54" x2="707" y2="368"/><line x1="816" y1="54" x2="816" y2="368"/><line x1="929" y1="54" x2="929" y2="368"/></g>
+      <path d="M186 80 H985" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 108 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 136 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 184 H985" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 212 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 240 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 288 H985" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 316 H985" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 344 H985" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/>
+      <g class="cs-dot cs-dot-f"><circle cx="317" cy="80" r="11"/><text x="317" y="84">1</text><circle cx="302" cy="184" r="11"/><text x="302" y="188">5</text><circle cx="416" cy="288" r="11"/><text x="416" y="292">9</text></g>
+      <g class="cs-dot cs-dot-r"><circle cx="540" cy="108" r="11"/><text x="540" y="112">2</text><circle cx="540" cy="212" r="11"/><text x="540" y="216">6</text><circle cx="867" cy="316" r="11"/><text x="867" y="320">10</text></g>
+      <g class="cs-dot"><circle cx="339" cy="136" r="11"/><text x="339" y="140">3</text><circle cx="874" cy="136" r="11"/><text x="874" y="140">4</text><circle cx="335" cy="240" r="11"/><text x="335" y="244">7</text><circle cx="809" cy="240" r="11"/><text x="809" y="244">8</text><circle cx="368" cy="344" r="11"/><text x="368" y="348">11</text><circle cx="525" cy="344" r="11"/><text x="525" y="348">12</text><circle cx="922" cy="344" r="11"/><text x="922" y="348">13</text></g>
     </svg>
-    <figcaption>Both tracks continue past the right edge. This repository's history opens with a first release, so its work starts somewhat before May.</figcaption>
+    <figcaption>All three continue past the right edge. The Legaia recomp's line starts at its first published commits, and this repository's history opens with a first release, so its work starts somewhat before May.</figcaption>
   </figure>
   <div class="cs-legend">
     <div><h3>Playing the game</h3><ol start="1">
-      <li><span class="cs-who cs-who-r">Recomp</span> <em>Tomba!</em> reaches gameplay on the framework.</li>
-      <li><span class="cs-who cs-who-r">Recomp</span> Legaia runs field, battles and summons.</li>
-      <li><span class="cs-who">Engine</span> A walkable overworld, with collision and encounters.</li>
-      <li><span class="cs-who">Engine</span> A run on pad input alone reaches the credits.</li>
+      <li><span class="cs-who cs-who-f">PSXRecomp</span> <em>Tomba!</em> reaches gameplay on the framework.</li>
+      <li><span class="cs-who cs-who-r">Legaia recomp</span> Legaia runs field, battles and summons.</li>
+      <li><span class="cs-who">Legaia engine</span> A walkable overworld, with collision and encounters.</li>
+      <li><span class="cs-who">Legaia engine</span> A run on pad input alone reaches the credits.</li>
     </ol></div>
     <div><h3>Fidelity</h3><ol start="5">
-      <li><span class="cs-who cs-who-r">Recomp</span> Hardware accuracy: SPU envelopes, vblank pacing on guest cycles.</li>
-      <li><span class="cs-who cs-who-r">Recomp</span> Legaia's CD and XA sequencing in battle.</li>
-      <li><span class="cs-who">Engine</span> Audio oracles: PCM parity and bit-exact XA.</li>
-      <li><span class="cs-who">Engine</span> The full-game ladder, retail corpus and soak harness.</li>
+      <li><span class="cs-who cs-who-f">PSXRecomp</span> Hardware accuracy: SPU envelopes, vblank pacing on guest cycles.</li>
+      <li><span class="cs-who cs-who-r">Legaia recomp</span> Legaia's CD and XA sequencing in battle.</li>
+      <li><span class="cs-who">Legaia engine</span> Audio oracles: PCM parity and bit-exact XA.</li>
+      <li><span class="cs-who">Legaia engine</span> The full-game ladder, retail corpus and soak harness.</li>
     </ol></div>
     <div><h3>Modding</h3><ol start="9">
-      <li><span class="cs-who cs-who-r">Recomp</span> Widescreen and new renderer backends, framework-wide.</li>
-      <li><span class="cs-who cs-who-r">Recomp</span> A modding SDK, in development since October.</li>
-      <li><span class="cs-who">Engine</span> The disc patcher and randomizer, for the retail game.</li>
-      <li><span class="cs-who">Engine</span> Language packs on the same patcher.</li>
-      <li><span class="cs-who">Engine</span> Expansion packs, game modes and netplay.</li>
+      <li><span class="cs-who cs-who-f">PSXRecomp</span> Widescreen and new renderer backends, framework-wide.</li>
+      <li><span class="cs-who cs-who-r">Legaia recomp</span> A modding SDK, in development since October.</li>
+      <li><span class="cs-who">Legaia engine</span> The disc patcher and randomizer, for the retail game.</li>
+      <li><span class="cs-who">Legaia engine</span> Language packs on the same patcher.</li>
+      <li><span class="cs-who">Legaia engine</span> Expansion packs, game modes and netplay.</li>
     </ol></div>
   </div>
-  <p><strong>The two projects come at the same goals in different orders.</strong> A recomp starts with the original's own code, so retail behaviour is there from the first frame and the work goes into making the hardware model right. That is the quickest way to play a game as it was, and the framework behind it already carries <em>Tomba!</em> and <em>Mega Man X6</em> as well. The engine started with nothing running, and built up both the playthrough and its fidelity one mechanism at a time against retail captures.</p>
+  <p><strong>The recomp and the engine come at the same goals in different orders.</strong> A recomp starts with the original's own code, so retail behaviour is there from the first frame and the work goes into making the hardware model right. That is the quickest way to play a game as it was, and the framework behind it already carries <em>Tomba!</em> and <em>Mega Man X6</em> as well. The engine started with nothing running, and built up both the playthrough and its fidelity one mechanism at a time against retail captures.</p>
   <p>Modding has been a thread of its own on both sides, and the kinds of mod differ. Disc patches like the randomizer change the retail game's own bytes, so they arrived early, before the engine could play the story. Language packs followed on the same tooling. Expansion packs came later because they need the engine: they name monsters, maps and quests rather than addresses.</p>
   <p>The two have also helped each other throughout. The recomp's README credits this project's docs, saying they "materially shortened the investigation and guided the runtime's overlay-cache fixes", and <a href="recomp-differential.html">the recomp is one of this project's best references</a> for what retail actually does.</p>
 </section>
@@ -284,6 +286,8 @@
   section.doc-section .cs-legend li { display: list-item; padding-left: 0.1rem; margin: 0 0 0.45rem; }
   .cs-who { display: block; width: fit-content; font-family: var(--font-mono); font-size: 0.68rem; color: var(--dg-accent); }
   .cs-who-r { color: var(--warn); }
+  .cs-who-f { color: var(--prov); }
+  figure.diagram .cs-dot-f circle { stroke: var(--prov); }
   figure.diagram .cs-dot-r circle { stroke: var(--warn); }
   section.doc-section .cs-legend li::before { content: none; }
 
