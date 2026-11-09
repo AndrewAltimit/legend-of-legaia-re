@@ -783,3 +783,35 @@ fn the_play_clock_snapshot_is_the_records_word() {
     w.step_inline_dialogue(false, false, false);
     assert_eq!(w.clock.records_play_seconds, 4242);
 }
+
+/// The record behind a walk touch tests the held d-pad in its first slice
+/// (`town01` P1 flat 101: `42 01 00 05 00`, Down, hops off the ledge). Retail
+/// runs that slice in the pass the player's step posted the touch, so it reads
+/// that pass's held word; the port's first slice is the next tick, by when
+/// the pad can have changed.
+#[test]
+fn a_touch_records_first_slice_reads_the_pad_of_the_touch() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let bc = |_: ()| {
+        vec![
+            0x42, 0x01, 0x00, 0x05, 0x00, 0x4A, 0xFF, 0x7F, 0x4A, 0xFF, 0x7F,
+        ]
+    };
+    let run = |touch: Option<u16>| {
+        let mut w = World::new();
+        let mut tl = CutsceneTimeline::new(bc(()), 0);
+        tl.touch_pad = touch;
+        w.cutscene.timeline = Some(tl);
+        w.input.set_pad(0x4000);
+        w.clock.display_frame_step = 1;
+        w.step_spawned_record_contexts();
+        let pc = w.cutscene.timeline.as_ref().map(|t| t.pc);
+        (pc, w.field_vm.slice_pad)
+    };
+    assert_eq!(
+        run(Some(0x40)),
+        (Some(8), None),
+        "Down held on the touch tick: the jump runs on to the wait, the override is spent"
+    );
+    assert_eq!(run(None).0, Some(5), "no touch: the tick's own pad, Cross");
+}

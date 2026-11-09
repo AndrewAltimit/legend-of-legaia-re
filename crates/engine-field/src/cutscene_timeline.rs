@@ -247,6 +247,15 @@ pub struct CutsceneTimeline {
     /// parked tick.
     // REF: FUN_8003C83C
     pub player_move_frames: u32,
+    /// The pad word on the tick the player's step posted the touch that
+    /// installed this record. The first slice runs in the same retail pass as
+    /// the touch (the player's tick posts it, the placement's tick runs the
+    /// context later in the walk), so it reads that pass's held word; the
+    /// port's first slice is a tick later.
+    pub touch_pad: Option<u16>,
+    /// The player carries the halt bit a `C3 F8` arc raised: extended ops
+    /// naming it wait for the landing.
+    pub player_arc_halted: bool,
     /// `Some(step_past_width)` while the timeline is PARKED at a
     /// **player-channel arc jump** (`C3 F8 <sub> …` = op `0x43`
     /// sub-0/1/A/B against `0xF8`). Retail raises the caller's halt bit and
@@ -563,6 +572,8 @@ impl CutsceneTimeline {
             visited,
             channel_wait: None,
             player_move_frames: 0,
+            touch_pad: None,
+            player_arc_halted: false,
             player_wait: None,
             restore_hidden_on_complete: false,
             walk_wait: None,

@@ -28,6 +28,7 @@ impl World {
         // record's `44`), and the walk reaches the new actor in that frame.
         let first_slice = !tl.stepped;
         tl.stepped = true;
+        self.field_vm.slice_pad = tl.touch_pad.take().filter(|_| first_slice);
         // A spawned record's actor steps from the actor-list walk, once per
         // game frame (`FrameClock::script_slice_due`): between two game
         // frames its ops do not run and no park it sits in resumes, and the
@@ -1212,6 +1213,20 @@ impl World {
                         tl.pc = pc + 4;
                         continue;
                     }
+                    if tl.player_arc_halted {
+                        // The dispatcher prelude parks an extended op on the
+                        // halted player until the arc's watcher releases it
+                        // on landing; `B2 F8 0A` clears the bit itself.
+                        // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+                        if !host.world.player_script_arc_live()
+                            || (op == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
+                        {
+                            tl.player_arc_halted = false;
+                        } else {
+                            tl.frames = tl.frames.saturating_sub(1);
+                            break;
+                        }
+                    }
                     // End-latch spin on the player (`AD F8 08`): park while
                     // the poked scene-bank clip is still playing.
                     if op == 0x2D && tl.bytecode.get(pc + 2) == Some(&8) && tl.player_clip_ticks > 0
@@ -1253,9 +1268,19 @@ impl World {
                                 None,
                             )
                         {
+                            // The arm raises the halt bit on the player and
+                            // on the caller, and the context keeps stepping:
+                            // only an extended op that names the halted
+                            // player waits (the prelude below). `town01`
+                            // P2[12]'s `4A 18 00` counts under the flight.
                             tl.player_move_frames = 0;
-                            tl.player_wait = Some(width);
-                            break;
+                            tl.player_arc_halted = true;
+                            tl.ctx.wait_accum = 0;
+                            if pc < tl.visited.len() {
+                                tl.visited[pc] = true;
+                            }
+                            tl.pc = pc + width;
+                            continue;
                         }
                         if tl.player_move_frames == 0 {
                             tl.pc = pc + width;

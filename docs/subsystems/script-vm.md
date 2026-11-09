@@ -355,6 +355,10 @@ Three consequences:
   the step on the vsyncs that are game frames and nothing between them (see
   [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
 
+### A touch's first slice
+
+The player's tick posts a touch and the touched record's context runs later in the same walk of the actor lists, so its first slice reads the pass's own held word `_DAT_8007B850`. `town01` P2[12] tests it first (`42 01 00 05 00`, Down, and hops off the ledge). The port runs that slice a tick after the touch, when the pad can have changed, so the record carries the touch tick's pad (`CutsceneTimeline::touch_pad`) into its first slice.
+
 ### Engagement and the system script
 
 A context runs only while its `+0x10 & 0x100` (engaged) bit is up: the
@@ -1299,6 +1303,8 @@ if (((ctx[+0x94] != 0) || ctx == _DAT_8007C364) &&
 
 If `pbVar47[1] == 0 && pbVar47[2] == 0`: use ctx's current position (read `+0x14/+0x16/+0x18`); store negated-Y at `ctx[+0x8E]`. Else: decode target XZ from operand bytes via `(b & 0x7F) * 0x80 + 0x40` (or `+0x80` if high bit set); call `func_0x80019278(ctx)` for collision lookup of Y.
 
+The halt bits do not stop the context that issued the op. The arm exits past the op (`0x801DF5B8`) and the record keeps stepping: only an **extended** op naming the halted actor waits, through the dispatcher prelude (`0x801DE90C..0x801DE944`), and `B2 F8 0A` clears the bit itself. `town01` P2[12] runs `C3 F8 01 ..` and then `4A 18 00` the same game frame, its wait counting while the player flies (a breakpoint on the VM slice entry, capture).
+
 None of the operand halfwords is a resume PC. All three go through the
 unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the arc-hop
 spawner `FUN_801D25EC`:
@@ -1337,7 +1343,7 @@ All 492 are extended: 323 arc the player (`0xF8`), the rest an NPC
 channel, and all but six sit in partition-2 cutscene records.
 
 The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
-decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
+decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` arm
 and `FieldActorHost::spawn_arc_jump` (NPC channels) both reach
 `World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
 the clip and the watcher. An NPC's height lives in

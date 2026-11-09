@@ -42,7 +42,10 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     /// `town01` P2[12..14]) are mode-1 tests against it.
     fn held_pad(&self) -> u32 {
         u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
-            self.world.input.pad(),
+            self.world
+                .field_vm
+                .slice_pad
+                .unwrap_or_else(|| self.world.input.pad()),
         ))
     }
 

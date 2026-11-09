@@ -139,6 +139,10 @@ pub struct FieldVmState {
     /// the retail run settles on the op target) from the live channel
     /// stepper's own-script op (glide).
     pub in_spawned_record_slice: bool,
+    /// The held pad a record's first slice reads
+    /// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::touch_pad`]),
+    /// in place of the tick's.
+    pub slice_pad: Option<u16>,
     /// Actors another spawned-record context holds in an in-place park
     /// while the one being stepped runs: a walk-to-tile, rotate or player
     /// glide leg (`None` = the player, `Some(slot)` = an NPC placement).
@@ -274,6 +278,7 @@ impl FieldVmState {
             pending_retire_ids: Vec::new(),
             party_mesh_swap_pending: false,
             in_spawned_record_slice: false,
+            slice_pad: None,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),

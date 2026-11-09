@@ -762,6 +762,7 @@ impl World {
         *glide = (*glide - 1).max(0);
         self.step_cutscene_timeline();
         self.step_helper_contexts();
+        self.field_vm.slice_pad = None;
     }
 
     /// Record a context the anti-hang cap ended
