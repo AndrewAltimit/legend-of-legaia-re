@@ -263,7 +263,9 @@ impl World {
                             id.pc,
                         )
                         .is_some();
-                    if on_self || re_acquire {
+                    // `33 0A` spins on the bit the leg holds (`0x801DEE2C..`).
+                    let spins = b == 0x33 && id.bytecode.get(id.pc + 1) == Some(&0x0A);
+                    if on_self || re_acquire || spins {
                         break;
                     }
                     if b == 0x4A {
