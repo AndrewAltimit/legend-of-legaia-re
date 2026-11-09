@@ -539,8 +539,16 @@ impl World {
             // runs its 24 draws once per list walk, so it steps on the game
             // tick (`0x801D6058` handler, one call per pass). Run every
             // vsync, `vell` drew twice retail's `rand()` count at 30 fps.
-            // Self-gates to a no-op on an empty channel.
-            if actor_tick_fired {
+            // Self-gates to a no-op on an empty channel. The intro's init
+            // rebuilds the actor lists (`FUN_801CE8CC` -> `FUN_8001DCF8` ->
+            // `FUN_8001E1B4`, sentinels at `0x8001E338..0x8001E364`), so the
+            // emitter's node is gone for the whole transition.
+            // REF: FUN_801CE8CC, FUN_8001E1B4
+            let intro_rebuilt_lists = matches!(
+                self.encounters.session.as_ref().map(|s| s.phase()),
+                Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
+            );
+            if actor_tick_fired && !intro_rebuilt_lists {
                 let mut rng = crate::world::WorldRng::new(self.rng_state);
                 self.tick_cutscene_elements(delta, || rng.step());
                 self.rng_state = rng.state();

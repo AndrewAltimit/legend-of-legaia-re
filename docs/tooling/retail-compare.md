@@ -1185,8 +1185,9 @@ draws it takes.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition
-  (`EncounterState::rng_hold`): the field's NPC and ambient programs keep
-  drawing until the fight is in battle mode.
+  (`EncounterState::rng_hold`): the field's NPC programs keep drawing until the
+  fight is in battle mode. The hold is applied at the head of a tick, so the
+  draws of the tick that opens the fight still reach the fight's stream.
 - A capture of something a draw decides is still one realisation of the stream.
   The seeds in `BATTLE_RNG_SEEDS` are tried in order, and the first under which
   the fight is still on, its opening reached a prompt, and the drive or replayed

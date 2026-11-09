@@ -675,6 +675,12 @@ per game tick (a `vell` retail breakpoint on the wrapper: `72` draws at `801D61C
 `801D61E8` and `801D6200` per two-vsync pass), not per vsync. The port steps it on
 the game tick alone; the frame-scaled timers beside it keep the frame step.
 
+The emitter does not outlive the field's game mode. The battle intro's init
+`FUN_801CE8CC` calls the mode initialiser `FUN_8001DCF8`, whose `FUN_8001E1B4`
+rebuilds every actor list (`0x8001E324..0x8001E364`, skipped only for a mode `2`
+re-entry), so no emitter pass and no emitter draw happens during the transition.
+The port holds the emitter for the session's `Transition` phase.
+
 The scene arm takes twenty-four independent draws per pass, each with a one
 in sixteen chance of bursting `(rand & 3) + 1` particles at one point sampled
 inside the camera's visible-tile span `DAT_1F8003E8..EB`, centred on the
