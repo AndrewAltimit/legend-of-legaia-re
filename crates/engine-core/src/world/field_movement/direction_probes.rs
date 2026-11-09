@@ -356,7 +356,7 @@ impl World {
     ///
     /// PORT: FUN_801CF754 (the `flags & 3` filter), FUN_801CFC40 (the moving arm)
     /// REF: FUN_8003A1E4, FUN_801D79E8
-    pub(crate) fn field_moving_actor_centres(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+    pub fn field_moving_actor_centres(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let channels = self.field_vm.channels.iter().filter(|c| !c.object_bind);
         let placed = channels.clone().filter_map(move |c| {

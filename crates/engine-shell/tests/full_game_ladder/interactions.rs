@@ -305,6 +305,18 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                 None => break,
             }
         };
+        // A side inside a wall is not a side at all, and the walk toward one
+        // presses straight at it once the route runs out: `cave01` P1[2],
+        // Terra at (9, 89) with the wall row (9, 90) behind her. The press
+        // slides down her west flank into a pocket whose way back her body
+        // closes - the probes ahead of a step south clear her box from a row
+        // where the probes ahead of a step north do not.
+        if attempt > 0 && session.host.world.mode == SceneMode::Field {
+            let (cx, cz) = tile_center(side);
+            if session.host.world.field_tile_is_wall(cx, cz) {
+                continue;
+            }
+        }
         // A side off the authored floor is not somewhere a player stands to
         // talk. Retail's locomotion reads only the wall bits, so the black
         // between a town's interior cutaways is open ground: `geremi`

@@ -330,7 +330,12 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
     let mut bad = Vec::new();
     // A waypoint must be a scene the disc graph knows.
     for m in &spine {
-        for v in m.via.iter().filter(|v| !graph.edges.contains_key(*v)) {
+        for v in m
+            .via
+            .iter()
+            .chain(m.pad_via.iter().flatten())
+            .filter(|v| !graph.edges.contains_key(*v))
+        {
             bad.push(format!("{}: via scene {v} is not in the disc graph", m.id));
         }
     }
