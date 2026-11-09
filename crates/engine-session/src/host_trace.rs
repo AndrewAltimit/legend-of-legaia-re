@@ -497,6 +497,13 @@ pub fn emit_tick_digest<S: AudioSink>(session: &BootSession<S>) {
         ),
         pager.map_or_else(|| "-".to_string(), |p| format!("{p:02x}")),
     ));
+    // The battle clock's frame step (`DAT_1F800393`'s twin).
+    let (parts, ghosts) = world.battle_frame_load();
+    line.push_str(&format!(
+        " fs={} fl={parts},{ghosts} xa={}",
+        world.battle_frame_step(),
+        world.audio.battle_xa_busy_frames
+    ));
     if let Some(cam) = world.battle.camera.as_ref() {
         let p = cam.framing_pose();
         line.push_str(&format!(

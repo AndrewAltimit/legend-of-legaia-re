@@ -1176,7 +1176,7 @@ impl PlayWindowApp {
         // past it: the module countdown's gate can open a pass late
         // (`battle_nilboa_neo_grude_power_up_mid_cast`, the gate's pass a
         // pass past the RAM's parts). A harness seat.
-        let pass = u64::from(self.session.host.world.battle.frame_clock.step.max(1));
+        let pass = self.session.host.world.battle.frame_clock.span();
         // The state's first pass still draws the state before it (the pass
         // that flipped the byte draws its old frame), so a retake that lands
         // on that pass has left the state; such a capture keeps the gate's

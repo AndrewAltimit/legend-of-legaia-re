@@ -174,6 +174,21 @@ pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u
     }
 }
 
+/// What a frame costs while the CD drive streams a battle CD-XA clip: the
+/// clip's sector interrupts run through the CD response dispatcher
+/// `FUN_8005DAB0` (`0x8005DAEC`, sampled across the frame on a gate-replay of
+/// the town01 fight) on the same CPU as the frame, and the ring's entry reads
+/// its clamp (`0x2BC`) for the whole read span (`1063` raw hblanks on an item
+/// use's clip, an arts swing's about `1200`, a Spirit's `1411`..`1660`). One
+/// emulated machine's measurement, like the table above.
+pub const XA_STREAM_FRAME_COST: u16 = 1063;
+
+/// The overrun of a frame the XA stream loads: the frame's raw cost past its
+/// step-`4` span, in vsyncs. `1` for the item's and art's `1063`..`1200`
+/// (`5`-vsync passes on the capture), which an item use's passes read
+/// exactly; a Spirit's run longer (`6` and `7`), and this is a floor there.
+pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
+
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
 /// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
 /// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two
@@ -222,8 +237,13 @@ pub const fn steady_battle_frame_step(party_count: u8) -> u8 {
 /// frame on the tick it is made and counts from there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleFrameClock {
-    /// Vsyncs a battle frame spans.
+    /// `DAT_1F800393`, the step a frame's counters and clips advance by.
     pub step: u8,
+    /// Vsyncs a frame runs past [`Self::step`]: an overrun. Retail's frame
+    /// reads its step from the ring and spans what its work costs, so a
+    /// frame the ring clamps at step `4` runs on to the next vsync after
+    /// its cost.
+    pub span_extra: u8,
     /// The display tick the current step took effect on.
     origin_tick: u64,
     /// The battle frame id at [`Self::origin_tick`].
@@ -234,6 +254,7 @@ impl Default for BattleFrameClock {
     fn default() -> Self {
         Self {
             step: DEFAULT_BATTLE_FRAME_STEP,
+            span_extra: 0,
             origin_tick: 0,
             origin_frame: 0,
         }
@@ -243,7 +264,27 @@ impl Default for BattleFrameClock {
 impl BattleFrameClock {
     /// The battle frame display tick `tick` falls in.
     pub fn frame_of(&self, tick: u64) -> u64 {
-        self.origin_frame + tick.saturating_sub(self.origin_tick) / u64::from(self.step.max(1))
+        self.origin_frame + tick.saturating_sub(self.origin_tick) / self.span()
+    }
+
+    /// The vsyncs one frame spans: the step, plus any overrun.
+    pub fn span(&self) -> u64 {
+        u64::from(self.step.max(1)) + u64::from(self.span_extra)
+    }
+
+    /// Run the frame `tick` opens with an overrun of `extra` vsyncs,
+    /// keeping its id and step.
+    pub fn retime_span(&mut self, tick: u64, extra: u8) {
+        if extra == self.span_extra {
+            return;
+        }
+        let id = self.frame_of(tick);
+        *self = Self {
+            step: self.step,
+            span_extra: extra,
+            origin_tick: tick,
+            origin_frame: id,
+        };
     }
 
     /// Re-time the frame `tick` opens to `step` vsyncs, keeping its id: the
@@ -261,6 +302,7 @@ impl BattleFrameClock {
         let id = self.frame_of(tick);
         *self = Self {
             step,
+            span_extra: self.span_extra,
             origin_tick: tick,
             origin_frame: id,
         };
@@ -276,6 +318,7 @@ impl BattleFrameClock {
         let next = self.frame_of(tick) + 1;
         *self = Self {
             step,
+            span_extra: self.span_extra,
             origin_tick: tick,
             origin_frame: next,
         };
@@ -285,7 +328,7 @@ impl BattleFrameClock {
 impl BattleFrameClock {
     /// How many display ticks into its battle frame `tick` falls.
     pub fn ticks_into_frame(&self, tick: u64) -> u64 {
-        tick.saturating_sub(self.origin_tick) % u64::from(self.step.max(1))
+        tick.saturating_sub(self.origin_tick) % self.span()
     }
 }
 
@@ -499,6 +542,19 @@ mod frame_cost_tests {
         let mut ring = FrameCostRing::default();
         assert_eq!(ring.push(0x2D1), 4);
         assert_eq!(ring.push(400), 3, "the clamp `0x2BC` reads step 3 after it");
+    }
+
+    #[test]
+    fn an_overrun_stretches_the_frame_and_leaves_the_step() {
+        let mut clock = BattleFrameClock {
+            step: 4,
+            ..BattleFrameClock::default()
+        };
+        clock.retime_span(100, XA_STREAM_SPAN_EXTRA);
+        assert_eq!(clock.step, 4, "the counters advance by the step");
+        let id = clock.frame_of(100);
+        assert_eq!(clock.frame_of(104), id, "frame spans the step + 1");
+        assert_eq!(clock.frame_of(105), id + 1);
     }
 
     #[test]

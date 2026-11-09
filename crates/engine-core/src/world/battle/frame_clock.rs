@@ -39,7 +39,7 @@ impl World {
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
         use legaia_engine_battle_loop::frame_clock::{
-            cost_of_step, frame_load_cost, measured_frame_cost_at,
+            XA_STREAM_FRAME_COST, cost_of_step, frame_load_cost, measured_frame_cost_at,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -47,11 +47,19 @@ impl World {
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
+        let xa_streaming = self.audio.battle_xa_busy_frames > 0;
         let cost = arm_step.map_or_else(
             || {
                 let (parts, ghosts) = self.battle_frame_load();
-                measured_frame_cost_at(self.party.party_count, state, passes)
-                    .saturating_add(frame_load_cost(parts, ghosts))
+                let cost = measured_frame_cost_at(self.party.party_count, state, passes)
+                    .saturating_add(frame_load_cost(parts, ghosts));
+                // An XA clip's read span: the whole frame runs on the CD
+                // interrupt path (`FUN_8005DAB0`).
+                if xa_streaming {
+                    cost.max(XA_STREAM_FRAME_COST)
+                } else {
+                    cost
+                }
             },
             cost_of_step,
         );
@@ -268,12 +276,27 @@ impl World {
         // the length retail's frames ran under the arm, and takes effect on
         // its own pass.
         self.push_frame_cost(measured);
+        // A frame the XA stream loads overruns its step (`span_extra`); an
+        // arm table's step is the length its own frames ran.
+        let extra = if measured.is_none()
+            && self.toggles.battle_party_cost_step
+            && self.audio.battle_xa_busy_frames > 0
+        {
+            legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
+        } else {
+            0
+        };
+        let tick = self.clock.display_frames;
+        self.battle.frame_clock.retime_span(tick, extra);
         let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
             (None, true) => ordinary,
             (None, false)
-                if ordinary != DEFAULT_BATTLE_FRAME_STEP && self.battle.frame_stretch.is_none() =>
+                if (ordinary != DEFAULT_BATTLE_FRAME_STEP
+                    || (self.toggles.battle_party_cost_step
+                        && self.battle.frame_clock.step != ordinary))
+                    && self.battle.frame_stretch.is_none() =>
             {
                 ordinary
             }
@@ -856,7 +879,7 @@ impl World {
     /// a frame it is the rest of that frame.
     pub fn advance_battle_pass(&mut self) -> u8 {
         let clock = &self.battle.frame_clock;
-        let step = u64::from(clock.step.max(1));
+        let step = clock.span();
         let into = clock.ticks_into_frame(self.clock.display_frames);
         let vsyncs = step - into;
         self.clock.display_frames += vsyncs;
@@ -1318,5 +1341,19 @@ mod tests {
         }
         // No keep byte, no winding - and no reset either.
         assert_eq!(w.battle_backdrop_slot_1_yaw(), 0x1AD3);
+    }
+
+    #[test]
+    fn an_xa_read_span_runs_overrunning_step_four_frames() {
+        use legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA;
+        let mut w = World::new();
+        w.audio.battle_xa_busy_frames = 60;
+        w.push_frame_cost(None);
+        assert_eq!(w.battle.frame_cost_step, 4);
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, XA_STREAM_SPAN_EXTRA);
+        w.audio.battle_xa_busy_frames = 0;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
 }
