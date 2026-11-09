@@ -1437,6 +1437,7 @@ impl BattleDrive {
         // its own glide is the capture's to seat, and runs untouched.
         if !self.reached(world) {
             world.battle.release_command_pad_hold();
+            world.land_command_band_sideband_read();
         }
         let Self::Action {
             seat,

@@ -115,3 +115,25 @@ fn a_finished_round_waits_four_passes_before_the_next_round_starts() {
         "the 0xFF round bump lands when the boundary's passes are over"
     );
 }
+
+/// A capture drive crosses the command band in a few ticks, so it lands the
+/// round-start pick's read there; outside the band the read stands.
+#[test]
+fn a_capture_drive_lands_the_read_only_in_the_command_band() {
+    use legaia_engine_battle_loop::round_flow::RoundPhase;
+    let mut world = World::new();
+    world.battle_ctx.menu_open = 1;
+    world.casting.sideband_read_left = Some(64);
+
+    world.battle.round_flow.phase = RoundPhase::Execute;
+    world.land_command_band_sideband_read();
+    assert_eq!(
+        world.battle_ctx.menu_open, 1,
+        "the execute band keeps its read"
+    );
+
+    world.battle.round_flow.phase = RoundPhase::Command;
+    world.land_command_band_sideband_read();
+    assert_eq!(world.battle_ctx.menu_open, 0);
+    assert_eq!(world.casting.sideband_read_left, None);
+}

@@ -130,6 +130,19 @@ impl World {
         );
     }
 
+    /// Land a round-start pick's side-band read under a capture drive, which
+    /// crosses the command band in a few ticks where a player's presses take
+    /// longer than the read: across the corpus every capture past the command
+    /// surfaces reads the stage `ctx[+0x276]` back at `0` (states `0x0A` to
+    /// `0x0C`, flows `0x28` and `0x6E`). No game path calls it.
+    pub fn land_command_band_sideband_read(&mut self) {
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
+        if self.battle.round_flow.phase == RoundPhase::Command {
+            self.battle_ctx.menu_open = 0;
+            self.casting.sideband_read_left = None;
+        }
+    }
+
     /// The action the last pick decided for the monster it picked, parked
     /// for that monster's dispatch.
     pub fn parked_monster_action(&self) -> Option<&(u8, MonsterAction)> {

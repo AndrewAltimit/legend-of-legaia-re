@@ -2562,6 +2562,14 @@ both values listed in the detail:
 
 ### Driving to the phase
 
+A drive crosses the command band in a few ticks, far under a player's presses, so
+what those ticks would have finished is landed under it. That covers the command
+surfaces' glides (`release_command_pad_hold`) and the side-band read the round-start
+pick raises (`World::land_command_band_sideband_read`): without it the first turn
+holds in `0x0B` for the read's time, which no capture shows. Every library
+state in action states `0x0A` to `0x0C`, or on flows `0x28` and `0x6E`, reads the
+stage `ctx[+0x276]` back at `0`.
+
 A menu or action capture is reached through the engine's own command surfaces
 (`BattleDrive`), one press every other tick so each press is an edge. The image
 child runs the same drive (`LEGAIA_BATTLE_DRIVE`) and captures the first frame
