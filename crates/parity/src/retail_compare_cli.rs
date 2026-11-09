@@ -2,6 +2,7 @@
 //! the human report. The logic is [`crate::retail_compare`]; this is the
 //! argument surface and the file output.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -197,7 +198,15 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok());
         let unmeasured: &[&str] = if args.images { &[] } else { IMAGE_CHANNELS };
-        let b = Baseline::from_reports(&reports).merged_over(prior, unmeasured);
+        let failed_frames: BTreeSet<&str> = reports
+            .iter()
+            .filter(|r| r.frame_failed())
+            .map(|r| r.label.as_str())
+            .collect();
+        for label in &failed_frames {
+            eprintln!("[frame-failed] {label}: no frame was made; its image score is kept");
+        }
+        let b = Baseline::from_reports(&reports).merged_over(prior, unmeasured, &failed_frames);
         std::fs::write(&p, serde_json::to_string_pretty(&b)? + "\n")?;
         println!("wrote baseline {}", p.display());
     }

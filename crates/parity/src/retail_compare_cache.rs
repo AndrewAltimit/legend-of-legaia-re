@@ -236,11 +236,7 @@ impl ResultCache {
         opts: &RunOptions<'_>,
     ) {
         let Some(key) = key.as_ref() else { return };
-        let frame_failed = report
-            .detail
-            .get("image")
-            .is_some_and(|d| d.starts_with("engine frame failed"));
-        if frame_failed || report.unseeded.starts_with("seeding failed") {
+        if report.frame_failed() || report.unseeded.starts_with("seeding failed") {
             return;
         }
         let mut copy = report.clone();

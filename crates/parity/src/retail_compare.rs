@@ -35,7 +35,7 @@
 //! its retail observables and a reason, so the corpus summary counts what
 //! the instrument cannot reach instead of hiding it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

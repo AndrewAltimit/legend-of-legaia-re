@@ -96,13 +96,15 @@ fn a_bless_replaces_a_measured_states_channel_set() {
     let mut run = Baseline::default();
     run.states
         .insert("arrival".into(), chans(&[("camera", 0.8)]));
-    let display_less = run.clone().merged_over(Some(prior.clone()), &["image"]);
+    let display_less = run
+        .clone()
+        .merged_over(Some(prior.clone()), &["image"], &BTreeSet::new());
     assert_eq!(
         display_less.states["arrival"],
         chans(&[("camera", 0.8), ("image", 0.7)])
     );
     assert_eq!(display_less.states["elsewhere"], chans(&[("camera", 0.5)]));
-    let full = run.merged_over(Some(prior), &[]);
+    let full = run.merged_over(Some(prior), &[], &BTreeSet::new());
     assert_eq!(full.states["arrival"], chans(&[("camera", 0.8)]));
 }
 
@@ -136,12 +138,42 @@ fn a_state_run_without_its_own_image_is_skipped_and_never_blessed() {
     let skips = prior.fallback_skips(&fallback);
     assert_eq!(skips.len(), 1);
     assert!(skips[0].contains("image.bin not found"));
-    let blessed = Baseline::from_reports(&fallback).merged_over(Some(prior.clone()), &[]);
+    let blessed =
+        Baseline::from_reports(&fallback).merged_over(Some(prior.clone()), &[], &BTreeSet::new());
     assert_eq!(blessed.states["swap"], chans(&[("image", 0.9)]));
     // On its own image the same drop is reported.
     let own = vec![patched_report("swap", 0.5, None)];
     assert_eq!(prior.patched_drift(&own, &[]).len(), 1);
     assert!(prior.fallback_skips(&own).is_empty());
+}
+
+/// A frame that could not be produced is no measurement: a bless keeps the
+/// state's image score and takes its other channels, and a check still
+/// reports the unscored image.
+#[test]
+fn a_bless_keeps_the_image_score_of_a_frame_that_failed() {
+    let mut prior = Baseline::default();
+    prior.states.insert(
+        "lost".into(),
+        chans(&[("camera", 0.9), ("footing", 0.4), ("image", 0.7)]),
+    );
+    let mut lost = patched_report("lost", 0.0, None);
+    lost.resident_patch = None;
+    lost.channels = chans(&[("camera", 0.8)]);
+    lost.detail
+        .insert("image".into(), "engine frame failed: device lost".into());
+    assert!(lost.frame_failed());
+    let reports = vec![lost];
+    let failed: BTreeSet<&str> = ["lost"].into();
+    let blessed = Baseline::from_reports(&reports).merged_over(Some(prior), &[], &failed);
+    assert_eq!(
+        blessed.states["lost"],
+        chans(&[("camera", 0.8), ("image", 0.7)])
+    );
+    assert_eq!(
+        blessed.regressions(&reports, &[]),
+        vec!["lost.image: not measured (baseline 0.700)".to_string()]
+    );
 }
 
 /// The smoke tier breaks only on a frame far under the accuracy baseline or

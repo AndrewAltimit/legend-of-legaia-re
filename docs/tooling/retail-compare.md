@@ -211,8 +211,10 @@ unmeasured, when a seedable state fails to seed, or when no state is seeded
 at all. A rise is allowed and is folded in
 by a reviewed `--bless`. A bless merges into the existing file: a state
 outside a `--filter`, or one the run could not seed, keeps its baselined
-channels, and a run without a display keeps each state's baselined image
-score. A state the run did seed otherwise takes the run's channel set, so a
+channels, a run without a display keeps each state's baselined image
+score, and so does a state whose frame could not be produced (the run prints
+`[frame-failed]`, and a later check still reports it `not measured` if the
+failure repeats). A state the run did seed otherwise takes the run's channel set, so a
 channel that no longer applies to it (a field state re-classed `world_map`
 has no `facing`) leaves the file rather than failing every later check as
 `not measured`. A baselined state missing from the local library is
