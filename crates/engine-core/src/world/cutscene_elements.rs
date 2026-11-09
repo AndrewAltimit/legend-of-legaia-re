@@ -444,6 +444,23 @@ mod tests {
     }
 
     #[test]
+    fn the_emitter_steps_once_per_game_tick_on_the_world_tick() {
+        let mut w = world();
+        w.clock.frame_step = 2;
+        w.spawn_ambient_emitter(AmbientScene {
+            enabled: true,
+            ..Default::default()
+        });
+        let mut changed = 0;
+        for _ in 0..8 {
+            let before = w.rng_state;
+            let _ = w.tick();
+            changed += u32::from(w.rng_state != before);
+        }
+        assert_eq!(changed, 4, "one emitter pass per two-vsync game tick");
+    }
+
+    #[test]
     fn an_empty_channel_publishes_an_empty_frame() {
         let mut w = world();
         w.tick_cutscene_elements(1, || 0);

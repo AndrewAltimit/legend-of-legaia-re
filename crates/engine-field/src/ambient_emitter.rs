@@ -12,7 +12,7 @@
 //! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
 //! `bnez` on `_DAT_8007B8B8`. `legaia_engine_core::world::cutscene_elements` is its seat:
 //! `World::install_field_scene_elements` spawns it on every cold field entry
-//! and `World::tick_cutscene_elements` runs it each frame on both hosts.
+//! and `World::tick_cutscene_elements` runs it each game tick on both hosts.
 //!
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
 //!
@@ -154,7 +154,7 @@ impl AmbientEmitter {
     /// The collecting wrapper; the port tag sits on [`Self::step_with`].
     ///
     /// WIRED: `legaia_engine_core::world::World::tick_cutscene_elements` runs this every
-    /// frame on both hosts, off the same master-driver gate the other
+    /// game tick on both hosts, off the same master-driver gate the other
     /// plain-template families ride, and
     /// `legaia_engine_core::world::World::install_field_scene_elements` installs the one
     /// element it runs on at every cold field entry (descriptor `0x801F271C`,

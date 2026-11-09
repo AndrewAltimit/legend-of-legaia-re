@@ -535,10 +535,16 @@ impl World {
             // the ambient emitter is a `+0x0C` handler on that one
             // effect-actor list, and its own template
             // (`0x801F271C`) sits in the very table the three above come from.
+            // Unlike those timers the emitter has no `delta` to scale by: it
+            // runs its 24 draws once per list walk, so it steps on the game
+            // tick (`0x801D6058` handler, one call per pass). Run every
+            // vsync, `vell` drew twice retail's `rand()` count at 30 fps.
             // Self-gates to a no-op on an empty channel.
-            let mut rng = crate::world::WorldRng::new(self.rng_state);
-            self.tick_cutscene_elements(delta, || rng.step());
-            self.rng_state = rng.state();
+            if actor_tick_fired {
+                let mut rng = crate::world::WorldRng::new(self.rng_state);
+                self.tick_cutscene_elements(delta, || rng.step());
+                self.rng_state = rng.state();
+            }
             // The fog pool's render step (`FUN_8003F348`, run from the field
             // render pass) sees `DAT_1F800393` as its `dt`; the hosts call
             // it from their draw path, so the ticks accumulate until then.
