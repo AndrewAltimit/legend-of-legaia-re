@@ -8,7 +8,7 @@
  * Interaction model:
  *   - hover / focus a chip: light the crates it uses and the crates using it,
  *     and draw those edges (transient; restores the selection on leave);
- *   - click / Enter: select it (sticky), fill the side card, set #crate=<id>;
+ *   - click / Enter: select it (sticky), fill the card, set #crate=<id>;
  *   - Escape: clear the selection or the walkthrough trace;
  *   - track buttons + search box dim what they exclude, never re-flow;
  *   - "Disc to pixels" steps light their crates; "Trace on the map" carries
@@ -74,6 +74,10 @@
         applyFilter();
       });
       host.appendChild(b);
+      var li = document.createElement('li');
+      li.className = 't-' + t.id;
+      li.innerHTML = '<span class="cm-sw" aria-hidden="true"></span><span><strong>' + esc(t.title) + '.</strong> ' + esc(t.blurb) + '</span>';
+      $('cm-tracks-key').appendChild(li);
     });
   }
 
@@ -252,43 +256,53 @@
   function cardFor(id) {
     var c = data.crates[id];
     var band = bandOf(c.band);
-    var h = '<div class="cm-name">' + esc(id) + '</div><div class="cm-pkg">' + esc(c.package) + '</div>';
-    h += '<div class="cm-tags"><span class="cm-tag t-' + c.track + '">' + esc(trackTitle(c.track)) + '</span>';
-    h += '<span class="cm-tag">' + esc(band ? band.title : c.band) + (c.rank != null ? ', rank ' + c.rank : '') + '</span></div>';
-    if (c.scope) h += '<div class="cm-scope">' + c.scope + '</div>';
-    if (c.role) h += '<div class="cm-h">Layering role</div><div class="cm-coupling">' + esc(c.role) + '</div>';
-    if (c.bins.length) h += '<div class="cm-h">Binaries</div><div class="cm-mods">' + c.bins.map(esc).join(', ') + '</div>';
-    h += '<div class="cm-h">Uses (' + c.deps.length + ')</div>' + miniList(c.deps);
-    h += '<div class="cm-h">Used by (' + c.dependents.length + ')</div>' + miniList(c.dependents);
-    if (c.dev_deps.length) h += '<div class="cm-h">Tests also use</div>' + miniList(c.dev_deps);
+    var who = '<div class="cm-links cm-corner"><a href="' + esc(c.readme) + '" target="_blank" rel="noopener">README</a>' +
+      '<button type="button" data-clear="1">Clear</button></div>';
+    who += '<div class="cm-name">' + esc(id) + '</div><div class="cm-pkg">' + esc(c.package) + '</div>';
+    who += '<div class="cm-tags"><span class="cm-tag t-' + c.track + '">' + esc(trackTitle(c.track)) + '</span>';
+    who += '<span class="cm-tag">' + esc(band ? band.title : c.band) + (c.rank != null ? ', rank ' + c.rank : '') + '</span></div>';
+    if (c.scope) who += '<div class="cm-scope">' + c.scope + '</div>';
+
+    var edges = '<div class="cm-h">Uses (' + c.deps.length + ')</div>' + miniList(c.deps);
+    edges += '<div class="cm-h">Used by (' + c.dependents.length + ')</div>' + miniList(c.dependents);
+    if (c.dev_deps.length) edges += '<div class="cm-h">Tests also use</div>' + miniList(c.dev_deps);
+
+    var more = '';
+    if (c.role) more += '<div class="cm-h">Layering role</div><div class="cm-coupling">' + esc(c.role) + '</div>';
+    if (c.bins.length) more += '<div class="cm-h">Binaries</div><div class="cm-mods">' + c.bins.map(esc).join(', ') + '</div>';
     var coup = data.couplings.filter(function (k) { return k.from === id || k.to === id; });
     if (coup.length) {
-      h += '<div class="cm-h">Edges with a recorded reason</div>';
+      more += '<div class="cm-h">Edges with a recorded reason</div>';
       coup.forEach(function (k) {
-        h += '<p class="cm-coupling"><code>' + esc(k.from) + '</code> → <code>' + esc(k.to) + '</code>: ' + esc(k.reason) + '</p>';
+        more += '<p class="cm-coupling"><code>' + esc(k.from) + '</code> → <code>' + esc(k.to) + '</code>: ' + esc(k.reason) + '</p>';
       });
     }
     if (c.modules.length) {
       var mods = c.modules.map(function (m) { return esc(m); }).join(' · ');
       if (c.modules.length > 14) {
-        h += '<details><summary class="cm-h">Public modules (' + c.modules.length + ')</summary><div class="cm-mods">' + mods + '</div></details>';
+        more += '<details><summary class="cm-h">Public modules (' + c.modules.length + ')</summary><div class="cm-mods">' + mods + '</div></details>';
       } else {
-        h += '<div class="cm-h">Public modules</div><div class="cm-mods">' + mods + '</div>';
+        more += '<div class="cm-h">Public modules</div><div class="cm-mods">' + mods + '</div>';
       }
     }
-    h += '<div class="cm-links"><a href="' + esc(c.readme) + '" target="_blank" rel="noopener">README</a>' +
-      '<button type="button" data-clear="1">Clear</button></div>';
-    return h;
+    return cardCols([who, edges, more]);
+  }
+
+  /* The card's columns; an empty one is dropped so the rest take its width. */
+  function cardCols(cols) {
+    return '<div class="cm-cols">' + cols.filter(Boolean).map(function (c) { return '<div>' + c + '</div>'; }).join('') + '</div>';
   }
 
   function walkCard() {
     var step = data.walk[walkIndex];
-    return '<div class="cm-pkg">Disc to pixels · step ' + (walkIndex + 1) + ' of ' + data.walk.length + '</div>' +
-      '<div class="cm-name">' + esc(step.title) + '</div><div class="cm-scope">' + esc(step.text) + '</div>' +
-      miniList(step.crates) +
+    return cardCols([
+      '<div class="cm-pkg">Disc to pixels · step ' + (walkIndex + 1) + ' of ' + data.walk.length + '</div>' +
+      '<div class="cm-name">' + esc(step.title) + '</div><div class="cm-scope">' + esc(step.text) + '</div>',
+      '<div class="cm-h">Crates in this step</div>' + miniList(step.crates) +
       '<div class="cm-links"><button type="button" data-walk="-1"' + (walkIndex === 0 ? ' disabled' : '') + '>Previous</button>' +
       '<button type="button" data-walk="1"' + (walkIndex === data.walk.length - 1 ? ' disabled' : '') + '>Next</button>' +
-      '<button type="button" data-clear="1">End trace</button></div>';
+      '<button type="button" data-clear="1">End trace</button></div>'
+    ]);
   }
 
   var EMPTY_CARD = null;
@@ -298,6 +312,7 @@
     if (walkTrace) card.innerHTML = walkCard();
     else if (selected) card.innerHTML = cardFor(selected);
     else card.innerHTML = EMPTY_CARD;
+    card.scrollTop = 0;
   }
 
   function onCardClick(e) {
@@ -329,9 +344,9 @@
     }
   }
 
-  /* Below the two-column breakpoint the card would sit after every band, a
-   * long scroll from the chip that filled it. There it moves in after the
-   * selected crate's band instead; at desktop width it stays in its column. */
+  /* On a narrow screen a pinned card would cover the map, so the card sits
+   * in the page flow and moves in after the selected crate's band. At desktop
+   * width it stays pinned above the map. */
   function isNarrow() { return window.matchMedia('(max-width: 1100px)').matches; }
   function placeCard() {
     var card = $('cm-card');
@@ -340,7 +355,7 @@
       var band = chips[focus].closest('.cm-band');
       if (band && band.nextSibling !== card) band.parentNode.insertBefore(card, band.nextSibling);
     } else if (card.parentNode !== $('cm-body')) {
-      $('cm-body').appendChild(card);
+      $('cm-body').insertBefore(card, $('cm-stage'));
     }
     render();
   }
