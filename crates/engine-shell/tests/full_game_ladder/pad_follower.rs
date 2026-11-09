@@ -920,6 +920,10 @@ pub(super) fn pad_walk(
             tap_owed = false;
             if since > 0 && since.is_multiple_of(NPC_REPLAN_FRAMES) {
                 path.clear();
+                // A committed teleport-maze route is the same route again:
+                // it was planned with the body somewhere else.
+                committed.clear();
+                committed_pos = 0;
                 planned_from = None;
                 pad = 0;
             }
@@ -1278,25 +1282,17 @@ pub(super) fn pad_walk(
 /// Frames between re-plans while the press is held against a person.
 const NPC_REPLAN_FRAMES: u32 = 8;
 
-/// Whether `pad`'s direction is stopped by a field NPC's body, as the
-/// locomotion's actor probes see it (a prop's box is not a person: it answers
-/// the action button or never moves, and keeps the stall handling it had).
+/// Whether a held direction is stopped by a field NPC's body, as the
+/// locomotion's actor probes see it. Any direction, since a held diagonal
+/// slides; only a body, since a door's box answers the press itself.
 fn pressing_into_npc(session: &NativeSession, pad: u16) -> bool {
     let w = &session.host.world;
     if !w.npcs.solid || w.mode != SceneMode::Field || pad & DIRECTIONS == 0 {
         return false;
     }
     let (x, z) = player_xz(session);
-    let (ix, iz) = (i32::from(x), i32::from(z));
-    let npc_near = w
-        .field_moving_actor_centres()
-        .any(|(cx, cz)| (cx - ix).abs() < NPC_REACH && (cz - iz).abs() < NPC_REACH);
-    npc_near && (0..4).any(|d| w.field_actor_dir_blocked(x, z, d))
+    (0..4).any(|d| w.field_npc_dir_blocked(x, z, d))
 }
-
-/// How far from the player a body can stand and still meet an actor probe:
-/// the probes' 64-unit arm plus the 40-unit box half.
-const NPC_REACH: i32 = 64 + 40;
 
 /// Hold the d-pad toward world point `at` until `done` holds, for at most
 /// `frames` ticks. A press toward a solid body turns the player to face it

@@ -251,24 +251,34 @@ impl Blockers {
         const NPC_HALF: i32 = 0x40 - 0x18;
         let npcs_off = NPC_BODIES_OFF.with(std::cell::Cell::get);
         let near = NPC_BODIES_NEAR.with(std::cell::Cell::get);
-        // The bodies the walk collides with, not the talk map: a placement
-        // the port tracks only by its script channel stops the player too,
-        // and one hidden or culled does not.
-        let mut boxes: Vec<(i32, i32, i32)> = w
-            .field_moving_actor_centres()
-            .filter(|_| !npcs_off)
-            .filter(|&(x, z)| {
-                near.is_none_or(|(nx, nz)| {
-                    (x - nx).abs() <= NPC_NEAR_REACH && (z - nz).abs() <= NPC_NEAR_REACH
+        // With bodies solid, the bodies the walk collides with, not the talk
+        // map: a placement the port tracks only by its script channel stops
+        // the player too, and one hidden or culled does not.
+        let centres: Vec<(i32, i32)> = if w.npcs.solid {
+            w.field_moving_actor_centres()
+                // A body on the goal tile is what the walk is going to, not
+                // something in its way: a talk's first walk aims at the NPC's
+                // own tile. Left in, it makes the goal unreachable and sends
+                // the route through every other body on the bodies-off search.
+                .filter(|&(x, z)| {
+                    goal.is_none_or(|(gx, gz)| (x >> 7, z >> 7) != (i32::from(gx), i32::from(gz)))
                 })
-            })
-            // A body on the goal tile is what the walk is going to, not
-            // something in its way: a talk's first walk aims at the NPC's own
-            // tile. Left in, it makes the goal unreachable and sends the
-            // route through every other body on the bodies-off search below.
-            .filter(|&(x, z)| {
-                goal.is_none_or(|(gx, gz)| (x >> 7, z >> 7) != (i32::from(gx), i32::from(gz)))
-            })
+                .filter(|&(x, z)| {
+                    near.is_none_or(|(nx, nz)| {
+                        (x - nx).abs() <= NPC_NEAR_REACH && (z - nz).abs() <= NPC_NEAR_REACH
+                    })
+                })
+                .collect()
+        } else {
+            w.npcs
+                .positions
+                .values()
+                .map(|&(x, z)| (i32::from(x), i32::from(z)))
+                .collect()
+        };
+        let mut boxes: Vec<(i32, i32, i32)> = centres
+            .into_iter()
+            .filter(|_| !npcs_off)
             .map(|(x, z)| (x, z, NPC_HALF))
             .collect();
         // The centres come out of a `HashMap`; the plan memo hashes the boxes.
@@ -737,15 +747,17 @@ pub(super) fn plan_path(
         // is usually far off, and a route that also ignores the villager a
         // step away walks into them (`vell`'s square, a route to the map exit
         // straight through one standing in open ground).
-        let (fx, fz) = cell_center(from);
-        let local = NPC_BODIES_NEAR.with(|f| {
-            f.set(Some((i32::from(fx), i32::from(fz))));
-            let r = plan_search(session, from, goal, None, avoid);
-            f.set(None);
-            r
-        });
-        if let Some((p, _, true)) = local {
-            return Some(p);
+        if session.host.world.npcs.solid {
+            let (fx, fz) = cell_center(from);
+            let local = NPC_BODIES_NEAR.with(|f| {
+                f.set(Some((i32::from(fx), i32::from(fz))));
+                let r = plan_search(session, from, goal, None, avoid);
+                f.set(None);
+                r
+            });
+            if let Some((p, _, true)) = local {
+                return Some(p);
+            }
         }
         let open = NPC_BODIES_OFF.with(|f| {
             f.set(true);
@@ -875,7 +887,8 @@ pub(super) const UNREACHED_MIN_CELLS: usize = 4_000;
 const NPC_NEAR_REACH: i32 = 8 * 128;
 
 /// What a failed plan's answer depends on: the scene, the goal, the avoid
-/// set and the story flags (which open and shut doors and paint walls).
+/// set, the story flags (which open and shut doors and paint walls) and,
+/// with bodies solid, where the bodies stand.
 pub(super) type PlanKey = (String, (i16, i16), u64, u64);
 
 thread_local! {
@@ -905,6 +918,13 @@ pub(super) fn plan_key(
     a.hash(&mut h);
     let mut f = std::collections::hash_map::DefaultHasher::new();
     session.host.world.flags.system_flags.hash(&mut f);
+    // A body that walks off un-seals what it sealed: a failure holds only
+    // while the bodies stand where they stood.
+    if session.host.world.npcs.solid {
+        let mut bodies: Vec<_> = session.host.world.field_moving_actor_centres().collect();
+        bodies.sort_unstable();
+        bodies.hash(&mut f);
+    }
     (scene_name(session), goal, h.finish(), f.finish())
 }
 

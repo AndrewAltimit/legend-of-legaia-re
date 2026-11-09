@@ -312,7 +312,7 @@ impl World {
     /// against every live NPC position at ±[`FIELD_NPC_BOX_HALF`].
     ///
     /// PORT: FUN_801cfc40
-    pub(crate) fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+    pub fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         let centres: Vec<(i32, i32)> = self.field_moving_actor_centres().collect();
         if centres.is_empty() {
             return false;

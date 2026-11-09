@@ -36,6 +36,7 @@ flowchart LR
 - [How fights are played](#how-fights-are-played)
 - [Input conventions in both passes](#input-conventions-in-both-passes)
 - [Diagnostics](#diagnostics)
+- [Solid NPCs](#solid-npcs)
 - [What it cannot measure](#what-it-cannot-measure)
 - [Route notes](#route-notes)
 
@@ -855,6 +856,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload, and asserts the baseline's `[continuous_seeds]` row `seed_<n>` when it has one (see [the seed set](#the-seed-set)). |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_PIN_RETAIL=1` | Pins every fidelity toggle to retail's value (`WorldToggles::pin_retail`) in each session the ladder opens, so both parts measure the retail-faithful mode. The gameplay difference from the defaults is the ledge-hop landing guard, off; the rest is presentation. |
+| `LEGAIA_FGL_SOLID_NPCS=1` | Arms `npcs.solid` in each session the ladder opens, as both play hosts have it, so a body stops the walk ([solid NPCs](#solid-npcs)). |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
@@ -1925,15 +1927,28 @@ clips and matches the same arts a windowed one does. Beyond that:
 
 Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal too, the gap is a join the walls do not show - a script or a story gate - not the planner. And `PROBE_AT` is the way to ask the engine, rather than the lattice, whether a spot can be walked off.
 
+## Solid NPCs
+
+With `npcs.solid` armed a body stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:
+
+- **A person is walked round, not spoken to.** A press held against an NPC re-plans from where the body now stands instead of tapping the action button. In the mist `town0b`'s villagers answer a tap with a fight, and the old stall tap fought one per lean. A door still gets its tap, and a committed teleport-maze route is dropped along with the path.
+- **The planner reads the bodies the walk collides with** (`World::field_moving_actor_centres`), not the talk map: a placement tracked only by its script channel stops the player too, and one hidden or culled does not.
+- **A body on the goal tile is the destination.** A talk's first walk aims at the NPC's own tile, so that box is left out of the search.
+- **Bodies that seal a route are dropped in stages.** A plan the bodies keep from its goal is searched again with only the bodies within eight tiles of the walker, then with none. The last stage is what lets a walk press on toward a body that may yet move.
+- **A failed plan is remembered only while the bodies stand where they stood.** One walking past un-seals what it sealed.
+- **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
+- **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
+
+A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.
+
 ## What it cannot measure
 
 - The seated tier places the player. It proves doors, scripts, gates and the
   scene graph, not locomotion; the pad tier is the locomotion claim.
-- The pad tier walks through NPCs. Its session leaves `npcs.solid` off where both
-  play hosts arm it, because the follower's route does not plan round a standing
-  villager: with the arm on, `town0b`'s `mist_rim_elm -> hunters_spring` falls from
-  `pad` to `progresses`. A [gate replay](gate-replay.md) of a digest stops where a
-  villager's box stands on the walk on retail.
+- The pad tier walks through NPCs by default: its session leaves `npcs.solid` off
+  where both play hosts arm it. `LEGAIA_FGL_SOLID_NPCS=1` arms it, and the walk then
+  plans round bodies ([below](#solid-npcs)). A [gate replay](gate-replay.md) of a
+  digest stops where a villager's box stands on the walk on retail.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
   options by rotation, not by reading them. Neither segmented tier buys,

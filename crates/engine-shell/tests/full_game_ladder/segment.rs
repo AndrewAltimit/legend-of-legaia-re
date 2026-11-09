@@ -147,7 +147,7 @@ pub(super) fn traverse(
     PICKS.with(|p| *p.borrow_mut() = (HashMap::new(), None));
     let mut via = 0usize;
     let vias: &[String] = match &target.pad_via {
-        Some(v) if pad => v,
+        Some(v) if pad && session.host.world.npcs.solid => v,
         _ => &target.via,
     };
     // Edges whose hop failed even after the scene's beats ran: the ladder
