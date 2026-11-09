@@ -23,7 +23,7 @@
   <h2>What actually runs</h2>
   <p>The names blur, but the question that separates them is concrete: when you press Start, whose code is executing?</p>
   <figure class="diagram">
-    <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What executes at play time under each route. Decompilation runs the game's logic as rewritten C on a new platform layer. Static recompilation runs the game's machine code translated to C on a runtime that models the PlayStation hardware. Reimplementation runs new Rust that follows the original's rules, with the original's scripts running as data on new virtual machines. Only the reimplementation has no original code executing.">
+    <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What executes at play time under each route. Decompilation runs the game's logic as rewritten C on a new platform layer. Static recompilation runs the game's machine code translated to C on a runtime that models the PlayStation hardware. Reimplementation runs new code that follows the original's rules, with any scripts the game ships running as data on new interpreters. Only the reimplementation has no original code executing.">
       <g><text class="dg-label" x="170" y="28" style="font-size:18px;font-weight:700">Decompilation</text>
       <rect class="dg-node-ok" x="30" y="46" width="280" height="62" rx="6"/><text class="dg-label" x="170" y="72">The game's assets</text><text class="dg-sub" x="170" y="92">often from the user's copy</text>
       <rect class="dg-node-warn" x="30" y="116" width="280" height="102" rx="6"/><text class="dg-label" x="170" y="150">The game's logic, as C</text><text class="dg-sub" x="170" y="172">rewritten by hand, compiled for the host</text><text class="dg-sub" x="170" y="192">its structure is the original's</text>
@@ -37,9 +37,9 @@
       <rect class="dg-node" x="360" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="500" y="349">Host: GPU, audio, OS</text></g>
 
       <g><text class="dg-label" x="830" y="28" style="font-size:18px;font-weight:700">Reimplementation</text>
-      <rect class="dg-node-ok" x="690" y="46" width="280" height="102" rx="6"/><text class="dg-label" x="830" y="80">The disc's data</text><text class="dg-sub" x="830" y="102">models, tables, and the game's own</text><text class="dg-sub" x="830" y="122">script and effect bytecode</text>
-      <rect class="dg-node-accent" x="690" y="156" width="280" height="154" rx="6"/><text class="dg-label" x="830" y="196">New engine, in Rust</text><text class="dg-sub" x="830" y="220">VMs that run that bytecode</text><text class="dg-sub" x="830" y="240">rules read from the disassembly</text><text class="dg-sub" x="830" y="260">renderer, audio, saves of its own</text><text class="dg-sub" x="830" y="280">a structure it chose for itself</text>
-      <rect class="dg-node" x="690" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="830" y="349">Host: native window or browser</text></g>
+      <rect class="dg-node-ok" x="690" y="46" width="280" height="102" rx="6"/><text class="dg-label" x="830" y="80">The game's data</text><text class="dg-sub" x="830" y="102">models, tables and any scripts,</text><text class="dg-sub" x="830" y="122">usually from the user's copy</text>
+      <rect class="dg-node-accent" x="690" y="156" width="280" height="154" rx="6"/><text class="dg-label" x="830" y="184">New engine</text><text class="dg-sub" x="830" y="206">interpreters for the game's scripts</text><text class="dg-sub" x="830" y="226">rules taken from the original</text><text class="dg-sub" x="830" y="246">renderer, audio, saves of its own</text><text class="dg-sub" x="830" y="266">a structure it chose for itself</text><text class="dg-sub" x="830" y="288">(this project uses Rust)</text>
+      <rect class="dg-node" x="690" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="830" y="349">Host: GPU, audio, OS</text></g>
 
       <rect class="dg-node-warn" x="232" y="392" width="16" height="16" rx="3"/><text class="dg-sub dg-start" x="254" y="405" style="font-size:13px">original code</text>
       <rect class="dg-node-accent" x="400" y="392" width="16" height="16" rx="3"/><text class="dg-sub dg-start" x="422" y="405" style="font-size:13px">new code</text>
@@ -117,19 +117,19 @@
         <tr><th>Rules a person can read</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Naming and typing, after the match.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>Generated C. Machine state stays visible.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Written that way, tagged with the retail address.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Written as ordinary named code (this project tags each routine with its retail address).</td></tr>
         <tr><th>New rendering</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Replace the draw path in source.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Well served at the draw-call level: PSXRecomp has widescreen and new backends.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The renderer is the engine's own.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The renderer is the engine's own (this project uses wgpu).</td></tr>
         <tr><th>Running on new systems</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Someone writes a platform layer for each new system.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The generated C compiles almost anywhere, but the PlayStation runtime has to be brought to each new system.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>No console code to carry, so a new system is ordinary engine work. This project runs natively and in a browser.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>No console code to carry, so a new system is ordinary engine work (this project runs natively and in a browser).</td></tr>
         <tr><th>Modding by game concept</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Source edits, easier as names land.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Hooks. N64Recomp's are <a href="https://readonlymemo.com/n64-recompiled-interview-majoras-mask-emulation-native-pc-port/" target="_blank" rel="noopener">"almost as easy as directly modifying the decompilation"</a> when one exists.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span><a href="../formats/expansion-pack.html">TOML</a> naming monsters, maps and quests.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Mods can name monsters, maps and quests rather than addresses (this project uses <a href="../formats/expansion-pack.html">TOML expansion packs</a>).</td></tr>
         <tr><th>Targeting another game on the same console</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The tools carry. The work does not.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>The framework carries. A game adds config and fixes.</td>
@@ -137,7 +137,7 @@
         <tr><th>No original code executing</th>
           <td data-r="Decompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>The source is derived from it.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>It is the original, translated.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>No MIPS executes.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The game's machine code never runs.</td></tr>
       </tbody>
     </table>
   </div>
@@ -192,20 +192,20 @@
     <li><strong>Those two fit together.</strong> An agent is a fast and confident writer, and unnoticed differences are what a fast, confident writer produces. A reimplementation with measurement gives that writer something external to answer to.</li>
   </ul>
   <figure class="diagram">
-    <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The working loop. An agent reads the disassembly and writes a kernel tagged with the retail address. Build, test and layering gates check it. Retail oracles score it against the original. A ratchet accepts a rise or requires a recorded reason for a fall. Divergences go back to the agent as the next job. Beneath the loop, a human sets goals, captures retail states, plays the game and reviews, and disproved readings go into a register that every later run reads.">
+    <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The working loop. An agent reads the original's code and writes an equivalent routine. Build, test and layering gates check it. Retail oracles score it against the original. A ratchet accepts a rise or requires a recorded reason for a fall. Divergences go back to the agent as the next job. Beneath the loop, a human sets goals, captures retail states, plays the game and reviews, and disproved readings go into a register that every later run reads.">
       <defs><marker id="cs-a" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
-      <rect class="dg-node" x="10" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="95" y="84">Read</text><text class="dg-sub" x="95" y="106">the disassembly,</text><text class="dg-sub" x="95" y="122">not the decompiled C</text>
-      <rect class="dg-node" x="210" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="295" y="84">Write</text><text class="dg-sub" x="295" y="106">a kernel, tagged with</text><text class="dg-sub" x="295" y="122">its retail address</text>
+      <rect class="dg-node" x="10" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="95" y="84">Read</text><text class="dg-sub" x="95" y="106">the original's code</text><text class="dg-sub" x="95" y="122">at its most exact</text>
+      <rect class="dg-node" x="210" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="295" y="84">Write</text><text class="dg-sub" x="295" y="106">an equivalent routine,</text><text class="dg-sub" x="295" y="122">traceable to its source</text>
       <rect class="dg-node" x="410" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="495" y="84">Gate</text><text class="dg-sub" x="495" y="106">build, tests, layering,</text><text class="dg-sub" x="495" y="122">reached by a live caller</text>
-      <rect class="dg-node-accent" x="610" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="695" y="84">Measure</text><text class="dg-sub" x="695" y="106">against retail: corpus,</text><text class="dg-sub" x="695" y="122">ladder, differentials</text>
+      <rect class="dg-node-accent" x="610" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="695" y="84">Measure</text><text class="dg-sub" x="695" y="106">against the original,</text><text class="dg-sub" x="695" y="122">by scripted comparison</text>
       <rect class="dg-node-ok" x="810" y="52" width="180" height="82" rx="6"/><text class="dg-label" x="900" y="84">Ratchet</text><text class="dg-sub" x="900" y="106">a rise is kept; a fall</text><text class="dg-sub" x="900" y="122">needs a recorded reason</text>
       <path class="dg-edge" d="M180 93 H208" marker-end="url(#cs-a)"/><path class="dg-edge" d="M380 93 H408" marker-end="url(#cs-a)"/><path class="dg-edge" d="M580 93 H608" marker-end="url(#cs-a)"/><path class="dg-edge" d="M780 93 H808" marker-end="url(#cs-a)"/>
       <path class="dg-edge" d="M695 52 V24 H95 V50" marker-end="url(#cs-a)"/>
       <text class="dg-edge-label" x="395" y="17" text-anchor="middle">a divergence names the next job, worst first</text>
       <rect class="dg-group" x="10" y="160" width="980" height="38" rx="5"/><text class="dg-sub" x="500" y="184" style="font-size:13px">a register of disproved readings and an evidence grade on every claim, read by each later run</text>
-      <rect class="dg-node-warn" x="10" y="206" width="980" height="40" rx="5"/><text class="dg-label" x="500" y="232" style="font-size:14px">A person: sets the goal, captures retail states, plays the game, decides what counts</text>
+      <rect class="dg-node-warn" x="10" y="206" width="980" height="40" rx="5"/><text class="dg-label" x="500" y="232" style="font-size:14px">A person: sets the goal, captures the original running, plays the game, decides what counts</text>
     </svg>
-    <figcaption>The agent is inside the loop. The ground truth is not.</figcaption>
+    <figcaption>The agent is inside the loop. The ground truth is not. This project's version is <a href="retail-oracle-method.html">the retail-oracle method</a>.</figcaption>
   </figure>
   <div class="cs-two">
     <div>

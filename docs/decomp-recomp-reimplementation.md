@@ -16,9 +16,9 @@ A port is a result, not a method: a PC port can be built on a decompilation, a r
 
 | | Decompilation | Static recompilation | Reimplementation |
 |---|---|---|---|
-| **Game code at play time** | The logic as hand-rewritten C, compiled for the host | The machine code translated to C; registers and addresses survive | None; new Rust follows the rules read from the disassembly |
+| **Game code at play time** | The logic as hand-rewritten C, compiled for the host | The machine code translated to C; registers and addresses survive | None; new code follows rules taken from the original (this project uses Rust) |
 | **Beneath it** | A platform layer for each host | A PlayStation hardware runtime (in PSXRecomp, the BIOS is recompiled too) | The engine's own renderer, audio and saves |
-| **Game data** | Assets, often from the user's copy | The disc, through a modelled CD drive | The disc, including script and effect bytecode run on new VMs |
+| **Game data** | Assets, often from the user's copy | The disc, through a modelled CD drive | The disc, including any scripts, run on new interpreters |
 
 ## One game, two ports, the same months
 
