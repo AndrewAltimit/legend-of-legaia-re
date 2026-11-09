@@ -81,8 +81,10 @@ fn battle_awaiting_command() -> World {
 
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..8000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
+        w.settle_battle_pad_hold();
         if w.mode == SceneMode::Battle {
             break;
         }
@@ -140,8 +142,10 @@ fn confirm_attack(w: &mut World) {
             }
         };
         release = !release;
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         w.tick();
+        w.settle_battle_pad_hold();
     }
     panic!("Attack was never confirmed");
 }

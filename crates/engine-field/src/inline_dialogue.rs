@@ -121,10 +121,11 @@ pub struct InlineDialogue {
     /// The talker's own turn a no-target `4C 85|8E|8F` started, while it is
     /// in flight: the placement slot whose face-at leg holds the talker's
     /// `0x400`. Retail's dispatcher prologue (`0x801DE90C..0x801DE944`)
-    /// refuses every op of a context carrying `0x400` (the scene word
-    /// `*(_DAT_801C6EA4) + 8` is `0` in a talk and the talker is not `0xFB`),
-    /// so the record holds at its PC until the leg's terminal frame clears
-    /// the bit (`FUN_8003774C`, `0x80038004`).
+    /// refuses an extended op whose resolved target carries `0x400` (the
+    /// scene word `*(_DAT_801C6EA4) + 8` is `0` in a talk and the talker is
+    /// not `0xFB`), which holds the record's ops on itself until the leg's
+    /// terminal frame clears the bit (`FUN_8003774C`, `0x80038004`). Plain
+    /// ops and text leads run under the turn.
     pub own_turn: Option<u8>,
     /// This pass has spawned a record (an own-context op `0x44`) or armed a
     /// mode-24 door warp (`3E` with `op0 >= 100`). A raw
@@ -202,6 +203,21 @@ impl HeldBox {
             panel: panel.held_after_press(),
             until_next_line: dispatch_byte == Some(0x24),
         }
+    }
+
+    /// The panel for the line at `lead` of `bytes` when `held` is the box the
+    /// record left up: a `0x24` box goes on as the same window
+    /// ([`OwnedDialogPanel::resumed_at_segment`]), and anything else opens a
+    /// fresh one. Rows live in the record that wrote them, so a line from
+    /// another buffer opens fresh too.
+    pub fn next_line_panel(
+        held: Option<HeldBox>,
+        bytes: &Arc<Vec<u8>>,
+        lead: usize,
+    ) -> OwnedDialogPanel {
+        held.filter(|h| h.until_next_line && Arc::ptr_eq(&h.panel.bytes, bytes))
+            .and_then(|h| h.panel.resumed_at_segment(lead))
+            .unwrap_or_else(|| OwnedDialogPanel::at_segment(Arc::clone(bytes), lead))
     }
 }
 

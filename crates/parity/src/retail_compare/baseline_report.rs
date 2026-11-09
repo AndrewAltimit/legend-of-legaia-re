@@ -82,6 +82,17 @@ impl SmokeFrame {
 /// Slack for float round-trips through the JSON baseline.
 pub(super) const RATCHET_EPS: f64 = 0.0005;
 
+impl StateReport {
+    /// The state seeded, but its frame could not be produced (the play window
+    /// would not open, the device was lost, no screenshot was written). That
+    /// says nothing about the engine's image, so it is not a measurement.
+    pub fn frame_failed(&self) -> bool {
+        self.detail
+            .get("image")
+            .is_some_and(|d| d.starts_with("engine frame failed"))
+    }
+}
+
 impl Baseline {
     pub fn from_reports(reports: &[StateReport]) -> Self {
         let mut b = Baseline {
@@ -106,15 +117,23 @@ impl Baseline {
     /// instead of failing every later check as "not measured". The channels
     /// in `unmeasured_by_run` (the image channel on a run without a display)
     /// are carried over, and so is every state outside the run (a
-    /// `--filter`) or that the run could not seed.
-    pub fn merged_over(self, prior: Option<Baseline>, unmeasured_by_run: &[&str]) -> Self {
+    /// `--filter`) or that the run could not seed. A state in `failed_frames`
+    /// ([`StateReport::frame_failed`]) keeps its baselined image channels too.
+    pub fn merged_over(
+        self,
+        prior: Option<Baseline>,
+        unmeasured_by_run: &[&str],
+        failed_frames: &BTreeSet<&str>,
+    ) -> Self {
         let Some(mut out) = prior else { return self };
         out.settle_ticks = self.settle_ticks;
         out.classes.extend(self.classes);
         for (label, mut chans) in self.states {
             if let Some(old) = out.states.get(&label) {
+                let frame_failed = failed_frames.contains(label.as_str());
                 for (ch, v) in old {
-                    if unmeasured_by_run.contains(&ch.as_str()) {
+                    let image = IMAGE_CHANNELS.contains(&ch.as_str());
+                    if unmeasured_by_run.contains(&ch.as_str()) || (frame_failed && image) {
                         chans.entry(ch.clone()).or_insert(*v);
                     }
                 }

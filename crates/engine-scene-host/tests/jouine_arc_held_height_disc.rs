@@ -46,7 +46,12 @@ fn the_pre_battle_hops_land_the_player_on_the_floor_or_skip() {
     host.world.field_vm.pending_record_spawns.push(19 + 18 + 5);
     let mut hopped = false;
     let mut dropped = Vec::new();
-    for i in 0..6000 {
+    // The record's two hops (`+0xA6A`, `+0x13E4`), then a beat of settling:
+    // the scene moves on soon after, so the check stops short of that.
+    let mut arc_was_live = false;
+    let mut landed = 0;
+    let mut settle = 120;
+    for i in 0..12000 {
         let pad = if i % 16 < 2 {
             PadButton::Cross.mask()
         } else {
@@ -56,11 +61,21 @@ fn the_pre_battle_hops_land_the_player_on_the_floor_or_skip() {
         host.tick().expect("tick");
         let slot = host.world.player_actor_slot.expect("player") as usize;
         let y = host.world.actors[slot].move_state.world_y;
-        hopped |= host.world.player_script_arc_live();
+        let arc_live = host.world.player_script_arc_live();
+        hopped |= arc_live;
+        landed += u32::from(arc_was_live && !arc_live);
+        arc_was_live = arc_live;
         if hopped && y == 0 {
             dropped.push(i);
         }
+        if landed == 2 {
+            settle -= 1;
+            if settle == 0 {
+                break;
+            }
+        }
     }
+    assert_eq!(landed, 2, "both hops land inside the budget");
     let slot = host.world.player_actor_slot.expect("player") as usize;
     let ms = &host.world.actors[slot].move_state;
     eprintln!(

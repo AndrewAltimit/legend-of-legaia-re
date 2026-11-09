@@ -762,6 +762,7 @@ impl World {
         *glide = (*glide - 1).max(0);
         self.step_cutscene_timeline();
         self.step_helper_contexts();
+        self.field_vm.slice_pad = None;
     }
 
     /// Record a context the anti-hang cap ended
@@ -780,6 +781,43 @@ impl World {
         };
         log::warn!("timeline cap ended a record: {cap:?}");
         self.cutscene.capped.push(cap);
+    }
+
+    /// Seat the player on the walk-leg target (the walk kernel's end state).
+    pub(super) fn seat_player_on_walk_leg_target(&mut self, target: (i16, i16)) {
+        if let Some(p) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(p as usize)
+        {
+            actor.move_state.world_x = target.0;
+            actor.move_state.world_z = target.1;
+        }
+        self.snap_player_y_unless_settling();
+    }
+
+    /// A record that ended behind a `C7 F8` leg still in flight keeps its
+    /// slot until the player lands: retail's walk kernel finishes the leg
+    /// on its own (`FUN_8003BC08`), and the port's leg lives on the record.
+    fn hold_finished_record_for_walk(
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        if tl.done && tl.walk_wait.is_some() {
+            tl.done = false;
+            tl.finish_after_walk = true;
+        }
+    }
+
+    /// A record that ends with a `C7 F8` leg still in flight: retail's walk
+    /// kernel lands the player on its own after the record is gone
+    /// (`FUN_8003BC08`). The port's leg lives on the record, so a record the
+    /// anti-hang cap or a scene change ends seats the player on the target
+    /// here rather than leave them mid-walk.
+    fn land_player_walk_past_record(
+        &mut self,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        if let Some(walk) = tl.walk_wait.take() {
+            self.seat_player_on_walk_leg_target(walk.target);
+        }
     }
 
     // REF: FUN_8003BDE0
@@ -809,6 +847,7 @@ impl World {
         if tl.dialog.is_some() {
             self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
+                self.step_legs_under_box(&mut tl);
                 self.cutscene.timeline = Some(tl);
                 return;
             }
@@ -851,6 +890,97 @@ impl World {
             // timeline installed and re-test next tick.
             self.cutscene.timeline = Some(tl);
         }
+    }
+
+    /// The legs a record armed before its text lead go on under the box: the
+    /// walk kernel runs from the actor tick (`FUN_8003BC08`) whether or not
+    /// the record sits on a line. A landing holds its actor for the script as
+    /// in the slice, and a landing on the player clears the caller's halt and
+    /// `+0x54`. `npc_walks` needs nothing: the motion VM steps those.
+    ///
+    /// REF: FUN_8003BC08, FUN_8003774C
+    fn step_legs_under_box(
+        &mut self,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 {
+            return;
+        }
+        if let Some((mut ramp, frames)) = tl.player_face.take() {
+            if self.step_player_face_leg_by(&mut ramp, grid) {
+                tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
+            } else {
+                tl.player_face = Some((ramp, frames + 1));
+            }
+        }
+        for mut face in std::mem::take(&mut tl.npc_faces) {
+            if self.step_npc_face_leg_by(face.slot, &mut face.ramp, grid) {
+                tl.npc_landed_hold.push(face.slot);
+            } else {
+                tl.npc_faces.push(face);
+            }
+        }
+        for mut fw in std::mem::take(&mut tl.npc_facings) {
+            if self.step_timeline_facing(&mut fw, grid) {
+                tl.npc_facings.push(fw);
+            } else if let Some(slot) = fw.slot {
+                tl.npc_landed_hold.push(slot);
+            } else {
+                tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
+            }
+        }
+        if let Some(mut glide) = tl.player_glide.take() {
+            glide.state.speed = grid;
+            if self.step_player_glide(&mut glide) {
+                tl.player_glide = Some(glide);
+            } else {
+                tl.player_landed_hold = true;
+            }
+        }
+        for mut glide in std::mem::take(&mut tl.npc_glides) {
+            glide.state.speed = grid;
+            if self.step_npc_glide(&mut glide) {
+                tl.npc_glides.push(glide);
+            } else {
+                tl.npc_landed_hold.push(glide.slot);
+            }
+        }
+        if let Some(mut walk) = tl.walk_wait.take() {
+            walk.frames += 1;
+            if self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach) {
+                tl.player_landed_hold = true;
+            } else if walk.frames < WALK_PARK_TIMEOUT {
+                tl.walk_wait = Some(walk);
+            } else {
+                self.seat_player_on_walk_leg_target(walk.target);
+                tl.player_landed_hold = true;
+            }
+        }
+    }
+
+    /// One game frame of a rotate leg (`B8 <id> ..`): the `0x38` kernel over
+    /// `grid` vsyncs, its yaw written back raw. `false` once the ramp snaps
+    /// or the leg times out.
+    ///
+    /// REF: FUN_8003774C (case 0x38)
+    pub(super) fn step_timeline_facing(
+        &mut self,
+        fw: &mut legaia_engine_field::cutscene_timeline::TimelineFacing,
+        grid: u16,
+    ) -> bool {
+        use legaia_engine_motion_vm::motion_vm::{MotionTarget, StepResult, step};
+        fw.state.speed = grid;
+        fw.frames += 1;
+        let r = step(&mut fw.state, MotionTarget::default(), &fw.program);
+        if fw.state.yaw_written {
+            self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
+        }
+        r != StepResult::Done && fw.frames < WALK_PARK_TIMEOUT
     }
 
     /// Tick a script context's owned dialog panel one frame and, when
@@ -1101,7 +1231,9 @@ impl World {
         // retail's turn belongs to the NPC's own walk kernel and finishes
         // without the record, so land it on its compass entry here rather
         // than leave the actor frozen mid-ramp.
+        Self::hold_finished_record_for_walk(&mut tl);
         if tl.done {
+            self.land_player_walk_past_record(&mut tl);
             for mut face in std::mem::take(&mut tl.npc_faces) {
                 for _ in 0..WALK_PARK_TIMEOUT {
                     if self.step_npc_face_leg(face.slot, &mut face.ramp) {
@@ -1245,11 +1377,13 @@ impl World {
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
                 if owner != Some(tl.dialog_claim) {
+                    self.step_legs_under_box(tl);
                     continue;
                 }
                 owner = None;
                 self.drive_script_dialog(tl, true);
                 if tl.dialog.is_some() || tl.done {
+                    self.step_legs_under_box(tl);
                     continue;
                 }
             }
@@ -1273,6 +1407,12 @@ impl World {
         let dropped = contexts.iter().any(|tl| tl.done);
         for tl in contexts.iter().filter(|tl| tl.done) {
             self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
+        }
+        for tl in contexts.iter_mut() {
+            Self::hold_finished_record_for_walk(tl);
+        }
+        for tl in contexts.iter_mut().filter(|tl| tl.done) {
+            self.land_player_walk_past_record(tl);
         }
         contexts.retain(|tl| !tl.done);
         self.field_vm.helper_contexts = contexts;
@@ -1390,7 +1530,9 @@ fn drop_one_frame_held_box(held: &mut Option<HeldBox>) {
 
 /// The post-page byte the pager's state `0x19` dispatches a finished box on
 /// (`*pbVar14 & 0x7F`, `0x801D8FDC`): the byte at the panel's cursor.
-fn post_page_byte(panel: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> Option<u8> {
+pub(in crate::world) fn post_page_byte(
+    panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
+) -> Option<u8> {
     panel.bytes.get(panel.pc).map(|b| b & 0x7F)
 }
 

@@ -211,8 +211,10 @@ unmeasured, when a seedable state fails to seed, or when no state is seeded
 at all. A rise is allowed and is folded in
 by a reviewed `--bless`. A bless merges into the existing file: a state
 outside a `--filter`, or one the run could not seed, keeps its baselined
-channels, and a run without a display keeps each state's baselined image
-score. A state the run did seed otherwise takes the run's channel set, so a
+channels, a run without a display keeps each state's baselined image
+score, and so does a state whose frame could not be produced (the run prints
+`[frame-failed]`, and a later check still reports it `not measured` if the
+failure repeats). A state the run did seed otherwise takes the run's channel set, so a
 channel that no longer applies to it (a field state re-classed `world_map`
 has no `facing`) leaves the file rather than failing every later check as
 `not measured`. A baselined state missing from the local library is
@@ -1185,8 +1187,9 @@ draws it takes.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition
-  (`EncounterState::rng_hold`): the field's NPC and ambient programs keep
-  drawing until the fight is in battle mode.
+  (`EncounterState::rng_hold`): the field's NPC programs keep drawing until the
+  fight is in battle mode. The hold is applied at the head of a tick, so the
+  draws of the tick that opens the fight still reach the fight's stream.
 - A capture of something a draw decides is still one realisation of the stream.
   The seeds in `BATTLE_RNG_SEEDS` are tried in order, and the first under which
   the fight is still on, its opening reached a prompt, and the drive or replayed
@@ -2560,6 +2563,14 @@ both values listed in the detail:
   `509` and `660`.
 
 ### Driving to the phase
+
+A drive crosses the command band in a few ticks, far under a player's presses, so
+what those ticks would have finished is landed under it. That covers the command
+surfaces' glides (`release_command_pad_hold`) and the side-band read the round-start
+pick raises (`World::land_command_band_sideband_read`): without it the first turn
+holds in `0x0B` for the read's time, which no capture shows. Every library
+state in action states `0x0A` to `0x0C`, or on flows `0x28` and `0x6E`, reads the
+stage `ctx[+0x276]` back at `0`.
 
 A menu or action capture is reached through the engine's own command surfaces
 (`BattleDrive`), one press every other tick so each press is an edge. The image

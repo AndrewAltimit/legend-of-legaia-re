@@ -661,7 +661,7 @@ battle, a minigame or an FMV) skips it.
 
 ```mermaid
 flowchart LR
-    gate{"_DAT_8007B854<br/>(op 4C 30 / 4C 31)"} -->|set| emit["Emitter FUN_801D6058<br/>24 draws per frame,<br/>1 in 16 bursts"]
+    gate{"_DAT_8007B854<br/>(op 4C 30 / 4C 31)"} -->|set| emit["Emitter FUN_801D6058<br/>24 draws per pass,<br/>1 in 16 bursts"]
     emit -->|"tile in visible window"| spawn["Spawner FUN_801D629C<br/>walk box, region enable,<br/>cap, free slot"]
     spawn --> pool["Fog pool _DAT_8007B7E0<br/>80 records"]
     gate -->|"set and mode 3"| walk["Render pass 0x80026EBC<br/>walk FUN_8003F348"]
@@ -670,7 +670,18 @@ flowchart LR
     upd --> half["Two half-sheets FUN_8003F86C<br/>additive POLY_FT4 billboards"]
 ```
 
-The scene arm takes twenty-four independent draws per frame, each with a one
+The handler runs once per pass of the actor sweep, so the scene arm's draws are
+per game tick (a `vell` retail breakpoint on the wrapper: `72` draws at `801D61CC`,
+`801D61E8` and `801D6200` per two-vsync pass), not per vsync. The port steps it on
+the game tick alone; the frame-scaled timers beside it keep the frame step.
+
+The emitter does not outlive the field's game mode. The battle intro's init
+`FUN_801CE8CC` calls the mode initialiser `FUN_8001DCF8`, whose `FUN_8001E1B4`
+rebuilds every actor list (`0x8001E324..0x8001E364`, skipped only for a mode `2`
+re-entry), so no emitter pass and no emitter draw happens during the transition.
+The port holds the emitter for the session's `Transition` phase.
+
+The scene arm takes twenty-four independent draws per pass, each with a one
 in sixteen chance of bursting `(rand & 3) + 1` particles at one point sampled
 inside the camera's visible-tile span `DAT_1F8003E8..EB`, centred on the
 negated player X/Z that `_DAT_80089118` / `_DAT_80089120` hold. What decides

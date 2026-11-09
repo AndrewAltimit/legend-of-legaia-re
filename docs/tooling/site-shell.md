@@ -71,7 +71,9 @@ Two things the shell derives from `NAV` instead of trusting the page:
 - **The drawer's scroll position.** `revealActiveRow()` scrolls the current
   page's row into view after the saved scroll position is restored and every
   time the phone drawer opens. Without it the drawer opened on the two
-  always-expanded sections, with the reader's own page below its fold.
+  always-expanded sections, with the reader's own page below its fold. The
+  zone strip is pinned at the top of the drawer, so it counts as covering the
+  rows under it here, and the scroll position never takes the strip away.
 
 ## Themes
 
@@ -130,6 +132,13 @@ only through the brand mark and could not reach Play, Mods or Browse at all -
 the docs sidebar deliberately omits them (`DOCS_SECTIONS` excludes the explore
 section, and the `home` key is skipped from the tree).
 
+The strip is `position: sticky` inside the drawer's scroller, because the drawer
+opens at its saved or revealed scroll position and a strip in normal flow is
+carried up behind the top bar with the list. A drawer `top` matching the bar says
+nothing about this: the bar and the drawer's own box agree at every width and only
+the strip's box moves, so the check is the strip's rectangle at a non-zero drawer
+`scrollTop`.
+
 The hamburger lives *inside* the top bar rather than floating over the page.
 A floating button needs the content column to reserve a strip for it; an in-bar
 button needs nothing, and can never sit on top of a paragraph.
@@ -171,9 +180,9 @@ runs in the docs zone only, on load, on resize and once fonts settle.
 
 ## One right edge per column
 
-Prose is capped at `--measure` (46rem) so a line stays readable. That is right
-on the 880px docs column, where the measure is most of the column, and wrong
-on a wider one: a 46rem paragraph or callout sitting among 1400px grids, tiles
+On the docs column (1030px at a 1920px window, following the window above that)
+the title, text, figures, tables and code all share one width, so `--measure` is
+`none`. The property still matters elsewhere: a cap is wrong on a wider column: a narrow paragraph or callout sitting among 1400px grids, tiles
 and tables stops at half the page and reads as a section that failed to load.
 Nothing errors, and it is invisible below about 1300px of viewport, where the
 column is not yet wider than the measure.
@@ -182,16 +191,14 @@ Three column shapes, each with one rule for where text ends:
 
 | Column | Pages | Text ends at |
 |---|---|---|
-| Docs (880px) | every docs page not listed below | `--measure` |
+| Docs (1030px at 1920) | every docs page not listed below | the column: `--measure` is `none` |
 | App (1400 / 1480px) | home, `.wide-page` (`WIDE_PAGES` in `_gen.py`) | the column: `--measure` is `none` |
-| Prose with a breakout | `.wide-page.prose-page` (`PROSE_WIDE_PAGES`), `.dp-page` | the docs column; the named exhibit alone is wide |
+| Prose with a breakout | `.wide-page.prose-page` (`PROSE_WIDE_PAGES`) | the docs column; the named exhibit alone is wide |
 
 A `.prose-page` is a long-form page that is wide for one exhibit, such as a
 many-column table. Its header and sections keep the docs column, and a
 `section.doc-section.breakout` takes the full width and lifts the measure
-inside itself, so the exhibit's own caption follows the exhibit. The
-disc-patching write-ups (`.dp-page`) are the same shape with their own named
-breakouts.
+inside itself, so the exhibit's own caption follows the exhibit.
 
 A breakout spans its grid cell, and in the docs zone that cell sits between
 the sidebar and the TOC rail: at a 1440px viewport it is no wider than the

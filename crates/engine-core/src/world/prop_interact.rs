@@ -41,6 +41,9 @@
 //!
 //! REF: FUN_801D5B5C, FUN_80039B7C, FUN_801DE840, FUN_801CFC40, FUN_801CF754
 
+use crate::world::narration::post_page_byte;
+use legaia_engine_field::inline_dialogue::HeldBox;
+
 use super::*;
 
 /// Frames a prop run may stay parked on a waitable op (`2D 08`, `4A`, ...)
@@ -395,6 +398,12 @@ impl World {
             return;
         }
 
+        // A box held for its press's own frame only is gone by the next pager
+        // call, as in the talk runner (`HeldBox`).
+        if id.held_box.as_ref().is_some_and(|h| !h.until_next_line) {
+            id.held_box = None;
+        }
+
         // A box is open: tick the typewriter + route input. The prop's clip
         // keeps ticking underneath (the cupboard holds open at its clamp).
         if let Some(panel) = id.panel.as_mut() {
@@ -437,6 +446,8 @@ impl World {
                         Some(t) => id.pc = t,
                         None => id.done = true,
                     }
+                    let continuation = panel.picker().map(|pk| pk.continuation);
+                    id.held_box = Some(HeldBox::after_press(panel, continuation));
                     id.panel = None;
                 } else if panel.is_done() {
                     // Dismissed: resume the record just past the segment -
@@ -446,6 +457,7 @@ impl World {
                     // pager returns to SM state 0 and the script continues -
                     // unless the byte after the box parks the talk.
                     id.pc = panel.pc;
+                    id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                     id.panel = None;
                     end_prop_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
@@ -453,6 +465,7 @@ impl World {
                     panel.advance_page();
                     if panel.is_done() {
                         id.pc = panel.pc;
+                        id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                         id.panel = None;
                         end_prop_talk_at_post_box_byte(&mut id);
                     }
@@ -513,10 +526,8 @@ impl World {
                     if b == 0x1F {
                         // A text segment: open the real dialog panel here,
                         // with the record's name escapes resolved.
-                        let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
-                            std::sync::Arc::clone(&id.bytecode),
-                            id.pc,
-                        );
+                        let mut panel =
+                            HeldBox::next_line_panel(id.held_box.take(), &id.bytecode, id.pc);
                         panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
                         id.panel = Some(panel);
@@ -1374,13 +1385,27 @@ impl World {
     }
 
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
+        use legaia_engine_field::field_player_clip::ClipBank;
         let fallback = self.player_clip_frames_hint();
-        self.props.bank.bind_actor_clip(
+        let pick = self.field_player_script_clip(move_id);
+        // A party-bank clip (`B1 F8 18` before the poke) is timed by the
+        // party locomotion bundle; the id means something else in the scene
+        // bank the cursor would otherwise read. `FUN_800204F8` takes the clip
+        // through the bank's pointer either way (`0x80020534..0x8002056C`).
+        let meta = match pick.bound() {
+            Some((ClipBank::Party, record)) => self
+                .locomotion
+                .party_clip_meta
+                .get(usize::from(record))
+                .copied(),
+            _ => self.props.bank.clip_meta(move_id),
+        };
+        self.props.bank.bind_actor_clip_meta(
             legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET,
             move_id,
+            meta,
             fallback,
         );
-        let pick = self.field_player_script_clip(move_id);
         if let Some(id) = self.player_move_cue(&pick) {
             self.locomotion.player_move_cues.push(id);
         }
@@ -1410,7 +1435,15 @@ impl World {
             legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
         );
         let instant = std::mem::take(&mut self.dialog.window_instant);
-        panel.set_window_format(usize::from(rows), instant);
+        // No `4C E0` since the last box: a window carried over a `0x24` keeps
+        // its count (`_DAT_801F2740` is reset by states `0`, `6` and `9`, not
+        // by the `3` -> `4` path).
+        let rows = if usize::from(rows) == legaia_engine_dialog::dialog_window::WINDOW_ROWS {
+            panel.box_rows().unwrap_or(usize::from(rows))
+        } else {
+            usize::from(rows)
+        };
+        panel.set_window_format(rows, instant);
     }
 
     pub fn dialog_substitutions(

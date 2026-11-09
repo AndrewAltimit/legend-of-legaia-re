@@ -49,6 +49,7 @@ Most PS1 ports lately are static recompilations, and for good reason: the whole 
 
 A recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game. That engine has no PS1 underneath, so it renders through wgpu, runs in the browser and in VR, takes mods as TOML expansion packs, and keeps every rule as a readable Rust kernel citing its retail address. The price is that fidelity is a long tail paid continuously, on top of decompilation-grade reading of the disassembly, not instead of it.
 
+- [Decomp, recomp, reimplementation](docs/decomp-recomp-reimplementation.md) - this engine and a static recomp of the same game as a case study ([on the site](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/decomp-recomp-reimplementation.html)).
 - [Porting by reimplementation](docs/porting-by-reimplementation.md) - the three routes compared fairly, what this one costs and buys, and the method step by step ([on the site](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/porting-by-reimplementation.html)).
 - [The retail-oracle method](docs/tooling/retail-oracle-method.md) - how fidelity is measured: retail save states, scored channels, ratchets; usable whichever route a port takes.
 - [Reusing for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) - which crates and scripts carry to another title; the short table is [below](#reusable-for-other-ps1-games).

@@ -28,6 +28,7 @@ fn prompt_world() -> World {
         world.actors[i].battle.hp = 100;
         world.actors[i].battle.max_hp = 100;
     }
+    world.battle.flow = legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt;
     world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
     world.battle.start_round_prompt_glide();
     world

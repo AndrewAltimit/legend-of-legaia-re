@@ -444,6 +444,49 @@ mod tests {
     }
 
     #[test]
+    fn the_emitter_steps_once_per_game_tick_on_the_world_tick() {
+        let mut w = world();
+        w.clock.frame_step = 2;
+        w.spawn_ambient_emitter(AmbientScene {
+            enabled: true,
+            ..Default::default()
+        });
+        let mut changed = 0;
+        for _ in 0..8 {
+            let before = w.rng_state;
+            let _ = w.tick();
+            changed += u32::from(w.rng_state != before);
+        }
+        assert_eq!(changed, 4, "one emitter pass per two-vsync game tick");
+    }
+
+    #[test]
+    fn the_emitter_does_not_step_during_the_battle_intro() {
+        use legaia_engine_battle::encounter::{
+            EncounterRoll, EncounterSession, EncounterTable, EncounterTracker,
+        };
+        let mut w = world();
+        w.clock.frame_step = 2;
+        w.spawn_ambient_emitter(AmbientScene {
+            enabled: true,
+            ..Default::default()
+        });
+        let mut session = EncounterSession::new(EncounterTracker::new(EncounterTable::default()));
+        session.transition_frames = 100;
+        session.trigger_with(EncounterRoll {
+            formation_id: 3,
+            row_index: 0,
+            roll_q8: 0,
+        });
+        w.set_encounter_session(Some(session));
+        let before = w.rng_state;
+        for _ in 0..8 {
+            let _ = w.tick();
+        }
+        assert_eq!(w.rng_state, before, "the intro's init dropped the emitter");
+    }
+
+    #[test]
     fn an_empty_channel_publishes_an_empty_frame() {
         let mut w = world();
         w.tick_cutscene_elements(1, || 0);

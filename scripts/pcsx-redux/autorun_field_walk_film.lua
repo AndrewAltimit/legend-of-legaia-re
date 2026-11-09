@@ -8,6 +8,10 @@
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_FRAMES, LEGAIA_OUT_DIR,
 --      LEGAIA_PAD_SCRIPT  `A-B:BTN` spans in vsyncs from the load.
+--      LEGAIA_PAD_FILE    a timeline instead of the spans: one `vsync,0xMASK`
+--                         row per change of the held word, where bit N of the
+--                         mask is probe.BTN index N - the engine pad word, so
+--                         a `LEGAIA_DIAG_TICK_DIGEST` run's pad replays as is.
 --
 -- Outputs: walk_film.csv (one row a vsync), walk_film_actors.csv (one row per
 -- placement per vsync).
@@ -27,6 +31,8 @@ local FOCUS_X     = 0x80089118
 local FOCUS_Z     = 0x80089120
 local STAGING     = 0x801F3580
 local OFFSET_EASE = 0x8007BCAC
+local GAME_MODE   = 0x8007B83C
+local RAND_SEED   = 0x80009010
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -50,10 +56,21 @@ for item in string.gmatch(SCRIPT, "[^,]+") do
     end
 end
 
+-- The timeline of LEGAIA_PAD_FILE, in vsync order, and the row in force.
+local PAD_FILE = probe.getenv("LEGAIA_PAD_FILE", "")
+local timeline, timeline_i, timeline_mask = {}, 1, 0
+if PAD_FILE ~= "" then
+    for line in io.lines(PAD_FILE) do
+        local v, m = string.match(line, "^(%d+),0[xX](%x+)")
+        if v then timeline[#timeline + 1] = { tonumber(v), tonumber(m, 16) } end
+    end
+    PCSX.log(string.format("[walk-film] %d pad rows from %s", #timeline, PAD_FILE))
+end
+
 local held = {}
 local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
-    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record\n")
+    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record,mode,rng\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
 afh:write("vsync,flat,x,y,z,heading,flags,model\n")
@@ -94,6 +111,13 @@ probe.run({
         for _, s in ipairs(spans) do
             if el >= s.from and el < s.to then want[s.btn] = true end
         end
+        while timeline_i <= #timeline and timeline[timeline_i][1] <= el do
+            timeline_mask = timeline[timeline_i][2]
+            timeline_i = timeline_i + 1
+        end
+        for b = 0, 15 do
+            if math.floor(timeline_mask / 2 ^ b) % 2 == 1 then want[b] = true end
+        end
         for btn, _ in pairs(held) do
             if not want[btn] then probe.pad_release(btn); held[btn] = nil end
         end
@@ -103,7 +127,7 @@ probe.run({
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
         fh:write(string.format(
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x\n",
             el, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
             s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
             s16(PITCH), s16(YAW), s16(H),
@@ -111,7 +135,8 @@ probe.run({
             s32(FOCUS_X), s32(FOCUS_Z),
             s16(STAGING + 0x02), s16(STAGING + 0x06), s16(STAGING + 0x26),
             s16(STAGING + 0x0E), s16(STAGING + 0x12), s16(STAGING + 0x16),
-            s16(OFFSET_EASE), s16(p + 0x68), s16(p + 0x6A), s16(p + 0x5E)))
+            s16(OFFSET_EASE), s16(p + 0x68), s16(p + 0x6A), s16(p + 0x5E),
+            probe.read_u32(GAME_MODE) % 256, probe.read_u32(RAND_SEED)))
         fh:flush()
         log_actors(el, p)
     end,

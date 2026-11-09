@@ -91,6 +91,25 @@ fn a_script_clip_aimed_at_the_player_writes_the_base_and_binds() {
 }
 
 #[test]
+fn a_talks_poke_of_a_party_clip_times_the_cursor_off_the_party_bundle() {
+    // `town0b` `P1[55]`: `B1 F8 18`, `A2 F8 04`, `AC F8 08`, `AD F8 08`.
+    // The end latch of party record 4's clip lands after its own 7 frames
+    // (14 vsyncs at the template rate), not the scene bank's length for
+    // the id or the 60-vsync locomotion stand-in.
+    let mut w = world_with_anim();
+    w.locomotion.player_party_bank = true;
+    w.locomotion.clip_override = 0;
+    w.locomotion.party_clip_meta = vec![(7, false, 0); 64];
+    w.bind_player_script_clip(4);
+    let cursor = w
+        .props
+        .bank
+        .actor_clip(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+        .expect("the poke binds the player's cursor");
+    assert_eq!(cursor.frames, 7);
+}
+
+#[test]
 fn a_running_warp_tears_down_the_text_balloon() {
     let mut w = world_with_anim();
     w.cutscene.text_balloon = Some(legaia_engine_dialog::text_balloon::TextBalloon::spawn(b"x"));

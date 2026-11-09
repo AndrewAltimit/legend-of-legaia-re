@@ -37,10 +37,14 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
 /// Live-loop options per tier. Both tiers make battles player-driven and
 /// fight them with the pad ([`fight_pad`]); the seated tier runs with the
 /// random-encounter roll off (it measures doors and scripts, not
-/// encounters), the pad tier arms it.
+/// encounters), the pad tier arms it. `LEGAIA_FGL_NO_ENCOUNTERS=1` leaves it
+/// off for the pad tier too: the digest a gate replay plays on retail, which
+/// then runs with retail's own roll off, so the two walks do not part on two
+/// `rand()` streams (`docs/tooling/gate-replay.md`).
 pub(super) fn live_opts(pad: bool) -> FieldLiveOpts {
+    let no_encounters = std::env::var_os("LEGAIA_FGL_NO_ENCOUNTERS").is_some_and(|v| v != "0");
     FieldLiveOpts {
-        live_loop: pad,
+        live_loop: pad && !no_encounters,
         player_battle: true,
         battle_bgm: None,
     }

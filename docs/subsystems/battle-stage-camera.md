@@ -1373,6 +1373,20 @@ input and the Spirit-heavy Delilas fights read `3` (`theeder_summon_mid_cast`
 peaks at `625`, `gimard_burning_attack` sits at the `700` clamp); two light
 casts and the battle-loading frame read `1`.
 
+A battle CD-XA clip loads the frame for its whole read span. On a gate-replay of
+the town01 sparring fight every frame from an item use's or a Spirit's cue reads
+the ring's clamp (`700`), with the frame spent on the CD interrupt path (the
+response dispatcher `FUN_8005DAB0`) and through `CdSync`; the entry comes off at
+the clip's span, and the step then runs down over the sixteen-pass ring. A frame's
+real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
+step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_COST`
+and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
+run short of retail.
+
+An overrun lengthens the frame, not the step: the camera walker runs once a frame,
+scaled by the step (`BattleCamera::sync_step_phase`), so an overrunning frame still
+steps it once.
+
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
 restarts somewhere no `SCUS_942.54` store shows (only its increment at

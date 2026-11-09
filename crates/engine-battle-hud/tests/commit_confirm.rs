@@ -72,6 +72,7 @@ fn the_screen_waits_for_the_last_member_then_begin_plays_the_round() {
     // Cross takes the highlighted Begin: the round plays out.
     press(&mut world, PadButton::Cross);
     assert!(world.battle.command.is_none(), "Begin leaves the screen");
+    world.settle_battle_pad_hold();
     assert_eq!(world.battle.flow, BattleFlowState::Idle);
     // The Spirit turns play through the action SM's spirit band one after
     // another, so the round runs over frames.
@@ -117,6 +118,7 @@ fn the_commit_log_lists_every_member_the_cursor_walked_past() {
     // The round's start removes the log.
     commit_spirit(&mut world, 2);
     press(&mut world, PadButton::Cross);
+    world.settle_battle_pad_hold();
     assert!(battle_commit_log(&world).is_empty());
 }
 

@@ -1,0 +1,411 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; decomp, recomp, reimplementation</div>
+  <h1>Decomp, recomp, reimplementation: one game as a case study</h1>
+  <p class="lede">Legend of Legaia has been ported twice over the same months, by two separate efforts taking different routes: a static recompilation and this from-scratch engine. That makes it a rare side-by-side. This page sets out what each route gets up front, what it has to earn, and why building a new engine is a far more practical option than it used to be.</p>
+</header>
+
+<section class="doc-section" id="routes" data-doc="three-established-routes">
+  <h2>Three established routes</h2>
+  <p>There are three established ways to carry a console game's logic onto new machines, and each makes something different. Matthew Stanley, whose PSXRecomp is the recompiler in this case study, <a href="https://1379.tech/recomp-vs-decomp-wrong-question/" target="_blank" rel="noopener">writes</a> of decompilation and recompilation that "They produce different things &mdash; infrastructure and understanding". Reimplementation produces a third thing: an engine of its own, running the original's data.</p>
+  <figure class="cs-spectrum" aria-label="The three routes and what each produces. Decompilation produces source that rebuilds the game. Static recompilation produces the original game running natively. Reimplementation produces a new engine that runs the original's data.">
+    <div><strong>Decompilation</strong><span>Source code that rebuilds the game, and an understanding of what it does.</span><em>The Super Mario 64 and Ocarina of Time decompilations</em></div>
+    <div><strong>Static recompilation</strong><span>The original game running natively, over a model of its hardware.</span><em><a href="https://github.com/N64Recomp/N64Recomp" target="_blank" rel="noopener">N64Recomp</a>, <a href="https://github.com/hedge-dev/XenonRecomp" target="_blank" rel="noopener">XenonRecomp</a>, PSXRecomp</em></div>
+    <div><strong>Reimplementation</strong><span>A new engine that loads the original's data and behaves like the original.</span><em><a href="https://openmw.org/faq/" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/OpenLoco/OpenLoco" target="_blank" rel="noopener">OpenLoco</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, ScummVM</em></div>
+  </figure>
+  <p>Reimplementation has a long record. OpenMW is "an entirely different game engine that does not use the original executable file in any way". OpenLoco finished reimplementing its game in C++ in December 2025. On PlayStation, <a href="https://github.com/Legend-of-Dragoon-Modding/Severed-Chains" target="_blank" rel="noopener">Severed Chains</a> is The Legend of Dragoon "disassembled and rewritten in Java". Legaia now lets the route be compared directly with a recompilation of the same game.</p>
+  <div class="callout">
+    <div class="callout-title">Terms on this page</div>
+    <p><strong>A port is a result, not a method.</strong> A PC port can be built on a decompilation, a recompilation or a new engine. <strong>"Reimplementation"</strong> here means the whole game's engine; a recomp's runtime also reimplements libraries and hardware, which is a narrower thing. Engine recreations are often divided into <a href="https://en.wikipedia.org/wiki/Game_engine_recreation" target="_blank" rel="noopener"><em>top-down</em> and <em>bottom-up</em></a>: built from specifications and then tuned, or rebuilt from the disassembly. This project is bottom-up in what it reads and new in what it writes.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="what-runs" data-doc="what-actually-runs">
+  <h2>What actually runs</h2>
+  <p>The names blur, but the question that separates them is concrete: when you press Start, whose code is executing?</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What executes at play time under each route. Decompilation runs the game's logic as rewritten C on a new platform layer. Static recompilation runs the game's machine code translated to C on a runtime that models the PlayStation hardware. Reimplementation runs new code that follows the original's rules, with any scripts the game ships running as data on new interpreters. Only the reimplementation has no original code executing.">
+      <g><text class="dg-label" x="170" y="28" style="font-size:18px;font-weight:700">Decompilation</text>
+      <rect class="dg-node-ok" x="30" y="46" width="280" height="62" rx="6"/><text class="dg-label" x="170" y="72">The game's assets</text><text class="dg-sub" x="170" y="92">often from the user's copy</text>
+      <rect class="dg-node-warn" x="30" y="116" width="280" height="102" rx="6"/><text class="dg-label" x="170" y="150">The game's logic, as C</text><text class="dg-sub" x="170" y="172">rewritten by hand, compiled for the host</text><text class="dg-sub" x="170" y="192">its structure is the original's</text>
+      <rect class="dg-node-accent" x="30" y="226" width="280" height="84" rx="6"/><text class="dg-label" x="170" y="260">Platform layer</text><text class="dg-sub" x="170" y="282">written new for each host</text>
+      <rect class="dg-node" x="30" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="170" y="349">Host: GPU, audio, OS</text></g>
+
+      <g><text class="dg-label" x="500" y="28" style="font-size:18px;font-weight:700">Static recompilation</text>
+      <rect class="dg-node-ok" x="360" y="46" width="280" height="62" rx="6"/><text class="dg-label" x="500" y="72">The disc</text><text class="dg-sub" x="500" y="92">read through a modelled CD drive</text>
+      <rect class="dg-node-warn" x="360" y="116" width="280" height="102" rx="6"/><text class="dg-label" x="500" y="150">The game's machine code, as C</text><text class="dg-sub" x="500" y="172">generated; registers, addresses survive</text><text class="dg-sub" x="500" y="192">overlays compiled or interpreted</text>
+      <rect class="dg-node-accent" x="360" y="226" width="280" height="84" rx="6"/><text class="dg-label" x="500" y="252">PlayStation runtime</text><text class="dg-sub" x="500" y="274">R3000, GTE, GPU, SPU, CD</text><text class="dg-sub" x="500" y="292">in PSXRecomp, the BIOS is recompiled too</text>
+      <rect class="dg-node" x="360" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="500" y="349">Host: GPU, audio, OS</text></g>
+
+      <g><text class="dg-label" x="830" y="28" style="font-size:18px;font-weight:700">Reimplementation</text>
+      <rect class="dg-node-ok" x="690" y="46" width="280" height="102" rx="6"/><text class="dg-label" x="830" y="80">The game's data</text><text class="dg-sub" x="830" y="102">models, tables and any scripts,</text><text class="dg-sub" x="830" y="122">usually from the user's copy</text>
+      <rect class="dg-node-accent" x="690" y="156" width="280" height="154" rx="6"/><text class="dg-label" x="830" y="184">New engine</text><text class="dg-sub" x="830" y="206">interpreters for the game's scripts</text><text class="dg-sub" x="830" y="226">rules taken from the original</text><text class="dg-sub" x="830" y="246">renderer, audio, saves of its own</text><text class="dg-sub" x="830" y="266">a structure it chose for itself</text><text class="dg-sub" x="830" y="288">(this project uses Rust)</text>
+      <rect class="dg-node" x="690" y="318" width="280" height="50" rx="6"/><text class="dg-label" x="830" y="349">Host: GPU, audio, OS</text></g>
+
+      <rect class="dg-node-warn" x="232" y="392" width="16" height="16" rx="3"/><text class="dg-sub dg-start" x="254" y="405" style="font-size:13px">original code</text>
+      <rect class="dg-node-accent" x="400" y="392" width="16" height="16" rx="3"/><text class="dg-sub dg-start" x="422" y="405" style="font-size:13px">new code</text>
+      <rect class="dg-node-ok" x="530" y="392" width="16" height="16" rx="3"/><text class="dg-sub dg-start" x="552" y="405" style="font-size:13px">the game's data</text>
+    </svg>
+    <figcaption>Amber is the original's code in the running program. Decompilation and recompilation keep it in different forms. A reimplementation has none, which is its whole bargain: everything that amber box would have given for free has to be found and rebuilt.</figcaption>
+  </figure>
+  <p>Legaia suits the third column unusually well. Field scripts, effects and moves are bytecode on the disc, so porting a <a href="../subsystems/vm-inventory.html">VM</a> carries every script written for it. The same fact is why the disc has so much for a new engine to read.</p>
+</section>
+
+<section class="doc-section" id="timeline" data-doc="one-game-two-ports-the-same-months">
+  <h2>One game, two ports, the same months</h2>
+  <p>PSXRecomp and this project both started in spring 2026, within weeks of each other, and the Legaia recomp builds on PSXRecomp. All three are still going. Three threads run through them: getting the game playable from start to finish, matching the original, and letting people change it. Dates come from each project's commit log.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 1000 376" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline from April to November 2026 with three shared threads: playing the game, fidelity and modding. The PSXRecomp framework starts in April, the Legaia engine in May and the Legaia recomp, which builds on PSXRecomp, in July. Each has a line through all three threads. Numbered points are listed below the figure.">
+      <path d="M150 15 H178" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="188" y="19" style="font-size:12.5px">PSXRecomp (framework)</text>
+      <path d="M390 15 H418" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="428" y="19" style="font-size:12.5px">Legaia recomp (built on PSXRecomp)</text>
+      <path d="M700 15 H728" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round"/><text class="dg-sub dg-start" x="738" y="19" style="font-size:12.5px">Legaia engine (this project)</text>
+      <g class="dg-edge-label" text-anchor="middle" style="font-size:12px"><text x="150" y="46">Apr</text><text x="259" y="46">May</text><text x="372" y="46">Jun</text><text x="481" y="46">Jul</text><text x="594" y="46">Aug</text><text x="707" y="46">Sep</text><text x="816" y="46">Oct</text><text x="929" y="46">Nov</text></g>
+      <rect x="4" y="60" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="104" style="font-size:13px">Playing the game</text><text class="dg-sub dg-start" x="14" y="121">start to finish</text><rect x="4" y="164" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="208" style="font-size:13px">Fidelity</text><text class="dg-sub dg-start" x="14" y="225">matching retail</text><rect x="4" y="268" width="992" height="96" rx="6" style="fill:var(--bg-card);stroke:var(--border)"/><text class="dg-label dg-start" x="14" y="312" style="font-size:13px">Modding</text><text class="dg-sub dg-start" x="14" y="329">changing the game</text>
+      <g style="stroke:var(--border);stroke-width:1"><line x1="150" y1="54" x2="150" y2="368"/><line x1="259" y1="54" x2="259" y2="368"/><line x1="372" y1="54" x2="372" y2="368"/><line x1="481" y1="54" x2="481" y2="368"/><line x1="594" y1="54" x2="594" y2="368"/><line x1="707" y1="54" x2="707" y2="368"/><line x1="816" y1="54" x2="816" y2="368"/><line x1="929" y1="54" x2="929" y2="368"/></g>
+      <path d="M186 80 H960" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 108 H960" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 136 H960" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 184 H960" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 212 H960" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 240 H960" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M186 288 H960" style="stroke:var(--prov);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M536 316 H960" style="stroke:var(--warn);stroke-width:6;stroke-linecap:round;fill:none"/><path d="M274 344 H960" style="stroke:var(--dg-accent);stroke-width:6;stroke-linecap:round;fill:none"/>
+      <g class="cs-dot cs-dot-f"><g class="cs-pt" data-n="1" data-url="https://github.com/mstan/psxrecomp/commit/291e10f00d806c427dd5ab064c82258b73daacdc" data-who="PSXRecomp" data-date="May 17" data-title="Tomba! reaches gameplay" data-detail="Booted through the BIOS on May 11 and reached gameplay six days later." data-src="PSXRecomp commit 291e10f" tabindex="0" role="link" aria-label="PSXRecomp, May 17: Tomba! reaches gameplay"><circle cx="317" cy="80" r="11"/><text x="317" y="84">1</text></g><g class="cs-pt" data-n="5" data-url="https://github.com/mstan/psxrecomp/commit/f75159c8d6f3e19381b1de90e7d5144ce34f919a" data-who="PSXRecomp" data-date="May 9-13" data-title="Hardware accuracy" data-detail="SPU envelope and free-voice fixes on May 9, then vblank pacing moved to guest cycles on May 13." data-src="PSXRecomp commit f75159c" tabindex="0" role="link" aria-label="PSXRecomp, May 9-13: Hardware accuracy"><circle cx="288" cy="184" r="11"/><text x="288" y="188">5</text></g><g class="cs-pt" data-n="9" data-url="https://github.com/mstan/psxrecomp/commit/be76e4d4b569fc76afd30b4c0fb3778d0f17157d" data-who="PSXRecomp" data-date="Jun 12" data-title="Widescreen and an OpenGL renderer" data-detail="Both landed on Jun 12, framework-wide. A Vulkan backend followed and was validated in early July." data-src="PSXRecomp commits be76e4d, 7ef6415" tabindex="0" role="link" aria-label="PSXRecomp, Jun 12: Widescreen and an OpenGL renderer"><circle cx="412" cy="288" r="11"/><text x="412" y="292">9</text></g></g>
+      <g class="cs-dot cs-dot-r"><g class="cs-pt" data-n="2" data-url="https://github.com/SamSteProjects/legend-of-legaia-recomp/releases" data-who="Legaia recomp" data-date="Jul 17" data-title="Legaia runs field, battles and summons" data-detail="The overlay cache fix landed on Jul 16, and battle items, Spirit actions, Hyper Arts and summons were verified in-game on Jul 17. Public playtest builds followed, from v0.1.0 on Jul 18 to v0.1.7 on Aug 27." data-src="Fork commits bb2ec29, c4b5bd3; playtest releases" tabindex="0" role="link" aria-label="Legaia recomp, Jul 17: Legaia runs field, battles and summons"><circle cx="540" cy="108" r="11"/><text x="540" y="112">2</text></g><g class="cs-pt" data-n="6" data-url="https://github.com/SamSteProjects/psxrecomp/commit/c4b5bd3fa54938c15a5df98ef974287e534845cc" data-who="Legaia recomp" data-date="Jul 17" data-title="Legaia&#x27;s CD and XA sequencing in battle" data-detail="Interrupt timing during CD callbacks, XA audio in step with animation, and seeks for back-to-back clips." data-src="Fork commit c4b5bd3" tabindex="0" role="link" aria-label="Legaia recomp, Jul 17: Legaia&#x27;s CD and XA sequencing in battle"><circle cx="540" cy="212" r="11"/><text x="540" y="216">6</text></g><g class="cs-pt" data-n="10" data-url="https://github.com/SamSteProjects/psxrecomp/tree/legaia-sdk-integration" data-who="Legaia recomp" data-date="Oct 2" data-title="A modding SDK" data-detail="In active development on a public branch, not yet merged or released." data-src="Branch legaia-sdk-integration" tabindex="0" role="link" aria-label="Legaia recomp, Oct 2: A modding SDK"><circle cx="820" cy="316" r="11"/><text x="820" y="320">10</text></g></g>
+      <g class="cs-dot"><g class="cs-pt" data-n="3" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/142" data-who="Legaia engine" data-date="May 23" data-title="A walkable overworld" data-detail="Walking, collision, encounters and portals." data-src="PR #142" tabindex="0" role="link" aria-label="Legaia engine, May 23: A walkable overworld"><circle cx="339" cy="136" r="11"/><text x="339" y="140">3</text></g><g class="cs-pt" data-n="4" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/529" data-who="Legaia engine" data-date="Oct 17" data-title="A pad-only run reaches the credits" data-detail="One New Game played to the credits on pad input alone, never re-seeded from a retail save." data-src="PR #529" tabindex="0" role="link" aria-label="Legaia engine, Oct 17: A pad-only run reaches the credits"><circle cx="874" cy="136" r="11"/><text x="874" y="140">4</text></g><g class="cs-pt" data-n="7" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/107" data-who="Legaia engine" data-date="May 19-25" data-title="Audio oracles" data-detail="PCM-window parity on May 19, then bit-exact XA across the whole corpus on May 25." data-src="PRs #107, #151" tabindex="0" role="link" aria-label="Legaia engine, May 19-25: Audio oracles"><circle cx="325" cy="240" r="11"/><text x="325" y="244">7</text></g><g class="cs-pt" data-n="8" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/486" data-who="Legaia engine" data-date="Sep 29" data-title="Full-game ladder, retail corpus, soak harness" data-detail="Instruments that measure New Game to credits, retail save states and seeded random play." data-src="PR #486" tabindex="0" role="link" aria-label="Legaia engine, Sep 29: Full-game ladder, retail corpus, soak harness"><circle cx="809" cy="240" r="11"/><text x="809" y="244">8</text></g><g class="cs-pt" data-n="11" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/188" data-who="Legaia engine" data-date="May 31" data-title="Disc patcher and randomizer" data-detail="Patches the retail disc, starting with monster drops. More randomizers followed through June." data-src="PR #188" tabindex="0" role="link" aria-label="Legaia engine, May 31: Disc patcher and randomizer"><circle cx="368" cy="344" r="11"/><text x="368" y="348">11</text></g><g class="cs-pt" data-n="12" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/331" data-who="Legaia engine" data-date="Jul 15" data-title="Language packs" data-detail="Translation tooling on the same patcher, including German dialog fitting and the PAL localization toolchain." data-src="PRs #331, #333" tabindex="0" role="link" aria-label="Legaia engine, Jul 15: Language packs"><circle cx="532" cy="344" r="11"/><text x="532" y="348">12</text></g><g class="cs-pt" data-n="13" data-url="https://github.com/AndrewAltimit/legend-of-legaia-re/pull/544" data-who="Legaia engine" data-date="Oct 30" data-title="Expansion packs, game modes and netplay" data-detail="Packs that name monsters, maps and quests, with their own game modes and multiplayer." data-src="PR #544" tabindex="0" role="link" aria-label="Legaia engine, Oct 30: Expansion packs, game modes and netplay"><circle cx="922" cy="344" r="11"/><text x="922" y="348">13</text></g></g>
+    </svg>
+    <figcaption>Hover or tap a point for details, and click it to open its commit or pull request. Dates come from each project's commit history and are approximate. All three are still active. PSXRecomp's prototype dates from March, the Legaia recomp's line starts at its first published commits, and this repository opens with a first release, so its work starts somewhat before May.</figcaption>
+  </figure>
+  <div class="cs-legend">
+    <div><h3>Playing the game</h3><ol start="1">
+      <li data-n="1"><span class="cs-who cs-who-f">PSXRecomp &middot; May 17</span> <em>Tomba!</em> reaches gameplay on the framework.</li>
+      <li data-n="2"><span class="cs-who cs-who-r">Legaia recomp &middot; Jul 17</span> Legaia runs field, battles and summons, with public playtest builds from Jul 18.</li>
+      <li data-n="3"><span class="cs-who">Legaia engine &middot; May 23</span> A walkable overworld, with collision and encounters.</li>
+      <li data-n="4"><span class="cs-who">Legaia engine &middot; Oct 17</span> A run on pad input alone reaches the credits.</li>
+    </ol></div>
+    <div><h3>Fidelity</h3><ol start="5">
+      <li data-n="5"><span class="cs-who cs-who-f">PSXRecomp &middot; May 9-13</span> Hardware accuracy: SPU envelopes, vblank pacing on guest cycles.</li>
+      <li data-n="6"><span class="cs-who cs-who-r">Legaia recomp &middot; Jul 17</span> Legaia's CD and XA sequencing in battle.</li>
+      <li data-n="7"><span class="cs-who">Legaia engine &middot; May 19-25</span> Audio oracles: PCM parity and bit-exact XA.</li>
+      <li data-n="8"><span class="cs-who">Legaia engine &middot; Sep 29</span> The full-game ladder, retail corpus and soak harness.</li>
+    </ol></div>
+    <div><h3>Modding</h3><ol start="9">
+      <li data-n="9"><span class="cs-who cs-who-f">PSXRecomp &middot; Jun 12</span> Widescreen and an OpenGL renderer, framework-wide.</li>
+      <li data-n="10"><span class="cs-who cs-who-r">Legaia recomp &middot; Oct 2</span> A modding SDK, in development on a public branch.</li>
+      <li data-n="11"><span class="cs-who">Legaia engine &middot; May 31</span> The disc patcher and randomizer, for the retail game.</li>
+      <li data-n="12"><span class="cs-who">Legaia engine &middot; Jul 15</span> Language packs on the same patcher.</li>
+      <li data-n="13"><span class="cs-who">Legaia engine &middot; Oct 30</span> Expansion packs, game modes and netplay.</li>
+    </ol></div>
+  </div>
+  <p><strong>The recomp and the engine come at the same goals in different orders.</strong> A recomp starts with the original's own code, so retail behaviour is there from the first frame and the work goes into making the hardware model right. That is the quickest way to play a game as it was, and the framework behind it already carries <em>Tomba!</em> and <em>Mega Man X6</em> as well. The engine started with nothing running, and built up both the playthrough and its fidelity one mechanism at a time against retail captures.</p>
+  <p>Modding has been a thread of its own on both sides, and the kinds of mod differ. Disc patches like the randomizer change the retail game's own bytes, so they arrived early, before the engine could play the story. Language packs followed on the same tooling. Expansion packs came later because they need the engine: they name monsters, maps and quests rather than addresses.</p>
+  <p>The two have also helped each other throughout. The recomp's README credits this project's docs, saying they "materially shortened the investigation and guided the runtime's overlay-cache fixes", and <a href="recomp-differential.html">the recomp is one of this project's best references</a> for what retail actually does.</p>
+
+  <script>
+  (function () {
+    var pts = document.querySelectorAll('.cs-pt');
+    if (!pts.length) return;
+    var tip = document.createElement('div');
+    tip.className = 'cs-tip';
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    ['cs-tip-head', 'cs-tip-title', 'cs-tip-detail', 'cs-tip-src'].forEach(function (c) {
+      var d = document.createElement('div'); d.className = c; tip.appendChild(d);
+    });
+    document.body.appendChild(tip);
+    var current = null, armed = null, touch = false;
+    function open(pt) { if (pt.dataset.url) window.open(pt.dataset.url, '_blank', 'noopener'); }
+    function mark(n, on) {
+      document.querySelectorAll('.cs-pt[data-n="' + n + '"], .cs-legend li[data-n="' + n + '"]').forEach(function (e) {
+        e.classList.toggle('cs-on', on);
+      });
+    }
+    function hide() {
+      if (current) mark(current.dataset.n, false);
+      current = null;
+      armed = null;
+      tip.hidden = true;
+    }
+    function show(pt) {
+      if (current && current !== pt) mark(current.dataset.n, false);
+      current = pt;
+      mark(pt.dataset.n, true);
+      var d = pt.dataset;
+      tip.children[0].textContent = d.who + ' \u00b7 ' + d.date;
+      tip.children[1].textContent = d.title;
+      tip.children[2].textContent = d.detail;
+      tip.children[3].textContent = d.src + (d.url ? (touch ? ' \u00b7 tap again to open' : ' \u00b7 click to open') : '');
+      tip.hidden = false;
+      var r = pt.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+      var left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+      var top = r.top - h - 10;
+      if (top < 64) top = r.bottom + 10;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    pts.forEach(function (pt) {
+      pt.addEventListener('mouseenter', function () { show(pt); });
+      pt.addEventListener('mouseleave', hide);
+      pt.addEventListener('focus', function () { show(pt); });
+      pt.addEventListener('blur', hide);
+      pt.addEventListener('pointerdown', function (e) { touch = e.pointerType === 'touch'; });
+      pt.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (touch && armed !== pt) { show(pt); armed = pt; return; }
+        open(pt);
+      });
+      pt.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); open(pt); } });
+    });
+    document.querySelectorAll('.cs-legend li[data-n]').forEach(function (li) {
+      li.addEventListener('mouseenter', function () { mark(li.dataset.n, true); });
+      li.addEventListener('mouseleave', function () { mark(li.dataset.n, false); });
+    });
+    document.addEventListener('click', hide);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+    window.addEventListener('scroll', hide, { passive: true });
+  })();
+  </script>
+</section>
+
+<section class="doc-section" id="ledger" data-doc="what-each-route-gives-you-and-what-takes-extra-work">
+  <h2>What each route gives you, and what takes extra work</h2>
+  <p>Each route gives you some things simply by taking it. Most of the rest can be had with extra work, and a few things go against how the route works.</p>
+  <div class="cs-key"><div><span class="cs-p cs-come">&#9679; Built in</span> part of taking the route</div><div><span class="cs-p cs-earn">&#9680; Extra work</span> reachable, at a cost</div><div><span class="cs-p cs-against">&#9675; Poor fit</span> works against the route</div></div>
+  <div class="table-wrap cs-ledger">
+    <table>
+      <thead><tr><th>You want</th><th>Decompilation</th><th>Static recompilation</th><th>Reimplementation</th></tr></thead>
+      <tbody>
+        <tr><th>The whole game running</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>All the code, plus a platform layer.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>Once the runtime exists and the code is found.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Extra work</span>Once every routine is ported or handed to a library.</td></tr>
+        <tr><th>Retail quirks and timing</th>
+          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Built in</span>In the logic; timing depends on the platform layer.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>If the hardware model is right.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-earn">&#9680; Extra work</span>Found and measured one at a time. Full visual parity comes last.</td></tr>
+        <tr><th>Assurance the code is right</th>
+          <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Built in</span>When matching: a byte match per function.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>Translation is mechanical. The runtime carries the risk.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>Measured over samples, never proved.</td></tr>
+        <tr><th>Rules a person can read</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Naming and typing, after the match.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>Generated C. Machine state stays visible.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Written as ordinary named code (this project tags each routine with its retail address).</td></tr>
+        <tr><th>New rendering</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Replace the draw path in source.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Well served at the draw-call level: PSXRecomp has widescreen and new backends.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The renderer is the engine's own (this project uses wgpu).</td></tr>
+        <tr><th>Running on new systems</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Someone writes a platform layer for each new system.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The generated C compiles almost anywhere, but the PlayStation runtime has to be brought to each new system.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>No console code to carry, so a new system is ordinary engine work (this project runs natively and in a browser).</td></tr>
+        <tr><th>Modding by game concept</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Source edits, easier as names land.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Hooks that change or replace the game's functions. Finding what to hook generally requires a decompilation or disassembly.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>Mods can name monsters, maps and quests rather than addresses (this project uses <a href="../formats/expansion-pack.html">TOML expansion packs</a>).</td></tr>
+        <tr><th>Targeting another game on the same console</th>
+          <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>The tools carry. The work does not.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>The framework carries. A game adds config and fixes.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>The <a href="reusing-for-other-ps1-games.html">low layers and the method</a> carry. The engine does not.</td></tr>
+        <tr><th>No original code executing</th>
+          <td data-r="Decompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>The source is derived from it.</td>
+          <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>It is the original, translated.</td>
+          <td data-r="Reimplementation"><span class="cs-p cs-come">&#9679; Built in</span>The game's machine code never runs.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout callout-provenance">
+    <div class="callout-title">The last row is not a legal claim</div>
+    <p>No court has settled any of this. The nearest test, Take-Two's case over the GTA re3 and reVC projects, <a href="https://torrentfreak.com/take-two-dismisses-claims-against-lead-defendants-in-gta-mods-lawsuit-230405/" target="_blank" rel="noopener">ended in dismissal</a> with no ruling on the merits. A reimplementation written by people who read the disassembly is not "clean-room", and this project does not use the term; <a href="porting-by-reimplementation.html#why">the boundary it does enforce</a> is narrower. Whether AI assistance changes that picture is unresolved too.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="exhibits" data-doc="the-same-problems-paid-for-differently">
+  <h2>The same problems, paid for differently</h2>
+  <p>These come from the two Legaia ports. Each cost something on both sides, in a different place.</p>
+  <div class="cs-exhibits">
+    <article>
+      <h3>Battle items and CD audio</h3>
+      <div class="cs-side cs-recomp"><span>Recomp</span><p>Legaia's CD callback can wait for a vblank from inside an exception handler, an unusual pattern that showed up on battle items. Handling it in the hardware model fixed items, Spirit actions, Hyper Arts and summons together.</p></div>
+      <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>No libcd runs here, so that pattern never arises. The timing that comes with it was missing too: retail battle frames <a href="../subsystems/battle-stage-camera.html">run long during a CD-XA clip</a>, five to seven vsyncs. The engine played them at the normal rate until that was measured and modelled.</p></div>
+      <p class="cs-moral">A fix in a recomp's hardware model reaches the whole game at once. A reimplementation's fixes are local and found one at a time.</p>
+    </article>
+    <article>
+      <h3>Code that is not in the executable</h3>
+      <div class="cs-side cs-recomp"><span>Recomp</span><p>The translator sees the boot executable. Overlays load at runtime into a reused window, so they are captured as they load and then compiled, or interpreted until they are. Jump tables need help too: the renderer's computed <code>jr</code> does not resolve statically.</p></div>
+      <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>Overlays are <a href="static-overlay-pipeline.html">extracted from the disc</a> and read once, with no need to reach them in play. The price is bookkeeping: overlays share addresses, so <a href="../reference/re-do-not-re-walk.html">an address alone names nothing</a>, and these docs have been wrong about that.</p></div>
+      <p class="cs-moral">The recomp's problem is finding the code. The reimplementation's is knowing whose code it is reading.</p>
+    </article>
+    <article>
+      <h3>A bug no local test could see</h3>
+      <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>The GTE model passed its own sweep, because the sweep agreed with the model. The screen-coordinate FIFO saturates at signed 11 bits, and nothing here knew that.</p></div>
+      <div class="cs-side cs-recomp"><span>Recomp</span><p>Running retail's code, it produced real input and output pairs from the GTE, which exposed the difference at once. Its value here was as <a href="recomp-differential.html">a second, independent execution</a>.</p></div>
+      <p class="cs-moral">Each route makes the others better. Here, each has been the other's best instrument.</p>
+    </article>
+  </div>
+</section>
+
+<section class="doc-section" id="mistakes" data-doc="how-a-mistake-shows-up">
+  <h2>How a mistake shows up</h2>
+  <p>The biggest practical difference between the routes may be when you find out that somebody misread the original.</p>
+  <figure class="cs-errs" aria-label="When a mistake is found under each route. In a matching decompilation, at build time. In a static recompilation, usually while playing. In a reimplementation, only by comparing with the original.">
+    <div><strong>Decompilation</strong><span class="cs-when">At build time</span><span>A matching build reports that the function differs. Non-matching work gives this up.</span></div>
+    <div><strong>Static recompilation</strong><span class="cs-when">Usually while playing</span><span>A crash, a freeze or a visible glitch, though timing problems can be subtle.</span></div>
+    <div><strong>Reimplementation</strong><span class="cs-when">Only by comparing</span><span>The game runs and is slightly different, so the mistake appears only when measured against the original.</span></div>
+  </figure>
+  <p>That third row is the real historic objection to reimplementation. Without something to compare against, you can only say it feels right. It is also why this project spends so much on measurement: <a href="retail-oracle-method.html">the retail-oracle method</a> exists to turn that difference into a number. Even so, a score only speaks for what it sampled. A matching decompilation's proof is stronger, and nothing here replaces it.</p>
+</section>
+
+<section class="doc-section" id="ai" data-doc="why-reimplementation-is-more-viable-now">
+  <h2>Why reimplementation is more viable now</h2>
+  <p>Reimplementation has had two standing problems: years of labour before the first reward, and differences from the original that go unnoticed. Both have become more tractable, for connected reasons.</p>
+  <ul class="bullets">
+    <li><strong>The labour is the kind coding agents do well.</strong> Reading a routine, writing the equivalent function, wiring it up, and repeating that across a whole game was the cost. By hand, that work is measured in years: OpenLoco finished reimplementing its game in C++ only in December 2025.</li>
+    <li><strong>The instruments have got cheap to build.</strong> Scriptable emulators, readable save states and headless Ghidra existed already. What a small project could not afford was the software on top: state readers, scoring channels, ratchets and replay. An agent can write those too.</li>
+    <li><strong>Those two fit together.</strong> An agent is a fast and confident writer, and unnoticed differences are what a fast, confident writer produces. A reimplementation with measurement gives that writer something external to answer to.</li>
+  </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The working loop. An agent reads the original's code and writes an equivalent routine. Build, test and layering gates check it. Retail oracles score it against the original. A ratchet accepts a rise or requires a recorded reason for a fall. Divergences go back to the agent as the next job. Beneath the loop, a human sets goals, captures retail states, plays the game and reviews, and disproved readings go into a register that every later run reads.">
+      <defs><marker id="cs-a" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="95" y="84">Read</text><text class="dg-sub" x="95" y="106">the original's code</text><text class="dg-sub" x="95" y="122">at its most exact</text>
+      <rect class="dg-node" x="210" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="295" y="84">Write</text><text class="dg-sub" x="295" y="106">an equivalent routine,</text><text class="dg-sub" x="295" y="122">traceable to its source</text>
+      <rect class="dg-node" x="410" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="495" y="84">Gate</text><text class="dg-sub" x="495" y="106">build, tests, layering,</text><text class="dg-sub" x="495" y="122">reached by a live caller</text>
+      <rect class="dg-node-accent" x="610" y="52" width="170" height="82" rx="6"/><text class="dg-label" x="695" y="84">Measure</text><text class="dg-sub" x="695" y="106">against the original,</text><text class="dg-sub" x="695" y="122">by scripted comparison</text>
+      <rect class="dg-node-ok" x="810" y="52" width="180" height="82" rx="6"/><text class="dg-label" x="900" y="84">Ratchet</text><text class="dg-sub" x="900" y="106">a rise is kept; a fall</text><text class="dg-sub" x="900" y="122">needs a recorded reason</text>
+      <path class="dg-edge" d="M180 93 H208" marker-end="url(#cs-a)"/><path class="dg-edge" d="M380 93 H408" marker-end="url(#cs-a)"/><path class="dg-edge" d="M580 93 H608" marker-end="url(#cs-a)"/><path class="dg-edge" d="M780 93 H808" marker-end="url(#cs-a)"/>
+      <path class="dg-edge" d="M695 52 V24 H95 V50" marker-end="url(#cs-a)"/>
+      <text class="dg-edge-label" x="395" y="17" text-anchor="middle">a divergence names the next job, worst first</text>
+      <rect class="dg-group" x="10" y="160" width="980" height="38" rx="5"/><text class="dg-sub" x="500" y="184" style="font-size:13px">a register of disproved readings and an evidence grade on every claim, read by each later run</text>
+      <rect class="dg-node-warn" x="10" y="206" width="980" height="40" rx="5"/><text class="dg-label" x="500" y="232" style="font-size:14px">A person: sets the goal, captures the original running, plays the game, decides what counts</text>
+    </svg>
+    <figcaption>The agent is inside the loop. The ground truth is not. This project's version is <a href="retail-oracle-method.html">the retail-oracle method</a>.</figcaption>
+  </figure>
+  <div class="cs-two">
+    <div>
+      <h3>What got cheaper</h3>
+      <ul class="bullets">
+        <li>Reading a routine and writing its equivalent.</li>
+        <li>Wiring, and the sweeps nobody wants to do by hand.</li>
+        <li>Single-purpose tools, written for one question.</li>
+        <li>Docs that stay current because they are written with the change.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What did not</h3>
+      <ul class="bullets">
+        <li>Retail captures, many of which need someone on the pad.</li>
+        <li>Deciding what counts as right, and which scores to trust.</li>
+        <li>Noticing that a green test measures nothing.</li>
+        <li>Standing in a community that may not want this.</li>
+      </ul>
+    </div>
+  </div>
+  <p><strong>This is not an argument that AI favours reimplementation alone.</strong> This project is written with Claude Code. So was the <a href="https://1379.tech/i-built-a-ps1-static-recompiler-with-no-prior-experience-and-claude-code/" target="_blank" rel="noopener">prototype of PSXRecomp</a>, by an author with no compiler background, who adds that "the process still requires significant human oversight". Matching decompilation may have the best signal of the three, since a byte match is an unambiguous score: <a href="https://blog.chrislewis.au/decompiling-a-nintendo-64-game-in-84-days/" target="_blank" rel="noopener">Chris Lewis</a> matched one N64 game in 84 days against 596 for its sequel, with a different compiler and prior experience in the mix, and estimates it would have stalled around 89-90% without human experts. His 2025 view was that "We're a long way from 'vibe coding' being viable for matching decompilation."</p>
+  <p>The narrower claim is the one this case supports: all three routes got cheaper, and reimplementation had the most to gain, because labour was the thing that ruled it out for small teams. It need no longer be a commitment of many years. It is still a lot of careful work. Human judgment remains in the loop, and a project that skipped the measurement half would be producing exactly what its critics expect. The <a href="../reference/re-do-not-re-walk.html">register of disproved readings</a> is a public record of how plausibly wrong a reading can be.</p>
+  <div class="callout callout-warn">
+    <div class="callout-title">The community cost is real</div>
+    <p><a href="https://decomp.dev/" target="_blank" rel="noopener">decomp.dev</a> is sunsetting its main index, writing that AI "can expedite the decompilation process in a significant way" with the right guidance and that "the community aspect of decompilation has been broken". DarioSamo, who led Banjo: Recompiled, <a href="https://www.videogameschronicle.com/news/banjo-kazooie-pc-port-decomp-developer-says-ai-generated-pc-ports-are-a-race-to-the-bottom-and-disrespectful/" target="_blank" rel="noopener">declined</a> "a race to the bottom" with AI-generated ports. Severed Chains states "AI was not used to create this project", which is a useful reminder that a reimplementation has never needed it. Work built on other people's research owes those people credit, and this one tries to pay it in its <a href="../reference/index.html#acknowledgments">acknowledgments</a>.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="choosing" data-doc="choosing-a-route">
+  <h2>Choosing a route</h2>
+  <div class="cs-choose">
+    <div><strong>You want the game on modern machines, as it was</strong><span>Static recompilation, if a framework for the console exists. Nothing here competes with it on speed.</span></div>
+    <div><strong>You want to know exactly what the code says</strong><span>Matching decompilation, if the compiler can be pinned down.</span></div>
+    <div class="cs-this"><strong>You want the game to become more than it was</strong><span>Reimplementation, especially if much of the game is data, the target cannot carry its code, and you can measure against the original.</span></div>
+    <div><strong>You want to play it tonight</strong><span>An emulator, or an official release if there is one.</span></div>
+  </div>
+  <p>The routes also combine. This project uses a <a href="recomp-differential.html">recomp as an oracle</a>, Ghidra's output as a pointer and an emulator as the judge, and a matching decompilation of Legaia would be a better reference than any of them.</p>
+</section>
+
+<section class="doc-section" id="limits" data-doc="what-this-case-cannot-show">
+  <h2>What this case cannot show</h2>
+  <ul class="bullets">
+    <li><strong>It is one game</strong>, and a heavily data-driven one, which flatters this route.</li>
+    <li><strong>The two efforts are shaped differently.</strong> PSXRecomp is a general framework serving several games, and this repository is about one. Neither side has logged hours, so no labour comparison is possible.</li>
+    <li><strong>There is no third column.</strong> As far as this project knows there is no public decompilation of Legaia, so that route is argued from other games.</li>
+    <li><strong>"Reaches the credits" is not "identical to retail".</strong> Parity is measured over what the corpus has sampled, and it <a href="retail-compare.html">is still being worked on</a>.</li>
+    <li><strong>Both projects are moving.</strong> This is a snapshot, and the modding comparison in particular will change as the recomp's work ships.</li>
+    <li><strong>The author has a side.</strong> This page is written by the project it argues for. The links are there so that you can check.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="porting-by-reimplementation.html">The method, step by step</a>
+    <a href="retail-oracle-method.html">The retail-oracle method</a>
+    <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
+    <a href="recomp-differential.html">Recomp differential</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/decomp-recomp-reimplementation.md" target="_blank" rel="noopener">This page's source</a>
+  </div>
+</section>
+
+<style>
+  .cs-spectrum { margin: 1.1rem 0 1.3rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+  .cs-spectrum > div { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); min-width: 0; }
+  .cs-spectrum strong { color: var(--text-bright); }
+  .cs-spectrum span { color: var(--text-muted); font-size: 0.88rem; line-height: 1.45; flex: 1; }
+  .cs-spectrum em { color: var(--text-dim); font-style: normal; font-size: 0.82rem; line-height: 1.45; }
+  .cs-spectrum figcaption, .cs-errs figcaption { grid-column: 1 / -1; color: var(--text-dim); font-size: 0.82rem; }
+
+  figure.diagram .cs-dot circle { fill: var(--bg-raised); stroke: var(--dg-accent); stroke-width: 1.5; }
+  figure.diagram .cs-dot text { fill: var(--text-bright); font-size: 12px; font-weight: 600; text-anchor: middle; }
+  .cs-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1.4rem; margin: 0 0 1.2rem; font-size: 0.92rem; }
+  .cs-legend h3 { margin: 0 0 0.3rem; font-size: 0.92rem; }
+  section.doc-section .cs-legend ol { margin: 0; padding-left: 1.6rem; line-height: 1.45; list-style: decimal outside; }
+  section.doc-section .cs-legend li { display: list-item; padding-left: 0.1rem; margin: 0 0 0.45rem; }
+  .cs-who { display: block; width: fit-content; font-family: var(--font-mono); font-size: 0.68rem; color: var(--dg-accent); }
+  .cs-who-r { color: var(--warn); }
+  .cs-who-f { color: var(--prov); }
+  figure.diagram .cs-pt { cursor: pointer; outline: none; }
+  figure.diagram .cs-pt text { pointer-events: none; }
+  figure.diagram .cs-pt:hover circle, figure.diagram .cs-pt:focus-visible circle, figure.diagram .cs-pt.cs-on circle { stroke-width: 3.5; fill: var(--bg-card); }
+  .cs-legend li { border-radius: 4px; transition: background var(--transition); }
+  .cs-legend li.cs-on { background: var(--accent-soft); }
+  .cs-tip { position: fixed; z-index: 200; width: min(20rem, calc(100vw - 16px)); padding: 0.6rem 0.75rem; border: 1px solid var(--border-hi); border-radius: 6px; background: var(--bg-raised); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); pointer-events: none; font-size: 0.86rem; line-height: 1.45; }
+  .cs-tip-head { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); }
+  .cs-tip-title { color: var(--text-bright); font-weight: 600; margin: 0.1rem 0 0.25rem; }
+  .cs-tip-detail { color: var(--text); }
+  .cs-tip-src { margin-top: 0.3rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); }
+  figure.diagram .cs-dot-f circle { stroke: var(--prov); }
+  figure.diagram .cs-dot-r circle { stroke: var(--warn); }
+  section.doc-section .cs-legend li::before { content: none; }
+
+  .cs-key { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0.6rem 0 0.8rem; padding: 0; color: var(--text-muted); font-size: 0.86rem; }
+  .cs-p { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid; font-family: var(--font-mono); font-size: 0.72rem; white-space: nowrap; }
+  .cs-come { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+  .cs-earn { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  .cs-against { color: var(--text-muted); border-color: var(--border-hi); background: transparent; }
+  .cs-ledger td { font-size: 0.88rem; line-height: 1.45; vertical-align: top; }
+  .cs-ledger td .cs-p { display: block; width: fit-content; margin-bottom: 0.25rem; }
+  .cs-ledger tbody th { text-align: left; color: var(--text-bright); font-weight: 600; font-size: 0.9rem; vertical-align: top; }
+
+  .cs-exhibits { display: grid; gap: 1rem; margin: 1rem 0 1.25rem; }
+  .cs-exhibits article { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); padding: 0.95rem 1.05rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+  .cs-exhibits h3, .cs-moral { grid-column: 1 / -1; margin: 0; }
+  .cs-exhibits h3 { font-size: 1.04rem; }
+  .cs-side { border-left: 3px solid var(--border); padding-left: 0.75rem; min-width: 0; }
+  .cs-side span { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-bright); }
+  .cs-side p { margin: 0.2rem 0 0; font-size: 0.92rem; line-height: 1.5; }
+  .cs-recomp { border-left-color: var(--warn); }
+  .cs-reimpl { border-left-color: var(--accent-line); }
+  .cs-moral { font-weight: 600; color: var(--text-bright); font-size: 0.94rem; }
+
+  .cs-errs { margin: 1rem 0 1.25rem; display: grid; gap: 0.5rem; }
+  .cs-errs > div { display: grid; grid-template-columns: 11rem 11.5rem minmax(0, 1fr); gap: 0.9rem; align-items: center; font-size: 0.92rem; }
+  .cs-errs strong { color: var(--text-bright); font-weight: 600; }
+  .cs-when { justify-self: start; padding: 0.05rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-bright); white-space: nowrap; }
+
+  .cs-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.5rem; }
+  .cs-choose { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin: 1rem 0; }
+  .cs-choose > div { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
+  .cs-choose strong { color: var(--text-bright); }
+  .cs-choose span { color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; }
+  .cs-this { border-color: var(--accent-line) !important; }
+
+  @media (max-width: 760px) {
+    .cs-spectrum, .cs-legend, .cs-two, .cs-choose, .cs-exhibits article { grid-template-columns: minmax(0, 1fr); }
+    .cs-legend { gap: 0.5rem; }
+    .cs-errs > div { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    .cs-ledger table, .cs-ledger tbody, .cs-ledger tr, .cs-ledger td, .cs-ledger tbody th { display: block; width: 100%; }
+    .cs-ledger thead { display: none; }
+    .cs-ledger tr { padding: 0.6rem 0.7rem; border-top: 1px solid var(--border); }
+    .cs-ledger tbody th, .cs-ledger td { padding: 0.15rem 0; border: 0; }
+    .cs-ledger td::before { content: attr(data-r); display: block; margin-top: 0.4rem; color: var(--text-dim); font-size: 0.76rem; }
+  }
+</style>

@@ -237,6 +237,26 @@ pub fn sideband_token_vsyncs(base: u8) -> u16 {
     u16::from(sideband_slot_count(base)) * SIDEBAND_SLOT_READ_VSYNCS + seek
 }
 
+/// Vsyncs the applier's stage byte costs past the slots' reads when the turn
+/// pick seeds it: the stage's own frames, one to request the first slot and
+/// one to consume each landed slot, two vsyncs apiece at frame step `2`.
+///
+/// A gate-replay capture of the town01 sparring fight reads `64` vsyncs from
+/// the pass that runs a turn's seed (`0x801DAD6C`) to the first pass that
+/// reads the byte down, on every turn but one (`68`, a three-vsync frame); the
+/// stage reads `2` for `30` vsyncs, `3` for two and `4` for `30`. The summon
+/// invoke's fitted [`sideband_token_vsyncs`] is `60` for those two slots.
+pub const SIDEBAND_PICK_SEED_STEP_VSYNCS: u16 = 4;
+
+/// The vsyncs the turn pick `FUN_801DABA4`'s seed of `ctx[+0x276]` holds the
+/// stage byte up: [`sideband_token_vsyncs`] of the base plus the applier's
+/// own stage frames ([`SIDEBAND_PICK_SEED_STEP_VSYNCS`]).
+///
+/// REF: FUN_801DABA4 (`0x801DAD6C`), FUN_801F12D0
+pub fn sideband_turn_seed_vsyncs(base: u8) -> u16 {
+    sideband_token_vsyncs(base) + SIDEBAND_PICK_SEED_STEP_VSYNCS
+}
+
 /// State `0x33`: sustain clip `0x12` on the caster and wait for the anim cue
 /// `+0x1F5`; on the cue, spawn the flash-in fade (`0x801E4A50..0x801E4AA0`).
 pub(super) fn summon_fade_in<H: BattleActionHost + ?Sized>(
@@ -469,6 +489,8 @@ mod tests {
             4 * SIDEBAND_SLOT_READ_VSYNCS + SIDEBAND_FIRST_SLOT_SEEK_VSYNCS
         );
         assert_eq!(sideband_token_vsyncs(0x12), 2 * SIDEBAND_SLOT_READ_VSYNCS);
+        // The turn pick's seed adds the applier's own stage frames.
+        assert_eq!(sideband_turn_seed_vsyncs(0x12), 64);
     }
 
     #[test]

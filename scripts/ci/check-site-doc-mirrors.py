@@ -108,6 +108,8 @@ MIRRORS = [
      "site/_content/tooling/full-game-ladder.html"),
     ("docs/tooling/soak-harness.md",
      "site/_content/tooling/soak-harness.html"),
+    ("docs/decomp-recomp-reimplementation.md",
+     "site/_content/tooling/decomp-recomp-reimplementation.html"),
     ("docs/porting-by-reimplementation.md",
      "site/_content/tooling/porting-by-reimplementation.html"),
     ("docs/tooling/retail-kernel-differential.md",

@@ -190,6 +190,16 @@ impl RowWindow {
         self.phase = WindowPhase::PressTurn;
     }
 
+    /// Skip a queued `0x24` turn's press call: the press was spent long ago
+    /// and the window sat in the idle state `4`, so the next call is state
+    /// `5`'s load (`0x80039FDC..0x80039FF0` steps `4` to `5` as the record
+    /// reaches its next line).
+    pub fn resume_from_idle(&mut self) {
+        self.rows_on_page = 0;
+        self.pacer.hold = 0;
+        self.phase = WindowPhase::Load;
+    }
+
     /// The row being typed and how many of its units show, or `None` when
     /// every row in the window draws whole.
     pub fn typing_row(&self) -> Option<(WindowRow, u32)> {

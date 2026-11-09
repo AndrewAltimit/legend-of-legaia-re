@@ -13,20 +13,20 @@
     <dt>Legaia-only</dt><dd>Legaia's own containers, data or runtime. A worked example, not a dependency.</dd>
   </dl>
   <p>The package name follows the class: the standalone generic crates are named <code>psx-*</code> (lib <code>psx_*</code>), everything else <code>legaia-*</code>. The two engine crates with a generic core (<code>legaia-engine-audio</code>, <code>legaia-render-kernels</code>) keep the engine's prefix. The directory under <code>crates/</code> carries no prefix either way.</p>
-  <figure class="diagram">
-    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three bands of crates. Generic PS1: iso, xa, bytes. Generic with Legaia quirks: tim, vab, seq, lzs, mdec, mednafen, pcsx-redux, ram-image, engine-audio, and the gte module of render-kernels. Legaia-only: tmd, container-formats, prot, the format families and the engine crates.">
-      <rect class="dg-node-ok" x="20" y="20" width="840" height="64" rx="4"/>
-      <text class="dg-label" x="440" y="46">Generic PS1</text>
-      <text class="dg-sub" x="440" y="68">iso · xa · bytes</text>
-      <rect class="dg-node-accent" x="20" y="110" width="840" height="84" rx="4"/>
-      <text class="dg-label" x="440" y="136">Generic, with Legaia quirks</text>
-      <text class="dg-sub" x="440" y="158">tim · vab · seq · lzs · mdec</text>
-      <text class="dg-sub" x="440" y="178">mednafen · pcsx-redux · ram-image · engine-audio · render-kernels::gte</text>
-      <rect class="dg-node-warn" x="20" y="220" width="840" height="64" rx="4"/>
-      <text class="dg-label" x="440" y="246">Legaia-only</text>
-      <text class="dg-sub" x="440" y="268">tmd · container-formats · prot · format families · engine-*</text>
-    </svg>
-    <figcaption>The bottom of the crate stack splits three ways. Only the top band can be taken as-is; the middle band works once you know which helper encodes Legaia's behaviour.</figcaption>
+  <figure class="ru-map" aria-label="Crates sorted by how far they carry to another game. Generic PS1 crates can be taken as they are. Generic crates with Legaia quirks work once the named quirk is handled. Legaia-only crates are a worked example, not a dependency.">
+    <div class="ru-band ru-generic">
+      <div class="ru-head"><strong>Take it as it is</strong><span>any PSX disc, or any file of that format</span></div>
+      <div class="ru-chips"><code>iso</code><code>xa</code><code>bytes</code><code>retail-exec</code></div>
+    </div>
+    <div class="ru-band ru-quirks">
+      <div class="ru-head"><strong>Take it, and check the quirk</strong><span>Sony's format or hardware, with something of Legaia's baked in</span></div>
+      <div class="ru-chips"><code>tim</code><code>vab</code><code>seq</code><code>lzs</code><code>mdec</code><code>mednafen</code><code>pcsx-redux</code><code>ram-image</code><code>engine-audio</code><code>render-kernels::gte</code></div>
+    </div>
+    <div class="ru-band ru-only">
+      <div class="ru-head"><strong>Read it as a worked example</strong><span>Legaia's own containers, data and runtime</span></div>
+      <div class="ru-chips"><code>tmd</code><code>container-formats</code><code>prot</code><code>format families</code><code>engine-*</code></div>
+    </div>
+    <figcaption>The bottom of the crate stack, sorted by how far it carries. The <a href="#method">method</a> transfers more completely than any band here.</figcaption>
   </figure>
 </section>
 
@@ -140,17 +140,18 @@
     </a>
     <a class="card" href="disc-coverage.html">
       <div class="card-title">Take the denominator from the disc</div>
-      <div class="card-body">Coverage of each code image's bytes, and per-entry <a href="byte-accounting.html">byte accounting</a>, so an unwalked format is a run at the top of a list. <a href="address-reference-scan.html">Reference scans</a> turn "no caller found" into "no reference exists".</div>
+      <div class="card-body">Coverage of each code image's bytes, and per-entry byte accounting, so an unwalked format is a run at the top of a list. Reference scans turn "no caller found" into "no reference exists".</div>
     </a>
     <a class="card" href="determinism-replay.html">
       <div class="card-title">Make runs reproducible</div>
-      <div class="card-body">A text pad script replays to bit-identical state traces; the <a href="soak-harness.html">soak harness</a> generates such scripts from seeded random play and reduces each finding.</div>
+      <div class="card-body">A text pad script replays to bit-identical state traces; the soak harness generates such scripts from seeded random play and reduces each finding.</div>
     </a>
     <a class="card" href="ghidra.html#decompiler-artifacts">
       <div class="card-title">Do not trust the decompiler's C</div>
       <div class="card-body">Labels printed as calls, dropped register arguments, reordered stores, wrong load bases: the ways Ghidra's C has put false claims into these docs. MIPS- and Ghidra-specific, not game-specific.</div>
     </a>
   </div>
+  <p>Related pages: <a href="byte-accounting.html">byte accounting</a>, <a href="address-reference-scan.html">address reference scans</a> and the <a href="soak-harness.html">soak harness</a>.</p>
   <h3>Traps any PS1 project meets</h3>
   <ul class="bullets">
     <li>A save state replays the RAM of the disc that booted it: a state loaded onto a patched image still runs the old code. Verify disc edits from a cold boot or a memory-card load.</li>
@@ -172,3 +173,17 @@
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shell-observer-traps.md" target="_blank" rel="noopener">Shell observer traps</a>
   </div>
 </section>
+
+<style>
+  .ru-map { margin: 1.1rem 0 1.4rem; display: grid; gap: 0.55rem; }
+  .ru-band { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 0.9rem; align-items: center; padding: 0.8rem 0.95rem; border: 1px solid var(--border); border-left-width: 4px; border-radius: 6px; background: var(--bg-card); }
+  .ru-generic { border-left-color: var(--ok); }
+  .ru-quirks { border-left-color: var(--partial); }
+  .ru-only { border-left-color: var(--text-dim); }
+  .ru-head strong { display: block; color: var(--text-bright); }
+  .ru-head span { color: var(--text-muted); font-size: 0.85rem; line-height: 1.4; display: block; }
+  .ru-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .ru-chips code { padding: 0.12rem 0.5rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.82rem; white-space: nowrap; }
+  .ru-map figcaption { color: var(--text-dim); font-size: 0.82rem; }
+  @media (max-width: 680px) { .ru-band { grid-template-columns: minmax(0, 1fr); } }
+</style>

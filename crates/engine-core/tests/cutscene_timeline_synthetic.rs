@@ -203,9 +203,12 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
     // Seat two tiles east of the walk target (18,26) = (2368, 3392).
     w.actors[slot].move_state.world_x = 18 * 128 + 0x40 + 256;
     w.actors[slot].move_state.world_z = 26 * 128 + 0x40;
-    // `[C7 F8 12 1A 33][GFLAG_SET 16]`: the flag write is the arrival proof.
+    // `[C7 F8 12 1A 33][B3 F8 0A][GFLAG_SET 16]`: the wait on the player's
+    // walk bit holds the record behind the leg; the flag is the arrival
+    // proof. Retail runs on past the `C7` (`li s7,4` at `0x801DF030`), so
+    // the record already sits on the `B3` while the player walks.
     w.cutscene.timeline = Some(CutsceneTimeline::new(
-        vec![0xC7, 0xF8, 0x12, 0x1A, 0x33, 0x2E, 0x10],
+        vec![0xC7, 0xF8, 0x12, 0x1A, 0x33, 0xB3, 0xF8, 0x0A, 0x2E, 0x10],
         0,
     ));
 
@@ -213,7 +216,11 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
     let tl = w.cutscene.timeline.as_ref().expect("timeline still up");
     assert!(
         tl.walk_wait.is_some(),
-        "the walk-to-tile yield parks the timeline on a TimelineWalk"
+        "the walk-to-tile op arms the player's leg"
+    );
+    assert_eq!(
+        tl.pc, 5,
+        "and the record runs on to the next op on the player"
     );
     // mode 0x33 -> bits 3 -> 0x80 >> 5 = 4 units per tick; 256 units takes
     // ~64 ticks. After a few ticks the player has moved but not arrived.
@@ -240,6 +247,46 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
         (ms.world_x, ms.world_z),
         (18 * 128 + 0x40, 26 * 128 + 0x40),
         "the walk lands exactly on the decoded tile centre"
+    );
+}
+
+/// `C7 F8` does not park the record (`li s7,4` at `0x801DF030`; the halt on
+/// the caller does not stop the runner): the ops after it run on the frame
+/// it arms, as a retail capture of `town01` reads (the record past the op at
+/// vsync 460 for a walk landing at 553). Only the next op on the player
+/// waits, and a record that ends with the leg in flight lands the player.
+#[test]
+fn a_player_walk_to_tile_runs_the_record_on() {
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    w.install_field_player(0);
+    let slot = w.player_actor_slot.expect("player installed") as usize;
+    w.actors[slot].move_state.world_x = 18 * 128 + 0x40 + 256;
+    w.actors[slot].move_state.world_z = 26 * 128 + 0x40;
+    // `[C7 F8 12 1A 33][GFLAG_SET 16]`, then the record ends.
+    w.cutscene.timeline = Some(CutsceneTimeline::new(
+        vec![0xC7, 0xF8, 0x12, 0x1A, 0x33, 0x2E, 0x10],
+        0,
+    ));
+    step_frame(&mut w);
+    assert!(
+        w.flags.story_flags & (1 << 16) != 0,
+        "the op behind the walk ran on the arming frame"
+    );
+    for _ in 0..400 {
+        if w.cutscene.timeline.is_none() {
+            break;
+        }
+        step_frame(&mut w);
+    }
+    assert!(w.cutscene.timeline.is_none(), "the record ended");
+    let ms = &w.actors[slot].move_state;
+    assert_eq!(
+        (ms.world_x, ms.world_z),
+        (18 * 128 + 0x40, 26 * 128 + 0x40),
+        "the leg in flight lands the player"
     );
 }
 

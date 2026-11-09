@@ -439,9 +439,10 @@ pub fn first_divergences(
 /// image child) write into one file, each line led by its process id and
 /// session frame; the first line two sessions disagree on is where they
 /// parted (`scripts/ci/tick-digest-diff.py`). The line carries the pad word,
-/// the stream, the action SM's context, the field compass, the battle camera
-/// and every active actor's ground, HP and clip cursor - the channels a
-/// battle replay rides on - and none of the per-host clocks.
+/// the stream, the action SM's context, the field compass, the player's
+/// engaged bit, mode word, scene, position and dialog pager state, the battle camera and every
+/// active actor's ground, HP and clip cursor - the channels a battle replay
+/// rides on - and none of the per-host clocks.
 pub fn emit_tick_digest<S: AudioSink>(session: &BootSession<S>) {
     use std::io::Write;
     use std::sync::{Mutex, OnceLock};
@@ -470,6 +471,39 @@ pub fn emit_tick_digest<S: AudioSink>(session: &BootSession<S>) {
         debug_digest(&world.battle_ctx),
     );
     line.push_str(&format!(" az={}", world.locomotion.camera_azimuth));
+    // What a gate-synchronised replay cuts its beats on
+    // (`scripts/ci/gate-replay.py`).
+    let player = world
+        .player_actor_slot
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .map(|a| &a.move_state);
+    // `pg=` is the pager state `_DAT_801F2734` the open box mirrors, or `-`.
+    let pager = world
+        .dialog
+        .inline
+        .as_ref()
+        .and_then(|r| r.panel.as_ref())
+        .or_else(|| world.script_dialog_panel())
+        .and_then(|panel| panel.window())
+        .map(|w| w.phase.retail_state());
+    line.push_str(&format!(
+        " eng={} gm={} sc={} pl={} pg={}",
+        u8::from(world.script_context_engages_player()),
+        session.mode_seat.game_mode().as_index(),
+        world.active_scene_label,
+        player.map_or_else(
+            || "-".to_string(),
+            |m| format!("{},{},{}", m.world_x, m.world_y, m.world_z)
+        ),
+        pager.map_or_else(|| "-".to_string(), |p| format!("{p:02x}")),
+    ));
+    // The battle clock's frame step (`DAT_1F800393`'s twin).
+    let (parts, ghosts) = world.battle_frame_load();
+    line.push_str(&format!(
+        " fs={} fl={parts},{ghosts} xa={}",
+        world.battle_frame_step(),
+        world.audio.battle_xa_busy_frames
+    ));
     if let Some(cam) = world.battle.camera.as_ref() {
         let p = cam.framing_pose();
         line.push_str(&format!(

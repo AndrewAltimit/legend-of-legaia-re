@@ -13,7 +13,7 @@
     <li><a href="#ghidra"><strong>Dig in Ghidra</strong></a> - the static path: disassemble the executable, recover the RAM overlays, answer "who calls this?".</li>
     <li><a href="#capture"><strong>Capture the emulator</strong></a> - the dynamic path: watch the retail game run and record what the code actually does.</li>
     <li><a href="#measure"><strong>Measure the port</strong></a> - how much of the game is understood, how much is ported, and whether the port matches retail.</li>
-    <li><a href="#beyond"><strong>Beyond Legaia</strong></a> - why port by reimplementation, how its fidelity is measured, and what carries to other PS1 games.</li>
+    <li><a href="#beyond"><strong>Beyond Legaia</strong></a> - how reimplementation compares with decomp and recomp, how its fidelity is measured, and what carries to other PS1 games.</li>
     <li><a href="#more"><strong>More tooling docs</strong></a> - CI gates and triage ledgers, on GitHub only.</li>
   </ul>
 </section>
@@ -223,7 +223,7 @@
 
 <section class="doc-section" id="beyond">
   <h2>Beyond Legaia</h2>
-  <p>Most PS1 ports today are static recompilations, and for a good reason: translate the executable, model the hardware, and the whole game runs with its retail behaviour nearly for free. This project takes the less travelled route, <strong>reimplementation</strong>: a new engine, written in Rust from the format docs and the traced disassembly, that loads the game's data off your disc. A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game. Which one is right depends on what you want at the end.</p>
+  <p>Legend of Legaia has been ported twice over the same months: a static recompilation, which translates the executable and models the hardware, and this project, a new engine in Rust written from the format docs and the traced disassembly. <a href="decomp-recomp-reimplementation.html"><strong>The case study</strong></a> puts them side by side, with decompilation as the third route: what each gets up front, what it has to earn, and why reimplementation is more practical than it used to be. A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game.</p>
   <figure class="diagram">
       <svg viewBox="0 0 1000 466" xmlns="http://www.w3.org/2000/svg" style="font-family:var(--font-body)" role="img" aria-label="Decompilation starts from the executable rewritten as source and produces source that rebuilds the game, with fidelity proved by the byte match. Static recompilation translates the machine code and produces the original game running over a hardware model, with fidelity inherited. Reimplementation, this repository&#x27;s route, starts from format docs and traced behaviour and produces a new engine that loads the game data, with fidelity measured against retail states. A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game.">
         <defs><marker id="bt-routes-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>

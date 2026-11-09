@@ -219,6 +219,28 @@ impl SceneHost {
                     .collect()
             })
             .unwrap_or_default();
+        // The party locomotion bundle (PROT 0874 section 1): what the end
+        // latch of a party-bank clip waits. Once a session; the bundle is
+        // not per scene.
+        if self.world.locomotion.party_clip_meta.is_empty() {
+            let bundle = self
+                .index
+                .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
+                .ok()
+                .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
+            self.world.locomotion.party_clip_meta = bundle
+                .as_ref()
+                .map(|b| {
+                    (0..b.record_count as usize)
+                        .map(|i| {
+                            b.record(i).map_or((0, false, 0), |r| {
+                                (r.frame_count, r.blends(), (r.flag & 0xFF) as u8)
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
         self.world.locomotion.scene_clip_ticks = self
             .world
             .locomotion

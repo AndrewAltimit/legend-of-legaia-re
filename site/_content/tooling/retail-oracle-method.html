@@ -50,6 +50,30 @@
 <section class="doc-section" id="seed" data-doc="seed-the-engine-from-retail-ram">
   <h2>Seed the engine from retail RAM</h2>
   <p>A capture is an oracle only if the reimplementation can be put into the same situation. Read the scene, position, party, story flags, camera and fight state from the original's memory; enter that situation through the engine's own code; tick until it settles.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 212" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A retail state feeds the engine through two paths. The situation goes in through the engine's own load path. History that no load path can rebuild, such as the camera region last crossed, the random stream and a paused script, is installed from the state and named in the report. The engine then ticks until settled and computes everything the channels score.">
+      <defs><marker id="rom-seed-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="16" y="74" width="136" height="62" rx="5"/>
+      <text class="dg-label" x="84" y="101">Retail state</text><text class="dg-sub" x="84" y="120">its own memory</text>
+      <rect class="dg-node" x="210" y="20" width="270" height="74" rx="5"/>
+      <text class="dg-label" x="345" y="46">The situation</text>
+      <text class="dg-sub" x="345" y="66">scene, position, party, flags</text>
+      <text class="dg-sub" x="345" y="83">entered through the engine's load path</text>
+      <rect class="dg-node-warn" x="210" y="118" width="270" height="74" rx="5"/>
+      <text class="dg-label" x="345" y="144">History</text>
+      <text class="dg-sub" x="345" y="164">camera region, RNG stream, paused script</text>
+      <text class="dg-sub" x="345" y="181">installed, and named in the report</text>
+      <rect class="dg-node-ok" x="560" y="56" width="304" height="98" rx="5"/>
+      <text class="dg-label" x="712" y="88">Left to the engine</text>
+      <text class="dg-sub" x="712" y="110">ticks until it settles, then computes</text>
+      <text class="dg-sub" x="712" y="128">whatever the channels score</text>
+      <path class="dg-edge" d="M152 92 L208 60" marker-end="url(#rom-seed-arrow)"/>
+      <path class="dg-edge" d="M152 118 L208 152" marker-end="url(#rom-seed-arrow)"/>
+      <path class="dg-edge" d="M480 60 L558 90" marker-end="url(#rom-seed-arrow)"/>
+      <path class="dg-edge" d="M480 152 L558 122" marker-end="url(#rom-seed-arrow)"/>
+    </svg>
+    <figcaption>The more that sits in the amber box, the less the score says. Anything a channel scores has to be computed, or the channel only checks the seeding.</figcaption>
+  </figure>
   <ul class="bullets">
     <li><strong>Enter through the engine's own load path.</strong> Copying memory into engine structures field by field tests the copy. This project loads the lifted save the way a memory-card load does, in the original's order, then places the player (<a href="retail-compare.html#seeding">the seeding model</a>).</li>
     <li><strong>Seed history; compute the rest.</strong> Values that are the sum of everything before the capture (the camera region last crossed, a random stream hundreds of draws in, a paused script) are installed from the state. Everything else is left to the engine, because that is what the channel tests. Each installed value is named in the report.</li>
@@ -71,6 +95,23 @@
 <section class="doc-section" id="ratchet" data-doc="ratchet-the-baseline-with-a-loosening-ledger">
   <h2>Ratchet the baseline with a loosening ledger</h2>
   <p>Commit per-state, per-channel scores. A check fails when a score falls, when a measured channel goes unmeasured, or when a seedable state stops seeding; a rise is folded in by a reviewed bless (<a href="retail-compare.html#ratchet">the ratchet</a>). The baseline holds scores, never pixels or memory.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schematic of one channel's committed score over successive changes. Rises are folded in by a reviewed bless. A fall with no ledger entry fails the check and does not land. A fall with a ledger entry and a reason is accepted, as when an old score rested on an error.">
+      <line class="dg-edge-dim" x1="50" y1="200" x2="860" y2="200"/>
+      <text class="dg-edge-label" x="16" y="30">score</text><text class="dg-edge-label" x="760" y="222">successive changes</text>
+      <path class="dg-edge" style="stroke-width:2.5" d="M60 176 H180 V138 H340 V112 H560 V132 H720 V76 H850"/>
+      <circle cx="180" cy="138" r="5" style="fill:var(--ok)"/>
+      <text class="dg-sub" x="172" y="164" style="text-anchor:end">rise: reviewed bless</text>
+      <path d="M340 112 L410 168" style="stroke:var(--trap);stroke-width:2;stroke-dasharray:5 4;fill:none"/>
+      <circle cx="410" cy="168" r="6" style="fill:none;stroke:var(--trap);stroke-width:2"/>
+      <text class="dg-sub dg-start" x="426" y="173" style="fill:var(--trap)">fall, no ledger entry: the gate fails</text>
+      <circle cx="560" cy="132" r="5" style="fill:var(--partial)"/>
+      <text class="dg-sub" x="560" y="72">fall with a ledger entry:</text>
+      <text class="dg-sub" x="560" y="90">accepted, and the reason is kept</text>
+      <circle cx="720" cy="76" r="5" style="fill:var(--ok)"/>
+    </svg>
+    <figcaption>Schematic. A score can fall because a fix is right, when the old score rested on an error, so a drop is allowed only with its reason on record.</figcaption>
+  </figure>
   <div class="callout callout-trap"><p class="callout-title">Two ways a ratchet is defeated without tripping</p><p><strong>The baseline is edited</strong> in the same commit: a second gate compares every baseline with the base revision and fails on any value that moved the wrong way unless a ledger records that exact step with a reason. <strong>The measurement never runs</strong>: a test that skips for want of data reports as a pass, so count skips by reason on the machine that has the data (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">ratchet integrity</a>).</p></div>
 </section>
 
@@ -88,6 +129,11 @@
 <section class="doc-section" id="denominator" data-doc="take-the-denominator-from-the-disc">
   <h2>Take the denominator from the disc</h2>
   <p>Progress counted over work already done always flatters. Count against what the original contains:</p>
+  <figure class="rom-den" aria-label="The same finished work reads as nearly complete when divided by the work started, and as far less when divided by what the disc contains.">
+    <div class="rom-den-row"><span>Done, over what was started</span><div class="rom-den-bar"><i style="width:92%"></i></div></div>
+    <div class="rom-den-row"><span>The same work, over what the disc holds</span><div class="rom-den-bar"><i style="width:46%"></i></div></div>
+    <figcaption>Schematic. The second bar is the only one that shows what nobody has looked at yet.</figcaption>
+  </figure>
   <ul class="bullets">
     <li><strong>Code</strong>: per executable image, the bytes covered by analysed functions, uncovered runs largest first (<a href="disc-coverage.html">disc coverage</a>).</li>
     <li><strong>Data</strong>: per archive entry, the bytes some parser consumes and the shape of the rest (<a href="byte-accounting.html">byte accounting</a>).</li>
@@ -125,3 +171,12 @@
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">Ratchet integrity</a>
   </div>
 </section>
+
+<style>
+  .rom-den { margin: 1rem 0 1.25rem; display: grid; gap: 0.5rem; }
+  .rom-den-row { display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: 0.8rem; align-items: center; font-size: 0.9rem; }
+  .rom-den-bar { height: 0.9rem; border: 1px solid var(--border); border-radius: 3px; background: var(--bg-card); overflow: hidden; }
+  .rom-den-bar i { display: block; height: 100%; background: var(--accent-line); }
+  .rom-den figcaption { color: var(--text-dim); font-size: 0.82rem; }
+  @media (max-width: 620px) { .rom-den-row { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; } }
+</style>

@@ -326,6 +326,17 @@ impl World {
             return None;
         }
 
+        // `ctx.menu_open` is retail's side-band applier stage `ctx[+0x276]`:
+        // the turn pick (`FUN_801DABA4`) and the summon-invoke arm seed it to
+        // `1`, and `FUN_801F12D0` steps it back to `0` once the slots it
+        // streams have landed, whichever band the battle is in - the round
+        // start's seed runs through the command band. The engine's side-band
+        // is resident, so the stage stands for the reads' CD time only: up
+        // for `sideband_token_vsyncs` of its base, then down. Module arms
+        // that poll it, the `0x0B` hold, the `0x35` band-word clamp and the
+        // Done band's `0x51` gate wait that long, as retail's do.
+        self.tick_sideband_token();
+
         // The battle has ended and its presentation owns the frame: retail's
         // battle tick runs the results sequencer instead of the action SM
         // while `DAT_8007BD71 == 0xFE` (`FUN_80046A20` `0x80047040` /
@@ -463,9 +474,15 @@ impl World {
             || self.battle.arts_input.is_some()
             || self.battle.arts_menu.is_some()
             || self.battle.spell_menu.is_some()
-            || self.battle.item_menu.is_some();
+            || self.battle.item_menu.is_some()
+            || self.battle.round_armed;
         if surface_up && self.battle_command_glide_gate() {
             return None;
+        }
+        // `0xFE`'s arm, on the first dispatched pass after its step landed.
+        if self.battle.round_armed {
+            self.battle.round_armed = false;
+            self.begin_round_execution();
         }
         if self.battle.command.is_none() {
             // Any other state's dispatch empties the park unread.
@@ -521,16 +538,6 @@ impl World {
             self.battle
                 .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         }
-
-        // `ctx.menu_open` is retail's side-band applier stage `ctx[+0x276]`:
-        // the summon-invoke arm seeds it to `1` and `FUN_801F12D0` steps it
-        // back to `0` once the slots of `summon.dat` it streams have landed.
-        // The engine's side-band is resident, so the stage stands for the
-        // reads' CD time only: up for `sideband_token_vsyncs` of its base,
-        // then down. Module arms that poll it (Horn's arm 2, Mule's arm 1),
-        // the `0x35` band-word clamp and the Done band's `0x51` gate wait
-        // that long, as retail's do.
-        self.tick_sideband_token();
 
         // Battle locomotion - the anim tick's root-motion drive
         // (`FUN_80047430`): the attack band's approach walk toward the
@@ -627,6 +634,21 @@ impl World {
         let boss_transition = sm_pass
             && self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
             && self.run_boss_transition_arm();
+
+        // A finished round's boundary (`RoundFlow::boundary_hold`): the SM
+        // holds its passes, and the last one opens the next round.
+        if self.battle.round_flow.boundary_hold > 0 {
+            if sm_pass {
+                self.battle.round_flow.boundary_hold -= 1;
+                if self.battle.round_flow.boundary_hold == 0 {
+                    self.end_battle_round();
+                    // A DoT can down the last member of a side; the round
+                    // start re-checks before it opens a prompt.
+                    self.begin_battle_round();
+                }
+            }
+            return None;
+        }
 
         let outcome = if sm_pass {
             // A shot the last pass handed the camera and no camera step

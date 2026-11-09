@@ -46,8 +46,7 @@
 .cm-opt { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
 .cm-stats { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.78rem; margin-left: auto; }
 
-.cm-body { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 0.9rem; align-items: start; }
-@media (max-width: 1100px) { .cm-body { grid-template-columns: minmax(0, 1fr); } }
+.cm-body { display: flex; flex-direction: column; gap: 0.75rem; }
 
 .cm-stage { position: relative; min-width: 0; }
 .cm-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
@@ -104,10 +103,15 @@
 
 .cm-card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
-  padding: 0.8rem 0.9rem; min-width: 0; position: sticky; top: calc(var(--topbar-h, 52px) + 0.75rem);
-  max-height: calc(100vh - var(--topbar-h, 52px) - 1.5rem); overflow-y: auto;
+  padding: 0.8rem 0.9rem; min-width: 0; position: sticky; top: var(--topbar-h, 52px); z-index: 5;
 }
-@media (max-width: 1100px) { .cm-card { position: static; max-height: none; } #cm-bands > .cm-card { margin-bottom: 0.5rem; } }
+/* A card taller than the window could never show its end while pinned. */
+.cm-card.is-unpinned { position: static; }
+.cm-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: 0.5rem 1.5rem; }
+.cm-cols > div { min-width: 0; }
+.cm-cols > div > .cm-h:first-child,
+.cm-cols > div > details:first-child > .cm-h { margin-top: 0; }
+@media (max-width: 1100px) { .cm-card { position: static; } #cm-bands > .cm-card { margin-bottom: 0.5rem; } .cm-tracks-key { display: none; } }
 .cm-card .cm-name { margin: 0; font-weight: 600; font-family: var(--font-mono); font-size: 1.02rem; color: var(--text-bright); overflow-wrap: anywhere; }
 .cm-card .cm-pkg { font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-dim); }
 .cm-card .cm-scope { font-size: 0.84rem; color: var(--text); margin: 0.5rem 0; line-height: 1.5; }
@@ -125,7 +129,12 @@
 }
 .cm-mods { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; overflow-wrap: anywhere; }
 .cm-card .cm-coupling { font-size: 0.78rem; color: var(--text-muted); margin: 0.25rem 0; }
-.cm-card .cm-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.9rem; }
+.cm-card .cm-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.cm-card .cm-links.cm-corner { float: right; margin: 0 0 0.3rem 0.6rem; }
+.cm-tracks-key { list-style: none; margin: 0; padding: 0; }
+.cm-tracks-key li { display: flex; gap: 0.5rem; align-items: baseline; margin: 0 0 0.4rem; line-height: 1.4; }
+.cm-tracks-key .cm-sw { align-self: center; }
+.cm-tracks-key strong { color: var(--text); font-weight: 600; }
 .cm-card .cm-links a, .cm-card .cm-links button {
   font-size: 0.78rem; text-decoration: none; cursor: pointer;
   border: 1px solid var(--border-hi); border-radius: 3px; padding: 0.25rem 0.55rem;
@@ -214,17 +223,20 @@
     </div>
     <div class="cm-key" aria-hidden="true"><span class="k-uses">uses</span><span class="k-usedby">used by</span></div>
     <div class="cm-body" id="cm-body">
+      <aside class="cm-card" id="cm-card" aria-live="polite">
+        <div class="cm-empty cm-cols">
+          <div>
+            <p><strong>Pick a crate.</strong> Hovering one lights the crates it uses and the crates that use it; clicking keeps the selection and fills this card.</p>
+            <p>Keyboard: Tab moves through the crates, Enter selects, Escape clears.</p>
+          </div>
+          <ul class="cm-tracks-key" id="cm-tracks-key"></ul>
+        </div>
+      </aside>
       <div class="cm-stage" id="cm-stage">
         <svg class="cm-edges" id="cm-edges" aria-hidden="true"></svg>
         <div id="cm-bands"><p class="cm-empty">Loading the crate map...</p></div>
         <noscript><img src="assets/crate-map-dark.svg" alt="The crate map: the workspace drawn as bands, hosts at the top and the per-format parsers at the bottom." style="max-width:100%"></noscript>
       </div>
-      <aside class="cm-card" id="cm-card" aria-live="polite">
-        <div class="cm-empty">
-          <p><strong>Pick a crate.</strong> Hovering one lights the crates it uses and the crates that use it; clicking keeps the selection and fills this card.</p>
-          <p>Keyboard: Tab moves through the crates, Enter selects, Escape clears.</p>
-        </div>
-      </aside>
     </div>
   </div>
 </section>

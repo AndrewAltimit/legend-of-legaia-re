@@ -95,6 +95,7 @@ const NAV = [
     items: [
       { href: 'writeups/index.html', text: 'Technical write-ups', key: 'writeups/index' },
       { heading: 'Beyond Legaia' },
+      { href: 'tooling/decomp-recomp-reimplementation.html', text: 'Decomp, recomp, reimplementation', key: 'tooling/decomp-recomp-reimplementation' },
       { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },
       { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
       { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
@@ -1047,8 +1048,13 @@ function revealActiveRow(sidebar) {
   if (!row) return;
   const box = sidebar.getBoundingClientRect();
   const r = row.getBoundingClientRect();
-  if (r.top < box.top || r.bottom > box.bottom) {
-    sidebar.scrollTop += (r.top - box.top) - box.height / 3;
+  /* The phone drawer pins the zone strip over the list's top edge, so a row
+     under it is as hidden as one above the box. The strip has no height where
+     the rail replaces it. */
+  const strip = sidebar.querySelector('.sidebar-zones');
+  const floor = strip && strip.offsetHeight ? strip.getBoundingClientRect().bottom : box.top;
+  if (r.top < floor || r.bottom > box.bottom) {
+    sidebar.scrollTop += (r.top - floor) - (box.bottom - floor) / 3;
   }
 }
 

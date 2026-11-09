@@ -99,8 +99,10 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
 
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..8000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
+        w.settle_battle_pad_hold();
         if w.mode == SceneMode::Battle {
             break;
         }
@@ -153,8 +155,10 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
             }
         };
         release = !release;
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         w.tick();
+        w.settle_battle_pad_hold();
     }
     assert!(w.battle.command.is_none(), "Attack was never confirmed");
 

@@ -473,10 +473,16 @@ impl World {
             for slot in executed {
                 self.npcs.headings.remove(&slot);
             }
+            // The spawn loop's own `rand()` draws, one per placement with a
+            // move, before its prologue slice (`0x8003A410`, `0x8003A4B8`).
+            if let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) {
+                self.draw_placement_spawn_phases(&man_file, &man);
+            }
         }
         self.field_vm.entry_prerun = true;
         self.step_field_channel_prologues(None);
         self.field_vm.entry_prerun = false;
+        self.field_vm.prerun_running_slot = None;
         // A spawn section's story gate retires its actor before the first
         // frame draws (`cave01` P1[3]: `71 5D ..`, `31 03`).
         self.retire_killed_field_channels();
@@ -632,6 +638,15 @@ impl World {
                 .position(|c| c.object_bind)
                 .unwrap_or(self.field_vm.channels.len());
             self.field_vm.channels.insert(at, fresh);
+            // A fresh node at the list's tail (`FUN_80020454`), and the
+            // spawn's clip-phase draw before the prologue slice.
+            self.relink_ambient_at_tail(slot);
+            if man_file
+                .actor_placement(&man, index)
+                .is_some_and(|p| p.anim_id > 0)
+            {
+                self.draw_placement_spawn_phase(slot);
+            }
             self.npcs.positions.remove(&slot);
             self.npcs.headings.remove(&slot);
             self.field_vm.entry_prerun = true;
@@ -654,6 +669,25 @@ impl World {
         }
         // The spawn section runs the same story gates a scene entry does.
         self.retire_killed_field_channels();
+    }
+
+    /// The clip-phase `rand()` draw of every placement the spawn loop
+    /// (`FUN_8003AEB0` over `FUN_8003A1E4`) seats with a move, in spawn
+    /// order: `man_file.actor_placements` is partition order `1..N1`.
+    ///
+    /// REF: FUN_8003AEB0 (the `0x8003B8D4` loop)
+    pub(crate) fn draw_placement_spawn_phases(
+        &mut self,
+        man_file: &legaia_scene_formats::man_section::ManFile,
+        man: &[u8],
+    ) {
+        for p in man_file.actor_placements(man) {
+            if p.anim_id > 0
+                && let Ok(slot) = u8::try_from(p.index)
+            {
+                self.draw_placement_spawn_phase(slot);
+            }
+        }
     }
 
     pub(super) fn step_field_channel_prologues(&mut self, only: Option<usize>) {
@@ -713,6 +747,11 @@ impl World {
             ) {
                 continue;
             }
+            self.field_vm.prerun_running_slot = if only.is_none() {
+                u8::try_from(channels[i].placement_index).ok()
+            } else {
+                None
+            };
             let mut budget = FIELD_CHANNEL_STEP_BUDGET;
             while budget > 0 {
                 budget -= 1;

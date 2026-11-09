@@ -350,3 +350,66 @@ fn tint_fade_bindings_or_skip() {
     }
     assert!(tint_sites > 0, "no op 0x0C site decoded");
 }
+
+/// No placed object's stream draws `rand()`: every `0x18` / `0x06` is bound to
+/// a placement. So the placements' tick order in
+/// `World::tick_field_npc_ambient` is the whole of the field's draw order and
+/// the objects' streams need no slot in it.
+#[test]
+fn no_object_stream_draws_rand_or_skip() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let mut sites = 0usize;
+    let mut drawing_records = 0usize;
+    let mut object_bound: Vec<String> = Vec::new();
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        for carrier in scene_man_carriers(&index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
+                continue;
+            };
+            let n0 = man_file.partitions.first().map(|p| p.len()).unwrap_or(0);
+            for rec in legaia_scene_formats::man_motion::motion_records(man, &man_file) {
+                let mut draws = 0usize;
+                for var in legaia_scene_formats::man_motion::stream_variants(man, &rec) {
+                    let mut pc = var.code_offset;
+                    while pc < var.code_end && pc < man.len() {
+                        let op = man[pc];
+                        let Some(w) = legaia_scene_formats::man_motion::op_width(op) else {
+                            break;
+                        };
+                        if matches!(op, 0x06 | 0x18) {
+                            draws += 1;
+                        }
+                        pc += w;
+                    }
+                }
+                if draws == 0 {
+                    continue;
+                }
+                sites += draws;
+                drawing_records += 1;
+                for b in &rec.bindings {
+                    if usize::from(b.actor_id) < n0 {
+                        object_bound.push(format!("{name} rec{} obj{}", rec.index, b.actor_id));
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("[motion ops] rand ops: {sites} sites over {drawing_records} records");
+    assert!(
+        object_bound.is_empty(),
+        "object-bound drawing streams: {object_bound:?}"
+    );
+}

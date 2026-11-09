@@ -127,7 +127,8 @@ fn run(status: Option<&str>) -> Option<Run> {
         rt.set_pad(pad);
         rt.tick_frame().expect("tick");
         rt.set_pad(0);
-        for _ in 0..10 {
+        // The next surface's records glide before it reads the pad.
+        for _ in 0..24 {
             rt.tick_frame().expect("tick");
         }
     }

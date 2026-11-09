@@ -107,6 +107,22 @@ fn balden_lamp_records_retire_and_respawn_their_placements() {
             "the re-seated context {channel:#x} answers again"
         );
     }
+    // Each `4C D2` links a fresh node at the actor list's tail, so a
+    // re-seated placement ticks after every placement that stayed
+    // (`FUN_80020454`; `World::tick_field_npc_ambient` walks this order).
+    let reseated: Vec<u8> = slots
+        .iter()
+        .copied()
+        .filter(|s| host.world.npcs.ambient.contains_key(s))
+        .collect();
+    let order = &host.world.npcs.ambient_order;
+    let tail = order.len() - reseated.len();
+    for s in &reseated {
+        assert!(
+            order[tail..].contains(s),
+            "re-seated slot {s} sits at the list's tail, order {order:?}"
+        );
+    }
     eprintln!(
         "[retire] balden: {} placements out and back, {} of them drawn at entry",
         slots.len(),
@@ -127,4 +143,46 @@ fn a_spawn_section_story_gate_retires_at_entry() {
     host.enter_field_scene("cave01", 0)
         .expect("re-enter cave01");
     assert!(!drawn(&host, 3), "flag up: the spawn section retired it");
+}
+
+/// `town01` `P2[3]`'s `A3 <id> ..` block seats placements across the map, and
+/// each `0x23` relinks its target at the actor list's tail (`FUN_801D81E0`).
+/// The order this leaves is retail's: `s3_rimelm_freeroam`'s list holds the
+/// same wanderers as flats `38, 73, 75, 79, 83, 52, 48, 53, 49, 50, 55`.
+#[test]
+fn town01_seat_block_relinks_placements_to_the_list_tail() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    let man = {
+        let scene = host.scene.as_ref().expect("scene loaded");
+        scene
+            .field_man_payload(&host.index)
+            .expect("MAN readable")
+            .expect("town01 has a MAN")
+    };
+    let file = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
+    let n0 = file.header.partition_counts[0] as u8;
+    assert_eq!(
+        host.world.npcs.ambient_order,
+        [38u8, 48, 49, 50, 52, 53, 55, 73, 75, 79, 83]
+            .map(|f| f - n0)
+            .to_vec(),
+        "spawn order at entry"
+    );
+    assert!(
+        host.world
+            .install_cutscene_timeline_record(&file, &man, 2, 3, false)
+    );
+    for _ in 0..60 {
+        host.tick().expect("tick");
+    }
+    assert_eq!(
+        host.world.npcs.ambient_order,
+        [38u8, 73, 75, 79, 83, 52, 48, 53, 49, 50, 55]
+            .map(|f| f - n0)
+            .to_vec(),
+        "the block's relinks"
+    );
 }

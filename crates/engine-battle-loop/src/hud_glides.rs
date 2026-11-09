@@ -115,6 +115,18 @@ impl BattleState {
         self.ring_open_glide = Some(LogLaunch::new(false));
     }
 
+    /// Start the glide a command surface's own sub-draw step costs: the
+    /// records `FUN_801D388C` spawns take sixteen vsyncs to land and the menu
+    /// SM dispatches nothing until they have (`0x801D0B2C`). The port draws
+    /// these surfaces at rest, so what it keeps of the glide is the hold.
+    /// [`Self::set_battle_flow`] raises it on every edge into a surface.
+    ///
+    /// PORT: FUN_801D388C (the shared tail's spawn loop, the hold it leaves)
+    pub fn start_surface_hold(&mut self) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        self.surface_hold_glide = Some(LogLaunch::new(false));
+    }
+
     /// Land every HUD widget glide in flight on its rest seat, as
     /// `FUN_801D9BBC` does once a glide's `elapsed` reaches its `total`. The
     /// retail-compare capture seats this when the retail state's glides had
@@ -130,6 +142,7 @@ impl BattleState {
             self.result_windows_glide.as_mut(),
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
+            self.surface_hold_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -154,6 +167,7 @@ impl BattleState {
         for g in [
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
+            self.surface_hold_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -189,6 +203,7 @@ impl BattleState {
             self.module_panels_glide.as_mut(),
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
+            self.surface_hold_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -240,6 +255,7 @@ impl BattleState {
             self.module_panels_glide.as_ref(),
             self.round_prompt_glide.as_ref(),
             self.ring_open_glide.as_ref(),
+            self.surface_hold_glide.as_ref(),
         ]
         .into_iter()
         .flatten()

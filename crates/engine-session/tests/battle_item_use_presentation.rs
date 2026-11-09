@@ -47,6 +47,11 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 fn tap(session: &mut NativeSession, button: PadButton) {
+    // No surface reads the pad while its step's records glide.
+    while session.host.world.battle.battle_command_pad_held() {
+        session.host.world.set_pad(0);
+        session.tick().expect("tick");
+    }
     session.host.world.set_pad(InputState::mask_of([button]));
     let _ = session.tick();
     session.host.world.set_pad(0);

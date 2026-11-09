@@ -314,9 +314,10 @@ each node on the walked position with `+0x8C` / `+0x8D` still on the seat
 tile. A parked placement's walk lands it one step short of the park seat:
 `town01` `P1[36]` parks on `4C 51 7F 7F` and then runs `41 00 01`, so
 retail holds it at `(16320, 16256)`. A talk record's own walk is the same
-leg on the talker, and there the record does wait: the dispatcher refuses
-every op of a context carrying `0x400` (`0x801DE90C..0x801DE944`), so the
-talk resumes past the op on the frame the kernel lands it (`tunnelc`
+leg on the talker, and there the record does wait: the dispatcher refuses an
+extended op whose resolved target carries `0x400` (`0x801DE90C..0x801DE944`;
+a plain op branches past the test at `0x801DE88C`), so the talk's next op on
+itself waits until the kernel lands it (`tunnelc`
 `P1[4]`, Xain's `41 07 C1`). Port: the pre-run and the talk runner arm the
 leg (`FieldNpcState::glide_legs`), `World::tick_field_npc_face_legs` steps
 it, and a talk holds on `InlineDialogue::own_turn` until it lands.
@@ -353,6 +354,10 @@ Three consequences:
   frame, and never more. An engine that steps a context every vsync credits
   the step on the vsyncs that are game frames and nothing between them (see
   [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
+
+### A touch's first slice
+
+The player's tick posts a touch and the touched record's context runs later in the same walk of the actor lists, so its first slice reads the pass's own held word `_DAT_8007B850`. `town01` P2[12] tests it first (`42 01 00 05 00`, Down, and hops off the ledge). The port runs that slice a tick after the touch, when the pad can have changed, so the record carries the touch tick's pad (`CutsceneTimeline::touch_pad`) into its first slice.
 
 ### Engagement and the system script
 
@@ -988,11 +993,14 @@ The **cross-context form** (`0x80`-flagged op + target byte, e.g.
 dispatcher saves the yield-op pointer into the target's `+0x94` and sets its
 `0x400` walk bit (`0x801DEFC0..0x801DF054`). Whether the *poking record* waits
 depends on the target. `li s7,4` sits in the delay slot at `0x801DF030`, so
-the record advances past the op for every target; only a **player** target
-also parks the caller (`0x801DF034..0x801DF044`), which then resumes when the
-player arrives. A record that walks an NPC runs on, and its next cross-context
-op on that NPC waits at the dispatcher's halted-target refusal until the leg
-lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
+the record advances past the op for every target. A **player** target also
+raises the caller's halt and seats the op on it (`0x801DF034..0x801DF044`), but
+the runner keeps stepping a halted caller (grade: capture, `town01`
+`s3_rimelm_freeroam`: the record runs past `C7 F8 12 1A 33` in the frame the
+walk starts at vsync 460, and sits on its next player op until the walk lands at
+553). So a record that walks the player runs on like one that walks an NPC,
+and its next cross-context op on that target waits at the dispatcher's
+halted-target refusal until the leg lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
 they overlap. The refusal holds from the op right after the walk, in the same
 frame: `dolk2`'s market beat (`P2[11]`) runs `C7 1F 46 5B 32` and then the
 `B3 1F 0A` halt-bit verify, which keeps Noa's "Vahn..." line back until she
@@ -1066,8 +1074,12 @@ after `+0x6E` starts with that leg, not after it. `map01`'s cave-mouth record
 walks the player out of the cave this way; the disassembler prints the op as
 `Yield (Standard)`, which is its dispatch class, not what it does. A record
 that waits for a player gesture pokes the clip and spins on its end latch
-(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
-scene bank the spin lasts the clip's frames. A talk's lead waits on the
+(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and the spin lasts the clip's
+frames whichever bank it binds from: `FUN_800204F8` raises the latch at the end
+of a pass for a clamped clip and a looping one alike (`0x800206E4..0x8002072C`,
+grade: disassembly), and the bank only picks the pointer (`0x80020524..0x800205A8`).
+`town01`'s Tetsu scene waits 14 vsyncs on `A2 F8 04` under the party-bank bit,
+a 7-frame clip at rate 8 (grade: capture). A talk's lead waits on the
 talker's **own** latch the same way (`2C 08` / `2D 08`); where the port holds
 no clip cursor for that talker the wait is a clip of no length and the
 record runs on from the op behind it, since the grant and the flag a chest
@@ -1291,6 +1303,8 @@ if (((ctx[+0x94] != 0) || ctx == _DAT_8007C364) &&
 
 If `pbVar47[1] == 0 && pbVar47[2] == 0`: use ctx's current position (read `+0x14/+0x16/+0x18`); store negated-Y at `ctx[+0x8E]`. Else: decode target XZ from operand bytes via `(b & 0x7F) * 0x80 + 0x40` (or `+0x80` if high bit set); call `func_0x80019278(ctx)` for collision lookup of Y.
 
+The halt bits do not stop the context that issued the op. The arm exits past the op (`0x801DF5B8`) and the record keeps stepping: only an **extended** op naming the halted actor waits, through the dispatcher prelude (`0x801DE90C..0x801DE944`), and `B2 F8 0A` clears the bit itself. `town01` P2[12] runs `C3 F8 01 ..` and then `4A 18 00` the same game frame, its wait counting while the player flies (a breakpoint on the VM slice entry, capture).
+
 None of the operand halfwords is a resume PC. All three go through the
 unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the arc-hop
 spawner `FUN_801D25EC`:
@@ -1329,7 +1343,7 @@ All 492 are extended: 323 arc the player (`0xF8`), the rest an NPC
 channel, and all but six sit in partition-2 cutscene records.
 
 The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
-decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
+decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` arm
 and `FieldActorHost::spawn_arc_jump` (NPC channels) both reach
 `World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
 the clip and the watcher. An NPC's height lives in

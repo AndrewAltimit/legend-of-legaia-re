@@ -65,7 +65,7 @@ use summon::*;
 pub use summon::{
     SIDEBAND_SLOT_READ_VSYNCS, SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID, SUMMON_FADE_ID,
     SUMMON_FLASH_CUE, SUMMON_FLASH_IN, SUMMON_FLASH_OUT, SummonFadeTemplate, sideband_slot_count,
-    sideband_token_vsyncs, summon_fade_template,
+    sideband_token_vsyncs, sideband_turn_seed_vsyncs, summon_fade_template,
 };
 
 mod spirit;

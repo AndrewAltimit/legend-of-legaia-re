@@ -11,6 +11,7 @@
 //! or format crate derives against a retail save state, so it needs both
 //! sides and lives above both.
 
+mod ambient_rand_stream_disc;
 mod arts_randomizer_runtime_e2e;
 mod arts_voice_retail_capture_disc;
 mod attached_light_cave01_retail_capture_disc;

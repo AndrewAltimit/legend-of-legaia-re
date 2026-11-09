@@ -320,9 +320,14 @@ halt (`World::tick_field_npc_face_legs`).
 
 Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the arm also raises the
 caller's own `0x400` (`0x801E21B4..0x801E21CC`), and the leg's terminal frame
-clears both (`0x80038004` / `0x80038028`). A cutscene record therefore waits
-on the player's turn - `jouine` `P2[5]` turns Vahn toward Cort this way before
-the evolved-Cort fight.
+clears both, and the caller's `+0x54` with them (`0x80038004` / `0x80038020..
+0x80038028`). The caller still runs on: the halted-target test sits on the
+extended-op path (`0x801DE88C` branches a plain op past it), so only an op
+aimed at the player, or at the caller by its own id, waits for the turn. A
+`4A` wait under the turn counts, and the terminal frame zeroes what it had:
+`town01`'s Tetsu record runs `CC F8 85 0C 00 <id>` then `CC 46 85 ..` and
+`4A 0C 00` on one frame, and the wait ends with the 12-vsync turn. `jouine`
+`P2[5]` turns Vahn toward Cort this way before the evolved-Cort fight.
 
 #### `4C 89`: the dialog auto-press
 

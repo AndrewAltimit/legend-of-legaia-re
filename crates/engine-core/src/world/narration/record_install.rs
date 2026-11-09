@@ -56,6 +56,9 @@ impl World {
         }
         let installed = self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false);
         if installed {
+            if let Some(tl) = self.cutscene.timeline.as_mut() {
+                tl.touch_pad = Some(self.input.pad());
+            }
             // `FUN_8003BDE0` ends a successful spawn with the motion-pause
             // kick (`jal 0x8003C9AC` at `0x8003C0D4`).
             self.kick_field_npc_motion_pause();

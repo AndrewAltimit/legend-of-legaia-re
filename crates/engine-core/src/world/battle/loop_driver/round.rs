@@ -10,6 +10,15 @@ use super::*;
 /// took the seat (Rage) its turn has no command of its own.
 const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 
+/// SM passes from the round's last `0x5A` to the next round's `0x14` pick
+/// and its `0x1E` prompt: the `0x5A` pass, the `0xFF` arm that stores the flow
+/// byte `0x14` (`0x801E67F0..0x801E67F4`), and two passes with the byte at
+/// `0x14`. `4` vsyncs at flow `0x14` on each sparring-fight round, after a
+/// `0x5A` and a `0xFF` pass of two vsyncs each, `capture`.
+///
+/// REF: FUN_801E295C (states `0x5A` / `0xFF`), FUN_801D0748 (`0x14`)
+pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 4;
+
 /// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
 /// grants its caster: the 99 a Miracle Art costs covers every string.
 const ART_SEED_SPIRIT: u16 = 99;
@@ -82,10 +91,10 @@ impl World {
                 if let Some(next) = pick {
                     self.dispatch_battle_turn(next);
                 } else {
-                    self.end_battle_round();
-                    // A DoT can down the last member of a side; the round
-                    // start re-checks before it opens a prompt.
-                    self.begin_battle_round();
+                    // The round's last `0x5A` pass stores `0xFF`, and the
+                    // boundary runs its frames before the next round's
+                    // `0x14` pick ([`RoundFlow::boundary_hold`]).
+                    self.battle.round_flow.boundary_hold = ROUND_BOUNDARY_FRAMES;
                 }
             }
         }
@@ -177,6 +186,21 @@ impl World {
         // both cases (`world/battle/sideband.rs`).
         // REF: FUN_80056208, FUN_801D0748 (`0x801D0BDC`)
         if self.battle_sideband_holds_round() {
+            return;
+        }
+        // The sparring fight's last lesson done: the side-band's completion
+        // tail stores the flow byte `0xC8` over this `0x14` before the arm
+        // runs (`FUN_801F6B70`'s tail, retail shows `0x14 -> 0xC8`), so no
+        // sweep or prompt runs: the sign-off and its hold own the frames left.
+        // REF: PROT 0967 (completion tail)
+        if self
+            .battle
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| t.lesson == 4 && !t.finished)
+        {
+            self.battle.run_sparring_completion_tail();
+            self.battle.set_battle_flow(BattleFlowState::Idle);
             return;
         }
         // An expansion fight's refill wave tops up the freed monster seats
@@ -562,13 +586,52 @@ impl World {
                         Some(PendingPartyAction::Run);
                 }
             }
-            self.begin_round_execution();
+            self.arm_round_execution();
             return;
         }
         match self.next_member_owing_command(Some(actor)) {
-            Some(next) => self.open_battle_command(next),
+            // The commit's sub-draw step (Spirit's `0x11`, an attack's
+            // `0x0E`, ...) glides its records whether or not the flow byte
+            // moved, and a Spirit walking on to the next member's ring does
+            // not move it.
+            // REF: FUN_801D0748 (the commit idiom), FUN_801D388C
+            Some(next) => {
+                self.battle.start_surface_hold();
+                self.open_battle_command(next);
+            }
             None => self.open_commit_confirm(actor),
         }
+    }
+
+    /// Wait out the pad hold a command surface opens under, as a player
+    /// would: the menu SM reads no press until its step's records land
+    /// (`BattleState::battle_command_pad_held`), so a scripted press sent
+    /// inside the hold is lost.
+    pub fn settle_battle_pad_hold(&mut self) {
+        for _ in 0..64 {
+            if !self.battle.battle_command_pad_held() && !self.battle.round_armed {
+                return;
+            }
+            self.set_pad(0);
+            self.tick();
+        }
+    }
+
+    /// Retail's `Begin` / `Run` confirm: `ctx[+0x06] = 0xFE` is stored with
+    /// sub-draw step `0x24` / `0x29` / `0x25`, whose records glide, and the
+    /// `0xFE` arm that restarts the action SM runs only on the pass after
+    /// they land - so the round starts once the hold has gone. A battle no
+    /// pad drives has no surface to hold and begins at once.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D3190..0x801D31DC`, `0x801D1150`)
+    pub(in crate::world) fn arm_round_execution(&mut self) {
+        if !self.battle.player_driven {
+            self.begin_round_execution();
+            return;
+        }
+        self.battle.command = None;
+        self.battle.start_surface_hold();
+        self.battle.round_armed = true;
     }
 
     /// Raise the party-wide commit-confirm screen (retail `ctx[+0x06] =
@@ -615,8 +678,9 @@ impl World {
             // next advance moves on; advancing `active_actor` also moves
             // the no-speed walk past it. The status duration ticks once per
             // round at the round start (`tick_status_effects`), so the
-            // affliction still wears off. The SM stays at EndOfAction (no
-            // action armed) - exactly the "skipped turn" outcome. A monster's
+            // affliction still wears off. The turn is armed with no action
+            // and runs the Done band below - a retail turn always reaches
+            // `0x50`. A monster's
             // pick decided its action anyway (the AI runs at the pick,
             // whatever the status word); nothing arms it, and the category
             // it wrote is dropped so no strike path reads it.
@@ -626,6 +690,10 @@ impl World {
             {
                 a.battle.action_category = 0;
             }
+            // The turn itself still runs: every pick reaches `0x50`
+            // through the seed, and the Done band's `0x51` holds the next
+            // turn back for its countdown and the pick's side-band stage.
+            self.arm_party_no_command(next);
             return;
         }
         if next >= party_count {

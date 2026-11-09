@@ -92,6 +92,12 @@ pub struct RoundFlow {
     /// `0x801D3284`): the round's first dispatch goes to the leader instead of
     /// the initiative pick. Consumed by that dispatch.
     pub leader_first: bool,
+    /// Battle frames left before a finished round's next round start.
+    /// Retail takes the round boundary in passes the engine has no state
+    /// byte for: the `0x5A` pass, the `0xFF` arm, and the flow byte's two
+    /// passes at `0x14` (measured `4` vsyncs on the sparring fight's rounds).
+    /// While it runs the action SM holds; see `World::live_battle_tick`.
+    pub boundary_hold: u8,
 }
 
 impl RoundFlow {

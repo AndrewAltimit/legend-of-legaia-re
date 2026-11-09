@@ -159,9 +159,16 @@ pub struct AmbientMotion {
     /// walk ops restamp from the default-move record. Hosts read it to drive
     /// the actor's animation stream.
     pub requested_move: Option<u8>,
-    /// Seed for the `FUN_80056798` equivalent the `0x18` wander draws its
-    /// direction and its continue-or-stop coin flip from.
+    /// The BIOS `rand()` seed the ops draw from (`FUN_80056798`): the `0x18`
+    /// wander's direction and continue-or-stop coin, and the `0x06` home
+    /// step's direction. Retail has one seed for the whole process, so the
+    /// host lends it its own stream word for the tick and takes the advanced
+    /// value back; a VM driven on its own keeps this seed, which is enough
+    /// for a determinism test.
     pub rng: u32,
+    /// Running count of [`Self::rng`] draws, for attributing a stream to the
+    /// actors that advanced it. Nothing in the VM reads it.
+    pub rand_draws: u32,
     /// The motion VM's one-slot **touch mailbox**, retail `DAT_80073F1C`:
     /// the actor id the collision probe last posted through `FUN_8003D038`
     /// ([`crate::motion_vm::post_touch`]).
@@ -240,9 +247,10 @@ impl AmbientMotion {
             wander_dir: 0,
             default_move: [DEFAULT_MOVE_UNSET; 2],
             requested_move: None,
-            // Any seed does; the host overrides it per actor so two NPCs
-            // running the same authored stream do not wander in lockstep.
+            // A standalone seed; the world host lends its own stream over
+            // this for every tick (`World::tick_field_npc_ambient`).
             rng: 0x1234_5678,
+            rand_draws: 0,
             pending_touch: None,
             actor_flags: 0,
             clip_control: 0,
@@ -274,6 +282,7 @@ impl AmbientMotion {
 
     /// Retail `FUN_80056798` - the PsyQ 15-bit `rand()`.
     pub(crate) fn rand(&mut self) -> u32 {
+        self.rand_draws = self.rand_draws.wrapping_add(1);
         u32::from(legaia_engine_system::rand::psyq_rand_step(&mut self.rng))
     }
 

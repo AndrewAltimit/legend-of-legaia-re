@@ -109,6 +109,7 @@ fn build_world() -> World {
 fn walk_into_battle(w: &mut World) {
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
@@ -176,6 +177,7 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
             0
         };
         let input_was_open = w.battle.arts_input_active();
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         press = !press;
         w.tick();

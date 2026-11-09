@@ -247,6 +247,15 @@ pub struct CutsceneTimeline {
     /// parked tick.
     // REF: FUN_8003C83C
     pub player_move_frames: u32,
+    /// The pad word on the tick the player's step posted the touch that
+    /// installed this record. The first slice runs in the same retail pass as
+    /// the touch (the player's tick posts it, the placement's tick runs the
+    /// context later in the walk), so it reads that pass's held word; the
+    /// port's first slice is a tick later.
+    pub touch_pad: Option<u16>,
+    /// The player carries the halt bit a `C3 F8` arc raised: extended ops
+    /// naming it wait for the landing.
+    pub player_arc_halted: bool,
     /// `Some(step_past_width)` while the timeline is PARKED at a
     /// **player-channel arc jump** (`C3 F8 <sub> …` = op `0x43`
     /// sub-0/1/A/B against `0xF8`). Retail raises the caller's halt bit and
@@ -282,20 +291,7 @@ pub struct CutsceneTimeline {
     /// mirrors that with a motion-VM glide on the target and this park.
     // REF: FUN_8003774C (case 0x47: walk-to-tile interpreted in place)
     pub walk_wait: Option<TimelineWalk>,
-    /// `Some` while the timeline is PARKED on a cross-context **rotate
-    /// yield** (`B8 <id> <dir|flags> <budget|dir>` = op `0x38` CAM_CFG with a
-    /// non-zero budget against an NPC channel). Retail's halt-acquire arm
-    /// parks the record and the yield-op bytes run in place as the
-    /// `FUN_8003774C` `0x38` RotateToAngle leg on the target actor: a linear
-    /// per-frame ramp (`arc * speed / frames_remaining`, raw pre-unwrap
-    /// write-back) onto the compass-LUT entry over the operand's own frame
-    /// budget, terminal frame snapping exactly. This is where a story beat's
-    /// per-op turn rates come from - the budget is op data, not an engine
-    /// constant. The engine mirrors it with a parked motion-VM rotate leg
-    /// writing the NPC's render heading each frame.
-    // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
-    pub facing_wait: Option<TimelineFacing>,
-    /// `Some` while the timeline is PARKED on a cross-context
+    /// `Some` while a cross-context
     /// **halt-acquire of the player** (`CC F8 85|8E|8F <lo> <hi> <id>`).
     /// Retail's acquire arm (`0x801E2148..0x801E21DC`) stores the op's
     /// address into the player's `+0x94` and raises `0x400` on the player
@@ -303,12 +299,14 @@ pub struct CutsceneTimeline {
     /// the bytes back as its `0x4C` FaceTarget leg on the player - turn
     /// toward the actor bind `<id>` over the `u16` frame budget - and its
     /// terminal frame clears both halt bits (`0x80038004` / `0x80038028`).
-    /// So the player turns to face the named actor and the record waits for
-    /// the turn. The leg is the one the talk runner plays
-    /// ([`crate::inline_dialogue::TalkFaceRamp`]); `.1` is the PC past the
-    /// op, `.2` the ticks parked so far.
+    /// So the player turns to face the named actor while the record runs on:
+    /// the dispatcher's halted-target test (`0x801DE90C..0x801DE944`) sits on
+    /// the extended-op path only, so a plain op such as a `4A` wait passes,
+    /// and only a later op aimed at the player waits for the turn. The leg is
+    /// the one the talk runner plays
+    /// ([`crate::inline_dialogue::TalkFaceRamp`]); `.1` is the ticks spent.
     // REF: FUN_801DE840 (the acquire arm), FUN_8003774C (the 0x4C arm)
-    pub player_face: Option<(crate::inline_dialogue::TalkFaceRamp, usize, u32)>,
+    pub player_face: Option<(crate::inline_dialogue::TalkFaceRamp, u32)>,
     /// `Some` while a cross-context **compass walk** this timeline armed
     /// against the player plays (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
     /// `0x37` / `0x41` with the player-anchor target). Retail's dispatcher
@@ -378,6 +376,9 @@ pub struct CutsceneTimeline {
     /// between the two.
     // REF: FUN_8003BC08, FUN_8003774C
     pub player_landed_hold: bool,
+    /// The record ended (`0x21`) with a `C7 F8` leg still in flight: the
+    /// slice only finishes the walk until it lands, then the record ends.
+    pub finish_after_walk: bool,
     /// The NPC placements whose walk, turn or face-at leg landed on the last
     /// game frame - [`Self::player_landed_hold`] for NPCs.
     pub npc_landed_hold: Vec<u8>,
@@ -481,7 +482,7 @@ pub struct TimelineNpcFace {
 }
 
 /// State of a parked cross-context rotate yield (see
-/// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
+/// [`CutsceneTimeline::npc_facings`]): one motion-VM `0x38` RotateToAngle leg
 /// stepped once per timeline tick against the target's render heading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimelineFacing {
@@ -495,8 +496,6 @@ pub struct TimelineFacing {
     /// The yield-op bytes re-encoded for the in-place kernel:
     /// `[0x38, dir|flags, budget|dir]`.
     pub program: [u8; 3],
-    /// PC to resume at once the ramp snaps (`yield pc + 4`).
-    pub resume_pc: usize,
     /// Ticks parked so far, bounded by the walk park timeout.
     pub frames: u32,
 }
@@ -530,9 +529,9 @@ impl CutsceneTimeline {
     pub fn halted_targets(&self) -> impl Iterator<Item = Option<u8>> + '_ {
         let live = !self.done;
         let walk = self.walk_wait.as_ref().map(|w| w.slot);
-        let facing = self.facing_wait.as_ref().map(|f| f.slot);
+        let face = self.player_face.as_ref().map(|_| None);
         let glide = self.player_glide.as_ref().map(|_| None);
-        [walk, facing, glide]
+        [walk, face, glide]
             .into_iter()
             .flatten()
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
@@ -573,10 +572,11 @@ impl CutsceneTimeline {
             visited,
             channel_wait: None,
             player_move_frames: 0,
+            touch_pad: None,
+            player_arc_halted: false,
             player_wait: None,
             restore_hidden_on_complete: false,
             walk_wait: None,
-            facing_wait: None,
             player_face: None,
             player_glide: None,
             npc_glides: Vec::new(),
@@ -584,6 +584,7 @@ impl CutsceneTimeline {
             npc_facings: Vec::new(),
             npc_faces: Vec::new(),
             player_landed_hold: false,
+            finish_after_walk: false,
             npc_landed_hold: Vec::new(),
             park_landed: None,
             player_clip_ticks: 0,

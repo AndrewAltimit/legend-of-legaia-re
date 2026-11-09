@@ -1112,3 +1112,64 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.7, 1210.9],
   ["counts/native/world_map/retail/allocs_per_frame", 1714.0, 1717.0],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The field motion VM's rand draws now come from the shared world stream in retail's actor-list order, and the placement spawner draws each clip phase from it (FUN_8003A1E4, ff2014063), so each tick-locked bench run is dealt a different scene. Attributed by build: the build before that commit measures the old baseline on every row and the commit measures the new one (the browser rows exactly, the native rows within 0.3). The world map's counts already moved with the stream before it (LEGAIA_RNG_SEED sweep: 366 or 374 draws, 1717 to 1864 allocations a frame, no code change), town01 became stream-dependent with it (45 or 46 draws, 1156 to 1263 allocations across seeds), and town01's retail allocations fell while the world map's rose, which is a re-deal rather than a new per-frame cost. The battle and summon rows are 0.1 of noise inside the room. The bundle rows are code: ff2014063 adds 2242 bytes gzip to the play bundle and 1177 to the tool bundle, and the later commits on the branch 266 and 117."
+changes = [
+  ["counts/browser/town01/enhanced/gl_draws_per_frame", 90.24, 90.29],
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 221.86, 221.87],
+  ["counts/bundle/gzip_bytes", 7095145, 7096439],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4454.0, 4454.1],
+  ["counts/native/battle/retail/allocs_per_frame", 1227.0, 1227.1],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1260.2, 1260.3],
+  ["counts/native/town01/retail/draws_per_frame", 45, 46],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1498.2, 1539.0],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.9, 1238.8],
+  ["counts/native/world_map/retail/allocs_per_frame", 1717.0, 1766.1],
+  ["counts/native/world_map/retail/draws_per_frame", 366, 374],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Patched-disc state. Comparing the frame from the build before ff2014063 with HEAD, the changed pixels are the ambient falling streaks and their immediate neighbours; the position, camera, NPC and flag channels hold at 1.0. Inferred, not bisected: the streaks moving because the placement spawner and field wander now draw from the shared world rand stream is the likely cause, but no build was compared at that commit alone."
+changes = [
+  ["states/rikuroa_post_caruban/image", 0.996, 0.994],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The ambient emitter now runs one pass per game tick and none during the battle intro (FUN_801CE8CC reaches FUN_8001E1B4, which rebuilds the actor lists). It no longer draws on the off-beat vsync that opens a fight, and rng_hold carries only that tick's draws into the battle stream, so each of these fights is re-dealt. Forcing an emitter pass back on that one tick moved 0 of 528 battle-class states off the old baseline, so that draw is the whole cause. The new stream is no more retail's than the old one, and the same re-deal raised other scores, such as battle_tunnela_mad_bird_strike camera 0.991 to 1.000. No retail capture confirms the emitter is absent during the intro; that reading is from disassembly."
+changes = [
+  ["states/battle_deroa_iota_v2_strike/image", 0.979, 0.969],
+  ["states/battle_garmel_party_vahn_hyper_elbow_mid/camera", 0.997, 0.988],
+  ["states/nilboa_rock_lizard_pre_earthquake/image", 0.997, 0.982],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "world_map enhanced allocations per frame rise from the ambient emitter's one pass per game tick; the count is unchanged at the commit before that change and rises at it, while kilobytes allocated per frame fall. play_gzip_bytes grows with the battle timing and talk timing code on this branch; it is a code size increase, not a data change."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4958538, 4962222],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1831.8, 1901.9],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Two battle timing changes re-time the frames these states score: the action SM's seed at state 0x50 for the turn hand-off, and the frame cost of a CD-XA stream (XA_STREAM_FRAME_COST, XA_STREAM_SPAN_EXTRA, fitted to one emulator). Each of these scores returns to its prior value with the 0x50 seed off, the XA cost off, or both, except that battle_garmel_zenoir_strike's camera also carries 0.003 from the ambient emitter's re-dealt fights. The retail evidence for both changes is timing only (state 0x51 dwells 76 of 76 frames, the stage byte rises at 0x50, XA frames step by 4). No capture shows these states' new frames are closer to retail, so this records an accepted loss and not a correction."
+changes = [
+  ["states/battle_balden_devil_pump_strike/camera", 1.0, 0.999],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/camera", 1.0, 0.998],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/image", 0.989, 0.988],
+  ["states/battle_deroa_spoon_v2_hyper_heal_mid_cast/image", 0.999, 0.988],
+  ["states/battle_garmel_zenoir_strike/camera", 1.0, 0.996],
+  ["states/battle_jou_spoon_v3_hyper_heal_mid_cast/image", 0.989, 0.98],
+  ["states/battle_korb2_ghost_knight_strike/image", 1.0, 0.996],
+  ["states/battle_tunnelc_xain_bloody_horns_mid_cast/image", 0.842, 0.787],
+  ["states/kor_shade_pre_fatal_decision/image", 1.0, 0.996],
+  ["states/retona_viguro_v2_pre_thunder_break/image", 0.998, 0.991],
+  ["states/ropeway_orb_pre_heal/image", 0.998, 0.994],
+  ["states/rugi_rogue_pre_element_change/image", 0.998, 0.997],
+  ["states/rugi_rogue_pre_rogue_thunder/image", 0.999, 0.998],
+  ["states/taiku_terror_face_pre_fissure/image", 0.998, 0.997],
+]

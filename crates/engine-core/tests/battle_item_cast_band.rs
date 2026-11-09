@@ -74,6 +74,7 @@ fn build_world() -> World {
 fn enter_battle(w: &mut World) {
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         let _ = w.tick();
         if w.mode == SceneMode::Battle {
@@ -96,11 +97,14 @@ fn press(w: &mut World, b: PadButton, trace: &mut Vec<u8>) {
         w.set_pad(0);
         let _ = w.tick();
     }
+    w.settle_battle_pad_hold();
     w.set_pad(InputState::mask_of([b]));
     let _ = w.tick();
     trace.push(w.battle_ctx.action_state);
     w.set_pad(0);
     let _ = w.tick();
+    trace.push(w.battle_ctx.action_state);
+    w.settle_battle_pad_hold();
     trace.push(w.battle_ctx.action_state);
 }
 

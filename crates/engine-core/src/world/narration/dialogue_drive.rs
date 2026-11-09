@@ -232,22 +232,61 @@ impl World {
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
             budget -= 1;
-            // The talker's own turn in flight (see `InlineDialogue::own_turn`):
-            // the dispatcher prologue refuses every op of a context carrying
-            // `0x400`, so the record holds at its PC - a text lead included -
-            // until the walk kernel's terminal frame clears the bit.
-            // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (0x80038004)
-            if let Some(slot) = id.own_turn {
-                if host.world.npcs.face_legs.contains_key(&slot)
-                    || host.world.npcs.glide_legs.contains_key(&slot)
-                    || host.world.npcs.rotate_legs.contains_key(&slot)
-                {
-                    break;
-                }
-                id.own_turn = None;
-                id.ctx.flags &= !0x400;
-            }
             let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
+            // The talker's own turn in flight (see `InlineDialogue::own_turn`).
+            // The dispatcher's halted-target test is on the extended-op path
+            // only (`0x801DE88C` branches a plain op past it), so plain ops and
+            // text leads run; an op aimed at the talker by its own id waits, as
+            // does another halt-acquire on it. A `4A` here counts on the same
+            // `+0x54` as the leg, so the turn runs twice as fast, and the
+            // terminal frame zeroes the wait (`0x80037FFC`). A retail capture
+            // of `town01` `P1[46]+0x69` (`4C 85 1C 00 F8`, `4A 20 00`) lands
+            // the turn at +12 vsyncs and opens the box at +44.
+            // REF: FUN_801DE840 (0x801DE88C, 0x801DE90C..0x801DE944), FUN_8003774C
+            if let Some(slot) = id.own_turn {
+                let npcs = &mut host.world.npcs;
+                if npcs.face_legs.contains_key(&slot)
+                    || npcs.glide_legs.contains_key(&slot)
+                    || npcs.rotate_legs.contains_key(&slot)
+                {
+                    let on_self = b & 0x80 != 0
+                        && vm::field::peek_extended(&id.bytecode, id.pc).is_some_and(|t| {
+                            let view = host.world.channel_view();
+                            legaia_engine_field::field_channels::resolve_target(view, t)
+                                .is_some_and(|ci| {
+                                    !view[ci].object_bind && view[ci].placement_index as u8 == slot
+                                })
+                        });
+                    let re_acquire = matches!(b, 0x37 | 0x38 | 0x41 | 0x43 | 0x47)
+                        || legaia_engine_field::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                            &id.bytecode,
+                            id.pc,
+                        )
+                        .is_some();
+                    // `33 0A` spins on the bit the leg holds (`0x801DEE2C..`).
+                    let spins = b == 0x33 && id.bytecode.get(id.pc + 1) == Some(&0x0A);
+                    if on_self || re_acquire || spins {
+                        break;
+                    }
+                    if b == 0x4A {
+                        let delta = host.world.clock.script_frame_delta();
+                        let npcs = &mut host.world.npcs;
+                        if let Some(ramp) = npcs.face_legs.get_mut(&slot) {
+                            ramp.accum = ramp.accum.saturating_add(delta);
+                        }
+                        if let Some(leg) = npcs.rotate_legs.get_mut(&slot) {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                        if let Some(leg) = npcs.glide_legs.get_mut(&slot) {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                    }
+                } else {
+                    id.own_turn = None;
+                    id.ctx.flags &= !0x400;
+                    id.ctx.wait_accum = 0;
+                }
+            }
             // Retail SM transition test: a byte with `& 0x7F < 0x20` is a text
             // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
             if b & 0x7F < 0x20 {
@@ -269,8 +308,11 @@ impl World {
                     }
                     // Same name-escape resolution as the prop-interaction and
                     // cutscene panels; this is the main NPC-talk path.
-                    let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
-                        std::sync::Arc::clone(&id.bytecode),
+                    // The next line loads into the pager (state `4` -> `5`),
+                    // which takes over a held box's rows.
+                    let mut panel = legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
+                        id.held_box.take(),
+                        &id.bytecode,
                         id.pc,
                     );
                     panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
@@ -284,9 +326,6 @@ impl World {
                         }
                     }
                     id.panel = Some(panel);
-                    // The next line loads into the pager (state `4` -> `5`),
-                    // which ends the held box.
-                    id.held_box = None;
                     break;
                 }
                 // A non-`0x1F` terminator before any box opened: if a prologue
@@ -300,6 +339,14 @@ impl World {
                 break;
             }
             if id.pc < id.visited.len() {
+                if !id.visited[id.pc] && std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
+                    eprintln!(
+                        "DIAG talk: world frame {} pc {:#06x} bytes {:02x?}",
+                        host.world.frame,
+                        id.pc,
+                        &id.bytecode[id.pc..(id.pc + 8).min(id.bytecode.len())]
+                    );
+                }
                 id.visited[id.pc] = true;
             }
             // The `0x80`-prefix target byte, when this op carries one. Retail
@@ -378,7 +425,7 @@ impl World {
             {
                 id.pc += 3;
                 id.park_frames = 0;
-                if host.world.face_npc_by_cam_cfg(slot, op0, op1, id.pc) {
+                if host.world.face_npc_by_cam_cfg(slot, op0, op1) {
                     id.ctx.flags |= 0x400;
                     id.own_turn = Some(slot);
                 }
@@ -420,14 +467,6 @@ impl World {
                 }
                 continue;
             }
-            if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
-                if id.pc < id.visited.len() {
-                    id.visited[id.pc] = true;
-                }
-                id.pc = next_pc;
-                id.park_frames = 0;
-                continue;
-            }
             // A placement the talk set walking carries `0x400` until the
             // kernel lands it, and the dispatcher prologue returns any
             // cross-context op aimed at it at its own PC: the talk retries
@@ -445,6 +484,14 @@ impl World {
                 .filter(|slot| !halt_clear && host.world.npc_leg_in_flight(*slot));
             if walking_target.is_some() {
                 break;
+            }
+            if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc = next_pc;
+                id.park_frames = 0;
+                continue;
             }
             // A compass walk aimed at a placement (`B7` / `C1 <id> b0 b1`):
             // the arm seats the op on the target's `+0x94`, raises its
@@ -1441,7 +1488,7 @@ impl World {
         match op & 0x7F {
             0x38 => {
                 let (op0, op1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
-                self.face_npc_by_cam_cfg(slot, op0, op1, pc + 4);
+                self.face_npc_by_cam_cfg(slot, op0, op1);
                 Some(pc + 4)
             }
             0x4C => {
@@ -1461,13 +1508,7 @@ impl World {
     /// one the actor had in flight. Returns whether a leg is now in flight.
     ///
     /// REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
-    pub(crate) fn face_npc_by_cam_cfg(
-        &mut self,
-        slot: u8,
-        op0: u8,
-        op1: u8,
-        resume_pc: usize,
-    ) -> bool {
+    pub(crate) fn face_npc_by_cam_cfg(&mut self, slot: u8, op0: u8, op1: u8) -> bool {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
         if op1 & 0x7F == 0 {
@@ -1488,7 +1529,6 @@ impl World {
                 ..Default::default()
             },
             program: [0x38, op0, op1],
-            resume_pc,
             frames: 0,
         };
         if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
@@ -1562,7 +1602,6 @@ impl World {
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
-                        resume_pc: pc + 4,
                         frames: 0,
                     });
                 }

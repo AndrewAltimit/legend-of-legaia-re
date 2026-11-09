@@ -20,6 +20,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     // Frame 1: Cross confirms the Bomb -> target select. The cursor must
     // skip the ally and land on the enemy row (offensive item).
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
     take_commit_begin(&mut world);
@@ -37,6 +38,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
 
     // Frame 2: Cross confirms the enemy -> 200 damage.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
     take_commit_begin(&mut world);
@@ -79,10 +81,12 @@ fn battle_item_bomb_downs_a_low_hp_enemy() {
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm item -> target
     take_commit_begin(&mut world);
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm enemy
     take_commit_begin(&mut world);
@@ -104,10 +108,12 @@ fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // item -> target (lands on enemy)
     take_commit_begin(&mut world);
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm enemy
     take_commit_begin(&mut world);
@@ -132,10 +138,12 @@ fn battle_item_escape_returns_to_field() {
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // item -> target
     take_commit_begin(&mut world);
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm
     take_commit_begin(&mut world);
@@ -221,6 +229,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
 
     // Frame 1: Cross opens the target cursor on the lone monster.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
     take_commit_begin(&mut world);
@@ -230,6 +239,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     // Magic band (nothing lands yet - retail's confirm commits the action,
     // the band charges the MP at 0x28 and the outcome folds at its seam).
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
     take_commit_begin(&mut world);
@@ -334,10 +344,12 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.battle.spell_menu = world.build_battle_spell_session(0);
 
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
     take_commit_begin(&mut world);
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
     take_commit_begin(&mut world);
@@ -707,6 +719,7 @@ fn battle_magic_escape_returns_to_field() {
     // band folds it at its 0x29 exit and the live loop ends the encounter
     // on that frame.
     world.set_pad(0);
+    world.settle_battle_pad_hold();
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
     take_commit_begin(&mut world);

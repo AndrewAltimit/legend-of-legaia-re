@@ -35,8 +35,8 @@
 
    Prose measure: paragraphs and lists inside section.doc-section are capped
    at --measure; tables, figures, grids and code blocks use the full column.
-   That holds on the 880px docs column, where the measure is most of the
-   column. A wider column (home, .wide-page) lifts the measure instead - see
+   On the docs column --measure is none, so text, figures and tables share one
+   width. A wider column (home, .wide-page) lifts the measure instead - see
    "Column width policy" beside .content.wide-page. Cap prose with
    var(--measure), never a literal ch / px width, or the wide pages cannot
    lift it.
@@ -110,7 +110,7 @@
   --rail-w:        76px;
   --sidebar-w:     260px;
   --toc-w:         220px;
-  --max-content-w: 880px;
+  --max-content-w: max(1030px, 53.65vw);
   --radius:        10px;
   --transition:    0.12s ease;
 }
@@ -614,8 +614,8 @@ body.nav-open { overflow: hidden; }
 
 /* ---------- Content column ---------- */
 .content {
-  padding: 2rem 2.4rem 4rem;
-  max-width: calc(var(--max-content-w) + 4.8rem);
+  padding: 2rem 1.5rem 4rem;
+  max-width: calc(var(--max-content-w) + 3rem);
   width: 100%;
   min-width: 0;
   /* Centered in BOTH zones: the explore zone's full-width surface and the
@@ -634,7 +634,8 @@ body.nav-open { overflow: hidden; }
 /* Column width policy. Every block in a column shares one right edge, or the
  * page reads as broken: a 46rem paragraph among 1400px grids and tables looks
  * like half the page failed to load.
- *   docs column (880px)   prose at --measure, which is most of the column.
+ *   docs column           1030px at a 1920px window, following the window
+ *                         above that; text and visuals share the width.
  *   app pages             home and .wide-page lay out dashboards, grids and
  *                         viewers at up to 1480px, so the measure is lifted
  *                         and intro text, callouts and narrow tables follow
@@ -643,8 +644,7 @@ body.nav-open { overflow: hidden; }
  *                         (a many-column table). The page keeps the docs
  *                         column and its measure; only section.breakout takes
  *                         the full width, and lifts the measure inside itself.
- * The disc-patching write-ups (.dp-page, below) are the same third shape with
- * their own named breakouts. */
+ */
 .page-home .content,
 .content.wide-page:not(.prose-page),
 .content.prose-page section.doc-section.breakout {
@@ -655,21 +655,10 @@ body.nav-open { overflow: hidden; }
   max-width: var(--max-content-w);
 }
 
-/* Write-up pages: running text, headings, callouts, and lists keep the original
- * reading measure; only the diagrams and the wide mod-catalog table break out to
- * the full 1180px column. */
-.content.dp-page {
-  max-width: 1180px;
-}
-.content.dp-page > .page-header,
-.content.dp-page > .notice,
-.content.dp-page section.doc-section > * {
-  max-width: 720px;
-}
-.content.dp-page section.doc-section > .overlay-strip,
-.content.dp-page section.doc-section > .table-wrap {
-  max-width: 1180px;
-}
+/* Docs column: the title, text, figures, tables and code share one width. */
+.zone-docs .content { --measure: none; }
+.content.prose-page > .page-header,
+.content.prose-page > section.doc-section:not(.breakout) { margin-inline: auto; }
 
 @media (max-width: 720px) {
   .content { padding: 1.4rem 1.2rem 3rem; }
@@ -4031,8 +4020,21 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
     overscroll-behavior: contain;
   }
   .sidebar.open { transform: translateX(0); }
-  /* The rail's destinations, which the hidden rail no longer provides. */
-  .sidebar-zones { display: grid; }
+  /* The rail's destinations, which the hidden rail no longer provides. They
+     stay pinned: the drawer opens wherever its saved or revealed scroll
+     position left it, and a strip that scrolled with the list went up under
+     the top bar, out of reach. `scroll-padding-top` keeps a keyboard-focused
+     row out from under the pinned strip. The drawer's top padding moves onto
+     the strip, or the list would show through that band above it. */
+  .sidebar { padding-top: 0; scroll-padding-top: 6rem; }
+  .sidebar-zones {
+    display: grid;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-top: 0.9rem;
+    background: var(--bg-raised);
+  }
 
   .sidebar-toggle { display: inline-flex; }
 
@@ -4061,7 +4063,7 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
    was being sized to. Scoped to the breakpoint so desktop column widths, which
    are computed from the same min-content, do not move.
    Block code keeps its own horizontal scroll - `pre` is already a scroller. */
-@media (max-width: 880px) {
+@media (max-width: 1100px) {
   /* Inherited, so it reaches inline code, links, list items, table cells and
      the bare `ghidra/scripts/funcs/...` paths in running prose alike. `pre`
      is unaffected: `white-space: pre` does not wrap at all, and it carries

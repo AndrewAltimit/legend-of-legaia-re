@@ -28,6 +28,7 @@ impl World {
         // record's `44`), and the walk reaches the new actor in that frame.
         let first_slice = !tl.stepped;
         tl.stepped = true;
+        self.field_vm.slice_pad = tl.touch_pad.take().filter(|_| first_slice);
         // A spawned record's actor steps from the actor-list walk, once per
         // game frame (`FrameClock::script_slice_due`): between two game
         // frames its ops do not run and no park it sits in resumes, and the
@@ -149,64 +150,34 @@ impl World {
         // dropping these left Mei OFFSCREEN (top corner of the shot) for the
         // whole conversation.
         // REF: FUN_8003774C (case 0x47), FUN_8003BC08 (0x400 walk-bit tick)
+        // The player's leg runs under the record, it does not park it:
+        // retail's `C7 F8` arm advances past the op for every target
+        // (`li s7,4` at `0x801DF030`) and the halt it raises on the caller
+        // (`0x801DF034..0x801DF044`) does not stop the runner. A capture
+        // reads the record already past the op on the frame the walk starts
+        // (`town01`, `s3_rimelm_freeroam`: vsync 460 for a walk that lands
+        // at 553). The record's next cross-context op on the player waits
+        // on the player's halt bit, as behind a compass leg (`glide_hold`).
+        let mut player_walk_landed = false;
         if let Some(mut walk) = tl.walk_wait.take() {
             walk.frames += 1;
             // The player's leg is stepped here, on the game-frame grid
-            // (`0x80 * DAT_1F800393 / (4 << bits)` a frame); an NPC's runs on
-            // the motion tick, which keeps the same grid.
-            let mut landed_now = false;
-            let arrived = match walk.slot {
-                Some(slot) => !self.npcs.motions.contains_key(&slot),
-                None if grid == 0 => false,
-                None => {
-                    landed_now =
-                        self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
-                    landed_now
-                }
-            };
-            if !arrived && walk.frames < WALK_PARK_TIMEOUT {
+            // (`0x80 * DAT_1F800393 / (4 << bits)` a frame).
+            let landed = grid != 0
+                && self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
+            if landed {
+                player_walk_landed = true;
+            } else if walk.frames < WALK_PARK_TIMEOUT {
+                // A leg in flight is playout, not a hang: it does not count
+                // toward the anti-hang frame cap (`tower` P2[2]'s
+                // `C7 F8 0D 45` covers ~7500 units at 4 a tick).
+                tl.frames = tl.frames.saturating_sub(1);
                 tl.walk_wait = Some(walk);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                // A walk park is real playout progress, not a hang: don't let
-                // it accumulate toward the anti-hang frame cap (a long leg -
-                // tower P2[2]'s `C7 F8 0D 45` covers ~7500 units at 4/tick -
-                // would otherwise burn the cap mid-walk and the forced
-                // completion would skip the record's trailing flag latches).
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
+            } else {
+                // Safety timeout: seat the player on the tile.
+                self.seat_player_on_walk_leg_target(walk.target);
+                player_walk_landed = true;
             }
-            // Arrived (or safety timeout: snap to the target so the
-            // choreography stays coherent) - resume past the yield.
-            if !arrived {
-                match walk.slot {
-                    Some(slot) => {
-                        self.npcs.motions.remove(&slot);
-                        self.npcs.positions.insert(slot, walk.target);
-                    }
-                    None => {
-                        if let Some(p) = self.player_actor_slot
-                            && let Some(actor) = self.actors.get_mut(p as usize)
-                        {
-                            actor.move_state.world_x = walk.target.0;
-                            actor.move_state.world_z = walk.target.1;
-                        }
-                        self.snap_player_y_unless_settling();
-                    }
-                }
-            }
-            if grid_live && (landed_now || grid == 0) {
-                tl.park_landed = Some(walk.resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = walk.resume_pc;
         }
         // Player compass walk (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops `0x37` /
         // `0x41` against the player anchor): the walk kernel translates the
@@ -233,7 +204,24 @@ impl World {
             tl.player_landed_hold = false;
             tl.npc_landed_hold.clear();
         }
-        let mut glide_hold = tl.player_landed_hold;
+        if tl.finish_after_walk {
+            self.field_vm.channels = channels;
+            self.field_vm.stepping_view.clear();
+            self.cutscene.in_timeline = false;
+            self.field_vm.in_spawned_record_slice = false;
+            if tl.walk_wait.is_none() {
+                tl.finish_after_walk = false;
+                tl.done = true;
+                return true;
+            }
+            tl.frames = tl.frames.saturating_sub(1);
+            return false;
+        }
+        let mut glide_hold = tl.player_landed_hold || tl.walk_wait.is_some();
+        if player_walk_landed {
+            tl.player_landed_hold = true;
+            glide_hold = true;
+        }
         if let Some(mut glide) = tl.player_glide.take() {
             if grid == 0 {
                 tl.player_glide = Some(glide);
@@ -279,35 +267,27 @@ impl World {
                 tl.npc_landed_hold.push(slot);
             }
         }
-        // NPC rotate legs (`B8 <id> <dir> <budget>`): the same in-place
-        // `0x38` RotateToAngle kernel the player park runs, stepped here
-        // while the record runs on; the actor stays held for the script
-        // until the ramp snaps, and on the snap frame.
+        // Rotate legs (`B8 <id> <dir> <budget>`, the player's included): the
+        // in-place `0x38` RotateToAngle kernel, stepped while the record runs
+        // on; the actor stays held for the script until the ramp snaps, and
+        // on the snap frame.
         // REF: FUN_801DE840 (0x801DEE90..0x801DEF24), FUN_8003774C (case 0x38)
+        let mut face_landed = false;
         for mut fw in std::mem::take(&mut tl.npc_facings) {
-            if let Some(slot) = fw.slot {
-                npc_glide_hold.push(slot);
+            match fw.slot {
+                Some(slot) => npc_glide_hold.push(slot),
+                None => glide_hold = true,
             }
-            if grid == 0 {
+            if grid == 0 || self.step_timeline_facing(&mut fw, grid) {
                 tl.npc_facings.push(fw);
                 continue;
             }
-            fw.state.speed = grid;
-            fw.frames += 1;
-            let r = legaia_engine_motion_vm::motion_vm::step(
-                &mut fw.state,
-                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                &fw.program,
-            );
-            if fw.state.yaw_written {
-                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
-            }
-            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
-                && fw.frames < WALK_PARK_TIMEOUT
-            {
-                tl.npc_facings.push(fw);
-            } else if let Some(slot) = fw.slot {
-                tl.npc_landed_hold.push(slot);
+            match fw.slot {
+                Some(slot) => tl.npc_landed_hold.push(slot),
+                None => {
+                    tl.player_landed_hold = true;
+                    face_landed = true;
+                }
             }
         }
         // NPC face-at legs (`CC <id> 85|8E|8F ..`): the target's walk kernel
@@ -346,82 +326,22 @@ impl World {
             }
             tl.pc += width;
         }
-        // Cross-context rotate park (`B8 <id> <dir|flags> <budget|dir>` = op
-        // 0x38 with a non-zero budget against an NPC channel): retail parks
-        // the record and the `FUN_8003774C` 0x38 RotateToAngle leg ramps the
-        // target actor's `+0x26` linearly over the operand budget - per-op
-        // turn rates (`arc / budget`), raw pre-unwrap mid-ramp headings, and
-        // an exact terminal snap onto the compass entry. Step the parked leg
-        // once per tick, mirror the raw yaw into the render-heading map, and
-        // resume the record past the yield when the ramp snaps.
-        // REF: FUN_8003774C (case 0x38 interpreted in place)
-        if let Some(mut fw) = tl.facing_wait.take() {
-            let r = if grid == 0 {
-                legaia_engine_motion_vm::motion_vm::StepResult::Yield
+        // Player face-at (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk kernel's
+        // FaceTarget leg turns the player toward the named actor while the
+        // record runs on past the acquire; see `CutsceneTimeline::player_face`.
+        // Like a compass leg, it spends its first unit on the arming frame
+        // and holds the player for the script through the frame it lands.
+        // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
+        if let Some((mut ramp, frames)) = tl.player_face.take() {
+            glide_hold = true;
+            if grid > 0 && self.step_player_face_leg_by(&mut ramp, grid) {
+                tl.player_landed_hold = true;
+                face_landed = true;
+            } else if frames < WALK_PARK_TIMEOUT {
+                tl.player_face = Some((ramp, frames + u32::from(grid > 0)));
             } else {
-                fw.state.speed = grid;
-                fw.frames += 1;
-                legaia_engine_motion_vm::motion_vm::step(
-                    &mut fw.state,
-                    legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                    &fw.program,
-                )
-            };
-            if fw.state.yaw_written {
-                // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
-                // exactly as retail's `+0x26` does); render consumers mask.
-                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
+                face_landed = true;
             }
-            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
-                && fw.frames < WALK_PARK_TIMEOUT
-            {
-                tl.facing_wait = Some(fw);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                // Like the walk park: a rotate park is real playout progress,
-                // not a hang - keep it off the anti-hang frame cap.
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            if grid_live {
-                tl.park_landed = Some(fw.resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = fw.resume_pc;
-        }
-        // Player face-at park (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk
-        // kernel's FaceTarget leg turns the player toward the named actor,
-        // and the record resumes past the acquire on the leg's terminal
-        // frame - see `CutsceneTimeline::player_face`.
-        // REF: FUN_8003774C (the 0x4C arm)
-        if let Some((mut ramp, resume_pc, frames)) = tl.player_face.take() {
-            let done = grid > 0 && self.step_player_face_leg_by(&mut ramp, grid);
-            if !done && frames < WALK_PARK_TIMEOUT {
-                tl.player_face = Some((ramp, resume_pc, frames + u32::from(grid > 0)));
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            if grid_live {
-                tl.park_landed = Some(resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = resume_pc;
         }
         if !due {
             tl.frames = tl.frames.saturating_sub(1);
@@ -522,16 +442,17 @@ impl World {
                         // escapes, exactly as the prop-interaction panel
                         // does, or a name renders as an empty string.
                         let _ = modal;
-                        let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
-                            std::sync::Arc::clone(&tl.bytecode),
-                            pc,
-                        );
+                        // The next line loads into the pager (state `4` ->
+                        // `5`), which takes over a held box's rows.
+                        let mut panel =
+                            legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
+                                tl.held_box.take(),
+                                &tl.bytecode,
+                                pc,
+                            );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
                         tl.dialog = Some(panel);
-                        // The next line loads into the pager, which ends a
-                        // held box.
-                        tl.held_box = None;
                         host.world.field_vm.dialog_claims += 1;
                         tl.dialog_claim = host.world.field_vm.dialog_claims;
                         break;
@@ -823,9 +744,9 @@ impl World {
                                     // at `0x80037BEC`).
                                     m.state.approach = b2 >> 4;
                                 }
-                                // The record runs on past an NPC walk (`li
-                                // s7,4` in the delay slot at `0x801DF030`);
-                                // only a player target parks the caller.
+                                // The record runs on past the walk (`li s7,4`
+                                // in the delay slot at `0x801DF030`), the
+                                // player's as well as an NPC's.
                                 tl.npc_walks.retain(|&w| w != s);
                                 tl.npc_walks.push(s);
                                 tl.pc = pc + 5;
@@ -842,25 +763,32 @@ impl World {
                             continue;
                         }
                         // The kernel takes the player's first step in the
-                        // frame that armed the park, after the script slice.
+                        // frame that armed the leg, after the script slice;
+                        // the record runs on past the op.
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.pc = pc + 5;
+                        glide_hold = true;
                         if grid > 0
                             && grid_live
                             && host
                                 .world
                                 .step_player_walk_leg((tx, tz), speed, grid, b2 >> 4)
                         {
-                            tl.park_landed = Some(pc + 5);
-                            break;
+                            tl.player_landed_hold = true;
+                        } else {
+                            tl.walk_wait =
+                                Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
+                                    slot,
+                                    target: (tx, tz),
+                                    resume_pc: pc + 5,
+                                    speed,
+                                    approach: b2 >> 4,
+                                    frames: 0,
+                                });
                         }
-                        tl.walk_wait = Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
-                            slot,
-                            target: (tx, tz),
-                            resume_pc: pc + 5,
-                            speed,
-                            approach: b2 >> 4,
-                            frames: 0,
-                        });
-                        break;
+                        continue;
                     }
                 }
                 // Halt clear on an NPC (`B2 <id> 0A`, op 0x32 bit 10): the
@@ -978,8 +906,7 @@ impl World {
                 //   RotateToAngle leg - a linear ramp at the op's own
                 //   `arc / budget` rate with an exact terminal compass snap
                 //   (the town01 Mei dinner beat authors seven of these at
-                //   budgets 0x12..0x20). Arm the rotate park; the pre-step
-                //   gate plays it out and resumes past the yield.
+                //   budgets 0x12..0x20). The record runs on past the op.
                 // REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
                 //
                 // The player (`B8 F8 ..`, `FUN_8003C83C` resolving `0xF8` to
@@ -1028,63 +955,40 @@ impl World {
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
-                        resume_pc: pc + 4,
                         frames: 0,
                     };
-                    // Only a player target parks the caller; an NPC's turn
-                    // plays out while the record runs on (`li s7,3` in the
-                    // delay slot at `0x801DEEFC`).
-                    if let Some(npc) = slot {
-                        tl.npc_facings.retain(|f| f.slot != slot);
-                        let mut leg = leg;
-                        let mut live = true;
-                        // The placements tick after the spawned records
-                        // (list `_DAT_8007C354` behind `_DAT_8007C34C`), so
-                        // on the game-frame grid the kernel takes the turn's
-                        // first frame in the frame that armed it, as it does
-                        // a walk's.
-                        if grid > 0 && host.world.clock.game_tick_live {
-                            leg.state.speed = grid;
-                            leg.frames += 1;
-                            let r = legaia_engine_motion_vm::motion_vm::step(
-                                &mut leg.state,
-                                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                                &leg.program,
-                            );
-                            if leg.state.yaw_written {
-                                host.world.set_timeline_facing(slot, leg.state.yaw as i16);
-                            }
-                            live = r != legaia_engine_motion_vm::motion_vm::StepResult::Done;
-                        }
-                        if live {
-                            tl.npc_facings.push(leg);
-                        } else {
-                            tl.npc_landed_hold.push(npc);
-                        }
-                        npc_glide_hold.push(npc);
-                        tl.pc = pc + 4;
-                        continue;
-                    }
-                    // The turn's first step falls in the arming frame too.
+                    // The turn plays out while the record runs on, for every
+                    // target (`li s7,3` in the delay slot at `0x801DEEFC`). A
+                    // player target also raises the caller's `0x400`, which
+                    // only ops aimed at it refuse. The placements tick after
+                    // the spawned records, so on the game-frame grid the
+                    // kernel takes the turn's first frame in the frame that
+                    // armed it, as it does a walk's.
+                    tl.npc_facings.retain(|f| f.slot != slot);
                     let mut leg = leg;
-                    if grid > 0 && grid_live {
-                        leg.state.speed = grid;
-                        leg.frames += 1;
-                        let r = legaia_engine_motion_vm::motion_vm::step(
-                            &mut leg.state,
-                            legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                            &leg.program,
-                        );
-                        if leg.state.yaw_written {
-                            host.world.set_timeline_facing(slot, leg.state.yaw as i16);
+                    let live =
+                        !(grid > 0 && grid_live) || host.world.step_timeline_facing(&mut leg, grid);
+                    if live {
+                        tl.npc_facings.push(leg);
+                    }
+                    match slot {
+                        Some(npc) => {
+                            npc_glide_hold.push(npc);
+                            if !live {
+                                tl.npc_landed_hold.push(npc);
+                            }
                         }
-                        if r == legaia_engine_motion_vm::motion_vm::StepResult::Done {
-                            tl.park_landed = Some(leg.resume_pc);
-                            break;
+                        None => {
+                            tl.ctx.flags |= 0x400;
+                            glide_hold = true;
+                            if !live {
+                                tl.player_landed_hold = true;
+                                face_landed = true;
+                            }
                         }
                     }
-                    tl.facing_wait = Some(leg);
-                    break;
+                    tl.pc = pc + 4;
+                    continue;
                 }
                 // Halt-acquire of an NPC (`CC <id> 85|8E|8F <lo> <hi> <bind>`
                 // against a placement channel): the target turns to face the
@@ -1156,9 +1060,8 @@ impl World {
                         host.world.locomotion.player_clip_rate = (rate >> 1).max(1);
                     }
                     // Halt-acquire of the player (`CC F8 85|8E|8F`): the
-                    // player turns to face the op's actor bind and the record
-                    // parks until the turn's terminal frame
-                    // (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
+                    // player turns to face the op's actor bind, and the record
+                    // runs on (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
                     // turns Vahn toward Cort this way before the evolved-Cort
                     // fight; stepped as a plain halt on the record's own
                     // context, the player kept facing the camera.
@@ -1172,18 +1075,21 @@ impl World {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
-                        let resume_pc = pc + 6;
-                        if grid_live {
-                            if grid > 0 && host.world.step_player_face_leg_by(&mut ramp, grid) {
-                                tl.park_landed = Some(resume_pc);
-                                break;
-                            }
-                        } else if host.world.step_player_face_leg(&mut ramp) {
-                            tl.pc = resume_pc;
-                            continue;
+                        tl.pc = pc + 6;
+                        tl.ctx.flags |= 0x400;
+                        glide_hold = true;
+                        let landed = if grid_live {
+                            grid > 0 && host.world.step_player_face_leg_by(&mut ramp, grid)
+                        } else {
+                            host.world.step_player_face_leg(&mut ramp)
+                        };
+                        if landed {
+                            tl.player_landed_hold = true;
+                            face_landed = true;
+                        } else {
+                            tl.player_face = Some((ramp, 1));
                         }
-                        tl.player_face = Some((ramp, resume_pc, 1));
-                        break;
+                        continue;
                     }
                     // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
                     // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
@@ -1235,13 +1141,18 @@ impl World {
                         // the clip base and is picked + bound at once.
                         let pick = host.world.field_player_script_clip(move_id);
                         // The end latch a following `AD F8 08` waits on lands
-                        // when a scene-bank clip has played its frames; a
-                        // party-bank clip (the locomotion loops) is not timed.
+                        // when the clip has played its frames, whichever
+                        // bank it binds from: `FUN_800204F8` latches at the
+                        // end of a pass for a clamp and a wrap alike
+                        // (`0x800206E4..0x8002072C`).
+                        use legaia_engine_field::field_player_clip::ClipBank;
                         tl.player_clip_ticks = match pick.bound() {
-                            Some((
-                                legaia_engine_field::field_player_clip::ClipBank::Scene,
-                                record,
-                            )) => host.world.player_scene_clip_end_ticks(record),
+                            Some((ClipBank::Scene, record)) => {
+                                host.world.player_scene_clip_end_ticks(record)
+                            }
+                            Some((ClipBank::Party, record)) => {
+                                host.world.player_party_clip_end_ticks(record)
+                            }
                             _ => 0,
                         };
                         // Cue the scripted player clip: the windowed host
@@ -1302,6 +1213,20 @@ impl World {
                         tl.pc = pc + 4;
                         continue;
                     }
+                    if tl.player_arc_halted {
+                        // The dispatcher prelude parks an extended op on the
+                        // halted player until the arc's watcher releases it
+                        // on landing; `B2 F8 0A` clears the bit itself.
+                        // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+                        if !host.world.player_script_arc_live()
+                            || (op == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
+                        {
+                            tl.player_arc_halted = false;
+                        } else {
+                            tl.frames = tl.frames.saturating_sub(1);
+                            break;
+                        }
+                    }
                     // End-latch spin on the player (`AD F8 08`): park while
                     // the poked scene-bank clip is still playing.
                     if op == 0x2D && tl.bytecode.get(pc + 2) == Some(&8) && tl.player_clip_ticks > 0
@@ -1343,9 +1268,19 @@ impl World {
                                 None,
                             )
                         {
+                            // The arm raises the halt bit on the player and
+                            // on the caller, and the context keeps stepping:
+                            // only an extended op that names the halted
+                            // player waits (the prelude below). `town01`
+                            // P2[12]'s `4A 18 00` counts under the flight.
                             tl.player_move_frames = 0;
-                            tl.player_wait = Some(width);
-                            break;
+                            tl.player_arc_halted = true;
+                            tl.ctx.wait_accum = 0;
+                            if pc < tl.visited.len() {
+                                tl.visited[pc] = true;
+                            }
+                            tl.pc = pc + width;
+                            continue;
                         }
                         if tl.player_move_frames == 0 {
                             tl.pc = pc + width;
@@ -1792,6 +1727,14 @@ impl World {
                     break;
                 }
             }
+        }
+        // The leg's terminal frame clears the caller's halt and its `+0x54`
+        // (`0x80037FFC`, `0x80038020..0x80038028`) after this frame's script
+        // ran: a `4A` under the turn loses what it had counted.
+        // REF: FUN_8003774C, FUN_8003BC08
+        if face_landed {
+            tl.ctx.flags &= !0x400;
+            tl.ctx.wait_accum = 0;
         }
         // Timeline pokes that moved a channel context (cross-context MoveTo)
         // write through to the field NPC render/probe state. Object-bind

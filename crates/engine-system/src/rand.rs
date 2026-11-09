@@ -45,10 +45,9 @@ impl BiosRand {
 /// bits, in the range `0..=0x7FFF`. The seed is mutated in place.
 ///
 /// Identical to PSX libc `rand()`, which is what the game uses
-/// (`FUN_80056798`, `ghidra/scripts/funcs/80056798.txt`). For deterministic
-/// replay the engine must seed this from the same boot-time source the
-/// retail game uses; the precise source is currently the SPU master clock
-/// at boot, captured in `_DAT_8007AE5C`.
+/// (`FUN_80056798`, `ghidra/scripts/funcs/80056798.txt`, the thunk onto BIOS
+/// `A(2Fh)`). Retail's seed is the kernel word `0x80009010`; the executable
+/// has no `srand` thunk (`docs/subsystems/battle-formulas.md` traces it).
 pub fn psyq_rand_step(seed: &mut u32) -> u16 {
     *seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
     ((*seed >> 16) & 0x7FFF) as u16

@@ -282,6 +282,19 @@ impl FieldHostImpl<'_> {
         });
     }
 
+    /// The list relink of the `0x23` and `4C 51` non-player arms
+    /// (`0x801DECCC..0x801DECD4`, `0x801E1AA0..0x801E1AA8`), on the placement
+    /// the op is seating. An op aimed at the player or a placed object moves
+    /// no ambient channel.
+    fn relink_seated_placement(&mut self, ctx: &FieldCtx, is_player: bool) {
+        if is_player || self.world.field_vm.executing_object.is_some() {
+            return;
+        }
+        if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+            self.world.relink_placement_for_seat(slot);
+        }
+    }
+
     pub(super) fn move_to(
         &mut self,
         ctx: &mut FieldCtx,
@@ -291,6 +304,7 @@ impl FieldHostImpl<'_> {
     ) {
         // The VM's `is_player` is the bit; retail's is an identity compare.
         let is_player = is_player && self.ctx_is_player(ctx);
+        self.relink_seated_placement(ctx, is_player);
         // Scene-entry spawn-prologue pre-run: the record seats ITS OWN actor
         // (the VM already wrote the channel ctx position; the pre-run's
         // write-through surfaces it). Never yank the player from here - a
@@ -432,6 +446,7 @@ impl FieldHostImpl<'_> {
         // The VM's `is_player` is the bit; retail's is an identity compare
         // (`0x801E1954`).
         let is_player = is_player && self.ctx_is_player(ctx);
+        self.relink_seated_placement(ctx, is_player);
         // The actor words every arm writes ahead of the seat (the player arm
         // writes the same words below, on the player's own state):
         // the depth byte's bit 7 sets or clears the party-bank bit

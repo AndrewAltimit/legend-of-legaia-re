@@ -719,6 +719,31 @@ impl World {
         }
     }
 
+    /// Vsyncs until the end latch of party-bank record `record`, at the
+    /// player's clip rate and the record's own gate and divisor: the length a
+    /// cutscene's `AD F8 08` waits. `FUN_800204F8` raises the latch at the
+    /// end of every pass, clamped or looping, and the bank only picks the
+    /// pointer, so a party-bank clip latches like a scene-bank one. `0` for
+    /// a record the table does not carry (no bundle loaded).
+    ///
+    /// Retail does not rewind a clip whose id is already bound (`+0x5C ==
+    /// +0x5E`, `0x8002057C`); the sim holds no party cursor to wait out the
+    /// rest of a pass, so a poke of the clip already playing waits a full
+    /// pass rather than the remainder of it.
+    ///
+    /// REF: FUN_800204F8 (the step select and the end test)
+    pub(crate) fn player_party_clip_end_ticks(&self, record: u16) -> u32 {
+        use legaia_engine_vm::actor_tick::{clip_end_ticks, clip_step};
+        let i = usize::from(record);
+        self.locomotion
+            .party_clip_meta
+            .get(i)
+            .map_or(0, |&(frames, gated, div)| {
+                let rate = self.locomotion.player_clip_rate.max(1) as u16;
+                clip_end_ticks(frames, clip_step(rate, gated, div))
+            })
+    }
+
     /// Copy the clip-control bits (hold / clamp / reverse / restart) of a
     /// player `+0x62` word some other model of it carries - a conversation's
     /// or a prop ride's cursor, which keep their own end latch - onto the

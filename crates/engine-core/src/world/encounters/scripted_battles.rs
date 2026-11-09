@@ -323,6 +323,9 @@ impl World {
         };
         let installed = self.install_interaction_timeline(&man_file, &man, record);
         if installed {
+            if let Some(tl) = self.cutscene.timeline.as_mut() {
+                tl.touch_pad = Some(self.input.pad());
+            }
             self.props.boss_stagers.remove(&slot);
             self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");

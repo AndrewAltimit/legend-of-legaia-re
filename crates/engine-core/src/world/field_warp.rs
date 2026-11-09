@@ -288,6 +288,24 @@ impl World {
                 .any(|tl| tl.dialog.is_some())
     }
 
+    /// Whether a context the script runner `FUN_80039B7C` counts in the modal
+    /// depth `_DAT_801C6EA4+0xA` is still open: a conversation, the modal
+    /// timeline or a helper record that has run a slice. Retail bumps the
+    /// depth at a context's slice (`0x80039D98`) and takes the context's
+    /// share back when it ends, so the depth is non-zero exactly while one of
+    /// these runs. A scene transition's hold and an expansion cutscene are
+    /// the port's own holds, not runner contexts, so they do not count.
+    fn script_runner_context_live(&self) -> bool {
+        self.dialog.current.is_some()
+            || self.dialog.inline.is_some()
+            || self.cutscene_timeline_active()
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.dialog.is_some() || (tl.stepped && !tl.is_done()))
+    }
+
     /// The script runner's release hold, once a tick after the field frame.
     ///
     /// `FUN_80039B7C` tears a context down on its `0x21` (or on the
@@ -298,16 +316,16 @@ impl World {
     /// `DAT_80073F02` is up - the latch cleared and `_DAT_8007B6B4 = 0x10`
     /// (`0x80039D24..0x80039D60`, and the same arm at `0x80039EF8..0x80039F34`).
     /// So the pad stays off for [`warp_tile::SCRIPT_RELEASE_HOLD_FRAMES`]
-    /// after a conversation's last box, and the player cannot walk, talk or
-    /// open the menu on the frame the box closes.
+    /// after the whole record, not after its last box: a record that keeps
+    /// running behind a closed box (`town01`'s Tetsu scene, its op-`0x45`
+    /// glide and `4C CD` after the last line) holds the pad from its `0x21`.
     ///
-    /// The engine has no single modal depth; its release is the frame
-    /// [`Self::dialogue_owns_input`] falls - the conversation the capture
-    /// measured. The wider [`Self::script_context_engages_player`] (cutscene
-    /// timelines, door holds, helper records) is not part of it: with it the
-    /// edge also fired on a scripted arrival's end, and the full-game ladder's
-    /// pad tier stopped reaching `sol_tower` from `station`. Whether retail's
-    /// release follows those contexts at depth `0` is not captured.
+    /// The system channel's own pass ends at the same arm every free-roam
+    /// tick (`FUN_801DA51C` steps it while the player is unlocked,
+    /// `0x801DA78C..0x801DA7BC`). The latch has no store outside this routine,
+    /// so a latch left up by a record a scene change tore down fires on the
+    /// first unlocked tick of the next scene, over the post-load hold: the
+    /// test is a level at depth `0`, not an edge of the engagement.
     ///
     /// PORT: FUN_80039B7C (`0x80039D44..0x80039D60`, `0x80039F1C..0x80039F34`
     /// the release hold, and `0x80039FE4` the yielded latch)
@@ -315,10 +333,13 @@ impl World {
         if self.script_box_shown() {
             self.dialog.script_yield_latch = true;
         }
-        let engaged = self.dialogue_owns_input();
-        let released = self.dialog.script_engaged_prev && !engaged;
-        self.dialog.script_engaged_prev = engaged;
-        if released && self.dialog.script_yield_latch {
+        let live = self.script_runner_context_live();
+        let ended = self.dialog.script_engaged_prev && !live;
+        self.dialog.script_engaged_prev = live;
+        if !live
+            && self.dialog.script_yield_latch
+            && (ended || !self.field_player_movement_locked())
+        {
             self.dialog.script_yield_latch = false;
             self.locomotion.warp.hold = warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
         }

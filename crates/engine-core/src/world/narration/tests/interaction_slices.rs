@@ -454,12 +454,12 @@ fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
 #[test]
 fn a_second_player_walk_waits_for_the_first_to_land() {
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
-    // Two contexts each walk the player (`C7 F8 tx tz mode`) then SET a
-    // flag. Retail's walk park leaves the player's halt bit `0x400` set
-    // until the kernel lands it, and the dispatcher refuses the second
-    // context's cross-context op on a halted target
-    // (`0x801DE90C..0x801DE944`) - the walks run one after the other,
-    // never against each other.
+    // Two contexts each walk the player (`C7 F8 tx tz mode`). Retail's
+    // walk leaves the player's halt bit `0x400` set until the kernel lands
+    // it, and the dispatcher refuses the second context's cross-context op
+    // on a halted target (`0x801DE90C..0x801DE944`) - the walks run one
+    // after the other, never against each other. Each record runs on past
+    // its walk, so the flag behind the op proves the walk started.
     let first = vec![0xC7, 0xF8, 0x12, 0x10, 0x33, 0x50, 0x0C, 0x4A, 0xFF, 0x7F];
     let second = vec![0xC7, 0xF8, 0x10, 0x10, 0x33, 0x50, 0x0D, 0x4A, 0xFF, 0x7F];
     let mut w = World::default();
@@ -475,14 +475,15 @@ fn a_second_player_walk_waits_for_the_first_to_land() {
         .push(CutsceneTimeline::new(second, 0));
     let target_first = (0x12 * 0x80 + 0x40, 0x10 * 0x80 + 0x40);
     let mut first_x = Vec::new();
+    let second_start = 0x10 * 0x80 + 0x40;
     for _ in 0..400 {
         w.step_helper_contexts();
         first_x.push(w.actors[0].move_state.world_x);
-        if w.system_flag_test(0x0D) {
+        if w.system_flag_test(0x0D) && w.actors[0].move_state.world_x == second_start {
             break;
         }
     }
-    assert!(w.system_flag_test(0x0C), "the first walk landed");
+    assert!(w.system_flag_test(0x0C), "the first walk started");
     assert!(w.system_flag_test(0x0D), "the second walk ran after it");
     assert!(
         first_x.contains(&target_first.0),
@@ -781,4 +782,36 @@ fn the_play_clock_snapshot_is_the_records_word() {
     w.start_inline_dialogue(vec![0x4C, 0xEE, 0x21]);
     w.step_inline_dialogue(false, false, false);
     assert_eq!(w.clock.records_play_seconds, 4242);
+}
+
+/// The record behind a walk touch tests the held d-pad in its first slice
+/// (`town01` P1 flat 101: `42 01 00 05 00`, Down, hops off the ledge). Retail
+/// runs that slice in the pass the player's step posted the touch, so it reads
+/// that pass's held word; the port's first slice is the next tick, by when
+/// the pad can have changed.
+#[test]
+fn a_touch_records_first_slice_reads_the_pad_of_the_touch() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let bc = |_: ()| {
+        vec![
+            0x42, 0x01, 0x00, 0x05, 0x00, 0x4A, 0xFF, 0x7F, 0x4A, 0xFF, 0x7F,
+        ]
+    };
+    let run = |touch: Option<u16>| {
+        let mut w = World::new();
+        let mut tl = CutsceneTimeline::new(bc(()), 0);
+        tl.touch_pad = touch;
+        w.cutscene.timeline = Some(tl);
+        w.input.set_pad(0x4000);
+        w.clock.display_frame_step = 1;
+        w.step_spawned_record_contexts();
+        let pc = w.cutscene.timeline.as_ref().map(|t| t.pc);
+        (pc, w.field_vm.slice_pad)
+    };
+    assert_eq!(
+        run(Some(0x40)),
+        (Some(8), None),
+        "Down held on the touch tick: the jump runs on to the wait, the override is spent"
+    );
+    assert_eq!(run(None).0, Some(5), "no touch: the tick's own pad, Cross");
 }

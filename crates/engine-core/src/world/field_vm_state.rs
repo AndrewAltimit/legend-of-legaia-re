@@ -25,6 +25,12 @@ pub struct FieldVmState {
     /// semantics (an initial SEAT written through the channel ctx) without
     /// touching the live free-roam / cutscene behaviour of the same op.
     pub(crate) entry_prerun: bool,
+    /// The placement slot whose scene-entry pre-run slice is executing: the
+    /// spawn loop's list tail, the point a `0x23` / `4C 51` relink lands
+    /// when nodes past it are not yet spawned
+    /// ([`crate::world::World::relink_placement_for_seat`]). `None` outside
+    /// the entry pre-run.
+    pub(crate) prerun_running_slot: Option<u8>,
     /// `true` while an op-`4C C3` re-seat is re-running its target's spawn
     /// section (retail `FUN_8003CF7C` inside the `*(_DAT_801C6EA4) + 8 = 1`
     /// bracket at `0x801E2810..0x801E282C`). Guards a section that re-seats
@@ -133,6 +139,10 @@ pub struct FieldVmState {
     /// the retail run settles on the op target) from the live channel
     /// stepper's own-script op (glide).
     pub in_spawned_record_slice: bool,
+    /// The held pad a record's first slice reads
+    /// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::touch_pad`]),
+    /// in place of the tick's.
+    pub slice_pad: Option<u16>,
     /// Actors another spawned-record context holds in an in-place park
     /// while the one being stepped runs: a walk-to-tile, rotate or player
     /// glide leg (`None` = the player, `Some(slot)` = an NPC placement).
@@ -249,6 +259,7 @@ impl FieldVmState {
             mode_flags: 0,
             submode_context: [0; 10],
             entry_prerun: false,
+            prerun_running_slot: None,
             respawn_rerun: false,
             eased_moves: Vec::new(),
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
@@ -267,6 +278,7 @@ impl FieldVmState {
             pending_retire_ids: Vec::new(),
             party_mesh_swap_pending: false,
             in_spawned_record_slice: false,
+            slice_pad: None,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),

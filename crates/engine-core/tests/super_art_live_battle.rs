@@ -133,6 +133,7 @@ fn live_arts_input_types_and_fires_a_super() {
     // --- Walk into a battle. ---
     let mut entered = false;
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
@@ -225,6 +226,7 @@ fn live_arts_input_types_and_fires_a_super() {
             0
         };
         let input_was_open = w.battle.arts_input_active();
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         press = !press;
         w.tick();

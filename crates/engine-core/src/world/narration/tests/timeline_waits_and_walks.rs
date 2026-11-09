@@ -427,10 +427,44 @@ fn a_pad_poll_loop_waits_for_the_press() {
     assert_eq!(tl.pc, 11, "the press takes the jump");
 }
 
-/// A party-bank clip (the locomotion loops) has no timed end latch in
-/// the port: the spin steps past as before rather than parking forever.
+/// `AD F8 08` after a party-bank clip spins for the clip's end latch
+/// (`FUN_800204F8`, the latch at `0x800206E4..0x8002072C`): `town01`'s Tetsu
+/// scene waits 14 vsyncs on the leader's 7-frame clip 4, and a retail
+/// capture reads the cursor 16..=112 across them. With no party bank
+/// loaded there is no clip to time and the record runs on.
 #[test]
-fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
+fn cutscene_timeline_party_bank_clip_parks_the_latch_spin_for_its_length() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_anim::CLIP_RATE;
+    assert_eq!(CLIP_RATE, 8);
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    // Record `leader * 7 + slot`; clip 4 is record 3 of the leader's bank.
+    w.locomotion.party_clip_meta = vec![(3, false, 0), (2, false, 0), (3, false, 0), (7, false, 0)];
+    // `A2 F8 04` (party-bank bit up by default), `AC F8 08`, `AD F8 08`.
+    let bc = vec![
+        0xA2, 0xF8, 0x04, 0xAC, 0xF8, 0x08, 0xAD, 0xF8, 0x08, 0x4A, 0xFF, 0x7F,
+    ];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    let mut spin_ticks = 0;
+    for _ in 0..40 {
+        w.step_cutscene_timeline();
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        if tl.player_clip_wait.is_some() {
+            spin_ticks += 1;
+        } else if spin_ticks > 0 {
+            break;
+        }
+    }
+    assert_eq!(spin_ticks, 14, "7 frames at rate 8, one vsync per step");
+    assert_eq!(w.cutscene.timeline.as_ref().unwrap().pc, 9, "past the spin");
+}
+
+/// With no party bank installed the spin has no clip to time and steps past.
+#[test]
+fn cutscene_timeline_party_bank_clip_without_a_bank_runs_on() {
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World::default();
     let bc = vec![0xA2, 0xF8, 0x01, 0xAD, 0xF8, 0x08, 0x4A, 0xFF, 0x7F];

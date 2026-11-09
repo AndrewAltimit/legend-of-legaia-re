@@ -2,7 +2,7 @@
 
 This page explains how this project ports Legend of Legaia and why it goes about it this way. Three broad methods can bring an old console game to modern machines: decompilation, static recompilation and engine reimplementation. This project takes the third: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of `SCUS_942.54`.
 
-Each method suits different goals, and none of them is the best in general. The page compares the three, says what this choice costs and buys, and then walks through the method step by step, with the gate that keeps each step honest and an example from this repository. The tool pages hold the detail; this page is the thread that connects them.
+[A separate case study](decomp-recomp-reimplementation.md) sets this engine beside a static recompilation of the same game. Each method suits different goals, and none of them is the best in general. The page compares the three, says what this choice costs and buys, and then walks through the method step by step, with the gate that keeps each step honest and an example from this repository. The tool pages hold the detail; this page is the thread that connects them.
 
 Nothing here changes the ground rules: the user supplies the disc, no Sony-owned bytes are committed or shipped, and the engine extracts what it needs at runtime ([legal posture](subsystems/engine.md#legal-posture)).
 

@@ -476,6 +476,15 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
         }
         let start = world.actors[0].battle.hp;
         for _ in 0..600 {
+            // The party member's Numb can wear off (the round-end waker
+            // `FUN_801F45A4` draws for it), and a strike strips the Sleep:
+            // the monster is held asleep so the only HP source stays the DoT.
+            if !world.battle.status_effects.has(1, StatusKind::Sleep) {
+                world
+                    .battle
+                    .status_effects
+                    .apply_with_duration(1, StatusKind::Sleep, 255);
+            }
             world.tick();
             if world.mode != SceneMode::Battle {
                 break;

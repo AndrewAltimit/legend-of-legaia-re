@@ -106,6 +106,7 @@ fn build_world(with_record: bool) -> World {
 fn walk_into_battle(w: &mut World) {
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..6000 {
+        w.settle_battle_pad_hold();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
@@ -207,6 +208,7 @@ fn drive_arts_entry(
             0
         };
         let input_was_open = w.battle.arts_input_active();
+        w.settle_battle_pad_hold();
         w.set_pad(pad);
         press = !press;
         w.tick();
