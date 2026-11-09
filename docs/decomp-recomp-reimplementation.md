@@ -38,8 +38,8 @@ The two come at the same goals in different orders. A recomp starts with the ori
 
 | You want | Decompilation | Static recompilation | Reimplementation |
 |---|---|---|---|
-| The whole game running | Extra work: all the code plus a platform layer | Built in, once the runtime exists and code is found | Extra work, and arrives last |
-| Retail quirks and timing | Built in, with timing up to the platform layer | Built in, if the hardware model is right | Extra work, one at a time |
+| The whole game running | Extra work: all the code plus a platform layer | Built in, once the runtime exists and code is found | Extra work: every routine ported or handed to a library |
+| Retail quirks and timing | Built in, with timing up to the platform layer | Built in, if the hardware model is right | Extra work, one at a time; full visual parity comes last |
 | Assurance the code is right | Built in when matching | Built in; the runtime carries the risk | Poor fit: measured, never proved |
 | Rules a person can read | Extra work after the match | Poor fit | Built in |
 | New rendering | Extra work | Extra work, well served at draw-call level | Built in |
