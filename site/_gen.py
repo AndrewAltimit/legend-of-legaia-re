@@ -808,6 +808,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/frame-bench.html", "Frame benchmark", "tooling/frame-bench", "tooling/frame-bench.html"),
     ("tooling/frame-hash.html", "Browser frame hash", "tooling/frame-hash", "tooling/frame-hash.html"),
     ("tooling/build-and-test-speed.html", "Build and test speed", "tooling/build-and-test-speed", "tooling/build-and-test-speed.html"),
+    ("tooling/decomp-recomp-reimplementation.html", "Decomp, recomp, reimplementation", "tooling/decomp-recomp-reimplementation", "tooling/decomp-recomp-reimplementation.html"),
     ("tooling/porting-by-reimplementation.html", "Porting by reimplementation", "tooling/porting-by-reimplementation", "tooling/porting-by-reimplementation.html"),
     ("tooling/reusing-for-other-ps1-games.html", "Reusing for other PS1 games", "tooling/reusing-for-other-ps1-games", "tooling/reusing-for-other-ps1-games.html"),
     ("tooling/retail-oracle-method.html", "The retail-oracle method", "tooling/retail-oracle-method", "tooling/retail-oracle-method.html"),

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; porting by reimplementation</div>
   <h1>Porting a game by engine reimplementation</h1>
-  <p class="lede">How this project ports Legend of Legaia, and why it goes about it this way: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of <code>SCUS_942.54</code>.</p>
+  <p class="lede">How this project ports Legend of Legaia, and why it goes about it this way: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of <code>SCUS_942.54</code>. This page is the method; <a href="decomp-recomp-reimplementation.html">the case study</a> sets it beside the other routes, using a static recompilation of this same game built over the same months.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="contents,the-method-at-a-glance,the-feedback-loops">
@@ -112,7 +112,7 @@
 
 <section class="doc-section" id="three-ways" data-doc="three-ways-to-port-a-game">
   <h2>Three ways to port a game</h2>
-  <p>Each method suits different goals, and none is the best in general. The clearest way to separate them is by what each one starts with and what it still has to earn.</p>
+  <p>Each method suits different goals, and none is the best in general. The clearest way to separate them is by what each one starts with and what it still has to earn. <a href="decomp-recomp-reimplementation.html">The case study</a> takes this further: what executes at play time, how the two Legaia ports developed side by side, and where each route pays.</p>
   <figure class="diagram">
       <svg viewBox="0 0 1000 466" xmlns="http://www.w3.org/2000/svg" style="font-family:var(--font-body)" role="img" aria-label="Decompilation starts from the executable rewritten as source and produces source that rebuilds the game, with fidelity proved by the byte match. Static recompilation translates the machine code and produces the original game running over a hardware model, with fidelity inherited. Reimplementation, this repository&#x27;s route, starts from format docs and traced behaviour and produces a new engine that loads the game data, with fidelity measured against retail states. A recomp gets you the game. A reimplementation, plus the oracles that measure it, gets you an engine for the game.">
         <defs><marker id="pr-routes-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
@@ -274,6 +274,14 @@
 
 <section class="doc-section" id="step-3" data-doc="step-3-wire-them">
   <h2>Step 3: wire them</h2>
+  <figure class="pr-chain" aria-label="A routine moves through five states, each with its own check: dumped, documented, ported, wired, entered. Ported is where a function looks finished, and it does nothing for a player until it is wired and entered.">
+    <div><span class="pr-chain-state">Dumped</span><span class="pr-chain-check">its instructions are on file</span></div>
+    <div><span class="pr-chain-state">Documented</span><span class="pr-chain-check">a page cites it</span></div>
+    <div class="pr-chain-trap"><span class="pr-chain-state">Ported</span><span class="pr-chain-check">Rust exists and its tests pass</span><span class="pr-chain-note">looks finished</span></div>
+    <div><span class="pr-chain-state">Wired</span><span class="pr-chain-check">a host can reach it</span></div>
+    <div class="pr-chain-done"><span class="pr-chain-state">Entered</span><span class="pr-chain-check">a replay actually ran it</span></div>
+    <figcaption>The catalog tracks each stage separately, so a ported routine with no caller cannot count as done.</figcaption>
+  </figure>
   <dl class="kv">
     <dt>Done</dt><dd>Give each port a caller that a host can reach. An unwired port compiles, passes its own unit tests, reads as progress and does nothing for a player, so it is not done until something live reaches it.</dd>
     <dt>Produces</dt><dd>Ports a host reaches, and for the rest an explicit statement of why not: <code>// NOT WIRED:</code> names what must exist first, <code>// REPLACED-BY:</code> names the mechanism that does the routine's job.</dd>
@@ -285,6 +293,38 @@
 <section class="doc-section" id="step-4" data-doc="step-4-replace-the-toolchain-under-the-game">
   <h2>Step 4: replace the toolchain under the game</h2>
   <p>Find the line between the game's own logic and the PlayStation toolchain it was built on, keep the first and replace the second with new foundational libraries. Sony's PsyQ libraries are statically linked into <code>SCUS_942.54</code>, where they appear as recognisable address clusters. The game's own logic is above them and mostly lives in overlays.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 286" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three layers of the retail program and what the port does with each. Game logic such as damage rules, script opcodes and culling choices is ported routine by routine. Observable hardware behaviour such as SPU voices, GTE register limits and dither is modelled. The toolchain and devices, meaning libsnd, libcd, the memory card and the GPU interface, are replaced with new foundations.">
+      <text class="dg-sub dg-start" x="24" y="24" style="font-size:12px;font-weight:700;letter-spacing:.06em">RETAIL</text>
+      <text class="dg-sub dg-start" x="472" y="24" style="font-size:12px;font-weight:700;letter-spacing:.06em">THE PORT</text>
+      <defs><marker id="pr-keep-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="36" width="370" height="72" rx="5"/>
+      <text class="dg-label" x="205" y="66">Game logic</text>
+      <text class="dg-sub" x="205" y="88">damage rules, script opcodes, culling choices</text>
+      <rect class="dg-node" x="20" y="120" width="370" height="72" rx="5"/>
+      <text class="dg-label" x="205" y="150">Observable hardware behaviour</text>
+      <text class="dg-sub" x="205" y="172">SPU voices and reverb, GTE limits, dither</text>
+      <rect class="dg-node" x="20" y="204" width="370" height="72" rx="5"/>
+      <text class="dg-label" x="205" y="234">Toolchain and devices</text>
+      <text class="dg-sub" x="205" y="256">libsnd, libspu, libcd, memory card, GPU interface</text>
+      <path class="dg-edge" d="M392 72 H466" marker-end="url(#pr-keep-arrow)"/>
+      <path class="dg-edge" d="M392 156 H466" marker-end="url(#pr-keep-arrow)"/>
+      <path class="dg-edge" d="M392 240 H466" marker-end="url(#pr-keep-arrow)"/>
+      <text class="dg-edge-label" x="429" y="64" text-anchor="middle">port</text>
+      <text class="dg-edge-label" x="429" y="148" text-anchor="middle">model</text>
+      <text class="dg-edge-label" x="429" y="232" text-anchor="middle">replace</text>
+      <rect class="dg-node-ok" x="468" y="36" width="392" height="72" rx="5"/>
+      <text class="dg-label" x="664" y="66">Same decisions, new Rust</text>
+      <text class="dg-sub" x="664" y="88">named kernels tagged with the retail address</text>
+      <rect class="dg-node-accent" x="468" y="120" width="392" height="72" rx="5"/>
+      <text class="dg-label" x="664" y="150">Reproduced where a player can tell</text>
+      <text class="dg-sub" x="664" y="172">SPU model, GTE model, PSX mode behind a toggle</text>
+      <rect class="dg-node-warn" x="468" y="204" width="392" height="72" rx="5"/>
+      <text class="dg-label" x="664" y="234">New foundations</text>
+      <text class="dg-sub" x="664" y="256">sequencer, Vfs, save writer, wgpu and WebGL2</text>
+    </svg>
+    <figcaption>The question at each layer is whether a player could notice the difference. The table below names the replacements.</figcaption>
+  </figure>
   <div class="pr-boundary" role="table" aria-label="What the port replaces, retail on the left and the port on the right">
     <div class="pr-bhead" role="row"><span role="columnheader">Retail</span><span role="columnheader">The port</span></div>
     <div role="row"><span role="cell">libsnd / SsAPI sequencer</span><span role="cell"><code>Sequencer</code> in <a href="../subsystems/audio.html">engine-audio</a></span></div>
@@ -309,6 +349,13 @@
 
 <section class="doc-section" id="step-5" data-doc="step-5-play-the-whole-game-on-pad-input">
   <h2>Step 5: play the whole game on pad input</h2>
+  <figure class="pr-rungs" aria-label="Each story segment climbs four tiers: loads, enters, progresses, pad. Pad means the next milestone is reached on button input alone.">
+    <div style="--h:1"><strong>loads</strong><span>the seeded save lands in its scene</span></div>
+    <div style="--h:2"><strong>enters</strong><span>the entry script settles</span></div>
+    <div style="--h:3"><strong>progresses</strong><span>the next milestone is reached by seated traversal</span></div>
+    <div style="--h:4" class="pr-rung-top"><strong>pad</strong><span>the next milestone is reached on buttons alone</span></div>
+    <figcaption>The four tiers a story segment climbs. A separate continuous run plays one New Game with no re-seeding.</figcaption>
+  </figure>
   <dl class="kv">
     <dt>Done</dt><dd>Play New Game to credits with no human, on pad input alone. A scripted hand walks, talks, fights, heals and shops by pressing the buttons a player would. Story and battle defects no unit test sees appear here, and a game that cannot be finished is not a port.</dd>
     <dt>Produces</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a>: story segments between milestones anchored to retail saves, each climbing <code>loads</code>, <code>enters</code>, <code>progresses</code> and <code>pad</code>. The <a href="full-game-ladder.html#continuous">continuous run</a> plays one session from New Game with no re-seeding, so it arrives at each stretch with the levels it earned. The <a href="soak-harness.html">soak harness</a> throws seeded random input at every scene and minigame.</dd>
@@ -341,12 +388,12 @@
 <section class="doc-section" id="grades" data-doc="evidence-grades">
   <h2>Evidence grades</h2>
   <p>A claim about the original carries a grade naming what it rests on, and it takes the grade of its weakest load-bearing piece (<a href="../reference/re-settled-threads.html#grades">the evidence column</a>).</p>
-  <dl class="kv">
-    <dt><code>disassembly</code></dt><dd>Instructions at stated addresses, branch and store sequences. The strongest grade, and only as good as the addresses it cites.</dd>
-    <dt><code>capture</code></dt><dd>A save state, a probe log, a disc-derived oracle.</dd>
-    <dt><code>decompiled-C</code></dt><dd>Ghidra's rendering, an inferred signature, a label someone typed into the database. A claim nobody has confirmed against instructions, which makes this a re-audit worklist and not a verdict of wrong.</dd>
-    <dt><code>inference</code></dt><dd>Reasoning from surrounding facts or from absence, usually stated openly.</dd>
-  </dl>
+  <ol class="pr-grades" aria-label="Evidence grades from strongest to weakest">
+    <li style="--w:100%"><code>disassembly</code><span>Instructions at stated addresses, branch and store sequences. The strongest grade, and only as good as the addresses it cites.</span></li>
+    <li style="--w:78%"><code>capture</code><span>A save state, a probe log, a disc-derived oracle.</span></li>
+    <li style="--w:48%"><code>decompiled-C</code><span>Ghidra's rendering, an inferred signature, a label someone typed into the database. A claim nobody has confirmed against instructions, which makes this a re-audit worklist and not a verdict of wrong.</span></li>
+    <li style="--w:28%"><code>inference</code><span>Reasoning from surrounding facts or from absence, usually stated openly.</span></li>
+  </ol>
   <p>A docs page is not a grade of its own. A statement on one carries the grade of what it cites, and a statement with no citation is a hypothesis until someone re-reads the listing. Grades let a reader see how much weight a claim will bear, and they make the audit cheap: the re-audits that falsify claims here find them in the <code>decompiled-C</code> bucket.</p>
 </section>
 
@@ -437,6 +484,27 @@
   .pr-boundary span + span { border-left: 2px dashed var(--accent-line); }
   .pr-bhead { background: var(--bg-raised); color: var(--text-bright); font-weight: 600; }
 
+  .pr-chain { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem 1rem; margin: 1.1rem 0 1.4rem; }
+  .pr-chain > div { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); min-width: 0; position: relative; }
+  .pr-chain > div + div::before { content: "\2192"; position: absolute; left: -0.92rem; top: 0.6rem; color: var(--text-muted); font-size: 0.85rem; }
+  .pr-chain-state { color: var(--text-bright); font-weight: 600; font-size: 0.95rem; }
+  .pr-chain-check { color: var(--text-muted); font-size: 0.84rem; line-height: 1.4; }
+  .pr-chain-note { color: var(--warn); font-family: var(--font-mono); font-size: 0.72rem; }
+  .pr-chain-trap { background: var(--warn-soft) !important; border-color: var(--warn) !important; }
+  .pr-chain-done { background: var(--ok-soft) !important; border-color: var(--ok) !important; }
+  .pr-chain figcaption, .pr-rungs figcaption { grid-column: 1 / -1; color: var(--text-dim); font-size: 0.82rem; margin-top: 0.2rem; }
+
+  .pr-rungs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.45rem; align-items: end; margin: 1.1rem 0 1.4rem; }
+  .pr-rungs > div { display: flex; flex-direction: column; justify-content: flex-start; gap: 0.2rem; min-height: calc(4.6rem + var(--h) * 1.5rem); padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 6px 6px 0 0; border-bottom: 3px solid var(--accent-line); background: var(--bg-card); min-width: 0; }
+  .pr-rungs strong { color: var(--text-bright); font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; }
+  .pr-rungs span { color: var(--text-muted); font-size: 0.84rem; line-height: 1.4; }
+  .pr-rung-top { background: var(--ok-soft) !important; border-color: var(--ok) !important; border-bottom-color: var(--ok) !important; }
+
+  .pr-grades { list-style: none; margin: 1rem 0 1.25rem; padding: 0; display: grid; gap: 0.7rem; }
+  .pr-grades li { margin: 0; padding: 0 0 0.55rem; display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.2rem 0.9rem; line-height: 1.5; position: relative; }
+  .pr-grades code { justify-self: start; align-self: start; }
+  .pr-grades li::before { content: ""; position: absolute; left: 0; bottom: 0; height: 4px; width: var(--w); border-radius: 2px; background: var(--accent-line); }
+
   @media (max-width: 1000px) {
     .pr-flow { grid-template-columns: minmax(0, 1fr); }
     .pr-flow .pr-fig { max-width: 520px; width: 100%; justify-self: center; }
@@ -445,6 +513,10 @@
   }
   @media (max-width: 720px) {
     .pr-twoup { grid-template-columns: minmax(0, 1fr); }
+    .pr-chain, .pr-rungs { grid-template-columns: minmax(0, 1fr); }
+    .pr-chain > div + div::before { content: none; }
+    .pr-rungs > div { min-height: 0; border-radius: 6px; }
+    .pr-grades li { grid-template-columns: minmax(0, 1fr); }
     .pr-flow .pr-fig { padding: 0.6rem 0.5rem 0.4rem; }
   }
 </style>

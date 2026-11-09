@@ -95,6 +95,7 @@ const NAV = [
     items: [
       { href: 'writeups/index.html', text: 'Technical write-ups', key: 'writeups/index' },
       { heading: 'Beyond Legaia' },
+      { href: 'tooling/decomp-recomp-reimplementation.html', text: 'Decomp, recomp, reimplementation', key: 'tooling/decomp-recomp-reimplementation' },
       { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },
       { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
       { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
