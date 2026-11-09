@@ -744,6 +744,25 @@ fn gaza2_park_action_framing_matches_the_retail_step_targets() {
     assert_eq!(pose.focus, [-785.0, 0.0, 39.0]);
 }
 
+/// A frame that overruns its step (a CD-XA read span, `BattleFrameClock::span`)
+/// still runs the walker once: at step `4` over a five-vsync frame the phase
+/// sync fires on the frame's first tick and not again on its last.
+#[test]
+fn an_overrun_frame_runs_the_walker_once() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_pass_granular(true);
+    cam.set_frame_step(4);
+    let start = cam.last_frames;
+    cam.sync_step_phase(0);
+    cam.advance_to(start + 1);
+    assert_eq!(cam.frame_accum, 0, "the frame's first tick fires the step");
+    for into in 1..5u64 {
+        cam.sync_step_phase(into);
+        cam.advance_to(start + into + 1);
+        assert_ne!(cam.frame_accum, 0, "no step inside the frame (tick {into})");
+    }
+}
+
 /// A camera on a frame step of three steps once every three display frames
 /// and scales the walker by three: the summon close-up's three-frame tween
 /// (`a3 = 3`) then lands every step, where at the default step of two it

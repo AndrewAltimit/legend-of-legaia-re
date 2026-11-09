@@ -1383,6 +1383,10 @@ step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_C
 and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
 run short of retail.
 
+An overrun lengthens the frame, not the step: the camera walker runs once a frame,
+scaled by the step (`BattleCamera::sync_step_phase`), so an overrunning frame still
+steps it once.
+
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
 restarts somewhere no `SCUS_942.54` store shows (only its increment at
