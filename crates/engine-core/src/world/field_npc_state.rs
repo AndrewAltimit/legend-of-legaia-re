@@ -15,6 +15,18 @@ pub struct FieldFaceRow {
     pub flags: u32,
 }
 
+/// The script context whose `0x21` ends an engagement, by where its node
+/// sits in the actor list `FUN_8002519C` walks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmbientEngageOwner {
+    /// A placement's own record (a talk).
+    Placement(u8),
+    /// A placed object's record (a door, a chest): the object nodes spawn
+    /// after every placement, so they sit between the placements still in
+    /// spawn order and the ones a seat op relinked to the tail.
+    Object,
+}
+
 /// Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
 pub struct FieldNpcState {
     /// When set, pad locomotion also blocks a direction when any of retail's
@@ -249,6 +261,12 @@ pub struct FieldNpcState {
     /// wanderer drawing from the re-asserted seed would make the same pick
     /// every tick. A real run leaves it `None`.
     pub ambient_rng_detour: Option<u32>,
+    /// The engaged bit as the last ambient tick read it, for
+    /// [`crate::world::World::ambient_engage_release_held`].
+    pub ambient_engaged: bool,
+    /// Whose script holds the engaged bit: where in the actor list the bit
+    /// clears, so which channels read it still set on the clearing pass.
+    pub ambient_engage_owner: Option<AmbientEngageOwner>,
     /// The scripted-motion streams bound to **placed objects**: MAN
     /// tail-section-1 records whose `actor_id` is a partition-0 record index
     /// (`FUN_8003A9D4` matches it against `+0x50`, which a `.MAP` object's
@@ -399,6 +417,8 @@ impl FieldNpcState {
             ambient: std::collections::BTreeMap::new(),
             ambient_order: Vec::new(),
             ambient_rng_detour: None,
+            ambient_engaged: false,
+            ambient_engage_owner: None,
             object_ambient: std::collections::BTreeMap::new(),
             object_models: std::collections::BTreeMap::new(),
             looks: Default::default(),

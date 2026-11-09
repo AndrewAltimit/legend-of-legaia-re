@@ -422,6 +422,59 @@ impl World {
     // result. So the tags here are cross-references - the same form
     // `world/frame_tick.rs`'s call site already uses for the pair.
     // REF: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
+    /// The channels that still read the engaged bit set on the pass it clears.
+    ///
+    /// The runner `FUN_80039B7C` clears the player's `+0x10 & 0x80000` while
+    /// `FUN_8002519C` walks the actor list, at the node of the context whose
+    /// raw `0x21` ended the engagement (`0x80039EF8`), and each stream's
+    /// deferral gate reads the bit on its own tick (`0x8003819C..0x800381B4`):
+    /// a node ahead of the owner has already been skipped this pass and starts
+    /// again on the next, one behind it starts on this one. The owner's own
+    /// stream runs before its runner, so it counts as ahead.
+    ///
+    /// The bit is one word raised and read per pass, so the port reads it once
+    /// and holds the channels ahead of the owner here for the one pass. An
+    /// engagement with no node on the list (a helper record linked at the
+    /// tail, the scene hold) clears between passes: nothing is held. A seat
+    /// reading a state's list, or the spawn loop, gives the same ascending
+    /// prefix, so the boundary an object owner needs comes off the order.
+    ///
+    /// REF: FUN_80039B7C, FUN_8002519C, FUN_80038158
+    pub(crate) fn ambient_engage_release_held(
+        &mut self,
+        engaged: bool,
+    ) -> std::collections::BTreeSet<u8> {
+        use crate::world::AmbientEngageOwner as Owner;
+        let was = std::mem::replace(&mut self.npcs.ambient_engaged, engaged);
+        if engaged {
+            let owner = self.dialog.inline.as_ref().and_then(|id| {
+                id.prop_anchor
+                    .map(|_| Owner::Object)
+                    .or(id.npc_slot.map(Owner::Placement))
+            });
+            if owner.is_some() {
+                self.npcs.ambient_engage_owner = owner;
+            }
+            return Default::default();
+        }
+        let owner = self.npcs.ambient_engage_owner.take();
+        if !was {
+            return Default::default();
+        }
+        let order = &self.npcs.ambient_order;
+        let ahead = match owner {
+            Some(Owner::Placement(slot)) => {
+                order.iter().position(|&s| s == slot).map_or(0, |at| at + 1)
+            }
+            Some(Owner::Object) => order
+                .windows(2)
+                .position(|w| w[1] < w[0])
+                .map_or(order.len(), |at| at + 1),
+            None => 0,
+        };
+        order[..ahead].iter().copied().collect()
+    }
+
     pub fn tick_field_npc_ambient(&mut self) {
         self.tick_object_ambient();
         if self.npcs.ambient.is_empty() {
@@ -470,6 +523,7 @@ impl World {
                         != 0
                 });
         let talker = self.dialog.inline.as_ref().and_then(|id| id.npc_slot);
+        let release_held = self.ambient_engage_release_held(player_engaged);
         for slot in slots {
             // A retired actor is off the list `FUN_8002519C` walks: no driver
             // tick, no stream. Its tail-section-1 record restarts if `4C D2`
@@ -541,6 +595,7 @@ impl World {
             // REF: FUN_80038158 (0x80038188..0x800381F4)
             let defer = *defers
                 && (player_engaged
+                    || release_held.contains(&slot)
                     || talker == Some(slot)
                     || chan_flags & 0x500 != 0
                     || seat.is_some_and(|(x, z)| x >= 0x3F81 && z >= 0x3F81));
@@ -980,5 +1035,74 @@ impl World {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod release_hold_tests {
+    use crate::world::{AmbientEngageOwner, World};
+
+    fn world_with_order(order: &[u8]) -> World {
+        let mut w = World::new();
+        w.npcs.ambient_order = order.to_vec();
+        w.npcs.ambient_engaged = true;
+        w
+    }
+
+    #[test]
+    fn a_talkers_release_holds_the_list_up_to_and_including_it() {
+        let mut w = world_with_order(&[1, 3, 9, 2, 5]);
+        w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Placement(9));
+        let held = w.ambient_engage_release_held(false);
+        assert_eq!(held.into_iter().collect::<Vec<_>>(), vec![1, 3, 9]);
+        assert_eq!(w.npcs.ambient_engage_owner, None, "the release is one pass");
+    }
+
+    #[test]
+    fn an_objects_release_holds_the_placements_still_in_spawn_order() {
+        // `town01`: 2, 37, 39, 43, 47 never relinked; 16.. were seated to the
+        // tail; the object nodes sit between the two.
+        let mut w = world_with_order(&[2, 37, 39, 43, 47, 16, 12, 17, 13, 14, 19]);
+        w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Object);
+        let held = w.ambient_engage_release_held(false);
+        assert_eq!(
+            held.into_iter().collect::<Vec<_>>(),
+            vec![2, 37, 39, 43, 47]
+        );
+    }
+
+    #[test]
+    fn a_fully_spawn_ordered_list_is_all_ahead_of_an_object() {
+        let mut w = world_with_order(&[1, 2, 3]);
+        w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Object);
+        assert_eq!(w.ambient_engage_release_held(false).len(), 3);
+    }
+
+    #[test]
+    fn no_owner_or_no_release_holds_nothing() {
+        let mut w = world_with_order(&[1, 2, 3]);
+        assert!(
+            w.ambient_engage_release_held(false).is_empty(),
+            "a release between passes holds no channel"
+        );
+        let mut w = world_with_order(&[1, 2, 3]);
+        w.npcs.ambient_engaged = false;
+        w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Placement(2));
+        assert!(
+            w.ambient_engage_release_held(false).is_empty(),
+            "no transition, nothing held"
+        );
+        assert_eq!(w.npcs.ambient_engage_owner, None);
+    }
+
+    #[test]
+    fn an_engaged_tick_holds_nothing_and_keeps_the_owner() {
+        let mut w = world_with_order(&[1, 2, 3]);
+        w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Placement(1));
+        assert!(w.ambient_engage_release_held(true).is_empty());
+        assert_eq!(
+            w.npcs.ambient_engage_owner,
+            Some(AmbientEngageOwner::Placement(1))
+        );
     }
 }
