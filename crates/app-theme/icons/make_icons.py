@@ -62,30 +62,46 @@ def pie(cx, cy, r, a0, a1, steps=48):
 GOLD = "#f2c14e"
 GOLD_DARK = "#c8902f"
 
-# Legend of Legaia: a golden tree under a night sky, mist drifting across
-# its roots.
+GREEN_DEEP = "#1f5a32"
+GREEN = "#2f8a45"
+GREEN_LIGHT = "#45a04d"
+
+# Legend of Legaia: a broad green tree under a night sky, mist drifting across
+# its roots. A wide, lobed crown on a thick branching trunk: a round cap on a
+# thin stem reads as a mushroom cloud at taskbar size.
 GAME = [
     ("rrect", TILE, vgrad(64, 960, "#1d2b53", "#2a6f73"), False),
-    ("circle", (512, 400, 330), rgba((255, 214, 140, 26)), True),
-    ("circle", (512, 400, 250), rgba((255, 214, 140, 34)), True),
     ("ellipse", (512, 930, 470, 150), rgba("#14203a"), True),
-    # trunk with a root flare
-    ("poly", [(452, 840), (480, 760), (494, 560), (530, 560), (544, 760),
-              (572, 840)], rgba("#7a4e24"), False),
-    # canopy: a shadow pass, then the gold crown
-    ("circle", (370, 462, 130), rgba(GOLD_DARK), False),
-    ("circle", (654, 462, 130), rgba(GOLD_DARK), False),
-    ("circle", (512, 400, 190), rgba(GOLD_DARK), False),
-    ("circle", (370, 448, 126), rgba(GOLD), False),
-    ("circle", (654, 448, 126), rgba(GOLD), False),
-    ("circle", (512, 382, 186), rgba(GOLD), False),
-    ("circle", (432, 312, 118), rgba(GOLD), False),
-    ("circle", (592, 312, 118), rgba(GOLD), False),
-    ("circle", (470, 270, 52), rgba((255, 236, 170, 120)), False),
+    # trunk with a root flare, and the two limbs that carry the crown
+    ("poly", [(392, 850), (446, 770), (462, 590), (562, 590), (578, 770),
+              (632, 850)], rgba("#6b4423"), False),
+    ("line", (486, 640, 330, 500, 46), rgba("#6b4423"), False),
+    ("line", (538, 640, 694, 500, 46), rgba("#6b4423"), False),
+    # crown: a deep shadow pass, the body, then the lit clusters
+    ("circle", (226, 490, 122), rgba(GREEN_DEEP), False),
+    ("circle", (798, 490, 122), rgba(GREEN_DEEP), False),
+    ("circle", (354, 548, 120), rgba(GREEN_DEEP), False),
+    ("circle", (670, 548, 120), rgba(GREEN_DEEP), False),
+    ("circle", (512, 520, 130), rgba(GREEN_DEEP), False),
+    ("circle", (234, 442, 118), rgba(GREEN), False),
+    ("circle", (790, 442, 118), rgba(GREEN), False),
+    ("circle", (360, 490, 118), rgba(GREEN), False),
+    ("circle", (664, 490, 118), rgba(GREEN), False),
+    ("circle", (512, 460, 140), rgba(GREEN), False),
+    ("circle", (330, 310, 124), rgba(GREEN), False),
+    ("circle", (694, 310, 124), rgba(GREEN), False),
+    ("circle", (512, 262, 138), rgba(GREEN), False),
+    ("circle", (304, 286, 66), rgba(GREEN_LIGHT), False),
+    ("circle", (486, 214, 76), rgba(GREEN_LIGHT), False),
+    ("circle", (668, 276, 62), rgba(GREEN_LIGHT), False),
+    ("circle", (214, 408, 54), rgba(GREEN_LIGHT), False),
+    ("circle", (420, 412, 58), rgba(GREEN_LIGHT), False),
+    ("circle", (618, 416, 52), rgba(GREEN_LIGHT), False),
+    ("circle", (772, 410, 50), rgba(GREEN_LIGHT), False),
     # mist
-    ("ellipse", (310, 712, 250, 34), rgba((225, 238, 250, 110)), True),
-    ("ellipse", (720, 770, 270, 32), rgba((225, 238, 250, 100)), True),
-    ("ellipse", (470, 840, 330, 34), rgba((225, 238, 250, 120)), True),
+    ("ellipse", (310, 742, 250, 30), rgba((225, 238, 250, 90)), True),
+    ("ellipse", (720, 790, 270, 30), rgba((225, 238, 250, 90)), True),
+    ("ellipse", (470, 856, 330, 32), rgba((225, 238, 250, 110)), True),
 ]
 
 # Legaia Explorer: a disc under a magnifying glass.
