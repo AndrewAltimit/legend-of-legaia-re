@@ -101,6 +101,12 @@ impl WalkFilm {
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
+        // The fog pool as the state left it: its live count gates the next
+        // spawns (`_DAT_8007BCA8`, FUN_801D629C), so a film from an empty
+        // pool draws past the cap until it fills. The seed's warm-up ticks
+        // accumulated a step the state's records have already taken.
+        session.host.world.fog.install_snapshot(&retail.fog_live);
+        session.host.world.fog.pending_dt = 0;
         let g = &mut session.camera.globals.0;
         let c = &retail.camera;
         g[0] = i32::from(c.pitch);

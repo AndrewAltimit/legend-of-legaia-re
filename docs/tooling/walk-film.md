@@ -43,7 +43,9 @@ from the state's RAM (`retail_compare::retail_ambient_streams`,
 `rng` column against retail's `walk_film.csv` `rng`: the free-walk stretch agrees
 draw for draw until an engage or a touch separates the two runs.
 
-`LEGAIA_RC_WALK_PAD=<file>` (`tick,0xMASK` rows, one per change of the held word, a `LEGAIA_DIAG_TICK_DIGEST` run's engine pad) drives the engine side in place of the spans, the same rows `autorun_field_walk_film.lua` takes as `LEGAIA_PAD_FILE`; a press retail must see widens to two vsyncs on the retail side only. The engine also writes `engine.draws.csv` (`tick,flat,draws`, each ambient channel's `rand()` draws), against a retail breakpoint on `0x80056798`. The film runs the fog pool's render step as a play host does (`NativeSession::fog_render_tick`), since the live count it writes gates the next tick's fog spawns and their draws.
+`LEGAIA_RC_WALK_PAD=<file>` (`tick,0xMASK` rows, one per change of the held word, a `LEGAIA_DIAG_TICK_DIGEST` run's engine pad) drives the engine side in place of the spans, the same rows `autorun_field_walk_film.lua` takes as `LEGAIA_PAD_FILE`; a press retail must see widens to two vsyncs on the retail side only. The engine also writes `engine.draws.csv` (`tick,flat,draws`, each ambient channel's `rand()` draws), against a retail breakpoint on `0x80056798`. The film runs the fog pool's render step as a play host does (`NativeSession::fog_render_tick`), since the live count it writes gates the next tick's fog spawns and their draws, and it stands on the state's fog records (`retail_fog_live`, the records with no step back to the displayed frame).
+
+A retail pass reads the pad the probe set one vsync earlier, and a pass is on a game frame, so a pad file made from an engine digest replays on retail two vsyncs early (each row's `tick - 2`, one-vsync presses widened); `retail - 1` of a draw then pairs with the engine tick.
 
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.

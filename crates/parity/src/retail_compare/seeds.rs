@@ -853,15 +853,28 @@ pub(super) const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 /// ([`legaia_engine_field::fog_particles`] has the layout), taken back to where
 /// the child's step over them draws the displayed table's sheets.
 pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
-    let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
-    if (pool & 0xFFE0_0000) != 0x8000_0000 {
-        return Vec::new();
-    }
     // Vsyncs of age and drift since the pass ahead of the one the displayed
     // table was built on: the display lag's two passes, plus the one the child
     // steps the records through to draw them.
     let back = (i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES) + 1)
         * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    retail_fog_stepped_back(ram, back)
+}
+
+/// The pool's records exactly as the state holds them: what a run resuming
+/// from the state starts on.
+pub fn retail_fog_live(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
+    retail_fog_stepped_back(ram, 0)
+}
+
+fn retail_fog_stepped_back(
+    ram: &[u8],
+    back: i32,
+) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
+    let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
+    if (pool & 0xFFE0_0000) != 0x8000_0000 {
+        return Vec::new();
+    }
     (0..legaia_engine_field::fog_particles::FOG_POOL_SLOTS as u32)
         .map(|i| pool + 0xA4 + i * 0x18)
         .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
