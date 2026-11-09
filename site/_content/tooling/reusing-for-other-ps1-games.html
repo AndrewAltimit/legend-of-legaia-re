@@ -140,17 +140,18 @@
     </a>
     <a class="card" href="disc-coverage.html">
       <div class="card-title">Take the denominator from the disc</div>
-      <div class="card-body">Coverage of each code image's bytes, and per-entry <a href="byte-accounting.html">byte accounting</a>, so an unwalked format is a run at the top of a list. <a href="address-reference-scan.html">Reference scans</a> turn "no caller found" into "no reference exists".</div>
+      <div class="card-body">Coverage of each code image's bytes, and per-entry byte accounting, so an unwalked format is a run at the top of a list. Reference scans turn "no caller found" into "no reference exists".</div>
     </a>
     <a class="card" href="determinism-replay.html">
       <div class="card-title">Make runs reproducible</div>
-      <div class="card-body">A text pad script replays to bit-identical state traces; the <a href="soak-harness.html">soak harness</a> generates such scripts from seeded random play and reduces each finding.</div>
+      <div class="card-body">A text pad script replays to bit-identical state traces; the soak harness generates such scripts from seeded random play and reduces each finding.</div>
     </a>
     <a class="card" href="ghidra.html#decompiler-artifacts">
       <div class="card-title">Do not trust the decompiler's C</div>
       <div class="card-body">Labels printed as calls, dropped register arguments, reordered stores, wrong load bases: the ways Ghidra's C has put false claims into these docs. MIPS- and Ghidra-specific, not game-specific.</div>
     </a>
   </div>
+  <p>Related pages: <a href="byte-accounting.html">byte accounting</a>, <a href="address-reference-scan.html">address reference scans</a> and the <a href="soak-harness.html">soak harness</a>.</p>
   <h3>Traps any PS1 project meets</h3>
   <ul class="bullets">
     <li>A save state replays the RAM of the disc that booted it: a state loaded onto a patched image still runs the old code. Verify disc edits from a cold boot or a memory-card load.</li>
