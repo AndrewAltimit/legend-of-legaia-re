@@ -174,22 +174,22 @@
 
 <section class="doc-section" id="mistakes" data-doc="how-a-mistake-shows-up">
   <h2>How a mistake shows up</h2>
-  <p>The biggest practical difference between the routes may be what happens when somebody misreads the original.</p>
-  <figure class="cs-errs" aria-label="A misreading in a matching decompilation fails to match at build time. A mistake in a recompiled runtime usually shows up as a crash, freeze or visible glitch. A misreading in a reimplementation produces a game that runs and is quietly different.">
-    <div><strong>Decompilation</strong><i class="cs-loud"></i><span><b>Loud, at once.</b> A matching build says the function differs. Non-matching work gives this up.</span></div>
-    <div><strong>Static recompilation</strong><i class="cs-mid"></i><span><b>Usually loud, at run time.</b> A crash, a freeze or a visible glitch, though timing can be subtle.</span></div>
-    <div><strong>Reimplementation</strong><i class="cs-quiet"></i><span><b>Silent.</b> The game runs, and it is slightly different.</span></div>
+  <p>The biggest practical difference between the routes may be when you find out that somebody misread the original.</p>
+  <figure class="cs-errs" aria-label="When a mistake is found under each route. In a matching decompilation, at build time. In a static recompilation, usually while playing. In a reimplementation, only by comparing with the original.">
+    <div><strong>Decompilation</strong><span class="cs-when">At build time</span><span>A matching build reports that the function differs. Non-matching work gives this up.</span></div>
+    <div><strong>Static recompilation</strong><span class="cs-when">Usually while playing</span><span>A crash, a freeze or a visible glitch, though timing problems can be subtle.</span></div>
+    <div><strong>Reimplementation</strong><span class="cs-when">Only by comparing</span><span>The game runs and is slightly different, so the mistake appears only when measured against the original.</span></div>
   </figure>
-  <p>That third row is the real historic objection to reimplementation. Without something to compare against, you can only say it feels right. It is also why this project spends so much on measurement: <a href="retail-oracle-method.html">the retail-oracle method</a> exists to turn that silence into a number. Even so, a score only speaks for what it sampled. A matching decompilation's proof is stronger, and nothing here replaces it.</p>
+  <p>That third row is the real historic objection to reimplementation. Without something to compare against, you can only say it feels right. It is also why this project spends so much on measurement: <a href="retail-oracle-method.html">the retail-oracle method</a> exists to turn that difference into a number. Even so, a score only speaks for what it sampled. A matching decompilation's proof is stronger, and nothing here replaces it.</p>
 </section>
 
 <section class="doc-section" id="ai" data-doc="why-reimplementation-is-more-viable-now">
   <h2>Why reimplementation is more viable now</h2>
-  <p>Reimplementation has had two standing problems: years of labour before the first reward, and that silent drift. Both have become more tractable, for connected reasons.</p>
+  <p>Reimplementation has had two standing problems: years of labour before the first reward, and differences from the original that go unnoticed. Both have become more tractable, for connected reasons.</p>
   <ul class="bullets">
     <li><strong>The labour is the kind coding agents do well.</strong> Reading a routine, writing the equivalent function, wiring it up, and repeating that across a whole game was the cost. By hand, that work is measured in years: OpenLoco finished reimplementing its game in C++ only in December 2025.</li>
     <li><strong>The instruments have got cheap to build.</strong> Scriptable emulators, readable save states and headless Ghidra existed already. What a small project could not afford was the software on top: state readers, scoring channels, ratchets and replay. An agent can write those too.</li>
-    <li><strong>Those two fit together.</strong> An agent is a fast and confident writer, and silent drift is what a fast, confident writer produces. A reimplementation with measurement gives that writer something external to answer to.</li>
+    <li><strong>Those two fit together.</strong> An agent is a fast and confident writer, and unnoticed differences are what a fast, confident writer produces. A reimplementation with measurement gives that writer something external to answer to.</li>
   </ul>
   <figure class="diagram">
     <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The working loop. An agent reads the disassembly and writes a kernel tagged with the retail address. Build, test and layering gates check it. Retail oracles score it against the original. A ratchet accepts a rise or requires a recorded reason for a fall. Divergences go back to the agent as the next job. Beneath the loop, a human sets goals, captures retail states, plays the game and reviews, and disproved readings go into a register that every later run reads.">
@@ -312,13 +312,9 @@
   .cs-moral { font-weight: 600; color: var(--text-bright); font-size: 0.94rem; }
 
   .cs-errs { margin: 1rem 0 1.25rem; display: grid; gap: 0.5rem; }
-  .cs-errs > div { display: grid; grid-template-columns: 11rem 7rem minmax(0, 1fr); gap: 0.9rem; align-items: center; font-size: 0.92rem; }
+  .cs-errs > div { display: grid; grid-template-columns: 11rem 11.5rem minmax(0, 1fr); gap: 0.9rem; align-items: center; font-size: 0.92rem; }
   .cs-errs strong { color: var(--text-bright); font-weight: 600; }
-  .cs-errs i { height: 0.7rem; border-radius: 2px; display: block; }
-  .cs-errs b { color: var(--text-bright); }
-  .cs-loud { background: var(--ok); width: 100%; }
-  .cs-mid { background: var(--warn); width: 62%; }
-  .cs-quiet { background: var(--trap); width: 16%; }
+  .cs-when { justify-self: start; padding: 0.05rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-bright); white-space: nowrap; }
 
   .cs-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.5rem; }
   .cs-choose { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin: 1rem 0; }
