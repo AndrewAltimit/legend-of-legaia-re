@@ -43,7 +43,7 @@ The two come at the same goals in different orders. A recomp starts with the ori
 | Assurance the code is right | Built in when matching | Built in; the runtime carries the risk | Poor fit: measured, never proved |
 | Rules a person can read | Extra work after the match | Poor fit | Built in |
 | New rendering | Extra work | Extra work, well served at draw-call level | Built in |
-| New hosts | Extra work | Extra work | Built in |
+| Running on new systems | Extra work | Extra work | Built in |
 | Modding by game concept | Extra work | Extra work, through hooks | Built in |
 | Targeting another game on the same console | Extra work: tools carry, work does not | Built in: the framework carries | Poor fit: low layers and method carry |
 | No original code executing | Poor fit | Poor fit | Built in |
