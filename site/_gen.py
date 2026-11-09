@@ -429,7 +429,6 @@ WIDE_PAGES: set[str] = {
 # docs column and its reading measure; only a `section.doc-section.breakout`
 # spans the wide column. See "Column width policy" in css/styles.css.
 PROSE_WIDE_PAGES: set[str] = {
-    "crates",
     "disc-map",
     "reference/music-tracks",
     "reference/scene-names",
