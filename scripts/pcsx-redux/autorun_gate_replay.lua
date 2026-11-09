@@ -62,6 +62,9 @@
 -- at the next state gate. A beat waiting on a page that is already shown gets
 -- its synthetic Cross sooner (SYNTH_PAGE_AFTER vsyncs).
 --
+-- An `act` or `flow` gate closes `cut` once the battle has ended: retail finished
+-- the fight before reaching that ordinal, a finding in the beat table.
+--
 -- `act` and `flow` gates come from the battle's two state bytes, which the
 -- port mirrors: the commit state 0x0A of the action SM and the round prompt
 -- 0x1E of the command flow, so a prompt's presses land relative to the prompt
@@ -71,10 +74,12 @@
 -- A beat closing on an `act` or `flow` gate whose presses have run out, with the
 -- command flow on a byte that waits for input, repeats the beat's last press
 -- until the byte moves: a two-vsync pulse every REPULSE_PERIOD vsyncs, none for
--- REPULSE_SETTLE vsyncs after the byte last moved (the ring ignores input that
--- long on entry), at most LEGAIA_GATE_REPULSE_MAX to a beat. Each pulse is
--- logged `synthetic_repulse` and counted as synthetic. The synthetic Cross waits
--- until the pulses are spent.
+-- REPULSE_SETTLE vsyncs after the byte last moved (each surface ignores input
+-- that long on entry), at most LEGAIA_GATE_REPULSE_MAX to a beat. The arts entry
+-- 0x50 takes a run of presses, so there the pulses replay the beat's presses in
+-- order and then keep the last. Each pulse is logged `synthetic_repulse` and
+-- counted as synthetic. The synthetic Cross waits until the pulses are spent,
+-- and in battle it only fires on a byte that waits for input.
 --
 -- Outputs: gate_beats.csv (one row a beat), gate_replay.csv (one row a vsync),
 -- gate_events.csv (every synthetic press and unexpected gate).
@@ -92,6 +97,7 @@ local PLAYER_PTR = 0x8007C364
 local GAME_MODE  = 0x8007B83C
 local BATTLE_CTX = 0x8007BD24
 local RAND_SEED  = 0x80009010
+local ACTOR_TABLE = 0x801C9370
 local SCENE_NAME = 0x8007050C
 local BATTLE_MODE = 0x15
 local ENGAGED_BIT = 0x80000
@@ -110,7 +116,10 @@ local REPULSE_PERIOD, REPULSE_SETTLE = 8, 18
 -- ctx[+0x06] bytes that sit waiting for a press: the prompt, ring, escape, item,
 -- magic, arts, target, target confirm and attack-mode states.
 local INPUT_FLOW = { [0x1E] = true, [0x28] = true, [0x32] = true, [0x3C] = true,
-    [0x46] = true, [0x50] = true, [0x5A] = true, [0x64] = true, [0x78] = true }
+    [0x46] = true, [0x50] = true, [0x5A] = true, [0x64] = true, [0x6E] = true, [0x78] = true }
+-- The arts entry 0x50 takes a run of presses, so a repeat there replays the
+-- beat's presses in order, then keeps the last.
+local SEQUENCE_FLOW = { [0x50] = true }
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -167,21 +176,28 @@ local function rising(mask, before)
     return r
 end
 
--- Each beat's last press: what a waiting battle beat repeats.
+-- Each beat's presses in order, and the last: what a waiting battle beat repeats.
+-- A press held across the opening gate is the previous beat's.
+local carried = 0
 for _, b in ipairs(beats) do
-    local before = 0
+    local before = carried
+    b.presses = {}
     for _, row in ipairs(b.pad) do
         local edge = rising(row[2], before)
-        if edge ~= 0 then b.press = edge end
+        if edge ~= 0 then
+            b.press = edge
+            b.presses[#b.presses + 1] = edge
+        end
         before = row[2]
     end
+    carried = before
 end
 PCSX.log(string.format("[gate-replay] %d beats from %s", #beats, PLAN))
 
 local fbeats = assert(io.open(probe.out_path("gate_beats.csv"), "w"))
 fbeats:write("beat,kind,value,engine_len,vsync_start,vsync_end,waited,dropped_presses,synthetic,status,x,z,rng,mode,scene\n")
 local frow = assert(io.open(probe.out_path("gate_replay.csv"), "w"))
-frow:write("vsync,beat,rel,waiting,x,y,z,engaged,battle,mode,scene,pad,rng,synth,pager,act,flow\n")
+frow:write("vsync,beat,rel,waiting,x,y,z,engaged,battle,mode,scene,pad,rng,synth,pager,act,flow,hp\n")
 local fev = assert(io.open(probe.out_path("gate_events.csv"), "w"))
 fev:write("vsync,beat,event,detail\n")
 
@@ -244,12 +260,20 @@ local function snapshot()
     end
     s.mode = probe.read_u32(GAME_MODE) % 256
     local ctx = probe.read_u32(BATTLE_CTX)
-    s.battle = (s.mode == BATTLE_MODE or ctx ~= 0) and 1 or 0
+    -- The context pointer outlives the fight, so only the mode byte says "in battle".
+    s.battle = s.mode == BATTLE_MODE and 1 or 0
     local in_ctx = s.battle == 1 and probe.in_ram(ctx)
     s.act = in_ctx and probe.read_u8(ctx + 7) or -1
     s.flow = in_ctx and probe.read_u8(ctx + 6) or -1
     s.scene = read_scene()
     s.rng = probe.read_u32(RAND_SEED)
+    -- Live HP (+0x14C) of the eight battle seats, `-` for an empty one.
+    local hp = {}
+    for slot = 0, 7 do
+        local a = in_ctx and probe.read_u32(ACTOR_TABLE + slot * 4) or 0
+        hp[#hp + 1] = (a ~= nil and probe.in_ram(a)) and tostring(probe.read_u16(a + 0x14C)) or "-"
+    end
+    s.hp = table.concat(hp, "/")
     s.pager = probe.read_u32(PAGER_STATE)
     return s
 end
@@ -265,7 +289,9 @@ local function gate_status(b, s, el)
     if b.kind == "act" or b.kind == "flow" then
         local v, n = string.match(b.value, "^(%x+):(%d+)$")
         local counts = b.kind == "act" and act_counts or flow_counts
-        return (counts[tonumber(v, 16)] or 0) >= tonumber(n) and "gate" or nil
+        if (counts[tonumber(v, 16)] or 0) >= tonumber(n) then return "gate" end
+        -- The fight ended first: a gate past its end will not come.
+        return s.battle == 0 and "cut" or nil
     end
     if b.kind == "page" then return pages_seen >= tonumber(b.value) and "gate" or nil end
     if b.kind == "warp" then
@@ -289,15 +315,17 @@ local function repulse(b, s, el, wait)
     local eligible = b.press and (b.kind == "flow" or b.kind == "act") and INPUT_FLOW[s.flow]
     local pulses = b.pulses or 0
     if not eligible or REPULSE_MAX <= 0 then return nil end
-    if b.pulse_at and el - b.pulse_at < SYNTH_HOLD then return b.press end
+    if b.pulse_at and el - b.pulse_at < SYNTH_HOLD then return b.pulse_mask end
     if pulses >= REPULSE_MAX then return nil end
     if wait >= REPULSE_PERIOD and el - flow_moved_at >= REPULSE_SETTLE
         and (b.pulse_at == nil or el - b.pulse_at >= REPULSE_PERIOD) then
-        b.pulses, b.pulse_at = pulses + 1, el
+        local mask = b.press
+        if SEQUENCE_FLOW[s.flow] then mask = b.presses[math.min(pulses + 1, #b.presses)] end
+        b.pulses, b.pulse_at, b.pulse_mask = pulses + 1, el, mask
         synth_count = synth_count + 1
         event(el, b.idx, "synthetic_repulse",
-            string.format("wait=%d press=%04x flow=%02x", wait, b.press, s.flow))
-        return b.press
+            string.format("wait=%d press=%04x flow=%02x", wait, mask, s.flow))
+        return mask
     end
     return 0
 end
@@ -411,7 +439,9 @@ probe.run({
                 mask, synth = pulse, 1
             end
             local after = s.pager == PAGE_WAIT and math.min(SYNTH_AFTER, SYNTH_PAGE_AFTER) or SYNTH_AFTER
-            if pulse == nil and (s.engaged == 1 or s.battle == 1) and SYNTH_AFTER > 0 and wait >= after then
+            -- In battle only a surface that waits for input reads a press.
+            local can_press = s.engaged == 1 or (s.battle == 1 and INPUT_FLOW[s.flow])
+            if pulse == nil and can_press and SYNTH_AFTER > 0 and wait >= after then
                 local phase = (wait - after) % SYNTH_PERIOD
                 if phase == 0 then
                     synth_count = synth_count + 1
@@ -424,9 +454,9 @@ probe.run({
             end
         end
         apply(mask)
-        frow:write(string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%04x,%08x,%d,%x,%d,%d\n",
+        frow:write(string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%04x,%08x,%d,%x,%d,%d,%s\n",
             el, b.idx, rel, waiting and 1 or 0, s.x, s.y, s.z, s.engaged, s.battle,
-            s.mode, s.scene, mask, s.rng, synth, s.pager, s.act, s.flow))
+            s.mode, s.scene, mask, s.rng, synth, s.pager, s.act, s.flow, s.hp))
         frow:flush()
     end,
 })

@@ -4,8 +4,8 @@
 The engine side is a `LEGAIA_DIAG_TICK_DIGEST` run (full_game_ladder with
 LEGAIA_FGL_ONLY, or any `BootSession`). The run is cut into beats at gates: the
 player engaged / released, scene changes, warps, battle entry and exit, dialog
-page ends, the walk's turns (position waypoints) and, inside a battle, the
-round prompt and each action's start. `autorun_gate_replay.lua` replays each
+page ends, the walk's turns (position waypoints) and, inside a battle, every
+command surface the flow enters and each action's start. `autorun_gate_replay.lua` replays each
 beat's pad relative to the beat's opening gate on the state named by
 `scenario`, and waits for retail at the next gate rather than holding one
 clock. Report only; output under captures/ (retail-derived, never committed).
@@ -26,7 +26,9 @@ DPAD = 0x00F0
 AXES = ("+x", "-x", "+z", "-z")
 PAGE_WAIT = "19"
 ACT_GATES = ("0a",)
-FLOW_GATES = {"TurnPrompt": "1e", "CategoryMenu": "28", "ItemWindow": "3c", "CommitBegin": "6e"}
+FLOW_GATES = {"TurnPrompt": "1e", "CategoryMenu": "28", "EscapePrompt": "32", "ItemWindow": "3c", "MagicWindow": "46",
+              "ArtsCommandEntry": "50", "TargetSelect": "5a", "TargetConfirm": "64", "CommitBegin": "6e",
+              "AttackModePrompt": "78"}
 LCG_A, LCG_C, LCG_MAX = 0x41C64E6D, 0x3039, 200_000
 FIELD_KV = re.compile(rb" (\w+)=(\S+)")
 
@@ -229,6 +231,15 @@ def stretched_masks(rows, until, min_press):
     return out
 
 
+def pad_boundary(masks, t, kind):
+    """Where a beat's pad stops: the gate tick, one past it when the gate is a
+    battle state a press on that very tick moved (the engine's flow byte changes
+    in the row of the press that caused it, so that press closes this beat)."""
+    if kind == "flow" and t < len(masks) and t > 0 and masks[t] & ~masks[t - 1]:
+        return t + 1
+    return t
+
+
 def write_plan(path, rows, gates, until, min_press=1):
     """The Lua plan: BEAT lines, each followed by its PAD rows."""
     gates = [g for g in gates if g[0] < until]
@@ -238,6 +249,7 @@ def write_plan(path, rows, gates, until, min_press=1):
     start = 0
     with open(path, "w") as f:
         for i, (t, kind, value) in enumerate([*gates, (until, "end", "-")]):
+            t = max(pad_boundary(masks, t, kind), start)
             f.write(f"BEAT {i} {kind} {value} {t - start}\n")
             seek = seek_spot(rows, kind, value, t)
             if seek:
