@@ -1929,6 +1929,11 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
 
 - The seated tier places the player. It proves doors, scripts, gates and the
   scene graph, not locomotion; the pad tier is the locomotion claim.
+- The pad tier walks through NPCs. Its session leaves `npcs.solid` off where both
+  play hosts arm it, because the follower's route does not plan round a standing
+  villager: with the arm on, `town0b`'s `mist_rim_elm -> hunters_spring` falls from
+  `pad` to `progresses`. A [gate replay](gate-replay.md) of a digest stops where a
+  villager's box stands on the walk on retail.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
   options by rotation, not by reading them. Neither segmented tier buys,
