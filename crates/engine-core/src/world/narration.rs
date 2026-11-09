@@ -846,7 +846,7 @@ impl World {
         if tl.dialog.is_some() {
             self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
-                self.step_face_legs_under_box(&mut tl);
+                self.step_legs_under_box(&mut tl);
                 self.cutscene.timeline = Some(tl);
                 return;
             }
@@ -891,13 +891,14 @@ impl World {
         }
     }
 
-    /// The face-at legs a record armed before its text lead go on under the
-    /// box: the walk kernel runs from the actor tick (`FUN_8003BC08`) whether
-    /// or not the record sits on a line. The landing clears the caller's halt
-    /// and `+0x54` as in the slice.
+    /// The legs a record armed before its text lead go on under the box: the
+    /// walk kernel runs from the actor tick (`FUN_8003BC08`) whether or not
+    /// the record sits on a line. A landing holds its actor for the script as
+    /// in the slice, and a landing on the player clears the caller's halt and
+    /// `+0x54`. `npc_walks` needs nothing: the motion VM steps those.
     ///
-    /// REF: FUN_8003BC08, FUN_8003774C (the 0x4C arm)
-    fn step_face_legs_under_box(
+    /// REF: FUN_8003BC08, FUN_8003774C
+    fn step_legs_under_box(
         &mut self,
         tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
     ) {
@@ -921,6 +922,64 @@ impl World {
                 tl.npc_faces.push(face);
             }
         }
+        for mut fw in std::mem::take(&mut tl.npc_facings) {
+            if self.step_timeline_facing(&mut fw, grid) {
+                tl.npc_facings.push(fw);
+            } else if let Some(slot) = fw.slot {
+                tl.npc_landed_hold.push(slot);
+            } else {
+                tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
+            }
+        }
+        if let Some(mut glide) = tl.player_glide.take() {
+            glide.state.speed = grid;
+            if self.step_player_glide(&mut glide) {
+                tl.player_glide = Some(glide);
+            } else {
+                tl.player_landed_hold = true;
+            }
+        }
+        for mut glide in std::mem::take(&mut tl.npc_glides) {
+            glide.state.speed = grid;
+            if self.step_npc_glide(&mut glide) {
+                tl.npc_glides.push(glide);
+            } else {
+                tl.npc_landed_hold.push(glide.slot);
+            }
+        }
+        if let Some(mut walk) = tl.walk_wait.take() {
+            walk.frames += 1;
+            if self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach) {
+                tl.player_landed_hold = true;
+            } else if walk.frames < WALK_PARK_TIMEOUT {
+                tl.walk_wait = Some(walk);
+            } else {
+                self.seat_player_on_walk_leg_target(walk.target);
+                tl.player_landed_hold = true;
+            }
+        }
+    }
+
+    /// One game frame of a rotate leg (`B8 <id> ..`): the `0x38` kernel over
+    /// `grid` vsyncs, its yaw written back raw. `false` once the ramp snaps
+    /// or the leg times out.
+    ///
+    /// REF: FUN_8003774C (case 0x38)
+    pub(super) fn step_timeline_facing(
+        &mut self,
+        fw: &mut legaia_engine_field::cutscene_timeline::TimelineFacing,
+        grid: u16,
+    ) -> bool {
+        use legaia_engine_motion_vm::motion_vm::{MotionTarget, StepResult, step};
+        fw.state.speed = grid;
+        fw.frames += 1;
+        let r = step(&mut fw.state, MotionTarget::default(), &fw.program);
+        if fw.state.yaw_written {
+            self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
+        }
+        r != StepResult::Done && fw.frames < WALK_PARK_TIMEOUT
     }
 
     /// Tick a script context's owned dialog panel one frame and, when
@@ -1317,13 +1376,13 @@ impl World {
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
                 if owner != Some(tl.dialog_claim) {
-                    self.step_face_legs_under_box(tl);
+                    self.step_legs_under_box(tl);
                     continue;
                 }
                 owner = None;
                 self.drive_script_dialog(tl, true);
                 if tl.dialog.is_some() || tl.done {
-                    self.step_face_legs_under_box(tl);
+                    self.step_legs_under_box(tl);
                     continue;
                 }
             }
@@ -1470,7 +1529,9 @@ fn drop_one_frame_held_box(held: &mut Option<HeldBox>) {
 
 /// The post-page byte the pager's state `0x19` dispatches a finished box on
 /// (`*pbVar14 & 0x7F`, `0x801D8FDC`): the byte at the panel's cursor.
-fn post_page_byte(panel: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> Option<u8> {
+pub(in crate::world) fn post_page_byte(
+    panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
+) -> Option<u8> {
     panel.bytes.get(panel.pc).map(|b| b & 0x7F)
 }
 

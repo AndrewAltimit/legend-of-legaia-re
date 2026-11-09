@@ -266,35 +266,27 @@ impl World {
                 tl.npc_landed_hold.push(slot);
             }
         }
-        // NPC rotate legs (`B8 <id> <dir> <budget>`): the same in-place
-        // `0x38` RotateToAngle kernel the player park runs, stepped here
-        // while the record runs on; the actor stays held for the script
-        // until the ramp snaps, and on the snap frame.
+        // Rotate legs (`B8 <id> <dir> <budget>`, the player's included): the
+        // in-place `0x38` RotateToAngle kernel, stepped while the record runs
+        // on; the actor stays held for the script until the ramp snaps, and
+        // on the snap frame.
         // REF: FUN_801DE840 (0x801DEE90..0x801DEF24), FUN_8003774C (case 0x38)
+        let mut face_landed = false;
         for mut fw in std::mem::take(&mut tl.npc_facings) {
-            if let Some(slot) = fw.slot {
-                npc_glide_hold.push(slot);
+            match fw.slot {
+                Some(slot) => npc_glide_hold.push(slot),
+                None => glide_hold = true,
             }
-            if grid == 0 {
+            if grid == 0 || self.step_timeline_facing(&mut fw, grid) {
                 tl.npc_facings.push(fw);
                 continue;
             }
-            fw.state.speed = grid;
-            fw.frames += 1;
-            let r = legaia_engine_motion_vm::motion_vm::step(
-                &mut fw.state,
-                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                &fw.program,
-            );
-            if fw.state.yaw_written {
-                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
-            }
-            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
-                && fw.frames < WALK_PARK_TIMEOUT
-            {
-                tl.npc_facings.push(fw);
-            } else if let Some(slot) = fw.slot {
-                tl.npc_landed_hold.push(slot);
+            match fw.slot {
+                Some(slot) => tl.npc_landed_hold.push(slot),
+                None => {
+                    tl.player_landed_hold = true;
+                    face_landed = true;
+                }
             }
         }
         // NPC face-at legs (`CC <id> 85|8E|8F ..`): the target's walk kernel
@@ -333,63 +325,12 @@ impl World {
             }
             tl.pc += width;
         }
-        // Cross-context rotate park (`B8 <id> <dir|flags> <budget|dir>` = op
-        // 0x38 with a non-zero budget against an NPC channel): retail parks
-        // the record and the `FUN_8003774C` 0x38 RotateToAngle leg ramps the
-        // target actor's `+0x26` linearly over the operand budget - per-op
-        // turn rates (`arc / budget`), raw pre-unwrap mid-ramp headings, and
-        // an exact terminal snap onto the compass entry. Step the parked leg
-        // once per tick, mirror the raw yaw into the render-heading map, and
-        // resume the record past the yield when the ramp snaps.
-        // REF: FUN_8003774C (case 0x38 interpreted in place)
-        if let Some(mut fw) = tl.facing_wait.take() {
-            let r = if grid == 0 {
-                legaia_engine_motion_vm::motion_vm::StepResult::Yield
-            } else {
-                fw.state.speed = grid;
-                fw.frames += 1;
-                legaia_engine_motion_vm::motion_vm::step(
-                    &mut fw.state,
-                    legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                    &fw.program,
-                )
-            };
-            if fw.state.yaw_written {
-                // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
-                // exactly as retail's `+0x26` does); render consumers mask.
-                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
-            }
-            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
-                && fw.frames < WALK_PARK_TIMEOUT
-            {
-                tl.facing_wait = Some(fw);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                // Like the walk park: a rotate park is real playout progress,
-                // not a hang - keep it off the anti-hang frame cap.
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            if grid_live {
-                tl.park_landed = Some(fw.resume_pc);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
-            }
-            tl.pc = fw.resume_pc;
-        }
         // Player face-at (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk kernel's
         // FaceTarget leg turns the player toward the named actor while the
         // record runs on past the acquire; see `CutsceneTimeline::player_face`.
         // Like a compass leg, it spends its first unit on the arming frame
         // and holds the player for the script through the frame it lands.
         // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
-        let mut face_landed = false;
         if let Some((mut ramp, frames)) = tl.player_face.take() {
             glide_hold = true;
             if grid > 0 && self.step_player_face_leg_by(&mut ramp, grid) {
@@ -964,8 +905,7 @@ impl World {
                 //   RotateToAngle leg - a linear ramp at the op's own
                 //   `arc / budget` rate with an exact terminal compass snap
                 //   (the town01 Mei dinner beat authors seven of these at
-                //   budgets 0x12..0x20). Arm the rotate park; the pre-step
-                //   gate plays it out and resumes past the yield.
+                //   budgets 0x12..0x20). The record runs on past the op.
                 // REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
                 //
                 // The player (`B8 F8 ..`, `FUN_8003C83C` resolving `0xF8` to
@@ -1014,63 +954,40 @@ impl World {
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
-                        resume_pc: pc + 4,
                         frames: 0,
                     };
-                    // Only a player target parks the caller; an NPC's turn
-                    // plays out while the record runs on (`li s7,3` in the
-                    // delay slot at `0x801DEEFC`).
-                    if let Some(npc) = slot {
-                        tl.npc_facings.retain(|f| f.slot != slot);
-                        let mut leg = leg;
-                        let mut live = true;
-                        // The placements tick after the spawned records
-                        // (list `_DAT_8007C354` behind `_DAT_8007C34C`), so
-                        // on the game-frame grid the kernel takes the turn's
-                        // first frame in the frame that armed it, as it does
-                        // a walk's.
-                        if grid > 0 && host.world.clock.game_tick_live {
-                            leg.state.speed = grid;
-                            leg.frames += 1;
-                            let r = legaia_engine_motion_vm::motion_vm::step(
-                                &mut leg.state,
-                                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                                &leg.program,
-                            );
-                            if leg.state.yaw_written {
-                                host.world.set_timeline_facing(slot, leg.state.yaw as i16);
-                            }
-                            live = r != legaia_engine_motion_vm::motion_vm::StepResult::Done;
-                        }
-                        if live {
-                            tl.npc_facings.push(leg);
-                        } else {
-                            tl.npc_landed_hold.push(npc);
-                        }
-                        npc_glide_hold.push(npc);
-                        tl.pc = pc + 4;
-                        continue;
-                    }
-                    // The turn's first step falls in the arming frame too.
+                    // The turn plays out while the record runs on, for every
+                    // target (`li s7,3` in the delay slot at `0x801DEEFC`). A
+                    // player target also raises the caller's `0x400`, which
+                    // only ops aimed at it refuse. The placements tick after
+                    // the spawned records, so on the game-frame grid the
+                    // kernel takes the turn's first frame in the frame that
+                    // armed it, as it does a walk's.
+                    tl.npc_facings.retain(|f| f.slot != slot);
                     let mut leg = leg;
-                    if grid > 0 && grid_live {
-                        leg.state.speed = grid;
-                        leg.frames += 1;
-                        let r = legaia_engine_motion_vm::motion_vm::step(
-                            &mut leg.state,
-                            legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                            &leg.program,
-                        );
-                        if leg.state.yaw_written {
-                            host.world.set_timeline_facing(slot, leg.state.yaw as i16);
+                    let live =
+                        !(grid > 0 && grid_live) || host.world.step_timeline_facing(&mut leg, grid);
+                    if live {
+                        tl.npc_facings.push(leg);
+                    }
+                    match slot {
+                        Some(npc) => {
+                            npc_glide_hold.push(npc);
+                            if !live {
+                                tl.npc_landed_hold.push(npc);
+                            }
                         }
-                        if r == legaia_engine_motion_vm::motion_vm::StepResult::Done {
-                            tl.park_landed = Some(leg.resume_pc);
-                            break;
+                        None => {
+                            tl.ctx.flags |= 0x400;
+                            glide_hold = true;
+                            if !live {
+                                tl.player_landed_hold = true;
+                                face_landed = true;
+                            }
                         }
                     }
-                    tl.facing_wait = Some(leg);
-                    break;
+                    tl.pc = pc + 4;
+                    continue;
                 }
                 // Halt-acquire of an NPC (`CC <id> 85|8E|8F <lo> <hi> <bind>`
                 // against a placement channel): the target turns to face the

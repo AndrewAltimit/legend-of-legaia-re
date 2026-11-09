@@ -544,7 +544,7 @@ impl ScriptGate {
                 tl.walk_wait,
                 tl.channel_wait,
                 tl.player_wait,
-                tl.facing_wait.is_some(),
+                tl.npc_facings.iter().any(|f| f.slot.is_none()),
                 tl.player_glide.is_some(),
                 tl.player_clip_wait,
                 tl.dialog.as_ref().map(|d| d.state()),

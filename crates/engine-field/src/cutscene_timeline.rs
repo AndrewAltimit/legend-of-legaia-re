@@ -282,20 +282,7 @@ pub struct CutsceneTimeline {
     /// mirrors that with a motion-VM glide on the target and this park.
     // REF: FUN_8003774C (case 0x47: walk-to-tile interpreted in place)
     pub walk_wait: Option<TimelineWalk>,
-    /// `Some` while the timeline is PARKED on a cross-context **rotate
-    /// yield** (`B8 <id> <dir|flags> <budget|dir>` = op `0x38` CAM_CFG with a
-    /// non-zero budget against an NPC channel). Retail's halt-acquire arm
-    /// parks the record and the yield-op bytes run in place as the
-    /// `FUN_8003774C` `0x38` RotateToAngle leg on the target actor: a linear
-    /// per-frame ramp (`arc * speed / frames_remaining`, raw pre-unwrap
-    /// write-back) onto the compass-LUT entry over the operand's own frame
-    /// budget, terminal frame snapping exactly. This is where a story beat's
-    /// per-op turn rates come from - the budget is op data, not an engine
-    /// constant. The engine mirrors it with a parked motion-VM rotate leg
-    /// writing the NPC's render heading each frame.
-    // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
-    pub facing_wait: Option<TimelineFacing>,
-    /// `Some` while the timeline is PARKED on a cross-context
+    /// `Some` while a cross-context
     /// **halt-acquire of the player** (`CC F8 85|8E|8F <lo> <hi> <id>`).
     /// Retail's acquire arm (`0x801E2148..0x801E21DC`) stores the op's
     /// address into the player's `+0x94` and raises `0x400` on the player
@@ -486,7 +473,7 @@ pub struct TimelineNpcFace {
 }
 
 /// State of a parked cross-context rotate yield (see
-/// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
+/// [`CutsceneTimeline::npc_facings`]): one motion-VM `0x38` RotateToAngle leg
 /// stepped once per timeline tick against the target's render heading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimelineFacing {
@@ -500,8 +487,6 @@ pub struct TimelineFacing {
     /// The yield-op bytes re-encoded for the in-place kernel:
     /// `[0x38, dir|flags, budget|dir]`.
     pub program: [u8; 3],
-    /// PC to resume at once the ramp snaps (`yield pc + 4`).
-    pub resume_pc: usize,
     /// Ticks parked so far, bounded by the walk park timeout.
     pub frames: u32,
 }
@@ -535,9 +520,9 @@ impl CutsceneTimeline {
     pub fn halted_targets(&self) -> impl Iterator<Item = Option<u8>> + '_ {
         let live = !self.done;
         let walk = self.walk_wait.as_ref().map(|w| w.slot);
-        let facing = self.facing_wait.as_ref().map(|f| f.slot);
+        let face = self.player_face.as_ref().map(|_| None);
         let glide = self.player_glide.as_ref().map(|_| None);
-        [walk, facing, glide]
+        [walk, face, glide]
             .into_iter()
             .flatten()
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
@@ -581,7 +566,6 @@ impl CutsceneTimeline {
             player_wait: None,
             restore_hidden_on_complete: false,
             walk_wait: None,
-            facing_wait: None,
             player_face: None,
             player_glide: None,
             npc_glides: Vec::new(),

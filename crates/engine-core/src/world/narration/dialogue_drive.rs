@@ -378,7 +378,7 @@ impl World {
             {
                 id.pc += 3;
                 id.park_frames = 0;
-                if host.world.face_npc_by_cam_cfg(slot, op0, op1, id.pc) {
+                if host.world.face_npc_by_cam_cfg(slot, op0, op1) {
                     id.ctx.flags |= 0x400;
                     id.own_turn = Some(slot);
                 }
@@ -1441,7 +1441,7 @@ impl World {
         match op & 0x7F {
             0x38 => {
                 let (op0, op1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
-                self.face_npc_by_cam_cfg(slot, op0, op1, pc + 4);
+                self.face_npc_by_cam_cfg(slot, op0, op1);
                 Some(pc + 4)
             }
             0x4C => {
@@ -1461,13 +1461,7 @@ impl World {
     /// one the actor had in flight. Returns whether a leg is now in flight.
     ///
     /// REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
-    pub(crate) fn face_npc_by_cam_cfg(
-        &mut self,
-        slot: u8,
-        op0: u8,
-        op1: u8,
-        resume_pc: usize,
-    ) -> bool {
+    pub(crate) fn face_npc_by_cam_cfg(&mut self, slot: u8, op0: u8, op1: u8) -> bool {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
         if op1 & 0x7F == 0 {
@@ -1488,7 +1482,6 @@ impl World {
                 ..Default::default()
             },
             program: [0x38, op0, op1],
-            resume_pc,
             frames: 0,
         };
         if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
@@ -1562,7 +1555,6 @@ impl World {
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
-                        resume_pc: pc + 4,
                         frames: 0,
                     });
                 }
