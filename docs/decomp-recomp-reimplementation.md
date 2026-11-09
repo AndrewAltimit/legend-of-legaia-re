@@ -28,7 +28,7 @@ Both projects started in spring 2026 and both are still going. Three threads run
 |---|---|---|
 | **Playing the game** | *Tomba!* gameplay (May); Legaia field, battles and summons (July) | Walkable overworld (May); a pad-only run reaches the credits (October) |
 | **Fidelity** | Hardware accuracy (May onward); Legaia's CD and XA sequencing (July) | Audio oracles (May); ladder, retail corpus, soak harness (September) |
-| **Modding** | Widescreen and renderer backends (June, July); a modding SDK in development | Disc patcher and randomizer (May, June); language packs (July); expansion packs (October) |
+| **Modding** | Widescreen and renderer backends (June, July); a modding SDK, in development since October | Disc patcher and randomizer (May, June); language packs (July); expansion packs (October) |
 
 The two come at the same goals in different orders. A recomp starts with the original's code, so retail behaviour is there from the first frame and the work goes into the hardware model; it is the quickest way to play a game as it was. The engine started with nothing running and built up both the playthrough and its fidelity one mechanism at a time. Modding differs in kind: disc patches change the retail game's bytes and arrived early, and expansion packs need the engine. The recomp's README credits this project's docs with having "materially shortened the investigation", and the recomp is one of this project's best references.
 
