@@ -459,14 +459,6 @@ impl World {
                 }
                 continue;
             }
-            if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
-                if id.pc < id.visited.len() {
-                    id.visited[id.pc] = true;
-                }
-                id.pc = next_pc;
-                id.park_frames = 0;
-                continue;
-            }
             // A placement the talk set walking carries `0x400` until the
             // kernel lands it, and the dispatcher prologue returns any
             // cross-context op aimed at it at its own PC: the talk retries
@@ -484,6 +476,14 @@ impl World {
                 .filter(|slot| !halt_clear && host.world.npc_leg_in_flight(*slot));
             if walking_target.is_some() {
                 break;
+            }
+            if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc = next_pc;
+                id.park_frames = 0;
+                continue;
             }
             // A compass walk aimed at a placement (`B7` / `C1 <id> b0 b1`):
             // the arm seats the op on the target's `+0x94`, raises its

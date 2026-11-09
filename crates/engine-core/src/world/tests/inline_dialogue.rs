@@ -782,3 +782,68 @@ fn a_talks_cross_context_compass_walks_move_their_target_in_turn() {
     assert_eq!(world.npcs.positions.get(&23), Some(&(2304, 2752)));
     assert_eq!(run_inline_until_box(&mut world), b"B");
 }
+
+#[test]
+fn a_talks_second_turn_on_a_placement_waits_for_the_first() {
+    // `B8 26 00 3A`, `4A 02 00`, `B8 26 04 3A` (`town0b` `P1[55]+0x267`):
+    // the dispatcher prologue returns a cross-context op aimed at a halted
+    // actor at its own PC, so each turn plays its whole budget before the
+    // next one is taken. Retail spends 60 vsyncs on each pair; a second
+    // `B8` that replaced the leg in flight ran the whole stretch in frames.
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut world = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    world.field_vm.channels = vec![FieldChannel {
+        placement_index: 23,
+        ctx: FieldCtx {
+            script_id: 0x26,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    world.npcs.positions.insert(23, (2752, 2752));
+    world.clock.game_tick_live = true;
+    world.clock.frame_step = 2;
+    world.clock.display_frame_step = 1;
+    let body = vec![
+        0xB8, 0x26, 0x00, 0x3A, 0x4A, 0x02, 0x00, 0xB8, 0x26, 0x04, 0x3A, 0x1F, b'T', 0x00,
+    ];
+    world.start_inline_dialogue_with_prologue(body, 0, 11);
+    let first = |w: &World| w.npcs.rotate_legs.get(&23).map(|l| l.program[1]);
+    world.clock.game_tick_fired = true;
+    world.step_inline_dialogue(false, false, false);
+    assert_eq!(first(&world), Some(0x00), "the first turn is armed");
+    // The wait runs out and the second turn holds at its own PC.
+    for _ in 0..4 {
+        world.clock.game_tick_fired = true;
+        world.step_inline_dialogue(false, false, false);
+    }
+    assert_eq!(
+        world.dialog.inline.as_ref().unwrap().pc,
+        7,
+        "held at the second B8"
+    );
+    assert_eq!(first(&world), Some(0x00), "not replaced while it plays");
+    let mut guard = 0;
+    while world.npcs.rotate_legs.contains_key(&23) {
+        world.clock.game_tick_fired = true;
+        world.tick_field_npc_motions();
+        guard += 1;
+        assert!(guard < 200, "the turn lands");
+    }
+    // The record holds through the landing frame.
+    world.frame += 1;
+    world.clock.game_tick_fired = true;
+    world.step_inline_dialogue(false, false, false);
+    assert_eq!(
+        first(&world),
+        Some(0x04),
+        "the second turn takes over once the first has landed"
+    );
+}
