@@ -52,7 +52,7 @@
   },
   "bundle": {
    "gzip_bytes": 7096439,
-   "play_gzip_bytes": 4961046
+   "play_gzip_bytes": 4962042
   },
   "native": {
    "battle": {
@@ -94,7 +94,7 @@
    "world_map": {
     "enhanced": {
      "alloc_kb_per_frame": 1539.0,
-     "allocs_per_frame": 1887.1,
+     "allocs_per_frame": 1901.9,
      "draws_per_frame": 374
     },
     "retail": {

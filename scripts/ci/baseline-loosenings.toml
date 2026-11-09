@@ -1120,13 +1120,11 @@ changes = [
   ["counts/browser/town01/enhanced/gl_draws_per_frame", 90.24, 90.29],
   ["counts/browser/world_map/enhanced/gl_draws_per_frame", 221.86, 221.87],
   ["counts/bundle/gzip_bytes", 7095145, 7096439],
-  ["counts/bundle/play_gzip_bytes", 4958538, 4961046],
   ["counts/native/battle/retail/alloc_kb_per_frame", 4454.0, 4454.1],
   ["counts/native/battle/retail/allocs_per_frame", 1227.0, 1227.1],
   ["counts/native/summon_cast/retail/allocs_per_frame", 1260.2, 1260.3],
   ["counts/native/town01/retail/draws_per_frame", 45, 46],
   ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1498.2, 1539.0],
-  ["counts/native/world_map/enhanced/allocs_per_frame", 1831.8, 1887.1],
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1210.9, 1238.8],
   ["counts/native/world_map/retail/allocs_per_frame", 1717.0, 1766.1],
   ["counts/native/world_map/retail/draws_per_frame", 366, 374],
@@ -1145,10 +1143,33 @@ reason = "The ambient emitter now runs one pass per game tick and none during th
 changes = [
   ["states/battle_deroa_iota_v2_strike/image", 0.979, 0.969],
   ["states/battle_garmel_party_vahn_hyper_elbow_mid/camera", 0.997, 0.988],
-  ["states/battle_garmel_zenoir_strike/camera", 1.0, 0.997],
-  ["states/battle_korb2_aluru_strike/image", 1.0, 0.999],
-  ["states/battle_map01_hornet_strike/camera", 0.993, 0.992],
-  ["states/battle_melee_hit_spark/image", 0.92, 0.917],
-  ["states/battle_tunnelb_nova_scythe_wind_mid_cast/image", 0.98, 0.979],
   ["states/nilboa_rock_lizard_pre_earthquake/image", 0.997, 0.982],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "world_map enhanced allocations per frame rise from the ambient emitter's one pass per game tick; the count is unchanged at the commit before that change and rises at it, while kilobytes allocated per frame fall. play_gzip_bytes grows with the battle timing and talk timing code on this branch; it is a code size increase, not a data change."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4958538, 4962042],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1831.8, 1901.9],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Two battle timing changes re-time the frames these states score: the action SM's seed at state 0x50 for the turn hand-off, and the frame cost of a CD-XA stream (XA_STREAM_FRAME_COST, XA_STREAM_SPAN_EXTRA, fitted to one emulator). Each of these scores returns to its prior value with the 0x50 seed off, the XA cost off, or both, except that battle_garmel_zenoir_strike's camera also carries 0.003 from the ambient emitter's re-dealt fights. The retail evidence for both changes is timing only (state 0x51 dwells 76 of 76 frames, the stage byte rises at 0x50, XA frames step by 4). No capture shows these states' new frames are closer to retail, so this records an accepted loss and not a correction."
+changes = [
+  ["states/battle_balden_devil_pump_strike/camera", 1.0, 0.999],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/camera", 1.0, 0.998],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/image", 0.989, 0.988],
+  ["states/battle_deroa_spoon_v2_hyper_heal_mid_cast/image", 0.999, 0.988],
+  ["states/battle_garmel_zenoir_strike/camera", 1.0, 0.996],
+  ["states/battle_jou_spoon_v3_hyper_heal_mid_cast/image", 0.989, 0.98],
+  ["states/battle_korb2_ghost_knight_strike/image", 1.0, 0.996],
+  ["states/battle_tunnelc_xain_bloody_horns_mid_cast/image", 0.842, 0.787],
+  ["states/kor_shade_pre_fatal_decision/image", 1.0, 0.996],
+  ["states/retona_viguro_v2_pre_thunder_break/image", 0.998, 0.991],
+  ["states/ropeway_orb_pre_heal/image", 0.998, 0.994],
+  ["states/rugi_rogue_pre_element_change/image", 0.998, 0.997],
+  ["states/rugi_rogue_pre_rogue_thunder/image", 0.999, 0.998],
+  ["states/taiku_terror_face_pre_fissure/image", 0.998, 0.997],
 ]
