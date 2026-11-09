@@ -13,6 +13,8 @@
 --                               (default 1800).
 --      LEGAIA_GATE_REPULSE_MAX  extra pulses a waiting battle beat may add
 --                               (default 16; 0 = none).
+--      LEGAIA_GATE_NO_ENCOUNTERS 1 = hold the encounter setting 0x8007B5F8 at 0
+--                               every vsync (retail's own "no roll" value).
 --
 -- The plan is text, one record a line:
 --   BEAT idx kind value length   a beat of `length` engine ticks closing on
@@ -113,6 +115,8 @@ local FIELD_MODE = 3
 local CROSS = probe.BTN.CROSS
 local SYNTH_PERIOD, SYNTH_HOLD = 30, 2
 local REPULSE_MAX = probe.getenv_num("LEGAIA_GATE_REPULSE_MAX", 16)
+local NO_ENCOUNTERS = probe.getenv_num("LEGAIA_GATE_NO_ENCOUNTERS", 0) ~= 0
+local ENCOUNTER_SETTING = 0x8007B5F8
 local REPULSE_PERIOD, REPULSE_SETTLE = 8, 18
 -- ctx[+0x06] bytes that sit waiting for a press: the prompt, ring, escape, item,
 -- magic, arts, target, target confirm and attack-mode states.
@@ -167,6 +171,14 @@ if PLAN ~= "" then
 end
 assert(#beats > 0, "gate replay: no beats in plan " .. PLAN)
 
+local function dpad_of(mask)
+    local r = 0
+    for bit = 4, 7 do
+        if math.floor(mask / 2 ^ bit) % 2 == 1 then r = r + 2 ^ bit end
+    end
+    return r
+end
+
 -- The bits newly down in `mask` given the word before it.
 local function rising(mask, before)
     local r = 0
@@ -194,6 +206,10 @@ for _, b in ipairs(beats) do
         before = row[2]
     end
     carried = before
+    b.walk_dpad = 0
+    for _, row in ipairs(b.pad) do
+        if dpad_of(row[2]) ~= 0 then b.walk_dpad = dpad_of(row[2]) end
+    end
 end
 PCSX.log(string.format("[gate-replay] %d beats from %s", #beats, PLAN))
 
@@ -357,6 +373,7 @@ probe.run({
     end,
     on_capture = function(ctx, el)
         if done then return end
+        if NO_ENCOUNTERS then probe.write_u8(ENCOUNTER_SETTING, 0) end
         local s = snapshot()
         if s.x ~= -32768 then
             if last_x and math.abs(s.x - last_x) + math.abs(s.z - last_z) > WARP_DIST then
@@ -434,6 +451,19 @@ probe.run({
                         synth_count = synth_count + 1
                         event(el, b.idx, "synthetic_seek",
                             string.format("from %d/%d to %d/%d", s.x, s.z, b.seek.x, b.seek.z))
+                    end
+                    -- On the spot and the gate has not come: a door or an
+                    -- object fires on the step into it, and the two walks
+                    -- end that step a pass of position apart. Keep pressing
+                    -- the beat's last direction into it.
+                    if mask == 0 and b.walk_dpad ~= 0 then
+                        mask, synth = b.walk_dpad, 1
+                        if not b.pushing then
+                            b.pushing = true
+                            synth_count = synth_count + 1
+                            event(el, b.idx, "synthetic_push",
+                                string.format("0x%04x at %d/%d", b.walk_dpad, s.x, s.z))
+                        end
                     end
                 else
                     mask = dpad(pad_mask)

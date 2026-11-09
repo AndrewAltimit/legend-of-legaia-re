@@ -10,7 +10,7 @@ disagreement stays in the beat that caused it and can be measured there.
 LEGAIA_FGL_ONLY=tetsu_spar LEGAIA_FGL_TRACE=1 LEGAIA_FGL_PIN_RETAIL=1 \
 LEGAIA_FGL_RNG_SEED=0x1a1193df LEGAIA_DIAG_TICK_DIGEST=/path/digest.txt \
 XMODIFIERS=@im=none cargo test -p legaia-engine-shell --profile release-test \
-  --test integration full_game_ladder:: -- --nocapture --test-threads 1
+  --test integration full_game_ladder::part_b_ -- --nocapture --test-threads 1
 
 scripts/ci/gate-replay.py s3_rimelm_freeroam --digest /path/digest.txt --until 3700
 ```
@@ -26,6 +26,17 @@ repository. The replay is report-only, like the [walk film](walk-film.md).
 
 Start the engine on the state's own stream, or the RNG column compares two different
 hands: read the state's `0x80009010` and pass it as `LEGAIA_FGL_RNG_SEED`.
+
+Run the ladder as `full_game_ladder::part_b_` so the digest holds the seated and pad
+passes of that one segment: the unfiltered `full_game_ladder::` name also runs part C and
+leaves gigabytes of sessions ahead of the pad pass. The last session is that pad pass;
+check its line count against the log's `[pad] N frames`.
+
+A walk that crosses encounter regions parts on the first fight one side rolls and the
+other does not, since the two `rand()` streams differ. To measure the field between the
+fights, take the digest with `LEGAIA_FGL_NO_ENCOUNTERS=1` (the pad tier stays off the
+random roll, like the seated tier) and pass `--no-encounters`, which holds retail's
+setting byte `0x8007B5F8` at `0`, the value at which `FUN_801DA51C` skips the roll.
 
 ## Beats and gates
 
@@ -82,7 +93,10 @@ pulse lands on a released tick and is absorbed, leaving two on, two off. At the 
   the walk ends by steering to where the engine stood when the gate fired
   (`SEEK` in the plan, d-pad masks read off the engine's own walking). This is
   input the engine's log did not supply: each is a `synthetic_seek` row in
-  `gate_events.csv` and counted in the `synth` column.
+  `gate_events.csv` and counted in the `synth` column. On the spot with the gate still
+  out, the beat keeps pressing its last direction, since a door or object fires on the
+  step into it and the two walks finish that step a pass apart (`synthetic_push`, same
+  count).
 - **Retail is still waiting** after `--synth-after` vsyncs (90 by default, 30 when a
   page is already shown waiting) on an engaged beat, or on a battle byte that waits for
   input. An unclosed page or a prompt the replay's presses did not reach is the usual

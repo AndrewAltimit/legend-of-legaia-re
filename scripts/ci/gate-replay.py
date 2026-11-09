@@ -103,7 +103,20 @@ def cut_gates(rows, min_dwell=3):
                 if abs(ax - bx) + abs(az - bz) > WARP_DIST:
                     gates.append((t, "warp", "-"))
         prev = row
-    return number_pages(drop_pulses(gates, min_dwell))
+    return number_pages(merge_door_landings(drop_pulses(gates, min_dwell), min_dwell))
+
+
+def merge_door_landings(gates, min_dwell):
+    """Drop an `engaged=1` that follows a warp by less than `min_dwell` ticks.
+    Retail holds the engaged bit across a door's whole run and straight into
+    the landing's record, so the two engine gates are one retail hold and
+    `engaged=1` would wait on an edge retail never shows."""
+    out = []
+    for g in gates:
+        if g[1] == "engaged" and g[2] == "1" and out and out[-1][1] == "warp" and g[0] - out[-1][0] < min_dwell:
+            continue
+        out.append(g)
+    return out
 
 
 def number_pages(gates):
@@ -356,6 +369,9 @@ def main():
     ap.add_argument("--repulse-max", type=int, default=16, help="extra pulses a waiting battle beat may add, 0 for none")
     ap.add_argument("--min-dwell", type=int, default=3, help="engaged runs shorter than this are not gates")
     ap.add_argument("--min-press", type=int, default=2, help="hold every press at least N ticks (1 = the log as written)")
+    ap.add_argument("--lua", help="a wrapper script to run instead of autorun_gate_replay.lua (for extra capture; it dofiles the real one)")
+    ap.add_argument("--interpreter", action="store_true", help="run the probe on the interpreter, not --fast (Lua breakpoints fire; slower)")
+    ap.add_argument("--no-encounters", action="store_true", help="hold retail's encounter setting 0x8007B5F8 at 0, for a digest run with LEGAIA_FGL_NO_ENCOUNTERS")
     ap.add_argument("--no-waypoints", action="store_true", help="beat only on state gates, not the walk's turns")
     ap.add_argument("--no-retail", action="store_true", help="reuse the retail side")
     a = ap.parse_args()
@@ -372,11 +388,12 @@ def main():
         frames = int(until * 1.5) + a.max_wait * 2
         timeout = max(180, frames // 25)
         env = dict(os.environ, LEGAIA_GATE_PLAN=str(plan), LEGAIA_GATE_MAX_WAIT=str(a.max_wait),
-                   LEGAIA_GATE_SYNTH_AFTER=str(a.synth_after), LEGAIA_GATE_REPULSE_MAX=str(a.repulse_max))
+                   LEGAIA_GATE_SYNTH_AFTER=str(a.synth_after), LEGAIA_GATE_REPULSE_MAX=str(a.repulse_max),
+                   LEGAIA_GATE_NO_ENCOUNTERS="1" if a.no_encounters else "0")
         subprocess.run(
             ["timeout", "--kill-after=5", str(timeout), "bash", str(REPO / "scripts/pcsx-redux/run_probe.sh"),
-             "--fast", "--headless", "--iso", a.iso, "--scenario", a.scenario,
-             "--lua", str(REPO / "scripts/pcsx-redux/autorun_gate_replay.lua"),
+             *([] if a.interpreter else ["--fast"]), "--headless", "--iso", a.iso, "--scenario", a.scenario,
+             "--lua", a.lua or str(REPO / "scripts/pcsx-redux/autorun_gate_replay.lua"),
              "--frames", str(frames), "--out-dir", str(out)],
             cwd=REPO, env=env, check=False,
         )
