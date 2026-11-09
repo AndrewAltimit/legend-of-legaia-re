@@ -1138,3 +1138,17 @@ reason = "Patched-disc state. Comparing the frame from the build before ff201406
 changes = [
   ["states/rikuroa_post_caruban/image", 0.996, 0.994],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The ambient emitter now runs one pass per game tick and none during the battle intro (FUN_801CE8CC reaches FUN_8001E1B4, which rebuilds the actor lists). It no longer draws on the off-beat vsync that opens a fight, and rng_hold carries only that tick's draws into the battle stream, so each of these fights is re-dealt. Forcing an emitter pass back on that one tick moved 0 of 528 battle-class states off the old baseline, so that draw is the whole cause. The new stream is no more retail's than the old one, and the same re-deal raised other scores, such as battle_tunnela_mad_bird_strike camera 0.991 to 1.000. No retail capture confirms the emitter is absent during the intro; that reading is from disassembly."
+changes = [
+  ["states/battle_deroa_iota_v2_strike/image", 0.979, 0.969],
+  ["states/battle_garmel_party_vahn_hyper_elbow_mid/camera", 0.997, 0.988],
+  ["states/battle_garmel_zenoir_strike/camera", 1.0, 0.997],
+  ["states/battle_korb2_aluru_strike/image", 1.0, 0.999],
+  ["states/battle_map01_hornet_strike/camera", 0.993, 0.992],
+  ["states/battle_melee_hit_spark/image", 0.92, 0.917],
+  ["states/battle_tunnelb_nova_scythe_wind_mid_cast/image", 0.98, 0.979],
+  ["states/nilboa_rock_lizard_pre_earthquake/image", 0.997, 0.982],
+]
