@@ -526,23 +526,13 @@ fn a_talkers_own_face_at_turns_the_talker() {
     let body = vec![0x4C, 0x85, 0x0A, 0x00, 0xF8, 0x1F, b'K', 0x00];
     world.start_inline_dialogue_with_prologue(body, 0, 5);
     world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
-    // The acquire raised the talker's own `0x400`, and the dispatcher
-    // refuses every op of a context carrying it: the box waits for the
-    // walk kernel to land the turn (budget 10) and clear the bit.
-    for _ in 0..4 {
-        world.step_inline_dialogue(false, false, false);
-        world.tick_field_npc_motions();
-    }
-    let id = world.dialog.inline.as_ref().unwrap();
-    assert!(id.page_bytes().is_empty(), "the box held for the turn");
-    assert_eq!(id.own_turn, Some(4));
+    // The text lead does not wait: a plain byte never reaches the
+    // dispatcher's halted-target test, and the turn goes on under the box.
+    assert_eq!(run_inline_until_box(&mut world), b"K");
+    assert_eq!(world.dialog.inline.as_ref().unwrap().own_turn, Some(4));
     for _ in 0..12 {
         world.tick_field_npc_motions();
     }
-    assert_eq!(run_inline_until_box(&mut world), b"K");
-    let id = world.dialog.inline.as_ref().unwrap();
-    assert_eq!(id.own_turn, None);
-    assert_eq!(id.ctx.flags & 0x400, 0, "the landed turn cleared the bit");
     let h = i32::from(*world.npcs.headings.get(&4).expect("heading written"));
     let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
     assert!(
@@ -651,6 +641,46 @@ fn the_line_after_a_held_continuation_types_beneath_its_rows() {
     assert!(panel.picker().is_none(), "the prompt's menu stays closed");
 }
 
+/// `town01` `P1[46]+0x69`'s shape (`4C 85 1C 00 F8`, `4A 20 00`): the wait
+/// counts on the leg's `+0x54`, so the 28-budget turn lands in seven game
+/// frames instead of fourteen, and the landing zeroes the wait, which then
+/// runs its full length.
+#[test]
+fn a_wait_under_the_talkers_own_turn_speeds_it_and_restarts() {
+    let mut world = World::new();
+    world.spawn_actor(0);
+    world.player_actor_slot = Some(0);
+    world.actors[0].move_state.world_x = 2368;
+    world.actors[0].move_state.world_z = 2496;
+    world.npcs.positions.insert(4, (3136, 3136));
+    world.clock.game_tick_live = true;
+    world.clock.frame_step = 2;
+    world.clock.display_frame_step = 1;
+    let body = vec![
+        0x4C, 0x85, 0x1C, 0x00, 0xF8, 0x4A, 0x20, 0x00, 0x1F, b'K', 0x00,
+    ];
+    world.start_inline_dialogue_with_prologue(body, 0, 5);
+    world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
+    let mut landed_at = None;
+    let mut box_at = None;
+    for frame in 0..40 {
+        world.clock.game_tick_fired = true;
+        world.step_inline_dialogue(false, false, false);
+        world.tick_field_npc_motions();
+        let id = world.dialog.inline.as_ref().unwrap();
+        if landed_at.is_none() && !world.npcs.face_legs.contains_key(&4) && frame > 0 {
+            landed_at = Some(frame);
+        }
+        if box_at.is_none() && id.panel.is_some() {
+            box_at = Some(frame);
+            break;
+        }
+    }
+    // Game frames from the acquire: retail's +12 and +44 vsyncs at step 2.
+    assert_eq!(landed_at, Some(6));
+    assert_eq!(box_at, Some(22));
+}
+
 /// An op-`0x49` park that opens a screen under a held `0x24` box takes the
 /// box down: the subsystem actor's installer `FUN_801F1278` rewinds the
 /// pager from its idle `4` to `1` (`0x801F1434..0x801F144C`), and state `1`
@@ -681,11 +711,11 @@ fn a_picker_commit_on_a_teardown_continuation_draws_the_box_for_one_frame() {
 }
 
 #[test]
-fn a_talkers_own_compass_walk_moves_the_talker_before_the_box() {
+fn a_talkers_own_compass_walk_goes_on_under_the_box() {
     // `41 07 C1` with no target byte walks the talker itself (`tunnelc`
     // `P1[4]`, Xain's second stage): direction 7 is `+X -Z`, half a tile
-    // over a 32-unit budget. The record holds at the next op until the walk
-    // kernel lands the leg and clears the talker's `0x400`.
+    // over a 32-unit budget. A text lead is a plain byte and does not wait
+    // for the talker's `0x400`, so the walk goes on under the box.
     let mut world = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
@@ -696,15 +726,12 @@ fn a_talkers_own_compass_walk_moves_the_talker_before_the_box() {
     world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
     world.step_inline_dialogue(false, false, false);
     assert!(world.npcs.glide_legs.contains_key(&4), "the leg is armed");
-    let id = world.dialog.inline.as_ref().unwrap();
-    assert!(id.page_bytes().is_empty(), "the box held for the walk");
+    assert_eq!(run_inline_until_box(&mut world), b"X");
+    assert!(world.npcs.glide_legs.contains_key(&4), "still walking");
     for _ in 0..40 {
         world.tick_field_npc_motions();
     }
     assert_eq!(world.npcs.positions.get(&4), Some(&(3200, 3072)));
-    assert_eq!(run_inline_until_box(&mut world), b"X");
-    let id = world.dialog.inline.as_ref().unwrap();
-    assert_eq!(id.ctx.flags & 0x400, 0, "the landed walk cleared the bit");
 }
 
 #[test]

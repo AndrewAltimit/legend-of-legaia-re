@@ -316,8 +316,8 @@ tile. A parked placement's walk lands it one step short of the park seat:
 retail holds it at `(16320, 16256)`. A talk record's own walk is the same
 leg on the talker, and there the record does wait: the dispatcher refuses an
 extended op whose resolved target carries `0x400` (`0x801DE90C..0x801DE944`;
-a plain op branches past the test at `0x801DE88C`), and the port holds the
-whole talk until the kernel lands it (`tunnelc`
+a plain op branches past the test at `0x801DE88C`), so the talk's next op on
+itself waits until the kernel lands it (`tunnelc`
 `P1[4]`, Xain's `41 07 C1`). Port: the pre-run and the talk runner arm the
 leg (`FieldNpcState::glide_legs`), `World::tick_field_npc_face_legs` steps
 it, and a talk holds on `InlineDialogue::own_turn` until it lands.

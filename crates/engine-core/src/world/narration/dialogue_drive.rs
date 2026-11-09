@@ -232,22 +232,59 @@ impl World {
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
             budget -= 1;
-            // The talker's own turn in flight (see `InlineDialogue::own_turn`):
-            // the dispatcher prologue refuses every op of a context carrying
-            // `0x400`, so the record holds at its PC - a text lead included -
-            // until the walk kernel's terminal frame clears the bit.
-            // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (0x80038004)
-            if let Some(slot) = id.own_turn {
-                if host.world.npcs.face_legs.contains_key(&slot)
-                    || host.world.npcs.glide_legs.contains_key(&slot)
-                    || host.world.npcs.rotate_legs.contains_key(&slot)
-                {
-                    break;
-                }
-                id.own_turn = None;
-                id.ctx.flags &= !0x400;
-            }
             let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
+            // The talker's own turn in flight (see `InlineDialogue::own_turn`).
+            // The dispatcher's halted-target test is on the extended-op path
+            // only (`0x801DE88C` branches a plain op past it), so plain ops and
+            // text leads run; an op aimed at the talker by its own id waits, as
+            // does another halt-acquire on it. A `4A` here counts on the same
+            // `+0x54` as the leg, so the turn runs twice as fast, and the
+            // terminal frame zeroes the wait (`0x80037FFC`). A retail capture
+            // of `town01` `P1[46]+0x69` (`4C 85 1C 00 F8`, `4A 20 00`) lands
+            // the turn at +12 vsyncs and opens the box at +44.
+            // REF: FUN_801DE840 (0x801DE88C, 0x801DE90C..0x801DE944), FUN_8003774C
+            if let Some(slot) = id.own_turn {
+                let npcs = &mut host.world.npcs;
+                if npcs.face_legs.contains_key(&slot)
+                    || npcs.glide_legs.contains_key(&slot)
+                    || npcs.rotate_legs.contains_key(&slot)
+                {
+                    let on_self = b & 0x80 != 0
+                        && vm::field::peek_extended(&id.bytecode, id.pc).is_some_and(|t| {
+                            let view = host.world.channel_view();
+                            legaia_engine_field::field_channels::resolve_target(view, t)
+                                .is_some_and(|ci| {
+                                    !view[ci].object_bind && view[ci].placement_index as u8 == slot
+                                })
+                        });
+                    let re_acquire = matches!(b, 0x37 | 0x38 | 0x41 | 0x43 | 0x47)
+                        || legaia_engine_field::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                            &id.bytecode,
+                            id.pc,
+                        )
+                        .is_some();
+                    if on_self || re_acquire {
+                        break;
+                    }
+                    if b == 0x4A {
+                        let delta = host.world.clock.script_frame_delta();
+                        let npcs = &mut host.world.npcs;
+                        if let Some(ramp) = npcs.face_legs.get_mut(&slot) {
+                            ramp.accum = ramp.accum.saturating_add(delta);
+                        }
+                        if let Some(leg) = npcs.rotate_legs.get_mut(&slot) {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                        if let Some(leg) = npcs.glide_legs.get_mut(&slot) {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                    }
+                } else {
+                    id.own_turn = None;
+                    id.ctx.flags &= !0x400;
+                    id.ctx.wait_accum = 0;
+                }
+            }
             // Retail SM transition test: a byte with `& 0x7F < 0x20` is a text
             // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
             if b & 0x7F < 0x20 {

@@ -124,9 +124,8 @@ pub struct InlineDialogue {
     /// refuses an extended op whose resolved target carries `0x400` (the
     /// scene word `*(_DAT_801C6EA4) + 8` is `0` in a talk and the talker is
     /// not `0xFB`), which holds the record's ops on itself until the leg's
-    /// terminal frame clears the bit (`FUN_8003774C`, `0x80038004`). The port
-    /// holds every op instead; no retail talk has been measured running a
-    /// plain op under its own turn.
+    /// terminal frame clears the bit (`FUN_8003774C`, `0x80038004`). Plain
+    /// ops and text leads run under the turn.
     pub own_turn: Option<u8>,
     /// This pass has spawned a record (an own-context op `0x44`) or armed a
     /// mode-24 door warp (`3E` with `op0 >= 100`). A raw
