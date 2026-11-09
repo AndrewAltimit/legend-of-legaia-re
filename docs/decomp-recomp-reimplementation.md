@@ -4,13 +4,13 @@ Legend of Legaia has been ported twice over the same months by two unrelated eff
 
 The [site page](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/decomp-recomp-reimplementation.html) carries the same argument with diagrams.
 
-## The route that drops out of the conversation
+## Three established routes
 
-Today's popular conversation about bringing old console games forward is usually staged as decompilation versus static recompilation. [Matthew Stanley](https://1379.tech/recomp-vs-decomp-wrong-question/), whose PSXRecomp is the recompiler here, opens one essay with "Retro preservation has settled into a false dichotomy: Decomp or Recomp", and argues the two are complementary. Neither that essay nor [his follow-up](https://1379.tech/decompilation-vs-recompilation-wrong-questions/) discusses a third route that builds a new engine.
+There are three established ways to carry a console game's logic onto new machines, and each makes something different. [Matthew Stanley](https://1379.tech/recomp-vs-decomp-wrong-question/), whose PSXRecomp is the recompiler here, writes of decompilation and recompilation that "They produce different things — infrastructure and understanding". Reimplementation produces a third thing: an engine of its own, running the original's data.
 
-Explainers vary. [One](https://www.indiekings.com/2026/11/decompilation-vs-static-recompilation.html) leaves it out, [one](https://fangamesdb.com/guides/recomp-vs-decomp.html) files OpenMW and OpenRCT2 under "source port", and [one](https://www.jamesfmackenzie.com/2026/10/03/disassembly-vs-decomp-vs-recomp-vs-port/) names it among related terms. These are examples, not a survey.
+Reimplementation has a long record: [OpenMW](https://openmw.org/faq/), [OpenLoco](https://github.com/OpenLoco/OpenLoco), [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2), ScummVM and, on PlayStation, [Severed Chains](https://github.com/Legend-of-Dragoon-Modding/Severed-Chains). Legaia now lets the route be compared directly with a recompilation of the same game.
 
-The route is old and established: [OpenMW](https://openmw.org/faq/), [OpenLoco](https://github.com/OpenLoco/OpenLoco), a [Wikipedia article](https://en.wikipedia.org/wiki/Game_engine_recreation) of its own, and on PlayStation [Severed Chains](https://github.com/Legend-of-Dragoon-Modding/Severed-Chains). The gap is specific to the current console-recomp wave, where it tends to appear as a footnote or under another name.
+A port is a result, not a method: a PC port can be built on a decompilation, a recompilation or a new engine. Engine recreations are often divided into [top-down and bottom-up](https://en.wikipedia.org/wiki/Game_engine_recreation); this project is bottom-up in what it reads and new in what it writes.
 
 ## What actually runs
 

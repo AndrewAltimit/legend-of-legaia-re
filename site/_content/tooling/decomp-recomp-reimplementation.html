@@ -4,19 +4,18 @@
   <p class="lede">Legend of Legaia has been ported twice over the same months, by two separate efforts taking different routes: a static recompilation and this from-scratch engine. That makes it a rare side-by-side. This page sets out what each route gets up front, what it has to earn, and why building a new engine is a far more practical option than it used to be.</p>
 </header>
 
-<section class="doc-section" id="missing" data-doc="the-route-that-drops-out-of-the-conversation">
-  <h2>The route that drops out of the conversation</h2>
-  <p>Today's popular conversation about bringing old console games forward is usually staged as decompilation versus static recompilation. <a href="https://1379.tech/recomp-vs-decomp-wrong-question/" target="_blank" rel="noopener">Matthew Stanley</a>, whose PSXRecomp is the recompiler in this case study, opens one essay with: "Retro preservation has settled into a false dichotomy: Decomp or Recomp." His answer is that the two are complementary. Neither that essay nor <a href="https://1379.tech/decompilation-vs-recompilation-wrong-questions/" target="_blank" rel="noopener">his follow-up</a> discusses a third route that builds a new engine. An explainer titled <a href="https://www.indiekings.com/2026/11/decompilation-vs-static-recompilation.html" target="_blank" rel="noopener">"The Two Pillars of Modern Game Preservation"</a> does not either.</p>
-  <figure class="cs-spectrum" aria-label="Three ways recent explainers treat reimplementation: left out, filed under source port, or named as its own thing.">
-    <div><strong>Left out</strong><span>Two methods, and no third.</span><a href="https://www.indiekings.com/2026/11/decompilation-vs-static-recompilation.html" target="_blank" rel="noopener">"The Two Pillars"</a></div>
-    <div><strong>Filed under "source port"</strong><span>OpenMW and OpenRCT2 beside dhewm3, whatever their origin.</span><a href="https://fangamesdb.com/guides/recomp-vs-decomp.html" target="_blank" rel="noopener">FanGamesDB</a></div>
-    <div><strong>Named, on the side</strong><span>A fresh engine over the original data, among the words people confuse.</span><a href="https://www.jamesfmackenzie.com/2026/10/03/disassembly-vs-decomp-vs-recomp-vs-port/" target="_blank" rel="noopener">James Mackenzie</a></div>
-    <figcaption>Examples, not a survey. Nobody has counted this properly, and the page does not claim a prevalence.</figcaption>
+<section class="doc-section" id="routes" data-doc="three-established-routes">
+  <h2>Three established routes</h2>
+  <p>There are three established ways to carry a console game's logic onto new machines, and each makes something different. Matthew Stanley, whose PSXRecomp is the recompiler in this case study, <a href="https://1379.tech/recomp-vs-decomp-wrong-question/" target="_blank" rel="noopener">writes</a> of decompilation and recompilation that "They produce different things &mdash; infrastructure and understanding". Reimplementation produces a third thing: an engine of its own, running the original's data.</p>
+  <figure class="cs-spectrum" aria-label="The three routes and what each produces. Decompilation produces source that rebuilds the game. Static recompilation produces the original game running natively. Reimplementation produces a new engine that runs the original's data.">
+    <div><strong>Decompilation</strong><span>Source code that rebuilds the game, and an understanding of what it does.</span><em>The Super Mario 64 and Ocarina of Time decompilations</em></div>
+    <div><strong>Static recompilation</strong><span>The original game running natively, over a model of its hardware.</span><em><a href="https://github.com/N64Recomp/N64Recomp" target="_blank" rel="noopener">N64Recomp</a>, <a href="https://github.com/hedge-dev/XenonRecomp" target="_blank" rel="noopener">XenonRecomp</a>, PSXRecomp</em></div>
+    <div><strong>Reimplementation</strong><span>A new engine that loads the original's data and behaves like the original.</span><em><a href="https://openmw.org/faq/" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/OpenLoco/OpenLoco" target="_blank" rel="noopener">OpenLoco</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, ScummVM</em></div>
   </figure>
-  <p>The route itself is old and well established. <a href="https://openmw.org/faq/" target="_blank" rel="noopener">OpenMW</a> is "an entirely different game engine that does not use the original executable file in any way". <a href="https://github.com/OpenLoco/OpenLoco" target="_blank" rel="noopener">OpenLoco</a> calls itself a re-implementation and finished reimplementing the game in C++ in December 2025. Wikipedia has a <a href="https://en.wikipedia.org/wiki/Game_engine_recreation" target="_blank" rel="noopener">whole article</a> on it. The closest PlayStation peer is <a href="https://github.com/Legend-of-Dragoon-Modding/Severed-Chains" target="_blank" rel="noopener">Severed Chains</a>, The Legend of Dragoon "disassembled and rewritten in Java". So the gap is specific: reimplementation is missing from the current console-recomp wave, where it tends to appear as a footnote or under another name.</p>
+  <p>Reimplementation has a long record. OpenMW is "an entirely different game engine that does not use the original executable file in any way". OpenLoco finished reimplementing its game in C++ in December 2025. On PlayStation, <a href="https://github.com/Legend-of-Dragoon-Modding/Severed-Chains" target="_blank" rel="noopener">Severed Chains</a> is The Legend of Dragoon "disassembled and rewritten in Java". Legaia now lets the route be compared directly with a recompilation of the same game.</p>
   <div class="callout">
-    <div class="callout-title">Words that slide</div>
-    <p><strong>"Reimplementation"</strong> also describes the part of a recomp's runtime that replaces libraries or hardware, which is a different thing. <strong>"Decomp"</strong> gets used to mean "PC port". And the line is genuinely blurry: Wikipedia splits engine recreations into <em>top-down</em> (built from specifications, then tuned) and <em>bottom-up</em> (rebuilt from the disassembly). This project is bottom-up in what it reads and new in what it writes.</p>
+    <div class="callout-title">Terms on this page</div>
+    <p><strong>A port is a result, not a method.</strong> A PC port can be built on a decompilation, a recompilation or a new engine. <strong>"Reimplementation"</strong> here means the whole game's engine; a recomp's runtime also reimplements libraries and hardware, which is a narrower thing. Engine recreations are often divided into <a href="https://en.wikipedia.org/wiki/Game_engine_recreation" target="_blank" rel="noopener"><em>top-down</em> and <em>bottom-up</em></a>: built from specifications and then tuned, or rebuilt from the disassembly. This project is bottom-up in what it reads and new in what it writes.</p>
   </div>
 </section>
 
@@ -181,7 +180,7 @@
       <h3>A bug no local test could see</h3>
       <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>The GTE model passed its own sweep, because the sweep agreed with the model. The screen-coordinate FIFO saturates at signed 11 bits, and nothing here knew that.</p></div>
       <div class="cs-side cs-recomp"><span>Recomp</span><p>Running retail's code, it produced real input and output pairs from the GTE, which exposed the difference at once. Its value here was as <a href="recomp-differential.html">a second, independent execution</a>.</p></div>
-      <p class="cs-moral">The routes compete for attention more than they compete in practice. Each is the other's best instrument.</p>
+      <p class="cs-moral">Each route makes the others better. Here, each has been the other's best instrument.</p>
     </article>
   </div>
 </section>
@@ -289,7 +288,7 @@
   .cs-spectrum > div { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); min-width: 0; }
   .cs-spectrum strong { color: var(--text-bright); }
   .cs-spectrum span { color: var(--text-muted); font-size: 0.88rem; line-height: 1.45; flex: 1; }
-  .cs-spectrum a { font-size: 0.82rem; }
+  .cs-spectrum em { color: var(--text-dim); font-style: normal; font-size: 0.82rem; line-height: 1.45; }
   .cs-spectrum figcaption, .cs-errs figcaption { grid-column: 1 / -1; color: var(--text-dim); font-size: 0.82rem; }
 
   figure.diagram .cs-dot circle { fill: var(--bg-raised); stroke: var(--dg-accent); stroke-width: 1.5; }
