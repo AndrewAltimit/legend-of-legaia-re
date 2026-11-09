@@ -306,13 +306,26 @@
   }
 
   var EMPTY_CARD = null;
+  var TOPBAR_ROOM = 72; // the top bar, and a little air under a pinned card
+  function scrollByNow(dy) { if (dy) window.scrollBy({ top: dy, behavior: 'instant' }); }
+
+  /* A pinned card that grew can land on the crate just clicked. */
+  function uncoverChip(id) {
+    var cover = $('cm-card').getBoundingClientRect().bottom + 8 - chips[id].getBoundingClientRect().top;
+    if (cover > 0) scrollByNow(-cover);
+  }
+
   function renderCard() {
     var card = $('cm-card');
     if (EMPTY_CARD === null) EMPTY_CARD = card.innerHTML;
+    var stageTop = $('cm-stage').getBoundingClientRect().top;
     if (walkTrace) card.innerHTML = walkCard();
     else if (selected) card.innerHTML = cardFor(selected);
     else card.innerHTML = EMPTY_CARD;
-    card.scrollTop = 0;
+    if (isNarrow()) return;
+    card.classList.toggle('is-unpinned', card.offsetHeight > window.innerHeight - TOPBAR_ROOM);
+    // The card grows and shrinks with its crate; hold the map where it was.
+    scrollByNow($('cm-stage').getBoundingClientRect().top - stageTop);
   }
 
   function onCardClick(e) {
@@ -339,8 +352,9 @@
     render();
     renderCard();
     placeCard();
-    if (selected && fromChip && isNarrow()) {
-      $('cm-card').scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'nearest' });
+    if (selected && fromChip) {
+      if (isNarrow()) $('cm-card').scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'nearest' });
+      else uncoverChip(selected);
     }
   }
 

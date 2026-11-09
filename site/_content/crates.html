@@ -104,14 +104,14 @@
 .cm-card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
   padding: 0.8rem 0.9rem; min-width: 0; position: sticky; top: var(--topbar-h, 52px); z-index: 5;
-  /* One height for every crate: a selection never moves the map under the pointer. */
-  height: 12rem; overflow-y: auto;
 }
+/* A card taller than the window could never show its end while pinned. */
+.cm-card.is-unpinned { position: static; }
 .cm-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: 0.5rem 1.5rem; }
 .cm-cols > div { min-width: 0; }
 .cm-cols > div > .cm-h:first-child,
 .cm-cols > div > details:first-child > .cm-h { margin-top: 0; }
-@media (max-width: 1100px) { .cm-card { position: static; height: auto; } #cm-bands > .cm-card { margin-bottom: 0.5rem; } .cm-tracks-key { display: none; } }
+@media (max-width: 1100px) { .cm-card { position: static; } #cm-bands > .cm-card { margin-bottom: 0.5rem; } .cm-tracks-key { display: none; } }
 .cm-card .cm-name { margin: 0; font-weight: 600; font-family: var(--font-mono); font-size: 1.02rem; color: var(--text-bright); overflow-wrap: anywhere; }
 .cm-card .cm-pkg { font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-dim); }
 .cm-card .cm-scope { font-size: 0.84rem; color: var(--text); margin: 0.5rem 0; line-height: 1.5; }
