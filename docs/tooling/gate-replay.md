@@ -156,11 +156,11 @@ vsyncs later, on its two-vsync pass.
 | `0x78`, `0x5A`, `0x6E` | 18, 18, 18 | 20, 20, 20 |
 | `0x3C` window, `0x64` target confirm | 18, 18 | 20 to 22, 20 |
 | `0x50` arts entry | 18 | 20 |
-| `0xFE` armed, to the action start | 19 | 20 |
+| `0xFE` armed, to the action start | 18 | 20 |
 
 The arts entry takes its typed presses after that hold, and the replay spaces them by the
-repeat rule; the engine presses in consecutive ticks, which retail's two-vsync pass would
-drop, so the arrows are the replay's own timing.
+repeat rule: replayed on the engine's clock the arrows did not all land on retail, so
+their timing is the replay's own.
 
 A round's actions run the same states on both sides with the same dwell, except at the
 close of each: `0x51` holds 62 ticks on the engine against 76 vsyncs on retail, and retail
