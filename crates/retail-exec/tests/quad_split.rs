@@ -177,7 +177,7 @@ fn the_bank3_quad_split_matches_subdivide_quad() {
             .wr32(prim + 0x14, uvw(uv[1]) | u32::from(tpage) << 16);
         cpu.mem.wr32(prim + 0x18, uvw(uv[2]) | uvw(uv[3]) << 16);
         cpu.mem.wr32(prim + 0x1C, 8 << 16);
-        cpu.mem.wr32(prim + 0x20, 2 * 8 | (3 * 8) << 16);
+        cpu.mem.wr32(prim + 0x20, (2 * 8) | ((3 * 8) << 16));
         cpu.mem.wr32(prim + 0x24, 0);
         cpu.mem.wr32(prim + 0x28, 0);
         cpu.mem.wr32(OBJECT, VERTS);
