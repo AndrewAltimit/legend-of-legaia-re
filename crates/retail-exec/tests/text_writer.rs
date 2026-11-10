@@ -384,3 +384,91 @@ fn the_two_string_wrappers_draw_and_count_as_retail_does() {
     }
     assert!(multi > 1500, "{multi}");
 }
+
+const SEPARATOR: u32 = 0x8003_C1F8;
+
+/// The separator glyph `FUN_8003C1F8(glyph, x, y)`, run live: one 8x12
+/// `SPRT` at the pen off the menu-glyph page, its CLUT the staged ink's.
+/// Held to the rect the atlas build cuts each separator cell from
+/// (`separator_glyph_page_rect`) and to the seat and size the painters'
+/// separator draw gives a cell of that id.
+#[test]
+fn the_separator_glyph_is_the_cell_the_atlas_cuts() {
+    differential!(scus(SEPARATOR));
+    use legaia_engine_menus::save_menu_atlas::{SEPARATOR_GLYPHS, separator_glyph_page_rect};
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // A font carrying a cell for every separator under every ink, as the
+    // menu atlas build hands it over.
+    let mut cells = Vec::new();
+    for staging in 0..10u8 {
+        for g in 0..SEPARATOR_GLYPHS as u16 {
+            cells.push(legaia_font::SpriteCellSrc {
+                id: legaia_font::sprite_cell_ids::ink_separator(staging, g),
+                w: 8,
+                h: 12,
+                rgba: vec![0xFF; 8 * 12 * 4],
+            });
+        }
+    }
+    let font = rig.font.clone().with_sprite_cells(&cells);
+    let mut rng = Rng(0x5345_5041);
+    for round in 0..6_000 {
+        let glyph = rng.below(SEPARATOR_GLYPHS);
+        let (x, y) = (rng.below(340) as i32 - 10, rng.below(250) as i32 - 5);
+        let ink = rng.below(10);
+        rig.cpu.mem.wr32(INK, ink);
+        rig.reset();
+        assert_eq!(
+            rig.cpu.call(SEPARATOR, &[glyph, x as u32, y as u32]),
+            Stop::Returned
+        );
+        let what = format!("round {round}: glyph {glyph} ink {ink} at ({x}, {y})");
+        let prims = rig.prims.borrow().clone();
+        assert_eq!(prims.len(), 2, "{what}: the sprite and its draw mode");
+        assert!(prims.iter().all(|p| p.0 == OT + 4), "{what}: slot one");
+        let p = prims[0].1;
+        assert_eq!(
+            rig.cpu.mem.rd32(p + 4),
+            0x6480_8080,
+            "{what}: a neutral SPRT"
+        );
+        let rect = (
+            u32::from(rig.cpu.mem.rd8(p + 0xC)),
+            u32::from(rig.cpu.mem.rd8(p + 0xD)),
+            u32::from(rig.cpu.mem.rd16(p + 0x10)),
+            u32::from(rig.cpu.mem.rd16(p + 0x12)),
+        );
+        assert_eq!(
+            rect,
+            separator_glyph_page_rect(glyph),
+            "{what}: the page rect"
+        );
+        assert_eq!(
+            u32::from(rig.cpu.mem.rd16(p + 0xE)),
+            0x7F86 + ink,
+            "{what}: the ink's CLUT"
+        );
+        // The painters' separator draw: the cell of this id and ink, at
+        // the pen, in the cell's own size.
+        let (cell, _) = legaia_engine_ui::menu_numeral_cell(
+            &font,
+            true,
+            glyph as u16,
+            legaia_engine_ui::menu_ink_color(ink as u8),
+        )
+        .expect("a separator cell");
+        assert_eq!(
+            (
+                i32::from(rig.cpu.mem.rd16(p + 8) as i16),
+                i32::from(rig.cpu.mem.rd16(p + 0xA) as i16),
+                rect.2,
+                rect.3
+            ),
+            (x, y, cell.w, cell.h),
+            "{what}: seat and size"
+        );
+    }
+}

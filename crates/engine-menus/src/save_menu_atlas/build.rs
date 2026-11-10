@@ -447,7 +447,7 @@ pub fn menu_font_cells(
                     id: ids::SEPARATOR + g as u16,
                     w: 8,
                     h: 12,
-                    rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
+                    rgba: cut(&rgba, w, separator_glyph_page_rect(g)),
                 });
             }
         }
@@ -472,7 +472,7 @@ pub fn menu_font_cells(
                     id: ids::ink_separator(staging, g as u16),
                     w: 8,
                     h: 12,
-                    rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
+                    rgba: cut(&rgba, w, separator_glyph_page_rect(g)),
                 });
             }
             // The command arrows `FUN_8003C310` draws: `uv = (dir * 12 +
@@ -519,4 +519,13 @@ pub fn menu_font_cells(
         push(ids::ITEM_SCOPE_ALL, 1, (0xF4, 0x80, 12, 12));
     }
     cells
+}
+
+/// Where separator glyph `g` sits on the menu-glyph page, `(u, v, w, h)`:
+/// the rect `FUN_8003C1F8` stamps into its sprite (`u = g * 8 + 0x50`,
+/// `v = 0xD0`, `8 x 12`; `0x8003C204..0x8003C23C`).
+///
+/// PORT: FUN_8003C1F8 (the cell's page rect)
+pub const fn separator_glyph_page_rect(g: u32) -> (u32, u32, u32, u32) {
+    (0x50 + g * 8, 0xD0, 8, 12)
 }
