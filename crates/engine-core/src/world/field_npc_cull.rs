@@ -79,9 +79,28 @@ impl World {
     /// carries its record's `+0x1E` byte there (`FUN_80020F88`,
     /// `0x80020FC0..0x80020FC8`).
     pub fn field_actor_culled_at(&self, x: i16, z: i16, radius: i16) -> bool {
+        let Some(window) = self.npcs.cull_view.as_ref().map(|v| v.window) else {
+            return false;
+        };
+        self.field_actor_culled_in_window(x, z, radius, window)
+    }
+
+    /// [`Self::field_actor_culled_at`] against `window` in place of the
+    /// published view's own: the cull a host draws by under a pulled-back
+    /// distance preset, whose crop walks a widened window
+    /// (`engine-scene::field_view_window::widened_window`). The focus and
+    /// the region box stay the published view's.
+    pub fn field_actor_culled_in_window(
+        &self,
+        x: i16,
+        z: i16,
+        radius: i16,
+        window: [i8; 4],
+    ) -> bool {
         let Some(view) = self.npcs.cull_view.as_ref() else {
             return false;
         };
+        let view = &FieldCullView { window, ..*view };
         let fade = self
             .world_map
             .ctrl

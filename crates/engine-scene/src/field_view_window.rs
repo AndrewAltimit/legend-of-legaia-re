@@ -64,6 +64,11 @@ pub struct ViewCells {
     pub span: [i32; 2],
     /// The walk-region box `[x_lo, z_lo, x_hi, z_hi]` the clamp read.
     pub region: [u8; 4],
+    /// The window as it stood on entry, before the clamp: the bytes the
+    /// actor cull `FUN_801D79E8` tests, which runs outside this pass and so
+    /// never sees [`Self::window`]. Retail's stored window at retail
+    /// framing; [`widened_window`]'s under a wider distance preset.
+    pub window_in: [i8; 4],
 }
 
 /// `ceil(-s / 128)` exactly as `0x801F726C..0x801F72D4` computes it:
@@ -118,7 +123,47 @@ pub fn view_cells(view: &FieldCullView) -> ViewCells {
         sub,
         span,
         region: view.attr_box,
+        window_in: view.window,
     }
+}
+
+/// Retail's visible tile window grown for a follow camera pulled back by
+/// `scale` (the port's `Far` / `Farther` distance presets, `scale > 1`).
+///
+/// The window is authored for retail's frustum. A preset moves the eye back
+/// along its own sight line and leaves the angles alone, so the ground the
+/// frame covers grows about the focus by the same factor; each signed
+/// offset is scaled away from the focus, rounded outward, and given one
+/// tile of slack for the parts of the pose the preset does not scale (the
+/// eye's lateral and vertical offsets). The port's own rule, not a retail
+/// routine: it keeps what retail's window is for - scenery behind the lens
+/// and other regions' sky shells stay undrawn - under a view retail never
+/// frames.
+pub fn widened_window(window: [i8; 4], scale: f32) -> [i8; 4] {
+    if scale.is_nan() || scale <= 1.0 {
+        return window;
+    }
+    window.map(|v| {
+        let w = f32::from(v) * scale;
+        let grown = if v < 0 {
+            w.floor() - 1.0
+        } else {
+            w.ceil() + 1.0
+        };
+        grown.clamp(-127.0, 127.0) as i8
+    })
+}
+
+/// Whether a camera differs from retail's framing by its distance preset
+/// alone, and by how much: `Some(scale)` under `Far` / `Farther` with the
+/// drag / tilt / zoom knobs at identity. Those views keep retail's angles,
+/// so the visible-tile crop still applies, widened ([`widened_window`]).
+pub fn preset_only_scale(camera: &Camera) -> Option<f32> {
+    (camera.distance != CameraDistance::Retail
+        && camera.manual_orbit == 0.0
+        && camera.manual_tilt == 0.0
+        && camera.manual_zoom == 1.0)
+        .then(|| camera.distance.scale())
 }
 
 impl ViewCells {
@@ -426,6 +471,45 @@ mod tests {
         v.focus_stored[0] -= 128;
         assert_ne!(view_cells(&v).stamp(), a.stamp());
         assert_ne!(a.stamp(), 0);
+    }
+
+    /// A pulled-back preset grows each offset away from the focus and never
+    /// shrinks one; retail's scale is the identity.
+    #[test]
+    fn widened_window_grows_outward_and_is_identity_at_retail() {
+        let w = [-8, -6, 6, 10];
+        assert_eq!(widened_window(w, 1.0), w);
+        assert_eq!(widened_window(w, 1.35), [-12, -10, 10, 15]);
+        let far = widened_window(w, 1.8);
+        assert!(far[0] < -12 && far[1] < -10 && far[2] > 10 && far[3] > 15);
+        assert_eq!(widened_window([-100, 0, 100, 0], 1.8), [-127, 1, 127, 1]);
+        let mut v = town01();
+        let retail = view_cells(&v);
+        assert_eq!(retail.window_in, v.window);
+        v.window = widened_window(v.window, 1.35);
+        let wide = view_cells(&v);
+        // Every cell the retail walk reaches, the widened walk reaches.
+        for col in 0..128 {
+            for row in 0..128 {
+                if retail.decoration_visible(col, row, 0) {
+                    assert!(wide.decoration_visible(col, row, 0), "({col}, {row})");
+                }
+                if retail.ground_visible(col, row) {
+                    assert!(wide.ground_visible(col, row), "ground ({col}, {row})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn preset_only_scale_needs_identity_knobs() {
+        let mut cam = Camera::new();
+        cam.distance = CameraDistance::Retail;
+        assert_eq!(preset_only_scale(&cam), None);
+        cam.distance = CameraDistance::Far;
+        assert_eq!(preset_only_scale(&cam), Some(CameraDistance::Far.scale()));
+        cam.manual_orbit = 0.3;
+        assert_eq!(preset_only_scale(&cam), None);
     }
 
     #[test]

@@ -679,10 +679,11 @@ impl PlayWindowApp {
                 // bloom stand-in), scaled by the mood's glow.
                 let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
                     &self.session.host.world,
-                    legaia_engine_world_views::field_view_window::retail_framing(
+                    legaia_engine_world_views::field_view_window::crop_framing(
                         &self.session.host.world,
                         &self.session.camera,
-                    ) && !self.field_debug_camera,
+                        self.field_debug_camera,
+                    ),
                 );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
                     &legaia_engine_screens::field_frame::field_glow_lights(
