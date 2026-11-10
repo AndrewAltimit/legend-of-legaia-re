@@ -105,6 +105,7 @@ mod item_probe;
 mod kiss_of_death;
 mod ledge_hop;
 mod level_up;
+mod lzs_decode;
 mod magic_level;
 mod man_record;
 mod map_display;
