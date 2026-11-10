@@ -201,3 +201,97 @@ fn the_toc_load_installs_the_ports_toc() {
     }
     assert!(archive.toc.len() > 0x400);
 }
+
+/// The CDNAME name-table loader `FUN_8001D8FC`.
+const CDNAME_LOAD: u32 = 0x8001_D8FC;
+
+#[test]
+fn the_cdname_table_is_retails() {
+    differential!(scus(CDNAME_LOAD));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use psx_retail_exec::A1;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const TABLE: u32 = 0x8008_8758;
+    const COUNT: u32 = 0x8007_B806;
+    const TABLE_LEN: usize = 0x3000;
+    let text: Rc<RefCell<Vec<u8>>> = Rc::default();
+    // Both loaders (the host path and the disc one) land the file in `a1`.
+    for va in [0x8003_E6BCu32, 0x8003_D3C4] {
+        let text = text.clone();
+        cpu.hook(va, move |r, m| {
+            // The digit fold reads four bytes past the last name whatever
+            // ends the file; what follows the text is zero, as the port
+            // reads it.
+            let mut t = text.borrow().clone();
+            t.extend([0; 16]);
+            m.load(r.r[A1], &t);
+            r.r[V0] = t.len() as u32 - 16;
+        });
+    }
+    let shipped = disc.read_named_file("CDNAME.TXT").expect("CDNAME.TXT");
+    let mut rng = Rng(0x4344_4E4D);
+    let mut long_names = 0;
+    for round in 0..600 {
+        let mut t = if round == 0 {
+            shipped.clone()
+        } else {
+            let mut t = Vec::new();
+            for _ in 0..1 + rng.below(40) {
+                t.extend_from_slice(b"#define ");
+                let n = rng.below(20);
+                long_names += i32::from(n >= 12);
+                t.extend(
+                    (0..n)
+                        .map(|_| b"abcdefghijklmnopqrstuvwxyz_0123456789"[rng.below(37) as usize]),
+                );
+                t.push(b' ');
+                for _ in 0..1 + rng.below(6) {
+                    t.push(if rng.below(5) == 0 {
+                        b'\t'
+                    } else {
+                        b'0' + rng.below(10) as u8
+                    });
+                }
+                if rng.below(3) == 0 {
+                    t.extend_from_slice(b" // note");
+                }
+                t.extend_from_slice(if rng.below(2) == 0 { b"\r\n" } else { b"\n" });
+            }
+            t
+        };
+        assert!(t.len() < 0x1000, "round {round}: text {}", t.len());
+        // What follows the last line: anything but another `#`.
+        t.push([0u8, b'\n', b'E'][rng.below(3) as usize]);
+        if round == 0 {
+            t.push(0);
+        }
+        *text.borrow_mut() = t.clone();
+        cpu.mem.load(TABLE, &vec![0u8; TABLE_LEN]);
+        cpu.mem.wr16(0x8007_B8C2, (round % 2) as u16);
+        assert_eq!(cpu.call(CDNAME_LOAD, &[]), Stop::Returned, "round {round}");
+        assert_eq!(cpu.regs.r[V0], TABLE);
+        let (table, indices) = legaia_prot::cdname::retail_name_table(&String::from_utf8_lossy(&t));
+        let mut want = table.clone();
+        want.resize(TABLE_LEN, 0);
+        let got = cpu.mem.read(TABLE, TABLE_LEN);
+        if got != want {
+            let at = crate::common::diff_offsets(&got, &want);
+            let rec = (0..TABLE_LEN).find(|&i| got[i] != want[i]).unwrap_or(0) / 16;
+            let line = t
+                .split(|&c| c == b'\n')
+                .nth(rec)
+                .map(|l| format!("{:?}", String::from_utf8_lossy(l)));
+            panic!("round {round}: record {rec} line {line:?}: {at:?}");
+        }
+        assert_eq!(
+            usize::from(cpu.mem.rd16(COUNT)),
+            indices.len(),
+            "round {round}"
+        );
+    }
+    assert!(long_names > 1_000, "{long_names}");
+}
