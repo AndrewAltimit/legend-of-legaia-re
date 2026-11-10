@@ -65,7 +65,7 @@
 //!    idle base), player `[+0x5C] = 2 + leader * 7` (the leader's idle clip
 //!    in the locomotion bank), player `[+0x10] |= 0x1000000` (the party-bank
 //!    bit that clip binds through), pad latch re-set ([`enter_context`]).
-//! 4. `submode[+0x3E] = 1`, `actor[+0x1A] = 1`, `_DAT_8007B374 = 0`, the
+//! 4. `submode[+0x3E] = 1`, `actor[+0x1A] = 1`, `_DAT_8007BB74 = 0`, the
 //!    current-member byte `_DAT_8007B469` re-resolved against the roster
 //!    ([`resolve_current_member`]).
 //! 5. The handler install above ([`installer_entry`]), the submode state

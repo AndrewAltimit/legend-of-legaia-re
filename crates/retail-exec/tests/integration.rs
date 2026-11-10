@@ -338,6 +338,7 @@ mod str_player;
 mod streak_ribbon;
 mod stream_slot;
 mod strv2_decode;
+mod subsystem_enter;
 mod summon_cameras;
 mod summon_roll_sites;
 mod super_learn;
