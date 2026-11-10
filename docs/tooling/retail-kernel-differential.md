@@ -1036,3 +1036,8 @@ grew no segment and drew four `rand()` short. Its single-quad sibling `FUN_801E1
 (`afterimage_quad`), the colour wash `FUN_801F2410` (`colour_wash`), Swordie's split panels and slash
 streak (`swordie`) and Deadly Rain `FUN_801F7B88` (`deadly_rain`, frame after frame on the real GTE:
 records, splashes, streaks and their ordering-table entries) match.
+
+The battle-stage stream walker `FUN_8001FE70` (`container_walkers`) copies its
+lead chunk whole and type-tests only the headers after it, so a lead chunk of
+type `0x02` does not end the walk, where the port's type-`0x02`-terminated walk
+stopped on it.

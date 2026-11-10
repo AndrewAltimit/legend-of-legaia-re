@@ -64,6 +64,8 @@ Each tail chunk header packs `(type << 24) | (size & 0x00FFFFFF)`. The walker (`
 | any other | Skip (advance to the next chunk). |
 | size = 0 | Stop the walk (the canonical terminator). |
 
+The table applies to the tail only. The walker copies chunk0 whole into its own buffer before the loop and type-tests only the headers after it (`0x8001FEFC..0x8001FF18`), so chunk0's type byte never stops or dispatches anything (`StreamTerminator::TypeTwo` in `legaia_container_formats`; the retail kernel differential `container_walkers` runs the walker against it).
+
 The type bytes mean something different from the standard dispatcher: in `FUN_8001F05C`, `0x01` is `TIM_LIST` (a `[count + offsets + TIMs]` pack); here it is one bare TIM. Calling `FUN_8002541C` on one of these entries mis-dispatches.
 
 <a id="one-entry-one-stream-the-falsified-two-list-shape"></a>
