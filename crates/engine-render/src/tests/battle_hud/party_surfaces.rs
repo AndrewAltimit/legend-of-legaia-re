@@ -602,6 +602,15 @@ fn a_hidden_readout_draws_question_cells_on_both_surfaces() {
             "{surface}: a figure drew under a hidden readout"
         );
     }
+    // Her panel carries no level / status element either (frame style
+    // `0x36` skips `FUN_8002C2E4`): a level changes nothing it draws.
+    let mut levelled = terra;
+    levelled.level = 1;
+    assert_eq!(
+        hud_draws(&font, &[levelled], &[], &[]).len(),
+        hud_draws(&font, &[terra], &[], &[]).len(),
+        "Terra's panel drew a level"
+    );
     // Every field keeps its right edge (HP 134 / 178, MP 238 / 274), so the
     // cells start at retail's record x: HP `0x5E` / `0x8A`, MP `0xCE` /
     // `0xF2` off the bar's pen x 16.

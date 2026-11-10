@@ -45,7 +45,8 @@ pub struct HudSlotView<'a> {
     /// Draw the HP / MP figures as `?` cells - three per HP field, two per MP
     /// field, right-aligned to the same edges - instead of the values.
     /// Retail's readout for Terra, character id `4`
-    /// (`legaia_engine_battle::battle_hud_state::BattleSlotHud::hidden_readout`).
+    /// (`legaia_engine_battle::battle_hud_state::BattleSlotHud::hidden_readout`),
+    /// whose roster panel also carries no level / status element.
     pub hidden_readout: bool,
 }
 

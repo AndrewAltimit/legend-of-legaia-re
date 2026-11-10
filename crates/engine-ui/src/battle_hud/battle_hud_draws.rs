@@ -484,7 +484,13 @@ pub fn battle_hud_draws_for(
             // cell (an atlas built from a slice that could not reach the
             // row-511 extension palettes) it degrades to the engine's
             // labelled tag on the level seat.
-            if slot.status_sprite != 0 {
+            //
+            // Terra's panel draws no element at all: its frame style is her
+            // id plus `0x32`, `0x36` (`FUN_801D84C0`), and the frame emitter
+            // `FUN_8002C69C` calls `FUN_8002C2E4` only for styles `0x33..=0x35`
+            // (`0x8002C70C..0x8002C764`) - Vahn, Noa and Gala.
+            if slot.hidden_readout {
+            } else if slot.status_sprite != 0 {
                 match frame
                     .badges
                     .and_then(|b| b.status_badge(slot.status_sprite))

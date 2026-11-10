@@ -66,7 +66,10 @@ pub struct BattleSlotHud {
     /// type `5` instead of `2` for present-party character id `4` (Terra),
     /// and the per-frame draw `FUN_80031D00` blits separator glyph `0xC`
     /// (`?`) once per cell for a type-`5` record, never reading the value
-    /// ([`BattleHud::sync_hidden_readout`]).
+    /// ([`BattleHud::sync_hidden_readout`]). Her roster panel draws no
+    /// level / status element either: its frame style is her id plus `0x32`,
+    /// `0x36`, and `FUN_8002C69C` runs the element `FUN_8002C2E4` for styles
+    /// `0x33..=0x35` only.
     pub hidden_readout: bool,
 }
 
