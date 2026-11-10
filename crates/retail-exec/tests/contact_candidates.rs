@@ -74,7 +74,11 @@ fn the_broad_phase_keeps_the_candidates_the_port_keeps() {
             let crowd = n >= 40 && rng.below(8) != 0;
             let direct = crowd || rng.below(2) == 0;
             let state_flags = (rng.next() & !(SKIP_STATE_MASK | DIRECT_POS_MASK))
-                | if !crowd && rng.below(6) == 0 { 1 + rng.below(3) } else { 0 }
+                | if !crowd && rng.below(6) == 0 {
+                    1 + rng.below(3)
+                } else {
+                    0
+                }
                 | if direct {
                     [0x0100_0000, 0x0002_0000, DIRECT_POS_MASK][rng.below(3) as usize]
                 } else {
@@ -92,7 +96,10 @@ fn the_broad_phase_keeps_the_candidates_the_port_keeps() {
             let (local_x, local_y) = if direct {
                 (near(&mut rng, centre.x), near(&mut rng, centre.y))
             } else {
-                (rng.below(0x300) as i16 - 0x180, rng.below(0x300) as i16 - 0x180)
+                (
+                    rng.below(0x300) as i16 - 0x180,
+                    rng.below(0x300) as i16 - 0x180,
+                )
             };
             let a = CullActor {
                 state_flags,
@@ -121,7 +128,11 @@ fn the_broad_phase_keeps_the_candidates_the_port_keeps() {
         for k in 0..VISIBLE_ACTOR_CAP as u32 + 1 {
             cpu.mem.wr32(TABLE + 4 * k, 0xA5A5_A5A5);
         }
-        assert_eq!(cpu.call(BROAD_PHASE, &[PLAYER, HEAD]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(BROAD_PHASE, &[PLAYER, HEAD]),
+            Stop::Returned,
+            "round {round}"
+        );
         let count = cpu.mem.rd32(COUNT);
         let retail: Vec<usize> = (0..count)
             .map(|k| ((cpu.mem.rd32(TABLE + 4 * k) - ACTORS) / ACTOR_LEN) as usize)
@@ -129,7 +140,11 @@ fn the_broad_phase_keeps_the_candidates_the_port_keeps() {
         let port = build_contact_candidates(centre, &actors, &descs);
         assert_eq!(retail, port, "round {round}: candidates of {n}");
         // Nothing past the count, and the centre the probes read.
-        assert_eq!(cpu.mem.rd32(TABLE + 4 * count), 0xA5A5_A5A5, "round {round}");
+        assert_eq!(
+            cpu.mem.rd32(TABLE + 4 * count),
+            0xA5A5_A5A5,
+            "round {round}"
+        );
         assert_eq!(
             (cpu.mem.rd16(CENTRE) as i16, cpu.mem.rd16(CENTRE + 4) as i16),
             (centre.x, centre.y),

@@ -6,9 +6,9 @@
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_scene::actor_bind::{
-    ActorBinding, ActorChainAction, ActorNodeAction, FLAG_NO_CHAIN, FLAG_NODE_READY,
-    FLAG_REFRESH, FLAG_REPICK_KIND, PlacementRecord, RENDER_NODE_BYTES, RENDER_NODE_SEED,
-    bind_actor_render, on_render_node_alloc_failure,
+    ActorBinding, ActorChainAction, ActorNodeAction, FLAG_NO_CHAIN, FLAG_NODE_READY, FLAG_REFRESH,
+    FLAG_REPICK_KIND, PlacementRecord, RENDER_NODE_BYTES, RENDER_NODE_SEED, bind_actor_render,
+    on_render_node_alloc_failure,
 };
 use psx_retail_exec::{A0, A1, Stop, V0};
 use std::cell::RefCell;
@@ -95,11 +95,20 @@ fn the_bind_resolves_what_the_port_resolves() {
         }
         let prefix = rng.below(16) as u16;
         let pool_len = rng.below(80);
-        let flags = (rng.next() & !(FLAG_REFRESH | FLAG_REPICK_KIND | FLAG_NO_CHAIN | FLAG_NODE_READY))
+        let flags = (rng.next()
+            & !(FLAG_REFRESH | FLAG_REPICK_KIND | FLAG_NO_CHAIN | FLAG_NODE_READY))
             | if rng.below(2) == 0 { FLAG_REFRESH } else { 0 }
-            | if rng.below(2) == 0 { FLAG_REPICK_KIND } else { 0 }
+            | if rng.below(2) == 0 {
+                FLAG_REPICK_KIND
+            } else {
+                0
+            }
             | if rng.below(3) == 0 { FLAG_NO_CHAIN } else { 0 }
-            | if rng.below(2) == 0 { FLAG_NODE_READY } else { 0 };
+            | if rng.below(2) == 0 {
+                FLAG_NODE_READY
+            } else {
+                0
+            };
         let actor = ActorBinding {
             flags,
             record_flags: rng.next() as u16,
@@ -153,7 +162,11 @@ fn the_bind_resolves_what_the_port_resolves() {
                 if s.alloc_ok {
                     node = Some(NODE);
                 } else {
-                    assert_eq!(on_render_node_alloc_failure(&mut want, &mut status), ret, "{ctx}");
+                    assert_eq!(
+                        on_render_node_alloc_failure(&mut want, &mut status),
+                        ret,
+                        "{ctx}"
+                    );
                     failed += 1;
                 }
             }
@@ -171,9 +184,17 @@ fn the_bind_resolves_what_the_port_resolves() {
         // bit the arm has just tested clear.
         let chained = node.is_some() && port.chain == ActorChainAction::Build;
         assert_eq!(s.builds, u32::from(chained), "{ctx}: chain build");
-        assert_eq!(s.frees, u32::from(chained && !s.chain_ok), "{ctx}: chain free");
+        assert_eq!(
+            s.frees,
+            u32::from(chained && !s.chain_ok),
+            "{ctx}: chain free"
+        );
         assert_eq!(got, want, "{ctx}: actor");
-        assert_eq!(s.prints, u32::from(port.mesh_index_out_of_range), "{ctx}: bound check");
+        assert_eq!(
+            s.prints,
+            u32::from(port.mesh_index_out_of_range),
+            "{ctx}: bound check"
+        );
         // The node's seeds, and the rest of both blocks left alone.
         let mut want_rec = rec.clone();
         for (off, bytes) in [
@@ -192,7 +213,10 @@ fn the_bind_resolves_what_the_port_resolves() {
         if node.is_some() {
             want_rec[0x7C..0x80].copy_from_slice(&0u32.to_le_bytes());
         }
-        assert!(cpu.mem.read(ACTOR, 0x100) == want_rec, "{ctx}: actor record");
+        assert!(
+            cpu.mem.read(ACTOR, 0x100) == want_rec,
+            "{ctx}: actor record"
+        );
         for at in [NODE, OLD_NODE] {
             let mut want_node = vec![0xA5u8; 0xA0];
             if node == Some(at) {

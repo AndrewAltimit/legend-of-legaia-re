@@ -276,7 +276,10 @@ fn the_dma_primitives_leave_what_the_port_host_leaves() {
         let dst = BUF + 0x1000 * rng.below(8);
         cpu.mem.load(dst, &vec![0; 0x800 * 0x40]);
         // A fresh host's cursor stands on the archive's first sector.
-        assert_eq!(cpu.call(INT_TO_POS, &[PROT_LBA, CURSOR_MSF]), Stop::Returned);
+        assert_eq!(
+            cpu.call(INT_TO_POS, &[PROT_LBA, CURSOR_MSF]),
+            Stop::Returned
+        );
         cpu.mem.wr32(LAST_INDEX, 0);
         cpu.mem.wr32(LAST_START, 0);
         let mut pending = false;
@@ -365,7 +368,11 @@ fn the_dma_primitives_leave_what_the_port_host_leaves() {
             if cpu.mem.rd32(DEST) != 0 || port.last_dst() != 0 {
                 assert_eq!(cpu.mem.rd32(DEST), port.last_dst(), "{ctx}: dest cell");
             }
-            assert_eq!(cursor(&mut cpu.mem), port.cursor_lba(), "{ctx}: cursor, op {op}");
+            assert_eq!(
+                cursor(&mut cpu.mem),
+                port.cursor_lba(),
+                "{ctx}: cursor, op {op}"
+            );
             if !pending {
                 let want = port.read(dst, 0x800 * 0x40).expect("port RAM").to_vec();
                 assert!(cpu.mem.read(dst, want.len()) == want, "{ctx}: destination");
@@ -408,7 +415,9 @@ fn the_stream_queue_plans_what_retail_plans() {
         for step in 0..1 + rng.below(40) {
             let idx = rng.below(entries);
             assert_eq!(cpu.call(ENQUEUE, &[idx]), Stop::Returned);
-            let d = port.enqueue_from_toc(idx as u16, &ram_toc).expect("in range");
+            let d = port
+                .enqueue_from_toc(idx as u16, &ram_toc)
+                .expect("in range");
             let at = TABLE + 8 * step;
             assert_eq!(
                 (cpu.mem.rd32(at), cpu.mem.rd32(at + 4)),
@@ -471,8 +480,16 @@ fn the_overlay_loaders_cache_what_the_port_caches() {
         port.set_overlay_destinations(DST_A, DST_B);
         for step in 0..12 {
             let ctx = format!("round {round} step {step}");
-            let dev = if rng.below(8) == 0 { 1 + rng.below(9) } else { 0 };
-            let mode = if rng.below(4) == 0 { 0x15 } else { rng.below(0x1C) as u16 };
+            let dev = if rng.below(8) == 0 {
+                1 + rng.below(9)
+            } else {
+                0
+            };
+            let mode = if rng.below(4) == 0 {
+                0x15
+            } else {
+                rng.below(0x1C) as u16
+            };
             // A small pool, so the cache hits.
             let param = params[rng.below(4.min(params.len() as u32)) as usize + (round % 8)];
             cpu.mem.wr32(DEV_FLAG, dev);
@@ -480,7 +497,10 @@ fn the_overlay_loaders_cache_what_the_port_caches() {
             port.set_overlay_dev_flag(dev);
             port.set_overlay_mode_state(mode);
             let a = rng.below(2) == 0;
-            let was = (port.overlay_slot(OverlayCacheSlot::A), port.overlay_slot(OverlayCacheSlot::B));
+            let was = (
+                port.overlay_slot(OverlayCacheSlot::A),
+                port.overlay_slot(OverlayCacheSlot::B),
+            );
             assert_eq!(
                 cpu.call(if a { LOADER_A } else { LOADER_B }, &[param as u32]),
                 Stop::Returned,
@@ -496,8 +516,16 @@ fn the_overlay_loaders_cache_what_the_port_caches() {
                 load_overlay_b(&mut port, param)
             };
             let _ = port.read_wait_poll(false);
-            assert_eq!(retail, got, "{ctx}: return, loader {}", if a { 'A' } else { 'B' });
-            let now = (port.overlay_slot(OverlayCacheSlot::A), port.overlay_slot(OverlayCacheSlot::B));
+            assert_eq!(
+                retail,
+                got,
+                "{ctx}: return, loader {}",
+                if a { 'A' } else { 'B' }
+            );
+            let now = (
+                port.overlay_slot(OverlayCacheSlot::A),
+                port.overlay_slot(OverlayCacheSlot::B),
+            );
             assert_eq!(
                 (cpu.mem.rd32(SLOT_A) as i32, cpu.mem.rd32(SLOT_B) as i32),
                 now,

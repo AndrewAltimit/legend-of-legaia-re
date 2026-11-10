@@ -27,7 +27,8 @@ fn the_duel_init_seeds_what_the_port_records() {
     const DUEL_INIT: u32 = 0x801C_F00C;
     const DUEL_INIT_END: u32 = 0x801C_F384;
     cpu.stub_outside = Some((DUEL_INIT, DUEL_INIT_END));
-    let calls: Rc<RefCell<Vec<(u32, [u32; 4])>>> = Rc::default();
+    type Calls = Rc<RefCell<Vec<(u32, [u32; 4])>>>;
+    let calls: Calls = Rc::default();
     for va in [
         0x8001_DAF8u32, // display width
         0x8001_DCF8,    // ordering-table depth
@@ -56,14 +57,16 @@ fn the_duel_init_seeds_what_the_port_records() {
     assert_eq!(cpu.call(DUEL_INIT, &[]), Stop::Returned);
     let port = legaia_engine_system::mode_entry_init::duel_overlay_init();
     let calls = calls.borrow();
-    let of = |va: u32| -> Vec<[u32; 4]> {
-        calls.iter().filter(|c| c.0 == va).map(|c| c.1).collect()
-    };
+    let of =
+        |va: u32| -> Vec<[u32; 4]> { calls.iter().filter(|c| c.0 == va).map(|c| c.1).collect() };
     assert_eq!(of(0x8001_DAF8)[0][0], u32::from(port.screen_width));
     assert_eq!(of(0x8001_DCF8)[0][0], u32::from(port.ot_depth));
     assert_eq!(of(0x8006_2004)[0][2], u32::from(port.bgm_arg3));
     assert_eq!(
-        of(0x801D_4C50).iter().map(|a| a[0] as u8).collect::<Vec<_>>(),
+        of(0x801D_4C50)
+            .iter()
+            .map(|a| a[0] as u8)
+            .collect::<Vec<_>>(),
         port.fighter_slots
     );
     let streams: Vec<u32> = of(0x8001_FC00).iter().map(|a| a[0]).collect();

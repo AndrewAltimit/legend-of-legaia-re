@@ -74,12 +74,18 @@ fn the_prologue_decides_what_the_port_decides() {
             1 => [0x08i16, 0x1A, 0x18, 2, 3][rng.below(5) as usize],
             _ => rng.below(0x1C) as i16,
         };
-        let outgoing = if rng.below(2) == 0 { 3 } else { rng.below(0x1C) as i16 };
+        let outgoing = if rng.below(2) == 0 {
+            3
+        } else {
+            rng.below(0x1C) as i16
+        };
         let player = (rng.next() as i16, rng.next() as i16);
         let words: Vec<u32> = (0..rng.below(24)).map(|_| rng.next()).collect();
         let len = match rng.below(8) {
             0 => -(rng.below(6) as i32),
-            _ => (words.len() as i32 * 4).saturating_sub(rng.below(6) as i32).max(0),
+            _ => (words.len() as i32 * 4)
+                .saturating_sub(rng.below(6) as i32)
+                .max(0),
         };
         let staged = rng.below(5) != 0;
         let dev_build = rng.below(6) == 0;
@@ -173,7 +179,11 @@ fn the_prologue_decides_what_the_port_decides() {
             }
             None => {
                 assert_eq!(
-                    (cpu.mem.rd32(WARP_X), cpu.mem.rd32(WARP_Z), cpu.mem.rd32(REENTRY)),
+                    (
+                        cpu.mem.rd32(WARP_X),
+                        cpu.mem.rd32(WARP_Z),
+                        cpu.mem.rd32(REENTRY)
+                    ),
                     (0x7777, 0x7777, 0x77),
                     "{ctx}: no snapshot"
                 );

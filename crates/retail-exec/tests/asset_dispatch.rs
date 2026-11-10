@@ -253,11 +253,19 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
                 assert!(cpu.mem.read(h.uploads[0], port.len()) == port, "{ctx}: TIM");
                 assert_eq!(h.uploads[0] == SRC, raw, "{ctx}");
                 // The decoder's ring buffer is the other block freed.
-                assert_eq!(h.frees.last().copied(), (!raw).then_some(h.uploads[0]), "{ctx}");
+                assert_eq!(
+                    h.frees.last().copied(),
+                    (!raw).then_some(h.uploads[0]),
+                    "{ctx}"
+                );
                 assert!(h.blocks.is_empty(), "{ctx}: a TIM leaves no block");
             }
             AssetType::TimList => {
-                let base = if raw { SRC } else { *h.frees.last().expect("scratch") };
+                let base = if raw {
+                    SRC
+                } else {
+                    *h.frees.last().expect("scratch")
+                };
                 assert!(h.blocks.is_empty(), "{ctx}: a TIM pack leaves no block");
                 let retail: Vec<usize> = h.uploads.iter().map(|p| (p - base) as usize).collect();
                 let port_members: Vec<usize> = parse_pack(&port)
@@ -377,7 +385,11 @@ fn the_registrars_number_models_and_records_in_call_order() {
         // Records: the dispatcher's type-7 loop hands the registrar
         // `buffer + offset[i]` for each record in table order.
         let members: Vec<Vec<u8>> = (0..rng.below(12))
-            .map(|_| (0..4 * (1 + rng.below(20))).map(|_| rng.next() as u8).collect())
+            .map(|_| {
+                (0..4 * (1 + rng.below(20)))
+                    .map(|_| rng.next() as u8)
+                    .collect()
+            })
             .collect();
         let vdf = pack(&members, false);
         cpu.mem.load(SRC, &vdf);

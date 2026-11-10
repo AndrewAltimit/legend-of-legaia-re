@@ -79,8 +79,8 @@ impl InstallHost for Spy {
     fn seq_install(&mut self, record: SeqRecord, id: i8, data: &[u8]) {
         // The fixed record's copy takes none of the chunk: its three
         // arguments are resource record 9's words.
-        let payload = (record == SeqRecord::Slot)
-            .then(|| (data.as_ptr() as usize - self.base, data.len()));
+        let payload =
+            (record == SeqRecord::Slot).then(|| (data.as_ptr() as usize - self.base, data.len()));
         self.events.push(Event::Seq(record, id, payload));
     }
     fn set_stream_flag(&mut self) {

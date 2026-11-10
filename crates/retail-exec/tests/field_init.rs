@@ -260,11 +260,18 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         if mode == FieldEntryMode::Warp {
             assert_eq!(
                 (s.sweeps, s.player_spawns.len()),
-                (legaia_engine_system::mode_entry_init::FIELD_ACTOR_LIST_SWEEPS, 0),
+                (
+                    legaia_engine_system::mode_entry_init::FIELD_ACTOR_LIST_SWEEPS,
+                    0
+                ),
                 "{ctx}"
             );
         } else {
-            assert_eq!((s.sweeps, &s.player_spawns[..]), (0, &[0x8007_05FC][..]), "{ctx}");
+            assert_eq!(
+                (s.sweeps, &s.player_spawns[..]),
+                (0, &[0x8007_05FC][..]),
+                "{ctx}"
+            );
         }
 
         // The BGM slot.
@@ -287,7 +294,11 @@ fn the_field_initialiser_seats_what_the_port_seats() {
             // The bank is read twice: its head and first part, then the rest.
             Some([seq, vab]) => {
                 assert_eq!(two, [seq, vab, vab], "{ctx}: two-part streams");
-                assert_eq!(cpu.mem.rd32(BGM_PLAYING), plan.slot, "{ctx}: staged as playing");
+                assert_eq!(
+                    cpu.mem.rd32(BGM_PLAYING),
+                    plan.slot,
+                    "{ctx}: staged as playing"
+                );
                 two_part += 1;
             }
             None => {
@@ -324,7 +335,12 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         recentred += u32::from(recentre);
     }
     assert!(
-        cold > 500 && warp > 500 && other > 500 && recentred > 400 && two_part > 100 && latched > 300,
+        cold > 500
+            && warp > 500
+            && other > 500
+            && recentred > 400
+            && two_part > 100
+            && latched > 300,
         "{cold} {warp} {other} {recentred} {two_part} {latched}"
     );
 }

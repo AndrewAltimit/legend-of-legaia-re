@@ -46,7 +46,9 @@ fn the_record_copy_takes_what_the_stream_parser_reads() {
             _ => (1 + rng.below(12) as u8, 1 + rng.below(20) as u8),
         };
         let stream = usize::from(parts) * usize::from(frames) * 9;
-        let mut rec: Vec<u8> = (0..0xAC + 2 + stream + 64).map(|_| rng.next() as u8).collect();
+        let mut rec: Vec<u8> = (0..0xAC + 2 + stream + 64)
+            .map(|_| rng.next() as u8)
+            .collect();
         rec[0xAC] = parts;
         rec[0xAD] = frames;
         cpu.mem.load(SRC, &rec);
@@ -55,7 +57,11 @@ fn the_record_copy_takes_what_the_stream_parser_reads() {
         let copied = (cpu.regs.r[V0] - DST) as usize;
         // The header's `0x2B` words, then the stream's two count bytes and
         // nine bytes a part a frame, to the word.
-        assert_eq!(copied, 0xAC + (2 + stream).next_multiple_of(4), "round {round}");
+        assert_eq!(
+            copied,
+            0xAC + (2 + stream).next_multiple_of(4),
+            "round {round}"
+        );
         let retail = cpu.mem.read(DST, copied);
         assert!(retail[..] == rec[..copied], "round {round}: copied bytes");
         assert!(
@@ -213,7 +219,8 @@ fn the_rect_copy_enqueue_builds_the_port_packet() {
         cpu.mem.wr16(SCRATCH + 0x92, ot_len);
         cpu.mem.wr32(SCRATCH + 0x8C, PACKETS);
         cpu.mem.wr32(SCRATCH + 0xE0, OT);
-        cpu.mem.wr16(BACK_BUFFER, u16::from(back) * (1 + rng.below(3) as u16));
+        cpu.mem
+            .wr16(BACK_BUFFER, u16::from(back) * (1 + rng.below(3) as u16));
         cpu.mem.load(PACKETS, &[0xA5; 0x20]);
         for (k, a) in [call.h, call.dst_x, call.dst_y].iter().enumerate() {
             cpu.mem.wr32(STACK + 0x10 + 4 * k as u32, *a as u16 as u32);
@@ -332,7 +339,11 @@ fn the_battle_on_screen_test_matches() {
             cpu.mem.wr16(actor + 0x3C + 2 * k as u32, *v as u16);
         }
         cpu.mem.wr16(actor + 0x42, pad);
-        assert_eq!(cpu.call(ON_SCREEN, &[SPRITE]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(ON_SCREEN, &[SPRITE]),
+            Stop::Returned,
+            "round {round}"
+        );
         let retail = cpu.regs.r[V0];
 
         let port = legaia_render_kernels::battle_on_screen::battle_actor_on_screen(
@@ -345,7 +356,11 @@ fn the_battle_on_screen_test_matches() {
             ofy,
             shift,
         );
-        assert_eq!(retail, u32::from(port.on_screen), "round {round}: {pos:?} half {half}");
+        assert_eq!(
+            retail,
+            u32::from(port.on_screen),
+            "round {round}: {pos:?} half {half}"
+        );
         // The re-anchor: the seat's whole SVECTOR onto the sprite's `+0x14`,
         // and nothing else of it.
         let mut want = sprite.clone();
@@ -516,7 +531,10 @@ fn the_move_image_wrapper_queues_the_copy_the_port_makes() {
             copies += 1;
         }
         port.move_image(sx, sy, w, h, dx, dy);
-        assert!(port.as_u16() == &gpu[..], "round {round}: VRAM after the copy");
+        assert!(
+            port.as_u16() == &gpu[..],
+            "round {round}: VRAM after the copy"
+        );
     }
     assert!(copies > 200 && refused > 80, "{copies} {refused}");
 }
@@ -572,7 +590,11 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
             let mut rec: Vec<u8> = (0..NODE_LEN).map(|_| rng.next() as u8).collect();
             let next = if k + 1 < n { at + NODE_LEN } else { 0 };
             rec[0..4].copy_from_slice(&next.to_le_bytes());
-            let tick = if rng.below(3) == 0 { OTHER_TICK } else { PART_TICK };
+            let tick = if rng.below(3) == 0 {
+                OTHER_TICK
+            } else {
+                PART_TICK
+            };
             rec[0xC..0x10].copy_from_slice(&tick.to_le_bytes());
             let flags = (rng.next() & !(HALT | MARKED | 0x800))
                 | [0, HALT, HALT | MARKED, HALT | MARKED][rng.below(4) as usize];
@@ -590,7 +612,11 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
         }
         cpu.mem.wr32(HEAD, if n > 0 { NODES } else { 0 });
         log.borrow_mut().clear();
-        assert_eq!(cpu.call(LIST_WALK, &[HEAD]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(LIST_WALK, &[HEAD]),
+            Stop::Returned,
+            "round {round}"
+        );
         let calls = log.borrow().clone();
         let mut at_call = 0;
         for (at, rec, tick, flags, mode) in &nodes {
@@ -608,18 +634,29 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
                 calls[start..at_call].to_vec()
             };
             if flags & HALT == 0 {
-                assert_eq!(mine, [Call::Tick(*tick, *at)], "round {round}: a live node ticks");
+                assert_eq!(
+                    mine,
+                    [Call::Tick(*tick, *at)],
+                    "round {round}: a live node ticks"
+                );
                 ticked += 1;
                 continue;
             }
             // Halted: the mark is raised either way.
             assert_ne!(cpu.mem.rd32(at + 0x10) & MARKED, 0, "round {round}");
             if flags & MARKED == 0 {
-                assert!(mine.is_empty(), "round {round}: the first halted walk frees nothing");
+                assert!(
+                    mine.is_empty(),
+                    "round {round}: the first halted walk frees nothing"
+                );
                 marked_now += 1;
                 continue;
             }
-            assert_eq!(mine[..2], [Call::Unlink(*at), Call::FreeNode(*at)], "round {round}");
+            assert_eq!(
+                mine[..2],
+                [Call::Unlink(*at), Call::FreeNode(*at)],
+                "round {round}"
+            );
             let release: Vec<Call> = mine
                 .iter()
                 .copied()
@@ -630,8 +667,14 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
                 move_submode: *mode,
                 ..ActorState::default()
             };
-            st.set_actor_u32(0xAC, u32::from_le_bytes(rec[0xAC..0xB0].try_into().unwrap()));
-            st.set_actor_u16(0xB0, u16::from_le_bytes(rec[0xB0..0xB2].try_into().unwrap()));
+            st.set_actor_u32(
+                0xAC,
+                u32::from_le_bytes(rec[0xAC..0xB0].try_into().unwrap()),
+            );
+            st.set_actor_u16(
+                0xB0,
+                u16::from_le_bytes(rec[0xB0..0xB2].try_into().unwrap()),
+            );
             let port = (*tick == PART_TICK)
                 .then(|| emitter_free(&st))
                 .flatten()
@@ -639,11 +682,19 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
                     EmitterOp::Release { cue, voice } => Call::Release(cue, voice),
                     other => panic!("round {round}: {other:?}"),
                 });
-            assert_eq!(release, port.into_iter().collect::<Vec<_>>(), "round {round}");
+            assert_eq!(
+                release,
+                port.into_iter().collect::<Vec<_>>(),
+                "round {round}"
+            );
             if release.is_empty() {
                 freed_quiet += 1;
             } else {
-                assert_eq!(mine.last(), release.last(), "round {round}: the release is last");
+                assert_eq!(
+                    mine.last(),
+                    release.last(),
+                    "round {round}: the release is last"
+                );
                 released += 1;
             }
         }
@@ -673,7 +724,9 @@ fn the_battle_loader_asks_for_the_stage_overlay_the_port_names() {
     let asked: Rc<RefCell<Vec<i32>>> = Rc::default();
     {
         let asked = asked.clone();
-        cpu.hook(LOADER_B, move |r, _| asked.borrow_mut().push(r.r[A0] as i32));
+        cpu.hook(LOADER_B, move |r, _| {
+            asked.borrow_mut().push(r.r[A0] as i32)
+        });
     }
     let (mut loaded, mut none) = (0, 0);
     // Both states that reach the stage arm (`0x8005266C` / `0x80052670`).
@@ -682,14 +735,22 @@ fn the_battle_loader_asks_for_the_stage_overlay_the_port_names() {
             cpu.mem.wr8(STATE, state);
             cpu.mem.wr8(STAGE_ID, stage);
             asked.borrow_mut().clear();
-            assert_eq!(cpu.call(BATTLE_LOADER, &[]), Stop::Returned, "stage {stage}");
+            assert_eq!(
+                cpu.call(BATTLE_LOADER, &[]),
+                Stop::Returned,
+                "stage {stage}"
+            );
             let retail: Vec<u32> = asked
                 .borrow()
                 .iter()
                 .map(|p| (p + OVERLAY_PROT_BASE) as u32)
                 .collect();
             let port = battle_stage_overlay_entry(stage);
-            assert_eq!(retail, port.into_iter().collect::<Vec<_>>(), "stage {stage}");
+            assert_eq!(
+                retail,
+                port.into_iter().collect::<Vec<_>>(),
+                "stage {stage}"
+            );
             // With no stage overlay the loader goes straight to its stream
             // tail (`0xFF`); with one it waits on the read first.
             assert_eq!(
@@ -818,7 +879,11 @@ fn the_part_tick_scrolls_the_rect_the_port_scrolls() {
             cpu.mem.wr8(SCRATCH + 0x69, 0x10);
             cpu.mem.wr32(SCRATCH + 0x8C, PACKETS);
             *calls.borrow_mut() = 0;
-            assert_eq!(cpu.call(PART_TICK, &[ACTOR]), Stop::Returned, "round {round}");
+            assert_eq!(
+                cpu.call(PART_TICK, &[ACTOR]),
+                Stop::Returned,
+                "round {round}"
+            );
             let fx = mode4_integrate(&mut st, frame_step);
             assert_eq!(
                 cpu.mem.rd16(ACTOR + 0xC6),
@@ -852,7 +917,11 @@ fn the_part_tick_scrolls_the_rect_the_port_scrolls() {
                     both += u32::from(axes == 2);
                 }
                 None => {
-                    assert_eq!(*calls.borrow(), 0, "round {round} tick {tick}: a quiet tick");
+                    assert_eq!(
+                        *calls.borrow(),
+                        0,
+                        "round {round} tick {tick}: a quiet tick"
+                    );
                     idle += 1;
                 }
             }
@@ -862,5 +931,8 @@ fn the_part_tick_scrolls_the_rect_the_port_scrolls() {
             );
         }
     }
-    assert!(fired > 1_500 && both > 500 && idle > 1_000, "{fired} {both} {idle}");
+    assert!(
+        fired > 1_500 && both > 500 && idle > 1_000,
+        "{fired} {both} {idle}"
+    );
 }
