@@ -353,6 +353,7 @@ const NAV = [
     title: 'Reference',
     items: [
       { href: 'reference/index.html', text: 'Reference index', key: 'reference/index' },
+      { href: 'reference/glossary.html', text: 'Glossary', key: 'reference/glossary' },
       { heading: 'Code and memory' },
       { href: 'reference/functions.html', text: 'Key functions', key: 'reference/functions' },
       { href: 'reference/memory-map.html', text: 'PSX RAM map', key: 'reference/memory-map' },

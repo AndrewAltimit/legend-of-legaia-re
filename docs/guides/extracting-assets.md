@@ -22,11 +22,14 @@ common cases with buttons:
    (`town tmd` finds the town meshes, `rim elm` every Rim Elm scene); the
    arrow keys, Page Up / Down, Home and End walk the list.
 3. **Preview** the selected entry: *Textures* (with a palette slider - try a
-   few rows before deciding a texture is broken), *3D model* (drag to orbit,
-   scroll to zoom; *scene* textures a mesh against the VRAM its scene
-   builds), *Audio* (play samples, play a sequence with a sound bank),
+   few rows before deciding a texture is broken; *Fit* shows the whole
+   texture, Ctrl + scroll zooms, dragging moves it), *3D model* (drag to
+   orbit, scroll to zoom; *scene* textures a mesh against the VRAM its scene
+   builds), *Audio* (play samples, play a sequence with a sound bank; the
+   row above the list has *Stop* and shows how far the sound is),
    *Text* (scene dialog and MES messages, with the accented letters of the
-   French, German and Italian discs), *Hex*.
+   French, German and Italian discs; *Find* keeps the lines holding every
+   word you type), *Hex* (*Go to* jumps to a hex offset).
 4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
    WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
    of the list saves any file of the disc's own file system. `Ctrl+E` saves

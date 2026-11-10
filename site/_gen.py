@@ -828,6 +828,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/translation-workbench.html","Translation workbench",   "tooling/translation-workbench","tooling/translation-workbench.html"),
     ("tooling/expansion-workbench.html","Expansion workbench",       "tooling/expansion-workbench","tooling/expansion-workbench.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
+    ("reference/glossary.html",    "Glossary",                      "reference/glossary",         "reference/glossary.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
     ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),

@@ -181,6 +181,35 @@
   <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-menus::pause_screens::list_kernel_navigate</code> + <code>engine-ui::menu::screens</code>.</p>
 </section>
 
+<section class="doc-section" id="cursor-repeat">
+  <h2>Holding a direction: the cursor repeat</h2>
+  <p>The list kernel does not read the pad's plain "just pressed" word. It reads a cursor word of its own, built by <code>FUN_80035C24</code>: a chord held unchanged is folded back in as a fresh press after <code>0x14</code> vsyncs (a third of a second), and then every <code>3</code>. The chord is the D-pad plus the four shoulder buttons, or the D-pad alone in battle, so a held face button never repeats.</p>
+  <figure class="diagram">
+    <svg class="dg-fit" viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A held Down on a timeline. The press itself moves the cursor once. Nothing happens for 0x14 vsyncs. After that the cursor moves again every 3 vsyncs for as long as the direction is held. A list that opens while the direction is already held clears the chord, so the whole delay runs again from the opening.">
+      <text class="dg-sub dg-start" x="20" y="22">Down held</text>
+      <rect class="dg-node" x="20" y="34" width="840" height="26" rx="3"/>
+      <rect class="dg-node-accent" x="20" y="34" width="8" height="26"/>
+      <text class="dg-sub dg-start" x="20" y="80">press: 1 step</text>
+      <text class="dg-sub" x="180" y="52">0x14 vsyncs: nothing</text>
+      <rect class="dg-node-accent" x="340" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="388" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="436" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="484" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="532" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="580" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="628" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="676" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="724" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="772" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="820" y="34" width="8" height="26"/>
+      <text class="dg-sub dg-start" x="340" y="80">then one step every 3 vsyncs</text>
+      <text class="dg-sub dg-start" x="20" y="118">A list that opens while the direction is already down clears the chord (FUN_80030628),</text>
+      <text class="dg-sub dg-start" x="20" y="136">so the whole delay runs again from the opening.</text>
+    </svg>
+  </figure>
+  <p>The same word drives the shop's quantity steppers and the naming screen's letter grid. Engine port: <code>engine-system::retail_pad::MenuRepeat</code>, folded in where the pause menu, the shop session, the naming grid and the battle spell and item lists take their edges, on both hosts.</p>
+</section>
+
 <section class="doc-section" id="items-use-flows">
   <h2>Items screen: Use / Throw Out / Arrange</h2>
   <ul class="bullets">
