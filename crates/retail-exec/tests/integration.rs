@@ -124,6 +124,7 @@ mod menu_leaves;
 mod menu_stats;
 mod monster_install;
 mod mesh_swap;
+mod mode_frame;
 mod monster_pick;
 mod morph_envelope;
 mod motion_install;
