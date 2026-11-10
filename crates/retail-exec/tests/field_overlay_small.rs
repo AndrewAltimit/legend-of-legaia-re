@@ -374,3 +374,99 @@ fn the_morph_spawner_snapshots_as_retail_does() {
         assert_eq!(cpu.mem.rd32(ACTOR + 0x4C), VDF_TABLE + 0x100, "case {case}");
     }
 }
+
+/// The seat ops' list relink `FUN_801D81E0`, with the SCUS list primitives
+/// it calls (`FUN_800204A4` unlink, `FUN_80020454` append) live, over
+/// generated placement lists, against `World::relink_placement_for_seat`:
+/// outside a spawn prologue on the whole list in any order; inside one on the
+/// placements spawned so far (the running one last), the later ones appended
+/// after as the spawn loop goes on to link them.
+#[test]
+fn the_seat_relink_matches_retail() {
+    use legaia_engine_core::world::{FieldNpcAmbient, World};
+    use legaia_engine_motion_vm::ambient_motion::AmbientMotion;
+    const RELINK: u32 = 0x801D_81E0;
+    const APPEND: u32 = 0x8002_0454;
+    const FREE_TOP: u32 = 0x8007_C348;
+    const HEAD: u32 = 0x8015_0000;
+    let node = |slot: u8| 0x8014_0000 + u32::from(slot) * 0x40;
+    differential!(prot(897, RELINK));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    // Link `order` onto an empty list through the append itself, each node
+    // handed over through the free stack as a spawn does.
+    let link = |cpu: &mut psx_retail_exec::Cpu, slots: &[u8]| {
+        for &s in slots {
+            cpu.mem.wr32(FREE_TOP, 0);
+            cpu.mem.wr32(FREE_TOP + 0x28, node(s));
+            assert_eq!(cpu.call(APPEND, &[HEAD]), Stop::Returned);
+        }
+    };
+    let walk = |cpu: &mut psx_retail_exec::Cpu| {
+        let mut out = Vec::new();
+        let mut at = cpu.mem.rd32(HEAD);
+        while at != 0 && out.len() < 64 {
+            out.push(((at - 0x8014_0000) / 0x40) as u8);
+            at = cpu.mem.rd32(at);
+        }
+        out
+    };
+    let channel = |slot: u8| FieldNpcAmbient {
+        defers: false,
+        walks: false,
+        variants: Vec::new(),
+        live: None,
+        vm: AmbientMotion::new(u32::from(slot), 0),
+    };
+    let mut rng = crate::common::Rng(0x5345_4154);
+    for case in 0..4000 {
+        let mut slots: Vec<u8> = (0..16u8).filter(|_| rng.below(2) == 0).collect();
+        if slots.len() < 2 {
+            continue;
+        }
+        let prologue = case % 2 == 1;
+        if !prologue {
+            for i in (1..slots.len()).rev() {
+                slots.swap(i, rng.below(i as u32 + 1) as usize);
+            }
+        }
+        let running_at = rng.below(slots.len() as u32) as usize;
+        let linked = if prologue {
+            &slots[..=running_at]
+        } else {
+            &slots[..]
+        };
+        let k = linked[rng.below(linked.len() as u32) as usize];
+        // An empty list: the first-node word zero, the tail pointer on it.
+        cpu.mem.wr32(HEAD, 0);
+        cpu.mem.wr32(HEAD + 0xC, HEAD);
+        cpu.mem.wr32(FREE_TOP, u32::MAX);
+        link(&mut cpu, linked);
+        cpu.mem.wr32(FREE_TOP, u32::MAX);
+        assert_eq!(
+            cpu.call(RELINK, &[node(k), HEAD]),
+            Stop::Returned,
+            "case {case}"
+        );
+        if prologue {
+            link(&mut cpu, &slots[running_at + 1..]);
+        }
+        let mut w = World::new();
+        for &s in &slots {
+            w.npcs.ambient.insert(s, channel(s));
+        }
+        w.npcs.ambient_order = slots.clone();
+        w.field_vm.prerun_running_slot = prologue.then_some(slots[running_at]);
+        w.relink_placement_for_seat(k);
+        assert_eq!(
+            walk(&mut cpu),
+            w.npcs.ambient_order,
+            "case {case}: {slots:?} relink {k} prologue {prologue}"
+        );
+    }
+}
