@@ -51,12 +51,10 @@ A field-VM op-`0x35` BGM id `>= 2000` resolves through the global pool
 (`FUN_800243F0`, see [script-vm § BGM lookup](../subsystems/script-vm.md#bgm-lookup-table)),
 and the pool is the `music_01` bank read as one linear run: global id
 `2000 + k` loads extraction `988 + k` (`_DAT_8007BC64`, the raw define
-`990`, plus `k`). Below `2068` that **is** the debug sound-test order, so
-**global id `2000 + i` plays sound-test track `i`**; the two entries the
-sound test skips (below) are ids `2068` and `2069`, so from `2070` an id plays
-track `id - 2002` - `jouine`'s `2071` is track 69 "Bio-Castle collapse", which
-a retail state shows loaded (raw `1061`), and `town0e`'s `2070` is track 68.
-That id-space join is proven by the
+`990`, plus `k`; a retail state in `jouine` shows `2071` loaded as raw `1061`).
+The pool order is the debug sound-test order, so **global id `2000 + i` plays
+sound-test track `i`**: the field overlay's own debug sound test pairs each id
+with its row's `M` code, `2068` = `M50` through `2071` = `M123`. That id-space join is proven by the
 per-scene op-`0x35` census (`engine-field/tests/scene_bgm_labels_disc.rs`):
 walking every scene MAN's scripts and joining each started id to this table
 lands the right label across the corpus - `town01` starts `2016` = `M14B`
@@ -65,15 +63,17 @@ overworld pair, `bylon` starts `2019` = `M17` "Byron Monastery", Sol's floors
 start `M16` casino / `M23` bar / `M100` Sol / `M112` disco, `geremi` starts
 `2047` = `M102` "Jeremi", the Bio-Castle interiors start `2013` = `M13`.
 
-The **sound-test** order, however, is not a single linear PROT run.
-Sound-test index maps onto two contiguous extraction ranges with a 2-entry
-gap between them:
+The curated table's own row-to-entry map, however, is not a single linear
+PROT run, and from row `68` it disagrees with the resolver and the debug sound
+test above: they put row `68 + j` at `1056 + j`, the map at `1058 + j`. Which
+entries rows `68..=80` hold is open; the map as curated maps sound-test index
+onto two contiguous extraction ranges with a 2-entry gap between them:
 
 - indices `0..=67`  -> extraction PROT `988 + index` (`988..=1055`);
-- a 2-entry gap - extraction `1056` (a VAB-only sound bank, no score: the
-  ending theme `2068`'s instruments, whose score the field init stages from
-  two other entries) and `1057` (a VAB and a score not in the sound-test
-  list, BGM id `2069`);
+- a 2-entry gap - extraction `1056` (a VAB-only sound bank, no score: what
+  the resolver loads for the ending theme `2068`, whose score the field init
+  stages from another entry) and `1057` (a VAB and a score; the resolver's
+  `2069`);
 - indices `68..=80` -> extraction PROT `990 + index` (`1058..=1070`).
 
 The low range starts at extraction **988**, not 990: the first two tracks

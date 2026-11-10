@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Magic</dt><dd><code>pQES</code> (bytes <code>70 51 45 53</code>) at the track's own offset 0</dd>
-    <dt>Where on disc</dt><dd>Behind a VAB inside <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> entries, never at the entry's start; 92 tracks. The <code>music_01</code> bank is BGM id <code>2000+k</code> = extraction <code>988+k</code>; the sound-test order is piecewise (track <code>i</code> = <code>988+i</code> for <code>i &lt;= 67</code>, <code>990+i</code> above) - see <a href="../reference/music-tracks.html">music tracks</a></dd>
+    <dt>Where on disc</dt><dd>Behind a VAB inside <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> entries, never at the entry's start; 92 tracks. The <code>music_01</code> bank is BGM id <code>2000+k</code> = extraction <code>988+k</code>; the curated sound-test list's entry map is piecewise (track <code>i</code> = <code>988+i</code> for <code>i &lt;= 67</code>, <code>990+i</code> above) - see <a href="../reference/music-tracks.html">music tracks</a></dd>
     <dt>Header</dt><dd>15 bytes (Legaia variant) - u32 big-endian version; PPQN always 480</dd>
     <dt>Parser</dt><dd><code>crates/seq</code> (binary <code>seq</code>); playback <code>engine-audio::Sequencer</code></dd>
     <dt>Confidence</dt><dd>Confirmed - public PsyQ shape; the divergences are pinned by the retail loader and by round-BPM arithmetic across the corpus (<a href="#how-we-know">how we know</a>)</dd>

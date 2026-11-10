@@ -1307,10 +1307,10 @@ build.
 
 The BGM swap poller `FUN_800243F0`, run from a changed track word through its first three stages to the payload
 read (`bgm_resolver`), found the port's id-to-entry map two entries off from `2069` on. Retail loads
-`_DAT_8007BC64 + id - 2000`, one linear run from extraction `988`; the port had routed ids through the sound
-test's order, which skips extraction `1056` / `1057`. So `jouine`'s `2071` played the Bio-Castle overture
-(`1061`) where a retail state shows the collapse theme (`1059`) loaded, and `town0e`'s `2070` played `1060`
-where retail plays `1058`. The battle bank's tenth copy keeps its bytes under its retail-space id `2075`.
+`_DAT_8007BC64 + id - 2000`, one linear run from extraction `988`; the port had routed an id through the
+curated sound-test row's entry, a map that steps two entries past `1055`. So `jouine`'s `2071` played
+extraction `1061` where a retail state shows `1059` loaded, and `town0e`'s `2070` played `1060` where retail
+plays `1058`. The battle bank's tenth copy keeps its bytes under its linear id `2075`.
 The fishing segment projector `FUN_801D5C2C`, the slot reel renderer `FUN_801D0FA8`'s faces and shades, the
 warp fade repack `FUN_801D58F0`, the fishing pre-hook readout `FUN_801D2050` and Baka Fighter's pack walk
 `FUN_801D4C50` match.

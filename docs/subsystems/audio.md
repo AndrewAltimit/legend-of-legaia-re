@@ -361,12 +361,11 @@ the poller acknowledges the first ([script-vm.md](script-vm.md#the-stream-gates-
 and then starts `2070`. `2070` is the scene's home track: its cutscene
 records `P2[7]` and `P2[8]` each switch to their own track and back to
 `2070`. The engine requests both starts on the first frame and sounds
-`2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` loads
-extraction `1058` (the resolver is linear, `988 + id - 2000`), the entry the
-curated table lists as sound-test track 68, `M50` "Ending", not the town
-theme `M14B` (`2016`) that `town01` plays, so the picked epilogue village
-does not sound like the one the story starts in
-([music tracks](../reference/music-tracks.md)).
+`2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` is
+sound-test track 70, `M122` "Blessed Rim Elm" (the resolver loads extraction
+`1058`, `988 + id - 2000`), the ending's arrangement, not the town theme
+`M14B` (`2016`) that `town01` plays, so the picked epilogue village does not
+sound like the one the story starts in ([music tracks](../reference/music-tracks.md)).
 
 ### Which track a scene plays
 
@@ -999,7 +998,7 @@ One id does not play from a bank entry at all. The field initialiser `FUN_801D67
 2. `FUN_8001FC00(0x422, ..)` reads raw `0x422` - extraction `1056`, the gap's VAB-only bank (53 programs) - and the same walker opens its head as VAB `10` and sends the first part of the body. The body is larger than the `0x39800`-byte buffer and is a type-3 chunk, which ends the walk, so a second read in append mode and `FUN_8002630C(.., vab 10, 1, size)` send the rest. That split is the "two part".
 3. `FUN_80026478(0x800705BC)` starts the sequence, and `_DAT_8007BA9C` takes `_DAT_8007BAB8`, so the ordinary resolver `FUN_800243F0` treats the track as loaded and never fetches it.
 
-So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` to extraction `1058` instead, and the arm is the only field path that id takes.
+So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` there too, and the arm (`SceneHost::music_bank_entry_bytes` checks it first) is the only field path that id takes.
 
 The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
 

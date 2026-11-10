@@ -12,12 +12,18 @@
 //! TOC index `_DAT_8007BC64 + k` (`0x80024448..0x80024458`), the bank base
 //! being the `music_01` define, `990` on every running image, so extraction
 //! `988 + k` for every slot of the bank ([`prot_entry_for_bgm_id`]). The
-//! retail kernel differential runs the poller and holds the port to it.
+//! retail kernel differential runs the poller and holds the port to it. The
+//! id's **label** is the curated row `k` ([`sound_test_index_for_bgm_id`]):
+//! the field overlay's debug sound test pairs each id with the row's `M`
+//! code, `2068..=2071` included.
 //!
-//! The **sound-test** side is not: the debug sound-test order (the order the
-//! curated table is keyed on) maps onto two contiguous extraction ranges with
-//! a 2-entry gap between them, so from `2070` on a global id's sound-test row
-//! is two below `id - 2000` ([`sound_test_index_for_bgm_id`]):
+//! The curated table's own row-to-entry map below is not linear, and from row
+//! `68` it disagrees with the two facts above: the poller puts id `2068 + j`
+//! at `1056 + j` where the map puts row `68 + j` at `1058 + j`. The map is
+//! kept for the labels the asset tools print per entry; which entries rows
+//! `68..=80` hold is open.
+//!
+//! The map, as curated:
 //!
 //! - sound-test indices `0..=67`  -> extraction PROT `988 + index` (`988..=1055`);
 //! - a 2-entry gap - extraction `1056` (a VAB-only sound bank, no score) and
@@ -135,10 +141,11 @@ pub const MUSIC_BANK_SLOTS: u32 = 82;
 /// raw `music_01` define (`990`, extraction `988`). `None` for scene-local
 /// ids or ids past the bank.
 ///
-/// It is not `2000 + sound-test index`: the sound test skips extraction
-/// `1056` / `1057`, the poller does not, so `2068` loads the VAB-only `1056`
-/// (the ending theme's instruments, [`crate::mode_entry_init::FIELD_BGM_TWO_PART_ID`]),
-/// `2069` the unlisted `1057`, and `2070` sound-test row `68`.
+/// It is not [`prot_entry_for_sound_test_index`] of the id's row: that map
+/// steps two entries past `1055`, the poller does not, so `2068` loads the
+/// VAB-only `1056` (the ending theme's instruments,
+/// [`crate::mode_entry_init::FIELD_BGM_TWO_PART_ID`]) and `2071` loads `1059`,
+/// which a retail state shows loaded in `jouine`.
 ///
 /// PORT: FUN_800243F0 (the global id -> raw TOC index, `0x80024448..0x80024458`)
 pub fn prot_entry_for_bgm_id(bgm_id: u16) -> Option<u32> {
@@ -151,16 +158,16 @@ fn tracks() -> &'static [MusicTrack] {
     DB.get_or_init(|| legaia_gamedata::Database::load().music_tracks().to_vec())
 }
 
-/// Map a field-VM op-`0x35` BGM id to its debug sound-test index: the
-/// sound-test row of the entry the id loads ([`prot_entry_for_bgm_id`]).
+/// Map a field-VM op-`0x35` BGM id to its debug sound-test index.
 ///
-/// Below `2068` that is `id - 2000`; `2068` / `2069` load the two entries the
-/// sound test skips and have no row; from `2070` the row is `id - 2002`.
-/// Scene-local ids (`< 2000`) resolve through the *scene's* PROT base, which
-/// this scene-independent map cannot see - use
+/// Global-pool ids (`>= 2000`) name sound-test row `id - 2000`, the pairing
+/// the field overlay's debug sound test itself carries (an id beside each
+/// row's `M` code). Scene-local ids (`< 2000`) resolve through the *scene's*
+/// PROT base, which this scene-independent map cannot see - use
 /// [`sound_test_index_for_prot_entry`] with the resolved entry instead.
 pub fn sound_test_index_for_bgm_id(bgm_id: u16) -> Option<u32> {
-    sound_test_index_for_prot_entry(prot_entry_for_bgm_id(bgm_id)?)
+    let idx = (bgm_id as u32).checked_sub(2000)?;
+    (idx < MUSIC_TRACK_COUNT).then_some(idx)
 }
 
 /// Map an extraction-space PROT entry index to its sound-test index, when
@@ -243,15 +250,14 @@ mod tests {
         assert_eq!(sound_test_index_for_bgm_id(5), None);
         assert_eq!(sound_test_index_for_bgm_id(1999), None);
         // Past the bank: no label.
-        assert_eq!(label_for_bgm_id(2082), None);
-        // The two entries the sound test skips load but carry no row; from
-        // 2070 the row is two below the slot.
+        assert_eq!(label_for_bgm_id(2081), None);
+        // The poller's entry is linear through the bank; the id's row is
+        // `id - 2000` throughout.
         assert_eq!(prot_entry_for_bgm_id(2067), Some(1055));
         assert_eq!(prot_entry_for_bgm_id(2068), Some(1056));
-        assert_eq!(prot_entry_for_bgm_id(2069), Some(1057));
-        assert_eq!(sound_test_index_for_bgm_id(2068), None);
-        assert_eq!(sound_test_index_for_bgm_id(2069), None);
-        assert_eq!(sound_test_index_for_bgm_id(2070), Some(68));
+        assert_eq!(prot_entry_for_bgm_id(2071), Some(1059));
+        assert_eq!(sound_test_index_for_bgm_id(2068), Some(68));
+        assert_eq!(sound_test_index_for_bgm_id(2071), Some(71));
         assert_eq!(prot_entry_for_bgm_id(2081), Some(1069));
         assert_eq!(prot_entry_for_bgm_id(2082), None);
     }
