@@ -758,3 +758,96 @@ fn the_bag_list_arms_build_the_rows_retail_builds() {
     }
     assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
 }
+
+const LIST_DRAW: u32 = 0x8003_2A44;
+const DRAW_STRING: u32 = 0x8003_6888;
+
+/// The list kernel `FUN_80032A44`'s row pass against `list_row_ink`: random
+/// rows of every class in a list node, the kernel run in each list mode
+/// (`gp+0x87C`; `1`, the pad-driven mode, is left out - its input half is
+/// the cursor step the list tests cover), every call outside it stubbed but
+/// the row-name resolver `FUN_8002FF8C` (recorded) and the string drawer
+/// `FUN_80036888` (recorded with the ink word `gp+0x13C` it runs under).
+/// Each bag and spell row's name must draw in the ink the port stages.
+#[test]
+fn the_list_rows_draw_in_the_ink_the_port_stages() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_menus::menu_list_rows::list_row_ink;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    let current = Rc::new(RefCell::new(0u16));
+    let c = current.clone();
+    cpu.hook(ROW_NAME, move |r, _| {
+        *c.borrow_mut() = r.r[A0] as u16;
+        r.r[V0] = TEXT;
+    });
+    let drawn = Rc::new(RefCell::new(Vec::<(u16, u8)>::new()));
+    let (c, d) = (current.clone(), drawn.clone());
+    // The name column is the window's `x + 0xC`; the bag arm's quantity
+    // draws through the same routine further right.
+    cpu.hook(DRAW_STRING, move |r, m| {
+        if r.r[A3] == 40 + 0xC {
+            d.borrow_mut().push((*c.borrow(), m.rd32(GP + 0x13C) as u8));
+        }
+    });
+    const LIST: u32 = 0x8013_1000;
+    let mut rng = Rng(0x494E_4B53);
+    let mut checked = [0usize; 2];
+    for case in 0..2000 {
+        let count = 1 + rng.below(40) as u16;
+        let visible = 1 + rng.below(12) as u16;
+        let top = rng.below(u32::from(count)) as u16;
+        let rows: Vec<u16> = (0..count)
+            .map(|_| {
+                let class =
+                    [0x1000u16, 0x1000, 0x2000, 0x5000, 0x3000, 0x4000][rng.below(6) as usize];
+                class | (rng.next() as u16 & 0x0FFF)
+            })
+            .collect();
+        let mode = [0u32, 2, 4][rng.below(3) as usize];
+        cpu.mem.wr32(GP + 0x87C, mode);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        cpu.mem.wr8(NODE + 0x1C, 3);
+        for (o, v) in [(0xA, 40u16), (0xC, 30), (0xE, 200), (0x10, 160)] {
+            cpu.mem.wr16(NODE + o, v);
+        }
+        cpu.mem.wr16(LIST, top);
+        cpu.mem.wr16(LIST + 2, visible);
+        cpu.mem.wr16(LIST + 4, count);
+        cpu.mem.wr16(LIST + 6, top);
+        for (k, r) in rows.iter().enumerate() {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k as u32, *r);
+        }
+        drawn.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+        let parked = mode == 4;
+        for (entry, ink) in drawn.borrow().iter() {
+            let class = entry & 0xF000;
+            if matches!(class, 0x1000 | 0x2000 | 0x5000) {
+                assert_eq!(
+                    *ink,
+                    list_row_ink(*entry, parked),
+                    "case {case}: row {entry:#06x} mode {mode}"
+                );
+                checked[usize::from(class != 0x1000)] += 1;
+            }
+        }
+        let shown = usize::from(visible.min(count - top));
+        let names = rows[usize::from(top)..usize::from(top) + shown]
+            .iter()
+            .filter(|r| matches!(*r & 0xF000, 0x1000 | 0x2000 | 0x5000))
+            .count();
+        let got = drawn
+            .borrow()
+            .iter()
+            .filter(|(e, _)| matches!(e & 0xF000, 0x1000 | 0x2000 | 0x5000))
+            .count();
+        assert_eq!(
+            got, names,
+            "case {case}: every visible bag and spell row draws"
+        );
+    }
+    assert!(checked.iter().all(|&n| n > 2000), "{checked:?}");
+}
