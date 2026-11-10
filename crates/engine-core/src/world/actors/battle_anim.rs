@@ -687,8 +687,8 @@ impl World {
             }
             self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
         }
-        // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
-        // driver's pass instead (`World::tick_battle_cast_drive`).
+        // The cast tick's effect-child drive. On retail's cadence it runs
+        // with the pass's draw instead (`World::tick_battle_anim_pass`).
         if !commit_after {
             self.tick_battle_cast_drive(vsyncs);
         }
@@ -845,9 +845,10 @@ impl World {
 
     /// The cast tick's effect-child drive (`FUN_801E09F8`, after its census):
     /// the move-FX streak's counter walk and the homing slots, once per
-    /// vsync of `vsyncs`. The cast tick is the frame driver's, so on
-    /// retail's cadence it runs on the pass ahead of the action SM; per
-    /// vsync it stays at the anim tick's tail.
+    /// vsync of `vsyncs`. The cast tick is the draw's (`jal 0x801E09F8` in
+    /// the battle draw tick `FUN_800480D8`), so on retail's cadence it runs
+    /// at the tail of the anim pass (`World::tick_battle_anim_pass`); per
+    /// vsync it stays at the anim tick's tail too.
     pub(in crate::world) fn tick_battle_cast_drive(&mut self, vsyncs: u8) {
         // On retail's cadence the drive is one call a battle frame with the
         // frame step folded into every counter and step
