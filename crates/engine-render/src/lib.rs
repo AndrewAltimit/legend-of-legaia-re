@@ -1,12 +1,20 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
-//! PORT: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002B994
-//! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC, FUN_80035EA8
+//! PORT: FUN_80031D00, FUN_80035CB8, FUN_80035DA0, FUN_80035E44
+//! No kernel in this crate ports these four: the overlay pipelines draw what
+//! the retail text-actor draw pump (`FUN_80031D00` and its three callees)
+//! puts on screen, from the hosts' own draw lists. The claim is the
+//! renderer's, module-wide, until a kernel takes it.
+//!
 //! REF: FUN_8002C488, FUN_8003C310 (their cells are cut by
 //! `legaia_engine_menus::save_menu_atlas::{menu_pictogram, command_arrow_page_rect}`)
-//! PORT: FUN_8003C1F8 (per-glyph dialog-font sprite emit; the engine renders
-//! in-game proportional dialog glyphs via the legaia-font atlas + textured-quad
-//! overlay instead of the retail GP0 cell-UV push)
+//!
+//! REF: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002B994, FUN_800337B0,
+//! FUN_800349EC, FUN_80035EA8, FUN_8003C1F8 - each ported by a kernel in
+//! `engine-ui`, `engine-menus` or `engine-dialog`, whose `PORT:` tag sits
+//! there; the renderer draws what those kernels emit (for `FUN_8003C1F8`, the
+//! per-glyph dialog-font sprite, through the legaia-font atlas and a
+//! textured-quad overlay instead of the retail GP0 cell-UV push).
 //!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!
