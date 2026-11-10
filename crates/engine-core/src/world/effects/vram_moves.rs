@@ -205,6 +205,8 @@ impl World {
     /// so a cycler leaves its seat frame one step of its rates on and with
     /// its gate at `2`. PROT 0921's two backdrop cyclers read `+0x90 = 4`,
     /// `+0x9C = 2` on the frame arm 3 seats them, a step-`1` frame.
+    ///
+    /// REF: FUN_80021B04 (the seater, whose VM run precedes the seat frame's tick)
     pub(crate) fn integrate_battle_part_cycler(
         &mut self,
         part: &mut legaia_engine_effects::summon::SummonPartRuntime,

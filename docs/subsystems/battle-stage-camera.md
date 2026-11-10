@@ -94,6 +94,14 @@ mirror bits per child billboard.) These tiles are the 619 `POLY_GT4` in the
 live primitive pool of the capture set. The grid is a full plane centred on the
 actors, so it fills the ground at every orbit angle.
 
+The packets are Gouraud ones whose four corners are cued off one `RGBC`, and the
+port's built grid holds that one colour on every corner. A shader that tells a
+flat-shaded draw by the colour's derivative reads such a quad as flat, and the
+PCSX-Redux capture rule does not dither a flat-shaded textured draw: the grid's
+vertices carry the Gouraud tag (`GROUND_PACKET_TSB`) so the instrument dithers
+the floor as that emulator does. It shows under a summon's dark ambient, where
+the floor is smooth enough for the dither table to read off a frame.
+
 The grid is not the world-map continent heightfield: the `prim-trace`
 "3715 hits in `0x80190000`" that suggested one were 3 degenerate `clut=0`
 `POLY_FT4` prims flooding that window. The capture filed under the `0896` label
