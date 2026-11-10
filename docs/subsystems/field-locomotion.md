@@ -1159,10 +1159,26 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
 - **Spawn.** `FUN_8003a55c` runs the record's prologue itself, one op at a time through the dispatcher `FUN_801DE840` (`0x8003A914..0x8003A95C`), stopping after an executed `0x21`, on a cursor that did not move, or before a text byte. A door's is `4C 41 <rate>` then `4C 35`: rate `16` (one frame per tick), then reset-and-hold. The door is shut and frozen. A prop with no `4C 35` keeps the looping template flags and turns forever - Rim Elm's windmill.
 
   Because the pass is a VM run, a story-flag test in it picks the arm and its flag writes land: `korb3`'s stones (P0[3..9], P0[23], P0[24]) clear their flag, test `0x403` and either hold shut and park on the `0x21` the touch resumes from, or raise the flag and park in an idle loop.
-  The port (`field_env::run_spawn_prologue`) takes the parked cursor, the flag writes and the clip words from that run, so a two-state prop poses from the arm its flag picks: Conkram's shell on `map03` (P0[0]) tests `0x4C8` over a `4C 35` arm (frame 0, the lid standing open behind the town) and a `4C 36` arm (its last frame), and a retail capture with the flag clear holds the actor at cursor `0`. The class bits still come from a linear walk of both arms, so a door whose "already opened" arm sets `31 00` (`dolk`'s locked gates P0[15..18]) spawns collision-exempt whatever its flag says.
+  The port (`field_env::run_spawn_prologue`) takes the parked cursor, the flag writes and the clip words from that run, so a two-state prop poses from the arm its flag picks: Conkram's shell on `map03` (P0[0]) tests `0x4C8` over a `4C 35` arm (frame 0, the lid standing open behind the town) and a `4C 36` arm (its last frame), and a retail capture with the flag clear holds the actor at cursor `0`. The class bits come from the same run, so a door whose "already opened" arm sets `31 00` spawns solid while its flag says shut, and its touch body opens it; only a bank built without a world walks the prologue linearly.
 
-  `rikuroa`'s barricade (P0[1]) is the visible case: only its `0x142` arm carries the `31 00`, so before Caruban it spawns exempt yet posed shut, the player walks through the closed gate, and its touch body (the fade, the swing, the `31 00`) never runs.
-  Taking the bits from the executed arm is the retail reading, but it turns 29 bound objects in 12 scenes solid in some flag state (`bylon`, `edbylon`, `cave01`, `dolk`, `jiji`, `map01`, `retock`, `rikuroa`, `taiku`, `taiku2`, `tower`, `vell`), and a route that walks through one unopened has to touch it open first.
+  `rikuroa`'s barricade (P0[1]) is the case that showed it: only its `0x142` arm carries the `31 00`, so read off both arms it spawned exempt yet posed shut, the player walked through the closed gate before Caruban, and its touch body (the fade, the swing, the `31 00`) never ran. Disc-gated `engine-session/tests/rikuroa_barricade_disc.rs` pins it.
+
+  Every bound object whose `31 00` hangs on a flag arm, from each prologue's disassembly (the test jumps when its flag is set). *Walk* objects open on body contact; *press* objects carry `31 1E` (the interact-gated class) and open only on the facing probe:
+
+  | Objects | Touch | Walk-through (`31 00`) when |
+  |---|---|---|
+  | `bylon` P0[3, 4, 22, 24..27], `edbylon` P0[3, 22, 24..27] | walk | `0x2A1` set and `0x2AC` clear |
+  | `cave01` P0[0] | walk | `0x15E` set |
+  | `dolk` P0[15..18] (Sunrise and sister gates) | press | `0x270..0x273` set (the touch inserts the key) |
+  | `jiji` P0[1] | walk | `0x206` set |
+  | `map01` P0[6] | walk | `0x2C5` or `0x19A` set |
+  | `retock` P0[15..17] | press | `0x357` clear |
+  | `rikuroa` P0[1] | walk | `0x142` set |
+  | `taiku` P0[1], `taiku2` P0[1] | press / walk | `0x508` set |
+  | `taiku` P0[5] | walk | `0x519` set (and it parks off-map) |
+  | `tower` P0[0] | press | `0x1C6` set |
+  | `vell` P0[1] | press | `0x2AE` set |
+
 - **Touch.** Resumed when the player's body hits the prop (`FUN_801cfc40` links the pair, `FUN_801d5b5c` posts the engagement, the dialog SM `FUN_80039b7c` runs the parked script). A house door's pass is a creak (`0x36` sub-`0x8000` -> the SFX cue player `FUN_80035b50`), then `2C 07` / `2C 01` / `2B 03` (clear reverse, **clear hold**, set clamp), then **`31 00`** (the door leaves the collision candidate list as the swing starts), then `2C 08` / `2D 08`, which spins until the tick latches the end. The clip plays forward and clamps open; the opened door neither blocks nor re-fires.
 - **Search body.** Rim Elm's cupboard continues past that spin: a `70 xx` searched-flag guard, `50 xx` flag SET + `39 xx` GIVE_ITEM, the `0x1F` message segments (found / empty, with the `C2` item-name escape), and only then the closing segment (`2B 07` / `2C 01` / `2B 03`, set reverse and play again). Because the script resumes only when the pager returns, the doors swing shut **after the message is dismissed**.
 - **Locked doors** (`town01` P0[1]) are the same shape with story-flag arms: while locked, the touch pass shows "The house is locked..." and never reaches the open ops or the `31 00`, so a locked door stays solid.
