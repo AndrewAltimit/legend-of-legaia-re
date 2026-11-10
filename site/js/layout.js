@@ -172,6 +172,7 @@ const NAV = [
       { href: 'subsystems/battle-formulas.html', text: 'Battle formulas', key: 'subsystems/battle-formulas' },
       { href: 'subsystems/level-up.html', text: 'Level-up', key: 'subsystems/level-up' },
       { heading: 'Battle: on screen' },
+      { href: 'subsystems/battle-frame.html', text: 'A battle frame, end to end', key: 'subsystems/battle-frame' },
       { href: 'subsystems/battle-stage-camera.html', text: 'Battle stage and camera', key: 'subsystems/battle-stage-camera' },
       { href: 'subsystems/battle-actor-rendering.html', text: 'Battle actor rendering', key: 'subsystems/battle-actor-rendering' },
       { href: 'subsystems/battle-hud.html', text: 'Battle HUD', key: 'subsystems/battle-hud' },

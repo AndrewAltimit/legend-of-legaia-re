@@ -676,6 +676,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/battle-hud.html", "Battle HUD", "subsystems/battle-hud", "subsystems/battle-hud.html"),
     ("subsystems/cast-module.html", "Cast modules", "subsystems/cast-module", "subsystems/cast-module.html"),
     ("subsystems/cast-pipeline.html", "A cast, end to end", "subsystems/cast-pipeline", "subsystems/cast-pipeline.html"),
+    ("subsystems/battle-frame.html", "A battle frame, end to end", "subsystems/battle-frame", "subsystems/battle-frame.html"),
     ("subsystems/battle-action-helpers.html", "Battle action helpers", "subsystems/battle-action-helpers", "subsystems/battle-action-helpers.html"),
     ("subsystems/battle-actor-rendering.html", "Battle actor rendering", "subsystems/battle-actor-rendering", "subsystems/battle-actor-rendering.html"),
     ("subsystems/field-ambient-fx.html", "Field ambient effects", "subsystems/field-ambient-fx", "subsystems/field-ambient-fx.html"),
