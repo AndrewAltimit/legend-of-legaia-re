@@ -210,12 +210,12 @@ fn direction_swing_commit_keeps_normal_speed_and_no_ghosts() {
     assert!(legaia_engine_world_views::battle_draws::battle_ghost_draws(&world).is_empty());
 }
 
-/// The trigger fires only on the matching (character, `+0x77`) pair, the
-/// sweep samples the pose ring at two-frame stride, and it needs at least
-/// two steps before anything draws - the retail `slti 0x2` gate of
-/// `FUN_80048310`.
+/// The trigger fires only on the matching (character, `+0x77`) pair, and
+/// the sweep is the driver's cursor walk: the playing clip decoded at the
+/// live cursor and then `2 * record[+0x78]` back a step down to the clip's
+/// start, sixteen steps at most (`FUN_80048310`).
 #[test]
-fn weapon_trail_sweeps_the_ring_on_the_trigger_clip() {
+fn weapon_trail_rewinds_the_cursor_on_the_trigger_clip() {
     let mut world = World::new();
     world.enter_battle(1, 0);
     // Slot 0 = battle ordinal 0 = roster slot 0 = Vahn (retail char id 1);
@@ -226,29 +226,43 @@ fn weapon_trail_sweeps_the_ring_on_the_trigger_clip() {
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
     world.actors[0].battle.queued_anim = 0xC;
     world.commit_staged_battle_anim(0);
-    // One ticked frame: only one ring entry wears the trigger key - below
-    // the two-step floor, nothing draws.
-    world.tick_battle_animations();
+    // The commit zeroes the cursor: nothing is captured at or below zero.
     assert!(legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world).is_empty());
-    for _ in 0..6 {
+    let mut seen_short = false;
+    let mut seen_full = false;
+    for _ in 0..12 {
         world.tick_battle_animations();
-    }
-    let draws = legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world);
-    assert_eq!(draws.len(), 1, "one trailing actor");
-    let d = &draws[0];
-    assert_eq!(d.actor_slot, 0);
-    assert_eq!(d.rgb, [0x80, 0x20, 0x40], "Vahn's trigger tint");
-    // 7 ring entries at stride 2 -> 4 sweep steps.
-    assert_eq!(d.steps.len(), 4);
-    // Control points are the pose translations of parts 0x0C..0x0F.
-    for (k, step) in d.steps.iter().enumerate() {
-        for (i, pt) in step.iter().enumerate() {
-            assert_eq!(pt[0], (0x0C + i) as i16, "step {k} point {i} x");
+        let player = world.actors[0].battle_animation.as_ref().unwrap();
+        let cursor = player.cursor_sixteenths() as i16;
+        // The fixture's rate byte is 2: four sixteenths a step.
+        let want = legaia_render_kernels::battle_trail::sweep_cursors(cursor, 2);
+        assert_eq!(want.len(), ((cursor as usize).div_ceil(4)).min(16));
+        let draws = legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world);
+        if want.len() < 2 {
+            assert!(draws.is_empty(), "below the two-step floor at {cursor}");
+            continue;
         }
+        assert_eq!(draws.len(), 1, "one trailing actor");
+        let d = &draws[0];
+        assert_eq!(d.actor_slot, 0);
+        assert_eq!(d.rgb, [0x80, 0x20, 0x40], "Vahn's trigger tint");
+        assert_eq!(d.steps.len(), want.len(), "cursor {cursor}");
+        seen_short |= want.len() < 16;
+        seen_full |= want.len() == 16;
+        for (k, step) in d.steps.iter().enumerate() {
+            let pose = player.pose_at_sixteenths(want[k] as u16);
+            for (i, pt) in step.iter().enumerate() {
+                // Control points are the pose translations of parts
+                // 0x0C..0x0F at the rewound cursor.
+                assert_eq!(*pt, pose.bone_outputs[0x0C + i].0, "step {k} point {i}");
+                assert_eq!(pt[0], (0x0C + i) as i16);
+            }
+        }
+        // Step 0 is the live pose; deeper steps are earlier in the clip
+        // (the fixture's `ty` is the keyframe index).
+        assert!(d.steps[0][0][1] >= d.steps[d.steps.len() - 1][0][1]);
     }
-    // Step 0 is the newest ring entry; deeper steps carry older frames
-    // (smaller ty written per frame).
-    assert!(d.steps[0][0][1] >= d.steps[3][0][1]);
+    assert!(seen_short && seen_full, "the walk grows to the budget");
 }
 
 /// No trail off the trigger: a different clip id on the same seat, or a
@@ -283,34 +297,60 @@ fn weapon_trail_stays_dark_off_the_trigger() {
     assert!(legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world).is_empty());
 }
 
-/// The sweep stops at the clip boundary: ring entries recorded under a
-/// different (or no) clip key never join the trail, so a fresh swing's
-/// trail grows from its own frames only.
+/// The sweep ends at the clip's start whatever played before it: a second
+/// commit of the same trigger clip (an art's next strike lands in the same
+/// dynamic slot) starts its trail from nothing, and a rate the arts' slow
+/// motion dropped leaves the walk in clip time.
 #[test]
-fn weapon_trail_sweep_stops_at_the_clip_boundary() {
+fn weapon_trail_sweep_ends_at_the_clips_start() {
     let mut world = World::new();
     world.enter_battle(1, 0);
     let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
     clips[0] = Some(trail_test_clip(0, 8));
     clips[0xC] = Some(trail_test_clip(0x29, 30));
+    clips[0xD] = Some(trail_test_clip(0x29, 30));
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
-    // Several idle frames first: the ring holds key-0 entries.
-    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
-    for _ in 0..6 {
-        world.tick_battle_animations();
-    }
-    assert!(legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world).is_empty());
-    // Now the swing: after 5 ticked frames the sweep sees ring depths
-    // 0/2/4 with the swing key - 3 steps, not the 16-step budget the idle
-    // frames would fill.
     world.actors[0].battle.queued_anim = 0xC;
     world.commit_staged_battle_anim(0);
-    for _ in 0..5 {
+    for _ in 0..12 {
         world.tick_battle_animations();
     }
+    let full = legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world);
+    assert_eq!(full[0].steps.len(), 16);
+    // A second clip of the same identity byte, staged behind the first:
+    // on the tick it commits, the walk reaches back to its own start only.
+    world.actors[0].battle.queued_anim = 0xD;
+    let mut ticks = 0;
+    while world.actors[0].battle.current_anim != 0xD {
+        world.tick_battle_animations();
+        ticks += 1;
+        assert!(ticks < 200, "the staged clip commits at the natural end");
+    }
+    let cursor = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .unwrap()
+        .cursor_sixteenths() as usize;
+    assert!(cursor < 16, "cursor {cursor}");
+    let steps = legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world)
+        .first()
+        .map_or(0, |d| d.steps.len());
+    assert_eq!(steps, if cursor > 4 { cursor.div_ceil(4) } else { 0 });
+    // Under a dropped rate the cursor moves less a tick; the steps are
+    // still four sixteenths apart, so the trail is as long as the cursor
+    // allows and no longer.
+    world.actors[0].battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+    for _ in 0..3 {
+        world.tick_battle_animations();
+    }
+    let cursor = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .unwrap()
+        .cursor_sixteenths() as usize;
+    assert!(cursor > 4 && cursor < 64, "cursor {cursor}");
     let draws = legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world);
-    assert_eq!(draws.len(), 1);
-    assert_eq!(draws[0].steps.len(), 3);
+    assert_eq!(draws[0].steps.len(), cursor.div_ceil(4));
 }
 
 /// A drawn party body casts the 24-column subtractive disc of radius

@@ -13,7 +13,7 @@ use crate::common::{Rng, scus_cpu};
 use legaia_engine_camera::projection::BattleCamPose;
 use legaia_render_kernels::battle_trail::{
     MAX_SWEEP_STEPS, TRAIL_PACKET_UNWRITTEN, TrailVertex, band_quads, band_schedule,
-    project_trail_point, trail_packet, trail_world_point,
+    project_trail_point, sweep_cursors, trail_packet, trail_world_point,
 };
 use legaia_render_kernels::gte::FieldGteView;
 use psx_retail_exec::{A0, A1, A2, A3, Cpu, SP, Stop};
@@ -285,12 +285,7 @@ fn the_sweep_schedule_matches_the_driver() {
 
         // The capture walk: one step per cursor `> 0`, rewinding two
         // frames of the clip rate each, at most sixteen.
-        let mut want = Vec::new();
-        let mut c = cursor;
-        while c > 0 && want.len() < MAX_SWEEP_STEPS {
-            want.push(c);
-            c = c.wrapping_sub(2 * i16::from(rate));
-        }
+        let want = sweep_cursors(cursor, rate);
         let s = seen.borrow();
         assert_eq!(s.decodes, want, "decoded cursors, {ctx}");
         for (step, c) in want.iter().enumerate() {
