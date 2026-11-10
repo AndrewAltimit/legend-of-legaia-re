@@ -119,7 +119,9 @@ pub fn recipient_ui_cue(event: &crate::shop::BuyRecipientEvent) -> Option<u8> {
         E::BoughtAndEquipped { .. } => Some(0x24),
         E::Buzz => Some(SHOP_REFUSAL_CUE),
         E::Cancelled => Some(crate::menu_cues::MENU_CANCEL_CUE),
-        E::None | E::ExitToBuyList => None,
+        // Dismissing the Point Card toast (`0x801DB7B4`).
+        E::ExitToBuyList => Some(0x20),
+        E::None => None,
     }
 }
 

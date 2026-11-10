@@ -627,7 +627,12 @@ credits it **before** the gold debit: gated on the party holding `0xFE`
 bought - the `0xCCCCCCCD` reciprocal-multiply plus `srl 4` at
 `0x801dbadc..0x801dbb10`, times the quantity. Sell transactions never accrue.
 The recipient picker `FUN_801db380` applies the same accrual on both of its
-purchase arms. `see ghidra/scripts/funcs/overlay_menu_801db7f4.txt`.
+purchase arms. Without the card it writes sub-screen `0x1B` (the buy list) on
+the confirm's own frame; with it, the toast holds until a confirm / cancel
+press, which plays `0x20` (`0x801DB7B4`) on the way back.
+`crates/retail-exec/tests/menu_subscreens.rs` steps the picker against
+`engine-menus::shop::BuyRecipientSession`.
+`see ghidra/scripts/funcs/overlay_menu_801db7f4.txt`.
 
 **The toast is window 31.** After crediting, the commit hands the widget-VM
 a script whose entire body is `01 1F` plus the terminator - one command,
