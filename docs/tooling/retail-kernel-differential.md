@@ -1259,3 +1259,14 @@ plain. The bring-up `FUN_801CF070`, the help panel `FUN_801D72A0`, the centred c
 `FUN_801D73B8` (`minigame_panels`), the sky strip `FUN_801D24EC` (`fishing_sky`), the Baka Fighter
 help panel `FUN_801D6CBC`, the cameo animator `FUN_801D6310` (`baka_cameo`) and the back-read loader
 tick `FUN_801F6B24` (`panel_backread`) match.
+
+The Status page's Magic list (`status_page`) showed the port drawing every row white while a spell
+is latched for an exchange; retail writes the other rows in the grey ink (`0x801D42B4`). Both list
+pages' empty-list line sat `0x13` px low: retail places it off the window record, not the page
+body. The Moves page, the shop's buy / sell list hand (on its row's pen line, as the list kernel
+seats it at `0x80032F84`), the sell panel `FUN_801D5AE8` and the game-over letter stager
+`FUN_801CE844` (its GPU and CD calls stubbed) match. The dev menu's list picker `FUN_801ECA08`
+showed the port running the row-action dispatcher on cancel; retail runs it on confirm and parks a
+cancel in phase `2`. The command arrow `FUN_8003C310` and the pictogram emitter `FUN_8002C488`
+are held to the cells the menu atlas bakes.
+
