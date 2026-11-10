@@ -290,6 +290,13 @@ impl World {
         }
         if entry == 966 {
             self.evil_seru_ride_lead();
+            // Arm 0 zeroes the shake word (`sw zero,-0x5B98` at
+            // `0x801F6B90`) and the body's epilogue runs it down every tick
+            // (`0x801F8A94..0x801F8AE8`), the code PROT 0927's has.
+            if phase_entry == 0 {
+                self.casting.module_shake = 0;
+            }
+            self.juggernaut_shake();
         }
         if entry == 927
             && let Some(d) = direction
@@ -540,6 +547,19 @@ impl World {
             if passed
                 && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
             {
+                // The stager's arm 4 (`0x801F8E4C`) opens on Juggernaut's
+                // salmon flash and its shake (`+0x14` into `0x801FA468`)
+                // before the sweep.
+                if let Some(t) = ticks::juggernaut_stager_fade(AOE_STAGER_WORKING_ARM) {
+                    let mut fade = None;
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut fade,
+                        &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
+                        1,
+                    );
+                    self.presentation.module_fades.extend(fade);
+                }
+                self.casting.module_shake += ticks::juggernaut_stager_shake(AOE_STAGER_WORKING_ARM);
                 if let Some(r) =
                     self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
                 {
