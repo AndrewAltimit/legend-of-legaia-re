@@ -84,6 +84,7 @@ mod curvature_table;
 mod dance_floor;
 mod dance_leaves;
 mod dead_end_crisis;
+mod deadly_rain;
 mod death_spoils;
 mod default_arm_mesh;
 mod default_move;
