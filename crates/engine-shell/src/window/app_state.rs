@@ -1067,6 +1067,12 @@ pub(super) struct PlayWindowApp {
     /// The last hotkey's notice line and when it went up; drawn under the
     /// quit prompt for [`NOTICE_DURATION`].
     pub(super) notice: Option<(String, std::time::Instant)>,
+    /// A `Print Screen` press waiting for the next presented frame
+    /// ([`legaia_engine_session::hotkeys::HostHotkey::Screenshot`]).
+    pub(super) player_shot_pending: bool,
+    /// `Print Screen` is down: its release then takes no second shot. A
+    /// platform that delivers only the release (Windows) shoots on it.
+    pub(super) player_shot_key_down: bool,
     /// The `F12` / `?` panel is up (`window::settings_panel`).
     pub(super) hotkey_help: bool,
     /// Which page of that panel is up.

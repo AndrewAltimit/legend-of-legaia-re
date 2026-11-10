@@ -1736,7 +1736,8 @@ impl OptionRow {
             | H::DebugCamera
             | H::CheatMaxAp
             | H::CheatEncounters
-            | H::ReloadPack => {
+            | H::ReloadPack
+            | H::Screenshot => {
                 return None;
             }
         })

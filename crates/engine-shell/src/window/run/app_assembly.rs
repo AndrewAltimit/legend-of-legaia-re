@@ -246,6 +246,8 @@ impl PlayWindowApp {
             diag_rows: legaia_engine_ui::diag_hud_enabled(),
             quit_prompt: None,
             notice: None,
+            player_shot_pending: false,
+            player_shot_key_down: false,
             hotkey_help: false,
             panel_page: Default::default(),
             settings_cursor: 0,

@@ -1211,6 +1211,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       window.removeEventListener('keydown', this._onDown);
       window.removeEventListener('keyup', this._onUp);
       window.removeEventListener('keydown', this._onHotkey);
+      window.removeEventListener('keyup', this._onShotUp);
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
       if (this._fogPass) { this._fogPass.dispose(); this._fogPass = null; }

@@ -763,6 +763,48 @@
           rt.play_land_frame_grab(buf, cw, ch);
         } catch (e) { /* presentation-only */ }
       }
+      /* `Print Screen` (`_runHotkey`): read this finished frame now, while
+       * the GL drawing buffer still holds it. */
+      if (!skipDraw && this._shotPending) {
+        this._shotPending = false;
+        this._savePlayerShot();
+      }
+    }
+
+    /* The player's screenshot: the GL canvas and every visible layer stacked
+     * on it (the menu overlay, a minigame's hub layer), at the GL canvas's
+     * size, downloaded as `legaia-<scene>-<time>.png`. The native window
+     * writes the same frame into the player's pictures folder
+     * (`window::player_screenshot`). */
+    _savePlayerShot() {
+      const src = this.canvas;
+      if (!src || !src.width || !src.height) return;
+      const out = document.createElement('canvas');
+      out.width = src.width; out.height = src.height;
+      const ctx = out.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      try {
+        ctx.drawImage(src, 0, 0);
+        for (const c of src.parentNode ? src.parentNode.querySelectorAll('canvas') : []) {
+          if (c !== src && !c.hidden && c.style.visibility !== 'hidden'
+              && c.style.display !== 'none') {
+            ctx.drawImage(c, 0, 0, out.width, out.height);
+          }
+        }
+      } catch (e) { return; }
+      const scene = String((this._hudState && this._hudState.scene) || '').replace(/[^A-Za-z0-9_]/g, '');
+      const name = 'legaia-' + (scene ? scene + '-' : '') + Math.floor(Date.now() / 1000) + '.png';
+      out.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        if (typeof window.__playShowNotice === 'function') window.__playShowNotice('Screenshot saved: ' + name);
+      }, 'image/png');
     }
 
     /* The field draws' work that only a viewer needs, done or dropped now that

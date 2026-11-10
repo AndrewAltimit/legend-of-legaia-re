@@ -1701,6 +1701,9 @@ mod key_script_tests {
         // flip, resolved ahead of `handle_key`.
         handled.remove("F11");
         handled.remove("NumpadEnter");
+        // So does the player's screenshot key: it writes into the player's
+        // pictures folder, which no scripted capture should touch.
+        handled.remove("PrintScreen");
         assert!(
             handled.len() >= 20,
             "the handler reads its keys as `KeyCode::*`"
