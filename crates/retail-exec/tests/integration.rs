@@ -86,6 +86,7 @@ mod default_arm_mesh;
 mod default_move;
 mod defeat_credit;
 mod dev_menu_flags;
+mod dev_menu_rows;
 mod dialog_pager;
 mod dome_tally;
 mod dome_hud;
