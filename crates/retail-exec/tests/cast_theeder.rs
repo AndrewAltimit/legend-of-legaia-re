@@ -92,13 +92,16 @@ fn put(cpu: &mut Cpu, at: u32, p: [i16; 3]) {
     cpu.mem.wr16(at + 6, 0xA5A5);
 }
 
+/// A textured packet's texels, CLUT and page.
+type Texture = ([(u8, u8); 4], u16, u16);
+
 /// A packet as decoded, for both sides.
 #[derive(Debug, PartialEq, Eq)]
 struct Packet {
     code: u8,
     xy: [(i16, i16); 4],
     rgb: [[u8; 3]; 4],
-    uv: Option<([(u8, u8); 4], u16, u16)>,
+    uv: Option<Texture>,
 }
 
 /// Every packet written since [`reset_pool`]: `POLY_FT4` (`0x2C..0x2F`, ten

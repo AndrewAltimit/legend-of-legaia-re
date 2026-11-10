@@ -14,7 +14,7 @@ use legaia_engine_ui::{
     CONFIRM_DIALOG_SLIDE_START_Y, CONFIRM_DIALOG_SLIDE_TARGET_Y, NOW_CHECKING_SLIDE_START_X,
     NOW_CHECKING_SLIDE_TARGET_X, SaveMenuAtlasRects, confirm_dialog_hand_draw_for,
 };
-use psx_retail_exec::{A0, A1, A2, A3, Stop};
+use psx_retail_exec::{A0, A1, A2, Stop};
 use std::cell::RefCell;
 use std::rc::Rc;
 
