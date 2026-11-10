@@ -37,7 +37,7 @@
 //!
 //! The battle strip ([`crate::battle_hud::battle_hud_draws_for`]) has its own
 //! layout, its own widths and its own plate art. The two read the same
-//! character record and take the same readout-tint law, and nothing else about
+//! character record and the same HP and MP ink laws, and nothing else about
 //! them is shared - the field columns are 4 px narrower, the field separator
 //! sits on the numeral row rather than four above it, and the field plate is a
 //! translucent scrim rather than the marbled 102x48 sprite.
@@ -129,12 +129,23 @@ pub struct FieldHudMember<'a> {
     pub hp_max: u16,
     pub mp: u16,
     pub mp_max: u16,
-    /// Drives the dead tier of the readout-tint law, exactly as on the battle
-    /// strip: a downed member's HP *and* MP go red, the name does not dim.
-    pub alive: bool,
     /// The record's `+0x12E` status word: any bit tints the HP readout in the
     /// caution tier above a quarter (`FUN_800349EC`).
     pub status: u16,
+}
+
+/// The ink tiers a member's two readouts draw in, `(hp, mp)`: the routine
+/// stages `FUN_800349EC(id)` before the HP pair and `FUN_80035EA8(id)` before
+/// the MP pair (`0x801D10AC` / `0x801D1114`). A downed member's HP takes the
+/// dead tier through the HP law itself (`cur == 0`); the MP pair keeps the MP
+/// law, so a fallen member's MP reads in its own tier, not red.
+///
+/// PORT: FUN_801d0d38 (the readout inks)
+pub fn field_hud_readout_inks(m: &FieldHudMember<'_>) -> (u8, u8) {
+    (
+        hp_bar_color_index(m.hp, m.hp_max, m.status != 0),
+        mp_bar_color_index(m.mp, m.mp_max),
+    )
 }
 
 /// Everything one field party-HUD frame needs.
@@ -381,18 +392,8 @@ pub fn field_party_hud_draws_for(
         let x = FIELD_HUD_X0 + ordinal as i32 * FIELD_HUD_PITCH;
         let hp_y = y + ROW_HP_DY;
         let mp_y = y + ROW_MP_DY;
-        // Readout-tint law, identical to the battle strip's: a downed member
-        // paints both readouts in the dead tier and leaves the name alone.
-        let hp_tint = if m.alive {
-            tier_color(hp_bar_color_index(m.hp, m.hp_max, m.status != 0))
-        } else {
-            gauge_fill_color(2)
-        };
-        let mp_tint = if m.alive {
-            tier_color(mp_bar_color_index(m.mp, m.mp_max))
-        } else {
-            gauge_fill_color(2)
-        };
+        let (hp_ink, mp_ink) = field_hud_readout_inks(m);
+        let (hp_tint, mp_tint) = (tier_color(hp_ink), tier_color(mp_ink));
 
         stage_text(&mut out.text, m.name, x, y, READOUT_NORMAL);
         label(
@@ -496,7 +497,6 @@ mod tests {
                 hp_max: 259,
                 mp: 35,
                 mp_max: 35,
-                alive: true,
                 status: 0,
             },
             FieldHudMember {
@@ -506,7 +506,6 @@ mod tests {
                 hp_max: 182,
                 mp: 16,
                 mp_max: 16,
-                alive: true,
                 status: 0,
             },
             FieldHudMember {
@@ -516,7 +515,6 @@ mod tests {
                 hp_max: 254,
                 mp: 48,
                 mp_max: 48,
-                alive: true,
                 status: 0,
             },
         ]
@@ -568,7 +566,6 @@ mod tests {
             hp_max: 4984,
             mp: 35,
             mp_max: 35,
-            alive: true,
             status: 0,
         }];
         let d = field_party_hud_draws_for(
@@ -597,9 +594,10 @@ mod tests {
         );
     }
 
-    /// A downed member's HP and MP take the dead tier; the name does not.
+    /// A downed member's HP takes the dead tier; its MP keeps the MP law and
+    /// the name does not dim.
     #[test]
-    fn a_downed_member_paints_both_readouts_red_and_keeps_its_name() {
+    fn a_downed_member_paints_its_hp_red_and_keeps_its_name() {
         let f = font();
         let dead = vec![FieldHudMember {
             name: "Gala",
@@ -608,7 +606,6 @@ mod tests {
             hp_max: 254,
             mp: 10,
             mp_max: 48,
-            alive: false,
             status: 0,
         }];
         let d = field_party_hud_draws_for(
@@ -625,6 +622,9 @@ mod tests {
         );
         let red = gauge_fill_color(2);
         assert!(d.text.iter().any(|t| t.color == red));
+        // 10 of 48 MP is the MP law's danger tier, not the dead one.
+        assert!(d.text.iter().any(|t| t.color == gauge_fill_color(9)));
+        assert_eq!(field_hud_readout_inks(&dead[0]), (2, 9));
         // The name glyphs sit on the base row in the normal readout colour.
         assert!(
             d.text

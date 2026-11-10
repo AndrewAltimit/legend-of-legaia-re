@@ -2241,6 +2241,12 @@ numerals on CLUT `(128, 510)`, all three names on `(208, 510)`):
   tier even when its own ratio says "normal" - the death override sits above
   the MP tier.
 
+The field party HUD `FUN_801D0D38` has no such override: it stages
+`FUN_80035EA8` before the MP pair (`0x801D1114`), so a fallen member's MP keeps
+its own tier there, and only the HP pair turns red, through the HP law's
+`cur == 0` arm. The retail differential (`field_hud`) holds
+`engine-ui::field_hud_readout_inks` to it.
+
 Port: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
 
 The tier-7 CLUT is also the ink of every battle caption - the actor and

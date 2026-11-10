@@ -104,6 +104,7 @@ mod euler_rot;
 mod field_actor_plan;
 mod field_camera;
 mod field_ctx;
+mod field_hud;
 mod field_leaves;
 mod field_magic;
 mod field_overlay_spawns;
