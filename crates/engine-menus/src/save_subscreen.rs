@@ -1,6 +1,7 @@
 //! Save-UI sub-screen graph.
 //!
-//! PORT: FUN_801DC6B4 (outer dispatcher), FUN_801E4F40 (sub-screen pointer table)
+//! PORT: FUN_801DC6B4 (outer dispatcher)
+//! REF: FUN_801E4F40 (the sub-screen pointer table; data, not a routine)
 //! REF: FUN_801DD35C (the card-driver pair's shared body; its op selector is
 //!      what fixes which of `0x18` / `0x19` is which direction)
 //! REF: FUN_801E37CC (the BIOS erase the save direction issues before writing)

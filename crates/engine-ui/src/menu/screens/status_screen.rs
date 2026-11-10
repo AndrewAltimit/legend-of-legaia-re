@@ -92,14 +92,18 @@ pub struct StatusListView {
 
 /// Rows a Magic or Moves page shows (`slti v0,t1,0x7`, `0x801D436C` / `0x801D472C`).
 const STATUS_PAGE_ROWS: usize = 7;
-/// The pitch between a string's `|` lines on the Status pages, measured on the
-/// `menu_status_*_conc_retail` frames. `FUN_8003CD00` itself steps `0x0D`
-/// (`0x8003CD84`); what adds the last pixel is not traced.
+/// The pitch between a string's `|` lines: the line renderer `FUN_80036888`
+/// steps its pen `0x0E` down at each `0x7C` (`0x80036934`). `FUN_8003CD00`'s
+/// own `0x0D` step (`0x8003CD84`) is another thing - it is taken only when
+/// the string it was handed opens on a control byte, to resume past it - so
+/// a label's lines are the renderer's.
 const LINE_BREAK_PITCH: i32 = 0x0E;
 /// The list pages' preview box, off the window's bottom (`0x801D4830`).
 const PREVIEW_H: i32 = 0x28;
 
 /// `FUN_8003CD00`: a string's `|` lines, one pitch apart, from `pen`.
+///
+/// PORT: FUN_8003CD00
 pub fn label_lines_draws(
     font: &legaia_font::Font,
     text: &[u8],
