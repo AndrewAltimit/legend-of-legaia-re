@@ -162,10 +162,20 @@ impl World {
     /// of four cloud records, `rand() % 4` (`0x801F7298..0x801F7344`), a quarter of
     /// the trig table behind the creature at `y = -0x280`, on the creature's angle
     /// trio. The arm's exit halts every handle it kept (`0x801F715C..0x801F7184`).
+    ///
+    /// The exit is the countdown test the arm opens with (`subu` of the whole
+    /// pass's drain, `bgtz` at `0x801F70D8`): a pass that leaves halts the
+    /// handles and seats nothing, and only a pass that holds reaches the spawn
+    /// counter (`0x801F7194..`). The port's pass is `delta` one-vsync ticks and
+    /// the leaving tick need not be its first, so the halt runs on whichever
+    /// tick leaves, and the first tick seats only when the pass's whole drain
+    /// keeps the word above zero.
     fn slippery_storm_clouds(&mut self, phase: u8, passed: bool, creature: u8) {
-        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        use legaia_engine_cast::cast_module_camera::{
+            MODULE_DRAIN_PER_TICK, ModuleSpawn, SpawnAnchor, SpawnRecord,
+        };
         const CLOUDS: [u32; 4] = [0x801F_8244, 0x801F_8284, 0x801F_82C4, 0x801F_8304];
-        if phase != 6 || self.casting.module_pass_repeat {
+        if phase != 6 {
             return;
         }
         if passed {
@@ -176,6 +186,12 @@ impl World {
                     }
                 }
             }
+            return;
+        }
+        let countdown = self.casting.module_cam.countdown;
+        if self.casting.module_pass_repeat
+            || countdown.0 - MODULE_DRAIN_PER_TICK * i32::from(countdown.1) <= 0
+        {
             return;
         }
         let n = self.casting.module_pass_counter.wrapping_add(1) & 3;

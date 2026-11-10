@@ -2457,7 +2457,13 @@ arm `10`'s wait for every monster to be idle, and the group-target framing
 of arm `8`. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
-halts them all (`World::slippery_storm_clouds`). The splashes are seated into the cast's scene, but the record is
+halts them all (`World::slippery_storm_clouds`). The exit is the arm's opening test: the
+pass's whole drain is subtracted and `bgtz` at `0x801F70D8` either holds on to the spawn
+counter (`0x801F7194..`) or takes the halting loop (`0x801F715C..0x801F7184`), so a pass
+that leaves seats no cloud. The port's pass runs `delta` one-vsync ticks and can leave on
+any of them, so the halt runs on the leaving tick and the first tick seats only when the
+whole pass holds: retail's part list holds no cloud a frame into arm 7. The clouds are
+bank-3 quads ([effect VM](effect-vm.md#the-sprite-arms-draw)). The splashes are seated into the cast's scene, but the record is
 a model-less node and nothing of it draws in the port yet. The streaks
 draw over the scene rather than sorted into it. Slippery's seat arm stores
 only a height (`+0x36 = -(scalar << 8)`, `0x801F6D18..0x801F6D28`) and a clip

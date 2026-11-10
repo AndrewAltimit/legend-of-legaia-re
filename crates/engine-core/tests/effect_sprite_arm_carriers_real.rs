@@ -73,8 +73,13 @@ fn shipped_sprite_arm_nodes_reach_the_kind4_draw_list() {
                 "PROT {idx:04}: the kind-4 list drops a node"
             );
             for d in &sprites {
-                assert_eq!(d.mesh.positions.len(), 4, "PROT {idx:04}: one quad");
-                assert_eq!(d.mesh.indices, vec![0, 1, 2, 2, 1, 3]);
+                // One quad, or bank 3's sixteen `GT3`s for a colour word with
+                // mode bit `0x20` (PROT 0920's storm clouds).
+                match d.mesh.positions.len() {
+                    4 => assert_eq!(d.mesh.indices, vec![0, 1, 2, 2, 1, 3]),
+                    48 => assert_eq!(d.mesh.indices.len(), 48),
+                    n => panic!("PROT {idx:04}: {n} vertices is neither one quad nor sixteen GT3s"),
+                }
                 pages.insert((d.mesh.cba_tsb[0][1] & 0x7F9F, d.mesh.cba_tsb[0][0]));
             }
             peak = peak.max(sprites.len());

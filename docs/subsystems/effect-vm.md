@@ -514,6 +514,18 @@ part:
 
 Its builder is SCUS code, so unlike the ribbon it draws in every mode.
 
+**A bank-3 colour word splits the quad.** The quad goes out as a gouraud `GT4`
+(kind 19) when its texture mode `(+0x9E >> 3) & 7` is `0`, and the prim
+dispatcher `FUN_80043390` sends a colour word with mode bit `0x20` to handler
+bank 3, whose kind-19 leaf `FUN_80045BB4` draws the quad as sixteen `GT3`s,
+each linked on its own `AVSZ3`. PROT 0920's storm clouds (`0x801F8244..
+0x801F8304`, colour word `0xE9000000`) are such quads: sheets `2560 x 640`
+under the camera-relative `6x` scale (`+0x52 = 0x380`), the nearest at an eye
+depth under `1000`. Drawn as one quad each, their halves reach past the
+GPU's span limit and the PCSX-Redux capture rule rejects them, and the sky
+reads about a third as bright as retail's. Split, the small triangles survive
+as retail's do.
+
 **The scale is seated by the spawn, not the record.** `FUN_80021B04` stores
 its fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the
 part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
@@ -528,12 +540,13 @@ PROT 0913's depth-scaled ones and the stager arms that forward a caller's
 `+0x72`).
 
 Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
-into a one-quad mesh. The quad geometry is
+into a one-quad mesh, or bank 3's sixteen triangles
+(`sprite_arm_tessellated`). The quad geometry is
 `render-kernels::sprite_arm::sprite_arm_quad`, the one Baka Fighter's
 impact flash draws through.
 `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports the
 slot-B images whose programs reach the arm and pins that each lands on the
-draw list as one quad.
+draw list as one quad or as the split's sixteen triangles.
 
 ### The default arm's draw
 
