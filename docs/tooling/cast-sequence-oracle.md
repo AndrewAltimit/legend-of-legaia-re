@@ -95,6 +95,7 @@ Flags worth knowing:
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
 | `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
+| `--range-trace` | Retail: each call of the range law `FUN_8004E2F0` to `retail/range.csv` (breakpoint core): its caller, the attacker's live pair and the target's live pair, body pair, heading, node cursor and clip, the inputs a walk-in's reach poll reads |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
 | `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, the position halfwords `+0x14..+0x18`, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`, the rotation banks `+0x24..+0x28`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
 | `--pose-objects` | Retail: `pose.csv` (breakpoint core), at each burning-body emit (`0x8004A61C`) on the summon creature, its cursor, live pair, facing and decoded object table; `LEGAIA_DIAG_CAST_PARTS` writes the engine's `pose.csv` from `stream_pose` |
@@ -280,7 +281,11 @@ that facing. The engine child stands each slot on the recorded facing beside its
 `battle_tunnelc_xain_strike`, Gala had struck Xain earlier in the round and faced `839`;
 her body pair stood `425` from Xain against a reach of `416`, so Bloody Horns' arm 0 walks
 one pass in. Unturned she stood `398` off, the engine skipped the walk and Xain cast from
-`67` units further back: the film read `.799` that way and `.873` seated.
+`67` units further back: the film read `.799` that way and `.873` seated. A recording made
+before the probe wrote the facing carries bare `x:z` pairs and replays the unturned stand,
+so re-record it (`--recapture`) rather than read a skipped walk as a port defect: re-recorded,
+`--range-trace` reads arm 0's poll (`ra = 0x801F7280`) on Gala's body `(85, 374)`, the
+engine's on `(84, 376)`, and both walk Xain one step to `(388, 575)`.
 
 Both sides also write `creature.csv`, the summon creature's clip, staged byte,
 cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a

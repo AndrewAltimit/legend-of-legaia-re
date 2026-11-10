@@ -610,6 +610,29 @@ probe.run({
                     -1, tou32(r.GPR.n.ra))
             end)
         end
+        if probe.getenv_num("LEGAIA_RANGE_TRACE", 0) ~= 0 then
+            -- Each entry of the range law FUN_8004E2F0(attacker a0, target
+            -- a1) (breakpoint core): the caller, the attacker's live pair,
+            -- the target's live and body pairs, its heading and its anim
+            -- node cursor. The pairs the law reads are the attacker's live
+            -- `+0x34` / `+0x38` against the target's body `+0x3C` / `+0x40`.
+            local range = probe.csv_open(probe.out_path("range.csv"),
+                "vsync,st7,phase,ra,att,tgt,ax,az,tx,tz,bx,bz,tf,tcur,tclip")
+            probe.arm_breakpoint(0x8004E2F0, "Exec", 4, "range", function()
+                local r = PCSX.getRegisters().GPR.n
+                local att, tgt = tou32(r.a0), tou32(r.a1)
+                if att > 7 or tgt > 7 then return end
+                local a, t = actor(att), actor(tgt)
+                if a == nil or t == nil then return end
+                local node = u32(t + 0x22C)
+                local cx = u32(CTX_PTR)
+                range:row("%d,%d,%d,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, ptr_ok(cx) and u8(cx + 0x279) or -1, tou32(r.ra),
+                    att, tgt, s16(a + 0x34), s16(a + 0x38), s16(t + 0x34), s16(t + 0x38),
+                    s16(t + 0x3C), s16(t + 0x40), u16(t + 0x46), ptr_ok(node) and u16(node + 0x68) or -1,
+                    u8(t + 0x1D9))
+            end)
+        end
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
