@@ -109,6 +109,7 @@ mod index_stack;
 mod inn;
 mod interact_probe;
 mod intro_names;
+mod intro_particles;
 mod inventory;
 mod item_apply;
 mod item_probe;
