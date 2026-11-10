@@ -105,6 +105,7 @@ mod map_display;
 mod map_display_tick;
 mod map_fade;
 mod melee_hit;
+mod menu_leaves;
 mod menu_stats;
 mod monster_install;
 mod mesh_swap;
