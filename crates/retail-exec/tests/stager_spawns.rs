@@ -87,6 +87,32 @@ const TERIO_PUNCH: u32 = 0x801F_7624;
 const WHITE_SHIELD: u32 = 0x801F_9370;
 const PARALYZING_WAVE: u32 = 0x801F_7EC4;
 const ELEMENT_CHANGE: u32 = 0x801F_8BF8;
+const CALL_WAVE: u32 = 0x801F_76C4;
+/// PROT 0946's sixteen-slot wave handle table (`addiu s0,v0,0x7f30`).
+const CALL_WAVE_HANDLES: u32 = 0x801F_7F30;
+const SPIKEFISH: u32 = 0x801F_7AE8;
+/// PROT 0925's turn counter, ring count and ring handle table
+/// (`-0x7fec(t3)`, `-0x7fe8(s2)`, `addiu v1,v1,-0x7f64` off `0x80200000`).
+const SPIKEFISH_TURN: u32 = 0x801F_8014;
+const SPIKEFISH_RING: u32 = 0x801F_8018;
+const SPIKEFISH_HANDLES: u32 = 0x801F_809C;
+const DEATH_GAME: u32 = 0x801F_99F4;
+/// PROT 0957's four card handles and the dealt values beside them
+/// (`addiu s1,v0,-0x5d48`, `addiu v0,v0,-0x5d78` off `0x80200000`).
+const DEATH_GAME_HANDLES: u32 = 0x801F_A2B8;
+const DEATH_GAME_TABLE: u32 = 0x801F_A288;
+/// Context bytes past everything a stager reads, which the harness spends as
+/// the seeds of the module words it plants.
+const SEED_BYTES: u32 = CTX + 0x10F0;
+
+/// How often the table stagers' gated arms seated: PROT 0946's wave into a
+/// free handle, PROT 0925's ring part, PROT 0957's revealed face.
+static TABLE_ARMS: [std::sync::atomic::AtomicU32; 3] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; 3];
+
+fn note(arm: usize) {
+    TABLE_ARMS[arm].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
 
 fn lcg(s: u32) -> u32 {
     s.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039)
@@ -122,6 +148,14 @@ struct Env<'a> {
     rand: &'a mut dyn FnMut() -> u32,
     /// Module-image halfwords the kernel says the arm leaves, as `(VA, value)`.
     module_writes: Vec<(u32, u16)>,
+    /// Caller halfwords the kernel says the arm leaves, as `(offset, value)`.
+    caller_writes: Vec<(u32, u16)>,
+}
+
+/// Store a word into the module image and note it as one the arm leaves.
+fn word_write(writes: &mut Vec<(u32, u16)>, va: u32, v: u32) {
+    writes.push((va, v as u16));
+    writes.push((va + 2, (v >> 16) as u16));
 }
 
 type Port = fn(&mut Env) -> Vec<StagerSpawn>;
@@ -180,9 +214,15 @@ fn fade_block(f: &SummonFadeTemplate) -> [u16; 12] {
 /// holds: PROT 0905's arm 0 lifts its glow to the sparks' height.
 /// PROT 0941's arm 0 clears its caller's `+0x42`, which the port does not
 /// carry (`enemy_cast_stager_spawns` discloses it).
-const CALLER_WRITES: [(u32, u8, u32, u16); 2] = [
+///
+/// PROT 0957's arms 2 and 3 store the caller card's height `+0x16`
+/// (`0x801F9B64`, `0x801F9B70`), which `death_game_stager_spawns` does not
+/// carry either.
+const CALLER_WRITES: [(u32, u8, u32, u16); 4] = [
     (905, 0, 0x16, t::VERA_SPARK_HEIGHT as u16),
     (941, 0, 0x42, 0),
+    (957, 2, 0x16, -0x1C_i16 as u16),
+    (957, 3, 0x16, -0x3C_i16 as u16),
 ];
 
 fn plain(f: fn(u8, StagerCaller) -> Vec<StagerSpawn>) -> impl Fn(&mut Env) -> Vec<StagerSpawn> {
@@ -344,6 +384,88 @@ fn cases() -> Vec<Case> {
         case!(959, MEGATON_PRESS, 0..1, |e| {
             t::megaton_press_stager_spawns(e.arm, e.caller, e.rand)
         }),
+        case!(946, CALL_WAVE, 0..1, |e| {
+            // The handle table fills from its head (nothing empties it during
+            // the cast), so a run of `fill` live handles is every reachable
+            // shape; `16` and past is the full table.
+            let fill = u32::from(e.mem.rd8(SEED_BYTES)) % 18;
+            for k in 0..16 {
+                let h = if k < fill { 0x8017_0000 + k * 0x40 } else { 0 };
+                e.mem.wr32(CALL_WAVE_HANDLES + k * 4, h);
+            }
+            let phase = e.mem.rd8(CTX + 0x279);
+            let seated = fill.min(16) as usize;
+            let out = t::call_wave_stager_spawns(e.arm, e.caller, phase, seated, e.rand);
+            if e.arm == 1 && !out.is_empty() {
+                word_write(&mut e.module_writes, CALL_WAVE_HANDLES + fill * 4, PARTS);
+                note(0);
+            }
+            out
+        }),
+        case!(925, SPIKEFISH, 0..1, |e| {
+            let turn = e.mem.rd32(SEED_BYTES);
+            let ring = u32::from(e.mem.rd8(SEED_BYTES + 4)) % 18;
+            e.mem.wr32(SPIKEFISH_TURN, turn);
+            e.mem.wr32(SPIKEFISH_RING, ring);
+            let phase = e.mem.rd8(CTX + 0x279);
+            let mut words = t::SpikefishStagerWords { turn, ring };
+            let mut caller = e.caller;
+            let out = t::spikefish_stager_spawns(e.arm, &mut caller, phase, &mut words, e.rand);
+            if e.arm == 1 {
+                word_write(&mut e.module_writes, SPIKEFISH_TURN, words.turn);
+                for (o, v) in [
+                    (0x14, caller.pos[0]),
+                    (0x16, caller.pos[1]),
+                    (0x18, caller.pos[2]),
+                    (0x28, caller.rot[2]),
+                ] {
+                    e.caller_writes.push((o, v as u16));
+                }
+            }
+            if words.ring != ring {
+                word_write(&mut e.module_writes, SPIKEFISH_RING, words.ring);
+                // The ring part is the arm's second seat.
+                word_write(
+                    &mut e.module_writes,
+                    SPIKEFISH_HANDLES + ring * 4,
+                    PARTS + PART_LEN,
+                );
+                note(1);
+            }
+            out
+        }),
+        case!(957, DEATH_GAME, 0..1, |e| {
+            // The caller is one of the four cards: its handle sits in the
+            // table, and the port finds it by the card standing on its `x`.
+            let at = u32::from(e.mem.rd8(SEED_BYTES)) % 4;
+            let mut table = [0u8; 4];
+            let mut cards = [[0i16; 3]; 4];
+            for k in 0..4u32 {
+                let v = 1 + e.mem.rd8(SEED_BYTES + 1 + k) % 4;
+                table[k as usize] = v;
+                e.mem.wr32(DEATH_GAME_TABLE + k * 4, u32::from(v));
+                let h = if k == at {
+                    CALLER
+                } else {
+                    0x8017_0000 + k * 0x40
+                };
+                e.mem.wr32(DEATH_GAME_HANDLES + k * 4, h);
+                let x = if k == at {
+                    e.caller.pos[0]
+                } else {
+                    e.caller.pos[0].wrapping_add(0x37 * (k as i16 + 1))
+                };
+                cards[k as usize] = [x, -0x1C0, 0];
+            }
+            let out = t::death_game_stager_spawns(e.arm, e.caller, table, cards);
+            if e.arm <= 1 && !out.is_empty() {
+                word_write(&mut e.module_writes, DEATH_GAME_HANDLES + at * 4, PARTS);
+                if e.arm == 1 {
+                    note(2);
+                }
+            }
+            out
+        }),
     ]
 }
 
@@ -425,6 +547,12 @@ fn run_case(
                 }
                 cpu.mem
                     .wr16(CALLER + 0x72, 0x400 + (rng.next() % 0x1800) as u16);
+                if matches!(case.entry, 925 | 946) {
+                    // The module phase the arm gates on: half the rounds in
+                    // the one it tests for, the rest anywhere near it.
+                    let p = if rng.below(2) == 0 { 7 } else { rng.below(10) };
+                    cpu.mem.wr8(CTX + 0x279, p as u8);
+                }
                 let caller = caller_view(&mut cpu.mem, arg);
                 let ctx_before = cpu.mem.read(CTX, CTX_LEN as usize);
                 let actors_before = cpu.mem.read(ACTOR, (8 * STRIDE) as usize);
@@ -451,9 +579,11 @@ fn run_case(
                     mem: &mut cpu.mem,
                     rand: &mut port_rand,
                     module_writes: Vec::new(),
+                    caller_writes: Vec::new(),
                 };
                 let want = (case.port)(&mut env);
                 let module_writes = env.module_writes;
+                let caller_writes = env.caller_writes;
                 let module_seeded = cpu.mem.read(BASE, module.len());
                 *log.borrow_mut() = Log::default();
                 {
@@ -551,6 +681,9 @@ fn run_case(
                     if (e, a) == (case.entry, arm) {
                         caller_before[o as usize..o as usize + 2].copy_from_slice(&v.to_le_bytes());
                     }
+                }
+                for &(o, v) in &caller_writes {
+                    caller_before[o as usize..o as usize + 2].copy_from_slice(&v.to_le_bytes());
                 }
                 let caller_after = cpu.mem.read(CALLER, 0x200);
                 assert!(
@@ -697,4 +830,20 @@ fn the_enemy_cast_stagers_seat_what_retail_seats() {
         prot(964, ELEMENT_CHANGE)
     );
     run(&[935, 941, 942, 943, 945, 951, 953, 955, 956, 964]);
+}
+
+#[test]
+fn the_table_stagers_seat_what_retail_seats() {
+    differential!(
+        prot(946, CALL_WAVE),
+        prot(925, SPIKEFISH),
+        prot(957, DEATH_GAME)
+    );
+    run(&[946, 925, 957]);
+    if disc().is_some() {
+        let n = TABLE_ARMS
+            .each_ref()
+            .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(n.iter().all(|&k| k > 5), "gated arms seated {n:?}");
+    }
 }
