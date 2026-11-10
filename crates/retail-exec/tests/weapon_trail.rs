@@ -325,3 +325,62 @@ fn the_sweep_schedule_matches_the_driver() {
         "capped {capped} two {two} short {none}"
     );
 }
+
+const TRIGGER: u32 = 0x8005_112C;
+const CHAR_IDS: u32 = 0x8007_BD10;
+
+/// The per-character trigger `FUN_8005112C`, the sweep driver hooked, over
+/// every roster id, seat and `+0x77` identity byte, against `trail_trigger`:
+/// which seats sweep, from which object and in which tint.
+#[test]
+fn the_trail_trigger_matches_the_ladder() {
+    differential!(scus(TRIGGER));
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    let swept = Rc::new(RefCell::new(Vec::new()));
+    {
+        let swept = swept.clone();
+        cpu.hook(SWEEP, move |r, _| {
+            swept.borrow_mut().push((r.r[A1], r.r[A2], r.r[A3]));
+        });
+    }
+    let mut fired = 0;
+    for character in 0..6u8 {
+        for seat in 0..5u16 {
+            for key in 0..=0xFFu8 {
+                for cursor in [0i16, 1, 0x40] {
+                    swept.borrow_mut().clear();
+                    cpu.mem.wr8(CHAR_IDS + u32::from(seat), character);
+                    cpu.mem.wr16(ACTOR + 0x5A, seat);
+                    cpu.mem.wr16(ACTOR + 0x68, cursor as u16);
+                    cpu.mem.wr32(ACTOR + 0x4C, RECORD);
+                    cpu.mem.wr8(RECORD + 0x77, key);
+                    assert_eq!(cpu.call(TRIGGER, &[ACTOR]), Stop::Returned);
+                    let want: Vec<(u32, u32, u32)> =
+                        legaia_render_kernels::battle_trail::trail_trigger(character, key)
+                            .filter(|_| seat < 3 && cursor != 0)
+                            .map(|t| {
+                                let rgb = u32::from(t.rgb[0]) << 16
+                                    | u32::from(t.rgb[1]) << 8
+                                    | u32::from(t.rgb[2]);
+                                (
+                                    t.base_part as u32,
+                                    legaia_render_kernels::battle_trail::TRAIL_POINTS as u32,
+                                    rgb,
+                                )
+                            })
+                            .into_iter()
+                            .collect();
+                    assert_eq!(
+                        *swept.borrow(),
+                        want,
+                        "character {character} seat {seat} key {key:#x} cursor {cursor}"
+                    );
+                    fired += want.len();
+                }
+            }
+        }
+    }
+    assert!(fired > 0);
+}
