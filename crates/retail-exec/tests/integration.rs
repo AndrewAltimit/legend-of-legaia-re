@@ -101,6 +101,7 @@ mod fog_spawn;
 mod frame_blend;
 mod glare_divide;
 mod glyph_count;
+mod ground_grid;
 mod group_aim;
 mod gte_capture;
 mod gte_engine;
