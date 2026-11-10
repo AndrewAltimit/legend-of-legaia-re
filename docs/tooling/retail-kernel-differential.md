@@ -1121,3 +1121,38 @@ under bit `0x2000` a hand on every row in mode `4`, which bobs off the vsync cou
 one static hand; `pause_root` and `equip_main` now hold every hand's row and mode. The Status
 screen's Skills page (`status_page`) matches: the Goods rows that grant a passive under `0x40`,
 their pictograms, the three strings a row and their inks, and the "no skills" line.
+
+Battle init `FUN_80055B6C` and the setup `FUN_800513F0`, each run whole with its loaders stubbed
+(`battle_init`, `battle_setup`), found two things the port's battle entry did not do. The
+[species-order rebuild](../subsystems/battle.md#the-species-order-rebuild) had no port: a formation
+of two species draws one `rand()` and, on an odd draw, opens with the other species in front, where
+the port seated every formation as authored and drew nothing. And the setup draws one `rand()` a
+seated body for its [opening clip phase](../subsystems/battle.md#the-opening-clip-phase), where the
+port started every idle on frame `0`, so like monsters idled in step. Both move the battle's
+`rand()` stream from its first draw. The seat tables, both family addends, the scripted-fight byte,
+the special-word arms, the battle tally, the rumble seed and both entry fades match.
+
+The MAN installer `FUN_8003AEB0` (`man_install`), run whole over a generated MAN with the scene
+control block reset and the map-install tail live beneath it, matches the port's pieces in the order
+it runs them: the entry flag, the save permission, the back-from-battle flag stores with the
+game-over hand-off and the escape clock's penalty, and the place-name banner with the flag it
+consumes. One write has no port: system flag `0x16` is cleared on every scene load and raised only
+under the boot latch `DAT_8007B71C`, so it reads "the first scene since boot". A card save taken in
+such a scene holds it set, and no scene script on the disc reads it; the test holds retail to that
+rule and leaves the bit out of the comparison.
+
+The pad pump `FUN_8001822C` (`pad_pump`), as one stream of calls over digital and analog reports,
+missing pads, the stick fold-ins on both sides of their dead zone, opposed directions and every
+frame step, matches on the held, changed and pressed words, the 32-vsync word and the repeat pulse.
+The frame-begin pass `FUN_8001698C` (`frame_begin`) matches on the SFX ring's aging, the audio
+level's apply and the debug frame skip. The battle cue dispatcher `FUN_8004FCC8` (`cue_dispatch`)
+matches over every id: the voice arm's two gates, clip slot, channel and read span, and the ring
+arm's value, de-dup and cursor wrap; the port declines a voice id whose span is zero, where retail
+starts a clip of nothing. The per-actor draw tick `FUN_800480D8` (`actor_draw_tick`), the party cast
+trigger `FUN_801DBF9C` (`spell_trigger`), the side-band applier `FUN_801F12D0`
+(`sideband_applier`, pass by pass from a turn's seed to the pass that drops its stage byte), the
+action SM `FUN_801E295C` entered at its own entry on the Done band (`spirit_cleanup`), the map
+install tail `FUN_8003ADAC` with the fade spawner `FUN_80024E80` and the positioned spawn
+`FUN_80024C88` (`map_install`), the status element `FUN_8002C2E4` (`status_icon`) and the scene and
+sound leaves in `scus_core_leaves` and `field_scus_hosts` match. The script target resolver
+`FUN_8003C83C` is ported beside them as a kernel.

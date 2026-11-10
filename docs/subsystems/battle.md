@@ -495,6 +495,14 @@ Pinned live (write watchpoints at `0x80055D14` / `0x80055D18` plus cell readback
 
 Both limits are why the encounter randomizer's unconditional battle-load safety pass (`legaia_patcher::encounter::SceneEncounters::enforce_species_limits`) caps every random formation at two distinct species and at the disc's own authored heap-cost maximum ([`randomizer.md`](../tooling/randomizer.md)).
 
+Engine: `legaia_engine_battle::battle_seats::rebuild_species_order` is the walk, and `World::enter_battle_from_formation` runs it on the formation it is handed, drawing from the world's one `rand()` stream as retail does, then seats and records the rebuilt order. The differential `battle_init` runs `FUN_80055B6C` whole against it.
+
+### The opening clip phase
+
+The setup `FUN_800513F0` draws one `rand()` for each body it seats, the party's in seat order and then the monsters', and opens the body's anim cursor at a random frame of its first stream: `(rand() % frames) << 4` into the node's `+0x68`, `frames` being the stream's frame count `*(record[+0x88] + 1)` (`0x80051544..0x80051574` for a party seat, `0x800518D0..0x800518F8` for a monster's). So no two bodies idle in step, and three of the same monster do not breathe together. The draws come ahead of the formation roll `FUN_80051D84`, which the setup calls last.
+
+Engine: `World::enter_battle_from_formation` draws the same count in the same order and holds each draw on its actor (`Actor::battle_idle_phase_draw`) until the seat's first idle clip is installed, where `World::apply_battle_pose` seats the cursor. The differential `battle_setup` runs the setup whole against the entry: the seats of both tables with their family addends, the scripted-fight byte, the draws and the loader's fade-in.
+
 ### The boss effect page
 
 <a id="the-boss-effect-page"></a>

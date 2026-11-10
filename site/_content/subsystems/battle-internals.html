@@ -114,6 +114,7 @@
     <summary>Details: the species-order rebuild and why three species is unsafe</summary>
     <div class="disclosure-body">
       <p>Before any monster streams, setup classifies the cells into "the first species" and "the other species", holding the other in a single register, then on a coin flip rebuilds the array as <code>[other &times; n, first &times; m]</code>. With two species this is an exact swap. With three, the register is overwritten by each later species, so <code>[a, b, c]</code> rebuilds as <code>[c, c, a]</code>: the middle species vanishes and the last is duplicated - on the other half of the flip all three stream verbatim, which turns an over-budget trio into a probabilistic load hang. The randomizer caps every formation at two distinct species for this reason.</p>
+      <p>The port runs the same walk at battle entry, on the same <code>rand()</code> stream, so a two-species formation opens with either species in front. The setup that follows draws once more for each body it seats and starts that body's first clip at a random frame (<code>(rand() % frames) &lt;&lt; 4</code> into the anim cursor), which is why three of the same monster never idle in step.</p>
     </div>
   </details>
 </section>
