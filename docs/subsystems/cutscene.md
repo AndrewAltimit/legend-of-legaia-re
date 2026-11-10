@@ -2150,9 +2150,11 @@ capture has read; the port keeps it under the text.
 
 Both hosts split on that one predicate (`screen_prim::screen_effect_push_prims_split`). The
 native window draws the under-text half beneath its overlay text and the other half above it.
-The browser play page draws both halves over the scene in its GL pass and applies the over-text
-half to its 2D overlay canvas's own pixels (`play_text_layer_washes_json`, the PSX ABR equations
-of `screen_prim::wash_channel`), since that canvas sits above the GL canvas.
+The browser play page draws the under-text half in its GL pass, then composites its 2D overlay
+canvas into the GL frame and draws the over-text half on top, the window's order. Its older
+fallback, washing the canvas's own pixels (`play_text_layer_washes_json`, the PSX ABR equations of
+`screen_prim::wash_channel`), runs only on a frame whose over half the GL pass cannot draw: run
+beside the composite, it washed the text twice.
 
 ##### The arm is a pair, and the sub-op byte carries both selectors
 

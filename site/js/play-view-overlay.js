@@ -423,8 +423,16 @@
      * are and their colours (`play_text_layer_washes_json`); the equations
      * are the PSX ABR modes `legaia_render_kernels::screen_prim::wash_channel`
      * names. Only called right after a branch repainted the canvas, so a
-     * wash never compounds across frames. */
+     * wash never compounds across frames.
+     *
+     * Every wash is also an `over` screen primitive, so on a frame that
+     * carries one `_drawScreenPrimsOver` composites this canvas into the GL
+     * frame and draws the wash over it there. Washing the canvas as well
+     * washed it twice: a battle's exit fade took the results box to black
+     * at twice the scene's rate. The canvas wash is the fallback for a frame
+     * whose `over` half the GL pass cannot draw. */
     _textWashJson() {
+      if (this._screenOver) return null;
       if (typeof this.rt.play_text_layer_washes_json !== 'function') return null;
       try { return this.rt.play_text_layer_washes_json(); }
       catch (e) { return null; }
