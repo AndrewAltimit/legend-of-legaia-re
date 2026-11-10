@@ -70,3 +70,68 @@ fn the_ring_and_clamp_rows_step_as_retail_steps() {
         "{both} {wrapped} {clamped} {idle}"
     );
 }
+
+const ACTION: u32 = 0x801E_A9B0;
+
+/// The row-action dispatcher `FUN_801EA9B0` against `dev_menu_action` and
+/// `dev_menu_action_phase`: the bound, the phase every path stores to
+/// `ctx[+0x54]`, and the `1` every path returns. The arms' own pokes are let
+/// run, their calls out of the overlay answered with zero.
+#[test]
+fn the_row_action_parks_and_returns_as_retail_does() {
+    differential!(prot(897, ACTION));
+    use legaia_engine_dev_menu::dev_menu_action::{dev_menu_action, dev_menu_action_phase};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let image = d.read_entry(897).expect("PROT 0897");
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    /// Row 1's gate word.
+    const ROW_ONE_GATE: u32 = 0x8007_B868;
+    let mut rng = Rng(0x4143_5449);
+    let (mut parked, mut ran, mut gated) = (0, 0, 0);
+    for run in 0..2_000 {
+        // The arms poke the overlay's own data; each run starts clean.
+        cpu.mem.load(OVERLAY_BASE, &image);
+        let row = match rng.below(4) {
+            0 => [-1i16, -2, 0x18, 0x19, 0x400, i16::MIN][rng.below(6) as usize],
+            1 => 1,
+            _ => rng.below(0x18) as i16,
+        };
+        let phase = 0x40 + rng.below(8) as i16;
+        let gate = rng.below(2) * (1 + rng.below(5));
+        cpu.mem.wr32(ROW_ONE_GATE, gate);
+        cpu.mem.wr16(ACTOR + 0x9E, row as u16);
+        cpu.mem.wr16(ACTOR + 0x54, phase as u16);
+        let stop = cpu.call(ACTION, &[ACTOR]);
+        assert_eq!(stop, Stop::Returned, "run {run}: row {row}");
+        let (park, result) = dev_menu_action(row);
+        assert_eq!(
+            cpu.regs.r[psx_retail_exec::V0] as i32,
+            result,
+            "run {run}: row {row}"
+        );
+        let left = dev_menu_action_phase(row, gate != 0);
+        assert_eq!(
+            cpu.mem.rd16(ACTOR + 0x54) as i16,
+            left,
+            "run {run}: row {row} gate {gate}: the phase word"
+        );
+        if let Some(p) = park {
+            assert_eq!(p, left, "run {run}: the park phase is the one stored");
+        }
+        assert_eq!(
+            park.is_some(),
+            !(0..0x18).contains(&row),
+            "run {run}: row {row}"
+        );
+        parked += u32::from(park.is_some());
+        ran += u32::from(park.is_none());
+        gated += u32::from(row == 1 && gate == 0);
+    }
+    assert!(
+        parked > 300 && ran > 1000 && gated > 100,
+        "{parked} {ran} {gated}"
+    );
+}
