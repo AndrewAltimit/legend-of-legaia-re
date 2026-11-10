@@ -1107,3 +1107,17 @@ loop and legend pens over the disc's two descriptors and generated ones. The sub
 `FUN_801D9C3C` seeds twelve words of the context block one by one, `0x801F3530` and `0x801F3534`
 among them after the tail clear, where the port listed ten; the scene actor spawn `FUN_801DE478`
 matches.
+
+Feeding the naming screen's d-pad the auto-repeat word it reads (`_DAT_8007BB84`) showed the word
+had never reached a host right. `InputState::set_pad`, the entry every host takes, hands the pump
+the raw pad word, and the cursor auto-repeat `FUN_80035C24` masked it with the packed layout's chord
+(`0xF00F`: the d-pad and the shoulders once byte-swapped). So a held direction never repeated in any
+menu, and a held face button, Start or Select re-fired as a direction: a Cross held for a third of a
+second walked a list down. The mask entry now runs the repeat on the packed form.
+
+The top-level command list and the Equip main window draw each hand in the mode the cursor word
+names: `FUN_8002B994` mode `0` (static) under bit `0x1000`, mode `1` (the idle bob) otherwise, and
+under bit `0x2000` a hand on every row in mode `4`, which bobs off the vsync counter. The port drew
+one static hand; `pause_root` and `equip_main` now hold every hand's row and mode. The Status
+screen's Skills page (`status_page`) matches: the Goods rows that grant a passive under `0x40`,
+their pictograms, the three strings a row and their inks, and the "no skills" line.
