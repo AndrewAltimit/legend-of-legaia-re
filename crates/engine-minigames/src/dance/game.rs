@@ -1395,6 +1395,26 @@ impl DanceGame {
         Some(self.cell(lane, beat))
     }
 
+    /// [`Self::auto_feed`] for dancer `i`, `0` for no symbol, as the retail
+    /// kernel differential calls `FUN_801d1820` on its own.
+    #[doc(hidden)]
+    pub fn feed_symbol(&mut self, i: usize) -> u8 {
+        self.auto_feed(i).unwrap_or(0)
+    }
+
+    /// [`Self::judge_direction`] for dancer `i` on this frame's beat, as the
+    /// retail judge `FUN_801d1960` answers: its return code (`0` miss, `1`
+    /// hit, `2` chain closed), the accuracy weight and the points.
+    #[doc(hidden)]
+    pub fn judge_code(&mut self, i: usize, dir: DanceDir) -> (u32, u32, u32) {
+        let beat = self.beat_index();
+        match self.judge_direction(i, dir, beat) {
+            DanceEvent::Hit { weight } => (1, weight, 0),
+            DanceEvent::Sequence { weight, points } => (2, weight, points),
+            _ => (0, 0, 0),
+        }
+    }
+
     /// One dancer's live words, for the differential.
     pub fn dancer_probe(&self, i: usize) -> DancerProbe {
         let d = &self.dancers[i];

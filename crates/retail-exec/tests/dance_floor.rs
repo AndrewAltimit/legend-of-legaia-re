@@ -4,9 +4,13 @@
 //! `FUN_801CF470` state 10 sum) against `DanceGame::advance` and `press`. Both
 //! sides read the hall's own clip bank; its records' timing words are what
 //! `FUN_800204F8` steps.
+//!
+//! Between frames the feed, the judge and the human's award are also called
+//! on their own, from the synced state, against `feed_symbol`, `judge_code`
+//! and `press` on a clone; the words they write are put back before the tick.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_engine_minigames::dance::{DanceDir, DanceGame, DanceMode};
+use legaia_engine_minigames::dance::{DanceDir, DanceEvent, DanceGame, DanceMode};
 use legaia_minigame_formats::dance_cast as dc;
 use psx_retail_exec::{Cpu, GP, Stop, V0};
 use std::cell::Cell;
@@ -34,6 +38,13 @@ const LANDED: u32 = 0x801D_570C;
 const TRI_CURSOR: u32 = 0x801D_574C;
 const TRI_METER: u32 = 0x801D_578C;
 const PAD_EDGE: u32 = 0x8007_B874;
+const FEED: u32 = 0x801D_1820;
+const JUDGE: u32 = 0x801D_1960;
+const AWARD: u32 = 0x801D_1AF4;
+const JUDGE_POINTS: u32 = 0x801D_608C;
+const JUDGE_WEIGHT: u32 = 0x801D_6090;
+/// The overlay's dance state and the dancers' actors: what a probe may write.
+const PROBE_WINDOWS: [(u32, usize); 3] = [(0x801D_5000, 0x1200), (ACTORS, 0x300), (0x8007_B6D8, 4)];
 
 #[derive(Debug, PartialEq, Eq)]
 struct Row {
@@ -53,7 +64,12 @@ struct Row {
 
 #[test]
 fn every_dancer_on_the_floor_dances_as_retail_dances() {
-    differential!(prot(980, TICK));
+    differential!(
+        prot(980, TICK),
+        prot(980, FEED),
+        prot(980, JUDGE),
+        prot(980, AWARD)
+    );
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -108,6 +124,7 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
 
     let mut rng = Rng(0x4441_4E43);
     let (mut sequences, mut groovies, mut misses, mut cpu_points) = (0u32, 0u32, 0u32, 0u32);
+    let (mut fed, mut judged, mut awards) = (0u32, [0u32; 3], 0u32);
     for scenario in 0..400 {
         let mode =
             [DanceMode::Qualifier, DanceMode::Finals, DanceMode::FreePlay][rng.below(3) as usize];
@@ -143,6 +160,14 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
         for frame in 0..4000 {
             if g.song_over() {
                 break;
+            }
+            if frame % 7 == 0 {
+                let probe = probe_leaves(&mut cpu, &g, n, rng.below(4));
+                fed += probe.0;
+                awards += probe.2;
+                for (t, c) in judged.iter_mut().zip(probe.1) {
+                    *t += c;
+                }
             }
             let edge: u32 = if rng.below(density) == 0 {
                 [0x80, 0x20, 0x10][rng.below(3) as usize]
@@ -217,6 +242,142 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
     assert!(groovies > 10, "{groovies}");
     assert!(misses > 100, "{misses}");
     assert!(cpu_points > 0, "{cpu_points}");
+    assert!(
+        fed > 1000 && judged.iter().all(|&n| n > 500) && awards > 1000,
+        "{fed} {judged:?} {awards}"
+    );
+}
+
+fn row_of(cpu: &mut Cpu, s: usize) -> Row {
+    let word = |cpu: &mut Cpu, base: u32| cpu.mem.rd32(base + s as u32 * 4);
+    Row {
+        score: word(cpu, SCORE),
+        gauge: word(cpu, GAUGE),
+        cursor: word(cpu, CURSOR),
+        stock: word(cpu, STOCK),
+        latch: word(cpu, LATCH),
+        latch_timer: word(cpu, LATCH_TIMER) as i32,
+        spin: word(cpu, SPIN),
+        misses: word(cpu, MISSES),
+        landed: word(cpu, LANDED) != 0,
+        tri_cursor: word(cpu, TRI_CURSOR),
+        tri_meter: word(cpu, TRI_METER) as i32,
+        clip: cpu.mem.rd16(ACTORS + s as u32 * 0x100 + 0x5C) as i16,
+    }
+}
+
+fn port_row(g: &DanceGame, s: usize) -> Row {
+    let p = g.dancer_probe(s);
+    Row {
+        score: p.score,
+        gauge: p.gauge,
+        cursor: p.cursor,
+        stock: p.triangles,
+        latch: p.latch,
+        latch_timer: p.latch_timer,
+        spin: p.spin_turns,
+        misses: p.misses,
+        landed: p.landed,
+        tri_cursor: p.tri_cursor as u32,
+        tri_meter: p.tri_meter,
+        clip: p.clip,
+    }
+}
+
+/// Call the feed and the judge for every dancer, and the human's award for
+/// one press, each from the synced state between frames; compare and put the
+/// words back. Returns how many feeds answered a symbol, the judge's codes and
+/// whether an award was compared.
+fn probe_leaves(cpu: &mut Cpu, g: &DanceGame, n: u32, press: u32) -> (u32, [u32; 3], u32) {
+    let saved: Vec<Vec<u8>> = PROBE_WINDOWS
+        .iter()
+        .map(|&(a, len)| cpu.mem.read(a, len))
+        .collect();
+    let restore = |cpu: &mut Cpu| {
+        for (&(a, _), bytes) in PROBE_WINDOWS.iter().zip(&saved) {
+            cpu.mem.load(a, bytes);
+        }
+    };
+    let (mut fed, mut codes) = (0, [0; 3]);
+    for s in 0..n as usize {
+        assert_eq!(cpu.call(FEED, &[s as u32]), Stop::Returned);
+        let retail = (
+            cpu.regs.r[V0],
+            cpu.mem.rd32(TRI_CURSOR + s as u32 * 4),
+            cpu.mem.rd32(TRI_METER + s as u32 * 4) as i32,
+        );
+        restore(cpu);
+        let mut c = g.clone();
+        let sym = c.feed_symbol(s);
+        let p = c.dancer_probe(s);
+        assert_eq!(
+            retail,
+            (u32::from(sym), p.tri_cursor as u32, p.tri_meter),
+            "feed {s}"
+        );
+        fed += u32::from(sym != 0);
+
+        for dir in [DanceDir::A, DanceDir::B] {
+            let lane = g.dancer_lane(s) as u32;
+            cpu.mem.wr32(JUDGE_WEIGHT, 0);
+            assert_eq!(
+                cpu.call(JUDGE, &[s as u32, lane, dir as u32]),
+                Stop::Returned
+            );
+            let code = cpu.regs.r[V0];
+            let retail = (
+                code,
+                if code == 0 {
+                    0
+                } else {
+                    cpu.mem.rd32(JUDGE_WEIGHT)
+                },
+                cpu.mem.rd32(JUDGE_POINTS),
+                cpu.mem.rd32(CURSOR + s as u32 * 4),
+            );
+            restore(cpu);
+            let mut c = g.clone();
+            let (pc, weight, points) = c.judge_code(s, dir);
+            assert_eq!(
+                retail,
+                (pc, weight, points, c.dancer_probe(s).cursor),
+                "judge {s} {dir:?} lane {lane}"
+            );
+            codes[code as usize] += 1;
+        }
+    }
+    // The human's award for one press (or none).
+    let (edge, dir) = [
+        (0, None),
+        (0x80, Some(DanceDir::A)),
+        (0x20, Some(DanceDir::B)),
+        (0x10, Some(DanceDir::C)),
+    ][press as usize];
+    // The tick holds the award back while the human's note latch or move
+    // clip runs (`DanceEvent::Ignored`); the routine itself has no such gate,
+    // so only a press the tick would hand it is compared.
+    let mut c = g.clone();
+    let accepted = dir
+        .map(|d| c.press(d))
+        .filter(|e| *e != DanceEvent::Ignored);
+    let awarded = u32::from(accepted.is_some());
+    if let (Some(dir), Some(_)) = (dir, accepted) {
+        cpu.mem.wr32(PAD_EDGE, edge);
+        assert_eq!(cpu.call(AWARD, &[0]), Stop::Returned);
+        // The clip the award stores is a staging value the tick rebinds;
+        // the port's press binds the final clip, so it is left out here.
+        let retail = Row {
+            clip: 0,
+            ..row_of(cpu, 0)
+        };
+        restore(cpu);
+        let port = Row {
+            clip: 0,
+            ..port_row(&c, 0)
+        };
+        assert_eq!(retail, port, "award {dir:?}");
+    }
+    (fed, codes, awarded)
 }
 
 const MARKER: u32 = 0x801D_0640;
