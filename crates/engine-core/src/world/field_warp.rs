@@ -170,6 +170,22 @@ impl World {
                 // rewrites the region-type mask there.
                 // REF: FUN_801DE3E0
                 self.zone_query_region_mask(i32::from(query_tile.0), i32::from(query_tile.1));
+                // The same query loads the destination's camera block, and the
+                // landing then snaps the camera onto it and clamps the focus
+                // (`jal 0x801DB8EC` at `0x801D2008`, `jal 0x801DAA50` at
+                // `0x801D2010`): the camera stands on the destination's shot
+                // from the landing frame, under the fade, instead of easing
+                // the old region's block across the door.
+                // REF: FUN_801DB8EC, FUN_801DAA50
+                self.push_camera_zone_request(
+                    legaia_engine_field::camera::CameraZoneRequest::QueryAtTile {
+                        x: query_tile.0,
+                        z: query_tile.1,
+                    },
+                );
+                self.push_camera_zone_request(
+                    legaia_engine_field::camera::CameraZoneRequest::SnapAndClamp,
+                );
                 self.pending_field_events.push(
                     legaia_engine_field::field_events::FieldEvent::MoveTo {
                         world_x: world.0 as u16,
@@ -531,6 +547,13 @@ mod tests {
         assert!(legaia_engine_field::field_warp_tile::pad_suppressed(
             &w.locomotion.warp
         ));
+        // The landing loads the destination's camera block and snaps onto it.
+        use legaia_engine_field::camera::CameraZoneRequest as R;
+        assert_eq!(
+            w.take_camera_zone_requests(),
+            [R::QueryAtTile { x: 10, z: 20 }, R::SnapAndClamp],
+            "FUN_801DE3E0 at the destination halved, then FUN_801DB8EC / FUN_801DAA50"
+        );
     }
 
     #[test]

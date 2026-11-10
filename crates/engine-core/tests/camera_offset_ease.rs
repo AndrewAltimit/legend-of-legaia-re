@@ -57,7 +57,8 @@ fn op_4c_49_posts_the_offset_and_the_frame_easing_walks_to_it() {
     assert!(start < 0x200, "the seed is below the posted target");
     let mut prev = start;
     let mut arrived = None;
-    for frame in 0..512 {
+    // A standing player's offset creeps one unit a game pass.
+    for frame in 0..1200 {
         let _ = world.tick();
         let cur = world.camera.offset_ease;
         assert!(
@@ -88,12 +89,43 @@ fn the_settled_value_is_the_posted_offset_minus_the_players_footing() {
         let mut world = world_with_player();
         world.actors[0].move_state.world_y = footing;
         world.load_field_script(sub9_default(0x100));
-        for _ in 0..512 {
+        for _ in 0..1200 {
             let _ = world.tick();
         }
         settled.push(world.camera.offset_ease);
     }
     assert_eq!(settled, vec![0x100, 0x100 + 192, 0x100 - 64]);
+}
+
+/// The step lands once a game pass, and its fast arm is live: with scratchpad
+/// bit 17 raised (`2E 11`) a held direction pins it at twelve a pass, where a
+/// standing player otherwise creeps one.
+#[test]
+fn a_held_direction_under_bit_17_pins_the_step_at_twelve_a_pass() {
+    let run = |fast: bool, held: bool| {
+        let mut world = world_with_player();
+        world.load_field_script(sub9_default(0x200));
+        let _ = world.tick();
+        if fast {
+            world.flags.story_flags |= legaia_engine_field::camera_ease::PAD_FAST_ARM;
+        }
+        // A wall on every side would be simpler; the player is held instead,
+        // so the direction moves nothing.
+        world.actors[0].move_state.flags |= 0x0008_0000;
+        if held {
+            world.set_pad(legaia_engine_system::input::PadButton::Up.mask());
+        }
+        let start = world.camera.offset_ease;
+        let step = usize::from(world.clock.frame_step.max(1));
+        for _ in 0..step * 10 {
+            let _ = world.tick();
+        }
+        world.camera.offset_ease - start
+    };
+    assert_eq!(run(false, false), 10, "one unit a pass");
+    assert_eq!(run(false, true), 10, "the pad alone is not the fast arm");
+    assert_eq!(run(true, false), 10, "nor the flag alone");
+    assert_eq!(run(true, true), 120, "both: twelve a pass");
 }
 
 /// Bit 24 of the scratchpad flag word is read by both routines, and that is

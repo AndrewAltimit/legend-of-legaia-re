@@ -525,11 +525,13 @@ impl World {
         if runs_master_driver {
             self.tick_register_ramps();
         }
-        // The camera vertical-offset easing `FUN_801DA390`: one call a frame,
-        // walking `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] - player[+0x16]`.
-        // Same gate as the ramps above - retail runs it off the field frame
-        // pump, which the CARD-mode frame does not reach.
-        if runs_master_driver {
+        // The camera vertical-offset easing `FUN_801DA390`: one call a game
+        // pass, walking `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] -
+        // player[+0x16]`. Its one caller is the head of the entity tick
+        // `FUN_801DA51C` (`jal` at `0x801DA52C`), an actor-list handler, so it
+        // steps on the actor game tick: its unit steps are one a pass, not one
+        // a vsync.
+        if actor_tick_fired {
             self.tick_camera_offset_ease();
         }
         // The three frame-delta timer templates (`0x801F2858` bars,
