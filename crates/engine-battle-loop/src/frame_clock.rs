@@ -28,57 +28,200 @@
 /// the one the camera and the root-motion carry assume by default.
 pub const DEFAULT_BATTLE_FRAME_STEP: u8 = 2;
 
+/// What the frame driver's pacing tail reads beside the frame's own cost
+/// (`FUN_80016B6C`, `0x80017044..0x800171D8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FramePace {
+    /// The forced step `gp+0x5D8`: non-zero stores its low byte as the step
+    /// and skips the history (`0x80017050..0x80017090`).
+    pub forced: u32,
+    /// The frame-rate mode `gp+0x4CE`: only `0x10` reads the step off the
+    /// history, every other value stores step `1` (`0x80017108..0x80017164`).
+    pub mode: i16,
+    /// The step floor `0x8007B9D8` (`0x80017170..0x80017198`).
+    pub floor: i32,
+}
+
+impl FramePace {
+    /// The adaptive mode every catalogued battle state holds: mode `0x10`,
+    /// no forced step, a floor the law never reads below.
+    pub const ADAPTIVE: Self = Self {
+        forced: 0,
+        mode: 0x10,
+        floor: 1,
+    };
+}
+
+/// What one frame's pacing tail leaves: the step `0x1F800393` the next frame
+/// runs on, and the count it hands `VSync` (`jal 0x8005FB84`), which is the
+/// step the frame before stored - `0` (one vsync) while that is under `2`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameEnd {
+    pub step: u8,
+    pub vsync_wait: u32,
+}
+
 /// Port of the frame driver's step law (`FUN_80016B6C`): the sixteen-entry
-/// history `0x80084098` and its maximum against `0xF1` / `0x1FF` / `0x2D1`
-/// (`0x80017098..0x8001715C`). What feeds it differs. Retail stores the hblanks
-/// since the last vsync once the CPU has finished the frame and `DrawSync(0)`
-/// has returned (`FUN_800173BC`), so the entry is `max(cpu, gpu of the last
-/// table)`; the engine has no such clock and pushes [`measured_frame_cost`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// history `0x80084098`, its write cursor `gp+0x440`, the step byte
+/// `0x1F800393` and the step the frame before left (`0x1F800392`). What
+/// feeds it differs. Retail stores the hblanks since the last vsync once the
+/// CPU has finished the frame and `DrawSync(0)` has returned
+/// (`FUN_800173BC`), so the entry is `max(cpu, gpu of the last table)`; the
+/// engine has no such clock and pushes [`measured_frame_cost`].
+///
+/// REF: FUN_800173BC
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameCostRing {
-    entries: [u16; 16],
+    entries: [i16; 16],
+    /// `gp+0x440` as the last pass left it: masked on the way in, so it
+    /// reads `1..=16` after a store.
     cursor: u8,
+    step: u8,
+    prev_step: u8,
+}
+
+impl Default for FrameCostRing {
+    fn default() -> Self {
+        Self {
+            entries: [0; 16],
+            cursor: 0,
+            step: 1,
+            prev_step: 1,
+        }
+    }
 }
 
 impl FrameCostRing {
     /// A ring holding these sixteen entries with the write cursor at
     /// `cursor` (`gp+0x440`, the slot the next pass stores to), as a retail
     /// capture's `0x80084098` holds them.
+    ///
+    /// A main-RAM image does not hold the step byte itself (it is the
+    /// scratchpad's), so the step is read back off the entries. That is
+    /// exact but for a newest entry on the clamp `0x2BC`, which the history
+    /// stores for a raw duration of `0x2BC` (step `3`), `0x2D0` (step `3`)
+    /// and anything longer (step `4`) alike; it is taken as the long frame,
+    /// the common case. A capture that holds the byte passes it through
+    /// [`Self::with_step`].
     pub fn from_entries(entries: [u16; 16], cursor: u8) -> Self {
+        let entries = entries.map(|e| e as i16);
+        let cursor = cursor & 0xF;
+        let newest = entries[usize::from(cursor.wrapping_sub(1) & 0xF)];
+        let step = if newest == 0x2BC {
+            4
+        } else {
+            step_of_cost(entries.iter().copied().max().unwrap_or(0).max(0) as u16)
+        };
         Self {
             entries,
-            cursor: cursor & 0xF,
+            cursor,
+            step,
+            prev_step: step,
         }
+    }
+
+    /// A ring from every byte the law reads: the entries, the cursor word
+    /// `gp+0x440`, the step `0x1F800393` and the step before it
+    /// (`0x1F800392`).
+    pub fn from_state(entries: [i16; 16], cursor: u8, step: u8, prev_step: u8) -> Self {
+        Self {
+            entries,
+            cursor,
+            step,
+            prev_step,
+        }
+    }
+
+    /// The same ring with the step byte `0x1F800393` a capture read.
+    pub fn with_step(mut self, step: u8) -> Self {
+        self.step = step;
+        self.prev_step = step;
+        self
+    }
+
+    /// The sixteen entries as `0x80084098` holds them.
+    pub fn entries(&self) -> [i16; 16] {
+        self.entries
+    }
+
+    /// The cursor word `gp+0x440`.
+    pub fn cursor(&self) -> u8 {
+        self.cursor
     }
 
     /// The newest entry: what the last pass's frame cost.
     pub fn newest(&self) -> u16 {
-        self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)]
+        self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)].max(0) as u16
     }
 
-    /// The step the ring's entries read now, before another push: what the
-    /// pass that last stored here left for the next one. A newest entry on
-    /// the clamp `0x2BC` stands for a raw duration of `0x2D0` or more, which
-    /// read step `4` (`0x800170F8..0x80017104`).
+    /// The step byte `0x1F800393`: what the last pass's tail stored for the
+    /// next frame.
     pub fn step(&self) -> u8 {
-        let newest = self.entries[usize::from(self.cursor.wrapping_sub(1) & 0xF)];
-        if newest == 0x2BC {
-            return 4;
-        }
-        step_of_cost(self.entries.iter().copied().max().unwrap_or(0))
+        self.step
     }
 
-    /// Store one frame's cost (`li s0,0x2bc` clamps a frame of `0x2D0` or
-    /// more) and read the step the next frame runs on.
+    /// The step the frame before the last stored (`0x1F800392`), which the
+    /// last tail's `VSync` call waited on.
+    pub fn prev_step(&self) -> u8 {
+        self.prev_step
+    }
+
+    /// One frame's pacing tail: store the frame's raw cost and read the step.
+    ///
+    /// The cursor is masked to the ring first. A forced step skips
+    /// everything else. Otherwise the cost is stored - a frame of `0x2D0`
+    /// hblanks or more as `0x2BC` - and the step is read off the largest
+    /// entry, or off the **raw** cost when it reached `0x2D0`
+    /// (`slti v0,a2,0x2d0` / `move s0,a2` at `0x800170F8..0x80017104`): raw
+    /// `0x2D0` reads step `3` like the clamp it stored, `0x2D1` and up step
+    /// `4`. The floor raises the result, and the frame waits on the step the
+    /// frame before it stored.
+    // PORT: FUN_80016B6C (`0x80017044..0x800171D8`, the frame-step law)
+    pub fn frame_end(&mut self, raw: i32, pace: FramePace) -> FrameEnd {
+        self.cursor &= 0xF;
+        if pace.forced != 0 {
+            self.step = pace.forced as u8;
+            let vsync_wait = if pace.forced == 1 { 0 } else { pace.forced };
+            return FrameEnd {
+                step: self.step,
+                vsync_wait,
+            };
+        }
+        let stored = if raw < 0x2D0 { raw } else { 0x2BC };
+        self.entries[usize::from(self.cursor)] = stored as i16;
+        self.cursor += 1;
+        let mut longest = self
+            .entries
+            .iter()
+            .copied()
+            .fold(0i32, |m, e| m.max(i32::from(e)));
+        if raw >= 0x2D0 {
+            longest = raw;
+        }
+        let mut step: u8 = match longest {
+            _ if pace.mode != 0x10 => 1,
+            ..0xF1 => 1,
+            0xF1..0x1FF => 2,
+            0x1FF..0x2D1 => 3,
+            _ => 4,
+        };
+        if i32::from(step) < pace.floor {
+            step = pace.floor as u8;
+        }
+        let vsync_wait = if self.prev_step >= 2 {
+            u32::from(self.prev_step)
+        } else {
+            0
+        };
+        self.step = step;
+        self.prev_step = step;
+        FrameEnd { step, vsync_wait }
+    }
+
+    /// Store one frame's cost on the adaptive mode ([`FramePace::ADAPTIVE`])
+    /// and read the step the next frame runs on.
     pub fn push(&mut self, cost: u16) -> u8 {
-        let raw = cost;
-        self.entries[usize::from(self.cursor & 0xF)] = if raw >= 0x2D0 { 0x2BC } else { raw };
-        self.cursor = self.cursor.wrapping_add(1) & 0xF;
-        let longest = self.entries.iter().copied().max().unwrap_or(0);
-        // The newest raw duration stands in for the clamped entry
-        // (`0x800170F8..0x80017104`), which is how a clamped frame reads step 4.
-        let longest = if raw >= 0x2D0 { raw } else { longest };
-        step_of_cost(longest)
+        self.frame_end(i32::from(cost), FramePace::ADAPTIVE).step
     }
 }
 
@@ -602,7 +745,42 @@ mod frame_cost_tests {
     fn a_frame_past_the_clamp_reads_step_four_and_stores_the_clamp() {
         let mut ring = FrameCostRing::default();
         assert_eq!(ring.push(0x2D1), 4);
+        assert_eq!(ring.step(), 4);
         assert_eq!(ring.push(400), 3, "the clamp `0x2BC` reads step 3 after it");
+    }
+
+    #[test]
+    fn a_raw_cost_on_the_clamps_edge_reads_step_three() {
+        let mut ring = FrameCostRing::default();
+        assert_eq!(ring.push(0x2D0), 3, "the raw cost is compared, under 0x2D1");
+        assert_eq!(ring.newest(), 0x2BC);
+        assert_eq!(
+            ring.step(),
+            3,
+            "the stored step, not a reading of the clamp"
+        );
+        assert_eq!(ring.push(0x2BC), 3, "a raw 0x2BC is stored as it is");
+        assert_eq!(ring.step(), 3);
+    }
+
+    #[test]
+    fn the_frame_waits_on_the_step_before_it() {
+        let mut ring = FrameCostRing::default();
+        assert_eq!(ring.frame_end(600, FramePace::ADAPTIVE).vsync_wait, 0);
+        assert_eq!(ring.frame_end(100, FramePace::ADAPTIVE).vsync_wait, 3);
+        let forced = FramePace {
+            forced: 2,
+            ..FramePace::ADAPTIVE
+        };
+        let cursor = ring.cursor();
+        assert_eq!(
+            ring.frame_end(100, forced),
+            FrameEnd {
+                step: 2,
+                vsync_wait: 2
+            }
+        );
+        assert_eq!(ring.cursor(), cursor, "a forced step stores no cost");
     }
 
     #[test]

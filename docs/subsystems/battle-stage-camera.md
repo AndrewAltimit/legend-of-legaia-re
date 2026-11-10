@@ -1379,11 +1379,26 @@ cost:
    sixteen-entry ring at `0x80084098`, index `gp+0x440`, clamped to `0x2BC` at
    `0x2D0` or more (`0x80017098..0x800170CC`).
 2. The step is the ring's maximum against `0xF1` / `0x1FF` / `0x2D1` - `1` /
-   `2` / `3`, else `4` (`0x80017108..0x8001715C`).
+   `2` / `3`, else `4` (`0x80017108..0x8001715C`). A frame of `0x2D0` hblanks or
+   more is compared **raw**, not as the clamp it stored (`slti v0,a2,0x2d0` /
+   `move s0,a2` at `0x800170F8..0x80017104`): raw `0x2D0` reads step `3`, `0x2D1`
+   and up step `4`.
 3. It is raised to the floor `0x8007B9D8` (`0x80017170..0x80017198`).
+4. The frame then waits on `VSync(n)` with the step the frame **before** stored
+   (`0x1F800392`; `0` for one vsync while that is under `2`), and only then copies
+   the new step there (`0x8001719C..0x800171D8`). A frame therefore spans the step
+   its own logic ran on.
 
-Only mode word `gp+0x4CE == 0x10` measures; a non-zero `gp+0x5D8` forces the
-step instead.
+Only mode word `gp+0x4CE == 0x10` measures: any other value stores step `1`,
+with the cost still pushed. A non-zero `gp+0x5D8` forces the step instead, pushes
+nothing and waits on its own value.
+
+Port: `frame_clock::FrameCostRing::frame_end`, compared with the routine store
+for store by the [kernel differential](../tooling/retail-kernel-differential.md)
+(`frame_pace`). The clamp is why a main-RAM capture cannot always say which step
+its newest pass read: an entry of `0x2BC` is a raw `0x2BC`, a raw `0x2D0` or a
+longer frame, and only the scratchpad byte tells them apart
+(`FrameCostRing::from_entries` takes it as the long frame).
 
 The battle's floor is `1` in every catalogued battle state, so the step is the
 load alone, not a property of the game state. Across the battle captures the
