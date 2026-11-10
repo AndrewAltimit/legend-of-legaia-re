@@ -174,6 +174,7 @@ mod item_apply;
 mod item_probe;
 mod key_on_volume;
 mod kiss_of_death;
+mod leader_swap;
 mod ledge_hop;
 mod level_up;
 mod libsnd_voices;

@@ -2875,6 +2875,9 @@ stateDiagram-v2
 - State `0` caches the three party actors' `x/y/z/facing` into the `0x800845E4` table and runs
   the arm gate. The gate refuses when all three presence flags are set - a full party has
   nothing to swap to - and when only two are set it additionally requires the leader's own flag.
+  Arming raises the player's engaged bit `+0x10 & 0x80000` (`801d29b0..801d29c8`) before the
+  fade-out spawns, so the player stands locked, and its follow ease idle, until state 4 lowers
+  the bit (`801d2ce4..801d2cf8`). State 2's own `FUN_801DB8EC` snap is what moves the camera.
 - State `2` performs the swap and re-anchors the camera and field grid on the incoming leader,
   then spawns the talk's own record: `FUN_8003BDE0(x, z, +0x72, 1)` at `801d2c58..801d2c78`.
   `+0x72` is the `43 02` instruction's record byte less the MAN header's first two partition
