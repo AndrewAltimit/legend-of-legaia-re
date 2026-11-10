@@ -43,7 +43,21 @@
     <li><b>Read the disassembly</b><span>Find what it reads and writes. Seed those bytes with the shapes a game reaches, including the caps and the empty cases.</span></li>
     <li><b>Compare whole regions</b><span>A write the port does not know about is exactly what this is for, and a field-by-field test cannot see one.</span></li>
     <li><b>Assert the arms</b><span>Hold that the run reached the interesting arms, so a seed change cannot leave the test passing on nothing.</span></li>
+    <li><b>Declare the routine</b><span>Open the test with <code>differential!(scus(VA))</code> or <code>differential!(prot(ENTRY, VA))</code>, naming every routine it compares. A test with no declaration fails the coverage gate.</span></li>
   </ol>
+</section>
+
+<section class="doc-section" id="declaring-what-a-test-runs" data-doc="declaring-what-a-test-runs">
+  <h2>Declaring what a test runs</h2>
+  <p>Every test opens with <code>differential!(..)</code>, naming the routines it compares as <code>scus(VA)</code> or <code>prot(ENTRY, VA)</code>, or with <code>not_a_differential!("why")</code> when it compares a table and runs nothing. Each argument is a literal or a <code>const</code> of the test file, so the declaration reads without compiling anything.</p>
+  <ul class="bullets">
+    <li><strong>The run checks the declaration.</strong> <code>Cpu::call</code> notes every entry it runs, with the bytes there, in a thread-local ledger. When the test passes with the disc present, the macro's guard fails it unless each declared routine was entered and its bytes are the named image's. A wrong address, or the right VA in the wrong overlay, fails the test that carries it.</li>
+    <li><strong>The count needs no disc.</strong> <code>scripts/ci/differential-coverage.py</code> reads the declarations and the <code>// PORT:</code> tags and reports how many tagged addresses a differential runs; <code>--check</code> fails on a test with no declaration or on coverage below its baseline, in the pre-commit hook and in CI.</li>
+    <li><strong>Other tools read it.</strong> The <a href="port-catalog.html">port catalog</a> carries a <em>differential</em> column and a <code>--no-differential</code> worklist; the provenance checker counts a differential-run address as verified.</li>
+    <li><strong>The declaration can be derived.</strong> <code>--record</code> runs the suite with the ledger written to <code>target/</code> (it holds the executable's bytes, so it is never committed), <code>--propose</code> names each entered routine's image off <code>extracted/</code>, and <code>--apply</code> writes the missing declarations.</li>
+  </ul>
+  <p class="hint">The credit is per address: a passing differential proves which routine ran and that the kernel the test calls computes what it wrote, not that every tag carrying the address sits on that kernel, nor that every arm was reached.</p>
+  <div class="cli"><code>python3 scripts/ci/differential-coverage.py --check</code></div>
 </section>
 
 <section class="doc-section" id="what-it-has-found" data-doc="what-it-has-found">

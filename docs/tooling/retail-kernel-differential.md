@@ -36,6 +36,94 @@ it reached the arm it claims.
    one.
 3. Assert the run reached the interesting arms, so a seed change cannot leave
    the test passing on nothing.
+4. Open the test with its declaration, `differential!(scus(VA))` or
+   `differential!(prot(ENTRY, VA))`, naming every routine it compares
+   ([below](#declaring-what-a-test-runs)). A test with no declaration fails
+   the coverage gate.
+
+## Declaring what a test runs
+
+Every `#[test]` in `crates/retail-exec/tests/` opens with one of two macros
+from `tests/common.rs`:
+
+```rust
+#[test]
+fn the_passive_sweep_matches_retail() {
+    differential!(scus(0x8004_CE2C));
+    // ...
+}
+
+#[test]
+fn the_port_arctan_table_is_the_retail_one() {
+    not_a_differential!("compares the port's arctan table with the SCUS table at 0x8006F4C8; runs no routine");
+    // ...
+}
+```
+
+`scus(VA)` names a routine of `SCUS_942.54`, `prot(ENTRY, VA)` one of PROT entry
+`ENTRY` (extraction index); several go in one call. Each argument is an integer
+literal or a `const` of the test's file (or of `common.rs`), so the declaration
+can be read without compiling anything.
+
+**The run checks the declaration.** `Cpu::call` notes every entry it is asked
+to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
+that entry. The macro plants a guard whose `Drop` runs when the test ends
+without a panic and with the disc present, and fails the test unless each
+declared routine was entered on the test's thread and the bytes entered are
+that image's - the `SCUS_942.54` bytes at the VA, or a run of the named PROT
+entry. A declaration naming the wrong address, or the right VA in the wrong
+overlay, fails the test that carries it. A test may enter more than it declares
+(a setup call); it may not declare what it did not run.
+
+**The count needs no disc.** `scripts/ci/differential-coverage.py` reads the
+declarations and the `// PORT:` tags and reports how many tagged addresses a
+differential runs:
+
+```bash
+python3 scripts/ci/differential-coverage.py              # covered / ported, per routine
+python3 scripts/ci/differential-coverage.py --uncovered  # tagged addresses no test runs
+python3 scripts/ci/differential-coverage.py --check      # the gate
+```
+
+`--check` fails on a test with no declaration, a test file `integration.rs`
+does not mount, an argument it cannot resolve, or a figure below
+`scripts/ci/differential-coverage-baseline.json` (`ported_covered`, `routines`,
+`tests_declared`; each may only rise). It runs in the pre-commit hook and in
+the Repo Gates job. A fall is a loosening, and goes through the
+[ledger](ratchet-integrity.md#a-baseline-may-not-loosen-silently). The report
+also lists declared routines that carry no `PORT:` tag, which is either a
+missing tag or a helper the test runs beside the routine it compares.
+
+The same declarations feed two other tools. The [port catalog](port-catalog.md)
+carries a `differential` column, a dashboard figure and a `--no-differential`
+filter (the ported routines no test runs, with `--live` the live ones). The
+[provenance checker](port-provenance.md#a-differential-is-evidence) counts a
+differential-run address as verified.
+
+**Writing the declaration for an existing test.** A test written before the
+macros, or one whose author wants the declaration derived rather than typed,
+can take it from a run:
+
+```bash
+python3 scripts/ci/differential-coverage.py --record           # the suite, with the ledger on
+python3 scripts/ci/differential-coverage.py --propose          # ledger vs declarations
+python3 scripts/ci/differential-coverage.py --propose --apply  # write the missing ones
+```
+
+`--record` runs the suite with `PSX_RETAIL_EXEC_LEDGER` set to
+`target/differential-coverage/ledger.tsv`, one line per test and routine it
+entered (a libtest thread is named after its test). `--propose` names each
+routine's image by finding its entry bytes in `extracted/` - `SCUS_942.54` at
+the VA first, then the PROT entries the test file loads, then every PROT entry
+- and prints the line each undeclared test should open with; `--apply` inserts
+it. The ledger holds the executable's bytes, so it stays under `target/`. The
+proposal declares everything the test entered, setup calls included; trim a
+routine that is only there to seed the one compared.
+
+**What the credit means.** It is per address. A passing differential proves
+which routine ran and that the Rust kernel the test calls computes what it
+wrote; it does not prove that every `PORT:` site carrying the address sits on
+that kernel, nor that every arm was reached (step 3 above is what does that).
 
 ## What it has found
 
