@@ -107,20 +107,20 @@ fn camera_view_rotation_skips_exactly_the_flagged_axis() {
     assert_eq!(
         camera_view_rotation(view_rot_flags::SKIP_PITCH, p, y, r).unwrap(),
         GteMat3::IDENTITY
-            .mul(&GteMat3::rot_y(y))
-            .mul(&GteMat3::rot_z(r))
+            .mul(&GteMat3::rot_y_psx(psx_angle(y)))
+            .mul(&GteMat3::rot_z_psx(psx_angle(r)))
     );
     assert_eq!(
         camera_view_rotation(view_rot_flags::SKIP_YAW, p, y, r).unwrap(),
         GteMat3::IDENTITY
-            .mul(&GteMat3::rot_x(p))
-            .mul(&GteMat3::rot_z(r))
+            .mul(&GteMat3::rot_x_psx(psx_angle(p)))
+            .mul(&GteMat3::rot_z_psx(psx_angle(r)))
     );
     assert_eq!(
         camera_view_rotation(view_rot_flags::SKIP_ROLL, p, y, r).unwrap(),
         GteMat3::IDENTITY
-            .mul(&GteMat3::rot_x(p))
-            .mul(&GteMat3::rot_y(y))
+            .mul(&GteMat3::rot_x_psx(psx_angle(p)))
+            .mul(&GteMat3::rot_y_psx(psx_angle(y)))
     );
 }
 
@@ -128,14 +128,14 @@ fn camera_view_rotation_skips_exactly_the_flagged_axis() {
 fn camera_view_rotation_composition_order_is_pitch_yaw_roll() {
     let (p, y, r) = (0.4f32, 0.9f32, 0.2f32);
     let got = camera_view_rotation(0, p, y, r).unwrap();
-    let want = GteMat3::rot_x(p)
-        .mul(&GteMat3::rot_y(y))
-        .mul(&GteMat3::rot_z(r));
+    let want = GteMat3::rot_x_psx(psx_angle(p))
+        .mul(&GteMat3::rot_y_psx(psx_angle(y)))
+        .mul(&GteMat3::rot_z_psx(psx_angle(r)));
     assert_eq!(got, want);
     // Order is load-bearing: the reverse product is a different matrix, so a
     // port that composed Rz * Ry * Rx would not silently agree.
-    let reversed = GteMat3::rot_z(r)
-        .mul(&GteMat3::rot_y(y))
-        .mul(&GteMat3::rot_x(p));
+    let reversed = GteMat3::rot_z_psx(psx_angle(r))
+        .mul(&GteMat3::rot_y_psx(psx_angle(y)))
+        .mul(&GteMat3::rot_x_psx(psx_angle(p)));
     assert_ne!(got, reversed);
 }

@@ -92,7 +92,7 @@
 //! reproduction.
 
 use crate::gte::{
-    GteMat3, GteVec3, ROT_ONE, SXY_MAX, SXY_MIN, ScreenXY, gte_divide, gte_persp_term, rot_trans,
+    GteMat3, GteVec3, SXY_MAX, SXY_MIN, ScreenXY, gte_divide, gte_persp_term, rot_trans,
 };
 
 // The from-scratch trig LUT lives with the rest of the GTE arithmetic in the
@@ -106,11 +106,7 @@ pub use crate::gte::{PSX_ANGLE_TURN, psx_cos, psx_sin};
 /// this is the exact matrix `FUN_8004638c` assembles when the current GTE
 /// rotation is identity - the state [`project_billboard`] runs it in.
 pub fn rot_z_psx(angle: u16) -> GteMat3 {
-    let c = psx_cos(angle).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-    let s = psx_sin(angle).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-    GteMat3 {
-        m: [[c, -s, 0], [s, c, 0], [0, 0, ROT_ONE as i16]],
-    }
+    GteMat3::rot_z_psx(angle)
 }
 
 /// Compose an existing rotation with an in-plane `Rz(angle)` spin.
