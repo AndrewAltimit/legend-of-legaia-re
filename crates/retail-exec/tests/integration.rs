@@ -248,6 +248,7 @@ mod marker_floor;
 mod mdec_sync;
 mod me_codec;
 mod melee_hit;
+mod menu_driver;
 mod menu_leaves;
 mod menu_list_rows;
 mod menu_numerals;
