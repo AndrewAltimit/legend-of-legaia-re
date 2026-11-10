@@ -157,20 +157,27 @@ impl Drop for Proof {
         };
         let entered = psx_retail_exec::ledger::entered_since(self.mark);
         for r in &self.routines {
-            let Some(e) = entered.iter().find(|e| e.entry == r.va) else {
+            // Several slot-B images hold different routines at one VA, and a
+            // test may enter more than one of them: any body entered at the VA
+            // that is the declared image's proves the declaration.
+            let at: Vec<_> = entered.iter().filter(|e| e.entry == r.va).collect();
+            if at.is_empty() {
                 let ran: Vec<String> = entered.iter().map(|e| format!("{:08X}", e.entry)).collect();
                 panic!("differential! declares {r}, which no Cpu::call entered (entered: {ran:?})");
-            };
-            let held = match r.prot {
-                None => scus().is_some_and(|exe| {
-                    let off = (r.va.wrapping_sub(0x8001_0000) as usize).wrapping_add(0x800);
-                    exe.get(off..off + e.body.len()) == Some(&e.body[..])
-                }),
-                Some(n) => d
-                    .read_entry(n)
-                    .ok()
-                    .is_some_and(|img| img.windows(e.body.len()).any(|w| w == &e.body[..])),
-            };
+            }
+            let image = r.prot.and_then(|n| d.read_entry(n).ok());
+            let held = at
+                .iter()
+                .flat_map(|e| e.bodies.iter())
+                .any(|body| match r.prot {
+                    None => scus().is_some_and(|exe| {
+                        let off = (r.va.wrapping_sub(0x8001_0000) as usize).wrapping_add(0x800);
+                        exe.get(off..off + body.len()) == Some(&body[..])
+                    }),
+                    Some(_) => image
+                        .as_ref()
+                        .is_some_and(|img| img.windows(body.len()).any(|w| w == &body[..])),
+                });
             assert!(
                 held,
                 "differential! declares {r}, but the bytes entered there are not that image's"

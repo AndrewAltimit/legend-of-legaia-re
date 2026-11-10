@@ -30,6 +30,10 @@ pub struct Entered {
     pub entry: u32,
     /// The bytes at the entry on the latest call.
     pub body: Vec<u8>,
+    /// Every distinct body called at this entry, in first-call order: the
+    /// slot-B images hold different routines at one VA, and one test can
+    /// run several of them.
+    pub bodies: Vec<Vec<u8>>,
     pub calls: u64,
     /// How many of those calls returned to the sentinel.
     pub returned: u64,
@@ -69,6 +73,7 @@ pub(crate) fn record(entry: u32, body: Vec<u8>, stop: &Stop) {
         let e = t.by_entry.entry(entry).or_insert_with(|| Entered {
             entry,
             body: Vec::new(),
+            bodies: Vec::new(),
             calls: 0,
             returned: 0,
             last: 0,
@@ -77,6 +82,9 @@ pub(crate) fn record(entry: u32, body: Vec<u8>, stop: &Stop) {
         e.calls += 1;
         e.returned += u64::from(*stop == Stop::Returned);
         e.last = seq;
+        if !e.bodies.contains(&body) {
+            e.bodies.push(body.clone());
+        }
         e.body.clone_from(&body);
         first
     });

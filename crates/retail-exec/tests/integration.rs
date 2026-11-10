@@ -52,6 +52,7 @@ mod camera_follow;
 mod camera_ghost;
 mod camera_height;
 mod camera_rel;
+mod capture_cameras;
 mod capture_takedown;
 mod cast_cue;
 mod cast_damage;
