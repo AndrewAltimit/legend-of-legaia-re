@@ -799,3 +799,63 @@ fn the_hub_menu_picks_as_retail_picks() {
     }
     assert!(rows.iter().all(|&n| n > 300), "{rows:?}");
 }
+
+/// The pre-hook tick `FUN_801D2050` past its spawn arms (the spawn counter
+/// `0x801D9294` parked at `2`), over generated actor positions, print flags
+/// and held pads: its debug readout's gate against `debug_readout_visible` and
+/// the tile pair it prints (`FUN_8001A068`'s second and third arguments)
+/// against `debug_tile`. Its first-frame camera seed is held to `CAMERA_INIT`.
+#[test]
+fn the_pre_hook_readout_matches_retail() {
+    use legaia_engine_fishing::fishing_actors::{CAMERA_INIT, debug_readout_visible, debug_tile};
+    const PRE_HOOK: u32 = 0x801D_2050;
+    const PRINT: u32 = 0x8001_A068;
+    const SKY: u32 = 0x801D_24EC;
+    const SPAWN_COUNT: u32 = 0x801D_9294;
+    const PRINT_FLAG: u32 = 0x8007_B9B0;
+    const PAD_HELD: u32 = 0x8007_B850;
+    const CAMERA: u32 = 0x8008_4044;
+    const ACTOR: u32 = 0x8012_0000;
+    differential!(prot(972, PRE_HOOK));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let prints = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let p = prints.clone();
+    cpu.hook(PRINT, move |r, _| p.borrow_mut().push((r.r[A1], r.r[A2])));
+    cpu.stub(SKY, 0);
+    let mut rng = Rng(0x5052_4548);
+    let mut shown = 0u32;
+    for case in 0..4000 {
+        let first = case % 7 == 0;
+        cpu.mem.wr16(ACTOR + 0x1A, u16::from(!first));
+        cpu.mem.wr32(ACTOR + 0x10, rng.next());
+        let (x, z) = (rng.next() as i16, rng.next() as i16);
+        cpu.mem.wr16(ACTOR + 0x14, x as u16);
+        cpu.mem.wr16(ACTOR + 0x18, z as u16);
+        cpu.mem.wr32(SPAWN_COUNT, 2);
+        let flag = rng.below(2) == 1;
+        let pad = rng.next() as u16;
+        cpu.mem
+            .wr32(PRINT_FLAG, u32::from(flag) * (1 + rng.below(9)));
+        cpu.mem.wr32(PAD_HELD, u32::from(pad));
+        cpu.mem.wr32(CAMERA, 0);
+        prints.borrow_mut().clear();
+        assert_eq!(cpu.call(PRE_HOOK, &[ACTOR]), Stop::Returned, "case {case}");
+        let prints = prints.borrow();
+        if debug_readout_visible(flag, pad) {
+            assert_eq!(prints.len(), 2, "case {case}: both readout lines");
+            let want = (debug_tile(x) as u32, debug_tile(z) as u32);
+            assert_eq!(prints[0], want, "case {case}: tile of ({x}, {z})");
+            shown += 1;
+        } else {
+            assert!(prints.is_empty(), "case {case}: readout hidden");
+        }
+        if first {
+            let cam = (cpu.mem.rd16(CAMERA) as i16, cpu.mem.rd16(CAMERA + 2) as i16);
+            assert_eq!(cam, CAMERA_INIT, "case {case}: camera seed");
+        }
+    }
+    assert!(shown > 500, "only {shown} readouts");
+}

@@ -888,3 +888,87 @@ mod chrome {
         );
     }
 }
+
+/// The per-fighter mesh installer `FUN_801D4C50` on its retail arm (the
+/// streaming flag `_DAT_8007B8C2` set), over generated packs: the PROT entry it
+/// reads (`FUN_8003EB98`'s first argument) against `fighter_pack_entry`, and
+/// every chunk it hands the dispatcher `FUN_8001F05C` (payload address, header
+/// word, the decompressed flag) against `fighter_pack_chunks`. The allocator
+/// returns the scratch pack and the CD calls are stood in for.
+#[test]
+fn the_fighter_pack_walk_matches_retail() {
+    use legaia_engine_minigames::baka_fighter::{fighter_pack_chunks, fighter_pack_entry};
+    use psx_retail_exec::{A1, A2, A3};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const INSTALL: u32 = 0x801D_4C50;
+    const ALLOC: u32 = 0x8001_7888;
+    const FREE: u32 = 0x8001_7B94;
+    const READ_ENTRY: u32 = 0x8003_EB98;
+    const SYNC: u32 = 0x8003_DE7C;
+    const DISPATCH: u32 = 0x8001_F05C;
+    const STREAMING: u32 = 0x8007_B8C2;
+    const MESH_INDEX: u32 = 0x801D_C114;
+    const BUF: u32 = 0x8014_0000;
+    differential!(prot(976, INSTALL));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8005_8104, 0);
+    cpu.stub(FREE, 0);
+    cpu.stub(SYNC, 0);
+    cpu.stub(ALLOC, BUF);
+    let reads = Rc::new(RefCell::new(Vec::<(u32, u32, u32)>::new()));
+    let r2 = reads.clone();
+    cpu.hook(READ_ENTRY, move |r, _| {
+        r2.borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[A1], r.r[A2]))
+    });
+    let chunks = Rc::new(RefCell::new(Vec::<(u32, u32, u32, u32)>::new()));
+    let c2 = chunks.clone();
+    cpu.hook(DISPATCH, move |r, _| {
+        c2.borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[A1], r.r[A2], r.r[A3]))
+    });
+    cpu.mem.wr16(STREAMING, 1);
+    cpu.mem.wr32(MESH_INDEX, 0);
+    cpu.mem.wr32(0x8007_C018, 0);
+    let mut rng = Rng(0x4655_4B50);
+    let mut walked = 0usize;
+    for case in 0..2000 {
+        let roster = rng.below(6);
+        let mut pack = Vec::new();
+        for _ in 0..rng.below(12) {
+            let span = if rng.below(4) == 0 { 0x40 } else { 0x2000 };
+            let size = 1 + rng.below(span);
+            let kind = rng.next() & 0xFF;
+            pack.extend_from_slice(&((kind << 24) | size).to_le_bytes());
+            let body = ((size / 4) * 4) as usize;
+            pack.extend((0..body).map(|_| rng.next() as u8));
+        }
+        // The terminator: a type byte over a zero size.
+        pack.extend_from_slice(&((rng.next() & 0xFF) << 24).to_le_bytes());
+        cpu.mem.load(BUF, &pack);
+        reads.borrow_mut().clear();
+        chunks.borrow_mut().clear();
+        assert_eq!(cpu.call(INSTALL, &[roster]), Stop::Returned, "case {case}");
+        let (_, entry) = fighter_pack_entry(roster as usize);
+        assert_eq!(
+            *reads.borrow(),
+            [(entry, BUF, 1)],
+            "case {case}: roster {roster}"
+        );
+        let want: Vec<_> = fighter_pack_chunks(&pack)
+            .iter()
+            .map(|c| {
+                let hdr = u32::from_le_bytes(pack[c.offset - 4..c.offset].try_into().unwrap());
+                assert_eq!((c.kind, c.len as u32), ((hdr >> 24) as u8, hdr & 0xFF_FFFF));
+                (BUF + c.offset as u32, hdr, 0, 1)
+            })
+            .collect();
+        assert_eq!(*chunks.borrow(), want, "case {case}");
+        walked += want.len();
+    }
+    assert!(walked > 5000, "only {walked} chunks walked");
+}
