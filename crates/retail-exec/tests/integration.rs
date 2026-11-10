@@ -227,6 +227,7 @@ mod nighto_roll;
 mod object_spawn;
 mod options_popup;
 mod ozma_ladder;
+mod pad_pump;
 mod pad_resolve;
 mod panel_actors;
 mod panel_script;
