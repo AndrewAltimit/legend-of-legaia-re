@@ -233,7 +233,10 @@ impl World {
         if let Some(d) = drift
             && let Some(cam) = self.battle.camera.as_mut()
         {
-            self.casting.module_tick_drift = Some(d);
+            // A drift that lands a stored value owes the rest of its pass only
+            // its rate part.
+            self.casting.module_tick_drift =
+                self.casting.module_tick_rest.take().unwrap_or(Some(d));
             cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
             if d.tr_x != 0 {
                 cam.drift_module_tr_x(d.tr_x);

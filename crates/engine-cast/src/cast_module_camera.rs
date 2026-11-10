@@ -479,6 +479,12 @@ pub struct ArmDirection {
     /// builder holds its endpoints in halfwords, so a stored word past
     /// `0x7FFF` cannot ride a cut (Barra's `0xFFFF` in arms 3 and 4).
     pub tr_z_store: Option<i32>,
+    /// `Some` when [`Self::drift`] lands a global on a stored value (a drift
+    /// worked out of the live pose, `ModuleCamState::live_pitch_tr`): the
+    /// rest of a pass that hands over on this tick repeats only this rate
+    /// part (`World::module_pass`), since retail's pass stores the value once
+    /// and drifts the rest by `k * delta`. `Some(None)` repeats nothing.
+    pub rest_drift: Option<Option<CaptureDrift>>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -999,6 +1005,7 @@ impl ArmDirection {
         drift_after_shot: false,
         ribbons: None,
         tr_z_store: None,
+        rest_drift: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -1017,6 +1024,7 @@ impl ArmDirection {
         drift_after_shot: false,
         ribbons: None,
         tr_z_store: None,
+        rest_drift: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {

@@ -80,6 +80,20 @@ pub fn with_drift(dir: ArmDirection, d: Option<CaptureDrift>) -> ArmDirection {
     ArmDirection { drift: d, ..dir }
 }
 
+/// `dir` with a drift that lands a global on a stored value, of which only
+/// `rate` is a per-tick drift ([`ArmDirection::rest_drift`]).
+pub fn with_stored_drift(
+    dir: ArmDirection,
+    d: Option<CaptureDrift>,
+    rate: Option<CaptureDrift>,
+) -> ArmDirection {
+    ArmDirection {
+        drift: d,
+        rest_drift: Some(rate),
+        ..dir
+    }
+}
+
 /// A passing arm that leaves for the done phase `0xFF` - the arm that stores
 /// it, or a terminal arm that returns `0` without storing a phase (the port
 /// then stands at `0xFF` for it, so the band lets go).

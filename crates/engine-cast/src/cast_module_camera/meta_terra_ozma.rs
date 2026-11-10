@@ -522,8 +522,13 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             st.creature_floor_clip = true;
             st.creature_stage = Some(1);
             // The shake's store runs ahead of the gate, on the pass that
-            // leaves the arm too: no cut follows it here.
-            with_ring(with_drift(ArmDirection::PASS, dd))
+            // leaves the arm too: no cut follows it here. TR y is a store, so
+            // the rest of the pass drifts the rest alone.
+            with_ring(with_stored_drift(
+                ArmDirection::PASS,
+                dd,
+                d(-D, D, 0, 0, 8 * D),
+            ))
         }
         6 => {
             let (odd, rise) = ozma_shake_step(st, 4 * D);
@@ -551,7 +556,14 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         8 => {
             let (odd, rise) = ozma_shake_step(st, -D);
             let dd = d(-D, 0, 0, odd * rise + 0xE00 - live_tr_y(st), 48 * D);
-            with_ring(arm(st, 0x30, dd, ArmDirection::PASS))
+            if gated(st, 0x30) {
+                return with_ring(held(dd));
+            }
+            with_ring(with_stored_drift(
+                ArmDirection::PASS,
+                dd,
+                d(-D, 0, 0, 0, 48 * D),
+            ))
         }
         9 => {
             let (odd, rise) = ozma_shake_step(st, -D);

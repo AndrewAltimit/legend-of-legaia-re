@@ -287,7 +287,11 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             // (`slti v0,v0,0x400` / `sw v0,0x4(v1)` at `0x801F8884..0x801F88A0`).
             let tr_y = st.live_pitch_tr.map_or(0x400, |(_, tr)| tr[1]);
             if tr_y < 0x400 {
-                return with_drift(ArmDirection::PASS, Some(drift(0, 0, 0, 0x400 - tr_y, 0)));
+                return with_stored_drift(
+                    ArmDirection::PASS,
+                    Some(drift(0, 0, 0, 0x400 - tr_y, 0)),
+                    None,
+                );
             }
             ArmDirection::PASS
         }

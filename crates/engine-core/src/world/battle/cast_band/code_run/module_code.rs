@@ -383,6 +383,7 @@ impl World {
             }
         }
         run.capture_drift = direction.and_then(|d| d.drift);
+        self.casting.module_tick_rest = direction.and_then(|d| d.rest_drift);
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         run.tr_z_store = direction.and_then(|d| d.tr_z_store);
         let mut capture_held = false;
