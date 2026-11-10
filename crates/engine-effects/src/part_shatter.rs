@@ -28,10 +28,14 @@
 //! a row and points the part's `+0x6D` at it (`0x8002377C..0x800237D4`), and
 //! the field carriers set a burst offset and the shrink flag that way
 //! (`rikuroa` / `rikuroa2` records `56` / `57`, `jagaroom` records `20` /
-//! `21`). The battle rows read zero in every capture
-//! ([`legaia_render_kernels::shatter::ShatterRow`]), so a battle part drawn
-//! with [`shatter_part_mesh`] bursts from its own origin with the default
-//! spin and push.
+//! `21`). Two battle images write one too: PROT 0953's Terio Punch planet
+//! (`0x801F7A3C`) and PROT 0959's twin record (`0x801F8EA0`) point `+0x6D` at
+//! row `3` with flags `7` (no spin, no push, shrink), so the planet stays
+//! whole while its `+0x7A` climbs and then shrinks away under flags `1` / `4`.
+//! The scenes' draw lists take the row through `row_of`
+//! (`SummonScene::part_draws_with` and its siblings); a part drawn with
+//! [`shatter_part_mesh`] reads the zero row, bursting from its own origin
+//! with the default spin and push.
 //!
 //! REF: FUN_8001ADA4 (`0x8001B45C..0x8001B568`), FUN_80029888
 
@@ -125,5 +129,28 @@ mod tests {
         let after = centroid(&m.positions[0..3]);
         let r = |c: [f32; 3]| (c[0] * c[0] + c[2] * c[2]).sqrt();
         assert!(r(after) > r(before) * 2.0, "{before:?} -> {after:?}");
+    }
+
+    /// Terio Punch's row: flags `7` (no spin, no push, shrink by
+    /// `0x1000 - v`) keeps every triangle about its own centroid, so a small
+    /// word draws the mesh whole.
+    #[test]
+    fn a_no_spin_no_push_row_keeps_the_mesh_whole() {
+        let whole = quad();
+        let row = ShatterRow {
+            flags: 7,
+            ..Default::default()
+        };
+        let m = shatter_part_mesh_row(&whole, 28, row).expect("shattering");
+        for (k, &i) in [0usize, 1, 2].iter().enumerate() {
+            for c in 0..3 {
+                assert!(
+                    (m.positions[k][c] - whole.positions[i][c]).abs() < 2.0,
+                    "{:?} vs {:?}",
+                    m.positions[k],
+                    whole.positions[i]
+                );
+            }
+        }
     }
 }

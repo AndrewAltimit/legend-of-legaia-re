@@ -667,10 +667,10 @@ impl World {
             .casting
             .active_move_fx
             .as_ref()
-            .map(|s| s.part_draws())
+            .map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
             .unwrap_or_default();
         for scene in &self.casting.active_action_fx {
-            out.extend(scene.part_draws());
+            out.extend(scene.part_draws_with(&|id| self.shatter_row(id)));
         }
         out
     }

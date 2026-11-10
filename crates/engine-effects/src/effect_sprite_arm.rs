@@ -83,9 +83,22 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
 /// in the keyframe-mesh mode draws one quad per posed part instead
 /// ([`sprite_arm_draws`]).
 pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
+    sprite_arm_draw_row(s, Default::default())
+}
+
+/// [`sprite_arm_draw`] under the deformation-table row the part's `+0x6D`
+/// names ([`crate::part_shatter::shatter_part_mesh_row`]).
+pub fn sprite_arm_draw_row(
+    s: &ActorState,
+    row: legaia_render_kernels::shatter::ShatterRow,
+) -> Option<crate::effect_ribbon::RibbonDraw> {
     let mut mesh = sprite_arm_vram_mesh(s)?;
     // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
-    crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
+    crate::part_shatter::apply_part_shatter_row(
+        &mut mesh,
+        crate::part_shatter::part_shatter_word(s),
+        row,
+    );
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
@@ -120,7 +133,16 @@ pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDra
 /// to the animated renderer)
 /// PORT: FUN_8001B964 (the per-part pose of a sprite-arm node's slots)
 pub fn sprite_arm_draws(s: &ActorState) -> Vec<crate::effect_ribbon::RibbonDraw> {
-    let Some(base) = sprite_arm_draw(s) else {
+    sprite_arm_draws_row(s, Default::default())
+}
+
+/// [`sprite_arm_draws`] under the deformation-table row the part's `+0x6D`
+/// names.
+pub fn sprite_arm_draws_row(
+    s: &ActorState,
+    row: legaia_render_kernels::shatter::ShatterRow,
+) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    let Some(base) = sprite_arm_draw_row(s, row) else {
         return Vec::new();
     };
     if s.move_submode != 6 {

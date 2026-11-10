@@ -141,7 +141,7 @@ impl World {
         self.casting
             .active_summon
             .as_ref()
-            .map(|s| s.part_draws())
+            .map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
             .unwrap_or_default()
     }
 

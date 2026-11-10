@@ -1,6 +1,7 @@
 //! `SummonScene`: seeding the parts off the overlay and ticking them through the move VM.
 
 use super::*;
+use legaia_render_kernels::shatter::ShatterRow;
 
 /// A running summon: every spawned part plus the model-library base the parts'
 /// mesh selectors index against.
@@ -489,6 +490,15 @@ impl SummonScene {
     /// nodes (`model_sel == -1`) carry no mesh and are skipped. The transform is
     /// the engine's interpretation (see module docs).
     pub fn part_draws(&self) -> Vec<SummonPartDraw> {
+        self.part_draws_with(&|_| Default::default())
+    }
+
+    /// [`Self::part_draws`] with each part's shatter under the
+    /// deformation-table row its `+0x6D` names, as `row_of` reads the shared
+    /// table `0x8007BE60` (move-VM op `0x21` writes it,
+    /// `0x8002377C..0x800237D4`; the model draw reads it,
+    /// `0x8001B538..0x8001B564`).
+    pub fn part_draws_with(&self, row_of: &dyn Fn(u8) -> ShatterRow) -> Vec<SummonPartDraw> {
         // A halted part (`+0x10 |= 8`, op `0x08`) is killed by retail's list
         // walk and never draws again: `gimard_burning_attack` holds no node
         // for PROT 0903's breath once its program halts, where the engine
@@ -507,8 +517,7 @@ impl SummonScene {
                     scale: s.field_72,
                     colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
                     shatter: crate::part_shatter::part_shatter_word(s),
-                    // The battle rows read zero in every capture.
-                    shatter_row: Default::default(),
+                    shatter_row: row_of(s.face_rotation),
                 }
             })
             .collect()
@@ -521,6 +530,15 @@ impl SummonScene {
     /// render dispatcher points the actor's model list at the emitter's own
     /// output (`FUN_8001ADA4` case 4, `0x8001B08C..0x8001B0B4`).
     pub fn ribbon_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.ribbon_draws_with(&|_| Default::default())
+    }
+
+    /// [`Self::ribbon_draws`] under each part's deformation-table row
+    /// ([`Self::part_draws_with`]).
+    pub fn ribbon_draws_with(
+        &self,
+        row_of: &dyn Fn(u8) -> ShatterRow,
+    ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
             .filter(|p| self.drawn(p))
@@ -529,9 +547,10 @@ impl SummonScene {
                 let mut mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
                 // The ribbon is the node's model too: the model draw's
                 // `+0x7A` gate ([`crate::part_shatter`]).
-                crate::part_shatter::apply_part_shatter(
+                crate::part_shatter::apply_part_shatter_row(
                     &mut mesh,
                     crate::part_shatter::part_shatter_word(s),
+                    row_of(s.face_rotation),
                 );
                 (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
                     mesh,
@@ -554,10 +573,24 @@ impl SummonScene {
     /// ([`crate::effect_sprite_arm::sprite_arm_draws`]). Like ribbons they are
     /// transform nodes, so [`Self::part_draws`] never lists them.
     pub fn sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.sprite_arm_draws_with(&|_| Default::default())
+    }
+
+    /// [`Self::sprite_arm_draws`] under each part's deformation-table row
+    /// ([`Self::part_draws_with`]).
+    pub fn sprite_arm_draws_with(
+        &self,
+        row_of: &dyn Fn(u8) -> ShatterRow,
+    ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
             .filter(|p| self.drawn(p))
-            .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
+            .flat_map(|p| {
+                crate::effect_sprite_arm::sprite_arm_draws_row(
+                    &p.state,
+                    row_of(p.state.face_rotation),
+                )
+            })
             .collect()
     }
 
@@ -565,10 +598,26 @@ impl SummonScene {
     /// scene holds, each as the procedural mesh `FUN_80028158` builds
     /// ([`crate::effect_default_arm::default_arm_draw`]).
     pub fn default_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.default_arm_draws_with(&|_| Default::default())
+    }
+
+    /// [`Self::default_arm_draws`] under each part's deformation-table row
+    /// ([`Self::part_draws_with`]): PROT 0953's Terio Punch planet
+    /// (`0x801F7A3C`) writes row 3 with flags `7` (no spin, no push, shrink)
+    /// and so stays whole while its `+0x7A` climbs.
+    pub fn default_arm_draws_with(
+        &self,
+        row_of: &dyn Fn(u8) -> ShatterRow,
+    ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
             .filter(|p| self.drawn(p))
-            .filter_map(|p| crate::effect_default_arm::default_arm_draw(&p.state))
+            .filter_map(|p| {
+                crate::effect_default_arm::default_arm_draw_row(
+                    &p.state,
+                    row_of(p.state.face_rotation),
+                )
+            })
             .collect()
     }
 

@@ -1015,9 +1015,22 @@ pub fn default_arm_rand_draws(s: &ActorState) -> u32 {
 /// The default-arm draw of a part, in the same `(world_pos, rot)` form a
 /// ribbon or a sprite-arm quad takes.
 pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
+    default_arm_draw_row(s, Default::default())
+}
+
+/// [`default_arm_draw`] under the deformation-table row the part's `+0x6D`
+/// names ([`crate::part_shatter::shatter_part_mesh_row`]).
+pub fn default_arm_draw_row(
+    s: &ActorState,
+    row: legaia_render_kernels::shatter::ShatterRow,
+) -> Option<crate::effect_ribbon::RibbonDraw> {
     let mut mesh = default_arm_vram_mesh(s)?;
     // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
-    crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
+    crate::part_shatter::apply_part_shatter_row(
+        &mut mesh,
+        crate::part_shatter::part_shatter_word(s),
+        row,
+    );
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
