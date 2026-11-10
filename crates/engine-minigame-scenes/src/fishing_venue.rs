@@ -516,17 +516,17 @@ pub fn venue_floor_ladder() -> [i16; 16] {
 }
 
 /// The 4096-step sine table the pond swell samples. Retail reads the
-/// shared table through `*_DAT_8007B81C` (runtime data the port does not
-/// stage); this synthesizes an equivalent once.
+/// shared table through `*_DAT_8007B81C`, which points at the SCUS sine
+/// table `0x80070A2C` (runtime data the port does not stage); this is that
+/// table, entry for entry: `sin_4096` truncates toward zero as the disc
+/// table does, where a rounded sine misses it by one on a fraction of the
+/// entries and lifts those swell rungs by one.
 pub fn swell_sine_table() -> &'static [i16] {
     use std::sync::OnceLock;
     static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
     TABLE.get_or_init(|| {
         (0..fc::SINE_TURN)
-            .map(|i| {
-                let f = (i as f64) * std::f64::consts::TAU / fc::SINE_TURN as f64;
-                (f.sin() * 4096.0).round() as i16
-            })
+            .map(|i| legaia_minigame_formats::minigame_slot_scene::sin_4096(i) as i16)
             .collect()
     })
 }

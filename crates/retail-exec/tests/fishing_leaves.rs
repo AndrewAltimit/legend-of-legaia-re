@@ -18,9 +18,9 @@ const GATE: u32 = 0x801D_712C;
 const PROBE: u32 = 0x801D_7030;
 const WANDER: u32 = 0x801D_2278;
 const CARD: u32 = 0x801D_5298;
+const SPAWN: u32 = 0x8002_1B04;
 const BAG_COUNT: u32 = 0x8004_2F4C;
 const RAND: u32 = 0x8005_6798;
-const SPAWN: u32 = 0x8002_1B04;
 
 fn rig() -> Option<Cpu> {
     let (mut cpu, d) = (scus_cpu()?, disc()?);
@@ -365,4 +365,199 @@ fn a_landed_catch_credits_what_retail_credits() {
         bested += u32::from(retail.1 != best);
     }
     assert!(capped > 100 && bested > 100, "{capped} {bested}");
+}
+
+/// The venue chrome: the pond swell `FUN_801D03B0` (over the SCUS sine table
+/// against the venue host's own table), the panel frame `FUN_801D74B0`, the
+/// camera reset `FUN_801D78C0` and the splash burst `FUN_801D7A5C`.
+mod chrome {
+    use super::*;
+    use legaia_engine_fishing::fishing_chrome::{
+        centred_panel, splash_burst, venue_camera_reset, water_swell,
+    };
+    use psx_retail_exec::A3;
+
+    const SWELL: u32 = 0x801D_03B0;
+    const PANEL: u32 = 0x801D_74B0;
+    const CAMERA: u32 = 0x801D_78C0;
+    const SPLASH: u32 = 0x801D_7A5C;
+
+    #[test]
+    fn the_pond_swells_as_retail_swells() {
+        differential!(prot(972, SWELL));
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        const ANGLE: u32 = 0x801D_9118;
+        const LADDER: u32 = 0x1F80_035C;
+        // The shared table `*_DAT_8007B81C` points at: the SCUS sine.
+        cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+        let table = legaia_engine_minigame_scenes::fishing_venue::swell_sine_table();
+        let mut rng = Rng(0x5357_454C);
+        for round in 0..20_000 {
+            let angle = match rng.below(3) {
+                0 => rng.below(0x1000) as i32,
+                1 => rng.below(0x100_0000) as i32,
+                _ => rng.next() as i32,
+            };
+            let step = 1 + rng.below(3) as i32;
+            cpu.mem.wr32(ANGLE, angle as u32);
+            cpu.mem.wr8(0x1F80_0393, step as u8);
+            cpu.mem.wr16(LADDER, 0x7777);
+            assert_eq!(cpu.call(SWELL, &[]), Stop::Returned);
+            let retail = (
+                [0, 2, 4, 6].map(|o| cpu.mem.rd16(LADDER + o) as i16),
+                cpu.mem.rd32(ANGLE) as i32,
+            );
+            let (swell, next) = water_swell(table, angle, step);
+            assert_eq!(
+                retail,
+                (swell.rungs, next),
+                "round {round} angle {angle:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_panel_frame_lands_where_retail_puts_it() {
+        differential!(prot(972, PANEL));
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let boxes = Rc::new(RefCell::new(Vec::new()));
+        let sink = boxes.clone();
+        cpu.stub(0x8003_4B6C, 0);
+        cpu.hook(0x8002_C69C, move |r, _| {
+            sink.borrow_mut().push((
+                r.r[A0] as i16,
+                r.r[A1] as i16,
+                r.r[A2] as i16,
+                r.r[A3] as i16,
+            ));
+        });
+        let mut rng = Rng(0x5041_4E45);
+        for round in 0..20_000 {
+            let cx = rng.below(400) as i16 - 40;
+            let y = rng.below(300) as i16 - 30;
+            let w = rng.below(300) as i16 - [0, 20][rng.below(2) as usize];
+            let h = rng.below(200) as i16;
+            boxes.borrow_mut().clear();
+            let args = [
+                cx as i32 as u32,
+                y as i32 as u32,
+                w as i32 as u32,
+                h as i32 as u32,
+            ];
+            assert_eq!(cpu.call(PANEL, &args), Stop::Returned);
+            let port: Vec<_> = centred_panel(cx, y, w, h)
+                .map(|p| (p.x, p.y, p.w, p.h))
+                .into_iter()
+                .collect();
+            assert_eq!(*boxes.borrow(), port, "round {round}");
+        }
+    }
+
+    #[test]
+    fn the_venue_camera_resets_as_retail_resets_it() {
+        differential!(prot(972, CAMERA));
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        const ROT: u32 = 0x8007_B790;
+        const TR: u32 = 0x8008_40B8;
+        cpu.mem.load(ROT, &[0x55; 6]);
+        cpu.mem.load(TR, &[0x66; 12]);
+        assert_eq!(cpu.call(CAMERA, &[]), Stop::Returned);
+        let r = venue_camera_reset();
+        assert_eq!(
+            (
+                [0, 2, 4].map(|o| cpu.mem.rd16(ROT + o) as i16),
+                cpu.mem.rd32(TR) as i32,
+                cpu.mem.rd32(TR + 4),
+                cpu.mem.rd32(TR + 8) as i32,
+            ),
+            (r.rot, r.tr_x, 0x6666_6666, r.tr_z),
+            "the reset leaves TR.y alone"
+        );
+    }
+
+    #[test]
+    fn the_splash_bursts_as_retail_bursts() {
+        differential!(prot(972, SPLASH));
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        const PARTS: u32 = 0x8015_0000;
+        let spawned = Rc::new(RefCell::new(Vec::<(u32, [u32; 4])>::new()));
+        let sink = spawned.clone();
+        cpu.hook(SPAWN, move |r, _| {
+            let mut s = sink.borrow_mut();
+            let part = PARTS + s.len() as u32 * 0x100;
+            s.push((part, [r.r[A0], r.r[A1], r.r[A2], r.r[A3]]));
+            r.r[V0] = part;
+        });
+        let mut rng = Rng(0x5350_4C41);
+        for round in 0..20_000 {
+            let (px, py) = (rng.below(0x200) as u16, rng.below(0x200) as u16);
+            let (sx, sy) = (rng.below(0x200) as u16, rng.below(0x200) as u16);
+            for p in 0..3u32 {
+                let part = PARTS + p * 0x100;
+                for o in (0..0x100).step_by(4) {
+                    cpu.mem.wr32(part + o, 0);
+                }
+                cpu.mem.wr16(part + 0x14, px);
+                cpu.mem.wr16(part + 0x16, py);
+                cpu.mem.wr16(part + 0x80 + 0x34, sx);
+                cpu.mem.wr16(part + 0x80 + 0x36, sy);
+            }
+            let (x, y, sprite) = (
+                rng.below(0x400) as i16,
+                rng.below(0x400) as i16,
+                rng.next() as u16,
+            );
+            let packed = (rng.below(0x2000) as i32) & 0x1FFF;
+            spawned.borrow_mut().clear();
+            let args = [
+                x as i32 as u32,
+                y as i32 as u32,
+                u32::from(sprite),
+                packed as u32,
+            ];
+            assert_eq!(cpu.call(SPLASH, &args), Stop::Returned);
+            let port = splash_burst(x, y, sprite, packed);
+            for (i, p) in port.iter().enumerate() {
+                let (part, args) = spawned.borrow()[i];
+                let (bx, by, off) = if p.sub_block {
+                    (sx, sy, 0x80 + 0x34)
+                } else {
+                    (px, py, 0x14)
+                };
+                let retail = (
+                    args,
+                    cpu.mem.rd16(part + off) as i16,
+                    cpu.mem.rd16(part + off + 2) as i16,
+                    (
+                        cpu.mem.rd32(part + 0x80 + 0x20),
+                        cpu.mem.rd32(part + 0x80 + 0x24),
+                    ),
+                );
+                let ported = (
+                    [
+                        p.x as i32 as u32,
+                        p.y as i32 as u32,
+                        u32::from(p.sprite_id),
+                        p.scale as u32,
+                    ],
+                    (i32::from(bx as i16) + p.nudge.0) as i16,
+                    (i32::from(by as i16) + p.nudge.1) as i16,
+                    p.rot,
+                );
+                assert_eq!(retail, ported, "round {round} part {i} packed {packed:#x}");
+            }
+        }
+    }
 }

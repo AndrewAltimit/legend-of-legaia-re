@@ -677,13 +677,13 @@ ladder[3] = (sin[angle + 0x800 & 0xFFF] >> 8) - 10   +0x4E
 angle += DAT_1F800393 << 4                       0x801D9118, unmasked
 ```
 
-`sin` is the shared 4096-step table at `*_DAT_8007B81C`, and each shift rounds toward zero (`bgez` / `addiu 0xFF` / `sra 8`). The three rungs are one sine at three phases, each swinging `-26..+6` world units.
+`sin` is the shared 4096-step table at `*_DAT_8007B81C`, the SCUS sine at `0x80070A2C` (its entries truncate toward zero, so a rounded sine is one off on a fraction of them), and each shift rounds toward zero (`bgez` / `addiu 0xFF` / `sra 8`). The three rungs are one sine at three phases, each swinging `-26..+6` world units.
 
 The `other1` walk ground references floor tiers `0..=3` only: tier `0` is the shore, which the cleared rung holds flat, and tiers `1..=3` are the water cells. The field ground pass resolves each cell corner's tier through the ladder on every frame it draws ([renderer](renderer.md#the-field-ground-pass-two-emitters-one-gate)), so neighbouring corners on different tiers rise and fall out of phase and the water surface heaves. Texture memory stays still: a `minigame_fishing_retail_ready` run under PCSX-Redux logs no `MoveImage` / `LoadImage` / `StoreImage` call across 120 vsyncs and no VRAM word outside the framebuffers changes, while the semi-transparent water `POLY_FT4`s (tpage `0x3C`, CLUT `0x7BC5`) keep their UVs and move their corners.
 
 The ladder's other rungs hold `-(i * 0x20)` in that capture (`-128 .. -480`). The tile actors the floor pass `FUN_801d6bbc` spawns are seated once (it is called from the setup state only, at `0x801CF664`), so placed props keep the height they were spawned at; only the ground pass and the floor solver read the ladder live.
 
-Port: `fishing_chrome::water_swell` (pinned to the capture's ladder reads), run every venue frame by `fishing_venue::tick_venue_actors` into `FishingVenue::floor_ladder`, which the floor solves and `fishing_scene::swell_ground_positions` read. The venue frame is one vsync, so the angle steps `0x10` a frame, retail's rate in wall time; retail steps `DAT_1F800393 << 4` once per game frame.
+Port: `fishing_chrome::water_swell` (pinned to the capture's ladder reads, and run against the routine by the retail kernel differential) over `fishing_venue::swell_sine_table` (the SCUS table, through `sin_4096`), run every venue frame by `fishing_venue::tick_venue_actors` into `FishingVenue::floor_ladder`, which the floor solves and `fishing_scene::swell_ground_positions` read. The venue frame is one vsync, so the angle steps `0x10` a frame, retail's rate in wall time; retail steps `DAT_1F800393 << 4` once per game frame.
 
 The solver reduces the actor's `+0x14` / `+0x18` world pair to a **half-cell** index (`>> 6`) and halves that toward zero for the grid index, so a floor cell is 128 world units and the half-cell's low bit is the quadrant. The sub-cell fraction is the raw coordinate's low seven bits.
 
