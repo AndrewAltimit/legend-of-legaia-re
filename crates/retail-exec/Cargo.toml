@@ -22,6 +22,7 @@ legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-font.workspace = true
+legaia-mes.workspace = true
 legaia-engine-battle-loop.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-camera.workspace = true
