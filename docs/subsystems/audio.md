@@ -361,11 +361,12 @@ the poller acknowledges the first ([script-vm.md](script-vm.md#the-stream-gates-
 and then starts `2070`. `2070` is the scene's home track: its cutscene
 records `P2[7]` and `P2[8]` each switch to their own track and back to
 `2070`. The engine requests both starts on the first frame and sounds
-`2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` is
-sound-test track 70, `M122` "Blessed Rim Elm" (extraction `1060`), the
-ending's arrangement, not the town theme `M14B` (`2016`) that `town01`
-plays, so the picked epilogue village does not sound like the one the
-story starts in ([music tracks](../reference/music-tracks.md)).
+`2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` loads
+extraction `1058` (the resolver is linear, `988 + id - 2000`), the entry the
+curated table lists as sound-test track 68, `M50` "Ending", not the town
+theme `M14B` (`2016`) that `town01` plays, so the picked epilogue village
+does not sound like the one the story starts in
+([music tracks](../reference/music-tracks.md)).
 
 ### Which track a scene plays
 
@@ -821,7 +822,7 @@ zeroes the set after the fight whose first monster is `0xA6`.
 
 Each bundle of the battle bank (extraction `877 + N`) carries a byte-identical
 copy of one `music_01` score: `0..9` = `2026`, `2027`, `2028`, `2030`, `2032`,
-`2031`, `2051`, `2067`, `2061`, `2073` (`music_labels::BATTLE_BANK_BGM_IDS`,
+`2031`, `2051`, `2067`, `2061`, `2075` (`music_labels::BATTLE_BANK_BGM_IDS`,
 pinned by `engine-scene-host/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
 selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
 for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
@@ -2044,7 +2045,7 @@ sequence voice is paired with the engine (`parity/tests/mednafen_voice_parity.rs
 the track is read off the state itself - the owner key's sequence record holds
 the score's start at `+0x04`, and the `music_01` entry carrying those bytes
 under the VAB header installed in the note's slot names it (`2044` and `2063`
-share a score, as do `2013` / `2069` and `2068` / `2072`) - and so are the
+share a score, as do `2013` / `2071` and `2070` / `2074`) - and so are the
 sequence volume (`+0x58`) and mono (`_DAT_801CE330`). Over 94 states, field,
 town, battle, summon, minigame, menu and ending, every sounding sequence voice's
 pitch, ADSR words, left and right volume and reverb send is one the engine

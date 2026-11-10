@@ -677,8 +677,8 @@ grant the whole item table through `FUN_800421D4`, play a track, toggle
 (the fourth disc-wide). It plays a track; cycling the cursor is
 `FUN_801E9F64`'s job. The arm (`0x801EACBC..0x801EAD20`) indexes the
 sound-test table at `0x801F2E94` by the cursor `_DAT_801F2E90`: a 10-byte
-stride whose first halfword is the **global BGM id** (`2000 + i` for
-sound-test track `i`; [`music-tracks.md`](../reference/music-tracks.md)) and
+stride whose first halfword is the **global BGM id** (`2000 + k`, extraction
+`988 + k`; [`music-tracks.md`](../reference/music-tracks.md)) and
 whose remaining eight bytes are the row's ASCII label. The table runs
 `2000..=2043` then `2045..=2071` - seventy-one rows for seventy-two ids, with
 `2044` carrying no row - so a cursor position and the id it plays differ above

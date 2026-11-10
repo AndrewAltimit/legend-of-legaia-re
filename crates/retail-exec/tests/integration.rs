@@ -64,6 +64,7 @@ mod battle_voice;
 mod bearing;
 mod best_equipment;
 mod bgm_reattach;
+mod bgm_resolver;
 mod billboard;
 mod boot_overlay;
 mod camera_arrival;

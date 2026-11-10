@@ -244,11 +244,12 @@
     <details class="disclosure">
       <summary>How a sound-test number finds its disc entry</summary>
       <div class="disclosure-body">
-        <p>The join is structural, not by name: in-game music id <code>2000 + i</code> is sound-test
-          track <code>i</code>. Mapping that onto an archive entry is <em>piecewise</em>, though -
-          the music bank has a two-slot gap in the middle, so the entry number steps by two past
-          it rather than following one flat base. The <a href="reference/music-tracks.html">music
-          tracks</a> page has the mapping and the four naming spaces each cue lives in.</p>
+        <p>The join is structural, not by name: in-game music id <code>2000 + k</code> loads archive
+          entry <code>988 + k</code>, one flat run. The sound test skips two of those entries in the
+          middle of the bank, so up to <code>2067</code> an id is sound-test track <code>k</code>,
+          and from <code>2070</code> on it is track <code>k - 2</code>. The
+          <a href="reference/music-tracks.html">music tracks</a> page has the mapping and the four
+          naming spaces each cue lives in.</p>
       </div>
     </details>
     <div id="legal">

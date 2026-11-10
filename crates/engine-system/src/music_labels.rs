@@ -8,9 +8,16 @@
 //! the curated [`legaia_gamedata`] music table (sound-test id + context +
 //! OST title; see `docs/reference/music-tracks.md`).
 //!
-//! The join is structural, but the bank is **not** a single linear PROT run.
-//! The debug sound-test order (the order the curated table is keyed on) maps
-//! onto two contiguous extraction ranges with a 2-entry gap between them:
+//! The **id** side of the join is linear: a global id `2000 + k` loads raw
+//! TOC index `_DAT_8007BC64 + k` (`0x80024448..0x80024458`), the bank base
+//! being the `music_01` define, `990` on every running image, so extraction
+//! `988 + k` for every slot of the bank ([`prot_entry_for_bgm_id`]). The
+//! retail kernel differential runs the poller and holds the port to it.
+//!
+//! The **sound-test** side is not: the debug sound-test order (the order the
+//! curated table is keyed on) maps onto two contiguous extraction ranges with
+//! a 2-entry gap between them, so from `2070` on a global id's sound-test row
+//! is two below `id - 2000` ([`sound_test_index_for_bgm_id`]):
 //!
 //! - sound-test indices `0..=67`  -> extraction PROT `988 + index` (`988..=1055`);
 //! - a 2-entry gap - extraction `1056` (a VAB-only sound bank, no score) and
@@ -81,7 +88,7 @@ pub const BATTLE_BANK_BASE_ENTRY: u32 = 877;
 /// join (`crates/engine-scene-host/tests/battle_bank_bgm_disc.rs`): the two random-
 /// encounter themes, the boss themes, and the four story fights' own scores.
 pub const BATTLE_BANK_BGM_IDS: [u16; 10] =
-    [2026, 2027, 2028, 2030, 2032, 2031, 2051, 2067, 2061, 2073];
+    [2026, 2027, 2028, 2030, 2032, 2031, 2051, 2067, 2061, 2075];
 
 /// The track battle sound set `set` loads: `Some` for `0..=9`, `None` for the
 /// "no battle track" set `-1` (and anything past the bank).
@@ -119,11 +126,24 @@ pub fn prot_entry_for_sound_test_index(index: u32) -> Option<u32> {
     }
 }
 
+/// Global-pool BGM ids the `music_01` bank holds: `2000..2000 + MUSIC_BANK_SLOTS`
+/// (extraction `988..=1069`; `1070` on is the `vab_01` block).
+pub const MUSIC_BANK_SLOTS: u32 = 82;
+
 /// The extraction-space PROT entry that plays a **global-pool** BGM id
-/// (`>= 2000`): `2000 + sound-test index`, resolved through the piecewise
-/// bank map. `None` for scene-local ids or ids past the last row.
+/// (`>= 2000`): retail's linear `_DAT_8007BC64 + (id - 2000)`, the base the
+/// raw `music_01` define (`990`, extraction `988`). `None` for scene-local
+/// ids or ids past the bank.
+///
+/// It is not `2000 + sound-test index`: the sound test skips extraction
+/// `1056` / `1057`, the poller does not, so `2068` loads the VAB-only `1056`
+/// (the ending theme's instruments, [`crate::mode_entry_init::FIELD_BGM_TWO_PART_ID`]),
+/// `2069` the unlisted `1057`, and `2070` sound-test row `68`.
+///
+/// PORT: FUN_800243F0 (the global id -> raw TOC index, `0x80024448..0x80024458`)
 pub fn prot_entry_for_bgm_id(bgm_id: u16) -> Option<u32> {
-    prot_entry_for_sound_test_index(sound_test_index_for_bgm_id(bgm_id)?)
+    let k = (bgm_id as u32).checked_sub(2000)?;
+    (k < MUSIC_BANK_SLOTS).then_some(MUSIC_BANK_LOW_BASE + k)
 }
 
 fn tracks() -> &'static [MusicTrack] {
@@ -131,16 +151,16 @@ fn tracks() -> &'static [MusicTrack] {
     DB.get_or_init(|| legaia_gamedata::Database::load().music_tracks().to_vec())
 }
 
-/// Map a field-VM op-`0x35` BGM id to its debug sound-test index.
+/// Map a field-VM op-`0x35` BGM id to its debug sound-test index: the
+/// sound-test row of the entry the id loads ([`prot_entry_for_bgm_id`]).
 ///
-/// Global-pool ids (`>= 2000`) index the `music_01` bank directly:
-/// `2000 + i` = bank slot `i` = sound-test index `i`. Scene-local ids
-/// (`< 2000`) resolve through the *scene's* PROT base, which this
-/// scene-independent map cannot see - use
+/// Below `2068` that is `id - 2000`; `2068` / `2069` load the two entries the
+/// sound test skips and have no row; from `2070` the row is `id - 2002`.
+/// Scene-local ids (`< 2000`) resolve through the *scene's* PROT base, which
+/// this scene-independent map cannot see - use
 /// [`sound_test_index_for_prot_entry`] with the resolved entry instead.
 pub fn sound_test_index_for_bgm_id(bgm_id: u16) -> Option<u32> {
-    let idx = (bgm_id as u32).checked_sub(2000)?;
-    (idx < MUSIC_TRACK_COUNT).then_some(idx)
+    sound_test_index_for_prot_entry(prot_entry_for_bgm_id(bgm_id)?)
 }
 
 /// Map an extraction-space PROT entry index to its sound-test index, when
@@ -223,7 +243,17 @@ mod tests {
         assert_eq!(sound_test_index_for_bgm_id(5), None);
         assert_eq!(sound_test_index_for_bgm_id(1999), None);
         // Past the bank: no label.
-        assert_eq!(label_for_bgm_id(2081), None);
+        assert_eq!(label_for_bgm_id(2082), None);
+        // The two entries the sound test skips load but carry no row; from
+        // 2070 the row is two below the slot.
+        assert_eq!(prot_entry_for_bgm_id(2067), Some(1055));
+        assert_eq!(prot_entry_for_bgm_id(2068), Some(1056));
+        assert_eq!(prot_entry_for_bgm_id(2069), Some(1057));
+        assert_eq!(sound_test_index_for_bgm_id(2068), None);
+        assert_eq!(sound_test_index_for_bgm_id(2069), None);
+        assert_eq!(sound_test_index_for_bgm_id(2070), Some(68));
+        assert_eq!(prot_entry_for_bgm_id(2081), Some(1069));
+        assert_eq!(prot_entry_for_bgm_id(2082), None);
     }
 
     /// The bank is piecewise: indices 0..=67 sit at `988+i`, a 2-entry gap at

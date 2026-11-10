@@ -197,7 +197,7 @@
     <li><strong>Global id (&ge; 2000):</strong> the change test and the load both use <code>music_01_base + (id &minus; 2000)</code>.</li>
     <li><strong>Scene-local id (&lt; 2000):</strong> the change test compares <code>scene_block + 6 + id</code>, but the load index is overwritten with global slot 2 (<code>0x800245A4..0x800245BC</code> in <code>FUN_800243F0</code>), so no scene bank is ever staged as music.</li>
   </ul>
-  <p>Global id <code>2000+i</code> is sound-test track <code>i</code>, but the <code>music_01</code> bank is <strong>piecewise</strong> in extraction space (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057) - not a flat base. Resolver: <code>engine-system::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
+  <p>Global id <code>2000+k</code> loads extraction <code>988+k</code>, a flat base. The sound-test order over the same bank is <strong>piecewise</strong> (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057), so from <code>2070</code> an id is sound-test track <code>id - 2002</code>. Resolver: <code>engine-system::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
 </section>
 
 <section class="doc-section" id="sound-loaders">
