@@ -170,6 +170,7 @@ mod monster_install;
 mod monster_load;
 mod monster_pick;
 mod morph_envelope;
+mod morph_weights;
 mod motion_install;
 mod motion_vm;
 mod move_ext;
