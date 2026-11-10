@@ -67,6 +67,14 @@ pub fn pack_record_offset(pack: &[u8], index: i16) -> Option<usize> {
 ///
 /// Retail truncates `index` to 16 bits and sign-extends it (`sll 0x10` /
 /// `sra 0xe`), which is why it is an `i16` here.
+///
+/// One store falls outside the actor: the `jal` to the allocator carries
+/// `sh zero,0x14(a0)` in its delay slot, after `a0` has become the spawn
+/// descriptor, so retail zeroes the descriptor's `+0x14` halfword (the render
+/// mode the allocator copies to `+0x56`) whether or not the allocation
+/// succeeds. The spawn overwrites `+0x56` with [`SPAWN_CLIP_KICK`] anyway; the
+/// descriptor store only changes what a later spawn off the same descriptor
+/// would start from.
 pub fn spawn_init(pack: &[u8], index: i16) -> Option<SpawnInit> {
     Some(SpawnInit {
         record_offset: pack_record_offset(pack, index)?,
