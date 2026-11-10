@@ -269,3 +269,108 @@ fn the_actor_clone_matches_retail() {
         );
     }
 }
+
+/// The morph-weight spawner `FUN_801D77F4` over generated VDF blocks (one to
+/// three records, so the three record pitches disagree) and generated meshes:
+/// the snapshot buffer it allocates (its size, and the bytes it copies into it)
+/// against `rest_pose_snapshot`, and the actor stores the envelope starts from
+/// (`+0x3C` / `+0x3E` the rates, `+0x6E` / `+0x68` / `+0x56` / `+0x5C` zero,
+/// `+0x48` the mesh, `+0x4C` the block). The debug prints are stubbed. Where the
+/// copy pass's pitch reads fewer vertices than the size pass summed, retail
+/// leaves the buffer's tail as the heap had it and the port leaves zeros; where
+/// it reads more, retail writes past its allocation and the port stops at it.
+#[test]
+fn the_morph_spawner_snapshots_as_retail_does() {
+    use legaia_engine_field::morph_weight_apply::rest_pose_snapshot;
+    const SPAWNER: u32 = 0x801D_77F4;
+    const ACTOR: u32 = 0x8013_0000;
+    const VDF_TABLE: u32 = 0x8013_2000;
+    const TMD: u32 = 0x8013_4000;
+    const VERTS: u32 = 0x8013_8000;
+    const SNAP: u32 = 0x8015_0000;
+    differential!(prot(897, SPAWNER));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    cpu.stub(0x8005_67A8, 0);
+    cpu.stub(SPAWN, ACTOR);
+    // The heap hands back whatever the buffer held: two fills, so a byte the
+    // copy pass never wrote shows as one that differs between them.
+    let sizes = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let fill = Rc::new(std::cell::Cell::new(0xEEu8));
+    let (s, f) = (sizes.clone(), fill.clone());
+    cpu.hook(0x8001_7888, move |r, m| {
+        s.borrow_mut().push(r.r[A1]);
+        m.load(SNAP, &[f.get(); 0x4000]);
+        r.r[V0] = SNAP;
+    });
+    cpu.mem.wr32(0x8007_B7DC, VDF_TABLE);
+    let mut rng = crate::common::Rng(0x4D4F_5250);
+    for case in 0..3000 {
+        // Six objects, each `0..12` vertices at its own pointer.
+        let mut groups: Vec<Vec<u8>> = Vec::new();
+        let mut at = VERTS;
+        for g in 0..6u32 {
+            let n = rng.below(12);
+            let bytes: Vec<u8> = (0..n * 8).map(|_| rng.next() as u8).collect();
+            cpu.mem.load(at, &bytes);
+            let entry = TMD + 0xC + g * 0x1C;
+            cpu.mem.wr32(entry, at);
+            cpu.mem.wr32(entry + 4, n);
+            at += 0x100;
+            groups.push(bytes);
+        }
+        let mesh_slot = rng.below(8);
+        cpu.mem.wr32(0x8007_C018 + 4 * mesh_slot, TMD);
+        // The block: a count, its records, and a tail of small words for the
+        // copy pass's own pitch to read as group ids.
+        let count = 1 + rng.below(3);
+        let mut block = count.to_le_bytes().to_vec();
+        while block.len() < 0x400 {
+            block.extend_from_slice(&rng.below(6).to_le_bytes());
+        }
+        let idx = rng.below(4);
+        cpu.mem.wr32(VDF_TABLE + 4 + 4 * idx, 0x100);
+        cpu.mem.load(VDF_TABLE + 0x100, &block);
+        let (up, down) = (rng.next() as u16, rng.next() as u16);
+        let args = [idx, mesh_slot, u32::from(up), u32::from(down)];
+        let mut runs = Vec::new();
+        for fill_byte in [0xEE, 0x11] {
+            fill.set(fill_byte);
+            cpu.mem.load(ACTOR, &[0xA5; 0x100]);
+            sizes.borrow_mut().clear();
+            assert_eq!(cpu.call(SPAWNER, &args), Stop::Returned, "case {case}");
+            runs.push(cpu.mem.read(SNAP, 0x4000));
+        }
+        let refs: Vec<&[u8]> = groups.iter().map(Vec::as_slice).collect();
+        let want = rest_pose_snapshot(&block, &refs);
+        assert_eq!(
+            *sizes.borrow(),
+            [want.len() as u32],
+            "case {case}: snapshot size"
+        );
+        // Bytes the copy pass wrote match; one it left as the heap had it is
+        // the port's zero.
+        for (i, &w) in want.iter().enumerate() {
+            let (a, b) = (runs[0][i], runs[1][i]);
+            let got = if a == b { a } else { 0 };
+            assert_eq!(got, w, "case {case}: {count} records, byte {i}");
+        }
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x90), SNAP, "case {case}");
+        let h = |cpu: &mut psx_retail_exec::Cpu, o: u32| cpu.mem.rd16(ACTOR + o);
+        assert_eq!(
+            (h(&mut cpu, 0x3C), h(&mut cpu, 0x3E)),
+            (up, down),
+            "case {case}: rates"
+        );
+        for o in [0x56, 0x5C, 0x68, 0x6E] {
+            assert_eq!(h(&mut cpu, o), 0, "case {case} +{o:#x}");
+        }
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x48), TMD, "case {case}");
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x4C), VDF_TABLE + 0x100, "case {case}");
+    }
+}
