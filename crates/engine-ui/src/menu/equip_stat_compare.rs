@@ -660,6 +660,35 @@ pub(crate) fn compare_arrow_draws(
     text_draws_for(&font.layout_ascii(ch), pen, color)
 }
 
+/// The [`ComparePanelField::Icon`] fields of a list as atlas sprites: the
+/// "MAX" tag and the HP / MP label of an HP / MP compare row
+/// (`FUN_8002C488` with [`ICON_HP`] / [`ICON_MP`]). An id the atlas has no
+/// rect for draws nothing.
+///
+/// PORT: FUN_801d1290 (the HP / MP rows' icon pairs)
+pub fn compare_panel_icon_sprites(
+    rects: &crate::SaveMenuAtlasRects,
+    fields: &[ComparePanelField],
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<crate::SpriteDraw> {
+    let mut out = Vec::new();
+    for field in fields {
+        let ComparePanelField::Icon { x, y, id } = field else {
+            continue;
+        };
+        let src = match *id {
+            0x64 => rects.label_max_hp,
+            0x65 => rects.label_max_mp,
+            0x3F => rects.label_hp,
+            0x40 => rects.label_mp,
+            _ => continue,
+        };
+        crate::menu::screens::push_stage_sprite(&mut out, src, (*x, *y), stage_origin, stage_scale);
+    }
+    out
+}
+
 /// Render a field list to [`TextDraw`]s. [`ComparePanelField::Icon`] is
 /// dropped - it is a UI-icon-atlas sprite, not a font glyph, and the host
 /// owns that atlas. [`ComparePanelField::Arrow`] draws the separator glyph

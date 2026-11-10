@@ -129,6 +129,8 @@ fn chrome_rects() -> SaveMenuAtlasRects {
         icon_money: band(),
         label_time: band(),
         label_coin: band(),
+        label_max_hp: band(),
+        label_max_mp: band(),
         gauge_cap: band(),
         gauge_trough: band(),
         gauge_box: band(),
@@ -269,8 +271,12 @@ fn compose_status(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         xp_to_next: 120,
         hp: 60,
         hp_max: 80,
+
+        hp_base: 80,
         mp: 10,
         mp_max: 12,
+
+        mp_base: 12,
         ap: 40,
         ap_max: 100,
         stat_rows: &stat_rows,
@@ -414,6 +420,7 @@ fn compose_items_target(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         base_mp_max: 12,
         stat_eff: [30, 18, 16, 12, 9],
         stat_base: [30, 18, 16, 12, 9],
+        status: 0,
     }];
     let view = TargetPanelView {
         members: &members,
@@ -525,6 +532,7 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
                     passive: None,
                 },
             ),
+            browse_info: None,
             // Window 25 rides the same step as window 24 - retail's open
             // script names the pair.
             compare: (!matches!(phase, EquipDrawPhase::SlotPicker)).then_some(

@@ -200,8 +200,12 @@ fn status_screen_draws_pack_panel() {
         xp_to_next: 350,
         hp: 60,
         hp_max: 60,
+
+        hp_base: 60,
         mp: 24,
         mp_max: 24,
+
+        mp_base: 24,
         ap: 0,
         ap_max: 4,
         stat_rows: &stat_rows,
@@ -321,8 +325,12 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
         xp_to_next: 121,
         hp: 180,
         hp_max: 180,
+
+        hp_base: 180,
         mp: 20,
         mp_max: 20,
+
+        mp_base: 20,
         ap: 4,
         ap_max: 100,
         stat_rows: &[],
@@ -1150,8 +1158,12 @@ fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
         xp_to_next: 121,
         hp: 180,
         hp_max: 180,
+
+        hp_base: 180,
         mp: 20,
         mp_max: 20,
+
+        mp_base: 20,
         ap: 0,
         ap_max: 100,
         stat_rows: &[StatusStatRow {

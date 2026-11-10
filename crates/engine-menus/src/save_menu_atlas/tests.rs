@@ -54,6 +54,40 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     assert_eq!(atlas.width, ATLAS_WIDTH);
     assert_eq!(atlas.height, ATLAS_BAKED_HEIGHT);
 
+    // The two "MAX" tags: each carries ink, the pair differ (one in the HP
+    // label's colours, one in the MP label's), and they sit on free ground -
+    // the columns beside them and the rows under them are empty.
+    {
+        let at = |x: u32, y: u32| {
+            let o = ((y * ATLAS_WIDTH + x) * 4) as usize;
+            &atlas.rgba[o..o + 4]
+        };
+        let texels = |(x0, y0, w, h): (u32, u32, u32, u32)| -> Vec<u8> {
+            (y0..y0 + h)
+                .flat_map(|y| (x0..x0 + w).flat_map(move |x| at(x, y).to_vec()))
+                .collect()
+        };
+        let (hp, mp) = (
+            texels(ATLAS_RECT_LABEL_MAX_HP),
+            texels(ATLAS_RECT_LABEL_MAX_MP),
+        );
+        for t in [&hp, &mp] {
+            let opaque = t.chunks(4).filter(|p| p[3] != 0).count();
+            assert!(opaque > 150, "a MAX tag decoded with {opaque} texels");
+        }
+        assert_ne!(hp, mp, "the two MAX tags are two palettes");
+        for y in 216..232 {
+            for x in [188, 189, 210, 211, 232, 233] {
+                assert_eq!(at(x, y)[3], 0, "({x}, {y}) beside a MAX tag");
+            }
+        }
+        for y in 226..232 {
+            for x in 190..232 {
+                assert_eq!(at(x, y)[3], 0, "({x}, {y}) under a MAX tag");
+            }
+        }
+    }
+
     // The dark class-0 skin (widget record 0x43): its fill patch is fully
     // opaque and a near-black neutral marble, with none of the blue skin's
     // blue, and each border cell carries ink.

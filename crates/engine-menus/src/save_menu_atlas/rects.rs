@@ -120,6 +120,11 @@ pub const ATLAS_RECT_ICON_WORN: (u32, u32, u32, u32) = (176, 216, 12, 12);
 pub const ATLAS_RECT_ICON_MONEY: (u32, u32, u32, u32) = (110, 216, 12, 12);
 pub const ATLAS_RECT_LABEL_TIME: (u32, u32, u32, u32) = (124, 216, 24, 10);
 pub const ATLAS_RECT_LABEL_COIN: (u32, u32, u32, u32) = (150, 216, 24, 10);
+/// Atlas placement of the two "MAX" tags (UI-icon codes `0x64` / `0x65`,
+/// `title_pak::OVERLAY_SYSTEM_UI_LABEL_MAX_HP` / `_MAX_MP`), on the same row
+/// past the worn-item pictogram.
+pub const ATLAS_RECT_LABEL_MAX_HP: (u32, u32, u32, u32) = (190, 216, 20, 10);
+pub const ATLAS_RECT_LABEL_MAX_MP: (u32, u32, u32, u32) = (212, 216, 20, 10);
 
 /// Atlas placement of the "Condition" pager **arrow sprites** (16x16
 /// solid triangles), copied from CLUT row 7 of the system-UI TIM (the

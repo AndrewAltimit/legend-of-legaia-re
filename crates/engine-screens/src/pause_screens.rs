@@ -533,8 +533,12 @@ pub fn status_draws(
         xp_to_next: snap.xp_to_next,
         hp: snap.hp,
         hp_max: snap.hp_max,
+
+        hp_base: snap.hp_base,
         mp: snap.mp,
         mp_max: snap.mp_max,
+
+        mp_base: snap.mp_base,
         ap: snap.ap,
         ap_max: snap.ap_max,
         stat_rows: &stat_rows,
@@ -859,6 +863,7 @@ pub fn target_panel_members(model: &ps::TargetPanelModel) -> Vec<ui::TargetPanel
             base_mp_max: m.base_mp_max,
             stat_eff: m.stat_eff,
             stat_base: m.stat_base,
+            status: m.status,
         })
         .collect()
 }
@@ -1108,8 +1113,19 @@ pub fn equip_draws(
         }
     }
     let stats = item_detail_stats(model.info.as_ref().and_then(|i| i.detail.as_ref()));
+    let browse_stats =
+        item_detail_stats(model.browse_info.as_ref().and_then(|i| i.detail.as_ref()));
     let mut input = equip_compose_input(&model, !ctx.chrome_present());
     input.arrows_blink = list_arrows_blink(world);
+    if let (Some(info), Some(d)) = (
+        input.browse_info.as_mut(),
+        model.browse_info.as_ref().and_then(|i| i.detail.as_ref()),
+    ) {
+        info.detail = Some(ui::PauseItemDetail {
+            text: &d.text,
+            stats: &browse_stats,
+        });
+    }
     if let (Some(info), Some(d)) = (
         input.info.as_mut(),
         model.info.as_ref().and_then(|i| i.detail.as_ref()),
@@ -1182,6 +1198,17 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
             detail: None,
             scope: i.scope_icon,
         }),
+        browse_info: m
+            .browse_info
+            .as_ref()
+            .map(|i| ui::pause_menu::EquipInfoInput {
+                name: i.name.as_str(),
+                count: i.count,
+                desc: i.desc.as_str(),
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+                detail: None,
+                scope: i.scope_icon,
+            }),
         compare: m.compare.as_ref().map(equip_compare_input),
     }
 }

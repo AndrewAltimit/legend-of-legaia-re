@@ -810,7 +810,8 @@ fn target_panel_model_from_target_select() {
 #[test]
 fn target_panel_view_model_fills_record_fields() {
     let mut s = items_session(&[(0x77, 3)]);
-    assert!(target_panel_view_model_of(&s, None, &[]).is_none());
+    let no_gear = legaia_engine_battle::battle_stats::EquipmentTable::default();
+    assert!(target_panel_view_model_of(&s, None, &[], &no_gear, &[]).is_none());
     s.input_pad_edge(edge(PadButton::Cross)); // -> list
     s.input_pad_edge(edge(PadButton::Cross)); // confirm -> target select
     assert_eq!(staged_use_item_id(&s), Some(0x77));
@@ -835,7 +836,9 @@ fn target_panel_view_model_fills_record_fields() {
     rec.set_live_stats(live);
     let members = vec![rec];
 
-    let m = target_panel_view_model_of(&s, None, &members).expect("target select stages the panel");
+    let m = target_panel_view_model_of(&s, None, &members, &no_gear, &[0x40])
+        .expect("target select stages the panel");
+    assert_eq!(m.members[0].status, 0x40);
     // No disc effect table - the plain panel.
     assert_eq!(m.mode, 0);
     assert_eq!(m.members.len(), 1);

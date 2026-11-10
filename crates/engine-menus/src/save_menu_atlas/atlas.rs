@@ -128,6 +128,14 @@ impl SaveMenuAtlas {
     pub fn band_label_coin(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_LABEL_COIN
     }
+    /// The "MAX" tag in the HP label's colours (20x10, UI-icon code 0x64).
+    pub fn band_label_max_hp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_MAX_HP
+    }
+    /// The "MAX" tag in the MP label's colours (20x10, UI-icon code 0x65).
+    pub fn band_label_max_mp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_MAX_MP
+    }
     /// AP-gauge left cap (arrow tip + red "AP" chip, 24x16).
     pub fn band_gauge_cap(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_GAUGE_CAP

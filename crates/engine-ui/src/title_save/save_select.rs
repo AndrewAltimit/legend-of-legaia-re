@@ -369,6 +369,12 @@ pub struct SaveMenuAtlasRects {
     pub icon_money: (u32, u32, u32, u32),
     pub label_time: (u32, u32, u32, u32),
     pub label_coin: (u32, u32, u32, u32),
+    /// The "MAX" tags (ICO codes `0x64` / `0x65`, 20x10), drawn ahead of
+    /// the HP / MP label where a panel shows a maximum: the target panel's
+    /// Life / Magic Water preview (`FUN_801D0520`) and the stat-compare
+    /// panels' HP / MP rows (`FUN_801D1290` / `FUN_801D4C28`).
+    pub label_max_hp: (u32, u32, u32, u32),
+    pub label_max_mp: (u32, u32, u32, u32),
     /// Status-page AP gauge pieces (CLUT row 4 of the system-UI TIM):
     /// left cap w/ red "AP" chip (24x16), trough body (56x16), value
     /// box (16x16) and right arrow tip (7x16). Retail composes the

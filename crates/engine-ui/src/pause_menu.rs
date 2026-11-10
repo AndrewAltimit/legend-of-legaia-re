@@ -564,12 +564,18 @@ pub struct EquipComposeView<'a> {
     /// Window 24's item-info panel content for the hovered candidate, or
     /// `None` outside the candidate step. See [`WIN_EQUIP_ITEM_INFO`].
     pub info: Option<crate::PauseItemInfo<'a>>,
+    /// The slot browse's item panel inside window 22, for the worn item on
+    /// the hovered slot row ([`crate::equip_browse_info_draws`]).
+    pub browse_info: Option<crate::PauseItemInfo<'a>>,
     /// Window 25's stat-compare panel, or `None` outside the candidate step.
     /// See [`WIN_EQUIP_COMPARE`].
     pub compare: Option<EquipCompareInput<'a>>,
 }
 
 /// One pause-menu screen, as the composition sees it.
+// A borrowed view built and consumed inside one call; boxing the Equip
+// variant would buy nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum PauseScreen<'a> {
     TopLevel(TopLevelView<'a>),
     Status(StatusScreenView<'a>),
@@ -1018,6 +1024,19 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             } else {
                 sprites.extend(ctx.window_chrome(&[window_ids::TAB_EQUIP, window_ids::EQUIP_LIST]));
             }
+            // The slot browse's item panel, inside window 22: the worn item
+            // of the hovered slot row over two shade boxes.
+            if browse && let Some(info) = v.browse_info.as_ref() {
+                let (draws, boxes) = crate::equip_browse_info_draws(
+                    ctx.font,
+                    ctx.rects.pen(window_ids::EQUIP_MAIN),
+                    info,
+                );
+                texts.extend(draws);
+                for b in boxes {
+                    sprites.extend(ctx.frame_around(b));
+                }
+            }
             // Window 24 - the candidate step's item-info panel. It is not a
             // fifth window of the *screen*: retail's sub-screen `0x14` opens
             // it (with window 25) on top of the browse step's four, through
@@ -1096,6 +1115,12 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 sprites.extend(ctx.frame_around(d.rect()));
                 let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
                 texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
+                // An HP / MP row's "MAX" tag and label are atlas sprites.
+                if let Some(rects) = ctx.chrome {
+                    sprites.extend(crate::compare_panel_icon_sprites(
+                        rects, &fields, ctx.origin, ctx.scale,
+                    ));
+                }
             }
             if !browse {
                 let hovered = usize::from(v.view.cursor) / crate::PAUSE_LIST_VISIBLE_ROWS;
@@ -1270,6 +1295,9 @@ pub struct EquipComposeInput<'a> {
     /// The hovered candidate's info-panel row. `None` outside the candidate
     /// step, which is the phase window 24 is open in.
     pub info: Option<EquipInfoInput<'a>>,
+    /// The worn item on the hovered slot row, for the slot browse's own
+    /// panel inside window 22. `None` off a filled slot row.
+    pub browse_info: Option<EquipInfoInput<'a>>,
     /// Window 25's stat-compare panel, open in the same step as window 24.
     pub compare: Option<EquipCompareInput<'a>>,
 }
@@ -1308,6 +1336,16 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
         .map(|(row, name)| (*row, name.as_str()))
         .collect();
     let best_rows: Vec<u8> = input.best_changes.iter().map(|(row, _)| *row).collect();
+    fn info_of<'a>(i: EquipInfoInput<'a>) -> crate::PauseItemInfo<'a> {
+        crate::PauseItemInfo {
+            name: i.name,
+            count: i.count,
+            desc: i.desc,
+            passive: i.passive,
+            detail: i.detail,
+            scope: i.scope,
+        }
+    }
     let view = EquipScreenView {
         party_names: &party_names,
         party_cursor: input.char_slot,
@@ -1330,14 +1368,8 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             candidate_icons: input.candidate_icons,
             arrows_blink: input.arrows_blink,
             best_rows: &best_rows,
-            info: input.info.map(|i| crate::PauseItemInfo {
-                name: i.name,
-                count: i.count,
-                desc: i.desc,
-                passive: i.passive,
-                detail: i.detail,
-                scope: i.scope,
-            }),
+            info: input.info.map(info_of),
+            browse_info: input.browse_info.map(info_of),
             compare: input.compare,
         }),
     )

@@ -18,8 +18,14 @@ pub struct StatusPanelView<'a> {
     pub xp_to_next: u32,
     pub hp: u16,
     pub hp_max: u16,
+    /// The record-side maximum (record `+0x11C`), the parenthesised number
+    /// beside the live one (`lhu a0,0x6e4(s6)`, `0x801D3684`): what the
+    /// level curve gave, before an accessory's percent boost.
+    pub hp_base: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// The record-side maximum MP (record `+0x11E`, `0x801D3734`).
+    pub mp_base: u16,
     pub ap: u8,
     pub ap_max: u8,
     pub stat_rows: &'a [StatusStatRow<'a>],
@@ -500,6 +506,15 @@ pub fn status_screen_draws_for_with(
     if !label_icons {
         str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
     }
+    // The level, ahead of the Ra-Seru group (`0x801D34E4`).
+    out.extend(num_field_draws(
+        font,
+        panel.level as u64,
+        wx + 0x60,
+        wy,
+        2,
+        white,
+    ));
     // The worn Ra-Seru (`0x801D3524..0x801D35C8`): tag at +0x8A, name at
     // +0x96, "LV" icon at +0xBE and the one-digit level at +0xCE.
     if let Some((name, level)) = panel.seru {
@@ -523,26 +538,10 @@ pub fn status_screen_draws_for_with(
     let (win_w, win_h) = (panel_window_w(), panel_window_h());
     match panel.page {
         1 => {
-            out.extend(num_field_draws(
-                font,
-                panel.level as u64,
-                wx + 0x60,
-                wy,
-                2,
-                white,
-            ));
             out.extend(status_skills_draws(font, labels, panel, (wx, wy)));
             return out;
         }
         2 | 3 => {
-            out.extend(num_field_draws(
-                font,
-                panel.level as u64,
-                wx + 0x60,
-                wy,
-                2,
-                white,
-            ));
             let body = (wx, wy + 0x13, win_h - 0x13);
             out.extend(if panel.page == 2 {
                 status_magic_draws(font, labels, panel, body)
@@ -558,15 +557,6 @@ pub fn status_screen_draws_for_with(
         }
         _ => {}
     }
-    out.extend(num_field_draws(
-        font,
-        panel.level as u64,
-        wx + 0x60,
-        wy,
-        2,
-        white,
-    ));
-
     // HP / MP rows: label tag at +0x20, current at +0x30, "/" at +0x50
     // (white - the field's last cell ends flush against it, retail's
     // "180/ 180" spacing), max at +0x58, then the teal parenthesised
@@ -581,7 +571,7 @@ pub fn status_screen_draws_for_with(
             "HP",
             panel.hp as u64,
             panel.hp_max as u64,
-            panel.hp_max as u64,
+            panel.hp_base as u64,
             menu_hp_ink_with_status(panel.hp, panel.hp_max, panel.status as i16),
         ),
         (
@@ -589,7 +579,7 @@ pub fn status_screen_draws_for_with(
             "MP",
             panel.mp as u64,
             panel.mp_max as u64,
-            panel.mp_max as u64,
+            panel.mp_base as u64,
             menu_mp_ink(panel.mp, panel.mp_max),
         ),
     ] {
@@ -597,8 +587,8 @@ pub fn status_screen_draws_for_with(
             str_at(&mut out, tag, wx + 0x20, row_y, gold);
         }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, tier));
-        out.extend(sep(SEPARATOR_GLYPH_SLASH, wx + 0x50, row_y, white));
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, tier));
+        out.extend(sep(SEPARATOR_GLYPH_SLASH, wx + 0x50, row_y, white));
         out.extend(sep(SEPARATOR_GLYPH_LPAREN, wx + 0x7c, row_y, teal));
         out.extend(num_field_draws(font, base, wx + 0x84, row_y, 4, teal));
         out.extend(sep(SEPARATOR_GLYPH_RPAREN, wx + 0xa4, row_y, teal));

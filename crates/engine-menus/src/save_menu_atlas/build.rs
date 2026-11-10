@@ -240,6 +240,15 @@ pub fn build_atlas(
             title_pak::OVERLAY_SYSTEM_UI_LABEL_COIN,
             ATLAS_RECT_LABEL_COIN,
         ),
+        // The "MAX" tags (UI-icon codes 0x64 / 0x65).
+        (
+            title_pak::OVERLAY_SYSTEM_UI_LABEL_MAX_HP,
+            ATLAS_RECT_LABEL_MAX_HP,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_LABEL_MAX_MP,
+            ATLAS_RECT_LABEL_MAX_MP,
+        ),
     ] {
         copy_rect(&mut out, ATLAS_WIDTH, &label_rgba, panel_src_w, src, dst);
     }

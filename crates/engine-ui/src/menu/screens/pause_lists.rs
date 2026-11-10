@@ -1273,6 +1273,8 @@ mod pause_list_tests {
             icon_money: z,
             label_time: z,
             label_coin: z,
+            label_max_hp: z,
+            label_max_mp: z,
             gauge_cap: z,
             gauge_trough: z,
             gauge_box: z,

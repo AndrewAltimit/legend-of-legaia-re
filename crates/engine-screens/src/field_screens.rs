@@ -35,6 +35,8 @@ pub fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
         icon_money: a.band_icon_money(),
         label_time: a.band_label_time(),
         label_coin: a.band_label_coin(),
+        label_max_hp: a.band_label_max_hp(),
+        label_max_mp: a.band_label_max_mp(),
         gauge_cap: a.band_gauge_cap(),
         gauge_trough: a.band_gauge_trough(),
         gauge_box: a.band_gauge_box(),

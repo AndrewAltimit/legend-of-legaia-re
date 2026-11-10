@@ -211,6 +211,8 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         icon_money: (110, 216, 12, 12),
         label_time: (124, 216, 24, 10),
         label_coin: (150, 216, 24, 10),
+        label_max_hp: (190, 216, 20, 10),
+        label_max_mp: (212, 216, 20, 10),
         gauge_cap: (40, 200, 24, 16),
         gauge_trough: (66, 200, 56, 16),
         gauge_box: (124, 200, 16, 16),

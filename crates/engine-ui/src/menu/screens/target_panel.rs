@@ -36,7 +36,8 @@
 //! switches the sprite to its static variant while a confirm is staged.
 
 use super::{
-    MENU_TEXT_GOLD, MENU_TEXT_TEAL, MENU_TEXT_WHITE, menu_hp_ink, menu_mp_ink, num_field_draws,
+    MENU_TEXT_GOLD, MENU_TEXT_TEAL, MENU_TEXT_WHITE, menu_hp_ink_with_status, menu_mp_ink,
+    num_field_draws,
 };
 use crate::*;
 
@@ -113,6 +114,10 @@ pub struct TargetPanelMember<'a> {
     pub stat_eff: [u16; 5],
     /// Record-side base stats (`+0x124..+0x12C`), same order.
     pub stat_base: [u16; 5],
+    /// The packed status halfword (record `+0x12E`): non-zero re-inks the
+    /// plain HP row, since the row's ink is `FUN_800349EC`'s
+    /// ([`menu_hp_ink_with_status`]).
+    pub status: u16,
 }
 
 /// Hand-cursor state of the panel (the `DAT_801E46C4` bit decode).
@@ -220,16 +225,25 @@ pub fn target_panel_draws_for(
                 ));
             }
         } else {
-            // Plain HP row: cur / max with the health-tier ink; the
-            // slash (glyph cell 6) stays staged-7 white.
+            // Plain HP row: cur / max with the health-tier ink, then the
+            // slash (glyph cell 6) in staged-7 white, drawn after both
+            // numbers (`0x801D0750`).
             if !view.label_icons {
                 str_at(&mut out, "HP", wx + 0x1c, yb + 0x11, MENU_TEXT_WHITE);
             }
-            let hp_ink = menu_hp_ink(m.hp, m.hp_max);
+            let hp_ink = menu_hp_ink_with_status(m.hp, m.hp_max, m.status as i16);
             out.extend(num_field_draws(
                 font,
                 m.hp as u64,
                 wx + 0x2c,
+                hp_y,
+                4,
+                hp_ink,
+            ));
+            out.extend(num_field_draws(
+                font,
+                m.hp_max as u64,
+                wx + 0x54,
                 hp_y,
                 4,
                 hp_ink,
@@ -239,14 +253,6 @@ pub fn target_panel_draws_for(
                 crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
                 (wx + 0x4c, hp_y),
                 MENU_TEXT_WHITE,
-            ));
-            out.extend(num_field_draws(
-                font,
-                m.hp_max as u64,
-                wx + 0x54,
-                hp_y,
-                4,
-                hp_ink,
             ));
             // Plain MP row - skipped in mode 3 (the two Guardian Water
             // stat rows take its place).
@@ -263,12 +269,6 @@ pub fn target_panel_draws_for(
                     4,
                     mp_ink,
                 ));
-                out.extend(crate::menu::window_painters::separator_glyph_draws(
-                    font,
-                    crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
-                    (wx + 0x4c, mp_y),
-                    MENU_TEXT_WHITE,
-                ));
                 out.extend(num_field_draws(
                     font,
                     m.mp_max as u64,
@@ -276,6 +276,12 @@ pub fn target_panel_draws_for(
                     mp_y,
                     4,
                     mp_ink,
+                ));
+                out.extend(crate::menu::window_painters::separator_glyph_draws(
+                    font,
+                    crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+                    (wx + 0x4c, mp_y),
+                    MENU_TEXT_WHITE,
                 ));
             }
         }
@@ -376,8 +382,12 @@ pub fn target_panel_sprites_for(
         let yb = block_y(wy, i);
         push(rects.label_lv, (wx + 0x58, yb + 2));
         if view.mode == TargetPanelMode::HpMp {
-            push(rects.label_hp, (wx + 0x14, yb + 0x11));
-            push(rects.label_mp, (wx + 0x14, yb + 0x1e));
+            // "MAX" then the label, twenty pixels on (`li a2,0x64` /
+            // `0x3F` at `0x801D0660..0x801D0670`, `0x65` / `0x40` after).
+            push(rects.label_max_hp, (wx + 0x14, yb + 0x11));
+            push(rects.label_hp, (wx + 0x28, yb + 0x11));
+            push(rects.label_max_mp, (wx + 0x14, yb + 0x1e));
+            push(rects.label_mp, (wx + 0x28, yb + 0x1e));
         } else {
             push(rects.label_hp, (wx + 0x1c, yb + 0x11));
             if view.mode != TargetPanelMode::Def {
@@ -407,6 +417,7 @@ mod target_panel_tests {
             base_mp_max: 72,
             stat_eff: [111, 92, 93, 74, 65],
             stat_base: [101, 82, 83, 64, 55],
+            status: 0,
         }
     }
 
@@ -570,6 +581,8 @@ mod target_panel_tests {
             icon_money: z,
             label_time: z,
             label_coin: z,
+            label_max_hp: z,
+            label_max_mp: z,
             gauge_cap: z,
             gauge_trough: z,
             gauge_box: z,

@@ -25,6 +25,9 @@ pub struct TargetPanelMemberModel {
     /// Record-side base stats (`+0x124..+0x12C`), same order - the teal
     /// paren value of the same rows.
     pub stat_base: [u16; 5],
+    /// The packed status halfword (record `+0x12E`), which gilds the plain
+    /// HP row through `FUN_800349EC`. Zero unless the host supplied it.
+    pub status: u16,
 }
 
 /// Owned view model of the window-14 party target panel - maps onto the
@@ -124,6 +127,8 @@ pub fn target_panel_view_model_of(
     s: &PauseItemsSession,
     item_effects: Option<&legaia_game_tables::item_effect::ItemEffectTable>,
     members: &[legaia_save::CharacterRecord],
+    equipment: &legaia_engine_battle::battle_stats::EquipmentTable,
+    status_words: &[u16],
 ) -> Option<TargetPanelModel> {
     let mode = staged_use_item_id(s)
         .and_then(|id| {
@@ -142,15 +147,24 @@ pub fn target_panel_view_model_of(
         if row.is_enemy {
             continue;
         }
-        let live = rec.live_stats();
         let base = rec.record_stats();
+        // The left value of a stat row is the menu block's word
+        // (`FUN_801CF650`, called per member at `0x801D0860`): the record's
+        // live stat with the worn equipment's bonus on it.
+        let hms = rec.hp_mp_sp();
+        let mut stat_record = stat_record_from_character(rec);
+        stat_record.equip =
+            crate::equip_session::engine_equip_from_record(stat_record.equip, row.slot);
+        let block = menu_stat_block(&stat_record, equipment, hms.hp_max, hms.mp_max);
+        let word = |i: usize| block[i].clamp(0, i32::from(u16::MAX)) as u16;
         m.level = match rec.magic_rank() {
             l @ 1..=99 => l,
             _ => legaia_save::level_for_cumulative_xp(rec.cumulative_xp()),
         };
         m.base_hp_max = base.hp_max;
         m.base_mp_max = base.mp_max;
-        m.stat_eff = [live.atk, live.udf, live.ldf, live.spd, live.int];
+        m.stat_eff = [word(3), word(4), word(5), word(6), word(7)];
+        m.status = status_words.get(row.slot as usize).copied().unwrap_or(0);
         m.stat_base = [base.atk, base.udf, base.ldf, base.spd, base.int];
     }
     Some(model)
@@ -162,6 +176,7 @@ pub fn target_panel_view_model_of(
 pub fn spell_target_panel_view_model_of(
     s: &crate::spell_menu::SpellMenuSession,
     records: &[legaia_save::CharacterRecord],
+    status_words: &[u16],
 ) -> TargetPanelModel {
     use crate::spell_menu::SpellMenuPhase;
     let (cursor_row, all_targets) = match s.phase() {
@@ -184,6 +199,7 @@ pub fn spell_target_panel_view_model_of(
                 hp_max: t.hp_max,
                 mp: hms.map_or(0, |h| h.mp_cur),
                 mp_max: hms.map_or(0, |h| h.mp_max),
+                status: status_words.get(t.slot as usize).copied().unwrap_or(0),
                 ..Default::default()
             }
         })

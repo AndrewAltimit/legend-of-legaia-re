@@ -219,7 +219,19 @@ pub fn equip_screen_draws_for_with(
         let grey: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
         for &(row, name) in view.best_changes.iter().take(4) {
             let y = my + (i32::from(row) + 1) * EQUIP_ROW_PITCH;
-            str_at(&mut out, "->", mx + 0x8e, y, grey);
+            // The right arrow under ink 0's CLUT (`li a0,0x2` / `sw zero`
+            // ahead of `jal 0x8003C310`, `0x801D248C..0x801D249C`); the
+            // ASCII pair stands in for a font without the arrow cells.
+            match crate::arts_input::list_cell_draw(
+                font,
+                legaia_font::sprite_cell_ids::ink_arrow(0, 2),
+                (mx + 0x8e, y),
+                (0, 0),
+                1,
+            ) {
+                Some(cell) => out.push(cell),
+                None => str_at(&mut out, "->", mx + 0x8e, y, grey),
+            }
             str_at(&mut out, name, mx + 0xb8, y, white);
         }
 
@@ -307,6 +319,34 @@ pub fn equip_screen_draws_for_with(
     }
 
     out
+}
+
+/// The slot browse panel's two shade boxes, content rects `(x, y, w, h)`.
+pub type EquipBrowseBoxes = [(i32, i32, i32, i32); 2];
+
+/// Where the slot browse's item panel sits in window 22, off its pen.
+pub const EQUIP_BROWSE_INFO_PEN: (i32, i32) = (0x94, 0x0C);
+
+/// The slot browse's item panel: with the hand on a slot row that holds
+/// something, window 22's renderer moves its own rect by `(+0x94, +0xC)`,
+/// runs the shared item panel `FUN_801D0F1C` there on the worn id and frames
+/// two `0x90 x 0x28` boxes under skin `3`, at the panel's origin and `0x38`
+/// below it. Returns the panel's text and the two boxes' content rects.
+///
+/// PORT: FUN_801d21c0 (`0x801D2800..0x801D28DC`)
+pub fn equip_browse_info_draws(
+    font: &legaia_font::Font,
+    main_pen: (i32, i32),
+    info: &crate::PauseItemInfo<'_>,
+) -> (Vec<TextDraw>, EquipBrowseBoxes) {
+    let (x, y) = (
+        main_pen.0 + EQUIP_BROWSE_INFO_PEN.0,
+        main_pen.1 + EQUIP_BROWSE_INFO_PEN.1,
+    );
+    (
+        crate::item_info_body_draws(font, (x, y), info),
+        [(x, y, 0x90, 0x28), (x, y + 0x38, 0x90, 0x28)],
+    )
 }
 
 /// The candidate list's sprites: each row's pictogram at the verb column

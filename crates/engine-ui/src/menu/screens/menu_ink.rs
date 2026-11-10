@@ -240,8 +240,12 @@ mod health_tier_ink_tests {
             xp_to_next: 200,
             hp: 180,
             hp_max: 180,
+
+            hp_base: 180,
             mp: 10,
             mp_max: 12,
+
+            mp_base: 12,
             ap: 40,
             ap_max: 100,
             stat_rows: &[],
