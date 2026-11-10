@@ -4409,6 +4409,7 @@ dependencies = [
  "legaia-save",
  "legaia-scene-formats",
  "psx-lzs",
+ "psx-pcsx-redux",
  "psx-vab",
 ]
 

@@ -1,7 +1,9 @@
 # psx-retail-exec
 
 A user-mode R3000 interpreter: integer instructions, `hi` / `lo`, unaligned
-loads and stores, RAM and the scratchpad, with no GTE and no COP0. The crate's
+loads and stores, RAM and the scratchpad, COP0 register moves, and a GTE
+(`gte`) written from the hardware documentation independently of the engine's
+own, so camera, projection and lighting routines run too. The crate's
 disc-gated tests load `SCUS_942.54` and the overlays off the user's disc, run a
 retail routine over generated inputs and compare what it wrote with the Rust
 kernel whose `// PORT:` tag names it.

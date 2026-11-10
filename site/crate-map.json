@@ -4186,6 +4186,7 @@
     "game-tables",
     "lzs",
     "minigame-formats",
+    "pcsx-redux",
     "render-kernels",
     "save",
     "scene-formats",
@@ -4194,6 +4195,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "gte",
     "ledger"
    ],
    "band": "top",
