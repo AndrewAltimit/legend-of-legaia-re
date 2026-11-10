@@ -809,6 +809,16 @@ over the id multisets alone, whatever the time.
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
 
+**An edge sampler misses a same-id re-push.** The ring is sampled, not watched, so a cue
+pushed into the slot that held the same id one frame earlier reads as one cue: the ager clears
+the slot and the frame body refills it between two samples, and no sample sees the gap. Neither
+the frame counter nor the countdown separates the two, because samples land both inside a
+frame's body and in its vsync wait. `battle_chitei2_kemaro_lv2_lava_breath_mid_cast` is the
+case: three homing landings ring `0x49` (three `FUN_8004FCC8` calls from `0x801E185C` on a
+`--sfx-callers` recording, the third in the frame after the first two), the sampler counts two,
+and the engine's third reads as an extra. A lone extra whose id sat in a slot the frame before
+is checked against `sfxcall.csv` before it is read as an engine defect.
+
 A missing cue is traced back with `--sfx-callers`, which also write-watches
 the ring's id half (a `store` row is any store into `0x8007B6D8..DF`, `a0`
 its pc; the ager `FUN_8001698C`'s clears at `0x80016AF4` are among them),
