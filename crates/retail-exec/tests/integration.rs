@@ -202,6 +202,7 @@ mod super_learn;
 mod talk_dispatch;
 mod target_banner;
 mod target_redirect;
+mod text_balloon;
 mod text_width;
 mod tile_lookups;
 mod tint_ease;
