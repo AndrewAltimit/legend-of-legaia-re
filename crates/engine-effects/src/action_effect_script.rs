@@ -585,7 +585,8 @@ pub struct HomingSlot {
 }
 
 /// One effect-list spawn the flight made: the list byte (bit 7 = the 2D pool
-/// form, `0xFF` = a ribbon the port does not stage), where, and the heading.
+/// form; an `0xFF` byte spawns nothing here, its ribbon is the landed
+/// slot's, [`HomingSlots::shocks`]), where, and the heading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HomingSpawn {
     pub effect: u8,
@@ -641,6 +642,15 @@ pub struct HomingSlots {
     /// (`0x801E1800..0x801E1824`), so the body shivers until the hit. Thunder
     /// Break's Gala reads rate `0x20` from the landing to the hit.
     pub shocks: [u8; HOMING_SLOTS],
+    /// This pass's victims of a slot in phase `3`, the landing's pass and
+    /// the hit's included: every such pass stores the record's `+0x0A`
+    /// impact selector on the slot's victim with its tint word
+    /// (`+0x21F = sel`, `+0x04 = 0x801F53D4[sel - 1]`, `+0x0C = 0x1000`,
+    /// `0x801E1560..0x801E15EC`) ahead of the drain, so a landed bolt holds
+    /// its victim's tint from the landing to the hit. The selector's status
+    /// rolls sit on the same arm, but every record with a roll (`3..=5`)
+    /// lands on a zero counter and hits on its landing pass.
+    pub landed: [u8; HOMING_SLOTS],
     /// Where the last [`Self::step`] dragged each slot's handle actor: on a
     /// record whose `+0x09` byte is set, a phase-`2` slot between two list
     /// spawns copies its fresh position into the actor its last table-form
@@ -740,6 +750,7 @@ impl HomingSlots {
         let fall = 4 * delta as i16;
         self.hits = [0; HOMING_SLOTS];
         self.shocks = [0; HOMING_SLOTS];
+        self.landed = [0; HOMING_SLOTS];
         self.follows = [None; HOMING_SLOTS];
         let shock_list = (0..4).any(|k| record.get(0x16 + k) == Some(&0xFF));
         let tracks = record.get(0x09).copied().unwrap_or(0) != 0;
@@ -814,6 +825,7 @@ impl HomingSlots {
                         // hits and frees the slot there and then
                         // (`beq v0,zero,0x801E1844` at `0x801E17A0`).
                         if landing_counts {
+                            self.landed[i] = s.child;
                             if s.counter != 0 {
                                 s.counter = (s.counter - fall).max(0);
                                 if shock_list {
@@ -828,6 +840,7 @@ impl HomingSlots {
                     }
                 }
                 3 => {
+                    self.landed[i] = s.child;
                     if s.counter != 0 {
                         s.counter = (s.counter - fall).max(0);
                         if shock_list {
@@ -1530,6 +1543,26 @@ mod tests {
         assert_eq!(h.shocks, [1, 0, 0, 0]);
         h.step(&rec, 0, |_| Some(target));
         assert_eq!((h.shocks, h.hits), ([0; 4], [1, 0, 0, 0]));
+    }
+
+    /// Every phase-`3` pass, the hit's included, stores the impact tint on the
+    /// slot's victim (`0x801E1560..0x801E15EC`, ahead of the drain), and a
+    /// freed slot stores nothing.
+    #[test]
+    fn a_landed_slot_marks_its_victim_every_pass_to_the_hit() {
+        let mut rec = vec![0u8; 0x1A];
+        rec[0x06] = 8;
+        rec[0x0A] = 2;
+        let target = [0, 0, 0];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, 0, 0), &[Some(target)], |_| 1);
+        for _ in 0..3 {
+            h.step(&rec, 0, |_| Some(target));
+            assert_eq!(h.landed, [1, 0, 0, 0]);
+        }
+        assert_eq!(h.hits, [1, 0, 0, 0]);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.landed, [0; 4]);
     }
 
     /// Tail Fire's record arms no landing counter (`+0x06 == 0`): the pass

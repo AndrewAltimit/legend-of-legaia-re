@@ -813,7 +813,6 @@ impl PlayWindowApp {
         // integer position - the engine half of the probe's file of the
         // same name: where the burning bodies' puffs sit.
         if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
-            && w.casting.active_summon.is_some()
             && let Ok(f) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)

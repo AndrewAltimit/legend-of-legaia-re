@@ -1081,6 +1081,14 @@ pub struct BattleState {
     /// point on the arm's pass, so the band rewrites it on every module tick
     /// and clears it when the arm has none. Drawn beside [`Self::clip_ribbon`].
     pub cast_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
+    /// This pass's streak ribbons from a landed move projectile: on every
+    /// pass a phase-`3` homing slot's counter runs, `FUN_801E09F8` calls
+    /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
+    /// `0xFF` byte of the move-power record's `+0x16` list
+    /// (`0x801E17EC..0x801E1834`): Thunder Break's bolts on its victim from
+    /// the landing to the hit. Rewritten by every pass of the flight
+    /// (`World::tick_homing_slots`), drawn beside [`Self::cast_ribbons`].
+    pub flight_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1514,6 +1522,7 @@ impl BattleState {
             field_camera_reseat: false,
             clip_ribbon: None,
             cast_ribbons: None,
+            flight_ribbons: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

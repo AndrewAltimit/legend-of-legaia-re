@@ -180,6 +180,8 @@ impl World {
     }
 
     fn tick_homing_slots_with(&mut self, pass_step: Option<u8>, counter: u16) {
+        // The landed bolts are this pass's calls, or none.
+        self.battle.flight_ribbons = None;
         let Some(idx) = self.casting.homing.record else {
             return;
         };
@@ -222,10 +224,40 @@ impl World {
                 }
             }
         }
+        // Every phase-`3` pass stores the record's impact selector and its
+        // tint on the slot's victim (`0x801E1560..0x801E15EC`), so the tint
+        // holds from the landing to the hit; the cast fold's own store at
+        // the hit (`World::apply_enemy_move_status`) is the same triple.
+        for child in homing.landed.iter().filter(|&&child| child != 0) {
+            self.arm_impact_tint(usize::from(child - 1), raw[0x0A]);
+        }
         for child in homing.shocks.iter().filter(|&&child| child != 0) {
             if let Some(a) = self.actors.get_mut(usize::from(child - 1)) {
                 a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(0x20);
             }
+        }
+        // And each such pass with the counter still running draws one streak
+        // ribbon per `0xFF` byte of the `+0x16` list at the slot's position,
+        // in the record's trail (`0x801E17EC..0x801E1834`).
+        let bolts = raw[0x16..0x1A].iter().filter(|&&b| b == 0xFF).count();
+        let mut ring = legaia_engine_cast::cast_module_camera::CastRibbonRing {
+            points: [[0; 3]; 16],
+            trail_id: raw[0x0B],
+            count: 0,
+        };
+        for (i, _) in homing.shocks.iter().enumerate().filter(|(_, c)| **c != 0) {
+            let p = homing.slots[i]
+                .pos
+                .map(|v| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+            for _ in 0..bolts {
+                if let Some(slot) = ring.points.get_mut(usize::from(ring.count)) {
+                    *slot = p;
+                    ring.count += 1;
+                }
+            }
+        }
+        if ring.count > 0 {
+            self.battle.flight_ribbons = Some(ring);
         }
         // A landed slot's hit opens on the record's impact cue
         // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).

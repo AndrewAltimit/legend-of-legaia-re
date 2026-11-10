@@ -388,12 +388,18 @@ pub fn cast_ribbon_prims(
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
     use legaia_render_kernels::streak_pass::clip_ribbon_quads;
-    let Some(ring) = world.battle.cast_ribbons else {
-        return Vec::new();
-    };
     let frame = world.clock.display_frames as u32;
     let mut out = Vec::new();
-    for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
+    // A landed move projectile's bolts (`BattleState::flight_ribbons`) are the
+    // same call on the slot's position, numbered on after the arm's points.
+    let rings = [world.battle.cast_ribbons, world.battle.flight_ribbons];
+    let points = rings.iter().flatten().flat_map(|ring| {
+        ring.points
+            .iter()
+            .take(usize::from(ring.count))
+            .map(move |p| (*p, ring.trail_id))
+    });
+    for (i, (p, trail_id)) in points.enumerate() {
         // The points are retail battle space (Y down, the stack trio the arm
         // hands `FUN_801E1D98`); the battle view-projection takes the drawn
         // frame, whose models carry the `scale(1,-1,1)` it cancels
@@ -405,7 +411,7 @@ pub fn cast_ribbon_prims(
         let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
         let quads = clip_ribbon_quads(
             at,
-            ring.trail_id,
+            trail_id,
             mvp,
             frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
         );

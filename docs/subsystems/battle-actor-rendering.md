@@ -540,6 +540,8 @@ Because the X wobble is shared inside an edge, the strip keeps its width and sna
 
 Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` returned for the bottom billboard, so the strip is depth-flat.
 
+A landed move projectile is a third caller: each pass a phase-3 homing slot's counter runs, `FUN_801E09F8` calls the ribbon once per `0xFF` byte of the move-power record's `+0x16` list on the slot's position, in the record's trail ([battle-action-helpers](battle-action-helpers.md#fun_801e09f8---cast-effect-census--projectile-flight--impact)); Thunder Break's lightning columns are these.
+
 Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
 
 ## Port hosts
