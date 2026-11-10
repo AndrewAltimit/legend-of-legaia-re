@@ -205,9 +205,7 @@ fn status_magic_draws(
         bytes.extend(row.name.bytes());
         text_draws_for(&font.layout(&bytes), pen, ink)
     };
-    // The overlay's two-byte template `$<digit>` (`0x801E46E0`): `$` is the
-    // font's small "Lv" glyph.
-    let level_text = |level: u8| format!("${level}");
+    let level_text = crate::spell_level_text;
     for (i, row) in panel
         .spells
         .iter()

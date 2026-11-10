@@ -863,6 +863,17 @@ pub struct PauseMagicView<'a> {
     pub text_cursor: bool,
 }
 
+/// A learned spell's level as the menu prints it: the overlay's two-byte
+/// template `$<digit>` at `0x801E46E0`, whose digit byte the Magic info
+/// window and the status page patch to `'0' + level` before drawing it. `$`
+/// is the font's one-glyph "Lv" ligature, not the two letters.
+///
+/// REF: FUN_801d2e74 (`addiu v0,v0,0x30; sb v0,0x1(a0)` at `0x801D2FB4`)
+pub fn spell_level_text(level: u8) -> String {
+    let digit = char::from(b'0'.wrapping_add(level));
+    format!("${digit}")
+}
+
 /// Build [`TextDraw`]s for the retail Magic screen's window contents.
 ///
 /// `caster_pen` / `list_pen` / `info_pen` are the content origins of the
@@ -883,7 +894,7 @@ pub struct PauseMagicView<'a> {
 ///   their staged ink ([`PauseMagicRow::ink`]): white while the caster
 ///   window has focus, grey in list focus on each row the build disabled;
 /// - info window: spell name gold at `(X, Y)` (the same leading-plate
-///   string), "Lv<n>" gold at `X+0x78`, description white
+///   string), the level ([`spell_level_text`]) gold at `X+0x78`, description white
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
 ///   green) at `(X+0x18, Y+0x2A)` with the 3-digit cost - also green -
 ///   at `X+0x74` (PORT: FUN_801d2e74).
@@ -935,12 +946,8 @@ pub fn magic_screen_draws_for_with(
             4,
             mp_ink,
         ));
-        out.extend(crate::menu::window_painters::separator_glyph_draws(
-            font,
-            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
-            (cx + 0x54, mp_y),
-            MENU_TEXT_WHITE,
-        ));
+        // Retail writes the maximum before the slash (`0x801D2E10` /
+        // `0x801D2E24`).
         out.extend(num_field_draws(
             font,
             caster.mp_max as u64,
@@ -948,6 +955,12 @@ pub fn magic_screen_draws_for_with(
             mp_y,
             4,
             mp_ink,
+        ));
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+            (cx + 0x54, mp_y),
+            MENU_TEXT_WHITE,
         ));
     }
 
@@ -988,8 +1001,13 @@ pub fn magic_screen_draws_for_with(
             (ix, iy),
             MENU_TEXT_GOLD,
         ));
-        let lv = format!("Lv{}", info.level);
-        str_at(&mut out, &lv, ix + 0x78, iy, MENU_TEXT_GOLD);
+        str_at(
+            &mut out,
+            &spell_level_text(info.level),
+            ix + 0x78,
+            iy,
+            MENU_TEXT_GOLD,
+        );
         for (k, line) in info.desc.split('\n').take(2).enumerate() {
             str_at(
                 &mut out,

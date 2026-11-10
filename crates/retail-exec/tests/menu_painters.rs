@@ -25,8 +25,10 @@ use legaia_engine_ui::menu::window_painters::{
     two_line_choice_panel_draws_for,
 };
 use legaia_engine_ui::{
-    OptionsPopupDraw, OptionsRowView, TextDraw, confirm_prompt_draws, confirm_prompt_hand_pos,
-    menu_ink_color, menu_numeral_cell, options_draws_for, options_popup_hand_pos, text_draws_for,
+    OptionsPopupDraw, OptionsRowView, PauseMagicCaster, PauseMagicInfo, PauseMagicPhase,
+    PauseMagicView, TextDraw, confirm_prompt_draws, confirm_prompt_hand_pos,
+    magic_screen_draws_for_with, menu_ink_color, menu_numeral_cell, options_draws_for,
+    options_popup_hand_pos, text_draws_for,
 };
 use legaia_font::Font;
 use psx_retail_exec::{A0, A1, A2, A3, Cpu, Memory, SP, Stop, V0};
@@ -66,6 +68,12 @@ const CONFIRM_3: u32 = 0x801D_1F10;
 const OPTIONS: u32 = 0x801D_CEF0;
 const OPTIONS_ROWS: u32 = 0x801D_2910;
 const OPTIONS_POPUP: u32 = 0x801D_2B44;
+const MAGIC_CASTERS: u32 = 0x801D_2C98;
+const MAGIC_INFO: u32 = 0x801D_2E74;
+/// The Magic screen's caster cursor word.
+const CASTER_CHOICE: u32 = 0x801E_46C8;
+const SPELLS: u32 = 0x8007_54C8;
+const SPELL_DESCS: u32 = 0x8007_5DB0;
 /// The settings window's row layout (`id`, advance) and its descriptor list
 /// (`[value word ptr][choices][ink][id][string index]`), and the string
 /// pointer table both index.
@@ -145,7 +153,16 @@ fn rig() -> Option<Rig> {
             legaia_font::FONT_TIM_LEN,
         )
         .expect("font TIM");
-    let font = Font::from_disc_tim_and_scus(&tim, &scus).expect("font");
+    let head = d
+        .read_prot_bytes(
+            legaia_font::escape_icons::ICON_PROT_DAT_OFFSET,
+            legaia_font::escape_icons::ICON_PROT_DAT_LEN,
+        )
+        .expect("escape icons");
+    let font = Font::from_disc_tim_and_scus(&tim, &scus)
+        .expect("font")
+        .with_escape_icons_from_disc(&head, &scus);
+    assert!(font.escape_cell(0x14).is_some(), "the element plates");
     let log: Rc<RefCell<Vec<Ev>>> = Rc::default();
     let ink = |m: &mut Memory| m.rd32(INK) as u8;
     let l = log.clone();
@@ -342,7 +359,17 @@ fn pictos(log: &[Ev]) -> Vec<PainterPictogram> {
 fn same_text(rig: &Rig, log: &[Ev], port: &[TextDraw], what: &str) {
     let want = rig.text_of(log);
     assert!(!want.is_empty() || port.is_empty(), "{what}: nothing drawn");
-    assert_eq!(keys(&want), keys(port), "{what}\n{log:?}");
+    let (w, p) = (keys(&want), keys(port));
+    let first = w.iter().zip(&p).position(|(a, b)| a != b);
+    assert_eq!(
+        w,
+        p,
+        "{what}: first difference at {first:?} of {} / {}\n{log:?}\nTAIL {:?}\nPORT {:?}",
+        w.len(),
+        p.len(),
+        &w[first.unwrap_or(0)..],
+        &p[first.unwrap_or(0)..]
+    );
 }
 
 fn rect(rng: &mut Rng) -> PainterRect {
@@ -927,4 +954,170 @@ fn the_options_window_and_its_popup_match() {
         assert_eq!(got, want, "{what} popup {choice}");
     }
     assert!(edits > 1000 && greys > 5000, "{edits} {greys}");
+}
+
+fn magic_view<'a>(
+    casters: &'a [PauseMagicCaster<'a>],
+    info: Option<PauseMagicInfo<'a>>,
+) -> PauseMagicView<'a> {
+    PauseMagicView {
+        arrows_blink: false,
+        casters,
+        rows: &[],
+        page: 0,
+        pages: 0,
+        phase: PauseMagicPhase::Caster,
+        caster_cursor: 0,
+        list_cursor: 0,
+        info,
+        label_icons: true,
+        text_cursor: false,
+    }
+}
+
+#[test]
+fn the_magic_casters_and_info_match() {
+    differential!(prot(899, MAGIC_CASTERS), prot(899, MAGIC_INFO));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pool = legaia_game_tables::menu_pool::MenuPoolLabels::from_menu_overlay(
+        &disc()
+            .unwrap()
+            .read_entry_footprint(899)
+            .expect("PROT 0899"),
+    );
+    let mut rng = Rng(0x4D41_4749);
+    let mut levels = 0;
+    for run in 0..3_000 {
+        let r = rect(&mut rng);
+        // The present party, every member a caster (ids below 3).
+        let n = 1 + rng.below(3);
+        let ids: Vec<u32> = (0..n).map(|_| rng.below(3)).collect();
+        rig.cpu.mem.wr8(0x8008_4594, n as u8);
+        let mut names = Vec::new();
+        for (i, &id) in ids.iter().enumerate() {
+            rig.cpu.mem.wr8(0x8008_4598 + i as u32, id as u8);
+            let rec = 0x8008_4708 + id * 0x414;
+            let max = rng.below(1000) as u16;
+            rig.cpu.mem.wr16(rec + 0x108, max);
+            rig.cpu
+                .mem
+                .wr16(rec + 0x10A, rng.below(u32::from(max) + 1) as u16);
+            rig.cpu.mem.wr8(rec + 0x130, 1 + rng.below(99) as u8);
+            let name = format!("@C{id}{}", rng.below(10));
+            rig.poke_str(rec + 0x2A7, &name);
+            names.push(name);
+        }
+        let f = flags(&mut rng, n - 1);
+        rig.cpu.mem.wr32(CASTER_CHOICE, f);
+        let log = rig.run(MAGIC_CASTERS, r);
+        let casters: Vec<PauseMagicCaster<'_>> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| {
+                let rec = 0x8008_4708 + id * 0x414;
+                PauseMagicCaster {
+                    name: &names[i],
+                    level: u16::from(rig.cpu.mem.rd8(rec + 0x130)),
+                    mp: rig.cpu.mem.rd16(rec + 0x10A),
+                    mp_max: rig.cpu.mem.rd16(rec + 0x108),
+                }
+            })
+            .collect();
+        // A member seated twice shows its last name in both blocks.
+        let casters: Vec<PauseMagicCaster<'_>> = casters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| PauseMagicCaster {
+                name: &names[ids.iter().rposition(|&x| x == ids[i]).unwrap()],
+                ..*c
+            })
+            .collect();
+        let text = magic_screen_draws_for_with(
+            &rig.font,
+            None,
+            &magic_view(&casters, None),
+            (r.x, r.y),
+            (0, 0),
+            (0, 0),
+        );
+        same_text(&rig, &log, &text, &format!("run {run} casters {ids:?}"));
+        let want: Vec<(i32, i32)> = (0..n)
+            .filter(|&i| ChoiceFlags(f).marker_variant(i).is_some())
+            .map(|i| (r.x, r.y + 1 + i as i32 * 0x23))
+            .collect();
+        let got: Vec<(i32, i32)> = hands(&log).iter().map(|h| (h.x, h.y)).collect();
+        assert_eq!(got, want, "run {run}: the caster hand");
+
+        // The info window over the cursor's caster and a learned spell.
+        let caster = ids[(f & 0xFFF).min(n - 1) as usize];
+        rig.cpu.mem.wr32(CASTER_CHOICE, (f & 0xFFF).min(n - 1));
+        let rec = 0x8008_4708 + caster * 0x414;
+        let spell = 0x81 + rng.below(0x0B);
+        let known = 1 + rng.below(8);
+        let slot = rng.below(known);
+        rig.cpu.mem.wr8(rec + 0x13C, known as u8);
+        for k in 0..known {
+            let id = if k == slot { spell } else { 0x60 + k };
+            rig.cpu.mem.wr8(rec + 0x13D + k, id as u8);
+            rig.cpu.mem.wr8(rec + 0x161 + k, rng.below(10) as u8);
+        }
+        rig.cpu.mem.wr32(SELECTED, spell);
+        let log = rig.run(MAGIC_INFO, r);
+        let srec = SPELLS + spell * 12;
+        let name_va = rig.cpu.mem.rd32(srec + 8);
+        let raw = cstr(&mut rig.cpu.mem, name_va);
+        let desc_ix = u32::from(rig.cpu.mem.rd8(srec + 4));
+        let desc = if desc_ix > 0 {
+            let va = rig.cpu.mem.rd32(SPELL_DESCS + desc_ix * 4);
+            String::from_utf8(cstr(&mut rig.cpu.mem, va))
+                .expect("ASCII")
+                .replace('|', "\n")
+        } else {
+            String::new()
+        };
+        let cost = log
+            .iter()
+            .find_map(|e| match e {
+                Ev::Number(v, 3, ..) => Some(*v as u16),
+                _ => None,
+            })
+            .expect("the cost");
+        let level = rig.cpu.mem.rd8(rec + 0x161 + slot);
+        let name = String::from_utf8(raw[3..].to_vec()).expect("ASCII");
+        let info = PauseMagicInfo {
+            name: &name,
+            icon: Some(raw[1]),
+            ra_seru: false,
+            level,
+            desc: &desc,
+            mp_cost: cost,
+        };
+        assert_eq!(raw[0], 0xCE, "run {run}: a plate-led name");
+        let labels: Vec<Ev> = log
+            .iter()
+            .map(|e| match e {
+                Ev::Label(va, x, y, ink) => Ev::Text(cstr(&mut rig.cpu.mem, *va), *x, *y, *ink),
+                e => e.clone(),
+            })
+            .collect();
+        let text = magic_screen_draws_for_with(
+            &rig.font,
+            Some(&pool),
+            &magic_view(&[], Some(info)),
+            (0, 0),
+            (0, 0),
+            (r.x, r.y),
+        );
+        same_text(
+            &rig,
+            &labels,
+            &text,
+            &format!("run {run} spell {spell:#x} level {level}"),
+        );
+        levels += 1;
+    }
+    assert!(levels > 2000, "{levels}");
 }
