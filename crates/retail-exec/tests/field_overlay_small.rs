@@ -546,3 +546,63 @@ fn the_contact_sweep_matches_retail_on_moving_actors() {
     }
     assert!(hits > 3000 && misses > 3000, "{hits} {misses}");
 }
+
+/// The `4C DB` CLUT blend spawn `FUN_801E57F0` over generated records, the
+/// allocator answering an actor: the descriptor and list it asks for
+/// (`0x801F2930`, `_DAT_8007C34C`), the record pointer `+0x90` and the state
+/// `+0x54 = 0` it stores, against `World::spawn_clut_blend_fx` - one effect,
+/// its record decoded from the bytes that pointer names, no fade begun (the
+/// actor's state `0`, whose first tick stores the cell).
+#[test]
+fn the_clut_blend_spawn_matches_retail() {
+    use legaia_engine_core::world::World;
+    use legaia_engine_field::clut_fade_actor::FadeRecord;
+    const BLEND_SPAWN: u32 = 0x801E_57F0;
+    const RECORD: u32 = 0x8013_2000;
+    const ACTOR: u32 = 0x8013_0000;
+    differential!(prot(897, BLEND_SPAWN));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let head = 0x8012_7000;
+    cpu.mem.wr32(0x8007_C34C, head);
+    let asked = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let a = asked.clone();
+    cpu.hook(SPAWN, move |r, m| {
+        a.borrow_mut().push((r.r[A0], r.r[A1]));
+        m.load(ACTOR, &[0xA5; 0x100]);
+        r.r[V0] = ACTOR;
+    });
+    let mut rng = crate::common::Rng(0x424C_4E44);
+    for case in 0..2000 {
+        let bytes: Vec<u8> = std::iter::once(0xDB)
+            .chain((0..15).map(|_| rng.next() as u8))
+            .collect();
+        cpu.mem.load(RECORD, &bytes);
+        asked.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(BLEND_SPAWN, &[RECORD]),
+            Stop::Returned,
+            "case {case}"
+        );
+        assert_eq!(*asked.borrow(), [(0x801F_2930, head)], "case {case}");
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x90), RECORD, "case {case}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x54), 0, "case {case}");
+        let mut w = World::new();
+        w.spawn_clut_blend_fx(&bytes);
+        let fx = &w.ambient.clut_blend_fx;
+        assert_eq!(fx.len(), 1, "case {case}");
+        let at = cpu.mem.rd32(ACTOR + 0x90);
+        let retail_record = cpu.mem.read(at, 16);
+        assert_eq!(
+            fx[0].record,
+            FadeRecord::from_bytes(&retail_record),
+            "case {case}"
+        );
+        assert!(fx[0].fade.is_none(), "case {case}: state 0");
+    }
+}
