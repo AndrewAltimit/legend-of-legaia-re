@@ -146,6 +146,7 @@ mod encounter_top_up;
 mod enemy_impact;
 mod equip_commit;
 mod equip_main;
+mod equip_panel;
 mod equip_select;
 mod escape;
 mod escape_timer;
