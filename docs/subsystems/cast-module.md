@@ -3318,6 +3318,20 @@ the miss) the engine plays none, and arm 5 reads `.809` to `.914`, the Done tail
 side, matched. The difference was the replay's `rand()` stream, a seat of the harness, not
 the cast. Grade `capture`.
 
+The leg labels are right: retail's roll on the `map01` film is `rand() = 20064`, even, the hit
+(probe at `0x801F8CC4`, `andi v0,v0,0x1` / `beq` to the hit leg at `0x801F8CC8`), from the seed
+word `0x4DE7668F`. `--rand-track` still hands the engine the miss because the engine's arm 4
+is two passes shorter. Arm 3's gate re-arms the countdown `0x801F9D28` by `scalar << 7`
+(`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8C98`,
+the step `0x1F800393`): retail's arm 4 runs `34` passes, the last five at step `3` as the frame
+cost falls from `700` to about `595` (step sum `131`), where the engine's table runs every pass
+at `4` (`32` passes). The track keys its words by pass within the phase, so the engine's
+gate pass takes retail's 33rd pass word (`0x6C5CC369`, then the discard), draws from
+`0x333F61EE` and rolls `19943`, odd. Retail's gate pass starts on `0x333F61EE` and draws
+the discard first. The engine's arm 3 gate also falls one pass later than retail's.
+This is the step table's per-arm reading ([the frame step](battle-stage-camera.md#the-frame-step)), not the
+roll. Grade `capture` + `disassembly`.
+
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
 the applier fills from `readef.DAT` on the caster's own turn

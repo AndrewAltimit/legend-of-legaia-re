@@ -229,6 +229,22 @@ choices sit beside it: seating a different monster record drops the seat's
 previous clips, and a combo total still on a target when the band leaves `0x20`
 is landed there, so the `0x51` settle gate (`FUN_801E7250`) cannot hold forever.
 
+**Measured.** A breakpoint probe on the roll (`0x801EC65C` ahead of the first
+draw, `0x801EC878` on the verdict, `0x801ECA84` past the juggle arm) reads `s0`,
+`s1`, the seed word and `s7` for every hit. Fed the same seed words, the engine's
+verdicts are retail's on every hit of three films: Nova's five swings on Gala
+(`battle_jou_nova_v3_strike`, `795` against `795` before the draws, land, block,
+block, land, land), Gaza's four Astral Slash beats on Vahn
+(`battle_kor_gaza_165_astral_slash_mid_cast`) and Vahn's two rolls on the
+Ropeway monster. Astral Slash shows the juggle arm overturning the roll: beats
+two to four roll a block (`534 < 996`, `500 < 567`, `612 < 949`, Vahn's Spirit
+stance and his `+0xF4 & 0x100000` passive each `x3/2`), and the juggle arm clears
+each (`0x801ECA4C..0x801ECA68`) because Vahn is mid-flinch (`+0x1F7 = 1`, `+0x1D9 = 2`, not his
+block entry `0x0B`), so all four land (`715`). On a stream whose first beat
+blocks, the defender holds the block clip with the window up and every later
+beat is blocked at `0x801EC984`: the all-or-nothing outcome is the rule, the
+stream decides which. Grade `capture`.
+
 ### Equipment fold - Base Offense
 
 <a id="base-offense-value-base-atk-plus-half-of-one-equipment-slot"></a>
