@@ -229,6 +229,7 @@ mod intro_tiles;
 mod inventory;
 mod item_apply;
 mod item_probe;
+mod items_command;
 mod items_panels;
 mod key_on_volume;
 mod kiss_of_death;

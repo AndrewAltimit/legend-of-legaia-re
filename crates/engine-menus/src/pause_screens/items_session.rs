@@ -414,19 +414,33 @@ impl PauseItemsSession {
         }
         match self.focus {
             PauseItemsFocus::Command => {
-                if circle || triangle {
+                // Triangle closing is the port's; retail's cancel is the
+                // picker's configured mask.
+                if triangle {
                     self.closed = true;
                     return;
                 }
-                if up {
-                    self.command_cursor = (self.command_cursor + 2) % 3;
-                }
-                if down {
-                    self.command_cursor = (self.command_cursor + 1) % 3;
+                // `FUN_801D688C(&DAT_801E46C0, 3, 1)`: confirm, then cancel,
+                // ahead of any move - Cross with a direction dispatches the
+                // row the cursor is already on.
+                use legaia_engine_system::menu_input::{
+                    CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav,
+                };
+                let mut cursor = u32::from(self.command_cursor);
+                let nav = menu_cursor_nav(
+                    &mut cursor,
+                    3,
+                    true,
+                    NavButtons::new(cross, circle, up, down),
+                );
+                self.command_cursor = (cursor & CURSOR_INDEX_MASK) as u8;
+                if nav == CursorNav::Cancel {
+                    self.closed = true;
+                    return;
                 }
                 // Retail scans the bag before dispatching any command row
                 // and buzzes (SFX 0x23) on an empty bag.
-                if cross && !self.bag_empty() {
+                if nav == CursorNav::Confirm && !self.bag_empty() {
                     match self.command_cursor {
                         0 => self.focus = PauseItemsFocus::List,
                         // Retail opens a *different* list window here (content
