@@ -315,3 +315,141 @@ fn the_description_dispatcher_draws_what_retail_draws() {
     }
     assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
 }
+
+const WINDOW_UPSERT: u32 = 0x8003_2434;
+const HEAP_ALLOC: u32 = 0x8001_7888;
+const WINDOW_CONTENT: u32 = 0x8003_0628;
+const WINDOW_LIST: u32 = GP + 0x148;
+
+/// The live-window register `FUN_80032434` against `LiveWindowSet::upsert`
+/// and `record_string_glyph_count`: a run of registrations over a few ids,
+/// the heap allocator `FUN_80017888` a bump allocator and the content
+/// rebuild `FUN_80030628` recorded, the whole circular list walked after
+/// each and held to the port's set in order, field by field.
+#[test]
+fn the_window_register_keeps_the_list_retail_keeps() {
+    differential!(scus(WINDOW_UPSERT));
+    use legaia_engine_menus::menu_list_rows::{
+        LiveWindow, LiveWindowSet, record_string_glyph_count,
+    };
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const HEAP: u32 = 0x8015_0000;
+    const CONFIG: u32 = 0x8014_0000;
+    const RECORDS: u32 = 0x8014_1000;
+    let next = Rc::new(RefCell::new(HEAP));
+    let n = next.clone();
+    cpu.hook(HEAP_ALLOC, move |r, _| {
+        let mut p = n.borrow_mut();
+        r.r[V0] = *p;
+        *p += (r.r[A1] + 3) & !3;
+    });
+    cpu.stub(0x8003_C110, 0);
+    let rebuilt = Rc::new(RefCell::new(Vec::new()));
+    let b = rebuilt.clone();
+    cpu.hook(WINDOW_CONTENT, move |r, m| {
+        b.borrow_mut().push(m.rd16(r.r[A0] + 8))
+    });
+    let mut rng = Rng(0x5749_4E44);
+    let mut reused = 0;
+    for run in 0..40 {
+        cpu.mem.wr32(WINDOW_LIST, 0);
+        let mut port = LiveWindowSet::new();
+        for step in 0..40 {
+            let id = rng.below(24) as u16;
+            // A record string: `[len][len * 2 bytes]` segments, zero-ended;
+            // now and then none at all.
+            let record = if rng.below(8) == 0 {
+                0
+            } else {
+                let at = RECORDS + 0x100 * (step % 16);
+                let mut o = at;
+                for _ in 0..rng.below(5) {
+                    let len = rng.below(12) as u8;
+                    if len == 0 {
+                        break;
+                    }
+                    cpu.mem.wr8(o, len);
+                    for k in 0..u32::from(len) * 2 {
+                        cpu.mem.wr8(o + 1 + k, 1 + rng.below(0xFE) as u8);
+                    }
+                    o += 1 + u32::from(len) * 2;
+                }
+                cpu.mem.wr8(o, 0);
+                at
+            };
+            let half = |rng: &mut Rng| rng.next() as u16;
+            let cfg: [u16; 12] = std::array::from_fn(|_| half(&mut rng));
+            cpu.mem.wr32(CONFIG, record);
+            for (k, v) in cfg.iter().enumerate().skip(2) {
+                cpu.mem.wr16(CONFIG + 2 * k as u32, *v);
+            }
+            rebuilt.borrow_mut().clear();
+            let node = {
+                assert_eq!(
+                    cpu.call(WINDOW_UPSERT, &[u32::from(id), CONFIG]),
+                    Stop::Returned
+                );
+                cpu.regs.r[V0]
+            };
+            assert_eq!(
+                *rebuilt.borrow(),
+                vec![id],
+                "run {run} step {step}: one rebuild"
+            );
+            reused += usize::from(port.get(id).is_some());
+            let glyphs = if record == 0 {
+                0
+            } else {
+                let bytes = cpu.mem.read(record, 0x100);
+                record_string_glyph_count(&bytes)
+            };
+            port.upsert(LiveWindow {
+                id,
+                x: cfg[8] as i16,
+                y: cfg[9] as i16,
+                w: cfg[6] as i16,
+                h: cfg[7] as i16,
+                content_id: cfg[2] as u8,
+                sub_kind: cfg[3] as u8,
+                glyph_count: glyphs,
+                slide_active: true,
+            });
+            // The slide record the node carries: current and target both
+            // the rect origin, the start the config's `+0x08` / `+0x0A`.
+            let slide = cpu.mem.rd32(node + 0x24);
+            let s: [u16; 7] = std::array::from_fn(|k| cpu.mem.rd16(slide + 2 * k as u32));
+            assert_eq!(
+                s,
+                [cfg[10], cfg[8], cfg[9], cfg[8], cfg[9], cfg[4], cfg[5]],
+                "run {run} step {step}: the slide record"
+            );
+            // Walk the circular list from the sentinel.
+            let head = cpu.mem.rd32(WINDOW_LIST);
+            let mut got = Vec::new();
+            let mut p = cpu.mem.rd32(head);
+            while p != head {
+                let m = &mut cpu.mem;
+                got.push(LiveWindow {
+                    id: m.rd16(p + 8),
+                    x: m.rd16(p + 0xA) as i16,
+                    y: m.rd16(p + 0xC) as i16,
+                    w: m.rd16(p + 0xE) as i16,
+                    h: m.rd16(p + 0x10) as i16,
+                    content_id: m.rd8(p + 0x1C),
+                    sub_kind: m.rd8(p + 0x1D),
+                    glyph_count: m.rd16(p + 0x14),
+                    slide_active: m.rd16(p + 0x20) == 1,
+                });
+                let fwd = m.rd32(p);
+                assert_eq!(m.rd32(fwd + 4), p, "the back link");
+                p = m.rd32(p);
+                assert!(got.len() <= 64, "a loop in the list");
+            }
+            let want: Vec<LiveWindow> = port.iter().cloned().collect();
+            assert_eq!(got, want, "run {run} step {step}");
+        }
+    }
+    assert!(reused > 400, "re-registrations ran {reused} times");
+}
