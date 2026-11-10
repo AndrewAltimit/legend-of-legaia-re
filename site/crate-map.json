@@ -4187,6 +4187,7 @@
     "engine-mode",
     "engine-motion-vm",
     "engine-scene",
+    "engine-scene-host",
     "engine-system",
     "engine-title",
     "engine-ui",
