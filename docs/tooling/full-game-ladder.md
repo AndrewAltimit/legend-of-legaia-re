@@ -1414,7 +1414,13 @@ map as its street:
   phase's landing, the phase the flag is not in now dearer by the wait.
   `rugi`'s prescript cycler idles until `0x594` (raised by the entry cutscene
   P2[72]), then each lap holds `0x463` for a moment and `0x462` for a
-  stretch; in the engine `0x462` is up 92 frames of every 442. The upper pads
+  stretch. The lap is the record's own waits (prescript record 34, `asset
+  move-disasm prescript`): `WAIT 600`, fourteen `WAIT 3` with `0x463` up, then
+  `0x462` up across a count-3 loop (four turns of one `WAIT 16` and four
+  `WAIT 3`) and one `WAIT 16` with five `WAIT 3`, then ten `WAIT 3`. At the
+  field's two-vsync step a `WAIT n` holds `n / 2 + 1` passes, so `0x462` is up
+  87 passes of every 436: 174 frames of every 872 on `World::frame`, the
+  count the follower times in, and clear for the other 698. The upper pads
   P2[40..61] land on their partner pad while it is down and on the hub
   (86, 59) while it is up, and the hub's own pad P2[62] lands on (86, 53),
   which is P2[40]'s tile. A plan that read only the live landing saw the hub

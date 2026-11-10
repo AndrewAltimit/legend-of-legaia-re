@@ -257,7 +257,8 @@ page builds one in the browser:
 The same pack works from the command line (`asset expansion validate`,
 `asset expansion bundle`) and runs in the native port with
 `legaia-engine play-window --expansion <dir>`, or on the browser play page:
-the workbench's **Play pack** button hands the pack straight to it. Page reference:
+the workbench's **Play pack** button hands the pack straight to it. Step-by-step
+guide: [making-expansion-packs.md](making-expansion-packs.md); page reference:
 [expansion-workbench.md](../tooling/expansion-workbench.md); format:
 [expansion-pack.md](../formats/expansion-pack.md).
 
@@ -267,6 +268,7 @@ the workbench's **Play pack** button hands the pack straight to it. Page referen
 - [translating.md](translating.md) - the translator's guide.
 - [translation/](../tooling/translation/index.md) - pack schema, markup, budgets, what may be committed.
 - [pal-localizations.md](../tooling/pal-localizations.md) - the official PAL text and how it lifts.
+- [making-expansion-packs.md](making-expansion-packs.md) - a first pack, step by step.
 - [expansion-workbench.md](../tooling/expansion-workbench.md) - the in-browser expansion-pack editor.
 - [save-record.md](../formats/save-record.md) - the character-record byte layout.
 - [getting-started.md](getting-started.md) - back to the tool index.
