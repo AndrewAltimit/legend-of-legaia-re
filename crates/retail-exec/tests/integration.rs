@@ -74,6 +74,7 @@ mod cast_view;
 mod chain_ticks;
 mod chip_marks;
 mod clip_cursor;
+mod clip_morph;
 mod clip_vertex;
 mod clut_cell;
 mod clut_walk;
