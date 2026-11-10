@@ -1180,3 +1180,10 @@ reason = "FUN_801CEB84 is the battle grid emitter FUN_801D02C0 relocated into th
 changes = [
   ["totals/ported", 1048, 1047],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "play_gzip_bytes grows by code: the menu slide-in input lock and the window walker port, the Print Screen key and the page's debug_play_record twin, the projectile flight bolts and landing flash, the arts list caption, the integer GTE camera for fog, lights, trail and screen grab, and the battle intro's retail trig. No data is added to the bundle; every native frame count stays within its baseline (summon_cast allocations fall)."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4962222, 4972542],
+]
