@@ -195,10 +195,11 @@ impl PanelPen<'_> {
         }
     }
 
-    /// A numeral field of `cells` 8-px cells at `x`: the `FUN_80034B78`
-    /// right-aligned fill when `zero_pad` is false, `FUN_80034E4C`'s
-    /// zero-padded one when true. A negative value prints `0`, as the
-    /// subtract loop never runs on one.
+    /// A numeral field of `cells` 8-px cells at `x`: `FUN_80034B78`'s
+    /// blank-padded walk when `zero_pad` is false, `FUN_80034E4C`'s
+    /// zero-padded one when true, cell by cell as
+    /// [`crate::menu::decimal_field::decimal_field_cells`] places them - a
+    /// value wider than its field included.
     #[allow(clippy::too_many_arguments)]
     fn numerals(
         &mut self,
@@ -210,25 +211,20 @@ impl PanelPen<'_> {
         y: i32,
         ink: [f32; 4],
     ) {
-        let v = value.max(0);
-        let s = if zero_pad {
-            format!("{v:0width$}", width = cells as usize)
-        } else {
-            v.to_string()
-        };
-        let left = x + (cells - s.len() as i32).max(0) * HUD_DIGIT_W;
-        for (i, ch) in s.bytes().enumerate() {
-            let cx = left + i as i32 * HUD_DIGIT_W;
-            match digits.and_then(|b| crate::hud_numeral_cell(&b, u32::from(ch - b'0'), ink)) {
+        for (dx, d) in crate::menu::decimal_field::decimal_field_cells(value, cells, zero_pad) {
+            let cx = x + dx;
+            match digits.and_then(|b| crate::hud_numeral_cell(&b, u32::from(d), ink)) {
                 Some((src, tint)) => self.sprite(src, cx, y, tint),
                 None => {
-                    let g = [ch];
-                    let g = std::str::from_utf8(&g).unwrap_or("0");
+                    let Some(ch) = char::from_digit(u32::from(d), 10) else {
+                        continue;
+                    };
+                    let g = ch.to_string();
                     let adv = self
                         .font
-                        .map(|f| f.layout_ascii(g).advance_x as i32)
+                        .map(|f| f.layout_ascii(&g).advance_x as i32)
                         .unwrap_or(HUD_DIGIT_W);
-                    self.text(g, cx + (HUD_DIGIT_W - adv) / 2, y, ink);
+                    self.text(&g, cx + (HUD_DIGIT_W - adv) / 2, y, ink);
                 }
             }
         }
@@ -280,7 +276,9 @@ fn slot_info_body(
     if info.location_valid {
         let y = panel_y + SLOT_INFO_LOCATION_OFFSET.1;
         pen.text(info.location, SLOT_INFO_LOCATION_OFFSET.0, y, text);
-        pen.text("Time", SLOT_INFO_TIME_LABEL_OFFSET.0, y, text);
+        // The literal at `0x801CF340` carries its trailing space, which the
+        // string writer draws as the blank cell it is.
+        pen.text("Time ", SLOT_INFO_TIME_LABEL_OFFSET.0, y, text);
         let (h, m, s) = info.play_time;
         for (v, x) in [h, m, s].into_iter().zip(SLOT_INFO_TIME_FIELDS_X) {
             pen.numerals(digits, v as i32, 2, true, x, y, READOUT_NORMAL);

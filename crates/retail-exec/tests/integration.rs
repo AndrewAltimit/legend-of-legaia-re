@@ -271,6 +271,7 @@ mod round_open;
 mod save_backdrop;
 mod save_compose;
 mod save_grid;
+mod save_info;
 mod save_leaves;
 mod save_subscreens;
 mod scale_stage;
