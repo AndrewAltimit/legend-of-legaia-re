@@ -264,6 +264,7 @@ mod st_ring;
 mod stager_spawns;
 mod stager_states;
 mod stat_aggregator;
+mod status_clut_restore;
 mod str_player;
 mod streak_ribbon;
 mod stream_slot;
