@@ -194,6 +194,7 @@ mod rot_matrix;
 mod round_boundary;
 mod round_end;
 mod round_open;
+mod save_compose;
 mod save_leaves;
 mod save_subscreens;
 mod scale_stage;
