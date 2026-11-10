@@ -418,6 +418,24 @@ pub(super) fn watch_clocks(session: &NativeSession) {
             // count: the flag may have flipped and back unseen.
             if now.saturating_sub(e.looked) > 2 {
                 e.held_since = now;
+                // And the phase it is seen in after the gap may be a later
+                // one than the phase it was in before: its start stands only
+                // while less than a lap (both phases timed) has gone by
+                // since. Every pad ride is such a gap, three hundred frames
+                // of script, and `rugi`'s `0x462` is up for 174 of each 872:
+                // a walk that rode a pad a lap, never seeing a whole one,
+                // timed the clear phase across the rise it missed (2442
+                // frames, then 1570, for a phase of 698), stepped onto
+                // P2[44] as that phase was ending, and was sent round the
+                // hub's loop instead of on to (82, 48).
+                let lap = e.shortest[0].zip(e.shortest[1]).map(|(a, b)| a + b);
+                if !e
+                    .flipped_at
+                    .zip(lap)
+                    .is_some_and(|(t, lap)| now - t < lap)
+                {
+                    e.flipped_at = None;
+                }
             }
             if e.value != v {
                 // A flip seen within a frame or two of the last look is
