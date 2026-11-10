@@ -129,6 +129,51 @@ pub fn soundtrack_from(audio: &StrAudio, secs: f64) -> Vec<i16> {
     audio.pcm.get(frame * ch..).unwrap_or(&[]).to_vec()
 }
 
+/// Where each retail movie plays: the scenes whose scripts start it and the
+/// scene the game goes on in after it, by CDNAME label. From the FMV
+/// dispatch table and the scene scripts' literal movie ids
+/// (`docs/formats/str-fmv-table.md`); `MV3.STR` holds four movies, cut by
+/// frame range.
+const MOVIE_PLACES: [(&str, &[&str], Option<&str>); 6] = [
+    ("MV1.STR", &[], None),
+    ("MV2.STR", &["town01"], Some("town0b")),
+    ("MV3.STR", &["garmel", "deroa", "dohaty", "taiku"], None),
+    ("MV4.STR", &["town0d"], Some("jou")),
+    ("MV5.STR", &["uru"], Some("uru2")),
+    ("MV6.STR", &[], Some("town0e")),
+];
+
+/// One line on where a movie plays in the game, for its list row's hover
+/// and the movie view (`MOV/MV2.STR` -> "Plays in Rim Elm, then the game goes
+/// on in Rim Elm (under attack)."). `None` for a file the table does not
+/// know.
+pub fn movie_note(path: &str) -> Option<String> {
+    let file = path.rsplit(['/', '\\']).next()?.to_ascii_uppercase();
+    let file = file.split(';').next()?;
+    let (_, from, to) = MOVIE_PLACES.iter().find(|(f, _, _)| *f == file)?;
+    let name = |label: &str| crate::place_name(label).unwrap_or(label).to_string();
+    let from: Vec<String> = from.iter().map(|l| name(l)).collect();
+    Some(match (from.as_slice(), to) {
+        ([], None) => "The opening movie.".into(),
+        ([], Some(to)) => format!("Plays on the way to {}.", name(to)),
+        ([one], Some(to)) => format!("Plays in {one}, then the game goes on in {}.", name(to)),
+        (many, _) => format!(
+            "{} movies in one file, played in {}.",
+            many.len(),
+            join_and(many)
+        ),
+    })
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 /// Write `pcm` as a 16-bit WAV.
 pub fn write_wav(path: &Path, pcm: &[i16], channels: Channels, rate: u32) -> Result<()> {
     psx_xa::write_wav(path, pcm, channels, rate)
@@ -137,6 +182,27 @@ pub fn write_wav(path: &Path, pcm: &[i16], channels: Channels, rate: u32) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_retail_movie_says_where_it_plays() {
+        assert_eq!(
+            movie_note("MOV/MV1.STR").as_deref(),
+            Some("The opening movie.")
+        );
+        assert_eq!(
+            movie_note("MOV/MV2.STR").as_deref(),
+            Some("Plays in Rim Elm, then the game goes on in Rim Elm (under attack).")
+        );
+        let mv3 = movie_note("MOV/MV3.STR;1").unwrap();
+        assert!(mv3.starts_with("4 movies in one file, played in Zeto's Dungeon, "));
+        assert!(mv3.ends_with(" and Zora's Floating Castle."), "{mv3}");
+        for f in ["MV4", "MV5", "MV6"] {
+            let note = movie_note(&format!("MOV/{f}.STR")).unwrap();
+            assert!(!note.contains('_'), "{note}");
+        }
+        assert_eq!(movie_note("XA/XA1.XA"), None);
+        assert_eq!(movie_note("MOV/MV9.STR"), None);
+    }
 
     #[test]
     fn a_resumed_soundtrack_starts_on_a_whole_sample_frame() {

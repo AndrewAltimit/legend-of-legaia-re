@@ -156,7 +156,11 @@ impl App {
                                     f.path,
                                     super::human_size(f.size as u64)
                                 );
-                                let row = ui.selectable_label(sel, RichText::new(text).monospace());
+                                let mut row =
+                                    ui.selectable_label(sel, RichText::new(text).monospace());
+                                if let Some(note) = crate::media::movie_note(&f.path) {
+                                    row = row.on_hover_text(note);
+                                }
                                 if row.clicked() {
                                     pick = Some(f.path.clone());
                                 }
@@ -341,6 +345,10 @@ impl App {
                 None => "no soundtrack".into(),
             }
         ));
+        if let Some(note) = crate::media::movie_note(sel) {
+            ui.label(RichText::new(note).weak());
+        }
+        let export_key = self.take_export_key();
         let st = &mut self.media;
         st.frame = st.frame.min(n - 1);
         let mut start: Option<usize> = None;
@@ -376,7 +384,12 @@ impl App {
                 stop = true;
             }
             ui.label(format!("{:.2} s", st.frame as f64 * period));
-            if ui.button("Export frame PNG...").clicked() {
+            if ui
+                .button("Export frame PNG...")
+                .on_hover_text("Ctrl+E")
+                .clicked()
+                || export_key
+            {
                 export = true;
             }
         });
