@@ -182,3 +182,50 @@ pub fn fight_on_hold(state: u32) -> bool {
 pub fn lineup_live(state: u32) -> bool {
     matches!(state, ST_SELECT_SETUP | ST_SELECT)
 }
+
+/// What one tick of a player-select fighter decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineupTick {
+    /// The match phase is up: the actor takes its retire bit and nothing else.
+    pub retire: bool,
+    /// The depth-cue level `+0x78` it draws at: `0` (full colour) for the
+    /// fighter a cursor rests on, `0x800` (halfway to the colour word, which
+    /// the tick zeroes) for the others.
+    pub cue: u16,
+    /// The clip rate `+0x6A`: byte `+7` of its clip record.
+    pub rate: u16,
+}
+
+/// Depth-cue level of a player-select fighter no cursor rests on.
+pub const LINEUP_DIM_CUE: u16 = 0x800;
+
+/// One tick of a player-select fighter (`FUN_801D3390`, the tick of the
+/// template at `0x801D760C`): retire once the match phase `DAT_801DBF78` is
+/// non-zero (`0x801D33A8..0x801D33B8`); otherwise draw at full colour when the
+/// fighter's roster id `+0x5A` matches the select cursor `DAT_801DBF70` or the
+/// second match `DAT_801DBF74` (`0x801D33CC..0x801D33F8`), at
+/// [`LINEUP_DIM_CUE`] otherwise, and take the clip rate off the record. The
+/// select pose passes `second = None` where it has no `DAT_801DBF74`.
+///
+/// PORT: FUN_801D3390
+pub fn lineup_tick(
+    roster: i32,
+    cursor: i32,
+    second: Option<i32>,
+    match_phase: i32,
+    record_rate: u8,
+) -> LineupTick {
+    if match_phase != 0 {
+        return LineupTick {
+            retire: true,
+            cue: 0,
+            rate: 0,
+        };
+    }
+    let lit = roster == cursor || second == Some(roster);
+    LineupTick {
+        retire: false,
+        cue: if lit { 0 } else { LINEUP_DIM_CUE },
+        rate: u16::from(record_rate),
+    }
+}

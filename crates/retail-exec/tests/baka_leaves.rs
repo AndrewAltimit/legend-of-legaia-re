@@ -1065,3 +1065,73 @@ fn the_afterimage_passes_as_retail_passes_it() {
         "{drawn} {expired} {retired}"
     );
 }
+
+/// The player-select fighter's tick `FUN_801D3390` over generated roster ids,
+/// cursors, second matches, match phases and clip records, against
+/// `lineup_tick`: the retire bit, the cue `+0x78`, the rate `+0x6A`; and the
+/// two stores the kernel's doc names, the colour word `+0x74` zeroed and the
+/// flag bit `2` cleared, on a live tick. The clip driver `FUN_800204F8` is
+/// stubbed.
+#[test]
+fn the_lineup_fighter_ticks_as_retail_ticks_it() {
+    use legaia_engine_minigames::baka_cabinet::lineup_tick;
+    const LINEUP: u32 = 0x801D_3390;
+    const CURSOR_G: u32 = 0x801D_BF70;
+    const SECOND_G: u32 = 0x801D_BF74;
+    const PHASE_G: u32 = 0x801D_BF78;
+    const CLIP_TABLE: u32 = 0x8016_0000;
+    const FIGHTER: u32 = 0x8014_3000;
+    differential!(prot(976, LINEUP));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8002_04F8, 0);
+    cpu.mem.wr32(0x8007_B888, CLIP_TABLE);
+    let mut rng = Rng(0x4C49_4E45);
+    let (mut lit, mut dim, mut retired) = (0, 0, 0);
+    for case in 0..10_000 {
+        let roster = rng.below(5) as i32;
+        let cursor = rng.below(4) as i32;
+        let second = rng.below(5) as i32 - 1;
+        let phase = if rng.below(4) == 0 {
+            1 + rng.below(2) as i32
+        } else {
+            0
+        };
+        let rate = rng.next() as u8;
+        let id = rng.below(0x20);
+        cpu.mem.wr32(CLIP_TABLE + 4 * id, 0x200 + 0x10 * id);
+        cpu.mem.wr8(CLIP_TABLE + 0x200 + 0x10 * id + 7, rate);
+        cpu.mem.wr32(CURSOR_G, cursor as u32);
+        cpu.mem.wr32(SECOND_G, second as u32);
+        cpu.mem.wr32(PHASE_G, phase as u32);
+        let flags = rng.next() & !8;
+        cpu.mem.load(FIGHTER, &[0xA5; 0x100]);
+        cpu.mem.wr32(FIGHTER + 0x10, flags);
+        cpu.mem.wr16(FIGHTER + 0x5A, roster as u16);
+        cpu.mem.wr16(FIGHTER + 0x5C, id as u16);
+        assert_eq!(cpu.call(LINEUP, &[FIGHTER]), Stop::Returned, "case {case}");
+        let t = lineup_tick(roster, cursor, Some(second), phase, rate);
+        let f = cpu.mem.rd32(FIGHTER + 0x10);
+        assert_eq!(f & 8 != 0, t.retire, "case {case}");
+        if t.retire {
+            assert_eq!(f, flags | 8, "case {case}: retire only");
+            retired += 1;
+            continue;
+        }
+        assert_eq!(f, flags & !2, "case {case}: flag bit 2 cleared");
+        assert_eq!(cpu.mem.rd16(FIGHTER + 0x78), t.cue, "case {case}: cue");
+        assert_eq!(cpu.mem.rd16(FIGHTER + 0x6A), t.rate, "case {case}: rate");
+        assert_eq!(cpu.mem.rd32(FIGHTER + 0x74), 0, "case {case}: colour word");
+        if t.cue == 0 {
+            lit += 1;
+        } else {
+            dim += 1;
+        }
+    }
+    assert!(
+        lit > 1000 && dim > 1000 && retired > 1000,
+        "{lit} {dim} {retired}"
+    );
+}
