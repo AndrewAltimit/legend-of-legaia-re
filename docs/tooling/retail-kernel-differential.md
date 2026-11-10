@@ -1229,3 +1229,32 @@ format machine `FUN_801E13B8`, the directory classifier `FUN_801E1208` and the f
 `FUN_801E1114` match. The developer menu's adjuster `FUN_801E9F64` (`dev_menu_adjust`) showed the
 12-bit ring arm testing its two pad bits independently, and the row-action dispatcher
 `FUN_801EA9B0` storing a phase on every one of its arms, not only the out-of-range one.
+
+The dance lesson `FUN_801D0750` (`dance_tutorial`), run whole over the hall's data window, showed the
+port's script was a caption walker and not the mode's controller. Its two free-dance steps wait on
+`900` units of the frames-danced word `DAT_801D5150`, which the hall's state `10` raises; the port
+waited on `900` points of score, which both steps clear on every frame. The lesson also holds the
+song timer, raises the load gate that turns presses away while the Disco King talks, restocks the
+triangles and sends the hall back to its count-in, none of which the port did. The triangle window
+`DAT_801D5144` is stepped by the lesson's practice step alone; the port decayed it every frame of
+every mode, and the whole-song differential had been patching retail's word to agree. The same
+window now reads retail's own word in `dance_floor`, with the miss window and the frames danced.
+
+The beat track `FUN_801D2524` (`dance_hud`) opens its draw area through column `x + 0x50` (the
+`E4` corner is the last column drawn) where the port cropped one column short, and lights its second
+note while the human's closed chain flashes (`DAT_801D558C`), which the port had no writer for. The
+HUD driver `FUN_801D231C`, the count-in banner `FUN_801D2D98`, the hit sting `FUN_801D3D78`, the
+floor spawner `FUN_801D0190` (`dance_spawn`), the sprite-part emit `FUN_801D387C`, the face stamp
+`FUN_801D03C4` (`dance_parts`) and the teardown `FUN_801D414C` match.
+
+The contest hub `FUN_801CF870` (`muscle_hub`) matches `FirstVisitHub::tick` frame for frame through
+a first visit, and shows a retail fault the port does not carry: arm `0x15` steps the state once
+for its hold running out and once more for a skip press on that same frame, which leaves the hub on
+an arm it does not have ([the hub's arms](../subsystems/minigame-muscle-dome.md)).
+
+The fishing tackle screen `FUN_801D0F5C` (`fishing_tackle`) draws an equipped lure's count in the
+row's highlight ink, since the numeral draw reads the ink word the name left; the port drew it
+plain. The bring-up `FUN_801CF070`, the help panel `FUN_801D72A0`, the centred caption
+`FUN_801D73B8` (`minigame_panels`), the sky strip `FUN_801D24EC` (`fishing_sky`), the Baka Fighter
+help panel `FUN_801D6CBC`, the cameo animator `FUN_801D6310` (`baka_cameo`) and the back-read loader
+tick `FUN_801F6B24` (`panel_backread`) match.
