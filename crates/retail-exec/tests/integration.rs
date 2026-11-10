@@ -40,6 +40,7 @@ mod attack_camera;
 mod audio_pitch;
 mod auto_combo;
 mod auto_command;
+mod baka_chrome;
 mod baka_fight;
 mod baka_leaves;
 mod battle_char_splice;

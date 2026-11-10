@@ -792,7 +792,7 @@ Three chrome bodies are pure frame-counter timelines over `FUN_801D5ED0`: given 
 | Frames | Draw |
 |---|---|
 | `30..99` | fades the logo (widget `0x28`) up at `(0xA0, 0x80)`, brightness `(t - 30) * 8` with the multiplier held at `0x10`; fires `XA33` channel `0x0E` once |
-| `100..139` | holds the logo at `0x80`, fires `XA33` channel `0x0F`, tints the screen white for four frames, and shrinks the subtitle (widget `0x22`) in from `size = 0x1000 + (0x10 - k) << 11` while flipping widget 34's CLUT (`0x801D740E`) between `0x7742` and `0x7740` |
+| `100..139` | holds the logo at `0x80`, fires `XA33` channel `0x0F`, flashes the screen red for four frames (`FUN_80024EE4(1, 1, 0xFF)`, an additive quad whose colour word carries the red byte alone, `0x801D5ACC`), and shrinks the subtitle (widget `0x22`) in from `size = 0x1000 + (0x10 - k) << 11` while flipping widget 34's CLUT (`0x801D740E`) between `0x7742` and `0x7740` |
 | `140..` | the full card: a four-cell caption ramp (widgets `0x24..0x27`, one per four frames from `t = 147`, tested **unsigned** so the negative early quotients fall through undrawn), a sweep bar (widget `0x32`) whose level ramps `4` per frame from `-0x80`, a screen tint fading white to black over 64 frames, then the logo, the subtitle, the two side ornaments (`0x2A` at `x = 0x86`, `0x2B` at `x = 0xBB`) and the underline (`0x23`) |
 
 The Ghidra dump at this address is truncated (80 bytes / 20 instructions, no `jr ra`); the overlay image holds 680 bytes / 170 instructions. Disassemble PROT 0976 at base `0x801CE818` instead.

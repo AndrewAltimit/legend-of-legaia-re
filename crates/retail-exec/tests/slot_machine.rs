@@ -561,3 +561,86 @@ fn whole_sessions_play_out_as_retail_plays_them() {
     assert!(spins > 2000 && wins > 100 && quits > 100 && broke > 20 && rules > 20);
     assert!([0, 1, 2, 3, 6].iter().all(|&i| modes[i] > 20), "{modes:?}");
 }
+
+/// The payline pass `FUN_801D3380` with its projection wrapper and primitive
+/// link hooked, over every winning-line word and generated depths, against
+/// `payline_prims` and `payline_ot_depth`: each packet's tag, colour and code,
+/// the two endpoints it hands the projection and the bucket it links at.
+#[test]
+fn the_paylines_are_the_packets_retail_links() {
+    differential!(prot(975, PAYLINES));
+    const PAYLINES: u32 = 0x801D_3380;
+    const PROJECT: u32 = 0x8003_D368;
+    const LINK: u32 = 0x8003_D2C4;
+    const CTX: u32 = 0x1F80_0314;
+    const PACKETS: u32 = 0x8010_0000;
+    const OT: u32 = 0x8018_0000;
+    use legaia_engine_minigames::slot_machine::{payline_ot_depth, payline_prims};
+    use legaia_minigame_formats::minigame_slot_scene::parse_paylines;
+    use psx_retail_exec::{A0, A1};
+    use std::cell::RefCell;
+    let state = Rc::new(Cell::new(0));
+    let (Some((mut cpu, _)), Some(d)) = (rig(&state), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d.read_entry(975).expect("PROT 0975");
+    let lines = parse_paylines(&overlay).expect("paylines");
+    // `(x, y, z)` of each endpoint projected, in call order, and the depths
+    // the wrapper answers.
+    let seen: Rc<RefCell<Vec<(i16, i16, i16)>>> = Rc::default();
+    let depths: Rc<RefCell<Vec<i32>>> = Rc::default();
+    let links: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let (s, dq) = (seen.clone(), depths.clone());
+    cpu.hook(PROJECT, move |r, m| {
+        let p = r.r[A0];
+        s.borrow_mut()
+            .push((m.rd16(p) as i16, m.rd16(p + 2) as i16, m.rd16(p + 4) as i16));
+        r.r[V0] = dq.borrow_mut().remove(0) as u32;
+    });
+    let l = links.clone();
+    cpu.hook(LINK, move |r, _| l.borrow_mut().push((r.r[A0], r.r[A1])));
+    let mut rng = Rng(0x4C49_4E45);
+    for round in 0..2000 {
+        let winning = rng.below(7) as i32 - 1;
+        let shift = rng.below(4);
+        let ds: Vec<i32> = (0..lines.len() * 2)
+            .map(|_| rng.below(0x4000) as i32 - 0x400)
+            .collect();
+        *depths.borrow_mut() = ds.clone();
+        seen.borrow_mut().clear();
+        links.borrow_mut().clear();
+        cpu.mem.wr32(CTX + 0x8C, PACKETS);
+        cpu.mem.wr32(CTX + 0xE0, OT);
+        cpu.mem.wr8(CTX + 0x90, shift as u8);
+        cpu.mem.wr32(LINE, winning as u32);
+        assert_eq!(cpu.call(PAYLINES, &[]), Stop::Returned);
+        let prims = payline_prims(&lines, winning);
+        assert_eq!(links.borrow().len(), prims.len(), "round {round}");
+        for (i, prim) in prims.iter().enumerate() {
+            let packet = PACKETS + i as u32 * 0x10;
+            let bucket = payline_ot_depth(ds[i * 2 + 1], shift);
+            assert_eq!(
+                (
+                    links.borrow()[i],
+                    cpu.mem.rd32(packet),
+                    cpu.mem.rd32(packet + 4),
+                    seen.borrow()[i * 2],
+                    seen.borrow()[i * 2 + 1],
+                ),
+                (
+                    (OT.wrapping_add((bucket << 2) as u32), packet),
+                    0x0300_0000,
+                    u32::from_le_bytes([prim.color.0, prim.color.1, prim.color.2, prim.code]),
+                    (prim.a.x, prim.a.y, prim.a.z),
+                    (prim.b.x, prim.b.y, prim.b.z),
+                ),
+                "round {round} line {i} winning {winning} shift {shift}"
+            );
+        }
+        assert_eq!(
+            cpu.mem.rd32(CTX + 0x8C),
+            PACKETS + 0x10 * prims.len() as u32
+        );
+    }
+}
