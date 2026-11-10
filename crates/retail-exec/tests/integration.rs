@@ -270,6 +270,7 @@ mod reflection;
 mod region_scan;
 mod render_leaves;
 mod ribbon;
+mod ringside_backdrop;
 mod rot_matrix;
 mod round_boundary;
 mod round_end;
