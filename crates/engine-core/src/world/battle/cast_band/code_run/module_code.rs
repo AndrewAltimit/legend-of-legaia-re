@@ -489,6 +489,14 @@ impl World {
         if let Some(reach) = capture_arm.as_ref().and_then(|a| a.caster_reach) {
             self.store_caster_reach(caster_slot, reach);
         }
+        if let Some(arm) = capture_arm.as_ref() {
+            if let Some(r) = arm.caster_radius {
+                self.store_caster_radius(caster_slot, Some(r));
+            }
+            if arm.caster_radius_restore {
+                self.store_caster_radius(caster_slot, None);
+            }
+        }
         // A director arm that names the body's damage-wrapper call folds the
         // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
         // victim's reaction - which the body's next arm waits out - starts
@@ -2168,6 +2176,9 @@ impl World {
             if arm.backdrop_off {
                 self.battle.backdrop_cue =
                     legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
+            }
+            if let Some(id) = arm.cue {
+                self.dispatch_battle_cue(id);
             }
         }
         // The hit-tint stores: colour word, blend and impact selector.

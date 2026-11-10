@@ -826,6 +826,7 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
     assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), Some(0));
+    assert_eq!(capture_exit_yaw_base(958, BLAZING_SLASH_BODY), Some(0));
     assert_eq!(capture_exit_yaw_base(960, 0x801F_69D8), Some(0));
     assert_eq!(capture_exit_yaw_base(960, 0x801F_74E4), Some(0));
 }

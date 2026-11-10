@@ -4084,6 +4084,7 @@ three units). The bodies without that store keep the half turn
 | 0941 `0x51` Steal, `0x801F730C` | case 6 on the caster through every arm; no `FUN_801D829C` | `0x801F83EC`, seeded `scalar << 5`; arm 1 holds on `FUN_8004E2F0` instead |
 | 0955 `0x73` Void Accessories, `0x801F6A28` | arm 0's `0xC`-frame shot on the caster, arm 1's `0xA0`-frame pull (pitch `-0xA0`, TR `(0, 0x740, ctx[+0x6D0] / 3)`), arm 2's cut on the victim (TR `(0, 0x300, 0x600)`), TR z `+scalar` through arms 3 and 4 | `0x801F9D28`, seeded `scalar * 12` |
 | 0960 `0x7B` Plasma Strike, `0x801F74E4` | [below](#prot-0960-plasma-strike) | `0x801F8E50`, seeded `scalar * 12`; arms 5, 6 and `0xD` gate on the caster's clip instead, arms 7..`0xF` re-arm by storing |
+| 0958 `0x79` Blazing Slash, `0x801F6DD8` | [below](#prot-0958-blazing-slash) | `0x801F93B8`, seeded `scalar * 12` and re-armed by adding; arm 24 holds on the victim's knockdown clip instead. The phase port (`blazing_slash_tick`) keeps the phase, so the director carries the countdown |
 | 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
@@ -4287,6 +4288,49 @@ fight: from `nivora_duel_che_vs_gala_start` (the monster-pick probe) it lands
 `218`, `238` and nine hits of `~145` on a full `1446`-HP Gala and drops her.
 Che casts it on every round whose mode counter `ctx[+0x28A]` reads `2` mod 3
 (the monster AI's `0xA2..=0xA4` arm), so a player guards that round.
+
+<a id="prot-0958-blazing-slash"></a>
+
+**0958 Blazing Slash** (`cast_module_camera::blazing_slash_camera`) is the
+third body of the same family: 26 arms off the 256-word table at the image
+head, then `0xFF`, with eleven `FUN_801D829C` shots. Arm 0 stands the caster
+at `(0, 0x80)` facing `0x800` and the victim at `(0, -0x80)` facing `0`,
+stores yaw `0`, TR z `0x1000` and the focus at the origin, and arms a
+`0xC`-frame shot behind the caster at half the framing depth. Arms 1..5 walk
+TR z (`+s/4`, then `+s/8`) through a `0x40`-frame rise, a full yaw turn on
+arm 3 and two one-frame cuts on the caster's body point (TR z `depth / 8`,
+then `depth`). Arm 6 pulls in (`-4s` TR z, `-s/2` pitch) and cuts to the
+victim as the first hit lands; arm 7 stands the caster at `z = 0x180` on clip
+`0x0C`, and arm 8 zeroes its body radius so the runs pass through the victim.
+
+Three runs follow, each a drift pair and a cut. Arms 9 / 10 carry the caster
+`-8s` a vsync with the focus (`-7s`), yaw `-2s`, TR z `+8s`, TR y `-3s`; arm
+11 cuts to the victim's body point and stands the caster at `z = -0x580`
+facing `0`. Arms 12 / 13 run it back (`+7s`, yaw `+4s`), arm 14 cuts again
+and stands it at `z = 0x140` facing `0x800`, and arms 15 / 16 run it through
+once more (`-7s`, yaw `+3s`). Each run's first arm stages the victim's own
+knockdown (`+0x1F1`) as it passes, turned (`0x800`, then `0`) and shoved
+`0x300` along z on the second and third. Arms 10, 13 and 16 hold the
+victim's cursor at `0x10` or past.
+
+Arm 18 stands the caster at `(-8, -0x400)` on clip `0x0A` behind a cut, arm
+19 lifts the camera, arm 21 hops the caster forward (`+2s` a vsync, height
+`-(sin(8 w) / 8)` off the countdown word `w`) and lands it at `z = -0x200`
+with cue `0x56` and two records. Arm 22 zooms out (`+4s` TR z) while the
+flame record `0x801F9348` is seated again each time the countdown falls to
+the pacing word `0x801F93BC` (seeded `84 s`, lowered `12 s` a call), then
+flushes the pool and cuts to the caster at `(0, 0x1C0)` on clip `0x0D`. Arm
+24 waits for the victim to leave its knockdown clip, and arm 25 clears both
+stages, zeroes `ctx[+0x6DA]` and cuts to the hand-back framing.
+
+Records: arm 0 `0x801F8EB8`, arm 5 `0x801F9164`, arms 9 / 12 / 15
+`0x801F91EC` / `0x801F9260` / `0x801F92D4`, arm 21 `0x801F9164` and
+`0x801F9348`, all on the caster's live trio; arms 4, 6 and 22 flush. The six
+`FUN_801DD6B4` sites (`0x801F74EC`, `0x801F7854`, `0x801F7CA4`, `0x801F80E4`,
+`0x801F8754`, `0x801F88D8`) stay with the band's fold. A frozen seat
+(`+0x21D = 0`) takes no root-motion step, so the victim the module freezes
+mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
+`.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
 
 <a id="prot-0960-plasma-strike"></a>
 

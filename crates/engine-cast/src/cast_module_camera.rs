@@ -312,6 +312,9 @@ pub struct ModuleCamState {
     /// The victim's playing clip `+0x1D9` equals its `+0x1F2` slot, fed by
     /// the host (PROT 0959's arms 9 and `0x0B` freeze it there).
     pub victim_on_gate_clip: bool,
+    /// The victim's playing clip `+0x1D9` equals its knockdown slot `+0x1F1`,
+    /// fed by the host (PROT 0958's arm 24 holds on it).
+    pub victim_on_knockdown_clip: bool,
     /// Whether this tick opens a battle frame, fed by the host: an arm whose
     /// state steps once a pass (PROT 0959's shake toggle) steps on it.
     pub opens_pass: bool,
@@ -1059,6 +1062,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 mod aluru;
 mod astral_slash;
 mod blade_breath;
+mod blazing_slash;
 mod bloody_horns;
 mod body_kit;
 mod body_paced;
@@ -1128,6 +1132,9 @@ pub use blade_breath::{
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
     capture_approach_reach, capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
+};
+pub use blazing_slash::{
+    BLAZING_SLASH_BODY, BLAZING_SLASH_COUNTDOWN, blazing_slash_camera, blazing_slash_hop_height,
 };
 pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
 pub use capture::*;

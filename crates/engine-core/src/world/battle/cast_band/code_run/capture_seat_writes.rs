@@ -108,6 +108,7 @@ impl World {
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
         let v = self.cast_view(victim_slot);
         st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
+        st.victim_on_knockdown_clip = v.playing_anim == v.knockdown_anim;
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
@@ -147,6 +148,23 @@ impl World {
         self.casting.caster_size_store = Some((caster, size));
         if let Some(a) = self.actors.get_mut(usize::from(caster)) {
             a.battle.render_radius = Some(radius);
+        }
+    }
+
+    /// A module's store into a monster caster's body radius alone
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_radius`]);
+    /// `None` puts it back on the seat's size class
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_radius_restore`]).
+    pub(in crate::world::battle::cast_band) fn store_caster_radius(
+        &mut self,
+        caster: u8,
+        radius: Option<i16>,
+    ) {
+        if caster < self.party.party_count {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(usize::from(caster)) {
+            a.battle.render_radius = radius;
         }
     }
 
@@ -228,6 +246,12 @@ impl World {
         if let Some(r) = w.rate {
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
         }
+        if let Some(floor) = w.seek_floor
+            && let Some(p) = a.battle_animation.as_mut()
+            && p.cursor_sixteenths() < floor
+        {
+            p.seek_sixteenths(floor);
+        }
         if w.cursor_reset
             && let Some(p) = a.battle_animation.as_mut()
         {
@@ -264,6 +288,13 @@ impl World {
             {
                 self.commit_staged_battle_anim_at_boundary(i);
             }
+        }
+        // The seat's own `+0x1F1` staged with the bump: its knockdown cuts
+        // in at once, as the damage primitive's does.
+        if w.stage_knockdown
+            && let Some(map) = self.battle_reaction_map(usize::from(slot))
+        {
+            self.commit_battle_reaction_entry(usize::from(slot), map[2]);
         }
     }
 

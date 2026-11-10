@@ -974,6 +974,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
             Some(super::SCYTHE_WIND_BODY | super::CHAOS_FLARE_BODY)
         ),
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
+        958 => body == Some(super::BLAZING_SLASH_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,
@@ -1045,7 +1046,8 @@ pub fn capture_arm_moves_to_victim(prot_entry: u32, phase: u8) -> Option<u32> {
 /// their pass, ahead of their own spawns: every part the module seated
 /// through `FUN_80050ED4` gets its halt bit. PROT 0938's arms 2 and 3
 /// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`),
-/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`) and PROT 0959's
+/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`), PROT 0958's arms 4,
+/// 6 and 22 (`0x801F722C`, `0x801F7464`, `0x801F8958`) and PROT 0959's
 /// arms 4, `0x0B`, `0x0E` and `0x0F` (`0x801F6ECC`, `0x801F77CC`,
 /// `0x801F7BE4`, `0x801F7F60`) and PROT 0960's arm 4 (`0x801F79D0`).
 ///
@@ -1060,6 +1062,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (940, 7)
             | (944, 2 | 4)
             | (946, 6)
+            | (958, 4 | 6 | 22)
             | (959, 4 | 0x0B | 0x0E | 0x0F)
             | (960, 4)
             | (962, 3)
@@ -1220,6 +1223,12 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
         (966, 10) => &E966_10,
         (966, 23) => &E966_23,
         (966, 26) => &E966_26,
+        (958, 0) => &super::blazing_slash::E958_0,
+        (958, 5) => &super::blazing_slash::E958_5,
+        (958, 9) => &super::blazing_slash::E958_9,
+        (958, 12) => &super::blazing_slash::E958_12,
+        (958, 15) => &super::blazing_slash::E958_15,
+        (958, 21) => &super::blazing_slash::E958_21,
         (959, 0) => &super::megaton_press::E959_0,
         (959, 8) => &super::megaton_press::E959_8,
         (959, 0x0B) => &super::megaton_press::E959_B,

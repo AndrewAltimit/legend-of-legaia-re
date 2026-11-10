@@ -59,6 +59,17 @@ pub struct CaptureCamArm {
     /// radius (`+0x58` behind `+0x22C`), the words the range poll and the
     /// separation pass read.
     pub caster_reach: Option<(u8, i16)>,
+    /// The arm's pass stores the caster's body radius alone (`+0x58` behind
+    /// `+0x22C`), the size class left as it stands: PROT 0958's arm 8 zeroes
+    /// it ahead of the caster's runs through its victim (`0x801F76A8`).
+    pub caster_radius: Option<i16>,
+    /// The cue the arm's pass hands the dispatcher (`FUN_8004FCC8(id)`), for
+    /// a call the module makes on its own and no hit or clip sounds: PROT
+    /// 0958's arm 21 (`0x56` at `0x801F87BC`).
+    pub cue: Option<u16>,
+    /// The arm's pass puts the caster's body radius back on its size class
+    /// (`record[+0x1F] << 5`): PROT 0958's `0xFF` arm (`0x801F8CCC..0x801F8CE4`).
+    pub caster_radius_restore: bool,
     /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
     /// record stands as seat 7, on the caster.
     pub seats_creature: bool,
@@ -274,6 +285,13 @@ pub struct CaptureSeatWrite {
     pub cursor_reset: bool,
     /// A store into the seat's node cursor `+0x68` (12.4).
     pub seek: Option<u16>,
+    /// The seat's node cursor `+0x68` raised to this where it reads under
+    /// it (`slti; beq; sh`): PROT 0958's arms 10, 13 and 16 on the victim.
+    pub seek_floor: Option<u16>,
+    /// The seat's own knockdown slot `+0x1F1` staged onto `+0x1DA` with the
+    /// `+0x1DC` bump (`lbu a0,0x1f1; sb a0,0x1da`): the reaction a body
+    /// stages itself beside its damage call (PROT 0958's arms 6, 9, 12, 15).
+    pub stage_knockdown: bool,
 }
 
 impl CaptureSeatWrite {
@@ -313,6 +331,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (938, super::CHAOS_BREATH_BODY) => Some(super::chaos_breath_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
+        (958, super::BLAZING_SLASH_BODY) => Some(super::blazing_slash_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
         (960, super::PLASMA_STRIKE_BODY) => Some(super::plasma_strike_camera),
         (960, super::NEO_STAR_SLASH_BODY) => Some(super::neo_star_slash_camera),
@@ -403,10 +422,12 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// Three bodies zero the counter instead (`sh zero,0x2(base)` beside `sb
-/// zero,0xd`): PROT 0959 Megaton Press (`0x801F8214`), PROT 0960 Plasma Strike
-/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). Retail films of all three read the
-/// counter `0` on `0x71`, and the first Done pass adds its drift.
+/// Four bodies zero the counter instead (`sh zero,0x2(base)`): PROT 0958
+/// Blazing Slash (`0x801F8C58`, on its arm 25), PROT 0959 Megaton Press
+/// (`0x801F8214`), PROT 0960 Plasma Strike (`0x801F85FC`) and Neo Star Slash
+/// (`0x801F74A8`), the last three beside their `sb zero,0xd`. Retail films of
+/// all four read the counter `0` on `0x71`, and the first Done pass adds its
+/// drift.
 ///
 /// The bodies of 0946..0948 and 0953 clear `ctx[+0x0D]` without the store
 /// ([`capture_exit_clears_style`]).
@@ -426,7 +447,8 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
         | (963, 0x801F_6A20)
         | (964, 0x801F_69D8 | 0x801F_88EC)
         | (966, SINGLE_BODY) => Some(YAW),
-        (959, super::MEGATON_PRESS_BODY)
+        (958, super::BLAZING_SLASH_BODY)
+        | (959, super::MEGATON_PRESS_BODY)
         | (960, super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY) => Some(0),
         _ => None,
     }

@@ -274,10 +274,14 @@ pub const BLAZING_SLASH_TERMINAL_ARM: u8 = 0xFF;
 /// `hit` names which of the six sites fires this frame; the caller supplies
 /// the roll so the RNG cursor stays retail's.
 ///
+/// The camera arms, the countdown gates that pace the arms, the seat stores
+/// and the per-arm spawns are
+/// [`crate::cast_module_camera::blazing_slash_camera`], which holds this
+/// body off while an arm's gate is shut.
+///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F6DD8 (phase machine + damage/staging; packet + camera arms
-/// unported)
+/// PORT: FUN_801F6DD8 (phase machine + damage/staging)
 pub fn blazing_slash_tick(
     ctx: &mut CastModuleCtx,
     victim: &mut CastActorState,
