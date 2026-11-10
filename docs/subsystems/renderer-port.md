@@ -411,7 +411,11 @@ by default in the renderer, and off IS retail** - the disabled path is pixel-ide
 `strength` is the host's eased output of the **visibility gate**
 (`engine-scene::field_occlusion`): a 5-point eye-to-player ray-cast against
 the static scene that arms the fade only when the character is completely
-hidden - a partially visible character never fades. A fragment then fades
+hidden - a partially visible character never fades. Only draws the frame
+draws count: the occluder set is built once per scene from every static
+draw, and the gate asks the shared `field_view_window::occluder_drawn` for
+each range (the terrain crop, the actor cull at the object's base position),
+so a wall the crop or the cull dropped cannot open a hole over the player. A fragment then fades
 only when its draw is environment geometry (the
 `set_occlusion_env_draws` watermark exempts the player / NPC draws via
 `flags[2]`), it is nearer the camera than the player by more than a small

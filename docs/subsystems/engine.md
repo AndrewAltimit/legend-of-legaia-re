@@ -553,6 +553,14 @@ The second cave, entered through the cliff opening at tile `(117, 80)`, showed t
 
 The placed-object near reject follows the vantage the same way (`field_view_window::retail_vantage`, which also counts a scripted shot and a battle frame as retail's): it drops a whole placed object by its origin's depth, and under a swung, tilted or zoomed follow camera that origin can sit behind the lens while a ground slab fills the view ([renderer.md](renderer.md#the-placed-object-near-reject)). The per-primitive near reject and the GPU span limit stay armed off the retail vantage.
 
+### The crop and the cull hold under a scripted shot
+
+The crop and the field actor cull both read the cull view the follow camera publishes (focus, region box, visible tile window; `engine-field::camera::event_routing`). Retail's cull `FUN_801D79E8` runs every frame against the scratchpad globals whatever wrote them, so the view is published while the zone follow camera composes and while a script owns the shot. The one gap is a free-roam frame before the follow camera's first compose, whose focus is not yet the one retail's globals would hold. The region box in the view is the world's latch (scratchpad `0x1F800384..87`, written at every re-centre), which a beat's scripted player moves keep current while the follow tick is not running.
+
+Publishing it only while the follow camera was active left any beat that takes the camera first with no crop and no cull for its whole length: `rikuroa`'s summit beat (`P2[48]`) reached on the arrival tick drew scenery from the slopes below the summit around the Genesis Tree and every scripted actor wherever it stood, and a glide staged while a hand-back snap was pending dropped the view mid-beat. `web-play/tests/rikuroa_summit_page.rs` pins the crop over the whole beat.
+
+A seat no door wrote latches the region box at its tile: `World::debug_seat_player` (the page's debug seat, `LEGAIA_SEAT`) and `World::seat_player_at_tile_rescued` (`LEGAIA_START_TILE`). A seat that kept the entry's box left the focus outside it, which lifts the crop, so a reproduction through either drew the whole map.
+
 `CameraDistance::Far` is the interactive `play-window` default (1.35x retail's eye-back distance); `CameraDistance::Retail` is the pinned retail framing and the type's own `Default`. The wheel zoom and drag tilt pivot the pose about the **character's body** (`camera_frame::FOLLOW_PIVOT_LIFT` above the feet), not about retail's floor-level focus - which sits a tier under the feet in `town01` and would walk the character out of frame. The tilt clamp is widened to include the scene's own pitch, and both knobs at identity return the retail pose bit for bit.
 
 ### Every minigame must be leavable

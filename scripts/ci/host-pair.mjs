@@ -109,6 +109,11 @@ export const SCENES = {
    * them from its running scene). */
   ed_bylon: { scene: 'edbylon', viaTown: true, ticks: 900, every: 30 },
   ed_korout: { scene: 'edkorout', viaTown: true, ticks: 900, every: 30 },
+  /* Mt. Rikuroa's summit beat in Noa's chapter (issue #582): the chapter's flags raised before
+   * the entry on both hosts - the summit's entry script picks Noa as the lead only when they are
+   * up at entry time, so a pair that raised them on one host after its entry drew Vahn there -
+   * then the walk onto the beat's tile and its dialogue paged. */
+  summit582: { scene: 'rikuroa', flags: [0x2FB, 0x281, 0x282, 0x283, 0x284, 0x285], seat: [7300, 9792], ticks: 1500, every: 60, hold: [[30, 55, 'Right']], taps: every(250, 1490, 20, 'Cross') },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */
 const mgPad = () => {
@@ -187,6 +192,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
     '--screenshot-last-tick', String(opts.ticks || sc.ticks)];
   if (script) a.push('--pad-script', script);
   if (sc.coins) a.push('--cheat-coins', String(sc.coins));
+  for (const f of sc.flags || []) a.push('--set-flag', '0x' + f.toString(16));
   if (sc.warp) a.push('--key-script', `${sc.warp.tick}:${sc.warp.key}`);
   if (sc.lgsfPath) a.push('--resume-save', sc.lgsfPath);
   const env = { ...process.env, LEGAIA_SWEEP_TRACE: '1', LEGAIA_CAPTURE_NO_PRESENT: '1', LEGAIA_AUDIO_DETACHED: '1' };
@@ -221,6 +227,8 @@ async function pageRun(cfg) {
    * the entry that lands where the window does, and again after it. */
   const seedRng = () => { if (sc.lgsfPath || sc.viaTown) { if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused'); } };
   if (pick) seedRng();
+  /* The window raises `--set-flag` ahead of its scene entry, so this page does too. */
+  for (const f of sc.flags || []) { if (!rt.set_system_flag(f, true)) throw new Error('flag refused ' + f); }
   btn.click();
   const view = window.__playView;
   view.stop();
