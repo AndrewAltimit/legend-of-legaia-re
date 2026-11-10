@@ -108,6 +108,7 @@ mod range_metric;
 mod record_spawn;
 mod region_scan;
 mod rot_matrix;
+mod ribbon;
 mod round_boundary;
 mod round_end;
 mod round_open;
