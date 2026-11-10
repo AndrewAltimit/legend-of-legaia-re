@@ -484,7 +484,7 @@ pub fn menu_font_cells(
                     id: ids::ink_arrow(staging, dir as u16),
                     w: 12,
                     h: 12,
-                    rgba: cut(&rgba, w, (0xD0 + dir * 12, 208, 12, 12)),
+                    rgba: cut(&rgba, w, command_arrow_page_rect(dir)),
                 });
             }
         }
@@ -505,20 +505,94 @@ pub fn menu_font_cells(
                 });
             }
         };
-        push(ids::PAGE_TAG, 1, (80, 136, 24, 8));
-        push(ids::PAGE_SLASH, 8, (120, 136, 6, 7));
-        for d in 0..10u32 {
-            push(ids::PAGE_DIGIT + d as u16, 8, (64 + d * 6, 144, 6, 8));
+        for p in MENU_PICTOGRAMS
+            .iter()
+            .filter_map(|&(_, code)| menu_pictogram(code))
+        {
+            push(p.cell, usize::from(p.clut_row), p.rect);
         }
-        push(ids::PAGE_PREV, 7, (96, 48, 8, 8));
-        push(ids::PAGE_NEXT, 7, (96, 56, 8, 8));
-        push(ids::SERU_TAG, 8, (0xD8, 0x30, 12, 12));
-        push(ids::LIST_UP, 7, (0xA8, 0x40, 8, 8));
-        push(ids::LIST_DOWN, 7, (0xA8, 0x48, 8, 8));
-        push(ids::ITEM_SCOPE_ONE, 1, (0xE8, 0x80, 12, 12));
-        push(ids::ITEM_SCOPE_ALL, 1, (0xF4, 0x80, 12, 12));
     }
     cells
+}
+
+/// The command arrow `dir` on the menu-glyph page, `(u, v, w, h)`: the rect
+/// `FUN_8003C310` stamps into its sprite (`u = dir * 12 + 0xD0`, `v = 0xD0`,
+/// `12 x 12`; `0x8003C31C..0x8003C358`), under the staged ink's CLUT word
+/// (`0x7F86 + ink`).
+///
+/// PORT: FUN_8003C310 (the cell's page rect)
+pub const fn command_arrow_page_rect(dir: u32) -> (u32, u32, u32, u32) {
+    (0xD0 + dir * 12, 0xD0, 12, 12)
+}
+
+/// One system-UI pictogram the menus draw from a baked cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuPictogram {
+    /// The font sprite-cell id the cell is baked under.
+    pub cell: u16,
+    /// The widget code (`FUN_8002C488`'s `a2`).
+    pub code: u8,
+    /// The system-UI TIM's CLUT row the record's palette byte names.
+    pub clut_row: u8,
+    /// The sheet rect, `(u, v, w, h)`.
+    pub rect: (u32, u32, u32, u32),
+}
+
+/// The pictograms the menus bake, by widget code: the list kernel's pager
+/// pieces, the Status page's Seru tag, the list arrows, the item scope icons.
+pub const MENU_PICTOGRAMS: [(u16, u8); 19] = {
+    use legaia_font::sprite_cell_ids as ids;
+    [
+        (ids::PAGE_TAG, 0x76),
+        (ids::PAGE_SLASH, 0x79),
+        (ids::PAGE_DIGIT, 0x7A),
+        (ids::PAGE_DIGIT + 1, 0x7B),
+        (ids::PAGE_DIGIT + 2, 0x7C),
+        (ids::PAGE_DIGIT + 3, 0x7D),
+        (ids::PAGE_DIGIT + 4, 0x7E),
+        (ids::PAGE_DIGIT + 5, 0x7F),
+        (ids::PAGE_DIGIT + 6, 0x80),
+        (ids::PAGE_DIGIT + 7, 0x81),
+        (ids::PAGE_DIGIT + 8, 0x82),
+        (ids::PAGE_DIGIT + 9, 0x83),
+        (ids::PAGE_PREV, 0x27),
+        (ids::PAGE_NEXT, 0x28),
+        (ids::SERU_TAG, 0x45),
+        (ids::LIST_UP, 0x67),
+        (ids::LIST_DOWN, 0x68),
+        (ids::ITEM_SCOPE_ONE, 0x84),
+        (ids::ITEM_SCOPE_ALL, 0x85),
+    ]
+};
+
+/// A baked pictogram's cell, by widget code: what the pictogram emitter
+/// `FUN_8002C488`'s record arm (`0x8002C580..0x8002C634`) samples for that
+/// code - the record's `+4..+7` sheet rect under the CLUT its `+3` palette
+/// byte names. The records are `SCUS_942.54` data (`0x800732A4`, 12-byte
+/// stride); these are their values for the codes the menus bake.
+///
+/// PORT: FUN_8002C488 (the record arm's rect and CLUT, for the baked codes)
+pub fn menu_pictogram(code: u8) -> Option<MenuPictogram> {
+    let cell = MENU_PICTOGRAMS.iter().find(|&&(_, c)| c == code)?.0;
+    let (clut_row, rect) = match code {
+        0x76 => (1, (80, 136, 24, 8)),
+        0x79 => (8, (120, 136, 6, 7)),
+        0x7A..=0x83 => (8, (64 + u32::from(code - 0x7A) * 6, 144, 6, 8)),
+        0x27 => (7, (96, 48, 8, 8)),
+        0x28 => (7, (96, 56, 8, 8)),
+        0x45 => (8, (0xD8, 0x30, 12, 12)),
+        0x67 => (7, (0xA8, 0x40, 8, 8)),
+        0x68 => (7, (0xA8, 0x48, 8, 8)),
+        0x84 => (1, (0xE8, 0x80, 12, 12)),
+        0x85 => (1, (0xF4, 0x80, 12, 12)),
+        _ => return None,
+    };
+    Some(MenuPictogram {
+        cell,
+        code,
+        clut_row,
+        rect,
+    })
 }
 
 /// Where separator glyph `g` sits on the menu-glyph page, `(u, v, w, h)`:

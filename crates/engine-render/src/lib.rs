@@ -1,7 +1,9 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
-//! PORT: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002C488, FUN_8002B994, FUN_8003C310
+//! PORT: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002B994
 //! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC, FUN_80035EA8
+//! REF: FUN_8002C488, FUN_8003C310 (their cells are cut by
+//! `legaia_engine_menus::save_menu_atlas::{menu_pictogram, command_arrow_page_rect}`)
 //! PORT: FUN_8003C1F8 (per-glyph dialog-font sprite emit; the engine renders
 //! in-game proportional dialog glyphs via the legaia-font atlas + textured-quad
 //! overlay instead of the retail GP0 cell-UV push)

@@ -472,3 +472,117 @@ fn the_separator_glyph_is_the_cell_the_atlas_cuts() {
         );
     }
 }
+
+const ARROW: u32 = 0x8003_C310;
+const PICTOGRAM: u32 = 0x8002_C488;
+
+/// One linked `SPRT` read back: `(code, x, y, (u, v, w, h), clut word)`.
+type Sprt = (u8, i32, i32, (u32, u32, u32, u32), u16);
+
+fn sprt(rig: &mut Rig, p: u32) -> Sprt {
+    let m = &mut rig.cpu.mem;
+    (
+        m.rd8(p + 7),
+        i32::from(m.rd16(p + 8) as i16),
+        i32::from(m.rd16(p + 0xA) as i16),
+        (
+            u32::from(m.rd8(p + 0xC)),
+            u32::from(m.rd8(p + 0xD)),
+            u32::from(m.rd16(p + 0x10)),
+            u32::from(m.rd16(p + 0x12)),
+        ),
+        m.rd16(p + 0xE),
+    )
+}
+
+/// The command arrow `FUN_8003C310(dir, x, y)`, run live: one 12x12 `SPRT`
+/// at the pen off the menu-glyph page, under the staged ink's CLUT. Held to
+/// the rect the atlas build cuts each arrow from (`command_arrow_page_rect`).
+#[test]
+fn the_command_arrow_is_the_cell_the_atlas_cuts() {
+    differential!(scus(ARROW));
+    use legaia_engine_menus::save_menu_atlas::command_arrow_page_rect;
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x4152_524F);
+    for round in 0..4_000 {
+        let dir = rng.below(4);
+        let (x, y) = (rng.below(340) as i32 - 10, rng.below(250) as i32 - 5);
+        let ink = rng.below(10);
+        rig.cpu.mem.wr32(INK, ink);
+        rig.reset();
+        assert_eq!(
+            rig.cpu.call(ARROW, &[dir, x as u32, y as u32]),
+            Stop::Returned
+        );
+        let what = format!("round {round}: dir {dir} ink {ink} at ({x}, {y})");
+        let prims = rig.prims.borrow().clone();
+        assert_eq!(prims.len(), 2, "{what}: the sprite and its draw mode");
+        assert!(prims.iter().all(|p| p.0 == OT + 4), "{what}: slot one");
+        let got = sprt(&mut rig, prims[0].1);
+        assert_eq!(
+            got,
+            (
+                0x64,
+                x,
+                y,
+                command_arrow_page_rect(dir),
+                0x7F86 + ink as u16
+            ),
+            "{what}"
+        );
+    }
+}
+
+/// The pictogram emitter `FUN_8002C488(x, y, code)`, run live over every
+/// code the menus bake: its record arm links one `SPRT` at the pen, on the
+/// system-UI page, under the CLUT the record's palette byte names
+/// (`0x7FC0 + row` for a row below `0x40`). Held to `menu_pictogram`.
+#[test]
+fn the_baked_pictograms_are_the_cells_retail_draws() {
+    differential!(scus(PICTOGRAM));
+    use legaia_engine_menus::save_menu_atlas::{MENU_PICTOGRAMS, menu_pictogram};
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The rig stands this routine in for the line renderer's escapes; here
+    // it runs.
+    rig.cpu.unhook(PICTOGRAM);
+    // `SetDrawMode(p, 0, 0, tpage, 0)`: keep the page it is handed.
+    rig.cpu.unhook(SET_DRAW_MODE);
+    rig.cpu.hook(SET_DRAW_MODE, |r, m| {
+        m.wr32(r.r[A0] + 4, 0xE100_0000 | r.r[psx_retail_exec::A3])
+    });
+    let mut rng = Rng(0x5049_4354);
+    let mut modes = Vec::new();
+    for round in 0..2_000 {
+        let &(_, code) = &MENU_PICTOGRAMS[rng.below(MENU_PICTOGRAMS.len() as u32) as usize];
+        let (x, y) = (rng.below(340) as i32 - 10, rng.below(250) as i32 - 5);
+        rig.reset();
+        assert_eq!(
+            rig.cpu
+                .call(PICTOGRAM, &[x as u32, y as u32, u32::from(code)]),
+            Stop::Returned
+        );
+        let what = format!("round {round}: code {code:#x} at ({x}, {y})");
+        let prims = rig.prims.borrow().clone();
+        assert_eq!(prims.len(), 2, "{what}: the sprite and its draw mode");
+        let p = menu_pictogram(code).expect("a baked code");
+        let got = sprt(&mut rig, prims[0].1);
+        assert_eq!(
+            got,
+            (0x64, x, y, p.rect, 0x7FC0 + u16::from(p.clut_row)),
+            "{what}"
+        );
+        modes.push(rig.cpu.mem.rd32(prims[1].1 + 4));
+    }
+    // Every pictogram samples the system-UI page (tpage `0x1E`).
+    assert!(
+        modes.iter().all(|&m| m & 0x1F == 0x1E),
+        "{:x?}",
+        &modes[..4]
+    );
+}
