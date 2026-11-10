@@ -124,3 +124,80 @@ fn the_toc_span_is_retails() {
         assert_eq!(Some(cpu.regs.r[V0]), port, "RAM index {i}");
     }
 }
+
+/// The boot loader's PROT TOC read `FUN_8003E4E8`.
+const TOC_LOAD: u32 = 0x8003_E4E8;
+
+#[test]
+fn the_toc_load_installs_the_ports_toc() {
+    differential!(scus(TOC_LOAD));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use psx_retail_exec::{A0, A1, A2};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const RAM_TOC: u32 = 0x801C_70F0;
+    const NAME: u32 = 0x8015_0000;
+    let prot = disc.read_named_file("PROT.DAT").expect("PROT.DAT");
+    let head = prot[..3 * 0x800].to_vec();
+    fn cstr(m: &mut psx_retail_exec::Memory, mut a: u32) -> Vec<u8> {
+        let mut s = Vec::new();
+        loop {
+            let b = m.rd8(a);
+            if b == 0 {
+                return s;
+            }
+            s.push(b);
+            a += 1;
+        }
+    }
+    // BIOS A(0x15) `strcat`, which the name is built with.
+    cpu.hook(0x8005_6728, |r, m| {
+        let mut end = r.r[A0];
+        while m.rd8(end) != 0 {
+            end += 1;
+        }
+        let src = cstr(m, r.r[A1]);
+        for (i, b) in src.iter().chain(std::iter::once(&0)).enumerate() {
+            m.wr8(end + i as u32, *b);
+        }
+        r.r[V0] = r.r[A0];
+    });
+    cpu.stub(0x8005_6758, 0);
+    cpu.stub(0x8005_BEFC, 1);
+    cpu.stub(0x8005_EA84, 0);
+    let searched: Rc<RefCell<Vec<u8>>> = Rc::default();
+    {
+        let searched = searched.clone();
+        cpu.hook(0x8005_DBB4, move |r, m| {
+            *searched.borrow_mut() = cstr(m, r.r[A1]);
+            r.r[V0] = 1;
+        });
+    }
+    let reads: Rc<RefCell<Vec<(u32, u32, u32)>>> = Rc::default();
+    {
+        let reads = reads.clone();
+        cpu.hook(0x8005_E9A4, move |r, m| {
+            reads.borrow_mut().push((r.r[A0], r.r[A1], r.r[A2]));
+            m.load(r.r[A1], &head[..(r.r[A0] as usize * 0x800).min(head.len())]);
+            r.r[V0] = 1;
+        });
+    }
+    cpu.mem.load(NAME, b"prot.dat\0");
+    assert_eq!(cpu.call(TOC_LOAD, &[NAME, 1]), Stop::Returned);
+    let name = String::from_utf8_lossy(&searched.borrow()).into_owned();
+    assert_eq!(name, "\\PROT.DAT;1", "the name searched");
+    assert_eq!(*reads.borrow(), vec![(3, RAM_TOC, 0x80)]);
+    let archive = legaia_prot::archive::Archive::from_bytes(prot).expect("archive");
+    for (i, &w) in archive.toc.iter().take(3 * 0x200 - 2).enumerate() {
+        assert_eq!(
+            cpu.mem.rd32(RAM_TOC + 4 * (i as u32 + 2)),
+            w,
+            "TOC word {i} (RAM word {})",
+            i + 2
+        );
+    }
+    assert!(archive.toc.len() > 0x400);
+}
