@@ -1170,3 +1170,39 @@ install tail `FUN_8003ADAC` with the fade spawner `FUN_80024E80` and the positio
 `FUN_80024C88` (`map_install`), the status element `FUN_8002C2E4` (`status_icon`) and the scene and
 sound leaves in `scus_core_leaves` and `field_scus_hosts` match. The script target resolver
 `FUN_8003C83C` is ported beside them as a kernel.
+
+The asset dispatcher `FUN_8001F05C` with its registrars live beneath it (`asset_dispatch`), over
+generated chunks of every type byte in both storage modes, installs what `decode` returns and
+registers the members `parse_pack` and `vdf_entry` find; the flag types and the unknown ones touch
+nothing. Run under the two walkers over every scene block, it registers each scene's models in
+`SceneModelBank`'s order. The VDF record table at `0x80083E58` runs on across installs: `edbalden`
+stages a bundle slot and a stream chunk, and a reader's buffer is the last one.
+
+The streaming-chunk installer `FUN_8001E54C` (`chunk_install`) found the port stopping the walk at a
+chunk shorter than a word, where retail reads the next word as the next header, and saturating the
+type-3 budget arithmetic, which is plain wrapping subtraction. No disc stream carries either shape.
+
+The CD plumbing runs with the drive stood in for (`cd_plumbing`): the libcd calls answer "done" and
+the VSync a blocking wait spins on delivers the sectors the kick computed. The stream-file shims
+and the cursor seek match `StreamFileHost` on the cursor, the deferred-op park and the bytes read.
+The DMA primitives found the offline host reading from the last lookup's start, where the kick
+reads from the cursor a completed wait advances (`0x8003E030..0x8003E050`), so a second read
+repeated the first; the lookup not draining a read in flight; and the blocking wait answering `0`
+where the bytes answer `2`. Only tests build that host. The stream load queue `FUN_8003DDA0`, the
+overlay loaders `FUN_8003EBE4` / `FUN_8003EC70` and the read sync `FUN_8005EA84` match.
+
+A large routine whose port is a slice of it runs whole with `Cpu::stub_outside` and its few live
+callees hooked. The field initialiser `FUN_801D6704` (`field_init`) matches `field_spawn`,
+`field_bgm_plan` and `field_prim_buffer_bytes` over every entry mode, and showed the two-part
+one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. The boot init
+`FUN_8001D424` matches the initmap sanitiser, the duel arena initialiser `FUN_801CF00C` its record
+of seeds (`duel_init`), the battle loader `FUN_800520F0` the stage overlay it names, the mode-entry
+prologue `FUN_80016230` its verdicts (`mode_transition`), and the part tick `FUN_80021DF4` the
+mode-4 VRAM scroll, with StoreImage / MoveImage / LoadImage applied to a stand-in VRAM.
+
+The actor render bind `FUN_80020F88` (`actor_bind`) found a failed node allocation leaving the node
+bit `0x800` set in the port, where the failure returns ahead of the store. The contact broad phase
+`FUN_801CF754` (`contact_candidates`), the list walk's emitter release `FUN_8002519C`, the pool
+flush `FUN_80050E74`, the rect-copy enqueue `FUN_800468A4`, the on-screen test `FUN_8005126C`, the
+MoveImage wrapper `FUN_80058490`, the record copy `FUN_800557B8` and the St frame latch
+`FUN_8005ECD4` match.
