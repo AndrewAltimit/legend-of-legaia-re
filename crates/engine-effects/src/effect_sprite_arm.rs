@@ -70,9 +70,19 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
     let rgb = colour.cue(quad.rgb);
     // A draw-time packet, not a resident TMD word: the prologue grade's
     // packet rewrite never reaches it (`TSB_RUNTIME_PACKET_BIT`).
+    // A `GT4` (or bank 3's `GT3`s) carries one colour on every corner, so
+    // it is tagged Gouraud for the dither the shaders cannot read off it
+    // (`TSB_GOURAUD_BIT`).
     let tsb = {
         let t = quad.tpage | (u16::from(colour.abr) << 5);
-        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi) | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT
+        let gouraud = if quad.gouraud {
+            legaia_tmd::mesh::TSB_GOURAUD_BIT
+        } else {
+            0
+        };
+        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi)
+            | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT
+            | gouraud
     };
     let k = f32::from(s.field_72) / 4096.0;
     if splits_into_gt3s(&quad, &colour) {
@@ -290,10 +300,22 @@ mod tests {
         // The first triangle is centre / centre-corner-0 midpoint / ...
         assert_eq!(m.positions[0], [0.0, 0.0, 0.0]);
         assert!(sprite_arm_draw(&s).unwrap().tessellated);
+        // One colour on every corner, still a Gouraud packet: tagged for the
+        // dither the shader cannot read off a zero colour derivative.
+        assert!(
+            m.cba_tsb
+                .iter()
+                .all(|ct| ct[1] & legaia_tmd::mesh::TSB_GOURAUD_BIT != 0)
+        );
         let mut flat = s.clone();
         flat.field_9e |= 1 << 3;
         let m = sprite_arm_vram_mesh(&flat).expect("a sprite-arm node");
         assert_eq!(m.indices, vec![0, 1, 2, 2, 1, 3]);
+        assert_eq!(
+            m.cba_tsb[0][1] & legaia_tmd::mesh::TSB_GOURAUD_BIT,
+            0,
+            "an FT4"
+        );
         assert!(!sprite_arm_draw(&flat).unwrap().tessellated);
         assert!(!sprite_arm_draw(&node()).unwrap().tessellated);
     }

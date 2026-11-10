@@ -46,6 +46,11 @@ pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
 /// `POLY_FT4`, the one kind PCSX-Redux's software GPU walks along its outline.
 pub const TSB_FLAT_QUAD_BIT: u16 = 0x0400;
 
+/// `legaia_tmd::mesh::TSB_GOURAUD_BIT`, kept in lockstep: a Gouraud packet
+/// whose corners may agree, which the VRAM-mesh shader dithers under the
+/// PCSX-Redux instrument where its colour derivative alone reads flat.
+pub const TSB_GOURAUD_BIT: u16 = 0x4000;
+
 /// Blend constant bound while drawing ABR mode 0 (`0.5*B + 0.5*F`):
 /// both factors are `BlendFactor::Constant`.
 pub const MODE0_BLEND_CONSTANT: f64 = 0.5;

@@ -524,7 +524,12 @@ under the camera-relative `6x` scale (`+0x52 = 0x380`), the nearest at an eye
 depth under `1000`. Drawn as one quad each, their halves reach past the
 GPU's span limit and the PCSX-Redux capture rule rejects them, and the sky
 reads about a third as bright as retail's. Split, the small triangles survive
-as retail's do.
+as retail's do. They are Gouraud packets with one colour on every corner, which
+the PCSX-Redux instrument dithers like any Gouraud draw; a shader that reads
+"flat" off the colour's derivative floors each of the stacked additive sheets to
+five bits instead, and the storm sky stood about two thirds as bright as retail's
+in blocky bands. The sprite arm tags its Gouraud packets (`TSB_GOURAUD_BIT`) so
+the shader dithers them.
 
 **The scale is seated by the spawn, not the record.** `FUN_80021B04` stores
 its fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the

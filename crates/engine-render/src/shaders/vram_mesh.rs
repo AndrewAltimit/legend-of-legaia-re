@@ -847,8 +847,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // modulate floored and nothing added (`getTextureTransColShade`). The
     // packet colour's derivative tells the two apart: zero across a flat
     // polygon's four-pixel quad, and across a Gouraud one whose corners
-    // happen to agree, which that emulator still dithers.
-    let flat = pcsx_flat_shaded(fwidth(in.prim_color));
+    // happen to agree, which that emulator still dithers: a draw-time
+    // Gouraud packet carries `TSB_GOURAUD_BIT` for that case.
+    let flat = pcsx_flat_shaded(fwidth(in.prim_color)) && (tsb & 0x4000u) == 0u;
     var dither = u.psx_params.w;
     if dither >= 1.5 && flat {
         dither = 0.0;
@@ -956,7 +957,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // (`B + 0.25 * F`), as it does on the browser play page where the 0.25 is
     // a blend factor. Retail's quarter is `F >> 2`; the unfloored quarter
     // keeps the two hosts on one law.
-    let flat = pcsx_flat_shaded(fwidth(in.prim_color));
+    let flat = pcsx_flat_shaded(fwidth(in.prim_color)) && (tsb & 0x4000u) == 0u;
     var fg = psx_blend_foreground(cued);
     if u.psx_params.w >= 1.5 && !flat {
         fg = psx_blend_foreground_pcsx(cued, in.clip_pos.xy);
