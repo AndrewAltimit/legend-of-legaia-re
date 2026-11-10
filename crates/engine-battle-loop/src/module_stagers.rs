@@ -427,8 +427,24 @@ impl CastFxState {
                 [0; 3],
             )
         });
+        // A splash lives seven vsyncs and the routine seats up to sixteen a
+        // call, so a storm seats thousands: the ones retail's walk has
+        // unlinked (`walk_linked`) leave the scene rather than pile up in it.
+        // Nothing addresses a splash by index; the tag names them.
+        scene.parts.retain(|p| {
+            p.tag != Some(legaia_render_kernels::cast_rain::RAIN_SPLASH_RECORD) || p.walk_linked()
+        });
         for s in splashes {
+            let first = scene.parts.len();
             scene.push_parts(&parts, &bytes, s.at, s.at);
+            // The routine's store into the node `FUN_80021B04` hands back,
+            // after the seater's own run zeroed it through the record's
+            // `CTRL_74`: the splash starts on the depth cue its landing point
+            // projected to, and its `LEVEL_RATE` fades it on from there.
+            for p in &mut scene.parts[first..] {
+                p.tag = Some(legaia_render_kernels::cast_rain::RAIN_SPLASH_RECORD);
+                p.seat_pokes.push((0x78, s.depth_half as u16));
+            }
         }
     }
 

@@ -2450,9 +2450,12 @@ Port: `cast_module_camera::slippery_direct` carries the whole phase chain
 (`ModuleProfile::director_body`), so the band lasts as long as retail's and
 the outcome lands at arm `9`'s exit; `CastFxState::slippery_rain_words` writes the
 budget and colour words around it; `World::step_module_rain` makes the call
-once a tick through `legaia_render_kernels::cast_rain` on the world's
-`rand()` stream; both hosts draw `World::module_rain_lines` through
-`engine-screens`. Arm `8`'s exit frames the cast's target off the creature's
+once a battle frame through `legaia_render_kernels::cast_rain` on the world's
+`rand()` stream, at that frame's step; both hosts draw `World::module_rain_lines` through
+`engine-screens`. The call is the draw tick's, latched once a frame by `ctx[+0x272]`
+(`0x80048104..0x800481B0`), and its rate is the step: the arm runs at step `4`, so a
+call per vsync at rate `1` fell each drop a quarter as far and rolled its spawns four
+times as often, and the storm stood about four times as dense as retail's. Arm `8`'s exit frames the cast's target off the creature's
 target byte `+0x1DD` (the caster's, copied by the installer at
 `0x801F1D98..0x801F1DB8`): Slippery's own group code frames the monster row's
 centre through `FUN_801DCEAC` with its extent doubled into TR z
@@ -2467,8 +2470,12 @@ counter (`0x801F7194..`) or takes the halting loop (`0x801F715C..0x801F7184`), s
 that leaves seats no cloud. The port's pass runs `delta` one-vsync ticks and can leave on
 any of them, so the halt runs on the leaving tick and the first tick seats only when the
 whole pass holds: retail's part list holds no cloud a frame into arm 7. The clouds are
-bank-3 quads ([effect VM](effect-vm.md#the-sprite-arms-draw)). The splashes are seated into the cast's scene, but the record is
-a model-less node and nothing of it draws in the port yet. The streaks
+bank-3 quads ([effect VM](effect-vm.md#the-sprite-arms-draw)). The splashes are default-arm rings
+(`+0x9E = 1`, ten columns, radius `16` and height `32` growing at `+0xC0` / `+0xC2`) in the
+rain colour, which the routine writes into the record before each spawn; it then stores
+the landing point's `min(IR3, 0x2000) >> 1` into the part's `+0x78`, so a splash starts on
+its depth cue and its `LEVEL_RATE` fades it from there. A storm holds up to `64` live at
+once on both sides. The streaks
 draw over the scene rather than sorted into it. Slippery's seat arm stores
 only a height (`+0x36 = -(scalar << 8)`, `0x801F6D18..0x801F6D28`) and a clip
 bump, so the creature hangs over the caster where `FUN_801F19EC` leaves it.
