@@ -230,6 +230,8 @@ fn the_compass_is_right_from_the_first_free_roam_frame_after_the_opening() {
     );
     // Select -> confirm (opens on No) -> Up to Yes -> commit.
     rt.name_entry_input(PadButton::Cross.mask());
+    // The call after the Select press reads no pad (retail's state 2).
+    rt.name_entry_input(0);
     rt.name_entry_input(PadButton::Up.mask());
     assert!(rt.name_entry_input(PadButton::Cross.mask()), "commit");
     let mut ticks = 0;

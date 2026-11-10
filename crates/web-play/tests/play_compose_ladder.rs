@@ -470,6 +470,8 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
     rt.name_entry_input(PadButton::Up.mask());
     rt.name_entry_input(PadButton::Cross.mask());
     let _ = rt.name_entry_draws_json(W, H);
+    // The call after the Select press reads no pad (retail's state 2).
+    rt.name_entry_input(0);
     rt.name_entry_input(PadButton::Up.mask());
     if !rt.name_entry_input(PadButton::Cross.mask()) {
         return Err("confirming Yes did not commit the name".into());

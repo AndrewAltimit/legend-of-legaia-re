@@ -10,7 +10,9 @@
 //! slot-A load base's.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_engine_dev_menu::dev_menu_flags::{FLAG_LIST_END_TAG, flag_list_next, flag_list_prev};
+use legaia_engine_dev_menu::dev_menu_flags::{
+    FLAG_LIST_END_TAG, edit_flag_value, flag_list_next, flag_list_prev,
+};
 use psx_retail_exec::{Cpu, Stop, V0};
 
 const OVERLAY_BASE: u32 = 0x801C_E818;
@@ -94,5 +96,57 @@ fn the_flag_list_cursor_steps_as_retail_steps() {
     assert!(
         wraps_next > 50 && wraps_prev > 50,
         "{wraps_next} {wraps_prev}"
+    );
+}
+
+const ADJUST: u32 = 0x801E_A51C;
+const VALUE: u32 = 0x801F_2AA0;
+const HELD: u32 = 0x8007_B850;
+const REPEAT: u32 = 0x8007_BB84;
+
+/// The edited flag number's step arm `0x801EA51C..0x801EA63C`, entered where
+/// its tag points (the delay-slot `nop` ahead of the step) with `v0` clear,
+/// so the flag-raise call above it is skipped: Up / Down by `8`, or by `0x80`
+/// under the held coarse bit, Right / Left by one, then the clamp to
+/// `0..=0xFFF`. Every combination of the four repeat bits, since the arm
+/// applies them one after another.
+#[test]
+fn the_flag_number_steps_as_retail_steps() {
+    differential!(prot(897, ADJUST));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x464C_4E4F);
+    let (mut low, mut high, mut coarse) = (0, 0, 0);
+    for case in 0..20_000 {
+        let value = match rng.below(4) {
+            0 => rng.below(0x90) as i32,
+            1 => 0xFFF - rng.below(0x90) as i32,
+            _ => rng.below(0x1000) as i32,
+        };
+        let repeat = (rng.below(16) << 12) | rng.below(0x1000);
+        let held = match rng.below(3) {
+            0 => 0x10 | (rng.next() & 0xFFEF),
+            _ => rng.next() & 0xFFEF,
+        };
+        cpu.mem.wr32(VALUE, value as u32);
+        cpu.mem.wr32(REPEAT, repeat);
+        cpu.mem.wr32(HELD, held);
+        cpu.regs.r[V0] = 0;
+        assert_eq!(cpu.call(ADJUST, &[]), Stop::Returned, "case {case}");
+        let retail = cpu.mem.rd32(VALUE) as i32;
+        let port = edit_flag_value(value, repeat as u16, held as u16);
+        assert_eq!(
+            retail, port,
+            "case {case}: {value:#x} repeat {repeat:#x} held {held:#x}"
+        );
+        low += u32::from(retail == 0 && value != 0);
+        high += u32::from(retail == 0xFFF && value != 0xFFF);
+        coarse += u32::from(held & 0x10 != 0 && (retail - value).abs() >= 0x7F);
+    }
+    assert!(
+        low > 50 && high > 50 && coarse > 1000,
+        "{low} {high} {coarse}"
     );
 }

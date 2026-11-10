@@ -17,6 +17,10 @@ pub struct SaveSelectRow<'a> {
 /// off page 9 (`0x64` prims at `(0,0,192,192)` UV `(0,0)` and
 /// `(192,0,128,255)` UV `(64,0)`).
 pub const BACKDROP_SPLIT_X: u32 = 0xC0;
+/// Rows the left backdrop sprite covers.
+pub const BACKDROP_LEFT_H: u32 = 0xC0;
+/// Rows the right backdrop sprite asks for (the screen ends it at 240).
+pub const BACKDROP_RIGHT_H: u32 = 0xFF;
 
 /// The save-UI backdrop redraw: the title art re-emitted with every RGB
 /// modulation byte set to `brightness` - the dim behind the Load/Save
@@ -40,10 +44,18 @@ pub fn backdrop_dim_sprites(
     let color = [tint, tint, tint, 1.0];
     let (sx, sy, sw, sh) = title_src;
     let split = BACKDROP_SPLIT_X.min(sw);
+    // The two prims' own heights (`sh s2,0x12(a1)` at `0x801E031C`, `li
+    // v0,0xff` at `0x801E0384`): the left one stops at row `0xC0`.
+    let (left_h, right_h) = (BACKDROP_LEFT_H.min(sh), BACKDROP_RIGHT_H.min(sh));
     let mut out = Vec::with_capacity(2);
     out.push(SpriteDraw {
-        dst: (stage_origin.0, stage_origin.1, split * scale, sh * scale),
-        src: (sx, sy, split, sh),
+        dst: (
+            stage_origin.0,
+            stage_origin.1,
+            split * scale,
+            left_h * scale,
+        ),
+        src: (sx, sy, split, left_h),
         color,
     });
     if sw > split {
@@ -52,9 +64,9 @@ pub fn backdrop_dim_sprites(
                 stage_origin.0 + (split * scale) as i32,
                 stage_origin.1,
                 (sw - split) * scale,
-                sh * scale,
+                right_h * scale,
             ),
-            src: (sx + split, sy, sw - split, sh),
+            src: (sx + split, sy, sw - split, right_h),
             color,
         });
     }
