@@ -38,6 +38,7 @@ mod audio_pitch;
 mod auto_combo;
 mod auto_command;
 mod baka_fight;
+mod battle_char_splice;
 mod battle_framing;
 mod battle_gauge;
 mod battle_item;
