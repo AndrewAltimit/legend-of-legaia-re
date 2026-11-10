@@ -680,3 +680,28 @@ and the billboard projector `FUN_800195A8` match. One arm of the shadow differs 
 sorts within ten slots of the front links below the ordering table's base in retail, where the port floors the
 slot at `0`; field depths keep the blob far from it.
 
+The cast roll's scale stage `FUN_801DD864`, run on its own (`scale_stage`) against the kernels its port splits it
+into over the affinity tables PROT 0898 carries, matches on every seat pairing, both weaken bits, the Spirit stance
+and the summon body's magic-level arm, the unlearned spell's slot `0x20` included. Its products wrap at the word
+(`mult` / `mflo` at `0x801DD954` and the weaken's `sll` / `addu`), where the port saturated; no roll the game builds
+is large enough to tell them apart. The group aim `FUN_801DCEAC` (`group_aim`) reads its extent back as a halfword
+before the `0x400` floor (`0x801DD084..0x801DD08C`), so a spread past `0x7FFF` takes the floor; the port floored the
+word. The body colour pass `FUN_8004A908` (`actor_tint`), its view transform hooked, scales each depth-cue channel
+with a signed `mult` over whole words and a `divu` (`0x8004AAC8`); the port truncated both operands to 16 bits, so
+a negative radius or a depth past `0xFFFF` sixteenths coloured differently. All three are out of a staged fight's
+reach, and the ports now compute what the bytes compute.
+
+The rest of the battle side's frameless kernels match on their first run: the Seru learn `FUN_801E92DC` over whole
+records and the magic-level line `FUN_801F452C` (`seru_learn`); the swing camera's height `FUN_801F0348`
+(`camera_height`); the popup ring push `FUN_801F44A0`; the cursor step `FUN_801D32BC` and the placement copies
+`FUN_801D57E8` / `FUN_801D5718` / `FUN_801D5778` (`cursor_leaves`); the Super tail replace `FUN_801EF9E4` over every
+character's resident rows and the learned-art check `FUN_801EFBFC` with its gate and draw (`super_learn`); the
+monster install `FUN_80054CB0`, both boost profiles and the reaction map (`monster_install`); the MES escape append
+`FUN_8003CB54`, the event-list probe `FUN_80050E00` and the side-band arm `FUN_80055B4C` (`battle_small_leaves`); the
+dead-target redirect `FUN_801DB124` with its draw count (`target_redirect`); the arts flash ramp `FUN_801E2524` and
+its emitter `FUN_801E2650`, packet by packet (`flash_ramp`); the cast-start cue `FUN_801F3990` and the Seru reward
+line `FUN_801DBA90` (`cast_cue`); the party attach swap `FUN_8004CCD4` (`attach_swap`); the command ring's four
+chip marks `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBDDC` / `FUN_801DBEC4` (`chip_marks`); the arts list pager
+`FUN_801D3748` (`arts_pager`); the applier's cue-group expander `FUN_801E22C8` (`cue_group`); the target banner
+`FUN_801E6D84` (`target_banner`); the bolt ribbon `FUN_801CFA48` with the overlay generator `FUN_801D0290`
+(`ribbon`); and the clip crossing-vertex interpolator `FUN_80029724` (`clip_vertex`).
