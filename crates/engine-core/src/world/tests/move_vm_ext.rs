@@ -353,3 +353,44 @@ fn ext_rand_add_divides_by_the_signed_operand() {
         assert_eq!(world.move_vm.bytecode[0][5], want);
     }
 }
+
+/// Sub-op `0x29` writes rung `op[2]` of the scene floor-height ladder
+/// (`0x1F80035C`), immediately when `op[4] == 0` and through the property-ramp
+/// pool otherwise (`0x801D43BC..0x801D4428`).
+#[test]
+fn ext_0x29_writes_and_ramps_the_floor_ladder() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.terrain.floor_height_lut[3] = 0x40;
+    // Immediate: rung 5 = -0x20.
+    let bc = vec![0x002F, 0x0029, 5, 0x0020, 0];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(world.terrain.floor_height_lut[5], -0x20);
+    assert_eq!(world.terrain.floor_ladder_ramps.active(), 0);
+    // Ramp: rung 3 from 0x40 toward -0x40 over 4 frame steps.
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.terrain.floor_height_lut[3] = 0x40;
+    let bc = vec![0x002F, 0x0029, 3, 0x0040, 4];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(
+        world.terrain.floor_height_lut[3], 0x40,
+        "a ramp does not snap"
+    );
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        world.tick_field_timer_actors(1);
+        seen.push(world.terrain.floor_height_lut[3]);
+    }
+    assert_eq!(seen, [0x20, 0, -0x20, -0x40]);
+    assert_eq!(world.terrain.floor_ladder_ramps.active(), 0);
+    // A rung past the ladder is declined, not wrapped onto rung 0.
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let bc = vec![0x002F, 0x0029, 0x10, 0x0011, 0];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(world.terrain.floor_height_lut[0], 0);
+}

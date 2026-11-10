@@ -895,7 +895,7 @@ arm touches (`move_ext`), found sub-ops `0x11`, `0x25` and `0x26` moving the 8-b
 restored the `+0x2A` mirror. The Bezier `FUN_801E45BC` splits each weight into whole and fraction in 32-bit words
 over an `lhu` parameter; the port's widened form agreed only inside `0..=0x1000` and now transcribes the split.
 Sub-op `0x29` negates its operand as a word (`negu` at `0x801D4418`), so `-0x8000` ramps toward `+0x8000`; the
-port negated a halfword. The curve's point is copied out as a whole SVECTOR whose pad is stack the arm never
+port negated a halfword. The arm's destination is rung `op[2]` of the scene floor-height ladder at `0x1F80035C`, and its non-zero-duration arm installs a property ramp (`FUN_8003C5F0`, `0x801D43F0..0x801D4428`); the engine's world host had stored the end value in a sixteen-entry array nothing read, so the ladder neither moved nor ramped. It now writes `FieldTerrain::floor_height_lut` and ramps through a `RampScheduler` the field frame ticks. The curve's point is copied out as a whole SVECTOR whose pad is stack the arm never
 wrote, so `+0x1A` after `0x0E` / `0x12` is not compared. Sub-op `0x3C` ramps toward the operand's `lh`, where the
 port's fade request carries a byte; no larger operand is generated.
 

@@ -137,6 +137,13 @@ pub struct FieldTerrain {
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_field::field_actor_timers::FloorTierBob>,
+    /// Property ramps on rungs of [`Self::floor_height_lut`], installed by the
+    /// move VM's overlay sub-op `0x29` with a non-zero duration: the arm hands
+    /// the SCUS pool installer `FUN_8003C5F0` the rung's address
+    /// `0x1F80035C + slot * 2`, width `2`, the rung's current `lh` and the
+    /// negated operand (`0x801D43F0..0x801D4428`), and the pool ticker
+    /// `FUN_80036D80` lerps it frame by frame. Each ramp's `dest` is the rung.
+    pub floor_ladder_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Player tile the region encounter reader last compared, sampled only
     /// on the actor game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]):
     /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
@@ -177,6 +184,7 @@ impl FieldTerrain {
             floor_cell_bit: legaia_scene_formats::field_objects::CELL_WALK_VISIBLE,
             elevation_overrides: Vec::new(),
             floor_tier_bobs: Vec::new(),
+            floor_ladder_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             step_tile: None,
             region_tracker: None,
             static_window: Default::default(),
