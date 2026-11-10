@@ -468,7 +468,8 @@ pub enum StreamTerminator {
     /// ends the stream (the 4-byte zero header is the sentinel, not a chunk).
     ZeroSize,
     /// Battle-init / sound-pack walker (`FUN_8001FE70`): the stream ends at the
-    /// first chunk whose **type byte is `0x02`**. That chunk's `size` is
+    /// first chunk after the lead whose **type byte is `0x02`** (the lead is
+    /// copied whole and never type-tested). That chunk's `size` is
     /// usually non-zero (it carries a real body); the type byte alone is the
     /// loop's exit condition. A `size == 0` header still hard-stops.
     TypeTwo,
@@ -554,7 +555,11 @@ pub fn parse_streaming_with(
         pos += advance;
 
         // The type-2 chunk is a real (pushed) chunk that also ends the walk.
-        if terminator == StreamTerminator::TypeTwo && type_byte == 0x02 {
+        // `FUN_8001FE70` copies the lead chunk whole before its loop and
+        // type-tests only the headers after it (`srl v0,v0,0x18` /
+        // `lbu v0,0x3(s2)` at `0x8001FEFC..0x8001FF18`), so a lead of type
+        // `0x02` does not end the walk.
+        if terminator == StreamTerminator::TypeTwo && type_byte == 0x02 && chunks.len() > 1 {
             terminated = true;
             break;
         }
@@ -580,6 +585,25 @@ mod tests {
         assert_eq!(d.size, 0x123456);
         assert_eq!(d.data_offset, 0x40);
         assert_eq!(d.asset_type(), AssetType::Tmd);
+    }
+
+    /// FUN_8001FE70 never type-tests the lead chunk: a lead of type `0x02`
+    /// is walked past, and the next type-`0x02` chunk ends the stream.
+    #[test]
+    fn type_two_walk_skips_the_lead_chunk() {
+        let mut b = Vec::new();
+        b.extend_from_slice(&0x02_000004u32.to_le_bytes());
+        b.extend_from_slice(&[0; 4]);
+        b.extend_from_slice(&0x01_000004u32.to_le_bytes());
+        b.extend_from_slice(&[0; 4]);
+        b.extend_from_slice(&0x02_000004u32.to_le_bytes());
+        b.extend_from_slice(&[0; 4]);
+        b.extend_from_slice(&0x01_000004u32.to_le_bytes());
+        b.extend_from_slice(&[0; 4]);
+        let r = parse_streaming_with(&b, 16, StreamTerminator::TypeTwo).unwrap();
+        assert!(r.terminated);
+        let types: Vec<u8> = r.chunks.iter().map(|c| c.type_byte).collect();
+        assert_eq!(types, [2, 1, 2]);
     }
 
     /// FUN_80020224: count from the header word, OR-union of the

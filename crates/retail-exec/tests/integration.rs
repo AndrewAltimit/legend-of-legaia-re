@@ -82,6 +82,7 @@ mod colour_tween;
 mod colour_wash;
 mod combo_records;
 mod confuse;
+mod container_walkers;
 mod cue_group;
 mod cursor_leaves;
 mod curvature_table;
