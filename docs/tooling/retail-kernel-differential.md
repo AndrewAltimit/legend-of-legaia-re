@@ -748,9 +748,8 @@ install (`ambient_emitter`, `fog_spawn`), the world map's entry fade, the L1 map
 stepper and clamp in PROT 0981 (`map_display`, `map_display_tick`), and the menu overlay's category check and
 preview mode (`menu_leaves`). Three stores have no port and no reader the port runs: the post-box byte
 classification `FUN_80038050` (`talk_dispatch`) stores a `4C FE xx` operand to the pager's box-gone count,
-an arm no shipped script reaches; the fog spawner writes halfword `1` at record `+0x12`; and the ramp ticker
-walks its list in install order where the port walks slot order, which differs only for two live ramps on
-one destination.
+an arm no shipped script reaches; and the fog spawner writes halfword `1` at record `+0x12`. The ramp
+ticker's order is below.
 
 The sound driver's per-frame tier runs in the interpreter too: libsnd's `SsSeqCalc` `FUN_80062F98` with its tempo
 slide, both volume slides, the track end and the chained restart, stop, start, the event decoder and the delta-time
@@ -851,3 +850,33 @@ wider than its field prints its overflow's non-zero digits from the pen in retai
 first cell, and the zero-padded writer cut the value to its field. One kernel, `decimal_field_cells`, now stands for
 both. The HP and MP ink tiers `FUN_800349EC` / `FUN_80035EA8` match both hosts' readers, and the field's text
 balloon, its spawner `FUN_8003C764` and handler `FUN_801DA7F0` (`text_balloon`), matches tick by tick.
+The property-ramp ticker `FUN_80036D80` walks a list, not the slots: the installer `FUN_8003C5F0` links each
+new slot at the tail through `+0x1A` / `+0x1C` (`0x8003C664..0x8003C688`) whichever slot its first-free scan
+found. Two live ramps on one word therefore end on the newer one's value, where the port, walking slot order,
+let an older ramp in a higher slot overwrite it. `RampScheduler` keeps the install order, and `ramp_pool` now
+shares destinations. The motion VM's player box `FUN_801CF8AC` and its wander fan `FUN_801D5A68` match
+`AmbientPlayerProbe` (`ambient_probe`) on the class arm every placement takes. The party-table rebuild
+`FUN_801DE190` matches `rebuild_battle_party_table` (`party_table`), the kernel the battle entry's companion seat
+now reads; retail would also append Terra beside a full party or beside Terra, which the engine's seat refuses.
+
+The move VM `FUN_80023070`, run over short random programs on a record of random bytes (`move_vm`), found the
+loop's exit wrong: an opcode past `0x46` does not end the frame. The bound check branches to the epilogue
+`0x80024150`, which adds the width the previous opcode left in `$a2` and loops; op `0x0B`'s jump-table word is
+the same epilogue. The port ended the frame on the first and spun on the second. `move_vm::FrameStep` carries
+the width across a frame, for `run_until_break` and the ambient part tick alike. Op `0x46` stores three words,
+`+0xB8 = 1` and the sign-extended operand at `+0xBC` and `+0xC0` (`0x80024134..0x8002414C`), where the port
+wrote two halfwords. Every other opcode matches over the whole record, op `0x3C` / `0x3D`'s pose block, op
+`0x1D`'s global and op `0x21`'s deformation row.
+
+The overlay escape `FUN_801D362C`, every sub-op with a host answering each global from a copy of the RAM the
+arm touches (`move_ext`), found sub-ops `0x11`, `0x25` and `0x26` moving the 8-byte position vector
+`+0x14..+0x1B` with `lwl` / `lwr`: a slot's fourth halfword is the vector's pad `+0x1A`, where the port saved and
+restored the `+0x2A` mirror. The Bezier `FUN_801E45BC` splits each weight into whole and fraction in 32-bit words
+over an `lhu` parameter; the port's widened form agreed only inside `0..=0x1000` and now transcribes the split.
+Sub-op `0x29` negates its operand as a word (`negu` at `0x801D4418`), so `-0x8000` ramps toward `+0x8000`; the
+port negated a halfword. The curve's point is copied out as a whole SVECTOR whose pad is stack the arm never
+wrote, so `+0x1A` after `0x0E` / `0x12` is not compared. Sub-op `0x3C` ramps toward the operand's `lh`, where the
+port's fade request carries a byte; no larger operand is generated.
+
+The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
+`.MAP` (`window_rebuild`) match on their first run.
