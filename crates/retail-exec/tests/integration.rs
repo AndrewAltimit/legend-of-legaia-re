@@ -11,6 +11,7 @@
 mod common;
 
 mod action_tag;
+mod actor_cull;
 mod actor_draw;
 mod actor_node_pool;
 mod actor_tint;
@@ -222,6 +223,7 @@ mod walk_regen;
 mod walk_step;
 mod water_hazard;
 mod window_vm;
+mod window_rebuild;
 mod zone_ramp;
 mod zone_record;
 mod zone_requery;
