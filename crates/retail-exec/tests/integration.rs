@@ -129,6 +129,7 @@ mod dialog_pager;
 mod dome_hud;
 mod dome_tally;
 mod drop_shadow;
+mod duel_disc;
 mod duel_init;
 mod effect_script;
 mod effect_vm;
