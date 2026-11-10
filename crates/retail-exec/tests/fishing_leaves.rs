@@ -724,3 +724,78 @@ mod chrome {
         }
     }
 }
+
+/// The venue hub's main menu `FUN_801D0474` with its draws stubbed, against
+/// `FishingMenu::tick`: the cursor's snapping wrap, the cancel, the confirm's
+/// row states, the lure-index snapshot and the leave latch. The screen's pad
+/// word (`0x801D90D8`, the moves and the cancel) and the frame's edge word
+/// (`0x8007B874`, the confirm) carry one press.
+#[test]
+fn the_hub_menu_picks_as_retail_picks() {
+    differential!(prot(972, MENU));
+    use legaia_engine_fishing::fishing::{FISHING_MENU_ROW_STATES, FishingMenu};
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const MENU: u32 = 0x801D_0474;
+    const CURSOR: u32 = 0x801D_912C;
+    const STATE: u32 = 0x801D_926C;
+    const SFX: u32 = 0x8007_B6D8;
+    const SNAPSHOT: u32 = 0x801D_90DC;
+    const LURE: u32 = 0x8008_4450;
+    const EXIT: u32 = 0x801D_90CC;
+    const LOADING: u32 = 0x8007_BC20;
+    for va in [0x8003_6888, 0x8002_C488, 0x801D_74B0] {
+        cpu.stub(va, 0);
+    }
+    let mut rng = Rng(0x4D45_4E55);
+    let mut rows = [0u32; 5];
+    for round in 0..50_000 {
+        let cursor = [0, 1, 2, 3, 4, -1, 5, rng.below(5) as i32][rng.below(8) as usize];
+        let pad =
+            [0u16, 0x20, 0x01, 0x1000, 0x4000, 0x40, 0x04, 0x5000, 0x1040][rng.below(9) as usize];
+        let interactive = rng.below(4) != 0;
+        let lure = rng.below(3);
+        cpu.mem.wr32(CURSOR, cursor as u32);
+        cpu.mem.wr32(0x801D_90D8, u32::from(pad));
+        cpu.mem.wr32(0x8007_B874, u32::from(pad));
+        cpu.mem.wr32(STATE, 0xEE);
+        cpu.mem.wr16(SFX, 0);
+        cpu.mem.wr32(SNAPSHOT, 0xDD);
+        cpu.mem.wr32(LURE, lure);
+        cpu.mem.wr32(EXIT, 0);
+        cpu.mem.wr32(LOADING, 1);
+        assert_eq!(cpu.call(MENU, &[u32::from(interactive)]), Stop::Returned);
+        let mut m = FishingMenu { cursor };
+        let t = m.tick(pad, interactive);
+        let retail = (
+            cpu.mem.rd32(CURSOR) as i32,
+            (cpu.mem.rd32(STATE) != 0xEE).then(|| cpu.mem.rd32(STATE)),
+            (cpu.mem.rd16(SFX) != 0).then(|| cpu.mem.rd16(SFX)),
+            cpu.mem.rd32(SNAPSHOT) != 0xDD,
+            cpu.mem.rd32(EXIT) == 1 && cpu.mem.rd32(LOADING) == 0,
+        );
+        let port = (
+            m.cursor,
+            t.next_state,
+            t.sfx,
+            t.snapshot_points,
+            t.leave_venue,
+        );
+        assert_eq!(
+            retail, port,
+            "round {round} cursor {cursor} pad {pad:#x} interactive {interactive}"
+        );
+        if t.snapshot_points {
+            assert_eq!(cpu.mem.rd32(SNAPSHOT), lure);
+        }
+        if let Some(s) = t.next_state.filter(|_| pad & 0x44 != 0) {
+            rows[FISHING_MENU_ROW_STATES
+                .iter()
+                .position(|&r| r == s)
+                .unwrap()] += 1;
+        }
+    }
+    assert!(rows.iter().all(|&n| n > 300), "{rows:?}");
+}
