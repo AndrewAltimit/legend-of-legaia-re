@@ -175,6 +175,7 @@ mod key_on_volume;
 mod kiss_of_death;
 mod ledge_hop;
 mod level_up;
+mod libsnd_voices;
 mod light_pool;
 mod lzs_decode;
 mod magic_level;

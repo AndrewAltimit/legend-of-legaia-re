@@ -60,3 +60,4 @@ legaia-scene-formats.workspace = true
 legaia-prot.workspace = true
 legaia-overlay-images.workspace = true
 psx-vab.workspace = true
+psx-seq.workspace = true

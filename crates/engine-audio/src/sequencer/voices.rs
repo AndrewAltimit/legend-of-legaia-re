@@ -365,8 +365,9 @@ impl Sequencer {
     /// channel sharing the program and key is released with this one.
     ///
     /// PORT: FUN_8006688C
-    pub(super) fn note_off(&mut self, spu: &mut Spu, channel: u8, key: u8) {
+    pub(super) fn note_off(&mut self, spu: &mut Spu, channel: u8, key: u8) -> u32 {
         let program = self.channels[channel as usize].program as usize;
+        let mut released = 0;
         for voice in 0..self.voice_note.len() {
             let Some(n) = self.voice_note[voice] else {
                 continue;
@@ -387,8 +388,10 @@ impl Sequencer {
             if self.active.len() != before {
                 spu.voices[voice].key_off();
                 spu.record_key_off(voice);
+                released |= 1 << voice;
             }
         }
+        released
     }
 
     /// The top of `FUN_80065BAC`: read every voice's envelope into its record,

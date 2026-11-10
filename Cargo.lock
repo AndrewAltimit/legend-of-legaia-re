@@ -4421,6 +4421,7 @@ dependencies = [
  "psx-lzs",
  "psx-mdec",
  "psx-pcsx-redux",
+ "psx-seq",
  "psx-tim",
  "psx-vab",
 ]

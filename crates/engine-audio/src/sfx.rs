@@ -840,7 +840,7 @@ pub struct VoiceAttr {
     /// `sp+0x50` - note the voice is keyed at.
     pub note: u8,
     /// `sp+0x54` - the pitch fine-tune byte (`0x40` at every retail call
-    /// site). Carried; the port's pitch math is [`VabBank::play_tone`]'s.
+    /// site). The key-on pitch takes it ([`key_on_voice_attr`]).
     pub fine: i16,
     /// `sp+0x58` / `sp+0x5C` - left / right volume, `0..=127`.
     pub vol_l: i16,
@@ -897,8 +897,7 @@ impl VoiceAttr {
 ///
 /// PORT: FUN_80065034 (voice reject, volume-pair split and key-on only)
 ///
-/// Partial. Not carried: the `vag == 0xFF` arm (`0x80065358`), the `fine`
-/// argument the pitch call takes (`0x80065370`, here the fixed cue fine),
+/// Partial. Not carried: the `vag == 0xFF` arm (`0x80065358`),
 /// the per-voice record stores (owner, vab, program, tone, note, reserved
 /// flag, age; `0x800652c0..0x80065334`), the re-entry lock at `0x801CD2B4`
 /// and the bank select through `0x80068B98` - the caller passes the bank.
@@ -914,7 +913,7 @@ pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool
     if usize::from(attr.voice) >= 24 {
         return false;
     }
-    vab.play_tone_pair(
+    let keyed = vab.play_tone_pair(
         spu,
         usize::from(attr.voice),
         usize::from(attr.program),
@@ -922,7 +921,22 @@ pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool
         attr.note,
         attr.vol_l,
         attr.vol_r,
-    )
+    );
+    // The pitch takes the call's own fine (`sp+0x54`, `FUN_80066E50`'s second
+    // argument at `0x80065370`), where the catalog's cues pass `0x40`.
+    if keyed
+        && let Some(tone) = vab
+            .programs
+            .get(usize::from(attr.program))
+            .and_then(|p| p.tones.get(usize::from(attr.tone)))
+    {
+        spu.voices[usize::from(attr.voice)].pitch = crate::vab_bind::pitch_from_key(
+            i32::from(attr.note),
+            u32::from(attr.fine as u16),
+            tone,
+        );
+    }
+    keyed
 }
 
 #[cfg(test)]

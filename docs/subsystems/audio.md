@@ -1357,6 +1357,17 @@ duck or a fade puts a moved note back where it keyed. The pause's zero level goe
 through that walk, which is why it cuts release tails as well. Port:
 `Sequencer::remix_program`, `remix_all`, `note_off`, over `voice_note`.
 
+**The walks run against the port one by one.** `crates/retail-exec/tests/libsnd_voices.rs`
+seats one random record file on both sides (notes of the sequence sounding or released, voices a cue
+took, records another sequence or bank owns; `Sequencer::seat_voice_record`) over a synthetic bank,
+runs the note-off `FUN_8006688C`, the bend `FUN_80067C1C`, the re-volume `FUN_8006861C`, the
+sequence-volume walk `FUN_80067E9C`, the flush's envelope read and silent history `FUN_80065BAC`,
+the explicit cue key-on `FUN_80065034` and the BGM pause `FUN_80026740` off the disc, and compares
+the shadow registers and dirty bits each writes with the port's voices. They agree. Two differences
+are folded and inaudible: retail's note-off keys off again a released voice whose record still
+matches (a KOFF on a voice already in release), and the pause keys the notes off at once where retail's
+next calc does, under a level already zero.
+
 Provenance: per-instruction read of the dumps' disassembly sections, and
 [the keying differential](#the-keying-differential). `see ghidra/scripts/funcs/80066b00.txt`,
 `80065bac.txt`, `80065978.txt`, `80066308.txt`, `8006688c.txt`, `8006861c.txt`,
