@@ -73,11 +73,12 @@
 //! hands the operands to the host.
 //! REF: FUN_8003C83C, FUN_801D596C, FUN_801D8280, FUN_801DE754, FUN_801DE7BC
 //! are called by the arms this module decodes and are not ported in it: the
-//! VM passes the operands to a [`FieldHost`] method and the host does the
-//! work its own way (the actor-id resolve per method over the world's actor table, the
-//! escape-timer HUD spawn, the shutter and screen-frame actors). No kernel
-//! here computes what the routine's bytes compute, and the `HSV` grade walk
-//! `FUN_801D8280` has no host body at all.
+//! VM passes the operands to a [`FieldHost`] method. The actor-id resolve is
+//! done per method over the world's actor table; the other four have their
+//! kernels outside this crate (`legaia_engine_field::escape_timer::countdown_actor_spawn`,
+//! `primitive_colour_grade::shift_resident_tmds`, `ShutterBars::spawn` and the
+//! world's `ScreenFrame::spawn`). The `HSV` grade walk has no host body: the
+//! renderer applies its result in closed form.
 //!
 //! REF: FUN_801DD9D4 - **not ported here, and it was tagged `PORT:` in error.**
 //! The field VM only ever passes this address as a *token*: op `0x43` sub-`0xE`

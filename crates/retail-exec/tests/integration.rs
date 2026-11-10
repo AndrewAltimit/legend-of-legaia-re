@@ -295,6 +295,7 @@ mod target_redirect;
 mod text_balloon;
 mod text_width;
 mod tile_lookups;
+mod timer_spawns;
 mod tint_ease;
 mod tint_sm;
 mod title_prims;
