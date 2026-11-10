@@ -904,7 +904,10 @@ keeps retail's zero: its sweep, its name hold and its caption close-up are
 all framed on it. So does every fight in the retail-faithful mode: the
 judgement is the toggle `WorldToggles::battle_entry_off_axis`, which
 `pin_retail` lowers. Both PCSX-Redux openings (`gaza2_card_battle_init`,
-`cort_evolved_card_battle_init`) read yaw `0` under the sweep.
+`cort_evolved_card_battle_init`) read yaw `0` under the sweep, and so does a
+walked random encounter filmed vsync by vsync from battle init through the
+sweep's park and 90 vsyncs past it
+(`scripts/pcsx-redux/autorun_battle_intro_rand.lua` from `kor_field_route_walk`).
 
 <a id="the-battle-entry-sweep"></a>
 
