@@ -110,6 +110,7 @@ mod inn;
 mod interact_probe;
 mod intro_names;
 mod intro_particles;
+mod intro_swirl;
 mod intro_tiles;
 mod inventory;
 mod item_apply;

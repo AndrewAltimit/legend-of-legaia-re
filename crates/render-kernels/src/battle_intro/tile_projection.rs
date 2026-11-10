@@ -181,7 +181,11 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
             grey << 16 | grey << 8 | grey,
             q.semi_transparent,
             CullMode::SingleSided,
-            (rec.progress != 0).then_some(rec.progress),
+            (rec.progress != 0).then_some(DepthCue {
+                ir0: rec.progress,
+                far: 0,
+                max_sz: false,
+            }),
             prims,
         );
     }
@@ -216,6 +220,9 @@ pub(super) fn unwrap_bottom_edge_v(mut uv: [(u8, u8); 4]) -> [(u8, u8); 4] {
 
 /// Backface handling of one dispatched packet - the dispatcher's NCLIP mask.
 ///
+/// Double-sided is not quite every quad: the masked `n1` of an edge-on quad is
+/// `0`, which still rejects (see [`push_ft4_quad`]).
+///
 /// `FUN_80043390` decodes bit 27 of its second argument into the mask the
 /// kind handlers AND over each NCLIP result (`0x80043520..0x80043540`):
 /// clear = `0xFFFFFFFF` (the plain single-sided accept), set = `0x7FFFFFFF`
@@ -235,9 +242,10 @@ pub(super) enum CullMode {
 /// mask), then `AVSZ4` for the OT depth and the [`INTRO_NEAR_OTZ`] cutoff.
 /// Returns whether the quad was pushed.
 ///
-/// `fade` selects the depth-cue leaf (`FUN_80044DC8` for a tile): after the
-/// near cutoff it drops a quad wholly off the screen ([`offscreen`]) and
-/// fades `color` toward black by `IR0 = fade` ([`dpcs_toward_black`]).
+/// `cue` selects the depth-cue leaf (`FUN_80044DC8`): its depth is the
+/// largest corner `SZ` instead of `AVSZ4` when [`DepthCue::max_sz`], and after
+/// the near cutoff it drops a quad wholly off the screen ([`offscreen`]) and
+/// moves `color` toward the far colour by `IR0` ([`dpcs`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_ft4_quad(
     p: &[ProjCorner; 4],
@@ -247,28 +255,40 @@ pub(super) fn push_ft4_quad(
     color: u32,
     semi_transparent: bool,
     cull: CullMode,
-    fade: Option<i16>,
+    cue: Option<DepthCue>,
     prims: &mut Vec<ScreenPrim>,
 ) -> bool {
-    if cull == CullMode::SingleSided {
-        let n1 = nclip(p[0].xy, p[1].xy, p[2].xy);
-        let n2 = nclip(p[1].xy, p[2].xy, p[3].xy);
-        if n1 <= 0 && n2 >= 0 {
-            return false;
-        }
+    // `MAC0` is the low 32 bits of the cross product; the leaf ANDs each
+    // `NCLIP` with the dispatcher's mask and rejects on `n1 <= 0 && n2 >= 0`.
+    // Under the double-sided mask `0x7FFFFFFF` both halves still run: `n2`
+    // always passes, and `n1` fails only at `0`, so an edge-on quad drops.
+    let mask = match cull {
+        CullMode::SingleSided => -1i32,
+        CullMode::DoubleSided => 0x7FFF_FFFF,
+    };
+    let n1 = nclip(p[0].xy, p[1].xy, p[2].xy) as i32 & mask;
+    let n2 = nclip(p[1].xy, p[2].xy, p[3].xy) as i32 & mask;
+    if n1 <= 0 && n2 >= 0 {
+        return false;
     }
-    let otz = avsz4_with_scale(p[0].sz, p[1].sz, p[2].sz, p[3].sz, INTRO_ZSF4);
+    // `0x80044EB4..0x80044F2C`: the flag byte's `0x10` takes the largest
+    // corner depth (the OT shift is `0` here) in place of `AVSZ4`.
+    let otz = if cue.is_some_and(|c| c.max_sz) {
+        p.iter().map(|c| c.sz).max().unwrap_or(0)
+    } else {
+        avsz4_with_scale(p[0].sz, p[1].sz, p[2].sz, p[3].sz, INTRO_ZSF4)
+    };
     if otz < INTRO_NEAR_OTZ {
         return false;
     }
-    let color = match fade {
-        Some(ir0) => {
+    let color = match cue {
+        Some(cue) => {
             if offscreen(std::array::from_fn(|i| {
                 (p[i].xy.x as i16, p[i].xy.y as i16)
             })) {
                 return false;
             }
-            let c = |shift: u32| u32::from(dpcs_toward_black((color >> shift) as u8, ir0));
+            let c = |shift: u32| u32::from(dpcs((color >> shift) as u8, cue.far, cue.ir0));
             c(16) << 16 | c(8) << 8 | c(0)
         }
         None => color,
@@ -302,11 +322,29 @@ pub(super) fn offscreen(xy: [(i16, i16); 4]) -> bool {
         || xy.iter().all(|c| c.0 >= 0x140)
 }
 
-/// One channel of `DPCS` (`sf = 1`) toward a far colour of `0`:
-/// `MAC = (c << 16) + IR0 * IR`, `IR = -(c << 4)`, the colour `MAC >> 16`.
-pub(super) fn dpcs_toward_black(c: u8, ir0: i16) -> u8 {
+/// What `FUN_80043390` stages for its depth-cue bank, which it selects for a
+/// non-zero third argument or a non-zero top byte of the second
+/// (`0x800433C0..0x800433CC` ORs `1` into the third for the latter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DepthCue {
+    /// `IR0`, the third argument.
+    pub(super) ir0: i16,
+    /// The far colour byte, the second argument's low byte, staged into
+    /// `RFC` / `GFC` / `BFC` as `(far << 4) & 0xFFFE` (grey on every caller).
+    pub(super) far: u8,
+    /// The second argument's top byte carries `0x10`: the OT depth is the
+    /// largest corner `SZ`.
+    pub(super) max_sz: bool,
+}
+
+/// One channel of `DPCS` (`sf = 1`, `lm = 0`): `IR = ((FC << 12) - (c <<
+/// 16)) >> 12` saturated to `i16`, `MAC = (c << 16) + IR * IR0`, the colour
+/// `MAC >> 16` saturated to a byte.
+pub(super) fn dpcs(c: u8, far: u8, ir0: i16) -> u8 {
     let c = i64::from(c);
-    let mac = (c << 16) + i64::from(ir0) * -(c << 4);
+    let fc = i64::from((u16::from(far) << 4) & 0xFFFE);
+    let ir = (((fc << 12) - (c << 16)) >> 12).clamp(-0x8000, 0x7FFF);
+    let mac = (c << 16) + ir * i64::from(ir0);
     ((mac >> 12) >> 4).clamp(0, 0xFF) as u8
 }
 
