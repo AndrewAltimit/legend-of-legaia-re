@@ -20,6 +20,7 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                 "dumped",
                 "documented",
                 "ported",
+                "differential",
                 "live",
                 "not_wired_tag",
                 "replaced_tag",
@@ -40,6 +41,7 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                     int(r["dumped"]),
                     int(r["documented"]),
                     int(r["ported"]),
+                    int(r["differential"]),
                     int(r["live"]) if r["live_known"] else "",
                     int(r["not_wired_tag"]) if r["live_known"] else "",
                     int(r["replaced_tag"]) if r["live_known"] else "",
@@ -64,6 +66,7 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
         "- **dumped** - Ghidra decompiler output exists under `ghidra/scripts/funcs/`.",
         "- **documented** - the address is cited from at least one file under `docs/`.",
         "- **ported** - the address appears in a `// PORT: FUN_<addr>` tag in a Rust source under `crates/`.",
+        "- **differential** - a `crates/retail-exec` test declares (`differential!`) that it runs the routine at this address against its port, and fails if it does not.",
         "- **ignore** - address is listed in `scripts/ci/port-catalog-ignore.toml` as non-port-site (library code, an address that starts no routine, a game routine covered another way, or one nothing reaches).",
     ] + (
         [
@@ -75,10 +78,10 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
             "",
         ]
     ) + [
-        "| addr | bucket | dumped | documented | ported (crates) |"
+        "| addr | bucket | dumped | documented | ported (crates) | differential |"
         + (" live |" if with_live else "")
         + " ignore | refs | first dump source |",
-        "|---|---|---|---|---|" + ("---|" if with_live else "") + "---|---|---|",
+        "|---|---|---|---|---|---|" + ("---|" if with_live else "") + "---|---|---|",
     ]
     for r in rows:
         crates = ", ".join(r["port_crates"]) if r["port_crates"] else "-"
@@ -89,7 +92,7 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
         )
         lines.append(
             f"| `{r['addr']}` | {r['bucket']} | {yesno(r['dumped'])} | "
-            f"{yesno(r['documented'])} | {crates} |{live_cell} {ignore_cell} | "
+            f"{yesno(r['documented'])} | {crates} | {yesno(r['differential'])} |{live_cell} {ignore_cell} | "
             f"{r['refs']} | `{first_src}` |"
         )
     md = "\n".join(lines) + "\n"

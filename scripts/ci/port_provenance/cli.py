@@ -5,6 +5,7 @@ worklist.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from collections import defaultdict
@@ -12,9 +13,10 @@ from pathlib import Path
 
 from port_provenance import paths
 from port_provenance.call_sites import images
+from port_provenance.differential import SETTLED_SIGNALS, declared, verifying_tests
 from port_provenance.dumps import load_corpus
 from port_provenance.path_check import check_declared_paths
-from port_provenance.paths import DEFAULT_EXTRACTED, DEFAULT_FUNCS, WAIVERS
+from port_provenance.paths import BASELINE, DEFAULT_EXTRACTED, DEFAULT_FUNCS, WAIVERS
 from port_provenance.rows import IMAGE_ENTRY_ACCEPTED, SITE_ACCEPTED
 from port_provenance.signals.absent_citations import find_absent_citations
 from port_provenance.signals.doc_citations import (
@@ -28,6 +30,49 @@ from port_provenance.waivers import load_live, load_waivers
 
 # `--help` leads with the first line of the package docstring.
 from port_provenance import __doc__
+
+SIGNALS = ["module-orphan", "absent-citation", "doc-citation", "dual-label", "non-entry"]
+
+
+def snapshot(unwaived: list, stale: int) -> dict:
+    """The ratcheted figures, in the shape the baseline file carries."""
+    by_signal = {s: 0 for s in SIGNALS}
+    for f in unwaived:
+        by_signal[f.signal] = by_signal.get(f.signal, 0) + 1
+    return {"unwaived": by_signal, "stale_waivers": stale}
+
+
+def ratchet(snap: dict, update: bool) -> int:
+    """`--check`: no figure may rise above the baseline. `--update-baseline`
+    writes the current figures; a rise then needs a ledger entry in
+    `baseline-loosenings.toml`, which `check-baseline-loosening.py` enforces."""
+    if update:
+        BASELINE.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n")
+        print(f"check-port-provenance: wrote {BASELINE.name}")
+        return 0
+    if not BASELINE.is_file():
+        print(f"check-port-provenance: no baseline {BASELINE.name}; run --update-baseline")
+        return 1
+    base = json.loads(BASELINE.read_text())
+    flat_now = {f"unwaived/{k}": v for k, v in snap["unwaived"].items()}
+    flat_now["stale_waivers"] = snap["stale_waivers"]
+    flat_was = {f"unwaived/{k}": v for k, v in base.get("unwaived", {}).items()}
+    flat_was["stale_waivers"] = base.get("stale_waivers", 0)
+    rc = 0
+    for key, now in sorted(flat_now.items()):
+        was = flat_was.get(key, 0)
+        if now > was:
+            rc = 1
+            print(
+                f"check-port-provenance: RATCHET {key} rose {was} -> {now}. Read each "
+                "new row against the disassembly: fix the tag, or waive it with what "
+                "the bytes showed (a stale waiver: delete it)."
+            )
+        elif now < was:
+            print(f"check-port-provenance: {key} fell {was} -> {now}; --update-baseline keeps it")
+    if rc == 0:
+        print("check-port-provenance: ratchet ok - no unwaived finding beyond the baseline")
+    return rc
 
 # ---------------------------------------------------------------------------
 
@@ -80,6 +125,18 @@ def main() -> int:
         "--strict",
         action="store_true",
         help="exit 1 when an unwaived finding remains (the ratchet)",
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="ratchet: fail when an unwaived count or the stale-waiver count rises "
+        "above scripts/ci/port-provenance-baseline.json; SKIPPED (exit 0) without "
+        "the dump corpus or the extracted images",
+    )
+    ap.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="write the current figures to the baseline",
     )
     ap.add_argument(
         "--emit-waivers",
@@ -136,7 +193,19 @@ def main() -> int:
             "`--funcs <dir>` pointing at a checkout that has the corpus, or "
             "pass --allow-vacuous to accept exit 0."
         )
+        if args.check:
+            print("check-port-provenance --check: SKIPPED, NOT RATCHETED (no dump corpus)")
+            return 0
         return 0 if args.allow_vacuous else 2
+    if (args.check or args.update_baseline) and not images():
+        print(
+            f"check-port-provenance --check: SKIPPED, NOT RATCHETED (no extracted "
+            f"images under {paths.EXTRACTED}; a partial run over-reports)"
+        )
+        return 0 if args.check else 2
+    if (args.check or args.update_baseline) and (args.addr or args.signal or args.live_only):
+        print("check-port-provenance: --check / --update-baseline take no display filter")
+        return 2
 
     by_addr, df, cdf = load_corpus()
     tags = collect_tags()
@@ -182,12 +251,36 @@ def main() -> int:
             or any(a in live for a in re.findall(CODE_ADDR, "\n".join(f.lines)))
         ]
 
+    # A differential that runs the tagged routine is evidence, not a waiver: the
+    # tag sites it backs are verified, and a suspicion signal on one is settled.
+    decl = declared()
+    verified_sites = [
+        (t, tests) for t in tags if (tests := verifying_tests(t, decl))
+    ]
+    verified_at: dict[tuple[str, str], list[str]] = {}
+    for t, tests in verified_sites:
+        verified_at[(t.addr, t.file)] = tests
+
+    def verified_by(f) -> list[str]:
+        if f.signal not in SETTLED_SIGNALS or not f.addr:
+            return []
+        file = f.where.rsplit(":", 1)[0]
+        return verified_at.get((f.addr, file), [])
+
     waivers = load_waivers()
-    unwaived = [f for f in findings if f.key not in waivers]
+    unwaived = [f for f in findings if f.key not in waivers and not verified_by(f)]
     shown = findings if args.show_waived else unwaived
     shown.sort(key=lambda f: (-f.rank, f.signal, f.key))
     if args.top:
         shown = shown[: args.top]
+
+    if args.check or args.update_baseline:
+        stale = len(set(waivers) - all_keys)
+        for f in sorted(unwaived, key=lambda x: x.key):
+            print(f"  unwaived {f.signal}  {f.where}")
+        for key in sorted(set(waivers) - all_keys):
+            print(f"  stale waiver {key}")
+        return ratchet(snapshot(unwaived, stale), args.update_baseline)
 
     if args.emit_waivers:
         for f in sorted(unwaived, key=lambda x: x.key):
@@ -228,9 +321,18 @@ def main() -> int:
         )
         for subj, site, img in accepted:
             print(f"    FUN_{subj} @ {site}: prologue in {img}")
+    v_addrs = {t.addr for t, _ in verified_sites}
+    print(
+        f"  {len(v_addrs)} PORT address(es) over {len(verified_sites)} tag site(s) "
+        "verified by a retail-exec differential that runs the routine "
+        "(differential-coverage.py lists them)."
+    )
     for f in shown:
         mark = " [LIVE]" if f.addr and f.addr in live else ""
         waived = " [waived]" if f.key in waivers else ""
+        tests = verified_by(f)
+        if tests:
+            waived += f" [differential-verified: {', '.join(tests[:3])}]"
         print(f"\n{f.signal}  {f.where}{mark}{waived}")
         for line in f.lines:
             print("  " + line)
@@ -252,7 +354,7 @@ def main() -> int:
     print(
         f"\n{len(unwaived)} unwaived finding(s) "
         + (", ".join(f"{k}={v}" for k, v in sorted(by_signal.items())) or "(none)")
-        + f"; {len(findings) - len(unwaived)} waived."
+        + f"; {len(findings) - len(unwaived)} waived or differential-verified."
     )
     if not imgs and not args.allow_vacuous:
         print(

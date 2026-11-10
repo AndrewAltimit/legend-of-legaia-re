@@ -38,6 +38,7 @@ def summarize(rows: list[dict]) -> str:
         1 for r in rows if r["ported"] and not r["documented"]
     )
     ported_not_dumped = sum(1 for r in rows if r["ported"] and not r["dumped"])
+    ported_differential = sum(1 for r in rows if r["ported"] and r["differential"])
     live_block: list[str] = []
     if any(r["live_known"] for r in rows):
         ported_rows = [r for r in rows if r["ported"]]
@@ -91,6 +92,7 @@ def summarize(rows: list[dict]) -> str:
             f"dumped                        : {n_dumped}",
             f"documented (in docs/)         : {n_documented}",
             f"ported (// PORT: tag)         : {n_ported}",
+            f"  run by a retail-exec differential             : {ported_differential}",
             "",
             f"dumped + documented           : {dd}",
             f"dumped + documented + ported  : {ddp}",

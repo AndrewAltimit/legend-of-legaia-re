@@ -149,6 +149,19 @@ def collect_doc_citations() -> dict[str, set[str]]:
     return out
 
 
+def collect_differential() -> dict[str, list[str]]:
+    """Return {addr: [test paths]} for every routine a retail-exec test
+    declares with `differential!` (see `scripts/ci/differential_map.py`).
+    Reads the test sources only, so it needs no disc and no build."""
+    import differential_map
+
+    out: dict[str, list[str]] = defaultdict(list)
+    for t in differential_map.scan().tests:
+        for _img, va in t.routines:
+            out[f"{va:08x}"].append(t.path)
+    return dict(out)
+
+
 def collect_ports() -> dict[str, set[str]]:
     """Return {addr: set(crate_names)} for every Rust `// PORT: FUN_<addr>` tag.
 

@@ -88,8 +88,14 @@ def build_rows(
     ports: dict[str, set[str]],
     ignore: dict[str, tuple[str, str]] | None = None,
     live: dict[str, dict] | None = None,
+    differential: dict[str, list[str]] | None = None,
 ) -> list[dict]:
-    """Union the four signals into a per-address row list, sorted by address."""
+    """Union the four signals into a per-address row list, sorted by address.
+
+    `differential` maps an address to the retail-exec tests whose
+    `differential!` declaration runs it (`differential_map.py`); it marks a row,
+    it does not add one - a routine nobody cites is not a catalog row."""
+    differential = differential or {}
     addrs = set(dumped) | set(refs) | set(docs) | set(ports)
     ignore = ignore or {}
     live = live if live is not None else {}
@@ -118,6 +124,8 @@ def build_rows(
                 "documented": is_documented,
                 "doc_sources": doc_hits,
                 "ported": is_ported,
+                "differential": addr in differential,
+                "differential_tests": differential.get(addr, []),
                 "port_crates": port_crates,
                 "refs": refs.get(addr, 0),
                 "first_sources": sources.get(addr, [])[:3],
@@ -156,6 +164,10 @@ def filter_rows(rows: list[dict], args: argparse.Namespace) -> list[dict]:
         out.sort(key=lambda r: (r["not_wired_tag"], r["addr"]))
     if args.live_only:
         out = [r for r in out if r["ported"] and r["live"]]
+    if getattr(args, "no_differential", False):
+        out = [r for r in out if r["ported"] and not r["differential"]]
+        if any(r["live_known"] for r in out):
+            out = [r for r in out if r["live"]]
     if args.bucket:
         out = [r for r in out if r["bucket"] == args.bucket]
     if args.top:

@@ -52,6 +52,11 @@ def render_dashboard(
         if r["dumped"] and r["documented"] and not r["ported"] and r["ignored"]
     )
     remaining = dd_not_p - dd_not_p_ignored
+    n_diff = sum(1 for r in all_rows if r["ported"] and r["differential"])
+    live_known = any(r["live_known"] for r in all_rows)
+    n_live_no_diff = sum(
+        1 for r in all_rows if r["ported"] and r["live"] and not r["differential"]
+    )
     lines.extend(
         [
             f"- **dumped**: {n_dumped}",
@@ -59,6 +64,17 @@ def render_dashboard(
             f"- **ported** (`// PORT:` tag): {n_ported}",
             f"- **ignored** (ignore-list rows; kinds in the ignore-list summary): {n_ignored}",
             f"- **port worklist** (dumped + documented, not ported, not ignored): {remaining}",
+            f"- **differential** (ported, and a retail-exec test runs the routine against its port): "
+            f"{n_diff} / {n_ported} ({(100.0 * n_diff / n_ported) if n_ported else 0.0:.1f}%)",
+        ]
+        + (
+            [
+                f"- **live without a differential** (`--no-differential --live` lists them): {n_live_no_diff}",
+            ]
+            if live_known
+            else []
+        )
+        + [
             "",
         ]
     )
@@ -72,8 +88,8 @@ def render_dashboard(
                 "Reachable counts widen as more dumps land - feature views start tight and grow.",
                 "**In scope** = Reachable minus Ignored, and it is the Port % denominator: an ignore-list row is an address this project will never port line by line (library code mapped to a native equivalent, an address that starts no routine, a game routine the port covers another way, or one nothing on the disc reaches), so counting it would cap a finished feature below 100%. **Ported** counts in-scope rows only.",
                 "",
-                "| Feature | Reachable | In scope | Ported | Port % | Missing | Ignored | Description |",
-                "|---|---:|---:|---:|---:|---:|---:|---|",
+                "| Feature | Reachable | In scope | Ported | Port % | Differential | Missing | Ignored | Description |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         # Compute per-feature numbers and stash for the per-feature top-N
@@ -111,6 +127,9 @@ def render_dashboard(
                 1 for r in f_rows if r["ported"] and not r["ignored"]
             )
             pct = (100.0 * n_ported_scope_f / n_scope_f) if n_scope_f else 0.0
+            n_diff_f = sum(
+                1 for r in f_rows if r["ported"] and r["differential"] and not r["ignored"]
+            )
             stats = {
                 "reachable": n_reach,
                 "ported": n_ported_f,
@@ -124,7 +143,7 @@ def render_dashboard(
             desc = body.get("description", "") or ""
             lines.append(
                 f"| `{name}` | {n_reach} | {n_scope_f} | {n_ported_scope_f} | "
-                f"{pct:.1f}% | {n_missing_f} | {n_ignored_f} | {desc} |"
+                f"{pct:.1f}% | {n_diff_f} | {n_missing_f} | {n_ignored_f} | {desc} |"
             )
         lines.append("")
 

@@ -17,8 +17,9 @@ beside it:
     port_provenance/citation_support.py  cited addresses no dump carries
     port_provenance/findings.py          the finding record
     port_provenance/signals/             one module per signal
+    port_provenance/differential.py      retail-exec differentials as evidence
     port_provenance/waivers.py           the waiver file and the live set
-    port_provenance/cli.py               command line and report
+    port_provenance/cli.py               command line, report and ratchet
 
 Reviewed false positives go in `port-provenance-waivers.toml`.
 
@@ -29,6 +30,7 @@ Usage:
     python3 scripts/ci/check-port-provenance.py --addr 801d5de0
     python3 scripts/ci/check-port-provenance.py --signal dual-label
     python3 scripts/ci/check-port-provenance.py --strict     # exit 1 on unwaived
+    python3 scripts/ci/check-port-provenance.py --check      # the ratchet (hook, CI)
     python3 scripts/ci/check-port-provenance.py --emit-waivers
     python3 scripts/ci/check-port-provenance.py --funcs DIR --extracted DIR
 """

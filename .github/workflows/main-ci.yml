@@ -251,6 +251,23 @@ jobs:
       - name: Port-catalog ratchet (skips without the dump corpus)
         run: python3 scripts/ci/port-catalog.py --check --live
 
+      # Which PORT-tagged routines a crates/retail-exec differential runs. The
+      # figure is read off the tests' `differential!` declarations, which each
+      # test checks against the routines it enters when the disc is present,
+      # so this needs neither the disc nor a build and has teeth here: a test
+      # without a declaration, a declaration this cannot resolve, or coverage
+      # below the baseline fails. See docs/tooling/retail-kernel-differential.md.
+      - name: Differential coverage ratchet
+        run: python3 scripts/ci/differential-coverage.py --check
+
+      # Unwaived provenance findings may not grow, and a waiver that matches no
+      # finding may not linger. It reads the gitignored dump corpus and the
+      # extracted images, so it reports SKIPPED here and has teeth in the hook
+      # and in full-gate's data pass - listed for the same reason the
+      # disc-coverage ratchet is.
+      - name: Port provenance ratchet (skips without the dump corpus)
+        run: python3 scripts/ci/check-port-provenance.py --check
+
       # Every pack under packs/ validates, bundles byte-for-byte the same
       # twice and reads back clean - what release-build.sh ships as
       # packs/<id>.lxpack. Builds the `asset` CLI (dev profile), the one gate

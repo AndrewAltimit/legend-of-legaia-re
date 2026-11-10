@@ -9,6 +9,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent.parent
 CRATES_DIR = REPO / "crates"
 WAIVERS = Path(__file__).resolve().parent.parent / "port-provenance-waivers.toml"
+BASELINE = Path(__file__).resolve().parent.parent / "port-provenance-baseline.json"
 LIVE_CSV = REPO / "target" / "port-catalog" / "catalog.csv"
 OVERLAY_MAP = CRATES_DIR / "asset" / "data" / "static-overlays.toml"
 

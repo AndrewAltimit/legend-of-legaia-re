@@ -1173,3 +1173,10 @@ changes = [
   ["states/rugi_rogue_pre_rogue_thunder/image", 0.999, 0.998],
   ["states/taiku_terror_face_pre_fissure/image", 0.998, 0.997],
 ]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "FUN_801CEB84 is the battle grid emitter FUN_801D02C0 relocated into the Baka Fighter overlay (290 instructions, identical modulo relocation) and the ignore list files it as that duplicate. Its PORT tag on the duel floor cue counted one kernel twice and contradicted the ignore row (the provenance checker's non-entry finding); it is a REF now, and the cue calls FUN_801D02C0's port."
+changes = [
+  ["totals/ported", 1048, 1047],
+]
