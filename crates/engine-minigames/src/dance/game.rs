@@ -1162,12 +1162,14 @@ impl DanceGame {
         Some(self.cell(self.lane(), self.beat_index()))
     }
 
-    /// The symbol the **CPU auto-feed** would press for the human's lane
-    /// (`FUN_801d1820` - the display half, which substitutes the triangle symbol
-    /// `3` on the combo slot once the dancer's schedule is due). Kept for hosts
-    /// that draw the retail "displayed" note; only [`Self::judged_symbol`]
-    /// scores a direction.
-    // PORT: FUN_801d1820 (chart lookup - the auto-feed / display half)
+    /// The note a host draws for the human's lane: nothing in the dead zone,
+    /// the triangle symbol `3` on every combo slot, else the lane's chart
+    /// cell. A host aid, not a retail routine: the CPU feed it resembles
+    /// ([`Self::auto_feed`], `FUN_801d1820`) shows the triangle only once the
+    /// dancer's schedule is due, moves that schedule, and reads the lane off
+    /// the dancer's own gauge. Only [`Self::judged_symbol`] scores a
+    /// direction.
+    // REF: FUN_801d1820
     pub fn required_symbol(&self) -> Option<u8> {
         if self.in_dead_zone() {
             return None;
