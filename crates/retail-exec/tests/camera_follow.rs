@@ -14,7 +14,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::camera_zone::{
     CameraZoneConfig, ComposeInputs, EASE_SHIFT_TABLE, clamp_focus, compose, ease_step,
-    ease_step_i16, sqrt0,
+    ease_step_i16, snap, sqrt0,
 };
 use psx_retail_exec::{A0, Stop, V0};
 use std::cell::Cell;
@@ -302,5 +302,186 @@ fn the_follow_camera_composes_eases_and_clamps_as_retail() {
             .enumerate()
             .all(|(m, &n)| m == 6 || n > 500),
         "{mode_hits:?}"
+    );
+}
+
+const COMPOSE: u32 = 0x801D_AB90;
+const SNAP: u32 = 0x801D_B8EC;
+const STAGING: u32 = 0x801F_3580;
+const SET_H: u32 = 0x8003_D254;
+
+/// The composer called on its own into the staging block the snap and the
+/// ease both use, and the snap `FUN_801DB8EC` (compose, copy every staged
+/// field through the descriptor list, load `H`, seat the focus), each against
+/// `compose` / `snap`. The staging block is compared whole: the target
+/// fields at `+0x02 / +0x06 / +0x0E / +0x12 / +0x16 / +0x26`, the player's
+/// negated X / Z and footing at `+0x1A / +0x22 / +0x1E`, and every byte the
+/// composer leaves alone.
+#[test]
+fn the_composer_and_the_snap_match_retail() {
+    differential!(prot(897, COMPOSE), prot(897, SNAP));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+    cpu.mem.wr32(PLAYER_PTR, PLAYER);
+    let floor = Rc::new(Cell::new(0i32));
+    {
+        let floor = floor.clone();
+        cpu.hook(FLOOR, move |r, _| r.r[V0] = floor.get() as u32);
+    }
+    cpu.hook(SQRT, |r, _| r.r[V0] = sqrt0(r.r[A0] as i32) as u32);
+    let h_loaded = Rc::new(Cell::new(0u32));
+    {
+        let h_loaded = h_loaded.clone();
+        cpu.hook(SET_H, move |r, _| h_loaded.set(r.r[A0]));
+    }
+    let mut rng = Rng(0x534E_4150);
+    let (mut composed, mut snapped, mut traps, mut held, mut failures) = (0, 0, 0, 0, Vec::new());
+    let mut modes = [0u32; 8];
+    for case in 0..30_000 {
+        let cfg = config(&mut rng);
+        cpu.mem.load(BLOCK, &cfg.to_retail_block());
+        let enable = rng.below(6) != 0;
+        cpu.mem.wr8(BLOCK + 6, u8::from(enable));
+        let half_eye = rng.below(3) == 0;
+        cpu.mem.wr8(HALF_EYE, u8::from(half_eye));
+        let bx0 = rng.below(0x70);
+        let bz0 = rng.below(0x70);
+        let attr_box = [
+            bx0 as u8,
+            bz0 as u8,
+            (bx0 + rng.below(0x10)) as u8,
+            (bz0 + rng.below(0x10)) as u8,
+        ];
+        for (k, b) in attr_box.iter().enumerate() {
+            cpu.mem.wr8(ATTR_BOX + k as u32, *b);
+        }
+        let px = (bx0 * 0x80 + rng.below(0x900)) as i32 - 0x80;
+        let pz = (bz0 * 0x80 + rng.below(0x900)) as i32 - 0x80;
+        let footing = s16(&mut rng, 0x400);
+        floor.set(s16(&mut rng, 0x400));
+        for (o, v) in [(0x14, px), (0x16, footing), (0x18, pz)] {
+            cpu.mem.wr16(PLAYER + o, v as u16);
+        }
+        let start = Pose {
+            pitch: s16(&mut rng, 0x2000) as i16,
+            yaw: s16(&mut rng, 0x2000) as i16,
+            h: rng.below(0x400) as i16,
+            eye: [
+                s16(&mut rng, 0x400),
+                s16(&mut rng, 0x800),
+                s16(&mut rng, 0x8000),
+            ],
+            focus: [s16(&mut rng, 0x4000), s16(&mut rng, 0x4000)],
+        };
+        write_pose(&mut cpu, &start);
+        let junk: Vec<u8> = (0..0x28).map(|_| rng.next() as u8).collect();
+        cpu.mem.load(STAGING, &junk);
+        let inputs = ComposeInputs {
+            player: [px, footing, pz],
+            floor_y: floor.get(),
+            attr_box,
+            live_pitch: i32::from(start.pitch),
+            live_yaw: i32::from(start.yaw),
+            half_eye_y: half_eye,
+        };
+        let mode = cfg.mode >> 4;
+
+        if rng.below(2) == 0 {
+            // The composer alone.
+            let stop = cpu.call(COMPOSE, &[PLAYER, STAGING]);
+            if let Stop::DivideByZero { .. } = stop {
+                traps += 1;
+                continue;
+            }
+            assert_eq!(stop, Stop::Returned, "case {case}");
+            composed += 1;
+            modes[usize::from(mode)] += 1;
+            let c = compose(&cfg, &inputs);
+            let t = c.target;
+            let mut port = junk.clone();
+            let mut put = |off: usize, v: i16| port[off..off + 2].copy_from_slice(&v.to_le_bytes());
+            put(0x02, t.pitch);
+            put(0x06, t.yaw);
+            put(0x0E, t.eye[0]);
+            put(0x12, t.eye[1]);
+            put(0x16, t.eye[2]);
+            put(0x26, t.h);
+            put(0x0A, 0);
+            put(0x1A, (-px) as i16);
+            put(0x1E, footing as i16);
+            put(0x22, (-pz) as i16);
+            let retail = cpu.mem.read(STAGING, 0x28);
+            let live_yaw = cpu.mem.rd16(YAW) as i16;
+            let port_live_yaw = c.live_yaw.unwrap_or(start.yaw);
+            if (retail.clone(), live_yaw) != (port.clone(), port_live_yaw) && failures.len() < 12 {
+                failures.push(format!(
+                    "compose case {case} mode {:#04x} b60a {:#04x} b60b {:#04x}: live yaw retail \
+                     {live_yaw:#x} port {port_live_yaw:#x}; {:?}",
+                    cfg.mode,
+                    cfg.b60a,
+                    cfg.b60b,
+                    crate::common::diff_offsets(&retail, &port)
+                ));
+            }
+            continue;
+        }
+
+        // The snap.
+        h_loaded.set(0xDEAD);
+        let stop = cpu.call(SNAP, &[PLAYER]);
+        if let Stop::DivideByZero { .. } = stop {
+            traps += 1;
+            continue;
+        }
+        assert_eq!(stop, Stop::Returned, "case {case}");
+        let retail = read_pose(&mut cpu);
+        let mut port = Pose { ..start };
+        if enable {
+            snapped += 1;
+            let c = compose(&cfg, &inputs);
+            if let Some(ly) = c.live_yaw {
+                port.yaw = ly;
+            }
+            let (pitch, yaw, eye, h) = snap(&c.target);
+            port.pitch = pitch as i16;
+            port.yaw = yaw as i16;
+            port.eye = eye;
+            port.h = h as i16;
+            port.focus = if mode == 5 {
+                [-(cfg.anchor_x << 7) - 0x40, -(cfg.anchor_z << 7) - 0x40]
+            } else {
+                [-px, -pz]
+            };
+            assert_eq!(h_loaded.get() as i16, port.h, "case {case}: the H load");
+        } else {
+            held += 1;
+            assert_eq!(h_loaded.get(), 0xDEAD, "case {case}: disabled, no H load");
+        }
+        let same = (retail.pitch, retail.yaw, retail.h, retail.eye, retail.focus)
+            == (port.pitch, port.yaw, port.h, port.eye, port.focus);
+        if !same && failures.len() < 12 {
+            failures.push(format!(
+                "snap case {case} mode {:#04x} enable {enable}\n  retail {}\n  port   {}",
+                cfg.mode,
+                fmt_pose(&retail),
+                fmt_pose(&port)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    eprintln!("{composed} composed, {snapped} snapped, {held} held, {traps} traps, {modes:?}");
+    assert!(
+        composed > 12_000 && snapped > 10_000 && held > 1000,
+        "{composed} {snapped} {held}"
+    );
+    assert!(
+        modes.iter().enumerate().all(|(m, &n)| m == 6 || n > 300),
+        "{modes:?}"
     );
 }

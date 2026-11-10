@@ -95,6 +95,7 @@ mod equip_commit;
 mod escape;
 mod escape_timer;
 mod euler_rot;
+mod field_actor_plan;
 mod field_camera;
 mod field_ctx;
 mod field_leaves;
