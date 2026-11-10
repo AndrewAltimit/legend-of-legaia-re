@@ -172,3 +172,91 @@ fn the_tackle_screen_runs_as_retail_runs_it() {
         "lures {lures} rods {rods} refused {refused} left {left} wraps {wraps}"
     );
 }
+
+/// The overlay's bring-up `FUN_801CF070`, whole, with every routine it calls
+/// outside the overlay stubbed: the rod its scan leaves in the persistent
+/// word against `entry_rod_index`, the floor-height table it writes to the
+/// scratchpad against `FISHING_FLOOR_LUT`, and the developer flag's points
+/// against `DEV_ENTRY_POINT_BONUS`.
+#[test]
+fn the_bring_up_leaves_the_rod_and_floor_table_retail_leaves() {
+    differential!(prot(972, BRING_UP));
+    const BRING_UP: u32 = 0x801C_F070;
+    const POINTS: u32 = 0x8008_444C;
+    const FLOOR_LUT: u32 = 0x1F80_035C;
+    use legaia_engine_fishing::fishing::{
+        DEV_ENTRY_POINT_BONUS, ENTRY_ROD_PROBES, FISHING_FLOOR_LUT, entry_rod_index,
+    };
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+    cpu.stub_outside = Some((
+        fs::FISHING_OVERLAY_BASE_VA,
+        fs::FISHING_OVERLAY_BASE_VA + overlay.len() as u32,
+    ));
+    let bag = Rc::new(RefCell::new((0u32, Vec::<u32>::new())));
+    let b = bag.clone();
+    cpu.hook(BAG_COUNT, move |r, _| {
+        let mut b = b.borrow_mut();
+        b.1.push(r.r[A0]);
+        // Bit `n` of the mask: rod `n` is held.
+        let held = r.r[A0]
+            .checked_sub(0xA0)
+            .is_some_and(|n| n < 3 && b.0 >> n & 1 != 0);
+        r.r[V0] = u32::from(held) * 3;
+    });
+    let mut rng = Rng(0x4252_4E47);
+    let (mut kept, mut stepped, mut none) = (0, 0, 0);
+    for round in 0..2000 {
+        let mask = rng.below(8);
+        let saved = if rng.below(6) == 0 {
+            3 + rng.below(6)
+        } else {
+            rng.below(3)
+        };
+        let dev = rng.below(4) == 0;
+        let points = rng.below(900_000);
+        *bag.borrow_mut() = (mask, Vec::new());
+        cpu.mem.wr32(ROD, saved);
+        cpu.mem.wr32(DEV_FLAG, u32::from(dev));
+        cpu.mem.wr32(POINTS, points);
+        for i in 0..16 {
+            cpu.mem.wr16(FLOOR_LUT + 2 * i, 0x7777);
+        }
+        assert_eq!(cpu.call(BRING_UP, &[]), Stop::Returned);
+
+        let mut probes = Vec::new();
+        let rod = entry_rod_index(saved, |id| {
+            probes.push(id);
+            i32::from(
+                id.checked_sub(0xA0)
+                    .is_some_and(|n| n < 3 && mask >> n & 1 != 0),
+            )
+        });
+        let ctx = format!("round {round} saved {saved} held {mask:#b}");
+        assert_eq!(cpu.mem.rd32(ROD), rod, "{ctx}: the rod");
+        assert_eq!(bag.borrow().1, probes, "{ctx}: the probes");
+        assert!(probes.len() <= ENTRY_ROD_PROBES as usize);
+        let lut: Vec<i16> = (0..16)
+            .map(|i| -(cpu.mem.rd16(FLOOR_LUT + 2 * i) as i16))
+            .collect();
+        assert_eq!(lut, FISHING_FLOOR_LUT, "{ctx}: the floor table");
+        assert_eq!(
+            cpu.mem.rd32(POINTS) as i32,
+            points as i32 + if dev { DEV_ENTRY_POINT_BONUS } else { 0 },
+            "{ctx}: the points"
+        );
+        kept += u32::from(rod == saved && mask != 0);
+        stepped += u32::from(rod != saved && mask != 0);
+        none += u32::from(mask == 0);
+    }
+    assert!(
+        kept > 300 && stepped > 300 && none > 100,
+        "{kept} {stepped} {none}"
+    );
+}
