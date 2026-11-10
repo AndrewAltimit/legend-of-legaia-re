@@ -453,3 +453,149 @@ fn the_window_register_keeps_the_list_retail_keeps() {
     }
     assert!(reused > 400, "re-registrations ran {reused} times");
 }
+
+const ITEM_DETAIL: u32 = 0x8003_37B0;
+const DRAW_LINES: u32 = 0x8003_CD00;
+const DRAW_RAW: u32 = 0x8003_6888;
+const BLIT_CELL: u32 = 0x8003_C11C;
+
+/// One draw the item-detail printer makes: a string (which drawer, the raw
+/// bytes, the pen) or a numeral cell (the digit, the pen).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DetailDraw {
+    Lines(Vec<u8>, i16, i16),
+    Raw(Vec<u8>, i16, i16),
+    Digit(u8, i16, i16),
+}
+
+/// A menu string in RAM, raw: two-byte escapes kept whole even when their
+/// operand is `0` (`ItemDetailTables`' reader).
+fn raw_string(m: &mut psx_retail_exec::Memory, mut at: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let b = m.rd8(at);
+        match b {
+            0 => break,
+            0xC1..=0xC7 | 0xCE | 0xCF => {
+                out.extend([b, m.rd8(at + 1)]);
+                at += 2;
+            }
+            _ => {
+                out.push(b);
+                at += 1;
+            }
+        }
+        assert!(out.len() < 0x200, "an unterminated string");
+    }
+    out
+}
+
+/// The item-detail printer `FUN_800337B0` against `item_detail_line`, over
+/// every item id with its own description and, for every equipment id, with
+/// none (the slot-template arm): the string drawers `FUN_8003CD00` /
+/// `FUN_80036888` and the numeral blit `FUN_8003C11C` recorded. The text
+/// is the line's, at the pen; each stat's label at its `label_dx`, one row
+/// down; its value in three 8-px cells from `value_dx`, right-aligned with
+/// leading zeros blank.
+#[test]
+fn the_item_detail_printer_draws_what_retail_draws() {
+    differential!(scus(ITEM_DETAIL));
+    use legaia_engine_menus::shop::{DETAIL_STAT_DY, ItemDetailTables, item_detail_line};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    let tables = ItemDetailTables::from_scus(&crate::common::scus().unwrap()).unwrap();
+    let draws = Rc::new(RefCell::new(Vec::<DetailDraw>::new()));
+    let d = draws.clone();
+    cpu.hook(DRAW_LINES, move |r, m| {
+        let s = raw_string(m, r.r[A0]);
+        d.borrow_mut()
+            .push(DetailDraw::Lines(s, r.r[A1] as i16, r.r[A2] as i16));
+    });
+    let d = draws.clone();
+    cpu.hook(DRAW_RAW, move |r, m| {
+        assert_eq!((r.r[A1], r.r[A2]), (0, 0), "a raw draw from the start");
+        let s = raw_string(m, r.r[A0]);
+        let y = m.rd32(r.r[29] + 0x10);
+        d.borrow_mut()
+            .push(DetailDraw::Raw(s, r.r[A3] as i16, y as i16));
+    });
+    let d = draws.clone();
+    cpu.hook(BLIT_CELL, move |r, m| {
+        let (pos, rect) = (r.r[A0], r.r[A1]);
+        assert_eq!(
+            (m.rd16(rect + 2), m.rd16(rect + 4), m.rd16(rect + 6)),
+            (0xD0, 8, 12),
+            "a numeral cell"
+        );
+        let u = m.rd16(rect);
+        assert_eq!(u % 8, 0);
+        d.borrow_mut().push(DetailDraw::Digit(
+            (u / 8) as u8,
+            m.rd16(pos) as i16,
+            m.rd16(pos + 2) as i16,
+        ));
+    });
+    const EMPTY: u32 = 0x8014_2000;
+    cpu.mem.wr8(EMPTY, 0);
+    let mut rng = Rng(0x4954_454D);
+    let (mut templated, mut equipped) = (0, 0);
+    for pass in 0..2 {
+        for id in 0..=255u8 {
+            let is_equip = tables.kind[usize::from(id)] == 1;
+            if pass == 1 && !is_equip {
+                continue;
+            }
+            let desc = if pass == 0 {
+                cpu.mem.rd32(ITEMS + 12 * u32::from(id) + 8)
+            } else {
+                EMPTY
+            };
+            if desc == 0 {
+                continue;
+            }
+            let (x, y) = (rng.below(200) as i16, rng.below(200) as i16);
+            cpu.mem.wr32(GP + 0x15C, 0);
+            draws.borrow_mut().clear();
+            let args = [desc, u32::from(id), x as u32, y as u32];
+            assert_eq!(cpu.call(ITEM_DETAIL, &args), Stop::Returned, "id {id:#x}");
+
+            let mut t = tables.clone();
+            if pass == 1 {
+                t.desc[usize::from(id)].clear();
+            }
+            let line = item_detail_line(&t, id);
+            let mut want = Vec::new();
+            let own = !t.desc[usize::from(id)].is_empty();
+            if own {
+                want.push(DetailDraw::Lines(line.text.clone(), x, y));
+            } else if is_equip {
+                templated += 1;
+                want.push(DetailDraw::Raw(line.text.clone(), x, y));
+            }
+            let sy = y + DETAIL_STAT_DY as i16;
+            for st in &line.stats {
+                let label: Vec<u8> = t.stat_labels[st.label].bytes().collect();
+                want.push(DetailDraw::Raw(label, x + st.label_dx as i16, sy));
+                let digits = [st.value / 100, st.value / 10 % 10, st.value % 10];
+                let mut lead = true;
+                for (k, dg) in digits.into_iter().enumerate() {
+                    lead &= dg == 0 && k < 2;
+                    if !lead {
+                        want.push(DetailDraw::Digit(
+                            dg,
+                            x + st.value_dx as i16 + 8 * k as i16,
+                            sy,
+                        ));
+                    }
+                }
+            }
+            equipped += usize::from(!line.stats.is_empty());
+            assert_eq!(*draws.borrow(), want, "pass {pass} id {id:#x}");
+        }
+    }
+    assert!(
+        templated > 50 && equipped > 100,
+        "templated {templated} equipped {equipped}"
+    );
+}
