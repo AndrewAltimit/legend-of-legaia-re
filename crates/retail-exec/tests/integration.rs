@@ -15,8 +15,6 @@ mod actor_draw;
 mod actor_node_pool;
 mod actor_tint;
 mod afterimage_walk;
-mod actor_node_pool;
-mod actor_tint;
 mod ambient_emitter;
 mod ambient_motion;
 mod anim_cue_walk;
