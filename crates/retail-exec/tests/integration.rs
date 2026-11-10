@@ -92,6 +92,7 @@ mod cd_plumbing;
 mod chain_ticks;
 mod chip_marks;
 mod chunk_install;
+mod class0_fill;
 mod clip_cursor;
 mod clip_morph;
 mod clip_vertex;

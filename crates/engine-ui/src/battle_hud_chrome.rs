@@ -136,7 +136,7 @@ pub fn message_banner_chrome_draws_for(
 /// The class-0 frame's **fill**: the frame rect `(x, y, w, h)` covered by
 /// the blue-marbled patch, drawn under the border.
 ///
-/// PORT: FUN_8002BDC4 - columns of [`CLASS0_FILL_TILE`] from the frame's
+/// After `FUN_8002BDC4` ([`class0_fill_quads`]): columns of [`CLASS0_FILL_TILE`] from the frame's
 /// left edge and bands of the same height from its top, the last of each
 /// clipped, texels 1:1 with pixels (each band restarts at texel row 0).
 /// Band `k`'s top grey is `0x40 + k * (0x900 / h)` and its bottom grey the
@@ -194,6 +194,65 @@ pub fn class0_fill_draws_at(
     class0_fill_rows_at(rects.panel_filigree, frame, stage_origin, stage_scale)
 }
 
+/// One `POLY_GT4` of the class-0 fill: the screen rect `(x, y, w, h)`, whose
+/// texels are the fill tile's from its origin (`u + 0..w`, `v + 0..h`), and
+/// the grey of its top and bottom edges (each the same left and right).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Class0FillQuad {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub top: i32,
+    pub bottom: i32,
+}
+
+/// The class-0 fill's quads over the frame rect `(x, y, w, h)` for a fill
+/// tile of `tile = (w, h)` texels, in retail's emission order: bands of the
+/// tile's height from the frame's top, each cut into columns of the tile's
+/// width from its left, the last band and column clipped to the frame.
+/// Band `k` runs grey `0x40 + k * (0x900 / h)` down to the next band's top,
+/// the last band ending on `0x88`.
+///
+/// PORT: FUN_8002BDC4 - called with the content pen `(x, y)` and size
+/// `(w, h)`, it fills the frame `(x - 4, y - 4, w + 8, h + 8)`
+/// (`0x8002BE2C..0x8002BE34`); its per-column grey step `(right - left) *
+/// 32 / w` is always zero, since a band's two edge greys advance together.
+pub fn class0_fill_quads(frame: (i32, i32, i32, i32), tile: (i32, i32)) -> Vec<Class0FillQuad> {
+    let (fx, fy, fw, fh) = frame;
+    let mut out = Vec::new();
+    if fw <= 0 || fh <= 0 || tile.0 <= 0 || tile.1 <= 0 {
+        return out;
+    }
+    let step = 0x900 / fh;
+    let (right, foot) = (fx + fw, fy + fh);
+    let mut y = fy;
+    let mut top = CLASS0_FILL_TOP;
+    while y < foot {
+        let (y1, bottom) = if y + tile.1 < foot {
+            (y + tile.1, top + step)
+        } else {
+            (foot, CLASS0_FILL_BOTTOM)
+        };
+        let mut x = fx;
+        while x < right {
+            let x1 = (x + tile.0).min(right);
+            out.push(Class0FillQuad {
+                x,
+                y,
+                w: x1 - x,
+                h: y1 - y,
+                top,
+                bottom,
+            });
+            x = x1;
+        }
+        y = y1;
+        top = bottom;
+    }
+    out
+}
+
 /// [`class0_fill_draws_at`]'s exact arm for any skin: the frame rect covered
 /// by one-row strips of the raw fill patch `raw`, each tinted to its row's
 /// grey. Bands of [`CLASS0_FILL_TILE`] rows restart the texture, band `k`
@@ -207,7 +266,7 @@ pub fn class0_fill_rows_at(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let (fx, fy, fw, fh) = frame;
+    let (_, _, fw, fh) = frame;
     let s = stage_scale as i32;
     let mut out = Vec::new();
     if fw <= 0 || fh <= 0 || raw.2 == 0 || raw.3 == 0 {
@@ -225,35 +284,30 @@ pub fn class0_fill_rows_at(
             color: [grey, grey, grey, 1.0],
         });
     };
-    let step = 0x900 / fh;
-    let mut band_y = 0;
-    let mut top = CLASS0_FILL_TOP;
-    while band_y < fh {
-        let bh = CLASS0_FILL_TILE.min(fh - band_y);
-        let bottom = if band_y + bh >= fh {
-            CLASS0_FILL_BOTTOM
-        } else {
-            top + step
-        };
+    let tile = (CLASS0_FILL_TILE.min(raw.2 as i32), CLASS0_FILL_TILE);
+    let quads = class0_fill_quads(frame, tile);
+    // Band by band (the quads of one band share `y`), row by row down it.
+    let mut first = 0;
+    while first < quads.len() {
+        let y = quads[first].y;
+        let end = first + quads[first..].iter().take_while(|q| q.y == y).count();
+        let band = &quads[first..end];
+        let (bh, top, bottom) = (band[0].h, band[0].top, band[0].bottom);
         for row in 0..bh {
             let grey = top + (bottom - top) * row / bh;
             let tex_row = raw.1 + (row as u32 % raw.3);
-            let mut x = 0;
-            while x < fw {
-                let cw = CLASS0_FILL_TILE.min(fw - x).min(raw.2 as i32);
+            for q in band {
                 push(
-                    (raw.0, tex_row, cw as u32, 1),
-                    fx + x,
-                    fy + band_y + row,
-                    cw,
+                    (raw.0, tex_row, q.w as u32, 1),
+                    q.x,
+                    q.y + row,
+                    q.w,
                     1,
                     grey as f32 / 128.0,
                 );
-                x += cw;
             }
         }
-        band_y += bh;
-        top = bottom;
+        first = end;
     }
     out
 }
