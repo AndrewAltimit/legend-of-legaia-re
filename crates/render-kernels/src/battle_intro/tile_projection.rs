@@ -133,6 +133,14 @@ pub(super) fn project_intro_corner(rot: &GteMat3, tr: GteVec3, c: (i16, i16, i16
 
 /// Project one tile's ten-face packet and append the survivors to `prims`.
 ///
+/// `FUN_801D0E54` hands the dispatcher the record's progress `+0x00` as its
+/// third argument, and a non-zero one selects the depth-cue bank: the
+/// slot-17 leaf is then `FUN_80044DC8`, which rejects a quad wholly off the
+/// screen (`FUN_80044798`) and fades the face colour toward the far colour
+/// `0` by `IR0 = progress` (`DPCS` at `0x80044F74`), so a tile darkens as it
+/// flies apart. Only a tile at progress `0` takes the plain leaf
+/// `FUN_800439E4`.
+///
 /// The accept chain is the FT4 handler's (`FUN_800439E4`, the slot-17 leaf
 /// `FUN_80043390` dispatches this packet to): `NCLIP` over corners 0-2, a
 /// second `NCLIP` over 1-3 after the fourth `RTPS`, **accept unless
@@ -173,6 +181,7 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
             grey << 16 | grey << 8 | grey,
             q.semi_transparent,
             CullMode::SingleSided,
+            (rec.progress != 0).then_some(rec.progress),
             prims,
         );
     }
@@ -225,6 +234,10 @@ pub(super) enum CullMode {
 /// fourth `RTPS`, reject on `n1 <= 0 && n2 >= 0` (through the [`CullMode`]
 /// mask), then `AVSZ4` for the OT depth and the [`INTRO_NEAR_OTZ`] cutoff.
 /// Returns whether the quad was pushed.
+///
+/// `fade` selects the depth-cue leaf (`FUN_80044DC8` for a tile): after the
+/// near cutoff it drops a quad wholly off the screen ([`offscreen`]) and
+/// fades `color` toward black by `IR0 = fade` ([`dpcs_toward_black`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_ft4_quad(
     p: &[ProjCorner; 4],
@@ -234,6 +247,7 @@ pub(super) fn push_ft4_quad(
     color: u32,
     semi_transparent: bool,
     cull: CullMode,
+    fade: Option<i16>,
     prims: &mut Vec<ScreenPrim>,
 ) -> bool {
     if cull == CullMode::SingleSided {
@@ -247,6 +261,18 @@ pub(super) fn push_ft4_quad(
     if otz < INTRO_NEAR_OTZ {
         return false;
     }
+    let color = match fade {
+        Some(ir0) => {
+            if offscreen(std::array::from_fn(|i| {
+                (p[i].xy.x as i16, p[i].xy.y as i16)
+            })) {
+                return false;
+            }
+            let c = |shift: u32| u32::from(dpcs_toward_black((color >> shift) as u8, ir0));
+            c(16) << 16 | c(8) << 8 | c(0)
+        }
+        None => color,
+    };
     let Some(xy) = gpu_span_cut(std::array::from_fn(|i| {
         (p[i].xy.x as i16, p[i].xy.y as i16)
     })) else {
@@ -264,6 +290,24 @@ pub(super) fn push_ft4_quad(
         depth: None,
     }));
     true
+}
+
+/// The depth-cue leaves' screen reject `FUN_80044798`: a quad whose four
+/// corners all lie above row `0`, at or below row `0xF0`, at or left of
+/// column `0`, or at or right of column `0x140` is dropped.
+pub(super) fn offscreen(xy: [(i16, i16); 4]) -> bool {
+    xy.iter().all(|c| c.1 < 0)
+        || xy.iter().all(|c| c.1 >= 0xF0)
+        || xy.iter().all(|c| c.0 <= 0)
+        || xy.iter().all(|c| c.0 >= 0x140)
+}
+
+/// One channel of `DPCS` (`sf = 1`) toward a far colour of `0`:
+/// `MAC = (c << 16) + IR0 * IR`, `IR = -(c << 4)`, the colour `MAC >> 16`.
+pub(super) fn dpcs_toward_black(c: u8, ir0: i16) -> u8 {
+    let c = i64::from(c);
+    let mac = (c << 16) + i64::from(ir0) * -(c << 4);
+    ((mac >> 12) >> 4).clamp(0, 0xFF) as u8
 }
 
 /// The GPU's polygon-size limit on one projected `POLY_FT4`.

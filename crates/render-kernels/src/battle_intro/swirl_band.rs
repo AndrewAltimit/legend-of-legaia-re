@@ -100,6 +100,7 @@ pub fn emit_swirl_band(
                 rgb,
                 false,
                 CullMode::DoubleSided,
+                None,
                 prims,
             );
         }
