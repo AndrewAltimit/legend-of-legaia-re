@@ -51,6 +51,17 @@ impl World {
         self.effect_pool.install_child_snapshot(&children);
     }
 
+    /// Whether the pool's spawn API and walker run this frame. Both entries
+    /// open on the same two tests (`0x801DFDF0..0x801DFE30`,
+    /// `0x801E0080..0x801E00C4`): the pool-ready byte `0x8007BD58` and the
+    /// battle-end byte `DAT_8007BD71 == 0xFF`. Once the wipe or escape
+    /// teardown stores `0xFE` there ([`crate::world::World::battle`]'s `end`),
+    /// a spawn returns before taking a slot and the walker returns before
+    /// either pass - no child steps and none is drawn.
+    fn effect_pool_live(&self) -> bool {
+        !(self.mode == legaia_engine_mode::mode::SceneMode::Battle && self.battle.end.is_some())
+    }
+
     /// Tick the effect pool - one sweep of the faithful retail walker
     /// (`Pool::tick_retail`, the `FUN_801E0088` pass-1 port): the master
     /// spawn cadence over the catalog's 14-byte pack1 records and the child
@@ -64,7 +75,9 @@ impl World {
     ///
     /// REF: FUN_801E0088
     pub fn tick_effects(&mut self) {
-        self.with_effect_pool(|pool, host, catalog| pool.tick_retail(host, catalog, 1));
+        if self.effect_pool_live() {
+            self.with_effect_pool(|pool, host, catalog| pool.tick_retail(host, catalog, 1));
+        }
         self.debug_effects.retain_mut(|d| {
             d.age_frames += 1;
             d.age_frames < DEBUG_EFFECT_LIFETIME_FRAMES
@@ -122,6 +135,9 @@ impl World {
     ///
     /// REF: FUN_801E0088
     pub fn active_effect_sprites(&self) -> Vec<EffectSprite> {
+        if !self.effect_pool_live() {
+            return Vec::new();
+        }
         self.effect_pool
             .child_billboards(&self.effect_catalog)
             .into_iter()
@@ -349,6 +365,9 @@ impl World {
         angle: u16,
         sweeps: u8,
     ) {
+        if !self.effect_pool_live() {
+            return;
+        }
         self.with_effect_pool(|pool, host, catalog| {
             if let Some(mi) = pool.spawn_by_ui_id(host, ui_id, world_pos, angle, catalog) {
                 pool.catch_up_master(host, catalog, mi, sweeps);

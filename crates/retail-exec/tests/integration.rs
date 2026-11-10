@@ -84,6 +84,7 @@ mod defeat_credit;
 mod dialog_pager;
 mod drop_shadow;
 mod effect_script;
+mod effect_vm;
 mod element_change;
 mod encounter_carve;
 mod encounter_roll;

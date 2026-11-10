@@ -165,7 +165,7 @@ fn spawn_distributes_random_children_when_flag_set() {
     // child 1: (31 % 32) - 16 = 15, (7 % 32) - 16 = -9.
     assert_eq!(host.events, vec![HostEvent::Random; 4]);
     assert_eq!(
-        pool.master_slots[slot].child_offsets,
+        pool.scribbled_legs[&pool.master_slots[slot].ui_id],
         vec![(-16, -8), (15, -9)]
     );
 }
@@ -847,7 +847,7 @@ fn retail_randomized_offsets_override_record_legs() {
     host.rng_seq = vec![20, 24, 0];
     pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
         .expect("spawn");
-    assert_eq!(pool.master_slots[0].child_offsets, vec![(4, 8)]);
+    assert_eq!(pool.scribbled_legs[&0], vec![(4, 8)]);
 
     pool.tick_retail(&mut host, &catalog, 1);
     let c = &pool.children[0];

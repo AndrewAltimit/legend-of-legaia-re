@@ -43,6 +43,21 @@ Spawn ids `4` and `0x13` make a side call to the move-VM part spawner
 `0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the
 ordinary spawn path.
 
+Both entries return at once unless the pool-ready byte is set and the
+battle-end byte `DAT_8007BD71` holds `0xFF`: once a wipe or the escape
+teardown stores `0xFE` there, a spawn takes no slot and the walker runs
+neither pass, so no child moves or draws again (`World::tick_effects`,
+`World::active_effect_sprites` and the spawn seat test `battle.end`).
+
+**The randomized offsets live in the script, not the slot.** For an effect
+whose pack1 flags carry bit 0, the spawn draws two `rand()` per record and
+writes `rand % (2 * spread) - spread` back into each record's `+2` / `+6`
+legs in the resident `efect.dat` buffer (`0x801DFF64..0x801E0028`). Every
+master of that id reads its records from that one buffer, so a second spawn
+re-deals the legs of a first one still releasing children. The port keeps the
+legs per effect id (`Pool::scribbled_legs`), dropped with the pool at battle
+teardown as the buffer is reloaded.
+
 ## Lifecycle
 
 ```mermaid

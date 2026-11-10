@@ -907,6 +907,14 @@ port negated a halfword. The arm's destination is rung `op[2]` of the scene floo
 wrote, so `+0x1A` after `0x0E` / `0x12` is not compared. Sub-op `0x3C` ramps toward the operand's `lh`, where the
 port's fade request carries a byte; no larger operand is generated.
 
+The battle effect pool runs whole (`effect_vm`): the init and pack fixup `FUN_801DE914` over the real
+`efect.dat`, the spawn API `FUN_801DFDF0` over every effect id with the ids `4` / `0x13` side call, and
+the walker `FUN_801E0080` frame by frame at frame steps `0..=3`, every master and child slot compared
+and every pass-2 packet held to `child_billboards`. The spawn's randomized offsets are written into the
+shared script buffer, so a second spawn of an effect re-deals the legs of an earlier master still
+releasing children; the port kept them per master. Both entries also stand still once the battle-end
+byte leaves `0xFF`, which the engine's spawn, walk and draw did not test.
+
 The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
 `.MAP` (`window_rebuild`) match on their first run.
 
