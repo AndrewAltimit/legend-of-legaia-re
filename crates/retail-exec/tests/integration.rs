@@ -223,6 +223,7 @@ mod walk_regen;
 mod walk_step;
 mod water_hazard;
 mod window_rebuild;
+mod weapon_trail;
 mod window_vm;
 mod zone_ramp;
 mod zone_record;

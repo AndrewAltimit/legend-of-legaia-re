@@ -29,6 +29,9 @@ use super::divide::gte_divide;
 /// The field's base matrix scale (`_DAT_8007BF10 = 0x6000 * I`).
 pub const FIELD_BASE_Q12: i16 = 0x6000;
 
+/// The battle's base matrix scale (`_DAT_8007BF10 = 0x4000 * I`).
+pub const BATTLE_BASE_Q12: i16 = 0x4000;
+
 /// The field's GTE screen centre `OFX`, in pixels.
 pub const FIELD_OFX: i32 = 160;
 
@@ -130,6 +133,33 @@ impl FieldGteView {
             view.h.round().clamp(0.0, 65535.0) as u16,
             FIELD_OFX,
             ofy,
+        )
+    }
+
+    /// The battle base matrix `0x4000 * I` (`_DAT_8007BF10` in battle: the
+    /// 4x world scale).
+    pub fn battle_base() -> GteMat3 {
+        let s = BATTLE_BASE_Q12;
+        GteMat3 {
+            m: [[s, 0, 0], [0, s, 0], [0, 0, s]],
+        }
+    }
+
+    /// The matrix `FUN_800172C0` leaves loaded in battle, from the shared
+    /// battle pose: the pitch and yaw are the 12-bit globals (rounded and
+    /// wrapped, the phase script stages no roll), the eye trio the
+    /// `0x800840B8` words as they are, the focus negated, under the battle
+    /// base matrix, `H = 256` and the field's screen centre.
+    pub fn from_battle_pose(pose: &legaia_engine_camera::projection::BattleCamPose) -> Self {
+        let angle = |a: f32| (a.round() as i64 & 0xFFF) as u16;
+        Self::from_globals(
+            [angle(pose.pitch), angle(pose.yaw), 0],
+            pose.tr.map(|c| c.round() as i32),
+            pose.focus.map(|c| -(c.round() as i32)),
+            &Self::battle_base(),
+            legaia_engine_camera::projection::GTE_H as u16,
+            FIELD_OFX,
+            legaia_engine_camera::projection::GTE_OFY as i32,
         )
     }
 

@@ -825,10 +825,11 @@ mod battle_cam_shared_tests {
     /// **The weapon trail rides the body, on both hosts.** A sweep control
     /// point is an object position in the body's mesh frame; retail turns it
     /// by the body's yaw and sets it on the slot's ground base
-    /// (`FUN_800485BC`), and the shared kernel places and projects it
-    /// (`battle_trail::project_battle_point`) through the battle VP both
-    /// hosts hand it - the native composition here, `battle_vp` on the page,
-    /// pinned equal above. Where the body's own draw (`battle_body_model`
+    /// (`FUN_800485BC`), and the shared kernel projects it through the
+    /// integer matrix the battle frame loads (`battle_trail::project_trail_point`);
+    /// the f32 battle VP both hosts draw the body with - the native
+    /// composition here, `battle_vp` on the page, pinned equal above - must
+    /// agree with it. Where the body's own draw (`battle_body_model`
     /// under `cam * scale`) puts the same mesh-frame point is where the
     /// trail must land. The two hosts' old per-host projections each missed
     /// it: the native one dropped the world scale and the body's turn, the
@@ -853,6 +854,7 @@ mod battle_cam_shared_tests {
             4.0 / 3.0,
         );
         let page_vp = projection::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
+        let gte_view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&pose);
         let actor_cam = cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE));
         for (ground, facing) in [
             ([0i16, -800i16], 0u16),
@@ -882,9 +884,18 @@ mod battle_cam_shared_tests {
                     assert!(
                         (f32::from(got.0) - want.0).abs() <= 1.5
                             && (f32::from(got.1) - want.1).abs() <= 1.5,
-                        "ground {ground:?} facing {facing:#x} local {local:?}: trail {got:?} vs body {want:?}"
+                        "ground {ground:?} facing {facing:#x} local {local:?}: point {got:?} vs body {want:?}"
                     );
                 }
+                // The trail itself projects as retail's emitter does, through
+                // the integer matrix the battle frame loads; it lands on the
+                // same pixel to within the divide's truncation.
+                let got = bt::project_trail_point(&gte_view, 0, p).xy;
+                assert!(
+                    (f32::from(got.0) - want.0).abs() <= 1.5
+                        && (f32::from(got.1) - want.1).abs() <= 1.5,
+                    "ground {ground:?} facing {facing:#x} local {local:?}: trail {got:?} vs body {want:?}"
+                );
             }
         }
     }

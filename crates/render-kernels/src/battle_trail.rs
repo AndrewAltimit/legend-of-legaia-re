@@ -21,13 +21,16 @@
 //!
 //! # Engine mapping, disclosed
 //!
-//! * **One placement, one projection.** The yaw turn and ground base are
+//! * **One projection, the console's.** The yaw turn and ground base are
 //!   retail's integer arithmetic ([`trail_world_point`]); the point then
-//!   goes through the battle placement both hosts give a body (frame flip,
-//!   world scale) and the shared battle view-projection
-//!   ([`project_battle_point`]) into the 320x240 stage. Neither host
-//!   projects a trail point of its own. The **packet** (vertex order, edge
-//!   colours, blend) is retail.
+//!   goes through the billboard projector the emitter calls
+//!   ([`project_trail_point`]) under the integer matrix the battle frame
+//!   loads ([`crate::gte::FieldGteView::from_battle_pose`]), so each corner
+//!   is retail's `SXY` to the pixel. The packet (vertex order, edge colours,
+//!   the OT entry it would link at) is [`band_quads`] / [`trail_packet`],
+//!   which the retail-exec differential holds to the bytes. A corner at or
+//!   behind the eye keeps the GTE's saturated `SXY` as retail's does, and
+//!   the GPU's polygon-size limit drops the band there.
 //! * **Blend**: the `POLY_G4` packet carries no texpage, so its ABR comes
 //!   from the GPU state the OT walk left active; the trail draws inside
 //!   the battle FX group whose draw wrapper arms ABR 1
@@ -123,8 +126,9 @@ pub fn trail_world_point(base_xz: [i16; 2], yaw: u16, local: [i16; 3]) -> [i16; 
 /// battle view-projection `vp` (`legaia_engine_camera::projection::battle_vp`,
 /// which the native window's glam composition is pinned to): the point
 /// takes the placement frame flip `F = diag(1, -1, 1)` and the battle world
-/// scale, exactly as a body's translation and mesh do, so the trail lands on
-/// the blade the body draws. `None` behind the near plane.
+/// scale, exactly as a body's translation and mesh do. `None` behind the
+/// near plane. The weapon trail no longer projects here (it stands for
+/// retail's own GTE call, [`project_trail_point`]); the Theeder beam does.
 pub fn project_battle_point(vp: &[f32; 16], world_scale: f32, p: [i16; 3]) -> Option<(i16, i16)> {
     project_stage_point_cols(
         vp,
@@ -136,21 +140,149 @@ pub fn project_battle_point(vp: &[f32; 16], world_scale: f32, p: [i16; 3]) -> Op
     )
 }
 
+/// One sweep control point as `FUN_800485BC` projects it: the screen point
+/// and the depth `FUN_800195A8` returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrailVertex {
+    pub xy: (i16, i16),
+    /// The projector's return, `(SZ3 >> 2) >> ot_shift`, as the emitter
+    /// keeps it: a halfword (`sh` at `0x800487C4`, read back with `lh`).
+    pub otz: i16,
+}
+
+/// One battle point through the billboard projector the emitter calls,
+/// `FUN_800195A8(point, 1, 1, 0, out x4)` (`0x800487AC`): the centre's
+/// `MVMVA` under the loaded camera, the corners `+-1` round it, no spin. All
+/// four out-pointers name one slot, so the point the emitter keeps is the
+/// last corner written, `(vx + 1, vy + 1)` - a view-space unit right and
+/// down of the point. `view` is the matrix the battle frame loads
+/// ([`crate::gte::FieldGteView::from_battle_pose`]).
+///
+/// PORT: FUN_800485BC (the projection, `0x8004878C..0x80048874`)
+pub fn project_trail_point(
+    view: &crate::gte::FieldGteView,
+    ot_shift: u32,
+    p: [i16; 3],
+) -> TrailVertex {
+    use crate::gte::GteVec3;
+    let c = crate::billboard::project_billboard(
+        &view.rot,
+        GteVec3::new(view.tr[0], view.tr[1], view.tr[2]),
+        GteVec3::new(p[0].into(), p[1].into(), p[2].into()),
+        1,
+        1,
+        0,
+        i32::from(view.h),
+        view.ofx,
+        view.ofy,
+        ot_shift,
+    );
+    TrailVertex {
+        xy: c.xy[3],
+        otz: c.depth as i16,
+    }
+}
+
+/// One band quad as `FUN_800485BC` writes it: the four corners in packet
+/// order (`A[i-1]`, `B[i-1]`, `A[i]`, `B[i]`), the two edge colours and the
+/// ordering-table entry it links at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrailQuad {
+    pub xy: [(i16, i16); 4],
+    pub lead: [u8; 3],
+    pub tail: [u8; 3],
+    /// The OT entry index: the four depths summed and divided by four toward
+    /// zero (`0x80048950..0x80048980`), with no shift and no clamp.
+    pub ot_entry: i32,
+}
+
+/// The quads of one band between sweep steps `a` (step `seg`, colour
+/// `lead`) and `b` (step `seg + 1`, colour `tail`), one per consecutive
+/// control-point pair (`0x800487E0..0x800489D4`).
+///
+/// PORT: FUN_800485BC (the band walk)
+pub fn band_quads(
+    a: &[TrailVertex],
+    b: &[TrailVertex],
+    lead: [u8; 3],
+    tail: [u8; 3],
+) -> Vec<TrailQuad> {
+    (1..a.len().min(b.len()))
+        .map(|i| {
+            let sum = i32::from(a[i - 1].otz)
+                + i32::from(b[i - 1].otz)
+                + i32::from(a[i].otz)
+                + i32::from(b[i].otz);
+            TrailQuad {
+                xy: [a[i - 1].xy, b[i - 1].xy, a[i].xy, b[i].xy],
+                lead,
+                tail,
+                ot_entry: sum / 4,
+            }
+        })
+        .collect()
+}
+
+/// The packet bytes no store of `FUN_800485BC` writes: each colour word's
+/// top byte past the first (`+0x0F`, `+0x17`, `+0x1F`) keeps what the
+/// packet buffer held. Zero in [`trail_packet`].
+pub const TRAIL_PACKET_UNWRITTEN: [usize; 3] = [0x0F, 0x17, 0x1F];
+
+/// The `POLY_G4` packet of one [`TrailQuad`] as nine words, the tag's link
+/// left zero (`addPrim` `FUN_8003D2C4` fills it): tag `0x08000000`, command
+/// `0x3B` with the lead colour at `+4..+6`, then `xy0`, the tail colour,
+/// `xy1`, the lead, `xy2`, the tail, `xy3` (`0x80048878..0x8004894C`). A
+/// colour `[r, g, b]` is the argument word `0x00RRGGBB`, which the stores
+/// lay down byte-reversed, so `r` lands at the packet's red byte.
+pub fn trail_packet(q: &TrailQuad) -> [u32; 9] {
+    let col = |c: [u8; 3]| u32::from(c[0]) | u32::from(c[1]) << 8 | u32::from(c[2]) << 16;
+    let xy = |p: (i16, i16)| u32::from(p.0 as u16) | u32::from(p.1 as u16) << 16;
+    [
+        0x0800_0000,
+        0x3B00_0000 | col(q.lead),
+        xy(q.xy[0]),
+        col(q.tail),
+        xy(q.xy[1]),
+        col(q.lead),
+        xy(q.xy[2]),
+        col(q.tail),
+        xy(q.xy[3]),
+    ]
+}
+
+/// The GPU skips a polygon whose corners lie more than `1023` pixels apart
+/// horizontally or `511` vertically ([`crate::prim_near_reject::GPU_MAX_SPAN`]).
+/// Retail hands the GTE's saturated `SXY` of a point at or behind the eye
+/// straight to the packet; this is what keeps such a band off the screen.
+/// The GPU tests each of a quad's two triangles; the port drops the quad
+/// when either fails.
+fn gpu_draws(xy: &[(i16, i16); 4]) -> bool {
+    let [mx, my] = crate::prim_near_reject::GPU_MAX_SPAN;
+    let fits = |t: [(i16, i16); 3]| {
+        let span = |f: fn(&(i16, i16)) -> i16| {
+            let v = t.map(|p| f32::from(f(&p)));
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        span(|p| p.0) <= mx && span(|p| p.1) <= my
+    };
+    fits([xy[0], xy[1], xy[2]]) && fits([xy[1], xy[2], xy[3]])
+}
+
 /// Emit the weapon-trail screen primitives for one actor's projected sweep.
 ///
-/// `steps[k][i]` = the stage-space position of control point `i` at sweep
-/// step `k` (step 0 = the current pose, each further step 2 frames older -
-/// the retail rewind). `rgb` is the trigger tint, `ot_index` the overlay
-/// OT bucket the whole trail links at.
+/// `steps[k][i]` = control point `i` at sweep step `k` through
+/// [`project_trail_point`] (step 0 = the current pose, each further step 2
+/// frames older - the retail rewind). `rgb` is the trigger tint, `ot_index`
+/// the overlay OT bucket the whole trail links at.
 ///
 /// Returns the bands in the retail emission order (white lead band, grey
 /// second band, then the linear tint fade -
 /// `crate::battle_trail::band_schedule`), each band one gouraud
-/// quad per consecutive control-point pair.
+/// quad per consecutive control-point pair ([`band_quads`]).
 ///
 /// PORT: FUN_800485BC (per-band gouraud quad-strip emitter)
 pub fn weapon_trail_prims(
-    steps: &[[(i16, i16); TRAIL_POINTS]],
+    steps: &[[TrailVertex; TRAIL_POINTS]],
     rgb: [u8; 3],
     ot_index: u32,
 ) -> Vec<ScreenPrim> {
@@ -160,13 +292,14 @@ pub fn weapon_trail_prims(
         let (Some(a), Some(b)) = (steps.get(band.seg), steps.get(band.seg + 1)) else {
             continue;
         };
-        let lead = [band.lead[0], band.lead[1], band.lead[2], 0xFF];
-        let tail = [band.tail[0], band.tail[1], band.tail[2], 0xFF];
-        for i in 1..TRAIL_POINTS {
+        for q in band_quads(a, b, band.lead, band.tail) {
+            if !gpu_draws(&q.xy) {
+                continue;
+            }
+            let lead = [q.lead[0], q.lead[1], q.lead[2], 0xFF];
+            let tail = [q.tail[0], q.tail[1], q.tail[2], 0xFF];
             out.push(ScreenPrim::Flat(FlatQuad {
-                // Retail `POLY_G4` slotting (`0x800488x` stores):
-                // xy0 = A[i-1], xy1 = B[i-1], xy2 = A[i], xy3 = B[i].
-                xy: [a[i - 1], b[i - 1], a[i], b[i]],
+                xy: q.xy,
                 color: lead,
                 // colA on the leading (step `seg`) edge, colB trailing.
                 gouraud: Some([lead, tail, lead, tail]),
@@ -185,13 +318,16 @@ mod tests {
     use super::*;
     use crate::screen_prim::BlendClass;
 
-    fn steps(n: usize) -> Vec<[(i16, i16); TRAIL_POINTS]> {
+    fn steps(n: usize) -> Vec<[TrailVertex; TRAIL_POINTS]> {
         // A sweep marching left across the stage, blade points stacked
         // vertically.
         (0..n)
             .map(|k| {
                 let x = 160 - 10 * k as i16;
-                [(x, 100), (x, 120), (x, 140)]
+                [100, 120, 140].map(|y| TrailVertex {
+                    xy: (x, y),
+                    otz: 0x200,
+                })
             })
             .collect()
     }
@@ -228,7 +364,7 @@ mod tests {
         assert_eq!(g[1], [0x80, 0x80, 0x80, 0xFF]);
         // Its corners span steps 0 and 1 in the retail vertex order.
         let s = steps(5);
-        assert_eq!(q.xy, [s[0][0], s[1][0], s[0][1], s[1][1]]);
+        assert_eq!(q.xy, [s[0][0].xy, s[1][0].xy, s[0][1].xy, s[1][1].xy]);
     }
 
     #[test]
