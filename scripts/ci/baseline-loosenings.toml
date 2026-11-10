@@ -1212,3 +1212,11 @@ reason = "A cast arm whose table step is cheaper than the arm before runs the fr
 changes = [
   ["states/horn_summon_mid_cast/camera", 1.0, 0.998],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Two retail-grounded engine changes, each bisected to one commit. kor_field_route_walk falls at 55cbaa6d1: the sprite arm (FUN_8002A5A4) tags its one-colour Gouraud packets so the PCSX-Redux instrument dithers them as it dithers retail's, which lifts the Slippery storm-cloud arm .832 -> .924 and dithers kor's field sprites too. battle_uru2_nurga_heal_mid_cast moves with the native colour mesh going screen-linear (it now matches the page and retail's affine fill). battle_jou_aluru_v3_strike's image (1.000 -> 0.999, inside the checker's tolerance) moves at 67fc7ae07, the ghost cost priced by the monster mesh's triangles, which brings Caruban's Fire Breath onto retail's step 3 (step agreement .315 -> .958)."
+changes = [
+  ["states/battle_uru2_nurga_heal_mid_cast/image", 0.963, 0.962],
+  ["states/kor_field_route_walk/image", 0.923, 0.921],
+]
