@@ -306,8 +306,33 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let mut finished = false;
             for pass in 0..3000 {
                 let phase = cpu.mem.rd8(CTX + 0x279);
+                // PROT 0961's arm 0 stands the seats before its cut; the host
+                // runs the line-up ahead of the director
+                // (`World::dead_end_crisis_seats`), so the director frames the
+                // stood caster.
+                let lined = (body.entry, body.va, phase) == (961, DEAD_END_CRISIS, 0);
+                let caster_seat = if lined {
+                    let mut poses =
+                        [cam::LineUpPose::default(); cam::DEAD_END_CRISIS_LINE_UP_SEATS];
+                    for (s, p) in poses.iter_mut().enumerate() {
+                        let a = ACTOR + s as u32 * STRIDE;
+                        p.pos = [0u32, 2, 4, 6].map(|o| cpu.mem.rd16(a + 0x34 + o) as i16);
+                        p.facing = cpu.mem.rd16(a + 0x46);
+                    }
+                    let row_x = std::array::from_fn(|s| {
+                        legaia_engine_battle::battle_seats::monster_seat(1, s, false).x
+                    });
+                    cam::dead_end_crisis_line_up(&mut poses, row_x);
+                    let mut seat = seat_at(&mut cpu.mem, ca, false);
+                    if let Some(p) = poses.get(caster as usize) {
+                        (seat.x, seat.z, seat.facing) = (p.pos[0], p.pos[2], p.facing & 0xFFF);
+                    }
+                    seat
+                } else {
+                    seat_at(&mut cpu.mem, ca, false)
+                };
                 let seats = ModuleCamSeats {
-                    caster: seat_at(&mut cpu.mem, ca, false),
+                    caster: caster_seat,
                     victim: seat_at(&mut cpu.mem, va_, false),
                     band_timer: i32::from(cpu.mem.rd16(CTX + 0x6D8) as i16),
                     action: body.action,
@@ -411,23 +436,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
 
 /// Shots the port is known to frame differently, as `(entry, body, arm,
 /// why)`; the rest of each arm is still compared.
-const KNOWN_GAPS: [(u32, u32, u8, &str); 2] = [
-    (
-        961,
-        DEAD_END_CRISIS,
-        0,
-        "arm 0 lines the party up off 0x80077628 (x / 2, z -0x400, heading 0) and seat 3 \
-         at (0, 0x400) heading 0x800 (0x801F6B00..0x801F6BD4), then frames the lined-up \
-         caster; the port carries no line-up",
-    ),
-    (
-        961,
-        DEAD_END_CRISIS,
-        5,
-        "the no-one-standing branch frames nothing; the director cuts on it (documented \
-         on dead_end_crisis_camera)",
-    ),
-];
+const KNOWN_GAPS: [(u32, u32, u8, &str); 1] = [(
+    961,
+    DEAD_END_CRISIS,
+    5,
+    "the no-one-standing branch frames nothing; the director cuts on it (documented \
+     on dead_end_crisis_camera)",
+)];
 
 const MYSTIC_CIRCLE: u32 = 0x801F_69EC;
 const CHAOS_BREATH: u32 = 0x801F_726C;

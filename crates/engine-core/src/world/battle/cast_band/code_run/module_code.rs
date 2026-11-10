@@ -395,6 +395,13 @@ impl World {
                 .module_cam
                 .victim_slot
                 .get_or_insert(victim_slot);
+            // PROT 0961's arm 0 stands the seats before its cut frames the
+            // caster; its `0xFF` arm stands them back.
+            if entry == 961
+                && body == Some(legaia_engine_cast::cast_module_camera::DEAD_END_CRISIS_BODY)
+            {
+                self.dead_end_crisis_seats(ctx.phase);
+            }
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);

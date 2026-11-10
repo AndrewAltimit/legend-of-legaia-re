@@ -75,6 +75,7 @@ mod cue_group;
 mod cursor_leaves;
 mod curvature_table;
 mod dance_floor;
+mod dead_end_crisis;
 mod death_spoils;
 mod default_arm_mesh;
 mod default_move;

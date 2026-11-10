@@ -4,6 +4,60 @@
 use super::*;
 
 impl World {
+    /// PROT 0961's seat line-up on its arm 0 pass and the restore on its
+    /// `0xFF` arm's, ahead of the arm's camera, which frames the lined-up
+    /// caster ([`legaia_engine_cast::cast_module_camera::dead_end_crisis_line_up`]).
+    /// Retail walks `actor_table[0..4]`; an empty party seat has no engine
+    /// slot and is skipped. The poses saved are the engine's live trio and
+    /// facing.
+    pub(in crate::world::battle::cast_band) fn dead_end_crisis_seats(&mut self, phase: u8) {
+        use legaia_engine_cast::cast_module_camera as cam;
+        const N: usize = cam::DEAD_END_CRISIS_LINE_UP_SEATS;
+        let map = self.cast_seat_map();
+        let slots: [Option<usize>; N] = std::array::from_fn(|s| {
+            map.engine(s as u8)
+                .map(usize::from)
+                .filter(|&e| e < self.actors.len())
+        });
+        if phase == cam::DEAD_END_CRISIS_LINE_UP_ARM {
+            let mut poses = [cam::LineUpPose::default(); N];
+            for (p, e) in poses.iter_mut().zip(slots) {
+                if let Some(a) = e.map(|e| &self.actors[e]) {
+                    let m = &a.move_state;
+                    p.pos = [m.world_x, m.world_y, m.world_z, 0];
+                    p.facing = a.battle.facing_angle;
+                }
+            }
+            // The one-monster row of the seat table at `0x80077628`.
+            let row_x = std::array::from_fn(|s| {
+                legaia_engine_battle::battle_seats::monster_seat(1, s, false).x
+            });
+            let saved = cam::dead_end_crisis_line_up(&mut poses, row_x);
+            self.casting.module_saved_poses.clear();
+            for ((p, s), e) in poses.iter().zip(&saved).zip(slots) {
+                let Some(e) = e else { continue };
+                self.casting
+                    .module_saved_poses
+                    .push((e, [s.pos[0], s.pos[1], s.pos[2]], s.facing));
+                let a = &mut self.actors[e];
+                a.move_state.world_x = p.pos[0];
+                a.move_state.world_z = p.pos[2];
+                a.battle.facing_angle = p.facing;
+            }
+        } else if phase == cam::DEAD_END_CRISIS_RESTORE_ARM {
+            for (e, pos, facing) in std::mem::take(&mut self.casting.module_saved_poses) {
+                if let Some(a) = self.actors.get_mut(e) {
+                    [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ] = pos;
+                    a.battle.facing_angle = facing;
+                }
+            }
+        }
+    }
+
     /// Fill the capture director inputs of `st` that the seats do not carry:
     /// both bodies' display trios, the lead party member's roster id
     /// `0x8007BD10[0]`, the frame step and whether this tick opens a battle
