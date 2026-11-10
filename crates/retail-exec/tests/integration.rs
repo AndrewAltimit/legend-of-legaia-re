@@ -84,6 +84,7 @@ mod level_up;
 mod magic_level;
 mod melee_hit;
 mod menu_stats;
+mod monster_install;
 mod monster_pick;
 mod motion_vm;
 mod mule_wave;
