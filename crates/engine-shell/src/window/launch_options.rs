@@ -286,6 +286,11 @@ pub struct ScreenshotConfig {
     /// `0x801C8FE4`, the roll PROT 0964's strike forks on. Set by the
     /// retail-compare image channel.
     pub seat_ai_counter: Option<i32>,
+    /// `LEGAIA_SEAT_SIDEBAND_SEEK=<vsyncs>`: the recording drive's seek into
+    /// the first `summon.dat` slot, in place of the modelled drive's
+    /// (`CastFxState::sideband_first_seek_seat`). Set by the cast-sequence
+    /// driver for a PCSX-Redux recording.
+    pub seat_sideband_seek: Option<u16>,
     /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
     /// label opened on a commit younger than its displayed frame, so the
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
@@ -1115,6 +1120,9 @@ impl ScreenshotConfig {
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
             seat_ai_counter: std::env::var("LEGAIA_SEAT_AI_COUNTER")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+            seat_sideband_seek: std::env::var("LEGAIA_SEAT_SIDEBAND_SEEK")
                 .ok()
                 .and_then(|v| v.parse().ok()),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),

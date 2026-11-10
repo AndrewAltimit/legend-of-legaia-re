@@ -966,10 +966,14 @@ impl World {
             self.casting.sideband_read_left = None;
             return;
         }
+        let base = self.battle_ctx.summon_frame_idx;
+        let seat = self.casting.sideband_first_seek_seat;
         let left = self.casting.sideband_read_left.get_or_insert_with(|| {
-            legaia_engine_battle_vm::battle_action::sideband_token_vsyncs(
-                self.battle_ctx.summon_frame_idx,
-            )
+            use legaia_engine_battle_vm::battle_action as ba;
+            match seat {
+                Some(seek) => ba::sideband_token_vsyncs_on(base, seek),
+                None => ba::sideband_token_vsyncs(base),
+            }
         });
         *left = left.saturating_sub(1);
         if *left == 0 {

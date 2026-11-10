@@ -522,6 +522,10 @@ def run_engine(a, out: Path) -> bool:
     args = rest[i + 1:]
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
+    # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
+    # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
+    # holds the side-band stage nine vsyncs longer. A harness seat.
+    env.setdefault("LEGAIA_SEAT_SIDEBAND_SEEK", "0")
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:

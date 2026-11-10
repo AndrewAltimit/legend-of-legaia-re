@@ -229,11 +229,15 @@ pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 9;
 /// for a `summon.dat` base the first read's seek in from the clip band
 /// ([`SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`]).
 pub fn sideband_token_vsyncs(base: u8) -> u16 {
-    let seek = if base & 0x80 != 0 {
-        SIDEBAND_FIRST_SLOT_SEEK_VSYNCS
-    } else {
-        0
-    };
+    sideband_token_vsyncs_on(base, SIDEBAND_FIRST_SLOT_SEEK_VSYNCS)
+}
+
+/// [`sideband_token_vsyncs`] on a drive whose first `summon.dat` slot seeks
+/// in `first_seek` vsyncs. A PCSX-Redux recording reads `0`: every Seru film
+/// of the lone-caster set drops the stage `30` vsyncs a slot after `0x32`'s
+/// store, `90` for a three-slot base and `120` for a four-slot one.
+pub fn sideband_token_vsyncs_on(base: u8, first_seek: u16) -> u16 {
+    let seek = if base & 0x80 != 0 { first_seek } else { 0 };
     u16::from(sideband_slot_count(base)) * SIDEBAND_SLOT_READ_VSYNCS + seek
 }
 
@@ -489,6 +493,11 @@ mod tests {
             4 * SIDEBAND_SLOT_READ_VSYNCS + SIDEBAND_FIRST_SLOT_SEEK_VSYNCS
         );
         assert_eq!(sideband_token_vsyncs(0x12), 2 * SIDEBAND_SLOT_READ_VSYNCS);
+        // Another drive's seek replaces the modelled one, on a `summon.dat`
+        // base only.
+        assert_eq!(sideband_token_vsyncs_on(0xCF, 0), 120);
+        assert_eq!(sideband_token_vsyncs_on(0x9E, 0), 90);
+        assert_eq!(sideband_token_vsyncs_on(0x12, 5), 60);
         // The turn pick's seed adds the applier's own stage frames.
         assert_eq!(sideband_turn_seed_vsyncs(0x12), 64);
     }
