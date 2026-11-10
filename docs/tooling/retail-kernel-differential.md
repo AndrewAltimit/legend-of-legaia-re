@@ -728,3 +728,23 @@ classification `FUN_80038050` (`talk_dispatch`) stores a `4C FE xx` operand to t
 an arm no shipped script reaches; the fog spawner writes halfword `1` at record `+0x12`; and the ramp ticker
 walks its list in install order where the port walks slot order, which differs only for two live ramps on
 one destination.
+
+The sound driver's per-frame tier runs in the interpreter too: libsnd's `SsSeqCalc` `FUN_80062F98` with its tempo
+slide, both volume slides, the track end and the chained restart, stop, start, the event decoder and the delta-time
+pump (`seq_calc`); the voice chooser `FUN_80066B00` (`voice_choose`); the key-on volume chain `FUN_80067550` on the
+sequencer and cue paths (`key_on_volume`); the key-on and bend pitch `FUN_80066D8C` / `FUN_80066E50` / `FUN_80067A1C`
+(`audio_pitch`); and the SEQ slot release `FUN_8001FF58`. Two volume-slide arms differed: the slide's cached pair is
+read back through the set `FUN_80067E9C`, which clamps each side to `0x7F`, where the port cached the unclamped
+commit, and the ascending fast arm's ceiling test is a 32-bit sum where the port wrapped a halfword. The pitch arms
+match on every shift the disc's VABs hold (`0..=0x7F`); a larger one would read past the 192-entry table.
+
+The LZS decoder `FUN_8001A55C` matches over every container section on the disc and both packers. The SCUS root
+`FUN_8005AF0C` under the fishing lure's record counted a negative input's leading zeros, where the GTE's `LZCR` counts
+its leading ones. The field animator's sampler `FUN_8001BE80` and angle lerp `FUN_8001D088` over real clip banks, the
+`"ME"` reader `FUN_8002B28C` and codec `FUN_8002A9CC` over every slot of `summon.dat` / `readef.DAT`, the VDF morph
+`FUN_8001C604` / `FUN_8005B038`, the action-tag lookup `FUN_80050E2C`, the record's spell-list helpers, the MAN
+section-0 carve `FUN_8003A110` and the motion-script installer `FUN_8003A9D4` over every scene, the slot machine's LCG,
+landing search and marquee blits, the fishing prize gate and reel decoder, the coin counter's entry panel, the
+publisher-logo quads, and the mode table's per-frame and INIT handlers match. The CARD body's readout takes the
+scratchpad byte `0x1F800391`, which two notes gave as `0x1F800393`, and the dance HUD's displayed-note helper carried
+the CPU feed's tag without the feed's schedule.
