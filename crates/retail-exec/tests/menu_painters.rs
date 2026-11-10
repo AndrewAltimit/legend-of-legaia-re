@@ -1,0 +1,738 @@
+//! The menu overlay's window content painters (PROT 0899) against
+//! `engine-ui`'s `menu::window_painters`: the six title tabs, the record
+//! tab, the two counters, the prompt and amount panels, the count panel, the
+//! three choice / label panels, and the shop's item, buy, sell and
+//! equip-target panels.
+//!
+//! The leaf draws are hooked and logged with the ink word `_DAT_8007B454`
+//! each is called under: the string writer `FUN_80036888`, the number writers
+//! `FUN_80034B78` / `FUN_80034E4C`, the separator glyph `FUN_8003C1F8`, the
+//! hand `FUN_8002B994`, the pictogram `FUN_8002C488`, the frame
+//! `FUN_8002C69C` and the two description writers. Each logged text draw is
+//! laid out with the port's own primitives (the font, `decimal_field_draws`,
+//! the numeral cells) in the ink `menu_ink_color` gives the logged word, and
+//! the result is held to the painter's output in order; hands and pictograms
+//! are compared as they are.
+
+use crate::common::{Rng, disc, scus, scus_cpu};
+use legaia_engine_ui::menu::decimal_field::decimal_field_draws;
+use legaia_engine_ui::menu::window_painters::{
+    BuyQuantityLabels, ChoiceFlags, DescriptionSource, EquipTargetRow, PainterPictogram,
+    PainterRect, PainterSprite, amount_prompt_draws_for, buy_quantity_draws_for,
+    char_prompt_draws_for, choice_panel_draws_for, count_panel_draws_for, counter_panel_draws_for,
+    description_source, equip_row_enabled, equip_target_list_draws_for, item_description_draws_for,
+    label_list_draws_for, record_title_tab_draws_for, sell_quantity_draws_for, title_tab_draws_for,
+    two_line_choice_panel_draws_for,
+};
+use legaia_engine_ui::{TextDraw, menu_ink_color, menu_numeral_cell, text_draws_for};
+use legaia_font::Font;
+use psx_retail_exec::{A0, A1, A2, A3, Cpu, Memory, SP, Stop, V0};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+const OVERLAY_BASE: u32 = 0x801C_E818;
+const TABS: [u32; 6] = [
+    0x801D_CA0C,
+    0x801D_CA50,
+    0x801D_CA94,
+    0x801D_CAD8,
+    0x801D_CB1C,
+    0x801D_CFE4,
+];
+const TAB_0: u32 = 0x801D_CA0C;
+const TAB_1: u32 = 0x801D_CA50;
+const TAB_2: u32 = 0x801D_CA94;
+const TAB_3: u32 = 0x801D_CAD8;
+const TAB_4: u32 = 0x801D_CB1C;
+const TAB_43: u32 = 0x801D_CFE4;
+const RECORD_TAB: u32 = 0x801D_CF14;
+const GOLD_PANEL: u32 = 0x801D_CF84;
+const COIN_PANEL: u32 = 0x801D_D028;
+const AMOUNT: u32 = 0x801D_CE20;
+const COUNT: u32 = 0x801D_CC20;
+const CHAR_PROMPT: u32 = 0x801D_CCB4;
+const CHOICE_46: u32 = 0x801D_603C;
+const CHOICE_5: u32 = 0x801D_61B0;
+const LABELS_6: u32 = 0x801D_6360;
+const ITEM_INFO: u32 = 0x801D_4A80;
+const BUY_QTY: u32 = 0x801D_5510;
+const SELL_QTY: u32 = 0x801D_5944;
+const EQUIP_TARGET: u32 = 0x801D_56FC;
+
+const TEXT: u32 = 0x8003_6888;
+const NUMBER: u32 = 0x8003_4B78;
+const NUMBER_ZERO: u32 = 0x8003_4E4C;
+const SEPARATOR: u32 = 0x8003_C1F8;
+const HAND: u32 = 0x8002_B994;
+const PICTO: u32 = 0x8002_C488;
+const FRAME: u32 = 0x8002_C69C;
+const LABEL: u32 = 0x8003_CD00;
+const DETAIL: u32 = 0x8003_37B0;
+const BAG_SLOT: u32 = 0x8004_2EE0;
+const BAG_COUNT: u32 = 0x8004_2F4C;
+const ITEM_PANEL: u32 = 0x801D_0F1C;
+const PANEL_MODE: u32 = 0x8003_4B6C;
+
+const INK: u32 = 0x8007_B454;
+const ADVANCE: u32 = 0x8007_3F20;
+const WINDOW: u32 = 0x8012_0000;
+const SCRATCH: u32 = 0x8013_0000;
+const ITEMS: u32 = 0x8007_4368;
+const SELECTED: u32 = 0x801E_46B0;
+const QUANTITY: u32 = 0x801E_46B4;
+const BOUND: u32 = 0x801E_46B8;
+const CHOICE: u32 = 0x801E_46D0;
+const TARGET_CHOICE: u32 = 0x801E_46C0;
+/// The bag's count bytes, `0x80084140 + 0x1819 + slot * 2`.
+const BAG_COUNTS: u32 = 0x8008_5959;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Ev {
+    Text(Vec<u8>, i32, i32, u8),
+    Number(i32, i32, i32, i32, u8, bool),
+    Separator(u8, i32, i32, u8),
+    Hand(PainterSprite),
+    Picto(PainterPictogram),
+    Frame(i32, i32, i32, i32),
+    Label(u32, i32, i32, u8),
+    Detail(u32, u32, i32, i32, u8),
+    Call(u32),
+}
+
+fn cstr(m: &mut Memory, mut a: u32) -> Vec<u8> {
+    let mut s = Vec::new();
+    loop {
+        let b = m.rd8(a);
+        if b == 0 {
+            return s;
+        }
+        s.push(b);
+        a += 1;
+    }
+}
+
+struct Rig {
+    cpu: Cpu,
+    font: Font,
+    log: Rc<RefCell<Vec<Ev>>>,
+    /// What the bag hooks answer: `(slot or 0x100, count)`.
+    bag: Rc<RefCell<(u32, u32)>>,
+}
+
+fn rig() -> Option<Rig> {
+    let (mut cpu, d, scus) = (scus_cpu()?, disc()?, scus()?);
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &d.read_entry_footprint(899).expect("PROT 0899"),
+    );
+    let tim = d
+        .read_prot_bytes(
+            legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+            legaia_font::FONT_TIM_LEN,
+        )
+        .expect("font TIM");
+    let font = Font::from_disc_tim_and_scus(&tim, &scus).expect("font");
+    let log: Rc<RefCell<Vec<Ev>>> = Rc::default();
+    let ink = |m: &mut Memory| m.rd32(INK) as u8;
+    let l = log.clone();
+    cpu.hook(TEXT, move |r, m| {
+        assert_eq!((r.r[A1], r.r[A2]), (0, 0));
+        let y = m.rd32(r.r[SP] + 0x10) as i32;
+        let s = cstr(m, r.r[A0]);
+        let i = ink(m);
+        l.borrow_mut().push(Ev::Text(s, r.r[A3] as i32, y, i));
+    });
+    for (entry, zero) in [(NUMBER, false), (NUMBER_ZERO, true)] {
+        let l = log.clone();
+        cpu.hook(entry, move |r, m| {
+            let i = ink(m);
+            l.borrow_mut().push(Ev::Number(
+                r.r[A0] as i32,
+                r.r[A1] as i32,
+                r.r[A2] as i32,
+                r.r[A3] as i32,
+                i,
+                zero,
+            ));
+        });
+    }
+    let l = log.clone();
+    cpu.hook(SEPARATOR, move |r, m| {
+        let i = ink(m);
+        l.borrow_mut().push(Ev::Separator(
+            r.r[A0] as u8,
+            r.r[A1] as i32,
+            r.r[A2] as i32,
+            i,
+        ));
+    });
+    let l = log.clone();
+    cpu.hook(HAND, move |r, _| {
+        l.borrow_mut().push(Ev::Hand(PainterSprite {
+            sprite: r.r[A0] as u8,
+            variant: r.r[A1] as u8,
+            x: r.r[A2] as i32,
+            y: r.r[A3] as i32,
+        }))
+    });
+    let l = log.clone();
+    cpu.hook(PICTO, move |r, _| {
+        l.borrow_mut().push(Ev::Picto(PainterPictogram {
+            id: r.r[A2] as u8,
+            x: r.r[A0] as i32,
+            y: r.r[A1] as i32,
+        }))
+    });
+    let l = log.clone();
+    cpu.hook(FRAME, move |r, _| {
+        l.borrow_mut().push(Ev::Frame(
+            r.r[A0] as i32,
+            r.r[A1] as i32,
+            r.r[A2] as i32,
+            r.r[A3] as i32,
+        ))
+    });
+    let l = log.clone();
+    cpu.hook(LABEL, move |r, m| {
+        let i = ink(m);
+        l.borrow_mut()
+            .push(Ev::Label(r.r[A0], r.r[A1] as i32, r.r[A2] as i32, i));
+    });
+    let l = log.clone();
+    cpu.hook(DETAIL, move |r, m| {
+        let i = ink(m);
+        l.borrow_mut().push(Ev::Detail(
+            r.r[A0],
+            r.r[A1],
+            r.r[A2] as i32,
+            r.r[A3] as i32,
+            i,
+        ));
+    });
+    for entry in [ITEM_PANEL, PANEL_MODE] {
+        let l = log.clone();
+        cpu.hook(entry, move |_, _| l.borrow_mut().push(Ev::Call(entry)));
+    }
+    let bag: Rc<RefCell<(u32, u32)>> = Rc::default();
+    let b = bag.clone();
+    cpu.hook(BAG_SLOT, move |r, _| r.r[V0] = b.borrow().0);
+    let b = bag.clone();
+    cpu.hook(BAG_COUNT, move |r, _| r.r[V0] = b.borrow().1);
+    Some(Rig {
+        cpu,
+        font,
+        log,
+        bag,
+    })
+}
+
+impl Rig {
+    /// Run `entry` on a window record at `rect`; the log it left.
+    fn run(&mut self, entry: u32, rect: PainterRect) -> Vec<Ev> {
+        for (o, v) in [(0xA, rect.x), (0xC, rect.y), (0xE, rect.w), (0x10, rect.h)] {
+            self.cpu.mem.wr16(WINDOW + o, v as u16);
+        }
+        self.cpu.mem.wr32(INK, 0x33);
+        self.log.borrow_mut().clear();
+        assert_eq!(
+            self.cpu.call(entry, &[WINDOW]),
+            Stop::Returned,
+            "{entry:#x}"
+        );
+        self.log.borrow().clone()
+    }
+
+    /// Lay the logged text draws out with the port's primitives.
+    fn text_of(&self, log: &[Ev]) -> Vec<TextDraw> {
+        let mut out = Vec::new();
+        for e in log {
+            match e {
+                Ev::Text(s, x, y, ink) => out.extend(text_draws_for(
+                    &self.font.layout(s),
+                    (*x, *y),
+                    menu_ink_color(*ink),
+                )),
+                Ev::Number(v, digits, x, y, ink, zero) => out.extend(decimal_field_draws(
+                    &self.font,
+                    i64::from(*v),
+                    (*x, *y),
+                    *digits,
+                    *zero,
+                    menu_ink_color(*ink),
+                )),
+                Ev::Separator(g, x, y, ink) => {
+                    let c = menu_ink_color(*ink);
+                    if let Some((cell, tint)) =
+                        menu_numeral_cell(&self.font, true, u16::from(*g), c)
+                    {
+                        out.push(TextDraw {
+                            dst: (*x, *y, cell.w, cell.h),
+                            src: (cell.atlas_x, cell.atlas_y, cell.w, cell.h),
+                            color: tint,
+                        });
+                    } else {
+                        let ch = legaia_engine_ui::menu::window_painters::separator_glyph_char(*g)
+                            .expect("a text separator");
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&ch.to_string()),
+                            (*x, *y),
+                            c,
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn string(&mut self, va: u32) -> String {
+        String::from_utf8(cstr(&mut self.cpu.mem, va)).expect("ASCII")
+    }
+
+    fn poke_str(&mut self, va: u32, s: &str) {
+        for (i, b) in s.bytes().chain([0]).enumerate() {
+            self.cpu.mem.wr8(va + i as u32, b);
+        }
+    }
+}
+
+type Key = ((i32, i32, u32, u32), (u32, u32, u32, u32), [u32; 4]);
+
+fn keys(d: &[TextDraw]) -> Vec<Key> {
+    d.iter()
+        .map(|t| (t.dst, t.src, t.color.map(f32::to_bits)))
+        .collect()
+}
+
+fn hands(log: &[Ev]) -> Vec<PainterSprite> {
+    log.iter()
+        .filter_map(|e| match e {
+            Ev::Hand(h) => Some(*h),
+            _ => None,
+        })
+        .collect()
+}
+
+fn pictos(log: &[Ev]) -> Vec<PainterPictogram> {
+    log.iter()
+        .filter_map(|e| match e {
+            Ev::Picto(p) => Some(*p),
+            _ => None,
+        })
+        .collect()
+}
+
+fn same_text(rig: &Rig, log: &[Ev], port: &[TextDraw], what: &str) {
+    let want = rig.text_of(log);
+    assert!(!want.is_empty() || port.is_empty(), "{what}: nothing drawn");
+    assert_eq!(keys(&want), keys(port), "{what}\n{log:?}");
+}
+
+fn rect(rng: &mut Rng) -> PainterRect {
+    PainterRect::new(
+        rng.below(0x110) as i32,
+        rng.below(0xB0) as i32,
+        0x20 + rng.below(0x100) as i32,
+        0x10 + rng.below(0x60) as i32,
+    )
+}
+
+fn flags(rng: &mut Rng, rows: u32) -> u32 {
+    match rng.below(5) {
+        0 => 0x4000 | rng.below(0x4000),
+        1 => 0x2000 | (rng.below(2) << 12) | rng.below(0x1000),
+        2 => rng.below(rows + 1) | (rng.below(2) << 12),
+        3 => rng.below(rows + 1),
+        _ => rng.next() & 0x7FFF,
+    }
+}
+
+#[test]
+fn the_title_tabs_match() {
+    differential!(
+        prot(899, TAB_0),
+        prot(899, TAB_1),
+        prot(899, TAB_2),
+        prot(899, TAB_3),
+        prot(899, TAB_4),
+        prot(899, TAB_43),
+        prot(899, RECORD_TAB)
+    );
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5441_4253);
+    for run in 0..2_000 {
+        let r = rect(&mut rng);
+        for entry in TABS {
+            let log = rig.run(entry, r);
+            let Ev::Text(s, ..) = &log[0] else {
+                panic!("{log:?}")
+            };
+            let label = String::from_utf8(s.clone()).expect("ASCII");
+            let port = title_tab_draws_for(&rig.font, r, &label);
+            same_text(&rig, &log, &port, &format!("run {run} {entry:#x}"));
+            assert!(hands(&log).is_empty() && log.len() == 1);
+        }
+        // The record tab: the string past the record's skip count.
+        let skip = rng.below(6) as u8;
+        rig.cpu.mem.wr32(0x8007_B450, SCRATCH);
+        rig.cpu.mem.wr8(SCRATCH + 2, skip);
+        let name = ["@Rim Elm shop", "Bottle Shop", "x", "Weapons & Armor"][rng.below(4) as usize];
+        rig.poke_str(SCRATCH + 3 + u32::from(skip), name);
+        let advance = rng.below(0x20) as u8;
+        rig.cpu.mem.wr8(ADVANCE, advance);
+        let log = rig.run(RECORD_TAB, r);
+        let port = record_title_tab_draws_for(&rig.font, r, name);
+        same_text(&rig, &log, &port, &format!("run {run} record tab"));
+        assert_eq!(
+            rig.cpu.mem.rd8(ADVANCE),
+            advance,
+            "the advance byte restored"
+        );
+    }
+}
+
+#[test]
+fn the_counters_and_the_amount_panel_match() {
+    differential!(
+        prot(899, GOLD_PANEL),
+        prot(899, COIN_PANEL),
+        prot(899, AMOUNT)
+    );
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The heading's `0xC2 0xFE` item token is the host's to expand.
+    rig.poke_str(0x801C_EA40, "@Point Card has earned");
+    let heading = rig.string(0x801C_EA40);
+    let unit = rig.string(0x801C_EA50);
+    let mut rng = Rng(0x434E_5452);
+    for run in 0..4_000 {
+        let r = rect(&mut rng);
+        let value = [
+            0,
+            rng.below(1000),
+            rng.below(10_000_000),
+            rng.below(0x7FFF_FFFF),
+        ][rng.below(4) as usize];
+        for (entry, cell, pictogram) in [
+            (GOLD_PANEL, 0x8008_459C, 0x62),
+            (COIN_PANEL, 0x8008_45A4, 0x66),
+        ] {
+            rig.cpu.mem.wr32(cell, value);
+            let log = rig.run(entry, r);
+            let (text, pic) = counter_panel_draws_for(&rig.font, r, pictogram, u64::from(value));
+            same_text(&rig, &log, &text, &format!("run {run} {entry:#x} {value}"));
+            assert_eq!(pictos(&log), vec![pic], "run {run}");
+        }
+        rig.cpu.mem.wr32(0x8008_45B4, value);
+        let log = rig.run(AMOUNT, r);
+        let (text, hand) = amount_prompt_draws_for(&rig.font, r, &heading, u64::from(value), &unit);
+        same_text(&rig, &log, &text, &format!("run {run} amount {value}"));
+        assert_eq!(hands(&log), vec![hand], "run {run}");
+    }
+}
+
+#[test]
+fn the_count_and_char_prompts_match() {
+    differential!(prot(899, COUNT), prot(899, CHAR_PROMPT));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The template's spell token is the host's to expand; the byte the
+    // routine patches is its `+1`.
+    rig.poke_str(0x801E_46E4, "@? learned a spell level");
+    let mut rng = Rng(0x434F_554E);
+    let mut counted = 0;
+    for run in 0..4_000 {
+        let r = rect(&mut rng);
+        let item = [0i32, -1, 1 + rng.below(255) as i32][rng.below(3) as usize];
+        let count = rng.below(100);
+        rig.cpu.mem.wr32(SELECTED, item as u32);
+        rig.bag.borrow_mut().1 = count;
+        let log = rig.run(COUNT, r);
+        let selection = (item > 0).then_some(u64::from(count));
+        let (text, frame) = count_panel_draws_for(&rig.font, r, selection);
+        same_text(&rig, &log, &text, &format!("run {run} count {item}"));
+        assert_eq!(
+            log.last(),
+            Some(&Ev::Frame(frame.0, frame.1, frame.2, frame.3))
+        );
+        assert_eq!(
+            log.contains(&Ev::Call(ITEM_PANEL)),
+            item > 0,
+            "run {run}: the item panel under it"
+        );
+        counted += u32::from(item > 0);
+        // Window 7: one patched byte off the slot's learned-spell list.
+        let (slot, index) = (rng.below(3), rng.below(8));
+        let byte = b'A' + rng.below(26) as u8;
+        rig.cpu.mem.wr16(0x8007_BB70, slot as u16);
+        rig.cpu.mem.wr16(0x8007_BB78, index as u16);
+        rig.cpu
+            .mem
+            .wr8(0x8008_4140 + slot * 0x414 + index + 0x705, byte);
+        let log = rig.run(CHAR_PROMPT, r);
+        let line = cstr(&mut rig.cpu.mem, 0x801E_46E4);
+        assert_eq!(line[1], byte, "run {run}: the patched byte");
+        let (text, hand) = char_prompt_draws_for(&rig.font, r, &line);
+        same_text(&rig, &log, &text, &format!("run {run} char prompt"));
+        assert_eq!(hands(&log), vec![hand], "run {run}");
+    }
+    assert!(counted > 1000, "{counted}");
+}
+
+#[test]
+fn the_choice_and_label_panels_match() {
+    differential!(
+        prot(899, CHOICE_46),
+        prot(899, CHOICE_5),
+        prot(899, LABELS_6)
+    );
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The last label is a lone `0xC1` name token, the host's to expand.
+    rig.poke_str(0x801C_ED58, "@Vahn");
+    let heading = rig.string(0x801C_EAC8);
+    let yes = rig.string(0x801C_EA84);
+    let no = rig.string(0x801C_EA8C);
+    let headings = [rig.string(0x801C_EC78), rig.string(0x801C_EC94)];
+    let labels: Vec<String> = [
+        0x801C_ECA8,
+        0x801C_ECD4,
+        0x801C_ECFC,
+        0x801C_ED20,
+        0x801C_ED38,
+        0x801C_ED58,
+    ]
+    .into_iter()
+    .map(|va| rig.string(va))
+    .collect();
+    let mut rng = Rng(0x4348_4F49);
+    let mut marked = 0;
+    for run in 0..4_000 {
+        let r = rect(&mut rng);
+        let f = flags(&mut rng, 1);
+        rig.cpu.mem.wr32(CHOICE, f);
+        let log = rig.run(CHOICE_46, r);
+        let (text, marks) =
+            choice_panel_draws_for(&rig.font, r, &heading, [&yes, &no], ChoiceFlags(f));
+        let what = format!("run {run} 46 flags {f:#x}");
+        same_text(&rig, &log, &text, &what);
+        assert_eq!(hands(&log), marks, "{what}");
+        assert_eq!(rig.cpu.mem.rd32(INK), 7, "{what}: the ink restored");
+        marked += marks.len() as u32;
+        let log = rig.run(CHOICE_5, r);
+        let (text, marks) = two_line_choice_panel_draws_for(
+            &rig.font,
+            r,
+            [&headings[0], &headings[1]],
+            [&yes, &no],
+            ChoiceFlags(f),
+        );
+        let what = format!("run {run} 5 flags {f:#x}");
+        same_text(&rig, &log, &text, &what);
+        assert_eq!(hands(&log), marks, "{what}");
+        let log = rig.run(LABELS_6, r);
+        let refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let (text, hand) = label_list_draws_for(&rig.font, r, &refs);
+        same_text(&rig, &log, &text, &format!("run {run} 6"));
+        assert_eq!(hands(&log), vec![hand], "run {run} 6");
+    }
+    assert!(marked > 2000, "{marked}");
+}
+
+#[test]
+fn the_shop_panels_match() {
+    differential!(
+        prot(899, ITEM_INFO),
+        prot(899, BUY_QTY),
+        prot(899, SELL_QTY),
+        prot(899, EQUIP_TARGET)
+    );
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The row labels open on a `0xC1` name token, the host's to expand.
+    rig.poke_str(0x801C_EC08, "@Vahn will equip");
+    rig.poke_str(0x801C_EC18, "@Noa will equip");
+    rig.poke_str(0x801C_EC28, "@Gala will equip");
+    let row_labels = [
+        rig.string(0x801C_EC08),
+        rig.string(0x801C_EC18),
+        rig.string(0x801C_EC28),
+    ];
+    let header = rig.string(0x801C_EBF8);
+    let labels_owned = [
+        rig.string(0x801C_EBC8),
+        rig.string(0x801C_EBD0),
+        rig.string(0x801C_EBD4),
+        rig.string(0x801C_EBDC),
+    ];
+    let buy_labels = BuyQuantityLabels {
+        have_head: &labels_owned[0],
+        have_tail: &labels_owned[1],
+        none_held: &labels_owned[2],
+        prompt: &labels_owned[3],
+    };
+    let sell_heading = rig.string(0x801C_EC38);
+    // Names the string writer would expand get an ASCII stand-in.
+    let stand_in = SCRATCH + 0x100;
+    rig.poke_str(stand_in, "@Stand-in");
+    for id in 0..256u32 {
+        let p = rig.cpu.mem.rd32(ITEMS + id * 12 + 4);
+        let ascii = (0x8001_0000..0x8008_0000).contains(&p)
+            && cstr(&mut rig.cpu.mem, p)
+                .iter()
+                .all(|b| (0x20..0x80).contains(b));
+        if !ascii {
+            rig.cpu.mem.wr32(ITEMS + id * 12 + 4, stand_in);
+        }
+    }
+    let mut rng = Rng(0x5348_4F50);
+    let (mut passives, mut details, mut dimmed) = (0, 0, 0);
+    for run in 0..6_000 {
+        let r = rect(&mut rng);
+        let item = [
+            0i32,
+            -3,
+            1 + rng.below(255) as i32,
+            1 + rng.below(255) as i32,
+        ][rng.below(4) as usize];
+        let held = rng.below(3) != 0;
+        let slot = rng.below(0x100);
+        let count = rng.below(100) as u8;
+        *rig.bag.borrow_mut() = (if held { slot } else { 0x100 }, 0);
+        rig.cpu.mem.wr8(BAG_COUNTS + slot * 2, count);
+        let (qty, bound) = (rng.below(100), rng.below(100));
+        rig.cpu.mem.wr32(SELECTED, item as u32);
+        rig.cpu.mem.wr32(QUANTITY, qty);
+        rig.cpu.mem.wr32(BOUND, bound);
+        let id = item as u32;
+        let rec = ITEMS.wrapping_add(id.wrapping_mul(12));
+        let (kind, sub) = (rig.cpu.mem.rd8(rec), rig.cpu.mem.rd8(rec + 1));
+        let price = u32::from(rig.cpu.mem.rd16(rec + 2));
+        let name_ptr = rig.cpu.mem.rd32(rec + 4);
+        let what = format!("run {run} item {item}");
+
+        // Window 34: name and owned count, then one description writer.
+        let log = rig.run(ITEM_INFO, r);
+        let name = if item > 0 {
+            rig.string(name_ptr)
+        } else {
+            String::new()
+        };
+        let owned = if held { count } else { 0 };
+        let text = item_description_draws_for(&rig.font, r, item > 0, &name, owned, "");
+        let head: Vec<Ev> = log
+            .iter()
+            .filter(|e| !matches!(e, Ev::Label(..) | Ev::Detail(..)))
+            .cloned()
+            .collect();
+        same_text(&rig, &head, &text, &format!("{what} 34"));
+        let desc: Vec<&Ev> = log
+            .iter()
+            .filter(|e| matches!(e, Ev::Label(..) | Ev::Detail(..)))
+            .collect();
+        if item > 0 {
+            let passive = rig.cpu.mem.rd8(0x8007_52C0 + u32::from(sub) * 4 + 3);
+            let pen = (r.x + 8, r.y + 0xE);
+            match description_source(kind, passive) {
+                DescriptionSource::AccessoryPassive(p) => {
+                    let va = rig.cpu.mem.rd32(0x8007_625C + u32::from(p) * 12 + 8);
+                    assert_eq!(desc, vec![&Ev::Label(va, pen.0, pen.1, 7)], "{what}");
+                    passives += 1;
+                }
+                DescriptionSource::Item => {
+                    let va = rig.cpu.mem.rd32(rec + 8);
+                    assert_eq!(desc, vec![&Ev::Detail(va, id, pen.0, pen.1, 7)], "{what}");
+                    details += 1;
+                }
+            }
+        } else {
+            assert!(log.is_empty(), "{what}: {log:?}");
+        }
+
+        // Window 35: the buy stepper.
+        let log = rig.run(BUY_QTY, r);
+        let (text, pic, hand) = buy_quantity_draws_for(
+            &rig.font,
+            r,
+            buy_labels,
+            held.then_some(u32::from(count)),
+            qty,
+            bound,
+            price,
+        );
+        same_text(&rig, &log, &text, &format!("{what} 35"));
+        assert_eq!(
+            pictos(&log),
+            pic.into_iter().collect::<Vec<_>>(),
+            "{what} 35"
+        );
+        assert_eq!(
+            hands(&log),
+            hand.into_iter().collect::<Vec<_>>(),
+            "{what} 35"
+        );
+
+        // Window 37: the sell stepper.
+        let log = rig.run(SELL_QTY, r);
+        let (text, pic, hand) =
+            sell_quantity_draws_for(&rig.font, r, item > 0, &sell_heading, qty, bound, price);
+        same_text(&rig, &log, &text, &format!("{what} 37"));
+        assert_eq!(
+            pictos(&log),
+            pic.into_iter().collect::<Vec<_>>(),
+            "{what} 37"
+        );
+        assert_eq!(
+            hands(&log),
+            hand.into_iter().collect::<Vec<_>>(),
+            "{what} 37"
+        );
+
+        // Window 36: the equip-target list over the present party.
+        let n = rng.below(5);
+        let members: Vec<u8> = (0..n)
+            .map(|_| [0u8, 1, 2, 0, 1, 2, 3][rng.below(7) as usize])
+            .collect();
+        rig.cpu.mem.wr8(0x8008_4594, n as u8);
+        for (i, m) in members.iter().enumerate() {
+            rig.cpu.mem.wr8(0x8008_4598 + i as u32, *m);
+        }
+        let f = flags(&mut rng, n);
+        rig.cpu.mem.wr32(TARGET_CHOICE, f);
+        let mask = rig.cpu.mem.rd8(0x8007_4F68 + u32::from(sub) * 8 + 6);
+        let rows: Vec<(EquipTargetRow, &str)> = members
+            .iter()
+            .map(|&m| {
+                (
+                    EquipTargetRow {
+                        member_class: m,
+                        equippable: equip_row_enabled(mask, m),
+                    },
+                    row_labels.get(usize::from(m)).map_or("", String::as_str),
+                )
+            })
+            .collect();
+        let log = rig.run(EQUIP_TARGET, r);
+        let (text, marks) =
+            equip_target_list_draws_for(&rig.font, r, &header, &rows, ChoiceFlags(f));
+        same_text(&rig, &log, &text, &format!("{what} 36 {members:?} {f:#x}"));
+        assert_eq!(hands(&log), marks, "{what} 36 {members:?} {f:#x}");
+        dimmed += rows.iter().filter(|(r, _)| !r.equippable).count() as u32;
+    }
+    assert!(
+        passives > 200 && details > 1000 && dimmed > 1000,
+        "{passives} {details} {dimmed}"
+    );
+}

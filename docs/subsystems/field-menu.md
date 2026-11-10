@@ -342,14 +342,18 @@ The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
 [`engine-ui::menu::window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
 (windows 25 and 41 in `menu::equip_stat_compare`). Every window painter
-is reached by a screen on both hosts. The port keeps the pen arithmetic and the
-state-word rules and drops two globals every painter touches - the ink word
-`DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
-composites in call order and lays glyphs out proportionally needs neither.
-The **accent pen** (`DAT_8007B454 = 6`) is kept as a colour
-(`PAINTER_INK_ACCENT`, the same colour as a rising stat): window 34 stages it
-for the item name and owned count, window 24 for its count, window 31 for its
-number, each restoring `7` afterwards.
+is reached by a screen on both hosts. The port keeps the pen arithmetic, the
+state-word rules and the ink word `DAT_8007B454` as each draw's colour. Most
+text is ink `7` (white). The **accent pen** `6` (`PAINTER_INK_ACCENT`, the same
+colour as a rising stat) covers window 34's item name and owned count, window
+24's count and window 31's number; the **choice ink** `5`
+(`PAINTER_INK_CHOICE`, teal) covers the two choice labels of windows 46 and 5,
+staged before the first label and held through the second. Each window
+restores `7` afterwards. The byte some painters stage at `DAT_80073F20` is the
+string writer's width-table entry for byte `0x04` (`0x80073F1C + 4`), not a
+mode; no string these windows draw carries that byte, so the port drops it.
+The retail differential `crates/retail-exec/tests/menu_painters.rs` holds
+every painter here to its routine, ink included.
 
 `FUN_801E4140` is not a painter. Past its `y < 0xF1` guard it calls the
 fill-state setter `FUN_80034B6C` and the box writer

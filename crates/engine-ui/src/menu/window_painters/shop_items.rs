@@ -9,13 +9,14 @@ use super::*;
 /// Where a window-34 description line comes from.
 ///
 /// `FUN_801D4A80` branches on the item record's kind byte (`+0` of
-/// `0x80074368 + id*12`). Kind `2` - the accessory ("Goods") class - does
-/// **not** use the item's own description word. It reads the item-effect
-/// record `0x800752C0 + effect*4`, takes the passive index at `+3`, and
-/// only if that index is below `0x40` does it draw the passive's
-/// description from `0x8007625C + index*12 + 8`. An accessory whose
-/// passive index is `0x40` or above draws no description at all - the
-/// bound is checked twice, unsigned then signed, and both arms bail.
+/// `0x80074368 + id*12`). Kind `2` reads the item-effect record
+/// `0x800752C0 + effect*4` and takes the passive index at `+3`; below `0x40`
+/// it draws that passive's description (`0x8007625C + index*12 + 8`, through
+/// `FUN_8003CD00`). At `0x40` or above the unsigned bound check branches to
+/// the same arm every other kind takes (`beq v0,zero,0x801D4BD8`), so the
+/// item's own description word goes through the detail printer
+/// `FUN_800337B0` - which is what every kind-2 item with no passive
+/// (marker `0x41`) shows. The signed recheck after it can never fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DescriptionSource {
     /// The item record's own description word (`+8`).
@@ -23,26 +24,22 @@ pub enum DescriptionSource {
     /// Accessory passive `index`, whose description lives in the
     /// name/description table at `0x8007625C`.
     AccessoryPassive(u8),
-    /// Kind `2` with an out-of-range passive index: nothing is drawn.
-    None,
 }
 
 /// Item kind byte that routes a description through the passive table.
 pub const ITEM_KIND_ACCESSORY: u8 = 2;
-/// Passive indices at or above this draw no description.
+/// Passive indices at or above this fall back to the item's description.
 pub const ACCESSORY_PASSIVE_LIMIT: u8 = 0x40;
 
 /// Resolve which description a window-34 draw would use.
 ///
-/// REF: FUN_801D4A80 (the kind-2 branch and its double bound check)
+/// REF: FUN_801D4A80 (the kind-2 branch and its bound check)
 pub fn description_source(item_kind: u8, passive_index: u8) -> DescriptionSource {
-    if item_kind != ITEM_KIND_ACCESSORY {
-        return DescriptionSource::Item;
+    if item_kind == ITEM_KIND_ACCESSORY && passive_index < ACCESSORY_PASSIVE_LIMIT {
+        DescriptionSource::AccessoryPassive(passive_index)
+    } else {
+        DescriptionSource::Item
     }
-    if passive_index >= ACCESSORY_PASSIVE_LIMIT {
-        return DescriptionSource::None;
-    }
-    DescriptionSource::AccessoryPassive(passive_index)
 }
 
 /// Window 34: item name, owned count, and the description line below.
