@@ -441,8 +441,14 @@ fragment discard ([below](#what-a-raised-0x42-draws)).
 - **`FUN_80027F00`** - the vertex clip loop. For each edge with an endpoint
   outside the bound at `[0x1F800314]+0x6C`, it computes the crossing fraction
   `((bound - a) << 12) / (b - a)` and calls the interpolator to synthesise a
-  clipped vertex before handing the group to `FUN_80027C6C`. See
-  `ghidra/scripts/funcs/80027f00.txt`.
+  clipped vertex before handing the group to `FUN_80027C6C`. It is one pass in
+  ring order, not a clip per bound: a corner past a bound gives way to the
+  crossing on the edge from the corner before it, then on the edge to the
+  corner after it, each made only when that neighbour lies strictly inside, so
+  a corner on the bound makes no duplicate. Port:
+  `engine-effects::object_effect::far_arm_mesh`, in that order, in `f32` (its
+  corners arrive scaled); the `far_arm_clip` differential holds it to retail
+  within the integer rounding. See `ghidra/scripts/funcs/80027f00.txt`.
 - **`FUN_80029724`** - the interpolation kernel the clip loop calls. Given an
   output slot, two vertices and a q12 fraction `a3`, it lerps X/Y/Z
   (`out = b + ((a-b)*frac >> 12)`) and, by flag word `a2`, the packed

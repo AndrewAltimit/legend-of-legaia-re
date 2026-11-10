@@ -155,6 +155,7 @@ mod escape;
 mod escape_timer;
 mod euler_rot;
 mod face_anim;
+mod far_arm_clip;
 mod field_actor_plan;
 mod field_camera;
 mod field_ctx;

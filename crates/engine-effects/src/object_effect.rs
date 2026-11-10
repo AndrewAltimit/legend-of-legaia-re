@@ -227,14 +227,92 @@ impl MeshClip {
     }
 }
 
+/// `FUN_80027F00`'s pass over one ring: each corner in ring order either
+/// stays (`lo <= y <= hi`, both ends inclusive) or, when it lies past a bound,
+/// gives way to the crossings on its two edges - the edge from the corner
+/// before it first, then the edge to the corner after it - each made only
+/// when that neighbour lies strictly inside the bound (`0x80027F60..0x80028098`).
+/// A crossing is the neighbour moved toward the corner by
+/// `(neighbour - bound) / (neighbour - corner)` of the edge (`FUN_80029724`).
+/// So the output starts where retail's starts, a corner exactly on a bound
+/// makes no duplicate, and an edge spanning both bounds yields both
+/// crossings, each from its own end.
+fn clip_ring<C: Copy + CornerPos>(
+    ring: &[C],
+    clip: &MeshClip,
+    at: impl Fn(C, C, f32) -> C,
+) -> Vec<C> {
+    let n = ring.len();
+    let y = |c: &C| {
+        let p = c.pos();
+        clip.m[0] * p[0] + clip.m[1] * p[1] + clip.m[2] * p[2]
+    };
+    let mut out = Vec::with_capacity(n + 2);
+    for k in 0..n {
+        let here = ring[k];
+        let (prev, next) = (ring[(k + n - 1) % n], ring[(k + 1) % n]);
+        let (yh, yp, yn) = (y(&here), y(&prev), y(&next));
+        let mut outside = false;
+        if yh < clip.lo {
+            outside = true;
+            if yp > clip.lo {
+                out.push(at(prev, here, (yp - clip.lo) / (yp - yh)));
+            }
+            if yn > clip.lo {
+                out.push(at(next, here, (yn - clip.lo) / (yn - yh)));
+            }
+        }
+        if yh > clip.hi {
+            outside = true;
+            if yp < clip.hi {
+                out.push(at(prev, here, (yp - clip.hi) / (yp - yh)));
+            }
+            if yn < clip.hi {
+                out.push(at(next, here, (yn - clip.hi) / (yn - yh)));
+            }
+        }
+        if !outside {
+            out.push(here);
+        }
+    }
+    out
+}
+
+/// A clip corner's mesh-space position.
+trait CornerPos {
+    fn pos(&self) -> [f32; 3];
+}
+
+/// One corner of the far arm's ring: position, texel, colour.
+#[derive(Clone, Copy)]
+struct Corner {
+    pos: [f32; 3],
+    uv: [f32; 2],
+    rgb: [f32; 3],
+}
+
+impl CornerPos for Corner {
+    fn pos(&self) -> [f32; 3] {
+        self.pos
+    }
+}
+
 /// A raised node's emitter mesh as the far arm `FUN_8002735C` links it. Each
 /// corner carries retail's order, and `front` is the arm's winding test on the
 /// projected first three corners: `NCLIP` then `bltz` at `0x80027548..0x8002755C`
 /// for a quad, with no double-sided mask, so an area of exactly zero stays and
 /// the quad's second triangle is never tested. A kept quad goes round
 /// `FUN_80027F00`'s ring `(v0, v1, v3, v2)` against the slab, which synthesises a
-/// corner on each crossing edge with its UV and colour (`FUN_80029724`). Fewer
-/// than three corners draw nothing (`sltiu v0,a0,3` at `0x80027884`).
+/// corner on each crossing edge with its UV and colour (`FUN_80029724`), in
+/// retail's corner order ([`clip_ring`]). Fewer than three corners draw nothing
+/// (`sltiu v0,a0,3` at `0x80027884`).
+///
+/// The clip runs in `f32`: the hosts hand this mesh-space corners already
+/// scaled by the node's render scale, where retail clips the object-local
+/// integer vertex and scales in the matrix, so retail's integer lerp (a q12
+/// fraction truncated by `div`, the step floored by `sra 12`) would round a
+/// scaled mesh to the unit. The differential `far_arm_clip` holds this to
+/// retail within that rounding.
 ///
 /// The quad form is the one every draw-kind-4 emitter writes
 /// (`[b, b + 1, b + 2, b + 2, b + 1, b + 3]`); anything else is a triangle.
@@ -246,12 +324,6 @@ pub fn far_arm_mesh(
     clip: Option<&MeshClip>,
     mut front: impl FnMut([[f32; 3]; 3]) -> bool,
 ) -> legaia_tmd::mesh::VramMesh {
-    #[derive(Clone, Copy)]
-    struct Corner {
-        pos: [f32; 3],
-        uv: [f32; 2],
-        rgb: [f32; 3],
-    }
     let corner = |i: u32| {
         let i = i as usize;
         Corner {
@@ -298,26 +370,11 @@ pub fn far_arm_mesh(
         if !front(first.map(|c| mesh.positions[c as usize])) {
             continue;
         }
-        let mut poly: Vec<Corner> = ring.iter().map(|&c| corner(c)).collect();
-        if let Some(c) = clip {
-            let measure = |p: [f32; 3]| c.m[0] * p[0] + c.m[1] * p[1] + c.m[2] * p[2];
-            // The two bounds in turn: below `lo`, then above `hi`.
-            for (bound, keep_above) in [(c.lo, true), (c.hi, false)] {
-                let inside = |y: f32| if keep_above { y >= bound } else { y <= bound };
-                let mut kept = Vec::with_capacity(poly.len() + 2);
-                for (k, &here) in poly.iter().enumerate() {
-                    let next = poly[(k + 1) % poly.len()];
-                    let (a, b) = (measure(here.pos), measure(next.pos));
-                    if inside(a) {
-                        kept.push(here);
-                    }
-                    if inside(a) != inside(b) {
-                        kept.push(at(here, next, (bound - a) / (b - a)));
-                    }
-                }
-                poly = kept;
-            }
-        }
+        let corners: Vec<Corner> = ring.iter().map(|&c| corner(c)).collect();
+        let poly = match clip {
+            Some(c) => clip_ring(&corners, c, at),
+            None => corners,
+        };
         if poly.len() < 3 {
             continue;
         }
