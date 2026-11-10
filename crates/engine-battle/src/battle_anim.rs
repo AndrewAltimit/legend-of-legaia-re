@@ -683,6 +683,7 @@ impl MonsterAnimPlayer {
     /// sweep `FUN_80048310` reads when it stores a rewound cursor and calls
     /// the decoder `FUN_8004998C` again (`0x8004836C`). The loop counter and
     /// the queued clip's tween target are the live ones, as retail's are.
+    // REF: FUN_80048310 (the sweep's re-decode at a rewound cursor)
     pub fn pose_at_sixteenths(&self, sixteenths: u16) -> PoseFrame {
         self.decode(u32::from(sixteenths) << 4)
     }
