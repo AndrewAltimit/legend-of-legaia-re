@@ -601,3 +601,52 @@ fn tagged_spawn_tags_each_part_with_its_record() {
     let plain = SummonScene::spawn(&ov, &bytes, 26, [0, 0, 0]);
     assert!(plain.parts.iter().all(|p| p.tag.is_none()));
 }
+
+/// Records each op-`0x20` call's `walk_successor` - whether what the call
+/// seats would be reached by this frame's walk.
+#[derive(Default)]
+struct CallHost {
+    calls: Vec<bool>,
+}
+impl MoveHost for CallHost {
+    fn ext_20(&mut self, state: &mut ActorState, _arg0: i16, _arg1: i16) {
+        self.calls.push(state.walk_successor);
+    }
+}
+
+/// A seater's own run comes before the walk (list 0's callbacks), so an
+/// op-`0x20` call the program opens with seats a node the walk still
+/// reaches, even from the list's newest node: PROT 0909's arm-12 emitter
+/// `0x801F8158` calls its stager before its first `WAIT`, and retail's first
+/// ring shows its first `+0xC0` step on that frame. A call from the walk
+/// tick of the list's last node is past the walk's `next` (PROT 0964's rays).
+#[test]
+fn a_call_from_the_seat_run_seats_a_node_the_walk_reaches() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(-1i16).to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // SLOT_B_HOOK 2,0 ; WAIT 1 ; SLOT_B_HOOK 3,0 ; WAIT 0x7F ; HALT
+    for w in [0x20u16, 2, 0, 0x09, 1, 0x20, 3, 0, 0x09, 0x7F, 0x08] {
+        bytes.extend_from_slice(&w.to_le_bytes());
+    }
+    let parts = vec![SummonPart {
+        record_off: 0,
+        model_sel: -1,
+        reserved: 0,
+        bytecode: 4..bytes.len(),
+    }];
+    let mut scene = SummonScene::spawn_parts(&parts, &bytes, 0, [0, 0, 0]);
+    let mut host = CallHost::default();
+    for _ in 0..4 {
+        scene.tick(&mut host, 0x0400);
+    }
+    assert_eq!(
+        host.calls,
+        vec![true, false],
+        "the seat run's call is reached; the lone node's walk-tick call is not"
+    );
+    assert!(
+        !scene.parts[0].state.walk_successor,
+        "the walk's own reading is restored after the seat run"
+    );
+}

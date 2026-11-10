@@ -296,8 +296,17 @@ impl SummonScene {
         for i in 0..self.parts.len() {
             // A part seated earlier this frame (a module arm's spawn in the
             // world tick) gets the seater's VM run first, then this frame's
-            // part tick - the order retail's list walk gives it.
+            // part tick - the order retail's list walk gives it. The seater's
+            // run happens before the walk (list 0's callbacks), so what an
+            // op-`0x20` call inside it seats lands behind every node the walk
+            // has still to reach and takes its tick this frame too: PROT
+            // 0909's arm-12 emitter seats its first ring from its own seat
+            // run, and retail's ring shows its first `+0xC0` step on that
+            // frame.
+            let behind = self.parts[i].state.walk_successor;
+            self.parts[i].state.walk_successor = true;
             self.seat_part(i, host);
+            self.parts[i].state.walk_successor = behind;
             self.parts[i].walk_reached = false;
             self.tick_part(i, host, frame_delta);
         }

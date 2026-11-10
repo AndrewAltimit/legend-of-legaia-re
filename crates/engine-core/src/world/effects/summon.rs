@@ -102,6 +102,12 @@ impl World {
         let Some(entry) = self.casting.module_running_entry else {
             return;
         };
+        if entry == 909 {
+            if self.seat_viguro_stager_spawns_now() {
+                self.seat_walk_active_summon();
+            }
+            return;
+        }
         if !Self::runs_part_stager_calls(entry)
             || (self.casting.module_stager_calls.is_empty()
                 && self.casting.module_stager_seats.is_empty())
@@ -109,6 +115,13 @@ impl World {
             return;
         }
         self.run_part_stager_calls(entry);
+        self.seat_walk_active_summon();
+    }
+
+    /// Give the parts a stager call just seated the seater's own move-VM run
+    /// and, where the walk reaches them, this frame's part tick
+    /// (`SummonScene::seat_walk`).
+    fn seat_walk_active_summon(&mut self) {
         let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };

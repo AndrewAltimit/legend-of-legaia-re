@@ -123,7 +123,8 @@ before it calls the node's tick (`lw s1,0x0(s1)` at `0x800251D8`, the call
 on the old tail, `sw v0,0xc(a0)` as the list's new tail. So:
 
 - a part seated by the list's last node is past the `next` the walk already read (`0`), and waits for the next frame: PROT 0964's first rays, whose emitter is the newest node when it seats them, are born at level `0x1000` and take their first fade step a frame late;
-- a part seated by a node with anything behind it is reached on the same walk: PROT 0917's arm-7 emitter `0x801F8B18` seats a cloud a frame behind the clouds it seated before, so every cloud shows one step along (`+0x18 = 832` from `1024`) on the frame it is seated, as retail's `parts.csv` holds it.
+- a part seated by a node with anything behind it is reached on the same walk: PROT 0917's arm-7 emitter `0x801F8B18` seats a cloud a frame behind the clouds it seated before, so every cloud shows one step along (`+0x18 = 832` from `1024`) on the frame it is seated, as retail's `parts.csv` holds it;
+- a part seated from a seater's own run is reached too: a module tick seats its records from list 0's callbacks before the list-1 walk starts, and `FUN_80021B04`'s run of the new node (`jal 0x80023070` at `0x80021DC0`) makes any op `0x20` call the program opens with, so what that call seats lands behind every node the walk has still to read. PROT 0909's arm-12 emitter `0x801F8158` calls its stager's arm 2 before its first `WAIT`, and retail's first ring shows radius `176` (one `+0xC0` step) on the frame the arm opens. PROT 0964's ray emitter opens on `WAIT 0`, so its calls come from the walk instead.
 
 A halted node stays linked for two more walks (the first ORs `0x2000000`
 into `+0x10`, the second unlinks it through `FUN_800204A4`), so it still

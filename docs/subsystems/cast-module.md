@@ -1957,7 +1957,12 @@ phase 3. Arm 7 spawns record `0x801F7F20`, which waits `0x13`, loops a
 20-vsync body six times and calls arm `1`, stepping phase 8. The port queues
 every op-`0x20` call a module's parts make (`CastFxState::module_stager_calls`)
 and runs PROT 0909's through its stager on the module's next tick, so both
-rendezvous fall where the parts' own waits put them. A host that does not
+rendezvous fall where the parts' own waits put them. The seating arms `2`, `3`, `4` and
+`6` run on the caller's frame instead, right after the frame's part tick
+(`World::seat_viguro_stager_spawns_now`), as retail's call inside the caller's step
+seats them: queued to the next tick, every ring arm 12's emitter `0x801F8158` seats
+stood a battle frame (one `+0xC0` step of radius) behind retail's, and arm 12 read
+`.590` frame by frame (`.667` on the caller's frame; the rest is the bolts' `rand()`). A host that does not
 seat one of the two records (no disc, or a driver that steps the module
 without the band seam) keeps that record's clock in its place
 (`cast_module_camera::VIGURO_STAGER_CALLERS`, `CastFxState::module_record_clocks`):
