@@ -703,9 +703,11 @@ pub struct PauseThrowConfirmView<'a> {
     pub cursor: u8,
     /// Emit an ASCII `>` cursor instead of the hand sprite.
     pub text_cursor: bool,
-    /// The window's two prompt lines (`0x801CEA60` after the count,
-    /// `0x801CEA74` below) and the Yes / No labels, as the menu overlay's
-    /// pool holds them, `@` lead included. Empty strings draw nothing.
+    /// The window's two prompt lines (`0x801CEA60` after the count - which
+    /// retail seats off screen, see [`items_throw_confirm_draws_for`] -
+    /// and `0x801CEA74` below) and the Yes / No labels, as the menu
+    /// overlay's pool holds them, `@` lead included. Empty strings draw
+    /// nothing.
     pub prompt: [&'a str; 2],
     pub choices: [&'a str; 2],
 }
@@ -723,13 +725,23 @@ pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
 /// id 9, rect [`ITEMS_THROW_CONFIRM_RECT`]). Retail layout, all from the
 /// window's content origin `(WX, WY)`:
 ///
-/// - item name (staging 7 white) at `(WX, WY)`, the bag count right of
-///   the name (the retail pen is `WX + 8 + name_glyphs*0xC`; the port
-///   uses the proportional name advance + 8), then the first prompt line
-///   (`0x801CEA60`) 8 px past the count (16 px for a 2-digit count);
+/// - item name (staging 7 white) at `(WX, WY)`;
+/// - the bag count (`FUN_80034B78`, one cell) at `WX + 8 + name[0] * 0xC`,
+///   and the first prompt line (`0x801CEA60`) 8 px past it (16 px for a
+///   2-digit count). `name[0]` is the name's first **byte**
+///   (`lbu v1,0x0(a1)` at `0x801D1BB4`, off the pointer the string writer
+///   was just handed), so on this disc, where a name opens on a letter,
+///   both land hundreds of pixels right of the screen and are not seen:
+///   the window reads as the name over the second line. They are laid out
+///   where retail puts them and dropped the way the GPU drops them
+///   ([`gpu_seen`]);
 /// - the second prompt line (`0x801CEA74`) at `(WX+6, WY+0xE)`;
 /// - Yes / No (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
 ///   `WY+0x2A`, hand cursor at `WX+0x28` on the focused row.
+///
+/// The routine's `0xF1` arm (`0x801D1BCC..0x801D1C10`, a name whose second
+/// byte is `0xF1` re-seats the pen off a party member's name) is not
+/// modelled: no item name on the disc carries the byte.
 ///
 /// PORT: FUN_801D1B20
 pub fn items_throw_confirm_draws_for(
@@ -742,19 +754,18 @@ pub fn items_throw_confirm_draws_for(
     let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
         out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
     };
-    let name_layout = font.layout_ascii(view.name);
-    out.extend(text_draws_for(&name_layout, (wx, wy), MENU_TEXT_WHITE));
-    let count_x = wx + 8 + name_layout.advance_x as i32;
-    out.extend(num_field_draws(
-        font,
-        view.count as u64,
-        count_x,
-        wy,
-        1,
-        MENU_TEXT_WHITE,
-    ));
+    str_at(&mut out, view.name, wx, wy, MENU_TEXT_WHITE);
+    // A `char` up to `U+00FF` is the dialog font's byte of that value.
+    let lead = view
+        .name
+        .chars()
+        .next()
+        .map_or(0, |c| (c as u32 & 0xFF) as i32);
+    let count_x = wx + 8 + lead * 0x0C;
+    let mut far = num_field_draws(font, view.count as u64, count_x, wy, 1, MENU_TEXT_WHITE);
     let after_count = count_x + if view.count >= 10 { 0x10 } else { 0x8 };
-    str_at(&mut out, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
+    str_at(&mut far, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
+    out.extend(far.iter().filter_map(gpu_seen));
     str_at(&mut out, view.prompt[1], wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
     let teal = super::system_menus::OPTIONS_INK_TEAL;
     for (label, y, row) in [
@@ -767,6 +778,17 @@ pub fn items_throw_confirm_draws_for(
         str_at(&mut out, label, wx + THROW_CONFIRM_CHOICE_X, y, teal);
     }
     out
+}
+
+/// A stage-pixel draw as the PSX GPU takes it: the x of a sprite is a
+/// signed 11-bit coordinate, and one that falls outside the 320-px drawing
+/// area is not drawn. `None` for a draw the screen never shows.
+fn gpu_seen(d: &TextDraw) -> Option<TextDraw> {
+    let x = (d.dst.0 + 1024).rem_euclid(2048) - 1024;
+    (x > -(d.dst.2 as i32) && x < 320).then(|| TextDraw {
+        dst: (x, d.dst.1, d.dst.2, d.dst.3),
+        ..*d
+    })
 }
 
 /// The confirm window's hand-cursor sprite at `(WX+0x28, rowY)` for the

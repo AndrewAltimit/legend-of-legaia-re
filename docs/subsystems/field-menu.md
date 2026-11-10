@@ -1376,13 +1376,21 @@ selected bag pair - the whole stack, no compaction - then fixes up the scroll
 confirm. An empty rescan restores descriptor 15 and drops to sub-screen 5.
 
 **Throw Out confirm (window 9, rect `(14,38,144,54)`, `FUN_801D1B20`)** -
-drawn from the staged slot (`_DAT_8007BB88`): the item name (CLUT 7; the
-item-table `+4` string, whose leading byte is its glyph count) at `(WX, WY)`;
-the count (min-1-digit `FUN_80034B78`) at `WX + 8 + glyphs*0xC`; "You are
-about to" 8 px past the count (16 px for a 2-digit count); "Throw out?" at
-`(WX+6, WY+0xE)`; then CLUT 5 "Yes" at `(WX+0x3C, WY+0x1C)` and "No" at
-`(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28`. The name renderer honours a
-`0xF1` second-byte escape that substitutes a character name (`+0x2A7`). The
+drawn from the staged slot (`_DAT_8007BB88`): the item name (CLUT 7, the
+item-table `+4` string) at `(WX, WY)`; the count (min-1-digit `FUN_80034B78`)
+at `WX + 8 + name[0]*0xC`; "You are about to" 8 px past the count (16 px for a
+2-digit count); "Throw out?" at `(WX+6, WY+0xE)`; then CLUT 5 "Yes" at
+`(WX+0x3C, WY+0x1C)` and "No" at `(WX+0x3C, WY+0x2A)` with the hand at
+`WX+0x28`.
+
+`name[0]` is the first **byte** of the name (`lbu v1,0x0(a1)` at `0x801D1BB4`,
+off the pointer just handed to the string writer), read as a glyph count. The
+names on this disc carry no count byte - they open on a letter - so the pen
+lands several hundred pixels right of the screen, and neither the count nor
+"You are about to" is seen: the window reads as the item name over "Throw
+out?". A `0xF1` second byte re-seats the pen off a party member's name
+(`+0x2A7`); no item name carries one. The differential
+`crates/retail-exec/tests/items_panels.rs` holds the port to it. The
 strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
 `@Throw out?` at `0x801CEA74` / `@Yes` / `@No`). Port: the confirm draws them
 from `pause_screens::ThrowConfirmLabels` (installed by
