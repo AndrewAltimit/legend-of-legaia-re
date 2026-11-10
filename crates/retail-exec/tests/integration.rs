@@ -236,6 +236,7 @@ mod save_grid;
 mod save_leaves;
 mod save_subscreens;
 mod scale_stage;
+mod scene_entry;
 mod screen_dim;
 mod screen_fx;
 mod separation;
