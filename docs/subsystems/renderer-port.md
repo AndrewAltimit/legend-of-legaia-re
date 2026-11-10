@@ -246,6 +246,14 @@ The composited screen primitives take the same pixel centre and texel bias
 on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to
 a corner - samples the GPU's.
+Under the PCSX-Redux rule they take no half-texel bias. That emulator walks a
+flat `POLY_FT4` whole from the left edge's `U` / `V` at the first column and
+the row's own `V` (`SoftRenderer::drawPoly4TEx4`, `posX = m_leftU`), and splits
+a `POLY_GT4` into triangles that read the texel at the pixel centre along the
+row (the 3D pass's rule); `screen_prim::FLAG_GOURAUD` tells the two apart. A
+quad drawn one texel per pixel reads the same texel under every rule; a scaled
+one - a fog sheet - reads its emulator's. Taking the console's bias there had
+put every fog sheet on a PCSX-Redux state half a texel off its capture.
 
 The Gouraud colour is not rounded the way the UV is. Rounding the
 interpolated colour to a whole step (a half-step start, as an emulator's

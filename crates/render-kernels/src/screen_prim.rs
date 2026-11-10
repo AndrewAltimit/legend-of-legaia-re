@@ -882,6 +882,11 @@ pub const FLAG_TEXTURED: u32 = 1;
 /// "nearer or equal", no depth write); this bit is the only thing that
 /// makes a quad take part.
 pub const FLAG_DEPTH_TESTED: u32 = 2;
+/// `flags` bit set on a textured quad drawn with per-corner colours (a
+/// `POLY_GT4`). The GPU splits it into two triangles where a flat
+/// `POLY_FT4` can be walked whole; only an emulator's texel rule tells the two
+/// apart (`PsxTexelRule::PcsxRedux` in `engine-render`). Shaders ignore it.
+pub const FLAG_GOURAUD: u32 = 4;
 
 /// One contiguous run of quads sharing a [`BlendClass`], expressed as an
 /// index-buffer range. A host binds the run's pipeline / blend state once and
@@ -1057,7 +1062,11 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                     Some(c) => std::array::from_fn(|i| tex_mod_factor(c[i])),
                     None => [tex_mod_factor(q.color); 4],
                 },
-                FLAG_TEXTURED,
+                if q.gouraud.is_some() {
+                    FLAG_TEXTURED | FLAG_GOURAUD
+                } else {
+                    FLAG_TEXTURED
+                },
                 q.depth,
                 sw,
                 sh,
