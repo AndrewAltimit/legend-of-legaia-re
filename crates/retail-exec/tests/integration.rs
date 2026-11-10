@@ -201,6 +201,7 @@ mod spirit_cleanup;
 mod spoils;
 mod sprite_arm;
 mod sprite_glide;
+mod st_ring;
 mod stager_spawns;
 mod stager_states;
 mod stat_aggregator;

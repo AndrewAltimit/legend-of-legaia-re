@@ -50,6 +50,7 @@ legaia-minigame-formats.workspace = true
 legaia-save.workspace = true
 psx-pcsx-redux.workspace = true
 psx-lzs.workspace = true
+psx-mdec.workspace = true
 legaia-container-formats.workspace = true
 legaia-scene-formats.workspace = true
 psx-vab.workspace = true

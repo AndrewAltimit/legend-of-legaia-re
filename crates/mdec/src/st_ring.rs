@@ -183,6 +183,35 @@ struct Slot {
     height: u16,
 }
 
+/// The ring's cursors and frame window, the globals retail keeps them in:
+/// a read-only view for a caller comparing the ring against retail's
+/// (the retail-exec differential), nothing a player reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StCursors {
+    /// `_DAT_801CADBC`.
+    pub write_slot: usize,
+    /// `_DAT_801CADC0`.
+    pub frame_start_slot: usize,
+    /// `_DAT_801CADC4`.
+    pub read_slot: usize,
+    /// `_DAT_801CAD90`.
+    pub cur_frame: u32,
+    /// `_DAT_801CAD94`.
+    pub next_chunk: u32,
+    /// `_DAT_801CADB0`.
+    pub stream_filter: u16,
+    /// `_DAT_801CADD0`.
+    pub seek_armed: bool,
+    /// `_DAT_801CADAC`.
+    pub start_frame: u32,
+    /// `_DAT_801CADCC`.
+    pub end_frame: u32,
+    /// `_DAT_801CADB4`.
+    pub frame_pending: bool,
+    /// `_DAT_801CAD98`.
+    pub mode_flag: bool,
+}
+
 /// The retail STR sector ring and its demux state machine.
 ///
 /// Feed it whole 2048-byte sector data areas with [`StRing::deliver_sector`],
@@ -308,6 +337,30 @@ impl StRing {
     /// CD or DMA registers to poke, so it only records the flag.
     pub fn mode_flag(&self) -> bool {
         self.mode_flag
+    }
+
+    /// The cursors and frame window ([`StCursors`]).
+    pub fn cursors(&self) -> StCursors {
+        StCursors {
+            write_slot: self.write_slot,
+            frame_start_slot: self.frame_start_slot,
+            read_slot: self.read_slot,
+            cur_frame: self.cur_frame,
+            next_chunk: self.next_chunk,
+            stream_filter: self.stream_filter,
+            seek_armed: self.seek_armed,
+            start_frame: self.start_frame,
+            end_frame: self.end_frame,
+            frame_pending: self.frame_pending,
+            mode_flag: self.mode_flag,
+        }
+    }
+
+    /// Slot `i`'s status halfword, the word retail overwrites the sector
+    /// magic with (`0` free, `1` wrap marker, `2` complete, `3` filling,
+    /// `4` with the decoder).
+    pub fn slot_status(&self, i: usize) -> u16 {
+        self.slots[i].status
     }
 
     /// Number of ring slots.
@@ -527,7 +580,9 @@ impl StRing {
         self.payload[dst..dst + n].copy_from_slice(&src[..n]);
         self.payload[dst + n..dst + SECTOR_PAYLOAD_BYTES].fill(0);
 
-        if chunks_per_frame.saturating_sub(1) == chunk_number {
+        // `lhu` then `addiu -1` (`0x8005F7EC..0x8005F7F8`): a word, so a
+        // header claiming zero chunks never completes its frame.
+        if u32::from(chunks_per_frame).wrapping_sub(1) == u32::from(chunk_number) {
             self.frame_pending = true;
             self.next_chunk = 0;
             self.cur_frame = 0;
@@ -576,6 +631,20 @@ mod tests {
         (0..chunks)
             .map(|c| ring.deliver_sector(&sector(frame, c, chunks, fill)))
             .collect()
+    }
+
+    /// A header claiming zero chunks never completes its frame: the demux
+    /// compares `chunks - 1` as a word, `0xFFFFFFFF` here (held against
+    /// `FUN_8005F024` by the retail-exec differential).
+    #[test]
+    fn a_zero_chunk_header_never_completes() {
+        let mut ring = StRing::retail();
+        ring.set_stream(0, 0, 0);
+        let step = ring.deliver_sector(&sector(1, 0, 0, 0x11));
+        assert_eq!(step.status, StStatus::Accepted);
+        assert!(!step.frame_ready);
+        assert_eq!(ring.slot_status(0), SLOT_FILLING);
+        assert!(ring.get_next().is_none());
     }
 
     #[test]
