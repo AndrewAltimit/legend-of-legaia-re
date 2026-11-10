@@ -258,6 +258,7 @@ mod mule_wave;
 mod muscle_contest;
 mod muscle_hub;
 mod name_entry;
+mod narration_roller;
 mod new_game_seed;
 mod nighto_roll;
 mod object_spawn;
