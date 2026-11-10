@@ -328,21 +328,13 @@ impl World {
         // pass opened runs out on the step it ran at, and a cost pushed now
         // first times the next pass, which also drains its timers by it
         // (`battle-stage-camera.md`, the frame step). An arm table's step is
-        // the length retail's frames ran under the arm, and takes effect on
-        // its own pass.
-        //
-        // The step the frames before this pass left in the ring: what a pass
-        // under a cheaper arm still runs at while a dearer arm's entries sit in
-        // the sixteen-frame history (`FUN_80016B6C` reads the ring's maximum,
-        // `0x800170D0..0x800170F4`).
-        let carried = self.battle.frame_cost_step;
+        // the cost retail's frames ran under the arm, pushed like any other.
         self.push_frame_cost(measured);
-        // An arm table names the cost of the arm's own frames, so a dearer arm
-        // raises the step from its first pass, and a cheaper arm after a dear
-        // one runs the ring's step until the dear entries leave it: Kiss of
-        // Death's arm 5 runs `3` for sixteen passes after arm 4's clamped
-        // frames, then `2`.
-        let measured = measured.map(|step| step.max(carried));
+        // An arm table names the cost of the arm's own frames, which the push
+        // above stored: the ring's step after it is the larger of the arm's and
+        // what the passes before left, so a cheaper arm after a dear one runs
+        // the ring's step until the dear entries leave it (Kiss of Death's arm
+        // 5 runs `3` for sixteen passes after arm 4's clamped frames, then `2`).
         // A frame the XA stream loads overruns its step (`span_extra`); an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
@@ -358,7 +350,7 @@ impl World {
         self.battle.frame_clock.retime_span(tick, extra);
         let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
-            (Some(step), _) => step,
+            (Some(_), _) => self.battle.frame_cost_step,
             (None, true) => ordinary,
             (None, false)
                 if (ordinary != DEFAULT_BATTLE_FRAME_STEP
@@ -371,30 +363,29 @@ impl World {
             (None, false) => return,
         };
         self.battle.cast_arm_step_on = measured.is_some();
-        if measured.is_none() {
-            // The ring's step is the next pass's: retail waits this pass's
-            // frame out on the step the pass ran at (`VSync(0x1F800392)` at
-            // `0x800171C0`) and only then copies the new one in
-            // (`0x800171D8`), so the step this pass's cost raised opens the
-            // next frame.
-            self.battle.pending_frame_step = Some(want);
-            return;
-        }
-        // An arm table names the step of the arm's own frames, from its
-        // first pass on.
-        if self.battle.frame_clock.step != want {
-            // The pass this tick ran opened the frame the new step spans.
-            let tick = self.clock.display_frames;
-            self.battle.frame_clock.retime_frame(tick, want);
-            if let Some(cam) = self.battle.camera.as_mut() {
-                cam.set_frame_step(want);
-            }
-        }
+        // The ring's step is the next pass's, an arm's as an ordinary frame's:
+        // retail waits this pass's frame out on the step the pass ran at
+        // (`VSync(0x1F800392)` at `0x800171C0`) and only then copies the new
+        // one in (`0x800171D8`), so the step this pass's cost raised opens the
+        // next frame. A dear arm's first pass therefore runs on the step the
+        // frames before it left and the arm's own step from its second pass
+        // on: Nova's arm 3 runs `1` then `4`, as its recording reads.
+        self.battle.pending_frame_step = Some(want);
+        self.battle.pending_frame_step_from = self.battle_frame_id();
     }
 
     /// Install the step the last pass left ([`BattleState::pending_frame_step`])
     /// on the tick the next pass opens its frame.
-    fn take_pending_frame_step(&mut self) {
+    pub(in crate::world) fn take_pending_frame_step(&mut self) {
+        // The pass that left the step has its frame: the effect scene graphs'
+        // claims of that same frame (`World::summon_fx_pass_vsyncs`,
+        // `World::action_fx_pass_vsyncs`, run in the frame tail after the
+        // pass) leave it for the next one.
+        if self.battle.pending_frame_step.is_none()
+            || self.battle_frame_id() == self.battle.pending_frame_step_from
+        {
+            return;
+        }
         let Some(want) = self.battle.pending_frame_step.take() else {
             return;
         };

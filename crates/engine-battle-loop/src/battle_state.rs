@@ -794,6 +794,10 @@ pub struct BattleState {
     /// pass's frame out on the step the pass ran at and only then copies the
     /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
     pub pending_frame_step: Option<u8>,
+    /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
+    /// that opens a later frame takes it. The effect scene graphs claim the
+    /// same frame after the pass that set it, on the same tick.
+    pub pending_frame_step_from: u64,
     /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
     /// outranks the arm table and the default.
     pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
@@ -1527,6 +1531,7 @@ impl BattleState {
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             frame_cost_state: None,
             pending_frame_step: None,
+            pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,
             death_game_deal_seat: None,
