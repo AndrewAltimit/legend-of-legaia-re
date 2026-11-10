@@ -220,6 +220,7 @@ mod unequip;
 mod validator;
 mod value_readout;
 mod vdf_morph;
+mod view_window;
 mod voice_choose;
 mod walk_on;
 mod walk_regen;
