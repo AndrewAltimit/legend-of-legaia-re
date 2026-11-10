@@ -75,6 +75,7 @@ mod clut_walk;
 mod coin_counter;
 mod coin_panel;
 mod colour_tween;
+mod colour_wash;
 mod combo_records;
 mod confuse;
 mod cue_group;
