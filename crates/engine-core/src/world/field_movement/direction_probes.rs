@@ -312,7 +312,7 @@ impl World {
     /// against every live NPC position at ±[`FIELD_NPC_BOX_HALF`].
     ///
     /// PORT: FUN_801cfc40
-    pub(crate) fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+    pub fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         let centres: Vec<(i32, i32)> = self.field_moving_actor_centres().collect();
         if centres.is_empty() {
             return false;
@@ -356,7 +356,7 @@ impl World {
     ///
     /// PORT: FUN_801CF754 (the `flags & 3` filter), FUN_801CFC40 (the moving arm)
     /// REF: FUN_8003A1E4, FUN_801D79E8
-    pub(crate) fn field_moving_actor_centres(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+    pub fn field_moving_actor_centres(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let channels = self.field_vm.channels.iter().filter(|c| !c.object_bind);
         let placed = channels.clone().filter_map(move |c| {

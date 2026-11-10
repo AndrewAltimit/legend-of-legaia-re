@@ -102,6 +102,11 @@ pub(super) struct Milestone {
     /// does not reach, but a run of its own has to play on the way.
     #[serde(default)]
     pub(super) continuous_via: Option<Vec<String>>,
+    /// The waypoints the seeded pad tier plays instead of `via`, where the
+    /// seated hand's route rests on being placed past a body the pad has to
+    /// be let through by the story.
+    #[serde(default)]
+    pub(super) pad_via: Option<Vec<String>>,
     #[serde(default)]
     pub(super) anchor: Option<AnchorRef>,
     /// `false` for an anchor from outside the main playthrough (a debug

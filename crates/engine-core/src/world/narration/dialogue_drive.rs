@@ -850,7 +850,18 @@ impl World {
                 }
                 r
             } else {
-                field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc)
+                // A talk runs on the touched actor's context, so a plain
+                // `22 <clip>` plays the clip on that actor (`FUN_80024E08`):
+                // Terra's legs through `cave01` P1[2]'s `22 09` walk-off.
+                let own_clip = b == 0x22 && id.prop_anchor.is_none();
+                if own_clip {
+                    host.world.field_vm.executing_channel = id.npc_slot;
+                }
+                let r = field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+                if own_clip {
+                    host.world.field_vm.executing_channel = None;
+                }
+                r
             };
             host.world.dialog.stepping_inline_npc = talker;
             // The talker's own seat (`23 x z`, no target byte): the talk and
@@ -1134,12 +1145,16 @@ impl World {
                 // word that is neither `0` nor `1` returns the unchanged PC
                 // (`bne v0,zero` at `0x801E097C`). The casino prize counter
                 // (sub-7, `koin1` / `balden`) is the same host-closed screen
-                // as the gold shop and parks the same way.
+                // as the gold shop and parks the same way, and so does any
+                // sub-screen of the op's own: `doman` P1[18]'s `49 02` code
+                // lock, whose talk goes on to act on the code and send Dr.
+                // Usha's assistants away (`A3 1F 7F 7F`).
                 // REF: FUN_801DE840 (op `0x49`'s Armed / Done arms)
                 FieldStepResult::Halt { final_pc }
                     if (b & 0x7F) == 0x49
                         && (host.world.shops.shop_armed
-                            || host.world.shops.prize_exchange_armed) =>
+                            || host.world.shops.prize_exchange_armed
+                            || host.world.field_vm.submode_screen.is_open()) =>
                 {
                     id.pc = final_pc;
                     break;

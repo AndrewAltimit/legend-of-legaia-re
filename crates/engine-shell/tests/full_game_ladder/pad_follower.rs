@@ -911,7 +911,23 @@ pub(super) fn pad_walk(
         if since == 0 {
             tap_owed = false;
         }
-        if since > 0 && since.is_multiple_of(60) {
+        let on_a_person = !moved && pressing_into_npc(session, pad);
+        if on_a_person {
+            // A person in the way is walked round, not spoken to: the tap
+            // below talks to whoever the press is facing, and in the mist
+            // `town0b`'s villagers answer with a fight. The route is asked
+            // again from here with the body where it now stands.
+            tap_owed = false;
+            if since > 0 && since.is_multiple_of(NPC_REPLAN_FRAMES) {
+                path.clear();
+                // A committed teleport-maze route is the same route again:
+                // it was planned with the body somewhere else.
+                committed.clear();
+                committed_pos = 0;
+                planned_from = None;
+                pad = 0;
+            }
+        } else if since > 0 && since.is_multiple_of(60) {
             path.clear();
             planned_from = None;
             pad = 0;
@@ -1155,6 +1171,14 @@ pub(super) fn pad_walk(
                             .map(|d| w.field_actor_dir_blocked(px, pz, d))
                             .collect::<Vec<_>>()
                     );
+                    let mut bodies: Vec<_> = w
+                        .field_moving_actor_centres()
+                        .filter(|&(x, z)| {
+                            (x - i32::from(px)).abs() < 400 && (z - i32::from(pz)).abs() < 400
+                        })
+                        .collect();
+                    bodies.sort_unstable();
+                    eprintln!("      [stall-npc] bodies {bodies:?}");
                     for c in &w.props.colliders {
                         if (c.center.0 - i32::from(px)).abs() < 400
                             && (c.center.1 - i32::from(pz)).abs() < 400
@@ -1253,6 +1277,21 @@ pub(super) fn pad_walk(
     }
     session.host.world.set_pad(0);
     Err(format!("pad walk to {goal:?} ran out of frames"))
+}
+
+/// Frames between re-plans while the press is held against a person.
+const NPC_REPLAN_FRAMES: u32 = 8;
+
+/// Whether a held direction is stopped by a field NPC's body, as the
+/// locomotion's actor probes see it. Any direction, since a held diagonal
+/// slides; only a body, since a door's box answers the press itself.
+fn pressing_into_npc(session: &NativeSession, pad: u16) -> bool {
+    let w = &session.host.world;
+    if !w.npcs.solid || w.mode != SceneMode::Field || pad & DIRECTIONS == 0 {
+        return false;
+    }
+    let (x, z) = player_xz(session);
+    (0..4).any(|d| w.field_npc_dir_blocked(x, z, d))
 }
 
 /// Hold the d-pad toward world point `at` until `done` holds, for at most

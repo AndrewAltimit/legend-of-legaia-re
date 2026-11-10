@@ -146,7 +146,10 @@ pub(super) fn traverse(
     // P2[0]'s "are you ready?" opened on its second option, "No").
     PICKS.with(|p| *p.borrow_mut() = (HashMap::new(), None));
     let mut via = 0usize;
-    let vias: &[String] = &target.via;
+    let vias: &[String] = match &target.pad_via {
+        Some(v) if pad && session.host.world.npcs.solid => v,
+        _ => &target.via,
+    };
     // Edges whose hop failed even after the scene's beats ran: the ladder
     // routes around them (see the `dead` arm below).
     let mut dead: BTreeSet<(String, String)> = BTreeSet::new();

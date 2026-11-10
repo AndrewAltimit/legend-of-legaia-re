@@ -307,6 +307,10 @@ via = ["nilboa", "deene", "son"]
 # arrival at bubu1 plays. The anchor carries 0x3D5..0x3DA and 0x6C6, the
 # nivora_late anchor none of them. Continuous run only:
 continuous_via = ["nilboa", "bubu1", "koin1b", "bubu1", "deene", "son"]
+# The seeded pad tier plays the same chain: with bodies solid, deene P1[4] and
+# P1[5] stand in the only way to the rest of the town until the 0x6C6 branch
+# has moved them, and that branch waits on 0x3D7.
+pad_via = ["nilboa", "bubu1", "koin1b", "bubu1", "deene", "son"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-14" }
 
 [[milestone]]

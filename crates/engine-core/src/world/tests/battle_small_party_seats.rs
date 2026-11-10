@@ -138,3 +138,53 @@ fn a_party_seat_reads_its_roster_id() {
     assert_eq!(world.battle_party_char_id(0), 1);
     assert_eq!(world.battle_party_char_id(1), 3);
 }
+
+/// The AI companion takes no commands: `FUN_801DBA04` / `FUN_801DB81C` refuse
+/// char id `4`, which sits on seat 1 in the Noa + Terra party.
+#[test]
+fn the_ai_companion_is_never_offered_a_command_ring() {
+    let mut world = seated(2, 1);
+    world.party.active_party = vec![1, 3];
+    assert_eq!(world.next_member_owing_command(None), Some(0));
+    assert_eq!(world.next_member_owing_command(Some(0)), None);
+    kill(&mut world, 0);
+    assert_eq!(world.next_member_owing_command(None), None);
+
+    // Any other second member still takes one.
+    let mut world = seated(2, 1);
+    world.party.active_party = vec![0, 2];
+    assert_eq!(world.next_member_owing_command(Some(0)), Some(1));
+}
+
+/// The bag's window reads the field list: Noa alone keeps her own half with
+/// the companion seated beside her (`terra_party_battle`: window `128..256`).
+#[test]
+fn the_seated_companion_does_not_widen_a_lone_noas_bag() {
+    use legaia_save::retail_inventory::ItemWindow;
+    let mut world = seated(2, 1);
+    world.party.active_party = vec![1, 3];
+    world.party.party_count = 2;
+    world.battle.battle_party_restore = Some(vec![1]);
+    world.tick();
+    assert_eq!(world.party.inventory.window(), ItemWindow::High);
+}
+
+/// The companion's category-2 pick lands through the applier. A cast from any
+/// other seat folds at its own band and must not land here too.
+#[test]
+fn the_applier_lands_only_the_companions_magic() {
+    let fire = |roster: Vec<u8>| {
+        let mut world = seated(2, 1);
+        world.party.active_party = roster;
+        world.party.party_count = 2;
+        world.actors[0].battle.hp = 0;
+        world.actors[0].battle.liveness = 0;
+        world.battle_ctx.active_actor = 1;
+        world.actors[1].battle.action_category = 2;
+        // Class 4, the revive arm; tier 0 needs no disc table to raise a seat.
+        world.fold_battle_item_action(4, 0, 0);
+        world.actors[0].battle.liveness != 0
+    };
+    assert!(fire(vec![1, 3]), "Terra revives Noa");
+    assert!(!fire(vec![0, 1]), "a player's cast folds elsewhere");
+}

@@ -305,6 +305,21 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                 None => break,
             }
         };
+        // A side inside a wall is not a side at all, and the walk toward one
+        // presses straight at it once the route runs out: `cave01` P1[2],
+        // Terra at (9, 89) with the wall row (9, 90) behind her. The press
+        // slides down her west flank into a pocket whose way back her body
+        // closes - the probes ahead of a step south clear her box from a row
+        // where the probes ahead of a step north do not.
+        if attempt > 0
+            && session.host.world.npcs.solid
+            && session.host.world.mode == SceneMode::Field
+        {
+            let (cx, cz) = tile_center(side);
+            if session.host.world.field_tile_is_wall(cx, cz) {
+                continue;
+            }
+        }
         // A side off the authored floor is not somewhere a player stands to
         // talk. Retail's locomotion reads only the wall bits, so the black
         // between a town's interior cutaways is open ground: `geremi`
@@ -389,6 +404,25 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                     return r;
                 }
                 if let Some(scene) = pad_lean(session, npc, 48, facing) {
+                    return Run::Entered(scene);
+                }
+            }
+        }
+        // Another body stops the lean short of the probe's reach: `koin4`'s
+        // baker P1[3], with a customer at the counter a tile to the south.
+        // A player steps along the counter and leans in again.
+        if session.host.world.npcs.solid {
+            for (dx, dz) in [(0, -56), (0, 56), (-56, 0), (56, 0)] {
+                if facing(session) || !walking(session) {
+                    break;
+                }
+                let aside = move |s: &NativeSession| {
+                    npc(s).map(|(x, z)| (x.saturating_add(dx), z.saturating_add(dz)))
+                };
+                if let Some(scene) = pad_lean(session, aside, 24, facing) {
+                    return Run::Entered(scene);
+                }
+                if let Some(scene) = pad_lean(session, npc, 24, facing) {
                     return Run::Entered(scene);
                 }
             }

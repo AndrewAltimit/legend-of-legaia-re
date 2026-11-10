@@ -153,7 +153,11 @@ pub fn art_learned_notice(
         |slot| {
             // `0xC1 0x63` names the leader (`DAT_80084597`); any other
             // operand is a roster slot.
-            let i = if slot == 0x63 { 0 } else { usize::from(slot) };
+            let i = if slot == 0x63 {
+                usize::from(world.field_leader())
+            } else {
+                usize::from(slot)
+            };
             names.get(i).cloned()
         },
         |ch, art| {

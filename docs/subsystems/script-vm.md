@@ -974,6 +974,8 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 
 #### 0x37 / 0x41 / 0x47 YIELD family (motion ops)
 
+A touched record runs on the touched actor's own context, however the touch arrived: a player's Cross, or another record's `B1 <id> 08`. Its plain actor ops (`22`, `23`, `37`, `38`, `41`, `47`) therefore move that actor, and `33 0A` waits on the leg it armed. `cave01` P1[2] is the worked case: the walk-on `P2[9]` engages Terra, and each quiz stop ends with her own `22 09`, `37`, `23`, `22 0A`.
+
 All three park the running script: they save the op's own PC into `ctx[+0x94]`,
 clear the cursor `ctx[+0x54]`, and set `ctx[+0x10]` bit 0x400 (HALT). A player
 context propagates the halt to the caller.
@@ -1645,6 +1647,8 @@ A tristate state machine on `_DAT_8007B450`, with sub-cases 0..0xD:
 - **Idle** (`== 0`): arms it - spawns an effect-actor `func_0x80020DE0(0x8007065C,…)` and sets `_DAT_8007B450 = operand_ptr`.
 - **Armed** (`!= 0, != 1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (the Done writer is field-overlay `FUN_801F159C`-class).
 - **Done** (`== 1`): clears it and advances the PC.
+
+A talk that reaches the op parks on it like any other context, and runs on from the Done edge when the screen closes. `doman` P1[18] acts on its `49 02` code lock in the same pass: it raises `0x36E` and `0x371` and sends Dr. Usha's assistants off.
 
 Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0
 (`0x801E08DC..0x801E0910`) reads its length from the **third** operand byte:

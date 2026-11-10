@@ -64,12 +64,27 @@ impl World {
     /// the cast bands fold at their own seams.
     ///
     /// PORT: FUN_801E295C (`0x801E4108..0x801E4138`, the applier call)
-    pub(in crate::world) fn fold_battle_item_action(&mut self, target: u8) {
+    pub(in crate::world) fn fold_battle_item_action(&mut self, class: u8, tier: u8, target: u8) {
         use legaia_engine_battle_vm::battle_action::ActionCategory;
         let actor = self.battle_ctx.active_actor;
         let Some(a) = self.actors.get(usize::from(actor)) else {
             return;
         };
+        // The AI companion's heal, revive and cure are category `2` picks
+        // whose spell records carry applier classes: the same `0x3F` call,
+        // with the spell's own `(class, tier)` in place of an item's.
+        // Every other cast folds at its own band's seam.
+        // REF: FUN_801EED1C (`0x801EEEF8`), FUN_800402F4
+        if a.battle.action_category == ActionCategory::Magic.as_byte()
+            && self.battle_party_char_id(actor)
+                == legaia_engine_battle_vm::battle_action::AI_COMPANION_CHAR_ID
+            && actor < self.party.party_count
+        {
+            if let Some(outcome) = self.applier_class_arm(class, tier, target) {
+                self.push_item_use_fx(target, outcome);
+            }
+            return;
+        }
         if a.battle.action_category != ActionCategory::Item.as_byte() {
             return;
         }
@@ -104,6 +119,13 @@ impl World {
         target: u8,
     ) -> Option<ItemOutcome> {
         let (class, tier) = self.battle_item_selector(item_id)?;
+        self.applier_class_arm(class, tier, target)
+    }
+
+    /// The applier arm `class` selects, on one seat.
+    ///
+    /// PORT: FUN_800402F4 (the class jump table)
+    fn applier_class_arm(&mut self, class: u8, tier: u8, target: u8) -> Option<ItemOutcome> {
         Some(match class {
             0 | 1 => self.battle_restore_hp(tier, target),
             2 => self.battle_restore_mp(tier, target),

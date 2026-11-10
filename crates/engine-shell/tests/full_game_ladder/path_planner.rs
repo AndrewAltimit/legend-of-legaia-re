@@ -245,17 +245,44 @@ pub(super) struct Blockers {
 impl Blockers {
     pub(super) fn build(
         w: &legaia_engine_core::world::World,
+        goal: Option<(i16, i16)>,
         pass: impl Fn(&legaia_engine_core::world::FieldPropCollider) -> bool,
     ) -> Self {
         const NPC_HALF: i32 = 0x40 - 0x18;
         let npcs_off = NPC_BODIES_OFF.with(std::cell::Cell::get);
-        let mut boxes: Vec<(i32, i32, i32)> = w
-            .npcs
-            .positions
-            .values()
+        let near = NPC_BODIES_NEAR.with(std::cell::Cell::get);
+        // With bodies solid, the bodies the walk collides with, not the talk
+        // map: a placement the port tracks only by its script channel stops
+        // the player too, and one hidden or culled does not.
+        let centres: Vec<(i32, i32)> = if w.npcs.solid {
+            w.field_moving_actor_centres()
+                // A body on the goal tile is what the walk is going to, not
+                // something in its way: a talk's first walk aims at the NPC's
+                // own tile. Left in, it makes the goal unreachable and sends
+                // the route through every other body on the bodies-off search.
+                .filter(|&(x, z)| {
+                    goal.is_none_or(|(gx, gz)| (x >> 7, z >> 7) != (i32::from(gx), i32::from(gz)))
+                })
+                .filter(|&(x, z)| {
+                    near.is_none_or(|(nx, nz)| {
+                        (x - nx).abs() <= NPC_NEAR_REACH && (z - nz).abs() <= NPC_NEAR_REACH
+                    })
+                })
+                .collect()
+        } else {
+            w.npcs
+                .positions
+                .values()
+                .map(|&(x, z)| (i32::from(x), i32::from(z)))
+                .collect()
+        };
+        let mut boxes: Vec<(i32, i32, i32)> = centres
+            .into_iter()
             .filter(|_| !npcs_off)
-            .map(|&(x, z)| (i32::from(x), i32::from(z), NPC_HALF))
+            .map(|(x, z)| (x, z, NPC_HALF))
             .collect();
+        // The centres come out of a `HashMap`; the plan memo hashes the boxes.
+        boxes.sort_unstable();
         for c in &w.props.colliders {
             if !c.solid || pass(c) {
                 continue;
@@ -716,6 +743,22 @@ pub(super) fn plan_path(
     // bodies alone keep the goal out of reach, the route ignores them and
     // the follower's stall handling answers a body that does block.
     if !reached {
+        // First with only the bodies around the walker: what seals the goal
+        // is usually far off, and a route that also ignores the villager a
+        // step away walks into them (`vell`'s square, a route to the map exit
+        // straight through one standing in open ground).
+        if session.host.world.npcs.solid {
+            let (fx, fz) = cell_center(from);
+            let local = NPC_BODIES_NEAR.with(|f| {
+                f.set(Some((i32::from(fx), i32::from(fz))));
+                let r = plan_search(session, from, goal, None, avoid);
+                f.set(None);
+                r
+            });
+            if let Some((p, _, true)) = local {
+                return Some(p);
+            }
+        }
         let open = NPC_BODIES_OFF.with(|f| {
             f.set(true);
             let r = plan_search(session, from, goal, None, avoid);
@@ -734,7 +777,7 @@ pub(super) fn plan_path(
                 dispatch_tile(x, z)
             })
             .collect();
-        let bl = Blockers::build(&session.host.world, |_| false);
+        let bl = Blockers::build(&session.host.world, Some(goal), |_| false);
         eprintln!(
             "      [comp] {} goal {goal:?} cells {}",
             scene_name(session),
@@ -839,8 +882,13 @@ pub(super) fn plan_path(
 /// Searches smaller than this are cheap enough to repeat.
 pub(super) const UNREACHED_MIN_CELLS: usize = 4_000;
 
+/// How far from the walker a body still counts on the second search of a
+/// plan the bodies kept from its goal: eight tiles.
+const NPC_NEAR_REACH: i32 = 8 * 128;
+
 /// What a failed plan's answer depends on: the scene, the goal, the avoid
-/// set and the story flags (which open and shut doors and paint walls).
+/// set, the story flags (which open and shut doors and paint walls) and,
+/// with bodies solid, where the bodies stand.
 pub(super) type PlanKey = (String, (i16, i16), u64, u64);
 
 thread_local! {
@@ -848,6 +896,10 @@ thread_local! {
     /// second search of a plan the bodies alone kept from its goal
     /// ([`plan_path`]).
     pub(super) static NPC_BODIES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// When set, [`Blockers::build`] keeps only the NPC bodies within
+    /// [`NPC_NEAR_REACH`] of this world point.
+    pub(super) static NPC_BODIES_NEAR: std::cell::Cell<Option<(i32, i32)>> =
+        const { std::cell::Cell::new(None) };
     /// Failed plans: the cells the search reached and the one nearest the
     /// goal, by [`PlanKey`].
     pub(super) static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (FastSet<Cell>, Cell)>> =
@@ -866,6 +918,13 @@ pub(super) fn plan_key(
     a.hash(&mut h);
     let mut f = std::collections::hash_map::DefaultHasher::new();
     session.host.world.flags.system_flags.hash(&mut f);
+    // A body that walks off un-seals what it sealed: a failure holds only
+    // while the bodies stand where they stood.
+    if session.host.world.npcs.solid {
+        let mut bodies: Vec<_> = session.host.world.field_moving_actor_centres().collect();
+        bodies.sort_unstable();
+        bodies.hash(&mut f);
+    }
     (scene_name(session), goal, h.finish(), f.finish())
 }
 
@@ -1078,7 +1137,7 @@ pub(super) fn plan_search(
     // against it, taps Cross (`chitei2` P0[2], the gate at (41, 122) in
     // front of the kind-0 teleport at (41, 124) into the Jette pocket).
     let self_opening = self_opening_doors(session);
-    let blockers = Blockers::build(w, |c| {
+    let blockers = Blockers::build(w, Some(goal), |c| {
         !c.moving_box
             && (c.anchor.is_some_and(|a| self_opening.contains(&a))
                 || !c.interact
@@ -1194,10 +1253,16 @@ pub(super) fn plan_search(
         // axis, so only these doors can answer the contact test below; the
         // list keeps `doors`' order, and the test's first match with it.
         near_doors.clear();
-        near_doors.extend(doors.iter().copied().filter(|((dx, dz), _)| {
+        near_doors.extend(doors.iter().copied().filter(|((dx, dz), land)| {
+            let (lx, lz) = cell_center(*land);
+            // A contact that lands on the tile it is pressed from goes
+            // nowhere, and with bodies solid it is no way out of a corner the
+            // people have closed: `doman`'s P1[15] with two assistants beside
+            // the player on (103, 100), where the step east is the open one.
             (i32::from(cx) - i32::from(*dx)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
                 && (i32::from(cz) - i32::from(*dz)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
                 && !skip.contains(&(*dx, *dz))
+                && !(w.npcs.solid && dispatch_tile(lx, lz) == here)
         }));
         for ((dx, dz), dir) in STEPS {
             let next = (cur.0 + dx, cur.1 + dz);

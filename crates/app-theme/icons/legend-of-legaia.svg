@@ -4,20 +4,31 @@
 <linearGradient id="g0" gradientUnits="userSpaceOnUse" x1="0" y1="64" x2="0" y2="960"><stop offset="0" stop-color="#1d2b53"/><stop offset="1" stop-color="#2a6f73"/></linearGradient>
 </defs>
 <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#g0)"/>
-<circle cx="512" cy="400" r="330" fill="#ffd68c" fill-opacity="0.102" clip-path="url(#tile)"/>
-<circle cx="512" cy="400" r="250" fill="#ffd68c" fill-opacity="0.133" clip-path="url(#tile)"/>
 <ellipse cx="512" cy="930" rx="470" ry="150" fill="#14203a" clip-path="url(#tile)"/>
-<polygon points="452.0,840.0 480.0,760.0 494.0,560.0 530.0,560.0 544.0,760.0 572.0,840.0" fill="#7a4e24"/>
-<circle cx="370" cy="462" r="130" fill="#c8902f"/>
-<circle cx="654" cy="462" r="130" fill="#c8902f"/>
-<circle cx="512" cy="400" r="190" fill="#c8902f"/>
-<circle cx="370" cy="448" r="126" fill="#f2c14e"/>
-<circle cx="654" cy="448" r="126" fill="#f2c14e"/>
-<circle cx="512" cy="382" r="186" fill="#f2c14e"/>
-<circle cx="432" cy="312" r="118" fill="#f2c14e"/>
-<circle cx="592" cy="312" r="118" fill="#f2c14e"/>
-<circle cx="470" cy="270" r="52" fill="#ffecaa" fill-opacity="0.471"/>
-<ellipse cx="310" cy="712" rx="250" ry="34" fill="#e1eefa" fill-opacity="0.431" clip-path="url(#tile)"/>
-<ellipse cx="720" cy="770" rx="270" ry="32" fill="#e1eefa" fill-opacity="0.392" clip-path="url(#tile)"/>
-<ellipse cx="470" cy="840" rx="330" ry="34" fill="#e1eefa" fill-opacity="0.471" clip-path="url(#tile)"/>
+<polygon points="392.0,850.0 446.0,770.0 462.0,590.0 562.0,590.0 578.0,770.0 632.0,850.0" fill="#6b4423"/>
+<line x1="486" y1="640" x2="330" y2="500" stroke-width="46" stroke-linecap="round" stroke="#6b4423"/>
+<line x1="538" y1="640" x2="694" y2="500" stroke-width="46" stroke-linecap="round" stroke="#6b4423"/>
+<circle cx="226" cy="490" r="122" fill="#1f5a32"/>
+<circle cx="798" cy="490" r="122" fill="#1f5a32"/>
+<circle cx="354" cy="548" r="120" fill="#1f5a32"/>
+<circle cx="670" cy="548" r="120" fill="#1f5a32"/>
+<circle cx="512" cy="520" r="130" fill="#1f5a32"/>
+<circle cx="234" cy="442" r="118" fill="#2f8a45"/>
+<circle cx="790" cy="442" r="118" fill="#2f8a45"/>
+<circle cx="360" cy="490" r="118" fill="#2f8a45"/>
+<circle cx="664" cy="490" r="118" fill="#2f8a45"/>
+<circle cx="512" cy="460" r="140" fill="#2f8a45"/>
+<circle cx="330" cy="310" r="124" fill="#2f8a45"/>
+<circle cx="694" cy="310" r="124" fill="#2f8a45"/>
+<circle cx="512" cy="262" r="138" fill="#2f8a45"/>
+<circle cx="304" cy="286" r="66" fill="#45a04d"/>
+<circle cx="486" cy="214" r="76" fill="#45a04d"/>
+<circle cx="668" cy="276" r="62" fill="#45a04d"/>
+<circle cx="214" cy="408" r="54" fill="#45a04d"/>
+<circle cx="420" cy="412" r="58" fill="#45a04d"/>
+<circle cx="618" cy="416" r="52" fill="#45a04d"/>
+<circle cx="772" cy="410" r="50" fill="#45a04d"/>
+<ellipse cx="310" cy="742" rx="250" ry="30" fill="#e1eefa" fill-opacity="0.353" clip-path="url(#tile)"/>
+<ellipse cx="720" cy="790" rx="270" ry="30" fill="#e1eefa" fill-opacity="0.353" clip-path="url(#tile)"/>
+<ellipse cx="470" cy="856" rx="330" ry="32" fill="#e1eefa" fill-opacity="0.431" clip-path="url(#tile)"/>
 </svg>

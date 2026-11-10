@@ -1027,8 +1027,8 @@ of its own and frames the member whose ring opened it.
 
 **The target cursor is cases 1 and 3.** The menu driver re-arms `FUN_801D5854`
 on every cursor step against the cursor's scope. The Attack command's
-cursor steps `0x0C` / `0x2D` / `0x30` (the prompt's `Auto`, and the ring's
-Attack arm under the `Automatic` option) jump to `0x801D43C0`, case `1` on
+cursor steps `0x0C` / `0x2D` / `0x30` (the arts entry's confirm, the prompt's
+`Auto`, and the ring's Attack arm under the `Automatic` option) jump to `0x801D43C0`, case `1` on
 the commanding member. The `Auto | Command` prompt `0x78` itself is case 0:
 its opening step `0x2A` (`0x801D3980`) and the arts entry's cancel `0x2F`
 take the shared tail without a framing call, leaving the ring's close-up, and

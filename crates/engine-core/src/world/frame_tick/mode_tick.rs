@@ -12,9 +12,17 @@ impl World {
     /// PORT: FUN_8004313C (the call sites)
     fn refresh_bag_window(&mut self) {
         const FULL_WINDOW_FLAG: u16 = 20;
-        let members = self.party.party_count;
+        // Retail's inputs are the field list (`0x80084594` / `0x80084598`),
+        // and a fight that reseats the party keeps that list aside: `Noa`
+        // alone beside the AI companion still reads one member.
+        let field_list = self
+            .battle
+            .battle_party_restore
+            .as_deref()
+            .filter(|l| !l.is_empty());
+        let members = field_list.map_or(self.party.party_count, |l| l.len() as u8);
         let full = self.system_flag_test(FULL_WINDOW_FLAG);
-        let solo = self.party_roster_slot(0) as u8;
+        let solo = field_list.map_or(self.party_roster_slot(0) as u8, |l| l[0]);
         self.party
             .inventory
             .install_window_for_party(members, full, solo);

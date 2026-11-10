@@ -272,7 +272,7 @@ The block is a healer watching the party leader. It chooses by **battle seat 0's
 | healthy, `+0x16E != 0` (statused) | `2` (Magic) | spell id `0x11` | `0x801EEEE0` |
 | healthy, no status | `3` (Attack) or none | `rand() & 1`: half Attack, half category `0` (stand by) | `0x801EEF28` |
 
-The spell id lands in `+0x1DF` (`0x801EEEF8`) and `+0x1E7 = 9` (`0x801EEF00`). A separate, earlier gate on `DAT_8007BD11 == 4` (`0x801EEE10`) seeds the `0xC8` gauge onto seat 1's `+0x174` / `+0x150` / `+0x172` / `+0x14C`.
+The spell id lands in `+0x1DF` (`0x801EEEF8`) and `+0x1E7 = 9` (`0x801EEF00`). All three spell records carry applier classes, so state `0x3F`'s `FUN_800402F4` call lands them as it lands an item. A separate, earlier gate on `DAT_8007BD11 == 4` (`0x801EEE10`) seeds the `0xC8` gauge onto seat 1's `+0x174` / `+0x150` / `+0x172` / `+0x14C`.
 
 <a id="the-companions-physical-arm"></a>
 The physical arm (`0x801EEF2C..0x801EF024`), in draw order:
