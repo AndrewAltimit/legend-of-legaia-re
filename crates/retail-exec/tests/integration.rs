@@ -234,6 +234,7 @@ mod water_hazard;
 mod window_rebuild;
 mod weapon_trail;
 mod window_vm;
+mod world_map_sky;
 mod zone_ramp;
 mod zone_record;
 mod zone_requery;
