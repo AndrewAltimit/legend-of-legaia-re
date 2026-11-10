@@ -1412,6 +1412,13 @@ Two structural consequences:
 - A beat landing **mid-tween** re-seeds every axis' `start` from the current interpolated
   globals and resets the shared progress to `0`. There is one progress counter, one duration and
   one curve for all ten axes.
+- The tick stores **nine** of them: it has no block for the focus Y pair (`+0x1C` / `+0x1E`), so
+  `0x8008911C` holds through a glide (`0x801DCC88..0x801DD044` step from the focus X block to the
+  focus Z one). Its tail re-rolls the shake jitter about the mover's own pose, `FUN_801D9D30`'s
+  arithmetic inline (`0x801DD264..0x801DD2F8`). The arming routine `FUN_801DD310` copies the live
+  globals' low halves into the block and stores the duration as a halfword the tick reads signed.
+  Port: `CameraMover::store_frame` and `arm`, held to both routines by the retail-exec
+  differential.
 
 **Per-frame law** (`FUN_801DC0BC`, body `0x801DC104..0x801DD220`):
 
@@ -2484,7 +2491,10 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
 walks its state to a fixed point within a handful of draws). The port's stand-in,
-`render-kernels::battle_intro_particles::IntroRng`, is shared by every host.
+`render-kernels::battle_intro_particles::IntroRng`, is shared by every host. The rest of the
+seeders' environment (`IntroEnv`) is retail's: the bearing `FUN_80019B28`, the root
+`FUN_8005AF0C` and the two LUTs, `_DAT_8007B7F8` the cosine and `_DAT_8007B81C` the sine. With the
+same draws the four seeders' grids are retail's byte for byte.
 
 #### The transition owns the whole frame
 

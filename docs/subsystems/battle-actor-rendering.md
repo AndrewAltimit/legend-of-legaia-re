@@ -166,7 +166,7 @@ The mesh's primitives are textured through per-prim CBA / TSB. The palette and p
 +0x1E0  4bpp indices               ; texture page, width x 256 texels, row-major
 ```
 
-- The CLUT region uploads to VRAM `(0, 484 + slot)`, 256 colours wide, with the STP bit set on non-zero entries.
+- The CLUT region uploads to VRAM `(0, 484 + slot)` as a `256 x 1` rectangle from the pool's start (`0x80055510..0x80055554`), with the STP bit set on the fifteen palettes' non-zero entries; the row's last sixteen entries are therefore the page's first halfwords, raw (`monster_archive::battle_clut_row`). No primitive selects palette 15.
 - The page uploads to `(slot*64 + 320, 256)`. It is always 256 rows tall; its width is 128 texels (32 fb-units) for most monsters or 256 texels (64 fb-units) when the per-monster wide flag is set, so `width_texels = (pool_len - 0x1E0) / 256 * 2`.
 - A primitive selects its palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`. Index 0 (colour `0x0000`) is transparent.
 - The arithmetic is exact: Gimard `0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to their pool sizes.
@@ -479,9 +479,9 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 
 **Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `engine-world-views::battle_draws::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key.
 
-**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then placed as the hosts place a battle body - frame flip, the 4x world scale - and projected through the battle view-projection (`battle_trail::project_battle_point`).
-The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`, which builds the battle VP itself (`battle_fx_vp`: `battle_vp` at the stage's 4:3, which `battle_vp_matches_the_native_glam_composition` pins to the native window's glam composition). `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both compositions.
-PROT 0904's Theeder beam projects through the same `project_battle_point`, from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
+**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then projected as the emitter projects it: `FUN_800195A8(point, 1, 1, 0, out x4)` with all four out-pointers on one slot, so the point kept is the last corner, a view unit right and down, through the integer matrix the battle frame loads (`battle_trail::project_trail_point` over `FieldGteView::from_battle_pose`). `battle_trail::band_quads` / `trail_packet` give each quad's `POLY_G4` and OT entry, held to the emitter by the retail-exec differential; a band whose corner sits at or behind the eye keeps the GTE's saturated `SXY`, and the GPU's polygon-size limit drops it.
+The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`. `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both hosts' `f32` compositions.
+PROT 0904's Theeder beam projects through the hosts' `f32` battle view (`battle_trail::project_battle_point`), from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 

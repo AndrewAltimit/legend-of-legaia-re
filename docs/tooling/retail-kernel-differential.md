@@ -880,3 +880,48 @@ port's fade request carries a byte; no larger operand is generated.
 
 The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
 `.MAP` (`window_rebuild`) match on their first run.
+
+The battle weapon trail runs whole: the band emitter `FUN_800485BC` with the billboard projector
+`FUN_800195A8` live beneath it (`weapon_trail`), its sweep driver `FUN_80048310` and the trigger
+`FUN_8005112C`. The emitter hands the projector a box of half-size `1` and points all four of its
+out-pointers at one slot, so the point it keeps is the last corner, a view unit right and down of the
+control point, projected through the matrix the battle frame loads. The port projected through the
+hosts' `f32` battle view instead, a pixel off on about one point in twenty;
+`FieldGteView::from_battle_pose` now builds the integer matrix and `project_trail_point` stands for
+the projector call, and the packets and their ordering-table links match.
+
+The op-`0x45` camera mover's tick `FUN_801DC0BC` (`camera_mover`) has stores for nine of its ten pairs:
+no block reads the focus Y pair `+0x1C` / `+0x1E`, so `0x8008911C` holds through a glide, where the port
+walked it to the beat's target. The tick's tail re-rolls the shake jitter about the mover's own pose
+(`FUN_801D9D30`'s arithmetic inline), which the port skipped while a glide ran. The arming
+`FUN_801DD310` copies the live globals' low halves into the pair block and stores the duration as a
+halfword the tick reads signed; the port armed on whole words. The tween builder `FUN_801D829C` and the
+shake `FUN_801D9D30` (`camera_tween`) match.
+
+The field-to-battle transition's seeders (`intro_seeders`), run with the production `IntroEnv`, showed
+its trig tables swapped: `_DAT_8007B7F8` is the cosine table and `_DAT_8007B81C` the sine, so every
+particle of `FUN_801CFBB4` / `FUN_801D0164` and every tile of `FUN_801D081C` tumbled about the wrong
+axis and the swirl `FUN_801D1564` built its rings transposed. The heading was a floating-point
+`atan2` where retail reads the bearing `FUN_80019B28`, and the radial seeder's root a float `sqrt`
+where retail runs `FUN_8005AF0C`. The four seeders now match given the same draws; the draws
+themselves stay the port's stand-in stream.
+
+The battle monster loader `FUN_80055468` (`monster_load`), over every monster at every slot, uploads its
+CLUT row as a `256 x 1` rectangle from the pool's start, so the row's last sixteen entries are the 4bpp
+page's first halfwords; the port wrote only the fifteen palettes. The page, the relocated primitives
+and the upload gate on the acting seat's queue byte match. The party battle mesh's splice
+`FUN_800536BC`, post-pass `FUN_80053898` and texture relocation `FUN_80053A28` (`battle_char_splice`)
+match over the four player files and random loadouts, the TMD registrar `FUN_800268DC`
+(`tmd_register`) over every TMD the raw PROT entries carry, and the sprite arm `FUN_8002A5A4`
+(`sprite_arm`) over every mode word.
+
+The visible-tile crop's decoration pass `FUN_801F7088` (`view_window`), run whole over random maps,
+focus words, windows and region boxes, draws exactly the cells `view_cells` and
+`ViewCells::decoration_visible` pass, hands its ground emitter the clamped window and restores the
+scratchpad bytes after it.
+
+The PsyQ `St` ring (`st_ring`), `StSetRing`, `StSetStream` with its window installer, the demux
+`FUN_8005F024` on its memory-source path, `StGetNext` and `StFreeRing`, run as one stream of operations
+over generated movies, matches `StRing` on every slot status, the cursors (`StRing::cursors`), the trace
+codes and the frames read. The demux compares `chunks - 1` as a word, so a header claiming zero chunks
+leaves its frame filling, where the port completed it.
