@@ -302,6 +302,10 @@ pub struct CaptureSeatWrite {
     /// the trail the playing clip left goes with the store (PROT 0958's
     /// arm 7 on the caster).
     pub ghost_ring_clear: bool,
+    /// The write is made only on a seat with live HP `+0x14C` (PROT 0959's
+    /// arm `0x11` stages the victim's idle behind `bne v1,zero` at
+    /// `0x801F8158`).
+    pub alive_only: bool,
 }
 
 impl CaptureSeatWrite {

@@ -4315,6 +4315,15 @@ fight: from `nivora_duel_che_vs_gala_start` (the monster-pick probe) it lands
 Che casts it on every round whose mode counter `ctx[+0x28A]` reads `2` mod 3
 (the monster AI's `0xA2..=0xA4` arm), so a player guards that round.
 
+Arm `0x11` closes the cast: caster to `z = 0x200`, victim to `-0x200`, both rates
+back at `8`, and a living victim staged to idle with the `+0x1DC` bump
+(`0x801F81A8..0x801F81B4`, behind the HP test at `0x801F8158`). That cut ends
+the knockdown the victim has held frozen since arm 9, so state `0x71`'s settle
+test, which waits for a live target on clip `0`, passes on its first pass.
+Without it the engine's `0x71` held `54` ticks on the knockdown and the Done
+band opened on case 6's endpoint instead of easing from the module's last shot
+(`nivora_duel_pre_megaton_press`: `0x51` `.678` to `.889`).
+
 <a id="prot-0958-blazing-slash"></a>
 
 **0958 Blazing Slash** (`cast_module_camera::blazing_slash_camera`) is the
