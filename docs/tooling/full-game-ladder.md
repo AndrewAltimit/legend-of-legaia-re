@@ -1963,6 +1963,12 @@ With `npcs.solid` armed a body stops the walk exactly as it stops a player, and 
 
 A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.
 
+Two stretches still stop the arm on some streams, both where a scene's layout changes under the walk:
+
+- **`jouinc`'s corridor to `jouind`.** The scene entry script (P1[0]) opens tile (82, 39) (`4C 70 52 27 52 27`, mask `0`) while `0x5D` is clear, and the item P1[17] stands in that gap until it is picked up; its record hides it (`4C 40`, draw scale `0`) but never raises its `+0x10` bit 0, so its box stays.
+  The lattice route from the corridor (80..82, 37..60) to the door at (111, 10) runs through that gap whenever the party reaches the corridor with the door's own approach out of reach, and with the bodies solid the item's box closes it. The plan that misses ends at the reachable cell nearest the goal, which follows whether the cull leaves the item in view, so the walk goes back and forth along the corridor until its stall clock runs out. Without the arm the walk passes through the item. Whether retail's item blocks the gap after it is taken is not measured.
+- **`rugi`'s hub.** A walk to P1[33] stalls at (84, 54) with all four probes walled, beside the hub pad P2[62]'s landing, and every later beat from (86, 52) reads its way out as crossing a band that leaves the scene, until the stretch's frame budget runs out in the next scene.
+
 ## What it cannot measure
 
 - The seated tier places the player. It proves doors, scripts, gates and the
