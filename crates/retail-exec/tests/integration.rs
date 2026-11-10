@@ -99,6 +99,8 @@ mod ledge_hop;
 mod level_up;
 mod magic_level;
 mod man_record;
+mod map_display;
+mod map_display_tick;
 mod melee_hit;
 mod menu_stats;
 mod monster_install;
