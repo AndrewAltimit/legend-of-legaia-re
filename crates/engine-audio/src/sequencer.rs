@@ -42,6 +42,7 @@ mod events;
 mod transport;
 mod voices;
 
+pub use channel_math::channel_tail;
 use channel_math::*;
 use voices::SILENT_RING_LEN;
 pub use voices::flush_key_on_lag;
