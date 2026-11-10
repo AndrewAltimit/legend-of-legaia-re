@@ -4380,7 +4380,11 @@ vsync (arm 3 spins the yaw a full turn); arm 4 stages `0x0C`, stores
 `0x1000` into both backdrop records' `+0x78` and the stage byte `3`, so the
 backdrop leaves the screen for the rest of the cast. Arm 5 cuts to the pair's
 midpoint every pass and waits for Lu's clip `0x0D` to reach cursor `0x90`;
-arm 6 waits for its loop counter to leave `0xFF`. Arms 7, 9 and `0xB` climb
+arm 6 waits for its loop counter to leave `0xFF`. As arm 5 passes it also stores zero
+into the root speed `+0x0C` of Lu's action entry for clip `0x0D` (the record off
+`0x801C9348`, `+0x80`; `0x801F7BF4..0x801F7C08`), which the anim tick's root-motion term
+reads each tick, so her charge stops at `z = -0xC0` while the clip plays on
+(`CaptureCamArm::caster_clip_speed`). Arms 7, 9 and `0xB` climb
 (TR z `+16s`, yaw `-s`) and cut onto Lu's body at TR y `-5` times its display
 height, with one-pass arms 8 and `0xA` between; arm `0xD` holds for cursor
 `0x160`, fires the `0x1C0` burst and seats four records on the victim's floor
