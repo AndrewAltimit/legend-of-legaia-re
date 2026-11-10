@@ -12,6 +12,7 @@ mod common;
 
 mod actor_tint;
 mod actor_node_pool;
+mod ambient_emitter;
 mod ambient_motion;
 mod anim_cue_walk;
 mod anim_cursor;
