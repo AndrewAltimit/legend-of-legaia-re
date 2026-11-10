@@ -510,3 +510,258 @@ fn the_skills_page_matches() {
     }
     assert!(empty > 100 && rows_seen > 3000, "{empty} {rows_seen}");
 }
+
+/// The label writer `FUN_8003CD00(str, x, y)`, re-hooked so a log entry
+/// carries the bytes it drew: the Magic page rewrites its `Lv` buffer
+/// (`0x801E46E0`) between rows.
+const LABEL: u32 = 0x8003_CD00;
+/// The Magic list's scroll top and cursor word, and the latch word (bit
+/// `0x1000` set: nothing latched).
+const LIST_TOP: u32 = 0x8007_BB90;
+const LIST_CURSOR_WORD: u32 = 0x8007_BB98;
+const LATCH: u32 = 0x801E_46D0;
+
+/// The Magic page (`0x801D40A8..0x801D43BC`): header, up to seven spell rows
+/// from the list's top, the hand and the latched row's second hand, and the
+/// hovered spell's preview. Every text draw is held to the port's in order;
+/// the hands by seat.
+#[test]
+fn the_magic_page_matches() {
+    differential!(prot(899, STATUS_PANEL));
+    use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let scus = scus().unwrap();
+    let pool = MenuPoolLabels::from_menu_overlay(
+        &disc()
+            .unwrap()
+            .read_entry_footprint(899)
+            .expect("PROT 0899"),
+    );
+    let names = legaia_engine_menus::pause_screens::MenuTextTables::from_scus(&scus)
+        .spell_names
+        .expect("spell names");
+    let castable: Vec<u8> = (1..=255u8)
+        .filter(|&id| names.name(id).is_some_and(|n| !n.is_empty()))
+        .collect();
+    assert!(castable.len() > 10, "{} named spells", castable.len());
+    let l = rig.log.clone();
+    rig.cpu.unhook(LABEL);
+    rig.cpu.hook(LABEL, move |r, m| {
+        let ink = m.rd32(0x8007_B454) as u8;
+        let s = cstr(m, r.r[psx_retail_exec::A0]);
+        l.borrow_mut().push(Ev::Text(
+            s,
+            r.r[psx_retail_exec::A1] as i32,
+            r.r[psx_retail_exec::A2] as i32,
+            ink,
+        ));
+    });
+    let tag = |n: u32| (n, 0, 1, 1);
+    // The preview box's frame needs real piece sizes to tile.
+    let atlas = SaveMenuAtlasRects {
+        label_lv: tag(0x0A),
+        cursor: tag(0x900),
+        panel_tl: (0x700, 0, 4, 4),
+        panel_tr: (0x704, 0, 4, 4),
+        panel_bl: (0x708, 0, 4, 4),
+        panel_br: (0x70C, 0, 4, 4),
+        panel_top: (0x710, 0, 24, 4),
+        panel_bot: (0x710, 4, 24, 4),
+        panel_left: (0x730, 0, 4, 24),
+        panel_right: (0x734, 0, 4, 24),
+        panel_interior: (0x740, 0, 16, 16),
+        ..Default::default()
+    };
+    let mut rng = Rng(0x4D41_4749);
+    let (mut empty, mut previewed, mut latched, mut halved) = (0, 0, 0, 0);
+    for run in 0..3_000 {
+        let id = rng.below(3);
+        let seat = rng.below(3);
+        rig.cpu.mem.wr8(ROSTER + seat, id as u8);
+        rig.cpu.mem.wr32(LIST_CURSOR, seat);
+        rig.cpu.mem.wr32(PAGE, [2u32, 7][rng.below(2) as usize]);
+        let rec_va = RECORDS + id * STRIDE;
+        for o in 0..STRIDE {
+            rig.cpu.mem.wr8(rec_va + o, 0);
+        }
+        let name = format!("Hero{id}");
+        rig.poke_str(rec_va + 0x2A7, &name);
+        rig.cpu.mem.wr8(rec_va + 0x130, 7);
+        let ability = [0u32, 0x10, 0x20, 0x30][rng.below(4) as usize];
+        rig.cpu.mem.wr32(rec_va + 0xF4, ability);
+        let seru_seat = u32::from(rig.cpu.mem.rd16(RASERU_SEAT + id * 2));
+        let base = rig.cpu.mem.rd8(RASERU_BASE + id);
+        let seru_id = match rng.below(6) {
+            0 => 0,
+            _ => base + rng.below(9) as u8,
+        };
+        rig.cpu.mem.wr8(rec_va + 0x196 + seru_seat, seru_id);
+        let count = match rng.below(6) {
+            0 => 0,
+            _ => 1 + rng.below(14),
+        };
+        let mut spells = Vec::new();
+        for i in 0..count {
+            let s = castable[rng.below(castable.len() as u32) as usize];
+            let lv = 1 + rng.below(9) as u8;
+            rig.cpu.mem.wr8(rec_va + 0x13D + i, s);
+            rig.cpu.mem.wr8(rec_va + 0x161 + i, lv);
+            spells.push((s, lv));
+        }
+        rig.cpu.mem.wr8(rec_va + 0x13C, count as u8);
+        // The list: its top, the hand (or none) on a visible row, the latch.
+        let top = if count > 7 { rng.below(count - 6) } else { 0 };
+        let visible = (count - top).min(7);
+        // The list holds the pad only over rows: no Seru, no rows.
+        let hand =
+            (count > 0 && seru_id != 0 && rng.below(3) != 0).then(|| top + rng.below(visible));
+        let latch = (hand.is_some() && rng.below(3) == 0).then(|| top + rng.below(visible));
+        rig.cpu.mem.wr32(LIST_TOP, top);
+        rig.cpu.mem.wr32(
+            LIST_CURSOR_WORD,
+            hand.map_or(0x4000 | rng.below(0x1000), |h| h),
+        );
+        rig.cpu
+            .mem
+            .wr32(LATCH, latch.map_or(0x1000 | rng.below(0x1000), |l| l));
+        let r = legaia_engine_ui::menu::window_painters::PainterRect::new(
+            rng.below(100) as i32,
+            rng.below(50) as i32,
+            218,
+            188,
+        );
+        let log = rig.run(STATUS_PANEL, r);
+        let what = format!(
+            "run {run} id {id} seru {seru_id:#x} spells {spells:02x?} top {top} hand {hand:?} latch {latch:?} at {r:?}"
+        );
+
+        let rows: Vec<(String, Option<u8>, u8, u16, String)> = spells
+            .iter()
+            .map(|&(s, lv)| {
+                let mp = u16::from(names.mp(s).unwrap_or(0));
+                (
+                    names.name(s).unwrap_or_default().to_string(),
+                    names.icon(s),
+                    lv,
+                    mp_cost_after_ability_bits(mp, MpCostModifier::from_ability_flags(ability)),
+                    names.desc(s).unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        halved += u32::from(ability != 0 && count > 0);
+        let views: Vec<legaia_engine_ui::StatusSpellRowView<'_>> = rows
+            .iter()
+            .map(
+                |(n, icon, lv, mp, d)| legaia_engine_ui::StatusSpellRowView {
+                    name: n,
+                    icon: *icon,
+                    level: *lv,
+                    mp_cost: *mp,
+                    description: d,
+                },
+            )
+            .collect();
+        let seru_name = (seru_id != 0).then(|| {
+            let va = rig.cpu.mem.rd32(SERU_NAMES + id * 4);
+            String::from_utf8(cstr(&mut rig.cpu.mem, va)).expect("ASCII")
+        });
+        let seru = seru_name
+            .as_deref()
+            .map(|s| (s, seru_id.wrapping_sub(base).wrapping_add(1)));
+        let list = hand.map(|h| legaia_engine_ui::StatusListView {
+            cursor: h as usize,
+            scroll: top as usize,
+            latched: latch.map(|l| l as usize),
+        });
+        let panel = StatusPanelView {
+            name: &name,
+            level: 7,
+            xp: 0,
+            xp_to_next: 0,
+            hp: 0,
+            hp_max: 0,
+            hp_base: 0,
+            mp: 0,
+            mp_max: 0,
+            mp_base: 0,
+            ap: 0,
+            ap_max: 100,
+            stat_rows: &[],
+            equip_rows: &[],
+            status: 0,
+            seru,
+            page: 2,
+            skills: &[],
+            spells: &views,
+            moves: &[],
+            list,
+            scroll: top as usize,
+        };
+        let port =
+            status_screen_draws_for_with(&rig.font, Some(&pool), &panel, None, (r.x, r.y), true);
+        let text: Vec<Ev> = log
+            .iter()
+            .filter(|e| matches!(e, Ev::Text(..) | Ev::Number(..) | Ev::Separator(..)))
+            .cloned()
+            .collect();
+        let on_grid = |d: &[TextDraw]| -> Vec<_> {
+            d.iter()
+                .map(|t| (t.dst, t.src, t.color.map(|c| (c * 31.0).round() as u32)))
+                .collect()
+        };
+        // Retail writes the preview from inside the row loop, when it
+        // reaches the hovered row; the port after the rows. The two regions
+        // do not overlap, so the draws are held as a set.
+        let want = rig.text_of(&text);
+        let (mut w, mut p) = (on_grid(&want), on_grid(&port));
+        w.sort_by_key(|k| format!("{k:?}"));
+        p.sort_by_key(|k| format!("{k:?}"));
+        let first = w.iter().zip(&p).position(|(a, b)| a != b);
+        assert_eq!(
+            w,
+            p,
+            "{what}: first difference at {first:?}\nRETAIL {:?}\nPORT {:?}\n{text:02x?}",
+            &w[first.unwrap_or(0).saturating_sub(2)..(first.unwrap_or(0) + 6).min(w.len())],
+            &p[first.unwrap_or(0).saturating_sub(2)..(first.unwrap_or(0) + 6).min(p.len())]
+        );
+
+        // The hands: the list hand, and the latch's second one.
+        let sprites = status_icon_sprites_for(
+            &atlas,
+            (r.x, r.y),
+            0,
+            StatusIconPage {
+                page: 2,
+                seru: seru.is_some(),
+                hand_row: hand.map(|h| (h - top) as usize),
+                latched_row: latch.map(|l| (l - top) as usize),
+                ..Default::default()
+            },
+            (0, 0),
+            1,
+        );
+        let mut got: Vec<(i32, i32)> = sprites
+            .iter()
+            .filter(|s| s.src.0 == 0x900)
+            .map(|s| (s.dst.0, s.dst.1))
+            .collect();
+        let mut want: Vec<(i32, i32)> = crate::menu_painters::hands(&log)
+            .iter()
+            .filter(|h| h.sprite == 0)
+            .map(|h| (h.x, h.y))
+            .collect();
+        got.sort();
+        want.sort();
+        assert_eq!(got, want, "{what}: hands");
+        empty += u32::from(count == 0 || seru_id == 0);
+        previewed += u32::from(hand.is_some());
+        latched += u32::from(latch.is_some());
+    }
+    assert!(
+        empty > 300 && previewed > 1000 && latched > 300 && halved > 1000,
+        "{empty} {previewed} {latched} {halved}"
+    );
+}

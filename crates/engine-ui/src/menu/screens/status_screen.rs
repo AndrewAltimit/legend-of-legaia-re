@@ -98,6 +98,11 @@ const STATUS_PAGE_ROWS: usize = 7;
 /// the string it was handed opens on a control byte, to resume past it - so
 /// a label's lines are the renderer's.
 const LINE_BREAK_PITCH: i32 = 0x0E;
+/// How far a list page's body (`wy` in the page drawers) sits below the
+/// window's own `WY`. The pages' empty-list line is placed off the window
+/// record, at `WY + 0x50` (`lh v0,0xc(t2); addiu v0,v0,0x50` at
+/// `0x801D43A8` / `0x801D4768`), not off the body.
+const STATUS_PAGE_BODY_DY: i32 = 0x13;
 /// The list pages' preview box, off the window's bottom (`0x801D4830`).
 const PREVIEW_H: i32 = 0x28;
 
@@ -202,7 +207,7 @@ fn status_magic_draws(
     if panel.seru.is_none() || panel.spells.is_empty() {
         out.extend(text_draws_for(
             &font.layout_ascii(pool_label(labels, MenuLabel::NoMagic, "-No magic skills-")),
-            (x, wy + 0x50),
+            (x, wy - STATUS_PAGE_BODY_DY + 0x50),
             white,
         ));
         return out;
@@ -216,19 +221,28 @@ fn status_magic_draws(
         text_draws_for(&font.layout(&bytes), pen, ink)
     };
     let level_text = crate::spell_level_text;
+    // While a row is latched for an exchange, every other row writes in the
+    // grey ink (`sw zero` to `_DAT_8007B454` at `0x801D42B4`, taken when the
+    // latch word `DAT_801E46D0` holds an index and it is not this row's).
+    let latched = panel.list.and_then(|l| l.latched);
+    let grey = crate::menu_ink_color(0);
     for (i, row) in panel
         .spells
         .iter()
+        .enumerate()
         .skip(scroll)
         .take(STATUS_PAGE_ROWS)
-        .enumerate()
     {
-        let y = rows_y + i as i32 * 0x0D;
-        out.extend(spell_name(row, (x, y), white));
+        let y = rows_y + (i - scroll) as i32 * 0x0D;
+        let ink = match latched {
+            Some(l) if l != i => grey,
+            _ => white,
+        };
+        out.extend(spell_name(row, (x, y), ink));
         out.extend(text_draws_for(
             &font.layout_ascii(&level_text(row.level)),
             (x + 0x68, y),
-            white,
+            ink,
         ));
         out.extend(num_field_draws(
             font,
@@ -236,7 +250,7 @@ fn status_magic_draws(
             x + 0x98,
             y,
             3,
-            white,
+            ink,
         ));
     }
     if let Some(row) = panel.list.and_then(|l| panel.spells.get(l.cursor)) {
@@ -289,7 +303,7 @@ fn status_moves_draws(
                 MenuLabel::NoMoves,
                 "You have not learned any moves.",
             )),
-            (x, wy + 0x50),
+            (x, wy - STATUS_PAGE_BODY_DY + 0x50),
             white,
         ));
         return out;
@@ -546,7 +560,7 @@ pub fn status_screen_draws_for_with(
             return out;
         }
         2 | 3 => {
-            let body = (wx, wy + 0x13, win_h - 0x13);
+            let body = (wx, wy + STATUS_PAGE_BODY_DY, win_h - STATUS_PAGE_BODY_DY);
             out.extend(if panel.page == 2 {
                 status_magic_draws(font, labels, panel, body)
             } else {
