@@ -621,9 +621,15 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
-  Both are taken back to the displayed table: `retail_fog` rewinds each record's
-  age and drift three passes, the display lag's two and the one the child's step
-  puts back. And a sheet stands against the camera's eased vertical offset
+  Both are taken back to the displayed table. The child's step draws each record
+  from where it stood before the step, so `retail_fog` rewinds age and drift by
+  exactly the passes between the state's pool and the frame on screen: the table
+  still in the state's RAM sits one pass behind the pool on a PCSX-Redux state
+  and two on a Mednafen one (`FOG_TABLE_PASSES`; rolled back that far, the
+  integer fog kernel reproduces that table's packets corner for corner and no
+  other roll-back comes close, `fog_table_passes_capture_disc`), and the frame on
+  screen is the table before it. The seat had rewound three passes on both,
+  one too many on a PCSX-Redux state. And a sheet stands against the camera's eased vertical offset
   `_DAT_8007BCAC` (`FUN_8003F3FC` at `0x8003F448`), a clock of the footing the
   player walked, which the child seats beside them (`LEGAIA_SEAT_FOG_OFFSET`).
   `concnow_field_door_hop`'s word reads `163` to the engine's `233`: every sheet
