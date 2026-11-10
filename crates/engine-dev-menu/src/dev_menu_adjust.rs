@@ -11,8 +11,7 @@
 //! `actor[+0x9e] - 3` (jump table `0x801CF294`); each case edits one menu row's
 //! backing value from the frame's newly-pressed pad mask
 //! (`_DAT_8007BB84`), the **Right** bit `0x2000` stepping the value up and the
-//! **Left** bit `0x8000` stepping it down (Right takes priority when both are
-//! set in the same frame).
+//! **Left** bit `0x8000` stepping it down.
 //!
 //! The rows differ only in how the stepped value is bounded. Two of the arms
 //! are pure integer kernels with no VRAM / actor state, ported here:
@@ -43,8 +42,10 @@ pub const PAD_STEP_DOWN: u32 = 0x8000;
 
 /// Resolve a frame's pad mask into a step: `+1`, `-1`, or `0`.
 ///
-/// Mirrors the branch order in `FUN_801E9F64`: the up bit is tested first and
-/// wins when both bits are set in the same frame.
+/// Mirrors the branch order of `FUN_801E9F64`'s clamp arm
+/// (`0x801EA040..0x801EA070`): the up bit is tested first and wins when both
+/// bits are set in the same frame. The 12-bit ring arm tests the two bits
+/// independently ([`wrap12_step`]).
 ///
 // PORT: FUN_801e9f64 (pad-edge decode shared by every row arm)
 #[inline]
@@ -58,16 +59,25 @@ pub fn pad_step(pad_pressed: u32) -> i32 {
     }
 }
 
-/// Step a value that wraps in a 12-bit ring (`_DAT_800836D0`).
+/// Step a value that wraps in a 12-bit ring (`_DAT_8007B6D0`).
 ///
-/// The retail arm keeps the low 12 bits after the increment/decrement, so the
-/// value cycles `0 -> 0xFFF -> 0` without ever leaving `0..=0xFFF`.
+/// The retail arm is two independent tests, not one decoded step: the up bit
+/// adds one and masks to 12 bits, then the down bit takes one off and masks
+/// again. Both bits in one frame therefore cancel (unlike the clamp arm,
+/// where up wins), and a frame with neither leaves the word as it lies,
+/// unmasked.
 ///
 // PORT: FUN_801e9f64 (`0x801E9FE4..0x801EA030`, the 12-bit ring arm)
 #[inline]
 pub fn wrap12_step(value: u16, pad_pressed: u32) -> u16 {
-    let stepped = (value as i32) + pad_step(pad_pressed);
-    (stepped as u16) & 0x0FFF
+    let mut v = value;
+    if pad_pressed & PAD_STEP_UP != 0 {
+        v = v.wrapping_add(1) & 0x0FFF;
+    }
+    if pad_pressed & PAD_STEP_DOWN != 0 {
+        v = v.wrapping_sub(1) & 0x0FFF;
+    }
+    v
 }
 
 /// Step a value clamped to the inclusive range `[1, 255]` (`_DAT_801F2E8C`).
@@ -113,10 +123,13 @@ mod tests {
         assert_eq!(wrap12_step(0x0FFF, PAD_STEP_UP), 0x000);
         // Wrap at the bottom: 0 - 1 -> 0xFFF.
         assert_eq!(wrap12_step(0x000, PAD_STEP_DOWN), 0x0FFF);
-        // Neutral frame leaves the value (masked) unchanged.
+        // A neutral frame leaves the value as it lies, high bits included:
+        // the mask rides the step.
         assert_eq!(wrap12_step(0x123, 0), 0x123);
-        // A value already carrying high bits is masked to 12 bits.
-        assert_eq!(wrap12_step(0x1234, 0), 0x234);
+        assert_eq!(wrap12_step(0x1234, 0), 0x1234);
+        assert_eq!(wrap12_step(0x1234, PAD_STEP_UP), 0x235);
+        // Both bits in one frame cancel.
+        assert_eq!(wrap12_step(0x100, PAD_STEP_UP | PAD_STEP_DOWN), 0x100);
     }
 
     #[test]
