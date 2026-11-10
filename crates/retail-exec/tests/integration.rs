@@ -54,6 +54,7 @@ mod battle_vm_leaves;
 mod bearing;
 mod best_equipment;
 mod billboard;
+mod boot_overlay;
 mod camera_arrival;
 mod camera_follow;
 mod camera_ghost;
