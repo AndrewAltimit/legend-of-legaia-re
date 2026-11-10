@@ -93,6 +93,7 @@ mod hop_session;
 mod hop_spawn;
 mod hp_bar_settle;
 mod hsv;
+mod index_stack;
 mod inn;
 mod interact_probe;
 mod intro_names;
