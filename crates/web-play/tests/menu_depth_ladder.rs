@@ -423,10 +423,10 @@ fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
         return Err("Equip screen drew nothing on open".into());
     }
     // The character picker: Cross hands the pad to the slot browse.
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let browse = rt.play_menu_draws_json(W, H);
     // Row 0 = Best Equipment.
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     if rt.play_menu_draws_json(W, H) == browse {
         return Err("Best Equipment changed nothing with a better sword in the bag".into());
     }
@@ -435,26 +435,26 @@ fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
     // the hovered row, and answer the Yes/No prompt.
     for slot_row in 1..=5u32 {
         for _ in 0..slot_row {
-            rt.play_menu_input(PadButton::Down.mask());
+            rt.play_menu_press(PadButton::Down.mask());
             let _ = rt.play_menu_draws_json(W, H);
         }
-        rt.play_menu_input(PadButton::Cross.mask());
+        rt.play_menu_press(PadButton::Cross.mask());
         let _ = rt.play_menu_draws_json(W, H);
         for edge in [
             PadButton::Down.mask(),
             PadButton::Down.mask(),
             PadButton::Up.mask(),
         ] {
-            rt.play_menu_input(edge);
+            rt.play_menu_press(edge);
             let _ = rt.play_menu_draws_json(W, H);
         }
-        rt.play_menu_input(PadButton::Cross.mask());
+        rt.play_menu_press(PadButton::Cross.mask());
         let _ = rt.play_menu_draws_json(W, H);
-        rt.play_menu_input(PadButton::Cross.mask());
+        rt.play_menu_press(PadButton::Cross.mask());
         let _ = rt.play_menu_draws_json(W, H);
         // Back to the slot list for the next slot.
         for _ in 0..3 {
-            rt.play_menu_input(PadButton::Circle.mask());
+            rt.play_menu_press(PadButton::Circle.mask());
             let _ = rt.play_menu_draws_json(W, H);
             if !rt.play_menu_is_open() {
                 break;
@@ -529,14 +529,14 @@ fn rung4_items_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
     if !rt.play_menu_open_row("Items") {
         return Err("Items did not open for Arrange".into());
     }
-    rt.play_menu_input(PadButton::Down.mask());
-    rt.play_menu_input(PadButton::Down.mask());
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Down.mask());
+    rt.play_menu_press(PadButton::Down.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let once = rt.play_menu_draws_json(W, H);
     if text_count(&json(&once)) == 0 {
         return Err("the Items list drew nothing after Arrange".into());
     }
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let twice = rt.play_menu_draws_json(W, H);
     if once != twice {
         return Err(
@@ -552,17 +552,17 @@ fn rung4_items_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
     if !rt.play_menu_open_row("Items") {
         return Err("Items did not re-open for Throw Out".into());
     }
-    rt.play_menu_input(PadButton::Down.mask());
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Down.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let _ = rt.play_menu_draws_json(W, H);
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let confirm = json(&rt.play_menu_draws_json(W, H));
     if text_count(&confirm) == 0 {
         return Err("throw-out confirm drew nothing".into());
     }
     // The confirm seeds on No (retail); Up moves the hand to Yes.
-    rt.play_menu_input(PadButton::Up.mask());
-    rt.play_menu_input(PadButton::Cross.mask());
+    rt.play_menu_press(PadButton::Up.mask());
+    rt.play_menu_press(PadButton::Cross.mask());
     let _ = rt.play_menu_draws_json(W, H);
     unwind_menu(rt);
     let after = bag_total(rt);
@@ -588,7 +588,7 @@ fn unwind_menu(rt: &mut LegaiaRuntime) {
         if !rt.play_menu_is_open() {
             break;
         }
-        rt.play_menu_input(PadButton::Circle.mask());
+        rt.play_menu_press(PadButton::Circle.mask());
         let _ = rt.play_menu_draws_json(W, H);
     }
     rt.play_menu_close();

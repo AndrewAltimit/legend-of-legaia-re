@@ -100,3 +100,20 @@ pub fn pause_slide_gate(
         delta,
     )
 }
+
+/// Whether the next [`pause_slide_gate`] lets the pad through: the lock has
+/// seen the screen the menu stands on and no window is moving. A driver that
+/// presses into the menu (a test, a scripted hand) waits on this rather than
+/// on a frame count. Always `true` without the overlay's programs, where the
+/// lock is open.
+pub fn pause_slide_settled(
+    world: &World,
+    menu: Option<&FieldMenuSession>,
+    sub: Option<&FieldMenuSubsession>,
+) -> bool {
+    if world.menu.widget_scripts.is_none() {
+        return true;
+    }
+    let screen = menu.and_then(|m| pause_screen(m, sub));
+    world.menu.pause_slide_lock.screen() == screen && world.menu.widgets.slide_latch() == 0
+}

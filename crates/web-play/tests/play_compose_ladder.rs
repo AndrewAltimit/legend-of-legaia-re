@@ -552,7 +552,7 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
     }
     // Root cursor over all seven rows, drawing each step.
     for _ in 0..7 {
-        rt.play_menu_input(PadButton::Down.mask());
+        rt.play_menu_press(PadButton::Down.mask());
         step(rt, tally);
     }
     rt.play_menu_close();
@@ -569,7 +569,7 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
             PadButton::Right.mask(),
             PadButton::Up.mask(),
         ] {
-            rt.play_menu_input(edge);
+            rt.play_menu_press(edge);
             step(rt, tally);
         }
         // Back all the way out (sub-screens can be two levels deep).
@@ -577,7 +577,7 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
             if !rt.play_menu_is_open() {
                 break;
             }
-            rt.play_menu_input(PadButton::Circle.mask());
+            rt.play_menu_press(PadButton::Circle.mask());
             step(rt, tally);
         }
         rt.play_menu_close();
@@ -613,7 +613,7 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
             return Err(format!("menu row {row} did not re-open"));
         }
         for edge in drive {
-            rt.play_menu_input(edge);
+            rt.play_menu_press(edge);
             step(rt, tally);
             run(rt, tally, 3);
         }
@@ -621,7 +621,7 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
             if !rt.play_menu_is_open() {
                 break;
             }
-            rt.play_menu_input(PadButton::Circle.mask());
+            rt.play_menu_press(PadButton::Circle.mask());
             step(rt, tally);
         }
         rt.play_menu_close();

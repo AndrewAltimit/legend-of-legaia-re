@@ -78,6 +78,16 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 fn tap(s: &mut NativeSession, b: PadButton) {
+    // The menu reads nothing while its windows slide (`_DAT_8007BB80`,
+    // `legaia_engine_menus::menu_slide_lock`): a player waits for them to
+    // land before pressing on.
+    for _ in 0..96 {
+        if s.field_menu_settled() {
+            break;
+        }
+        s.host.world.set_pad(0);
+        let _ = s.tick();
+    }
     s.host.world.set_pad(b.mask());
     let _ = s.tick();
     s.host.world.set_pad(0);

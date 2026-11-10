@@ -168,6 +168,22 @@ impl<S: AudioSink> BootSession<S> {
         self.pause_wipe.tick(step);
     }
 
+    /// Whether the open pause menu reads the pad on its next frame: it has
+    /// spawned, and its windows have stopped sliding (the slide lock,
+    /// [`pause_slide_gate`]). A driver that presses into the menu waits on
+    /// this, as a player waits for the windows to land. `true` with no menu.
+    pub fn field_menu_settled(&self) -> bool {
+        if self.field_menu.is_none() {
+            return true;
+        }
+        self.pause_wipe.menu_spawned()
+            && legaia_engine_menu_runtime::field_menu_dispatch::pause_slide_settled(
+                &self.host.world,
+                self.field_menu.as_ref(),
+                self.field_menu_sub.as_ref(),
+            )
+    }
+
     /// Whether the in-field pause menu is open (the engine equivalent of
     /// retail `game_mode 0x17`; [`World::mode`](legaia_engine_core::world::World::mode)
     /// is [`SceneMode::Menu`] while `true`).

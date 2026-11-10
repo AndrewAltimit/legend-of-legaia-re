@@ -119,9 +119,9 @@ fn open_row(rt: &mut LegaiaRuntime, row: usize) {
     rt.play_menu_open();
     rt.play_menu_settle();
     for _ in 0..row {
-        rt.play_menu_input(DOWN);
+        rt.play_menu_press(DOWN);
     }
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
 }
 
 /// Sit on the "Now checking" beat until the grid comes up.
@@ -136,7 +136,7 @@ fn unwind(rt: &mut LegaiaRuntime) {
         if !rt.play_menu_is_open() {
             return;
         }
-        rt.play_menu_input(CIRCLE);
+        rt.play_menu_press(CIRCLE);
     }
     rt.play_menu_close();
 }
@@ -305,7 +305,7 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
     open_row(&mut rt, ROW_SAVE);
     let (pill_sprites, _) = menu_draws(&rt);
     assert!(pill_sprites > 0, "the pill row draws its chrome");
-    rt.play_menu_input(CROSS); // pick SLOT 1
+    rt.play_menu_press(CROSS); // pick SLOT 1
     settle_card_read(&mut rt);
     let (grid_sprites, grid_texts) = menu_draws(&rt);
     assert!(
@@ -320,15 +320,15 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
     // file. What it must NOT do is collide with the `-03` already on the
     // card.
     for _ in 0..4 {
-        rt.play_menu_input(RIGHT);
+        rt.play_menu_press(RIGHT);
         let _ = rt.play_menu_draws_json(W, H);
     }
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     let _ = rt.play_menu_draws_json(W, H);
     // A free block raises "Do you wish to save?" (defaulting to No); Yes
     // runs "Saving to MEMORY CARD" / "Save successful." before the write.
-    rt.play_menu_input(LEFT);
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(LEFT);
+    rt.play_menu_press(CROSS);
     run_commit_beat(&mut rt);
     assert!(
         rt.card_slot_dirty(0),
@@ -423,12 +423,12 @@ fn rung2_the_save_panel_wears_all_three_info_modes() {
     fn panel_draws(rt: &mut LegaiaRuntime, port: usize, cell: usize) -> (usize, usize) {
         open_row(rt, ROW_SAVE);
         for _ in 0..port {
-            rt.play_menu_input(DOWN);
+            rt.play_menu_press(DOWN);
         }
-        rt.play_menu_input(CROSS);
+        rt.play_menu_press(CROSS);
         settle_card_read(rt);
         for _ in 0..cell {
-            rt.play_menu_input(RIGHT);
+            rt.play_menu_press(RIGHT);
         }
         let draws = menu_draws(rt);
         unwind(rt);
@@ -494,15 +494,15 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     let (plain_sprites, plain_texts) = menu_draws(&rt);
 
     open_row(&mut rt, ROW_LOAD);
-    rt.play_menu_input(CROSS); // pick SLOT 1
+    rt.play_menu_press(CROSS); // pick SLOT 1
     settle_card_read(&mut rt);
     rt.eject_card(0);
     for _ in 0..3 {
-        rt.play_menu_input(RIGHT); // to cell 3, where the `-03` save sits
+        rt.play_menu_press(RIGHT); // to cell 3, where the `-03` save sits
     }
-    rt.play_menu_input(CROSS); // load it - raises "Do you wish to load?"
-    rt.play_menu_input(LEFT); // -> Yes
-    rt.play_menu_input(CROSS); // - and there is no card to load from
+    rt.play_menu_press(CROSS); // load it - raises "Do you wish to load?"
+    rt.play_menu_press(LEFT); // -> Yes
+    rt.play_menu_press(CROSS); // - and there is no card to load from
     run_commit_beat(&mut rt);
     assert!(
         !rt.play_menu_take_load(),
@@ -526,7 +526,7 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     );
 
     // A pad edge dismisses the notice and returns the plain menu.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     assert_eq!(
         menu_draws(&rt),
         (plain_sprites, plain_texts),
@@ -615,11 +615,11 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     )
     .expect("insert");
     open_row(&mut rt, ROW_LOAD);
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     settle_card_read(&mut rt);
-    rt.play_menu_input(CROSS); // "Do you wish to load?"
-    rt.play_menu_input(LEFT); // -> Yes
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS); // "Do you wish to load?"
+    rt.play_menu_press(LEFT); // -> Yes
+    rt.play_menu_press(CROSS);
     run_commit_beat(&mut rt);
     // The page lands the parked save the frame the Load commits
     // (`play_menu_take_load`, then `play_resume_save` via `onCardLoad`).
@@ -656,12 +656,12 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     /// list-open as a panel.
     fn use_row(rt: &mut LegaiaRuntime, row: usize) -> (serde_json::Value, serde_json::Value) {
         assert!(rt.play_menu_open_row("Items"), "Items opens");
-        rt.play_menu_input(CROSS); // Use
+        rt.play_menu_press(CROSS); // Use
         for _ in 0..row {
-            rt.play_menu_input(DOWN);
+            rt.play_menu_press(DOWN);
         }
         let before = json(&rt.play_menu_draws_json(W, H));
-        rt.play_menu_input(CROSS);
+        rt.play_menu_press(CROSS);
         let after = json(&rt.play_menu_draws_json(W, H));
         assert_eq!(after["open"], true, "the confirm closed the menu");
         (before, after)

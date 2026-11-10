@@ -113,6 +113,16 @@ use legaia_engine_system::input::PadButton;
 /// so a mask held across two frames is one event and the second frame's press
 /// would be silently lost - which reads exactly like a screen refusing input.
 fn tap(session: &mut NativeSession, mask: u16) {
+    // The menu reads nothing while its windows slide (`_DAT_8007BB80`,
+    // `legaia_engine_menus::menu_slide_lock`): a player waits for them to
+    // land before pressing on.
+    for _ in 0..96 {
+        if session.field_menu_settled() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        let _ = session.tick();
+    }
     session.host.world.set_pad(mask);
     let _ = session.tick();
     session.host.world.set_pad(0);

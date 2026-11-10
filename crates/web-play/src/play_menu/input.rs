@@ -64,10 +64,11 @@ impl LegaiaRuntime {
         // `_DAT_8007BB80`): the shared lock, stepped once per menu frame
         // ahead of every pre-empt and blip - the native window's
         // `tick_boot_ui` calls the same gate.
-        let sub = self.play_menu.as_ref().and_then(|m| match m.sub.as_ref() {
-            Some(PlaySub::Session(s)) => Some(s.as_ref()),
-            None => None,
-        });
+        let sub = self
+            .play_menu
+            .as_ref()
+            .and_then(|m| m.sub.as_ref())
+            .map(|PlaySub::Session(s)| s.as_ref());
         let driving = self.play_menu.as_ref().is_some_and(|m| m.driving_row);
         let edge = match self.scene_host.session_mut() {
             Some(_) if driving => edge,

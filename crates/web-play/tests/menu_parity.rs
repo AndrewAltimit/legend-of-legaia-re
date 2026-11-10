@@ -90,9 +90,9 @@ fn draw_counts(rt: &LegaiaRuntime) -> (usize, usize) {
 /// at row 0).
 fn open_row(rt: &mut LegaiaRuntime, row: usize) {
     for _ in 0..row {
-        rt.play_menu_input(DOWN);
+        rt.play_menu_press(DOWN);
     }
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
              single-label generic frame (got {texts} text draws)"
         );
         // Back out of the sub-screen (Circle at the top phase finishes it).
-        rt.play_menu_input(CIRCLE);
+        rt.play_menu_press(CIRCLE);
     }
 
     // Status + Options remain fully rendered (regression guard).
@@ -156,7 +156,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
             texts > 8,
             "{name}: sub-screen renders content (got {texts})"
         );
-        rt.play_menu_input(CIRCLE);
+        rt.play_menu_press(CIRCLE);
     }
 
     // Load / Save render the real retail save-select screen against the
@@ -192,7 +192,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
         );
         // The panel title is drawn per-glyph from the dialog font.
         assert!(texts >= 4, "{name}: panel title glyphs (got {texts})");
-        host.play_menu_input(CIRCLE);
+        host.play_menu_press(CIRCLE);
     }
 
     // Cursor navigation wraps (Up from Items lands on Save) - measured where
@@ -201,8 +201,8 @@ fn every_pause_menu_row_renders_full_retail_content() {
         r.play_menu_close();
         r.play_menu_open();
         r.play_menu_settle();
-        r.play_menu_input(UP);
-        r.play_menu_input(CROSS);
+        r.play_menu_press(UP);
+        r.play_menu_press(CROSS);
         let (sprites, _) = draw_counts(r);
         assert!(sprites > 14, "wrapped cursor opens the Save row");
     }
@@ -289,7 +289,7 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
 
     // X on SLOT 1 reads the card: the "Now checking. Do not remove MEMORY
     // CARD" dialog is a panel + two centred text lines on top of the pills.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     let (checking_sprites, checking_texts) = draw_counts(&rt);
     assert!(
         checking_texts > 20,
@@ -327,7 +327,7 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
     // Confirming an EMPTY block must do nothing: the session only knows the
     // phase, so without a host gate this reports Loaded and then fails to
     // parse a block that holds no save - closing the screen for nothing.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     let (_, still_texts) = draw_counts(&rt);
     assert_eq!(
         still_texts, empty_cell_texts,
@@ -341,8 +341,8 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
     // Walk the cursor onto the real save in block 3 (= cell 2): the info
     // panel is bound to the focused cell, so its rows appear now.
     let before = rt.play_menu_draws_json(320, 240);
-    rt.play_menu_input(RIGHT);
-    rt.play_menu_input(RIGHT);
+    rt.play_menu_press(RIGHT);
+    rt.play_menu_press(RIGHT);
     let after = rt.play_menu_draws_json(320, 240);
     assert_ne!(
         before, after,
@@ -366,13 +366,13 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
     // (defaulting to No), then runs "Now Loading" / "Load successful."
     // before the save is parked; the page's resume call
     // (`play_resume_save`) lands it in the live world.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     assert!(
         rt.play_menu_take_load_scene().is_empty(),
         "the load confirm must not load on its own"
     );
-    rt.play_menu_input(LEFT); // -> Yes
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(LEFT); // -> Yes
+    rt.play_menu_press(CROSS);
     run_commit_beat(&mut rt);
     assert!(
         !rt.play_menu_take_load_scene().is_empty(),
@@ -407,21 +407,21 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
     rt.play_menu_open();
     rt.play_menu_settle();
     open_row(&mut rt, ROW_SAVE);
-    rt.play_menu_input(CROSS); // pick SLOT 1
+    rt.play_menu_press(CROSS); // pick SLOT 1
     for _ in 0..200 {
         rt.play_menu_input(0); // "Now checking" beat
     }
     // Walk to cell 2 (= block 3, the existing save) and confirm.
-    rt.play_menu_input(RIGHT);
-    rt.play_menu_input(RIGHT);
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(RIGHT);
+    rt.play_menu_press(RIGHT);
+    rt.play_menu_press(CROSS);
     // The overwrite prompt defaults to "No" - a stray confirm must not write.
     assert!(
         !rt.card_slot_dirty(0),
         "the prompt must not write on its own"
     );
-    rt.play_menu_input(LEFT); // -> Yes
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(LEFT); // -> Yes
+    rt.play_menu_press(CROSS);
     // "Saving to MEMORY CARD", then "Save successful.", then the write.
     run_commit_beat(&mut rt);
     assert!(rt.card_slot_dirty(0), "confirming Yes writes into the card");
@@ -456,13 +456,13 @@ fn confirm_a_save_into_a_blank_card(rt: &mut LegaiaRuntime) {
     rt.play_menu_open();
     rt.play_menu_settle();
     open_row(rt, ROW_SAVE);
-    rt.play_menu_input(CROSS); // pick SLOT 1
+    rt.play_menu_press(CROSS); // pick SLOT 1
     for _ in 0..200 {
         rt.play_menu_input(0); // "Now checking" beat
     }
-    rt.play_menu_input(CROSS); // cell 0 = block 1, free
-    rt.play_menu_input(UP); // the prompt opens on No -> Yes
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS); // cell 0 = block 1, free
+    rt.play_menu_press(UP); // the prompt opens on No -> Yes
+    rt.play_menu_press(CROSS);
 }
 
 /// The page that stores its cards (`card_store_handshake`) holds the Save
@@ -523,7 +523,7 @@ fn load_screen_with_no_card_inserted_renders_and_refuses() {
     open_row(&mut rt, ROW_LOAD);
     let (sprites, _) = draw_counts(&rt);
     assert!(sprites > 14, "the panel + pills draw with no card inserted");
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     let json: serde_json::Value = serde_json::from_str(&rt.play_menu_draws_json(320, 240)).unwrap();
     assert_eq!(json["open"], true, "an empty port must not close the menu");
     assert!(
@@ -557,7 +557,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     );
 
     // Triangle swaps the Status sub-session for the chain editor.
-    rt.play_menu_input(TRIANGLE);
+    rt.play_menu_press(TRIANGLE);
     assert!(
         rt.play_menu_is_open(),
         "the menu stays open across the swap"
@@ -577,7 +577,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
 
     // The editor is stateful, not a static frame: Cross on "+ New" enters the
     // Editing phase, and each direction appends to the working sequence.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     let (_, editing_texts) = draw_counts(&rt);
     assert_ne!(
         editing_texts, arts_texts,
@@ -587,7 +587,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     // Appends below the 3-input minimum only grow the printed sequence...
     let mut prev = editing_texts;
     for dir in [LEFT, RIGHT] {
-        rt.play_menu_input(dir);
+        rt.play_menu_press(dir);
         let (_, texts) = draw_counts(&rt);
         assert!(
             texts > prev,
@@ -598,7 +598,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     // ...and the append that REACHES the minimum shrinks the list, because the
     // "(need 3+ inputs)" tail is dropped from the Cross hint once the chain is
     // long enough to save. That drop is the min-length rule made visible.
-    rt.play_menu_input(DOWN);
+    rt.play_menu_press(DOWN);
     let (_, at_min_texts) = draw_counts(&rt);
     assert!(
         at_min_texts < prev,
@@ -607,7 +607,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     );
 
     // Circle backs out of the editor rather than leaving the page stranded.
-    rt.play_menu_input(CIRCLE);
+    rt.play_menu_press(CIRCLE);
     assert!(rt.play_menu_is_open(), "backing out keeps the menu up");
 }
 
@@ -644,9 +644,9 @@ fn the_options_screen_remembers_an_edit_across_opens() {
     // Cross opens the value popup on the cursor row, Down steps the choice,
     // Cross commits it into the session state (retail writes the config word
     // inside the popup and never reverts).
-    rt.play_menu_input(CROSS);
-    rt.play_menu_input(DOWN);
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
+    rt.play_menu_press(DOWN);
+    rt.play_menu_press(CROSS);
     let edited = rt
         .debug_open_options_json()
         .expect("options session still open");
@@ -657,7 +657,7 @@ fn the_options_screen_remembers_an_edit_across_opens() {
     );
 
     // Circle closes the screen and drops back to the command list.
-    rt.play_menu_input(CIRCLE);
+    rt.play_menu_press(CIRCLE);
     assert!(
         rt.debug_open_options_json().is_none(),
         "Circle closes the Options sub-screen"
@@ -671,7 +671,7 @@ fn the_options_screen_remembers_an_edit_across_opens() {
     // Reopen: the seed must be the lifted state, not a fresh default. The
     // close already parked the cursor back on the row that opened the screen,
     // so Cross alone re-enters it.
-    rt.play_menu_input(CROSS);
+    rt.play_menu_press(CROSS);
     assert_eq!(
         rt.debug_open_options_json().as_deref(),
         Some(edited.as_str()),
