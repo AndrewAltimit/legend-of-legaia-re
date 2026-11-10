@@ -202,3 +202,109 @@ fn the_all_clear_announcer_counts_as_retail_counts() {
     }
     assert!(finished > 100, "{finished}");
 }
+
+/// The chrome sprite-actor draw callback `FUN_801D67F0` over generated
+/// actors in every mode, against `chrome_actor_draw`: the quad it emits and
+/// the retire bit mode `1` raises once the match is live.
+#[test]
+fn a_chrome_sprite_actor_draws_as_retail_draws_it() {
+    differential!(prot(976, CALLBACK));
+    const CALLBACK: u32 = 0x801D_67F0;
+    const ACTOR: u32 = 0x8014_0000;
+    const MATCH_PHASE: u32 = 0x801D_BF78;
+    use legaia_engine_minigames::baka_fighter_chrome::{ChromeActor, chrome_actor_draw};
+    let Some((mut cpu, frame)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5350_5249);
+    let mut retired = 0;
+    for round in 0..40_000 {
+        let actor = ChromeActor {
+            x: rng.below(400) as i16 - 40,
+            y: rng.below(300) as i16 - 30,
+            id: rng.below(0x40) as u16,
+            size: [0x1000, 0x800, rng.below(0x3000) as u16][rng.below(3) as usize],
+            fade: match rng.below(5) {
+                0 => 0x4000 + rng.below(4) as u16,
+                1 => rng.next() as u16,
+                _ => rng.below(0x1100) as u16,
+            },
+        };
+        let mode = rng.below(4) as i32;
+        let phase = rng.below(3) as i32;
+        let flags = rng.next() & !8;
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        cpu.mem.wr16(ACTOR + 0x14, actor.x as u16);
+        cpu.mem.wr16(ACTOR + 0x16, actor.y as u16);
+        cpu.mem.wr16(ACTOR + 0x50, actor.id);
+        cpu.mem.wr16(ACTOR + 0x72, actor.size);
+        cpu.mem.wr16(ACTOR + 0x78, actor.fade);
+        cpu.mem.wr32(MATCH_PHASE, phase as u32);
+        *frame.borrow_mut() = Frame::default();
+        assert_eq!(cpu.call(CALLBACK, &[ACTOR, mode as u32]), Stop::Returned);
+        let port = chrome_actor_draw(&actor, mode, phase);
+        let quads: Vec<Quad> = port
+            .draw
+            .iter()
+            .map(|d| {
+                (
+                    u32::from(d.widget),
+                    i32::from(d.x),
+                    i32::from(d.y),
+                    d.brightness,
+                    d.size,
+                    d.glyph.map(glyph_u),
+                )
+            })
+            .collect();
+        // Only mode 2 pages the glyph strip; a plain draw of that widget
+        // shows whichever cell was paged last.
+        let mut retail = frame.borrow().quads.clone();
+        if mode != 2 {
+            for q in &mut retail {
+                q.5 = None;
+            }
+        }
+        assert_eq!(
+            (retail, cpu.mem.rd32(ACTOR + 0x10) & 8 != 0),
+            (quads, port.retire),
+            "round {round} {actor:?} mode {mode} phase {phase}"
+        );
+        retired += u32::from(port.retire);
+    }
+    assert!(retired > 3000, "{retired}");
+}
+
+/// The all-clear fighter's tick `FUN_801D6F18`, against `clear_fighter_tick`:
+/// the flag it raises and its one call into the clip selector.
+#[test]
+fn the_all_clear_fighter_ticks_as_retails_does() {
+    differential!(prot(976, TICK));
+    const TICK: u32 = 0x801D_6F18;
+    const ACTOR: u32 = 0x8014_0000;
+    use legaia_engine_minigames::baka_fighter_chrome::{ClearFighter, clear_fighter_tick};
+    let Some((mut cpu, _)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let calls: Rc<RefCell<Vec<u32>>> = Rc::default();
+    let c = calls.clone();
+    cpu.hook(0x8002_04F8, move |r, _| c.borrow_mut().push(r.r[A0]));
+    let mut rng = Rng(0x434C_5246);
+    for _ in 0..2000 {
+        let flags = rng.next();
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        calls.borrow_mut().clear();
+        assert_eq!(cpu.call(TICK, &[ACTOR]), Stop::Returned);
+        let mut port = ClearFighter {
+            x: 0,
+            flags,
+            clock: 0,
+        };
+        clear_fighter_tick(&mut port, 1);
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x10), port.flags);
+        // One selector run a tick, which is what the port's clock counts.
+        assert_eq!((calls.borrow().as_slice(), port.clock), (&[ACTOR][..], 1));
+    }
+}
