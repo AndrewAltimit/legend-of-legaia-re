@@ -49,6 +49,7 @@ mod battle_small_leaves;
 mod bearing;
 mod best_equipment;
 mod billboard;
+mod camera_arrival;
 mod camera_follow;
 mod camera_ghost;
 mod camera_height;
