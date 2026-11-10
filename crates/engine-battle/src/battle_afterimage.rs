@@ -147,22 +147,26 @@ pub fn ghost_eligible(ring_id: u8) -> bool {
     ring_id >= GHOST_RING_ID_MIN
 }
 
-/// The two ring depths the walk samples for an actor: `step` and `2 * step`
+/// The ring depths the walk samples for an actor: `step` and `2 * step`
 /// with `step = 8 / rate` (floored at 1 - retail floors the quotient's zero
 /// case at `0x80049410`), doubled for a monster seat (`0x8004941C..
-/// 0x80049428`). A frozen actor (`rate 0`) is clamped to the deepest pair
-/// the ring can serve rather than reproducing retail's undefined
-/// divide-by-zero.
-pub fn ghost_depths(rate: u8, monster: bool) -> [usize; GHOST_COUNT] {
-    let mut step = if rate == 0 {
-        HISTORY_DEPTH / 2 - 1
-    } else {
-        (8 / rate as usize).clamp(1, HISTORY_DEPTH / 2 - 1)
-    };
-    if monster {
-        step = (step * 2).min(HISTORY_DEPTH / 2 - 1);
+/// 0x80049428`). A monster at rate `1` samples depth `32`, one past the
+/// ring: retail reads the bytes after it (`+0x21B` as the id), which is no
+/// history, so a binding answers it ineligible.
+///
+/// Rate `0` samples nothing. The divide has no guard (`div zero,v0,v1` at
+/// `0x800493F8`, no `break`), and the R3000's quotient for `8 / 0` is all
+/// ones, so `step` is `-1` (`-2` for a monster) and the loop's unsigned
+/// bound `2 * step + 1` is not above it: the walk draws no ghost.
+pub fn ghost_depths(rate: u8, monster: bool) -> Vec<usize> {
+    if rate == 0 {
+        return Vec::new();
     }
-    [step, 2 * step]
+    let mut step = (8 / rate as usize).max(1);
+    if monster {
+        step *= 2;
+    }
+    vec![step, 2 * step]
 }
 
 /// One planned ghost draw.
@@ -191,9 +195,12 @@ pub fn plan_ghosts(
             continue;
         }
         out.push(GhostPlan { depth, color });
-        for c in color.iter_mut() {
-            *c = c.saturating_sub(GHOST_COLOR_DECAY);
-        }
+        // `(word & 0xFFFFFF) + 0xFFEFEFF0` (`0x80049514..0x80049530`): one
+        // 24-bit subtract of `0x101010`, a byte below `0x10` borrowing from
+        // the next.
+        let word = u32::from(color[0]) | u32::from(color[1]) << 8 | u32::from(color[2]) << 16;
+        let word = word.wrapping_sub(u32::from(GHOST_COLOR_DECAY) * 0x01_0101) & 0xFF_FFFF;
+        color = [word as u8, (word >> 8) as u8, (word >> 16) as u8];
     }
     out
 }
@@ -372,11 +379,15 @@ mod tests {
     }
 
     #[test]
-    fn frozen_rate_clamps_inside_the_ring() {
-        let [a, b] = ghost_depths(0, false);
-        assert!(b > a && b < HISTORY_DEPTH);
-        let [a, b] = ghost_depths(0, true);
-        assert!(b > a && b < HISTORY_DEPTH);
+    fn a_frozen_actor_draws_no_ghost() {
+        assert!(ghost_depths(0, false).is_empty());
+        assert!(ghost_depths(0, true).is_empty());
+        assert!(plan_ghosts(0, true, GHOST_COLOR_MONSTER, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_monster_at_rate_one_samples_past_the_ring() {
+        assert_eq!(ghost_depths(1, true), [16, HISTORY_DEPTH]);
     }
 
     #[test]

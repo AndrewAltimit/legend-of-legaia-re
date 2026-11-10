@@ -155,11 +155,12 @@ fn the_ground_grid_emits_what_the_port_kernels_say() {
                     sz[r][i] = g.read_data(17 + i);
                 }
             }
-            code_now = CODE_WHILE_EMITTING;
+            // The code byte reads `CODE_WHILE_EMITTING` from the projection
+            // on, and `CODE_AFTER_EMITTING` once the cell is done.
+            code_now = CODE_AFTER_EMITTING;
             let corner = |r: usize, i: usize| (sxy[r][i] as i16, (sxy[r][i] >> 16) as i16);
             if !quad_on_screen([corner(0, 0), corner(0, 2), corner(2, 0), corner(2, 2)]) {
                 rejected += 1;
-                code_now = CODE_AFTER_EMITTING;
                 continue;
             }
             g.write_data(6, rgb | u32::from(CODE_WHILE_EMITTING) << 24);
@@ -185,7 +186,6 @@ fn the_ground_grid_emits_what_the_port_kernels_say() {
                     emitted += 1;
                 }
             }
-            code_now = CODE_AFTER_EMITTING;
         }
         let got: Vec<u32> = (0..packets.len() as u32)
             .map(|k| cpu.mem.rd32(PACKETS + 4 * k))

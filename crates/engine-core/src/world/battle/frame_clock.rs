@@ -98,7 +98,10 @@ impl World {
                 a.battle.anim_rate.get(),
                 a.battle_monster_id.is_some(),
                 [0; 3],
-                |d| hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible),
+                |d| {
+                    d < ai::HISTORY_DEPTH
+                        && hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible)
+                },
             )
             .len();
         }
