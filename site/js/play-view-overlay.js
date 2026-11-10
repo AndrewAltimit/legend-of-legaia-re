@@ -207,7 +207,18 @@
         let draws;
         try { draws = JSON.parse(drawsJson); }
         catch (e) { return; }
-        if (!draws || !draws.open) return;
+        if (!draws || !draws.open) {
+          /* The pause wipe: the menu is open but not spawned yet, and the
+           * field darkens under the wipe quad. Nothing of the field's layers
+           * may stay on this canvas - retail's party readout is gone from the
+           * first field tick after the menu press (the press rearms its idle
+           * countdown, `FUN_801D0D38`), and the native window draws none.
+           * Returning without a clear kept the last field frame's readout
+           * here, dimmed by the wipe drawn over it. */
+          ctx.clearRect(0, 0, ov.width, ov.height);
+          this._overlayPainted = menuKey;
+          return;
+        }
         /* Native blacks the whole framebuffer while the pause menu is up
          * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
          * frozen scene is NOT visible around the windows. This overlay canvas sits
