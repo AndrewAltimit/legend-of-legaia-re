@@ -362,8 +362,11 @@ impl World {
             // (`FUN_8003D53C`; the same latch `push_battle_xa_cue` arms for
             // the melee kernel's clips).
             self.audio.battle_xa_busy_frames = req.duration_sectors.min(u16::MAX as u32) as u16;
-            // A cast module's voice leaves the frame's cost to the arm.
-            self.audio.battle_xa_frame_load = false;
+            // A summon module seeks the drive to its clip's file on an arm
+            // ahead of the cue (`module_drive_arms`); that clip leaves the
+            // frame its own cost. A module with no seek (the capture band's)
+            // starts its clip as the cue funnel does.
+            self.audio.battle_xa_frame_load = self.casting.drive_arms.is_none();
             self.audio
                 .battle_xa_cues
                 .push(legaia_engine_system::sound_state::XaVoiceClip {
