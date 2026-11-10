@@ -69,6 +69,7 @@ const OPTIONS: u32 = 0x801D_CEF0;
 const OPTIONS_ROWS: u32 = 0x801D_2910;
 const OPTIONS_POPUP: u32 = 0x801D_2B44;
 const MAGIC_CASTERS: u32 = 0x801D_2C98;
+const PRIZE_ROWS: u32 = 0x801D_5DE0;
 const MAGIC_INFO: u32 = 0x801D_2E74;
 /// The Magic screen's caster cursor word.
 const CASTER_CHOICE: u32 = 0x801E_46C8;
@@ -1120,4 +1121,69 @@ fn the_magic_casters_and_info_match() {
         levels += 1;
     }
     assert!(levels > 2000, "{levels}");
+}
+
+#[test]
+fn the_prize_rows_take_the_ink_retail_stages() {
+    differential!(prot(899, PRIZE_ROWS));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const TABLE: u32 = 0x801E_4518;
+    const ROW_COUNT: u32 = 0x801E_F0D0;
+    const ROW_IDS: u32 = 0x801E_F0E0;
+    const COINS: u32 = 0x8008_45A4;
+    let context = SCRATCH + 0x200;
+    rig.cpu.mem.wr32(0x8007_B450, context);
+    let mut rng = Rng(0x5052_5A45);
+    let mut seen = [0u32; 8];
+    for run in 0..3_000 {
+        let r = rect(&mut rng);
+        let block = rng.below(4);
+        rig.cpu.mem.wr8(context + 1, block as u8);
+        let n = 1 + rng.below(8);
+        rig.cpu.mem.wr8(ROW_COUNT, n as u8);
+        let coins = [0, rng.below(10_000), rng.below(1_000_000)][rng.below(3) as usize];
+        rig.cpu.mem.wr32(COINS, coins);
+        let mut rows = Vec::new();
+        for i in 0..n {
+            let row = rng.below(12);
+            rig.cpu.mem.wr8(ROW_IDS + i, row as u8);
+            let rec = TABLE + block * 0x60 + row * 8;
+            // A generated record: the item id stays the shipped one.
+            let marker = [0u16, 0, 1, rng.next() as u16][rng.below(4) as usize];
+            let price = [0, 100, rng.below(20_000)][rng.below(3) as usize];
+            rig.cpu.mem.wr16(rec + 2, marker);
+            rig.cpu.mem.wr32(rec + 4, price);
+            rows.push((rec, marker as i16, price as i32));
+        }
+        let f = flags(&mut rng, n - 1);
+        rig.cpu.mem.wr32(0x8007_BB98, f);
+        // The held count the bag scan answers, one per run.
+        let held = [0u32, 98, 99, 100, rng.below(120)][rng.below(5) as usize];
+        rig.bag.borrow_mut().1 = held;
+        let log = rig.run(PRIZE_ROWS, r);
+        let names: Vec<&Ev> = log.iter().filter(|e| matches!(e, Ev::Text(..))).collect();
+        assert_eq!(names.len(), n as usize, "run {run}");
+        for (i, (e, &(rec, _, _))) in names.iter().zip(&rows).enumerate() {
+            // A row picked twice holds the later write.
+            let marker = rig.cpu.mem.rd16(rec + 2) as i16;
+            let price = rig.cpu.mem.rd32(rec + 4) as i32;
+            let want = legaia_engine_ui::prize_exchange::prize_row_ink(
+                held as i16,
+                marker,
+                coins as i32,
+                price,
+            );
+            let Ev::Text(_, x, y, ink) = e else {
+                unreachable!()
+            };
+            let what = format!("run {run} row {i} rec {rec:#x}");
+            assert_eq!(*ink, want, "{what}");
+            assert_eq!((*x, *y), (r.x + 0x14, r.y + 0xE * i as i32), "{what}");
+            seen[usize::from(want)] += 1;
+        }
+    }
+    assert!(seen[0] > 1000 && seen[6] > 500 && seen[7] > 500, "{seen:?}");
 }
