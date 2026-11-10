@@ -175,18 +175,30 @@ impl Camera {
         // The field actor visibility cull (`FUN_801D79E8`) reads the focus
         // pair, the region box and the visible tile window. They live here,
         // so this drain point - which both hosts reach every frame - is
-        // where the world gets them. Published only while the zone follow
-        // camera owns them; before its first compose the focus is not the
-        // one retail's globals would hold, and a cull against it would hold
-        // gliders the player can see. Published after this frame's op-`0x46`
-        // events land: retail's op writes the scratchpad window outright, so
-        // the frame that runs the op already culls and crops against it (a
-        // record's `46 ..` beat one frame late drew its shot against the
-        // previous region's window).
+        // where the world gets them. Published while the zone follow camera
+        // owns them, and while a script owns the shot: retail's cull reads
+        // the scratchpad globals every frame whatever wrote them, and a beat
+        // that takes the camera before the follow camera's first compose (a
+        // walk-on record that fires on the arrival tick, a scene-entry
+        // cutscene) ran the whole beat with no crop and no actor cull - the
+        // scenery and the actors retail hides drew around the shot. The one
+        // gap left is the free-roam frames before the first compose, whose
+        // focus is not the one retail's globals would hold. Published after
+        // this frame's op-`0x46` events land: retail's op writes the
+        // scratchpad window outright, so the frame that runs the op already
+        // culls and crops against it (a record's `46 ..` beat one frame late
+        // drew its shot against the previous region's window).
+        //
+        // The region box is the world's latch (scratchpad `0x1F800384..87`,
+        // written by `FUN_800180EC` at every re-centre), not the follow
+        // tick's copy of it: a beat's scripted player moves re-centre the
+        // world while the follow tick is not running.
+        let owned = self.zone.active || self.zone.prev_scripted;
         world.set_camera_mode_byte(self.zone.active.then_some(self.zone.config.mode));
-        world.set_npc_cull_view(self.zone.active.then(|| FieldCullView {
+        let attr_box = world.region_attributes().box_bytes;
+        world.set_npc_cull_view(owned.then(|| FieldCullView {
             focus_stored: [self.globals.0[6], self.globals.0[8]],
-            attr_box: self.zone.attrs.box_bytes,
+            attr_box,
             window: self.zone.view_window,
         }));
         // Publish the live visible-tile window to the fog pool: the ambient

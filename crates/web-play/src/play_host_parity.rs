@@ -62,16 +62,17 @@ impl LegaiaRuntime {
     /// Stand the field player at world `(x, z)`. Test support only, for a
     /// native test that needs the player where a retail capture had it; the
     /// page never calls it. `false` with no player.
+    ///
+    /// The engine's own debug seat (`World::debug_seat_player`): floor-sampled
+    /// height, the region tables refreshed and the camera window re-centred
+    /// on the new tile. Writing the position alone kept the scene entry's
+    /// region box, so the seated player ran with no crop and no actor cull
+    /// (the box no longer held the focus) and every reproduction through
+    /// this seat drew scenery retail hides.
     pub fn debug_seat_player(&mut self, x: i16, z: i16) -> bool {
-        let Some(w) = self.scene_host.host_mut().map(|h| &mut h.world) else {
-            return false;
-        };
-        let Some(slot) = w.player_actor_slot else {
-            return false;
-        };
-        let m = &mut w.actors[usize::from(slot)].move_state;
-        (m.world_x, m.world_z) = (x, z);
-        true
+        self.scene_host
+            .host_mut()
+            .is_some_and(|h| h.world.debug_seat_player(x, z))
     }
 
     /// The engine camera's retail globals, the state

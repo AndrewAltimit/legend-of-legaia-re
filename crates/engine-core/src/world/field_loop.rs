@@ -964,8 +964,19 @@ impl World {
     /// every direction of [`World::step_field_locomotion`] with nothing on
     /// screen to explain it. Never use it on an op-`0x3F` arrival: see
     /// [`World::seat_player_at_tile`] for why a door tile reads as a wall.
+    ///
+    /// The seat is a placement no door wrote, so it latches the region box
+    /// and re-plans the windowed object list at the new tile, as
+    /// [`World::debug_seat_player`] does: a seat that kept the entry's box
+    /// left the walk region, the visible-tile crop and the actor cull
+    /// planned for wherever the scene put the player first, which drew the
+    /// whole map around the seated player until something re-centred.
     pub fn seat_player_at_tile_rescued(&mut self, tile_x: u8, tile_z: u8) {
         self.seat_player_at_tile_inner(tile_x, tile_z, true);
+        if self.mode == SceneMode::Field {
+            self.refresh_field_regions();
+            self.recentre_field_window_on_player();
+        }
     }
 
     fn seat_player_at_tile_inner(&mut self, tile_x: u8, tile_z: u8, rescue: bool) {
