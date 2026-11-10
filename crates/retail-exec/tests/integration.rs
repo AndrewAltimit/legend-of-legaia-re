@@ -21,6 +21,7 @@ mod arts_gauge;
 mod arts_queue;
 mod arts_roll;
 mod arts_voice;
+mod attach_swap;
 mod attack_camera;
 mod auto_combo;
 mod auto_command;
