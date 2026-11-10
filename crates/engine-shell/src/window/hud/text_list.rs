@@ -84,7 +84,7 @@ impl PlayWindowApp {
                 &mut stage,
                 (6, y - 1),
                 (layout.advance_x + 4, layout.advance_y + 2),
-                0.7,
+                legaia_app_theme::chrome::notice_scrim_alpha(self.chrome_dark),
             );
             stage.extend(text_draws_for(&layout, (8, y), color));
         }
