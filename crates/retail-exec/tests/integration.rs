@@ -29,6 +29,7 @@ mod battle_gauge;
 mod battle_item;
 mod battle_leaves;
 mod battle_seed;
+mod battle_small_leaves;
 mod bearing;
 mod best_equipment;
 mod billboard;
