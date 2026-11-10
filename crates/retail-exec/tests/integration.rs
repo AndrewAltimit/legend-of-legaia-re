@@ -217,6 +217,7 @@ mod index_stack;
 mod inn;
 mod interact_probe;
 mod intro_curtain;
+mod intro_fade;
 mod intro_names;
 mod intro_particles;
 mod intro_seeders;
