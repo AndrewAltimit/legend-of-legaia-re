@@ -568,6 +568,12 @@ inlines the `<< 7` + clamp.
 
 The reason each row carries, in short form. The source tag is authoritative.
 
+- **`tick_commits`** (`80047430`) - `DISCLOSE`. The anim tick's two commit
+  sites composed in one pass. Its parts are live where the engine's clip
+  players reach each boundary (`mid_clip_cut`, `event_commit_due`,
+  `natural_end_commit`); no per-seat pass owns both, so the order inside one
+  tick - the natural end tested on the entry the cut installed - is held by the
+  differential alone.
 - **`sync_scene_name`** - the engine changes scene by label through the scene
   host and carries no staged-name / active-buffer / scene-index-word triple for
   this bridge to resolve between.
