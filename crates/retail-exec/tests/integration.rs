@@ -58,6 +58,7 @@ mod best_equipment;
 mod billboard;
 mod boot_overlay;
 mod camera_arrival;
+mod camera_commit;
 mod camera_follow;
 mod camera_ghost;
 mod camera_height;

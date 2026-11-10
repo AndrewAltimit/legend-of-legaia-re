@@ -91,6 +91,42 @@ impl RetailCamGlobals {
     }
 }
 
+/// The op-`0x45` staging block (`0x801C6EA8`): the ten axes as the
+/// halfwords at `+0x02 + 4 * axis` the Configure arm fills and the commit
+/// reads.
+pub type StagedShot = [i16; AXIS_COUNT];
+
+impl RetailCamGlobals {
+    /// Snapshot the live globals into a staging block - `FUN_801DE004`, which
+    /// the Configure arm runs through its one-call wrapper `FUN_801DDFE4`
+    /// before it overwrites the masked slots, and the SAVE arm runs directly.
+    /// Every axis is copied as its **low halfword** (`lhu` / `sh`), the word
+    /// globals included.
+    ///
+    /// PORT: FUN_801DE004, FUN_801DDFE4
+    pub fn stage(&self) -> StagedShot {
+        self.0.map(|v| v as i16)
+    }
+
+    /// Commit a staging block to the globals - the snap leg of
+    /// `FUN_801DE084` (`apply == 0`). Before it reads the block it clears
+    /// the block's focus Y (`sh zero,0x1e(s0)`, in the delay slot of the
+    /// `apply` branch, so on the glide leg too) and the focus-Y global
+    /// `0x8008911C`, so a shot's focus Y is always `0` whatever slot 7
+    /// staged. The halfword globals take the halfwords; the word ones take
+    /// them sign-extended (`lh` / `sw`).
+    ///
+    /// The routine also marks every live camera mover dead (the
+    /// `FUN_8003CF04` walk for tick `FUN_801DC0BC`) and loads `H` into the
+    /// GTE (`FUN_8003D254`); those are the caller's.
+    ///
+    /// PORT: FUN_801DE084
+    pub fn commit_staged(mut staged: StagedShot) -> Self {
+        staged[7] = 0;
+        Self(staged.map(i32::from))
+    }
+}
+
 impl Default for RetailCamGlobals {
     fn default() -> Self {
         Self::FIELD_RESET

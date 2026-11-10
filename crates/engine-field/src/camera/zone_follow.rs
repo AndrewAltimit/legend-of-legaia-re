@@ -515,10 +515,12 @@ impl Camera {
     /// free-roam scene, so a scripted beat that is about to capture the live
     /// globals sees the zone camera's pose rather than the field reset.
     pub(super) fn prime_zone_before_script<W: CameraWorld + ?Sized>(&mut self, world: &W) {
-        if self.zone.arrival.is_some() && self.mode == CameraMode::Follow {
-            // The port's stand-in for the op-`0x45` arms' own compose into
-            // the staging struct, which retail runs whatever the arrival
-            // actor did: snap the composed pose in now.
+        if self.zone.arrival.is_some()
+            && self.mode == CameraMode::Follow
+            && !world.field_player_movement_locked()
+        {
+            // The arrival actor's tick, run ahead of the script beat: a free
+            // player is snapped (an engaged one keeps the countdown).
             self.zone.arrival = None;
             self.zone.snap_pending = true;
         }

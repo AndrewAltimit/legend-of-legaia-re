@@ -1,8 +1,8 @@
 //! Field / event script VM, ported from `FUN_801DE840`.
 //!
-//! PORT: FUN_801DE840, FUN_8003CE08, FUN_8003CE34, FUN_8003CE64, FUN_8003C83C, FUN_8003CF04
-//! PORT: FUN_801DAA50, FUN_801DAB90, FUN_801DBC20, FUN_801DE004, FUN_801DC0BC
-//! PORT: FUN_801DE190, FUN_8003C5F0, FUN_801D77F4, FUN_801D8280, FUN_801E57F0
+//! PORT: FUN_801DE840, FUN_8003CE08, FUN_8003CE34, FUN_8003CE64, FUN_8003CF04
+//! PORT: FUN_801DAA50, FUN_801DAB90, FUN_801DBC20, FUN_801DC0BC
+//! PORT: FUN_801DE190, FUN_8003C5F0, FUN_801D77F4
 //! REF: FUN_801E3614 (not a routine: the dispatcher's relative-skip exit label
 //!      `addiu v0,v0,-2; j 0x801E3624; addu s8,s8,v0`, taken by ops `0x4D` and
 //!      `4C E4`; the VM computes the skip inline)
@@ -58,11 +58,26 @@
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
 //!
-//! PORT: FUN_801D5630, FUN_801D596C, FUN_801D65D8, FUN_801D835C, FUN_801DB8EC
-//! PORT: FUN_801DDE34, FUN_801DDFE4, FUN_801DE084, FUN_801DE2B0
-//! PORT: FUN_801DE3E0, FUN_801DE698, FUN_801DE754, FUN_801DE7BC, FUN_801E4C58
-//! PORT: FUN_801E573C, FUN_801E5668, FUN_801F8004, FUN_801F88FC, FUN_801F8D4C
+//! PORT: FUN_801D5630, FUN_801D65D8, FUN_801D835C, FUN_801DB8EC
+//! PORT: FUN_801DDE34, FUN_801DE2B0
+//! PORT: FUN_801DE3E0, FUN_801DE698, FUN_801E4C58
+//! PORT: FUN_801E573C, FUN_801F8004, FUN_801F88FC, FUN_801F8D4C
 //! PORT: FUN_801F8E6C, FUN_801F8F28
+//!
+//! REF: FUN_801DDFE4, FUN_801DE004, FUN_801DE084 - the op-`0x45` staging
+//! snapshot and commit. This module only decodes the beat; the routines are
+//! ported as `legaia_engine_camera::retail_cam::RetailCamGlobals::stage` /
+//! `commit_staged`, which the Configure arm of the field camera runs.
+//! REF: FUN_801E5668, FUN_801E57F0 - spawners whose bodies live at their
+//! own homes (`field_actor_billboard`, the world's CLUT-fade spawn); the VM
+//! hands the operands to the host.
+//! REF: FUN_8003C83C, FUN_801D596C, FUN_801D8280, FUN_801DE754, FUN_801DE7BC
+//! are called by the arms this module decodes and are not ported in it: the
+//! VM passes the operands to a [`FieldHost`] method and the host does the
+//! work its own way (the actor-id resolve per method over the world's actor table, the
+//! escape-timer HUD spawn, the shutter and screen-frame actors). No kernel
+//! here computes what the routine's bytes compute, and the `HSV` grade walk
+//! `FUN_801D8280` has no host body at all.
 //!
 //! REF: FUN_801DD9D4 - **not ported here, and it was tagged `PORT:` in error.**
 //! The field VM only ever passes this address as a *token*: op `0x43` sub-`0xE`

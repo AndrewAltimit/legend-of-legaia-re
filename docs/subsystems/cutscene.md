@@ -1372,9 +1372,15 @@ follow-cam `FUN_801DBE9C` sets `_DAT_80089118 = -(anchor+0x14)` /
 `_DAT_80089120 = -(anchor+0x18)`; the culling test `FUN_80021DF4` reads `-_DAT_80089118` as the world focus X;
 the smooth-scroll in `overlay_0896_801ca998` targets `tile*-0x80 - _DAT_80089118`. So the world
 focus is `(-param6, param7, -param8)` (Y is stored un-negated, per the camera-param builder
-`FUN_801DAB90`). Each slot is written **only when its mask bit is set** - an absent slot keeps
-the prior beat's value. `opdeene`'s opening beats supply focus X/Z (slots 6/8) but never slot 7,
-so a beat pans horizontally and Y holds.
+`FUN_801DAB90`). The Configure arm snapshots the live globals into the staging block
+(`FUN_801DDFE4` -> `FUN_801DE004`, the low halfword of each) and overwrites **only the slots its
+mask sets**, so an absent slot keeps the prior value. The commit `FUN_801DE084` then clears the
+block's focus Y and the focus-Y global (`sh zero,0x1e(s0)` in the `apply` branch's delay slot,
+`sw zero` to `0x8008911C`) before it copies the block, on the snap leg and the glide leg alike: a
+staged slot 7 never reaches the camera. No beat the [field-op census](../tooling/field-op-census.md)
+decodes cleanly stages one; the few `45 00` decodes that do all follow a decode failure in an
+event-script carrier. `opdeene`'s opening beats supply focus X/Z (slots 6/8) and pan horizontally. Port: `RetailCamGlobals::stage` / `commit_staged`, held to both routines by the
+retail-exec differential.
 
 **The full transform** is `screen = H · (R·(v − focus) + tr_eye) / Ze`. The view builder
 `FUN_800172c0` assembles it:
@@ -1715,8 +1721,8 @@ in display frames. The host also **merges** each beat's masked slots into a pers
 `opdeene`'s nine op-`0x45` beats sets **only slot 9 (H)** (`[(9, 792)]`), and a wholesale replace
 would drop that shot's focus / pitch / eye depth. The set is cleared on scene entry.
 
-- Each focus slot applies on its own presence; an absent focus Y falls back to retail's `0` (the
-  vertical framing rides the eye-space Y offset in the translation trio).
+- Each focus slot applies on its own presence, except focus Y, which the commit always clears to
+  retail's `0` (the vertical framing rides the eye-space Y offset in the translation trio).
 - In free-roam the follow camera owns the focus globals (`FUN_801DBE9C`, negated anchor XZ);
   once a scene executes any Configure the script keeps them, matching retail's step-shaped focus
   across a shot.
