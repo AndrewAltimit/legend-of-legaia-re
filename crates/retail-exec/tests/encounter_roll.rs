@@ -288,3 +288,46 @@ fn a_step_rolls_what_retail_rolls() {
         "{battles} battles {steps} steps"
     );
 }
+
+/// The step-counter reroll leaf `FUN_801DDF48`.
+const REROLL: u32 = 0x801D_DF48;
+
+#[test]
+fn the_counter_reroll_is_retails() {
+    differential!(prot(897, REROLL));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let draws: Rc<std::cell::RefCell<Vec<u32>>> = Rc::default();
+    {
+        let draws = draws.clone();
+        cpu.hook(0x8005_6798, move |r, _| {
+            r.r[psx_retail_exec::V0] = draws.borrow_mut().remove(0);
+        });
+    }
+    let mut rng = Rng(0x5245_524C);
+    let (mut low, mut high) = (0, 0);
+    for round in 0..20_000 {
+        // `rand()` is `0..=0x7FFF`; the edges of each modulus too.
+        let mut draw = || match rng.below(4) {
+            0 => [0, 0x1E6, 0x1E7, 0x7FFF][rng.below(4) as usize],
+            _ => rng.below(0x8000),
+        };
+        let pair = [draw(), draw()];
+        *draws.borrow_mut() = pair.to_vec();
+        assert_eq!(cpu.call(REROLL, &[]), Stop::Returned, "round {round}");
+        assert!(draws.borrow().is_empty(), "round {round}: draws left");
+        let retail = cpu.regs.r[psx_retail_exec::V0] as i32;
+        let mut it = pair.into_iter();
+        let port = legaia_engine_battle::region_encounter::encounter_counter_reroll(|| {
+            it.next().expect("a third draw")
+        });
+        assert_eq!(retail, port, "round {round}: draws {pair:?}");
+        low += i32::from(retail < 0x3CE);
+        high += i32::from(retail > 0x3CE);
+    }
+    assert!(low > 5_000 && high > 5_000, "{low} {high}");
+}
