@@ -198,6 +198,7 @@ mod morph_weights;
 mod motion_install;
 mod motion_vm;
 mod move_ext;
+mod move_spawn;
 mod move_vm;
 mod mule_wave;
 mod muscle_contest;
