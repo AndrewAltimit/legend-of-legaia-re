@@ -772,6 +772,23 @@ impl World {
                 }
             }
         }
+        // The arm's streak-ribbon calls draw their `rand()` words inside the
+        // arm, ahead of its rumble words (PROT 0934's `0x801F6EE4` before
+        // `0x801F6F10`). PROT 0957's arm 5 calls after its scatter loop, so
+        // its ring is dealt where the scatter's height reaches it.
+        let pass_ribbons = capture_arm
+            .as_ref()
+            .and_then(|a| a.ribbons)
+            .or(direction.and_then(|d| d.ribbons));
+        if pass_ribbons.is_none() {
+            self.battle.cast_ribbon_seeds = None;
+        }
+        if let Some(ring) = pass_ribbons.as_ref()
+            && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)
+            && self.module_tick_opens_pass()
+        {
+            self.deal_cast_ribbon_rands(ring);
+        }
         // The arm's controller rumble stores, on the edge each sits on.
         let rumble_passed = direction.map_or(!capture_held, |d| !d.hold);
         self.apply_module_rumble(
@@ -1947,10 +1964,7 @@ impl World {
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
-        self.battle.cast_ribbons = capture_arm
-            .as_ref()
-            .and_then(|a| a.ribbons)
-            .or(direction.and_then(|d| d.ribbons));
+        self.battle.cast_ribbons = pass_ribbons;
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         // A capture director's seat stores (PROT 0959's stand-ins, heights

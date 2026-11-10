@@ -507,10 +507,27 @@ on the lone-caster films, Odd Dimension (`0x93`, PROT 0921) and Ozma (`0xA0`, PR
 | `0xA0` | arm 18 | `14095` / `508` | `1918` / `512` |
 
 Odd Dimension's arm 9 runs about one pass every two vsyncs in retail and one
-every four in the engine (its frame-step row); Ozma's sparks and bolts
-(arms 1..3's `0x801F9E28` / `0x801F9F2C` records, then the arms past 15) draw
-two dozen words a vsync in retail and almost none from the engine's world
-stream, so their deal cannot meet retail's whatever the seed.
+every four in the engine (its frame-step row). The two Ozma rows are the
+jittered rings' draw words, which the engine now deals
+([effect VM](../subsystems/effect-vm.md)): arms 16 and 18 read `5724` and
+`14095` on the engine's side.
+
+Counted per frame instead of per arm, the same subtraction reads one pass's
+draws, which is how Ozma's arms 5..9 were closed: a retail frame there reads
+`111`, `123`, `167` then `187` words as the camera pulls in, the frame driver's
+one, the eight streak ribbons' and the rumble's two, with a volley's `16..64`
+on top every eighth frame. The engine's frames read the same numbers once the
+ribbon draws on the world stream, and under `--rand-track` its bolts are
+retail's bolt for bolt. Its volleys are not yet: the part that calls the stager
+(`0x801F9F10`, a `0x5F` wait then one call every `0x1F`) fires on the 23rd
+frame after its seat where retail's fires on the 24th. A part's tick drains its
+wait by `8 * step` and re-enters its program below zero
+(`0x80021E40..0x80021E4C`, `0x80022B9C`), `24` frames of step `4` for a wait of
+`760`; the engine's part has drained one frame's `32` more. Retail's seat frame
+reads step `2` (the part's `+0xB6` channel gains `40` there and `80` a frame
+after), and the engine runs the hand-over frame on the next arm's `4`, which
+would account for it. Every volley so lands a frame early, on another frame's
+words.
 
 A cast whose outcome is a roll parts on the deal the same way, and the sound
 channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a

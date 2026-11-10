@@ -836,6 +836,20 @@ impl World {
         }
     }
 
+    /// Whether this module tick is the one retail's pass maps onto: the
+    /// frame driver enters the module once a battle frame, while the module
+    /// here runs on every display tick ([`Self::module_pass`]), so what an
+    /// arm does once a pass (a spawn call, a `rand()` draw) runs on the tick
+    /// that opens a frame, and on the first tick of a multi-tick pass.
+    pub(in crate::world) fn module_tick_opens_pass(&self) -> bool {
+        !self.casting.module_pass_repeat
+            && self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0
+    }
+
     /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
     /// `FUN_801F2160`), at retail's frame delta.
     ///

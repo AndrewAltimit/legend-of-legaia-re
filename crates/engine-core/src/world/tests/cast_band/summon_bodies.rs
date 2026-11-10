@@ -508,6 +508,53 @@ fn ozma_hides_the_row_and_tints_the_creature_on_their_arms() {
     assert_eq!(tinted_at, Some(0x11));
 }
 
+/// PROT 0934's arms 5..9 hand the streak ribbon eight ground points a pass,
+/// and the ribbon draws on the game's stream inside the arm, ahead of the
+/// arm's two rumble words: the pass keeps each call's word as its seed, the
+/// first the word the pass opened on, and an arm with no ribbon lets the
+/// seeds go.
+#[test]
+fn ozma_deals_its_bolt_ring_off_the_world_stream() {
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[0].battle.active_target = 1;
+    for i in 5..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let (mut dealt, mut released) = (0, false);
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let before = world.rng_state;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        match (world.battle.cast_ribbons, world.battle.cast_ribbon_seeds) {
+            (Some(ring), Some(seeds)) => {
+                assert!((5..=9).contains(&phase), "arm {phase} dealt a ring");
+                assert_eq!(ring.count, 8);
+                assert_eq!(seeds[0], before, "the ring draws first in the arm");
+                dealt += 1;
+            }
+            (None, seeds) => {
+                assert!(seeds.is_none(), "arm {phase} kept seeds with no ring");
+                released |= dealt > 0;
+            }
+            (Some(_), None) => panic!("arm {phase} drew a ring it never dealt"),
+        }
+        if !run.busy {
+            break;
+        }
+    }
+    assert!(dealt > 0);
+    assert!(released);
+}
+
 /// PROT 0934's arm `0x18`: its threshold walks down from `0x60` by `0x20` as
 /// the word falls past it, three steps while the arm holds; the fourth hit is
 /// the band's fold, on the arm's pass.

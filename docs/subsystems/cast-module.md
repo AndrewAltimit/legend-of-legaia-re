@@ -2761,7 +2761,9 @@ walk (each pooled part's `+0x7A` and height climbing, killed at a level of `0xA0
 or under, so four stand where twenty have been seated), and Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
 into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
-a shake on the low bit of a pass word, and draw eight streak ribbons on a ring.
+a shake on the low bit of a pass word, and draw eight streak ribbons on a ring,
+whose `rand()` words the pass deals ahead of its two rumble words
+([effect VM](effect-vm.md)); the rumble words are drawn once a battle frame.
 Meta's closing arms keep the creature on its idle clip and raise it
 (`y = (cursor - 800) * 16`) with two effect-`0xB` puffs per pair of retail frames.
 Ozma's arm `0x18` hits four times on its way down: the word falling to a threshold

@@ -1086,6 +1086,11 @@ pub struct BattleState {
     /// point on the arm's pass, so the band rewrites it on every module tick
     /// and clears it when the arm has none. Drawn beside [`Self::clip_ribbon`].
     pub cast_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
+    /// The world `rand()` state each of [`Self::cast_ribbons`]' calls started
+    /// on, dealt on the module pass that made them
+    /// (`World::deal_cast_ribbon_rands`): the draw replays each ribbon from
+    /// its word. `None` while no pass has dealt the ring.
+    pub cast_ribbon_seeds: Option<[u32; 16]>,
     /// This pass's streak ribbons from a landed move projectile: on every
     /// pass a phase-`3` homing slot's counter runs, `FUN_801E09F8` calls
     /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
@@ -1534,6 +1539,7 @@ impl BattleState {
             field_camera_reseat: false,
             clip_ribbon: None,
             cast_ribbons: None,
+            cast_ribbon_seeds: None,
             flight_ribbons: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,

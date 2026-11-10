@@ -289,6 +289,46 @@ impl World {
         self.rng_state = state;
     }
 
+    /// A module arm's streak-ribbon calls draw on the game's one stream
+    /// inside the module's tick: `FUN_801E1D98` projects its anchor and, unless
+    /// the top-edge test suppresses the ribbon, draws seven words for the
+    /// bottom segment and four for each chained one (`jal 0x80056798` at
+    /// `0x801E1E94..0x801E2054`, `0x801E2134..0x801E2218`). Ozma's arms 5..9
+    /// call it eight times a pass ahead of their two rumble words
+    /// (`0x801F6EE4`, then `0x801F6F10` / `0x801F6F40`), about a hundred words
+    /// a frame in a retail watch of the seed word `0x80009010`.
+    ///
+    /// Each call keeps the stream's word as its seed
+    /// (`BattleState::cast_ribbon_seeds`) and the stream steps past the draws
+    /// the ribbon makes through the camera the pass holds, so the bolts are
+    /// retail's words and every later deal of the pass stands where retail's
+    /// does.
+    ///
+    /// PORT: FUN_801E1D98 (the module-arm calls' `jal 0x80056798`, drawn on
+    /// the world stream)
+    pub(in crate::world) fn deal_cast_ribbon_rands(
+        &mut self,
+        ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
+    ) {
+        let view =
+            legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
+        let mut seeds = [0u32; 16];
+        for (seed, p) in seeds
+            .iter_mut()
+            .zip(ring.points.iter().take(usize::from(ring.count)))
+        {
+            *seed = self.rng_state;
+            let (_, state) = legaia_render_kernels::streak_pass::ribbon_quads_seeded(
+                &view,
+                *p,
+                ring.trail_id,
+                *seed,
+            );
+            self.rng_state = state;
+        }
+        self.battle.cast_ribbon_seeds = Some(seeds);
+    }
+
     /// This frame's draw-kind-4 geometry - every live node whose model is
     /// its emitter's per-frame output, each composed like a mesh part: the
     /// ribbons ([`Self::active_effect_ribbons`], battle only), the `0x4000`
