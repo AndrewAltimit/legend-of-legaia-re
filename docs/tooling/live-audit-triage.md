@@ -134,6 +134,8 @@ Settled rows:
 | `keyframe_alloc` / `_init` / `_free`, move ops `0x2C` / `0x30` | Ambient parts; cast modules `0916`, `0921`, `0928`, `0929`, `0931` | Replaced for the capture (`World::step_ambient_fx`, `BattleState::cell_captures`); the op-`0x30` restore is open: [below](#op-0x30-restores-the-captured-rect). |
 | `ext_debug_world`, move ext `0x01` | Live | No wire owed: `FUN_8001A068` is the `EFC %d %d %d` debug-text print. |
 | `ext_emit_ot_packet`, move ext `0x2E` | None | No carrier ([`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)). |
+| `WorldMapEntityHost::bgm_poll`, `FUN_800243F0`'s return | Overworld | Kept at `-1`, the poller's common return; its `0` arm (`0x80024C60`), which holds that frame's encounter roll, is not modelled ([`world-map.md`](../subsystems/world-map.md)). |
+| `WorldMapEntityHost::set_player_movement_blocked` | Overworld | No wire owed: the port's Activating state drains within one tick, so the raise (`0x801DA5C0`) and the drop (`0x801DA730`) land on the same frame. |
 | `slot_count` | Battle | Not a no-op: the default is the engine's slot-table width, which every host shares. |
 | `BgmDirector::reattach_volume`, op `0x35` sub-op `8` | Live | Left: the replayed record names no stream in any captured state, so retail sounds nothing ([`audio.md`](../subsystems/audio.md)). |
 
