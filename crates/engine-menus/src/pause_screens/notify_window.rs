@@ -59,7 +59,7 @@ pub fn notify_window_operands(window: (i16, i16), selector: i16, base: u8) -> No
         c1_operand: selector as u8,
         c5_operand: base.wrapping_add((selector.wrapping_mul(0x40)) as u8),
         text_pen: (wx, wy),
-        cursor_pen: (wx + 0xE6, wy + 0xD),
+        cursor_pen: (wx.wrapping_add(0xE6), wy.wrapping_add(0xD)),
     }
 }
 
