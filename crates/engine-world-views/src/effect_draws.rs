@@ -333,10 +333,7 @@ pub fn effect_model_draws(
                 let model = node(draw.flags_52, draw.world_pos, draw.rot);
                 FxPartModel {
                     model: match part_cam.filter(|_| draw.colour.split_quads) {
-                        Some(cam) => mat4_mul(
-                            &mat4_translation(cam.tessellated_link_offset(battle)),
-                            &model,
-                        ),
+                        Some(cam) => mat4_mul(&cam.tessellated_link_nearer(battle), &model),
                         None => model,
                     },
                     single_sided: per_word_cull && !draw.colour.double_sided,
@@ -357,10 +354,7 @@ pub fn effect_model_draws(
             }
             FxMeshModel {
                 model: match part_cam.filter(|_| rb.tessellated) {
-                    Some(cam) => mat4_mul(
-                        &mat4_translation(cam.tessellated_link_offset(battle)),
-                        &model,
-                    ),
+                    Some(cam) => mat4_mul(&cam.tessellated_link_nearer(battle), &model),
                     None => model,
                 },
                 single_sided: per_word_cull && rb.single_sided,

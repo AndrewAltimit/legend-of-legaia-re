@@ -366,8 +366,19 @@ Structural facts, read from the raw table:
   in `2046`, and the additive disc paints over the opaque one everywhere. The
   port's depth buffer has no bucket to tie on, and two model matrices round
   apart, so the sheets would cross along a line. A kernel keeps the links' order
-  instead: `effect_draws` brings a node on this bank `TESSELLATED_LINK_NEARER_SZ`
-  nearer along the view axis, on both hosts.
+  instead: `effect_draws` scales a node on this bank about the eye by
+  `1 - TESSELLATED_LINK_NEARER_SHARE`, on both hosts, so each vertex comes a
+  `256`th of its depth nearer along its own view ray and lands on the pixel it
+  had. The share is the port's, not retail's. The port's depth is a 32-bit
+  float `1 - near / z`, whose step grows with the depth, and those two discs
+  stand `0x2000` draw units out, where two model matrices a turn about the view
+  axis apart round further apart than a two-unit offset: on whole passes the
+  additive disc failed the depth test against the opaque disc's texels and
+  showed only through that disc's holes, hard-edged patches where retail's
+  frame holds a smooth sheet. Hiding the opaque record with
+  `LEGAIA_DIAG_CAST_HIDE` is what showed the sheet whole. An offset along the
+  view axis large enough to clear the rounding moves a far sheet across the
+  screen, which the Juggernaut film reads.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is the leaves' off-screen reject: a transform-free read of
   the four projected corners (`SXY0..2` plus the first corner saved in

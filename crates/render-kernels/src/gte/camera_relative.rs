@@ -104,29 +104,72 @@ impl PartCameraPose {
     }
 }
 
-/// How far nearer than the quad leaves' a tessellating prim links, in `SZ`
-/// units. Handler bank 3's quad leaf `FUN_80045BB4` splits a quad into sixteen
-/// `GT3`s and links each on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
-/// `andi v0,v0,0xFFFC` at `0x80046020`), where the opaque quad leaves link on
-/// `AVSZ4`. `ZSF3 = 0x555` is a shade under a third, so a sheet at one depth
-/// links nearer through the leaf: on a retail table of Iota's arm 5, PROT
-/// 0921's two discs on one plane at `SZ 0x2000` hold the opaque quads in bucket
-/// `2048` and the additive `GT3`s in `2046`.
+/// The share of its own eye depth a tessellating prim is drawn nearer by.
+///
+/// Handler bank 3's quad leaf `FUN_80045BB4` splits a quad into sixteen
+/// `GT3`s and links each on its own `AVSZ3` (`cop2 0x158002D` at
+/// `0x80046000`, `andi v0,v0,0xFFFC` at `0x80046020`), where the opaque quad
+/// leaves link on `AVSZ4`. `ZSF3 = 0x555` is a shade under a third, so a
+/// sheet at one depth links nearer through the leaf: on a retail table of
+/// Iota's arm 5, PROT 0921's two discs on one plane hold the opaque quads in
+/// bucket `2048` and the additive `GT3`s in `2046`.
+///
+/// Retail's order is a bucket's and exact at any depth; the port's is a
+/// 32-bit float depth `1 - near / z`, whose step grows with the depth, and two
+/// sheets whose model matrices differ by a turn about the view axis round
+/// several of those steps apart. Those two discs stand `0x2000` draw units
+/// from the eye, where two units nearer is inside that rounding: on whole
+/// passes the additive disc fell behind the opaque one's texels and showed
+/// only through its holes. A `256`th of the depth is `32` units there, and a
+/// film of the cast stops losing the sheet between `8` and `32`.
 // REF: FUN_80045BB4
-pub const TESSELLATED_LINK_NEARER_SZ: f32 = 8.0;
+pub const TESSELLATED_LINK_NEARER_SHARE: f32 = 1.0 / 256.0;
 
 impl PartCameraPose {
-    /// The draw-frame offset that brings a node [`TESSELLATED_LINK_NEARER_SZ`]
-    /// nearer the eye: along the view axis, over the base scale. On the port's
-    /// depth buffer that is what keeps two sheets on one plane in the order
-    /// their links give; left equal, the two model matrices round apart and
-    /// the sheets cross along a line.
-    pub fn tessellated_link_offset(&self, frame_flip: bool) -> [f32; 3] {
+    /// The eye in the draw frame: `focus - R^T * tr_unit`, the frame flip
+    /// applied.
+    pub fn eye_position(&self, frame_flip: bool) -> [f32; 3] {
         let r = camera_rotation(self.pitch, self.yaw, self.roll);
-        let d = TESSELLATED_LINK_NEARER_SZ / self.base_scale;
-        let sy = if frame_flip { -1.0 } else { 1.0 };
-        // Column-major `r[c * 4 + row]`: eye z is row 2.
-        [-r[2] * d, -r[6] * d * sy, -r[10] * d]
+        // Column-major `r[c * 4 + row]`.
+        let e: [f32; 3] = std::array::from_fn(|c| {
+            self.focus[c]
+                - (r[c * 4] * self.tr_unit[0]
+                    + r[c * 4 + 1] * self.tr_unit[1]
+                    + r[c * 4 + 2] * self.tr_unit[2])
+        });
+        [e[0], if frame_flip { -e[1] } else { e[1] }, e[2]]
+    }
+
+    /// The draw-frame transform that brings a tessellating node
+    /// [`TESSELLATED_LINK_NEARER_SHARE`] of its depth nearer the eye: a
+    /// uniform scale about the eye, so every vertex moves along its own view
+    /// ray and lands on the pixel it had. On the port's depth buffer that is
+    /// what keeps two sheets on one plane in the order their links give; left
+    /// equal, the two model matrices round apart and the sheets cross along a
+    /// line. An offset along the view axis instead moves a sheet across the
+    /// screen as it grows.
+    pub fn tessellated_link_nearer(&self, frame_flip: bool) -> [f32; 16] {
+        let k = 1.0 - TESSELLATED_LINK_NEARER_SHARE;
+        let e = self.eye_position(frame_flip);
+        let t = 1.0 - k;
+        [
+            k,
+            0.0,
+            0.0,
+            0.0, //
+            0.0,
+            k,
+            0.0,
+            0.0, //
+            0.0,
+            0.0,
+            k,
+            0.0, //
+            e[0] * t,
+            e[1] * t,
+            e[2] * t,
+            1.0,
+        ]
     }
 
     /// The GTE's `(IR1, IR2, SZ)` of a point in the draw frame: the frame
@@ -552,19 +595,23 @@ mod tests {
     }
 
     #[test]
-    fn a_tessellated_link_comes_nearer_along_the_view_axis() {
-        let cam = PartCameraPose {
-            pitch: 0.0,
-            yaw: 0.0,
-            roll: 0.0,
-            focus: [0.0; 3],
-            tr_unit: [0.0; 3],
-            base_scale: BATTLE_BASE_SCALE,
-        };
-        // Eye z is world z at rest: nearer is `-z`, by the `SZ` over the base.
-        let o = cam.tessellated_link_offset(true);
-        assert!(o[0].abs() < 1e-6 && o[1].abs() < 1e-6);
-        assert!((o[2] + TESSELLATED_LINK_NEARER_SZ / BATTLE_BASE_SCALE).abs() < 1e-5);
+    fn a_tessellated_link_comes_nearer_along_each_view_ray() {
+        let cam = battle_cam([100.0, 0.0, -50.0]);
+        let k = 1.0 - TESSELLATED_LINK_NEARER_SHARE;
+        for flip in [false, true] {
+            let m = cam.tessellated_link_nearer(flip);
+            // The eye is the fixed point.
+            let eye = cam.eye_point(cam.eye_position(flip), flip);
+            assert!(eye.iter().all(|c| c.abs() < 1e-2), "{eye:?}");
+            for p in [[300.0, -40.0, 900.0], [-2000.0, 500.0, 6000.0]] {
+                let q: [f32; 3] = std::array::from_fn(|i| m[i * 5] * p[i] + m[12 + i]);
+                let (a, b) = (cam.eye_point(p, flip), cam.eye_point(q, flip));
+                // A share nearer, on the same ray.
+                for i in 0..3 {
+                    assert!((b[i] - a[i] * k).abs() < 2e-2, "{a:?} {b:?}");
+                }
+            }
+        }
     }
 
     #[test]
