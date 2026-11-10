@@ -29,8 +29,10 @@ common cases with buttons:
    French, German and Italian discs), *Hex*.
 4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
    WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
-   of the list saves any file of the disc's own file system. After an export,
-   *Show folder* on the status line opens the folder it went to.
+   of the list saves any file of the disc's own file system. `Ctrl+E` saves
+   what the view shows without reaching for the button (on *3D model* it
+   writes the textured `.glb`). After an export, *Show folder* on the status
+   line opens the folder it went to.
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder
    (it proposes one beside the disc image), open *Options* for the same skip options the
    command line offers, and start. The tab shows progress and the log, can be
@@ -43,7 +45,7 @@ common cases with buttons:
    equipment, and every monster by name (`Gimard Lv2`, with its element
    badge), each with its battle animations - for Vahn, Noa and Gala also
    every Tactical Art by name; export them as animated `.glb`.
-7. **Movies & voice**: the disc's six movies, played with their
+7. **Movies & voice**: the disc's six movies, each naming where in the game it plays, played with their
    soundtrack or stepped frame by frame (PNG export), and the CD-XA audio
    files channel by channel (play, WAV export). These read raw CD sectors,
    so they need the disc image rather than an extracted folder.

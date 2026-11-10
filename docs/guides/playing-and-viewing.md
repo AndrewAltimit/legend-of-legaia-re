@@ -440,7 +440,8 @@ repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`, wherever your keyboard layout puts it) opens the panel; a controller opens it with `Select` + `Start`,
 which with `L1` and `R1` also held stays the original game's soft reset. The
-game holds still under it. Its first page, **Settings**, lists what the game
+game holds still under it, and the field party readout, which the panel's
+plate covers, is not drawn until it closes. Its first page, **Settings**, lists what the game
 reads live: every launcher row but *Look and feel* and the window size, in the
 launcher's order and words - the display and enhancement rows, the play rows,
 the gameplay tweaks, the battle tuning, the volumes and *Original game only*.
