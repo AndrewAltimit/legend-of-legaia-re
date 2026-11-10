@@ -332,3 +332,157 @@ fn the_clut_blend_fade_matches_retail() {
     }
     assert!(rows > 50_000 && done == 2000, "{rows} {done}");
 }
+
+const CROSS_FADE: u32 = 0x801E_4794;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Vram {
+    Store([i16; 4]),
+    Load([i16; 4], Vec<u16>),
+    Move([i16; 4], (i16, i16)),
+    Free(u32),
+}
+
+/// The `4C 61` cross-fade actor `FUN_801E4794` frame by frame against
+/// `ClutFade`: the two `StoreImage`s of the first tick (or one, and the
+/// flat row, when `B.y == 0`), every row `LoadImage`d to the destination,
+/// the `+0x54` counter, and the completion - cell B moved onto the
+/// destination (or the flat colour loaded, without A's STP bits), the scratch freed, the spawning
+/// context's halt bit cleared and `+0x10 |= 8`.
+#[test]
+fn the_clut_cross_fade_matches_retail() {
+    differential!(prot(897, CROSS_FADE));
+    let Some(mut cpu) = cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::clut_fx::{ClutCellFxOp, ClutFade, ClutFadeStep, flat_b_row};
+    const OP: u32 = 0x8014_0000;
+    const SCRATCH: u32 = 0x8014_1000;
+    const CTX: u32 = 0x8014_2000;
+    let log: Rc<std::cell::RefCell<Vec<Vram>>> = Rc::default();
+    let rows = Rc::new(Cell::new(((0i16, 0i16), [0u16; 16], [0u16; 16])));
+    let rect = |m: &mut psx_retail_exec::Memory, p: u32| -> [i16; 4] {
+        std::array::from_fn(|i| m.rd16(p + 2 * i as u32) as i16)
+    };
+    cpu.hook(0x8001_7888, |r, _| r.r[V0] = SCRATCH);
+    {
+        let log = log.clone();
+        cpu.hook(0x8001_7B94, move |r, _| {
+            log.borrow_mut().push(Vram::Free(r.r[A0]))
+        });
+    }
+    cpu.hook(0x8005_8104, |r, _| r.r[V0] = 0);
+    {
+        let (log, rows) = (log.clone(), rows.clone());
+        cpu.hook(0x8005_842C, move |r, m| {
+            let at = rect(m, r.r[A0]);
+            log.borrow_mut().push(Vram::Store(at));
+            let (a_cell, a, b) = rows.get();
+            let src = if (at[0], at[1]) == a_cell { a } else { b };
+            for (i, px) in src.iter().enumerate() {
+                m.wr16(r.r[A1] + 2 * i as u32, *px);
+            }
+        });
+    }
+    {
+        let log = log.clone();
+        cpu.hook(0x8005_83C8, move |r, m| {
+            let px = (0..16).map(|i| m.rd16(r.r[A1] + 2 * i)).collect();
+            log.borrow_mut().push(Vram::Load(rect(m, r.r[A0]), px));
+        });
+    }
+    {
+        let log = log.clone();
+        cpu.hook(0x8005_8490, move |r, m| {
+            log.borrow_mut().push(Vram::Move(
+                rect(m, r.r[A0]),
+                (r.r[A1] as i16, r.r[psx_retail_exec::A2] as i16),
+            ));
+        });
+    }
+    let mut rng = Rng(0x5846_4144);
+    let (mut ticks, mut flat_runs) = (0, 0);
+    'run: for run in 0..2000 {
+        let cell = |rng: &mut Rng| ((rng.below(64) * 16) as i16, 1 + rng.below(511) as i16);
+        let a = cell(&mut rng);
+        let flat = rng.below(4) == 0;
+        let b = if flat {
+            (rng.next() as i16, 0)
+        } else {
+            let mut b = cell(&mut rng);
+            if b == a {
+                b.1 = (b.1 % 511) + 1;
+            }
+            b
+        };
+        let dest = cell(&mut rng);
+        let frames = [1i16, 2, 16, 128, 1 + rng.below(0x200) as i16][rng.below(5) as usize];
+        let op = ClutCellFxOp { a, b, dest, frames };
+        let mut bytes = vec![0x61u8];
+        for v in [a.0, a.1, b.0, b.1, dest.0, dest.1, frames] {
+            bytes.extend(v.to_le_bytes());
+        }
+        cpu.mem.load(OP, &bytes);
+        let a_row: [u16; 16] = std::array::from_fn(|_| rng.next() as u16);
+        let b_row: [u16; 16] = std::array::from_fn(|_| rng.next() as u16);
+        rows.set((a, a_row, b_row));
+        let b_eff = if flat {
+            flat_b_row(&a_row, b.0 as u16)
+        } else {
+            b_row
+        };
+        let mut fade = ClutFade::new(&a_row, &b_eff, frames);
+        flat_runs += usize::from(flat);
+        let (flags, ctx_flags) = (rng.next() & !8, rng.next());
+        cpu.mem.load(ACTOR, &[0u8; 0x100]);
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        cpu.mem.wr32(ACTOR + 0x90, OP);
+        cpu.mem.wr32(ACTOR + 0x94, CTX);
+        cpu.mem.wr32(CTX + 0x10, ctx_flags);
+        let dest_rect = [dest.0, dest.1, 16, 1];
+        for frame in 0..1000 {
+            let dt = [1u8, 1, 2, 3][rng.below(4) as usize];
+            cpu.mem.wr8(0x1F80_0393, dt);
+            log.borrow_mut().clear();
+            assert_eq!(
+                cpu.call(CROSS_FADE, &[ACTOR]),
+                Stop::Returned,
+                "run {run} frame {frame}"
+            );
+            let mut want = Vec::new();
+            if frame == 0 {
+                want.push(Vram::Store([a.0, a.1, 16, 1]));
+                if !flat {
+                    want.push(Vram::Store([b.0, b.1, 16, 1]));
+                }
+            }
+            let label = format!("run {run} frame {frame} dt {dt}: {op:?}");
+            match fade.step(dt) {
+                ClutFadeStep::Row(px) => {
+                    ticks += 1;
+                    want.push(Vram::Load(dest_rect, px.to_vec()));
+                    assert_eq!(*log.borrow(), want, "{label}");
+                    assert_eq!(cpu.mem.rd16(ACTOR + 0x54), fade.counter(), "{label}");
+                    assert_eq!(cpu.mem.rd32(ACTOR + 0x10), flags, "{label}");
+                }
+                ClutFadeStep::Done => {
+                    if flat {
+                        // The plain colour, no STP carried from A: what
+                        // `World::step_clut_fx`'s completion writes too.
+                        want.push(Vram::Load(dest_rect, vec![b.0 as u16; 16]));
+                    } else {
+                        want.push(Vram::Move([b.0, b.1, 16, 1], dest));
+                    }
+                    want.push(Vram::Free(SCRATCH));
+                    assert_eq!(*log.borrow(), want, "{label}");
+                    assert_eq!(cpu.mem.rd32(CTX + 0x10), ctx_flags & !0x400, "{label}");
+                    assert_eq!(cpu.mem.rd32(ACTOR + 0x10), flags | 8, "{label}");
+                    continue 'run;
+                }
+            }
+        }
+        panic!("run {run}: never finished");
+    }
+    assert!(ticks > 50_000 && flat_runs > 300, "{ticks} {flat_runs}");
+}
