@@ -1175,7 +1175,7 @@ pub(crate) fn list_name_run(
 /// rows (an id the table lacks) keep their pitch. Cells the font does not
 /// carry are skipped.
 ///
-/// PORT: FUN_80034358
+/// The cells come from [`arts_list_cells`], the routine's port.
 pub fn arts_list_text_draws(
     font: &legaia_font::Font,
     rows: &[Option<ArtsListRowView<'_>>],
@@ -1185,45 +1185,102 @@ pub fn arts_list_text_draws(
 ) -> Vec<TextDraw> {
     use legaia_font::sprite_cell_ids as ids;
     let mut out = Vec::new();
+    let scale = stage_scale.max(1) as i32;
+    for cell in arts_list_cells(rows, slide) {
+        match cell {
+            ArtsListCell::Name { name, x, y } => {
+                // Split at the `0xCF XX` ink escapes, each run on the pen the
+                // previous one left.
+                let mut ink = LIST_NAME_INK;
+                let mut pen = x;
+                let mut run: Vec<u8> = Vec::new();
+                let mut bytes = name.iter().copied();
+                while let Some(b) = bytes.next() {
+                    if b == 0xCF {
+                        pen +=
+                            list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
+                        run.clear();
+                        ink = bytes.next().unwrap_or(ink);
+                    } else {
+                        run.push(b);
+                    }
+                }
+                list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
+            }
+            ArtsListCell::ApDigit { digit, x, y } => {
+                out.extend(list_cell_draw(
+                    font,
+                    ids::ink_numeral(LIST_AP_INK, u16::from(digit)),
+                    (x, y),
+                    stage_origin,
+                    scale,
+                ));
+            }
+            ArtsListCell::Arrow { dir, ink, x, y } => {
+                out.extend(list_cell_draw(
+                    font,
+                    ids::ink_arrow(ink, u16::from(dir)),
+                    (x, y),
+                    stage_origin,
+                    scale,
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// One draw of the Triangle arts list, in stage pixels and in the order
+/// `FUN_80034358` makes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArtsListCell<'a> {
+    /// The name through the text kernel `FUN_80036888`, staged in ink `7`;
+    /// its `0xCF XX` escapes restage the ink inside the kernel.
+    Name { name: &'a [u8], x: i32, y: i32 },
+    /// One AP numeral cell (`FUN_8003C11C`, ink `9`).
+    ApDigit { digit: u8, x: i32, y: i32 },
+    /// One command arrow (`FUN_8003C310`) in the ink the last `0xFF XX`
+    /// marker staged.
+    Arrow { dir: u8, ink: u8, x: i32, y: i32 },
+}
+
+/// The Triangle arts list's draws for one frame: per row `n` on the pen
+/// `(x, 36 + 30n)` (`x` the slide's, [`arts_list_window_x`]) the name, the
+/// AP as three cells from `x + 0x72` with leading zeros blank, and the
+/// command arrows on `y + 14`, right-aligned to `x + 0x8A` at a 12-px pitch,
+/// a `0xFF XX` marker taking no cell and an unknown code taking a cell but
+/// drawing nothing. Empty rows (an id the table lacks) keep their pitch;
+/// nothing draws while the counter is at `0`.
+///
+/// PORT: FUN_80034358
+pub fn arts_list_cells<'a>(
+    rows: &[Option<ArtsListRowView<'a>>],
+    slide: u8,
+) -> Vec<ArtsListCell<'a>> {
+    let mut out = Vec::new();
     if slide == 0 {
         return out;
     }
-    let scale = stage_scale.max(1) as i32;
     let x = arts_list_window_x(slide);
     let (_, y0, _, h) = LIST_RECT;
     let visible = (h / 28) as usize;
     for (n, row) in rows.iter().take(visible).enumerate() {
         let Some(row) = row else { continue };
         let y = y0 + n as i32 * LIST_ROW_PITCH;
-        // Name: split at the `0xCF XX` ink escapes, each run on the pen the
-        // previous one left.
-        let mut ink = LIST_NAME_INK;
-        let mut pen = x;
-        let mut run: Vec<u8> = Vec::new();
-        let mut bytes = row.name.iter().copied();
-        while let Some(b) = bytes.next() {
-            if b == 0xCF {
-                pen += list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
-                run.clear();
-                ink = bytes.next().unwrap_or(ink);
-            } else {
-                run.push(b);
-            }
-        }
-        list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
-        // AP: three cells, the value right-aligned, leading zeros blank.
+        out.push(ArtsListCell::Name {
+            name: row.name,
+            x,
+            y,
+        });
         let digits = [row.ap / 100, row.ap / 10 % 10, row.ap % 10];
         let lead = digits.iter().position(|&d| d != 0).unwrap_or(2);
-        for (k, &d) in digits.iter().enumerate().skip(lead) {
-            out.extend(list_cell_draw(
-                font,
-                ids::ink_numeral(LIST_AP_INK, u16::from(d)),
-                (x + LIST_AP_X + k as i32 * 8, y),
-                stage_origin,
-                scale,
-            ));
+        for (k, &digit) in digits.iter().enumerate().skip(lead) {
+            out.push(ArtsListCell::ApDigit {
+                digit,
+                x: x + LIST_AP_X + k as i32 * 8,
+                y,
+            });
         }
-        // Arrows: right-aligned, restaged by the `0xFF XX` markers.
         let cells = row.glyphs.iter().filter(|g| g[0] != 0xFF).count() as i32;
         let mut ax = x + LIST_ARROW_RIGHT - LIST_ARROW_PITCH * cells;
         let mut ink = LIST_ARROW_INK;
@@ -1233,13 +1290,12 @@ pub fn arts_list_text_draws(
                 continue;
             }
             if let Some(dir) = arts_list_arrow_dir(g) {
-                out.extend(list_cell_draw(
-                    font,
-                    ids::ink_arrow(ink, u16::from(dir)),
-                    (ax, y + LIST_ARROW_DY),
-                    stage_origin,
-                    scale,
-                ));
+                out.push(ArtsListCell::Arrow {
+                    dir,
+                    ink,
+                    x: ax,
+                    y: y + LIST_ARROW_DY,
+                });
             }
             ax += LIST_ARROW_PITCH;
         }

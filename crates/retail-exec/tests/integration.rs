@@ -31,6 +31,7 @@ mod arrange;
 mod art_banner;
 mod arts_entry_build;
 mod arts_gauge;
+mod arts_list;
 mod arts_list_driver;
 mod arts_pager;
 mod arts_queue;
