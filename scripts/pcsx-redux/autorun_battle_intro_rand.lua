@@ -96,6 +96,15 @@ local function arm()
         if not in_init then return end
         event("init_return", 0)
         in_init = false
+        -- The tile shatter's record block (FUN_801D081C stores its pointer
+        -- at 0x801D2468): 256 records of 0x5C bytes, the seeded delays at
+        -- +0x0A. Dumped raw beside the CSV for an offline comparison.
+        local blk = probe.read_u32(0x801D2468) or 0
+        if blk >= 0x80000000 and blk < 0x80200000 then
+            local bytes = probe.read_bytes(blk, 0x5C00)
+            local fh = bytes and io.open(probe.out_path("tile_records.bin"), "wb")
+            if fh then fh:write(tostring(bytes)); fh:close() end
+        end
     end)
     for addr, name in pairs(SEEDERS) do
         probe.arm_breakpoint(addr, "Exec", 4, name, function()

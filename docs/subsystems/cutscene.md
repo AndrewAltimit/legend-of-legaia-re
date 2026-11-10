@@ -2506,7 +2506,8 @@ and the tile seeder `FUN_801D081C` two per interior corner (`15 x 15`) plus one 
 (`scripts/pcsx-redux/autorun_battle_intro_rand.lua`, tile shatter at sub-style `0`) counts 706
 calls between the init's entry and its return, reads the seed word `0x09632944` before and
 `0x0D59BDA2` after (the BIOS step applied 706 times), and counts none from there to the battle
-mode. The port takes the same segment of its one stream: on the transition's first frame the
+mode. The tile records it dumps at the init's return carry all 256 seeded delays (`+0x0A`) equal to
+`rand() % 5000` over that stream past the 450 corner draws. The port takes the same segment of its one stream: on the transition's first frame the
 world records `BattleState::intro_rand_state` and steps `World::rng_state` past
 `battle_intro_styles::intro_seeder_draws`, and the host's emitter replays the draws from the
 recorded word.
