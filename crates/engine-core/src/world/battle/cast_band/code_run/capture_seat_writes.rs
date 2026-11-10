@@ -42,10 +42,24 @@ impl World {
                 Self::stand_battle_seat(&mut self.actors[e], p.pos[0], p.pos[2], p.facing);
             }
         } else if phase == cam::DEAD_END_CRISIS_RESTORE_ARM {
-            for (e, pos, facing) in std::mem::take(&mut self.casting.module_saved_poses) {
+            let held = std::mem::take(&mut self.casting.module_saved_poses);
+            let mut seats = [cam::LineUpPose::default(); N];
+            let mut saved = [cam::LineUpPose::default(); N];
+            for (i, &(e, pos, facing)) in held.iter().take(N).enumerate() {
+                if let Some(a) = self.actors.get(e) {
+                    let m = &a.move_state;
+                    seats[i].pos = [m.world_x, m.world_y, m.world_z, 0];
+                    seats[i].facing = a.battle.facing_angle;
+                }
+                saved[i].pos = [pos[0], pos[1], pos[2], 0];
+                saved[i].facing = facing;
+            }
+            cam::dead_end_crisis_restore(&mut seats, &saved);
+            for (i, &(e, _, _)) in held.iter().take(N).enumerate() {
                 if let Some(a) = self.actors.get_mut(e) {
-                    a.move_state.world_y = pos[1];
-                    Self::stand_battle_seat(a, pos[0], pos[2], facing);
+                    let p = seats[i];
+                    a.move_state.world_y = p.pos[1];
+                    Self::stand_battle_seat(a, p.pos[0], p.pos[2], p.facing);
                 }
             }
         }

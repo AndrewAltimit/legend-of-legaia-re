@@ -67,5 +67,6 @@ NON_PAD_CODES = {
     "End",
     "PageUp",
     "PageDown",
+    "PrintScreen",
     *(f"F{n}" for n in range(1, 13)),
 }

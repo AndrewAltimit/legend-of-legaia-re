@@ -827,6 +827,10 @@ the real PROT.DAT; the window uploads the same sheet through
 method = "set_active_scene_label"
 reason = "Not a table install: the native `--world-map` launcher's failure arm (`BootSession::enter_world_map_live` when `enter_world_map_scene` errors) labels the world by hand so the window still has a camera. The page has no such launcher arm - its scene entries go through `SceneHost::enter_field_scene` / `enter_world_map_scene`, which set the label themselves."
 
+[[boot_install]]
+method = "install_cutscene_timeline_record"
+reason = "Not a boot install: it sits in the shared `BootSession::play_scene_record`, the engine call behind the native `--play-record P:R` flag and the page's `debug_play_record` export (crates/web-play/src/play_host_parity.rs). Both hosts reach it through that one session method, so the page never names the World call."
+
 [[frame_kernel]]
 host = "native"
 kernel = "seat_strike_deal"
