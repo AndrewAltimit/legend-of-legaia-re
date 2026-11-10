@@ -433,3 +433,179 @@ fn the_item_screens_command_and_info_windows_match() {
         "{passives} {greys} {cards} {scopes}"
     );
 }
+
+const ACTIVE_COMPARE: u32 = 0x801D_1290;
+const SLOT_ROW: u32 = 0x801E_46C0;
+const BLOCK: u32 = 0x801E_F080;
+const TRIAL_BLOCK: u32 = 0x801E_F0A0;
+/// Per browse row: the record's equip byte the row shows (row 0, the weapon,
+/// reads the per-character seat `0x8007B42C` instead).
+const ROW_SEATS: u32 = 0x801E_43E8;
+const WEAPON_SEAT: u32 = 0x8007_B42C;
+
+/// A logged draw as the port's field list spells it.
+fn field_of(e: &Ev) -> Option<legaia_engine_ui::ComparePanelField> {
+    use legaia_engine_ui::ComparePanelField as F;
+    Some(match e {
+        Ev::Text(s, x, y, ink) => F::Text {
+            x: *x,
+            y: *y,
+            text: String::from_utf8(s.clone()).expect("ASCII"),
+            ink: *ink,
+        },
+        Ev::Number(v, d, x, y, ink, false) => F::Number {
+            x: *x,
+            y: *y,
+            value: *v,
+            digits: *d as u8,
+            ink: *ink,
+        },
+        Ev::Separator(g, x, y, ink) => F::Arrow {
+            x: *x,
+            y: *y,
+            glyph: *g,
+            ink: *ink,
+        },
+        Ev::Picto(p) => F::Icon {
+            x: p.x,
+            y: p.y,
+            id: p.id,
+        },
+        _ => return None,
+    })
+}
+
+#[test]
+fn the_active_stat_compare_matches() {
+    use legaia_engine_ui::{
+        CompareCategoryInputs, CompareRows, EquipComparePanelView, EquipStatBlock,
+        active_compare_category, equip_compare_panel_fields,
+    };
+    use legaia_game_tables::menu_pool::MenuLabel;
+    differential!(prot(899, ACTIVE_COMPARE));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pool = pool();
+    let scus = crate::common::scus().unwrap();
+    let effects =
+        legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).expect("item effects");
+    let stats = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).expect("equip");
+    let info = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(&stats);
+    let record = legaia_save::CharacterRecord::zeroed();
+    let ctx = legaia_engine_menus::pause_screens::EquipCompareCtx {
+        record: &record,
+        equip_info: Some(&info),
+        item_effects: Some(&effects),
+    };
+    let label = |l, f| legaia_engine_ui::menu::window_painters::pool_label(Some(&pool), l, f);
+    // Ids whose category picks the HP / MP or the SPD / INT / AGL rows.
+    let keyed: Vec<u32> = (1..256u32)
+        .filter(|&id| {
+            let c = legaia_engine_menus::pause_screens::compare_category_for_item(id as u8, &ctx);
+            c < 6 || (10..13).contains(&c)
+        })
+        .collect();
+    assert!(!keyed.is_empty());
+    let mut rng = Rng(0x434D_5052);
+    let mut seen = [0u32; 3];
+    for run in 0..6_000 {
+        let r = rect(&mut rng);
+        let n = 1 + rng.below(3);
+        let mut ids_pool = vec![0u32, 1, 2];
+        let ids: Vec<u32> = (0..n)
+            .map(|_| ids_pool.remove(rng.below(ids_pool.len() as u32) as usize))
+            .collect();
+        rig.cpu.mem.wr8(PARTY_COUNT, n as u8);
+        for (i, &id) in ids.iter().enumerate() {
+            rig.cpu.mem.wr8(ROSTER + i as u32, id as u8);
+        }
+        let at = rng.below(n);
+        rig.cpu.mem.wr32(LIST_CURSOR, at);
+        let ch = ids[at as usize];
+        let rec = RECORDS + ch * STRIDE;
+        let name = format!("Name{ch}{}", rng.below(10));
+        rig.poke_str(rec + 0x2A7, &name);
+        let (hp_max, mp_max) = (rng.below(10_500) as u16, rng.below(1_200) as u16);
+        rig.cpu.mem.wr16(rec + 0x104, hp_max);
+        rig.cpu.mem.wr16(rec + 0x108, mp_max);
+        let row = if rng.below(2) == 0 {
+            5 + rng.below(3)
+        } else {
+            1 + rng.below(7)
+        };
+        rig.cpu.mem.wr32(SLOT_ROW, row | (rng.below(2) << 12));
+        let seat = if row == 1 {
+            rig.cpu.mem.rd16(WEAPON_SEAT + ch * 2) as u32
+        } else {
+            u32::from(rig.cpu.mem.rd8(ROW_SEATS + row - 1))
+        };
+        let equipped = [
+            0u32,
+            1 + rng.below(255),
+            keyed[rng.below(keyed.len() as u32) as usize],
+        ][rng.below(3) as usize];
+        rig.cpu.mem.wr8(rec + 0x196 + seat, equipped as u8);
+        let staged =
+            [-1i32, 1 + rng.below(255) as i32, 1 + rng.below(255) as i32][rng.below(3) as usize];
+        rig.cpu.mem.wr32(STAGED_ID, staged as u32);
+        let mut words = [[0i32; 8]; 2];
+        for (b, block) in [BLOCK, TRIAL_BLOCK].into_iter().enumerate() {
+            for k in 0..8 {
+                let w = match rng.below(4) {
+                    0 if b == 1 => words[0][k],
+                    1 => rng.below(1100) as i32,
+                    _ => rng.below(12_000) as i32,
+                };
+                words[b][k] = w;
+                rig.cpu.mem.wr32(block + k as u32 * 4, w as u32);
+            }
+        }
+        let log = rig.run(ACTIVE_COMPARE, r);
+        let category = active_compare_category(CompareCategoryInputs {
+            slot_row: row as i32 - 1,
+            staged_id: staged,
+            staged_category: if staged > 0 {
+                legaia_engine_menus::pause_screens::compare_category_for_item(staged as u8, &ctx)
+            } else {
+                0x40
+            },
+            equipped_id: equipped as u8,
+            equipped_category: legaia_engine_menus::pause_screens::compare_category_for_item(
+                equipped as u8,
+                &ctx,
+            ),
+        });
+        let rows = CompareRows::from_category(category);
+        let labels = match rows {
+            CompareRows::SpdIntAgl => [
+                label(MenuLabel::Spd, "SPD"),
+                label(MenuLabel::Int, "INT"),
+                label(MenuLabel::Agl, "AGL"),
+            ],
+            _ => [
+                label(MenuLabel::Atk, "ATK"),
+                label(MenuLabel::Udf, "UDF"),
+                label(MenuLabel::Ldf, "LDF"),
+            ],
+        };
+        let view = EquipComparePanelView {
+            name: &name,
+            current: EquipStatBlock::from_words(&words[0]),
+            candidate: EquipStatBlock::from_words(&words[1]),
+            hp_max,
+            mp_max,
+            rows,
+            labels,
+        };
+        let port = equip_compare_panel_fields(&view, (r.x, r.y));
+        let got: Vec<_> = log.iter().filter_map(field_of).collect();
+        assert_eq!(
+            got, port,
+            "run {run}: char {ch} row {row} staged {staged} equipped {equipped} category {category:#x}"
+        );
+        seen[rows as usize] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
+}
