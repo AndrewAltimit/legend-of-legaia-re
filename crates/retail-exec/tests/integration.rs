@@ -71,6 +71,7 @@ mod euler_rot;
 mod field_ctx;
 mod field_leaves;
 mod field_magic;
+mod field_stores;
 mod field_timers;
 mod field_vm;
 mod field_walls;
