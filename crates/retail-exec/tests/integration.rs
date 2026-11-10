@@ -54,6 +54,7 @@ mod clip_vertex;
 mod clip_cursor;
 mod clut_cell;
 mod coin_counter;
+mod coin_panel;
 mod colour_tween;
 mod combo_records;
 mod confuse;
