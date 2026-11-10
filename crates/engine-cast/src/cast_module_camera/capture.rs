@@ -123,6 +123,11 @@ pub struct CaptureCamArm {
     /// which the clip commit seeds the loop counter `+0x21B` / budget `+0x176`
     /// from. Made ahead of the arm's caster stage.
     pub caster_clip_window: Option<(u8, [u8; 3])>,
+    /// `(clip, speed)`: the arm's store into the root speed `+0x0C` of the
+    /// same action entry, which every later root-motion term of the clip
+    /// reads (PROT 0960's arm 5 zeroes Lu's `0x0D` so her charge stops
+    /// where the arm leaves her).
+    pub caster_clip_speed: Option<(u8, i16)>,
     /// The arm drifts ahead of its gate and shoots after it, so a pass's
     /// cut lands on its own endpoint (the drift is spent before the cut).
     pub drift_first: bool,

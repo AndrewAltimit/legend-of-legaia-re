@@ -446,6 +446,9 @@ impl World {
             if let Some((clip, window)) = arm.caster_clip_window {
                 self.write_clip_loop_window(caster_slot, clip, window);
             }
+            if let Some((clip, speed)) = arm.caster_clip_speed {
+                self.write_clip_root_speed(caster_slot, clip, speed);
+            }
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;

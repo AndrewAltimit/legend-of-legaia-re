@@ -195,6 +195,42 @@ impl World {
         }
     }
 
+    /// A module's store into the root speed `+0x0C` of a monster caster's
+    /// action entry `clip`
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_speed`]).
+    /// Retail edits the archive's entry, and the root-motion term reads the
+    /// committed entry every tick (`lh v0,0xc(s3)` at `0x80047D34`), so a
+    /// clip already playing changes speed at once: the playing player takes
+    /// the value beside the bank.
+    pub(in crate::world::battle::cast_band) fn write_clip_root_speed(
+        &mut self,
+        caster: u8,
+        clip: u8,
+        speed: i16,
+    ) {
+        use legaia_actor_formats::monster_archive::ENTRY_ROOT_SPEED_OFFSET as AT;
+        if caster < self.party.party_count {
+            return;
+        }
+        let Some(a) = self.actors.get_mut(usize::from(caster)) else {
+            return;
+        };
+        if let Some(entry) = a
+            .battle_action_clips
+            .as_mut()
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(usize::from(clip)))
+            .and_then(Option::as_mut)
+            && let Some(bytes) = entry.effect_script.get_mut(AT..AT + 2)
+        {
+            bytes.copy_from_slice(&speed.to_le_bytes());
+        }
+        if a.battle.current_anim == clip
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.set_root_speed(speed);
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass

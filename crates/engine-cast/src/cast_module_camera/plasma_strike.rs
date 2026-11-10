@@ -188,6 +188,12 @@ pub fn plasma_strike_camera(
                 arm.victim_write.rate = Some(0);
                 arm.victim_write.colour = Some(0x2008_0200);
                 arm.victim_write.render_flag = Some(0);
+                // `lw v0,0x80(record)` / `sh zero,0xc(v0)` at
+                // `0x801F7BF4..0x801F7C08`, the record off `0x801C9348`:
+                // clip `0x0D`'s root speed zeroed, so Lu's charge, which
+                // has carried her from `z = 0x80` to `-0xC0`, stops here
+                // while the clip plays on.
+                arm.caster_clip_speed = Some((0x0D, 0));
             }
         }
         6 => {
@@ -689,9 +695,14 @@ mod tests {
         // Arm 5 holds until the caster's clip `0x0D` reaches cursor `0x90`.
         st.caster_clip = Some(0x0D);
         st.caster_frame = Some(0x80);
-        assert!(plasma_strike_camera(&mut st, 5, seats).hold);
+        let held = plasma_strike_camera(&mut st, 5, seats);
+        assert!(held.hold);
+        assert_eq!(held.caster_clip_speed, None);
         st.caster_frame = Some(0x90);
-        assert!(!plasma_strike_camera(&mut st, 5, seats).hold);
+        let pass = plasma_strike_camera(&mut st, 5, seats);
+        assert!(!pass.hold);
+        // The pass zeroes clip `0x0D`'s root speed: Lu's charge stops there.
+        assert_eq!(pass.caster_clip_speed, Some((0x0D, 0)));
         // Arm 6 holds on the loop counter, then stores `s << 5`.
         st.caster_loops = Some(0xFF);
         assert!(plasma_strike_camera(&mut st, 6, seats).hold);
