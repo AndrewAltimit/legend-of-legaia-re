@@ -153,7 +153,11 @@ pub fn apply_hsv_cell(src: &[u16], fx: &ClutCellFx) -> Vec<u16> {
                 ng = blend(ng);
                 nb = blend(nb);
             }
-            ((nr >> 3) | ((ng >> 3) << 5) | ((nb >> 3) << 10)) as u16 | stp
+            // Retail packs with `addu` (`0x80019FC8..0x80019FE0`), not `or`:
+            // a white amount below zero (the integrator has no floor) drives
+            // a channel negative, and its sign bits carry into the next
+            // field rather than masking it.
+            (((nr >> 3) + ((ng >> 3) << 5) + ((nb >> 3) << 10)) as u16) | stp
         })
         .collect()
 }

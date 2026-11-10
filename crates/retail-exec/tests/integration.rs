@@ -48,6 +48,7 @@ mod cast_steal;
 mod chip_marks;
 mod clip_vertex;
 mod clip_cursor;
+mod clut_cell;
 mod coin_counter;
 mod colour_tween;
 mod combo_records;
