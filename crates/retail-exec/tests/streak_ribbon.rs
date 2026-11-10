@@ -22,9 +22,12 @@ const RECT: u32 = 0x8010_0000;
 const POOL: u32 = 0x8012_0000;
 const OT: u32 = 0x8013_0000;
 
-/// A packet as the port's quad lays it out: code+colour, then per corner
-/// `xy` and `uv`, the CLUT and the page.
-fn packet(m: &mut Memory, p: u32) -> (u32, [(i16, i16); 4], [(u8, u8); 4], u16, u16) {
+/// A `POLY_FT4` as compared: code+colour, per corner `xy` and `uv`, the CLUT
+/// and the page.
+type Ft4 = (u32, [(i16, i16); 4], [(u8, u8); 4], u16, u16);
+
+/// A packet read off the pool.
+fn packet(m: &mut Memory, p: u32) -> Ft4 {
     let xy = std::array::from_fn(|k| {
         let at = p + 8 + 8 * k as u32;
         (m.rd16(at) as i16, m.rd16(at + 2) as i16)
@@ -36,7 +39,7 @@ fn packet(m: &mut Memory, p: u32) -> (u32, [(i16, i16); 4], [(u8, u8); 4], u16, 
     (m.rd32(p + 4), xy, uv, m.rd16(p + 0xE), m.rd16(p + 0x16))
 }
 
-fn port_packet(q: &AfterimageQuad) -> (u32, [(i16, i16); 4], [(u8, u8); 4], u16, u16) {
+fn port_packet(q: &AfterimageQuad) -> Ft4 {
     let code = 0x2C | u32::from(q.semi_transparent) << 1;
     (q.color | code << 24, q.xy, q.uv, q.clut, q.tpage)
 }
