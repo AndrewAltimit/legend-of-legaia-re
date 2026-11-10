@@ -146,6 +146,7 @@
 
 <p>The STR overlay runs from frame bytes to the MDEC word list. Its Iki converter <code>FUN_801D0378</code> and the table&rsquo;s LZSS <code>FUN_801D0604</code> match the port word for word over frames of all six movies; the port&rsquo;s decoder now goes through that list and a separate MDEC stage, as retail does, with the pixels unchanged. The STRv2 decoder <code>FUN_801D070C</code>, one-shot and resumed in chunks, its table unpacker, the play loop&rsquo;s context, frame poll and slice callback, the stream open and frame pump over the nine retail cutscene slots, and the MDEC sync routines match.</p>
 <p>So do a set of system and render leaves: the boot SPU-base seeder, the fade ramp step, the rumble actuator, the scene-name sync, the prompt line counter, the gouraud colour spread, the display mirror, the battle intro&rsquo;s style pick and quad builder, the CLUT-walk shimmer stepper, the placement spawner&rsquo;s model-bank select, the field-load entry step, the sustained-cue teardown and the battle XA seek-ahead.</p>
+<p>The move-FX streak ribbon <code>FUN_801E1D98</code> grows its first segment above the bottom quad whatever the baseline: the chain loop is a <code>do</code>-<code>while</code>, and the port tested first, so a ribbon whose bottom quad sat at the screen top drew one segment short. Its single-quad sibling, the cast colour wash, Swordie&rsquo;s split panels and slash streak, and Deadly Rain, run frame after frame on the real GTE, match.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

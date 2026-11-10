@@ -530,7 +530,7 @@ The ribbon starts from one `FUN_800195A8` billboard projection of the actor poin
 - **Suppression.** If the projected top edge spans `0x41` px or more (`x1 - x0`, signed), the routine returns without linking anything. The packet already carved out of the frame arena is abandoned; there is no single-quad fallback.
 - **Segment height.** The projected height `y2 - y0` is kept when it is at least `0x40`, otherwise `0x40` is substituted. That is a floor, not a cap: a tall billboard produces tall segments and a shorter chain.
 
-Every further segment reuses the previous segment's top edge as its bottom edge, so the quads form one continuous strip, and the un-jittered baseline steps up by exactly one segment height per iteration. The walk stops when the baseline (sign-extended to 16 bits) is no longer greater than `-height`, i.e. once the strip has left the top of the screen.
+Every further segment reuses the previous segment's top edge as its bottom edge, so the quads form one continuous strip, and the un-jittered baseline steps up by exactly one segment height per iteration. The walk is a `do`-`while` (`0x801E20F8..0x801E2290`): the first segment above the bottom one is drawn whatever the baseline, and the walk stops once the stepped baseline (sign-extended to 16 bits) is no longer greater than `-height`, i.e. once the strip has left the top of the screen. A bottom billboard already at the screen top still grows that one segment.
 
 The jitter magnitudes are all shifts of the segment height `h`:
 
@@ -545,7 +545,7 @@ Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` r
 
 A landed move projectile is a third caller: each pass a phase-3 homing slot's counter runs, `FUN_801E09F8` calls the ribbon once per `0xFF` byte of the move-power record's `+0x16` list on the slot's position, in the record's trail ([battle-action-helpers](battle-action-helpers.md#fun_801e09f8---cast-effect-census--projectile-flight--impact)); Thunder Break's lightning columns are these.
 
-Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
+Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng; held to the routine segment by segment by the [retail kernel differential](../tooling/retail-kernel-differential.md)); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
 
 ## Port hosts
 

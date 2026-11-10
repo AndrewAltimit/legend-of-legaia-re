@@ -1028,3 +1028,11 @@ intro's style pick and `POLY_GT4` builder (`intro_style`), the CLUT-walk stepper
 case `0xB` (`clut_walk`), the placement spawner's model-bank select (`model_select`), the field-load
 entry step (`field_load_entry`), the sustained-cue teardown (in `sfx_drain`) and the battle XA
 seek-ahead (`battle_voice`) all match.
+
+PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
+bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn
+whatever the baseline, where the port tested first, so a bottom billboard at or above the screen top
+grew no segment and drew four `rand()` short. Its single-quad sibling `FUN_801E1AB0`
+(`afterimage_quad`), the colour wash `FUN_801F2410` (`colour_wash`), Swordie's split panels and slash
+streak (`swordie`) and Deadly Rain `FUN_801F7B88` (`deadly_rain`, frame after frame on the real GTE:
+records, splashes, streaks and their ordering-table entries) match.
