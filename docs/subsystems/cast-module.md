@@ -3087,6 +3087,24 @@ caller, and run off the same calls
 
 Their records leave the module's whole-set seat.
 
+<a id="ozmas-close-up-is-drawn-whole"></a>
+
+**Ozma's close-up is drawn whole.** Arms 7 and 8 fly the camera along the
+shell, and a retail frame there shows a straight-edged block of dark scales
+over a pale lower shell, which reads like a row of quads cut out. Nothing is
+cut. A retail ordering table of arm 7 (a RAM image, `ot-raster.py`) holds
+the creature's `GT3` packets on CLUTs `0x7980..=0x7987` in buckets
+`285..=572` with none past the GPU's size limit, and rasterised alone they
+draw the whole shell, seams included: the block is the nearest plate,
+painted last. The pale wash is the stager's sparks `0x801F9E28`, additive
+`GT4` billboards on CLUT `0x76C0` about `110` pixels across, linked at their
+own view depth (`+0x34 >> 4`, buckets `288..=368`) and so painted over every
+shell packet behind them. The engine's shell and sparks match that table
+part for part and count for count (`parts.csv` on both sides; the sparks'
+level, rise and frame walk agree tick for tick). What differs between a
+retail frame and an engine frame of these arms is where the volleys fall,
+which is `rand()`.
+
 Palma's arm 1 holds on the side-band token `ctx[+0x276]`
 (`0x801F6D58..0x801F6D60`, [The side-band token](#the-side-band-token)): its
 four-slot read outlasts most of the sustain, and with the stage cleared at
@@ -4905,7 +4923,9 @@ still walking would do (`capture`; the walk order is an inference). On a step-`4
 four vsyncs: without it Slippery's arm-7 wash reads a step behind through arm 8. The
 presentation hook's exit-pass sites step at once. Fades a part's stager calls do not:
 Juggernaut's read right unstepped, and a part tick can fall after the fade's in the walk.
-Theeder's arm 11 flash reads a step ahead under the rule, which is still open.
+Theeder's arm 11 flash read a step ahead under the rule while the film's pairing counted
+counter runs; counted in wait ends it does not
+([cast-sequence oracle](../tooling/cast-sequence-oracle.md#the-flip-on-a-wait-end)).
 
 ### The creature seat
 

@@ -536,6 +536,7 @@ mod tests {
                     fade: None,
                     fade_back: None,
                     over: false,
+                    rand: None,
                 });
                 t += 1;
                 f += 1;
