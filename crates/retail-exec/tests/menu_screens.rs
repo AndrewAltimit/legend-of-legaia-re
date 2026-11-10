@@ -550,16 +550,22 @@ fn the_active_stat_compare_matches() {
         let staged =
             [-1i32, 1 + rng.below(255) as i32, 1 + rng.below(255) as i32][rng.below(3) as usize];
         rig.cpu.mem.wr32(STAGED_ID, staged as u32);
-        let mut words = [[0i32; 8]; 2];
-        for (b, block) in [BLOCK, TRIAL_BLOCK].into_iter().enumerate() {
-            for k in 0..8 {
-                let w = match rng.below(4) {
-                    0 if b == 1 => words[0][k],
-                    1 => rng.below(1100) as i32,
-                    _ => rng.below(12_000) as i32,
-                };
-                words[b][k] = w;
-                rig.cpu.mem.wr32(block + k as u32 * 4, w as u32);
+        let stat = |rng: &mut Rng| match rng.below(3) {
+            0 => rng.below(1100) as i32,
+            _ => rng.below(12_000) as i32,
+        };
+        let current: [i32; 8] = std::array::from_fn(|_| stat(&mut rng));
+        let trial: [i32; 8] = std::array::from_fn(|k| {
+            if rng.below(4) == 0 {
+                current[k]
+            } else {
+                stat(&mut rng)
+            }
+        });
+        let words = [current, trial];
+        for (block, w) in [(BLOCK, &current), (TRIAL_BLOCK, &trial)] {
+            for (k, v) in w.iter().enumerate() {
+                rig.cpu.mem.wr32(block + k as u32 * 4, *v as u32);
             }
         }
         let log = rig.run(ACTIVE_COMPARE, r);
