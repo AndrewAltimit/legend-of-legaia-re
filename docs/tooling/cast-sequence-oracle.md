@@ -771,6 +771,15 @@ scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine
 scripts/ci/cast-sequence.py --physical --state battle_jou_nova_v3_strike --strike-deal --hit-trace
 ```
 
+A strike film scored without the deal is also a statement about every round the engine played up to
+the gate: a change to battle timing moves how many passes those rounds take, each pass draws, and the
+strike is dealt another hand. Moving the cast tick behind the node ticks
+([the order inside the pass](../subsystems/battle-stage-camera.md#the-frame-step)) took six caster fights'
+strike films down on the engine's own stream (`battle_jou_orb_v3_strike` `.896` to `.830`, cues `1.000`
+to `.333`: its swings blocked where retail's landed). Dealt, the same six read alike on either order,
+within `.008`, and every cue pairs on both. Compare an engine change across strike films with
+`--strike-deal` on both sides.
+
 Most strike recordings dealt this way match retail cue for cue: block verdict, damage rolls, the flinch's
 impact pick and the times. The burst reading is not complete: a blocked swing leaves no word, and an
 emitter's draw can fall between the frame's first word and the hit. `battle_jou_nova_v3_strike`'s burst words
