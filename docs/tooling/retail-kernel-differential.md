@@ -1314,3 +1314,9 @@ where retail plays `1058`. The battle bank's tenth copy keeps its bytes under it
 The fishing segment projector `FUN_801D5C2C`, the slot reel renderer `FUN_801D0FA8`'s faces and shades, the
 warp fade repack `FUN_801D58F0`, the fishing pre-hook readout `FUN_801D2050` and Baka Fighter's pack walk
 `FUN_801D4C50` match.
+
+The slot overlay's per-frame marquee `FUN_801CFFF0` found the round pips lit from the left in the port, where
+retail fills them from the right (one round owed lights the pip at column `0x40`), and a negative payout figure
+dropping its units digit, which retail places unconditionally. Its init `FUN_801CEC94` expands the message bank
+as `parse_messages` reads it, each texel the nibble times four. The dance overlay's entry `FUN_801CEF54` stages
+what `dance_scene_entry` records.

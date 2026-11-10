@@ -345,7 +345,7 @@ A claimed column prints `claimed - 0x10` = `value - 0xf`. The tally is the resul
 
 The same matrix has two other bonus faces, also from `FUN_801cfff0`:
 
-- Between spins of a round (states 1 / 2) it shows the **rounds still owed** as three pips (message `0x12` filled / `0x13` hollow).
+- Between spins of a round (states 1 / 2) it shows the **rounds still owed** as three pips (message `0x12` filled / `0x13` hollow), filled from the right: one owed lights the pip at column `0x40`, two add `0x20`, three add `0` (`0x801D02B4..0x801D0324`).
 - Once a paying spin tallies it shows the **payout figure**: digits at fixed right-aligned columns `0 / 0xd / 0x1a / 0x27`, each drawn only once the figure reaches its place, then the word "coin" at column `0x34`, whose tail runs off the 78-column matrix. It slides down into place over 13 frames (`row = min(frame - 0xd, 0)`).
 
 #### The message bank's roles

@@ -244,3 +244,103 @@ fn the_message_bank_expands_as_retail_expands_it() {
     }
     assert!(compared > 200_000, "only {compared} texels");
 }
+
+/// The per-frame marquee composer `FUN_801CFFF0`, over generated frames
+/// (payout figure and slide clock, feature mode, reel state, rounds owed,
+/// claimed reels, the anticipation latch and the legend counter), with the two
+/// coin counters stubbed: every placement it makes (`FUN_801D3230`) against
+/// `compose_marquee_frame`, and its scroll calls (`FUN_801D069C`) - the
+/// clearing call it opens with, then the legend - against `attract_legend`.
+#[test]
+fn the_marquee_frame_composes_as_retail_composes_it() {
+    use legaia_minigame_formats::minigame_slot_scene::{
+        MarqueeFrame, MarqueePlacement, attract_legend, compose_marquee_frame,
+    };
+    use psx_retail_exec::{A0, A1, A2};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const FRAME: u32 = 0x801C_FFF0;
+    const SCROLL: u32 = 0x801D_069C;
+    differential!(prot(975, FRAME));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x801D_2CC0, 0);
+    cpu.stub(0x801D_2914, 0);
+    let places = Rc::new(RefCell::new(Vec::<MarqueePlacement>::new()));
+    let scrolls = Rc::new(RefCell::new(Vec::<(i32, i32, i32)>::new()));
+    let p = places.clone();
+    cpu.hook(PLACE, move |r, _| {
+        p.borrow_mut().push(MarqueePlacement {
+            msg: r.r[A0] as usize,
+            col: r.r[A1] as i32,
+            row: r.r[A2] as i32,
+        })
+    });
+    let s = scrolls.clone();
+    cpu.hook(SCROLL, move |r, _| {
+        s.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as i32))
+    });
+    let mut rng = Rng(0x4652_4D45);
+    let (mut captions, mut tallies, mut legends) = (0, 0, 0);
+    for case in 0..20_000 {
+        let pick = |rng: &mut Rng, xs: &[i32]| xs[rng.below(xs.len() as u32) as usize];
+        let frame = MarqueeFrame {
+            payout: pick(&mut rng, &[0, 0, 7, 42, 999, 1000, 4321, 9999, 12345, -5]).wrapping_add(
+                if rng.below(3) == 0 {
+                    rng.below(3000) as i32
+                } else {
+                    0
+                },
+            ),
+            payout_frame: pick(&mut rng, &[0, 0, 1, 5, 13, 14, 200]),
+            feature_mode: rng.below(9) as u8,
+            reel_state: rng.below(7) as i32 - 1,
+            bonus_rounds: rng.below(5) as i32 - 1,
+            claimed: std::array::from_fn(|_| pick(&mut rng, &[0, 1, 0xF, 0x10, 0x11, 0x19, 0x1A])),
+        };
+        let anticipation = pick(&mut rng, &[0, 0, 0, 1, 2, 3]);
+        let counter = rng.below(0x4000) as i32;
+        cpu.mem.wr32(0x801D_3D3C, frame.payout as u32);
+        cpu.mem.wr32(0x801D_3C94, frame.payout_frame as u32);
+        cpu.mem.wr32(0x801D_3CAC, u32::from(frame.feature_mode));
+        cpu.mem.wr32(0x801D_3C84, frame.reel_state as u32);
+        cpu.mem.wr32(0x801D_3CB0, frame.bonus_rounds as u32);
+        for (i, c) in frame.claimed.iter().enumerate() {
+            cpu.mem.wr32(0x801D_3D20 + 4 * i as u32, *c as u32);
+        }
+        cpu.mem.wr32(0x801D_3CA4, anticipation as u32);
+        cpu.mem.wr32(0x801D_3CA0, counter as u32);
+        places.borrow_mut().clear();
+        scrolls.borrow_mut().clear();
+        assert_eq!(cpu.call(FRAME, &[]), Stop::Returned, "case {case}");
+        let want = compose_marquee_frame(&frame);
+        assert_eq!(*places.borrow(), want, "case {case}: {frame:?}");
+        let scrolls = scrolls.borrow();
+        assert!(scrolls[0].0 < 0, "case {case}: the frame opens on a clear");
+        let caption = frame.payout != 0 && frame.payout_frame != 0;
+        let legend = if caption {
+            None
+        } else {
+            attract_legend(frame.feature_mode, anticipation, counter)
+        };
+        let got: Vec<_> = scrolls[1..].to_vec();
+        let want_scroll: Vec<_> = legend
+            .map(|(id, col)| (id as i32, col, 0))
+            .into_iter()
+            .collect();
+        assert_eq!(
+            got, want_scroll,
+            "case {case}: {frame:?} latch {anticipation} counter {counter}"
+        );
+        captions += usize::from(caption);
+        tallies += usize::from(!caption && !want.is_empty());
+        legends += usize::from(legend.is_some());
+    }
+    assert!(
+        captions > 1000 && tallies > 1000 && legends > 1000,
+        "{captions} {tallies} {legends}"
+    );
+}
