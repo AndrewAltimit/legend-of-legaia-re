@@ -712,7 +712,24 @@ Circle's arm 0 turn the caster onto its target before the shot (a seat's live pa
 group code `8`) and frame the new heading; the port framed the stale one. Melt Spray's arm 2 and Chaos Flare's arm 2
 turn on the victim's display pair `+0x3C` / `+0x40`, not its live pair. Stone Circle's arm 1 writes no focus, so its
 cut is on the origin the prologue zeroed. Dead End Crisis's arm 0 lines the party up off `0x80077628` and stands
-seat 3 opposite before it frames; the port carries no line-up, and the test names that shot as a gap.
+seat 3 opposite before it frames, which the port did not carry.
+
+That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
+eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
+reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation
+`+0x28` off three `rand()`s (`stager_states`), had no port either: every Dark Eclipse ray stood on one angle.
+
+The phase-chain tick bodies (`chain_ticks`) run from arm 0 to their Done off their images, pass by pass, against the
+port's pass: the chain runner, the body's camera director on every pass, the band's caster pre-pass, the party-row
+rate and the fold's hit rate. The whole context and all eight records are compared, but for the bytes another owner
+writes (the fold's HP side and reaction, presentation, poses, the cue byte, PROT 0963's lighting) and the rate-rule
+gaps the test names. Five arms differed. Dead End Crisis's arm 5 holds the party at rate `2` (`0x801F7524`) where the
+director froze it, which held the engine's Done band for some 1800 ticks after Final Crisis. Genocidal Cannon's
+sweep slows each struck seat and holds the party row at `2`, which the port carried neither of. Megaton Press freezes a
+victim that plays its `+0x1F2` clip under lead roster `1`. Hyper Lightning's arm 7 leaves on the pass its fourth hit
+counts, a pass before the director did. A replayed caster's stage-0 store, its return to idle, belongs to the chain
+runner, not the wind-up pre-pass. The summon tick bodies' phase walks, PROT 0918, 0922, 0924, 0925, 0927, 0949 and
+0958, match but for Water Crystals, whose arm 5 is terminal; the port ended a pass later.
 
 The rest of the battle side's frameless kernels match on their first run: the Seru learn `FUN_801E92DC` over whole
 records and the magic-level line `FUN_801F452C` (`seru_learn`); the swing camera's height `FUN_801F0348`

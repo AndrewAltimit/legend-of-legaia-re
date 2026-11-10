@@ -1165,8 +1165,10 @@ pub const DEAD_END_CRISIS_WIPE_DAMAGE: u16 = 9999;
 /// battle-end signal `0xFE` with cause `5`) is the same party-wipe end the
 /// action SM's `0x5A` gate raises, which the engine reaches on its own once
 /// the fold has emptied the party. Rate left out under the module's rate
-/// rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). Not ported: the packet
-/// arms, the seat line-up and its restore.
+/// rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). The seat line-up and its
+/// restore are `cast_module_camera::dead_end_crisis_line_up` /
+/// `dead_end_crisis_restore`, run by the host ahead of the arm's camera. Not
+/// ported: the packet arms.
 ///
 /// PORT: FUN_801F69D8 (PROT 0961; phase chain + caster staging, both formation paths; packet arms unported)
 pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
