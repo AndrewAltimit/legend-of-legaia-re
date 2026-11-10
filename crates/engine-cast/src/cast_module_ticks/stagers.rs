@@ -99,6 +99,10 @@ pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
     }
 }
 
+/// The tint word PROT 0906's stager arm 1 gives the summon seat as it shows
+/// it (`lui v0,0x3ff0; sw v0,0x4(a0)` at `0x801F7824..0x801F7828`).
+pub const GIZAM_SEAT_TINT: u32 = 0x3FF0_0000;
+
 /// PROT 0906 (Gizam) spawn stager.
 ///
 /// Seven arms behind `sltiu a1, 7` through the head table at `0x801F69D8`
@@ -106,8 +110,8 @@ pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// `79A8`). Two arms carry state:
 ///
 /// * arm `1` (`0x801F780C..0x801F783C`) poses the summon seat
-///   `actor_table[7]`: `+0x21C = 0` (visible), `+0x04 = 0x3FF00000` (the
-///   render blend), `+0x0C = 0x1000`;
+///   `actor_table[7]`: `+0x21C = 0` (visible), `+0x04 =`
+///   [`GIZAM_SEAT_TINT`] (the tint word), `+0x0C = 0x1000`;
 /// * arm `2` (`0x801F783C..0x801F785C`) is nothing but the phase advance.
 ///
 /// The rest are `FUN_80024E80` prim fills, two `FUN_80056798` rand draws and
@@ -120,6 +124,7 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
     match arm {
         1 => {
             summon_seat.render_flag = 0;
+            summon_seat.present_04 = GIZAM_SEAT_TINT;
             summon_seat.root_speed = 0x1000;
         }
         2 => advance_phase(ctx),
