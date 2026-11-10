@@ -825,7 +825,7 @@ impl World {
         });
         self.battle.return_mode = SceneMode::WorldMap;
         // `enter_battle_from_formation` swaps to the battle BGM itself.
-        self.enter_battle_from_formation(&formation);
-        self.battle.active_formation = Some(formation);
+        let seated = self.enter_battle_from_formation(&formation);
+        self.battle.active_formation = Some(seated);
     }
 }

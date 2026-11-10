@@ -138,9 +138,9 @@ impl World {
         // the dome tick); the field battle intro's sound-set swap is not on
         // this path, so the battle entry must not swap a track of its own.
         let battle_bgm = self.audio.battle_bgm.take();
-        self.enter_battle_from_formation(&formation);
+        let seated = self.enter_battle_from_formation(&formation);
         self.audio.battle_bgm = battle_bgm;
-        self.battle.active_formation = Some(formation);
+        self.battle.active_formation = Some(seated);
         self.minigames.muscle_leg_in_battle = true;
     }
 

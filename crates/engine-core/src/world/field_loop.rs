@@ -158,8 +158,8 @@ impl World {
         // script bytes (`P1[3]`'s `52 89`, executed through
         // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
         // battle-entry op reaches this path.
-        self.enter_battle_from_formation(&formation);
-        self.battle.active_formation = Some(formation);
+        let seated = self.enter_battle_from_formation(&formation);
+        self.battle.active_formation = Some(seated);
     }
 
     /// Seed the battle actor table from `formation` and enter
@@ -406,10 +406,48 @@ impl World {
         }
     }
 
+    /// The formation as battle init seats it: the species-order rebuild over
+    /// the first four seats (`FUN_80055B6C`, `0x80055C7C..0x80055D2C`,
+    /// [`legaia_engine_battle::battle_seats::rebuild_species_order`]). A
+    /// formation of two species draws one `rand()` and, on an odd draw, opens
+    /// with the other species in front; a single species draws nothing.
+    pub(crate) fn formation_in_species_order(
+        &mut self,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        let mut cells = [0u16; 4];
+        for (c, s) in cells.iter_mut().zip(&formation.slots) {
+            *c = s.monster_id;
+        }
+        let before = cells;
+        let mut out = formation.clone();
+        if legaia_engine_battle::battle_seats::rebuild_species_order(&mut cells, || {
+            self.next_rand()
+        }) {
+            // A rebuilt cell takes the first authored seat of its species.
+            let seats: Vec<_> = cells
+                .iter()
+                .take_while(|&&id| id != 0)
+                .filter_map(|id| {
+                    let from = before.iter().position(|b| b == id)?;
+                    formation.slots.get(from).copied()
+                })
+                .collect();
+            let tail = formation.slots.iter().skip(4).copied();
+            out.slots = seats.into_iter().chain(tail).collect();
+        }
+        out
+    }
+
+    /// Enter the battle `formation` describes and return the formation as it
+    /// was seated: battle init may reorder its species
+    /// ([`Self::formation_in_species_order`]).
     pub(crate) fn enter_battle_from_formation(
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
-    ) {
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        let seated = self.formation_in_species_order(formation);
+        let formation = &seated;
         // An expansion pack's monsters take their seats' catalog entries for
         // the fight (identity with no pack).
         self.expansion_prepare_battle(formation);
@@ -722,6 +760,7 @@ impl World {
         // (`World::begin_battle_round`).
         self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.begin_battle_round();
+        seated
     }
 
     /// Seat monster `monster_id`'s catalog stats on actor slot `mslot` for a
