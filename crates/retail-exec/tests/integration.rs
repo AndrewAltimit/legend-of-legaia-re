@@ -15,6 +15,7 @@ mod actor_cull;
 mod actor_draw;
 mod actor_node_pool;
 mod actor_tint;
+mod afterimage_quad;
 mod afterimage_walk;
 mod ambient_emitter;
 mod ambient_motion;
