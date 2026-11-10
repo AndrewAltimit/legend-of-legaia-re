@@ -139,8 +139,10 @@ impl SpriteWidget {
     /// * `4` - tween colour only to `rgb:u24@3`, mode `@6`, `dur:i16@7`;
     ///   `cursor += 9` on completion.
     ///
-    /// A cursor byte other than `0x40` (or a sub-op `>= 5`) leaves the script
-    /// parked and just draws.
+    /// A cursor byte other than `0x40` on entry (or a sub-op `>= 5`) leaves
+    /// the script parked and just draws. The byte is not tested again after a
+    /// wait passes: the next record's sub-op dispatches whatever its first
+    /// byte is.
     // PORT: FUN_801F7A9C
     pub fn tick(
         &mut self,
@@ -148,86 +150,86 @@ impl SpriteWidget {
         frame_delta: u8,
         mut flag_test: impl FnMut(u16) -> bool,
     ) -> Option<SpriteDraw> {
-        loop {
-            if self.killed {
-                break;
-            }
-            let Some(&op) = script.get(self.cursor) else {
-                break;
-            };
-            if op != SPRITE_SCRIPT_OP || self.cursor + 3 > script.len() {
-                break;
-            }
-            match script[self.cursor + 2] {
-                0 => {
-                    self.killed = true;
+        // The opcode byte is tested once, on entry (`xori v0,v0,0x40` at
+        // `0x801F7AD0`); a wait that passes loops back to `0x801F7ADC`, which
+        // dispatches the next record's sub-op without testing its byte again.
+        let parked = self.killed || script.get(self.cursor) != Some(&SPRITE_SCRIPT_OP);
+        if !parked {
+            loop {
+                if self.killed || self.cursor + 3 > script.len() {
                     break;
                 }
-                1 => {
-                    let f = rs16(script, self.cursor + 3) as u16;
-                    if !flag_test(f) {
+                match script[self.cursor + 2] {
+                    0 => {
+                        self.killed = true;
                         break;
                     }
-                    self.cursor += 5;
-                }
-                2 => {
-                    let f = rs16(script, self.cursor + 3) as u16;
-                    if flag_test(f) {
+                    1 => {
+                        let f = rs16(script, self.cursor + 3) as u16;
+                        if !flag_test(f) {
+                            break;
+                        }
+                        self.cursor += 5;
+                    }
+                    2 => {
+                        let f = rs16(script, self.cursor + 3) as u16;
+                        if flag_test(f) {
+                            break;
+                        }
+                        self.cursor += 5;
+                    }
+                    3 => {
+                        if self.t == 0 {
+                            self.start_x = self.x;
+                            self.start_y = self.y;
+                            self.start_rgb = self.rgb;
+                        }
+                        self.t = self.t.wrapping_add(frame_delta as i16);
+                        let tx = rs16(script, self.cursor + 3);
+                        let ty = rs16(script, self.cursor + 5);
+                        let trgb = ru24(script, self.cursor + 7);
+                        let dur = rs16(script, self.cursor + 0xb);
+                        if dur < self.t {
+                            self.t = dur;
+                        }
+                        if self.t == dur {
+                            self.t = 0;
+                            self.x = tx;
+                            self.y = ty;
+                            self.rgb = trgb;
+                            self.cursor += 0xd;
+                            break;
+                        }
+                        let mode = InterpMode::from_byte(script[self.cursor + 0xa]);
+                        let (t, d) = (self.t as i32, dur as i32);
+                        self.x = interp(tx as i32, self.start_x as i32, t, d, mode) as i16;
+                        self.y = interp(ty as i32, self.start_y as i32, t, d, mode) as i16;
+                        self.rgb = interp_rgb(trgb, self.start_rgb, t, d, mode);
                         break;
                     }
-                    self.cursor += 5;
-                }
-                3 => {
-                    if self.t == 0 {
-                        self.start_x = self.x;
-                        self.start_y = self.y;
-                        self.start_rgb = self.rgb;
-                    }
-                    self.t = self.t.wrapping_add(frame_delta as i16);
-                    let tx = rs16(script, self.cursor + 3);
-                    let ty = rs16(script, self.cursor + 5);
-                    let trgb = ru24(script, self.cursor + 7);
-                    let dur = rs16(script, self.cursor + 0xb);
-                    if dur < self.t {
-                        self.t = dur;
-                    }
-                    if self.t == dur {
-                        self.t = 0;
-                        self.x = tx;
-                        self.y = ty;
-                        self.rgb = trgb;
-                        self.cursor += 0xd;
+                    4 => {
+                        if self.t == 0 {
+                            self.start_rgb = self.rgb;
+                        }
+                        self.t = self.t.wrapping_add(frame_delta as i16);
+                        let trgb = ru24(script, self.cursor + 3);
+                        let dur = rs16(script, self.cursor + 7);
+                        if dur < self.t {
+                            self.t = dur;
+                        }
+                        if self.t == dur {
+                            self.t = 0;
+                            self.rgb = trgb;
+                            self.cursor += 9;
+                            break;
+                        }
+                        let mode = InterpMode::from_byte(script[self.cursor + 6]);
+                        let (t, d) = (self.t as i32, dur as i32);
+                        self.rgb = interp_rgb(trgb, self.start_rgb, t, d, mode);
                         break;
                     }
-                    let mode = InterpMode::from_byte(script[self.cursor + 0xa]);
-                    let (t, d) = (self.t as i32, dur as i32);
-                    self.x = interp(tx as i32, self.start_x as i32, t, d, mode) as i16;
-                    self.y = interp(ty as i32, self.start_y as i32, t, d, mode) as i16;
-                    self.rgb = interp_rgb(trgb, self.start_rgb, t, d, mode);
-                    break;
+                    _ => break,
                 }
-                4 => {
-                    if self.t == 0 {
-                        self.start_rgb = self.rgb;
-                    }
-                    self.t = self.t.wrapping_add(frame_delta as i16);
-                    let trgb = ru24(script, self.cursor + 3);
-                    let dur = rs16(script, self.cursor + 7);
-                    if dur < self.t {
-                        self.t = dur;
-                    }
-                    if self.t == dur {
-                        self.t = 0;
-                        self.rgb = trgb;
-                        self.cursor += 9;
-                        break;
-                    }
-                    let mode = InterpMode::from_byte(script[self.cursor + 6]);
-                    let (t, d) = (self.t as i32, dur as i32);
-                    self.rgb = interp_rgb(trgb, self.start_rgb, t, d, mode);
-                    break;
-                }
-                _ => break,
             }
         }
         if self.killed {

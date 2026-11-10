@@ -862,6 +862,11 @@ same table the overlay-resident dispatcher `FUN_801F2D68` consumes via
 | 3 | `x:i16@3, y:i16@5, rgb:u24@7, mode:u8@0xA, dur:i16@0xB` | tween position + colour; `cursor += 0xD` on completion |
 | 4 | `rgb:u24@3, mode:u8@6, dur:i16@7` | tween colour only; `cursor += 9` on completion |
 
+The `0x40` byte is tested once, on entry (`0x801F7AD0`). A wait that passes
+loops back to `0x801F7ADC`, which dispatches the next record's sub-op without
+testing its first byte again, so a passed wait followed by a zero byte runs
+sub-op `0` and kills the widget.
+
 ### Mask widget
 
 A 4-edge rect tween plus **4 black border quads** (GP0 `0x28`, colour 0):
@@ -886,6 +891,7 @@ wider than 256 px splits across two pages.
 
 - Spawn record: `[x][y][w][h][tex_x][tex_y]` from operand `+1`; `w > 0x100` computes the second page and clamps the first-page width.
 - Move / scale: `scale` is 4.12 fixed against the `+0xb8/ba/bc` base sizes.
+- The handler draws from the **targets** (`0x801F84BC..0x801F84E8`) and has no `dur == 0` latch: a move with `dur = 0` shows at once, and the current values at `+0x14..+0x24` stay where the last tween left them, so the next tween starts there.
 
 ### Letterbox widget
 

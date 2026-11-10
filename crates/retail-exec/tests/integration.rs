@@ -191,6 +191,7 @@ mod round_end;
 mod round_open;
 mod save_subscreens;
 mod scale_stage;
+mod screen_fx;
 mod separation;
 mod seq_calc;
 mod seq_slot_release;

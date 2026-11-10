@@ -915,6 +915,13 @@ shared script buffer, so a second spawn of an effect re-deals the legs of an ear
 releasing children; the port kept them per master. Both entries also stand still once the battle-end
 byte leaves `0xFF`, which the engine's spawn, walk and draw did not test.
 
+The PROT 0900 screen-effect widgets run with their spawn and control APIs live (`screen_fx`): the shared
+interpolator `FUN_801DE4C8`, the mask, the letterbox, the image panel and the scripted sprite, every
+record field and packet frame by frame. The panel handler draws from its targets, so a `dur = 0` move
+shows at once where the port kept drawing the old latch; and the sprite's `0x40` byte is tested once on
+entry, so after a passed wait the next record dispatches whatever its first byte is, where the port
+parked on a non-`0x40` byte.
+
 The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
 `.MAP` (`window_rebuild`) match on their first run.
 
