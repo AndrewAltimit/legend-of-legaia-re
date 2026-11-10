@@ -1198,3 +1198,34 @@ fn the_swirl_transition_runs_its_own_252_frames() {
     assert_eq!(plain_clock as i32, INTRO_DURATION_FRAMES);
     assert_eq!(plain_ticks, INTRO_DURATION_FRAMES + 1);
 }
+
+/// The hosts' "start a battle here" control: the scene's lowest rollable
+/// row, armed through the normal transition, with the live loop raised when
+/// encounters were off; nothing in a scene with no formation.
+#[test]
+fn force_battle_here_arms_the_first_rollable_row() {
+    use legaia_engine_battle::encounter::{EncounterEntry, EncounterPhase, EncounterTable};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+    let mut w = World::new();
+    assert_eq!(w.force_battle_here(), None, "no formation registered");
+    w.set_active_scene_label("forcescene");
+    let mut table = EncounterTable::new("forcescene");
+    table.push(EncounterEntry::new(2, 1));
+    table.push(EncounterEntry::new(5, 1));
+    w.install_man_encounter(
+        table,
+        vec![
+            FormationDef::new(2, Vec::new()),
+            FormationDef::new(5, vec![FormationSlot::new(9)]),
+        ],
+    );
+    w.toggles.live_gameplay_loop = false;
+    w.battle.player_driven = false;
+    assert_eq!(w.force_battle_here(), Some(5), "row 2 carries no monsters");
+    assert!(w.toggles.live_gameplay_loop);
+    assert!(w.battle.player_driven);
+    match w.encounters.session.as_ref().unwrap().phase() {
+        EncounterPhase::Transition { roll, .. } => assert_eq!(roll.formation_id, 5),
+        p => panic!("not armed: {p:?}"),
+    }
+}

@@ -8,8 +8,9 @@
 //! file, so a developer tool cannot come back on by itself on a later start.
 //! The browser play page's twins are its dev-menu box, Auto-battle box,
 //! *Overworld markers* box, *Retail battle cadence* box, Minigame list,
-//! *Effect outlines* box, Party field, Battle BGM field, Learn spell row and
-//! GameShark box (a file here: a window has no text field).
+//! *Effect outlines* box, Party field, Battle BGM field, Learn spell row,
+//! *Start a battle here* button and GameShark box (a file here: a window has
+//! no text field).
 
 use super::*;
 
@@ -38,12 +39,14 @@ pub(super) enum ToolRow {
     LearnSpell,
     /// Read and apply a GameShark code file (`--cheat-file`).
     GameShark,
+    /// Arm a fight from the scene's own encounter table (`--battle first`).
+    StartBattle,
     /// A press of the window key that enters a minigame or a mode.
     Enter(KeyCode),
 }
 
 /// The rows: control, label, one line of help.
-pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 18] = [
+pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 19] = [
     (
         ToolRow::DevMenu,
         "Developer menu",
@@ -98,6 +101,11 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 18] = [
         ToolRow::GameShark,
         "GameShark file",
         "Cross: apply the --cheat-file codes, or legaia-codes.txt in the settings folder.",
+    ),
+    (
+        ToolRow::StartBattle,
+        "Start a battle here",
+        "Cross: the scene's first encounter formation, through the normal transition.",
     ),
     (
         ToolRow::Enter(KeyCode::KeyL),
@@ -244,6 +252,7 @@ impl PlayWindowApp {
                 return ToolValue::Pick(spell_pick_label(world, id));
             }
             ToolRow::GameShark => return ToolValue::Press("Cross: apply"),
+            ToolRow::StartBattle => return ToolValue::Press("Cross: start"),
             ToolRow::Enter(_) => return ToolValue::Press("Cross: start"),
         })
     }
@@ -255,7 +264,10 @@ impl PlayWindowApp {
         if self.tools_page.pick(row, dir) {
             return;
         }
-        if !matches!(row, ToolRow::Enter(_) | ToolRow::GameShark) {
+        if !matches!(
+            row,
+            ToolRow::Enter(_) | ToolRow::GameShark | ToolRow::StartBattle
+        ) {
             self.tools_apply();
         }
     }
@@ -336,6 +348,19 @@ impl PlayWindowApp {
                     Some(path) => self.apply_codes_file(&path),
                     None => format!("No settings folder to find {DEFAULT_CODES_FILE} in."),
                 });
+            }
+            ToolRow::StartBattle => {
+                let world = &mut self.session.host.world;
+                if !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
+                    self.tools_page.note = Some(REFUSED.into());
+                    return;
+                }
+                if world.force_battle_here().is_some() {
+                    self.hotkey_help = false;
+                } else {
+                    self.tools_page.note =
+                        Some("This scene registers no encounter formation to start.".into());
+                }
             }
             ToolRow::Enter(key) => {
                 if self.minigame_key(key, ElementState::Pressed) {

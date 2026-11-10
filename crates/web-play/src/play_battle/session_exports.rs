@@ -221,12 +221,19 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        let resolved = if row < 0 {
-            host.world.first_rollable_formation_id()
-        } else {
-            u16::try_from(row).ok()
-        };
-        let Some(id) = resolved else {
+        if row < 0 {
+            // The window's `F12` Tools row runs the same kernel.
+            let armed = host.world.force_battle_here().is_some();
+            if !armed {
+                crate::console_log(&format!(
+                    "debug_force_battle: no formation armed in '{}' (registered rows: {:?})",
+                    host.world.active_scene_label,
+                    host.world.registered_formation_ids()
+                ));
+            }
+            return armed;
+        }
+        let Some(id) = u16::try_from(row).ok() else {
             crate::console_log(&format!(
                 "debug_force_battle: no formation resolved in '{}' (registered rows: {:?})",
                 host.world.active_scene_label,

@@ -473,7 +473,9 @@ minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
 picker and the trading-card menu, then the play page's other debug controls:
 effect outlines, the party, the fight music, teaching the lead a spell, and a
 GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
-folder; the page's box is a text field, a window has none). The list scrolls
+folder; the page's box is a text field, a window has none), and *Start a
+battle here*, the scene's first encounter formation through the normal
+transition (`--battle first`, the page's button of the same name). The list scrolls
 under the cursor. The play page has the debug camera and the diagnostics bar as
 boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key

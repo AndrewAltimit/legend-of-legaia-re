@@ -457,7 +457,9 @@ the window.
 `debug_force_battle(row)` is the exported twin of the native
 `--battle <ROW|first>`: it resolves a formation row against the scene's own MAN
 table, turns the live loop on and hands the row to `World::force_encounter`, so
-the intro, the BGM swap and the battle load are the ordinary ones.
+the intro, the BGM swap and the battle load are the ordinary ones. Row `-1`
+is `World::force_battle_here`, the kernel the window's `F12` Tools row *Start
+a battle here* runs too.
 `debug_formation_rows()` lists the rows the current scene registered. Both are
 on the ordinary `#[wasm_bindgen]` surface, not behind a feature: every retail
 town is rate-0 by design and the native `debug_start_test_battle` is
