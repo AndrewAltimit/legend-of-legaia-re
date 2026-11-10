@@ -107,6 +107,29 @@ const SEG_T_MAX: f32 = 0.998;
 /// visually see-through, so it must not arm the gate.
 pub const OCCLUDER_MIN_OPACITY: f32 = 0.55;
 
+/// The draw an occluder range was instanced from, as a host's per-frame
+/// draw gate sees it: which list of [`FieldOccluders::build`] it came from
+/// (the hosts pass `[terrain, placements]`), its crop key and its world
+/// position. [`FieldOccluders::fully_occluded_where`] hands it to the host's
+/// gate, so a draw the visible-tile crop or the actor cull dropped this frame
+/// cannot hide the character.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OccluderDraw {
+    /// Index of the draw list in [`FieldOccluders::build`]'s `draw_lists`.
+    pub list: usize,
+    /// The draw's visible-tile crop key.
+    pub key: crate::field_view_window::CellKey,
+    /// The draw's world X (retail units).
+    pub world_x: i32,
+    /// The draw's world Z (retail units).
+    pub world_z: i32,
+}
+
+/// The list index [`FieldOccluders::build`]'s callers give the terrain draws.
+pub const OCCLUDER_LIST_TERRAIN: usize = 0;
+/// The list index [`FieldOccluders::build`]'s callers give the placed objects.
+pub const OCCLUDER_LIST_PLACEMENTS: usize = 1;
+
 /// One instanced draw's triangle range + world AABB (the broad phase).
 #[derive(Debug, PartialEq)]
 struct DrawRange {
@@ -116,6 +139,8 @@ struct DrawRange {
     end: usize,
     /// Source mesh identity (diagnostics - see [`FieldOccluders::first_hit`]).
     res_tmd: usize,
+    /// The draw it was instanced from.
+    source: OccluderDraw,
 }
 
 /// Each mesh's occluder triangles, by its bytes and the VRAM they were
@@ -212,7 +237,7 @@ impl FieldOccluders {
         let vram_key = ContentKey::of_vram(&res.vram);
         let mut cache: HashMap<usize, Option<Arc<Tris>>> = HashMap::new();
         let mut out = Self::default();
-        for draws in draw_lists {
+        for (list, draws) in draw_lists.iter().enumerate() {
             for d in *draws {
                 if d.anim_id != 0 {
                     continue;
@@ -227,7 +252,7 @@ impl FieldOccluders {
                     }))
                 });
                 if let Some(m) = mesh {
-                    out.add_instanced_mesh(&m.0, &m.1, d);
+                    out.add_instanced_mesh_from(&m.0, &m.1, d, list);
                 }
             }
         }
@@ -238,6 +263,18 @@ impl FieldOccluders {
     /// them to the occluder set. Public so tests (and future hosts holding
     /// raw geometry) can compose a set without a [`SceneResources`].
     pub fn add_instanced_mesh(&mut self, positions: &[[f32; 3]], indices: &[u32], d: &EnvDraw) {
+        self.add_instanced_mesh_from(positions, indices, d, 0);
+    }
+
+    /// [`Self::add_instanced_mesh`] for a draw of `list`
+    /// ([`OccluderDraw::list`]).
+    pub fn add_instanced_mesh_from(
+        &mut self,
+        positions: &[[f32; 3]],
+        indices: &[u32],
+        d: &EnvDraw,
+        list: usize,
+    ) {
         // The draw's own placement (`Rx * Ry * Rz` then the world position,
         // `EnvDraw::place_point`), so a tilted placement occludes where it is
         // drawn rather than where a yaw-only bake would stand it.
@@ -272,6 +309,12 @@ impl FieldOccluders {
                 start,
                 end: self.tris.len(),
                 res_tmd: d.res_tmd,
+                source: OccluderDraw {
+                    list,
+                    key: crate::field_view_window::CellKey::of_draw(d),
+                    world_x: d.world_x,
+                    world_z: d.world_z,
+                },
             });
         }
     }
@@ -292,9 +335,19 @@ impl FieldOccluders {
     /// Both endpoints are trimmed by [`SEG_T_MIN`]/[`SEG_T_MAX`] so surfaces
     /// flush against either end don't self-occlude.
     pub fn segment_blocked(&self, eye: [f32; 3], point: [f32; 3]) -> bool {
+        self.segment_blocked_where(eye, point, &|_| true)
+    }
+
+    /// [`Self::segment_blocked`] over the draws `drawn` keeps.
+    fn segment_blocked_where(
+        &self,
+        eye: [f32; 3],
+        point: [f32; 3],
+        drawn: &dyn Fn(&OccluderDraw) -> bool,
+    ) -> bool {
         let dir = [point[0] - eye[0], point[1] - eye[1], point[2] - eye[2]];
         for dr in &self.draws {
-            if !segment_hits_aabb(eye, dir, dr.lo, dr.hi) {
+            if !segment_hits_aabb(eye, dir, dr.lo, dr.hi) || !drawn(&dr.source) {
                 continue;
             }
             for tri in &self.tris[dr.start..dr.end] {
@@ -361,12 +414,27 @@ impl FieldOccluders {
     /// The gate: is the character **completely** occluded from `eye`?
     /// Arms only when every sample of the 5-point cross is blocked.
     pub fn fully_occluded(&self, eye: [f32; 3], centre: [f32; 3]) -> bool {
+        self.fully_occluded_where(eye, centre, |_| true)
+    }
+
+    /// [`Self::fully_occluded`] against only the draws `drawn` says this
+    /// frame draws. The set is built once per scene from every static draw,
+    /// but the visible-tile crop and the actor cull drop draws per frame; a
+    /// dropped wall is not on screen, so it must not open a hole over the
+    /// character. Both hosts pass the same gate
+    /// (`engine-world-views::field_view_window::occluder_drawn`).
+    pub fn fully_occluded_where(
+        &self,
+        eye: [f32; 3],
+        centre: [f32; 3],
+        drawn: impl Fn(&OccluderDraw) -> bool,
+    ) -> bool {
         if self.is_empty() {
             return false;
         }
         Self::sample_points(eye, centre)
             .iter()
-            .all(|p| self.segment_blocked(eye, *p))
+            .all(|p| self.segment_blocked_where(eye, *p, &drawn))
     }
 }
 
@@ -507,6 +575,26 @@ mod tests {
         let o = set_with_wall_at(0);
         assert!(o.segment_blocked(EYE, PLAYER));
         assert!(o.fully_occluded(EYE, PLAYER));
+    }
+
+    /// A wall the frame does not draw (cropped or culled) hides nothing: the
+    /// gate asks the host's draw test per occluder range, with the list and
+    /// position of the draw it came from.
+    #[test]
+    fn an_undrawn_wall_does_not_arm_the_gate() {
+        let (p, i) = wall();
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh_from(&p, &i, &draw_at(0, 0, 0, 0), OCCLUDER_LIST_PLACEMENTS);
+        assert!(o.fully_occluded_where(EYE, PLAYER, |_| true));
+        assert!(!o.fully_occluded_where(EYE, PLAYER, |_| false));
+        let seen = std::cell::Cell::new(None);
+        o.fully_occluded_where(EYE, PLAYER, |d| {
+            seen.set(Some(*d));
+            true
+        });
+        let d = seen.get().expect("the gate asks about the wall");
+        assert_eq!(d.list, OCCLUDER_LIST_PLACEMENTS);
+        assert_eq!((d.world_x, d.world_z), (0, 0));
     }
 
     /// The same wall BEHIND the player does not block (the segment ends at

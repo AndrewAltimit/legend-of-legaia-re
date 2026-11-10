@@ -197,6 +197,27 @@ pub fn placed_actor_visible(
     })
 }
 
+/// The occlusion fade's draw gate
+/// ([`legaia_engine_scene::field_occlusion::FieldOccluders::fully_occluded_where`]):
+/// `true` when the static draw an occluder range came from is drawn this
+/// frame. A terrain draw asks the terrain crop
+/// ([`legaia_engine_scene::field_view_window::terrain_draw_visible`]), a
+/// placed object the actor cull ([`placed_actor_visible`]) at its base
+/// position - where its occluder triangles stand. With no crop (`cells =
+/// None`) every draw is drawn. Both play hosts ask this one gate, so the
+/// fade opens over the same walls on both.
+pub fn occluder_drawn(
+    world: &World,
+    cells: Option<&ViewCells>,
+    d: &legaia_engine_scene::field_occlusion::OccluderDraw,
+) -> bool {
+    if d.list == legaia_engine_scene::field_occlusion::OCCLUDER_LIST_PLACEMENTS {
+        placed_actor_visible(world, cells, d.world_x, d.world_z, d.key.cull_radius)
+    } else {
+        legaia_engine_scene::field_view_window::terrain_draw_visible(cells, d.key)
+    }
+}
+
 /// The field-NPC gate a host applies per draw while the visible-tile crop is
 /// on: `true` = draw placement `slot` (spawned at `spawn`). The same cull as
 /// [`placed_actor_visible`], at the NPC's live position and the placement

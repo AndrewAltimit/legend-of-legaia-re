@@ -779,7 +779,25 @@ impl PlayWindowApp {
                             );
                         }
                     }
-                    self.field_occluders.fully_occluded(eye.to_array(), centre)
+                    // Only what this frame draws can hide the player (the
+                    // shared gate the browser page asks too).
+                    let world = &self.session.host.world;
+                    let cells = legaia_engine_world_views::field_view_window::field_view_cells(
+                        world,
+                        legaia_engine_world_views::field_view_window::crop_framing(
+                            world,
+                            &self.session.camera,
+                            self.field_debug_camera,
+                        ),
+                    );
+                    self.field_occluders
+                        .fully_occluded_where(eye.to_array(), centre, |d| {
+                            legaia_engine_world_views::field_view_window::occluder_drawn(
+                                world,
+                                cells.as_ref(),
+                                d,
+                            )
+                        })
                 })
                 .unwrap_or(false);
             let mut ramp = self.occl_fade_strength.get();
