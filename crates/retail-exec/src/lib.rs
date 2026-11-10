@@ -192,6 +192,11 @@ impl Cpu {
         self.hooks.insert(va, Box::new(f));
     }
 
+    /// Run the routine at `va` again, dropping a hook set on it.
+    pub fn unhook(&mut self, va: u32) {
+        self.hooks.remove(&va);
+    }
+
     /// Make the routine at `va` return at once with `v0 = ret`.
     pub fn stub(&mut self, va: u32, ret: u32) {
         self.hook(va, move |r, _| r.r[V0] = ret);

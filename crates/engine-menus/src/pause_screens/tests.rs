@@ -18,6 +18,8 @@ fn items_session(ids_counts: &[(u8, u8)]) -> PauseItemsSession {
             count: *count,
             desc: format!("Desc {id:02X}"),
             passive: None,
+            detail: None,
+            scope_icon: None,
             use_bits: 0,
             throw_bits: 0,
         })

@@ -1221,6 +1221,8 @@ pub struct EquipInfoInput<'a> {
     pub passive: Option<(&'a str, &'a str)>,
     /// The detail printer's output, when the disc tables are up.
     pub detail: Option<crate::PauseItemDetail<'a>>,
+    /// The scope icon's font cell ([`crate::PauseItemInfo::scope`]).
+    pub scope: Option<u16>,
 }
 
 /// Window 25's panel content as a host hands it over: the two eight-word
@@ -1334,6 +1336,7 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
                 desc: i.desc,
                 passive: i.passive,
                 detail: i.detail,
+                scope: i.scope,
             }),
             compare: input.compare,
         }),

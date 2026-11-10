@@ -1145,10 +1145,15 @@ staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at `(WX+0x7C, WY)`
 panel `FUN_801D0F1C`:
 
 - name (CLUT 6, item-table `+4`) at `(WX, WY)`; description (CLUT 7,
-  item-table `+8`) at `(WX, WY+0x10)`;
-- for accessories, the passive lines from `0x8007625C` at `(WX, WY+0x38)`
-  (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a single / all-scope icon
-  (`0x84` / `0x85`) at `WX+0x84`;
+  item-table `+8`) at `(WX, WY+0x10)` through the detail printer
+  `FUN_800337B0`, so equipment gets its slot template and stat line here as on
+  the Equip screen's window 24;
+- for an item that grants a passive (index below `0x40`), the passive lines
+  from `0x8007625C` at `(WX, WY+0x38)` (CLUT 4) and `(WX, WY+0x48)` (CLUT 7);
+  a kind-`2` item adds a scope icon at `(WX+0x84, WY+0x38)`, icon `0x85` when
+  its effect descriptor's `+2` flags carry `0x08` with a non-zero `+0` class,
+  or `0x20` without `0x08`, else `0x84` (`0x801D111C..0x801D11B8`). Every
+  shipped passive sits on a kind-`2` item, so every passive line carries one;
 - for a Point Card (id `0xFE`), instead: "Points Left" at
   `(WX+0x18, WY+0x41)` and the 8-digit bank `_DAT_800845B4` at
   `(WX+0x38, WY+0x4E)`. This is a branch (id test at `0x801d0fd0` jumps to the
@@ -1158,7 +1163,11 @@ The renderer always emits a second framed box
 `FUN_8002C69C(WX, WY+0x38, 0x90, 0x28)` under its window; the passive / points
 lines land inside it. Port: the Point Card arm is a separate builder
 (`engine-ui::item_points_panel_draws`) over `items_screen_draws_for`, fed from
-`World::minigames.point_card`.
+`World::minigames.point_card`; the scope icon is the font sprite cell
+`ITEM_SCOPE_ONE` / `ITEM_SCOPE_ALL` picked by
+`engine-menus::pause_screens::item_scope_icon`.
+`crates/retail-exec/tests/menu_screens.rs` runs the command window, window 17
+and the panel against these builders.
 
 ### Command sub-flows (Use / Throw Out / Arrange)
 

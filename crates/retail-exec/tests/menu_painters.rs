@@ -110,7 +110,7 @@ const TARGET_CHOICE: u32 = 0x801E_46C0;
 const BAG_COUNTS: u32 = 0x8008_5959;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Ev {
+pub(crate) enum Ev {
     Text(Vec<u8>, i32, i32, u8),
     Number(i32, i32, i32, i32, u8, bool),
     Separator(u8, i32, i32, u8),
@@ -122,7 +122,7 @@ enum Ev {
     Call(u32),
 }
 
-fn cstr(m: &mut Memory, mut a: u32) -> Vec<u8> {
+pub(crate) fn cstr(m: &mut Memory, mut a: u32) -> Vec<u8> {
     let mut s = Vec::new();
     loop {
         let b = m.rd8(a);
@@ -134,15 +134,15 @@ fn cstr(m: &mut Memory, mut a: u32) -> Vec<u8> {
     }
 }
 
-struct Rig {
-    cpu: Cpu,
-    font: Font,
-    log: Rc<RefCell<Vec<Ev>>>,
+pub(crate) struct Rig {
+    pub(crate) cpu: Cpu,
+    pub(crate) font: Font,
+    pub(crate) log: Rc<RefCell<Vec<Ev>>>,
     /// What the bag hooks answer: `(slot or 0x100, count)`.
-    bag: Rc<RefCell<(u32, u32)>>,
+    pub(crate) bag: Rc<RefCell<(u32, u32)>>,
 }
 
-fn rig() -> Option<Rig> {
+pub(crate) fn rig() -> Option<Rig> {
     let (mut cpu, d, scus) = (scus_cpu()?, disc()?, scus()?);
     cpu.mem.load(
         OVERLAY_BASE,
@@ -260,12 +260,12 @@ fn rig() -> Option<Rig> {
 
 impl Rig {
     /// Run `entry` on a window record at `rect`; the log it left.
-    fn run(&mut self, entry: u32, rect: PainterRect) -> Vec<Ev> {
+    pub(crate) fn run(&mut self, entry: u32, rect: PainterRect) -> Vec<Ev> {
         self.run_with(entry, rect, &[])
     }
 
     /// [`Rig::run`] with arguments after the window record.
-    fn run_with(&mut self, entry: u32, rect: PainterRect, more: &[u32]) -> Vec<Ev> {
+    pub(crate) fn run_with(&mut self, entry: u32, rect: PainterRect, more: &[u32]) -> Vec<Ev> {
         for (o, v) in [(0xA, rect.x), (0xC, rect.y), (0xE, rect.w), (0x10, rect.h)] {
             self.cpu.mem.wr16(WINDOW + o, v as u16);
         }
@@ -277,7 +277,7 @@ impl Rig {
     }
 
     /// Lay the logged text draws out with the port's primitives.
-    fn text_of(&self, log: &[Ev]) -> Vec<TextDraw> {
+    pub(crate) fn text_of(&self, log: &[Ev]) -> Vec<TextDraw> {
         let mut out = Vec::new();
         for e in log {
             match e {
@@ -320,26 +320,26 @@ impl Rig {
         out
     }
 
-    fn string(&mut self, va: u32) -> String {
+    pub(crate) fn string(&mut self, va: u32) -> String {
         String::from_utf8(cstr(&mut self.cpu.mem, va)).expect("ASCII")
     }
 
-    fn poke_str(&mut self, va: u32, s: &str) {
+    pub(crate) fn poke_str(&mut self, va: u32, s: &str) {
         for (i, b) in s.bytes().chain([0]).enumerate() {
             self.cpu.mem.wr8(va + i as u32, b);
         }
     }
 }
 
-type Key = ((i32, i32, u32, u32), (u32, u32, u32, u32), [u32; 4]);
+pub(crate) type Key = ((i32, i32, u32, u32), (u32, u32, u32, u32), [u32; 4]);
 
-fn keys(d: &[TextDraw]) -> Vec<Key> {
+pub(crate) fn keys(d: &[TextDraw]) -> Vec<Key> {
     d.iter()
         .map(|t| (t.dst, t.src, t.color.map(f32::to_bits)))
         .collect()
 }
 
-fn hands(log: &[Ev]) -> Vec<PainterSprite> {
+pub(crate) fn hands(log: &[Ev]) -> Vec<PainterSprite> {
     log.iter()
         .filter_map(|e| match e {
             Ev::Hand(h) => Some(*h),
@@ -348,7 +348,7 @@ fn hands(log: &[Ev]) -> Vec<PainterSprite> {
         .collect()
 }
 
-fn pictos(log: &[Ev]) -> Vec<PainterPictogram> {
+pub(crate) fn pictos(log: &[Ev]) -> Vec<PainterPictogram> {
     log.iter()
         .filter_map(|e| match e {
             Ev::Picto(p) => Some(*p),
@@ -357,7 +357,7 @@ fn pictos(log: &[Ev]) -> Vec<PainterPictogram> {
         .collect()
 }
 
-fn same_text(rig: &Rig, log: &[Ev], port: &[TextDraw], what: &str) {
+pub(crate) fn same_text(rig: &Rig, log: &[Ev], port: &[TextDraw], what: &str) {
     let want = rig.text_of(log);
     assert!(!want.is_empty() || port.is_empty(), "{what}: nothing drawn");
     let (w, p) = (keys(&want), keys(port));
@@ -373,7 +373,7 @@ fn same_text(rig: &Rig, log: &[Ev], port: &[TextDraw], what: &str) {
     );
 }
 
-fn rect(rng: &mut Rng) -> PainterRect {
+pub(crate) fn rect(rng: &mut Rng) -> PainterRect {
     PainterRect::new(
         rng.below(0x110) as i32,
         rng.below(0xB0) as i32,
@@ -382,7 +382,7 @@ fn rect(rng: &mut Rng) -> PainterRect {
     )
 }
 
-fn flags(rng: &mut Rng, rows: u32) -> u32 {
+pub(crate) fn flags(rng: &mut Rng, rows: u32) -> u32 {
     match rng.below(5) {
         0 => 0x4000 | rng.below(0x4000),
         1 => 0x2000 | (rng.below(2) << 12) | rng.below(0x1000),

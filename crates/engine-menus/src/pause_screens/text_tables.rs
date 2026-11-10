@@ -112,6 +112,27 @@ pub struct ItemDisplayText {
     /// equipment's slot template) with name escapes expanded, and equipment's
     /// stat line as `(label, label dx, value dx, value)`.
     pub detail: Option<ItemDetailText>,
+    /// The scope icon the info panel draws beside a passive-bearing
+    /// consumable's green line, as a font sprite cell ([`item_scope_icon`]).
+    pub scope_icon: Option<u16>,
+}
+
+/// The scope icon `FUN_801D0F1C` draws beside a kind-`2` item's passive name
+/// (`0x801D111C..0x801D11B8`), as a font sprite cell: icon `0x85`
+/// (`ITEM_SCOPE_ALL`) when the effect descriptor's `+2` flags carry `0x08` and
+/// its `+0` class is non-zero, or carry `0x20` without `0x08`; icon `0x84`
+/// (`ITEM_SCOPE_ONE`) otherwise. The panel asks only when the item grants a
+/// passive (index below `0x40`).
+///
+/// PORT: FUN_801d0f1c (`0x801D111C..0x801D11B8`, the scope pictogram)
+pub fn item_scope_icon(effect: &legaia_game_tables::item_effect::ItemEffect) -> u16 {
+    use legaia_font::sprite_cell_ids::{ITEM_SCOPE_ALL, ITEM_SCOPE_ONE};
+    let all = if effect.flags & 0x08 != 0 {
+        effect.class != 0
+    } else {
+        effect.flags & 0x20 != 0
+    };
+    if all { ITEM_SCOPE_ALL } else { ITEM_SCOPE_ONE }
 }
 
 /// One item's [`ItemDisplayText::detail`].
