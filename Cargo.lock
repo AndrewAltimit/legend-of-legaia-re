@@ -4411,6 +4411,8 @@ dependencies = [
  "legaia-game-tables",
  "legaia-mes",
  "legaia-minigame-formats",
+ "legaia-overlay-images",
+ "legaia-prot",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
