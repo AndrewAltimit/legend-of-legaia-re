@@ -413,6 +413,14 @@ Yes is heard as the coin jingle `0x25` the commit state pushes on the next
 frame (`0x801DC4C0`). Port: `PrizeEvent::cue`, returned to both hosts by
 `MenuRuntime::step_field_session` on the channel the shop's own screens use.
 
+**The commit is its own frame.** Yes stores state `3` (`0x801DC494`) and
+nothing else; the next frame's state 3 reads no pad, grants the copy, debits
+the coin bank, raises the one-shot gate and rebuilds the rows. The port's
+session answers Yes with `PrizeEvent::Committing` and the commit with
+`PrizeEvent::Redeemed` on the tick after, which is where its host applies it.
+The [kernel differential](../tooling/retail-kernel-differential.md) runs the
+session against `FUN_801DC1CC` frame by frame.
+
 ### The buy-list builder (`FUN_80030628` case `0x0B`)
 
 The buy list is built once, at window create / content refresh, by the SCUS

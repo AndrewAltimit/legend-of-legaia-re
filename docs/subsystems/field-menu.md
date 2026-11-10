@@ -285,7 +285,9 @@ Notes on those rows:
   shop's recipient sub-screen adds only window 36.
 - **Windows 5 / 6 belong to entry-context kind `0x0D`**, a scripted pre-battle
   party menu. Window 5's two headings are the ready check whose Yes exits
-  into the fight; window 6's six labels are the matching briefing - six
+  into the fight (its rows step on Up / Down through the list kernel
+  `FUN_801D688C`, two rows, wrapping, with confirm and cancel tested ahead of
+  any move); window 6's six labels are the matching briefing - six
   static VAs in the overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
   `0x801d636c..0x801d6448`), not content the entry-context record owns.
 - **Window 31** is opened by both shop buy commits with a one-command script

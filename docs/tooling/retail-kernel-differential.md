@@ -830,3 +830,22 @@ once per `0xFF` byte of the `+0x12` list on every pass (`0x801E1284..0x801E12D8`
 list is four `0xFF` drew no bolts between the caster and the target. And the two lists do not read a byte alike: the
 landing list's `0x64` is a screen flash (`FUN_80024E80(0x801C9070, 2)`, `0x801E14E0..0x801E1534`) and `0x65..=0x7F`
 spawns nothing, where the port handed both to the prototype table; the flight list has no such test.
+The menu side runs through a window-VM harness: the interpreter `FUN_801D6628` with its SCUS window-list helpers
+live over a bump heap (`window_vm`), every program the overlay scan recovers chained at random and generated ones
+over every opcode, the whole list compared node by node after each program. The port's window model created every
+window with style `0` where the creator copies the descriptor's class word, never computed the park edge it slides in
+from, and closed a closing window again and a sliding one from frame `0`, where retail leaves the first alone and
+reverses the second's progress. With the helpers live, the sub-screens that wait on them run frame by frame
+(`save_subscreens`): the terminal screen `FUN_801DD12C`, the Yes/No screens `FUN_801D6D38` / `FUN_801D8A58`, the
+notice `FUN_801DD1B8` and the release wait `FUN_801DD26C`, with the list kernel `FUN_801D688C` live beneath them. The
+save graph's Yes/No screens never seeded their cursor. The pause menu's own ready check, against the same
+`FUN_801D6D38`, stepped on Left and Right and stopped at the ends, and moved before it confirmed; retail runs the list
+kernel over two rows, wrapping, on Up and Down, with confirm and cancel ahead of any move.
+
+The casino prize counter `FUN_801DC1CC` (`prize_exchange`), over every block of the disc's table, found the port
+committing a redeem on the Yes press: retail stores state `3` there and commits on the next frame, which reads no pad,
+so the jingle lands a frame after a silent Yes. The menu's decimal writers `FUN_80034B78` / `FUN_80034E4C`
+(`menu_numerals`) decide each of nine places alone, and six copies in the port right-aligned a string instead: a value
+wider than its field prints its overflow's non-zero digits from the pen in retail, where the port stacked them on the
+first cell, and the zero-padded writer cut the value to its field. One kernel, `decimal_field_cells`, now stands for
+both. The HP and MP ink tiers `FUN_800349EC` / `FUN_80035EA8` match both hosts' readers.
