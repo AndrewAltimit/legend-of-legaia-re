@@ -207,10 +207,15 @@ pub fn owned_bank_offsets(stream: &[u8]) -> Option<OwnedBankOffsets> {
 /// budget a type-3 chunk bounds itself by). Returns the type-3 leftover
 /// byte count (`size - remaining_budget`), or 0 when the list ends normally.
 ///
+/// The type-3 arithmetic is retail's, in wrapping words: `remaining =
+/// budget - payload offset` (`subu s6,s6,a1` at `0x8001E7C4`) and the return
+/// `size - remaining` (`subu s8,s3,s6`), so a budget that ends ahead of the
+/// payload hands the uploader a negative count and returns more than the
+/// chunk's size. A size below four advances no further than its own header
+/// (`size >> 2 == 0`): the next word is read as the next header.
+///
 /// Hardening the retail walker does not do: a header that overruns the
-/// buffer, a payload size the buffer cannot hold, or a size too small to
-/// advance the word cursor (`size >> 2 == 0`, which would spin retail
-/// forever) all terminate the walk.
+/// buffer or a payload size the buffer cannot hold terminates the walk.
 pub fn install_chunks<H: InstallHost>(
     host: &mut H,
     slot: &mut SeqSlot,
@@ -249,10 +254,10 @@ pub fn install_chunks<H: InstallHost>(
             3 => {
                 // Budget stop: `remaining = budget - payload byte offset`;
                 // upload what fits and report the leftover.
-                let remaining = budget.saturating_sub(payload_start);
-                host.vab_upload(slot.id, payload, Some(remaining));
+                let remaining = (budget as u32).wrapping_sub(payload_start as u32);
+                host.vab_upload(slot.id, payload, Some(remaining as usize));
                 slot.loaded = true;
-                return size.saturating_sub(remaining);
+                return (size as u32).wrapping_sub(remaining) as usize;
             }
             4 => {
                 host.set_stream_flag();
@@ -264,11 +269,7 @@ pub fn install_chunks<H: InstallHost>(
             // retail `sltiu 0xd` range guard. Both just advance.
             _ => {}
         }
-        let advance = size >> 2;
-        if advance == 0 {
-            break; // sub-word size would never advance the cursor
-        }
-        word += advance;
+        word += size >> 2;
     }
     0
 }
@@ -431,8 +432,8 @@ mod tests {
         // Declared size overruns the buffer.
         let over = chunk(1, &[0x55; 4]);
         assert_eq!(install_chunks(&mut host, &mut slot, &over[..6], 0), 0);
-        // Sub-word size (advance 0) would spin retail; we stop after the
-        // dispatch instead of looping forever.
+        // Sub-word size (advance 0): the next word is the next header, as
+        // in retail, and here it overruns the buffer.
         let mut tiny = ((1u32 << 24) | 2).to_le_bytes().to_vec();
         tiny.extend_from_slice(&[0x66; 8]);
         assert_eq!(install_chunks(&mut host, &mut slot, &tiny, 0), 0);

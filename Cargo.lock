@@ -4382,6 +4382,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-container-formats",
+ "legaia-disc-audit",
  "legaia-disc-patch",
  "legaia-engine-audio",
  "legaia-engine-battle",

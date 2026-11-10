@@ -18,6 +18,7 @@ path = "tests/integration.rs"
 [dev-dependencies]
 legaia-actor-formats.workspace = true
 legaia-art.workspace = true
+legaia-disc-audit.workspace = true
 legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-hud.workspace = true
