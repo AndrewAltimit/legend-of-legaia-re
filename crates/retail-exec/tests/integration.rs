@@ -36,6 +36,7 @@ mod billboard;
 mod camera_follow;
 mod camera_height;
 mod capture_takedown;
+mod cast_cue;
 mod cast_damage;
 mod cast_dispatch;
 mod cast_steal;
