@@ -132,6 +132,7 @@ mod field_actor_plan;
 mod field_camera;
 mod field_ctx;
 mod field_hud;
+mod field_init;
 mod field_leaves;
 mod field_load_entry;
 mod field_magic;
