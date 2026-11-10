@@ -621,3 +621,180 @@ const NEO_STAR_SLASH: u32 = 0x801F_69D8;
 const DEAD_END_CRISIS: u32 = 0x801F_69D8;
 const GENOCIDAL_CANNON: u32 = 0x801F_6A20;
 const ELEMENT_STRIKE: u32 = 0x801F_69D8;
+
+/// A summon creature's tick body, by its port.
+type SummonTick =
+    fn(&mut t::CastModuleCtx, &mut CastActorState, &mut CastActorState) -> t::CastTickStep;
+
+/// Walk one summon tick body off its image: the arms it left, each as
+/// `(phase, phase after, busy)`, and whether it reached its Done.
+/// Each arm a walk left: `(phase, phase after, busy)`.
+type Walk = Vec<(u8, u8, bool)>;
+
+fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
+    let disc = disc()?;
+    let mut cpu = scus_cpu()?;
+    cpu.mem.load(OVERLAY_BASE, &disc.read_entry(898).ok()?);
+    let module = disc.read_entry(entry as usize).ok()?;
+    cpu.mem.load(BASE, &module);
+    cpu.mem.wr32(CTX_PTR, CTX);
+    let stream = Rc::new(std::cell::Cell::new(0x1234_5679u32));
+    for target in jal_targets(&module) {
+        if target == RAND {
+            let stream = stream.clone();
+            cpu.hook(RAND, move |r, _| {
+                let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+                stream.set(n);
+                r.r[V0] = (n >> 16) & 0x7FFF;
+            });
+        } else if WRAPPERS.contains(&target) {
+            cpu.stub(target, ROLL);
+        } else {
+            cpu.stub(target, 0);
+        }
+    }
+    for b in 0..CTX_LEN as u32 {
+        cpu.mem.wr8(CTX + b, 0);
+    }
+    cpu.mem.wr8(CTX, 3);
+    cpu.mem.wr8(CTX + 1, 3);
+    for s in 0..8u32 {
+        let a = ACTOR + s * STRIDE as u32;
+        cpu.mem.wr32(ACTORS + s * 4, a);
+        for o in (0..STRIDE as u32).step_by(2) {
+            cpu.mem.wr16(a + o, 0);
+        }
+        cpu.mem.wr16(a + 0x14C, 300);
+        cpu.mem.wr8(a + 0x21D, 8);
+        cpu.mem.wr8(a + 0x1DF, action);
+        cpu.mem.wr8(a + 0x1DD, 4);
+        let node = NODES + s * 0x100;
+        cpu.mem.wr32(a + 0x22C, node);
+        cpu.mem.wr16(node + 0x72, 0x1000);
+    }
+    for i in 0..5 {
+        cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
+    }
+    cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
+    cpu.mem.wr8(STEP, 1);
+    let mut path = Vec::new();
+    for _ in 0..40_000 {
+        for s in 0..8u32 {
+            cpu.mem.wr8(ACTOR + s * STRIDE as u32 + 0x1D9, 0);
+            cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
+        }
+        let phase = cpu.mem.rd8(CTX + 0x279);
+        if cpu.call(va, &[]) != Stop::Returned {
+            return Some((path, false));
+        }
+        let busy = cpu.regs.r[V0] != 0;
+        let after = cpu.mem.rd8(CTX + 0x279);
+        if busy && after == phase {
+            continue;
+        }
+        path.push((phase, after, busy));
+        if !busy {
+            return Some((path, true));
+        }
+    }
+    Some((path, false))
+}
+
+/// The summon tick bodies the walk holds to their ports, as `(entry, body,
+/// action, the port, the fewest arms the walk must leave)`. PROT 0922's and
+/// 0958's walks stop where an arm reaches a part handle the stubbed seat call
+/// never made; the arms before it are compared.
+const SUMMON_TICKS: [(u32, u32, u8, SummonTick, usize); 7] = [
+    (
+        949,
+        WATER_CRYSTALS,
+        0x9E,
+        |c, _, v| t::water_crystals_tick(c, v, None),
+        6,
+    ),
+    (925, SPIKEFISH, 0x97, |c, k, _| t::spikefish_tick(c, k), 10),
+    (
+        924,
+        ULTIMATE_RAVE,
+        0x96,
+        |c, k, v| t::ultimate_rave_tick(c, k, v, false),
+        12,
+    ),
+    (922, PUERA, 0x94, |c, _, v| t::puera_tick(c, v, None), 8),
+    (
+        927,
+        JUGGERNAUT,
+        0x99,
+        |c, _, v| t::juggernaut_tick(c, v, None),
+        20,
+    ),
+    (
+        958,
+        BLAZING_SLASH,
+        0x79,
+        |c, _, v| t::blazing_slash_tick(c, v, None),
+        24,
+    ),
+    (
+        918,
+        KEMARO,
+        0x95,
+        |c, _, v| t::kemaro_tick(c, v, None).unwrap_or(t::CastTickStep::Done),
+        21,
+    ),
+];
+
+#[test]
+fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
+    differential!(
+        prot(949, WATER_CRYSTALS),
+        prot(925, SPIKEFISH),
+        prot(924, ULTIMATE_RAVE),
+        prot(922, PUERA),
+        prot(927, JUGGERNAUT),
+        prot(958, BLAZING_SLASH),
+        prot(918, KEMARO)
+    );
+    if disc().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut failures = Vec::new();
+    for (entry, va, action, port, fewest) in SUMMON_TICKS {
+        let (path, done) = summon_walk(entry, va, action).expect("disc");
+        eprintln!(
+            "PROT {entry:04}: {:x?}{}",
+            path.iter().map(|p| p.0).collect::<Vec<_>>(),
+            if done { " Done" } else { "" }
+        );
+        if path.len() < fewest {
+            failures.push(format!(
+                "PROT {entry:04}: the walk left {} arms",
+                path.len()
+            ));
+        }
+        for &(p, a, busy) in &path {
+            let mut ctx = t::CastModuleCtx {
+                phase: p,
+                ..Default::default()
+            };
+            let (mut k, mut v) = (CastActorState::default(), CastActorState::default());
+            let step = port(&mut ctx, &mut k, &mut v);
+            if (step == t::CastTickStep::Done) == busy || (busy && ctx.phase != a) {
+                failures.push(format!(
+                    "PROT {entry:04} arm {p:#x}: retail -> {a:#x} busy {busy}, port -> {:#x} {step:?}",
+                    ctx.phase
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const WATER_CRYSTALS: u32 = 0x801F_6A10;
+const SPIKEFISH: u32 = 0x801F_6A00;
+const ULTIMATE_RAVE: u32 = 0x801F_6A18;
+const PUERA: u32 = 0x801F_6A3C;
+const JUGGERNAUT: u32 = 0x801F_6A84;
+const BLAZING_SLASH: u32 = 0x801F_6DD8;
+const KEMARO: u32 = 0x801F_6C70;

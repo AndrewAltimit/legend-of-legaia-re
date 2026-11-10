@@ -719,6 +719,12 @@ pub fn water_crystals_tick(
     victim: &mut CastActorState,
     hit: Option<i32>,
 ) -> CastTickStep {
+    // Arm 5 is terminal: it shows the party row again and clears the busy
+    // register (`clear s7` at `0x801F7588`) without advancing, so the module
+    // ends on that arm's pass, not a tick later past the bound.
+    if ctx.phase == WATER_CRYSTALS_TERMINAL_ARM {
+        return CastTickStep::Done;
+    }
     run_tick(ctx, 6, |_| {
         if let Some(roll) = hit {
             apply_hit_floor_zero(victim, roll);
@@ -729,6 +735,9 @@ pub fn water_crystals_tick(
         false
     })
 }
+
+/// PROT 0949's terminal arm (`0x801F7540..0x801F7588`).
+pub const WATER_CRYSTALS_TERMINAL_ARM: u8 = 5;
 
 #[cfg(test)]
 mod spikefish_tail_tests {
