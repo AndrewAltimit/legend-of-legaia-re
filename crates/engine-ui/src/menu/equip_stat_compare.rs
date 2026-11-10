@@ -660,9 +660,6 @@ pub(crate) fn compare_arrow_draws(
     text_draws_for(&font.layout_ascii(ch), pen, color)
 }
 
-/// Fixed decimal-cell pitch of `FUN_80034B78` (8 px per digit).
-const NUM_CELL_W: i32 = 8;
-
 /// Render a field list to [`TextDraw`]s. [`ComparePanelField::Icon`] is
 /// dropped - it is a UI-icon-atlas sprite, not a font glyph, and the host
 /// owns that atlas. [`ComparePanelField::Arrow`] draws the separator glyph
@@ -691,18 +688,14 @@ pub fn compare_panel_draws_for(
                 digits,
                 ink,
             } => {
-                let s = value.max(&0).to_string();
-                let len = s.len() as i32;
-                let color = compare_panel_ink(*ink);
-                for (i, ch) in s.chars().enumerate() {
-                    let cell = (i32::from(*digits) - len + i as i32).max(0);
-                    out.extend(crate::numeral_cell_draws(
-                        font,
-                        ch,
-                        (*x + cell * NUM_CELL_W, *y),
-                        color,
-                    ));
-                }
+                out.extend(crate::menu::decimal_field::decimal_field_draws(
+                    font,
+                    i64::from(*value),
+                    (*x, *y),
+                    i32::from(*digits),
+                    false,
+                    compare_panel_ink(*ink),
+                ));
             }
             ComparePanelField::Arrow { x, y, glyph, ink } => {
                 out.extend(compare_arrow_draws(font, *glyph, (*x, *y), *ink));

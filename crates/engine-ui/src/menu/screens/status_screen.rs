@@ -412,13 +412,6 @@ fn status_scroll_arrow_draws(
     out
 }
 
-/// Fixed decimal-cell pitch of the retail number primitive
-/// `FUN_80034b78`: one glyph cell per digit, 8 px apart (pinned against
-/// the golden capture - the HP row's current-value field at `+0x30` puts
-/// "180" in cells `+0x38/+0x40/+0x48`, ending flush at the `/` at
-/// `+0x50`).
-const NUM_CELL_W: i32 = 8;
-
 /// Lay a decimal value into a `digits`-wide fixed-cell field starting at
 /// `x` - the shape of the retail decimal primitive
 /// `FUN_80034b78(value, digits, x, y)`: digit `i` (of the value's
@@ -432,19 +425,14 @@ pub(crate) fn num_field_draws(
     digits: i32,
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    let s = value.to_string();
-    let len = s.len() as i32;
-    let mut out = Vec::new();
-    for (i, ch) in s.chars().enumerate() {
-        let cell = (digits - len + i as i32).max(0);
-        out.extend(crate::numeral_cell_draws(
-            font,
-            ch,
-            (x + cell * NUM_CELL_W, y),
-            color,
-        ));
-    }
-    out
+    crate::menu::decimal_field::decimal_field_draws(
+        font,
+        i64::try_from(value).unwrap_or(i64::MAX),
+        (x, y),
+        digits,
+        false,
+        color,
+    )
 }
 
 /// Window 28's content size, the Status main panel's descriptor rect.

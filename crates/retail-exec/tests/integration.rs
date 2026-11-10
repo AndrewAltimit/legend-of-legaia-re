@@ -141,6 +141,7 @@ mod map_fade;
 mod me_codec;
 mod melee_hit;
 mod menu_leaves;
+mod menu_numerals;
 mod menu_stats;
 mod mesh_swap;
 mod mode_frame;
