@@ -377,3 +377,325 @@ fn the_dma_primitives_leave_what_the_port_host_leaves() {
         "{ops:?} {waited_out} {idle}"
     );
 }
+
+#[test]
+fn the_stream_queue_plans_what_retail_plans() {
+    differential!(scus(ENQUEUE));
+    if crate::common::disc().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    const ENQUEUE: u32 = 0x8003_DDA0;
+    const TABLE_PTR: u32 = GP + 0x1A8;
+    const QUEUED: u32 = GP + 0x8BC;
+    const BYTE_CURSOR: u32 = GP + 0x984;
+    const TABLE: u32 = 0x8010_0000;
+    let index = Arc::new(index());
+    let mut cpu = cd_cpu(&index).expect("disc");
+    // The in-RAM TOC as the port's wrapper reads it, header words included.
+    let ram_toc: Vec<u32> = (0..index.toc().len() as u32 + 2)
+        .map(|i| cpu.mem.rd32(RAM_TOC + 4 * i))
+        .collect();
+    let entries = index.toc().len() as u32 - 8;
+    let mut rng = Rng(0x5155_4555);
+    for round in 0..200 {
+        reset(&mut cpu);
+        cpu.mem.wr32(TABLE_PTR, TABLE);
+        cpu.mem.wr32(QUEUED, 0);
+        cpu.mem.wr32(BYTE_CURSOR, 0);
+        cpu.mem.load(TABLE, &[0xA5; 0x200]);
+        let mut port = legaia_engine_scene::cd_dma::StreamLoadQueue::new();
+        for step in 0..1 + rng.below(40) {
+            let idx = rng.below(entries);
+            assert_eq!(cpu.call(ENQUEUE, &[idx]), Stop::Returned);
+            let d = port.enqueue_from_toc(idx as u16, &ram_toc).expect("in range");
+            let at = TABLE + 8 * step;
+            assert_eq!(
+                (cpu.mem.rd32(at), cpu.mem.rd32(at + 4)),
+                (u32::from(d.prot_idx), d.byte_offset),
+                "round {round} step {step}"
+            );
+            assert_eq!(cpu.mem.rd32(QUEUED) as usize, port.count());
+            assert_eq!(cpu.mem.rd32(BYTE_CURSOR), port.byte_cursor());
+            assert_eq!(cpu.mem.rd32(LAST_INDEX), u32::from(port.last_prot_idx()));
+            assert_eq!(cpu.mem.rd32(LAST_START), port.last_start_lba());
+            assert_eq!(cpu.mem.rd32(TIMEOUT), port.read_wait_timeout());
+            // The slot after the one written stands.
+            assert_eq!(cpu.mem.rd32(at + 8), 0xA5A5_A5A5);
+        }
+    }
+}
+
+#[test]
+fn the_overlay_loaders_cache_what_the_port_caches() {
+    differential!(scus(LOADER_A), scus(LOADER_B));
+    if crate::common::disc().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    use legaia_engine_scene::overlay_loader::{OverlayCacheSlot, load_overlay_a, load_overlay_b};
+    const LOADER_A: u32 = 0x8003_EBE4;
+    const LOADER_B: u32 = 0x8003_EC70;
+    const SLOT_A: u32 = GP + 0x924;
+    const SLOT_B: u32 = GP + 0x934;
+    const DST_A_PTR: u32 = 0x8001_038C;
+    const DST_B_PTR: u32 = 0x8001_0390;
+    const DEV_FLAG: u32 = 0x8007_B868;
+    const MODE_WORD: u32 = 0x8007_B83C;
+    const DST_A: u32 = 0x8010_0000;
+    const DST_B: u32 = 0x8014_0000;
+    const SPAN: usize = 0x3_0000;
+    let index = Arc::new(index());
+    let mut cpu = cd_cpu(&index).expect("disc");
+    // Overlay parameters whose entry fits the scratch destinations.
+    let params: Vec<i32> = (0..0x60)
+        .filter(|p| {
+            index
+                .entry_lba_count_retail((p + 0x37F) as u16)
+                .is_some_and(|n| n as usize * 0x800 <= SPAN)
+        })
+        .collect();
+    assert!(params.len() > 20, "{} loadable overlays", params.len());
+    let (dst_a_word, dst_b_word) = (cpu.mem.rd32(DST_A_PTR), cpu.mem.rd32(DST_B_PTR));
+    let mut rng = Rng(0x4F56_4C59);
+    let (mut fresh, mut hits, mut dev_calls, mut invalidated) = (0, 0, 0, 0);
+    for round in 0..120 {
+        reset(&mut cpu);
+        cpu.mem.wr32(SLOT_A, -1i32 as u32);
+        cpu.mem.wr32(SLOT_B, -1i32 as u32);
+        cpu.mem.wr32(DST_A_PTR, DST_A);
+        cpu.mem.wr32(DST_B_PTR, DST_B);
+        cpu.mem.load(DST_A, &vec![0; SPAN]);
+        cpu.mem.load(DST_B, &vec![0; SPAN]);
+        let mut port = ProtCdDmaHost::new(index.clone());
+        port.set_overlay_destinations(DST_A, DST_B);
+        for step in 0..12 {
+            let ctx = format!("round {round} step {step}");
+            let dev = if rng.below(8) == 0 { 1 + rng.below(9) } else { 0 };
+            let mode = if rng.below(4) == 0 { 0x15 } else { rng.below(0x1C) as u16 };
+            // A small pool, so the cache hits.
+            let param = params[rng.below(4.min(params.len() as u32)) as usize + (round % 8)];
+            cpu.mem.wr32(DEV_FLAG, dev);
+            cpu.mem.wr16(MODE_WORD, mode);
+            port.set_overlay_dev_flag(dev);
+            port.set_overlay_mode_state(mode);
+            let a = rng.below(2) == 0;
+            let was = (port.overlay_slot(OverlayCacheSlot::A), port.overlay_slot(OverlayCacheSlot::B));
+            assert_eq!(
+                cpu.call(if a { LOADER_A } else { LOADER_B }, &[param as u32]),
+                Stop::Returned,
+                "{ctx}"
+            );
+            let retail = cpu.regs.r[V0] as i32;
+            // The loader only issues the read; the mode switch waits on it.
+            cpu.mem.wr32(DEV_FLAG, 0);
+            assert_eq!(cpu.call(WAIT, &[0]), Stop::Returned, "{ctx}");
+            let got = if a {
+                load_overlay_a(&mut port, param)
+            } else {
+                load_overlay_b(&mut port, param)
+            };
+            let _ = port.read_wait_poll(false);
+            assert_eq!(retail, got, "{ctx}: return, loader {}", if a { 'A' } else { 'B' });
+            let now = (port.overlay_slot(OverlayCacheSlot::A), port.overlay_slot(OverlayCacheSlot::B));
+            assert_eq!(
+                (cpu.mem.rd32(SLOT_A) as i32, cpu.mem.rd32(SLOT_B) as i32),
+                now,
+                "{ctx}: cache slots"
+            );
+            for dst in [DST_A, DST_B] {
+                let want = port.read(dst, SPAN).expect("port RAM").to_vec();
+                assert!(cpu.mem.read(dst, SPAN) == want, "{ctx}: overlay image");
+            }
+            if dev != 0 {
+                dev_calls += 1;
+            } else if was == now {
+                hits += 1;
+            } else {
+                fresh += 1;
+                invalidated += usize::from(a && was.1 != -1);
+            }
+        }
+    }
+    cpu.mem.wr32(DST_A_PTR, dst_a_word);
+    cpu.mem.wr32(DST_B_PTR, dst_b_word);
+    assert!(
+        fresh > 300 && hits > 100 && dev_calls > 50 && invalidated > 50,
+        "{fresh} {hits} {dev_calls} {invalidated}"
+    );
+}
+
+/// The drive a streaming read waits on, as both sides see it: each look at
+/// the vsync counter moves time on, and now and then a sector lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Drive {
+    now: i32,
+    start: i32,
+    last_sector: i32,
+    remaining: i32,
+    total: i32,
+    steps: Vec<(i32, bool)>,
+    looks: usize,
+    restarts: u32,
+    delivered: Vec<u32>,
+}
+
+impl Drive {
+    fn look(&mut self) -> i32 {
+        let (dt, sector) = self.steps[self.looks % self.steps.len()];
+        self.looks += 1;
+        self.now += dt;
+        if sector && self.remaining > 0 {
+            self.remaining -= 1;
+            self.last_sector = self.now;
+        }
+        self.now
+    }
+    fn restart(&mut self) {
+        self.restarts += 1;
+        self.remaining = self.total;
+        self.last_sector = self.now;
+    }
+}
+
+impl legaia_engine_scene::cd_dma::StreamReadSyncHost for Drive {
+    fn vsync_now(&mut self) -> i32 {
+        self.look()
+    }
+    fn read_start_vsync(&self) -> i32 {
+        self.start
+    }
+    fn last_sector_vsync(&self) -> i32 {
+        self.last_sector
+    }
+    fn sectors_remaining(&self) -> i32 {
+        self.remaining
+    }
+    fn total_sector_count(&self) -> i32 {
+        self.total
+    }
+    fn restart_streaming_read(&mut self) {
+        self.restart();
+    }
+    fn deliver_status(&mut self, result: Option<&mut [u8]>) {
+        self.delivered.push(u32::from(result.is_some()));
+    }
+}
+
+#[test]
+fn the_stream_read_sync_waits_as_retail_waits() {
+    differential!(scus(SYNC));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const SYNC: u32 = 0x8005_EA84;
+    const RESTART: u32 = 0x8005_E788;
+    const DELIVER: u32 = 0x8005_BEAC;
+    const READ_START: u32 = 0x8007_96E0;
+    const LAST_SECTOR: u32 = 0x8007_96DC;
+    const REMAINING: u32 = 0x8007_96D8;
+    const TOTAL: u32 = 0x8007_96C4;
+    const RESULT: u32 = 0x8010_0000;
+    let drive: Rc<RefCell<Option<Drive>>> = Rc::default();
+    // The cells are the drive's: the hooks carry them across each call.
+    fn pull(d: &mut Drive, m: &mut Memory) {
+        d.start = m.rd32(READ_START) as i32;
+        d.last_sector = m.rd32(LAST_SECTOR) as i32;
+        d.remaining = m.rd32(REMAINING) as i32;
+        d.total = m.rd32(TOTAL) as i32;
+    }
+    fn push(d: &Drive, m: &mut Memory) {
+        m.wr32(READ_START, d.start as u32);
+        m.wr32(LAST_SECTOR, d.last_sector as u32);
+        m.wr32(REMAINING, d.remaining as u32);
+        m.wr32(TOTAL, d.total as u32);
+    }
+    {
+        let drive = drive.clone();
+        cpu.hook(VSYNC, move |r, m| {
+            assert_eq!(r.r[psx_retail_exec::A0], -1i32 as u32, "a counter read");
+            let mut g = drive.borrow_mut();
+            let d = g.as_mut().expect("drive");
+            pull(d, m);
+            r.r[V0] = d.look() as u32;
+            push(d, m);
+        });
+    }
+    {
+        let drive = drive.clone();
+        cpu.hook(RESTART, move |r, m| {
+            assert_eq!(r.r[psx_retail_exec::A0], 1);
+            let mut g = drive.borrow_mut();
+            let d = g.as_mut().expect("drive");
+            pull(d, m);
+            d.restart();
+            push(d, m);
+        });
+    }
+    {
+        let drive = drive.clone();
+        cpu.hook(DELIVER, move |r, _| {
+            assert_eq!(r.r[psx_retail_exec::A0], 1);
+            let mut g = drive.borrow_mut();
+            g.as_mut()
+                .expect("drive")
+                .delivered
+                .push(u32::from(r.r[psx_retail_exec::A1] != 0));
+        });
+    }
+    let mut rng = Rng(0x5359_4E43);
+    let (mut timed_out, mut done, mut restarted, mut polled) = (0, 0, 0, 0);
+    for round in 0..4_000 {
+        let total = 1 + rng.below(40) as i32;
+        let now = rng.below(0x1_0000) as i32;
+        let start = now - rng.below(0x500) as i32;
+        let seed = Drive {
+            now,
+            start,
+            last_sector: now - rng.below(0x50) as i32,
+            remaining: match rng.below(8) {
+                0 => -1 - rng.below(3) as i32,
+                1 => 0,
+                _ => 1 + rng.below(total as u32) as i32,
+            },
+            total,
+            // Slow drives stall; quick ones finish.
+            steps: (0..7)
+                .map(|_| (rng.below(0x30) as i32, rng.below(3) != 0))
+                .collect(),
+            looks: 0,
+            restarts: 0,
+            delivered: Vec::new(),
+        };
+        let poll_once = rng.below(2) == 1;
+        let with_result = rng.below(2) == 1;
+
+        *drive.borrow_mut() = Some(seed.clone());
+        push(&seed, &mut cpu.mem);
+        let args = [u32::from(poll_once), if with_result { RESULT } else { 0 }];
+        assert_eq!(cpu.call(SYNC, &args), Stop::Returned, "round {round}");
+        let retail_ret = cpu.regs.r[V0] as i32;
+        let retail = drive.borrow_mut().take().expect("drive");
+
+        let mut port = seed;
+        let mut buf = [0u8; 8];
+        let port_ret = legaia_engine_scene::cd_dma::stream_read_sync(
+            &mut port,
+            poll_once,
+            with_result.then_some(&mut buf[..]),
+        );
+        assert_eq!(retail_ret, port_ret, "round {round}: report");
+        assert_eq!(retail, port, "round {round}: the drive after the wait");
+        timed_out += usize::from(port_ret == -1);
+        done += usize::from(port_ret == 0);
+        restarted += usize::from(port.restarts > 0);
+        polled += usize::from(poll_once && port_ret > 0);
+    }
+    assert!(
+        timed_out > 100 && done > 300 && restarted > 300 && polled > 300,
+        "{timed_out} {done} {restarted} {polled}"
+    );
+}
