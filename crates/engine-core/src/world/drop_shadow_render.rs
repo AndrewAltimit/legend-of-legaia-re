@@ -88,10 +88,26 @@ impl World {
         }
         let curve_bias = self.overworld_curve_bias();
         let proj = self.field_fx_view(view);
+        // The cells' corners go through the GTE's own integer `RTPT`
+        // (`FUN_8001C394`) under the matrix `FUN_800172C0` loads, rebuilt
+        // from the view; only the depth a host tests against its scene comes
+        // from the shared view-projection.
+        let gte = legaia_render_kernels::gte::FieldGteView::from_field_view(
+            view,
+            legaia_engine_camera::projection::GTE_OFY as i32,
+        );
         let project = |p: [i32; 3]| {
-            let (sx, sy, sz) = proj.project_gte(p)?;
+            let r = gte.rtps(p.map(|c| c as i16));
+            if r.mac[2] <= 0 {
+                return None;
+            }
             let depth = proj.ndc_depth([p[0], p[1] - DROP_SHADOW_DEPTH_LIFT, p[2]]);
-            Some(ShadowVertex { sx, sy, sz, depth })
+            Some(ShadowVertex {
+                sx: r.sxy.0,
+                sy: r.sxy.1,
+                sz: r.sz,
+                depth,
+            })
         };
         let mut out = Vec::new();
         let mut cast = |flags: u32, pos: [i32; 3], near: bool| {
