@@ -190,6 +190,7 @@ mod libsnd_voices;
 mod light_pool;
 mod lzs_decode;
 mod magic_level;
+mod man_install;
 mod man_record;
 mod map_display;
 mod map_display_tick;
