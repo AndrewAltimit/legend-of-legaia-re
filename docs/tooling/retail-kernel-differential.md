@@ -992,3 +992,21 @@ to the fifth monster's seat when the first four are down, where the port returne
 the band end. The save composer `FUN_801E1934` (`save_compose`) stages exactly the
 block `legaia-save`'s title, identity and summary writers compose from the same
 live state.
+
+The menu overlay's window painters (`menu_painters`), run with every leaf draw logged under the ink
+word `_DAT_8007B454`, found the ink the port had dropped as a draw-order word: the Yes / No labels of
+windows 46 and 5 stage ink `5` (teal) and the port drew them white. Window 34's passive bound falls
+through to the item's own description at `0x40` and above, where `description_source` said none. With
+the options popup open, every row but the cursor's draws in ink `0`, where the port scaled each row's
+own colour; the popup's cursor is the hand sprite, where the port printed `>`. The Magic info window
+prints a spell's level through the template `$<digit>`, and `$` is the font's one-glyph "Lv"
+ligature, which the port spelled out. The field party HUD `FUN_801D0D38` (`field_hud`) stages the MP
+law for the MP pair, so a fallen member's MP keeps its own tier there, where the port painted it red.
+The save screen's grid dispatcher `FUN_801E06C0` (`save_grid`) forms each cell's slide base from the
+previous cell's slot, which only the parked row and the slide frames show.
+
+The fishing HUD's sprite path (`fishing_hud`) and the Muscle Dome hub's (`dome_hud`), run into a
+packet buffer and ordering table and held to the port's primitives packet by packet, match: the shared
+emitters, the digit fields, the banners, the gauge bars and the hub's ROUND banner and course card. So
+do the art-name banner placement `FUN_8004C650` (`art_banner`), the counters, prompts, tabs and shop
+panels of the menu overlay, the save-flow confirms, and the save screen's box guard and caption.
