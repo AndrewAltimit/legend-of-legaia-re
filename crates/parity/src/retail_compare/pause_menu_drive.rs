@@ -4,14 +4,20 @@
 use super::*;
 
 /// Ticks between two scripted pad edges of a menu drive: long enough for
-/// the menu's open / hand-off beats, which swallow the edge that caused them.
-pub const MENU_PRESS_GAP: u64 = 12;
+/// the window-slide lock a screen change raises
+/// (`legaia_engine_menus::menu_slide_lock`). Retail's next sub-screen runs its
+/// window program the frame after the press and reads no pad until the
+/// twelve-frame slide is over, so the next press lands thirteen frames on at
+/// the earliest; one more keeps the drive off the edge.
+pub const MENU_PRESS_GAP: u64 = 14;
 
 /// Extra ticks the first press after `Start` waits: the field darkens for up
 /// to fourteen ticks (`0x83 / 10` at a frame step of `1`) before the menu
-/// exists and takes a press (`NativeSession::pause_wipe`, retail
-/// `FUN_801ED308` phase 1), longer than one [`MENU_PRESS_GAP`].
-pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
+/// exists (`NativeSession::pause_wipe`, retail `FUN_801ED308` phase 1), and
+/// the root picker's windows then slide in for twelve more before it reads
+/// the pad. With one [`MENU_PRESS_GAP`] on top, the first press lands at
+/// tick 28.
+pub const MENU_OPEN_WIPE_TICKS: u64 = 14;
 
 /// Ticks a card screen's grid takes to come up after its pill-row confirm:
 /// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`

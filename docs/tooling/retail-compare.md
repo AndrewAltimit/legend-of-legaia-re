@@ -3459,7 +3459,8 @@ seeded: the field seed runs (card-load resume, seat, settle), then the pause
 menu is driven through its own pad path - `Start`, `Down` onto the row,
 `Cross`; one more `Cross` past the character picker for `0x13`, and for
 `0x14` a `Down` past Best Equipment and a `Cross` into the first slot's
-candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
+candidates, one edge every `MENU_PRESS_GAP` ticks (fourteen: a screen change holds the pad
+for thirteen, [`field-menu.md`](../subsystems/field-menu.md#the-window-slide-input-lock)). The headless side
 presses them into `BootSession`'s menu; the image side hands the same edges to
 `play-window` as a `--pad-script` after the card-load resume.
 
