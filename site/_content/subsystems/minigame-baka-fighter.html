@@ -372,7 +372,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     </tbody>
   </table>
   </div>
-  <p>The rows drain <strong>strictly in sequence</strong>, each starting once the rows before it are empty, with a tick blip every step. A row moves a fifth of what is left per frame while more than 5 remain, half while 3 to 5 remain, and exactly one below that. <strong>Pressing any face button snaps the tally to its end</strong>: the fast-forward latch short-circuits the step to the whole remainder.</p>
+  <p>The rows drain <strong>strictly in sequence</strong>, each starting once the rows before it are empty, with a tick blip every step. A row fades in while the row just above it is empty, so a zero row lets the next one light up early and drain without a pause when its turn comes. A row moves a fifth of what is left per frame while more than 5 remain, half while 3 to 5 remain, and exactly one below that. <strong>Pressing any face button snaps the tally to its end</strong>: the fast-forward latch short-circuits the step to the whole remainder.</p>
   <p>The combo row reads the running maximum of the opponent&rsquo;s hits-taken counter, which the HUD latches once a frame - so the score&rsquo;s combo term tracks the longest streak you land.</p>
   <p class="dg-note">Tally <code>FUN_801D239C</code>, drain step <code>FUN_801D6710</code>, per-exchange accumulator <code>FUN_801D2A28</code>, combo / HP tables <code>DAT_801D70C4</code> / <code>DAT_801D711C</code> (overlay rodata, no terminators). The same drain step is linked into the <a href="minigame-muscle-dome.html">Muscle Dome</a> hub.</p>
 </section>

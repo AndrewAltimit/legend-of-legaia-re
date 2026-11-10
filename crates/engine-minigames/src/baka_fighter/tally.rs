@@ -77,8 +77,9 @@ pub const TALLY_GOLD_COUNTER: usize = 3;
 /// PORT: FUN_801d239c (end-of-match score tally). The retail screen holds
 /// four counters (`DAT_801dbee0` / `DAT_801dbed8` / `DAT_801dbedc` for the
 /// score rows and `DAT_801dbee8` for the coin prize). Each row has its own
-/// fade counter that advances by the frame step only once every *earlier*
-/// row has emptied; a row starts draining when its fade reaches
+/// fade counter that advances by the frame step while the row *just above*
+/// it is empty; a row drains only once every earlier row has emptied, and
+/// starts when its fade reaches
 /// [`TALLY_FADE_GATE`], moves [`tally_drain_step`] out per frame and queues
 /// the tick blip ([`BAKA_CUE_CURSOR`]) on every step. The first three rows
 /// feed the score total (`DAT_801dbee4`); the fourth feeds party gold.
@@ -122,16 +123,22 @@ impl BakaTally {
             self.fast_forward = true;
         }
         for i in 0..TALLY_COUNTERS {
-            // A row is only reached once every earlier row has emptied.
-            if self.counters[..i].iter().any(|&c| c != 0) {
-                break;
+            // A row's fade advances while the row just above it is empty,
+            // whatever the rows further up hold: each section tests only its
+            // neighbour (`0x801D26C4`, `0x801D274C`, `0x801D2800`). So a zero
+            // score row lets the row below it fade in while the first row is
+            // still counting, and that row then drains the frame its turn
+            // comes, with no fade-in wait of its own.
+            if i == 0 || self.counters[i - 1] == 0 {
+                self.fade[i] += frame_step;
             }
-            self.fade[i] += frame_step;
-            if self.counters[i] == 0 {
+            // A row drains only once every row above it has emptied, and
+            // after its fade has passed the gate.
+            if self.counters[..i].iter().any(|&c| c != 0)
+                || self.counters[i] == 0
+                || self.fade[i] < TALLY_FADE_GATE
+            {
                 continue;
-            }
-            if self.fade[i] < TALLY_FADE_GATE {
-                break;
             }
             let step =
                 tally_drain_step(self.counters[i], self.fast_forward).clamp(1, self.counters[i]);
@@ -143,12 +150,13 @@ impl BakaTally {
             } else {
                 self.total += step;
             }
-            // No break: retail falls straight through into the next row's
-            // section, so the frame that empties a row also advances the
-            // following row's fade. That row cannot drain on the same frame
-            // (its fade is still under the gate), but it does start a frame
-            // earlier than a break here would allow. If this row did *not*
-            // empty, the next iteration's own guard stops the sweep.
+        }
+        // A fade past the gate is held at full (`0x801D28C0..0x801D292C`), so
+        // the row draws at `0x10 * 10` and drains on every later frame.
+        for f in &mut self.fade {
+            if *f > TALLY_FADE_GATE - 1 {
+                *f = TALLY_FADE_GATE - 1;
+            }
         }
     }
 
@@ -167,6 +175,13 @@ impl BakaTally {
     /// The counters still to drain.
     pub fn counters(&self) -> [i32; TALLY_COUNTERS] {
         self.counters
+    }
+
+    /// Each row's fade counter, in counter order (`DAT_801DBEF4` /
+    /// `DAT_801DBEEC` / `DAT_801DBEF0` / `DAT_801DBEFC`): the brightness the
+    /// screen draws the row at is ten times it.
+    pub fn fades(&self) -> [i32; TALLY_COUNTERS] {
+        self.fade
     }
 
     /// The on-screen score total accumulated so far (`DAT_801dbee4`).
