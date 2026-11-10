@@ -106,8 +106,9 @@ for (const [name, sub, key] of [['slots', 3, 'O'], ['baka', 4, 'B'], ['dance', 6
 
 /* A retail save off a card: the page lands it and writes the LGSF the window then resumes, so
  * every one of these also crosses a save from one host to the other. `card` is under saves/library/cards. */
-/* A save carries no RNG state, and the page lands a card from the scene it had running while the
- * window lands it cold, so both seed one stream after the landing (LEGAIA_RNG_SEED / debug_seed_rng). */
+/* A save carries no RNG state, and the page lands a card (or enters a scene the picker does not
+ * list) from the scene it had running while the window enters it cold, so both seed one stream
+ * after the entry (LEGAIA_RNG_SEED / debug_seed_rng). */
 const CARD_RNG_SEED = 0x12345678;
 const CARD = { late: 'playthrough-endgame-7saves.mcr', ladder: 'playthrough-ladder-pro00-14.mcr' };
 const cardScenes = (key, card, block) => ({
@@ -177,7 +178,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
   if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
-  if (sc.lgsfPath) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
+  if (sc.lgsfPath || sc.viaTown) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
   const r = spawnSync(engine, a, { env, cwd, encoding: 'utf8', timeout: 1200000 });
@@ -199,11 +200,16 @@ async function pageRun(cfg) {
   for (const id of cfg.unboxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (el.checked) el.click(); }
   const P = (window.__pair = window.__pair);
   P.vt = 1e6; P.virtual = true;
+  /* The window seeds ahead of its scene entry and again after its seeds: this page seeds ahead of
+   * the entry that lands where the window does, and again after it. */
+  const seedRng = () => { if (sc.lgsfPath || sc.viaTown) { if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused'); } };
+  if (pick) seedRng();
   btn.click();
   const view = window.__playView;
   view.stop();
   view.setPaused(true);
-  if (!pick) view.enter(sc.scene);
+  if (!pick) { seedRng(); view.enter(sc.scene); }
+  if (sc.viaTown) seedRng();
   if (sc.seat && !rt.play_debug_seat(sc.seat[0], sc.seat[1])) throw new Error('seat refused');
   /* The native side's LEGAIA_DIAG_FOLLOW_KNOBS: the knobs written raw, every frame. */
   const holdKnobs = () => {
@@ -218,9 +224,9 @@ async function pageRun(cfg) {
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     rt.import_save(bytes);
+    seedRng();
     view.resumeSave();
-    /* The window's LEGAIA_RNG_SEED, at the same point: after the landing, before the first tick. */
-    if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused');
+    seedRng();
   }
   if (sc.coins) rt.cheat_apply('coins', sc.coins, '');
   const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));

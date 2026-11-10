@@ -713,7 +713,9 @@ pub(super) fn teach_debug_spells(
 /// replaces the world's boot seed, so a sweep can be re-rolled onto a
 /// different deterministic stream - the way to reach an AI branch (a
 /// monster cast) the default seed never picks. A development aid for the
-/// parity sweeps, not a player surface.
+/// parity sweeps, not a player surface. The launch applies it twice, before
+/// the launch scene's entry and after the debug seeds, so the entry's draws
+/// and the first tick both read the seeded stream.
 pub(super) fn apply_rng_seed_env(session: &mut NativeSession) {
     if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
         let spec = spec.trim();
