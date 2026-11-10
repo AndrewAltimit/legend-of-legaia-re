@@ -620,13 +620,12 @@ fn the_magic_page_matches() {
             (count > 0 && seru_id != 0 && rng.below(3) != 0).then(|| top + rng.below(visible));
         let latch = (hand.is_some() && rng.below(3) == 0).then(|| top + rng.below(visible));
         rig.cpu.mem.wr32(LIST_TOP, top);
-        rig.cpu.mem.wr32(
-            LIST_CURSOR_WORD,
-            hand.map_or(0x4000 | rng.below(0x1000), |h| h),
-        );
         rig.cpu
             .mem
-            .wr32(LATCH, latch.map_or(0x1000 | rng.below(0x1000), |l| l));
+            .wr32(LIST_CURSOR_WORD, hand.unwrap_or(0x4000 | rng.below(0x1000)));
+        rig.cpu
+            .mem
+            .wr32(LATCH, latch.unwrap_or(0x1000 | rng.below(0x1000)));
         let r = legaia_engine_ui::menu::window_painters::PainterRect::new(
             rng.below(100) as i32,
             rng.below(50) as i32,
@@ -987,10 +986,9 @@ fn the_moves_page_matches() {
         let visible = (count - top).min(7);
         let hand = (count > 0 && rng.below(3) != 0).then(|| top + rng.below(visible));
         rig.cpu.mem.wr32(LIST_TOP, top);
-        rig.cpu.mem.wr32(
-            LIST_CURSOR_WORD,
-            hand.map_or(0x4000 | rng.below(0x1000), |h| h),
-        );
+        rig.cpu
+            .mem
+            .wr32(LIST_CURSOR_WORD, hand.unwrap_or(0x4000 | rng.below(0x1000)));
         let r = legaia_engine_ui::menu::window_painters::PainterRect::new(
             rng.below(100) as i32,
             rng.below(50) as i32,

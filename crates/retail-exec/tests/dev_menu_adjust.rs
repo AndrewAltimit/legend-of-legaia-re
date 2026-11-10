@@ -199,11 +199,15 @@ fn the_list_pickers_active_leg_steps_as_retail_steps() {
         let held = if rng.below(6) == 0 { 0x40 } else { 0 };
         cpu.mem.wr32(HELD, held);
         let (up, down) = (rng.below(3) == 0, rng.below(3) == 0);
-        cpu.mem
-            .wr32(STEP_EDGE, u32::from(up) * 0x1000 | u32::from(down) * 0x4000);
+        cpu.mem.wr32(
+            STEP_EDGE,
+            (u32::from(up) * 0x1000) | (u32::from(down) * 0x4000),
+        );
         let (cancel, confirm) = (rng.below(5) == 0, rng.below(5) == 0);
-        cpu.mem
-            .wr32(EDGE, u32::from(cancel) * 0x20 | u32::from(confirm) * 0x40);
+        cpu.mem.wr32(
+            EDGE,
+            (u32::from(cancel) * 0x20) | (u32::from(confirm) * 0x40),
+        );
         log.borrow_mut().clear();
         assert_eq!(
             cpu.call(PICKER, &[ACTOR, start as u32, end as u32, panel]),
