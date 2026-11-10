@@ -218,6 +218,7 @@ mod text_width;
 mod tile_lookups;
 mod tint_ease;
 mod tint_sm;
+mod tmd_register;
 mod turn_pick;
 mod unequip;
 mod validator;
