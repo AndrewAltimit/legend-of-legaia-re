@@ -852,11 +852,16 @@ pub(super) fn pad_walk(
             let w = &session.host.world;
             // A prop's box, not a person: an NPC walks off on its own, and
             // stepping round one changed the walk past `suimon`'s gate
-            // keeper by a few units.
-            let npc_near = w.npcs.positions.values().any(|&(x, z)| {
-                (i32::from(x) - i32::from(wx)).abs() < 256
-                    && (i32::from(z) - i32::from(wz)).abs() < 256
-            });
+            // keeper by a few units. With bodies solid a person stops the
+            // walk as a prop does, and one who stands still holds it for
+            // good: `bubu1` P1[6] at (8500, 3904) stops a walk at
+            // (8568, 4006), eight units west of the route's line at
+            // x 8576, where the line itself passes the body clear.
+            let npc_near = !w.npcs.solid
+                && w.npcs.positions.values().any(|&(x, z)| {
+                    (i32::from(x) - i32::from(wx)).abs() < 256
+                        && (i32::from(z) - i32::from(wz)).abs() < 256
+                });
             !npc_near
                 && w.field_actor_dir_blocked(wx, wz, dir)
                 && !w.field_actor_dir_blocked(tx, tz, dir)
