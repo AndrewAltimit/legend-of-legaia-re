@@ -133,3 +133,114 @@ fn the_placement_blit_matches_retail() {
         assert_eq!(retail, port, "run {run} id {id} col {col} row {row}");
     }
 }
+
+/// The slot overlay's init `FUN_801CEC94`, whole with its other calls stubbed,
+/// over the shipped record table and generated records: for each of the 21
+/// message records it `StoreImage`s the rect at `(0x340 + u / 4, 0x100 + v)`
+/// out of a generated page-3 VRAM, allocates `h << 8` bytes, stores the
+/// pointer at the record's `+4` and expands the 4bpp row into one byte per
+/// texel. Each expanded texel is the nibble times four (the swatch's `u`), the
+/// rows `0x100` apart; held against `parse_messages` over the same page.
+/// Retail expands `w / 2` byte pairs a row, so an odd width's last column is
+/// never written and is left out of the compare.
+#[test]
+fn the_message_bank_expands_as_retail_expands_it() {
+    use legaia_minigame_formats::minigame_slot_scene::{
+        MESSAGE_COUNT, MESSAGE_STRIDE, MESSAGE_TABLE_OFFSET, parse_messages,
+    };
+    use psx_retail_exec::{A0, A1, V0};
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    const INIT: u32 = 0x801C_EC94;
+    const STORE_IMAGE: u32 = 0x8005_842C;
+    const ALLOC: u32 = 0x8001_7888;
+    const SPAWN_ACTOR: u32 = 0x8002_0DE0;
+    const HEAP: u32 = 0x8015_0000;
+    const PAGE_W: usize = 256;
+    const PAGE_H: usize = 256;
+    differential!(prot(975, INIT));
+    let Some(d) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut overlay = d.read_entry(975).expect("PROT 0975");
+    let mut rng = Rng(0x4241_4E4B);
+    let mut compared = 0usize;
+    for run in 0..40 {
+        // Run 0 keeps the shipped records; the others generate their own,
+        // `u` on a VRAM halfword and the rect inside the page, as every
+        // shipped one is.
+        if run > 0 {
+            for i in 0..MESSAGE_COUNT {
+                let o = MESSAGE_TABLE_OFFSET + i * MESSAGE_STRIDE;
+                let u = rng.below(0x30) * 4;
+                overlay[o] = u as u8;
+                overlay[o + 1] = rng.below(0x80) as u8;
+                overlay[o + 2] = (1 + rng.below(0x80).min(PAGE_W as u32 - u - 1)) as u8;
+                overlay[o + 3] = rng.below(20) as u8;
+            }
+        }
+        let page: Vec<u8> = (0..PAGE_W * PAGE_H).map(|_| rng.below(16) as u8).collect();
+        let mut cpu = scus_cpu().expect("disc present");
+        cpu.mem.load(OVERLAY_BASE, &overlay);
+        cpu.stub_outside = Some((INIT, INIT + 0x444));
+        let page_rc = Rc::new(page.clone());
+        let pg = page_rc.clone();
+        cpu.hook(STORE_IMAGE, move |r, m| {
+            let rect: [u16; 4] = std::array::from_fn(|i| m.rd16(r.r[A0] + 2 * i as u32));
+            let (x0, y0) = ((rect[0] - 0x340) as usize * 4, (rect[1] - 0x100) as usize);
+            let mut out = r.r[A1];
+            for row in 0..rect[3] as usize {
+                for hw in 0..rect[2] as usize {
+                    let at = |k: usize| {
+                        let (x, y) = (x0 + hw * 4 + k, y0 + row);
+                        if x < PAGE_W && y < PAGE_H {
+                            pg[y * PAGE_W + x]
+                        } else {
+                            0
+                        }
+                    };
+                    m.wr8(out, at(0) | (at(1) << 4));
+                    m.wr8(out + 1, at(2) | (at(3) << 4));
+                    out += 2;
+                }
+            }
+        });
+        let next = Rc::new(Cell::new(HEAP));
+        let sizes = Rc::new(RefCell::new(Vec::new()));
+        let (n, s) = (next.clone(), sizes.clone());
+        cpu.hook(ALLOC, move |r, m| {
+            let at = n.get();
+            s.borrow_mut().push(r.r[A1]);
+            m.load(at, &vec![0xEE; r.r[A1] as usize]);
+            n.set(at + ((r.r[A1] + 0xFF) & !0xFF).max(0x100));
+            r.r[V0] = at;
+        });
+        cpu.stub(SPAWN_ACTOR, 0x8014_0000);
+        // Its decompression scratch at `_DAT_8007B85C`.
+        cpu.mem.wr32(0x8007_B85C, 0x8018_0000);
+        cpu.mem.wr16(0x8007_B8C2, 1);
+        assert_eq!(cpu.call(INIT, &[]), Stop::Returned, "run {run}");
+        let port = parse_messages(&overlay, &page, PAGE_W).expect("records");
+        for (i, msg) in port.iter().enumerate() {
+            let rec = RECORDS + (i * MESSAGE_STRIDE) as u32;
+            let buf = cpu.mem.rd32(rec + 4);
+            assert_eq!(
+                sizes.borrow()[i],
+                u32::from(msg.h) << 8,
+                "run {run} msg {i}: size"
+            );
+            let pairs = usize::from(msg.w) / 2 * 2;
+            for row in 0..usize::from(msg.h) {
+                for col in 0..pairs {
+                    let got = cpu.mem.rd8(buf + (row * 0x100 + col) as u32);
+                    let want = msg.bitmap[row * usize::from(msg.w) + col] << 2;
+                    let rect = (msg.u, msg.v, msg.w, msg.h);
+                    assert_eq!(got, want, "run {run} msg {i} {rect:?} row {row} col {col}");
+                    compared += 1;
+                }
+            }
+        }
+    }
+    assert!(compared > 200_000, "only {compared} texels");
+}
