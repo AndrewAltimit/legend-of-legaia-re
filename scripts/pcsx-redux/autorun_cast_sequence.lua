@@ -48,6 +48,10 @@
 --                FUN_800508DC's), and rates.csv beside it: each seat's animation
 --                rate +0x21D and node cursor +0x68, off which a reaction's
 --                pace reads.
+--   hits.csv     with LEGAIA_HIT_TRACE=1 (breakpoint core): one row per melee
+--                hit FUN_801EC3E4 resolves, at the head of its hit body
+--                (0x801EC5A8): the attacker, its target and the BIOS rand()
+--                seed word the hit's rolls draw from.
 --   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
 --                these bytes with its pc, ra and registers.
 --   manifest.txt the run's knobs.
@@ -608,6 +612,24 @@ probe.run({
                 local r = PCSX.getRegisters()
                 calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
                     -1, tou32(r.GPR.n.ra))
+            end)
+        end
+        if probe.getenv_num("LEGAIA_HIT_TRACE", 0) ~= 0 then
+            -- Each melee hit the strike kernel FUN_801EC3E4 resolves
+            -- (breakpoint core): 0x801EC5A8 is the head of its hit body,
+            -- past the head guards and the limb-miss exit and ahead of the
+            -- block roll's two draws, so the BIOS seed word there is the one
+            -- the hit's rolls draw from - blocked, missed or landed alike.
+            local hits = probe.csv_open(probe.out_path("hits.csv"),
+                "vsync,st7,att,tgt,seed")
+            probe.arm_breakpoint(0x801EC5A8, "Exec", 4, "hit", function()
+                local r = PCSX.getRegisters().GPR.n
+                local cx = u32(CTX_PTR)
+                local att = tou32(r.s6) % 256
+                local a = actor(att)
+                hits:row("%d,%d,%d,%d,%d", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, att,
+                    a ~= nil and u8(a + 0x1DD) or -1, u32(0x80009010))
             end)
         end
         if probe.getenv_num("LEGAIA_RANGE_TRACE", 0) ~= 0 then
