@@ -37,7 +37,6 @@ pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
 
 pub mod battle_intro;
 pub mod gte_trace;
-pub mod mode_transition;
 pub mod window;
 
 // The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`; its

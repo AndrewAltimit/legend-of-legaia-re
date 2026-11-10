@@ -75,8 +75,6 @@ Beyond `window`, `screen_overlay` and `psx_blend` above:
 - `battle_intro` - the renderer-bound half of the field-to-battle transition
   emitter; the wgpu-free half is `legaia_render_kernels::battle_intro`.
 - `gte_trace` - GTE (cop2) trace capture + replay harness.
-- `mode_transition` - the game-mode-entry prologue (`FUN_80016230`): frame
-  pacing reset, overlay-cache check, stashing the field state a mode clobbers.
 - `dyn_light` / `scene_lights` - the enhanced-lighting shading law's WGSL
   twin and the per-scene point lights' renderer half (not retail).
 - `occlusion_fade` - the camera-occlusion fade's renderer side (not retail).

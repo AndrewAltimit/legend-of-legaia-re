@@ -1023,7 +1023,7 @@ disc references it).
   span against `[0, 0x140]`. Horizontal only: retail reads the X of two
   corners and no Y at all, which is what separates it from the rectangle
   probe `FUN_8001B73C`.
-- [`mode_transition`](../../crates/engine-render/src/mode_transition.rs) (`FUN_80016230`) - the
+- [`mode_transition`](../../crates/engine-mode/src/mode_transition.rs) (`FUN_80016230`) - the
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is
   entered behind.
