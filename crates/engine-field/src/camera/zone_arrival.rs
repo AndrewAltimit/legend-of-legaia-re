@@ -75,10 +75,11 @@ pub enum CameraZoneArrival {
 /// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
 /// label of this body, not its entry).
 ///
-/// REPLACED-BY: [`ZoneFollow::arm_arrival`] and the zone-follow tick that
-/// consumes it, which do the retail leg's job - re-pin the focus to the
-/// player and snap the composed shot in - and run the tile query from the
-/// same tick through [`crate::field_regions::zone_query`].
+/// REPLACED-BY: [`ZoneFollow::arm_scene_arrival`] and the zone-follow tick
+/// that consumes it, which do the retail leg's job - re-pin the focus to the
+/// player and snap the composed shot in, or, while the player is engaged,
+/// count the `0xF` countdown and retire at `-1` without a snap - and run the
+/// tile query from the same tick through [`crate::field_regions::zone_query`].
 ///
 /// This is the stronger claim, not "nothing calls it". The body ported here
 /// is the leg the entry gate selects when `_DAT_8007B868` is **non-zero**

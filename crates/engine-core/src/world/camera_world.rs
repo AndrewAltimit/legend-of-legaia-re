@@ -713,6 +713,57 @@ mod tests {
         (w, c)
     }
 
+    /// The scene-entry arrival is the arrival actor's (`FUN_801DBE9C`'s
+    /// retail leg, `0x801DBFF8..0x801DC0A4`): an engaged player
+    /// (`+0x10 & 0x80000`) is not snapped, the actor counts its `0xF`
+    /// countdown a pass at a time, a lock that lifts inside the window snaps
+    /// on that pass, and one that outlasts it leaves the scene-reset globals
+    /// for the follow ease.
+    #[test]
+    fn scene_arrival_waits_on_an_engaged_player_and_retires_at_minus_one() {
+        let (mut w, mut c) = gated_zone_world();
+        let reset_pitch = {
+            let mut r = Camera::default();
+            r.reset_globals_for_scene_entry();
+            r.globals.angles()[0]
+        };
+        assert_ne!(
+            reset_pitch, 450,
+            "the fixture's shot differs from the reset"
+        );
+
+        // Engaged for the whole window: sixteen passes, no snap, and the
+        // actor is gone after them.
+        c.reset_globals_for_scene_entry();
+        w.actors[0].move_state.flags |= 0x0008_0000;
+        for pass in 0..16 {
+            w.tick();
+            c.tick(&w);
+            assert_eq!(c.globals.angles()[0], reset_pitch, "pass {pass}");
+            assert_eq!(c.zone.arrival_pending(), pass < 15, "pass {pass}");
+        }
+        // Unlocked and standing still: the retired actor snaps nothing.
+        w.actors[0].move_state.flags &= !0x0008_0000;
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], reset_pitch, "no late snap");
+
+        // Engaged for a few passes, then free inside the window: the actor
+        // snaps on the pass the lock lifts.
+        c.reset_globals_for_scene_entry();
+        w.actors[0].move_state.flags |= 0x0008_0000;
+        for _ in 0..5 {
+            w.tick();
+            c.tick(&w);
+            assert_eq!(c.globals.angles()[0], reset_pitch);
+        }
+        w.actors[0].move_state.flags &= !0x0008_0000;
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], 450, "snapped when the lock lifted");
+        assert!(!c.zone.arrival_pending());
+    }
+
     /// Op `4C CF` (arm `0x801E2A34`) stages the script focus override the
     /// edge clamp `FUN_801DAA50` reads: a tile byte pins that focus axis on
     /// the tile centre (stored negated, as the clamp's `0x801DAB68` /

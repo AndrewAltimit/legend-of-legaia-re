@@ -148,7 +148,7 @@ impl Camera {
                 // A scripted glide in a free-roam scene drives these same
                 // globals from the zone pose it was primed with; the follow
                 // view keeps reading them rather than its fallback.
-                self.zone.active = !self.zone.snap_pending;
+                self.zone.active = !self.zone.snap_pending && self.zone.arrival.is_none();
             }
             return;
         }

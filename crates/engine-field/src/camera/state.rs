@@ -159,6 +159,10 @@ pub struct ZoneFollow {
     /// engine-core's `World`-driven camera tests can stage an arrival.
     #[doc(hidden)]
     pub snap_pending: bool,
+    /// The arrival actor's `+0x54` countdown while its snap waits on an
+    /// engaged player (see [`Self::arm_arrival`]); `None` once it snapped or
+    /// retired.
+    pub(super) arrival: Option<i16>,
     /// The next tick re-runs the zone query even on the same tile.
     pub(super) reload_pending: bool,
     /// The op-`0x43` ramp register values already folded into the block,
@@ -258,6 +262,7 @@ impl Default for ZoneFollow {
             tile: None,
             prev_player: None,
             snap_pending: false,
+            arrival: None,
             reload_pending: true,
             ramp_seen: crate::register_ramp::CameraRegisterFile::DEFAULTS,
             prev_scripted: false,
@@ -281,7 +286,16 @@ impl Default for ZoneFollow {
     }
 }
 
+/// The arrival actor's starting `+0x54`: the MAN loader spawns it as
+/// `FUN_801DE478(0xF)` (`0x8003B9B0`), which stores the mode argument there.
+pub const ARRIVAL_COUNTDOWN: i16 = 0xF;
+
 impl ZoneFollow {
+    /// Whether a scene-entry arrival snap is still waiting to run.
+    pub fn arrival_pending(&self) -> bool {
+        self.arrival.is_some()
+    }
+
     /// Load one 18-byte camera-region record into the block (the op-`0x45`
     /// LOAD arm, `FUN_801DBC20(operand + 1)`).
     pub fn load_record(&mut self, rec: &[u8; crate::field_regions::ZONE_RECORD_STRIDE]) {
@@ -349,15 +363,38 @@ impl ZoneFollow {
         self.seat_angles = Some(angles);
     }
 
-    /// Arm a scene-entry / arrival snap: re-query the tile and copy the
-    /// composed target into the globals on the next tick.
+    /// Arm an unconditional arrival snap: re-query the tile and copy the
+    /// composed target into the globals on the next tick, whatever the
+    /// player is doing. For a seat that stands the engine where a retail
+    /// state stood (the retail-compare seat, `LEGAIA_SEAT`, the page's debug
+    /// seat): the state's camera is follow history the seat cannot replay,
+    /// and the snap is the seat's best stand-in. A MAN load's own arrival
+    /// is [`Self::arm_scene_arrival`].
     pub fn arm_arrival(&mut self) {
         self.snap_pending = true;
+        self.arrival = None;
         self.reload_pending = true;
         self.tile = None;
         self.prev_player = None;
         self.active = false;
         self.focus_held = None;
+    }
+
+    /// Arm the scene-entry arrival: re-query the tile and snap the composed
+    /// target in once the player is free.
+    ///
+    /// The snap is the arrival actor's (`FUN_801DBE9C`, spawned by the MAN
+    /// load as `FUN_801DE478(0xF)`, so its `+0x54` countdown starts at
+    /// [`ARRIVAL_COUNTDOWN`]), and its retail leg (`0x801DBFF8..0x801DC0A4`)
+    /// is gated on the player: an unengaged player (`+0x10 & 0x80000` clear)
+    /// is snapped on the actor's first tick, an engaged one only counts the
+    /// countdown down a game pass at a time, and the actor retires at `-1`
+    /// without snapping. A lock that lifts inside the window snaps on that
+    /// pass. [`Camera::zone_follow_tick`] runs the gate.
+    pub fn arm_scene_arrival(&mut self) {
+        self.arm_arrival();
+        self.snap_pending = false;
+        self.arrival = Some(ARRIVAL_COUNTDOWN);
     }
 }
 

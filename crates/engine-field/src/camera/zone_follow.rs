@@ -136,11 +136,45 @@ impl Camera {
         // `FUN_801DB8EC` themselves), and neither are the two callers that
         // run the ease on their own: the ledge hop's phase tick
         // (`FUN_801D2298`) and the arc release watcher (`FUN_801D5D60`).
-        let locked = world.field_player_movement_locked()
-            && !world.ledge_hop_active()
-            && !world.player_script_arc_live();
-        let gated =
-            locked && story & CAMERA_LOCKED_EASE_FLAG == 0 && !zone.snap_pending && zone.active;
+        let engaged = world.field_player_movement_locked();
+        let locked = engaged && !world.ledge_hop_active() && !world.player_script_arc_live();
+        // Retail eases once a game pass, with no frame-step term in the shift
+        // (`0x801DB5AC..0x801DB724`; the player tick `FUN_801D1344` calls
+        // it), and the world ticks once a vsync: the steps land on the pass
+        // grid, or the camera closes `frame_step` times too fast
+        // (`kor_field_route_walk`'s film holds eye Y `681, 703, 720, 733`
+        // two vsyncs apart). The arrival actor counts on the same grid.
+        zone.ease_credit += dt.clamp(1, 8);
+        let step = i32::from(world.camera_frame_step().max(1));
+        let passes = zone.ease_credit / step;
+        zone.ease_credit %= step;
+        // The arrival actor's retail leg (`FUN_801DBE9C`, `0x801DBFF8..
+        // 0x801DC0A4`): an unengaged player is snapped on its first tick; an
+        // engaged one (`+0x10 & 0x80000`, `0x801DC014`) only counts `+0x54`
+        // down, and at `-1` the actor retires with no snap - the globals keep
+        // what the scene reset left until the follow ease picks them up.
+        if let Some(cd) = zone.arrival.as_mut() {
+            if !engaged {
+                zone.arrival = None;
+                zone.snap_pending = true;
+            } else {
+                for _ in 0..passes {
+                    *cd = cd.wrapping_sub(1);
+                    if *cd == -1 {
+                        break;
+                    }
+                }
+                if *cd == -1 {
+                    zone.arrival = None;
+                    zone.active = true;
+                }
+            }
+        }
+        let awaiting = zone.arrival.is_some();
+        let gated = locked
+            && story & CAMERA_LOCKED_EASE_FLAG == 0
+            && !zone.snap_pending
+            && (zone.active || awaiting);
         let hold = !gated && (!zone.follow_enabled || story & CAMERA_HOLD_FLAG != 0);
         if hold {
             zone.prev_player = Some([x, y, z]);
@@ -184,16 +218,6 @@ impl Camera {
             prev => prev != Some([x, y, z]),
         };
         zone.prev_player = Some([x, y, z]);
-        // Retail eases once a game pass, with no frame-step term in the shift
-        // (`0x801DB5AC..0x801DB724`; the player tick `FUN_801D1344` calls
-        // it), and the world ticks once a vsync: the steps land on the pass
-        // grid, or the camera closes `frame_step` times too fast
-        // (`kor_field_route_walk`'s film holds eye Y `681, 703, 720, 733`
-        // two vsyncs apart).
-        zone.ease_credit += dt.clamp(1, 8);
-        let step = i32::from(world.camera_frame_step().max(1));
-        let passes = zone.ease_credit / step;
-        zone.ease_credit %= step;
         zone.ease_moved |= moved;
         let pass_start = zone.pass_player;
         if passes > 0 {
@@ -491,6 +515,13 @@ impl Camera {
     /// free-roam scene, so a scripted beat that is about to capture the live
     /// globals sees the zone camera's pose rather than the field reset.
     pub(super) fn prime_zone_before_script<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        if self.zone.arrival.is_some() && self.mode == CameraMode::Follow {
+            // The port's stand-in for the op-`0x45` arms' own compose into
+            // the staging struct, which retail runs whatever the arrival
+            // actor did: snap the composed pose in now.
+            self.zone.arrival = None;
+            self.zone.snap_pending = true;
+        }
         if self.zone.snap_pending && self.mode == CameraMode::Follow && zone_camera_scene(world) {
             self.zone_follow_tick(world, 1);
         }
