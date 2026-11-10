@@ -109,6 +109,7 @@ mod curvature_table;
 mod dance_floor;
 mod dance_hud;
 mod dance_leaves;
+mod dance_parts;
 mod dance_spawn;
 mod dance_tutorial;
 mod dead_end_crisis;
