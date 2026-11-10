@@ -227,6 +227,19 @@ impl World {
     /// own hit walk), per actor, against the hit walks' commits on other
     /// seats.
     pub(in crate::world) fn tick_battle_animations_walk(&mut self, hits: bool) -> Vec<bool> {
+        self.tick_battle_animations_walk_of(hits, None)
+    }
+
+    /// [`Self::tick_battle_animations_walk`] over one seat alone when `only`
+    /// names it: the slice a node the pass created after the walk had passed
+    /// it still owes (`World::run_seat_pass_node_tick`). The pass-wide work
+    /// around the slices (the impact sweep, the Mystic Shield, the colour
+    /// latch) has run already and is not repeated.
+    pub(in crate::world) fn tick_battle_animations_walk_of(
+        &mut self,
+        hits: bool,
+        only: Option<usize>,
+    ) -> Vec<bool> {
         let start: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
         let mut foreign = vec![0u32; self.actors.len()];
         if self.battle.anim_slice_commits.len() != self.actors.len() {
@@ -254,17 +267,23 @@ impl World {
         // XA-template tick ahead of the anim node advance). Their counters
         // are written in vsyncs, so a pass runs one per vsync it spans.
         for _ in 0..vsyncs {
+            if only.is_some() {
+                break;
+            }
             self.tick_battle_impact_fx();
         }
         // The same pass's Mystic Shield pose and break
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.
-        if self.mode == SceneMode::Battle {
+        if self.mode == SceneMode::Battle && only.is_none() {
             self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
         let mut fresh = vec![false; self.actors.len()];
         for i in 0..self.actors.len() {
+            if only.is_some_and(|o| o != i) {
+                continue;
+            }
             fresh[i] = self.actors[i].battle_clip_commits
                 != self.battle.anim_slice_commits.get(i).copied().unwrap_or(0);
             // Hit-reaction chaining first: a finished reaction clip takes the
@@ -693,10 +712,12 @@ impl World {
         }
         // The cast tick's effect-child drive. On retail's cadence it runs
         // with the pass's draw instead (`World::tick_battle_anim_pass`).
-        if !commit_after {
+        if !commit_after && only.is_none() {
             self.tick_battle_cast_drive(vsyncs);
         }
-        self.latch_battle_node_colours();
+        if only.is_none() {
+            self.latch_battle_node_colours();
+        }
         self.actors
             .iter()
             .enumerate()
