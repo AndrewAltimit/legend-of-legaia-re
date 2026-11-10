@@ -34,9 +34,10 @@
 /// at `0x8002687C`) and nothing else happens. Otherwise the flag clears and
 /// the release fires.
 ///
-/// The `subu`/`bgez` pair at `0x8002681C` compares `deadline - elapsed >= 0`,
-/// so the release fires on the frame elapsed first **reaches** the deadline,
-/// not the frame after. Denominating the accumulator in the frame step is the
+/// The `subu`/`bgez` pair at `0x8002681C` keeps counting while
+/// `deadline - elapsed >= 0`, so a call that finds the two equal still
+/// counts and the release fires on the first call that finds elapsed
+/// **past** the deadline. Denominating the accumulator in the frame step is the
 /// same cadence-invariance every other retail duration has: a deadline of 60
 /// expires after 60 vsyncs at any cadence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,8 +90,8 @@ impl SoundReleaseTimer {
             return SoundReleaseTick::Idle;
         }
         // 0x8002681C: `deadline - elapsed >= 0` keeps counting.
-        if self.deadline - self.elapsed >= 0 {
-            self.elapsed += i32::from(frame_step);
+        if self.deadline.wrapping_sub(self.elapsed) >= 0 {
+            self.elapsed = self.elapsed.wrapping_add(i32::from(frame_step));
             return SoundReleaseTick::Counting {
                 elapsed: self.elapsed,
             };

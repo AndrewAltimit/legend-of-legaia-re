@@ -263,6 +263,7 @@ mod scene_entry;
 mod scene_transition;
 mod screen_dim;
 mod screen_fx;
+mod scus_core_leaves;
 mod separation;
 mod seq_calc;
 mod seq_slot_release;

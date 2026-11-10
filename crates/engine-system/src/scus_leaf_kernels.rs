@@ -484,6 +484,33 @@ pub const SCENE_CONTROL_BLOCK_RESET: SceneControlBlockReset = SceneControlBlockR
 /// Size of the scene control block, in bytes (`FUN_80017888(0, 0x64)`).
 pub const SCENE_CONTROL_BLOCK_SIZE: usize = 0x64;
 
+impl SceneControlBlockReset {
+    /// Write the reset over `block` as `FUN_8003A024` does: the image's six
+    /// words and the zero stores beside them. Every other byte of the fresh
+    /// allocation is left as the allocator handed it out - the routine clears
+    /// no more than it names.
+    pub fn install(&self, block: &mut [u8; SCENE_CONTROL_BLOCK_SIZE]) {
+        let mut h = |at: usize, v: u16| block[at..at + 2].copy_from_slice(&v.to_le_bytes());
+        for at in [0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x4A, 0x52] {
+            h(at, 0);
+        }
+        h(0x12, self.field_12);
+        h(0x14, self.field_14);
+        h(0x4C, self.field_4c);
+        h(0x4E, self.field_4e);
+        h(0x50, self.field_50);
+        let mut w = |at: usize, v: u32| block[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        w(0x00, self.fallback_table);
+        w(0x04, self.fallback_table);
+        for at in [0x18, 0x1C, 0x20, 0x24, 0x28] {
+            w(at, 0);
+        }
+        for at in 0x5D..=0x62 {
+            block[at] = 0;
+        }
+    }
+}
+
 /// The error code `FUN_8003A024` parks in `_DAT_8007B828` when the allocation
 /// **fails**.
 ///
