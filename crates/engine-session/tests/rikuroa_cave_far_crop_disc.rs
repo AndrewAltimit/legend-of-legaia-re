@@ -121,3 +121,62 @@ fn far_preset_crops_the_cave_by_the_widened_window() {
     );
     eprintln!("[ran] rikuroa cave: retail {retail:?} far {far:?}");
 }
+
+/// The second cave (the one Noa enters through the cliff opening at tile
+/// `(117, 80)` after the Golem fight and Terra's rest): its walk region is
+/// `[86, 104, 126, 125]`, and the mountain's cliff backdrop panel, placed
+/// object `25` at `(13376, 12608)` with cull radius `17`, stands outside it.
+/// Retail's actor cull drops it while the cave's box is latched, which a
+/// retail film of the walk-in shows. Under `Far` the pulled-back eye sits
+/// beyond the panel, so a frame that drew it was a wall of cliff texture with
+/// the player behind it.
+#[test]
+fn far_preset_culls_the_second_caves_backdrop_panel() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let cfg = BootConfig {
+        scene: "town01".into(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    let save = legaia_save::SaveFile {
+        party: legaia_save::Party::zeroed(1),
+        ..Default::default()
+    };
+    let landing = session.resume_save(save, "rikuroa", &FieldLiveOpts::default());
+    assert_eq!(landing, ResumeLanding::SavedScene("rikuroa".into()));
+    for flag in [0x2FB, 0x281, 0x282] {
+        session.host.world.system_flag_set(flag);
+    }
+    const PANEL: (i32, i32, u8) = (13376, 12608, 17);
+    for seat in [(12264i16, 14464i16), (12864, 14528), (13640, 14554)] {
+        assert!(session.host.world.debug_seat_player(seat.0, seat.1));
+        session.camera.zone.arm_arrival();
+        for _ in 0..30 {
+            session.tick().expect("tick");
+        }
+        let world = &session.host.world;
+        let view = world.npcs.cull_view.expect("a published cull view");
+        assert_eq!(view.attr_box, [86, 104, 126, 125], "the second cave's box");
+        session.camera.distance = CameraDistance::Far;
+        let framing = crop_framing(world, &session.camera, false);
+        assert_eq!(framing, CropFraming::Widened(CameraDistance::Far.scale()));
+        let cells = field_view_cells(world, framing).expect("Far keeps a crop here");
+        assert!(
+            !placed_actor_visible(world, Some(&cells), PANEL.0, PANEL.1, PANEL.2),
+            "the backdrop panel drawn under Far at {seat:?}"
+        );
+        // Non-vacuous: with no crop the panel is drawn, which is what the
+        // whole-map rule did under Far.
+        assert!(placed_actor_visible(world, None, PANEL.0, PANEL.1, PANEL.2));
+        // The player's own tile stays in the crop.
+        let (tx, tz) = (i32::from(seat.0) >> 7, i32::from(seat.1) >> 7);
+        assert!(cells.ground_visible(tx, tz), "ground at {seat:?}");
+    }
+}
