@@ -153,6 +153,7 @@ mod round_open;
 mod scale_stage;
 mod separation;
 mod seq_calc;
+mod seq_slot_release;
 mod seru_debuff;
 mod seru_learn;
 mod sfx_cue_route;
