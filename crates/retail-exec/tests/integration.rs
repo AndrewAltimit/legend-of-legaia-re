@@ -199,6 +199,7 @@ mod spell_list;
 mod spell_list_scans;
 mod spirit_cleanup;
 mod spoils;
+mod sprite_arm;
 mod sprite_glide;
 mod stager_spawns;
 mod stager_states;
