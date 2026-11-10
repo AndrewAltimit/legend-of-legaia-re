@@ -187,3 +187,85 @@ fn the_warp_fade_repack_matches_retail() {
         assert_eq!(got, want, "case {case}: {f:?}");
     }
 }
+
+/// The actor clone `FUN_801D835C` over generated source actors and operands,
+/// the allocator answering a zeroed actor: the descriptor's `+4` low half and
+/// every field of the clone against `clone_plan` - position, rotation, rate,
+/// modulation word, `+0x68`, the untouched fraction `+0x78` - with the two
+/// fourth halfwords and the model word `+0x4C` copied as the plan's doc says.
+#[test]
+fn the_actor_clone_matches_retail() {
+    use legaia_engine_field::field_actor_clone::{CloneSource, clone_plan};
+    const CLONE: u32 = 0x801D_835C;
+    const DESCRIPTOR: u32 = 0x8007_0644;
+    const SRC: u32 = 0x8013_0000;
+    const DST: u32 = 0x8013_1000;
+    differential!(prot(897, CLONE));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let head = 0x8012_7000;
+    cpu.mem.wr32(0x8007_C34C, head);
+    let asked = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let a = asked.clone();
+    cpu.hook(SPAWN, move |r, m| {
+        a.borrow_mut().push((r.r[A0], r.r[A1]));
+        m.load(DST, &[0; 0x100]);
+        r.r[V0] = DST;
+    });
+    let mut rng = crate::common::Rng(0x434C_4F4E);
+    for case in 0..5000 {
+        let junk: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+        cpu.mem.load(SRC, &junk);
+        let h = |cpu: &mut psx_retail_exec::Cpu, o: u32| cpu.mem.rd16(SRC + o) as i16;
+        let src = CloneSource {
+            pos: (h(&mut cpu, 0x14), h(&mut cpu, 0x16), h(&mut cpu, 0x18)),
+            rot: (h(&mut cpu, 0x24), h(&mut cpu, 0x26), h(&mut cpu, 0x28)),
+            anim_set: h(&mut cpu, 0x64) as u16,
+            field_68: h(&mut cpu, 0x68),
+        };
+        let word = rng.next() & 0x00FF_FFFF;
+        let rate = rng.next() as i16;
+        asked.borrow_mut().clear();
+        let args = [SRC, word, rate as i32 as u32];
+        assert_eq!(cpu.call(CLONE, &args), Stop::Returned, "case {case}");
+        assert_eq!(*asked.borrow(), [(DESCRIPTOR, head)], "case {case}");
+        let plan = clone_plan(src, word, rate);
+        let d = |cpu: &mut psx_retail_exec::Cpu, o: u32| cpu.mem.rd16(DST + o) as i16;
+        let got = (
+            (d(&mut cpu, 0x14), d(&mut cpu, 0x16), d(&mut cpu, 0x18)),
+            (d(&mut cpu, 0x24), d(&mut cpu, 0x26), d(&mut cpu, 0x28)),
+            d(&mut cpu, 0x54),
+            cpu.mem.rd32(DST + 0x74),
+            d(&mut cpu, 0x68),
+            d(&mut cpu, 0x78),
+            cpu.mem.rd16(DESCRIPTOR + 4),
+        );
+        let want = (
+            plan.pos,
+            plan.rot,
+            plan.rate,
+            plan.modulation,
+            plan.field_68,
+            plan.fraction,
+            plan.anim_set,
+        );
+        assert_eq!(got, want, "case {case}");
+        for o in [0x1A, 0x2A] {
+            assert_eq!(
+                cpu.mem.rd16(DST + o),
+                cpu.mem.rd16(SRC + o),
+                "case {case} +{o:#x}"
+            );
+        }
+        assert_eq!(
+            cpu.mem.rd32(DST + 0x4C),
+            cpu.mem.rd32(SRC + 0x4C),
+            "case {case}"
+        );
+    }
+}
