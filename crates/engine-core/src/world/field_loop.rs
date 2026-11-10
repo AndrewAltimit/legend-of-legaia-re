@@ -14,6 +14,26 @@ pub(crate) const AI_COMPANION_ROSTER_SLOT: u8 = 3;
 /// (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`).
 pub(crate) const AI_COMPANION_SYSTEM_FLAG: u16 = 0x13;
 
+/// The field overlay's party-table rebuild `FUN_801DE190` (PROT 0897) over
+/// the battle party table `DAT_8007BD10`: bytes `0..=2` cleared, then
+/// `id + 1` for each of the first `min(count, 3)` present ids (a count of
+/// four or more reads as three, `0x801DE1AC..0x801DE1C8`), then id `4` -
+/// Terra - at the next byte when system flag `0x13` is up
+/// (`0x801DE204..0x801DE220`). Byte `3` is written only by that append.
+/// `count` is `0x80084594`, `list` the present ids at `0x80084598`.
+///
+/// PORT: FUN_801DE190
+pub fn rebuild_battle_party_table(count: u8, list: &[u8; 4], companion: bool, table: &mut [u8; 4]) {
+    table[..3].fill(0);
+    let n = if count < 4 { usize::from(count) } else { 3 };
+    for i in 0..n {
+        table[i] = list[i].wrapping_add(1);
+    }
+    if companion {
+        table[n] = 4;
+    }
+}
+
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
@@ -429,7 +449,8 @@ impl World {
         // read here, at the seat the table feeds; the scripts raise and
         // lower `0x13` beside the party ops that rebuild it (`cave01` P1[0],
         // `rikuroa` P2[48]: `60 12`, `60 13`, then the ops).
-        // PORT: FUN_801DE190 (the flag-`0x13` companion append)
+        // The engine seats the companion only beside one or two members who
+        // are not already Terra; a fuller list keeps the field composition.
         if self.battle.battle_party_restore.is_none() {
             let list = self.present_party_list();
             if !list.is_empty()
@@ -451,8 +472,16 @@ impl World {
                         self.seed_party_members(&tpl, &missing);
                     }
                 }
-                let mut seated = list;
-                seated.push(AI_COMPANION_ROSTER_SLOT);
+                let mut ids = [0u8; 4];
+                ids[..list.len()].copy_from_slice(&list);
+                let mut table = [0u8; 4];
+                rebuild_battle_party_table(list.len() as u8, &ids, true, &mut table);
+                let seated: Vec<u8> = table
+                    .iter()
+                    .take_while(|&&id| id != 0)
+                    .map(|&id| id - 1)
+                    .collect();
+                debug_assert_eq!(seated.last(), Some(&AI_COMPANION_ROSTER_SLOT));
                 party_count = seated.len() as u8;
                 self.battle.battle_party_restore =
                     Some(std::mem::replace(&mut self.party.active_party, seated));

@@ -84,6 +84,13 @@ pub struct RampWrite {
 #[derive(Debug, Clone, Default)]
 pub struct RampScheduler {
     slots: Vec<Option<Ramp>>,
+    /// The busy slots in install order: retail's list through the slot words
+    /// `+0x1A` (next) / `+0x1C` (previous), headed by slot 0. The installer
+    /// links a new slot at the tail (`0x8003C664..0x8003C688`) whichever slot
+    /// the first-free scan found, and the ticker walks the list, so a ramp
+    /// installed later writes later even from a lower slot. Two live ramps on
+    /// one destination end on the newer one's value.
+    order: Vec<usize>,
     /// Retail's `DAT_80073ED0` pool-exhausted counter, incremented instead
     /// of installing when every slot is busy.
     pub overflow: u32,
@@ -93,6 +100,7 @@ impl RampScheduler {
     pub fn new() -> Self {
         Self {
             slots: vec![None; RAMP_SLOTS],
+            order: Vec::new(),
             overflow: 0,
         }
     }
@@ -106,6 +114,7 @@ impl RampScheduler {
         match self.slots.iter().position(Option::is_none) {
             Some(i) => {
                 self.slots[i] = Some(ramp);
+                self.order.push(i);
                 Some(i)
             }
             None => {
@@ -123,6 +132,8 @@ impl RampScheduler {
                 *s = None;
             }
         }
+        let slots = &self.slots;
+        self.order.retain(|&i| slots[i].is_some());
     }
 
     // Live: `World::install_field_player` calls this on the world-owned
@@ -159,6 +170,7 @@ impl RampScheduler {
     pub fn reset_pool(&mut self) {
         self.slots.clear();
         self.slots.resize(RAMP_SLOTS, None);
+        self.order.clear();
         self.overflow = 0;
     }
 
@@ -171,10 +183,12 @@ impl RampScheduler {
         self.slots.iter().any(|s| s.is_some_and(|r| r.dest == dest))
     }
 
-    /// One frame of `FUN_80036D80`. `speed` is `_DAT_1F800393`.
+    /// One frame of `FUN_80036D80`. `speed` is `_DAT_1F800393`. The slots
+    /// are walked in install order (the list from slot 0's `+0x1A`).
     pub fn tick(&mut self, speed: u8) -> Vec<RampWrite> {
         let mut out = Vec::new();
-        for slot in self.slots.iter_mut() {
+        for &i in &self.order {
+            let slot = &mut self.slots[i];
             let Some(mut r) = *slot else { continue };
             r.remaining -= i32::from(speed);
             let (value, finished) = if r.remaining <= 0 {
@@ -195,6 +209,8 @@ impl RampScheduler {
             });
             *slot = if finished { None } else { Some(r) };
         }
+        let slots = &self.slots;
+        self.order.retain(|&i| slots[i].is_some());
         out
     }
 }

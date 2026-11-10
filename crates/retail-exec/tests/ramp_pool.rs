@@ -6,10 +6,10 @@
 //! ramps write, and which slots stand busy, has to match after every
 //! operation.
 //!
-//! Each ramp gets a destination of its own and no owner: the ticker walks its
-//! list in install order and the port its slots in index order, which only
-//! differ for two live ramps on one destination; the owner kill is the host's
-//! `free_owner` in the port.
+//! Ramps share destinations, so two live ramps often write one word: the
+//! ticker walks its list in install order (the installer links each new slot
+//! at the tail), and the newer ramp's value is the one that stands. Ramps have
+//! no owner here; the owner kill is the host's `free_owner` in the port.
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind, RampScheduler};
@@ -43,7 +43,7 @@ fn the_ramp_pool_writes_what_retail_writes() {
     };
     cpu.stub(ALLOC, 0);
     let mut rng = Rng(0x5241_4D50);
-    let (mut installs, mut overflows, mut finished, mut rgb) = (0, 0, 0, 0);
+    let (mut installs, mut overflows, mut finished, mut rgb, mut shared) = (0, 0, 0, 0, 0);
     for session in 0..40 {
         assert_eq!(cpu.call(RESET, &[]), Stop::Returned);
         cpu.mem.wr32(OVERFLOW, 0);
@@ -51,12 +51,10 @@ fn the_ramp_pool_writes_what_retail_writes() {
         port.reset_pool();
         // One word per destination, each written by one ramp at a time.
         let mut dests = vec![0u32; 256];
-        let mut free: Vec<u32> = (0..256).collect();
         for (i, d) in dests.iter_mut().enumerate() {
             *d = rng.next();
             cpu.mem.wr32(DESTS + i as u32 * 4, *d);
         }
-        let mut live: Vec<u32> = Vec::new();
         for op in 0..1500 {
             // Odd sessions install faster than ramps retire and fill the pool.
             let install = if session % 2 == 1 {
@@ -64,8 +62,9 @@ fn the_ramp_pool_writes_what_retail_writes() {
             } else {
                 rng.below(3) == 0
             };
-            if install && !free.is_empty() {
-                let d = free.swap_remove(rng.below(free.len() as u32) as usize);
+            if install {
+                // A small destination set, so live ramps collide on one word.
+                let d = rng.below(if session % 4 < 2 { 24 } else { 256 });
                 let kind = [RampKind::U8, RampKind::U16, RampKind::Rgb, RampKind::U32]
                     [rng.below(4) as usize];
                 let total = [1i32, 2, 5, 30, 0x100][rng.below(5) as usize];
@@ -90,18 +89,19 @@ fn the_ramp_pool_writes_what_retail_writes() {
                     "session {session} op {op} install"
                 );
                 if ok {
-                    live.push(d);
                     installs += 1;
                     rgb += u32::from(kind == RampKind::Rgb);
                 } else {
-                    free.push(d);
                     overflows += 1;
                 }
             } else {
                 let step = [1u8, 1, 2, 3, 4][rng.below(5) as usize];
                 cpu.mem.wr8(FRAME_STEP, step);
                 assert_eq!(cpu.call(TICK, &[]), Stop::Returned);
-                for w in port.tick(step) {
+                let writes = port.tick(step);
+                let mut seen = std::collections::HashSet::new();
+                shared += writes.iter().filter(|w| !seen.insert(w.dest)).count();
+                for w in writes {
                     let i = ((w.dest - DESTS) / 4) as usize;
                     let v = w.value as u32;
                     dests[i] = match w.kind {
@@ -109,12 +109,7 @@ fn the_ramp_pool_writes_what_retail_writes() {
                         RampKind::U16 => dests[i] & !0xFFFF | v & 0xFFFF,
                         RampKind::Rgb | RampKind::U32 => v,
                     };
-                    if w.finished {
-                        finished += 1;
-                        let d = i as u32;
-                        live.retain(|x| *x != d);
-                        free.push(d);
-                    }
+                    finished += u32::from(w.finished);
                 }
             }
             for (i, d) in dests.iter().enumerate() {
@@ -136,7 +131,7 @@ fn the_ramp_pool_writes_what_retail_writes() {
         }
     }
     assert!(
-        installs > 5000 && overflows > 100 && finished > 5000 && rgb > 1000,
-        "{installs} {overflows} {finished} {rgb}"
+        installs > 5000 && overflows > 100 && finished > 5000 && rgb > 1000 && shared > 5000,
+        "{installs} {overflows} {finished} {rgb} {shared}"
     );
 }
