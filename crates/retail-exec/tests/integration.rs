@@ -93,6 +93,7 @@ mod fishing_prize;
 mod fishing_root;
 mod floor_height;
 mod fog_spawn;
+mod frame_blend;
 mod glare_divide;
 mod glyph_count;
 mod gte_capture;
