@@ -48,6 +48,7 @@ mod battle_init;
 mod battle_item;
 mod battle_leaves;
 mod battle_seed;
+mod battle_setup;
 mod battle_sideband;
 mod battle_small_leaves;
 mod battle_texture;

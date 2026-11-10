@@ -217,6 +217,12 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
     let monster_slot = w.party.party_count as usize;
     w.battle.speed[monster_slot] = 20000;
     w.rng_state = 0xDEAD_BEEF;
+    // No pre-emptive strike off the entry roll, live or latched: that one
+    // cannot fail.
+    w.set_battle_formation(legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None);
+    w.set_battle_formation_latched(
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None,
+    );
 
     let mut trace: Vec<u8> = Vec::new();
     press(&mut w, PadButton::Right, &mut trace);
@@ -266,6 +272,12 @@ fn a_button_held_through_a_failed_run_cuts_its_message() {
         let monster_slot = w.party.party_count as usize;
         w.battle.speed[monster_slot] = 20000;
         w.rng_state = 0xDEAD_BEEF;
+        // No pre-emptive strike off the entry roll, live or latched: that one
+        // cannot fail.
+        w.set_battle_formation(legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None);
+        w.set_battle_formation_latched(
+            legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None,
+        );
         let mut trace: Vec<u8> = Vec::new();
         press(&mut w, PadButton::Right, &mut trace);
         press(&mut w, PadButton::Left, &mut trace);

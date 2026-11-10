@@ -1719,10 +1719,20 @@ impl World {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
             }),
         };
-        if let Some((player, clip)) = selected {
+        if let Some((mut player, clip)) = selected {
             // Anim record swapped: install its effect script and zero the
             // effect-script cursor (retail FUN_8004AD80, `sb zero,0x1f5`).
             let script = Some(clip.effect_script.clone()).filter(|s| !s.is_empty());
+            // The seat's opening phase, drawn at battle setup
+            // (`FUN_800513F0`, `0x80051544..0x80051574` and the monster twin
+            // at `0x800518D0`): `(rand() % frames) << 4`.
+            if let Some(draw) = actor.battle_idle_phase_draw.take()
+                && clip_slot == 0
+                && player.is_looping()
+            {
+                let frames = player.frame_count().max(1);
+                actor.pose_frame = Some(player.seat_cursor(((draw % frames) << 4) as u16));
+            }
             actor.battle_animation = Some(player);
             actor.battle_pose = Some(pose_id);
             actor.battle_effect_script = script;

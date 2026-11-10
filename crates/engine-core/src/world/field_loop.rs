@@ -442,7 +442,7 @@ impl World {
     /// Enter the battle `formation` describes and return the formation as it
     /// was seated: battle init may reorder its species
     /// ([`Self::formation_in_species_order`]).
-    pub(crate) fn enter_battle_from_formation(
+    pub fn enter_battle_from_formation(
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) -> legaia_engine_battle::monster_catalog::FormationDef {
@@ -551,6 +551,16 @@ impl World {
         // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
         self.enter_battle(party_count, monster_count);
+        // Each seated body opens its first clip at a random phase: one
+        // `rand()` a party seat, then one a monster seat, in seat order
+        // (`0x80051544` / `0x800518D0`, `(rand() % frames) << 4` into the
+        // node cursor `+0x68`). The setup seats four monsters at most.
+        for slot in 0..usize::from(party_count) + usize::from(monster_count.min(4)) {
+            let draw = self.next_rand();
+            if let Some(a) = self.actors.get_mut(slot) {
+                a.battle_idle_phase_draw = Some(draw);
+            }
+        }
         // The scripted-fight flag `ctx[+0x287]`, derived the way retail's
         // battle init does: `FUN_800513F0` stores `(DAT_8007BD60 >> 5) & 4`,
         // i.e. "the formation's `record[+0]` header byte is non-zero"
