@@ -376,3 +376,101 @@ mod exchange {
         );
     }
 }
+
+/// The HUD's number drawers: the right-aligned 8px field `FUN_801D6A18`, the
+/// coin strip `FUN_801D6F44` and the single digit `FUN_801D69E4`, each quad
+/// they hand the widget emitter `FUN_801D5ED0` with the glyph column they
+/// patch into its descriptor first, against `right_aligned_number_cells`,
+/// `coin_digit_cells` and `single_digit_cell`.
+mod digits {
+    use super::*;
+    use legaia_engine_minigames::baka_fighter::{
+        DigitCell, coin_digit_cells, right_aligned_number_cells, single_digit_cell,
+    };
+    use psx_retail_exec::{A1, A2, A3};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    const FIELD: u32 = 0x801D_6A18;
+    const COIN: u32 = 0x801D_6F44;
+    const SINGLE: u32 = 0x801D_69E4;
+    const EMIT: u32 = 0x801D_5ED0;
+    const WIDGETS: u32 = 0x801D_7160;
+    const STACK_TOP: u32 = 0x801F_FF00;
+
+    /// `(x, y, widget, brightness, u)` per emitted quad.
+    type Quads = Rc<RefCell<Vec<(i32, i32, u32, u32, u8)>>>;
+
+    fn rig() -> Option<(Cpu, Quads)> {
+        let (mut cpu, d) = (scus_cpu()?, disc()?);
+        cpu.mem
+            .load(OVERLAY_BASE, &d.read_entry(976).expect("PROT 0976"));
+        let quads: Quads = Rc::default();
+        let sink = quads.clone();
+        cpu.hook(EMIT, move |r, m| {
+            let widget = r.r[A2];
+            let u = m.rd8(WIDGETS + widget * 0x14 + 8);
+            sink.borrow_mut().push((
+                r.r[psx_retail_exec::A0] as i32,
+                r.r[A1] as i32,
+                widget,
+                r.r[A3],
+                u,
+            ));
+        });
+        Some((cpu, quads))
+    }
+
+    fn expect(cells: &[DigitCell], x: i32, y: i32, b: u32) -> Vec<(i32, i32, u32, u32, u8)> {
+        cells
+            .iter()
+            .map(|c| (x + i32::from(c.x_offset), y, u32::from(c.widget), b, c.u))
+            .collect()
+    }
+
+    #[test]
+    fn the_number_drawers_draw_the_glyphs_retail_draws() {
+        differential!(prot(976, FIELD), prot(976, COIN), prot(976, SINGLE));
+        let Some((mut cpu, quads)) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let mut rng = Rng(0x4449_4749);
+        for round in 0..30_000 {
+            let value = match rng.below(4) {
+                0 => rng.below(10) as i32,
+                1 => rng.below(100_000) as i32,
+                2 => rng.below(100_000_000) as i32,
+                _ => (rng.next() & 0x7FFF_FFFF) as i32,
+            };
+            let (x, y, b) = (
+                rng.below(320) as i32,
+                rng.below(240) as i32,
+                rng.below(0x100),
+            );
+            cpu.mem.wr32(STACK_TOP + 0x10, rng.below(4));
+            for (entry, cells) in [
+                (FIELD, right_aligned_number_cells(value)),
+                (COIN, coin_digit_cells(value)),
+            ] {
+                quads.borrow_mut().clear();
+                let args = [x as u32, y as u32, value as u32, b];
+                assert_eq!(cpu.call(entry, &args), Stop::Returned);
+                assert_eq!(
+                    *quads.borrow(),
+                    expect(&cells, x, y, b),
+                    "round {round} entry {entry:#x} value {value}"
+                );
+            }
+            let digit = rng.below(10) as u8;
+            quads.borrow_mut().clear();
+            let args = [x as u32, y as u32, u32::from(digit), b];
+            assert_eq!(cpu.call(SINGLE, &args), Stop::Returned);
+            assert_eq!(
+                *quads.borrow(),
+                expect(&[single_digit_cell(digit)], x, y, b),
+                "round {round} digit {digit}"
+            );
+        }
+    }
+}
