@@ -1,13 +1,13 @@
 //! The SCUS square root the fishing lure's record rests on, `FUN_8005AF0C`,
 //! and its hyperbolic rotation `FUN_8005ADB8`, against
-//! `fishing_actors::{scus_sqrt, hyperbolic_root}` over the whole range: zero,
+//! `scus_leaf_kernels::{scus_sqrt, hyperbolic_root}` over the whole range: zero,
 //! powers of two and their neighbours, the squares a lure's `dx * dx + dz *
 //! dz` reaches, a sum that wrapped negative, and anything. The root's normaliser reads the
 //! leading-bit count off the GTE (`LZCS` / `LZCR`, `FUN_8005BA1C`), which the
 //! interpreter runs.
 
 use crate::common::{Rng, scus_cpu};
-use legaia_engine_fishing::fishing_actors::{hyperbolic_root, scus_sqrt};
+use legaia_engine_system::scus_leaf_kernels::{hyperbolic_root, scus_sqrt};
 use psx_retail_exec::{Stop, V0};
 
 const ROOT: u32 = 0x8005_AF0C;

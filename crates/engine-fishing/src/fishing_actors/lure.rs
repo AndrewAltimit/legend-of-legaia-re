@@ -96,62 +96,6 @@ fn lure_polar(angle: i32, radius: i32, scale: i32) -> (i32, i32) {
         .unwrap_or((0, 0))
 }
 
-/// `FUN_8005AF0C`: the SCUS root, normalised onto `FUN_8005ADB8`'s range, whose
-/// hyperbolic rotation runs six shifts with `4` taken twice. The result carries
-/// six fractional bits; the rotation's rounding is what the record's last unit
-/// rests on, so a float root will not do.
-///
-/// PORT: FUN_8005AF0C
-pub fn scus_sqrt(n: i32) -> i32 {
-    if n == 0 {
-        return 0;
-    }
-    // `FUN_8005BA1C` reads the GTE's `LZCR`: the run of leading bits equal
-    // to the sign, so a negative input counts its leading ones.
-    let lead = if n < 0 {
-        (!n).leading_zeros()
-    } else {
-        n.leading_zeros()
-    };
-    let e = 8 - lead as i32;
-    let (scale, arg) = if e >= 0 {
-        let s = e >> 1;
-        (s, n >> (s * 2))
-    } else {
-        let s = (e >> 1) + 1;
-        (s, n.wrapping_shl((-2 * s) as u32))
-    };
-    let x = hyperbolic_root(arg);
-    let shift = scale - 6;
-    if shift >= 0 { x << shift } else { x >> -shift }
-}
-
-/// `FUN_8005ADB8`: the hyperbolic rotation [`scus_sqrt`] runs on its
-/// normalised argument, from `(arg + 0x5D50AD, arg - 0x5D50AD)` through
-/// shifts `1..=6` with `4` taken twice. Returns the `x` it leaves.
-///
-/// PORT: FUN_8005ADB8
-pub fn hyperbolic_root(arg: i32) -> i32 {
-    let (mut x, mut y) = (arg.wrapping_add(0x5D_50AD), arg.wrapping_sub(0x5D_50AD));
-    let mut turn = |shift: i32| {
-        let (dx, dy) = (y >> shift, x >> shift);
-        if y < 0 {
-            x = x.wrapping_add(dx);
-            y = y.wrapping_add(dy);
-        } else {
-            x = x.wrapping_sub(dx);
-            y = y.wrapping_sub(dy);
-        }
-    };
-    for shift in 1..=6 {
-        turn(shift);
-        if shift == 4 {
-            turn(shift);
-        }
-    }
-    x
-}
-
 impl LureActor {
     /// Spawn the lure for a cast from `(anchor_x, anchor_z)` facing `facing`.
     ///
@@ -347,7 +291,11 @@ impl LureActor {
             (self.z_fixed >> 8) as i16,
         );
         self.z = self.tracked.2;
-        super::tracked_point_separation((self.tracked.0, self.tracked.2), self.spawn, scus_sqrt)
+        super::tracked_point_separation(
+            (self.tracked.0, self.tracked.2),
+            self.spawn,
+            legaia_engine_system::scus_leaf_kernels::scus_sqrt,
+        )
     }
 
     /// The bearing from the spawn point to the lure (`FUN_80019B28`, `0x801D2A08`).

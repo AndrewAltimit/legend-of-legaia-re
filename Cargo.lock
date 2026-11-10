@@ -3084,6 +3084,7 @@ dependencies = [
  "glam",
  "legaia-actor-formats",
  "legaia-engine-camera",
+ "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-overlay-images",

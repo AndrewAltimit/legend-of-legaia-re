@@ -2863,6 +2863,7 @@
     "engine-title",
     "engine-world-views",
     "parity",
+    "render-kernels",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -4076,6 +4077,7 @@
    "deps": [
     "actor-formats",
     "engine-camera",
+    "engine-system",
     "engine-vm",
     "font",
     "overlay-images",
@@ -4190,12 +4192,15 @@
     "font",
     "game-tables",
     "lzs",
+    "mdec",
     "mes",
     "minigame-formats",
     "pcsx-redux",
     "render-kernels",
     "save",
     "scene-formats",
+    "tim",
+    "tmd",
     "vab"
    ],
    "bins": [],
