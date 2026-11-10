@@ -109,7 +109,6 @@ mod ground_grid;
 mod group_aim;
 mod gte_capture;
 mod gte_engine;
-mod group_aim;
 mod gte_leaves;
 mod hop_arc;
 mod hop_session;
