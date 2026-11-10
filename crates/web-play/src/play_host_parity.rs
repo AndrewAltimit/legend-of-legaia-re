@@ -48,6 +48,17 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// Run the current scene's MAN record `P{partition}[{record}]` as a
+    /// cutscene timeline: the page's twin of the play window's
+    /// `--play-record P:R` (`BootSession::play_scene_record`). A debug
+    /// affordance, called from the console; `false` when it does not
+    /// resolve.
+    pub fn debug_play_record(&mut self, partition: usize, record: usize) -> bool {
+        self.scene_host
+            .session_mut()
+            .is_some_and(|s| s.play_scene_record(partition, record))
+    }
+
     /// Stand the field player at world `(x, z)`. Test support only, for a
     /// native test that needs the player where a retail capture had it; the
     /// page never calls it. `false` with no player.
