@@ -263,6 +263,11 @@ fn weapon_trail_rewinds_the_cursor_on_the_trigger_clip() {
         assert!(d.steps[0][0][1] >= d.steps[d.steps.len() - 1][0][1]);
     }
     assert!(seen_short && seen_full, "the walk grows to the budget");
+    // A hidden body (`+0x04 = 0` under `+0x21C = 0xFF`) never reaches the
+    // trigger: the draw tick's colour-word test skips it with the ghosts.
+    world.actors[0].battle.render_color = 0;
+    world.actors[0].battle.render_flag = 0xFF;
+    assert!(legaia_engine_world_views::battle_draws::battle_weapon_trail_draws(&world).is_empty());
 }
 
 /// No trail off the trigger: a different clip id on the same seat, or a

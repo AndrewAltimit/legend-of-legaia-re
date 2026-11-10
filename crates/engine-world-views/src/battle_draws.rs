@@ -465,6 +465,13 @@ pub fn battle_weapon_trail_draws(world: &World) -> Vec<BattleWeaponTrailDraw> {
         if actor.battle_monster_id.is_some() {
             continue;
         }
+        // The draw tick reaches the trigger (`jal 0x8005112c` at
+        // `0x80048244`) on the branch its colour-word test takes
+        // (`bne v0,zero,0x80048244` at `0x800481CC`), the one the after-image
+        // walk shares: a hidden body leaves no trail.
+        if battle_body_word_zero(actor) {
+            continue;
+        }
         let Some(player) = &actor.battle_animation else {
             continue;
         };
