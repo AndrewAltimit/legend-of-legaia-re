@@ -418,12 +418,15 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
             .any(|q| q.uv[0].1 == narrow.v && q.clut == narrow.clut),
         "no style-B counter digit (widget 0x21) in the HUD frame"
     );
-    // Body and notes stay inside the track's [x, x + 0x50) draw area.
+    // Body and notes stay inside the track's draw area, columns `x` through
+    // `x + 0x50` (`beat_track_clip`).
+    let (lo, hi) = legaia_engine_minigames::dance::beat_track_clip(tx);
+    assert_eq!((lo, hi), (tx, tx + 0x51));
     assert!(
         track[3..track.len() - 3]
             .iter()
             .filter(|q| q.y1 <= ty + 0x10)
-            .all(|q| q.x0 >= tx && q.x1 <= tx + 0x50),
+            .all(|q| q.x0 >= lo && q.x1 <= hi),
         "the body and notes are clipped to the track window"
     );
     // A non-zero score adds its style-A digit run with the glyph-U patched
