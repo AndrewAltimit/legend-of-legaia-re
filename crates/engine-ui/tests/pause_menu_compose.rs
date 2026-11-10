@@ -237,6 +237,8 @@ fn compose_top_level(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
     pause_screen_draws(
         ctx,
         PauseScreen::TopLevel(TopLevelView {
+            cursor_static: false,
+            hand_bob: Default::default(),
             rows: &rows,
             cursor: 1,
             money: 1234,
@@ -534,6 +536,7 @@ fn compose_equip_with(
             active_slot: 0,
             char_slot: 0,
             slot_cursor: matches!(phase, EquipDrawPhase::SlotPicker).then_some(1),
+            hand_bob: Default::default(),
             pictogram_rows: 5,
             text_cursor: ctx.chrome.is_none(),
             // The candidate step opens window 24's shared item-info panel;

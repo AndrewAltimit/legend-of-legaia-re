@@ -98,10 +98,16 @@ fn the_top_level_windows_match() {
     rig.cpu.mem.wr32(OP_PTR, OP);
     let mut rng = Rng(0x524F_4F54);
     let (mut greys, mut coin_rows, mut capped, mut ailing) = (0, 0, 0, 0);
+    // Runs by the hand's mode: static, animated, none, -, clocked.
+    let mut modes = [0u32; 5];
     for run in 0..4_000 {
         let (r1, r2, r3) = (rect(&mut rng), rect(&mut rng), rect(&mut rng));
         let row = rng.below(7);
-        let flags = row | (rng.below(2) << 12);
+        let flags = match rng.below(6) {
+            0 => 0x4000 | row,
+            1 => 0x2000 | (rng.below(2) << 12) | row,
+            _ => row | (rng.below(2) << 12),
+        };
         rig.cpu.mem.wr32(CURSOR, flags);
         // The two rows that can grey: row 5 under an entry context of kind
         // `0x0D`, row 6 while the gate byte is clear.
@@ -228,9 +234,14 @@ fn the_top_level_windows_match() {
         );
 
         let aps: Vec<u16> = stats.iter().map(|s| s.5).collect();
+        let bob = legaia_engine_ui::menu::window_painters::HandBob {
+            animated: (0, 300),
+            clocked: (0, 600),
+        };
         let sprites = field_menu_icon_sprites_for(
             &atlas,
-            row as u8,
+            legaia_engine_ui::menu::window_painters::ChoiceFlags(flags),
+            bob,
             &aps,
             (r1.x, r1.y),
             (r2.x, r2.y),
@@ -244,14 +255,16 @@ fn the_top_level_windows_match() {
             .filter(|s| s.src.0 == 1)
             .map(|s| (s.dst.0, s.dst.1))
             .collect();
+        // Static (mode 0) unmoved, animated (1) and clocked (4) by their bobs.
         assert_eq!(
             port_hands,
-            list_hands.iter().map(|h| (h.x, h.y)).collect::<Vec<_>>(),
-            "{what}: the hand"
+            list_hands
+                .iter()
+                .map(|h| (h.x, h.y + [0, 300, 0, 0, 600][usize::from(h.variant)]))
+                .collect::<Vec<_>>(),
+            "{what}: the hands and their modes"
         );
-        for h in &list_hands {
-            assert_eq!(u32::from(h.variant), ((flags >> 12) ^ 1) & 1, "{what}");
-        }
+        modes[usize::from(list_hands.first().map_or(2, |h| h.variant.min(4)))] += 1;
         let mut port_icons: Vec<(u32, i32, i32)> = sprites
             .iter()
             .filter(|s| s.src.0 != 1 && s.src.0 < 0x200)
@@ -282,6 +295,10 @@ fn the_top_level_windows_match() {
             "{what}: the AP values"
         );
     }
+    assert!(
+        modes[0] > 500 && modes[1] > 500 && modes[2] > 200 && modes[4] > 100,
+        "{modes:?}"
+    );
     assert!(
         greys > 1000 && coin_rows > 1000 && capped > 100 && ailing > 500,
         "{greys} {coin_rows} {capped} {ailing}"

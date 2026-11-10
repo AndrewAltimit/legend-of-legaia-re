@@ -326,14 +326,19 @@ fn the_equip_main_window_matches() {
             .collect();
         let got: Vec<(i32, i32, u8)> = hands(&log).iter().map(|h| (h.x, h.y, h.variant)).collect();
         assert_eq!(got, want_hands, "{what}: hands");
-        let slot_cursor = (flags & 0x6000 == 0).then_some((flags & 0xFFF) as u16);
+        // Each mode bobs by its own offset here, so a hand names its mode.
+        let bob = legaia_engine_ui::menu::window_painters::HandBob {
+            animated: (0, 100),
+            clocked: (0, 200),
+        };
         let sprites = equip_screen_sprites_for(
             &atlas,
             7,
             (r.x, r.y),
             (0x4000, 0x4000),
             0,
-            slot_cursor,
+            Some(ChoiceFlags(flags)),
+            bob,
             (0, 0),
             1,
         );
@@ -342,10 +347,15 @@ fn the_equip_main_window_matches() {
             .filter(|s| s.src.0 == 1 && s.dst.0 < 0x2000)
             .map(|s| (s.dst.0, s.dst.1))
             .collect();
-        if flags & 0x6000 == 0 {
-            let plain: Vec<(i32, i32)> = got.iter().map(|h| (h.0, h.1)).collect();
-            assert_eq!(port_hands, plain, "{what}: the port's hand");
-        }
+        // Static (mode 0) unmoved, animated (1) and clocked (4) by their bobs.
+        let moved: Vec<(i32, i32)> = got
+            .iter()
+            .map(|h| (h.0, h.1 + [0, 100, 0, 0, 200][usize::from(h.2)]))
+            .collect();
+        assert_eq!(
+            port_hands, moved,
+            "{what}: the port's hands and their modes"
+        );
         // The pictograms: the slot column, then the change list's.
         let mut port_icons: Vec<(u32, i32, i32)> = sprites
             .iter()

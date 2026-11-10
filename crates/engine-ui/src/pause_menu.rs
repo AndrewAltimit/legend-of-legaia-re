@@ -458,6 +458,11 @@ pub enum GenericContent<'a> {
 pub struct TopLevelView<'a> {
     pub rows: &'a [FieldMenuRowView<'a>],
     pub cursor: u8,
+    /// The command list is not the one reading the pad (the cursor word's
+    /// bit `0x1000`): its hand stands still.
+    pub cursor_static: bool,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     pub money: u32,
     pub play_time_seconds: u32,
     /// The casino coin bank, `Some` while the box shows its coin row
@@ -553,6 +558,8 @@ pub struct EquipComposeView<'a> {
     pub char_slot: usize,
     /// Slot-picker cursor row, or `None` past the slot picker.
     pub slot_cursor: Option<u16>,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     /// Pictogram rows to draw - retail's seven.
     pub pictogram_rows: usize,
     /// ICO codes of the candidate rows, parallel to the view's candidates.
@@ -656,7 +663,10 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ));
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
-                    v.cursor,
+                    crate::menu::window_painters::ChoiceFlags(
+                        u32::from(v.cursor) | (u32::from(v.cursor_static) << 12),
+                    ),
+                    v.hand_bob,
                     v.party_ap,
                     ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
                     money_pen,
@@ -1155,7 +1165,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     ctx.rects.pen(window_ids::EQUIP_MAIN),
                     ctx.rects.pen(window_ids::EQUIP_PARTY),
                     v.char_slot,
-                    v.slot_cursor,
+                    v.slot_cursor
+                        .map(|r| crate::menu::window_painters::ChoiceFlags(u32::from(r))),
+                    v.hand_bob,
                     ctx.origin,
                     ctx.scale,
                 ));
@@ -1289,6 +1301,8 @@ pub struct EquipComposeInput<'a> {
     pub active_slot: u8,
     pub char_slot: usize,
     pub slot_cursor: Option<u16>,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     pub pictogram_rows: usize,
     /// Emit ASCII `>` cursors (no chrome atlas to draw the hand sprite).
     pub text_cursor: bool,
@@ -1364,6 +1378,7 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             view: &view,
             char_slot: input.char_slot,
             slot_cursor: input.slot_cursor,
+            hand_bob: input.hand_bob,
             pictogram_rows: input.pictogram_rows,
             candidate_icons: input.candidate_icons,
             arrows_blink: input.arrows_blink,

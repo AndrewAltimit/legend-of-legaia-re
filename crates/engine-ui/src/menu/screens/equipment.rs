@@ -441,7 +441,8 @@ pub fn equip_screen_sprites_for(
     main_pen: (i32, i32),
     party_pen: (i32, i32),
     party_cursor: usize,
-    slot_cursor: Option<u16>,
+    slot_cursor: Option<crate::menu::window_painters::ChoiceFlags>,
+    bob: crate::menu::window_painters::HandBob,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -488,8 +489,16 @@ pub fn equip_screen_sprites_for(
     // Main-window hand cursor on the hovered slot-browse row. Row 0 is the
     // "Best Equipment" line at the window origin (retail's `hand at (X, Y)`),
     // row `n` the slot row `n - 1` at `Y + 0xE*n`.
-    if let Some(row) = slot_cursor {
-        push(rects.cursor, mx, my + EQUIP_ROW_PITCH * row as i32);
+    // The cursor word `DAT_801E46C0` picks the rows and the hand's mode:
+    // static under bit `0x1000`, every row under `0x2000`
+    // (`0x801D2230..0x801D2278`, `0x801D22C0..0x801D2318`).
+    if let Some(flags) = slot_cursor {
+        for (x, y, variant) in
+            crate::menu::window_painters::list_hand_marks(flags, 8, (mx, my), EQUIP_ROW_PITCH)
+        {
+            let (dx, dy) = bob.offset(variant);
+            push(rects.cursor, x + dx, y + dy);
+        }
     }
     out
 }

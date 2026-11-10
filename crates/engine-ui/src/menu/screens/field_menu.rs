@@ -250,7 +250,8 @@ pub fn field_menu_info_draws_for(
 #[allow(clippy::too_many_arguments)]
 pub fn field_menu_icon_sprites_for(
     rects: &SaveMenuAtlasRects,
-    cursor: u8,
+    hand: crate::menu::window_painters::ChoiceFlags,
+    bob: crate::menu::window_painters::HandBob,
     party_ap: &[u16],
     list_pen: (i32, i32),
     money_pen: (i32, i32),
@@ -277,12 +278,15 @@ pub fn field_menu_icon_sprites_for(
                 color: [1.0, 1.0, 1.0, 1.0],
             });
         };
-        // Command-list hand cursor at (WX, row_y).
-        push(
-            rects.cursor,
-            list_pen.0,
-            list_pen.1 + cursor as i32 * LIST_PITCH,
-        );
+        // The command list's hands: the row the cursor word names (or
+        // every row under its all-rows bit), static under bit `0x1000`,
+        // bobbing otherwise (`0x801CFDB4..0x801CFE00`, seven times over).
+        for (x, y, variant) in
+            crate::menu::window_painters::list_hand_marks(hand, 7, list_pen, LIST_PITCH)
+        {
+            let (dx, dy) = bob.offset(variant);
+            push(rects.cursor, x + dx, y + dy);
+        }
         // Money icon + play-time tag in the corner box.
         push(rects.icon_money, money_pen.0, money_pen.1 + 2);
         let mut time_y = money_pen.1 + 0x10;

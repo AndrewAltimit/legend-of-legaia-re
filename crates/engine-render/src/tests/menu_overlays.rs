@@ -780,7 +780,8 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
         EQUIP_MAIN_PEN,
         EQUIP_PARTY_PEN,
         0,
-        Some(1),
+        Some(legaia_engine_ui::menu::window_painters::ChoiceFlags(1)),
+        Default::default(),
         (0, 0),
         1,
     );
@@ -822,6 +823,7 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
         EQUIP_PARTY_PEN,
         0,
         None,
+        Default::default(),
         (0, 0),
         1,
     );
@@ -835,7 +837,8 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
         EQUIP_MAIN_PEN,
         EQUIP_PARTY_PEN,
         0,
-        Some(0),
+        Some(legaia_engine_ui::menu::window_painters::ChoiceFlags(0)),
+        Default::default(),
         (0, 0),
         1,
     );
