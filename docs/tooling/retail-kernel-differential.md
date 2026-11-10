@@ -976,3 +976,19 @@ The PsyQ `St` ring (`st_ring`), `StSetRing`, `StSetStream` with its window insta
 over generated movies, matches `StRing` on every slot status, the cursors (`StRing::cursors`), the trace
 codes and the frames read. The demux compares `chunks - 1` as a word, so a header claiming zero chunks
 leaves its frame filling, where the port completed it.
+
+The menu overlay's sub-screens, run frame by frame against `SaveScreenMachine`
+(`menu_subscreens`), show the shop quantity spinner `FUN_801DBC5C` re-arming its
+list result to `1` on the frame it settles, so that frame never routes, where the
+machine routed on whatever the word held; and the mode select's Buy row clearing
+only the staged item, quantity and list result, where the machine cleared the
+staged slot too. The sprite-descriptor dispatcher `FUN_800198E0` (`title_prims`)
+closes every non-`0x11` upload by recording the texpage's CLUT row in the table
+at `0x8007BEC0`, which its port did not do, and stores its strip width as a
+halfword, so a `w * h` past `0xFFFF` wraps where the port saturated. The slot add
+`FUN_80042FE8` (`save_leaves`) refuses a slot at or past the window's end, which
+the port did not test; the first-live-monster scan `FUN_801DB8B4` falls through
+to the fifth monster's seat when the first four are down, where the port returned
+the band end. The save composer `FUN_801E1934` (`save_compose`) stages exactly the
+block `legaia-save`'s title, identity and summary writers compose from the same
+live state.
