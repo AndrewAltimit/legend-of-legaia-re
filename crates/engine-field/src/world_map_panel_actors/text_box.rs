@@ -92,6 +92,11 @@ pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<Tex
     let mut timer = input.fade.timer;
     let mut out = Vec::new();
     if !(0..15).contains(&phase) {
+        // `sltiu v1,0xf` sends an out-of-range phase to the epilogue, not past
+        // it: a negative phase still runs the `phase < 10` text-actor tick.
+        if phase < TEXT_BOX_TICK_BELOW {
+            out.push(TextBoxEffect::TickTextActors);
+        }
         return (phase, cursor, timer, out);
     }
     let exit = ActorExit {

@@ -11,8 +11,8 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::world_map_panel::CursorPad;
 use legaia_engine_field::world_map_panel_actors::{
     FadeFlashEffect, FadeFlashInput, FillFadeEffect, FillFadeInput, SoftResetEffect,
-    SoftResetInput, SubListEffect, SubListInput, fade_flash_tick, fill_fade_tick, soft_reset_tick,
-    sub_list_tick,
+    SoftResetInput, SubListEffect, SubListInput, TextBoxEffect, TextBoxInput, fade_flash_tick,
+    fill_fade_tick, soft_reset_tick, sub_list_tick, text_box_tick,
 };
 use psx_retail_exec::{A0, A1, Cpu, Stop, V0};
 use std::cell::{Cell, RefCell};
@@ -23,6 +23,7 @@ const FADE_FLASH: u32 = 0x801E_D308;
 const SUB_LIST: u32 = 0x801E_D590;
 const SOFT_RESET: u32 = 0x801E_DF00;
 const FILL_FADE: u32 = 0x801E_E5D4;
+const TEXT_BOX: u32 = 0x801E_E90C;
 
 const APPLY_BRIGHTNESS: u32 = 0x8003_479C;
 const SAVE_SPAWN: u32 = 0x801D_841C;
@@ -543,5 +544,206 @@ fn the_fill_fade_matches_retail() {
     assert!(
         spawned > 300 && queued > 300 && exits > 500 && held > 500,
         "{spawned} {queued} {exits} {held}"
+    );
+}
+
+/// The text box `FUN_801EE90C`: the confirm / decline cursor, the party
+/// restore over the three records of the save block, and the fill fade it
+/// replays at phases 10..13 with the place-name latch in front.
+#[test]
+fn the_text_box_matches_retail() {
+    differential!(prot(897, TEXT_BOX));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let (mut cpu, log) = hooked(
+        &disc.read_entry(897).expect("PROT 0897"),
+        &[
+            PANEL_SCRIPT,
+            REPLACE_CUE,
+            PUSH_CUE,
+            POST_PRIM,
+            DRAW_PUMP,
+            SPAWN,
+            QUEUE_DMA,
+        ],
+    );
+    let busy = Rc::new(Cell::new(0u32));
+    let b = busy.clone();
+    cpu.hook(LOAD_BUSY, move |r, _| r.r[V0] = b.get());
+    const SCENE_FILL: u32 = 0x8007_B62C;
+    const NAME_SRC: u32 = 0x801C_6EA0;
+    const NAME_LATCH: u32 = 0x8007_B44C;
+    const SAVE_BLOCK: u32 = 0x8008_4140;
+    let mut rng = Rng(0x5445_5854);
+    let (mut restored, mut declined, mut exits, mut spawned, mut queued, mut idle) =
+        (0, 0, 0, 0, 0, 0);
+    for round in 0..20000 {
+        let before = seat(&mut rng, 0x2F, 15);
+        let pad = CursorPad {
+            held: match rng.below(4) {
+                0 => 0x20,
+                1 => 0x40,
+                _ => 0,
+            } | (rng.next() & 0x0F00),
+            pressed: [0, 0x1000, 0x4000, 0x20, 0x40][rng.below(5) as usize],
+            action_a_mask: 0x20,
+            action_b_mask: 0x40,
+        };
+        let fade = FillFadeInput {
+            frame_delta: 1 + rng.below(4) as i16,
+            timer: match rng.below(4) {
+                0 => 0x10 - rng.below(5) as i16,
+                1 => -(rng.below(4) as i16),
+                _ => rng.below(0x14) as i16,
+            },
+            input_locked: rng.below(4) == 0,
+            load_pending: rng.below(2) == 0,
+            handler_id: before.handler,
+        };
+        let input = TextBoxInput {
+            input_locked: fade.input_locked,
+            cursor: rng.below(2) as i32,
+            pad,
+            dismiss_pressed: pad.pressed & (pad.action_a_mask | pad.action_b_mask) != 0,
+            fade,
+            handler_id: before.handler,
+        };
+        let live: [u8; 3] = std::array::from_fn(|_| rng.below(256) as u8);
+        let saved: [u8; 3] = std::array::from_fn(|_| rng.below(256) as u8);
+        let player_flags = rng.next() & !0x8_0000;
+        let scene_fill = rng.below(2) * 0x8012_5000;
+        let name = 0x8012_6000 + rng.below(0x100);
+        // Three party records' HP / MP quartets, and the fourth the loop
+        // must leave alone.
+        let party: [[u16; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| rng.next() as u16));
+        write_seat(&mut cpu, before);
+        cpu.mem.wr8(FRAME_STEP, fade.frame_delta as u8);
+        cpu.mem.wr16(ACTOR + 0x9E, fade.timer as u16);
+        cpu.mem.wr32(BLOCKED, u32::from(input.input_locked));
+        cpu.mem.wr32(ROW, input.cursor as u32);
+        cpu.mem.wr32(0x8007_B874, pad.held);
+        cpu.mem.wr32(0x8007_BB84, pad.pressed);
+        cpu.mem.wr32(0x8008_46D0, pad.action_a_mask);
+        cpu.mem.wr32(0x8008_46D4, pad.action_b_mask);
+        cpu.mem.wr32(PLAYER + 0x10, player_flags);
+        cpu.mem.wr32(SCENE_FILL, scene_fill);
+        cpu.mem.wr32(NAME_SRC, name);
+        cpu.mem.wr32(NAME_LATCH, 0x5A5A_5A5A);
+        for (i, q) in party.iter().enumerate() {
+            for (k, v) in q.iter().enumerate() {
+                cpu.mem.wr16(SAVE_BLOCK + 0x6CC + 0x414 * i as u32 + 2 * k as u32, *v);
+            }
+        }
+        busy.set(u32::from(fade.load_pending));
+        for i in 0..3u32 {
+            cpu.mem.wr8(TINT + i, live[i as usize]);
+            cpu.mem.wr8(TINT_MIRROR + i, 0x99);
+            cpu.mem.wr8(TINT_SAVE + 2 - i, saved[i as usize]);
+        }
+        log.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(TEXT_BOX, &[ACTOR]),
+            Stop::Returned,
+            "round {round}"
+        );
+
+        let (phase, cursor, timer, effects) = text_box_tick(before.phase, input);
+        let mut want = before;
+        want.phase = phase;
+        let (mut calls, mut tint, mut mirror, mut save, mut flags) =
+            (Vec::new(), live, [0x99u8; 3], saved, player_flags);
+        let (mut want_party, mut latch) = (party, 0x5A5A_5A5Au32);
+        for e in &effects {
+            match *e {
+                TextBoxEffect::PlaySfx(0) => calls.push((REPLACE_CUE, 0)),
+                TextBoxEffect::PlaySfx(id) => calls.push((PUSH_CUE, id)),
+                TextBoxEffect::RestoreParty => {
+                    for q in want_party.iter_mut().take(3) {
+                        q[1] = q[0];
+                        q[3] = q[2];
+                    }
+                    restored += 1;
+                }
+                TextBoxEffect::RunPanelScript(va) => calls.push((PANEL_SCRIPT, va)),
+                TextBoxEffect::Exit(x) => {
+                    let (mut ph, mut h) = (want.phase, want.handler);
+                    x.apply(&mut want.handback, &mut want.stashed, &mut h, &mut ph);
+                    want.handler = h;
+                    want.phase = ph;
+                    exits += 1;
+                }
+                TextBoxEffect::Fade(f) => match f {
+                    FillFadeEffect::PostFillPrim => {
+                        calls.push((POST_PRIM, 0));
+                        latch = name;
+                    }
+                    FillFadeEffect::SpawnSubActorAndCaptureTint => {
+                        calls.push((SPAWN, 0x8007_06BC));
+                        save = tint;
+                        tint = [0; 3];
+                        mirror = [0; 3];
+                        spawned += 1;
+                    }
+                    FillFadeEffect::QueueDmaAndRestoreTint => {
+                        calls.push((QUEUE_DMA, 0));
+                        calls.push((QUEUE_DMA, 0));
+                        if scene_fill != 0 {
+                            calls.push((POST_PRIM, 0));
+                        }
+                        calls.push((POST_PRIM, 0));
+                        tint = save;
+                        mirror = save;
+                        queued += 1;
+                    }
+                    FillFadeEffect::SetSceneFlagBit => flags |= 0x8_0000,
+                    FillFadeEffect::TickTextActors => calls.push((DRAW_PUMP, 0)),
+                    other => panic!("the text box replays no {other:?}"),
+                },
+                TextBoxEffect::ClearSceneField3E => want.done_gate = 0,
+                TextBoxEffect::TickTextActors => calls.push((DRAW_PUMP, 0)),
+            }
+        }
+        let ctx = format!("round {round} phase {} {input:?}", before.phase);
+        // The cursor's own cues are the list cursor's, compared on their own.
+        let got: Vec<(u32, u32)> = log
+            .borrow()
+            .iter()
+            .filter(|c| !(c.0 == PUSH_CUE && c.1 != 0x25))
+            .map(|&(va, a0)| {
+                let keep = matches!(va, PANEL_SCRIPT | SPAWN | REPLACE_CUE | PUSH_CUE);
+                (va, if keep { a0 } else { 0 })
+            })
+            .collect();
+        assert_eq!(got, calls, "calls: {ctx}");
+        assert_eq!(read_seat(&mut cpu), want, "seat: {ctx}");
+        assert_eq!(cpu.mem.rd32(ROW) as i32, cursor, "cursor: {ctx}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x9E) as i16, timer, "timer: {ctx}");
+        assert_eq!(cpu.mem.rd32(PLAYER + 0x10), flags, "player flags: {ctx}");
+        assert_eq!(cpu.mem.rd32(NAME_LATCH), latch, "name latch: {ctx}");
+        for (i, q) in want_party.iter().enumerate() {
+            for (k, v) in q.iter().enumerate() {
+                let at = SAVE_BLOCK + 0x6CC + 0x414 * i as u32 + 2 * k as u32;
+                assert_eq!(cpu.mem.rd16(at), *v, "party {i} word {k}: {ctx}");
+            }
+        }
+        for i in 0..3u32 {
+            let k = i as usize;
+            assert_eq!(cpu.mem.rd8(TINT + i), tint[k], "tint {i}: {ctx}");
+            assert_eq!(cpu.mem.rd8(TINT_MIRROR + i), mirror[k], "mirror {i}: {ctx}");
+            assert_eq!(cpu.mem.rd8(TINT_SAVE + 2 - i), save[k], "save {i}: {ctx}");
+        }
+        declined += u32::from(before.phase == 1 && phase == 3);
+        idle += u32::from((4..10).contains(&before.phase) && got == [(DRAW_PUMP, 0)]);
+    }
+    assert!(
+        restored > 50
+            && declined > 50
+            && exits > 300
+            && spawned > 300
+            && queued > 300
+            && idle > 3000,
+        "{restored} {declined} {exits} {spawned} {queued} {idle}"
     );
 }
