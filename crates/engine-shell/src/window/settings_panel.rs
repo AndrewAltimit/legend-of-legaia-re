@@ -28,8 +28,9 @@ use legaia_engine_system::input::PadButton;
 /// smarter monsters, the saved-chain Arts list, the gameplay tweaks and the
 /// battle tuning) and *Original game only*, as the play page's boxes take
 /// them live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 38] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 39] = [
     OptionRow::Fullscreen,
+    OptionRow::WholeStepScale,
     OptionRow::Theme,
     OptionRow::CameraDistance,
     OptionRow::PsxRender,
@@ -347,6 +348,7 @@ impl PlayWindowApp {
         edit(row, &mut self.options_state, &mut switches);
         match row {
             OptionRow::Fullscreen => self.win.set_fullscreen(self.options_state.fullscreen),
+            OptionRow::WholeStepScale => self.fit_frame_target(),
             OptionRow::Theme => self.resolve_chrome_theme(),
             OptionRow::PsxRender => {
                 self.set_psx_render(switches.switches.psx_render);
@@ -486,16 +488,25 @@ impl PlayWindowApp {
     /// (`legaia_engine_render::fill_target_for`), so a 960x720 window a
     /// small screen clamps to 960x699 shows the 3x frame shrunk to fit
     /// instead of the 2x one with black around it. PSX mode keeps its
-    /// 320x240 target.
+    /// 320x240 target. With *Pixel-exact scaling* on
+    /// (`OptionsState::integer_scale`) there is no shrink: the frame draws
+    /// at the window's size, where the stage rect
+    /// (`legaia_engine_ui::pause_menu::stage_transform`) is already the
+    /// largest whole step that fits, black around it.
     pub(super) fn fit_frame_target(&mut self) {
         if self.psx_render {
             return;
         }
+        let integer = self.options_state.integer_scale;
         let Some(r) = self.win.renderer.as_mut() else {
             return;
         };
         let (w, h) = r.presented_size();
-        let want = legaia_engine_render::fill_target_for(w, h);
+        let want = if integer {
+            None
+        } else {
+            legaia_engine_render::fill_target_for(w, h)
+        };
         if r.native_resolution() != want {
             r.set_native_resolution(want);
             if let Some((tw, th)) = want {

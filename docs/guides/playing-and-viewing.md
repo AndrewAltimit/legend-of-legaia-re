@@ -209,6 +209,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Start here | Look and feel (Enhanced, Original, Custom) | both | - | Enhanced |
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
+| Display | Pixel-exact scaling: whole steps of 320x240 only | `legaia-options.toml` | - | off |
 | Display | Menu colours (System, Light, Dark) | `legaia-options.toml` | - | System |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
 | Display | PlayStation pixel look: the native 320x240 picture, magnified (`--psx-render`) | `launcher.toml` | - | off |
@@ -514,6 +515,9 @@ keeps whole steps of 320x240 so text and sprites stay sharp; a window a
 little short of a step (a 960x720 window a 768-pixel-tall screen hands back
 about 960x699) draws the frame at that step and shows it shrunk by a few
 percent to fit, rather than dropping to the step below with black around it.
+The *Pixel-exact scaling* row (`integer_scale`, also on the `F12` panel)
+turns that shrink off, for a player who wants every stage pixel the same size
+at the cost of the black border; PSX mode always scales in whole steps.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`
