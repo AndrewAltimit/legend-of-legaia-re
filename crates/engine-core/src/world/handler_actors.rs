@@ -596,6 +596,12 @@ impl World {
         self.locomotion.pad_octant = 0;
     }
 
+    /// The pad-rotation octant `gp+0x2D8` (`0x8007B5F0`) a scene's script
+    /// authors with field-VM op `4C 2x`.
+    pub fn pad_octant(&self) -> u32 {
+        self.locomotion.pad_octant
+    }
+
     /// Re-spawn any scripted-scene program a scene change interrupted.
     ///
     /// PORT: FUN_8003AEB0 (`0x8003BAF0..0x8003BB3C`), driving

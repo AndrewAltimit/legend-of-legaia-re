@@ -123,3 +123,41 @@ fn a_field_stager_id_names_the_record_retail_names() {
     }
     assert!(resolved > 4000, "{resolved}");
 }
+
+const CLEAR_OCTANT: u32 = 0x801E_565C;
+const FIELD_OVERLAY_BASE: u32 = 0x801C_E818;
+const PAD_OCTANT: u32 = 0x8007_B5F0;
+
+/// The MAN loader's pad-octant reset `FUN_801E565C` (PROT 0897) against
+/// `World::man_load_actor_reset`: an octant a script authored with `4C 2x`
+/// is gone after the scene's actor reset.
+#[test]
+fn the_pad_octant_reset_is_retails() {
+    differential!(prot(897, CLEAR_OCTANT));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), crate::common::disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.load(
+        FIELD_OVERLAY_BASE,
+        &disc.read_entry(897).expect("PROT 0897"),
+    );
+    for octant in 0..8u8 {
+        let before = cpu.mem.read(PAD_OCTANT - 0x20, 0x44);
+        cpu.mem.wr32(PAD_OCTANT, u32::from(octant));
+        assert_eq!(cpu.call(CLEAR_OCTANT, &[]), Stop::Returned);
+        assert_eq!(cpu.mem.rd32(PAD_OCTANT), 0);
+        // Nothing beside the word moves.
+        let mut after = cpu.mem.read(PAD_OCTANT - 0x20, 0x44);
+        after[0x20..0x24].copy_from_slice(&before[0x20..0x24]);
+        assert_eq!(after, before);
+
+        let mut w = World::new();
+        w.field_bytecode = vec![0x4C, 0x20 | octant, 0x00, 0x00];
+        w.field_pc = 0;
+        let _ = w.step_field();
+        assert_eq!(w.pad_octant(), u32::from(octant), "op 4C 2x authors it");
+        w.man_load_actor_reset();
+        assert_eq!(w.pad_octant(), cpu.mem.rd32(PAD_OCTANT));
+    }
+}
