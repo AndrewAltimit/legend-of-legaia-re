@@ -1196,10 +1196,18 @@ impl RetailBattle {
                 // A party strike's monster target is the same clock: nothing
                 // the strike loop runs touches its loop before the hit
                 // (`battle_ropeway_party_noa_sonic_javelin_open`'s Orb, whose
-                // idle bob stands it a sphere's height off retail's).
+                // idle bob stands it a sphere's height off retail's). Only
+                // ahead of the first swing's commit, though: that commit
+                // steps the attacker along the range law to the target's
+                // body pair (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`), which
+                // the replay's own idle phase decided, and a loop re-seated
+                // after it stands the body where the step never measured
+                // (`minigame_muscle_dome_retail_red_piura_vahn_strike`
+                // `.987` to `.967`).
                 let melee_target_idle = clip == 0
                     && slot == self.target_code
                     && self.queued_category == 3
+                    && (self.active_actor >= 3 || self.caster_clip == 0)
                     && (0x14..=0x1E).contains(&self.action_state);
                 // ... and a monster cast's party target still idling ahead of
                 // the hit, the same clock: the cast band stages nothing on the
