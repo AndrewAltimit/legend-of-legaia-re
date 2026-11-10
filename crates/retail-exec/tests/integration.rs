@@ -149,6 +149,7 @@ mod field_init;
 mod field_leaves;
 mod field_load_entry;
 mod field_magic;
+mod field_overlay_small;
 mod field_overlay_spawns;
 mod field_scus_hosts;
 mod field_scus_leaves;
