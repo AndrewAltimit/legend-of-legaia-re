@@ -942,6 +942,109 @@ impl LiveWindowSet {
     }
 }
 
+/// What the per-frame window walk draws for one live node, by its kind byte
+/// (`+0x1C`): the arm `FUN_80031D00` dispatches to through the jump table at
+/// `0x80010DC0`, kinds past `0x23` folded onto it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextActorArm {
+    /// Kind `0`: the record string through the text kernel `FUN_80036888`.
+    Text,
+    /// Kind `1`: the typewriter reveal, one segment more each frame, through
+    /// the same kernel.
+    Typewriter,
+    /// Kinds `0xD` / `0x11`: the record string through `FUN_8003CC98`.
+    StaticText,
+    /// The list kinds: the list kernel `FUN_80032A44` while the node carries
+    /// no record string, the caption [`caption_window_pen`] once it does.
+    ListOrCaption,
+    /// Kind `4`: the highlighted row's description ([`row_description_source`]).
+    RowDescription,
+    /// Kind `6`: the highlighted spell's description ([`spell_caption_desc`]).
+    SpellCaption,
+    /// Kind `0xC`: the Triangle arts list (`FUN_80034358`).
+    ArtsList,
+    /// Kind `0x21`: the highlighted item's detail line ([`item_caption_item`]).
+    ItemCaption,
+    /// Kind `0x23` and past: nothing.
+    None,
+}
+
+/// The draw arm for a node of `kind` (`FUN_80031D00`'s dispatch,
+/// `0x80032170..0x800323C0`).
+///
+/// PORT: FUN_80031D00 (the per-node draw dispatch, jump table `0x80010DC0`)
+///
+/// REPLACED-BY: the per-screen window models and typed draw lists the hosts
+/// build each frame; no host keeps the `gp+0x148` node list this walks (see
+/// family 1 in the module heading).
+pub fn text_actor_arm(kind: u8) -> TextActorArm {
+    match kind {
+        0 => TextActorArm::Text,
+        1 => TextActorArm::Typewriter,
+        0xD | 0x11 => TextActorArm::StaticText,
+        4 => TextActorArm::RowDescription,
+        6 => TextActorArm::SpellCaption,
+        0xC => TextActorArm::ArtsList,
+        0x21 => TextActorArm::ItemCaption,
+        0x23.. => TextActorArm::None,
+        _ => TextActorArm::ListOrCaption,
+    }
+}
+
+/// Where a list-kind node's caption draws once it carries a record string:
+/// `FUN_8003CC98` at `(x, y + (h >> 1) - 14)` (`0x80035D5C..0x80035D88`),
+/// centred on the node's height, in ink `7`.
+///
+/// PORT: FUN_80035CB8 (the caption pen)
+///
+/// REPLACED-BY: the per-screen window models, which place their captions
+/// from the disc-parsed window rects (family 1 in the module heading).
+pub fn caption_window_pen(x: i16, y: i16, h: i16) -> (i16, i16) {
+    (x, y.wrapping_add(h >> 1).wrapping_sub(14))
+}
+
+/// Whether a caption node takes a cancel this frame: only in the battle
+/// mode (`_DAT_8007B83C == 0x15`) and only on a press the cancel masks
+/// (`0x800846D0 | 0x800846D4`) carry. Retail then queues the cancel cue
+/// `0x37` and sets the list mode to `3` (`0x80035CC0..0x80035D54`).
+///
+/// PORT: FUN_80035CB8 (the battle cancel)
+///
+/// REPLACED-BY: the battle command menus' own cancel handling
+/// (`legaia_engine_battle_menus`), which no caption node routes.
+pub fn caption_window_cancels(game_mode: i16, pressed: u32, cancel_masks: u32) -> bool {
+    game_mode == 0x15 && pressed & cancel_masks != 0
+}
+
+/// The spell description a kind-`6` node draws (`0x80035DA0..0x80035E40`):
+/// the `0x80075DB0` table entry the spell record's `+4` byte names, when the
+/// character knows any spell (`record +0x13C != 0`), the highlighted spell is
+/// not `0` and that byte is not `0`.
+///
+/// PORT: FUN_80035DA0
+///
+/// REPLACED-BY: the typed spell rows' resolved description
+/// (`crate::pause_screens::PauseTextTables::spell_desc`), which the Magic
+/// screens draw (family 2 in the module heading).
+pub fn spell_caption_desc(spell_count: u8, spell: u32, desc_index: u8) -> Option<u8> {
+    (spell_count != 0 && spell != 0 && desc_index != 0).then_some(desc_index)
+}
+
+/// The item whose detail line a kind-`0x21` node draws
+/// (`0x80035E44..0x80035EA4`): the highlighted item when the highlighted
+/// row's class word is `0x3000` and the list is past its idle mode `0`.
+/// Retail hands its description to the printer `FUN_800337B0`
+/// ([`crate::shop::item_detail_line`]) at the node's pen.
+///
+/// PORT: FUN_80035E44
+///
+/// REPLACED-BY: the screens' own detail draw over the staged item
+/// (`legaia_engine_screens::shop::item_detail_draws`), which calls the
+/// printer's port directly (family 2 in the module heading).
+pub fn item_caption_item(row_class: u32, list_mode: u32, item: u32) -> Option<u32> {
+    (row_class == 0x3000 && list_mode != 0).then_some(item)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

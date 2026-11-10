@@ -1,10 +1,10 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
-//! PORT: FUN_80031D00, FUN_80035CB8, FUN_80035DA0, FUN_80035E44
-//! No kernel in this crate ports these four: the overlay pipelines draw what
-//! the retail text-actor draw pump (`FUN_80031D00` and its three callees)
-//! puts on screen, from the hosts' own draw lists. The claim is the
-//! renderer's, module-wide, until a kernel takes it.
+//! REF: FUN_80031D00, FUN_80035CB8, FUN_80035DA0, FUN_80035E44
+//! The overlay pipelines draw what the retail text-actor draw pump
+//! (`FUN_80031D00` and its three callees) puts on screen, from the hosts' own
+//! draw lists; the pump's dispatch and its callees' rules are ported in
+//! `legaia_engine_menus::menu_list_rows` (`text_actor_arm` and siblings).
 //!
 //! REF: FUN_8002C488, FUN_8003C310 (their cells are cut by
 //! `legaia_engine_menus::save_menu_atlas::{menu_pictogram, command_arrow_page_rect}`)

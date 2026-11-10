@@ -371,6 +371,7 @@ mod talk_dispatch;
 mod target_banner;
 mod target_panel;
 mod target_redirect;
+mod text_actor_walk;
 mod text_balloon;
 mod text_width;
 mod text_writer;
