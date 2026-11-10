@@ -50,19 +50,17 @@ pub struct TileActorDraw {
 /// hosts call it (`play-window`'s redraw and the browser play page's
 /// `play_tile_board`).
 ///
-/// Provenance caveat - the dump this cites is a **wrong-base print**. The
-/// board renderer is not a function: it is the tail block of the walk SM
-/// `FUN_801EF2B0` at `0x801EFEA0`, entered by nineteen in-body branches and
-/// running to that routine's epilogue, so there is no render entry to name
+/// The board renderer is not a function of its own: it is the tail block of
+/// the walk SM `FUN_801EF2B0` at `0x801EFEA0`, entered by nineteen in-body
+/// branches and running to that routine's epilogue
 /// (`overlay_0897_801efea0.txt`, and
 /// [`docs/subsystems/tile-board.md`](../../../docs/subsystems/tile-board.md)
-/// "The render tail"). `overlay_0897_801e0f3c.txt` is a second print of the
-/// same instructions under a different load base; it is cited here because
-/// it is the dump file the corpus carries for this pass, not because a
-/// function begins at that address.
+/// "The render tail"). `overlay_0897_801e0f3c.txt` is a wrong-base second
+/// print of the same instructions; no routine begins at `0x801E0F3C`.
 ///
-/// PORT: overlay_0897_801e0f3c (per-cell tile-actor draw pass; the select +
-/// reposition halves live in `World::refresh_tile_board_draw_list`)
+/// PORT: FUN_801EF2B0 (the render tail `0x801EFEA0..0x801F03E8`: the per-cell
+/// tile-actor draw pass; the select + reposition halves live in
+/// `World::refresh_tile_board_draw_list`)
 pub fn tile_board_actor_draws(world: &legaia_engine_core::world::World) -> Vec<TileActorDraw> {
     world
         .board
