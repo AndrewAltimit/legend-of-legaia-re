@@ -1774,7 +1774,7 @@ mod pause_list_tests {
     }
 
     /// Throw Out confirm window (FUN_801D1B20): name at the content
-    /// origin, count right of the name, "Throw out?" at `(X+6, Y+0xE)`,
+    /// origin, the count off screen, "Throw out?" at `(X+6, Y+0xE)`,
     /// Yes / No teal at `X+0x3C` on rows `Y+0x1C` / `Y+0x2A`, hand at
     /// `X+0x28` on the focused row.
     #[test]
@@ -1804,9 +1804,24 @@ mod pause_list_tests {
             .map(|d| d.color)
             .unwrap();
         assert_eq!(yes_ink, super::super::system_menus::OPTIONS_INK_TEAL);
-        // The count sits right of the proportional name advance.
+        // The count and the first prompt line are seated off the name's
+        // first byte (`'M' * 12`), right of the screen: the name's row
+        // holds the name and nothing else.
         let name_w = font.layout_ascii("Medicine").advance_x as i32;
-        assert!(draw_at(&draws, wx + 8 + name_w, wy));
+        assert!(
+            !draws
+                .iter()
+                .any(|d| d.dst.1 == wy && d.dst.0 >= wx + name_w),
+            "nothing follows the name on its row"
+        );
+        // A name opening on a byte whose pen wraps back onto the screen
+        // (`0xAB * 12 + 8` is `2060`, `12` as the GPU reads it) shows both.
+        let wrapped = PauseThrowConfirmView {
+            name: "\u{AB}x",
+            ..view
+        };
+        let draws = items_throw_confirm_draws_for(&font, &wrapped, (wx, wy));
+        assert!(draw_at(&draws, wx + 8 + 0xAB * 12 - 2048, wy));
         // Sprite variant: hand at (X+0x28, rowY) for the focused row.
         let sprites = items_throw_confirm_sprites_for(&test_rects(), 0, (wx, wy), (0, 0), 1);
         assert!(
