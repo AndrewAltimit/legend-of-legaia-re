@@ -1010,3 +1010,21 @@ packet buffer and ordering table and held to the port's primitives packet by pac
 emitters, the digit fields, the banners, the gauge bars and the hub's ROUND banner and course card. So
 do the art-name banner placement `FUN_8004C650` (`art_banner`), the counters, prompts, tabs and shop
 panels of the menu overlay, the save-flow confirms, and the save screen's box guard and caption.
+
+The STR overlay (PROT 0970) runs from the frame bytes to the MDEC word list. Its Iki converter
+`FUN_801D0378` with the table LZSS `FUN_801D0604` (`iki_decode`) matches `psx_mdec::iki_mdec_codes`
+word for word over sampled frames of all six movies, header copy and `0xFE00` padding included;
+`MdecDecoder::decode_frame` now runs through that list and the MDEC stage `decode_mdec_codes` as
+retail splits the work, pixel-identical to the fused decoder it replaced. The STRv2 decoder
+`FUN_801D070C` (`strv2_decode`), one-shot and resumed in chunks, and its table unpacker
+`FUN_801F1A00` match on generated streams. The play loop's context init, frame poll and slice callback,
+the stream open and frame pump over the nine retail dispatch slots on their own movies, the MDEC output
+word, the slice-callback install and the four MDEC DMA sync routines (`str_player`, `mdec_sync`) match.
+
+Among the system and render leaves, the boot SPU-base seeder, the staged character pair, the prompt
+line counter, the DRAWENV seed, the fade ramp step, the rumble actuator kernel and the scene-name sync
+(`system_leaves`), the gouraud colour spread and the display X mirror (`render_leaves`), the battle
+intro's style pick and `POLY_GT4` builder (`intro_style`), the CLUT-walk stepper on the actor walker's
+case `0xB` (`clut_walk`), the placement spawner's model-bank select (`model_select`), the field-load
+entry step (`field_load_entry`), the sustained-cue teardown (in `sfx_drain`) and the battle XA
+seek-ahead (`battle_voice`) all match.

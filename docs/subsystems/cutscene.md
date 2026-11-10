@@ -558,7 +558,12 @@ voice path is per-caller data, not a single table - an open census, tracked in
 
 ## MDEC decoder (Iki bitstream)
 
-`MdecDecoder::decode_frame(frame)` converts a complete demuxed frame into an RGBA8 pixel buffer.
+`MdecDecoder::decode_frame(frame)` converts a complete demuxed frame into an RGBA8 pixel buffer,
+in retail's two steps: `psx_mdec::iki_mdec_codes` (the port of `FUN_801D0378`) writes the MDEC
+command-word list the overlay DMAs, and `psx_mdec::decode_mdec_codes` stands in for the MDEC
+hardware that list feeds. The STRv2 decoder's list goes through the same pixel stage. The list half
+is held word for word to the overlay by the [retail kernel differential](../tooling/retail-kernel-differential.md);
+the pixel half is written from the MDEC documentation and has no routine on the disc to compare with.
 
 Legaia's movies use the PSX **"Iki"** bitstream variant, **not** the common STRv2 layout. The
 distinguishing trait: the per-block DC and quantization scale are **not** in the entropy
