@@ -1629,3 +1629,22 @@ fn mystic_circle_halves_the_casters_clip_through_the_rise() {
         None
     );
 }
+
+/// Guilty Cross's arm 3 drops the parked cross once its word reaches
+/// `scalar << 4` and stands it at `-0x200` as it passes (`0x801F701C..0x801F7074`).
+#[test]
+fn guilty_cross_drops_its_cross_through_arm_3s_last_frames() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = SPEED_SCALAR << 8;
+    let early = guilty_cross_camera(&mut st, 3, seats());
+    assert!(early.hold);
+    assert_eq!(early.part_write, None);
+    st.countdown.0 = (SPEED_SCALAR << 4) + MODULE_DRAIN_PER_TICK;
+    let falling = guilty_cross_camera(&mut st, 3, seats()).part_write.unwrap();
+    assert_eq!((falling.dy, falling.y), (0x100, None));
+    st.countdown.0 = MODULE_DRAIN_PER_TICK;
+    let pass = guilty_cross_camera(&mut st, 3, seats());
+    assert!(!pass.hold);
+    assert_eq!(pass.part_write.unwrap().y, Some(-0x200));
+    assert_eq!(pass.part_write.unwrap().records, &[0x801F_81E8]);
+}

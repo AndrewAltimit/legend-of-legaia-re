@@ -644,7 +644,7 @@ pub const GUILTY_CROSS_COUNTDOWN: u32 = 0x801F_8360;
 /// | 0 (`0x801F6AC8`) | shot: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x800)`, focus the caster, `0x20` frames | `= scalar << 7` |
 /// | 1 (`0x801F6CC4`) | drift TR z `+4` | `+= scalar << 7` |
 /// | 2 (`0x801F6E04`) | drift TR z `+4`; then a cut: pitch `0x100`, yaw `0x800 - victim[+0x46]`, TR `(0, 0x400, 0xA00)`, focus the victim | `+= scalar << 7` |
-/// | 3 (`0x801F6FD4`) | drift TR z `+32` | `+= scalar << 8` |
+/// | 3 (`0x801F6FD4`) | drift TR z `+32`; the cross falls `0x100` a vsync once the word is at or under `scalar << 4`, and rests at `-0x200` as the arm passes | `+= scalar << 8` |
 /// | 4 (`0x801F7238`) | a cut back to arm 0's framing | `+= scalar * 0xC0` |
 /// | 5 (`0x801F7378`) | drift TR z `+4` | - (the body finishes) |
 ///
@@ -686,6 +686,20 @@ pub fn guilty_cross_camera(
     let hold = st.countdown.drain_above(0);
     let mut shot = None;
     let mut arm = CaptureCamArm::default();
+    // Arm 3 drops the cross arm 2 parked at `0x801F836C`: once the drained
+    // word stands at or under `scalar << 4` (`slt` at `0x801F701C`) every
+    // pass adds `step << 8` to its `+0x16` (`0x801F702C..0x801F7040`), and
+    // the pass that leaves stores `-0x200` there (`0x801F7064..0x801F7074`),
+    // so the cross falls from `-0x1200` onto the victim in the arm's last
+    // sixteen frames and stands at `-0x200` through arm 4.
+    if phase == 3 && st.countdown.0 <= SPEED_SCALAR << 4 {
+        arm.part_write = Some(CapturePartWrite {
+            records: &GUILTY_CROSS_CROSS,
+            dy: if hold { GUILTY_CROSS_FALL_PER_TICK } else { 0 },
+            y: (!hold).then_some(GUILTY_CROSS_REST_Y),
+            ..Default::default()
+        });
+    }
     if !hold {
         match phase {
             1 => st.countdown.add(1 << 7),
@@ -747,6 +761,12 @@ pub fn guilty_cross_camera(
 
 /// The neutral colour word PROT 0944's arms store to show a seat.
 const GUILTY_CROSS_NEUTRAL: u32 = 0x2008_0200;
+/// The cross (`model_sel 25`) arm 2 seats and parks at `0x801F836C`.
+const GUILTY_CROSS_CROSS: [u32; 1] = [0x801F_81E8];
+/// Arm 3's fall: `step << 8` a frame, `0x100` a vsync.
+const GUILTY_CROSS_FALL_PER_TICK: i16 = 0x100;
+/// Where the cross rests once arm 3 passes (`li v0,-0x200` at `0x801F7068`).
+const GUILTY_CROSS_REST_Y: i16 = -0x200;
 
 /// PROT 0962's `0xA5` body (evolved Cort's Ultra Charge).
 pub const ULTRA_CHARGE_BODY: u32 = 0x801F_69D8;
