@@ -228,6 +228,7 @@ mod party_table;
 mod passive_sweep;
 mod pause_leaves;
 mod pause_root;
+mod player_tick;
 mod popup_numeral;
 mod pose_decoder;
 mod prize_exchange;

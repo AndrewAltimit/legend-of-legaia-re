@@ -244,6 +244,12 @@ impl World {
         if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
             return;
         }
+        // Past the walk gate (`field_warp_tile::player_tick_walks`) the tick
+        // runs the walk-regen tick and then the pad controller
+        // (`jal 0x801D0B90` at `0x801D16EC`, `jal 0x801D01B0` at
+        // `0x801D16F4`): the regen spends the steps earlier frames banked,
+        // ahead of this frame's, and sits out every frame the player is held.
+        self.tick_field_walk_regen();
         // The action-movement enhancement takes the player from here, past
         // every pad lock above; off, nothing below changes.
         if self.action_movement_applies(slot) {

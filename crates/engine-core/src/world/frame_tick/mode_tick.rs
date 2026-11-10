@@ -768,12 +768,11 @@ impl World {
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
+                // The step runs the walk-regen tick ahead of the pad
+                // controller, behind the same gate
+                // (`World::tick_field_walk_regen`); its Incense zero edge
+                // raises the wear-off notice, which runs here.
                 self.step_field_locomotion();
-                // Walk-regen: drain the accumulator the step above just fed
-                // and apply the three accessory-gated restore bumps. Its
-                // Incense zero edge raises the wear-off notice, which runs
-                // here too.
-                self.tick_field_walk_regen();
                 self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a
                 // separate per-frame controller after the walk commits, so

@@ -2,7 +2,9 @@
 //! per-frame field path.
 //!
 //! - `FUN_801D0B90` walk-regen (`walk_regen::tick_walk_regen`), reached from
-//!   `World::tick`'s Field arm through `World::tick_field_walk_regen`.
+//!   `World::tick`'s Field arm through the player's step, which runs
+//!   `World::tick_field_walk_regen` ahead of the pad controller on a frame
+//!   the player is free to walk (retail's `FUN_801D1344`).
 //! - `FUN_801CFC40` actor collision (`World::field_actor_dir_blocked`),
 //!   reached from the locomotion step's per-axis gate.
 //!
@@ -46,6 +48,7 @@ fn pools(world: &World) -> (u16, u16, u16) {
 fn field_tick_drains_the_walk_regen_accumulator_and_bumps_the_gauges() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
+    world.install_field_player(0);
     party_with_walk_passives(&mut world, HP_WALK_MASK | MP_WALK_MASK | AP_WALK_MASK);
     world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
 
@@ -72,10 +75,41 @@ fn walk_regen_gates_are_per_passive_and_a_bare_party_is_untouched() {
     ] {
         let mut world = World::new();
         world.mode = SceneMode::Field;
+        world.install_field_player(0);
         party_with_walk_passives(&mut world, mask);
         world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
         world.tick();
         assert_eq!(pools(&world), want, "mask {mask:#x}");
+    }
+}
+
+/// The tick sits behind the player tick's walk gate: a held player, a warp in
+/// flight and an undrained pad hold each leave a banked bump unpaid, and the
+/// first free frame pays it.
+#[test]
+fn a_held_player_s_walk_regen_waits_for_the_walk_gate() {
+    for hold in ["lock", "warp", "pad hold"] {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        party_with_walk_passives(&mut world, HP_WALK_MASK);
+        world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+        match hold {
+            "lock" => world.actors[0].move_state.flags |= 0x0008_0000,
+            "warp" => world.locomotion.warp.timer = 0x7FFF,
+            _ => world.locomotion.warp.hold = 0x7FFF,
+        }
+        world.tick();
+        assert_eq!(pools(&world), (50, 20, 10), "{hold}: held, no bump");
+        assert_eq!(
+            world.locomotion.walk_regen_steps,
+            WALK_REGEN_STEP_COST + 1,
+            "{hold}"
+        );
+        world.actors[0].move_state.flags &= !0x0008_0000;
+        world.locomotion.warp = Default::default();
+        world.tick();
+        assert_eq!(pools(&world), (58, 20, 10), "{hold}: released");
     }
 }
 
