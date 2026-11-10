@@ -892,6 +892,34 @@ impl BattleCamera {
         (0..8).fold(0u8, |m, k| if ret[k] && own[k] { m | 1 << k } else { m })
     }
 
+    /// Stand the yaw on `shown` when [`Self::align_glide_origin_to`] placed
+    /// it by the ease band (its endpoint `target` within
+    /// [`ALIGN_YAW_EASE_BAND`] of retail's `end` but not on it, and `mask`
+    /// carrying the yaw bit). Returns the yaw bit when it moved the yaw.
+    ///
+    /// The ease band puts the engine's yaw as far short of its own endpoint
+    /// as retail's stood from retail's, which keeps the endpoints' difference
+    /// on the `camera` channel. A frame drawn there turns the scene by that
+    /// difference. A party strike's recover glide re-arms its yaw endpoint
+    /// on the striker's walk back every pass (`battle_rikuroa_party_vahn_chain_open`:
+    /// `592`, `566`, `537`, `510` on successive passes), so a replay a pass
+    /// apart frames `28` units off, and a ghosted body beside the eye swings
+    /// a third of the screen on it. The image child therefore draws
+    /// retail's own yaw.
+    pub fn seat_eased_yaw(
+        &mut self,
+        shown: BattleCamPose,
+        end: BattleCamPose,
+        target: BattleCamPose,
+        mask: u8,
+    ) -> u8 {
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        if mask & 2 == 0 || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
+            return 0;
+        }
+        self.seat_pose_components(shown, 2)
+    }
+
     /// Stand the components in `mask` ([`BattleCamPose`] order) on `shown`:
     /// a displayed frame's held components, which
     /// [`Self::align_glide_origin_to`] leaves on the engine's own value when

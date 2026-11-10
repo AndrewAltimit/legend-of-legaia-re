@@ -581,3 +581,26 @@ fn the_magic_chain_exit_pass_holds_on_the_vsync_cadence_too() {
     cam.advance_to(3);
     assert_eq!(cam.close_up_accum(), 8);
 }
+
+/// A yaw the ease band placed short of the engine's own endpoint is stood
+/// on the displayed yaw; an exact endpoint, or a yaw the alignment left
+/// alone, is not touched (`battle_rikuroa_party_vahn_chain_open`: retail's
+/// recover endpoint `592`, the replay's `564`).
+#[test]
+fn an_eased_yaw_is_stood_on_the_shown_yaw() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    let mut end = cam.pose;
+    end.yaw = 592.0;
+    let mut target = end;
+    target.yaw = 564.0;
+    let mut shown = end;
+    shown.yaw = 1125.0;
+    cam.pose.yaw = 1097.0;
+    assert_eq!(cam.seat_eased_yaw(shown, end, target, 0), 0);
+    assert_eq!(cam.pose.yaw, 1097.0);
+    assert_eq!(cam.seat_eased_yaw(shown, end, end, 2), 0);
+    assert_eq!(cam.pose.yaw, 1097.0);
+    assert_eq!(cam.seat_eased_yaw(shown, end, target, 2), 2);
+    assert_eq!(cam.pose.yaw, 1125.0);
+}

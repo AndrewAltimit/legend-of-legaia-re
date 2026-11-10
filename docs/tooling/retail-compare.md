@@ -5574,6 +5574,17 @@ same side, and an engine glide that has landed, keep the engine's own yaw.
 `rim_elm_gimard_victory` is the case: its endpoints stand `24` apart, retail
 `27` under its own and the engine `97` over.
 
+That placement is the `camera` channel's. The image child then stands such a
+yaw on the displayed one (`BattleCamera::seat_eased_yaw`): drawn at the
+engine's endpoint less retail's distance, the frame turns by the endpoints'
+difference. A party strike's recover glide re-arms its yaw endpoint on the
+striker's walk back every pass (`battle_rikuroa_party_vahn_chain_open`: `592`,
+`566`, `537`, `510` on the passes after the state, a PCSX-Redux read of the
+step table), so a replay a pass apart lands `28` off, and the bodies the
+[near-camera ghost](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)
+draws beside the eye swing a third of the screen on it (`image` `.840` to
+`.885`; `battle_ropeway_party_vahn_slash_kick_mid` `.722` to `.766`).
+
 The focus follows the yaw's phase. A yaw whose endpoint agrees to the unit
 takes retail's live value - retail's point in its ease - and a focus
 endpoint a few units off (a midpoint of body pairs a replay lands within a
