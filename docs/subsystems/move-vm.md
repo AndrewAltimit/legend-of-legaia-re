@@ -65,7 +65,7 @@ int FUN_80023070(int actor);                              // no PC argument
 
 short* op = (short*)(actor[+0x48] + actor[+0x70] * 2);   // u16-aligned PC
 short  v1 = op[0];
-if (v1 >= 0x47) goto epilogue;                            // sltiu v0, v1, 0x47
+if ((unsigned)v1 >= 0x47) goto epilogue;                  // sltiu v0, v1, 0x47
 goto jt[v1];                                              // JT at 0x80010778
 ```
 
@@ -79,7 +79,7 @@ flowchart TD
     gate -- no --> skip["VM not entered this frame"]
     gate -- yes --> fetch["Fetch op at +0x48 + PC*2"]
     fetch --> bound{"op >= 0x47?"}
-    bound -- yes --> out["Exit loop"]
+    bound -- yes --> adv
     bound -- no --> jt["Jump table 0x80010778"]
     jt --> plain["Ordinary handler"]
     jt --> x2f["0x2F: FUN_801D362C, sub-op JT 0x801CE868"]
@@ -95,7 +95,7 @@ flowchart TD
 ```
 
 - **Break opcodes.** `0x08` (HALT, size 0, sets flag bit `0x8`) and `0x09` (WAIT_SET, size 2) clear the loop flag. Every other opcode continues in the same frame.
-- **Out of range.** An opcode `>= 0x47` falls through to the loop exit, the same shape as the field VM's `default` arm. Treat it as "end of move buffer", not "unknown opcode".
+- **Out of range.** An opcode `>= 0x47` (read with `lh`, so `0x8000..` too) branches to the epilogue `0x80024150`, which adds the `$a2` the previous instruction left and loops while the flag stands: the word is skipped by the previous instruction's width, as `0x0B` is ([below](#reading-a-program-asset-move-disasm)), and does not end the frame. Ahead of a pass's first instruction `$a2` is the caller's register. The port's `move_vm::FrameStep` carries the width across the frame; the [differential](../tooling/retail-kernel-differential.md) holds it to retail.
 - **`0x2F` size.** The extension handler's return is the whole instruction's width, added to the PC like any other size ([widths](move-vm-overlay-ext.md#instruction-widths)).
 - **Re-entry.** The next frame's `FUN_80021DF4` runs its integration blocks, then re-enters `FUN_80023070` from the saved PC once the wait has drained below zero. A halted part (`flags & 8`) goes to the tick's halt handler at `0x80023040`.
 - **Sizes hide in delay slots.** Cases that look like no-ops in the decompiled C still advance the PC: `param_3` is set in a MIPS branch-delay slot (same pattern as the field VM, see [`script-vm.md`](script-vm.md) "Decompile quirks").

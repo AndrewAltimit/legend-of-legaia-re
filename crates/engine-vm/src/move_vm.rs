@@ -26,8 +26,9 @@
 //! ```
 //!
 //! Each handler advances PC by an opcode-specific number of u16 words.
-//! Out-of-range opcodes (`>= 0x47`) silently terminate the loop, matching the
-//! `sltiu v0, v1, 0x47` bound check in the original dispatcher.
+//! Out-of-range opcodes (`>= 0x47`) and `0x0B` do not end the loop: the
+//! `sltiu v0, v1, 0x47` bound check branches to the shared epilogue, which
+//! skips the word by the previous opcode's width ([`FrameStep`]).
 //!
 //! ## Two-layer dispatch
 //!
