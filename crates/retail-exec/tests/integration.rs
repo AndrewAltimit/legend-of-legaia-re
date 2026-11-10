@@ -86,6 +86,7 @@ mod gte_engine;
 mod group_aim;
 mod hop_arc;
 mod hp_bar_settle;
+mod hsv;
 mod inn;
 mod interact_probe;
 mod intro_names;
