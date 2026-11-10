@@ -308,3 +308,79 @@ fn the_all_clear_fighter_ticks_as_retails_does() {
         assert_eq!((calls.borrow().as_slice(), port.clock), (&[ACTOR][..], 1));
     }
 }
+
+/// The impact effect pair `FUN_801D4DF8` over seated fighters and generated
+/// keyframe records, with the part spawner hooked, against
+/// `impact_effect_pair` and `impact_keyframe_index`: both spawns' position,
+/// rotation, template and scale, in order, and the cleared `+0x38` word.
+#[test]
+fn the_impact_pair_spawns_where_retail_spawns_it() {
+    differential!(prot(976, IMPACT));
+    const IMPACT: u32 = 0x801D_4DF8;
+    const BLOCK: u32 = 0x801D_BFBC;
+    const STRIDE: u32 = 0xA8;
+    const ACTORS: [u32; 2] = [0x8014_0000, 0x8014_0100];
+    const TABLE: u32 = 0x8015_0000;
+    const SPECIAL_LATCH: u32 = 0x801D_BF50;
+    use legaia_engine_minigames::baka_fighter_chrome::{
+        ImpactSpawn, impact_effect_pair, impact_keyframe_index,
+    };
+    let Some((mut cpu, _)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let spawned: Rc<RefCell<Vec<ImpactSpawn>>> = Rc::default();
+    let sink = spawned.clone();
+    cpu.hook(0x8002_1B04, move |r, m| {
+        let h = |m: &mut psx_retail_exec::Memory, a: u32| m.rd16(a) as i16;
+        let (p, q) = (r.r[A0], r.r[A1]);
+        sink.borrow_mut().push(ImpactSpawn {
+            pos: (h(m, p), h(m, p + 2), h(m, p + 4)),
+            rot: (h(m, q), h(m, q + 2), h(m, q + 4)),
+            template: r.r[A2],
+            scale: r.r[A3] as i32,
+        });
+    });
+    let mut rng = Rng(0x494D_5041);
+    for round in 0..20_000 {
+        let slot = rng.below(2) as usize;
+        let action = rng.below(9);
+        let live = rng.below(8) as i32;
+        let reset = rng.below(3) == 0;
+        let facing = rng.below(2) == 0;
+        let latch = rng.below(2) == 0;
+        let pos = (rng.next() as i16, rng.next() as i16, rng.next() as i16);
+        let b = BLOCK + slot as u32 * STRIDE;
+        let a = ACTORS[slot];
+        // Bits above the action id ride in the same word.
+        cpu.mem.wr32(b + 0x10, action | (rng.below(4) << 10));
+        cpu.mem.wr32(b + 0x28, u32::from(facing));
+        cpu.mem.wr32(b + 0x38, 7);
+        cpu.mem.wr32(b + 0x98, live as u32);
+        cpu.mem.wr32(0x801D_BFAC + slot as u32 * 4, a);
+        cpu.mem.wr32(a + 0x48, TABLE);
+        cpu.mem.wr16(a + 0x14, pos.0 as u16);
+        cpu.mem.wr16(a + 0x16, pos.1 as u16);
+        cpu.mem.wr16(a + 0x18, pos.2 as u16);
+        cpu.mem.wr32(SPECIAL_LATCH, u32::from(latch));
+        let mut keys = [(0i16, 0i16, 0i16); 8];
+        for (k, key) in keys.iter_mut().enumerate() {
+            *key = (rng.next() as i16, rng.next() as i16, rng.next() as i16);
+            let at = TABLE + action * 0x60 + k as u32 * 8 + 0x20;
+            cpu.mem.wr16(at, key.0 as u16);
+            cpu.mem.wr16(at + 2, key.1 as u16);
+            cpu.mem.wr16(at + 4, key.2 as u16);
+        }
+        spawned.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(IMPACT, &[slot as u32, u32::from(reset)]),
+            Stop::Returned
+        );
+        let key = keys[impact_keyframe_index(live, reset) as usize];
+        assert_eq!(
+            (spawned.borrow().as_slice(), cpu.mem.rd32(b + 0x38)),
+            (&impact_effect_pair(slot, pos, key, facing, latch)[..], 0),
+            "round {round} slot {slot} action {action} live {live} reset {reset}"
+        );
+    }
+}
