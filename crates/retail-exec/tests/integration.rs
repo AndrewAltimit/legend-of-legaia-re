@@ -153,6 +153,7 @@ mod floor_height;
 mod fog_render;
 mod fog_spawn;
 mod format_leaves;
+mod frame_begin;
 mod frame_blend;
 mod frame_pace;
 mod glare_divide;
