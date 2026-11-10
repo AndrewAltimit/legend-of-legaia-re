@@ -102,6 +102,7 @@ mod rot_matrix;
 mod round_boundary;
 mod round_end;
 mod round_open;
+mod scale_stage;
 mod separation;
 mod seru_debuff;
 mod seru_learn;
