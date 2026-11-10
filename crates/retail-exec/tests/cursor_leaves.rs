@@ -104,6 +104,9 @@ fn the_cursor_step_lands_where_retail_lands() {
     );
 }
 
+/// One of the three placement copies.
+type PlacementCopy = fn(&mut [ElementPlacement], usize, usize);
+
 fn parse(raw: &[u8]) -> Vec<ElementPlacement> {
     let h = |r: &[u8], o: usize| u16::from_le_bytes([r[o], r[o + 1]]);
     raw.chunks(ELEMENT_PLACEMENT_STRIDE)
@@ -159,7 +162,7 @@ fn the_placement_copies_write_what_retail_writes() {
         } else {
             rng.below(RECORDS as u32) as usize
         };
-        let (entry, port): (u32, fn(&mut [ElementPlacement], usize, usize)) = match n % 3 {
+        let (entry, port): (u32, PlacementCopy) = match n % 3 {
             0 => (COPY, element_placement_copy),
             1 => (LAND, element_placement_land),
             _ => (REMAP, element_placement_copy_remapped),
