@@ -444,7 +444,12 @@ pub fn attached_sprite_script_tick(s: &mut AttachedSprite, dt: u8) {
                         lerp_i16(s.from_extent.0, w, t, d),
                         lerp_i16(s.from_extent.1, h, t, d),
                     );
-                    s.offset.1 = lerp_i16(s.from_y, y, t, d);
+                    // The target is `negu` of the sign-extended halfword, a
+                    // 32-bit value: a record Y of `-0x8000` aims at
+                    // `+0x8000`, which the `i16` negation would wrap back.
+                    let to_y = -i32::from(s16(13));
+                    s.offset.1 =
+                        (i32::from(s.from_y) + (to_y - i32::from(s.from_y)) * t / d) as i16;
                     let mix = |from: [u8; 3], to: [u8; 3]| -> u32 {
                         let ch = |i: usize| {
                             ((i32::from(from[i]) + (i32::from(to[i]) - i32::from(from[i])) * t / d)
@@ -523,7 +528,10 @@ fn quarter_mix(a: u32, b: u32) -> u32 {
 /// Every primitive is semi-transparent at [`AttachedSprite::abr`]: an
 /// additive glow (`A` bright, `B` black) or a subtractive darkness mask (`A`
 /// black, `B` the darkness) - the draw-mode packet `abr << 5 | 0x1E` is the
-/// last one linked, so the ordering table draws it first.
+/// last one linked, so the ordering table draws it first. A draw-mode reset
+/// (`tpage 0x1E`, no blend bits) is linked before everything, so it draws
+/// last and leaves the mode clean for whatever follows in the slot. Neither
+/// mode packet is in the returned list.
 ///
 /// Returned in **link order** - the order retail's `AddPrim`
 /// (`FUN_8003D2C4`) calls run, all into one ordering-table slot
