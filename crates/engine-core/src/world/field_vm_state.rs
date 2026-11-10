@@ -14,11 +14,11 @@ pub struct FieldVmState {
     /// is the field-side copy.
     pub(crate) mode_flags: u32,
     /// The op-`0x49` submode context block (`0x801F2734..`), in the order
-    /// [`legaia_engine_field::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
+    /// [`legaia_engine_field::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its words -
     /// that const carries the offsets. Reseeded on every MAN load by
     /// [`crate::world::World::man_load_actor_reset`]; word `0` is the submode state
     /// ([`legaia_engine_field::field_submode::SUBMODE_STATE_OPEN`] once opened).
-    pub(crate) submode_context: [u32; 10],
+    pub(crate) submode_context: [u32; legaia_engine_field::field_submode::SUBMODE_CONTEXT_WORDS],
     /// `true` only while [`crate::world::World::pre_run_field_channel_prologues`] is
     /// executing the scene-entry spawn-prologue slices. The field-VM host
     /// reads it to give the prologue's `4C 51` NPC-run ops their load-time
@@ -257,7 +257,7 @@ impl FieldVmState {
     pub fn new() -> Self {
         Self {
             mode_flags: 0,
-            submode_context: [0; 10],
+            submode_context: [0; legaia_engine_field::field_submode::SUBMODE_CONTEXT_WORDS],
             entry_prerun: false,
             prerun_running_slot: None,
             respawn_rerun: false,

@@ -831,7 +831,7 @@ mod tests {
             .expect("a driver actor was spawned");
         // Second load with the driver still live: retail returns 0 and spawns
         // nothing, but the context reset happens either way.
-        w.field_vm.submode_context = [0; 10];
+        w.field_vm.submode_context = Default::default();
         assert_eq!(w.man_load_actor_reset(), SubmodeOpen::AlreadyOpen);
         assert_eq!(
             w.find_actor_by_handler(ActorHandler::SubmodeDriver),

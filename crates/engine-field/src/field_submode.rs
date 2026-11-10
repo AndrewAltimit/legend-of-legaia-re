@@ -46,12 +46,12 @@
 /// value)` pairs.
 ///
 /// The block is a run of `u32`s based at `0x801F2734`; the open routine writes
-/// ten of them explicitly and then clears a 16-word tail. Offsets are kept
+/// twelve of them explicitly and then clears a 16-word tail. Offsets are kept
 /// rather than named because only three have confirmed roles:
 /// `+0x00` is the submode **state** (`1` = open - the same word the resume /
 /// close handler `FUN_801F159C` gates on, admitting `{1, 4, 7}`), `+0x0C` is a
 /// mode selector seeded to `3`, and `+0x20` a second flag seeded to `1`.
-pub const SUBMODE_CONTEXT_SEEDS: [(u16, u32); 10] = [
+pub const SUBMODE_CONTEXT_SEEDS: [(u16, u32); SUBMODE_CONTEXT_WORDS] = [
     (0x00, 1),  // 0x801F2734 - submode state: open
     (0x04, 0),  // 0x801F2738
     (0x08, 0),  // 0x801F273C
@@ -61,8 +61,16 @@ pub const SUBMODE_CONTEXT_SEEDS: [(u16, u32); 10] = [
     (0x20, 1),  // 0x801F2754
     (0x24, 0),  // 0x801F2758
     (0x28, 0),  // 0x801F275C
+    (0xDFC, 0), // 0x801F3530, stored after the tail clear
+    (0xE00, 0), // 0x801F3534, likewise
     (0xE04, 0), // 0x801F3538
 ];
+
+/// Words the open routine seeds one by one.
+pub const SUBMODE_CONTEXT_WORDS: usize = 12;
+
+/// Offset of the first tail word from `0x801F2734` (`0x801F3540`).
+pub const SUBMODE_TAIL_OFFSET: u16 = 0xE0C;
 
 /// Words in the tail block the open routine clears
 /// (`0x801F3540..=0x801F357C`, written high-to-low).
@@ -116,7 +124,9 @@ pub enum SubmodeOpen {
 ///
 /// [`World::man_load_actor_reset`]: legaia_engine_core::world::World::man_load_actor_reset
 /// [`World::find_actor_by_handler`]: legaia_engine_core::world::World::find_actor_by_handler
-pub fn open_submode(handler_present: bool) -> (&'static [(u16, u32); 10], SubmodeOpen) {
+pub fn open_submode(
+    handler_present: bool,
+) -> (&'static [(u16, u32); SUBMODE_CONTEXT_WORDS], SubmodeOpen) {
     (
         &SUBMODE_CONTEXT_SEEDS,
         if handler_present {

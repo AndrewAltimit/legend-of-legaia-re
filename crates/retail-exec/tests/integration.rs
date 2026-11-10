@@ -142,6 +142,7 @@ mod fishing_leaves;
 mod fishing_line_clip;
 mod fishing_prize;
 mod fishing_root;
+mod flag_window;
 mod flash_ramp;
 mod floor_height;
 mod fog_render;
