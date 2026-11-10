@@ -53,6 +53,7 @@ mod arts_editor;
 mod journal;
 mod outcomes;
 mod session_builders;
+mod slide_gate;
 mod status;
 #[cfg(test)]
 mod tests;
@@ -62,6 +63,7 @@ pub use arts_editor::*;
 pub use journal::*;
 pub use outcomes::*;
 pub use session_builders::*;
+pub use slide_gate::*;
 pub use status::*;
 pub use tick::*;
 

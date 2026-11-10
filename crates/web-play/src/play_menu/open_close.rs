@@ -116,10 +116,16 @@ impl LegaiaRuntime {
         // cursor: `tick` is what puts the session in `Suspended`, which is
         // what `resume` needs to hand control back on close.
         let steps = usize::from(row.index());
+        if let Some(m) = self.play_menu.as_mut() {
+            m.driving_row = true;
+        }
         for _ in 0..steps {
             self.play_menu_input(PadButton::Down.mask());
         }
         self.play_menu_input(PadButton::Cross.mask());
+        if let Some(m) = self.play_menu.as_mut() {
+            m.driving_row = false;
+        }
         self.play_menu
             .as_ref()
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))

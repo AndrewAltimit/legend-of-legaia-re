@@ -43,6 +43,11 @@ pub struct MenuWidgetScripts {
     /// as `(script_va, bytes)` - the full per-overlay program table, kept
     /// for tooling and tests.
     pub programs: Vec<(u32, Vec<u8>)>,
+    /// The sub-screen programs the slide lock runs
+    /// ([`crate::menu_slide_lock::lock_program_vas`]), resolved by address:
+    /// several are handed to the VM through a register the `jal`-site scan
+    /// does not follow.
+    pub lock_programs: Vec<(u32, Vec<u8>)>,
 }
 
 impl MenuWidgetScripts {
@@ -63,11 +68,28 @@ impl MenuWidgetScripts {
                 (r.script.va, bytes)
             })
             .collect();
+        let lock_programs = crate::menu_slide_lock::lock_program_vas()
+            .filter_map(|va| {
+                widget_script::script_bytes_at(overlay, va)
+                    .ok()
+                    .map(|b| (va, b))
+            })
+            .collect();
         Some(Self {
             shop_open,
             shop_sell_away,
             programs,
+            lock_programs,
         })
+    }
+
+    /// The program at `va`, terminator included.
+    pub fn program(&self, va: u32) -> Option<&[u8]> {
+        self.lock_programs
+            .iter()
+            .chain(&self.programs)
+            .find(|(v, _)| *v == va)
+            .map(|(_, b)| b.as_slice())
     }
 }
 

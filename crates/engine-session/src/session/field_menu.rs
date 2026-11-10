@@ -64,6 +64,9 @@ impl<S: AudioSink> BootSession<S> {
         session.open_entry_screen();
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
+        // A fresh menu: no window is up, and the root picker's slide-in is
+        // the first thing the slide lock sees.
+        reset_pause_slide_lock(world);
         self.field_menu = Some(session);
         // Retail opens the menu by writing the mode word, not by calling the
         // menu: `CARD INIT` (22) stages the menu overlay and hands the word to
@@ -131,6 +134,7 @@ impl<S: AudioSink> BootSession<S> {
     /// menu is open.
     pub fn close_field_menu(&mut self) {
         if self.field_menu.take().is_some() {
+            reset_pause_slide_lock(&mut self.host.world);
             // The field brightens back under the lifting wipe (phase 4).
             self.pause_wipe.close();
             // The sub-session goes with it: a menu closed out from under an
@@ -216,7 +220,16 @@ impl<S: AudioSink> BootSession<S> {
         // The edge word every menu surface in this subsystem reads, with the
         // window kernel's cursor auto-repeat folded in (`gp+0x86C`).
         let pad = &mut self.host.world.input;
-        let pressed = (pad.pad() & !pad.pad_prev()) | pad.take_menu_repeat();
+        let mut pressed = (pad.pad() & !pad.pad_prev()) | pad.take_menu_repeat();
+        // Retail's sub-screens read nothing while a window slides
+        // (`_DAT_8007BB80`); the lock is stepped every menu frame.
+        if !pause_slide_gate(
+            &mut self.host.world,
+            self.field_menu.as_ref(),
+            self.field_menu_sub.as_ref(),
+        ) {
+            pressed = 0;
+        }
 
         if self.field_menu_sub.is_some() {
             self.tick_field_menu_sub(pressed);
@@ -311,4 +324,11 @@ impl<S: AudioSink> BootSession<S> {
             let _ = menu.resume(close_menu);
         }
     }
+}
+
+/// Drop the pause menu's slide lock and the window list it drives: the menu
+/// opened or closed.
+fn reset_pause_slide_lock(world: &mut legaia_engine_core::world::World) {
+    world.menu.pause_slide_lock.reset();
+    world.menu.widgets.reset();
 }

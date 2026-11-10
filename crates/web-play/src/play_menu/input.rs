@@ -60,6 +60,30 @@ impl LegaiaRuntime {
             self.rebuild_screen_geom();
             return;
         }
+        // The pause menu reads nothing while a window slides (retail's
+        // `_DAT_8007BB80`): the shared lock, stepped once per menu frame
+        // ahead of every pre-empt and blip - the native window's
+        // `tick_boot_ui` calls the same gate.
+        let sub = self.play_menu.as_ref().and_then(|m| match m.sub.as_ref() {
+            Some(PlaySub::Session(s)) => Some(s.as_ref()),
+            None => None,
+        });
+        let driving = self.play_menu.as_ref().is_some_and(|m| m.driving_row);
+        let edge = match self.scene_host.session_mut() {
+            Some(_) if driving => edge,
+            Some(session) => {
+                if field_menu_dispatch::pause_slide_gate(
+                    &mut session.host.world,
+                    session.field_menu.as_ref(),
+                    sub,
+                ) {
+                    edge
+                } else {
+                    0
+                }
+            }
+            None => edge,
+        };
         // A save-refusal notice owns the pad while it is up - the same
         // pre-empt the native window makes, so the edge that dismisses the
         // box does not also drive the menu behind it.

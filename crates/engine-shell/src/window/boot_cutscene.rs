@@ -316,7 +316,20 @@ impl PlayWindowApp {
     pub(super) fn tick_boot_ui(&mut self) -> bool {
         // Build edge-triggered "newly pressed" mask so menu navigation
         // doesn't auto-repeat on held keys.
-        let pressed = self.pad & !self.prev_pad;
+        let mut pressed = self.pad & !self.prev_pad;
+        // The pause menu reads nothing while a window slides (retail's
+        // `_DAT_8007BB80`): the shared lock, stepped once per menu frame
+        // ahead of every pre-empt and cue - the page's `play_menu_input`
+        // and `BootSession`'s own step call the same gate.
+        if let BootUiState::FieldMenu { sub } = &self.boot_ui
+            && !legaia_engine_menu_runtime::field_menu_dispatch::pause_slide_gate(
+                &mut self.session.host.world,
+                self.session.field_menu.as_ref(),
+                sub.as_ref(),
+            )
+        {
+            pressed = 0;
+        }
         // The title's Continue screen runs its own driver on the raw edge.
         let raw_pressed = pressed;
         // Save-screen driver first: answer the card read the flow is waiting

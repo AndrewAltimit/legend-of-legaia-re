@@ -84,6 +84,14 @@ pub struct MenuState {
     /// Run against it via [`crate::world::World::run_shop_widget_open`] /
     /// [`crate::world::World::run_shop_widget_sell_away`].
     pub widgets: legaia_engine_menus::menu_widget::MenuWidgetState,
+    /// The pause menu's window-slide input lock over [`Self::widgets`]
+    /// ([`legaia_engine_menus::menu_slide_lock`]); stepped once per menu frame
+    /// by `legaia_engine_menu_runtime::field_menu_dispatch::pause_slide_gate`.
+    pub pause_slide_lock: legaia_engine_menus::menu_slide_lock::MenuSlideLock,
+    /// The same lock over the field-overlay screens `MenuRuntime` drives
+    /// (the casino prize counter), stepped by
+    /// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime::step_field_session`.
+    pub session_slide_lock: legaia_engine_menus::menu_slide_lock::MenuSlideLock,
     /// The notify window's message template (menu overlay `0x801E4700`,
     /// [`legaia_engine_menus::pause_screens::notify_template_from_menu_overlay`]).
     /// Installed by [`crate::world::World::install_menu_overlay_tables`];
@@ -115,6 +123,8 @@ impl MenuState {
             pending_escape: false,
             pause_session: None,
             widgets: Default::default(),
+            pause_slide_lock: Default::default(),
+            session_slide_lock: Default::default(),
             notify_template: None,
             pending_art_notice: None,
             pending_spell_notice: None,
