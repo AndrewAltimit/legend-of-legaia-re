@@ -72,7 +72,12 @@ fn synthetic_table() -> MenuWindowTable {
             d.h = h as i16;
         }
     }
-    let renderers: [(usize, u32); 9] = [
+    let renderers: [(usize, u32); 10] = [
+        // ...and window 25, the active character's stat compare.
+        (
+            legaia_engine_ui::pause_menu::WIN_EQUIP_COMPARE,
+            dispatch::RENDERER_ACTIVE_STAT_COMPARE,
+        ),
         (window_ids::TAB_ITEMS, dispatch::RENDERER_TAB_ITEMS),
         (window_ids::TAB_MAGIC, dispatch::RENDERER_TAB_MAGIC),
         (window_ids::TAB_EQUIP, dispatch::RENDERER_TAB_EQUIP),
@@ -488,6 +493,17 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
 }
 
 fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraws {
+    compose_equip_with(ctx, phase, None, false)
+}
+
+/// [`compose_equip`] with the slot browse's worn-item panel, and with the
+/// compare panel on an HP / MP category (a staged accessory on a Goods row).
+fn compose_equip_with(
+    ctx: &PauseMenuCtx<'_>,
+    phase: EquipDrawPhase,
+    browse_info: Option<legaia_engine_ui::pause_menu::EquipInfoInput<'_>>,
+    hp_mp_compare: bool,
+) -> PauseMenuDraws {
     let party_names = ["Vahn".to_string(), "Noa".to_string()];
     let slot_labels: Vec<String> = ["Weapon", "Head", "Armor", "Boots", "Goods"]
         .iter()
@@ -532,7 +548,7 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
                     passive: None,
                 },
             ),
-            browse_info: None,
+            browse_info,
             // Window 25 rides the same step as window 24 - retail's open
             // script names the pair.
             compare: (!matches!(phase, EquipDrawPhase::SlotPicker)).then_some(
@@ -546,9 +562,10 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
                     ]),
                     hp_max: 100,
                     mp_max: 20,
-                    slot_row: 0,
+                    slot_row: if hp_mp_compare { 4 } else { 0 },
                     staged_id: 0x21,
-                    staged_category: 0x40,
+                    // A category under 6 is the HP / MP pair.
+                    staged_category: if hp_mp_compare { 0 } else { 0x40 },
                     equipped_id: 0x11,
                     equipped_category: 0x40,
                 },
@@ -889,4 +906,115 @@ fn composed_draws_stay_on_the_surface() {
             );
         }
     }
+}
+
+/// The slot browse's worn-item panel reaches the screen: its name is drawn at
+/// `(+0x94, +0xC)` off window 22's pen and its two shade boxes are framed,
+/// and neither is there without it or in the candidate step.
+#[test]
+fn the_slot_browse_draws_the_worn_items_panel() {
+    let fx = Fixture::new(true);
+    let ctx = fx.ctx();
+    let info = legaia_engine_ui::pause_menu::EquipInfoInput {
+        detail: None,
+        scope: None,
+        name: "Zq",
+        count: 0,
+        desc: "",
+        passive: None,
+    };
+    let plain = compose_equip(&ctx, EquipDrawPhase::SlotPicker);
+    let with = compose_equip_with(&ctx, EquipDrawPhase::SlotPicker, Some(info), false);
+    let pen = ctx
+        .rects
+        .pen(legaia_game_tables::menu_windows::window_ids::EQUIP_MAIN);
+    let (_, boxes) = legaia_engine_ui::equip_browse_info_draws(
+        &fx.font,
+        pen,
+        &legaia_engine_ui::PauseItemInfo {
+            name: "Zq",
+            count: 0,
+            desc: "",
+            passive: None,
+            detail: None,
+            scope: None,
+        },
+    );
+    assert_eq!((boxes[0].0, boxes[0].1), (pen.0 + 0x94, pen.1 + 0xC));
+    assert_eq!(boxes[1].1 - boxes[0].1, 0x38);
+    // The name's first glyph sits on the panel's pen, scaled to the surface.
+    let at = (
+        ctx.origin.0 + boxes[0].0 * ctx.scale as i32,
+        ctx.origin.1 + boxes[0].1 * ctx.scale as i32,
+    );
+    let on_pen = |d: &PauseMenuDraws| d.texts.iter().filter(|t| (t.dst.0, t.dst.1) == at).count();
+    assert_eq!(on_pen(&plain), 0);
+    assert_eq!(on_pen(&with), 1, "the worn item's name on the panel's pen");
+    assert_eq!(
+        with.texts.len(),
+        plain.texts.len() + 2,
+        "two glyphs of name"
+    );
+    let frame = fx_frame_len(&ctx, boxes[0]);
+    assert_eq!(
+        with.sprites.len(),
+        plain.sprites.len() + 2 * frame,
+        "two shade boxes"
+    );
+    // The candidate step has no such panel, whatever the host hands over.
+    let picker = compose_equip(&ctx, EquipDrawPhase::ItemPicker);
+    let picker_with = compose_equip_with(&ctx, EquipDrawPhase::ItemPicker, Some(info), false);
+    assert_eq!(picker.texts.len(), picker_with.texts.len());
+    assert_eq!(picker.sprites.len(), picker_with.sprites.len());
+}
+
+/// Sprites one framed box costs on this fixture's chrome.
+fn fx_frame_len(ctx: &PauseMenuCtx<'_>, content: (i32, i32, i32, i32)) -> usize {
+    legaia_engine_ui::menu_window_chrome_draws_for(
+        ctx.chrome.expect("chrome"),
+        (content.0 - 8, content.1 - 8, content.2 + 16, content.3 + 16),
+        ctx.origin,
+        ctx.scale,
+    )
+    .len()
+}
+
+/// The compare panel's HP / MP rows draw their icon pairs: a `MAX` tag and
+/// the HP or MP label per row, four sprites the ATK / UDF / LDF rows do not
+/// have.
+#[test]
+fn the_compare_panels_hp_mp_rows_draw_their_icons() {
+    let fx = Fixture::new(true);
+    let ctx = fx.ctx();
+    let stats = compose_equip_with(&ctx, EquipDrawPhase::ItemPicker, None, false);
+    let hp_mp = compose_equip_with(&ctx, EquipDrawPhase::ItemPicker, None, true);
+    assert_eq!(hp_mp.sprites.len(), stats.sprites.len() + 4);
+    // And the builder itself, by id: each of the four rects once.
+    let tag = |n: u32| (n, 0, 1, 1);
+    let rects = SaveMenuAtlasRects {
+        label_max_hp: tag(0x64),
+        label_max_mp: tag(0x65),
+        label_hp: tag(0x3F),
+        label_mp: tag(0x40),
+        ..chrome_rects()
+    };
+    let fields: Vec<legaia_engine_ui::ComparePanelField> = [0x64u8, 0x3F, 0x65, 0x40, 0x99]
+        .into_iter()
+        .enumerate()
+        .map(|(i, id)| legaia_engine_ui::ComparePanelField::Icon {
+            x: 10 * i as i32,
+            y: 7,
+            id,
+        })
+        .collect();
+    let got: Vec<(u32, i32, i32)> =
+        legaia_engine_ui::compare_panel_icon_sprites(&rects, &fields, (0, 0), 1)
+            .iter()
+            .map(|s| (s.src.0, s.dst.0, s.dst.1))
+            .collect();
+    assert_eq!(
+        got,
+        vec![(0x64, 0, 7), (0x3F, 10, 7), (0x65, 20, 7), (0x40, 30, 7)],
+        "an id with no rect draws nothing"
+    );
 }

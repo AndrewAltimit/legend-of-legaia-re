@@ -1203,3 +1203,105 @@ fn resume_use_keeps_the_target_screen_while_the_item_still_applies() {
     assert_eq!(gone.focus, PauseItemsFocus::List);
     assert!(!gone.target_select());
 }
+
+/// The slot browse's worn-item panel (`FUN_801D21C0`, `0x801D2800..`): a
+/// filled slot row under the hand stages the piece it holds; the Best
+/// Equipment row, an empty slot, the character picker and the candidate step
+/// stage nothing.
+#[test]
+fn the_slot_browse_stages_the_worn_item_of_the_hovered_row() {
+    use crate::equip_session::{EquipInput, EquipSession};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+    let mut record = StatRecord::default();
+    record.equip[0] = 0x31; // weapon: browse row 1
+    record.equip[4] = 0x47; // footwear: browse row 4
+    let mut session = EquipSession::new(
+        record,
+        crate::item_bag::ItemBag::new(),
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+    );
+    let names = vec!["Vahn".to_string()];
+    let text = |id: u8| ItemDisplayText {
+        name: format!("Piece {id:02X}"),
+        desc: format!("About {id:02X}"),
+        ..Default::default()
+    };
+    let model = |s: &EquipSession| equip_screen_model(s, 0, &names, &[], Some(&text), None);
+    let down = EquipInput {
+        down: true,
+        ..Default::default()
+    };
+    assert!(model(&session).browse_info.is_none(), "the Best row");
+    let mut seen = Vec::new();
+    for _ in 0..7 {
+        session.input(down);
+        seen.push(model(&session).browse_info.map(|i| (i.name, i.desc)));
+    }
+    let piece = |id: u8| Some((format!("Piece {id:02X}"), format!("About {id:02X}")));
+    assert_eq!(
+        seen,
+        vec![piece(0x31), None, None, piece(0x47), None, None, None],
+        "weapon, helmet, body, footwear, Goods x3"
+    );
+    // Back on the weapon row: hidden under the character picker, gone in the
+    // candidate step.
+    session.input(down);
+    session.input(down);
+    assert_eq!(
+        model(&session).browse_info.map(|i| i.name),
+        piece(0x31).map(|p| p.0)
+    );
+    session.set_slot_cursor_hidden(true);
+    assert!(
+        model(&session).browse_info.is_none(),
+        "the character picker"
+    );
+    session.set_slot_cursor_hidden(false);
+    session.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert!(model(&session).browse_info.is_none(), "the candidate step");
+}
+
+/// A stat preview's left value is the menu block's word: the record's live
+/// stat with the worn pieces' bonuses on it (`FUN_801CF650`), read through
+/// the character's own seat map. The status word rides along.
+#[test]
+fn target_panel_stat_preview_counts_the_worn_gear() {
+    use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
+    let mut s = items_session(&[(0x77, 3)]);
+    s.input_pad_edge(edge(PadButton::Cross));
+    s.input_pad_edge(edge(PadButton::Cross));
+    let mut rec = legaia_save::CharacterRecord::parse(&[0u8; 0x414]).expect("blank record");
+    let mut live = rec.live_stats();
+    live.atk = 40;
+    live.udf = 30;
+    live.ldf = 20;
+    live.spd = 10;
+    live.int = 5;
+    rec.set_live_stats(live);
+    // Vahn's record bytes: body `+0`, head `+1`, weapon `+2`, footwear `+4`.
+    let mut eq = rec.equipment();
+    eq.slots = [0x12, 0x11, 0x10, 0, 0x13, 0, 0, 0];
+    rec.set_equipment(eq);
+    let mut table = EquipmentTable::new();
+    let m = |atk, udf, ldf, spd, int| ItemModifier {
+        atk,
+        udf,
+        ldf,
+        spd,
+        int,
+        ..Default::default()
+    };
+    table.set(0x10, m(7, 0, 0, 0, 0));
+    table.set(0x11, m(0, 3, 0, 0, 2));
+    table.set(0x12, m(0, 4, 5, 0, 0));
+    table.set(0x13, m(0, 0, 1, 6, 0));
+    let model = target_panel_view_model_of(&s, None, &[rec], &table, &[0x0200])
+        .expect("target select stages the panel");
+    assert_eq!(model.members[0].stat_eff, [47, 37, 26, 16, 7]);
+    assert_eq!(model.members[0].status, 0x0200);
+}
