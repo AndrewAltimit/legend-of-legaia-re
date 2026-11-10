@@ -453,7 +453,11 @@ pub fn build_streak_ribbon(
     let span = 2 * seg16 + 1;
     let bound = -seg16;
 
-    while (baseline as i16 as i32) > bound && out.len() < RIBBON_MAX_SEGMENTS {
+    // A `do`-`while` (`0x801E20F8..0x801E2290`): the first chain segment is
+    // drawn whatever the baseline, and only the step after it is tested. A
+    // bottom billboard whose top edge sits at or above the screen top still
+    // grows one segment.
+    loop {
         // The previous top edge is this segment's bottom edge, verbatim.
         let mut seg_xy = [(0i16, 0i16); 4];
         seg_xy[2] = top_left;
@@ -485,6 +489,9 @@ pub fn build_streak_ribbon(
         top_right_x = nx1;
         top_right_y = ny1;
         baseline = baseline.wrapping_sub(seg);
+        if (baseline as i16 as i32) <= bound || out.len() >= RIBBON_MAX_SEGMENTS {
+            break;
+        }
     }
 
     out
@@ -597,12 +604,12 @@ mod tests {
     #[test]
     fn ribbon_segment_height_is_floored_not_capped() {
         // A 16px-tall billboard still steps by the 0x40 floor, so the chain
-        // from y=16 reaches the top of the screen in one extra segment.
+        // from the screen top is one segment over the bottom one.
         let short = [(0, 0), (8, 0), (0, 16), (8, 16)];
         let quads = build_streak_ribbon(short, 0, || 0);
-        // baseline starts at 0 - 0x40 = -0x40, which is not > -0x40, so the
-        // chain is the bottom segment alone.
-        assert_eq!(quads.len(), 1);
+        // The chain loop is a `do`-`while`: one segment is drawn above the
+        // bottom one before the baseline `0 - 0x40 - 0x40` fails `> -0x40`.
+        assert_eq!(quads.len(), 2);
 
         // A 0x100-tall billboard keeps its own height rather than being cut
         // back to 0x40 - the step is four times as long, so a chain anchored

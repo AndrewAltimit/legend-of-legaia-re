@@ -252,6 +252,7 @@ mod stager_spawns;
 mod stager_states;
 mod stat_aggregator;
 mod str_player;
+mod streak_ribbon;
 mod stream_slot;
 mod strv2_decode;
 mod summon_roll_sites;
