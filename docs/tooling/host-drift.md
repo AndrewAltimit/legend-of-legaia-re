@@ -1415,6 +1415,11 @@ a scratch directory only.
 A card landing enters from the page's running scene first, so its audio record starts a
 command apart and the actor table is longer; `monkey_fight`, `late_*` and the rest filter
 that one record, as do the `ed_*` scenes, which the page enters from town01's, and a `bindings` line on such a run says so rather than a difference.
+A save carries no `rand()` state, so the page's world reaches the landing with however many
+draws its first scene took and the window's with a cold boot's: every card scene seeds one
+stream on both after the landing (`LEGAIA_RNG_SEED` natively, `debug_seed_rng` on the page).
+Unseeded, `late_fight` parted on its first frame's `rng` line and drew a different fight
+(`44%` of every frame off); seeded, it reads `0.70%`, hairline rows.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the

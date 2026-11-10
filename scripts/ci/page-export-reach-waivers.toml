@@ -114,6 +114,7 @@ names = [
     "debug_shatter",
     "debug_talk_to_placement",
     "play_debug_seat",
+    "debug_seed_rng",
     "play_fmv_trigger",
     "begin_new_game",
 ]

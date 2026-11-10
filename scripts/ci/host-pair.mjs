@@ -106,6 +106,9 @@ for (const [name, sub, key] of [['slots', 3, 'O'], ['baka', 4, 'B'], ['dance', 6
 
 /* A retail save off a card: the page lands it and writes the LGSF the window then resumes, so
  * every one of these also crosses a save from one host to the other. `card` is under saves/library/cards. */
+/* A save carries no RNG state, and the page lands a card from the scene it had running while the
+ * window lands it cold, so both seed one stream after the landing (LEGAIA_RNG_SEED / debug_seed_rng). */
+const CARD_RNG_SEED = 0x12345678;
 const CARD = { late: 'playthrough-endgame-7saves.mcr', ladder: 'playthrough-ladder-pro00-14.mcr' };
 const cardScenes = (key, card, block) => ({
   [`${key}_walk`]: { card, block, ticks: 300, every: 30, hold: walk },
@@ -174,6 +177,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
   if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
+  if (sc.lgsfPath) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
   const r = spawnSync(engine, a, { env, cwd, encoding: 'utf8', timeout: 1200000 });
@@ -215,6 +219,8 @@ async function pageRun(cfg) {
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     rt.import_save(bytes);
     view.resumeSave();
+    /* The window's LEGAIA_RNG_SEED, at the same point: after the landing, before the first tick. */
+    if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused');
   }
   if (sc.coins) rt.cheat_apply('coins', sc.coins, '');
   const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
@@ -400,7 +406,7 @@ async function main() {
     await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
     await page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 120000 });
     const lgsf = sc.lgsfPath ? fs.readFileSync(sc.lgsfPath).toString('base64') : null;
-    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
+    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
     await context.close();
     let worst = null, sum = 0, offFrames = 0, firstTrace = null, traceOff = 0;
     const rows = [];
