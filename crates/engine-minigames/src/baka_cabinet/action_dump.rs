@@ -14,9 +14,11 @@ pub const DUMP_FIGHTERS: usize = 0x11;
 /// Retail allocates a `0x64000`-byte scratch buffer, walks all `0x11` fighter
 /// action tables (`PTR_DAT_801DB8B8[i]`) and all `9` `0x60`-byte action
 /// records inside each, appends one line per action and one per sub-keyframe,
-/// and writes the whole thing out as `ot5stat.txt` (`ot5` = `other5`, the
-/// battle pack the fighters come from) before freeing the buffer. Its return
-/// value is the byte count written.
+/// and hands the buffer, named `ot5stat.txt` (`ot5` = `other5`, the battle
+/// pack the fighters come from), to the write `FUN_8003E7F0` before freeing
+/// it. Retail ships that write empty (`addiu sp,-0x90; addiu sp,0x90; jr ra`),
+/// so on a retail disc the dump changes nothing; the cabinet calls it on an
+/// L1 edge (`_DAT_8007B874 & 4`, `0x801D1E90`).
 ///
 /// The port builds the same text and hands it back instead of touching a
 /// filesystem. Two columns are narrower than retail's: retail prints all eight
