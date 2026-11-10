@@ -544,3 +544,168 @@ fn the_menu_framings_are_retails() {
         failures[..failures.len().min(16)].join("\n")
     );
 }
+
+/// What every case shares and the cases with no framing of their own: the
+/// prologue's three counters (`ctx[+0x26E]`, `ctx[+0x270]`, `ctx[+0x87C]`)
+/// against `AttackCamCtx::advance` over every case and frame step (the byte
+/// wrap past step `0x20` included); case 2's fixed shot against the entry
+/// sweep's constants; cases 4 and 5 arming nothing; and a seat past the table
+/// on cases 6..9 turned into case 9's far framing, with the flag-word scrub
+/// `FUN_801DB9C4` run first (`0x801D58C8..0x801D58F0`).
+#[test]
+fn the_prologue_and_the_quiet_cases_are_retails() {
+    differential!(prot(898, FRAMING));
+    use legaia_engine_battle_vm::battle_cam_script::{
+        ENTRY_CASE2_FRAMES, ENTRY_CASE2_TR_Y, ENTRY_CASE2_TR_Z_RAW,
+    };
+    const SCRUB: u32 = 0x801D_B9C4;
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.stub(ART_TAIL, 0);
+    cpu.stub(0x8003_5F04, 0);
+    let scrubbed = Rc::new(RefCell::new(0u32));
+    {
+        let s = scrubbed.clone();
+        cpu.hook(SCRUB, move |_, _| *s.borrow_mut() += 1);
+    }
+    let shots: Rc<RefCell<Vec<Tween>>> = Rc::default();
+    {
+        let shots = shots.clone();
+        cpu.hook(TWEEN, move |r, m| {
+            let trio = |m: &mut psx_retail_exec::Memory, a: u32| {
+                [m.rd16(a) as i16, m.rd16(a + 2) as i16, m.rd16(a + 4) as i16]
+            };
+            let t = (
+                trio(m, r.r[A0]),
+                trio(m, r.r[A1]),
+                trio(m, r.r[A2]),
+                r.r[A3],
+            );
+            shots.borrow_mut().push(t);
+        });
+    }
+    for seat in 0..8 {
+        cpu.mem.wr32(ACTORS + seat * 4, actor(seat));
+        cpu.mem.wr32(actor(seat) + 0x22C, node(seat));
+    }
+    let mut rng = Rng(0x5155_4954);
+    let mut failures: Vec<String> = Vec::new();
+    let mut hits = [0u32; 4];
+    for round in 0..60_000 {
+        let pick = rng.below(4);
+        let (slot, case) = match pick {
+            0 => (rng.below(7), 2),
+            1 => (rng.below(7), 4 + rng.below(2)),
+            // Selectors `8` / `9` are case 9's group aim, which no caller hands it.
+            2 => (10 + rng.below(0xF6), 6 + rng.below(4)),
+            _ => (rng.below(3), [0u32, 1, 3, 9][rng.below(4) as usize]),
+        };
+        let step = if rng.below(50) == 0 {
+            0x20 + rng.below(0x20) as u8
+        } else {
+            1 + rng.below(4) as u8
+        };
+        let (ramp, death_ramp, accum) =
+            (rng.below(0x100) as u8, rng.below(0x100) as u8, rng.next());
+        cpu.mem.wr8(FRAME_STEP, step);
+        cpu.mem.wr8(CTX + 0x26E, ramp);
+        cpu.mem.wr8(CTX + 0x270, death_ramp);
+        cpu.mem.wr32(CTX + 0x87C, accum);
+        let party = 1 + rng.below(3);
+        let monsters = 1 + rng.below(4);
+        cpu.mem.wr8(CTX, party as u8);
+        cpu.mem.wr8(CTX + 0x13, rng.below(party) as u8);
+        let live_yaw = rng.below(0x1000) as i16;
+        cpu.mem.wr16(LIVE_YAW, live_yaw as u16);
+        for s in 0..8u32 {
+            let present = (s < party) || (3..3 + monsters).contains(&s);
+            let hp = u16::from(present && rng.below(5) != 0);
+            let (x, z) = (s16(&mut rng, 0x900), s16(&mut rng, 0x900));
+            let a = actor(s);
+            cpu.mem.wr16(a + 0x34, x as u16);
+            cpu.mem.wr16(a + 0x38, z as u16);
+            cpu.mem.wr16(a + 0x14C, hp);
+            cpu.mem.wr8(CHAR_IDS + s, 1 + rng.below(3) as u8);
+            cpu.mem.wr8(a + 0x1DD, (3 + rng.below(4)) as u8);
+        }
+        shots.borrow_mut().clear();
+        *scrubbed.borrow_mut() = 0;
+        assert_eq!(cpu.call(FRAMING, &[slot, case]), Stop::Returned, "{round}");
+
+        let mut counters = AttackCamCtx {
+            ramp,
+            death_ramp,
+            accum,
+            ..AttackCamCtx::default()
+        };
+        counters.advance(u32::from(step));
+        let got = (
+            cpu.mem.rd8(CTX + 0x26E),
+            cpu.mem.rd8(CTX + 0x270),
+            cpu.mem.rd32(CTX + 0x87C),
+        );
+        let want = (counters.ramp, counters.death_ramp, counters.accum);
+        if got != want {
+            failures.push(format!(
+                "round {round} case {case} step {step}: counters retail {got:x?} port {want:x?}"
+            ));
+            continue;
+        }
+        hits[pick as usize] += 1;
+        let shot = shots.borrow().first().copied();
+        let redirected = case >= 6 && slot >= 8;
+        let scrubs = *scrubbed.borrow();
+        if scrubs != u32::from(redirected) {
+            failures.push(format!(
+                "round {round} case {case} slot {slot}: {scrubs} scrubs"
+            ));
+        }
+        match (case, redirected) {
+            (2, _) => {
+                let want = (
+                    [0i16; 3],
+                    [0, ENTRY_CASE2_TR_Y as i16, ENTRY_CASE2_TR_Z_RAW as i16],
+                    [0i16; 3],
+                    ENTRY_CASE2_FRAMES,
+                );
+                if shot != Some(want) {
+                    failures.push(format!(
+                        "round {round} case 2: retail {shot:x?} port {want:x?}"
+                    ));
+                }
+            }
+            (4 | 5, _) => {
+                if shot.is_some() {
+                    failures.push(format!("round {round} case {case}: retail shot {shot:x?}"));
+                }
+            }
+            (_, true) => {
+                // A seat past the table is case 9 with `a0` as its selector.
+                // No selector arm names it, so the walk's bounds are the
+                // caller's `s0` / `s8` (`0x801D6F98` falls to `0x801D6FC8`
+                // with neither set): the pose is not pinned, only that the
+                // far framing's pitch, yaw and duration arm.
+                let ok = shot.is_some_and(|(rot, tr, _, dur)| {
+                    let yaw = rot[1] as u16 & 0xFFF;
+                    rot[0] == 0x20 && yaw == live_yaw as u16 & 0xFFF && tr[1] == 0x500 && dur == 0xE
+                });
+                if !ok {
+                    failures.push(format!("round {round} case {case} slot {slot}: {shot:x?}"));
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} differ:\n{}",
+        failures.len(),
+        failures[..failures.len().min(16)].join("\n")
+    );
+    assert!(hits.iter().all(|&h| h > 10_000), "{hits:?}");
+}

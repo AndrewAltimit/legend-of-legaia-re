@@ -656,7 +656,10 @@ skipping its target arms even in a scripted fight once the results word `_DAT_80
 Normal not walking the live yaw on by `4 * step / 3` at the battle-over signal (`0x801D6978..0x801D69A4`), and the
 scripted tail off Close (`0x801D6E84..0x801D6EDC`, live pitch and height over a fixed depth `0x600`) unported; and the
 far framing's box, whose midpoint floors, built over fallen seats where the walk gates on live HP (`0x801D7000`). Cases
-0, 1 and 3 match. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
+0, 1 and 3 match, and so do the prologue's three counters over every case and frame step (`AttackCamCtx::advance`,
+the byte wrap past step `0x20` included), case 2's fixed shot, cases 4 and 5 arming nothing, and the redirect of a
+seat past the table to case 9 behind the flag-word scrub. That redirect hands case 9 a selector no arm names, so the
+far framing's walk then runs between whatever `s0` / `s8` its caller left; no caller passes such a seat. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
 typewriter count `FUN_80036044` (`glyph_count`) and the cast dispatchers `FUN_801F1ED4` / `FUN_801F2160` (`cast_dispatch`) match.
 The per-frame anim-node cursor `FUN_80047430` (`anim_cursor`) over every rate, frame step, Slowed-idle gate and loop
 window found the port's step keeping a fraction retail drops: the cursor is in sixteenths of a keyframe, so a Slowed idle
