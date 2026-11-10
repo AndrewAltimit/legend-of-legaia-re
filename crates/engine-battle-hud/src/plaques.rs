@@ -172,7 +172,24 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
         if world.battle.move_label_closed {
             return None;
         }
-        let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
+        // The label names the art whose clip has **committed**: the strike
+        // loop stages the byte at the cursor and raises the `+0x1DC` bit-1
+        // latch (`0x801E3758`), and only the commit that installs it
+        // (`FUN_8004AD80`'s art-constant arm, `0x8004BB5C..0x8004BC40`) runs
+        // `FUN_8004C650` and opens the label. While that latch stands, the
+        // byte the cursor last passed is still waiting behind the playing
+        // clip - an art behind its starter (`battle_ropeway_party_vahn_slash_kick_mid`:
+        // Slash Kick staged over the `0x19` starter's eight frames, no label
+        // on retail's screen until the art's own commit).
+        let pending = usize::from(
+            actor
+                .battle
+                .flag_bits
+                .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE),
+        );
+        let staged = usize::from(actor.battle.strike_index)
+            .saturating_sub(pending)
+            .min(actor.battle.params.len());
         // The name table is the caster's own, by character: a seat is not a
         // roster slot when another member leads the party.
         let character = legaia_engine_battle::battle_arts::character_for_slot(
