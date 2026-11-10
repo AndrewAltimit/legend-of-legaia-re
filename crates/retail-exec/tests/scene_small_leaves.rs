@@ -654,3 +654,55 @@ fn the_list_walk_releases_the_emitters_the_port_releases() {
         "{released} {freed_quiet} {ticked} {marked_now}"
     );
 }
+
+#[test]
+fn the_battle_loader_asks_for_the_stage_overlay_the_port_names() {
+    differential!(scus(BATTLE_LOADER));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_scene::overlay_loader::{OVERLAY_PROT_BASE, battle_stage_overlay_entry};
+    const BATTLE_LOADER: u32 = 0x8005_20F0;
+    const BATTLE_LOADER_END: u32 = 0x8005_2770;
+    /// The loader's state byte, `gp + 0xA59`.
+    const STATE: u32 = 0x8007_BD71;
+    const STAGE_ID: u32 = 0x8007_B64A;
+    const LOADER_B: u32 = 0x8003_EC70;
+    cpu.stub_outside = Some((BATTLE_LOADER, BATTLE_LOADER_END));
+    let asked: Rc<RefCell<Vec<i32>>> = Rc::default();
+    {
+        let asked = asked.clone();
+        cpu.hook(LOADER_B, move |r, _| asked.borrow_mut().push(r.r[A0] as i32));
+    }
+    let (mut loaded, mut none) = (0, 0);
+    // Both states that reach the stage arm (`0x8005266C` / `0x80052670`).
+    for state in [0xEu8, 0x10] {
+        for stage in 0..=255u8 {
+            cpu.mem.wr8(STATE, state);
+            cpu.mem.wr8(STAGE_ID, stage);
+            asked.borrow_mut().clear();
+            assert_eq!(cpu.call(BATTLE_LOADER, &[]), Stop::Returned, "stage {stage}");
+            let retail: Vec<u32> = asked
+                .borrow()
+                .iter()
+                .map(|p| (p + OVERLAY_PROT_BASE) as u32)
+                .collect();
+            let port = battle_stage_overlay_entry(stage);
+            assert_eq!(retail, port.into_iter().collect::<Vec<_>>(), "stage {stage}");
+            // With no stage overlay the loader goes straight to its stream
+            // tail (`0xFF`); with one it waits on the read first.
+            assert_eq!(
+                cpu.mem.rd8(STATE),
+                if port.is_some() { 0x11 } else { 0xFF },
+                "stage {stage}: next state"
+            );
+            if port.is_some() {
+                loaded += 1;
+            } else {
+                none += 1;
+            }
+        }
+    }
+    assert_eq!((loaded, none), (510, 2));
+}
