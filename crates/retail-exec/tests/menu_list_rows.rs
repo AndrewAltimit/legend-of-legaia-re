@@ -599,3 +599,162 @@ fn the_item_detail_printer_draws_what_retail_draws() {
         "templated {templated} equipped {equipped}"
     );
 }
+
+const WINDOW_BUILD: u32 = 0x8003_0628;
+const APPLICABLE: u32 = 0x8003_043C;
+const BAG_WINDOW: u32 = 0x8004_313C;
+const STAGED_ROWS: u32 = 0x801C_6020;
+const ROW_FLAGS: u32 = 0x1F80_0394;
+
+/// The item tables the bag builders read, as written into RAM for one case.
+struct RowTables {
+    items: Vec<[u8; 4]>,
+    effects: Vec<[u8; 4]>,
+    equip_flags: Vec<u8>,
+}
+
+impl legaia_engine_menus::menu_list_rows::ItemRowTables for RowTables {
+    fn kind(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][0]
+    }
+    fn subtype(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][1]
+    }
+    fn price(&self, id: u8) -> u16 {
+        let r = self.items[usize::from(id)];
+        u16::from_le_bytes([r[2], r[3]])
+    }
+    fn effect_flags(&self, subtype: u8) -> u8 {
+        self.effects[usize::from(subtype)][2]
+    }
+    fn effect_marker(&self, subtype: u8) -> u8 {
+        self.effects[usize::from(subtype)][3]
+    }
+    fn equip_flags(&self, subtype: u8) -> u8 {
+        self.equip_flags[usize::from(subtype)]
+    }
+}
+
+/// Whether the hooked applicability probe answers yes for `id`.
+fn applicable(id: u8) -> bool {
+    (u32::from(id).wrapping_mul(0x9E37_79B9) >> 7) & 3 != 0
+}
+
+/// The window-content dispatcher `FUN_80030628`'s three bag-list arms -
+/// content id `2` (the price-gated sell list), `3` (the Items Use list, in
+/// the field and in battle, with both door gates) and `0x22` (Throw Out) -
+/// against `build_price_gated_rows` / `build_use_list_rows` /
+/// `build_throw_out_rows`: random item, effect and equipment tables written
+/// over the executable's, random bags and window ranges, the bag-window
+/// helper `FUN_8004313C` stubbed (the range is seeded), the applicability
+/// probe `FUN_8003043C` scripted, and the list allocator `FUN_80030104`
+/// hooked to read the staged row words it is handed.
+#[test]
+fn the_bag_list_arms_build_the_rows_retail_builds() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::menu_list_rows::{
+        UseListCtx, build_price_gated_rows, build_throw_out_rows, build_use_list_rows,
+    };
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.stub(BAG_WINDOW, 0);
+    cpu.hook(APPLICABLE, |r, _| {
+        r.r[V0] = u32::from(applicable(r.r[A0] as u8))
+    });
+    let built = Rc::new(RefCell::new(None::<Vec<u16>>));
+    let b = built.clone();
+    cpu.hook(LIST_ALLOC, move |r, m| {
+        let n = r.r[A2];
+        *b.borrow_mut() = Some((0..n).map(|k| m.rd16(STAGED_ROWS + 2 * k)).collect());
+        r.r[V0] = 0;
+    });
+    let mut rng = Rng(0x4241_4752);
+    let mut seen = [0usize; 4];
+    for case in 0..3000 {
+        let tables = RowTables {
+            items: (0..256)
+                .map(|_| {
+                    let kind = [0u8, 1, 2, 2, 3][rng.below(5) as usize];
+                    let price = if rng.below(3) == 0 {
+                        0
+                    } else {
+                        rng.next() as u16
+                    };
+                    let p = price.to_le_bytes();
+                    // The subtype indexes the equipment table (107 records)
+                    // for kind 1 and the effect table (130) otherwise.
+                    let sub = rng.below(if kind == 1 { 107 } else { 130 }) as u8;
+                    [kind, sub, p[0], p[1]]
+                })
+                .collect(),
+            effects: (0..130).map(|_| (rng.next()).to_le_bytes()).collect(),
+            equip_flags: (0..107).map(|_| rng.next() as u8).collect(),
+        };
+        for id in 0..256u32 {
+            let r = tables.items[id as usize];
+            for k in 0..4 {
+                cpu.mem.wr8(ITEMS + 12 * id + k, r[k as usize]);
+            }
+        }
+        for (id, e) in tables.effects.iter().enumerate() {
+            for (k, b) in e.iter().enumerate() {
+                cpu.mem.wr8(EFFECTS + 4 * id as u32 + k as u32, *b);
+            }
+        }
+        for (id, f) in tables.equip_flags.iter().enumerate() {
+            cpu.mem.wr8(EQUIP + 8 * id as u32 + 7, *f);
+        }
+        let bag: Vec<u8> = (0..256)
+            .map(|_| match rng.below(4) {
+                0 => 0,
+                1 => [0x88, 0x89][rng.below(2) as usize],
+                _ => rng.next() as u8,
+            })
+            .collect();
+        for (k, id) in bag.iter().enumerate() {
+            cpu.mem.wr16(BAG + 2 * k as u32, u16::from(*id));
+        }
+        let start = rng.below(128) as u16;
+        let end = start + rng.below(129) as u16;
+        cpu.mem.wr16(GP + 0x2D2, start);
+        cpu.mem.wr16(GP + 0x2D4, end);
+        let content = [2u8, 3, 3, 0x22][rng.below(4) as usize];
+        // The context word is the field (`0`) or battle (`1`) menu; the
+        // port's `UseListCtx::battle` carries those two.
+        let context = rng.below(2);
+        let flags = rng.next() & 0x0030_0000;
+        cpu.mem.wr32(GP + 0x85C, context);
+        cpu.mem.wr32(ROW_FLAGS, flags);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        *built.borrow_mut() = None;
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+
+        let window = &bag[usize::from(start)..usize::from(end)];
+        let want = match content {
+            2 => build_price_gated_rows(window, start, &tables),
+            0x22 => build_throw_out_rows(window, start, &tables),
+            _ => build_use_list_rows(
+                window,
+                start,
+                &tables,
+                &UseListCtx {
+                    battle: context == 1,
+                    door_light_blocked: flags & 0x0010_0000 != 0,
+                    door_wind_blocked: flags & 0x0020_0000 != 0,
+                    applicable: &applicable,
+                },
+            ),
+        };
+        let got = built.borrow().clone().unwrap_or_default();
+        let ctx = format!("case {case}: content {content:#x} context {context} flags {flags:#x}");
+        seen[3] += usize::from(content == 3 && context == 1);
+        assert_eq!(got, want, "{ctx}");
+        seen[usize::from(content == 3) + usize::from(content == 0x22) * 2] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
+}
