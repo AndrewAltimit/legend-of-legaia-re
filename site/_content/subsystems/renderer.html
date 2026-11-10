@@ -332,6 +332,7 @@
   </table>
   </div>
   <p><strong>Retail dithers.</strong> The draw-environment initialiser stamps the GPU's dither bit to 0, but the frame driver re-stamps it every frame from a global that boots at 1 and a script opcode can change. The port's clean default is a choice about the look, not a reading of the executable.</p>
+  <p><strong>A battle frame can lose it.</strong> The dither bit lives in the GPU's draw mode, so a draw-mode packet in the ordering table moves it for everything drawn after. The wash a cast arms is drawn through the fade quad, whose packet clears the bit in the farthest bucket; the ground grid's own pair of packets sets it again. A frame that arms the wash over a stage the grid does not draw, such as the closing arms of the Ozma summon, is drawn with no dither at all. The port follows the same rule in PSX mode on both hosts.</p>
   <p><strong>Semi-transparency</strong> is per texel on a textured primitive: palette entries with the STP bit blend, others draw opaque. The four blend equations are on <a href="shading.html#chain">shading</a>.</p>
 </section>
 
