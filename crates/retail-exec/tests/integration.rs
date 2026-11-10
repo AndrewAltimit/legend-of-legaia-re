@@ -358,6 +358,7 @@ mod tint_ease;
 mod tint_sm;
 mod title_prims;
 mod tmd_register;
+mod transition_sweep;
 mod travel_art;
 mod turn_pick;
 mod unequip;
