@@ -218,3 +218,88 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
     assert!(misses > 100, "{misses}");
     assert!(cpu_points > 0, "{cpu_points}");
 }
+
+const MARKER: u32 = 0x801D_0640;
+
+/// The step-marker tile's flipbook `FUN_801D0640` (PROT 0980, the dance
+/// overlay) frame by frame against `step_marker` over the overlay's own
+/// marker script (`MarkerScript::from_overlay`): the `+0x54` countdown, the
+/// `+0x9C` cursor and its wrap on the next pair's sentinel, the mesh handed
+/// to the model swap `FUN_80024E08` (with the `_DAT_8007B6F8` bias), and the
+/// clip-selector gate.
+#[test]
+fn the_step_marker_flipbook_matches_retail() {
+    differential!(prot(980, MARKER));
+    let (Some(mut cpu), Some(d)) = (crate::common::scus_cpu(), crate::common::disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::dance_marker::{MarkerActor, MarkerScript, step_marker};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let overlay = d.read_entry(980).expect("PROT 0980");
+    cpu.mem.load(0x801C_E818, &overlay);
+    let script = MarkerScript::from_overlay(&overlay, 0x801C_E818).expect("marker script");
+    const ACTOR: u32 = 0x8013_0000;
+    let calls: Rc<RefCell<Vec<(u32, i16)>>> = Rc::default();
+    {
+        let calls = calls.clone();
+        cpu.hook(0x8002_4E08, move |r, _| {
+            assert_eq!(r.r[psx_retail_exec::A0], ACTOR);
+            calls
+                .borrow_mut()
+                .push((0x8002_4E08, r.r[psx_retail_exec::A1] as i16));
+        });
+    }
+    {
+        let calls = calls.clone();
+        cpu.hook(0x8002_04F8, move |_, _| {
+            calls.borrow_mut().push((0x8002_04F8, 0))
+        });
+    }
+    let mut rng = crate::common::Rng(0x4D41_524B);
+    let (mut stepped, mut wrapped) = (0, 0);
+    for run in 0..400 {
+        let class = rng.below(4) as u16;
+        if script.steps(usize::from(class)) == 0 {
+            continue;
+        }
+        let mut actor = MarkerActor {
+            class,
+            cursor: 2 * rng.below(script.steps(usize::from(class)) as u32) as u16,
+            timer: rng.below(8) as i16 - 1,
+            mesh: None,
+        };
+        let bias = rng.next() as i16 >> 4;
+        cpu.mem.wr16(0x8007_B6F8, bias as u16);
+        cpu.mem.wr16(ACTOR + 0x50, actor.class);
+        cpu.mem.wr16(ACTOR + 0x9C, actor.cursor);
+        cpu.mem.wr16(ACTOR + 0x54, actor.timer as u16);
+        for frame in 0..300 {
+            let delta = [1u8, 1, 2, 3][rng.below(4) as usize];
+            let clip = [0i16, 1, -1][rng.below(3) as usize];
+            let flags = rng.next();
+            cpu.mem.wr8(0x1F80_0393, delta);
+            cpu.mem.wr16(ACTOR + 0x5C, clip as u16);
+            cpu.mem.wr32(ACTOR + 0x10, flags);
+            calls.borrow_mut().clear();
+            assert_eq!(cpu.call(MARKER, &[ACTOR]), Stop::Returned);
+            let before = actor;
+            let step = step_marker(&mut actor, &script, delta, bias, clip, flags);
+            let mut want = Vec::new();
+            if let Some(m) = step.staged_mesh {
+                want.push((0x8002_4E08, m));
+                stepped += 1;
+                wrapped += usize::from(actor.cursor == 0);
+            }
+            if step.run_clip_selector {
+                want.push((0x8002_04F8, 0));
+            }
+            let label = format!("run {run} frame {frame} class {class} before {before:?}");
+            assert_eq!(*calls.borrow(), want, "{label}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54) as i16, actor.timer, "{label}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C), actor.cursor, "{label}");
+        }
+    }
+    assert!(stepped > 5000 && wrapped > 500, "{stepped} {wrapped}");
+}
