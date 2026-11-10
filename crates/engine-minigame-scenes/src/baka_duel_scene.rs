@@ -751,7 +751,11 @@ impl BakaDuelScene {
     ///
     /// PORT: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
     /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
-    /// stepped at its record's byte `+0x07`)
+    /// stepped at its record's byte `+0x07`). Partial: the second match
+    /// against `DAT_801DBF74` (`0x801D33DC..0x801D33E8`) and the retire arm
+    /// on a non-zero match phase `DAT_801DBF78` (`0x801D33A8..0x801D33B8`)
+    /// are not carried (`DAT_801DBF74` has writers at `0x801CF954`,
+    /// `0x801CFD2C` and `0x801CFD4C` that the select pose does not model).
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
         dead.extend(self.ghost.iter().flatten().cloned());
@@ -873,7 +877,12 @@ impl BakaDuelScene {
     /// grid the `mtc2` is unclamped, so the cue runs past the far colour and
     /// the output clamp bounds it.
     ///
-    /// PORT: FUN_801CEB84 (`DPCS` per lattice corner)
+    /// `FUN_801CEB84` is the battle grid emitter `FUN_801D02C0` relocated into
+    /// the duel overlay (the same 290 instructions modulo relocation), so the
+    /// cue is that port's [`grid_ir0_raw`](legaia_engine_battle_vm::battle_ground_grid::grid_ir0_raw)
+    /// and the duel copy is filed as a duplicate, not ported twice.
+    ///
+    /// REF: FUN_801CEB84 (`DPCS` per lattice corner; ported as `FUN_801D02C0`)
     fn cue_floor(
         &mut self,
         camera: &legaia_engine_minigames::baka_duel::DuelCamera,
