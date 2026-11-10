@@ -1193,9 +1193,12 @@ impl RetailBattle {
                 // frame). A target idling in the RAM was not struck inside
                 // the display lag either, so the walk back holds (a wrap of
                 // the loop included).
+                // A party strike's monster target is the same clock: nothing
+                // the strike loop runs touches its loop before the hit
+                // (`battle_ropeway_party_noa_sonic_javelin_open`'s Orb, whose
+                // idle bob stands it a sphere's height off retail's).
                 let melee_target_idle = clip == 0
                     && slot == self.target_code
-                    && self.active_actor >= 3
                     && self.queued_category == 3
                     && (0x14..=0x1E).contains(&self.action_state);
                 // ... and a monster cast's party target still idling ahead of
