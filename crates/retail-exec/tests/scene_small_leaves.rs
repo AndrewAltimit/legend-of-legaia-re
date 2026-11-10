@@ -706,3 +706,161 @@ fn the_battle_loader_asks_for_the_stage_overlay_the_port_names() {
     }
     assert_eq!((loaded, none), (510, 2));
 }
+
+#[test]
+fn the_part_tick_scrolls_the_rect_the_port_scrolls() {
+    differential!(scus(PART_TICK));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::vram_scroll::{mode4_integrate, rotate_rect};
+    const PART_TICK: u32 = 0x8002_1DF4;
+    const PART_TICK_END: u32 = 0x8002_3070;
+    const STORE_IMAGE: u32 = 0x8005_842C;
+    const MOVE_IMAGE: u32 = 0x8005_8490;
+    const LOAD_IMAGE: u32 = 0x8005_83C8;
+    const SCRATCH: u32 = 0x1F80_0314;
+    const ACTOR: u32 = 0x8010_0000;
+    const PACKETS: u32 = 0x8012_0000;
+    const W: usize = 1024;
+    cpu.stub_outside = Some((PART_TICK, PART_TICK_END));
+    // The GPU the three libgpu calls reach: StoreImage out of VRAM, the
+    // VRAM-to-VRAM move (towards lower addresses, so a forward copy), and
+    // LoadImage back in.
+    let gpu: Rc<RefCell<Vec<u16>>> = Rc::new(RefCell::new(vec![0; W * 512]));
+    let calls: Rc<RefCell<u32>> = Rc::default();
+    fn rect(m: &mut psx_retail_exec::Memory, p: u32) -> [usize; 4] {
+        std::array::from_fn(|k| usize::from(m.rd16(p + 2 * k as u32)))
+    }
+    {
+        let (gpu, calls) = (gpu.clone(), calls.clone());
+        cpu.hook(STORE_IMAGE, move |r, m| {
+            let [x, y, w, h] = rect(m, r.r[A0]);
+            let g = gpu.borrow();
+            for i in 0..w * h {
+                m.wr16(r.r[A1] + 2 * i as u32, g[(y + i / w) * W + x + i % w]);
+            }
+            *calls.borrow_mut() += 1;
+        });
+    }
+    {
+        let (gpu, calls) = (gpu.clone(), calls.clone());
+        cpu.hook(MOVE_IMAGE, move |r, m| {
+            let [x, y, w, h] = rect(m, r.r[A0]);
+            let (dx, dy) = (r.r[A1] as usize, r.r[psx_retail_exec::A2] as usize);
+            let mut g = gpu.borrow_mut();
+            for i in 0..w * h {
+                g[(dy + i / w) * W + dx + i % w] = g[(y + i / w) * W + x + i % w];
+            }
+            *calls.borrow_mut() += 1;
+        });
+    }
+    {
+        let (gpu, calls) = (gpu.clone(), calls.clone());
+        cpu.hook(LOAD_IMAGE, move |r, m| {
+            let [x, y, w, h] = rect(m, r.r[A0]);
+            let mut g = gpu.borrow_mut();
+            for i in 0..w * h {
+                g[(y + i / w) * W + x + i % w] = m.rd16(r.r[A1] + 2 * i as u32);
+            }
+            *calls.borrow_mut() += 1;
+        });
+    }
+    let mut rng = Rng(0x5343_524C);
+    for px in gpu.borrow_mut().iter_mut() {
+        *px = rng.next() as u16;
+    }
+    let mut port_vram = gpu.borrow().clone();
+    let (mut fired, mut both, mut idle) = (0, 0, 0);
+    for round in 0..2_000 {
+        let (x, y) = (rng.below(900) as u16, rng.below(440) as u16);
+        let (w, h) = (2 + rng.below(64) as u16, 2 + rng.below(48) as u16);
+        let step = |rng: &mut Rng, extent: u16, frame: u16| match rng.below(3) {
+            0 => 0,
+            _ => 1 + rng.below(u32::from((extent - 1) / frame).max(1)) as u16,
+        };
+        let frame_step = 1 + rng.below(3) as u8;
+        let (hs, vs) = (
+            step(&mut rng, w, u16::from(frame_step)),
+            step(&mut rng, h, u16::from(frame_step)),
+        );
+        if u32::from(hs) * u32::from(frame_step) >= u32::from(w)
+            || u32::from(vs) * u32::from(frame_step) >= u32::from(h)
+        {
+            continue;
+        }
+        let period = rng.below(6) as u16;
+        let mut st = ActorState {
+            move_submode: 4,
+            ..ActorState::default()
+        };
+        let mut rec = vec![0u8; 0x100];
+        rec[0x5A] = 4;
+        let fields = [
+            (0xC4usize, period),
+            (0xC6, rng.below(4) as u16),
+            (0xCC, hs),
+            (0xCE, vs),
+            (0xD0, x),
+            (0xD2, y),
+            (0xD4, w),
+            (0xD6, h),
+        ];
+        for (off, v) in fields {
+            rec[off..off + 2].copy_from_slice(&v.to_le_bytes());
+            st.anim_block_u16_set(off - 0xAC, v);
+        }
+        cpu.mem.load(ACTOR, &rec);
+        // Several ticks, so the period reloads and the rect keeps turning.
+        for tick in 0..4 {
+            cpu.mem.wr8(SCRATCH + 0x7F, frame_step);
+            cpu.mem.wr8(SCRATCH + 0x69, 0x10);
+            cpu.mem.wr32(SCRATCH + 0x8C, PACKETS);
+            *calls.borrow_mut() = 0;
+            assert_eq!(cpu.call(PART_TICK, &[ACTOR]), Stop::Returned, "round {round}");
+            let fx = mode4_integrate(&mut st, frame_step);
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0xC6),
+                st.anim_block_u16(0xC6 - 0xAC),
+                "round {round} tick {tick}: countdown"
+            );
+            match fx {
+                Some(fx) => {
+                    let (x, y, w, h) = (
+                        usize::from(fx.rect.0),
+                        usize::from(fx.rect.1),
+                        usize::from(fx.rect.2),
+                        usize::from(fx.rect.3),
+                    );
+                    let texels: Vec<u16> = (0..w * h)
+                        .map(|i| port_vram[(y + i / w) * W + x + i % w])
+                        .collect();
+                    let turned = rotate_rect(
+                        &texels,
+                        w,
+                        h,
+                        usize::from(fx.strip_w),
+                        usize::from(fx.strip_h),
+                    );
+                    for (i, t) in turned.iter().enumerate() {
+                        port_vram[(y + i / w) * W + x + i % w] = *t;
+                    }
+                    let axes = u32::from(fx.strip_w != 0) + u32::from(fx.strip_h != 0);
+                    assert_eq!(*calls.borrow(), 3 * axes, "round {round} tick {tick}");
+                    fired += 1;
+                    both += u32::from(axes == 2);
+                }
+                None => {
+                    assert_eq!(*calls.borrow(), 0, "round {round} tick {tick}: a quiet tick");
+                    idle += 1;
+                }
+            }
+            assert!(
+                *gpu.borrow() == port_vram,
+                "round {round} tick {tick}: VRAM after the scroll"
+            );
+        }
+    }
+    assert!(fired > 1_500 && both > 500 && idle > 1_000, "{fired} {both} {idle}");
+}
