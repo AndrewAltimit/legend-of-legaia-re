@@ -125,6 +125,7 @@ mod monster_install;
 mod mesh_swap;
 mod monster_pick;
 mod morph_envelope;
+mod motion_install;
 mod motion_vm;
 mod mule_wave;
 mod muscle_contest;
