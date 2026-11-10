@@ -371,8 +371,11 @@ impl Side {
         // recording's first counter run, on the step that run was paced by.
         let (first, _) = *ws.first()?;
         let lead = u64::from(self.frame_runs()?.first()?.2);
+        // That pass ends on the first wait end, a vsync a game vsync on its
+        // step: counted forward from row 0 instead, a lead of one row took
+        // the whole step in one row.
         for (k, o) in out.iter_mut().enumerate().take(first + 1) {
-            *o = k as u64 * lead / (first as u64 + 1);
+            *o = (k as u64 + lead).saturating_sub(first as u64 + 1);
         }
         let mut base = lead;
         for (k, &(w, own)) in ws.iter().enumerate() {
@@ -423,7 +426,20 @@ impl Side {
                 // pass ran past its step, otherwise that step after the wait
                 // end before it.
                 (None, Some(&(p, _))) => (p + usize::from(paced)).max(i).min(j - 1),
-                (None, None) => (i + usize::from(paced) - 1).min(j - 1),
+                // The recording's first run is cut by its start: its bump is
+                // not row `i` but fell before it, a step ahead of the next
+                // bump `j` on time. Counted from `i` instead, a recording that
+                // opens mid-run gave the pass before it a whole step of game
+                // time in a row or two and every pair of a `--physical`
+                // film's opening segment, which starts on the state's own
+                // first vsync, sat a pass late
+                // (`battle_jouind_gilium_lv3_strike` `.970` to `.875`). A wait
+                // end ahead of the first row is not in the recording; the
+                // game clock's lead then covers the rows up to the next one.
+                (None, None) => match j.checked_sub(usize::from(paced)) {
+                    Some(w) => w.max(i),
+                    None => continue,
+                },
             };
             out.push((w, own));
         }
@@ -1785,10 +1801,13 @@ mod tests {
         // On-time step-1 frames: every shot is a new image, two rows back.
         let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1)]);
         assert_eq!(t.shown_by_frame(&t.rows[3]), Some(t.rows[1].t));
-        // On-time step-2 frames: `2 * step` on both rows of a frame.
+        // On-time step-2 frames: each wait ends on its bump's row (the next
+        // pass draws on the row after, as `battle_jouind_gilium_lv3_strike`'s
+        // on-time step-3 frames read), so the grab on a bump's row shows the
+        // pass before the one the next row shows.
         let u = side(&[(1, 2, 2), (2, 2, 2), (3, 2, 2), (4, 2, 2)]);
-        assert_eq!(u.shown_by_frame(&u.rows[6]), Some(u.rows[3].t));
-        assert_eq!(u.shown_by_frame(&u.rows[7]), Some(u.rows[3].t));
+        assert_eq!(u.shown_by_frame(&u.rows[6]), Some(u.rows[2].t));
+        assert_eq!(u.shown_by_frame(&u.rows[7]), Some(u.rows[4].t));
         // Step-2 frames that each run a little past one vsync: the pass's
         // bump lands on the row its wait ends, the next pass draws `rand()`
         // on the row after, and the grab shows the state up to the bump two
@@ -1809,7 +1828,7 @@ mod tests {
         // Seven-vsync frames on step 4: the grab on a bump's row still shows
         // the image before, the next one the new image.
         let v = side(&[(1, 4, 4), (2, 4, 7), (3, 4, 7), (4, 4, 7), (5, 4, 7)]);
-        assert_eq!(v.shown_by_frame(&v.rows[18]), Some(v.rows[7].t));
+        assert_eq!(v.shown_by_frame(&v.rows[18]), Some(v.rows[4].t));
         assert_eq!(v.shown_by_frame(&v.rows[19]), Some(v.rows[11].t));
         // The fade's own table stands one pass nearer.
         assert_eq!(

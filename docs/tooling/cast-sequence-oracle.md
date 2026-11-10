@@ -494,6 +494,17 @@ reads all three off the `frame` and `step` columns (`Side::wait_ends`):
   its step from one that runs a little past one vsync, and the second is the
   common case: a step of `2` is what a frame costing over a vsync sets. A
   recording without the column falls back on the counter.
+- **The recording's first run** is cut by its start: its bump fell before the
+  first row, so its wait is counted back a step from the next bump, and a wait
+  that falls before the first row is not in the recording. On the on-time
+  step-`3` frames of `battle_jouind_gilium_lv3_strike` the head draw sits on
+  the row after every bump, so each wait ends on its bump's row. Counted
+  forward from the first row as if it were a bump, the pass ahead of the first
+  wait end took a whole step in a row or two, and every pair of a `--physical`
+  film's opening segment, which starts on the state's own first vsync, sat a
+  pass late: that film read `.875` against `.975`, and Tri-Somersault's cues
+  `.607` against `1.000`. A cast film starts at its inject, ahead of every
+  segment it scores, and reads the same.
 - **A pass's state** stands on the rows from the vsync after the wait before
   it to its own wait end. A pass that takes longer than a vsync therefore
   shows its state a row or more ahead of its bump, and a row's counter does
