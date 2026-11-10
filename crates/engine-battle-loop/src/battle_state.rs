@@ -866,6 +866,15 @@ pub struct BattleState {
     /// stages and makes inside the seat's next tick after its advance, so
     /// that pass's advance is skipped. Empty until the first walk.
     pub anim_slice_commits: Vec<u32>,
+    /// Each actor's root-motion term as its own slice of the last anim walk
+    /// left it: the playing entry's `(+0x0C speed, +0x21D scale)` and the
+    /// heading `+0x46` (`World::tick_battle_animations_walk`). The node tick
+    /// steps the root motion of the entry it holds once its own commits are
+    /// made (`lw s3,0x4c(s5)` at `0x80047B60`, read at `0x80047D34`), so a
+    /// reaction a later seat's hit walk stages on this seat (`+0x1DA` with
+    /// `+0x1DC |= 5`, `0x801EEC6C..0x801EEC84`) moves it from the seat's
+    /// next tick on, and this pass's step is the entry the seat ticked on.
+    pub anim_slice_roots: Vec<(Option<(i16, u8)>, u16)>,
     /// Each actor's display trio as the previous pass's draw stored it - the
     /// anchor the value readout projects a landed hit's numeral from
     /// (`World::battle_readout_trio`). Retail's readout `FUN_801DF6B8` runs
@@ -1530,6 +1539,7 @@ impl BattleState {
             cast_census_drawn: false,
             hit_commit_rewalk: Vec::new(),
             anim_slice_commits: Vec::new(),
+            anim_slice_roots: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             frame_step_seed_after_accum: None,

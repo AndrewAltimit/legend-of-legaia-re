@@ -1963,3 +1963,49 @@ fn a_landed_string_folds_into_the_records() {
     let r = world.party.roster.members[rslot].battle_records();
     assert_eq!((r.max_damage, r.max_hits), (321, 4));
 }
+
+// --- the root-motion term reads the entry the seat's own tick held ---------
+
+/// A four-frame one-shot whose entry head carries a root speed (`+0x0C`).
+fn root_speed_clip(action_id: u8, speed: i16) -> MonsterAnimation {
+    let mut clip = pose_test_clip(action_id, 4, 0);
+    let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    head[0x0C..0x0E].copy_from_slice(&speed.to_le_bytes());
+    clip.effect_script = head;
+    clip
+}
+
+/// A reaction a later seat's hit walk commits on a seat that has already
+/// ticked this pass is only staged there in retail (`+0x1DA` with
+/// `+0x1DC |= 5`, `0x801EEC6C..0x801EEC84`): the seat's tick stepped the root
+/// motion of the entry it held (`0x80047D34`), and the reaction's backstep
+/// starts on its next tick.
+#[test]
+fn a_reaction_staged_after_the_seats_slice_slides_from_its_next_tick() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    assert!(world.toggles.battle_sm_frame_cadence);
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 4, 0));
+    clips[11] = Some(root_speed_clip(11, -4));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+    world.battle.anim_pass_vsyncs = 3;
+    let pair = |w: &World| {
+        (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z,
+        )
+    };
+    // The seat's own slice: on idle, which carries no speed.
+    world.tick_battle_animations_walk(true);
+    let stood = pair(&world);
+    // The attacker's slice lands its hit and commits the block.
+    assert!(world.commit_battle_reaction_entry(0, 11));
+    world.tick_battle_locomotion_dt(3);
+    assert_eq!(pair(&world), stood, "the hit's own pass steps the idle");
+    // The next pass's slice holds the block.
+    world.tick_battle_animations_walk(true);
+    world.tick_battle_locomotion_dt(3);
+    assert_ne!(pair(&world), stood, "the block slides from the next tick");
+}

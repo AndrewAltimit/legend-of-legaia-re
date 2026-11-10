@@ -1495,6 +1495,24 @@ each swing. Port: `World::commit_melee_reaction`, which installs the reaction
 on the hit itself and so takes the cut on the frame one advance ahead
 (`MonsterAnimPlayer::frame_after_vsyncs`).
 
+**The reaction slides from the defender's own next tick.** The root-motion term
+reads the entry the node holds once its own commits are made (`lw s3,0x4c(s5)` at
+`0x80047B60`, the speed `lh v0,0xc(s3)` at `0x80047D34`), and the node walk ticks
+the party seats ahead of the monsters. A monster's hit walk therefore stages its
+reaction on a party seat that has already stepped this pass on the entry it held,
+and the block's or flinch's backstep starts a pass later, behind the cut. A
+monster struck by a party member ticks after its attacker and takes the cut and
+the new entry's step on the hit's own pass. `battle_jouind_gilium_lv3_strike`
+shows the first: Vahn's block reaches its natural end on the pass Gilium's fourth
+swing lands, his node holds idle (`+0x1D9 = 0` with `0x0B` staged), and his live
+pair moves by the block's `+0x0E` end step alone that pass, `(-1, -1)`, then
+`(-4, -12)` a pass from the next. Gilium's own root motion stands behind the range
+poll, so it holds one pass as well. Port: `BattleState::anim_slice_roots`, the
+term each seat's slice of the anim walk left, which `drive_playing_root_motion`
+steps for a seat whose clip was committed after that slice; installed whole, the
+reaction slid a pass early and every blocked swing left both bodies `12` units
+further down the stage.
+
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
 counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the

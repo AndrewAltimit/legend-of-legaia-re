@@ -777,6 +777,18 @@ impl World {
         ) {
             *c = a.battle_clip_commits;
         }
+        // The root-motion term this seat's tick steps: the entry it holds
+        // once its own commits are made (`BattleState::anim_slice_roots`).
+        if commit_after {
+            if self.battle.anim_slice_roots.len() != self.actors.len() {
+                self.battle.anim_slice_roots = vec![(None, 0); self.actors.len()];
+            }
+            let root = (
+                self.battle_playing_root_motion(i),
+                self.actors[i].battle.facing_angle,
+            );
+            self.battle.anim_slice_roots[i] = root;
+        }
     }
 
     /// A reaction clip whose cursor crossed its end on this pass takes the
