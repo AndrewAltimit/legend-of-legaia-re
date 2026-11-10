@@ -353,7 +353,9 @@ The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, r
 
 Baka Fighter's damage kernel `FUN_801D3B18`, called on its own over every attack type and streak (`baka_leaves`), found the port zeroing a special's damage, where the kernel runs the same arithmetic for it: a power of `0` leaves the streak term `(streak - 1) * 0x40`, taken off a struck seat with HP left. No duel reaches it, since the special is thrown at a seat already at `0`.
 
-Baka Fighter's chrome timelines, each called as its caller calls it with the widget emitter, the announcer and the tint hooked (`baka_chrome`): the round banner `FUN_801D5C7C` and the all-clear announcer `FUN_801D21FC` match, and the intro title card `FUN_801D59D4` found the subtitle's four-frame flash carried as white where the routine pushes the colour word `0xFF`, red alone. The slot machine's payline pass `FUN_801D3380` and the Muscle Dome's contest-start restore `FUN_801D0ED8` and leg staging `FUN_801D1510` match.
+Baka Fighter's chrome timelines, each called as its caller calls it with the widget emitter, the announcer and the tint hooked (`baka_chrome`): the round banner `FUN_801D5C7C` and the all-clear announcer `FUN_801D21FC` match, and the intro title card `FUN_801D59D4` found the subtitle's four-frame flash carried as white where the routine pushes the colour word `0xFF`, red alone. The sprite-actor draw callback `FUN_801D67F0` found the port rounding the fade level up before its shift, where the level is read unsigned and takes a plain `>> 4`, a brightness one step high on most frames. The impact pair `FUN_801D4DF8` and the all-clear fighter's tick `FUN_801D6F18` match.
+
+The slot machine's payline pass `FUN_801D3380` and the Muscle Dome's contest-start restore `FUN_801D0ED8` and leg staging `FUN_801D1510` match.
 
 Baka Fighter's round score `FUN_801D2A28` matches, and tracing what feeds it found the channel unwired: no host installed the two bonus tables, the match bonus row was never seeded, and the running total never reached the cabinet, so neither secret opponent could ever appear. Retail also scores only the player's round win, off the player's HP.
 
