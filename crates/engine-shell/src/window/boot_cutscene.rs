@@ -314,9 +314,14 @@ impl PlayWindowApp {
     /// pad bitmask. Returns `true` if the boot UI is still active and
     /// the scene tick should be skipped this frame.
     pub(super) fn tick_boot_ui(&mut self) -> bool {
-        // Build edge-triggered "newly pressed" mask so menu navigation
-        // doesn't auto-repeat on held keys.
+        // The edge-triggered "newly pressed" mask. The pause menu's lists
+        // read it with the window kernel's cursor auto-repeat folded in
+        // (`BootSession::pause_menu_edge`, the page's `play_menu_input`
+        // twin); the title's screens read the plain edge.
         let mut pressed = self.pad & !self.prev_pad;
+        if matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
+            pressed = self.session.pause_menu_edge(pressed);
+        }
         // The pause menu reads nothing while a window slides (retail's
         // `_DAT_8007BB80`): the shared lock, stepped once per menu frame
         // ahead of every pre-empt and cue - the page's `play_menu_input`

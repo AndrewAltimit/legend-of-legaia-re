@@ -178,6 +178,17 @@ impl InputState {
         self.retail.reset_menu_repeat();
     }
 
+    /// Run the retail pump for a tick no [`Self::set_pad`] is made on: a
+    /// screen that holds the field (the pause menu, a shop, the naming
+    /// prompt) owns the tick and reads the cursor auto-repeat
+    /// ([`Self::take_menu_repeat`]), which only a pump raises. `mask` is the
+    /// held pad word. The published mask ([`Self::pad`]) is not touched: the
+    /// field's own edges resume from where its last tick left them. One pump
+    /// a tick: a tick that calls [`Self::set_pad`] must not call this too.
+    pub fn pump_held(&mut self, mask: u16) {
+        self.retail.pump_raw(mask, 1);
+    }
+
     /// Replace the pad mask. The previous frame's mask is rotated into
     /// `pad_prev` so edge queries reflect the transition between the last
     /// and current call.

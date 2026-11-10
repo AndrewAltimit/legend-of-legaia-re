@@ -97,6 +97,11 @@ pub struct HostTraceFrame {
     /// The naming prompt (`PartyState::name_entry`), as its debug form:
     /// cursor, entered glyphs and confirm state.
     pub naming: Option<u64>,
+    /// The world's pad: the published word and the one before it (what the
+    /// field's edges are cut from), and the retail pump's held word (what
+    /// the cursor auto-repeat counts on). A host that publishes or pumps on
+    /// a tick the other does not parts here.
+    pub pad: (u16, u16, u16),
     /// What the scene's actors are bound to: which slots carry a model, the
     /// idle clip each plays and the pose it holds, the lead's locomotion
     /// clip (its slot, frame and walking flag), and every placed NPC's clip
@@ -239,6 +244,11 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
             world.shops.pending_shop.is_some(),
         ),
         naming: world.party.name_entry.as_ref().map(debug_digest),
+        pad: (
+            world.input.pad(),
+            world.input.pad_prev(),
+            world.input.retail_pad().held as u16,
+        ),
         bindings: bindings_digest(world),
         switches: {
             let t = &world.toggles;
@@ -379,6 +389,7 @@ pub const CHANNELS: &[&str] = &[
     "overlay",
     "shop",
     "naming",
+    "pad",
     "bindings",
     "battle_stage",
     "battle_bodies",
@@ -408,6 +419,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "overlay" => a.overlay == b.overlay,
         "shop" => a.shop == b.shop,
         "naming" => a.naming == b.naming,
+        "pad" => a.pad == b.pad,
         "bindings" => a.bindings == b.bindings,
         "battle_stage" => a.battle_stage == b.battle_stage,
         "battle_bodies" => a.battle_bodies == b.battle_bodies,

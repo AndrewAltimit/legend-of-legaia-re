@@ -360,6 +360,7 @@ is reached at runtime.
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
 | pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
 | pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
+| pause-menu edge | `symbols_all` on `BootSession::pause_menu_edge` across the window's `tick_boot_ui` and the page's `play_menu_input`: the menu's edge word with the cursor auto-repeat folded in. |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | title card | `symbols_all` on `FrontEndStep` + `AttractStart` + `AttractEnded` + `Picked` across the native boot UI and the page's `boot_title_step`: the session's front end steps the title, the host acts on the step. |
 | logos to title | `symbols_all` on `FrontEndStep` + `TitleOpened` across the native boot UI and the page's `boot_logos_step`: both take the seat's `boot_handoff` through the front end. |
@@ -1239,7 +1240,7 @@ runs both hosts and compares what they leave.
 |---|---|
 | native side | `window::HeadlessPlayWindow`: the app `play-window` assembles (`assemble_play_window`, the launch stages after the intro movie) with no renderer, driven one display frame at a time - the redraw's sim ticks (`run_sim_ticks`), then the draw path's world-moving steps (`headless_frame_prep`) |
 | page side | the real `LegaiaRuntime`, driven the way `site/js/play-view-frame.js` drives it: the frame's ticks through `play_frame_ticks` (the export that owns their order on the page), the persistent tap set, the card-load take |
-| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, the host-held overlay screen (`sample_with_overlay`), and the four channels below |
+| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, the host-held overlay screen (`sample_with_overlay`), and the five channels below |
 | verdict | per channel, the first display frame the two traces part on |
 
 Each scenario runs at three cadences - one tick per display frame, two (a
@@ -1264,6 +1265,7 @@ prompt for good.
 | `battle_stage` | the stage class, the backdrop depth-cue weight, the fog's stage cap, each actor's battle texture slot | the battle-entry frame: each host wrote them from its battle mesh build |
 | `audio` | the director's command record (`AudioCommandLog`): what the routing asked for, not what an output sounded | the first menu or shop press: the window queued a screen's blip, the page fired it at once, and the page's open blip lived in JS |
 | `switches` | the world toggles, locomotion rules, NPC switches, frame grab and camera distance a launch sets | frame 0: the window pushed its options into the world only from its first tick |
+| `pad` | the world's published pad word and the one before it, and the pad pump's held word | a shop's ticks: the window published and pumped a neutral word under it, the page neither |
 
 World state does not hang off the renderer. The steps that bind it are
 session steps both hosts call before building any mesh:
@@ -1405,6 +1407,7 @@ a scratch directory only.
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
 | `town_slope`, `town_seat` | town01 with the player seated at tile (30, 22) (`LEGAIA_SEAT` / `play_debug_seat`): the first with the follow knobs held at orbit 2.7, tilt -0.5 (`LEGAIA_DIAG_FOLLOW_KNOBS` / the page's knob setters), the view past the plateau ramp to the sea off retail's vantage; the second at retail's |
 | `battle_menus` | a fight's round prompt, the command ring's Item window and its cursor, the empty Magic window, an item used |
+| `menu_hold`, `shop_hold` | Down held on the pause menu's root list and on a shop's stock list: the cursor auto-repeat under a screen that owns its ticks |
 | `equip` | the pause menu's Equip row down a level at a time: the character picker, the slot browse with the worn item's panel beside each row, a slot's candidate list, and back out |
 | `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
 | `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
@@ -1424,6 +1427,13 @@ set the props' start phases) and again after it (`LEGAIA_RNG_SEED` natively, `de
 on the page). Unseeded, `late_fight` parted on its first frame's `rng` line and drew a
 different fight (`44%` of every frame off), and `ed_korout`'s props started out of phase and
 its shots parted (`34%`); seeded, they read `0.70%` and `0.13%` with the trace agreeing.
+
+A scene can agree perfectly and test nothing: a pause press in the first second
+of a door entry reaches no accept, so a menu scene keyed there pairs two hosts
+standing in a field. A scene that is for a screen names it (`reach`: a line of the
+trace some paired frame must show on both hosts), and its summary line says
+`VACUOUS` when neither or only one host got there. The menu scenes press Start at
+tick 90 for that reason.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
@@ -1614,6 +1624,7 @@ decidable per instance, not from a source pattern.
 | **A rule spelled beside the shared predicate.** A host calls the predicate and adds its own clause. | Native asked `field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its narration local; the page asked only the predicate, so Start opened the pause menu over a shop. | Move the clause into the kernel; a copy is two spellings again. |
 | **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-play/tests/battle_hud_badges.rs`). |
 | **A session default one host never overrides.** The session runs a step itself unless the host declares it owns it. | `BootSession::tick` opens the pause menu off the world's pad edge unless `set_host_owns_pause_menu` is raised. The page raised it; the window did not, so the menu had two openers natively, and the session's one read an edge the menu's ticks never advance: a Start held across the tick that closed the menu reopened it on the next field tick. | Both hosts raise the flag; `pause_menu_start_close_frames_match_across_hosts` holds the press across the close. |
+| **A pump only the field's tick makes.** Symmetric, so every tier and the trace agreed. | The cursor auto-repeat is raised by retail's pad pump, which the port ran inside `World::set_pad`, and a host calls that on a field tick alone. Under the naming prompt, a shop and the pause menu neither host pumped, so a held direction stepped once on both while every headless driver (`set_pad` each tick) saw it repeat; the window's shop tick also pumped a neutral word and published it, where the page left the pad alone. | `TickClaims::held`: `claim_tick` pumps every tick the field does not run (`InputState::pump_held`), and both hosts' pause menus take their edge through `BootSession::pause_menu_edge`. The trace's `pad` channel holds the published words and the pump's. |
 | **An input contract one host does not honour.** | `MenuRuntime::tick` filters no repeats; the native window handed it the *held* word, so one press stepped several rows. | `menu_runtime::menu_input_from_pad_edges` on both. |
 | **A raw word into a packed-mask reader.** | `World::input` holds the raw PSX word (Cross `0x4000`); the op-`0x49` submode family tests the packed masks `FUN_8001822C` builds (Cross `0x0040`). Cross did nothing on a coin cabinet on both hosts, and the tests fed the packed constant so they asserted the defect. | `World::submode_pad_words` through `dev_menu::retail_packed`. |
 | **A typed channel narrowed at one host.** | The web strike-SFX scheduler was `u8` end to end and dropped every cue above `0xFF` through a `try_from`. | Widen to the event's `u16`. |

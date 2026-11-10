@@ -82,6 +82,7 @@ impl LegaiaRuntime {
                 overlay_open: self.menu.is_open(),
                 overlay_suspends: self.menu.is_open() && self.menu.suspends_field(),
                 pause_menu_ready: self.ensure_menu_assets(),
+                held: pad,
             };
             let owner = self
                 .scene_host

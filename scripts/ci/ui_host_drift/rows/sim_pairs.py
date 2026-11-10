@@ -1393,12 +1393,28 @@ SIM_PAIRS: list[dict[str, object]] = [
         "to assert is that every host routes the press through the kernel "
         "rather than around it",
         "sites": {
-            "play_hosts": (SESSION_TICK_OWNER, "claim_tick"),
+            "play_hosts": (SESSION_TICK_OWNER, "claim_tick_owner"),
             "native_boot": (NATIVE_BOOT_FRAME_TICK, "tick"),
             "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
         "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "pause-menu edge - the word a pause-menu tick reads is the "
+        "tick's new presses with the window kernel's cursor auto-repeat folded "
+        "in (`BootSession::pause_menu_edge`). The session's own menu step "
+        "folded it and both play hosts, which hold the menu themselves, cut a "
+        "plain edge: a direction held on a list stepped once on the window "
+        "and on the page while every headless driver saw it repeat. The "
+        "repeat is raised by the tick claim's pad pump (`TickClaims::held`), "
+        "since a host-held screen's tick makes no `set_pad`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_MENU_INPUT, "play_menu_input"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["pause_menu_edge"],
     },
     {
         "what": "tick order, native vs play page - which screen owns each "

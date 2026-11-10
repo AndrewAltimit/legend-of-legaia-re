@@ -216,6 +216,17 @@ impl<S: AudioSink> BootSession<S> {
         &self.save_flow
     }
 
+    /// The edge word a pause-menu tick reads: the tick's new presses with
+    /// the window kernel's cursor auto-repeat folded in (`gp+0x86C`,
+    /// `FUN_80035C24`), so a direction held on a list steps again after
+    /// `0x14` vsyncs and then every three. Every pause-menu driver takes its
+    /// edge through here: this session's own step and both play hosts'
+    /// menu screens. The repeat is raised by the tick's pad pump
+    /// (`claim_tick` on a host, `set_pad` under a headless driver).
+    pub fn pause_menu_edge(&mut self, edge: u16) -> u16 {
+        edge | self.host.world.input.take_menu_repeat()
+    }
+
     /// Drive one frame of the open pause menu, both levels. Returns `true`
     /// when the root session reached an outcome and the caller should close.
     ///
@@ -235,8 +246,9 @@ impl<S: AudioSink> BootSession<S> {
         }
         // The edge word every menu surface in this subsystem reads, with the
         // window kernel's cursor auto-repeat folded in (`gp+0x86C`).
-        let pad = &mut self.host.world.input;
-        let mut pressed = (pad.pad() & !pad.pad_prev()) | pad.take_menu_repeat();
+        let pad = &self.host.world.input;
+        let edge = pad.pad() & !pad.pad_prev();
+        let mut pressed = self.pause_menu_edge(edge);
         // Retail's sub-screens read nothing while a window slides
         // (`_DAT_8007BB80`); the lock is stepped every menu frame.
         if !pause_slide_gate(
