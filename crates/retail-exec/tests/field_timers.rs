@@ -233,3 +233,107 @@ fn the_eased_move_lands_where_retail_lands_it() {
         "{eased} {mirrored} {arrived}"
     );
 }
+
+const SHUTTER: u32 = 0x801D_D784;
+const OT_LINK: u32 = 0x8003_D2C4;
+const PACKET_PTR: u32 = 0x1F80_03A0;
+const OT_PTR: u32 = 0x1F80_03F4;
+const PACKETS: u32 = 0x8015_0000;
+
+/// The shutter-blackout actor `FUN_801DD784` frame by frame: the envelope
+/// (`+0x54` phase, `+0x9E` clock, the `+0x10 & 8` retire) against
+/// `ShutterBars::step`, and the two `POLY_F4` packets it emits from the
+/// height against `shutter_bar_rects` at retail's 224-line bottom.
+#[test]
+fn the_shutter_bars_match_retail() {
+    differential!(prot(897, SHUTTER));
+    let Some(mut cpu) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::field_actor_timers::ShutterBars;
+    use legaia_render_kernels::shutter_bars::{SHUTTER_RETAIL_SCREEN_H, shutter_bar_rects};
+    let links = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    {
+        let links = links.clone();
+        cpu.hook(OT_LINK, move |r, _| {
+            links
+                .borrow_mut()
+                .push((r.r[psx_retail_exec::A0], r.r[psx_retail_exec::A1]));
+        });
+    }
+    let mut rng = Rng(0x5348_5554);
+    let (mut traps, mut phases, mut retired) = (0, [0u32; 4], 0);
+    'run: for run in 0..3000 {
+        let durations: [i16; 3] = std::array::from_fn(|_| {
+            if rng.below(12) == 0 {
+                0
+            } else {
+                rng.below(0x100) as i16
+            }
+        });
+        let mut bars = ShutterBars::spawn(durations[0], durations[1], durations[2]);
+        let flags = rng.next() & !8;
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        cpu.mem.wr16(ACTOR + 0x54, 0);
+        cpu.mem.wr16(ACTOR + 0x9E, 0);
+        for (i, d) in durations.iter().enumerate() {
+            cpu.mem.wr16(ACTOR + 0xB8 + 2 * i as u32, *d as u16);
+        }
+        cpu.mem.wr16(ACTOR + 0xBE, 0);
+        let ot = 0x8016_0000 + rng.below(0x100) * 4;
+        cpu.mem.wr32(OT_PTR, ot);
+        for frame in 0..600 {
+            let delta = [1u8, 1, 2, 3, 4][rng.below(5) as usize];
+            cpu.mem.wr8(FRAME_STEP, delta);
+            cpu.mem.wr32(PACKET_PTR, PACKETS);
+            cpu.mem.load(PACKETS, &[0xA5; 0x30]);
+            links.borrow_mut().clear();
+            let stop = cpu.call(SHUTTER, &[ACTOR]);
+            if let Stop::DivideByZero { .. } = stop {
+                // A zero close / open duration on the frame its ramp runs:
+                // retail traps, the port draws no ramp.
+                traps += 1;
+                continue 'run;
+            }
+            assert_eq!(stop, Stop::Returned, "run {run} frame {frame}");
+            let bar = bars.step(delta);
+            let label = format!("run {run} frame {frame} durations {durations:?} delta {delta}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54) as i16, bars.phase, "{label}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9E), bars.clock, "{label}");
+            assert_eq!(
+                cpu.mem.rd32(ACTOR + 0x10),
+                flags | if bars.retired { 8 } else { 0 },
+                "{label}"
+            );
+            let mut want = Vec::new();
+            for r in shutter_bar_rects(bar, SHUTTER_RETAIL_SCREEN_H) {
+                want.extend(0x0500_0000u32.to_le_bytes());
+                want.extend(0x2800_0000u32.to_le_bytes());
+                for (x, y) in [(r.x0, r.y0), (r.x1, r.y0), (r.x0, r.y1), (r.x1, r.y1)] {
+                    want.extend(x.to_le_bytes());
+                    want.extend(y.to_le_bytes());
+                }
+            }
+            assert_eq!(cpu.mem.read(PACKETS, 0x30), want, "{label}: bar {bar}");
+            assert_eq!(cpu.mem.rd32(PACKET_PTR), PACKETS + 0x30, "{label}");
+            assert_eq!(
+                *links.borrow(),
+                vec![(ot + 8, PACKETS), (ot + 8, PACKETS + 0x18)],
+                "{label}"
+            );
+            if (0..4).contains(&bars.phase) {
+                phases[bars.phase as usize] += 1;
+            }
+            if bars.retired {
+                retired += 1;
+                continue 'run;
+            }
+        }
+    }
+    eprintln!("{phases:?} {retired} retired, {traps} traps");
+    assert!(
+        phases.iter().all(|&n| n > 1000) && retired > 2000,
+        "{phases:?} {retired} {traps}"
+    );
+}
