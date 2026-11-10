@@ -18,6 +18,7 @@ mod anim_rate_restore;
 mod approach_clamp;
 mod arrange;
 mod arts_gauge;
+mod arts_pager;
 mod arts_queue;
 mod arts_roll;
 mod arts_voice;
