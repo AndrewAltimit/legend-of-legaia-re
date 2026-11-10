@@ -85,7 +85,7 @@ fn sector(rng: &mut Rng, frame: u32, chunk: u16, chunks: u16, filter: u16) -> Ve
     s
 }
 
-fn retail_cursors(m: &mut Memory) -> psx_mdec::st_ring::StCursors {
+pub fn retail_cursors(m: &mut Memory) -> psx_mdec::st_ring::StCursors {
     psx_mdec::st_ring::StCursors {
         write_slot: m.rd32(WRITE_SLOT) as usize,
         frame_start_slot: m.rd32(FRAME_START) as usize,
