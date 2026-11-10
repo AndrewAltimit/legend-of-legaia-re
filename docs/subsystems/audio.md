@@ -3605,6 +3605,14 @@ in that tick, so both ring together; the ring, the drainer and the voice keying 
 battle frame order, which pass of the frame the cast tick's hit falls in relative to the victim's node
 tick, and the fix belongs there.
 
+Over the cast films' cue channel the same order reads from the other side. Their clock pairs the
+two sides state by state, and on it the landing cues (`0x48..0x4B`) never pair at offset `0`: five in six
+sit a game frame late in the port (median `+3` vsyncs, `+8` on Gaza's step), while the reaction cues beside
+them (`0x56`, `0x5C`, `0x62`) pair at `0` in most films. Retail rings the landing cue in the last frame
+of the flight state `0x2B` and leaves it for `0x2C` on the next frame, with the reaction's commit; the
+port lands, leaves the state and commits in one tick (`World::tick_homing_slots_with` into
+`fold_pending_cast_target`). No cue table or key-on rule differs on any of those casts.
+
 <a id="the-duck-names-the-states-tick"></a>
 **The duck names the state's tick.** A state taken while the summon duck ramps carries its own
 instant on the engine's clock: the applied level `DAT_8007B6EC` steps one unit a vsync, and the

@@ -569,6 +569,18 @@ tenth percentile `0.478` to `0.522`, Zenoir's `0.682` to `0.329`, Swordie's `0.7
 `0.332` and Theeder's `0.342` to `0.308`, the medians unmoved: the table still names a step
 retail does not run through the kill phases.
 
+The lag is not a sound-against-picture offset the port owes, and holding the cue alone would
+create one. `FUN_80016B6C` drains the ring at its head (`0x80016BF8`), then waits out the frame
+(`jal 0x8005FB84` at `0x80017088` / `0x800171C0`), and only after the wait swaps the display and
+draws the ordering table the frame built (`0x80017230`, `0x80017254`, `DrawOTag` at `0x80017288`),
+into the buffer the *next* frame's swap shows. So retail keys frame `N`'s cue at the end of `N`
+and shows `N`'s picture at the end of `N + 1`: the sound leads its picture by one frame step. The
+port presents a tick's picture and keys its cues on that tick. A cue held one step would trail its
+picture by a step, two steps from retail's order, where the unheld cue is one step from it. The
+cast channel's residual is therefore a term of the comparison (its one offset per cast cannot
+absorb a step that changes arm by arm), not a cue the player hears late. What would still close
+the number: the cast render delaying each ring cue by retail's step on that arm, in the oracle.
+
 ## Title / boot / overlays
 
 No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
