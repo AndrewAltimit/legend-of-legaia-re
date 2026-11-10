@@ -824,6 +824,30 @@ lands on both sides (`10` of `10` cues, film `.611` to `.804`). A walk-clip capt
 can also open past the first swing (`battle_retona_king_frog_strike`), and a defender's own stats stay the
 replay's. Read a residual by hand, as `battle_map02_mad_ogre_strike`'s Power Charge was read.
 
+**A recording that opens past `0x1E` is the state's own action.** The probe starts a
+`--physical` film on `0x1E`, `0x1F` or `0x20`. A recording made before it took the last two
+waited through the state's action for the next seat's strike and filmed that one:
+`battle_doman_killer_wolf_strike` then paired a Freed striking Vahn with the engine's Killer
+Wolf striking Gala (`.367`), and a state whose fight held no later strike kept no frame at
+all. Recorded from the state's first vsync, the same film reads `.947`. A strike film whose
+retail side shows another attacker than the engine's is re-recorded (`--recapture`) before
+it is read.
+
+**A walk's phase at arrival is the frame steps it ran on.** A monster whose walk entry is
+locked plays the walk on into the strike loop, and the first byte commits on the walk's
+natural end. `battle_map02_mad_ogre_strike` stands there: clip `1` at cursor `96` with `7`
+staged, the walk ending thirty vsyncs on with two `0x12` step cues. The engine's replay
+arrives on the pass its own walk ends (cursor `312` to `336`), so the arrival's idle commits
+and no step sounds: cue score `.571`. The law is the same on both sides. The cursor at
+arrival is the walk's passes times `8 * step`, and retail's yaw counter at the capture reads
+`638`, off the `512 + 4k` lattice a walk at step `3` keeps, so retail ran some of that walk at
+step `2` where the replay ran it at `3` throughout (the table's `0x19` row). Read such a film
+as the frame cost's, not as a missing walk.
+`--engine-env LEGAIA_DIAG_CAST_SEQ_PRE=1` prints the acting seat's attack band up to the
+gate into `engine.log`, a line a tick (state, clip, staged byte, `+0x1DC`, cursor, live
+pair, heading, the target's pair, the yaw counter, the step, the strike cursor): the engine
+half of the probe's `pre.csv`, and how the arrival above was read.
+
 What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
 `gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,
 `chitei2_gilium`, `mad_ogre`): every clip both sides played carries the same ids
