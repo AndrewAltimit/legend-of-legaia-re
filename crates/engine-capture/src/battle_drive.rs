@@ -1239,15 +1239,17 @@ impl BattleDrive {
         }
     }
 
-    /// Whether the engine holds the capture's phase.
-    /// What a monster strike's drive holds of the capture's hand.
+    /// What a strike's drive holds of the capture's hand: a monster's queue
+    /// and either striker's approach terms.
     pub fn strike_hand(&self) -> Option<StrikeHand> {
         match self {
-            Self::Action { seat, steer, .. } => steer.played.map(|queue| StrikeHand {
-                seat: *seat,
-                queue,
-                ramps: steer.ramps,
-            }),
+            Self::Action { seat, steer, .. } if steer.played.is_some() || steer.ramps.is_some() => {
+                Some(StrikeHand {
+                    seat: *seat,
+                    queue: steer.played,
+                    ramps: steer.ramps,
+                })
+            }
             _ => None,
         }
     }
@@ -2172,13 +2174,14 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 /// The engine battle ordinal of retail pool slot `seat`: party slots are
 /// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
 /// party size while the engine seats them straight after the party.
-/// The capture's monster strike as its state stood: the retail seat, the queue
-/// `+0x1DF..`, the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` and the working
-/// ATK `+0x158`.
+/// The capture's strike as its state stood: the retail seat, a monster's
+/// queue `+0x1DF..` (a party striker's is its own command input, which the
+/// drive already replays), the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]`
+/// and the working ATK `+0x158`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrikeHand {
     pub seat: u8,
-    pub queue: [u8; 16],
+    pub queue: Option<[u8; 16]>,
     pub ramps: Option<(i16, i16, u16)>,
 }
 

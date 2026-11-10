@@ -1870,7 +1870,9 @@ impl RetailBattle {
                     // stands the fight's stream on it (`strike_deal`).
                     played: (seat >= 3 && state == 0x1E && self.queued_category == 3)
                         .then_some(self.committed_queue),
-                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3).then_some((
+                    // Either striker's: a party swing's first block roll reads
+                    // them as a monster's does.
+                    ramps: (state == 0x1E && self.queued_category == 3).then_some((
                         self.approach_terms.0,
                         self.approach_terms.1,
                         self.acting_attack,
