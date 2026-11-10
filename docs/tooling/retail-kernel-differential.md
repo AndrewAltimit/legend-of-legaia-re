@@ -1206,3 +1206,26 @@ bit `0x800` set in the port, where the failure returns ahead of the store. The c
 flush `FUN_80050E74`, the rect-copy enqueue `FUN_800468A4`, the on-screen test `FUN_8005126C`, the
 MoveImage wrapper `FUN_80058490`, the record copy `FUN_800557B8` and the St frame latch
 `FUN_8005ECD4` match.
+
+The Throw Out confirm window `FUN_801D1B20` (`items_panels`) showed the port drawing the bag count
+and the window's first prompt line after the item name, where retail seats both at
+`WX + 8 + name[0] * 12` - the name's first byte read as a glyph count - which on this disc is
+hundreds of pixels right of the screen ([the window](../subsystems/field-menu.md)). The shop's root
+window `FUN_801D4868` (`shop_panels`) showed the composed picker's hand two pixels above the pen
+line retail opens it on. The save info panel `FUN_801E08D8` (`save_info`) matches once its numeral
+fields walk the retail cell rule and its `Time ` label keeps the literal's trailing space.
+
+The text expander `FUN_80036514` (`text_width`) showed the port folding retail's two passes into
+one: a `0xC8..=0xCD` lead is copied alone and its operand read as the next token, and the
+measurer's colour drop is the routine's own flag. The line renderer `FUN_80036888` and its two
+wrappers (`text_writer`) match glyph for glyph, and settle where a label's `0x0E` line pitch comes
+from: the renderer's own `0x7C` step, not the wrapper's `0x0D`. The cursor sprite `FUN_8002B994`
+(`cursor_sprite`) matches over frame and bob; a still (mode `0`) call draws frame zero.
+
+The memory-card layer (`card_bu`, `card_flow`) runs with the BIOS calls hooked and scripted. It
+showed the session reset `FUN_801E0598` leaving the transfer phase and the open descriptor alone,
+which the port cleared; the I/O machine `FUN_801E3294`, the poll fold `FUN_801E16E0`, the write /
+format machine `FUN_801E13B8`, the directory classifier `FUN_801E1208` and the frame ticker
+`FUN_801E1114` match. The developer menu's adjuster `FUN_801E9F64` (`dev_menu_adjust`) showed the
+12-bit ring arm testing its two pad bits independently, and the row-action dispatcher
+`FUN_801EA9B0` storing a phase on every one of its arms, not only the out-of-range one.
