@@ -384,6 +384,7 @@ mod text_actor_walk;
 mod text_balloon;
 mod text_width;
 mod text_writer;
+mod throw_out_confirm;
 mod tick_commits;
 mod tile_lookups;
 mod timer_spawns;

@@ -521,20 +521,28 @@ impl PauseItemsSession {
                 }
             }
             PauseItemsFocus::ThrowOutConfirm => {
-                if circle {
-                    self.focus = PauseItemsFocus::ThrowOutList;
-                    return;
-                }
-                // FUN_801D688C over 2 rows with wrap.
-                if up || down {
-                    self.confirm_cursor ^= 1;
-                }
-                if cross {
-                    if self.confirm_cursor == 0 {
-                        self.throw_out_selected();
-                    } else {
+                // `FUN_801D688C(&DAT_801E46D0, 2, 1)`: confirm, then cancel,
+                // ahead of any move - Cross with a direction confirms the
+                // row the cursor is already on, and Cross with Circle
+                // confirms.
+                use legaia_engine_system::menu_input::{
+                    CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav,
+                };
+                let mut cursor = u32::from(self.confirm_cursor);
+                let nav = menu_cursor_nav(
+                    &mut cursor,
+                    2,
+                    true,
+                    NavButtons::new(cross, circle, up, down),
+                );
+                self.confirm_cursor = (cursor & CURSOR_INDEX_MASK) as u8;
+                match nav {
+                    CursorNav::Confirm if self.confirm_cursor == 0 => self.throw_out_selected(),
+                    // "No" confirms back to the list, as cancel does.
+                    CursorNav::Confirm | CursorNav::Cancel => {
                         self.focus = PauseItemsFocus::ThrowOutList;
                     }
+                    CursorNav::Moved | CursorNav::None => {}
                 }
             }
             PauseItemsFocus::SpecialRoute => {
