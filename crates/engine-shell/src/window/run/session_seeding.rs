@@ -506,6 +506,16 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         world.rng_state = seed;
         world.encounters.rng_hold = Some(seed);
     }
+    // `LEGAIA_BATTLE_SEATS=<hex,hex..>`: the monster ids in the seat order a
+    // retail capture holds them, taken by the entry in place of battle
+    // init's species roll and opening-phase draws
+    // (`legaia_engine_capture::seat_pin`).
+    if let Some(ids) = std::env::var("LEGAIA_BATTLE_SEATS")
+        .ok()
+        .and_then(|v| legaia_engine_capture::seat_pin::seat_pin_from_env(&v))
+    {
+        legaia_engine_capture::seat_pin::apply_seat_pin(world, &ids);
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -514,6 +524,7 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         );
     } else {
         world.encounters.rng_hold = None;
+        world.encounters.seat_pin = None;
     }
 }
 

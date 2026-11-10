@@ -1310,6 +1310,7 @@
     "melee_hits",
     "phase_gate",
     "script_gate",
+    "seat_pin",
     "strike_deal"
    ],
    "band": "top",

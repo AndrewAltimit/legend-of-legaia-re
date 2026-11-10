@@ -123,21 +123,28 @@ pub fn ground_residual(
     sum
 }
 
-/// The first registered formation row whose monster list equals `ids`.
+/// The first registered formation row whose monster list equals `ids` as
+/// authored, or failing that the first whose list battle init's species-order
+/// rebuild turns into `ids` (`seat_pin::rebuilt_order`): a capture's cells
+/// are read after the roll.
 pub(super) fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8]) -> Option<u16> {
-    world.registered_formation_ids().into_iter().find(|fid| {
-        world
-            .tables
-            .formation_table
-            .formation(*fid)
-            .is_some_and(|d| {
-                d.slots.len() == ids.len()
-                    && d.slots
-                        .iter()
-                        .zip(ids)
-                        .all(|(s, &id)| s.monster_id == u16::from(id))
+    let want: Vec<u16> = ids.iter().map(|&i| u16::from(i)).collect();
+    let rows: Vec<(u16, Vec<u16>)> = world
+        .registered_formation_ids()
+        .into_iter()
+        .filter_map(|fid| {
+            let d = world.tables.formation_table.formation(fid)?;
+            Some((fid, d.slots.iter().map(|s| s.monster_id).collect()))
+        })
+        .collect();
+    rows.iter()
+        .find(|(_, authored)| *authored == want)
+        .or_else(|| {
+            rows.iter().find(|(_, authored)| {
+                legaia_engine_capture::seat_pin::rebuilt_order(authored).as_ref() == Some(&want)
             })
-    })
+        })
+        .map(|(fid, _)| *fid)
 }
 
 /// The system flags a scripted fight's capture holds only because the
@@ -508,6 +515,10 @@ pub fn run_engine_battle(
         session.host.world.battle.frame_step_seed_from = from;
         session.host.world.battle.frame_step_seed_after_accum = hold;
     }
+    // The capture's cells are battle init's output: the entry seats them as
+    // read and takes neither the species roll nor the opening-phase draws,
+    // so the stream above is the stream as init left it.
+    legaia_engine_capture::seat_pin::apply_seat_pin(&mut session.host.world, &battle.monster_ids);
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");
     }

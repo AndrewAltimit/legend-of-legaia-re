@@ -439,6 +439,33 @@ impl World {
         out
     }
 
+    /// The formation in a capture's seat order
+    /// ([`legaia_engine_battle::encounter_state::EncounterState::seat_pin`]):
+    /// each pinned id takes the first authored seat of its species among the
+    /// four init cells, as the rebuild's own rewrite does. Draws nothing. A
+    /// pin that names a species the formation does not carry, or the authored
+    /// order itself, leaves the formation as authored.
+    pub(crate) fn formation_in_pinned_order(
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
+        ids: &[u16],
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        let head = &formation.slots[..formation.slots.len().min(4)];
+        if head.iter().map(|s| s.monster_id).eq(ids.iter().copied()) {
+            return formation.clone();
+        }
+        let seats: Option<Vec<_>> = ids
+            .iter()
+            .take(4)
+            .map(|id| head.iter().find(|s| s.monster_id == *id).copied())
+            .collect();
+        let mut out = formation.clone();
+        if let Some(seats) = seats.filter(|s| !s.is_empty()) {
+            let tail = formation.slots.iter().skip(4).copied();
+            out.slots = seats.into_iter().chain(tail).collect();
+        }
+        out
+    }
+
     /// Enter the battle `formation` describes and return the formation as it
     /// was seated: battle init may reorder its species
     /// ([`Self::formation_in_species_order`]).
@@ -446,7 +473,13 @@ impl World {
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) -> legaia_engine_battle::monster_catalog::FormationDef {
-        let seated = self.formation_in_species_order(formation);
+        // A capture's seat order stands in for the roll, and its bodies'
+        // opening phases for the setup's draws (`EncounterState::seat_pin`).
+        let pin = self.encounters.seat_pin.take();
+        let seated = match &pin {
+            Some(ids) => Self::formation_in_pinned_order(formation, ids),
+            None => self.formation_in_species_order(formation),
+        };
         let formation = &seated;
         // An expansion pack's monsters take their seats' catalog entries for
         // the fight (identity with no pack).
@@ -555,7 +588,13 @@ impl World {
         // `rand()` a party seat, then one a monster seat, in seat order
         // (`0x80051544` / `0x800518D0`, `(rand() % frames) << 4` into the
         // node cursor `+0x68`). The setup seats four monsters at most.
-        for slot in 0..usize::from(party_count) + usize::from(monster_count.min(4)) {
+        // A pinned entry's bodies stand where the capture's did.
+        let drawn_seats = if pin.is_some() {
+            0
+        } else {
+            usize::from(party_count) + usize::from(monster_count.min(4))
+        };
+        for slot in 0..drawn_seats {
             let draw = self.next_rand();
             if let Some(a) = self.actors.get_mut(slot) {
                 a.battle_idle_phase_draw = Some(draw);

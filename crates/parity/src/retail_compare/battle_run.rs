@@ -599,6 +599,12 @@ pub(super) fn battle_image(
             battle.displayed_backdrop_slot_1_yaw().to_string(),
         ),
         ("LEGAIA_BATTLE_RNG_SEED", engine.rng_seed.to_string()),
+        // ... with the fight seated in the capture's order, as the headless
+        // seed pinned it.
+        (
+            "LEGAIA_BATTLE_SEATS",
+            legaia_engine_capture::seat_pin::seat_pin_to_env(&battle.monster_ids),
+        ),
         // The headless seed settles the landed field before it seeds the
         // stream and arms the fight (`run_engine_battle`); so does the child.
         ("LEGAIA_BATTLE_SETTLE", SETTLE_TICKS.to_string()),

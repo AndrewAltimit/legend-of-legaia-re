@@ -30,6 +30,8 @@
 //!   history ring on the capture frame.
 //! - [`formation_cell`] - [`FormationCell`](formation_cell::FormationCell), a
 //!   fight named by its formation cell where no MAN row carries it.
+//! - [`seat_pin`] - the seat order a capture's fight was seated in, which the
+//!   entry takes in place of battle init's roll.
 //! - [`field_seeds`] - the field-side seeds: object clips, walkers, morphs,
 //!   fog, sprite arms, CLUT cyclers, scroller rects, panel, camera block.
 
@@ -50,6 +52,7 @@ pub mod hud_glide;
 pub mod melee_hits;
 pub mod phase_gate;
 pub mod script_gate;
+pub mod seat_pin;
 pub mod strike_deal;
 
 /// The line `play-window` logs once its event loop exists, i.e. once the

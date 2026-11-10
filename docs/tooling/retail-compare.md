@@ -1117,6 +1117,7 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
+| [Seat the capture's order](#the-seat-order-is-the-captures) | formation cells `0x8007BD0C[0..4]` as battle init left them | `EncounterState::seat_pin`, `LEGAIA_BATTLE_SEATS` |
 | [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
@@ -1172,6 +1173,29 @@ replayed tutorial arm and the carrier's replayed BGM words
 combatants' live HP / MP are written over the engine's, and the session is
 placed at the capture's phase.
 
+### The seat order is the capture's
+
+Battle init reorders a two-species formation on an odd `rand()`
+(`FUN_80055B6C`, `0x80055C7C..0x80055D2C`: the other species opens in front),
+rewriting the formation cells in place, and battle setup draws each seated
+body's opening clip phase (`FUN_800513F0`). A capture stands after both: its
+cells hold the order as rolled and its anim nodes the phases as they ran on.
+An entry that rolled again would seat the other order half the time and score
+the roll, not the port (`enemies` `0.000`, `enemy_hp` `0.500` on a two-seat
+fight).
+
+- Both sides hand the entry the capture's ids in seat order
+  (`legaia_engine_capture::seat_pin`: `EncounterState::seat_pin` on the
+  headless seed, `LEGAIA_BATTLE_SEATS=<hex,hex..>` to the image child).
+  `World::enter_battle_from_formation` takes the pin: each id is seated on the
+  first authored seat of its species, and neither the roll nor the opening
+  phases draw. A played fight never sets it.
+- The bodies' phases come from the capture instead
+  (`LEGAIA_SEAT_BATTLE_CLIPS`, each anim node's cursor).
+- The scene's MAN row is matched on the capture's ids as authored, and failing
+  that as the rebuild would leave them (`seat_pin::rebuilt_order`), so a
+  capture that holds the rolled order still enters through its row.
+
 ### The stream at the entry
 
 Retail's RNG state at the instant its fight began is not in the capture. Its
@@ -1190,6 +1214,11 @@ every channel that rides a draw (a monster's pick and target, the battle
 camera, the frame) would move whenever a field-side port changed how many
 draws it takes.
 
+- The pinned stream is the stream **as battle init left it**. Init's own
+  draws - the species-order roll and each seat's opening clip phase - are
+  behind every capture, so the entry takes neither
+  ([the seat order](#the-seat-order-is-the-captures)) and the fight's first
+  draw is the stream's first.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition
