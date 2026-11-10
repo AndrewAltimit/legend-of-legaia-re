@@ -329,6 +329,7 @@ fn fog_sheet_geometry_matches_the_retail_frame() {
 
     let mut used = vec![false; retail.len()];
     let mut worst = 0i32;
+    let mut exact = 0usize;
     let mut unmatched = Vec::new();
     for q in &quads {
         let best = retail
@@ -350,6 +351,7 @@ fn fog_sheet_geometry_matches_the_retail_frame() {
         match best {
             Some((d, i)) if d <= 2 => {
                 used[i] = true;
+                exact += usize::from(d == 0);
                 worst = worst.max(d);
             }
             _ => unmatched.push((q.rgb[0], q.xy)),
@@ -371,6 +373,13 @@ fn fog_sheet_geometry_matches_the_retail_frame() {
         unmatched
     );
     assert!(unmatched.is_empty(), "engine halves retail did not draw");
+    // The corners go through the integer GTE camera, so nearly every half
+    // lands on retail's packet to the pixel; the rolled-back pool (ages and
+    // drift taken back two frame steps) is what is left to differ.
+    assert!(
+        exact * 10 >= matched * 9,
+        "only {exact} of {matched} halves land on retail's corners exactly"
+    );
     assert!(
         matched * 10 >= retail.len() * 9,
         "the engine draws only {matched} of retail's {} fog packets",

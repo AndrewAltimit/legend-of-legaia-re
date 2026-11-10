@@ -932,6 +932,17 @@ corners `0x80` units above the particle - that reading foreshortens the sheet
 by the pitch's cosine (about `0.84` at `map01`'s pitch) and moves its bottom
 edge.
 
+The port runs both steps on the integer GTE camera
+(`legaia_render_kernels::gte::FieldGteView`, `fog_particles::fog_half_corners`):
+`FUN_8003D344`'s `MVMVA` into the translation, then the two points with the
+GTE's divide and saturation. Nothing culls a particle at or behind the eye:
+its `SZ` saturates to `0` and the divide to its ceiling, and the row and
+column tests decide on the saturated corners, as retail's do. The `NCLIP` runs
+on `SXY0` / `SXY1` as the `RTPT` left them and on `SXY2 = (x1, y0)` written
+back with the curvature term in, so on the overworld only that third corner
+is bent. The half-width's PRNG byte (`FUN_8003F838`) is the low byte of
+`(rate * 12 + 2) >> 16`: zero for every rate the spawner draws.
+
 On the overworld (`_DAT_1F800394 & 1`, `0x8003F958..0x8003F9A0`) the emitter
 also drops a half nearer than `SZ 0x310`, links it at `(SZ - 0x10) >> 5`, and
 adds the entry at `*_DAT_8007BB04 + (SZ >> 5) * 2 + 2` to both corners' `SY`

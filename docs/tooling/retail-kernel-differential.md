@@ -814,6 +814,14 @@ stand for one of retail's own `RTPS` calls had projected through the hosts' `f32
 screen it missed retail's `SXY` on nearly every point, by a pixel from the divide and the integer
 matrix, and by hundreds where a point sits within `H / 2` of the eye and the divide saturates. The
 framebuffer grab's `rtps_point` and the drop shadow's grid now project through `FieldGteView`.
+The fog particle pass joins them (`fog_render`): the walk `FUN_8003F348`, the per-particle step
+`FUN_8003F3FC` and the half-sheet emitter `FUN_8003F86C`, run whole and step by step over random
+cameras the matrix build made, pools, windows, tints and both arms of the overworld bit, record for
+record and packet for packet with each packet's ordering-table bucket. Through the `f32` view the
+port's corners matched retail's on fewer than one half in twenty; a map01 capture's 104 sheets went from 6
+to 103 exact. The `f32` path also dropped a particle at or behind the eye where retail draws the
+saturated corners, and its overworld `NCLIP` bent all three corners where retail bends only the one it
+writes back (`SXY2`).
 
 The battle routines too large to run whole in one pass run arm by arm, each against the kernel its port keeps for
 that arm. The Triangle arts-list driver `FUN_801D3444` (`arts_list_driver`) carries a caption latch `0x801F4E08`

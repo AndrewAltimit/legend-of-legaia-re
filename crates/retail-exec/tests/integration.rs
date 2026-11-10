@@ -110,6 +110,7 @@ mod fishing_prize;
 mod fishing_root;
 mod flash_ramp;
 mod floor_height;
+mod fog_render;
 mod fog_spawn;
 mod frame_blend;
 mod glare_divide;
