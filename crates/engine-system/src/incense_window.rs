@@ -55,7 +55,7 @@ pub const COOLDOWN_MAX: i32 = 0x100;
 // pause Items screen committed; both play hosts apply the finished screen
 // through it.
 pub fn top_up_cooldown(value: i32) -> i32 {
-    let next = value + COOLDOWN_STEP;
+    let next = value.wrapping_add(COOLDOWN_STEP);
     if next < COOLDOWN_MAX {
         next
     } else {

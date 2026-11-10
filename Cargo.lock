@@ -4403,6 +4403,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-motion-vm",
  "legaia-engine-scene",
+ "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-engine-title",
  "legaia-engine-ui",

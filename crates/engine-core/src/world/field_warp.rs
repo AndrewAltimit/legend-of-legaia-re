@@ -283,6 +283,12 @@ impl World {
         }
     }
 
+    /// The post-warp / post-load hold still to drain, retail's
+    /// `_DAT_8007B6B4`.
+    pub fn post_load_hold(&self) -> i32 {
+        self.locomotion.warp.hold
+    }
+
     /// Whether a script context shows a text box this tick - the engine's
     /// reading of retail's yield: the script runner parks a context on a
     /// sub-`0x20` op, which is a text segment, and that is when it raises
