@@ -748,3 +748,30 @@ landing search and marquee blits, the fishing prize gate and reel decoder, the c
 publisher-logo quads, and the mode table's per-frame and INIT handlers match. The CARD body's readout takes the
 scratchpad byte `0x1F800391`, which two notes gave as `0x1F800393`, and the dance HUD's displayed-note helper carried
 the CPU feed's tag without the feed's schedule.
+The field-to-battle transition (PROT 0979) runs off the disc packet for packet. The particle fields
+`FUN_801CFDA0` / `FUN_801D0370` showed every per-frame integration term rounded toward zero in the
+port, where retail multiplies by the frame step and shifts with `sra`, which floors; only the
+spin-up's z adds `7` to a negative product first (`0x801D0628..0x801D0638`). The tile shatter
+`FUN_801D0D24` / `FUN_801D0E54`, with the SCUS dispatcher `FUN_80043390` and its leaves live, showed
+every flying tile drawn at its face's full grey: the emitter hands the dispatcher the record's
+progress, a non-zero one selects the depth-cue bank, and slot 17 is then `FUN_80044DC8`, which drops a
+quad wholly off the screen (`FUN_80044798`) and fades the colour toward black by `IR0 = progress`.
+The swirl's early submit `FUN_801D1A20` rides the same bank through its flag word's top byte, which
+also links each quad at its largest corner `SZ`; and under the double-sided `NCLIP` mask an edge-on
+quad still drops, which the port's double-sided arm had skipped. The tick `FUN_801D1888` matches. The
+late swirl, which hands the band to the shatter renderer `FUN_80029888`, is not carried faithfully and
+the test leaves it out.
+
+The procedural mesh builder `FUN_80028158` matches `effect_default_arm::build` byte for byte over
+every shape and texture mode; shapes 1 and 3 on the planes that start at `z` extrapolate vertex 6
+through two pads nothing wrote, so the test seeds the pads zero. The field frame blender
+`FUN_8001BE80` with the angle lerp `FUN_8001D088`, the camera-relative glide `FUN_80021248` /
+`FUN_8002149C` from spawn to retirement, the field-entry camera reset `FUN_80025C24`, the `LZCS`
+square root `FUN_8005B0B8` and the `GPF` morph blend `FUN_8005B038` match.
+
+The field camera build `FUN_800172C0` and the single-point `RTPS` `FUN_8003D368` match
+`render_kernels::gte::FieldGteView`, an integer port of the matrix the build loads. The kernels that
+stand for one of retail's own `RTPS` calls had projected through the hosts' `f32` view instead: on
+screen it missed retail's `SXY` on nearly every point, by a pixel from the divide and the integer
+matrix, and by hundreds where a point sits within `H / 2` of the eye and the divide saturates. The
+framebuffer grab's `rtps_point` and the drop shadow's grid now project through `FieldGteView`.

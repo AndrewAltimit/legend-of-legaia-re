@@ -2431,10 +2431,13 @@ Any allocation failure bumps the error counter `_DAT_8007B828` by ten.
 1, 3), `battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). All five styles **draw**
 through the engine's screen-overlay path; the packet builders are in `render-kernels::battle_intro`
 (`emit_particle_field`, `emit_tile`, `intro_quad_to_screen`, `emit_swirl_band`,
-`emit_spinup_ring`). Two retail nuances are not carried, because the screen-overlay path has no
-depth-cue channel: a moving tile's opaque faces and the late-phase swirl fade toward a far
-colour in retail, and keep their packet colours in the port. The spin-up ring models only the
-case-0 annulus of the multi-shape generator `FUN_80028158`.
+`emit_spinup_ring`). The particle fields, the tile shatter and the early swirl are held to
+retail by the [kernel differential](../tooling/retail-kernel-differential.md), packet for packet:
+a tile past progress `0` fades toward black by its progress on the dispatcher's depth-cue bank,
+as retail's does. Two parts are not carried faithfully: the late-phase swirl (retail hands the
+band to the shatter renderer, which draws its quads as triangles spun about their own centroids
+and pushed apart; the port turns whole quads about the origin), and the spin-up ring, which models
+only the case-0 annulus of the multi-shape generator `FUN_80028158`.
 
 #### Which style a battle gets
 
@@ -2633,7 +2636,11 @@ outer bands stop being circular and become the screen rectangle.
 - **Before frame `0x5A`** the submit goes to `FUN_80043390` with flag word `0x1880_8080`: bit 27
   selects the **double-sided** NCLIP mask (`0x7FFFFFFF`, the dispatcher's
   `0x80043520..0x80043540` decode), without which the x-mirrored half's reversed winding would
-  cull; `a2 = 0` keeps the opaque bank, and the `0x808080` low bytes multiply nothing because
+  cull, though an edge-on quad (`NCLIP` `0`) still drops. The flag word's non-zero top byte ORs
+  `1` into the dispatcher's third argument (`0x800433C0..0x800433CC`), which selects the
+  depth-cue bank: its byte `0x10` links each quad at its largest corner `SZ` instead of `AVSZ4`,
+  a quad wholly off the screen drops (`FUN_80044798`), and `DPCS` toward the grey far colour at
+  `IR0 = 1` leaves the colours as they are; the `0x808080` low bytes multiply nothing because
   the descriptor's `+0xC` word is zero.
 - **From `0x5A` on** the submit swaps to the light-source TMD renderer,
   `FUN_80029888(desc, 0x8180_8080, 0, (clock - 0x3C) * 4)`, which stages a mid-grey far colour (`param_2`'s three bytes
@@ -2743,9 +2750,10 @@ log) pins the rest:
 **Port.** `battle_intro_tiles::tile_face_quads` is the ten-primitive packet,
 `render-kernels::battle_intro::emit_tile` the projection + accept chain (with `euler_rot_psx` as the
 `FUN_80026988` port), and the capture path re-lands pack entry 0 in the transition's cloned VRAM
-page. Not carried: a moving tile's record (`progress != 0`) dispatches through the depth-cue
-alpha bank in retail (fade toward a zeroed far colour); in the port receding tiles keep their
-face grey instead of also dimming with depth.
+page. A tile whose record has left progress `0` dispatches through the depth-cue bank: slot 17
+is then `FUN_80044DC8`, which drops a quad wholly off the screen (`FUN_80044798`) and runs `DPCS`
+toward the zeroed far colour with `IR0 = progress` (`0x80044F5C..0x80044F74`), so a flying tile
+dims as it goes; `emit_tile` does the same.
 
 ## Script-cutscene helpers (`overlay_cutscene_dialogue`)
 
