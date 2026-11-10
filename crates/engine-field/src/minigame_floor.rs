@@ -454,15 +454,12 @@ pub struct FloorTileSpawn {
 /// The world position is `(gx * 0x80 + off_x + 0x40, ramp[height] + off_y,
 /// gz * 0x80 - (off_z - 0x40))`; note the **z** term is a subtraction, so a
 /// tile's `off_z` pushes it toward the camera, not away from it.
-// PORT: FUN_801d3a2c (the dance overlay's per-frame floor pass)
-// PORT: FUN_801d6bbc (the same pass in the shared overlay band; identical
-// bytes in the fishing and dance images, differing only in which overlay-local
-// globals it writes and in the `x0/z0/x1/z1` debug print it opens with)
-// WIRED, through [`MarkerFloor`]: the pool this pass's output was missing is
-// the per-cell step-marker actor list, and the browser minigames page's dance
-// venue draws it - `bake_dance_markers` in `crates/web-play` walks this
-// sweep over `other7`'s `.MAP`, keeps the cells [`marker_template`] classes as
-// markers, and the page flips each one's mesh per frame.
+// PORT: FUN_801d2a10 (the cell walk, z rows outer, and the per-cell resolve)
+// WIRED, through [`MarkerFloor`]: the browser minigames page's dance venue
+// draws the marker pool this walk feeds - `bake_dance_markers` in
+// `crates/web-play` walks it over `other7`'s `.MAP`, keeps the cells
+// [`marker_template`] classes as markers, and the page flips each one's mesh
+// per frame.
 //
 // The native play window is the host still owed a draw, and the reason is not
 // this pass: its dance minigame is HUD-only - it never builds the dance hall's
@@ -483,45 +480,89 @@ pub fn floor_tile_spawns(
     let mut out = Vec::new();
     for gz in z0..z0 + height {
         for gx in x0..x0 + width {
-            let tile_id = grid.tile_id(gx, gz);
-            let rec = grid.tile(tile_id);
-            if rec.flags & TILE_FLAG_DRAWN == 0 {
-                continue;
-            }
-            let nx = gx + rec.nbr_dx as i32;
-            let nz = gz + rec.nbr_dz as i32;
-            if !(0..GRID_EXTENT).contains(&nx) || !(0..GRID_EXTENT).contains(&nz) {
-                continue;
-            }
-            if neighbour_block && grid.cell(nx, nz) & CELL_NEIGHBOUR_BLOCK != 0 {
-                continue;
-            }
-            let h = ramp
-                .get(grid.height_index_flat(gx, gz))
-                .copied()
-                .unwrap_or(0) as i32;
-            out.push(FloorTileSpawn {
-                cell_x: gx,
-                cell_z: gz,
-                tile_id,
-                pos: [
-                    (gx * CELL_WORLD_UNITS + rec.off_x as i32 + 0x40) as i16,
-                    (h + rec.off_y as i32) as i16,
-                    (gz * CELL_WORLD_UNITS - (rec.off_z as i32 - 0x40)) as i16,
-                ],
-                draw_mode: if rec.flags & TILE_FLAG_ALT_MODE != 0 {
-                    5
-                } else {
-                    0
-                },
-                actor_74_tag: rec.tag != 0,
-                actor_74_flag: rec.flags & TILE_FLAG_ACTOR_74 != 0,
-                actor_10_flag: rec.flags & TILE_FLAG_ACTOR_10 != 0,
-                rot: rec.rot,
-            });
+            out.extend(resolve_floor_cell(grid, ramp, gx, gz, neighbour_block));
         }
     }
     out
+}
+
+/// The per-frame floor pass: despawn the floor list, then walk the rect the
+/// scratchpad bytes `0x1F800384..0x1F800387` hold - `x0, z0, x1, z1`, **end**
+/// coordinates, exclusive - and spawn one plain floor tile per drawn cell.
+///
+/// Unlike [`floor_tile_spawns`] (the `FUN_801D2A10` walk) the columns are the
+/// outer loop (`x` outer, `z` inner), so the spawn order is column-major, the
+/// neighbour must lack [`CELL_NEIGHBOUR_BLOCK`], no step-marker lookup runs,
+/// and [`TILE_FLAG_ACTOR_10`] reaches the actor's `+0x10`.
+// PORT: FUN_801d3a2c (the dance overlay's floor pass, gated off by the dev
+// word `0x8007B868` bit 2 and by a non-zero `0x8007B8B8`)
+// PORT: FUN_801d6bbc (the same pass in the fishing image; it opens with the
+// `x0/z0/x1/z1` debug print and counts into its own overlay-local word)
+// NOT WIRED: the cells this pass spawns are the plain floor template, static
+// hall and pond geometry with no flipbook, which both hosts already draw from
+// the scene's env-pack bake; nothing in the port re-spawns them as actors.
+pub fn floor_pass_spawns(
+    grid: FloorGrid<'_>,
+    ramp: &[i16],
+    x0: i32,
+    z0: i32,
+    x1: i32,
+    z1: i32,
+) -> Vec<FloorTileSpawn> {
+    let mut out = Vec::new();
+    for gx in x0..x1 {
+        for gz in z0..z1 {
+            out.extend(resolve_floor_cell(grid, ramp, gx, gz, true));
+        }
+    }
+    out
+}
+
+/// One cell of either floor walk: the drawn test, the neighbour probe and the
+/// spawn transform.
+fn resolve_floor_cell(
+    grid: FloorGrid<'_>,
+    ramp: &[i16],
+    gx: i32,
+    gz: i32,
+    neighbour_block: bool,
+) -> Option<FloorTileSpawn> {
+    let tile_id = grid.tile_id(gx, gz);
+    let rec = grid.tile(tile_id);
+    if rec.flags & TILE_FLAG_DRAWN == 0 {
+        return None;
+    }
+    let nx = gx + rec.nbr_dx as i32;
+    let nz = gz + rec.nbr_dz as i32;
+    if !(0..GRID_EXTENT).contains(&nx) || !(0..GRID_EXTENT).contains(&nz) {
+        return None;
+    }
+    if neighbour_block && grid.cell(nx, nz) & CELL_NEIGHBOUR_BLOCK != 0 {
+        return None;
+    }
+    let h = ramp
+        .get(grid.height_index_flat(gx, gz))
+        .copied()
+        .unwrap_or(0) as i32;
+    Some(FloorTileSpawn {
+        cell_x: gx,
+        cell_z: gz,
+        tile_id,
+        pos: [
+            (gx * CELL_WORLD_UNITS + rec.off_x as i32 + 0x40) as i16,
+            (h + rec.off_y as i32) as i16,
+            (gz * CELL_WORLD_UNITS - (rec.off_z as i32 - 0x40)) as i16,
+        ],
+        draw_mode: if rec.flags & TILE_FLAG_ALT_MODE != 0 {
+            5
+        } else {
+            0
+        },
+        actor_74_tag: rec.tag != 0,
+        actor_74_flag: rec.flags & TILE_FLAG_ACTOR_74 != 0,
+        actor_10_flag: rec.flags & TILE_FLAG_ACTOR_10 != 0,
+        rot: rec.rot,
+    })
 }
 
 /// Which spawn template the dance floor's step-marker pass picks for a cell,

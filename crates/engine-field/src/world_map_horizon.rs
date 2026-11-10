@@ -357,7 +357,7 @@ mod tests {
         let scale = 0x500;
         let half = scale >> 1;
         let lo = scale / 5;
-        let hi = scale.wrapping_sub(lo);
+        let hi = scale - lo;
 
         let b = emit_horizon(scale, 0, 0, 0, 0, false, &flat);
         let band = &b.bands[0];
