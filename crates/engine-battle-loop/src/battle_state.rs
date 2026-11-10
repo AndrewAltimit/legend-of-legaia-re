@@ -835,6 +835,24 @@ pub struct BattleState {
     /// root motion and hit walk), which on retail's cadence run after the
     /// pass (`World::tick_battle_anim_pass`).
     pub anim_slot_reached: bool,
+    /// Whether this tick's battle pass reached the cast tick's slot: on
+    /// retail's cadence the census and the effect-child drive run with the
+    /// pass's draw, after the anim walk (`World::tick_battle_anim_pass`).
+    pub cast_tick_due: bool,
+    /// What the cast tick spawned from the pass's draw: the effect children
+    /// and the screen flashes of a flight's lists. A node linked during the
+    /// draw first ticks, and so first shows, on the next pass, which hands
+    /// these on (`World::release_draw_spawns`).
+    pub draw_spawns: Vec<legaia_engine_battle::battle_events::BattleEffectSpawn>,
+    /// The landing flashes held beside [`Self::draw_spawns`].
+    pub draw_flashes: u8,
+    /// Whether the cast tick now running is the draw's (the tail of the
+    /// anim pass on retail's cadence).
+    pub in_draw_cast_tick: bool,
+    /// Whether a draw of this battle has measured the cast census yet. A
+    /// battle entered mid-flight has no draw behind its first pass, which
+    /// measures the census at its own head instead.
+    pub cast_census_drawn: bool,
     /// The actors this pass's hit walk committed a clip on inside their own
     /// anim tick in retail's order: the attacker's own event cut, and a
     /// reaction landed on a seat the actor walk reaches after the
@@ -1505,6 +1523,11 @@ impl BattleState {
             summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
+            cast_tick_due: false,
+            draw_spawns: Vec::new(),
+            draw_flashes: 0,
+            in_draw_cast_tick: false,
+            cast_census_drawn: false,
             hit_commit_rewalk: Vec::new(),
             anim_slice_commits: Vec::new(),
             readout_trios: Vec::new(),

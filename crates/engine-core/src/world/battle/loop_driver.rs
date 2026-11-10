@@ -595,17 +595,29 @@ impl World {
         // the action that raised it (`legaia_engine_battle::battle_steal`).
         self.tick_steal_caption();
 
-        // Rebuild the cast-census bytes the magic band's exit states read.
-        // Retail's cast tick (`FUN_801E09F8`) does this from zero every frame
-        // before it drives any effect child, so the gates are measurements
-        // rather than latches.
-        // REF: FUN_801E09F8
-        self.tick_battle_cast_census();
-        // On retail's cadence the same tick then drives the effect children
-        // on the pass (`World::tick_battle_cast_drive`).
+        // The cast tick (`FUN_801E09F8`): the census the magic band's exit
+        // states read, rebuilt from zero every frame so the gates are
+        // measurements rather than latches, then the effect-child drive. Its
+        // one caller is the battle draw tick `FUN_800480D8` (`jal
+        // 0x801E09F8` at `0x80048130`, in the preamble the frame's first
+        // drawn body runs), and the master frame driver `FUN_80016444` runs
+        // every list's tick pass (`FUN_8002519C`) ahead of its draw passes
+        // (`FUN_8001D140`). So on retail's cadence the cast tick follows the
+        // pass's anim walk (`World::tick_battle_anim_pass`): a projectile
+        // that lands this pass stages its victim's reaction after that
+        // seat's node tick, and the SM reads this pass's census on the next.
+        // A battle with no draw behind it measures the census here once.
+        // REF: FUN_801E09F8, FUN_800480D8, FUN_80016444, FUN_8002519C, FUN_8001D140
         if self.toggles.battle_sm_frame_cadence {
-            let n = self.battle.anim_pass_vsyncs;
-            self.tick_battle_cast_drive(n);
+            self.battle.cast_tick_due = self.battle.anim_pass_vsyncs > 0;
+            if self.battle.cast_tick_due {
+                self.release_draw_spawns();
+            }
+            if !self.battle.cast_census_drawn {
+                self.tick_battle_cast_census();
+            }
+        } else {
+            self.tick_battle_cast_census();
         }
 
         // Pre-step snapshot of the attack chain's cursor. The chain consumes

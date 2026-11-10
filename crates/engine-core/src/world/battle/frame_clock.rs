@@ -693,6 +693,7 @@ impl World {
     /// A no-op on the per-vsync cadence, where the anim tick keeps its seat
     /// ahead of the SM.
     pub(in crate::world) fn tick_battle_anim_pass(&mut self) {
+        let cast_tick_due = std::mem::take(&mut self.battle.cast_tick_due);
         if self.mode != legaia_engine_mode::mode::SceneMode::Battle
             || !self.toggles.battle_sm_frame_cadence
             || self.battle.anim_pass_vsyncs == 0
@@ -769,6 +770,19 @@ impl World {
         if let Some(cam) = self.battle.camera.as_mut() {
             cam.observe_active_commits(commits);
             cam.observe_active_installs(installs);
+        }
+        // The draw's preamble, ahead of any body: the cast tick's census
+        // and its effect-child drive (`jal 0x801E09F8` at `0x80048130`).
+        // What a landing stages here commits on the victim's next node
+        // tick, a pass on.
+        // PORT: FUN_800480D8 (`0x800480FC..0x80048130`, the cast tick's seat in the pass)
+        if cast_tick_due {
+            self.tick_battle_cast_census();
+            self.battle.cast_census_drawn = true;
+            let n = self.battle.anim_pass_vsyncs;
+            self.battle.in_draw_cast_tick = true;
+            self.tick_battle_cast_drive(n);
+            self.battle.in_draw_cast_tick = false;
         }
         // The draw: every body pair from the pose the pass left, for the
         // next pass's SM and camera to read - a seat the root-motion pass

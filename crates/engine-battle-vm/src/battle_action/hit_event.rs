@@ -198,6 +198,101 @@ pub fn event_commit_due(
     }
 }
 
+/// Which of the anim tick's commit calls one pass makes, and what each
+/// leaves in `+0x1DC` / `+0x1DA` when it calls `FUN_8004AD80`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TickCommits {
+    /// The mid-clip cut (`jal 0x8004AD80` at `0x80047A3C`): `Some(flags)`
+    /// with the `+0x1DC` byte the commit is entered on (bits 0 and 1
+    /// cleared).
+    pub cut: Option<u8>,
+    /// The natural end (`jal 0x8004AD80` at `0x80047B54`): `Some((flags,
+    /// staged))` - `+0x1DC` with bits 0..2 cleared, and `+0x1DA`, zeroed
+    /// when bit 2 (idle at the end) was up.
+    pub natural_end: Option<(u8, u8)>,
+}
+
+/// When the anim tick commits the clip staged at `+0x1DA`
+/// (`FUN_80047430`, `0x800478EC..0x80047B58`), after the pass's advance.
+///
+/// Mid-clip there are two ways in and one lock: `+0x1DC` bit 0 commits at
+/// once, bit 1 once the cursor frame is past the entry's gate frame by more
+/// than [`EVENT_COMMIT_SLACK`], and an entry whose `+0x76` byte is set
+/// refuses both. A clip staged under neither bit, or over a locked entry,
+/// waits for the natural end, which commits whatever is staged - idle when
+/// bit 2 is up.
+///
+/// The natural end is tested on the entry the node holds **after** the cut
+/// (`lw s3,0x4c(s5)` at `0x80047A44`), with the cursor the commit zeroed:
+/// `after_cut` is that entry's `(cursor frame, frame count)`, read only when
+/// the cut ran. Without one the playing entry's own `frame` and
+/// `frame_count` are tested.
+///
+/// So a reaction the damage primitive stages on another seat (`+0x1DA`
+/// with `+0x1DC |= 1`, `FUN_800402F4` `0x80042118..0x80042170`) lands on
+/// that seat's next node tick, behind the advance of the clip it replaces.
+///
+/// PORT: FUN_80047430 (`0x800478EC..0x80047B58`, the commit sites)
+/// REF: FUN_800402F4
+#[allow(clippy::too_many_arguments)]
+pub fn tick_commits(
+    flags: u8,
+    staged: u8,
+    event_frames: &[u8; 4],
+    four_slot: Option<u8>,
+    lock: u8,
+    frame: i16,
+    frame_count: u8,
+    after_cut: (i16, u8),
+) -> TickCommits {
+    let mut out = TickCommits::default();
+    let mut flags = flags;
+    let (frame, frame_count) = match mid_clip_cut(flags, event_frames, four_slot, lock, frame) {
+        Some(cleared) => {
+            flags = cleared;
+            out.cut = Some(cleared);
+            after_cut
+        }
+        None => (frame, frame_count),
+    };
+    if frame >= i16::from(frame_count) {
+        out.natural_end = Some(natural_end_commit(flags, staged));
+    }
+    out
+}
+
+/// The tick's mid-clip cut (`0x800478EC..0x80047A40`): `Some(flags)` when
+/// the staged clip commits now, with `+0x1DC` bits 0 and 1 cleared
+/// (`andi v0,v0,0xfc` at `0x80047A38`). Bit 0 cuts at once, bit 1 past the
+/// gate frame ([`event_commit_due`]); the entry's `+0x76` lock refuses both.
+///
+/// PORT: FUN_80047430 (`0x800478EC..0x80047948`, `0x80047A2C..0x80047A40`)
+pub fn mid_clip_cut(
+    flags: u8,
+    event_frames: &[u8; 4],
+    four_slot: Option<u8>,
+    lock: u8,
+    frame: i16,
+) -> Option<u8> {
+    let cut = if flags & 1 != 0 {
+        lock == 0
+    } else {
+        flags & 2 != 0 && event_commit_due(event_frames, four_slot, lock, frame)
+    };
+    cut.then_some(flags & 0xFC)
+}
+
+/// The tick's natural end (`0x80047B30..0x80047B58`): the `(+0x1DC, +0x1DA)`
+/// pair the commit is entered on. Bit 2 (idle at the end) replaces the
+/// staged byte with `0`, and bits 0..2 clear; bit 3, the root-motion latch,
+/// survives.
+///
+/// PORT: FUN_80047430 (`0x80047B30..0x80047B58`)
+pub const fn natural_end_commit(flags: u8, staged: u8) -> (u8, u8) {
+    let staged = if flags & 4 != 0 { 0 } else { staged };
+    (flags & 0xF8, staged)
+}
+
 /// Which art constant - if any - the committed clip on `slot` belongs to,
 /// read off the **latched** raw staged id (`+0x1DB`, the byte the anim
 /// commit copies before rewriting an art id to its dynamic slot) with

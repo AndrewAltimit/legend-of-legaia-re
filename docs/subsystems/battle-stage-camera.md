@@ -1791,13 +1791,25 @@ of each `BattleFrameClock` frame, a frame step of vsyncs at once, and every
 tick between holds:
 
 - **The order inside the pass.** The frame driver's work comes first: the
-  cast tick's census and its effect-child drive (`FUN_801E09F8`, the
-  move-FX streak and the homing slots, `World::tick_battle_cast_drive`), the
   SM with `frame_dt` the step, the separation pass, the stage colour pass
   `FUN_80050120` at `dt` the step, and the camera. The actors' anim tick
   `FUN_80047430` follows (`World::tick_battle_anim_pass`): the cursor advance
   scaled by the step (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`),
   the root motion, the hit walk with its event-path cut, then the commits.
+  The cast tick's census and its effect-child drive (`FUN_801E09F8`, the
+  move-FX streak and the homing slots, `World::tick_battle_cast_drive`) come
+  last, with the draw: the routine's one caller is the battle draw tick
+  `FUN_800480D8` (`jal 0x801E09F8` at `0x80048130`, in the preamble the frame's
+  first drawn body runs behind the latch `ctx+0x272`), and the master frame
+  driver `FUN_80016444` runs every list's tick pass `FUN_8002519C` ahead of its
+  draw passes `FUN_8001D140`. So the SM reads the census the pass before
+  measured, and a projectile that lands stages its victim's reaction after
+  that seat's node tick has run ([when a staged clip commits](battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)).
+  What the cast tick itself draws or stores shows on its own pass (the flight
+  ribbons, the victim's tint, the landing cue). A node it links - the landing
+  flash's fade actor, a list's effect children - first ticks on the next pass's
+  walk and first shows there: Astral Wave's recording brightens one frame after
+  the landing pass (`World::release_draw_spawns`).
   Every commit `FUN_80047430` makes sits after the advance
   (`0x800478EC..0x80047A44`) and `FUN_8004AD80` zeroes the cursor
   (`sh zero,0x68` at `0x8004B068`), so a clip the SM stages starts the next

@@ -661,7 +661,7 @@ Port: kernels in `engine-effects::action_effect_script`; the spawns come back as
 
 #### `FUN_801E09F8` - cast-effect census + projectile flight / impact
 
-Runs two jobs each frame (0898 image at base `0x801CE818`; `overlay_battle_action_801e09f8.txt`).
+Runs two jobs each frame (0898 image at base `0x801CE818`; `overlay_battle_action_801e09f8.txt`). Its one caller is the battle draw tick `FUN_800480D8` (`jal 0x801E09F8` at `0x80048130`), in the once-a-frame preamble the first drawn body runs, so both jobs follow every node's tick of the pass: the action SM reads the census one pass on, and a landing's reaction commits on the victim's next node tick.
 
 **(1) Census** (`0x801E0A44..0x801E0BF0`). It recomputes from scratch the outstanding-effect fields the magic / summon exit states poll:
 

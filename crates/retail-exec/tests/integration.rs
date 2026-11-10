@@ -298,6 +298,7 @@ mod target_panel;
 mod target_redirect;
 mod text_balloon;
 mod text_width;
+mod tick_commits;
 mod tile_lookups;
 mod timer_spawns;
 mod tint_ease;

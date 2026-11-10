@@ -217,7 +217,9 @@ impl World {
         }
         // Natural end (`0x80047B30..0x80047B58`).
         let idle = a.battle.flag_bits.has(ANIM_FLAG_IDLE_AT_END);
-        a.battle.flag_bits = ActorFlags(a.battle.flag_bits.0 & 0xF8);
+        let (flags, _) =
+            legaia_engine_battle_vm::battle_action::natural_end_commit(a.battle.flag_bits.0, 0);
+        a.battle.flag_bits = ActorFlags(flags);
         // The monster-death arm: previous entry tagged 4, monster seat, HP 0.
         // It runs whatever bit 2 staged - it re-installs the entry itself.
         if playing == 4 && hp_zero && !is_party {

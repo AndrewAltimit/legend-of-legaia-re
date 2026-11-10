@@ -3592,18 +3592,16 @@ also lock a voice the drive model misplaces onto a louder stretch (Zenoir's whol
 one alignment parameter, chosen on the score, and printed with the reach it came from.
 
 <a id="a-landings-reaction-cue-keys-a-frame-early"></a>
-**A landing's reaction cue keys a frame early.** Under a homing cast the landing pass rings the
+**A landing's cue and its reaction's cue ring a frame apart.** Under a homing cast the landing pass rings the
 record's cue (`0x49..0x4B`) and lands the hit, and the victim's reaction clip sounds its own cue track
 (Thunder Break on `retona_viguro_v2_pre_thunder_break`: `0x56` on party seat `0`). Retail's probe
 (`seats.csv`) has the reaction staged at `+0x1DA` on the landing vsync and committed at `+0x1D9`, its cue
-cursor `+0x1F6` at `1`, on the next game frame, so the two cues ring a frame apart: `3` vsyncs on
+cursor `+0x1F6` at `1`, on the next game frame: `3` vsyncs on
 Thunder Break, `7` on Gaza's Astral Wave, the [cast-sequence](../tooling/cast-sequence-oracle.md#the-sound-channel)
-films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The port commits the reaction on the landing tick
-(`World::queue_battle_reaction` from the cast fold), and its anim pass walks the new clip's cue track
-in that tick, so both ring together; the ring, the drainer and the voice keying read alike
-([sfx-table](../formats/sfx-table.md), the `libsnd_voices` and `sfx_drain` differentials). The gap is the
-battle frame order, which pass of the frame the cast tick's hit falls in relative to the victim's node
-tick, and the fix belongs there.
+films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The cause is the battle frame order: the cast tick
+`FUN_801E09F8` runs from the draw, after every node's tick, so the victim's node commits the reaction
+a pass later ([the order inside the pass](battle-stage-camera.md#the-frame-step)). The port runs the cast tick at the
+tail of its anim pass (`World::tick_battle_anim_pass`), and the next pass's walk sounds the reaction's first cue.
 
 Over the cast films' cue channel the same order reads from the other side. Their clock pairs the
 two sides state by state, and on it the landing cues (`0x48..0x4B`) never pair at offset `0`: five in six
