@@ -369,3 +369,288 @@ fn the_battle_on_screen_test_matches() {
         "{on} {off_left} {off_right}"
     );
 }
+
+#[test]
+fn the_initmap_override_is_sanitised_as_the_port_sanitises_it() {
+    differential!(scus(BOOT_INIT));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_system::scene_name_sync::{
+        INITMAP_NAME_FIELD_LEN, sanitize_initmap_scene_name,
+    };
+    const BOOT_INIT: u32 = 0x8001_D424;
+    const BOOT_INIT_END: u32 = 0x8001_D7F8;
+    const FILE_LOAD: u32 = 0x8003_E6BC;
+    const NAME_FIELD: u32 = 0x8007_050C;
+    /// `_DAT_8007B8C2`, clear on the development host that reads the file.
+    const BY_INDEX: u32 = 0x8007_B8C2;
+    /// `_DAT_8007B86E`, raised by a load that found no file.
+    const LOAD_FAILED: u32 = 0x8007_B86E;
+    // Everything the routine calls is display, GTE and work-table setup;
+    // only the file load and the field copy matter to the name.
+    cpu.stub_outside = Some((BOOT_INIT, BOOT_INIT_END));
+    let line: Rc<RefCell<Vec<u8>>> = Rc::default();
+    {
+        let line = line.clone();
+        cpu.hook(FILE_LOAD, move |r, m| {
+            m.load(r.r[A1], &line.borrow());
+            r.r[V0] = 0;
+        });
+    }
+    cpu.hook(0x8001_A8B0, |r, m| {
+        let bytes = m.read(r.r[A1], r.r[psx_retail_exec::A2] as usize);
+        m.load(r.r[A0], &bytes);
+    });
+    // The allocator's blocks, somewhere harmless.
+    cpu.stub(0x8001_7888, 0x8018_0000);
+    let mut rng = Rng(0x494E_4954);
+    let (mut cleaned, mut kept) = (0, 0);
+    for round in 0..600 {
+        let text: Vec<u8> = (0..INITMAP_NAME_FIELD_LEN + 8)
+            .map(|_| match rng.below(8) {
+                0 => 0x0D,
+                1 => 0x0A,
+                2 => 0x1A,
+                3 => 0,
+                _ => b'a' + rng.below(26) as u8,
+            })
+            .collect();
+        *line.borrow_mut() = text.clone();
+        let by_index = round % 5 == 4;
+        cpu.mem.wr16(BY_INDEX, u16::from(by_index));
+        cpu.mem.wr16(LOAD_FAILED, 0);
+        cpu.mem.load(NAME_FIELD, b"default\0\0\0\0\0\0\0\0\0");
+        assert_eq!(cpu.call(BOOT_INIT, &[]), Stop::Returned, "round {round}");
+        let retail = cpu.mem.read(NAME_FIELD, INITMAP_NAME_FIELD_LEN);
+        if by_index {
+            // The disc build never reads the override.
+            assert!(retail == b"default\0\0\0\0\0\0\0\0\0", "round {round}");
+            kept += 1;
+            continue;
+        }
+        let mut port = text[..INITMAP_NAME_FIELD_LEN].to_vec();
+        sanitize_initmap_scene_name(&mut port);
+        assert!(retail == port, "round {round}: {retail:02x?} / {port:02x?}");
+        cleaned += usize::from(port != text[..INITMAP_NAME_FIELD_LEN]);
+    }
+    assert!(cleaned > 300 && kept > 100, "{cleaned} {kept}");
+}
+
+#[test]
+fn the_move_image_wrapper_queues_the_copy_the_port_makes() {
+    differential!(scus(MOVE_IMAGE));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use psx_tim::vram::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
+    const MOVE_IMAGE: u32 = 0x8005_8490;
+    /// libgpu's driver table pointer, and the queue entry the wrapper calls
+    /// through its `+0x08`.
+    const DRIVER_PTR: u32 = 0x8007_8D4C;
+    const DRIVER: u32 = 0x8010_1000;
+    const QUEUE: u32 = 0x8010_2000;
+    const RECT: u32 = 0x8010_0000;
+    cpu.stub(0x8005_8170, 0); // the debug-level rect print
+    cpu.mem.wr32(DRIVER_PTR, DRIVER);
+    cpu.mem.wr32(DRIVER + 8, QUEUE);
+    cpu.mem.wr32(DRIVER + 0x18, 0x8010_3000);
+    // The GPU's queue: the command's three words.
+    let queued: Rc<RefCell<Vec<[u32; 3]>>> = Rc::default();
+    {
+        let queued = queued.clone();
+        cpu.hook(QUEUE, move |r, m| {
+            assert_eq!(r.r[A0], 0x8010_3000, "the driver's copy routine");
+            assert_eq!(r.r[psx_retail_exec::A2], 0x14, "five words");
+            let p = r.r[A1];
+            queued
+                .borrow_mut()
+                .push([m.rd32(p + 8), m.rd32(p + 0xC), m.rd32(p + 0x10)]);
+            r.r[V0] = 0;
+        });
+    }
+    let mut rng = Rng(0x4D4F_5645);
+    let seed: Vec<u8> = (0..VRAM_WIDTH * VRAM_HEIGHT * 2)
+        .map(|_| rng.next() as u8)
+        .collect();
+    let mut port = Vram::new();
+    port.write_block(0, 0, VRAM_WIDTH as u16, VRAM_HEIGHT as u16, &seed);
+    let mut gpu: Vec<u16> = port.as_u16().to_vec();
+    let (mut copies, mut refused) = (0, 0);
+    for round in 0..400 {
+        let (w, h) = match rng.below(6) {
+            0 => (0, 1 + rng.below(64) as u16),
+            1 => (1 + rng.below(64) as u16, 0),
+            _ => (1 + rng.below(64) as u16, 1 + rng.below(64) as u16),
+        };
+        // The source in the left half and the destination in the right, so
+        // the stand-in below needs no overlap rule.
+        let (sx, sy) = (rng.below(440) as u16, rng.below(440) as u16);
+        let (dx, dy) = (512 + rng.below(440) as u16, rng.below(440) as u16);
+        for (k, v) in [sx, sy, w, h].iter().enumerate() {
+            cpu.mem.wr16(RECT + 2 * k as u32, *v);
+        }
+        queued.borrow_mut().clear();
+        let args = [RECT, u32::from(dx), u32::from(dy)];
+        assert_eq!(cpu.call(MOVE_IMAGE, &args), Stop::Returned, "round {round}");
+        let q = queued.borrow().clone();
+        if w == 0 || h == 0 {
+            assert!(q.is_empty(), "round {round}: an empty rect queues nothing");
+            assert_eq!(cpu.regs.r[V0], -1i32 as u32, "round {round}");
+            refused += 1;
+        } else {
+            assert_eq!(q.len(), 1, "round {round}");
+            // Source corner, destination corner, extent: `y << 16 | x`.
+            let [src, dst, ext] = q[0];
+            let (x0, y0) = ((src & 0xFFFF) as usize, (src >> 16) as usize);
+            let (x1, y1) = ((dst & 0xFFFF) as usize, (dst >> 16) as usize);
+            let (cw, ch) = ((ext & 0xFFFF) as usize, (ext >> 16) as usize);
+            for row in 0..ch {
+                for col in 0..cw {
+                    gpu[(y1 + row) * VRAM_WIDTH + x1 + col] =
+                        gpu[(y0 + row) * VRAM_WIDTH + x0 + col];
+                }
+            }
+            copies += 1;
+        }
+        port.move_image(sx, sy, w, h, dx, dy);
+        assert!(port.as_u16() == &gpu[..], "round {round}: VRAM after the copy");
+    }
+    assert!(copies > 200 && refused > 80, "{copies} {refused}");
+}
+
+#[test]
+fn the_list_walk_releases_the_emitters_the_port_releases() {
+    differential!(scus(LIST_WALK));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_vm::sfx_emitter::{EmitterOp, emitter_free};
+    const LIST_WALK: u32 = 0x8002_519C;
+    const PART_TICK: u32 = 0x8002_1DF4;
+    const OTHER_TICK: u32 = 0x8010_F000;
+    const RELEASE: u32 = 0x8002_50D4;
+    const HEAD: u32 = 0x8010_0000;
+    const NODES: u32 = 0x8010_1000;
+    const NODE_LEN: u32 = 0x100;
+    const HALT: u32 = 0x8;
+    const MARKED: u32 = 0x0200_0000;
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Call {
+        Tick(u32, u32),
+        Unlink(u32),
+        FreeNode(u32),
+        Free(u32),
+        Release(i32, i16),
+    }
+    let log: Rc<RefCell<Vec<Call>>> = Rc::default();
+    macro_rules! hook {
+        ($va:expr, $f:expr) => {{
+            let log = log.clone();
+            cpu.hook($va, move |r, _| {
+                let f: fn(&psx_retail_exec::Regs) -> Call = $f;
+                log.borrow_mut().push(f(r));
+            });
+        }};
+    }
+    hook!(PART_TICK, |r| Call::Tick(PART_TICK, r.r[A0]));
+    hook!(OTHER_TICK, |r| Call::Tick(OTHER_TICK, r.r[A0]));
+    hook!(0x8002_4DFC, |r| Call::Unlink(r.r[A0]));
+    hook!(0x8002_04A4, |r| Call::FreeNode(r.r[A0]));
+    hook!(0x8001_7B94, |r| Call::Free(r.r[A0]));
+    hook!(RELEASE, |r| Call::Release(r.r[A0] as i32, r.r[A1] as i16));
+    let mut rng = Rng(0x4C49_5354);
+    let (mut released, mut freed_quiet, mut ticked, mut marked_now) = (0, 0, 0, 0);
+    for round in 0..1_500 {
+        let n = rng.below(10);
+        let mut nodes = Vec::new();
+        for k in 0..n {
+            let at = NODES + NODE_LEN * k;
+            let mut rec: Vec<u8> = (0..NODE_LEN).map(|_| rng.next() as u8).collect();
+            let next = if k + 1 < n { at + NODE_LEN } else { 0 };
+            rec[0..4].copy_from_slice(&next.to_le_bytes());
+            let tick = if rng.below(3) == 0 { OTHER_TICK } else { PART_TICK };
+            rec[0xC..0x10].copy_from_slice(&tick.to_le_bytes());
+            let flags = (rng.next() & !(HALT | MARKED | 0x800))
+                | [0, HALT, HALT | MARKED, HALT | MARKED][rng.below(4) as usize];
+            rec[0x10..0x14].copy_from_slice(&flags.to_le_bytes());
+            let mode = [3i16, 5, 5, 1, 7][rng.below(5) as usize];
+            rec[0x5A..0x5C].copy_from_slice(&mode.to_le_bytes());
+            // The mode-3 block and the `+0x4C` buffer, absent as often as not.
+            for off in [0x4C, 0xA8] {
+                if rng.below(2) == 0 {
+                    rec[off..off + 4].copy_from_slice(&0u32.to_le_bytes());
+                }
+            }
+            cpu.mem.load(at, &rec);
+            nodes.push((at, rec, tick, flags, mode));
+        }
+        cpu.mem.wr32(HEAD, if n > 0 { NODES } else { 0 });
+        log.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_WALK, &[HEAD]), Stop::Returned, "round {round}");
+        let calls = log.borrow().clone();
+        let mut at_call = 0;
+        for (at, rec, tick, flags, mode) in &nodes {
+            let mine: Vec<Call> = {
+                let start = at_call;
+                while at_call < calls.len()
+                    && match calls[at_call] {
+                        Call::Tick(_, a) | Call::Unlink(a) | Call::FreeNode(a) => a == *at,
+                        // The frees and the release name the node's buffers.
+                        _ => at_call > start,
+                    }
+                {
+                    at_call += 1;
+                }
+                calls[start..at_call].to_vec()
+            };
+            if flags & HALT == 0 {
+                assert_eq!(mine, [Call::Tick(*tick, *at)], "round {round}: a live node ticks");
+                ticked += 1;
+                continue;
+            }
+            // Halted: the mark is raised either way.
+            assert_ne!(cpu.mem.rd32(at + 0x10) & MARKED, 0, "round {round}");
+            if flags & MARKED == 0 {
+                assert!(mine.is_empty(), "round {round}: the first halted walk frees nothing");
+                marked_now += 1;
+                continue;
+            }
+            assert_eq!(mine[..2], [Call::Unlink(*at), Call::FreeNode(*at)], "round {round}");
+            let release: Vec<Call> = mine
+                .iter()
+                .copied()
+                .filter(|c| matches!(c, Call::Release(..)))
+                .collect();
+            // The port's half: the part tick's emitter mode, read off the node.
+            let mut st = ActorState {
+                move_submode: *mode,
+                ..ActorState::default()
+            };
+            st.set_actor_u32(0xAC, u32::from_le_bytes(rec[0xAC..0xB0].try_into().unwrap()));
+            st.set_actor_u16(0xB0, u16::from_le_bytes(rec[0xB0..0xB2].try_into().unwrap()));
+            let port = (*tick == PART_TICK)
+                .then(|| emitter_free(&st))
+                .flatten()
+                .map(|op| match op {
+                    EmitterOp::Release { cue, voice } => Call::Release(cue, voice),
+                    other => panic!("round {round}: {other:?}"),
+                });
+            assert_eq!(release, port.into_iter().collect::<Vec<_>>(), "round {round}");
+            if release.is_empty() {
+                freed_quiet += 1;
+            } else {
+                assert_eq!(mine.last(), release.last(), "round {round}: the release is last");
+                released += 1;
+            }
+        }
+        assert_eq!(at_call, calls.len(), "round {round}: calls for no node");
+    }
+    assert!(
+        released > 300 && freed_quiet > 300 && ticked > 1_000 && marked_now > 1_000,
+        "{released} {freed_quiet} {ticked} {marked_now}"
+    );
+}
