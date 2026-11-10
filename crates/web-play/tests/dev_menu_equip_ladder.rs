@@ -148,8 +148,9 @@ fn dev_menu_equip_ladder() {
         "the confirm disturbed the party record"
     );
 
-    // Cancel: retail's row-action dispatcher runs on this leg, not on the
-    // confirm. The screen stays up and the cursor stays where it was.
+    // Cancel: retail's cancel-settle leg (`FUN_801ECA08`, `cfg[+0x594]`);
+    // the row-action dispatcher is the confirm leg's. The screen stays up
+    // and the cursor stays where it was.
     let at_cancel = dev_draws(&mut rt).to_string();
     tap(&mut rt, PadButton::Circle.mask());
     assert_eq!(

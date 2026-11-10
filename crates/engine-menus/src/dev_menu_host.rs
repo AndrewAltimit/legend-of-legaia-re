@@ -173,9 +173,8 @@ pub struct DevMenuSession {
     /// Retail's list-picker phase (`ctx[+0x54]`) for this screen, kept in
     /// step with [`Self::page`] so the retail draw gate can be asked.
     pub list_phase: ListPickerPhase,
-    /// The retail draw gate's second factor - the caller's own input-allowed
-    /// flag on the `Active` leg, and the unwind dispatcher's return on the
-    /// `CancelUnwind` leg.
+    /// The retail draw gate's second factor - `1` on the `Active` leg, and
+    /// the row-action dispatcher's return on the `RowAction` leg.
     pub list_gate: i32,
     /// Whether the row list body draws this frame, per the retail gate.
     pub list_visible: bool,
@@ -309,32 +308,40 @@ impl DevMenuSession {
     /// record afterwards, exactly as `FUN_801D6E18` does - unconditionally,
     /// whichever page is up.
     pub fn tick(&mut self, pad_edge: u16, pad_held: u16, records: &mut [&mut [u8]]) {
-        // The list-picker phase this frame runs in. Retail's `ctx[+0x54]`
+        // The list-picker phase this frame enters in. Retail's `ctx[+0x54]`
         // space, driven off which page has the pad: the list is the `Active`
-        // leg, and a sub-editor parks the list in `ConfirmSettle`, whose draw
-        // gate product is 2 - i.e. the list body is not drawn behind it.
-        self.list_phase = match self.page {
+        // leg, and a sub-editor has taken the list down (`Teardown`, whose
+        // draw gate product is not 1 or 3 - the list body is not drawn
+        // behind it).
+        let entered = match self.page {
             DevPage::List => ListPickerPhase::Active,
-            _ => ListPickerPhase::ConfirmSettle,
+            _ => ListPickerPhase::Teardown,
         };
+        let on_list = self.page == DevPage::List;
+        self.list_phase = entered;
         self.list_gate = 1;
         match self.page {
             DevPage::List => self.tick_list(pad_edge, records),
             DevPage::EventFlag => self.tick_event_flag(pad_edge, pad_held),
             DevPage::PlayerParam => self.tick_player_param(pad_edge, pad_held, records),
         }
-        // Cancel on the row list takes retail's unwind leg, whose gate factor
-        // is the row-action dispatcher's return.
-        if self.page == DevPage::List && pad_edge & PACK_CIRCLE != 0 {
-            let (park, gate) = dev_menu_action(self.row as i16);
+        // `FUN_801ECA08`'s two exits from the Active leg, cancel tested
+        // first (`0x801ECBEC`): cancel parks the list in `CancelSettle`,
+        // confirm hands the row to the row-action dispatcher `FUN_801EA9B0`,
+        // whose return is the draw gate's factor on that leg.
+        if on_list && pad_edge & PACK_CIRCLE != 0 {
+            self.list_phase = ListPickerPhase::CancelSettle;
+        } else if on_list && pad_edge & PACK_CROSS != 0 {
+            let (_, gate) = dev_menu_action(self.row as i16);
             self.list_gate = gate;
-            self.list_phase = park
-                .and_then(ListPickerPhase::from_i16)
-                .unwrap_or(ListPickerPhase::CancelUnwind);
+            self.list_phase = ListPickerPhase::RowAction;
         }
+        // The gate is taken off the phase the frame entered in, so the frame
+        // of either press still draws the list.
+        let visible = list_body_draws(entered as i16, 1);
         let (start, end) = self.list_row_span();
         self.list_panel = panel_geometry(start, end);
-        self.list_visible = list_body_draws(self.list_phase as i16, self.list_gate);
+        self.list_visible = visible;
         for record in records.iter_mut() {
             clamp_record_stats(record);
         }
@@ -664,21 +671,36 @@ mod tests {
         assert!(s.list_visible, "phase 1 x gate 1 = 1 -> draws");
         s.page = DevPage::EventFlag;
         drive(&mut s, &mut r, 0, 0);
-        assert_eq!(s.list_phase, ListPickerPhase::ConfirmSettle);
-        assert!(!s.list_visible, "phase 2 x gate 1 = 2 -> no draw");
+        assert_eq!(s.list_phase, ListPickerPhase::Teardown);
+        assert!(!s.list_visible, "phase 4 x gate 1 = 4 -> no draw");
     }
 
-    /// Cancel takes retail's unwind leg. `FUN_801EA9B0` returns `1` on every
-    /// path, including its out-of-range arm, so the unwind still draws - the
-    /// gate never suppresses that leg.
+    /// Cancel is `FUN_801ECA08`'s `cfg[+0x594]` leg: the list parks in
+    /// `CancelSettle`, and the frame of the press still draws, the gate
+    /// being taken off the phase the frame entered in. The row-action
+    /// dispatcher is not consulted.
     #[test]
-    fn cancel_on_the_list_takes_the_unwind_leg_and_still_draws() {
+    fn cancel_on_the_list_parks_in_the_cancel_settle_and_still_draws() {
         let mut s = DevMenuSession::new();
         let mut r = records();
         drive(&mut s, &mut r, PACK_CIRCLE, 0);
-        assert_eq!(s.list_phase, ListPickerPhase::CancelUnwind);
+        assert_eq!(s.list_phase, ListPickerPhase::CancelSettle);
+        assert!(s.list_visible, "entered in phase 1 x gate 1 = 1 -> draws");
+    }
+
+    /// Confirm is the `cfg[+0x590]` leg: the row goes to `FUN_801EA9B0`,
+    /// whose `1` is the gate factor. Cancel is tested first.
+    #[test]
+    fn confirm_on_the_list_takes_the_row_action_leg() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, PACK_CROSS, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::RowAction);
         assert_eq!(s.list_gate, 1);
-        assert!(s.list_visible, "phase 3 x gate 1 = 3 -> draws");
+        assert!(s.list_visible);
+        let mut s = DevMenuSession::new();
+        drive(&mut s, &mut r, PACK_CROSS | PACK_CIRCLE, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::CancelSettle);
     }
 
     /// The panel is sized from the row span and bottom-anchored at `0xD0`.

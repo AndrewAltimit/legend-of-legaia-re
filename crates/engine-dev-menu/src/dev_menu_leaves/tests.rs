@@ -336,11 +336,11 @@ fn cursor_wraps_by_swap() {
 fn list_body_draw_gate() {
     // phase Active(1) with input allowed -> draws.
     assert!(list_body_draws(1, 1));
-    // phase CancelUnwind(3) while unwind running -> draws.
+    // phase RowAction(3), the dispatcher's 1 -> draws.
     assert!(list_body_draws(3, 1));
-    // phase CancelUnwind after unwind done -> no draw.
+    // phase RowAction with a zero factor -> no draw.
     assert!(!list_body_draws(3, 0));
-    // phase ConfirmSettle -> never draws.
+    // phase CancelSettle -> never draws.
     assert!(!list_body_draws(2, 1));
     // phase Active with input suppressed -> no draw.
     assert!(!list_body_draws(1, 0));

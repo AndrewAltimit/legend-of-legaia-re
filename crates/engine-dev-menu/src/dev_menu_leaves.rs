@@ -344,10 +344,15 @@ pub enum ListPickerPhase {
     Open = 0,
     /// Cursor movement + confirm/cancel input.
     Active = 1,
-    /// Confirm settle.
-    ConfirmSettle = 2,
-    /// Cancel unwind (`FUN_801EA9B0`).
-    CancelUnwind = 3,
+    /// Cancel settle: the cancel button's leg (`cfg[+0x594]`, SFX `0x37`,
+    /// `0x801ECBEC..0x801ECC0C`). The frame of the press still draws; the
+    /// leg itself (`0x801ECC38`) only clears the panel's open word.
+    CancelSettle = 2,
+    /// Row action: the confirm button's leg (`cfg[+0x590]`, SFX `0x36`,
+    /// `0x801ECC10..0x801ECC30`). Its frame (`0x801ECC64`) runs the row's
+    /// cheat through `FUN_801EA9B0`, draws, and leaves the phase that arm
+    /// stored.
+    RowAction = 3,
     /// Teardown; restores saved selection, resets phase to 0.
     Teardown = 4,
 }
@@ -357,8 +362,8 @@ impl ListPickerPhase {
         Some(match v {
             0 => ListPickerPhase::Open,
             1 => ListPickerPhase::Active,
-            2 => ListPickerPhase::ConfirmSettle,
-            3 => ListPickerPhase::CancelUnwind,
+            2 => ListPickerPhase::CancelSettle,
+            3 => ListPickerPhase::RowAction,
             4 => ListPickerPhase::Teardown,
             _ => return None,
         })
@@ -369,18 +374,20 @@ impl ListPickerPhase {
 /// computes `iVar6 = phase * gate` after the phase switch and draws when the
 /// product is `1` or `3`:
 ///
-/// - phase `Active` (1) with `gate = 1` (input allowed) -> draws;
-/// - phase `CancelUnwind` (3) with `gate` = the unwind dispatcher's return
+/// - phase `Active` (1) with `gate = 1` (the panel is not busy) -> draws,
+///   the frame cancel or confirm is pressed included: the product is taken
+///   off the phase the frame **entered** in (`lh s2,0x54(s0)` at
+///   `0x801ECA70`), not the one it leaves;
+/// - phase `RowAction` (3) with `gate` = the row-action dispatcher's return
 ///   -> draws;
-/// - every other product (0, 2, 4, ...) -> no draw.
+/// - every other product (0, 2, 4, ...) -> no draw. `CancelSettle` (2) and
+///   `Teardown` (4) leave `gate` at `0`.
 ///
-/// The unwind dispatcher is `FUN_801EA9B0`, and it returns `1`
+/// The row-action dispatcher is `FUN_801EA9B0`, and it returns `1`
 /// unconditionally - `s1` is loaded with `1` in the delay slot of its bound
 /// check and every arm, including the out-of-range one, exits through
 /// `move v0,s1` (see [`crate::dev_menu_action::dev_menu_action`]). So phase
-/// `CancelUnwind` always draws; that gate never suppresses it. The argument
-/// stays because the phase-1 leg's gate is the caller's own input-allowed
-/// flag, which does vary.
+/// `RowAction` always draws.
 ///
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_visible`
 /// is this gate's output, recomputed every frame.

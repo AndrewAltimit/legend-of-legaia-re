@@ -4,8 +4,8 @@
 //! world-map panel window system (`legaia_engine_field::world_map_panel`),
 //! whose list-cursor helper the dev menu's list picker mirrors, but its only
 //! caller in the port is the dev-menu screen
-//! `legaia_engine_menus::dev_menu_host`, whose cancel leg asks it for the park
-//! phase and the draw-gate factor.
+//! `legaia_engine_menus::dev_menu_host`, whose confirm leg asks it for the
+//! draw-gate factor, as the list picker `FUN_801ECA08` does (`0x801ECC6C`).
 //!
 //! ## Source
 //!
@@ -60,8 +60,8 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 /// PORT: FUN_801ea9b0 (dispatch head + shared epilogue)
 ///
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::tick` runs this
-/// on its cancel leg and uses both halves of the result - the park phase and
-/// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
+/// on its confirm leg and uses the factor
+/// [`crate::dev_menu_leaves::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
     if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
         return (

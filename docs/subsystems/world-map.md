@@ -703,7 +703,9 @@ calls it. The cheat arms' global pokes are not modelled.
 `legaia_engine_field::world_map_panel_host::PanelWindowHost` owns the
 `0x801F2B98` descriptor array and one window object per slot; `run_script`
 decodes a script through `run_panel_script` and applies every effect.
-`dev_menu_action` is hosted by the dev-menu screen's cancel leg.
+`dev_menu_action` is hosted by the dev-menu screen's confirm leg, as
+`FUN_801ECA08` runs it (phase 3, entered off the confirm button `cfg[+0x590]`);
+cancel (`cfg[+0x594]`) parks the list in phase 2 without it.
 
 ### The panel actor state machines
 
