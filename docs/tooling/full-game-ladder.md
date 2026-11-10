@@ -652,6 +652,23 @@ the bag is short of an errand's copies:
   bag's three heals a member: training from the bag spends the heals it is
   fighting to buy back.
 
+- **It goes back to a bed when the bag gives out.** Training out of the
+  bag ends when the bag is down to its reserve, whatever the purse holds. At
+  a waypoint that is not the item's own counter, a purse (with the outgrown
+  armament sold) still short of the items and of the heal reserve a counter
+  sells before them - three heals a member at the Healing Flower's price -
+  sends the hand back to the scene whose rest last lifted the party, up to
+  four doors away. It trains from that bed, and the outing goes on down the
+  route past the scenes that roll nothing to the one the last outing fought
+  in, and comes back the way it went. From a bed the fights cost the bag
+  nothing, so it fights until the coin in hand pays for the items and the
+  refill both. `kor5`'s keeper (P1[9]) is three doors above `kor`, the one
+  floor of Sol's stairs that rolls: a run that came to `koin2` with 42 083
+  gold and 7 480 of old gear went back up, fought four outings, and bought
+  the eight loaves and nine heals at `koin4` out of 53 747. Without the
+  walk back it bought seven loaves, the item counter having taken 3 600 for
+  the reserve first, and met the dogs one chest short.
+
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
 `kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
@@ -874,7 +891,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload, and asserts the baseline's `[continuous_seeds]` row `seed_<n>` when it has one (see [the seed set](#the-seed-set)). |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_PIN_RETAIL=1` | Pins every fidelity toggle to retail's value (`WorldToggles::pin_retail`) in each session the ladder opens, so both parts measure the retail-faithful mode. The gameplay difference from the defaults is the ledge-hop landing guard, off; the rest is presentation. |
-| `LEGAIA_FGL_SOLID_NPCS=1` | Arms `npcs.solid` in each session the ladder opens, as both play hosts have it, so a body stops the walk ([solid NPCs](#solid-npcs)). |
+| `LEGAIA_FGL_SOLID_NPCS=0` | Disarms `npcs.solid` in each session the ladder opens, so the pad tier walks through NPC bodies. The default arms it, as both play hosts do ([solid NPCs](#solid-npcs)); a run with it off is a probe and no longer the measured configuration. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
@@ -1414,6 +1431,18 @@ map as its street:
   raises `0x46A`, on which the cycler parks; a clock that has not flipped for
   4000 frames is not waited on.
 
+  A phase's start is known only while the flag was watched. The follower
+  does not look while a script runs, and every pad ride is three hundred
+  frames of script, longer than `0x462` stays up: after such a gap the flag
+  can read clear in a later lap than the one it was last seen clear in. So
+  the start of the phase stands across a gap only when both phases have
+  been timed and less than a lap has gone by since that start; otherwise
+  the follower waits for the next flip it sees. A run is timed only between
+  two flips with a known start, so a lap that was never watched whole is not
+  measured from its pieces. Without this a walk that rode a pad every lap
+  timed the clear phase at 2442 of its own frames, then 1570, where a lap
+  watched whole gives 698, and stepped onto P2[44] as the phase was ending.
+
 ### The follower
 
 - **Cross-axis offset.** The follower leaves a cross-axis offset of a few units alone while the other axis still has ground to cover. Chasing its own overshoot flips the diagonal every frame, and along a terrace edge the side-step toward the drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to (89, 80), a one-way hop it cannot climb back).
@@ -1948,7 +1977,7 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
 
 ## Solid NPCs
 
-With `npcs.solid` armed a body stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:
+The ladder arms `npcs.solid` in every session it opens, as both play hosts do (`LEGAIA_FGL_SOLID_NPCS=0` disarms it). A body then stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:
 
 - **A person is walked round, not spoken to.** A press held against an NPC re-plans from where the body now stands instead of tapping the action button. In the mist `town0b`'s villagers answer a tap with a fight, and the old stall tap fought one per lean. A door still gets its tap, and a committed teleport-maze route is dropped along with the path.
 - **The planner reads the bodies the walk collides with** (the placements `World::field_moving_actor_centres` boxes), not the talk map: a placement tracked only by its script channel stops the player too, and one hidden does not.
@@ -1958,32 +1987,37 @@ With `npcs.solid` armed a body stops the walk exactly as it stops a player, and 
 - **A failed plan is remembered only while the bodies stand where they stood.** One walking past un-seals what it sealed.
 - **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
 - **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
-- **A wall corner the planner reads open is stepped off sideways.** The locomotion's leading probes reach past the player's own column, so a walk standing a few units off a one-tile corridor's line presses into the wall beside it while the lattice route runs straight ahead. After eight frames pressed without moving, the walk takes a frame's step to the side whose probe and the forward probe from there are both clear. `rugi` P2[67]'s warp leaves the party at (5176, 8198), against the wall east of the corridor north of (40, 64), and every later beat of the scene stalled there until the stretch's frame budget ran out. The rule is armed with the bodies only, so the default walk is unchanged.
+- **A wall corner the planner reads open is stepped off sideways.** The locomotion's leading probes reach past the player's own column, so a walk standing a few units off a one-tile corridor's line presses into the wall beside it while the lattice route runs straight ahead. After eight frames pressed without moving, the walk takes a frame's step to the side whose probe and the forward probe from there are both clear. `rugi` P2[67]'s warp leaves the party at (5176, 8198), against the wall east of the corridor north of (40, 64), and every later beat of the scene stalled there until the stretch's frame budget ran out. The rule is armed with the bodies only, so the walk with them off is unchanged.
 - **A walk held off its line by a person steps back onto it.** A body can stop a walk standing a few units off the lattice line that the line itself passes clear: the actor probes reach 32 units to each side, and the body's box is 40. The hand steps back onto the line for a prop's box on either arm; with the bodies solid it does so for a person too, since one who stands still holds the walk for good. `bubu1` P1[6] at (8500, 3904) stopped the walk north at (8568, 4006), eight units west of the line at x 8576, until the stretch's budget ran out.
 - **A door contact that lands on the tile it is pressed from is not an exit.** With two assistants beside the player on `doman`'s (103, 100), P1[15]'s contact read as the only way out and the walk pressed into it for good; the open step is east.
+- **A contact a walk pressed for and was not carried by is no route.** A walk that stalls waiting on a contact's ride drops the contacts within a tile and a half that land there, until a story flag moves. The same P1[15] contact, at (13312, 12992), lands on (103, 100); a party the talk's side-steps left at (13232, 13008), a tile south of that landing, read the ride as its only way out of the corner the bodies close on the lattice, and every later beat of the scene stalled pressing at it while the step north stood open. With the contact dropped the plan the bodies seal is searched again without them, and the walk leaves.
 
 A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.
 
 ### What stopped the arm
 
-Two stretches stopped the arm, both where the plan and the cull disagreed:
+Five places stopped a run with the bodies solid. Two were places where the plan and the cull disagreed:
 
 - **`jouinc`'s item in the wall.** The scene entry script (P1[0]) opens tile (82, 39) (`4C 70 52 27 52 27`, mask `0`) while `0x5D` is clear, and the item P1[17] stands in that gap at (10624, 5056), drawn at scale `0` (`4C 40`). Taking it (`50 5D`, `39 EA`) writes no `+0x10` bit, and `FUN_801CF754` drops a candidate only on `+0x10 & 3`, so its box stays.
   Retail agrees: [`autorun_item_gap_probe.lua`](../../scripts/pcsx-redux/autorun_item_gap_probe.lua) on the `jouinc` library state, with the corridor's region box latched, stops a walk east into the gap at x 10552 before the pickup and at 10522 after it. Behind the item is only the open ground outside the castle walls, and P1[16] plugs the corridor's foot at (10432, 7680) the same way; the way to `jouind` is the pad at (70, 60) to (119, 30) and the stairs up to (110, 9). A plan that left the two plugs out while the camera window culled them leaked into the open ground, spent the search's node budget there, and sent the walk back and forth along the corridor.
 - **`rugi`'s hub.** West of P2[40] a walk can come to rest at (10754, 7038) with all four wall probes walled, and stays there until the stretch's frame budget runs out; every later beat then reads its way out from (86, 52) as crossing a band that leaves the scene. A plan that also routed round the bodies outside the latched region box took the walks to P1[33] through that corner.
 
-One stretch still stops the arm on some streams:
+The other three were the hand's own, and the bodies only showed them:
 
-- **`kor`'s guard dogs before the eighth loaf.** The dogs (P1[9] / P1[10]) hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A run whose gold training in `koin2` ends with the purse still short of the remaining Soru Bread (a party at under half HP after one round, on the traced stream) walks on to `korb2` with chests unfed, and stands at (18, 31) against the dogs, replaying `kor`'s beats until the stretch's budget runs out. Without the arm the walk passes the dogs with the errand short.
+- **`doman`'s contact that carries nobody.** The lab corner above: a route through P1[15]'s contact, pressed at until the stretch gave up, on a stream whose talk left the party a tile south of where the others stood.
+
+- **`rugi`'s clock, timed across a ride.** A walk reached the same corner of the hub when a pad sent it the wrong way: it stepped onto P2[44] reading `0x462` as clear for another lap, the pad tested it set, and the party landed on the hub pad (86, 59) and was carried back to (86, 53) instead of on to (82, 48). The follower had timed the clear phase across a rise it never saw ([the clock pads](#how-the-pad-tier-walks)). Which streams it happened on was the bodies' doing only in that they move every frame count before it.
+- **`kor`'s guard dogs before the eighth loaf.** The dogs (P1[9] / P1[10]) hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A run whose gold training on the way down Sol ended with the purse short of the eight loaves walked on to `korb2` with chests unfed, and stood at (18, 31) against the dogs, replaying `kor`'s beats until the stretch's budget ran out. With the bodies off the same walk passes through the dogs, so a run that never fed the chests scored the stretch: the story gate is one the walk-through configuration cannot see. The hand now [goes back to a bed](#an-errand-the-story-waits-on) for the rest of the gold.
 
 ## What it cannot measure
 
 - The seated tier places the player. It proves doors, scripts, gates and the
   scene graph, not locomotion; the pad tier is the locomotion claim.
-- The pad tier walks through NPCs by default: its session leaves `npcs.solid` off
-  where both play hosts arm it. `LEGAIA_FGL_SOLID_NPCS=1` arms it, and the walk then
-  plans round bodies ([below](#solid-npcs)). A [gate replay](gate-replay.md) of a
-  digest stops where a villager's box stands on the walk on retail.
+- The seated tier seats the player past NPC bodies. The pad tier does not: its
+  session arms `npcs.solid` as both play hosts do, and the walk plans round
+  bodies ([above](#solid-npcs)). `LEGAIA_FGL_SOLID_NPCS=0` is the old walk through
+  them, whose [gate replay](gate-replay.md) stops where a villager's box stands
+  on the walk on retail.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
   options by rotation, not by reading them. Neither segmented tier buys,
@@ -2094,6 +2128,14 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
 - A pad hop whose walk stalls against the door's own frame (two tiles or
   less short) treats the door as refused and tries the scene's other door
   to the same place, as for a door that turns the walk back.
+- A door band's tiles share a reachability but not a side. `kor4`'s stair up
+  to `kor5` is the square (16..17, 63..64), entered from the west. A walk
+  that comes down the pad at (18, 62) picks (17, 63), the tile nearest it,
+  which it meets only across the pad's own tile (17, 62); from the west
+  every route to it ends on its sibling door tiles, which a walk to one door
+  tile keeps off like any other door. When a hop's walk ends on "crosses a
+  band that leaves the scene", the continuous hand walks to the band's other
+  tiles in turn.
 
 ### Sol Tower
 

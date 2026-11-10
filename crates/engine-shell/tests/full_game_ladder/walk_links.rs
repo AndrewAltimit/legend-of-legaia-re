@@ -788,10 +788,14 @@ pub(super) fn object_doors(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
     out
 }
 
+/// A contact that carried nobody: scene, story-flag hash, contact centre
+/// and landing cell.
+type DeadContact = (String, u64, (i16, i16), Cell);
+
 thread_local! {
     /// Contacts a stalled walk pressed at for a whole stall without being
     /// carried ([`note_dead_contact`]), by scene and story flags.
-    static DEAD_CONTACTS: std::cell::RefCell<HashSet<(String, u64, (i16, i16), Cell)>> =
+    static DEAD_CONTACTS: std::cell::RefCell<HashSet<DeadContact>> =
         std::cell::RefCell::new(HashSet::new());
 }
 

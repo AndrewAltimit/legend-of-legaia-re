@@ -314,6 +314,7 @@
       <tr><td><code>LEGAIA_FGL_RNG_SEED=&lt;u32&gt;</code></td><td>Deals the pad segments and part C another hand of the world rand stream; part C asserts the matching <code>[continuous_seeds]</code> row.</td></tr>
       <tr><td><code>LEGAIA_FGL_SEATED_RNG_SEED=&lt;u32&gt;</code></td><td>The same for the seated pass.</td></tr>
       <tr><td><code>LEGAIA_FGL_PIN_RETAIL=1</code></td><td>Pins every fidelity toggle to retail (<code>WorldToggles::pin_retail</code>), so both parts measure the retail-faithful mode.</td></tr>
+      <tr><td><code>LEGAIA_FGL_SOLID_NPCS=0</code></td><td>Lets the pad tier walk through NPC bodies. The default keeps them solid, as both play hosts do; a run with them off is a probe, not the measured configuration.</td></tr>
       <tr><td><code>LEGAIA_FGL_CHECKPOINT_DIR=&lt;dir&gt;</code></td><td>Part C keeps its own save at each milestone (disc-derived state: keep it under <code>target/</code>).</td></tr>
       <tr><td><code>LEGAIA_FGL_CONTINUOUS_FROM</code> / <code>_RESUME</code> / <code>_UNTIL=&lt;id&gt;</code></td><td>Start part C from a later anchor, resume it from a kept checkpoint, or stop it at a milestone - probes for one stretch, none of which assert the baseline.</td></tr>
     </tbody>
@@ -324,17 +325,18 @@
 
 <section class="doc-section" id="solid-npcs" data-doc="solid-npcs">
   <h2>Solid NPCs</h2>
-  <p>Both play hosts make NPC bodies solid; the ladder's pad tier leaves them passable unless <code>LEGAIA_FGL_SOLID_NPCS=1</code> arms them. Armed, a body stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:</p>
+  <p>Both play hosts make NPC bodies solid, and so does the ladder (<code>LEGAIA_FGL_SOLID_NPCS=0</code> turns them off). A body stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:</p>
   <ul>
     <li><strong>A person is walked round, not spoken to.</strong> A press held against an NPC re-plans from where the body stands instead of tapping the action button, which in the misty Rim Elm starts a fight.</li>
     <li><strong>The planner reads the bodies the walk collides with</strong>, and leaves out the one on the goal tile: that is who the walk is going to.</li>
     <li><strong>A body the camera's window hides is still planned round.</strong> It is solid again by the time the walker reaches it, and some are plugs: in the Bio Castle corridor an invisible item stands in a gap the scene opens in the wall, and on retail it still blocks the gap after it is picked up. A body outside the room's latched region box stays passable until the next warp, and is left out.</li>
     <li><strong>Bodies that seal a route are dropped in stages</strong>, first all but those within eight tiles, then all of them, and a failed plan is remembered only while the bodies stand where they stood.</li>
     <li><strong>A talk side inside a wall is skipped</strong>, and a lean another body stops short steps along the counter and leans again.</li>
-    <li><strong>A door contact that lands on the tile it is pressed from is not an exit.</strong></li>
+    <li><strong>A door contact that lands on the tile it is pressed from is not an exit</strong>, and one a stalled walk pressed for without being carried is dropped until the story moves on.</li>
     <li><strong>A wall corner the planner reads open is stepped off sideways.</strong> The walk's leading probes reach past the player's own column, so a walk a few units off a narrow corridor's line presses into the wall beside it; after eight frames without moving it takes one sideways step and goes on.</li>
   </ul>
   <p>A body can also be a story gate, and then no route is the right answer: some guards stand in the only way on until a story branch moves them, and the route plays the scenes that do. Nivora Ravine is one: sixteen <code>BLOCK</code> placements stand round the landing until Dr. Usha's research is done, and the entry script retires them only then. A run that left Dr. Usha's lab town without that flag reached Nivora boxed in, which is how the solid-body run found that its hand stood in the intercom's box a few units short of where the intercom answers.</p>
+  <p>Sol Tower's guard dogs are another. They hold a doorway until eight chests have each been fed a loaf of bread the party has to buy, 48,000 gold in all. With bodies passable the walk went through the dogs, so a run that never fed the chests still scored the stretch; with them solid it has to earn the gold. When fighting out of the bag leaves the purse short, the hand walks back up to the last keeper who rested the party, fights from that bed until the coin in hand pays for the bread and the heals a counter sells first, and only then goes shopping.</p>
 </section>
 
 <section class="doc-section" id="limits" data-doc="what-it-cannot-measure">
