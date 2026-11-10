@@ -113,7 +113,7 @@ fn the_sideband_applier_is_retails() {
             }
 
             let texture = match &parse(&slot).expect("one slot").slots[0].kind {
-                SlotKind::Texture(t) => Some(t.clone()),
+                SlotKind::Texture(t) => Some(*t),
                 _ => None,
             };
             let upload = |clut_y: i16, page_x: i16| -> Vec<Event> {

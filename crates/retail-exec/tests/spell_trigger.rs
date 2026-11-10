@@ -1,9 +1,9 @@
 //! The party cast trigger `FUN_801DBF9C` against
 //! `World::stage_spell_anim_trigger`: every spell id on every party seat,
 //! over the anim-pair lists PROT 0898 carries (`0x801F4E63` / `0x801F4EDC`).
-//! Compared: the whole action parameter stream `+0x1DF..+0x1F2` over garbage
-//! - the pairs copied from `+0x1E0`, the terminator behind them, the summon
-//! arm's three bytes, and every byte neither arm names.
+//! Compared: the whole action parameter stream `+0x1DF..+0x1F2` over
+//! garbage: the pairs copied from `+0x1E0`, the terminator behind them, the
+//! summon arm's three bytes, and every byte neither arm names.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES;

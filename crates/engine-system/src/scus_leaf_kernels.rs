@@ -505,9 +505,7 @@ impl SceneControlBlockReset {
         for at in [0x18, 0x1C, 0x20, 0x24, 0x28] {
             w(at, 0);
         }
-        for at in 0x5D..=0x62 {
-            block[at] = 0;
-        }
+        block[0x5D..=0x62].fill(0);
     }
 }
 

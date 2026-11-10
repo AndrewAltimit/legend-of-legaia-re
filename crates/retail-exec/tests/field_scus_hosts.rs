@@ -105,17 +105,17 @@ fn a_field_stager_id_names_the_record_retail_names() {
         assert_eq!(parts.len(), count, "case {case}");
         let mut w = World::new();
         w.install_field_stagers(&buf);
-        for id in 0..count {
+        for (id, part) in parts.iter().enumerate() {
             let (a, b) = (rng.next(), rng.next());
             staged.borrow_mut().clear();
             assert_eq!(cpu.call(STAGER, &[id as u32, a, b]), Stop::Returned);
             // The caller's two words pass through; the scale is `0x1000`.
             assert_eq!(
                 *staged.borrow(),
-                vec![(a, b, BUNDLE + parts[id].record_off as u32, 0x1000)],
+                vec![(a, b, BUNDLE + part.record_off as u32, 0x1000)],
                 "case {case} id {id}"
             );
-            assert_eq!(w.props.stagers[id], parts[id]);
+            assert_eq!(&w.props.stagers[id], part);
             assert!(w.spawn_field_stager(id, [0; 3]));
             resolved += 1;
         }
