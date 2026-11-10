@@ -181,3 +181,77 @@ fn the_fade_spawner_is_retails() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(full > 500, "{full}");
 }
+
+const SPAWN_AT: u32 = 0x8002_4C88;
+const VIEW_TRANSFORM: u32 = 0x8003_D344;
+
+/// The positioned spawn `FUN_80024C88` against `World::spawn_at_position`
+/// (the move VM's allocator host): the two pool words it forwards, where the
+/// node stands, the view transform it asks for, and the null it hands back
+/// from a full pool.
+#[test]
+fn the_positioned_spawn_is_retails() {
+    use legaia_engine_vm::actor_alloc::{ActorAllocatorHost, SpawnPosition};
+    differential!(scus(SPAWN_AT));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pool = Rc::new(RefCell::new((0u32, Vec::new())));
+    let p = pool.clone();
+    cpu.hook(ALLOC, move |r, _| {
+        let mut p = p.borrow_mut();
+        p.1.push((r.r[A0], r.r[A1]));
+        r.r[V0] = p.0;
+    });
+    let transformed = Rc::new(RefCell::new(Vec::new()));
+    let t = transformed.clone();
+    cpu.hook(VIEW_TRANSFORM, move |r, _| {
+        t.borrow_mut().push((r.r[A0], r.r[A1]));
+    });
+    let mut rng = Rng(0x5350_4154);
+    let mut full = 0;
+    for case in 0..4000 {
+        let pos = SpawnPosition {
+            x: rng.next() as i16,
+            y: rng.next() as i16,
+            z: rng.next() as i16,
+        };
+        let (a, b) = (rng.next(), rng.next());
+        let exhausted = rng.below(5) == 0;
+        for (i, v) in [pos.x, pos.y, pos.z].into_iter().enumerate() {
+            cpu.mem.wr16(TEMPLATE + 2 * i as u32, v as u16);
+        }
+        cpu.mem.load(ACTOR, &[0xEE; 0x40]);
+        pool.borrow_mut().0 = if exhausted { 0 } else { ACTOR };
+        pool.borrow_mut().1.clear();
+        transformed.borrow_mut().clear();
+        assert_eq!(cpu.call(SPAWN_AT, &[TEMPLATE, a, b]), Stop::Returned);
+        assert_eq!(pool.borrow().1, vec![(a, b)], "the pool pair is forwarded");
+
+        let mut w = World::new();
+        if exhausted {
+            for actor in w.actors.iter_mut() {
+                actor.active = true;
+            }
+        }
+        let slot = w.spawn_at_position(pos, a, b);
+        assert_eq!(cpu.regs.r[V0] != 0, slot.is_some(), "case {case}");
+        let Some(slot) = slot else {
+            assert!(transformed.borrow().is_empty());
+            full += 1;
+            continue;
+        };
+        let m = &w.actors[slot as usize].move_state;
+        assert_eq!(
+            [0x14, 0x16, 0x18].map(|o| cpu.mem.rd16(ACTOR + o) as i16),
+            [m.world_x, m.world_y, m.world_z],
+            "case {case}"
+        );
+        // Nothing else of the node's head is written here.
+        assert_eq!(cpu.mem.read(ACTOR, 0x14), vec![0xEE; 0x14]);
+        assert_eq!(cpu.mem.read(ACTOR + 0x1A, 0x26), vec![0xEE; 0x26]);
+        assert_eq!(*transformed.borrow(), vec![(ACTOR + 0x14, ACTOR + 0x2C)]);
+    }
+    assert!(full > 500, "{full}");
+}
