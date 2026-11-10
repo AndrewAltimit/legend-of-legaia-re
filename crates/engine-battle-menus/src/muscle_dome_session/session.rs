@@ -233,6 +233,19 @@ impl MuscleDomeSession {
         }
     }
 
+    /// The help caption the arts-list driver keeps up over a window the
+    /// entry left sliding out
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow::caption`]);
+    /// `None` while an entry is open.
+    pub fn arts_list_lingering_caption(
+        &self,
+    ) -> Option<legaia_engine_battle_vm::arts_list_driver::ArtsListDriverCaption> {
+        match &self.menu {
+            DomeMenu::Input(_) => None,
+            _ => self.list_residual.and_then(|w| w.caption()),
+        }
+    }
+
     /// The entry's arts-list slide counter (`0` while no entry is open).
     pub fn arts_list_slide(&self) -> u8 {
         match &self.menu {

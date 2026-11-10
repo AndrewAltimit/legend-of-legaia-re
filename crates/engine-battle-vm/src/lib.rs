@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod arts_list_driver;
 pub mod battle_action;
 pub mod battle_actor_draw;
 pub mod battle_actor_tick;

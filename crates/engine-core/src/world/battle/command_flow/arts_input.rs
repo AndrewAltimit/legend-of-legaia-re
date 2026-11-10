@@ -191,6 +191,27 @@ impl World {
             .map(|(_, actor, page, slide)| (actor, page, slide))
     }
 
+    /// The help caption the arts-list driver `FUN_801D3444` keeps up after
+    /// the entry ended: a closed list's `View Hyper Arts list` stays latched
+    /// while the window it left slides out
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow::caption`]).
+    /// `None` while an entry is open - its caption is the entry view's.
+    pub fn arts_list_lingering_caption(
+        &self,
+    ) -> Option<legaia_engine_battle_vm::arts_list_driver::ArtsListDriverCaption> {
+        if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
+            return self
+                .minigames
+                .muscle_dome
+                .as_ref()?
+                .arts_list_lingering_caption();
+        }
+        if self.battle.arts_input.is_some() {
+            return None;
+        }
+        self.battle.arts_list_window.and_then(|w| w.caption())
+    }
+
     /// [`Self::arts_list_window`] with the roster slot whose record the rows
     /// read: `(char slot, actor, row page, slide)`.
     fn arts_list_source(&self) -> Option<(usize, u8, u8, u8)> {

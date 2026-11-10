@@ -552,7 +552,8 @@ pub fn arts_input_chrome_draws(
 /// The arts entry's Triangle help caption - the Triangle button sprite and
 /// the battle overlay's `View Hyper Arts list` / `View Next page` line
 /// (`FUN_801D3444`, [`legaia_engine_ui::arts_input::arts_list_caption`]) -
-/// while a party member owns the entry. Empty when no caption is up or the
+/// while a party member owns the entry, and the latched `View Hyper Arts
+/// list` while a closed list's window slides out after it. Empty when no caption is up or the
 /// disc's line was not read.
 fn arts_list_caption_draws(
     world: &World,
@@ -567,6 +568,20 @@ fn arts_list_caption_draws(
     }
     let mut out = arts_list_draws(world, font, origin, scale);
     let Some(view) = world.arts_input_view() else {
+        // A closed list's caption stays latched while the window the entry
+        // left slides out.
+        if world.arts_list_lingering_caption().is_some()
+            && let Some(text) = world.battle.ui_strings.get(BattleUiLabel::ArtsListHelp)
+        {
+            out.extend(ai::arts_list_caption_text_draws(
+                font,
+                ai::ArtsListCaption::HyperArtsList,
+                text,
+                legaia_engine_ui::battle_command_ui::LABEL_INK,
+                origin,
+                scale,
+            ));
+        }
         return out;
     };
     let frame = ai::ArtsInputFrame {

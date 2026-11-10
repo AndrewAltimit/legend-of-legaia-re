@@ -1148,6 +1148,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "arts_list_driver",
     "battle_action",
     "battle_actor_draw",
     "battle_actor_tick",
