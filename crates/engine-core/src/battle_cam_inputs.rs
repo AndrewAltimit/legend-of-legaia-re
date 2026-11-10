@@ -286,6 +286,12 @@ fn battle_cursor_framing(
             _ => None,
         };
     }
+    // The arts entry's confirm opens the same cursor (`0x50 -> 0x5A`, sub-draw
+    // step `0x0C` at `0x801D20B0`, whose arm ends in case `1`), and the entry
+    // holds it in its own session.
+    if let Some(picker) = b.arts_input.as_ref().and_then(|s| s.picker()) {
+        return from_picker(picker.state());
+    }
     if let Some(c) = b.command.as_ref() {
         return match &c.phase {
             CommandPhase::Targeting { picker, .. } => from_picker(picker.state()),
@@ -1183,6 +1189,22 @@ mod tests {
                 target: [-600.0, 800.0]
             })
         );
+        // The arts entry's own cursor frames the enemy the same way.
+        let ring = world.battle.command.take();
+        let mut arts = legaia_engine_battle::arts_command_input::ArtsCommandInputSession::new(
+            0, 0, 100, [0; 4], 1,
+        );
+        arts.phase = legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting {
+            picker: picker(true),
+        };
+        world.battle.arts_input = Some(arts);
+        assert_eq!(
+            battle_cam_inputs(&world).phase,
+            BattleCamPhase::TargetEnemy,
+            "the arts entry's target cursor"
+        );
+        world.battle.arts_input = None;
+        world.battle.command = ring;
         let settle = |world: &mut World| {
             for _ in 0..16 {
                 world.advance_battle_pass();

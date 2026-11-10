@@ -231,7 +231,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         "the heal waits for state 0x3F"
     );
     // The band's applier call lands it.
-    world.fold_battle_item_action(0);
+    world.fold_battle_item_action(0, 0, 0);
     assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);

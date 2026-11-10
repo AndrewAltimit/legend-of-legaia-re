@@ -655,7 +655,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
     }
     fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
-        self.world.fold_battle_item_action(target_slot);
+        self.world.fold_battle_item_action(icon, page, target_slot);
         self.world
             .pending_battle_events
             .push(BattleEvent::ApplyDamage {

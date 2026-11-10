@@ -15,7 +15,7 @@ its own colour type.
 
 ## Icons, and where the release puts the programs
 
-`icons/` holds the two programs' icons - the game (a golden tree under a
+`icons/` holds the two programs' icons - the game (a green tree under a
 night sky, mist across its roots) and Legaia Explorer (a disc under a
 magnifying glass) - as original artwork, no game asset drawn from or traced.
 `icons/make_icons.py` (Python + Pillow) is their source: it draws each icon

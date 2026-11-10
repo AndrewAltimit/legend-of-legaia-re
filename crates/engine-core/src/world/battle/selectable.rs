@@ -66,15 +66,12 @@ impl World {
                 ..PoolActor::default()
             });
             // `DAT_8007BD10` holds a **1-based** char id per *battle seat*,
-            // and the scan skips id `4` - the AI-companion seat. The port's
-            // player party is three seats, so its ids are `1..=3` and that
-            // term never fires: an engine seat that acts on its own carries
-            // the `0x380` delegation bits instead, which the status term
-            // above already refuses. Deriving the id from the roster slot
-            // would be the wrong thing - the port lets a story guest occupy
-            // a commandable seat, and roster slot 3 would then read as the
-            // companion.
-            ids.push(slot.wrapping_add(1));
+            // and the scan skips id `4` - the AI-companion seat, which
+            // `enter_battle_from_formation` fills beside a Noa who stands
+            // alone on the field list. The id is the roster's, not the seat's:
+            // Terra sits on seat 1, where `slot + 1` would read `2` and hand
+            // the player her ring.
+            ids.push(self.battle_party_char_id(slot));
         }
         (pool, ids)
     }

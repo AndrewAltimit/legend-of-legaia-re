@@ -1458,7 +1458,7 @@ impl World {
                     // `0xC1 99` = current party leader; other args index the
                     // roster order.
                     let name = if arg == 99 {
-                        self.party.party_names.first()
+                        self.party.party_names.get(usize::from(self.field_leader()))
                     } else {
                         self.party.party_names.get(arg as usize)
                     };
@@ -1861,6 +1861,19 @@ mod tests {
         let record = [0x1F, 0xC2, 0xA6, b' ', 0xC4, 0xA6, 0x00];
         let subs = w.dialog_substitutions(&record).expect("item escapes");
         assert_eq!(subs.get(&(2, 0xA6)), Some(&b"Key".to_vec()));
+    }
+
+    /// `0xC1 0x63` is the field leader (`DAT_80084597`), not the first name:
+    /// Noa opens her own chests in her chapter.
+    #[test]
+    fn the_leader_name_escape_names_the_field_leader() {
+        let mut w = World::new();
+        w.party.party_names = vec!["Vahn".into(), "Noa".into()];
+        w.party.active_party = vec![1];
+        let subs = w
+            .dialog_substitutions(&[0x1F, 0xC1, 0x63, 0x00])
+            .expect("a name escape");
+        assert_eq!(subs.get(&(1, 0x63)), Some(&b"Noa".to_vec()));
     }
 
     #[test]
