@@ -14,6 +14,15 @@ numbers, because the two families are not comparable:
     Measured against the game's own bytes. These can fall as well as rise and
     are the only figures that can say how much of the game is left.
 
+  TEST-DENOMINATED (`scripts/ci/differential-coverage.py`)
+    The `verification` block: of the `// PORT:`-tagged addresses, how many a
+    retail kernel differential runs off the disc beside the Rust kernel. It
+    is read from the tests' `differential!` declarations and the tags, both
+    committed, so it needs no disc and refreshes even where the two corpora
+    are absent. It is a separate block, not a fifth track: the four tracks
+    measure how much is traced and ported, this one how much of the port is
+    checked against retail's own bytes, and it is far from complete.
+
   CORPUS-DENOMINATED (`scripts/ci/port-catalog.py`)
     Measured against the set of addresses this project has identified. Useful
     for steering work; structurally unable to see a subsystem nobody has cited.
@@ -502,7 +511,56 @@ def run_port_catalog(funcs=None):
     }
 
 
-def build(scus, data, cat):
+def build_verification():
+    """The landing page's verification tiles, from the differential declarations.
+
+    Reuses the coverage gate's own readers (`differential_map.scan` and the
+    catalog's `collect_ports`), so the tile and `differential-coverage.py
+    --check` cannot disagree about what is covered. Returns None when the
+    declarations do not parse: a coverage figure built on a declaration the
+    gate rejects is the number this metric exists not to publish.
+    """
+    ci = os.path.join(REPO, "scripts", "ci")
+    if ci not in sys.path:
+        sys.path.insert(0, ci)
+    import differential_map
+    from port_catalog.citations import collect_ports
+
+    scan = differential_map.scan()
+    if scan.errors:
+        for e in scan.errors:
+            print("[progress] differential declarations: %s" % e)
+        return None
+    ported = set(collect_ports())
+    declared = scan.addrs()
+    covered = len(declared & ported)
+    tests = sum(1 for t in scan.tests if t.routines)
+    pct = 100.0 * covered / len(ported) if ported else 0.0
+    return [{
+        "key": "differential",
+        "label": "Retail kernel differential",
+        "pct": round(pct, 1),
+        "covered": covered,
+        "ported": len(ported),
+        "routines": len(declared),
+        "tests": tests,
+        "headline": "%d of %d ported routines run against retail's bytes"
+                    % (covered, len(ported)),
+        "detail": "Of the retail addresses a PORT tag names, the share a "
+                  "retail kernel differential runs: the routine executes off "
+                  "the user's disc in an R3000 interpreter beside the Rust "
+                  "kernel, on generated inputs, and the regions both wrote "
+                  "must match. Each test declares the routines it runs and "
+                  "fails unless the run entered exactly those bytes. %d tests "
+                  "run %d retail routines in all; the rest are setup calls or "
+                  "helpers with no tag of their own. Counted from the "
+                  "declarations, so it needs no disc." % (tests, len(declared)),
+        "denominator": "PORT-tagged addresses",
+        "href": "tooling/retail-kernel-differential.html",
+    }]
+
+
+def build(scus, data, cat, verification=None):
     tracks = []
 
     if scus:
@@ -583,12 +641,15 @@ def build(scus, data, cat):
                 "href": "subsystems/engine.html",
             })
 
-    return {
+    out = {
         "_comment": "Committed build input for site/_gen.py. The site builds without "
                     "disc data, so these cannot be computed at deploy time. Refresh "
                     "locally with scripts/ci/update-progress-metrics.py and commit.",
         "tracks": tracks,
     }
+    if verification:
+        out["verification"] = verification
+    return out
 
 
 def main():
@@ -618,10 +679,21 @@ def main():
             print("%-28s %s  %s" % (label, a, cat or "-"))
         return 0
 
+    verification = build_verification()
+
     scus, data = load_disc_coverage(args.funcs, args.extracted)
     if scus is None:
-        print("[progress] SKIPPED - no dump corpus / extracted tree; nothing to "
-              "refresh. Pass --funcs / --extracted to read another checkout's.")
+        # The verification block is the one part that needs neither corpus,
+        # so it refreshes here; every corpus-derived track stays as committed.
+        if verification and os.path.exists(OUT) and not args.show:
+            prev = json.load(open(OUT))
+            prev["verification"] = verification
+            with open(OUT, "w") as fh:
+                fh.write(json.dumps(prev, indent=2) + "\n")
+            print("[progress] refreshed the verification block of %s (disc-free)" % OUT)
+        print("[progress] SKIPPED - no dump corpus / extracted tree; the tracks "
+              "were not refreshed. Pass --funcs / --extracted to read another "
+              "checkout's.")
         return 0
 
     images = build_image_status(args.funcs, args.extracted,
@@ -647,13 +719,17 @@ def main():
     if args.skip_catalog and os.path.exists(OUT):
         prev = json.load(open(OUT))
         keep = {t["key"]: t for t in prev.get("tracks", [])}
-        out = build(scus, data, None)
+        out = build(scus, data, None, verification)
         have = {t["key"] for t in out["tracks"]}
         for key in ("port", "wiring"):
             if key in keep and key not in have:
                 out["tracks"].append(keep[key])
     else:
-        out = build(scus, data, cat)
+        out = build(scus, data, cat, verification)
+    if not verification and os.path.exists(OUT):
+        keep = json.load(open(OUT)).get("verification")
+        if keep:
+            out["verification"] = keep
 
     order = {"decompilation": 0, "formats": 1, "port": 2, "wiring": 3}
     out["tracks"].sort(key=lambda t: order.get(t["key"], 99))
@@ -666,6 +742,8 @@ def main():
         fh.write(text)
     print("[progress] wrote %s" % OUT)
     for t in out["tracks"]:
+        print("  %-14s %5.1f%%  (%s)" % (t["label"], t["pct"], t["denominator"]))
+    for t in out.get("verification", []):
         print("  %-14s %5.1f%%  (%s)" % (t["label"], t["pct"], t["denominator"]))
     return 0
 

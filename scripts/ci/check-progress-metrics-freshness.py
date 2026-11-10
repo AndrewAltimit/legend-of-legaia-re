@@ -37,6 +37,13 @@ those digests from the tree. A mismatch means the table describes an older tree.
 The ported-address set is also counted directly, which is what catches a port
 tile that agrees with a baseline as stale as itself.
 
+## The verification block
+
+The differential tile (`verification` in the JSON) is computed from the
+`differential!` declarations and the `// PORT:` tags, both committed, so it is
+recomputed here in full with the updater's own `build_verification` and
+compared figure by figure. It is the one block this check can hold exactly.
+
 ## What it deliberately does not do
 
 It never fails a commit, and it never rewrites the JSON. Refreshing is a
@@ -80,6 +87,15 @@ def tree_inputs():
     pc = upd.load_port_catalog()
     ports = pc.collect_ports()
     return len(ports), upd.image_status_inputs(set(ports), pc.load_ignore())
+
+
+def tree_verification():
+    """The verification block recomputed from this tree (disc-free)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("update_progress", UPDATER)
+    upd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(upd)
+    return upd.build_verification()
 
 
 def tracks(doc):
@@ -181,6 +197,19 @@ def main() -> int:
     else:
         bad.append("image-port-status.json is missing - the homepage renders "
                    "no per-image table")
+
+    shown_v = {t.get("key"): t for t in metrics.get("verification", [])}
+    want_v = tree_verification() or []
+    for t in want_v:
+        have = shown_v.get(t["key"])
+        if have is None:
+            bad.append("verification: progress-metrics.json carries no `%s` "
+                       "block" % t["key"])
+            continue
+        for f in ("covered", "ported", "routines", "tests"):
+            if have.get(f) != t.get(f):
+                bad.append("verification %s: tiles say %s, this tree's "
+                           "declarations give %s" % (f, have.get(f), t.get(f)))
 
     if args.live:
         if not os.path.isdir(FUNCS):

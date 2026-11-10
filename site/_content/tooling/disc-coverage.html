@@ -148,6 +148,7 @@
     <li><code>--check</code> compares against the committed baseline; coverage may only go up, within half a percentage point. A baseline moving down is a claim that needs a reason in the commit message (<code>--update-baseline</code>).</li>
     <li>The report lists the largest un-dumped code runs in <code>SCUS_942.54</code> by size - the one dump worklist the citation graph structurally cannot produce.</li>
     <li>The landing-page figures are refreshed by <code>scripts/ci/update-progress-metrics.py</code> and committed, because the site is built where the disc is not.</li>
+    <li>The homepage's third row, how much of the port is checked against retail's own code, comes from the same JSON's <code>verification</code> block: the share of <code>// PORT:</code>-tagged addresses a <a href="retail-kernel-differential.html">retail kernel differential</a> runs. It is counted from the tests' declarations, so it refreshes without the disc and the freshness check recomputes it exactly (<a href="verification-ladder.html">the verification ladder</a>).</li>
   </ul>
 </section>
 
