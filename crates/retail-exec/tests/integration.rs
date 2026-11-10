@@ -206,6 +206,7 @@ mod save_compose;
 mod save_leaves;
 mod save_subscreens;
 mod scale_stage;
+mod screen_dim;
 mod screen_fx;
 mod separation;
 mod seq_calc;
