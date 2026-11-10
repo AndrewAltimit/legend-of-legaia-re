@@ -315,3 +315,248 @@ fn the_light_pool_draws_what_retail_draws() {
     eprintln!("{polys} primitives, {filled} with fills, {alone} lone emits");
     assert!(polys > 100_000 && filled > 1500, "{polys} {filled}");
 }
+
+const SPRITE_TICK: u32 = 0x801E_4470;
+const CAMERA: u32 = 0x8001_72C0;
+const PROJECT: u32 = 0x8001_95A8;
+const PARENT: u32 = 0x8013_1000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Seen {
+    Hook,
+    Camera,
+    Project((i16, i16, i16), (i16, i16)),
+    Emit([i16; 4], u32, u32, u32),
+}
+
+/// The attached light's tick `FUN_801E4470` against `attached_sprite_tick`:
+/// the parent's tear-down and hidden bits, the folded world point handed to
+/// the projector with the extents, the per-tick hook when `+0x94` is set,
+/// and the rect (with both colours and the blend) handed to the draw. The
+/// projector answers generated corners; the draw and the hook are noted.
+#[test]
+fn the_light_pool_tick_matches_retail() {
+    differential!(prot(897, SPRITE_TICK));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    use legaia_engine_vm::field_actor_billboard::{
+        ProjectedQuad, SpriteTick, attached_sprite_tick,
+    };
+    use psx_retail_exec::{A0, A1, A2, A3, SP};
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let quad = std::rc::Rc::new(std::cell::Cell::new(ProjectedQuad::default()));
+    {
+        let seen = seen.clone();
+        cpu.hook(SCRIPT_TICK, move |r, _| {
+            assert_eq!(r.r[A0], ACTOR);
+            seen.borrow_mut().push(Seen::Hook);
+        });
+    }
+    {
+        let seen = seen.clone();
+        cpu.hook(CAMERA, move |_, _| seen.borrow_mut().push(Seen::Camera));
+    }
+    {
+        let (seen, quad) = (seen.clone(), quad.clone());
+        cpu.hook(PROJECT, move |r, m| {
+            let p = r.r[A0];
+            let pos = (m.rd16(p) as i16, m.rd16(p + 2) as i16, m.rd16(p + 4) as i16);
+            assert_eq!(r.r[A3], 0);
+            seen.borrow_mut()
+                .push(Seen::Project(pos, (r.r[A1] as i16, r.r[A2] as i16)));
+            let q = quad.get();
+            for (i, c) in [q.p0, q.p1, q.p2, q.p3].iter().enumerate() {
+                let at = m.rd32(r.r[SP] + 0x10 + 4 * i as u32);
+                m.wr16(at, c.0 as u16);
+                m.wr16(at + 2, c.1 as u16);
+            }
+        });
+    }
+    {
+        let seen = seen.clone();
+        cpu.hook(POOL, move |r, m| {
+            let p = r.r[A0];
+            let rect = std::array::from_fn(|i| m.rd16(p + 2 * i as u32) as i16);
+            seen.borrow_mut()
+                .push(Seen::Emit(rect, r.r[A1], r.r[A2], r.r[A3]));
+        });
+    }
+    let mut rng = Rng(0x5449_434B);
+    let mut arms = [0u32; 4];
+    for run in 0..20_000 {
+        let has_parent = rng.below(8) != 0;
+        let mut pflags = rng.next();
+        for bit in [8u32, 2] {
+            if rng.below(3) != 0 {
+                pflags &= !bit;
+            }
+        }
+        let ppos = (rng.next() as i16, rng.next() as i16, rng.next() as i16);
+        let local = (rng.next() as i16, rng.next() as i16, rng.next() as i16);
+        let ext = (rng.next() as i16 >> 4, rng.next() as i16 >> 4);
+        let hook = rng.below(2) == 0;
+        let (a, b, abr) = (
+            rng.next() & 0xFF_FFFF,
+            rng.next() & 0xFF_FFFF,
+            1 + rng.below(2),
+        );
+        let own = rng.next() & !8;
+        cpu.mem.wr32(ACTOR + 0x10, own);
+        cpu.mem
+            .wr32(ACTOR + 0x90, if has_parent { PARENT } else { 0 });
+        cpu.mem.wr32(ACTOR + 0x94, if hook { SCRIPT } else { 0 });
+        cpu.mem.wr16(ACTOR + 0x14, local.0 as u16);
+        cpu.mem.wr16(ACTOR + 0x16, local.1 as u16);
+        cpu.mem.wr16(ACTOR + 0x18, local.2 as u16);
+        cpu.mem.wr16(ACTOR + 0x3C, ext.0 as u16);
+        cpu.mem.wr16(ACTOR + 0x3E, ext.1 as u16);
+        cpu.mem.wr32(ACTOR + 0x74, a);
+        cpu.mem.wr32(ACTOR + 0x88, b);
+        cpu.mem.wr16(ACTOR + 0x5A, abr as u16);
+        cpu.mem.wr32(PARENT + 0x10, pflags);
+        cpu.mem.wr16(PARENT + 0x14, ppos.0 as u16);
+        cpu.mem.wr16(PARENT + 0x16, ppos.1 as u16);
+        cpu.mem.wr16(PARENT + 0x18, ppos.2 as u16);
+        let corner = |rng: &mut Rng| (rng.next() as i16 >> 6, rng.next() as i16 >> 6);
+        quad.set(ProjectedQuad {
+            p0: corner(&mut rng),
+            p1: corner(&mut rng),
+            p2: corner(&mut rng),
+            p3: corner(&mut rng),
+        });
+        seen.borrow_mut().clear();
+        assert_eq!(cpu.call(SPRITE_TICK, &[ACTOR]), Stop::Returned, "run {run}");
+
+        let want = std::cell::RefCell::new(Vec::new());
+        let tick = attached_sprite_tick(
+            has_parent.then_some((pflags, ppos)),
+            local,
+            ext,
+            hook,
+            |world, e| {
+                if hook {
+                    want.borrow_mut().push(Seen::Hook);
+                }
+                want.borrow_mut().push(Seen::Camera);
+                want.borrow_mut().push(Seen::Project(world, e));
+                quad.get()
+            },
+            |rect| {
+                want.borrow_mut().push(Seen::Emit(
+                    [rect.centre_x, rect.centre_y, rect.width, rect.height],
+                    a,
+                    b,
+                    abr,
+                ))
+            },
+        );
+        arms[match tick {
+            SpriteTick::NoParent => 0,
+            SpriteTick::TearDown => 1,
+            SpriteTick::Hidden => 2,
+            SpriteTick::Draw { .. } => 3,
+        }] += 1;
+        let label = format!("run {run}: {tick:?} parent flags {pflags:#x}");
+        assert_eq!(*seen.borrow(), want.into_inner(), "{label}");
+        let torn = matches!(tick, SpriteTick::TearDown);
+        assert_eq!(
+            cpu.mem.rd32(ACTOR + 0x10),
+            own | if torn { 8 } else { 0 },
+            "{label}"
+        );
+    }
+    assert!(arms.iter().all(|&n| n > 1000), "{arms:?}");
+}
+
+const SPAWN: u32 = 0x801E_5668;
+const ALLOC: u32 = 0x8002_0DE0;
+const STACK_TOP: u32 = 0x801F_FF00;
+
+/// The attached light's spawn `FUN_801E5668(parent, &offset, &extent,
+/// colour_a, colour_b, abr)` with the arguments op `0x34` sub-1 builds from
+/// its operand (`(0, -h, 0)`, the two extents, the colour in A or B by op0
+/// bit 0), against `spawn_attached_sprite` over decoded operands: the
+/// sprite's offset, extents, both colours and blend, with no script, plus
+/// the record fields the port does not carry (`+0x90` parent, `+0x50` /
+/// `+0x54`).
+#[test]
+fn the_light_pool_spawn_matches_retail() {
+    differential!(prot(897, SPAWN));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    use legaia_engine_vm::field_actor_billboard::{AttachedSpriteSpawn, spawn_attached_sprite};
+    let ok = std::rc::Rc::new(std::cell::Cell::new(true));
+    {
+        let ok = ok.clone();
+        cpu.hook(ALLOC, move |r, m| {
+            assert_eq!(r.r[psx_retail_exec::A0], 0x801F_28B8);
+            if ok.get() {
+                m.load(ACTOR, &[0xA5; 0x100]);
+            }
+            r.r[psx_retail_exec::V0] = if ok.get() { ACTOR } else { 0 };
+        });
+    }
+    const OFFSET: u32 = 0x8013_8000;
+    const EXTENT: u32 = 0x8013_8010;
+    let mut rng = Rng(0x5350_574E);
+    for run in 0..10_000 {
+        let mut operand = vec![0x10 | rng.below(16) as u8];
+        operand.extend((0..11).map(|_| rng.next() as u8));
+        let spawn = AttachedSpriteSpawn::decode(&operand).expect("sub-op 1");
+        let s = spawn_attached_sprite(&spawn, Vec::new());
+        // The op arm's arguments.
+        for (i, v) in [0, spawn.height.wrapping_neg(), 0].iter().enumerate() {
+            cpu.mem.wr16(OFFSET + 2 * i as u32, *v as u16);
+        }
+        cpu.mem.wr16(EXTENT, spawn.half_extent.0 as u16);
+        cpu.mem.wr16(EXTENT + 2, spawn.half_extent.1 as u16);
+        let bit = spawn.op0 & 1 != 0;
+        let (a, b, abr) = if bit {
+            (0, spawn.packed_rgb, 2u32)
+        } else {
+            (spawn.packed_rgb, 0, 1u32)
+        };
+        cpu.mem.wr32(STACK_TOP + 0x10, b);
+        cpu.mem
+            .wr32(STACK_TOP + 0x14, abr | (rng.next() & 0xFFFF_FF00));
+        ok.set(rng.below(8) != 0);
+        let parent = 0x8013_1000 + rng.below(0x100) * 4;
+        assert_eq!(
+            cpu.call(SPAWN, &[parent, OFFSET, EXTENT, a]),
+            Stop::Returned,
+            "run {run}"
+        );
+        if !ok.get() {
+            assert_eq!(cpu.regs.r[psx_retail_exec::V0], 0);
+            continue;
+        }
+        let label = format!("run {run}: {spawn:?}");
+        let h = |cpu: &mut psx_retail_exec::Cpu, o: u32| cpu.mem.rd16(ACTOR + o) as i16;
+        assert_eq!(
+            (h(&mut cpu, 0x14), h(&mut cpu, 0x16), h(&mut cpu, 0x18)),
+            s.offset,
+            "{label}"
+        );
+        assert_eq!(
+            (h(&mut cpu, 0x3C), h(&mut cpu, 0x3E)),
+            s.half_extent,
+            "{label}"
+        );
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x74), s.color_a, "{label}");
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x88), s.color_b, "{label}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x5A), u16::from(s.abr), "{label}");
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x94), 0, "{label}: no script yet");
+        assert!(s.script.is_empty());
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x90), parent, "{label}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x50), 0x3E7, "{label}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x54), 0, "{label}");
+    }
+}
