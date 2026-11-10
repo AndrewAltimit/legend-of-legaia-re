@@ -1503,10 +1503,16 @@ Vahn the same breath costs about `505`, under `0x1FF`, and stays at `2`
 this order: it stores a pass's cost and returns the step of the next one, and the
 engine installs that step when the next pass opens its frame
 (`BattleState::pending_frame_step`, taken by `World::battle_sm_pass_due` and the
-per-pass claims beside it), so the pass that raised it is still waited out on the step
-it ran at. An arm table's step is the arm's own frames' cost: a dearer arm raises the
-step on its first pass, and a cheaper arm after a dear one runs the ring's step until the
-dear entries leave it ([below](#what-the-arm-step-table-is)). Spanning a pass's own frame with the step its push returned shortened
+per-pass claims beside it, and only by a claim of a later frame than the one that left
+it), so the pass that raised it is still waited out on the step it ran at. The effect
+scene graphs claim the pass's own frame in the frame tail, after the pass has run
+(`World::summon_fx_pass_vsyncs`, `World::action_fx_pass_vsyncs`); taken there, every new
+step re-timed the pass that raised it. An arm table's step is the arm's own frames'
+cost and goes through the ring the same way, so a dearer arm's first pass runs on the
+step the frames before it left and the arm's own step opens its second pass, as
+retail's ramps read: Nova's arm 3 runs `1` then `4`, Vera's arm 4 `2`, `2`, `2` then
+`4`, Palma's arm 5 `2` then `4`. A cheaper arm after a dear one runs the ring's step
+until the dear entries leave it ([below](#what-the-arm-step-table-is)). Spanning a pass's own frame with the step its push returned shortened
 every ring-driven step change by a pass, and spanning it with the step read before
 the push (with the pass's timers still on the older step) left the pass's drain a
 step behind its frame.
@@ -1767,7 +1773,7 @@ What differs in those arms is the creature's pose and the burn puffs around it
 
 **A cheap arm runs the ring's step until it empties.** The port reads the arm's table
 step as its frames' cost through the ring (`World::apply_cast_arm_frame_step`): the step a
-pass runs is the larger of its arm's and the one the passes before it left. A clamped
+pass runs is the ring's after the pass before it. A clamped
 frame stores `0x2BC`, which reads `3`, so the sixteen passes after a step-`4` arm run `3`
 under a cheaper table. Kiss of Death's recording (`--retail-parts`,
 `battle_map01_lippian_kiss_of_death_mid_cast`) holds it: arm 5, the victim alone at `2` by
@@ -1794,6 +1800,12 @@ over the 29 Seru films, step agreement goes from `.895` to `.889` and the frames
 `.882` and `.864`, and Odd Dimension falls from `.710` to `.577`. The table stays. The opening arms
 read `1` on a lone caster where the table leaves the ordinary `2`, which moves the summon's CD-seek
 hold, and an arm the cost lowers to `3` re-deals what its passes seat.
+Those runs took an arm's step on its own first pass. With the step opening on the pass
+after ([above](#a-pass-runs-on-the-step-the-frames-before-it-left)) an entry is read as the
+arm's cost, and one entry form differs: an arm one pass long runs on the step the arm
+before it left, so its step column names that arm. Those entries take the cost column
+instead. Iota's arm 4 costs the clamp where its step column read `1`, so arm 5 opens on `4`
+as retail's does, and the film's arm 5 reads `.633` against `.400`.
 
 Neither Ozma (`.635`) nor Odd Dimension (`.710`) loses its film to the step. On retail's own steps
 (`--retail-steps`) they score `.632` and `.724`. Ozma's arms 6 to 20 already match retail's step on

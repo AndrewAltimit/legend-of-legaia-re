@@ -553,8 +553,12 @@ return from its own turn shows on the second tick of the `0x28` pass and the
 first of the next, where retail shows it for the whole of the next pass, and
 `0x28` reads `.908`. Palma's arm 5 is the other arm the count of counter
 runs had flattered: its five-vsync step-`4` frames read `.789` pass for
-pass, and `.899` against the engine tick four earlier, so the engine's arm
-stands a pass ahead of retail's there.
+pass, and `.899` against the engine tick four earlier. The camera channel
+named the cause: the arm-4 exit's pan sets out from TR x `-0x2000` and TR z
+`0x2000`, which the module stores straight, and the engine's stored-value drift
+was repeated for the rest of a pass that handed over on its first tick
+(`ArmDirection::rest_drift`); with the arm's first pass on retail's step `2`
+the arm reads `.943`.
 
 On frames that keep one length the two counts agree, which is why the
 earlier measurements hold. On the lone-caster Odd Dimension recording
@@ -620,16 +624,16 @@ draws, which is how Ozma's arms 5..9 were closed: a retail frame there reads
 one, the eight streak ribbons' and the rumble's two, with a volley's `16..64`
 on top every eighth frame. The engine's frames read the same numbers once the
 ribbon draws on the world stream, and under `--rand-track` its bolts are
-retail's bolt for bolt. Its volleys are not yet: the part that calls the stager
-(`0x801F9F10`, a `0x5F` wait then one call every `0x1F`) fires on the 23rd
-frame after its seat where retail's fires on the 24th. A part's tick drains its
-wait by `8 * step` and re-enters its program below zero
-(`0x80021E40..0x80021E4C`, `0x80022B9C`), `24` frames of step `4` for a wait of
-`760`; the engine's part has drained one frame's `32` more. Retail's seat frame
-reads step `2` (the part's `+0xB6` channel gains `40` there and `80` a frame
-after), and the engine runs the hand-over frame on the next arm's `4`, which
-would account for it. Every volley so lands a frame early, on another frame's
-words.
+retail's bolt for bolt. So are its volleys: the part that calls the stager
+(`0x801F9F10`, a `0x5F` wait then one call every `0x1F`) drains its wait by
+`8 * step` a frame and re-enters its program below zero
+(`0x80021E40..0x80021E4C`, `0x80022B9C`). Retail's seat frame runs step `2` (the
+part's `+0xB6` channel gains `40` there and `80` a frame after), the ring's
+step before arm 5's clamped frames, and the engine ran it on the arm's `4`, so
+every volley landed a frame early, on another frame's words. With an arm's step
+opening on its second pass ([the frame step](../subsystems/battle-stage-camera.md#a-pass-runs-on-the-step-the-frames-before-it-left))
+the volleys fall on frames `24`, `32`, `40`, `48`, `56` and `64` of arm 5 on both
+sides, and the per-frame draw counts agree for its first seventy frames.
 
 A cast whose outcome is a roll parts on the deal the same way, and the sound
 channel shows it first. `battle_korb2_mage_void_accessories_mid_cast` scores a

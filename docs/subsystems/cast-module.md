@@ -2027,8 +2027,9 @@ climbing word `w`).
 
 Arm 2 seats the creature and stages clip `1` with the bump on one pass
 (`sb s8,0x1DA` / `sb s8,0x1DC`, `0x801F6DB0..0x801F6DB4`, right behind the
-installer); the host seats after the tick, so `World::run_cast_module_code` carries a
-store made while a seat is owed or pending onto the next pass, as a director's is.
+installer); the host seats after the tick, so `World::run_cast_module_code` holds a
+store made while a seat is owed or pending, as a director's is, and the seat lands it
+behind the installer's resets on the same pass ([the seat pass](#the-seat-pass-ticks-the-new-node)).
 Arm 3's bare clip `0` then waits for clip `1`'s natural end (the clip-gated list).
 
 The cast opens on two **opaque** panels that cover the whole frame and fall
@@ -3256,7 +3257,8 @@ and `0x20` (`sh` into the node's `+0x68`), and arm 9's bare `+0x1DA`
 decrement leaves clip `0` to the swim-in's natural end, deep in arm 11. The
 host seats the creature after the tick that asks for it, so the director's
 creature writes wait for the seat rather than land on the installer's resets
-(`World::apply_seru_seat_writes`). Arm 15's `0x801F9398` is a VRAM-rect
+(`World::apply_seru_seat_writes`), and the seat applies them on the pass that asked
+([the seat pass](#the-seat-pass-ticks-the-new-node)). Arm 15's `0x801F9398` is a VRAM-rect
 scroller (op `0x1E`, rect `(0x2C0, 0, 0x3F, 0xFF)`, one halfword a step):
 it rolls page `0x2B`, the swirl texture the caustic nodes sample. Through arm 15
 the replay's rect matches retail VRAM reads exactly. In arm 16, where retail's
@@ -4981,6 +4983,22 @@ on the pass.
 The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.
+
+<a id="the-seat-pass-ticks-the-new-node"></a>
+
+**The seat pass ticks the new node.** The installer builds the creature's node inside the
+module's call on the frame driver's pass (`jal 0x80024C88` at `0x801F1D4C`), and the actor
+list's tick walk `FUN_8002519C` reaches it later in that pass, so the seat arm's own stores
+and the creature's first advance land on the seat pass. PROT 0934's arm 5 seats Ozma, sets
+the node's `+0x42`, Z `-0x600`, rate `4` and bumps `+0x1DA` (`0x801F7034..0x801F706C`); the
+first recorded creature row reads cursor `8`, staged `1`. PROT 0929's arm 5 bumps `+0x1DA`
+and `+0x1DC` bit 0 (`0x801F7094..0x801F70B8`), and Mule's first row already plays clip `1`
+at cursor `0`. Every lone-caster summon recording reads one advance on the seat's first
+row, Horn's hidden one included (cursor `3`, held there until arm 6 shows it: a fresh
+node's `+0x74` holds no tint word yet, so the zero-colour skip cannot stop that advance).
+The engine's hosts seat after the world tick, past the pass's anim walk, so
+`World::seat_summon_actor` lands the held seat writes and then runs the creature's own
+slice of the walk for the pass (`World::run_seat_pass_node_tick`).
 
 The installer is one battle-overlay routine, shared by every module that
 seats a creature, and what it writes holds band-wide
