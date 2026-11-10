@@ -85,10 +85,12 @@ fn rim_elm_ambush_matches_the_retail_capture() {
         .iter()
         .map(|s| s.monster_id)
         .collect();
-    assert_eq!(
-        ids,
-        vec![0x3F, 0x3E, 0x3E, 0x3E],
-        "town0c row 3 off the disc"
+    // Battle init's species-order rebuild (`FUN_80055B6C`,
+    // `0x80055C7C..0x80055D2C`) opens a two-species row either way round on
+    // one `rand()`: the row as authored, or the bees in front of their queen.
+    assert!(
+        ids == [0x3F, 0x3E, 0x3E, 0x3E] || ids == [0x3E, 0x3E, 0x3E, 0x3F],
+        "town0c row 3 off the disc, in one of battle init's two orders: {ids:02X?}"
     );
 
     // ctx+0x287 = 0: escapable, random-encounter boost profile.

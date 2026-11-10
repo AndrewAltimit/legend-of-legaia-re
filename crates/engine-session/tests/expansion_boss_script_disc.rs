@@ -234,7 +234,10 @@ fn the_cinder_warden_reaches_its_second_phase() {
     // A tenth of the Warden's HP leaves the fight short but still crosses
     // the half-HP threshold on a real hit rather than in one blow.
     w.toggles.enemy_stat_permille = 100;
-    w.rng_state = 0x5EED_0001;
+    // A seed whose first blow leaves the Warden standing: battle entry draws
+    // from this stream (the seat phases, the species order), so the seed
+    // is picked against the entry as it is.
+    w.rng_state = 0x5EED_0003;
     assert!(w.start_expansion_boss("cinder_warden"));
 
     let mut in_battle = false;

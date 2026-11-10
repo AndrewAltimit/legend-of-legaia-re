@@ -166,7 +166,8 @@ fn the_man_installer_is_retails() {
         cpu.mem.load(MAN, &man);
         cpu.mem.load(MAP + 0x12000, &[0u8; 0x10]);
         cpu.mem.load(FLAG_BANK, &bank);
-        cpu.mem.wr32(BOOT_LATCH, 0);
+        let latch = rng.below(4) == 0;
+        cpu.mem.wr32(BOOT_LATCH, u32::from(latch));
         cpu.mem.wr32(FIELD_ENTRY, entry);
         cpu.mem.wr16(GAME_MODE, 2);
         cpu.mem.wr8(STANDING, if survived { 0x80 } else { 0 });
@@ -213,7 +214,14 @@ fn the_man_installer_is_retails() {
         let ctx = format!(
             "case {case}: bank {bank:02x?} entry {entry} survived {survived} name {name:02x?}"
         );
-        let retail_bank = cpu.mem.read(FLAG_BANK, 4);
+        // Flag `0x16` is the installer's "first scene since boot" mark:
+        // cleared here, raised under the boot latch. The port carries
+        // neither, so it is held to retail on its own and left out of the
+        // comparison.
+        let mut retail_bank = cpu.mem.read(FLAG_BANK, 4);
+        assert_eq!(retail_bank[2] & 2 != 0, latch, "{ctx}: flag 0x16");
+        assert_eq!(cpu.mem.rd32(BOOT_LATCH), 0, "{ctx}: the latch is spent");
+        retail_bank[2] = retail_bank[2] & !2 | bank[2] & 2;
         let port_bank: Vec<u8> = (0..4u16)
             .map(|i| {
                 (0..8u16).fold(0u8, |b, bit| {

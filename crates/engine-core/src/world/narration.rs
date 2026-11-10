@@ -11,7 +11,8 @@ mod dialogue_drive;
 pub const MAN_LOAD_FLAG: u16 = 7;
 
 /// The system flag the MAN installer clears on every scene load and raises
-/// only on the first load after a boot (byte `0x8008575A` bit `0x02`).
+/// only on the first load after a boot (byte `0x8008575A` bit `0x02`). The
+/// port leaves it as it finds it ([`World::man_load_entry_flags`]).
 pub const MAN_LOAD_BOOT_FLAG: u16 = 0x16;
 
 /// One frame's grade staging ([`World::frame_grade`]): what each play host
@@ -529,19 +530,18 @@ impl World {
     /// therefore never spawns - `town01` / `town0c`'s `サウンド外` /
     /// `サウンド内` walk-on records (a bare "Greetings." box) among them.
     ///
-    /// The loader's next write clears flag [`MAN_LOAD_BOOT_FLAG`]
-    /// (`andi a0,v0,0xfd` on byte `0x8008575A`, `0x8003AEFC..0x8003AF0C`), so
-    /// the bank a save carries never holds it past a scene load. Under the
-    /// boot latch `DAT_8007B71C` the same block raises it again, clears the
-    /// latch and adds `0x80` to the entry X word `0x80073EF4`
-    /// (`0x8003AF10..0x8003AF28`); the latch is not carried, only the first
-    /// scene load after a boot sees it set, and no scene script reads the
-    /// flag.
+    /// The loader's next write is to flag [`MAN_LOAD_BOOT_FLAG`]: cleared
+    /// (`andi a0,v0,0xfd` on byte `0x8008575A`, `0x8003AEFC..0x8003AF0C`), or
+    /// under the boot latch `DAT_8007B71C` raised, with the latch cleared and
+    /// `0x80` added to the entry X word `0x80073EF4`
+    /// (`0x8003AF10..0x8003AF28`). So the flag reads "this is the first scene
+    /// since boot". The port does not carry it: the latch is boot state the
+    /// world has no seat for, a card save taken in such a scene holds the bit
+    /// set, and no scene script on the disc tests or writes flag `0x16`.
     ///
-    /// PORT: FUN_8003AEB0 (`0x8003AEEC..0x8003AF0C`)
+    /// PORT: FUN_8003AEB0 (`0x8003AEEC..0x8003AEF8`)
     pub fn man_load_entry_flags(&mut self) {
         self.system_flag_set(MAN_LOAD_FLAG);
-        self.system_flag_clear(MAN_LOAD_BOOT_FLAG);
     }
 
     /// Evaluate a partition-2 record's C1 / C2 story-flag gates: C1 blocks
