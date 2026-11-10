@@ -419,6 +419,25 @@ impl PlayWindowApp {
         );
         let mut y = Y0 + 15;
         let first = self.tools_page.first_shown();
+        // The scroll bar on the plate's edge, as the settings page draws it:
+        // without it nothing says the minigame rows sit under the last one
+        // shown.
+        if let Some((thumb_y, thumb_h)) =
+            scroll_thumb(SHOWN, TOOL_COUNT, first, SHOWN as i32 * ROW_H)
+            && let Some(src) = self.battle_hud_solid_src()
+        {
+            let x = X0 + WIDTH - 3;
+            out.push(TextDraw {
+                dst: (x, y, 1, (SHOWN as i32 * ROW_H) as u32),
+                src,
+                color: self.chrome().rule,
+            });
+            out.push(TextDraw {
+                dst: (x, y + thumb_y, 1, thumb_h as u32),
+                src,
+                color: text,
+            });
+        }
         for (i, (row, label, _)) in TOOL_ROWS.iter().enumerate().skip(first).take(SHOWN) {
             let focused = i == self.tools_page.cursor;
             if focused && let Some(src) = self.battle_hud_solid_src() {
@@ -464,6 +483,19 @@ impl PlayWindowApp {
     }
 }
 
+/// The scroll bar's thumb for a list of `total` rows showing `shown` from
+/// row `first`, on a track `track_h` pixels tall: its offset down the track
+/// and its height. `None` when every row shows.
+fn scroll_thumb(shown: usize, total: usize, first: usize, track_h: i32) -> Option<(i32, i32)> {
+    if total <= shown || shown == 0 {
+        return None;
+    }
+    let thumb_h = (track_h * shown as i32 / total as i32).max(6);
+    let max = (total - shown) as i32;
+    let at = (first as i32).min(max);
+    Some(((track_h - thumb_h) * at / max, thumb_h))
+}
+
 /// A battle-music pick's words.
 fn bgm_pick_label(i: usize) -> String {
     match bgm_pick(i) {
@@ -489,6 +521,28 @@ fn spell_pick_label(world: &legaia_engine_core::world::World, id: u8) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_scroll_thumb_spans_the_track_from_first_row_to_last() {
+        let track = SHOWN as i32 * ROW_H;
+        // A list that fits draws no bar.
+        assert_eq!(scroll_thumb(SHOWN, SHOWN, 0, track), None);
+        let (top, h) = scroll_thumb(SHOWN, TOOL_COUNT, 0, track).expect("the page scrolls");
+        assert_eq!(top, 0);
+        assert!(h >= 6 && h < track);
+        // At the last page the thumb ends on the track's end.
+        let (bottom, h2) =
+            scroll_thumb(SHOWN, TOOL_COUNT, TOOL_COUNT - SHOWN, track).expect("the page scrolls");
+        assert_eq!(h2, h);
+        assert_eq!(bottom + h, track);
+        // Every cursor position's first row keeps the thumb on the track.
+        let mut p = ToolsPage::default();
+        for _ in 0..TOOL_COUNT {
+            let (y, h) = scroll_thumb(SHOWN, TOOL_COUNT, p.first_shown(), track).unwrap();
+            assert!(y >= 0 && y + h <= track);
+            p.move_cursor(1);
+        }
+    }
 
     #[test]
     fn the_cursor_wraps_and_a_move_clears_the_refusal() {
