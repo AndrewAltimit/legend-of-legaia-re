@@ -912,8 +912,9 @@ page's first halfwords; the port wrote only the fifteen palettes. The page, the 
 and the upload gate on the acting seat's queue byte match. The party battle mesh's splice
 `FUN_800536BC`, post-pass `FUN_80053898` and texture relocation `FUN_80053A28` (`battle_char_splice`)
 match over the four player files and random loadouts, the TMD registrar `FUN_800268DC`
-(`tmd_register`) over every TMD the raw PROT entries carry, and the sprite arm `FUN_8002A5A4`
-(`sprite_arm`) over every mode word.
+(`tmd_register`) over every TMD the raw PROT entries carry, the sprite arm `FUN_8002A5A4`
+(`sprite_arm`) over every mode word, and the overworld sky band `FUN_801F73E4` (`world_map_sky`) over
+random overworld cameras.
 
 The visible-tile crop's decoration pass `FUN_801F7088` (`view_window`), run whole over random maps,
 focus words, windows and region boxes, draws exactly the cells `view_cells` and
