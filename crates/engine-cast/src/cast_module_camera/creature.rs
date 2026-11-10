@@ -75,15 +75,16 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 /// bumps `+0x1DA` and `+0x1DC` together (`0x801F7414`, `0x801F741C`). Its rise
 /// out of the floor in arms 2 and 3 is `World::apply_slippery_writes`.
 ///
+/// Arm 3's exit prints the spell name and arm 5's the attack name over it.
+///
 /// Arm 8's exit frames the cast's target: a group code (Slippery's own,
-/// the monster row) the group's centre through `FUN_801DCEAC` with its
-/// extent doubled into TR z, a seat that seat at half the framing depth.
+/// the monster row) frames the group's centre through `FUN_801DCEAC` with its
+/// extent doubled into TR z.
 ///
-/// Not carried: the arm 3 / 5 captions, and arm 10's wait for every monster
-/// to be idle (`+0x1D9 == 0`, `0x801F7A90..0x801F7B18`) - the arm gates on
-/// the countdown alone.
+/// Not carried: arm 10's wait for every monster to be idle (`+0x1D9 == 0`,
+/// `0x801F7A90..0x801F7B18`) - the arm gates on the countdown alone.
 ///
-/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates and camera writes - captions, parts, fades and the arm 10 idle wait not carried)
+/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates, camera writes and captions - parts, fades and the arm 10 idle wait not carried)
 pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let p = MODULE_DRAIN_PER_TICK;
@@ -138,8 +139,12 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 }
             }
             st.countdown.add(1 << 7);
+            // The exit prints the spell name at the label's place
+            // (`FUN_8003541C(.., 0x96, ..)` on `DAT_800754C8[+0x1DF].+8`,
+            // `0x801F6E08..0x801F6E94`).
             ArmDirection {
                 nudge: drift,
+                caption: Some(ModuleCaption::SpellName),
                 ..ArmDirection::PASS
             }
         }
@@ -155,7 +160,12 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 return ArmDirection::HOLD;
             }
             st.countdown.add(1 << 8);
-            ArmDirection::PASS
+            // The exit clears the line (`FUN_800319A8(0)`) and prints the
+            // attack name in its place (`0x801F6F70..0x801F6FC0`).
+            ArmDirection {
+                caption: Some(ModuleCaption::AttackName),
+                ..ArmDirection::PASS
+            }
         }
         SLIPPERY_RAIN_DRAIN_ARM => {
             if st.countdown.drain_above(0) {

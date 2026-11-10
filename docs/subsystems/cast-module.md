@@ -2460,7 +2460,9 @@ once a battle frame through `legaia_render_kernels::cast_rain` on the world's
 `engine-screens`. The call is the draw tick's, latched once a frame by `ctx[+0x272]`
 (`0x80048104..0x800481B0`), and its rate is the step: the arm runs at step `4`, so a
 call per vsync at rate `1` fell each drop a quarter as far and rolled its spawns four
-times as often, and the storm stood about four times as dense as retail's. Arm `8`'s exit frames the cast's target off the creature's
+times as often, and the storm stood about four times as dense as retail's. Arm `3`'s exit
+prints the spell name at the label's place and arm `5`'s exit the attack name over it
+(`0x801F6E08..0x801F6E94`, `0x801F6F70..0x801F6FC0`). Arm `8`'s exit frames the cast's target off the creature's
 target byte `+0x1DD` (the caster's, copied by the installer at
 `0x801F1D98..0x801F1DB8`): Slippery's own group code frames the monster row's
 centre through `FUN_801DCEAC` with its extent doubled into TR z
@@ -2469,7 +2471,7 @@ centre through `FUN_801DCEAC` with its extent doubled into TR z
 and the burst `0x801F83EC` on the camera focus, on the creature's angle trio
 (`0x801F7910..0x801F79E8`, `World::slippery_hit_exit`); its purple flash is the
 presentation decoder's. Without the rings arm 10 read `.830` frame by frame, `.900`
-with them. Not carried: the arms' captions, breath parts and fades, and arm `10`'s wait for
+with them. Not carried: the breath parts and fades, and arm `10`'s wait for
 every monster to be idle. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
