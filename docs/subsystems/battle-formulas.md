@@ -70,7 +70,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Special / summon roll](#roll---fun_801dd0ac) | `FUN_801DD0AC` | INT-driven attacker roll vs INT + HP + DEF defender roll | `summon_predamage`, `arts_physical_predamage` |
 | [Scale](#scale---fun_801dd864-and-the-element-matrix) | `FUN_801DD864` | `atk * matrix[a][d] / 100`, Venom / Toxic, magic level | `apply_element_affinity`, `apply_status_weaken`, `apply_magic_power` |
 | [Finisher](#finisher---fun_801ddb30) | `FUN_801DDB30` | resist halve, guard halve, `rand%9+8` floor, summon %, cap 9999 | `damage_finish` |
-| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
+| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, halfword cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
 | [Capture-class wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4) | `FUN_801DD4B0` / `FUN_801DD6B4` | baked power, respect or bypass the resist ladder | `battle_damage_wrappers` |
 | [Recovery summons](#recovery-summons) | PROT 0905 / 0911 | Vera `level*0x20 + 0xE0`; Orb `(level<<6) + 0x1C0` | `heal_summon_amount` |
 | [Spell XP + magic level](#summon-spell-xp--magic-level-up) | `FUN_801DDB30` tail, `FUN_801E70BC` | `gain = dmg*(12 or 4)/maxHP`; level up when `xp > table*mult>>1` | `summon_spell_xp_gain`, `summon_magic_levels_up` |
@@ -819,10 +819,17 @@ accessory halves a matching-element monster special and All Guard applies the
 
 ```text
 pct = max(1, damage * 100 / maxHP)
-if defender record +0xF8 & 0x200:  pct += pct >> 2        // AP Boost, passive 0x28 / 0x29
-if defender record +0xF8 & 0x100:  pct += pct / 10
-defender[+0x170] = min(100, defender[+0x170] + pct)
+party defender, record +0xF8 & 0x200:  gauge += pct >> 2     // AP Boost, passive 0x28 / 0x29
+party defender, record +0xF8 & 0x100:  gauge += pct / 10
+gauge += pct
+if gauge > 100: gauge = 100
 ```
+
+`gauge` is the halfword `defender[+0x170]`: each add is stored back as a
+halfword and the cap tests the halfword (copy A, `0x801DE25C..0x801DE2D8`). A
+percent past `0xFFFF` - a big hit on a tiny max HP - therefore wraps the gauge,
+and a wrap that lands at or under `100` stays. Both bonuses read the base
+percent, not each other's sum.
 
 The kernel exists **twice** in overlay 0898, as two independent inlined copies:
 

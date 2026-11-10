@@ -775,3 +775,27 @@ stand for one of retail's own `RTPS` calls had projected through the hosts' `f32
 screen it missed retail's `SXY` on nearly every point, by a pixel from the divide and the integer
 matrix, and by hundreds where a point sits within `H / 2` of the eye and the divide saturates. The
 framebuffer grab's `rtps_point` and the drop shadow's grid now project through `FieldGteView`.
+
+The battle routines too large to run whole in one pass run arm by arm, each against the kernel its port keeps for
+that arm. The Triangle arts-list driver `FUN_801D3444` (`arts_list_driver`) carries a caption latch `0x801F4E08`
+the port did not have: the closed list's `View Hyper Arts list` is latched in the entry and stays up while a list
+closed just before the entry ended slides out, which the port now draws. The battle-result build `FUN_801D84C0`
+(`party_panel_build`) publishes the context's `+0x1F9` buffer into two placement records, `0x59` and `0x65`, where
+the port's list named one. The Final Heal sweep `FUN_801E6968` (`final_heal`) keeps the ability bit on a member
+whose bit is set with no Lost Grail equipped, where the port cleared it; the engine still sweeps the whole party
+after every step where retail sweeps the acting actor's target at the action's cleanup. The after-image walk
+`FUN_80049348` (`afterimage_walk`) divides `8` by the anim rate with no guard, so a frozen actor's quotient is all
+ones and the walk draws nothing, where the port drew a deep pair; and a monster at rate `1` samples depths `16` and
+`32`, where the port clamped to `15`. The multi-cast readout `FUN_801E805C` (`value_readout`) draws a five-digit
+row's narrow cells fourteen rows tall, not twelve, and its teardown head closes element `0x50` and drops the flag
+when the string total is live, which the port's fragments did not compose. The damage finisher `FUN_801DDB30`
+(`finisher`), called on its own with the two rolls, matches on the value, the Stone nullify, the strip, the rumble
+and the summon XP; its Spirit fill stores each add as the halfword `+0x170` and caps the halfword, so a percent past
+`0xFFFF` - a big hit on a tiny max HP - wraps under the cap, where the port saturated. The per-hit numeral
+`FUN_801DF6B8` (`popup_numeral`) matches, except an arm with no port: under an OT depth of `0x80` the projection's
+square is reseated `32` px from its near corner, and the host projection carries no OT depth.
+
+Matched on their first run: the side-band tick `FUN_80056208` (`battle_sideband`); the battle floor's grid
+`FUN_801D02C0`, both passes and every packet, the GTE answered by the interpreter's (`ground_grid`); the per-actor
+draw `FUN_80048A08`, per object and the shadow (`actor_draw`); and the arts-entry build `FUN_801D388C` case `9`, the
+four chip records (`arts_entry_build`).
