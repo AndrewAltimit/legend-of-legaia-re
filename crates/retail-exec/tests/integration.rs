@@ -254,6 +254,7 @@ mod stream_slot;
 mod strv2_decode;
 mod summon_roll_sites;
 mod super_learn;
+mod swordie;
 mod system_leaves;
 mod talk_dispatch;
 mod target_banner;
