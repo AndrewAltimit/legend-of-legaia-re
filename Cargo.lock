@@ -4403,6 +4403,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-title",
+ "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-game-tables",
