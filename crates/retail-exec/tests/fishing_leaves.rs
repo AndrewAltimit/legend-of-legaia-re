@@ -17,6 +17,7 @@ const RESET: u32 = 0x801D_746C;
 const GATE: u32 = 0x801D_712C;
 const PROBE: u32 = 0x801D_7030;
 const WANDER: u32 = 0x801D_2278;
+const CARD: u32 = 0x801D_5298;
 const BAG_COUNT: u32 = 0x8004_2F4C;
 const RAND: u32 = 0x8005_6798;
 const SPAWN: u32 = 0x8002_1B04;
@@ -267,4 +268,101 @@ fn the_lead_angler_ticks_as_retail_ticks_him() {
         }
     }
     assert!(rolls > 2000, "{rolls}");
+}
+
+/// The landed-catch card `FUN_801D5298`, run frame by frame until it has
+/// credited the catch and settled the best-catch record, against
+/// `FishingSpecies::score_for` and `FishingRecord::credit`. Its draws, the
+/// clip driver and the sprite calls are stubbed; the record words are what it
+/// owns.
+#[test]
+fn a_landed_catch_credits_what_retail_credits() {
+    differential!(prot(972, CARD));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_fishing::fishing::{FISH_POINTS_CAP, FishingRecord};
+    let overlay = disc()
+        .unwrap()
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .unwrap();
+    let species = fs::parse(&overlay).expect("species");
+    for va in [
+        0x8003_D2C4,
+        0x8002_04F8,
+        0x8001_72C0,
+        0x8003_D344,
+        0x801D_67BC,
+        0x801D_63B0,
+        0x801D_76E0,
+        0x801D_73B8,
+    ] {
+        cpu.stub(va, 0);
+    }
+    const ACTOR: u32 = 0x8014_0000;
+    const SPECIES: u32 = 0x801D_91CC;
+    const STRENGTH: u32 = 0x801D_91B8;
+    const LIFT: u32 = 0x801D_9294;
+    const POINTS: u32 = 0x8008_444C;
+    const BEST: u32 = 0x8008_4458;
+    const BEST_FISH: u32 = 0x8008_445C;
+    const PACKETS: u32 = 0x1F80_03A0;
+    const FRAME_STEP: u32 = 0x1F80_0393;
+    let mut rng = Rng(0x4341_5443);
+    let (mut capped, mut bested) = (0, 0);
+    for round in 0..20_000 {
+        let sp = species[rng.below(species.len() as u32) as usize];
+        // The hook-time sum stays under `0x800` (`hook_strength`: a class
+        // roll below the water weight, at most 500, plus the line, spread and
+        // rod terms); the card's 32-bit product only wraps past `0x8000` on
+        // the dearest fish, which no hook reaches.
+        let strength = match rng.below(2) {
+            0 => rng.below(0x800) as i32,
+            _ => rng.below(0x4000) as i32,
+        };
+        let points = match rng.below(3) {
+            0 => FISH_POINTS_CAP - rng.below(2000) as i32,
+            _ => rng.below(500_000) as i32,
+        };
+        let best = rng.below(4000) as i32;
+        let best_fish = rng.below(10) as usize;
+        for o in (0..0x80).step_by(4) {
+            cpu.mem.wr32(ACTOR + o, 0);
+        }
+        cpu.mem.wr32(SPECIES, sp.index as u32);
+        cpu.mem.wr32(STRENGTH, strength as u32);
+        cpu.mem.wr32(LIFT, 1);
+        cpu.mem.wr32(POINTS, points as u32);
+        cpu.mem.wr32(BEST, best as u32);
+        cpu.mem.wr32(BEST_FISH, best_fish as u32);
+        let mut frames = 0;
+        while cpu.mem.rd16(ACTOR + 0x2A) != 2 {
+            cpu.mem.wr32(PACKETS, 0x8018_0000);
+            cpu.mem.wr8(FRAME_STEP, 1 + rng.below(3) as u8);
+            assert_eq!(cpu.call(CARD, &[ACTOR]), Stop::Returned);
+            frames += 1;
+            assert!(frames < 2000, "round {round}");
+        }
+        let mut port = FishingRecord {
+            points,
+            best_points: best,
+            best_fish,
+        };
+        port.credit(sp.index, sp.score_for(strength));
+        let retail = (
+            cpu.mem.rd32(POINTS) as i32,
+            cpu.mem.rd32(BEST) as i32,
+            cpu.mem.rd32(BEST_FISH) as usize,
+        );
+        assert_eq!(
+            retail,
+            (port.points, port.best_points, port.best_fish),
+            "round {round} species {} strength {strength:#x} points {points} best {best}",
+            sp.index
+        );
+        capped += u32::from(retail.0 == FISH_POINTS_CAP);
+        bested += u32::from(retail.1 != best);
+    }
+    assert!(capped > 100 && bested > 100, "{capped} {bested}");
 }
