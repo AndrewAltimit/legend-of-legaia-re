@@ -2376,10 +2376,11 @@ triangles. What removes geometry is retail's own rules:
 | Per-primitive near reject | Every per-prim handler | [below](#the-per-primitive-near-reject) |
 | GPU polygon-size limit | The GPU itself | [below](#the-gpu-polygon-size-limit) |
 
-**The crop holds only at retail's framing.** The tile window is sized for
-retail's frustum, so under the play-window's default `CameraDistance::Far`,
-the drag / tilt / zoom knobs or `F3`, the map is drawn whole and the actor
-cull goes off with the crop
+**The crop follows the framing.** The tile window is sized for retail's
+frustum. Under the play-window's default `CameraDistance::Far` (a preset
+alone) the crop and the actor cull walk the window widened to the preset's
+scale; under the drag / tilt / zoom knobs or `F3` the map is drawn whole and
+the actor cull goes off with the crop
 ([engine.md](engine.md#the-visible-tile-crop-follows-the-framing)).
 
 **The clip volume holds the whole scene.** Its planes are sized to contain
