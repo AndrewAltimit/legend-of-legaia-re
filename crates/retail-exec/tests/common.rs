@@ -28,6 +28,10 @@ pub fn scus_cpu() -> Option<Cpu> {
     Some(cpu)
 }
 
+/// Where `Cpu::call` puts the stack; a routine's fifth argument sits at
+/// `STACK_TOP + 0x10`.
+pub const STACK_TOP: u32 = 0x801F_FF00;
+
 /// A small deterministic generator for test inputs.
 pub struct Rng(pub u64);
 
@@ -210,4 +214,88 @@ macro_rules! differential {
 /// macros in every test.
 macro_rules! not_a_differential {
     ($why:literal) => {};
+}
+
+/// The `POLY_GT4` packet stream a minigame overlay's sprite emitters write:
+/// the packet cursor `0x1F8003A0`, the ordering table at `0x1F8003F4`, and
+/// the overlay's own bucket word, which each emitter resets to `3`.
+pub mod gt4 {
+    use psx_retail_exec::Cpu;
+
+    /// The packet cursor `0x1F800314 + 0x8C` and the ordering table's base
+    /// `0x1F800314 + 0xE0`.
+    pub const CURSOR: u32 = 0x1F80_03A0;
+    pub const OT_BASE: u32 = 0x1F80_03F4;
+    pub const PACKETS: u32 = 0x8010_0000;
+    pub const OT: u32 = 0x8018_0000;
+    pub const OT_LEN: u32 = 8;
+    pub const OT_END: u32 = 0x00FF_FFFF;
+
+    /// One `POLY_GT4` as the GPU reads it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Gt4 {
+        pub code: u8,
+        pub rgb: [[u8; 3]; 4],
+        pub xy: [(i16, i16); 4],
+        pub uv: [(u8, u8); 4],
+        pub clut: u16,
+        pub tpage: u16,
+    }
+
+    /// Empty the packet buffer and the ordering table, and set the overlay's
+    /// bucket word `bucket` to `3`.
+    pub fn reset(cpu: &mut Cpu, bucket: u32) {
+        cpu.mem.wr32(CURSOR, PACKETS);
+        cpu.mem.wr32(OT_BASE, OT);
+        for i in 0..OT_LEN {
+            cpu.mem.wr32(OT + 4 * i, OT_END);
+        }
+        cpu.mem.wr32(bucket, 3);
+    }
+
+    /// Every packet written since [`reset`], in emission order, after checking
+    /// that each is a `0x34`-byte `POLY_GT4` linked into bucket `3` and that the
+    /// bucket's chain walks them newest first.
+    pub fn packets(cpu: &mut Cpu, bucket: u32) -> Vec<Gt4> {
+        let end = cpu.mem.rd32(CURSOR);
+        assert_eq!((end - PACKETS) % 0x34, 0, "{end:#x}");
+        let n = (end - PACKETS) / 0x34;
+        let mut chain = Vec::new();
+        let mut link = cpu.mem.rd32(OT + 3 * 4) & 0xFF_FFFF;
+        while link != OT_END {
+            chain.push(link);
+            link = cpu.mem.rd32(0x8000_0000 | link) & 0xFF_FFFF;
+            assert!(chain.len() <= n as usize, "a loop in the chain");
+        }
+        let expect: Vec<u32> = (0..n)
+            .rev()
+            .map(|i| (PACKETS + i * 0x34) & 0xFF_FFFF)
+            .collect();
+        assert_eq!(chain, expect, "the bucket's chain");
+        for i in (0..OT_LEN).filter(|&i| i != 3) {
+            assert_eq!(cpu.mem.rd32(OT + 4 * i), OT_END, "bucket {i} untouched");
+        }
+        assert_eq!(cpu.mem.rd32(bucket), 3, "the bucket is restored");
+        (0..n)
+            .map(|i| {
+                let p = PACKETS + i * 0x34;
+                assert_eq!(cpu.mem.rd8(p + 3), 0x0C, "packet {i}: twelve words");
+                let mut g = Gt4 {
+                    code: cpu.mem.rd8(p + 7),
+                    rgb: [[0; 3]; 4],
+                    xy: [(0, 0); 4],
+                    uv: [(0, 0); 4],
+                    clut: cpu.mem.rd16(p + 0xE),
+                    tpage: cpu.mem.rd16(p + 0x1A),
+                };
+                for v in 0..4u32 {
+                    let q = p + 4 + 12 * v;
+                    g.rgb[v as usize] = [cpu.mem.rd8(q), cpu.mem.rd8(q + 1), cpu.mem.rd8(q + 2)];
+                    g.xy[v as usize] = (cpu.mem.rd16(q + 4) as i16, cpu.mem.rd16(q + 6) as i16);
+                    g.uv[v as usize] = (cpu.mem.rd8(q + 8), cpu.mem.rd8(q + 9));
+                }
+                g
+            })
+            .collect()
+    }
 }

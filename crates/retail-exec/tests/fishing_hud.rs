@@ -13,7 +13,8 @@
 //! port fills them flat, so a fill compares its geometry and vertex colours
 //! and the retail side's fixed page, CLUT and UVs.
 
-use crate::common::{Rng, disc, scus_cpu};
+use crate::common::gt4::{self, Gt4};
+use crate::common::{Rng, STACK_TOP, disc, scus_cpu};
 use legaia_engine_ui::fishing::sprite::{
     fishing_hud_sprite_prims, fishing_large_digit, fishing_small_digit, fishing_sprite_quad,
 };
@@ -45,28 +46,8 @@ const POWER_BAR: u32 = 0x801D_1A90;
 const PERSISTENT: u32 = 0x801D_13F0;
 const CATCH: u32 = 0x801D_1580;
 
-const STACK_TOP: u32 = 0x801F_FF00;
-/// The packet cursor `0x1F800314 + 0x8C` and the ordering table's base
-/// `0x1F800314 + 0xE0`.
-const CURSOR: u32 = 0x1F80_03A0;
-const OT_BASE: u32 = 0x1F80_03F4;
 /// The bucket word `_DAT_801D9158`.
 const BUCKET: u32 = 0x801D_9158;
-const PACKETS: u32 = 0x8010_0000;
-const OT: u32 = 0x8018_0000;
-const OT_LEN: u32 = 8;
-const OT_END: u32 = 0x00FF_FFFF;
-
-/// One `POLY_GT4` as the GPU reads it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Gt4 {
-    code: u8,
-    rgb: [[u8; 3]; 4],
-    xy: [(i16, i16); 4],
-    uv: [(u8, u8); 4],
-    clut: u16,
-    tpage: u16,
-}
 
 fn rig() -> Option<(Cpu, Vec<u8>)> {
     let (mut cpu, d) = (scus_cpu()?, disc()?);
@@ -87,58 +68,12 @@ fn table_of(overlay: &[u8]) -> Vec<FishingSprite> {
 
 /// Empty the packet buffer and the ordering table, bucket `3`.
 fn reset(cpu: &mut Cpu) {
-    cpu.mem.wr32(CURSOR, PACKETS);
-    cpu.mem.wr32(OT_BASE, OT);
-    for i in 0..OT_LEN {
-        cpu.mem.wr32(OT + 4 * i, OT_END);
-    }
-    cpu.mem.wr32(BUCKET, 3);
+    gt4::reset(cpu, BUCKET);
 }
 
-/// Every packet written since [`reset`], in emission order, after checking
-/// that each is a `0x34`-byte `POLY_GT4` linked into bucket `3` and that the
-/// bucket's chain walks them newest first.
+/// The packets written since [`reset`] (`gt4::packets`).
 fn packets(cpu: &mut Cpu) -> Vec<Gt4> {
-    let end = cpu.mem.rd32(CURSOR);
-    assert_eq!((end - PACKETS) % 0x34, 0, "{end:#x}");
-    let n = (end - PACKETS) / 0x34;
-    let mut chain = Vec::new();
-    let mut link = cpu.mem.rd32(OT + 3 * 4) & 0xFF_FFFF;
-    while link != OT_END {
-        chain.push(link);
-        link = cpu.mem.rd32(0x8000_0000 | link) & 0xFF_FFFF;
-        assert!(chain.len() <= n as usize, "a loop in the chain");
-    }
-    let expect: Vec<u32> = (0..n)
-        .rev()
-        .map(|i| (PACKETS + i * 0x34) & 0xFF_FFFF)
-        .collect();
-    assert_eq!(chain, expect, "the bucket's chain");
-    for i in (0..OT_LEN).filter(|&i| i != 3) {
-        assert_eq!(cpu.mem.rd32(OT + 4 * i), OT_END, "bucket {i} untouched");
-    }
-    assert_eq!(cpu.mem.rd32(BUCKET), 3, "the bucket is restored");
-    (0..n)
-        .map(|i| {
-            let p = PACKETS + i * 0x34;
-            assert_eq!(cpu.mem.rd8(p + 3), 0x0C, "packet {i}: twelve words");
-            let mut g = Gt4 {
-                code: cpu.mem.rd8(p + 7),
-                rgb: [[0; 3]; 4],
-                xy: [(0, 0); 4],
-                uv: [(0, 0); 4],
-                clut: cpu.mem.rd16(p + 0xE),
-                tpage: cpu.mem.rd16(p + 0x1A),
-            };
-            for v in 0..4u32 {
-                let q = p + 4 + 12 * v;
-                g.rgb[v as usize] = [cpu.mem.rd8(q), cpu.mem.rd8(q + 1), cpu.mem.rd8(q + 2)];
-                g.xy[v as usize] = (cpu.mem.rd16(q + 4) as i16, cpu.mem.rd16(q + 6) as i16);
-                g.uv[v as usize] = (cpu.mem.rd8(q + 8), cpu.mem.rd8(q + 9));
-            }
-            g
-        })
-        .collect()
+    gt4::packets(cpu, BUCKET)
 }
 
 fn rgb(c: u32) -> [u8; 3] {

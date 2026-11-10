@@ -87,6 +87,7 @@ mod defeat_credit;
 mod dev_menu_flags;
 mod dialog_pager;
 mod dome_tally;
+mod dome_hud;
 mod drop_shadow;
 mod effect_script;
 mod effect_vm;
