@@ -10,6 +10,7 @@
 #[macro_use]
 mod common;
 
+mod actor_draw;
 mod actor_tint;
 mod actor_node_pool;
 mod ambient_emitter;
