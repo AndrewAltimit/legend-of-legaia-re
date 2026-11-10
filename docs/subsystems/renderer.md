@@ -3032,7 +3032,10 @@ rasteriser does not divide by `1/w`.
 - **Native:** WGSL `@interpolate(linear)`, a static qualifier on the
   vertex-output struct, not a uniform-driven branch. The baked per-prim
   colour carries the same qualifier - PSX gouraud interpolation is affine
-  too.
+  too - on the VRAM mesh and on the untextured colour mesh alike. A
+  perspective-correct colour on the colour mesh shaded the Baka duel's
+  additive floor glow, a fan lying on the floor plane, darker toward the
+  camera than retail and the page draw it.
 - **Browser:** GLSL ES 3.00 lacks `noperspective`, so the vertex shader in
   `site/js/webgl-shaders.js` writes the UV and the gouraud colour
   premultiplied by clip `w`, alongside `w`, and the fragment shader divides.
