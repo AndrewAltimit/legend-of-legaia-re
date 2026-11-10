@@ -25,6 +25,7 @@ mod anim_rate_restore;
 mod anm_sampler;
 mod approach_clamp;
 mod arrange;
+mod art_banner;
 mod arts_entry_build;
 mod arts_gauge;
 mod arts_list_driver;
