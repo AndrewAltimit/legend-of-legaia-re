@@ -14,7 +14,9 @@
 //! reverses a slide part-way and a slide starts from somewhere other than
 //! its park. Programs are every one the disc's `jal`-site scan recovers,
 //! chained at random, then generated ones over every opcode; the screen box
-//! the park edges read is the menu's and random ones.
+//! the park edges read is the menu's and random ones. The walker's motion
+//! pass `FUN_80031AE4` runs against `MenuWidgetState::step_motion` the same
+//! way, the latch `_DAT_8007BB80` it leaves compared after every pass.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::menu_widget::{
@@ -34,6 +36,11 @@ const SNAP: u32 = 0x8003_58C0;
 const CLOSE: u32 = 0x8003_5978;
 const CLOSE_ALL: u32 = 0x8003_5A4C;
 const DESTROY: u32 = 0x8003_19A8;
+const MOTION: u32 = 0x8003_1AE4;
+/// `_DAT_8007BB80` (`gp + 0x868`), the walker's slide latch.
+const LATCH: u32 = 0x8007_BB80;
+/// `DAT_1F800393`, the frame delta the walker adds.
+const FRAME_DELTA: u32 = 0x1F80_0393;
 const ALLOC: u32 = 0x8001_7888;
 const FREE: u32 = 0x8001_7B94;
 const CONTENT: u32 = 0x8003_0628;
@@ -349,4 +356,86 @@ fn the_window_helpers_match_their_ports() {
         }
     }
     assert!(hits.iter().all(|&h| h > 300), "{hits:?}");
+}
+
+/// The motion walker `FUN_80031AE4` frame by frame over lists the disc's
+/// programs built, programs landing between passes so closes catch slides
+/// part-way; the latch it leaves (`_DAT_8007BB80`) and every node after each
+/// pass. The draw walker destroys a node whose close completed (`-2`) in
+/// the same frame, so the retail side does that too before comparing.
+#[test]
+fn the_motion_walker_matches_its_port() {
+    differential!(scus(MOTION));
+    let Some(mut r) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let programs = MenuWidgetScripts::resolve_from_overlay(&r.overlay)
+        .expect("programs")
+        .programs;
+    let mut rng = Rng(0x4D4F_5645);
+    let (mut moved, mut idle, mut landed) = (0u32, 0u32, 0u32);
+    for chain in 0..300 {
+        r.seat_screen(screens(&mut rng));
+        r.clear();
+        for step in 0..60 {
+            if rng.below(8) == 0 {
+                let (va, bytes) = &programs[rng.below(programs.len() as u32) as usize];
+                r.run(bytes);
+                r.compare(&format!("chain {chain} step {step} program {va:#x}"));
+            }
+            let delta = [1u8, 1, 1, 2, 3][rng.below(5) as usize];
+            r.cpu.mem.wr8(FRAME_DELTA, delta);
+            assert_eq!(r.cpu.call(MOTION, &[]), Stop::Returned);
+            for (addr, node) in r.retail_nodes() {
+                if node.3 == -2 {
+                    let id = u32::from(r.cpu.mem.rd16(addr + 8));
+                    assert_eq!(r.cpu.call(DESTROY, &[id]), Stop::Returned);
+                    landed += 1;
+                }
+            }
+            let latch = r.cpu.mem.rd32(LATCH);
+            let what = format!("chain {chain} step {step} delta {delta}");
+            assert_eq!(latch, r.port.step_motion(delta), "{what} latch");
+            assert_eq!(latch, r.port.slide_latch(), "{what}");
+            r.compare(&what);
+            if latch == 0 {
+                idle += 1;
+            } else {
+                moved += 1;
+            }
+        }
+    }
+    assert!(
+        moved > 2000 && idle > 2000 && landed > 500,
+        "{moved} {idle} {landed}"
+    );
+}
+
+/// A sub-screen's first frame runs its program; every window it moves
+/// slides for the twelve-frame duration, so the latch the next eleven
+/// frames read stays up and the twelfth reads zero - the frame the screen
+/// takes the pad.
+#[test]
+fn a_fresh_slide_holds_the_latch_eleven_passes() {
+    differential!(scus(MOTION));
+    let Some(mut r) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    r.seat_screen(ScreenBox::default());
+    r.clear();
+    // The root picker's program `0x801E4BC0`.
+    let root = legaia_game_tables::widget_script::script_bytes_at(&r.overlay, 0x801E_4BC0)
+        .expect("root program");
+    r.run(&root);
+    r.cpu.mem.wr8(FRAME_DELTA, 1);
+    let mut latches = Vec::new();
+    for _ in 0..13 {
+        assert_eq!(r.cpu.call(MOTION, &[]), Stop::Returned);
+        latches.push(r.cpu.mem.rd32(LATCH));
+        r.port.step_motion(1);
+    }
+    assert!(latches[..11].iter().all(|&l| l == 3), "{latches:?}");
+    assert_eq!(&latches[11..], &[0, 0]);
 }

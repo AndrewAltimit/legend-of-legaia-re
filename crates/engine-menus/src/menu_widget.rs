@@ -98,9 +98,12 @@ pub struct WidgetWindow {
     pub target: vm::Position,
     /// Node `+0x20`.
     pub motion: WidgetMotion,
-    /// Node `+0x1E`, the motion's frame count. Nothing here advances it (the
-    /// window walker does); a close reverses it.
+    /// Node `+0x1E`, the motion's frame count: the window walker
+    /// ([`MenuWidgetState::step_motion`]) advances it, a close reverses it.
     pub progress: i16,
+    /// Sub-object `+2/+4`: the park the creator computed
+    /// ([`park_position`]), where a close carries the window.
+    pub park: vm::Position,
     /// Live node `+0x1D` style byte: the descriptor's class word's low byte
     /// at creation, then whatever `SetField1d` writes.
     pub style: u8,
@@ -226,6 +229,10 @@ pub struct MenuWidgetState {
     pub global_updates: u32,
     /// `FUN_800319A8` (immediate destroy) invocations.
     pub effect_fires: u32,
+    /// `_DAT_8007BB80` (`gp+0x868`): how many windows the last walker pass
+    /// moved ([`Self::step_motion`]). Every menu sub-screen reads it before
+    /// its pad and takes no input while it is non-zero.
+    latch: u32,
 }
 
 impl MenuWidgetState {
@@ -300,6 +307,89 @@ impl MenuWidgetState {
     /// Drop every window (menu close / overlay swap).
     pub fn reset(&mut self) {
         self.windows.clear();
+        self.latch = 0;
+    }
+
+    /// `_DAT_8007BB80` as the last [`Self::step_motion`] left it: non-zero
+    /// while a window is sliding in or out. A sub-screen that reads it
+    /// before its pad (every one in the menu overlay does) ignores the pad
+    /// until it drops to zero.
+    pub fn slide_latch(&self) -> u32 {
+        self.latch
+    }
+
+    /// One pass of the window motion walker `FUN_80031AE4`, the first thing
+    /// the per-frame window walker `FUN_80031D00` does: it zeroes the latch
+    /// `_DAT_8007BB80`, then for each window on the list
+    ///
+    /// - sliding or closing (`+0x20 = 1 / -1`): adds `frame_delta`
+    ///   (`DAT_1F800393`) to the progress `+0x1E`; once that reaches the
+    ///   duration (`0xC`) the progress resets, the motion word steps down
+    ///   (`1 -> 0`, `-1 -> -2`) and the window lands on its target;
+    /// - then, on the motion word as it now stands: still copies the live
+    ///   position into the slide source; sliding places the window at
+    ///   `source + (target - source) * progress / duration` and closing at
+    ///   `source + (park - source) * progress / duration` (signed, truncated),
+    ///   each counting one onto the latch; `-2` puts it on its park.
+    ///
+    /// A window whose close completed (`-2`) is destroyed by the draw walker
+    /// in the same frame (`0x80031E04..0x80031E20`), so it leaves the list
+    /// here. Returns the latch.
+    ///
+    /// PORT: FUN_80031AE4
+    pub fn step_motion(&mut self, frame_delta: u8) -> u32 {
+        let dur = i32::from(WIDGET_MOTION_FRAMES);
+        let mut latch = 0u32;
+        let mut finished = Vec::new();
+        for (&id, w) in self.windows.iter_mut() {
+            let mut word: i16 = match w.motion {
+                WidgetMotion::Still => 0,
+                WidgetMotion::Sliding => 1,
+                WidgetMotion::Closing => -1,
+            };
+            if word != 0 {
+                let p = (w.progress as u16).wrapping_add(u16::from(frame_delta));
+                w.progress = p as i16;
+                if i32::from(p) >= dur {
+                    w.progress = 0;
+                    word -= 1;
+                    w.pos = w.target;
+                }
+            }
+            let lerp = |from: i16, to: i16, p: i16| -> i16 {
+                let span = (i32::from(to) - i32::from(from)).wrapping_mul(i32::from(p as u16));
+                (i32::from(from as u16) + span / dur) as i16
+            };
+            match word {
+                0 => {
+                    w.motion = WidgetMotion::Still;
+                    w.from = w.pos;
+                }
+                1 => {
+                    w.pos = vm::Position::new(
+                        lerp(w.from.x, w.target.x, w.progress),
+                        lerp(w.from.y, w.target.y, w.progress),
+                    );
+                    latch += 1;
+                }
+                -1 => {
+                    w.pos = vm::Position::new(
+                        lerp(w.from.x, w.park.x, w.progress),
+                        lerp(w.from.y, w.park.y, w.progress),
+                    );
+                    latch += 1;
+                }
+                _ => {
+                    w.pos = w.park;
+                    finished.push(id);
+                }
+            }
+        }
+        for id in finished {
+            self.windows.remove(&id);
+        }
+        self.latch = latch;
+        latch
     }
 }
 
@@ -350,6 +440,7 @@ impl vm::Host for MenuWidgetState {
                 target: desc.home,
                 motion: WidgetMotion::Sliding,
                 progress: 0,
+                park,
                 style: desc.kind as u8,
             },
         );
