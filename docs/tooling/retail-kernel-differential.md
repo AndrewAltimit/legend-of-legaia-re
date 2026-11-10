@@ -848,4 +848,5 @@ so the jingle lands a frame after a silent Yes. The menu's decimal writers `FUN_
 (`menu_numerals`) decide each of nine places alone, and six copies in the port right-aligned a string instead: a value
 wider than its field prints its overflow's non-zero digits from the pen in retail, where the port stacked them on the
 first cell, and the zero-padded writer cut the value to its field. One kernel, `decimal_field_cells`, now stands for
-both. The HP and MP ink tiers `FUN_800349EC` / `FUN_80035EA8` match both hosts' readers.
+both. The HP and MP ink tiers `FUN_800349EC` / `FUN_80035EA8` match both hosts' readers, and the field's text
+balloon, its spawner `FUN_8003C764` and handler `FUN_801DA7F0` (`text_balloon`), matches tick by tick.
