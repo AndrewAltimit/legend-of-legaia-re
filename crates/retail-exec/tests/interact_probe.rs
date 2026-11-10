@@ -54,6 +54,7 @@ const HALF: i32 = 0x40 + 0x20 - 0x18;
 
 #[test]
 fn the_interact_probe_talks_to_the_actor_retail_does() {
+    differential!(prot(897, PROBE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

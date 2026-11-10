@@ -26,6 +26,7 @@ const HELD: u32 = 0x8007_B850;
 
 #[test]
 fn a_hooked_fish_fights_as_retail_fights() {
+    differential!(prot(972, TICK));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

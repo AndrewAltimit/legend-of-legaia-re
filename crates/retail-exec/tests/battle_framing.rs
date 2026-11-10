@@ -52,6 +52,7 @@ fn s16(rng: &mut Rng, span: u32) -> i16 {
 
 #[test]
 fn the_action_framings_are_retails() {
+    differential!(prot(898, FRAMING));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -382,6 +383,7 @@ fn the_action_framings_are_retails() {
 /// steps through.
 #[test]
 fn the_menu_framings_are_retails() {
+    differential!(prot(898, FRAMING));
     use legaia_engine_battle_vm::battle_cam_script::{
         FormationBox, menu_framing, menu_raw_z, target_ally_pose, target_enemy_pose,
     };

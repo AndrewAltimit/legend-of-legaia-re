@@ -85,6 +85,7 @@ fn gen_turn(rng: &mut Rng) -> Turn {
 
 #[test]
 fn the_companion_picks_what_retail_picks() {
+    differential!(prot(898, BUILDER));
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -220,6 +221,7 @@ fn the_companion_picks_what_retail_picks() {
 /// overwrites the lead's stream, whichever seat it was called for.
 #[test]
 fn the_spar_forces_the_lesson_string() {
+    differential!(prot(898, BUILDER));
     use legaia_engine_system::option_values::SelectAttackOpt;
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = rig(&state) else {

@@ -28,6 +28,15 @@ fn call(cpu: &mut Cpu, entry: u32, args: &[u32]) -> u32 {
 
 #[test]
 fn the_bag_behaves_as_retail_does() {
+    differential!(
+        scus(0x8004_21D4),
+        scus(0x8004_2310),
+        scus(0x8004_23E0),
+        scus(0x8004_2EE0),
+        scus(0x8004_2F4C),
+        scus(0x8004_3048),
+        scus(0x8004_313C)
+    );
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -151,6 +160,7 @@ fn raw_at(port: &RetailInventory, end: u16) -> u8 {
 /// `FUN_80035C24`, the window kernel's cursor auto-repeat.
 #[test]
 fn a_held_direction_repeats_when_retail_repeats() {
+    differential!(scus(0x8003_5C24));
     use legaia_engine_system::retail_pad::{MENU_REPEAT_MASK, MENU_REPEAT_MASK_BATTLE, MenuRepeat};
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

@@ -17,6 +17,7 @@ const STRIDE: u32 = 0x414;
 
 #[test]
 fn a_walk_tick_restores_what_retail_restores() {
+    differential!(prot(897, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

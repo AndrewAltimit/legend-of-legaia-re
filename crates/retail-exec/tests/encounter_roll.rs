@@ -138,6 +138,7 @@ fn port_table(s: &Scene) -> RegionEncounterTable {
 
 #[test]
 fn a_step_rolls_what_retail_rolls() {
+    differential!(prot(897, ROLL));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -51,6 +51,7 @@ fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, slot_payout::SlotPayoutTable)> {
 
 #[test]
 fn the_feature_roll_rolls_what_retail_rolls() {
+    differential!(prot(975, 0x801D_258C));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, _)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -137,6 +138,7 @@ fn seed_retail(cpu: &mut Cpu, seat: &SlotSeat, raw: [i32; 3]) {
 
 #[test]
 fn a_spin_pays_what_retail_pays() {
+    differential!(prot(975, 0x801D_13E8));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, payouts)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -210,6 +212,7 @@ fn a_spin_pays_what_retail_pays() {
 
 #[test]
 fn a_reel_stops_where_retail_stops() {
+    differential!(prot(975, 0x801D_0554), prot(975, 0x801D_2114));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, payouts)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

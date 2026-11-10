@@ -31,6 +31,7 @@ const PLAYER: u32 = 0x8013_0000;
 
 #[test]
 fn the_countdown_runs_as_retail_runs_it() {
+    differential!(prot(897, HUD));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

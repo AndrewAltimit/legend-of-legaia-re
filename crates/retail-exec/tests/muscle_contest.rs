@@ -29,6 +29,7 @@ const ROW_LANES: [u32; 4] = [0x801D_1ACC, 0x801D_1AD0, 0x801D_1AD4, 0x801D_1AAC]
 
 #[test]
 fn a_contest_runs_and_settles_as_retails_does() {
+    differential!(prot(977, ENTRY), prot(977, SETTLE), prot(977, ROWS));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

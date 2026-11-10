@@ -22,6 +22,7 @@ const BATTLE_OVERLAY_BASE: u32 = 0x801C_E818;
 
 #[test]
 fn a_level_up_grows_the_record_retail_grows() {
+    differential!(scus(AGGREGATOR), prot(898, APPLIER));
     let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

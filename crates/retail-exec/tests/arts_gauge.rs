@@ -36,6 +36,7 @@ fn frame(cpu: &mut Cpu, pad: u32) {
 
 #[test]
 fn an_arts_entry_debits_and_ends_as_retail_does() {
+    differential!(prot(898, STATE_MACHINE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -24,6 +24,7 @@ const STEP_DELTA: u32 = 0x8007_BDE0;
 
 #[test]
 fn a_ledge_hops_where_retail_hops() {
+    differential!(prot(897, HOP));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

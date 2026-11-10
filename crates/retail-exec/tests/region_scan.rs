@@ -29,6 +29,7 @@ const ZONES: u32 = 0x8016_1000;
 
 #[test]
 fn the_region_refresh_and_zone_query_match_over_every_scene() {
+    differential!(scus(REFRESH), prot(897, ZONE_QUERY));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), crate::common::disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

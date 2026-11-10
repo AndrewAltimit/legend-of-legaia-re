@@ -341,6 +341,7 @@ struct After {
 
 #[test]
 fn the_turn_picker_picks_what_retail_picks() {
+    differential!(prot(898, PICK));
     let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

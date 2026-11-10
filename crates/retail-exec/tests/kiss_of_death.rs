@@ -22,6 +22,7 @@ const STRIDE: u32 = 0x400;
 
 #[test]
 fn kiss_of_death_lands_what_retail_lands() {
+    differential!(prot(955, BODY));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), crate::common::disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

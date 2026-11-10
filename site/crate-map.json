@@ -4193,7 +4193,9 @@
    ],
    "bins": [],
    "lib": true,
-   "modules": [],
+   "modules": [
+    "ledger"
+   ],
    "band": "top",
    "track": "tooling",
    "scope": "A user-mode R3000 interpreter that runs retail routines off the user's disc, and the disc-gated differential comparing them with their Rust ports.",

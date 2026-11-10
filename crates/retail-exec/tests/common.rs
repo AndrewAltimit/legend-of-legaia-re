@@ -98,3 +98,109 @@ pub fn split_statuses(w: &mut legaia_engine_core::world::World, salt: u32) {
         }
     }
 }
+
+/// One retail routine a differential runs: its entry and the image that holds
+/// it. Built by [`differential!`].
+#[derive(Debug, Clone, Copy)]
+pub struct Routine {
+    pub va: u32,
+    /// `None` for `SCUS_942.54`, else the PROT entry (extraction index).
+    pub prot: Option<usize>,
+}
+
+impl Routine {
+    pub const fn scus(va: u32) -> Self {
+        Self { va, prot: None }
+    }
+    pub const fn prot(entry: usize, va: u32) -> Self {
+        Self {
+            va,
+            prot: Some(entry),
+        }
+    }
+}
+
+impl std::fmt::Display for Routine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.prot {
+            None => write!(f, "SCUS FUN_{:08X}", self.va),
+            Some(n) => write!(f, "PROT {n:04} FUN_{:08X}", self.va),
+        }
+    }
+}
+
+/// The guard [`differential!`] plants: when the test ends without a panic and
+/// with the disc present, every declared routine must have been entered by a
+/// [`Cpu::call`] on this thread, and the bytes it ran at its entry must be its
+/// image's. A declaration is therefore checked by the run it describes.
+pub struct Proof {
+    routines: Vec<Routine>,
+    mark: u64,
+}
+
+impl Proof {
+    pub fn new(routines: &[Routine]) -> Self {
+        Self {
+            routines: routines.to_vec(),
+            mark: psx_retail_exec::ledger::mark(),
+        }
+    }
+}
+
+impl Drop for Proof {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            return;
+        }
+        let Some(d) = disc() else {
+            return;
+        };
+        let entered = psx_retail_exec::ledger::entered_since(self.mark);
+        for r in &self.routines {
+            let Some(e) = entered.iter().find(|e| e.entry == r.va) else {
+                let ran: Vec<String> = entered.iter().map(|e| format!("{:08X}", e.entry)).collect();
+                panic!("differential! declares {r}, which no Cpu::call entered (entered: {ran:?})");
+            };
+            let held = match r.prot {
+                None => scus().is_some_and(|exe| {
+                    let off = (r.va.wrapping_sub(0x8001_0000) as usize).wrapping_add(0x800);
+                    exe.get(off..off + e.body.len()) == Some(&e.body[..])
+                }),
+                Some(n) => d
+                    .read_entry(n)
+                    .ok()
+                    .is_some_and(|img| img.windows(e.body.len()).any(|w| w == &e.body[..])),
+            };
+            assert!(
+                held,
+                "differential! declares {r}, but the bytes entered there are not that image's"
+            );
+        }
+    }
+}
+
+/// Declare the retail routines this test compares, as `scus(VA)` or
+/// `prot(ENTRY, VA)`:
+///
+/// ```ignore
+/// differential!(scus(0x8004_CE2C), prot(898, ACTION_SM));
+/// ```
+///
+/// Put it first in the `#[test]` body. With the disc present the test fails
+/// unless each routine was entered and its bytes are its image's
+/// ([`Proof`]); `scripts/ci/differential-coverage.py` reads the declarations
+/// statically, so each argument is a literal or a `const` of the file.
+macro_rules! differential {
+    ($($img:ident ( $($arg:expr),+ )),+ $(,)?) => {
+        let _differential_proof = $crate::common::Proof::new(&[
+            $($crate::common::Routine::$img($($arg),+)),+
+        ]);
+    };
+}
+
+/// Mark a `#[test]` that runs no routine (a table or data check), with the
+/// reason. `scripts/ci/differential-coverage.py` requires one of the two
+/// macros in every test.
+macro_rules! not_a_differential {
+    ($why:literal) => {};
+}

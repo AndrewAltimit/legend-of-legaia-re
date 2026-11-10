@@ -38,6 +38,7 @@ fn retail_cpu() -> Option<Cpu> {
 
 #[test]
 fn a_held_pad_walks_where_retail_walks() {
+    differential!(prot(897, WALK));
     let Some(mut cpu) = retail_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -199,6 +200,7 @@ const FLAG_TOUCH: u32 = 0x8003_D038;
 /// compared is where the player ends up.
 #[test]
 fn a_held_pad_stops_on_actors_where_retail_stops() {
+    differential!(prot(897, WALK));
     use legaia_engine_core::world::FieldPropCollider;
     let Some(mut cpu) = retail_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

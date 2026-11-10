@@ -85,6 +85,7 @@ fn stat(rng: &mut Rng, cap: u32) -> u16 {
 
 #[test]
 fn the_validator_answers_what_retail_answers() {
+    differential!(scus(VALIDATOR));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -31,6 +31,7 @@ const S7: usize = 23;
 
 #[test]
 fn an_enemy_specials_impact_lands_what_retail_lands() {
+    differential!(prot(898, ARM));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

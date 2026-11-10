@@ -151,6 +151,7 @@ fn seed_party(cpu: &mut Cpu, w: &mut World, rng: &mut Rng) -> Vec<u8> {
 
 #[test]
 fn the_use_list_probe_answers_what_retail_answers() {
+    differential!(scus(PROBE));
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -250,6 +251,7 @@ fn the_use_list_probe_answers_what_retail_answers() {
 /// row and refuses its cast, against `menu_validator::spell_affects_anyone`.
 #[test]
 fn the_magic_list_probe_answers_what_retail_answers() {
+    differential!(scus(SPELL_PROBE));
     const SPELL_PROBE: u32 = 0x8003_053C;
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

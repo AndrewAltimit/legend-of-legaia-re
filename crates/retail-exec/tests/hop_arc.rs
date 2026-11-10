@@ -22,6 +22,7 @@ fn wr3(cpu: &mut psx_retail_exec::Cpu, a: u32, v: (i16, i16, i16)) {
 
 #[test]
 fn the_hop_arc_flies_as_retail_flies() {
+    differential!(prot(897, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -58,6 +58,12 @@ fn seed(rng: &mut Rng) -> Vec<u8> {
 
 #[test]
 fn a_menu_cast_writes_the_records_retail_writes() {
+    differential!(
+        scus(MP_COST),
+        scus(VALIDATOR),
+        scus(APPLIER),
+        scus(AGGREGATOR)
+    );
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

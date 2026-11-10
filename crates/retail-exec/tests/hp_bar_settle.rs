@@ -22,6 +22,7 @@ fn actor(seat: u32) -> u32 {
 
 #[test]
 fn the_bar_settle_check_is_retails() {
+    differential!(prot(898, SETTLE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

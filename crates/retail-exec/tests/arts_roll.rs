@@ -224,6 +224,7 @@ fn port_world(overlay: &[u8]) -> World {
 
 #[test]
 fn a_monster_special_rolls_what_retail_rolls() {
+    differential!(prot(898, KERNEL));
     let state = Rc::new(Cell::new(0u32));
     let Some((mut cpu, overlay)) = retail_cpu(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -282,6 +283,7 @@ fn a_monster_special_rolls_what_retail_rolls() {
 /// the party's resist ladder, `FUN_801DD6B4` skips it.
 #[test]
 fn the_capture_wrappers_roll_what_retail_rolls() {
+    differential!(prot(898, 0x801D_D4B0), prot(898, 0x801D_D6B4));
     const WRAPPERS: [u32; 2] = [0x801D_D4B0, 0x801D_D6B4];
     let state = Rc::new(Cell::new(0u32));
     let Some((mut cpu, overlay)) = retail_cpu(&state) else {
@@ -334,6 +336,7 @@ fn rng_pick(round: u32) -> u8 {
 
 #[test]
 fn a_summon_rolls_what_retail_rolls() {
+    differential!(prot(898, KERNEL));
     const SPELL: u8 = 0x81;
     let state = Rc::new(Cell::new(0u32));
     let Some((mut cpu, overlay)) = retail_cpu(&state) else {

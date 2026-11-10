@@ -26,6 +26,7 @@ const WINDOW_HI: u32 = 0x8007_B5EC;
 
 #[test]
 fn the_best_equipment_row_picks_and_applies_what_retail_does() {
+    differential!(prot(899, APPLY), prot(899, SCAN));
     let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

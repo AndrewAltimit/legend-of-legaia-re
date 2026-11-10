@@ -96,6 +96,7 @@ struct Outcome {
 
 #[test]
 fn the_walk_on_dispatch_runs_what_retail_runs() {
+    differential!(scus(STAMP), scus(INIT_STAMP), prot(897, DISPATCH));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

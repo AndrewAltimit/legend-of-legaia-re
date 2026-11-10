@@ -140,6 +140,7 @@ pub(crate) fn corpus() -> Vec<(Vec<u8>, usize, String)> {
 
 #[test]
 fn every_instruction_on_the_disc_steps_where_retail_steps() {
+    differential!(prot(897, VM));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -216,6 +217,7 @@ fn every_instruction_on_the_disc_steps_where_retail_steps() {
 
 #[test]
 fn the_staged_mode_switch_steps_as_retail_steps() {
+    differential!(prot(897, 0x801D_65D8));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -241,6 +243,7 @@ fn the_staged_mode_switch_steps_as_retail_steps() {
 
 #[test]
 fn a_missing_actor_or_item_takes_the_skip_retail_takes() {
+    differential!(prot(897, VM));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -279,6 +282,7 @@ fn a_missing_actor_or_item_takes_the_skip_retail_takes() {
 
 #[test]
 fn an_inn_stay_restores_what_retail_restores() {
+    differential!(prot(897, VM));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

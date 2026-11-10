@@ -20,6 +20,7 @@ fn currents(cpu: &mut psx_retail_exec::Cpu, slot: u32) -> [u16; 3] {
 
 #[test]
 fn a_stay_restores_and_charges_as_retail_does() {
+    differential!(prot(897, VM));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

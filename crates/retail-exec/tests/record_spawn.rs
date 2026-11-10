@@ -37,6 +37,7 @@ fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
 
 #[test]
 fn every_disc_record_spawns_where_retail_spawns_it() {
+    differential!(scus(DISPATCH));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

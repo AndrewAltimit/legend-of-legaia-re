@@ -36,6 +36,7 @@ fn gen_text(rng: &mut Rng) -> Vec<u8> {
 
 #[test]
 fn a_measured_width_is_the_retail_width() {
+    differential!(scus(MEASURE));
     let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

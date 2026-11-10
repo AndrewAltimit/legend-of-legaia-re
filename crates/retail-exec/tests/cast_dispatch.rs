@@ -26,6 +26,7 @@ fn run(cpu: &mut psx_retail_exec::Cpu, entry: u32) -> Vec<u32> {
 
 #[test]
 fn every_cast_key_dispatches_as_retail_dispatches() {
+    differential!(prot(898, SERU), prot(898, CLASS));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

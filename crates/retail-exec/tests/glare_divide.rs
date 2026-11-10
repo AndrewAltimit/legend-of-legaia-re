@@ -27,6 +27,7 @@ fn lcg(s: u32) -> u32 {
 
 #[test]
 fn the_split_weakens_the_half_retail_weakens() {
+    differential!(prot(940, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

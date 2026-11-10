@@ -13,6 +13,7 @@ const TEXT: u32 = 0x8014_0000;
 
 #[test]
 fn the_glyph_count_is_retails() {
+    differential!(scus(COUNT));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

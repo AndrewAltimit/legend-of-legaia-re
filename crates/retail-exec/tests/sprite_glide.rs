@@ -16,6 +16,7 @@ const RECORDS: u32 = CTX + 0x11B4;
 
 #[test]
 fn the_glide_stepper_is_retails() {
+    differential!(prot(898, STEPPER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), crate::common::disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

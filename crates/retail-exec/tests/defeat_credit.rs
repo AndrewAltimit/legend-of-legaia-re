@@ -20,6 +20,7 @@ const S1: usize = 17;
 
 #[test]
 fn a_death_credits_who_retail_credits() {
+    differential!(scus(HEAD));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -35,6 +35,7 @@ enum Cd {
 
 #[test]
 fn the_transfer_sequencer_is_retails() {
+    differential!(prot(898, SEQUENCER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

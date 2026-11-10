@@ -235,6 +235,7 @@ fn read_port(w: &World, slot: u8) -> Seat {
 
 #[test]
 fn every_battle_item_writes_what_retail_writes() {
+    differential!(scus(APPLIER));
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -337,6 +338,7 @@ const POP: u32 = 0x801F_44A0;
 /// The bank's boundaries are the arm's: empty, one spend, the `9999` clamp.
 #[test]
 fn the_point_card_discharges_what_retail_discharges() {
+    differential!(scus(APPLIER));
     use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -429,6 +431,7 @@ const BAG_ADD: u32 = 0x8004_21D4;
 /// loop (`target == 8`), with the Stone arm's refund and cancel.
 #[test]
 fn the_stone_and_curse_arms_roll_what_retail_rolls() {
+    differential!(scus(APPLIER));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -526,6 +529,9 @@ fn the_stone_and_curse_arms_roll_what_retail_rolls() {
 /// `0x0E` on the one target byte (`0x801E40C0`, `0x801E4134`).
 #[test]
 fn the_point_card_strikes_its_target_and_not_the_party() {
+    not_a_differential!(
+        "drives the port's state-0x3F band alone; the selector routines it cites are run by this file's other tests"
+    );
     use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
     let Some(scus) = scus() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

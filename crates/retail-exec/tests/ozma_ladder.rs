@@ -32,6 +32,7 @@ struct Pass {
 
 #[test]
 fn ozmas_hit_ladder_is_retails() {
+    differential!(prot(934, BODY));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, _)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

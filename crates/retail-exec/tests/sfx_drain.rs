@@ -221,6 +221,13 @@ fn call_interior(cpu: &mut Cpu, entry: u32) -> Stop {
 
 #[test]
 fn the_ring_drains_and_keys_as_retail_does() {
+    differential!(
+        scus(AGE_LOOP),
+        scus(DRAIN),
+        scus(PUSH),
+        scus(SET_DELAY),
+        scus(REPLACE)
+    );
     let log = Rc::new(RefCell::new(Vec::new()));
     let Some(mut cpu) = rig(&log) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

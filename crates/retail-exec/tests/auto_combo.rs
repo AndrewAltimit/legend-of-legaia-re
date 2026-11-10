@@ -246,6 +246,7 @@ fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, Vec<Vec<u8>>, [u16; 4])> {
 
 #[test]
 fn an_auto_round_builds_the_queue_retail_builds() {
+    differential!(prot(898, ASSEMBLER));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, banks, guards)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -318,6 +319,7 @@ fn an_auto_round_builds_the_queue_retail_builds() {
 #[test]
 #[allow(clippy::needless_range_loop)]
 fn a_delegated_member_draws_what_retail_draws() {
+    differential!(prot(898, ASSEMBLER));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, banks, guards)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -419,6 +421,7 @@ fn a_delegated_member_draws_what_retail_draws() {
 /// arrows the tail spliced in come out as arts.
 #[test]
 fn the_seed_tokenizes_what_the_assembler_built() {
+    differential!(prot(898, 0x801E_ED1C), prot(898, ASSEMBLER));
     use legaia_actor_formats::battle_char_assembly::art_animation_bank;
     use legaia_art::queue::{ActionConstant, Command};
     let state = Rc::new(Cell::new(0));

@@ -31,6 +31,7 @@ const BASES: [&str; 6] = [
 
 #[test]
 fn the_intro_banner_lays_the_names_out_as_retail_does() {
+    differential!(prot(898, BANNER));
     let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

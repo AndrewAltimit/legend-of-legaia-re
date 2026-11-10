@@ -1,6 +1,14 @@
 //! The retail kernel differential: every module runs a routine off the user's
 //! disc against the Rust kernel that claims to port it. Skips without
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
+//!
+//! Every test declares the routines it compares with `differential!` (or says
+//! why it runs none with `not_a_differential!`); see `common.rs`. The
+//! declarations are what `scripts/ci/differential-coverage.py` counts.
+
+// First, so its macros are in scope for every module below.
+#[macro_use]
+mod common;
 
 mod ambient_motion;
 mod anim_cue_walk;
@@ -31,7 +39,6 @@ mod cast_steal;
 mod coin_counter;
 mod colour_tween;
 mod combo_records;
-mod common;
 mod confuse;
 mod dance_floor;
 mod death_spoils;

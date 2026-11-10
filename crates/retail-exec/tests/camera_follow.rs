@@ -115,6 +115,7 @@ fn fmt_pose(p: &Pose) -> String {
 
 #[test]
 fn the_follow_camera_composes_eases_and_clamps_as_retail() {
+    differential!(prot(897, CLAMP), prot(897, EASE));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -33,6 +33,7 @@ fn actor(slot: u8) -> u32 {
 
 #[test]
 fn the_round_sweep_leaves_every_seat_as_retail_leaves_it() {
+    differential!(prot(898, SWEEP));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

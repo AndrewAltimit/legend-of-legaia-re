@@ -22,6 +22,7 @@ const SPIRIT_CATEGORY: u8 = 4;
 
 #[test]
 fn the_done_band_pays_spirit_as_retail_pays_it() {
+    differential!(prot(898, BLOCK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

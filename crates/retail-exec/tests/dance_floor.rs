@@ -53,6 +53,7 @@ struct Row {
 
 #[test]
 fn every_dancer_on_the_floor_dances_as_retail_dances() {
+    differential!(prot(980, TICK));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

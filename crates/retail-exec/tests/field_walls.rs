@@ -18,6 +18,7 @@ const ACTOR_COUNT: u32 = 0x8007_B6B8;
 
 #[test]
 fn the_walk_step_hits_the_walls_retail_hits() {
+    differential!(prot(897, COLLIDE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

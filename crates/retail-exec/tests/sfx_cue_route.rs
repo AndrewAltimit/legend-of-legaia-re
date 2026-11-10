@@ -31,6 +31,7 @@ const BANK_LEN: u32 = 0x1000;
 
 #[test]
 fn the_router_matches_retail() {
+    differential!(scus(ROUTE));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -13,6 +13,8 @@
 
 use std::collections::HashMap;
 
+pub mod ledger;
+
 /// Main RAM, mirrored at `0x0000_0000`, `0x8000_0000` and `0xA000_0000`.
 pub const RAM_SIZE: usize = 0x20_0000;
 /// The return address [`Cpu::call`] plants; reaching it ends the call.
@@ -196,7 +198,12 @@ impl Cpu {
         } else {
             self.step_budget
         };
-        self.run(entry, budget)
+        let body = self.mem.read(entry, ledger::BODY_LEN);
+        // A hook entry may sit outside memory; the read must not stop the run.
+        self.mem.bad = None;
+        let stop = self.run(entry, budget);
+        ledger::record(entry, body, &stop);
+        stop
     }
 
     fn run(&mut self, entry: u32, budget: u64) -> Stop {

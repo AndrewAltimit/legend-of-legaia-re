@@ -157,6 +157,7 @@ fn retail_vm() -> Option<psx_retail_exec::Cpu> {
 
 #[test]
 fn every_instruction_leaves_its_context_as_retail_leaves_it() {
+    differential!(prot(897, VM));
     let Some(mut cpu) = retail_vm() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -255,6 +256,7 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
 /// port's NPC walk does not keep.
 #[test]
 fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
+    differential!(prot(897, VM));
     let Some(mut cpu) = retail_vm() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -362,6 +364,7 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
 /// writes first (`0x801E1FC4..0x801E2068`).
 #[test]
 fn a_tint_lands_where_retail_tints_the_actor() {
+    differential!(prot(897, VM));
     use legaia_engine_field::object_tint::{ActorTint, ActorTintKey};
     let Some(mut cpu) = retail_vm() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -481,6 +484,7 @@ fn a_tint_lands_where_retail_tints_the_actor() {
 /// port's per-frame cull owns. The player form `A3 F8` moves the player.
 #[test]
 fn a_tile_warp_lands_on_the_context_it_names() {
+    differential!(prot(897, VM));
     let Some(mut cpu) = retail_vm() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

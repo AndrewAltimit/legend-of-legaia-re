@@ -37,6 +37,7 @@ type Spawn = (u16, (u8, u8), (u16, u16, u16), [u16; 3], u16);
 
 #[test]
 fn the_object_sweep_binds_what_retail_binds() {
+    differential!(scus(SWEEP));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

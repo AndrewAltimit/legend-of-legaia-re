@@ -34,6 +34,7 @@ struct Log {
 
 #[test]
 fn the_shout_selector_picks_what_retail_picks() {
+    differential!(scus(SELECTOR));
     let (Some(mut cpu), Some(exe)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

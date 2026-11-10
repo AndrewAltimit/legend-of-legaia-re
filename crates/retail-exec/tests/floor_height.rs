@@ -37,6 +37,7 @@ fn trigger_block(records: &[[u8; 4]]) -> Vec<u8> {
 
 #[test]
 fn the_floor_is_where_retail_puts_it() {
+    differential!(scus(SAMPLER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -218,6 +218,7 @@ fn battle_cpu(state: &Rc<Cell<u32>>) -> Option<Cpu> {
 
 #[test]
 fn a_round_opens_on_the_keys_retail_rolls() {
+    differential!(prot(898, 0x801D_A780));
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = battle_cpu(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -258,6 +259,7 @@ fn a_round_opens_on_the_keys_retail_rolls() {
 
 #[test]
 fn a_fight_opens_on_the_formation_retail_rolls() {
+    differential!(scus(0x8005_1D84));
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = battle_cpu(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -306,6 +308,7 @@ fn a_fight_opens_on_the_formation_retail_rolls() {
 /// `& 0x40` runs the applier on its own seat each round (`0x801E7730..0x801E7768`).
 #[test]
 fn the_regeneration_passives_restore_what_retail_restores() {
+    differential!(prot(898, 0x801E_752C));
     let state = Rc::new(Cell::new(0));
     let (Some(mut cpu), Some(scus)) = (battle_cpu(&state), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -363,6 +366,7 @@ fn the_regeneration_passives_restore_what_retail_restores() {
 
 #[test]
 fn the_status_tick_drains_what_retail_drains() {
+    differential!(prot(898, 0x801E_752C));
     let state = Rc::new(Cell::new(0));
     let (Some(mut cpu), Some(scus)) = (battle_cpu(&state), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -408,6 +412,7 @@ fn the_status_tick_drains_what_retail_drains() {
 /// neither may a count of the tracker's.
 #[test]
 fn a_tracked_ailment_lasts_as_long_as_the_word() {
+    differential!(prot(898, 0x801E_752C));
     use legaia_engine_battle_vm::status_effects::StatusKind;
     let state = Rc::new(Cell::new(0));
     let (Some(mut cpu), Some(scus)) = (battle_cpu(&state), scus()) else {
