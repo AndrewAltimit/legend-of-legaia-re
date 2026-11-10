@@ -229,6 +229,7 @@ mod menu_screens;
 mod menu_stats;
 mod menu_subscreens;
 mod mesh_swap;
+mod minigame_panels;
 mod mode_frame;
 mod mode_init;
 mod mode_transition;

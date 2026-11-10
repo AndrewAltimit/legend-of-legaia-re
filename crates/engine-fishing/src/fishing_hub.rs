@@ -489,20 +489,37 @@ impl crate::fishing::PondSession {
     }
 }
 
-/// The no-lure screen's line: `FUN_801D73B8(text, 0xA0, 0x68)`, which
-/// centres by `13 * (len - 1) / 4` and draws `7` px below the `y` it is
-/// given (the same caption routine the result plate's species name takes).
+/// Lowest row the centred caption routine still draws on (`slti v0,s1,0xf1`).
+pub const CAPTION_LAST_ROW: i32 = 0xF0;
+
+/// Where `FUN_801D73B8(text, cx, y)` puts a line of `len` bytes: `(x, y)` of
+/// the print, and the routine's return value `(len - 1) / 2`. It centres by
+/// `13 * (len - 1) / 4` and prints `7` px below the `y` it is given; past
+/// [`CAPTION_LAST_ROW`] it prints nothing. The no-lure screen and the result
+/// plate's species name both go through it.
+// PORT: FUN_801d73b8
+pub fn centred_caption(len: usize, cx: i32, y: i32) -> Option<((i32, i32), i32)> {
+    if y > CAPTION_LAST_ROW {
+        return None;
+    }
+    let n = len as i32 - 1;
+    Some(((cx - (13 * n) / 4, y + 7), n / 2))
+}
+
+/// The no-lure screen's line: `FUN_801D73B8(text, 0xA0, 0x68)`.
 // PORT: FUN_801cf3bc (case 0x96: the no-lure line through FUN_801d73b8)
 fn no_lure_lines(text: &FishingHubText) -> Vec<HubLine> {
     if text.no_lure.is_empty() {
         return Vec::new();
     }
     let (cx, y) = NO_LURE_LINE_AT;
-    let half = (13 * (text.no_lure.len() as i32 - 1)) / 4;
+    let Some(((x, y), _)) = centred_caption(text.no_lure.len(), i32::from(cx), i32::from(y)) else {
+        return Vec::new();
+    };
     vec![HubLine {
         text: text.no_lure.clone(),
-        x: cx - half as i16,
-        y: y + 7,
+        x: x as i16,
+        y: y as i16,
         marked: false,
     }]
 }
