@@ -253,8 +253,8 @@ impl Blockers {
         let near = NPC_BODIES_NEAR.with(std::cell::Cell::get);
         // With bodies solid, the bodies the walk collides with, not the talk
         // map: a placement the port tracks only by its script channel stops
-        // the player too, and one hidden does not. One culled now is kept
-        // ([`planning_bodies`]).
+        // the player too, and one hidden does not. One the camera window
+        // culls now is kept ([`planning_bodies`]).
         let centres: Vec<(i32, i32)> = if w.npcs.solid {
             planning_bodies(w)
                 .into_iter()
@@ -929,24 +929,35 @@ pub(super) fn plan_key(
 }
 
 /// The bodies a plan routes round with `npcs.solid` armed: the placements
-/// `World::field_moving_actor_centres` boxes, culled or not, sorted.
+/// `World::field_moving_actor_centres` boxes, sorted, keeping one the cull
+/// hides only by the camera's tile window.
 ///
-/// The cull (`+0x10` bit 1, `FUN_801D79E8`) is a function of where the
-/// camera stands, not of the body: one off the window now is a candidate
-/// again by the time the walker comes near it. A plan that leaves the
-/// culled bodies out routes through every gap one of them plugs. `jouinc`
-/// has two such plugs, the item P1[17] at (10624, 5056), standing in the
-/// wall gap its own scene script opens at (82, 39), and P1[16] at
-/// (10432, 7680), the corridor's foot; both carry bit 0 clear on retail
-/// (`+0x10` `0x09020882` / `0x09620886` in the `jouinc` library state), so
-/// both stop the player, and retail's item stops a walk into the gap after
-/// it is taken as well as before (`autorun_item_gap_probe.lua`). Planned
-/// from far off, the route leaked past them into the open ground outside
-/// the castle's walls, whose search filled the node budget before it found
-/// the door, and the walk went back and forth along the corridor until its
-/// stall clock ran out.
+/// The cull (`+0x10` bit 1, `FUN_801D79E8`) has two halves. The tile window
+/// follows the camera, so a body off it now is a candidate again by the
+/// time the walker comes near it; the region box is latched at a landing
+/// and a walk never re-latches it, so a body outside it stays culled until
+/// the next warp. A plan that leaves the window-culled bodies out routes
+/// through every gap one of them plugs. `jouinc` has two such plugs, the
+/// item P1[17] at (10624, 5056), standing in the wall gap its own scene
+/// script opens at (82, 39), and P1[16] at (10432, 7680), the corridor's
+/// foot; both carry bit 0 clear on retail (`+0x10` `0x09020882` /
+/// `0x09620886` in the `jouinc` library state), so both stop the player,
+/// and retail's item stops a walk into the gap after it is taken as well
+/// as before (`autorun_item_gap_probe.lua`). Planned from far off, the
+/// route leaked past them into the open ground outside the castle's walls,
+/// whose search filled the node budget before it found the door, and the
+/// walk went back and forth along the corridor until its stall clock ran
+/// out.
 pub(super) fn planning_bodies(w: &legaia_engine_core::world::World) -> Vec<(i32, i32)> {
     let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+    // `FUN_801D79E8`'s region-box half: world tiles, high edges exclusive.
+    let in_region = |x: i16, z: i16| {
+        w.npcs.cull_view.as_ref().is_none_or(|v| {
+            let b = v.attr_box.map(|t| i32::from(t) << 7);
+            let (x, z) = (i32::from(x), i32::from(z));
+            x >= b[0] && x < b[2] && z >= b[1] && z < b[3]
+        })
+    };
     let channels: Vec<_> = w
         .field_vm
         .channels
@@ -964,13 +975,14 @@ pub(super) fn planning_bodies(w: &legaia_engine_core::world::World) -> Vec<(i32,
                 .get(&slot)
                 .copied()
                 .unwrap_or((c.ctx.world_x as i16, c.ctx.world_z as i16));
-            (!(x == hide && z == hide)).then_some((i32::from(x), i32::from(z)))
+            (!(x == hide && z == hide) && in_region(x, z)).then_some((i32::from(x), i32::from(z)))
         })
         .collect();
     out.extend(w.npcs.positions.iter().filter_map(|(&slot, &(x, z))| {
         (!channels
             .iter()
-            .any(|c| c.placement_index == usize::from(slot)))
+            .any(|c| c.placement_index == usize::from(slot))
+            && in_region(x, z))
         .then_some((i32::from(x), i32::from(z)))
     }));
     out.sort_unstable();
