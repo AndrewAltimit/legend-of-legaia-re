@@ -3602,6 +3602,10 @@ films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The cause is the battle frame 
 `FUN_801E09F8` runs from the draw, after every node's tick, so the victim's node commits the reaction
 a pass later ([the order inside the pass](battle-stage-camera.md#the-frame-step)). The port runs the cast tick at the
 tail of its anim pass (`World::tick_battle_anim_pass`), and the next pass's walk sounds the reaction's first cue.
+Over the harvested enemy-cast films (`<scene>_<monster>_pre_<spell>`), the landing cues `0x48..0x4B` pair a median of one
+tick off retail's on that order and all inside the six-tick tolerance, where the head-of-pass seat rang every one late, a
+median of four ticks. What is left follows the flight's own length: Thunder Break's lands five ticks on, behind retail's
+step-`4` frames at the head of `0x2D`.
 
 Over the cast films' cue channel the same order reads from the other side. Their clock pairs the
 two sides state by state, and on it the landing cues (`0x48..0x4B`) never pair at offset `0`: five in six
