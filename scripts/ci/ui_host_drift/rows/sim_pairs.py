@@ -1215,18 +1215,20 @@ SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "visible-tile crop policy, native vs play page - retail draws "
         "only the cells the camera's tile window reaches (FUN_801F7088), and "
-        "whether a frame crops at all is a policy (knob, retail framing, field "
-        "mode, no cutscene, a focus the region box holds). Both hosts ask the "
-        "one `field_view_window::field_view_cells` entry with "
-        "`retail_framing` (retail's vantage, or a cutscene or helper record's "
-        "scripted shot owning the camera), so a host that cropped under its own rule would "
-        "black out cells the other draws",
+        "whether a frame crops, and by which window, is a policy (knob, field "
+        "mode, no cutscene, a focus the region box holds, and the framing). "
+        "Both hosts ask the one `field_view_window::field_view_cells` entry "
+        "with `crop_framing`'s three cases: retail's window at retail framing "
+        "(or a scripted shot), the window widened by the distance preset under "
+        "Far / Farther with the knobs at identity, the whole map under a "
+        "re-aimed view or the debug vantage - so a host that cropped under its "
+        "own rule would black out cells, or draw scenery, the other does not",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_view_cells", "retail_framing"],
+        "symbols": ["field_view_cells", "crop_framing"],
     },
     {
         "what": "visible-tile crop of the terrain list, native vs play page - "
