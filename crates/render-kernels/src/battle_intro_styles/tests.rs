@@ -495,3 +495,58 @@ fn the_white_flag_follows_the_additive_tail() {
         }
     }
 }
+
+/// [`intro_seeder_draws`] is what the ported seeders really draw: arm the
+/// emitter for every style and sub-style over a counting env.
+#[test]
+fn the_seeder_draw_counts_are_the_seeders_own() {
+    use crate::battle_intro_particles::{IntroEnv, ParticleEnv};
+    struct Counting {
+        inner: IntroEnv,
+        draws: u32,
+    }
+    impl ParticleEnv for Counting {
+        fn heading(&mut self, x: i32, z: i32) -> i32 {
+            self.inner.heading(x, z)
+        }
+        fn sin(&mut self, h: i32) -> i16 {
+            self.inner.sin(h)
+        }
+        fn cos(&mut self, h: i32) -> i16 {
+            self.inner.cos(h)
+        }
+        fn sqrt(&mut self, v: i32) -> i32 {
+            self.inner.sqrt(v)
+        }
+        fn rand(&mut self) -> i32 {
+            self.draws += 1;
+            self.inner.rand()
+        }
+    }
+    for selector in 0..INTRO_STYLE_COUNT {
+        let style = IntroStyle::from_selector(selector).unwrap();
+        for sub in 0..4 {
+            let mut env = Counting {
+                inner: IntroEnv::new(0x0963_2944),
+                draws: 0,
+            };
+            let mut trig = IntroEnv::new(0);
+            let _ = crate::battle_intro::BattleIntro::new(
+                style,
+                sub,
+                132,
+                crate::battle_intro::IntroQuadTable::neutral(),
+                &mut env,
+                &mut trig,
+                crate::battle_intro::DEFAULT_TILE_CORNERS,
+            );
+            assert_eq!(
+                env.draws,
+                intro_seeder_draws(style, sub),
+                "{style:?} sub {sub}"
+            );
+        }
+    }
+    // The capture's count: a kor encounter's tile shatter at sub-style 0.
+    assert_eq!(intro_seeder_draws(IntroStyle::TileShatter, 0), 706);
+}

@@ -479,11 +479,22 @@ mod tests {
             roll_q8: 0,
         });
         w.set_encounter_session(Some(session));
-        let before = w.rng_state;
+        // The only draws in the window are the init's own seeder's
+        // (`intro_seeder_draws`), all on the transition's first frame.
+        let choice = legaia_render_kernels::battle_intro_styles::select_intro_style(
+            &w.battle_intro_style_inputs(3),
+        );
+        let mut expect = w.rng_state;
+        for _ in 0..legaia_render_kernels::battle_intro_styles::intro_seeder_draws(
+            choice.style,
+            choice.sub_style,
+        ) {
+            expect = legaia_engine_system::rand::world_lcg_step(expect);
+        }
         for _ in 0..8 {
             let _ = w.tick();
         }
-        assert_eq!(w.rng_state, before, "the intro's init dropped the emitter");
+        assert_eq!(w.rng_state, expect, "the intro's init dropped the emitter");
     }
 
     #[test]

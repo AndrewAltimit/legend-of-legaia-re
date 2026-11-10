@@ -89,7 +89,9 @@ pub fn step_battle_intro(
 /// byte, the formation's first monster id and the current scene. All three
 /// come out of `SceneHost::battle_intro_style_inputs`; the arming is
 /// `BattleIntro::arm_for_battle` over the PROT 0979 tables (with their
-/// disc-free fallbacks), the shade pack and the world's RNG seed.
+/// disc-free fallbacks), the shade pack and the world RNG word the
+/// transition's init drew its seeder's `rand()`s from
+/// (`BattleState::intro_rand_state`).
 pub fn arm_battle_intro(host: &SceneHost, formation_id: u16, total: i32) -> BattleIntro {
     let inputs = host.battle_intro_style_inputs(formation_id);
     let overlay = host
@@ -105,7 +107,7 @@ pub fn arm_battle_intro(host: &SceneHost, formation_id: u16, total: i32) -> Batt
         total,
         overlay.as_deref(),
         shade.as_deref().map(Vec::as_slice),
-        host.world.rng_state,
+        host.world.battle.intro_rand_state,
     );
     log::info!(
         "battle intro style {:?} (sub {}) for formation slot0 {:#04x}, battle flags {:#04x}",

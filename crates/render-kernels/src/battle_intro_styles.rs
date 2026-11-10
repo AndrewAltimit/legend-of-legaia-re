@@ -446,6 +446,40 @@ pub fn intro_leaves_white(style: IntroStyle, sub_style: i32) -> bool {
     }
 }
 
+/// How many `rand()` draws the transition init `FUN_801CE8CC` makes through
+/// the style's seeder, all on the global BIOS seed (`FUN_80056798`).
+///
+/// The init's style switch (jump table `0x801CE840`) calls one seeder per
+/// style, and the seeders' draw counts are fixed by their loops:
+///
+/// | Style | Seeder | Draws |
+/// |---|---|---|
+/// | scatter | `FUN_801CFBB4` | none (no `jal 0x80056798`) |
+/// | spin-up | `FUN_801D0164` | one per cell, `32 x 40` (`0x801D02B8`) |
+/// | tile shatter | `FUN_801D081C` | two per interior corner, `15 x 15` (`0x801D0920` / `0x801D0958`), plus one per tile, `16 x 16`, on sub-styles `0` (`0x801D0C04`) and `1` (`0x801D0C4C`) |
+/// | curtain / swirl | `FUN_801D1CD4` / `FUN_801D1564` | none |
+///
+/// The ticks draw none: a capture of a walked kor encounter (tile shatter,
+/// sub-style `0`) counts 706 calls inside the init and none from its return
+/// to the battle mode (`scripts/pcsx-redux/autorun_battle_intro_rand.lua`).
+/// The world advances its stream by this many steps on the transition's first
+/// frame, and the emitter replays the same segment
+/// ([`crate::battle_intro_particles::IntroRng`]).
+pub fn intro_seeder_draws(style: IntroStyle, sub_style: i32) -> u32 {
+    match style {
+        IntroStyle::SpinUpParticles => 32 * 40,
+        IntroStyle::TileShatter => {
+            15 * 15 * 2
+                + if matches!(sub_style, 0 | 1) {
+                    16 * 16
+                } else {
+                    0
+                }
+        }
+        IntroStyle::ScatterParticles | IntroStyle::Curtain | IntroStyle::Swirl => 0,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // FUN_801CFDA0 / FUN_801D0370 - the two particle-field ticks
 // ---------------------------------------------------------------------------

@@ -1139,6 +1139,12 @@ pub struct BattleState {
     /// fades the fight in from it, then clears the word (`sw zero` at
     /// `0x80051D44`); clear, both fades are the black ones.
     pub entry_fade_white: bool,
+    /// The world RNG word (retail's BIOS seed `0x80009010`) the transition
+    /// init `FUN_801CE8CC` saw: its style seeder's `rand()` draws start
+    /// here. The world steps its own stream past them on the transition's
+    /// first frame and the intro emitter replays them from this word
+    /// (`legaia_render_kernels::battle_intro_styles::intro_seeder_draws`).
+    pub intro_rand_state: u32,
     /// The stage loader's 20-frame fade-in (`FUN_800513F0`,
     /// `0x80051C98..0x80051D2C`), its own fade actor beside the world's seat.
     /// Until the loader runs, battle init's held fade covers the screen
@@ -1535,6 +1541,7 @@ impl BattleState {
             ground_grid_drawn: true,
             stage_registration_pending: false,
             entry_fade_white: false,
+            intro_rand_state: 0,
             entry_fade: None,
             stage_outdoor: false,
             message_banner: None,
