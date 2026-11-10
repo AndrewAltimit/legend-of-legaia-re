@@ -366,8 +366,8 @@ down the table is not modelled. Every other caller of `SetDrawMode`
 
 | Call | Routine | `dtd` | Page word |
 |---|---|---|---|
-| `0x8002FEE4` | bar widget dispatcher `FUN_8002C69C`, ahead of a bar | `1` | `0x1E` |
-| `0x8002FF44` | the same, behind the bar | `0` | `0x1E` |
+| `0x8002FEE4` | a `SCUS_942.54` routine with no dump yet (the nearest entry below it is the bar widget dispatcher `FUN_8002C69C`) | `1` | `0x1E` |
+| `0x8002FF44` | the same routine, sixty bytes on | `0` | `0x1E` |
 | `0x801F8D14` | PROT 0900 letterbox handler `FUN_801F8A34`, bucket `1` | `1` | `0x55` |
 | `0x801F7FC8` | PROT 0900, the widget ahead of it | `0` | the widget's `+0xA0` |
 | `0x801F8128`, `0x801F8510` | PROT 0916 (Aluru) | `0` | `0x3F` |
@@ -377,8 +377,8 @@ down the table is not modelled. Every other caller of `SetDrawMode`
 The remaining `SCUS_942.54` sites all pass `0` (`clear a1` / `move a2,a1`): the
 fade quad, the dialog glyph and sprite emitters, the HUD's page setters. So a
 cast module's own packet clears the bit for whatever links nearer than it, as
-the wash does for the whole frame, and only the grid, a HUD bar and the
-letterbox set it. A film reads the result directly: the mean of each pixel's
+the wash does for the whole frame, and only the grid, the `0x8002FEE4` routine
+and the letterbox set it. A film reads the result directly: the mean of each pixel's
 5-bit value less its 4x4 cell's mean, per cell position, follows the dither
 table on a dithered frame and is flat on one that is not.
 
