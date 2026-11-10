@@ -230,6 +230,7 @@ mod ledge_hop;
 mod level_up;
 mod libsnd_voices;
 mod light_pool;
+mod list_order;
 mod lzs_decode;
 mod magic_level;
 mod man_install;
