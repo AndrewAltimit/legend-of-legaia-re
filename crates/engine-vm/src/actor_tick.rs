@@ -1,6 +1,6 @@
 //! Per-actor physics tick - port of `FUN_80021DF4`.
 //!
-//! PORT: FUN_80021DF4, FUN_800250D4, FUN_801D79E8
+//! PORT: FUN_80021DF4, FUN_801D79E8
 //!
 //! `FUN_8002519C` walks the per-frame actor list and calls this function on
 //! every active record. The dispatcher is **not** an "animation interpreter"

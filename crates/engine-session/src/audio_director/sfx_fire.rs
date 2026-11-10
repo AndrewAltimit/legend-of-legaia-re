@@ -490,7 +490,7 @@ impl<S: AudioSink> AudioDirector<S> {
                 let id = cue as u8;
                 self.sfx_bank.get(id).copied().and_then(|e| {
                     Some((
-                        (e.program_index, e.tone, e.key, e.voices.max(1)),
+                        (e.program_index, e.tone, e.key, e.voices),
                         self.sfx_vab_for_cue(id)?,
                     ))
                 })
@@ -501,7 +501,7 @@ impl<S: AudioSink> AudioDirector<S> {
                 )
                 .and_then(|row| {
                     Some((
-                        (row[0], row[1], row[2], (row[3] & 0x1F).max(1)),
+                        (row[0], row[1], row[2], row[3]),
                         self.sfx_vabs.get(&row[4])?,
                     ))
                 })
@@ -509,9 +509,22 @@ impl<S: AudioSink> AudioDirector<S> {
             let Some(((program, tone, note, count), vab)) = resolved else {
                 continue;
             };
-            let voices = (0..count).filter_map(|i| {
-                let v = i32::from(voice) + i32::from(i);
-                (0..24).contains(&v).then_some((v as usize, i))
+            // The key and release arms walk `row[3] & 0x1F` voices from the
+            // first and skip a negative first voice
+            // (`legaia_engine_vm::sfx_emitter::emitter_voices`); the volume
+            // arm makes no sign test, so a negative first voice still reaches
+            // the voices past zero there.
+            let span = match *op {
+                EmitterOp::Volume { .. } => {
+                    i32::from(voice)..i32::from(voice) + i32::from(count & 0x1F)
+                }
+                _ => legaia_engine_vm::sfx_emitter::emitter_voices(voice, count),
+            };
+            let first = i32::from(voice);
+            let voices = span.filter_map(move |v| {
+                (0..24)
+                    .contains(&v)
+                    .then_some((v as usize, (v - first) as u8))
             });
             match *op {
                 EmitterOp::Key { vol_l, vol_r, .. } => {

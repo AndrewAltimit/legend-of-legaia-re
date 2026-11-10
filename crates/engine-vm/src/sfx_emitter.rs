@@ -212,6 +212,25 @@ pub fn emitter_tick(st: &mut ActorState, listener: &EmitterListener) -> Option<E
     })
 }
 
+/// The voices one emitter op walks: `voice + i` for `i` below the cue row's
+/// count `row[3] & 0x1F`, none for a negative first voice or a zero count.
+///
+/// The release `FUN_800250D4(cue, voice)` returns on `voice < 0`
+/// (`bltz s2` at `0x800250EC`), takes the count off the row
+/// (`andi 0x1f` at `0x80025154`, `beq zero` on none) and keys off each voice
+/// through `FUN_800653C8`; the part tick's key arm makes the same two tests
+/// (`0x80022594`, `0x800225AC`). The count is the row's: a row of count `0`
+/// keys and releases nothing.
+///
+/// PORT: FUN_800250D4 (the voice walk)
+pub fn emitter_voices(voice: i16, count_byte: u8) -> std::ops::Range<i32> {
+    let n = i32::from(count_byte & 0x1F);
+    if voice < 0 {
+        return 0..0;
+    }
+    i32::from(voice)..i32::from(voice) + n
+}
+
 /// The release the actor-list walk owes an emitter part it frees.
 ///
 /// `FUN_8002519C` frees a halted actor one walk after it halts; when the
