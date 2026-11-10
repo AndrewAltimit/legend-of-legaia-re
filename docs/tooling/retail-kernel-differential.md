@@ -1100,3 +1100,10 @@ The World ran the walk-regen tick after the step on every field frame; the tick 
 the pad controller and only past the walk gate, and tests the system lock `0x1F800394 & 0x400`
 there, which the step did not. The scene-transition actor `FUN_80021934` (`scene_transition`)
 matches over whole transitions, both stream arms and the name-buffer rotation.
+
+The flag-window picker `FUN_801EF014` behind `49 04`, the Uru Mais lift's floor list, with the list
+cursor live beneath it, and its painter `FUN_801E6984` (`flag_window`) match the port's tick, row
+loop and legend pens over the disc's two descriptors and generated ones. The submode open
+`FUN_801D9C3C` seeds twelve words of the context block one by one, `0x801F3530` and `0x801F3534`
+among them after the tail clear, where the port listed ten; the scene actor spawn `FUN_801DE478`
+matches.
