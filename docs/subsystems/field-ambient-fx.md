@@ -268,8 +268,10 @@ tail (`FUN_80021DF4` mode-3 arm, `0x800226D8..`) then every frame:
    (`FUN_8001A78C`), `H += h` (mod `0x168`), `S += s`, `V += v` (clamped
    `0..0xFF`), HSV->RGB (`FUN_8001A6C8`, caps `0xF8`), and when
    `mode == 1` a white/invert blend `c += (255 - 2c) * white >> 8`; the
-   repacked row is emitted as a fresh `LoadImage` packet onto the captured
-   rect (`FUN_800583C8`);
+   channels are repacked with `addu`, not `or` (`0x80019FC8..0x80019FE0`),
+   so under a negative white amount a negative channel carries into the
+   next field; the row is emitted as a fresh `LoadImage` packet onto the
+   captured rect (`FUN_800583C8`);
 4. advances `+0x9C` (clamped 1000).
 
 The arm runs **before** the part's move VM (`0x80022B94`), after the wait

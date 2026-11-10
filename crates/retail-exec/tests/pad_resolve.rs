@@ -100,7 +100,7 @@ fn the_wall_slide_resolves_where_retail_resolves() {
             };
             // Cardinals, the four diagonals the resolver passes by, opposing
             // pairs and triples it walks, and the no-clip bit.
-            let dir = (rng.below(16) as u32) << 12;
+            let dir = rng.below(16) << 12;
             let held = dir
                 | if rng.below(8) == 0 { 0x2 } else { 0 }
                 | if rng.below(4) == 0 { 0x80 } else { 0 };

@@ -706,3 +706,25 @@ chip marks `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBDDC` / `FUN_801DBEC4` (`c
 `FUN_801E6D84` (`target_banner`); the bolt ribbon `FUN_801CFA48` with the overlay generator `FUN_801D0290`
 (`ribbon`); the near-camera ghost pass `FUN_8004DC68` with the bearing live beneath it (`camera_ghost`); and the clip
 crossing-vertex interpolator `FUN_80029724` (`clip_vertex`).
+The CLUT-cell HSV writer `FUN_80019D50` (`clut_cell`) found the texel repack ORing the three channels where
+the bytes add them (`0x80019FC8..0x80019FE0`). Op `0x44` takes a signed white-blend velocity and the mode-3
+integrator has no floor, so the white amount can go below zero; a channel then goes negative and its sign
+bits carry into the next field rather than being masked. The RGB / HSV pair under it (`hsv`) matches.
+
+The field and menu leaves under the VMs match on their first run: the system flag bank and the operand
+loaders the field VM calls (`field_leaves`), the handler finder and retire sweep, the text packet length,
+the actor node pool (`actor_node_pool`), the MAN record resolver `FUN_8003C8F0` over every scene MAN
+(`man_record`), the default-move readers (`default_move`), the pad's camera ring remap and wall-slide
+resolver called on their own (`pad_resolve`), the walkability probe and the kind-2 elevation lookup over every
+field `.MAP` (`tile_lookups`), the camera height ease, the floor-ladder oscillator and the eased move
+(`field_timers`), their spawners and the colour tween's (`field_spawners`), the camera-zone record loader and
+its re-query (`zone_record`, `zone_requery`), the reflection controller, the Ra-Seru mesh swap, the morph
+envelope and the clip cursor (`morph_envelope`, `clip_cursor`), the property-ramp pool (`ramp_pool`), the arc
+hop's two spawners and its phase watcher (`hop_spawn`, `hop_session`), the fog emitter, spawner and trig LUT
+install (`ambient_emitter`, `fog_spawn`), the world map's entry fade, the L1 map display's enter, tick,
+stepper and clamp in PROT 0981 (`map_display`, `map_display_tick`), and the menu overlay's category check and
+preview mode (`menu_leaves`). Three stores have no port and no reader the port runs: the post-box byte
+classification `FUN_80038050` (`talk_dispatch`) stores a `4C FE xx` operand to the pager's box-gone count,
+an arm no shipped script reaches; the fog spawner writes halfword `1` at record `+0x12`; and the ramp ticker
+walks its list in install order where the port walks slot order, which differs only for two live ramps on
+one destination.
