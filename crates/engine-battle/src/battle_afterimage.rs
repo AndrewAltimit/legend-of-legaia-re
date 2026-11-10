@@ -158,15 +158,15 @@ pub fn ghost_eligible(ring_id: u8) -> bool {
 /// `0x800493F8`, no `break`), and the R3000's quotient for `8 / 0` is all
 /// ones, so `step` is `-1` (`-2` for a monster) and the loop's unsigned
 /// bound `2 * step + 1` is not above it: the walk draws no ghost.
-pub fn ghost_depths(rate: u8, monster: bool) -> Vec<usize> {
+pub fn ghost_depths(rate: u8, monster: bool) -> Option<[usize; 2]> {
     if rate == 0 {
-        return Vec::new();
+        return None;
     }
     let mut step = (8 / rate as usize).max(1);
     if monster {
         step *= 2;
     }
-    vec![step, 2 * step]
+    Some([step, 2 * step])
 }
 
 /// One planned ghost draw.
@@ -190,7 +190,7 @@ pub fn plan_ghosts(
 ) -> Vec<GhostPlan> {
     let mut out = Vec::with_capacity(GHOST_COUNT);
     let mut color = base;
-    for depth in ghost_depths(rate, monster) {
+    for depth in ghost_depths(rate, monster).into_iter().flatten() {
         if !eligible(depth) {
             continue;
         }
@@ -364,30 +364,30 @@ mod tests {
 
     #[test]
     fn normal_rate_ghosts_trail_one_and_two_frames() {
-        assert_eq!(ghost_depths(8, false), [1, 2]);
+        assert_eq!(ghost_depths(8, false), Some([1, 2]));
         // Monster seats double the spacing.
-        assert_eq!(ghost_depths(8, true), [2, 4]);
+        assert_eq!(ghost_depths(8, true), Some([2, 4]));
     }
 
     #[test]
     fn slow_motion_stretches_the_trail() {
-        assert_eq!(ghost_depths(4, false), [2, 4]);
-        assert_eq!(ghost_depths(2, false), [4, 8]);
+        assert_eq!(ghost_depths(4, false), Some([2, 4]));
+        assert_eq!(ghost_depths(2, false), Some([4, 8]));
         // The starter's quarter-speed actor: depths 4 and 8 - the deep
         // dash trail.
-        assert_eq!(ghost_depths(2, true), [8, 16]);
+        assert_eq!(ghost_depths(2, true), Some([8, 16]));
     }
 
     #[test]
     fn a_frozen_actor_draws_no_ghost() {
-        assert!(ghost_depths(0, false).is_empty());
-        assert!(ghost_depths(0, true).is_empty());
+        assert!(ghost_depths(0, false).is_none());
+        assert!(ghost_depths(0, true).is_none());
         assert!(plan_ghosts(0, true, GHOST_COLOR_MONSTER, |_| true).is_empty());
     }
 
     #[test]
     fn a_monster_at_rate_one_samples_past_the_ring() {
-        assert_eq!(ghost_depths(1, true), [16, HISTORY_DEPTH]);
+        assert_eq!(ghost_depths(1, true), Some([16, HISTORY_DEPTH]));
     }
 
     #[test]
