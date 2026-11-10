@@ -116,6 +116,7 @@ mod man_record;
 mod map_display;
 mod map_display_tick;
 mod map_fade;
+mod me_codec;
 mod melee_hit;
 mod menu_leaves;
 mod menu_stats;
