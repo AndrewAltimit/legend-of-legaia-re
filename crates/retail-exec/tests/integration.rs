@@ -61,6 +61,7 @@ mod fishing_line_clip;
 mod floor_height;
 mod glare_divide;
 mod glyph_count;
+mod gte_capture;
 mod hop_arc;
 mod hp_bar_settle;
 mod inn;

@@ -6,10 +6,15 @@
 //! question the catalog's gates cannot: does the port compute what the bytes
 //! compute? See `docs/tooling/retail-kernel-differential.md`.
 //!
-//! No COP0 and no GTE: a routine that reaches one stops with
-//! [`Stop::Unsupported`]. Calls can be replaced by a [`Hook`], which is how
-//! `rand()` is scripted. Load-delay slots are not modelled; the retail compiler
-//! never reads a register in the slot after loading it.
+//! The GTE is the [`gte`] module, written from the hardware documentation and
+//! independent of the engine's own GTE. COP0 carries `mfc0` / `mtc0` as plain
+//! register moves and `rfe` as the status-stack pop; anything else on it stops
+//! with [`Stop::Unsupported`]. Calls can be replaced by a [`Hook`], which is
+//! how `rand()` is scripted. Load-delay slots are not modelled; the retail
+//! compiler never reads a register in the slot after loading it (or after an
+//! `mfc2` / `cfc2`), and GTE command latency is not modelled either.
+
+pub mod gte;
 
 use std::collections::HashMap;
 
@@ -29,7 +34,8 @@ const STACK_TOP: u32 = 0x801F_FF00;
 pub enum Stop {
     /// The routine returned to the sentinel.
     Returned,
-    /// An instruction this interpreter does not carry (GTE, COP0, ...).
+    /// An instruction this interpreter does not carry (`syscall`, an undefined
+    /// GTE command, a COP0 operation other than a move or `rfe`, ...).
     Unsupported { pc: u32, word: u32 },
     /// The step budget ran out.
     StepLimit { pc: u32 },
@@ -156,6 +162,13 @@ pub struct Cpu {
     /// `v0 = 0`, for a large routine whose calls are all side effects. A hook
     /// still wins.
     pub stub_outside: Option<(u32, u32)>,
+    /// Coprocessor 2, seeded and read by a test like RAM.
+    pub gte: gte::Gte,
+    /// The COP0 register file, as `mtc0` left it (`SR` is register 12).
+    pub cop0: [u32; 32],
+    /// GTE commands executed by the last [`Cpu::call`], so a test can prove
+    /// it reached its geometry arm.
+    pub gte_ops: u64,
 }
 
 impl Cpu {
@@ -193,6 +206,7 @@ impl Cpu {
         self.regs.r[RA] = RETURN_SENTINEL;
         self.steps = 0;
         self.calls.clear();
+        self.gte_ops = 0;
         let budget = if self.step_budget == 0 {
             2_000_000
         } else {
@@ -417,6 +431,41 @@ impl Cpu {
                 };
                 self.mem.wr32(ea & !3, keep | (vt << shift));
             }
+            // COP0: register moves and `rfe`.
+            0x10 => match rs {
+                0x00 => r.r[rt] = self.cop0[rd],
+                0x04 => self.cop0[rd] = vt,
+                0x10 if w & 0x3F == 0x10 => {
+                    let sr = self.cop0[12];
+                    self.cop0[12] = (sr & !0xF) | ((sr >> 2) & 0xF);
+                }
+                _ => return Err(unsupported),
+            },
+            // COP2: the GTE.
+            0x12 => {
+                if w & (1 << 25) != 0 {
+                    if !self.gte.execute(w & 0x01FF_FFFF) {
+                        return Err(unsupported);
+                    }
+                    self.gte_ops += 1;
+                } else {
+                    match rs {
+                        0x00 => r.r[rt] = self.gte.read_data(rd),
+                        0x02 => r.r[rt] = self.gte.read_ctrl(rd),
+                        0x04 => self.gte.write_data(rd, vt),
+                        0x06 => self.gte.write_ctrl(rd, vt),
+                        _ => return Err(unsupported),
+                    }
+                }
+            }
+            0x32 => {
+                let v = self.mem.rd32(ea);
+                self.gte.write_data(rt, v);
+            }
+            0x3A => {
+                let v = self.gte.read_data(rt);
+                self.mem.wr32(ea, v);
+            }
             _ => return Err(unsupported),
         }
         Ok(out)
@@ -462,13 +511,13 @@ mod unit {
         // jal 0x80020000 ; nop ; ...
         cpu.mem.wr32(0x8001_0000, 0x0C00_8000);
         cpu.mem.wr32(0x8001_0004, 0);
-        cpu.mem.wr32(0x8001_0008, 0x4A00_0000); // a GTE word
+        cpu.mem.wr32(0x8001_0008, 0x0000_000C); // syscall
         cpu.stub(0x8002_0000, 7);
         assert_eq!(
             cpu.call(0x8001_0000, &[]),
             Stop::Unsupported {
                 pc: 0x8001_0008,
-                word: 0x4A00_0000
+                word: 0x0000_000C
             }
         );
         assert_eq!(cpu.regs.r[V0], 7);
