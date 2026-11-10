@@ -358,8 +358,29 @@ draw has no packet to set it again: Ozma's arms 16 to 21 read no 4x4 pattern at
 all in a retail film, where the arms before them read the full one. Their
 stacked additive fans are where it shows, half a 5-bit step a layer.
 `World::frame_dither` carries the law and both hosts gate PSX mode's dither on
-it. The other callers of `FUN_80059010` with `dtd = 1` (the bar widget at
-`0x8002FEE4`, PROT 0900's letterbox at `0x801F8D14`) are not modelled.
+it.
+
+The law is one flag a frame, so a packet that moves the bit part of the way
+down the table is not modelled. Every other caller of `SetDrawMode`
+(`FUN_80059010`) a battle can reach, by its `dtd` argument:
+
+| Call | Routine | `dtd` | Page word |
+|---|---|---|---|
+| `0x8002FEE4` | bar widget dispatcher `FUN_8002C69C`, ahead of a bar | `1` | `0x1E` |
+| `0x8002FF44` | the same, behind the bar | `0` | `0x1E` |
+| `0x801F8D14` | PROT 0900 letterbox handler `FUN_801F8A34`, bucket `1` | `1` | `0x55` |
+| `0x801F7FC8` | PROT 0900, the widget ahead of it | `0` | the widget's `+0xA0` |
+| `0x801F8128`, `0x801F8510` | PROT 0916 (Aluru) | `0` | `0x3F` |
+| `0x801F8488`, `0x801F84BC` | PROT 0948 / 0949 (Cross Beam, Water Crystals) | `0` | `0x20` |
+| `0x801F8148` | PROT 0920's rain routine | set outside the call's block | `0x20` |
+
+The remaining `SCUS_942.54` sites all pass `0` (`clear a1` / `move a2,a1`): the
+fade quad, the dialog glyph and sprite emitters, the HUD's page setters. So a
+cast module's own packet clears the bit for whatever links nearer than it, as
+the wash does for the whole frame, and only the grid, a HUD bar and the
+letterbox set it. A film reads the result directly: the mean of each pixel's
+5-bit value less its 4x4 cell's mean, per cell position, follows the dither
+table on a dithered frame and is flat on one that is not.
 
 ## For modders: editing a texture
 
