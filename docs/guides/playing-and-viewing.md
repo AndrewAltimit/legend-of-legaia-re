@@ -434,6 +434,15 @@ enhancement has a retail-faithful off position
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
 | `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
+**Screenshots.** `Print Screen` saves the picture on screen as a PNG, menus
+and text included. The native window writes it into your pictures folder,
+under `Legend of Legaia` (`~/Pictures/Legend of Legaia` on most Linux
+desktops, `Pictures\Legend of Legaia` on Windows), named for the scene and
+the time (`legaia-town01-1762750000.png`), and says where on the notice line;
+the browser play page downloads the same picture under the same name. A
+desktop that keeps `Print Screen` for its own screenshot tool may not pass the
+key on; the game's shot then needs that shortcut freed.
+
 In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk

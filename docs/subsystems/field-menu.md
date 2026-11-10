@@ -118,7 +118,7 @@ calls its renderer or runs the list kernel.
 - Drawing: [primitives + CLUT staging](#draw-primitives--clut-staging) · [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8)
 - [Top-level pause menu](#top-level-pause-menu)
 - Status: [tab banner](#tab-banner) · [satellites](#status-satellite-windows) · [main panel](#status-main-panel-fun_801d33d8) · [status page](#status-page-submenu-0-or-5) · [magic](#magic-list-submenu-2) · [moves](#moves-list-submenu-3) · [skills](#skills-page-submenu-1)
-- Lists: [sub-screen state machines](#submenu-state-machines) · [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) · [Use-list build](#use-list-row-build-content-id-3-fun_80030628)
+- Lists: [sub-screen state machines](#submenu-state-machines) · [slide input lock](#the-window-slide-input-lock) · [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) · [Use-list build](#use-list-row-build-content-id-3-fun_80030628)
 - [Items screen](#items-screen) · [Magic screen](#magic-screen) · [Equip screen](#equip-screen) · [stat-compare panels](#equip-stat-compare-panels-windows-25-and-41) · [Options screen](#options-screen)
 - [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [windows 34 and 46](#two-more-descriptor-table-renderers-windows-34-and-46)
 - [Name columns](#name-columns-and-translated-text) · [dialog reading box](#dialog-reading-box-fun_801d84d0) · [inn stay](#inn-stay-there-is-no-inn-screen)
@@ -556,6 +556,19 @@ Disc-gated oracle:
 ICO `0x3f` is the same `(208,86,16,10)` sheet rect as status code `0x07`. HP /
 MP values take the [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8).
 
+### The party readout under the pause wipe
+
+The field party readout (`FUN_801D0D38`) is gone before the field starts to
+darken. A capture pressing the menu button in a retail field state with the
+readout up (`scripts/pcsx-redux/autorun_pause_hud_fade.lua`, `town01`) shows
+the routine build the panel on the accept tick and never again: the accept
+raises the player's engaged bit (`+0x10 & 0x80000`), and from the next field
+tick the scene-entry arm rearms the idle countdown to `0x28`, so every frame of
+the wipe (screen fade `_DAT_8007B440` from `20` up to `160`) has no readout.
+None of the suppress words (`_DAT_8007B868`, the D-pad, the menu lock) is
+raised. Both hosts draw none once the press opens the menu; the play page's
+overlay used to keep the last field frame's readout under the wipe quad.
+
 ### The menu does not open at all while a dialogue is up
 
 Retail has no separate Start handler: the menu-open accept sits in the
@@ -885,7 +898,83 @@ below; the overlay talks to it through globals:
 | `_DAT_8007BB88` | selected row's payload (entry low 12 bits; the bag slot on item lists) |
 | `_DAT_8007BB9C` | selected row's class nibble (`entry & 0xF000`; the key `FUN_80034250` dispatches descriptions on) |
 | `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` | scroll top / selected row / row count |
-| `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` |
+| `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` ([below](#the-window-slide-input-lock)) |
+
+### The window-slide input lock
+
+No menu screen reads the pad while a window is moving. The latch is
+`_DAT_8007BB80` (`gp+0x868`), and one routine writes it: the window walker's
+motion pass `FUN_80031AE4`, the first call of the per-frame window walker
+`FUN_80031D00` (`0x80031DC0`). It zeroes the latch (`0x80031AE8`), then for
+every window whose motion word `+0x20` is `1` (sliding) or `-1` (closing) adds
+the frame delta `DAT_1F800393` to the progress `+0x1E`; at the duration (`0xC`,
+the motion sub-object's `+0`) the progress resets, the motion word steps down
+and the window lands on its target. A window still moving after that is
+placed at `source + (target - source) * progress / 12` (closing:
+`(park - source)`) and counted onto the latch (`0x80031CCC..0x80031CD8`). A
+still window copies its live position into the slide source; a finished close
+(`-2`) sits on its park and the draw walker destroys it in the same frame
+(`0x80031E04..0x80031E20`).
+
+The sub-screens all take the same shape (`FUN_801D6B20`, the root picker, is
+the clearest):
+
+- The master tick `FUN_801DC6B4` dispatches a requested screen on the frame
+  **after** the request: it compares the request word `DAT_801E46A4` with the
+  settled copy at `0x801DC950..0x801DC970`, zeroes the phase word, and calls
+  the handler through the table at `0x801E4F40`.
+- Phase 0 hands `FUN_801D6628` the screen's window program and steps to
+  phase 1. It reads no pad.
+- Phase 1 loads the latch and skips its input while it is non-zero
+  (`0x801D6B90..0x801D6B98` in the root picker; `0x801DC334` and `0x801DC438`
+  in the prize counter; the same load heads every handler's input phase).
+- Every handler ends in `FUN_80031D00`, so the latch the next frame reads is
+  the one this frame's motion pass left.
+
+Every phase-0 program closes the open set (`[05]`) or creates a window, so
+every one starts a twelve-frame motion. After a press that changes the
+screen, the pad is next read thirteen frames on: the request frame, the
+phase-0 frame, eleven frames reading a raised latch. A step inside a screen
+that runs its program on the press itself (the prize counter's Yes / No
+window `[01 46]` and its close `[0A 44][04 46]`; the Throw Out confirm's
+`[04 13][01 9]`) is read again twelve frames on. The card drivers `0x18` /
+`0x19` close every window in phase 0 and start the card screen only once the
+latch drops (`0x801DAE94..0x801DAEA8`).
+
+The phase-0 program of each sub-screen, read off the `a0` each handler
+materialises ahead of its `jal 0x801D6628`:
+
+| id | program | id | program |
+|---|---|---|---|
+| `0x01` | `0x801E4BC0` | `0x0E` | `0x801E4D10`, `0x801E4CF4` |
+| `0x03` | `0x801E4BD4` | `0x0F` | `0x801E4D18` |
+| `0x04` | `0x801E4BE0` | `0x10` | `0x801E4D38` |
+| `0x05` | `0x801E4BEC` | `0x11` | `0x801E4D60` |
+| `0x06` | `0x801E4C14` | `0x12` | `0x801E4D88` |
+| `0x07` | `0x801E4C70` | `0x13` | `0x801E4DA0` |
+| `0x09` | `0x801E4C30` | `0x14` | `0x801E4DC8` |
+| `0x0A` | `0x801E4C48` | `0x15` | `0x801E4DEC` |
+| `0x0B` | `0x801E4CBC` | `0x17` | `0x801E4E08` |
+| `0x0C` | `0x801E4CD4` | `0x18` / `0x19` | `0x801E4E28` / `0x801E4E30` |
+| `0x0D` | `0x801E4CE4` | `0x20` | `0x801E4F18` |
+
+**Port.** `MenuWidgetState::step_motion` is the motion pass and keeps the
+latch; the [kernel differential](../tooling/retail-kernel-differential.md)
+runs it against `FUN_80031AE4` pass by pass. `engine-menus::menu_slide_lock`
+holds the program table, and its `MenuSlideLock` runs a screen's programs
+against the window list when the menu changes screen and answers whether the
+pad reaches the screen. The pause menu asks
+`field_menu_dispatch::pause_slide_gate` once per menu frame, ahead of every
+pre-empt and blip, on all three of its paths (`BootSession`, the play window's
+boot-UI arm, the play page's `play_menu_input`); the prize counter asks it
+inside `MenuRuntime::step_field_session`. The walker's delta is the menu
+family's frame floor, `1`. A session installs the overlay's programs at boot
+(`BootSession::from_host`), so headless drivers run the lock the hosts run;
+without the overlay there is no window list and the lock is open. A driver
+that presses into the menu waits on `BootSession::field_menu_settled` (the
+page's `play_menu_press`) rather than on a frame count. Not keyed yet: the
+Options value popup (`[01 47]`), the shop's sub-screens (their own slide model,
+[shop.md](shop.md)) and the save screen's inner card steps.
 
 ### Which cue a confirm sounds
 

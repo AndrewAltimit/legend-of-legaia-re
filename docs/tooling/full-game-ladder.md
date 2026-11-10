@@ -1845,6 +1845,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 - **Scripted sequences** get Cross on a press-2-release-14 duty cycle - and nothing while no script holds the frame. A Cross then is a talk: a seat on `rayman`'s `tunnelb` door beside the gate guard opens his talk on the frame the walk-on band is due.
 - **The naming prompt's Yes/No confirm** gets Up first (it opens on No).
 - **A menu press waits out the field pad hold** (`_DAT_8007B6B4`): every map install seats `0x28` frames of it (`FUN_8003ADAC`), the field-back load after each fight included, and a conversation's release `0x10` (`FUN_80039B7C`). The player tick skips the pad controller and its menu accept while it drains, so a Start sent into it is lost; the heal and dress passes after a fight press only once it is out.
+- **A press into an open menu waits for its windows to land** (`BootSession::field_menu_settled`): every menu screen reads nothing while a window slides, thirteen frames after a press that changes the screen ([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)), and the headless session runs that lock as the play hosts do. A heal pass that pressed into it read its own dropped Cross as an Items screen with nothing to use.
 - **An all-party restorative** (Healing Bloom, Magic Fruit) is confirmed on its party-wide confirm, which picks no row.
 
 The party's battle forms - the action clips the hit events are paced by and

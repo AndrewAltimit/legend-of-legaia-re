@@ -91,7 +91,11 @@ In the port, the `Host` methods carry the helpers' meaning (`slide_to`,
 each window's live position, slide source and target, style byte, `+0x20`
 motion word and `+0x1E` progress, creating at `menu_widget::park_position`.
 The [kernel differential](../tooling/retail-kernel-differential.md) runs the
-interpreter and the seven helpers against it. The world-map panel interpreter `FUN_801E9B3C` calls the same helpers
+interpreter and the seven helpers against it. The per-frame motion pass that
+animates the slides, `FUN_80031AE4`, is `MenuWidgetState::step_motion`, and
+the count of windows it moved is the latch `_DAT_8007BB80` every menu
+sub-screen waits on before it reads the pad
+([field-menu.md](field-menu.md#the-window-slide-input-lock)). The world-map panel interpreter `FUN_801E9B3C` calls the same helpers
 from the same arm layout (ops `1` / `2` slide, `9` / `10` snap;
 [`world-map.md`](world-map.md)).
 

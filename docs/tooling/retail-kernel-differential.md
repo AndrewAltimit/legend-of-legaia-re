@@ -858,6 +858,10 @@ notice `FUN_801DD1B8` and the release wait `FUN_801DD26C`, with the list kernel 
 save graph's Yes/No screens never seeded their cursor. The pause menu's own ready check, against the same
 `FUN_801D6D38`, stepped on Left and Right and stopped at the ends, and moved before it confirmed; retail runs the list
 kernel over two rows, wrapping, on Up and Down, with confirm and cancel ahead of any move.
+The window walker's motion pass `FUN_80031AE4` runs in the same harness frame by frame, programs landing between passes
+at frame deltas of `1` to `3`, the latch `_DAT_8007BB80` it leaves compared with every node: it matched the port's
+`MenuWidgetState::step_motion` as written, and the menu's window-slide input lock
+([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)) stands on it.
 
 The casino prize counter `FUN_801DC1CC` (`prize_exchange`), over every block of the disc's table, found the port
 committing a redeem on the Yes press: retail stores state `3` there and commits on the next frame, which reads no pad,

@@ -1315,7 +1315,8 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--no-tetsu-spar-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere`, `--action-movement` and the battle-tuning sliders `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`, `--enemy-attack-count`, `--enemy-stat-scale` (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--no-player-battle` | the Auto-battle box (`set_player_driven_battles`) |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting. `--battle first` has a runtime twin on both hosts, `World::force_battle_here`: the page's *Start a battle here* button (`debug_force_battle(-1)`) and the window's `F12` Tools row of the same name |
-| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
+| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling. A player's shot is `Print Screen` on both hosts (the window's pictures folder, the page's download) |
+| `--play-record` | `debug_play_record(P, R)` from the console (`window.__playRuntime`); both call `BootSession::play_scene_record` |
 | `--fullscreen`, `--windowed`, `--window-scale` | the page's fullscreen button (`requestFullscreen`); the browser sizes the canvas |
 
 Every `play-window` switch has a row: the binary's
@@ -1698,7 +1699,7 @@ reverse-engineering questions, so they are not on
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
 | dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F >> 3` steps, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
-| pause wipe, first frames | One half closed, one open. The frame the wipe spawns the menu: the window drew the lit field for one frame (the session hands the tick over on the next claim, and the wipe draws nothing once the menu exists), where the page draws the menu; the window now raises its menu state at the end of the spawning frame and holds the boot-UI arm off for the hand-over tick (`pause_menu_handover`), so `monkey_map`'s spawn frame reads `0.00%` where it read `95%`. Open: under the opening wipe the window draws no party HUD where the page dims it (`monkey_town` ticks 1680..1686); which is retail rests on which of `FUN_801D0D38`'s gate words (`0x8007B868`, `0x8007B850 & 0xF000`, `0x1F800394` bit 27) the press raises, and no retail state sits in a wipe. |
+| pause wipe, first frames | One half closed, one open. The frame the wipe spawns the menu: the window drew the lit field for one frame (the session hands the tick over on the next claim, and the wipe draws nothing once the menu exists), where the page draws the menu; the window now raises its menu state at the end of the spawning frame and holds the boot-UI arm off for the hand-over tick (`pause_menu_handover`), so `monkey_map`'s spawn frame reads `0.00%` where it read `95%`. Under the opening wipe the page dimmed the party HUD the window hides (`monkey_town` ticks 1680..1686); the window is retail ([field-menu.md](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)), and the page now clears its overlay there. |
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
@@ -1916,6 +1917,15 @@ the two notice kernels; the JavaScript half is pinned by
 `F12` panel (every hotkey with its current state) has no page twin beyond
 that list: the page's own checkboxes already show the state.
 
+`Print Screen` (`HostHotkey::Screenshot`) is the one key both hosts also take
+on its release: Windows delivers that key's release alone, so each host shoots
+on the press, or on a release no press came before. The window captures the
+frame it presents (`window::player_screenshot`, the player's pictures folder);
+the page composites its GL canvas and the layers over it at the end of the
+drawn frame (`_savePlayerShot`) and downloads it. The window's `F12` panel
+leaves the row out: one more row overflows the stage at the disc font's
+metrics.
+
 The keys a room, the game modes and the cards take are outside the table, because
 each holds only while its screen or session is up, but they mean the same on both
 hosts. `NetPlay::room_key` is the room's table (`1`..`5` not bound to a pad button
@@ -2017,6 +2027,7 @@ and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
 | title Continue | `engine-session::title_continue::ContinueScreen`: retail's title card manager, no pause-menu gate, with its own `SaveScreenFlow` and frame order (refusal pre-empt, port read, grid filter, tick, block read); the rack and the Continue scan (`card_port_rack`, `card_port_blocks`, `rack_has_save`) beside it. Per host: the ports, the blip, the landing (window `BootUiState::Continue`; page `boot_continue_step`). See [below](#the-title-continue-screen) |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
+| menu window-slide lock | `field_menu_dispatch::pause_slide_gate`, called once per menu frame before any pre-empt or blip by `BootSession::tick_field_menu`, the window's `tick_boot_ui` and the page's `play_menu_input`; the prize counter's inside `MenuRuntime::step_field_session` ([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)). The page's title-row driver (`play_menu_open_row`) skips it, as the window's `open_menu_row_from_title` ticks the picker directly |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
 | Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |

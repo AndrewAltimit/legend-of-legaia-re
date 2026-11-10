@@ -421,6 +421,18 @@ session answers Yes with `PrizeEvent::Committing` and the commit with
 The [kernel differential](../tooling/retail-kernel-differential.md) runs the
 session against `FUN_801DC1CC` frame by frame.
 
+**Up and Down only, and only once the windows land.** Both the list and the
+Yes / No prompt step through `FUN_801D688C` (`0x801DC354`, `0x801DC454`), which
+reads Up (`0x1000`) and Down (`0x4000`) of the held pad and nothing on the
+other axis; the port's counter took Left and Right as well and no longer does.
+Each input phase first loads the window-slide latch `_DAT_8007BB80` and reads
+nothing while a window moves (`0x801DC334`, `0x801DC438`): the opening
+program `0x801E4F18` slides the exchange set in, an affordable row's confirm
+slides window 46 in (`0x801DC41C`), and No, a cancel or the commit slides it
+back out (`0x801DC4B0`, `0x801DC674`). The port's counter waits the same way,
+through `MenuRuntime::step_field_session`
+([field-menu.md](field-menu.md#the-window-slide-input-lock)).
+
 ### The buy-list builder (`FUN_80030628` case `0x0B`)
 
 The buy list is built once, at window create / content refresh, by the SCUS

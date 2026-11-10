@@ -317,6 +317,11 @@ the op selector. Each step calls `func_0x80031D00()` before returning.
 | 2 | Call `FUN_801DD35C(1, op)` each frame until it returns non-zero: `op = 2` load (card to RAM), `op = 1` save (RAM to card). |
 | 3 | Write `DAT_801E46A4 = 1` (back to the root picker). The save driver then overwrites it with `0` (exit) when `_DAT_8007B450 != 0`: the unconditional write sits in the branch's delay slot, so a save raised from a parked field script hands control back to the script. |
 
+Both display scripts are the bare close-all `[05]`, so step 1 waits out the
+pause menu's windows sliding off before the card screen starts: twelve frames
+of the [window-slide lock](field-menu.md#the-window-slide-input-lock), which
+the port's Load / Save rows wait out too.
+
 Three independent readings fix the direction (the pair reads naturally the
 other way round):
 
