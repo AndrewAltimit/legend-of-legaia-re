@@ -25,6 +25,8 @@ const PUSH: u32 = 0x8003_5B50;
 const SET_DELAY: u32 = 0x8003_5BAC;
 const REPLACE: u32 = 0x8003_5BD0;
 const KEY_OFF: u32 = 0x8006_53C8;
+/// The sustained-run teardown the mode init and the battle anim commit call.
+const TEARDOWN: u32 = 0x8001_7910;
 const KEY_ON: u32 = 0x8006_5034;
 /// The ring loop's head, once per slot: the back-edge at `0x80016E9C` lands
 /// here, and the slot's first instruction is `lui v0,0x8008`.
@@ -226,7 +228,8 @@ fn the_ring_drains_and_keys_as_retail_does() {
         scus(DRAIN),
         scus(PUSH),
         scus(SET_DELAY),
-        scus(REPLACE)
+        scus(REPLACE),
+        scus(TEARDOWN)
     );
     let log = Rc::new(RefCell::new(Vec::new()));
     let Some(mut cpu) = rig(&log) else {
@@ -237,7 +240,7 @@ fn the_ring_drains_and_keys_as_retail_does() {
     let table = legaia_game_tables::sfx_table::SfxTable::from_scus(&scus).expect("sfx table");
     let static_ids = table.entries().len() as u32;
     let vab = tagged_bank();
-    let mut reached = [0u32; 5]; // one-shot, sustained, runtime, wrapped cursor, a pass cancelled
+    let mut reached = [0u32; 6]; // one-shot, sustained, runtime, wrapped cursor, a pass cancelled, a teardown
     for seed in 0..60u64 {
         let mut rng = Rng(seed);
         log.borrow_mut().clear();
@@ -372,6 +375,23 @@ fn the_ring_drains_and_keys_as_retail_does() {
                 "seed {seed} frame {frame} mode {mode:#x}: ring {ring:?} fired {:?}",
                 batch.ring
             );
+            // Now and then the teardown, as a mode change or a battle clip
+            // swap runs it between drains.
+            if rng.below(5) == 0 {
+                let held = bank.held_sustained();
+                assert_eq!(cpu.call(TEARDOWN, &[]), Stop::Returned);
+                let released = bank.release_sustained(&mut spu);
+                assert_eq!(released, held);
+                let raw = std::mem::take(&mut *log.borrow_mut());
+                assert_eq!(
+                    raw,
+                    port_events(&mut spu),
+                    "seed {seed} frame {frame}: teardown"
+                );
+                if held > 0 {
+                    reached[5] += 1;
+                }
+            }
             assert_eq!(
                 cpu.mem.rd32(GP + 0x5D0),
                 u32::from(bank.held_sustained()),

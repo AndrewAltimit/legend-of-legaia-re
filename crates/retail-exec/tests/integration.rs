@@ -48,6 +48,7 @@ mod battle_leaves;
 mod battle_seed;
 mod battle_sideband;
 mod battle_small_leaves;
+mod battle_voice;
 mod bearing;
 mod best_equipment;
 mod billboard;
