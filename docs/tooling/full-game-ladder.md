@@ -1972,6 +1972,10 @@ Two stretches stopped the arm, both where the plan and the cull disagreed:
   Retail agrees: [`autorun_item_gap_probe.lua`](../../scripts/pcsx-redux/autorun_item_gap_probe.lua) on the `jouinc` library state, with the corridor's region box latched, stops a walk east into the gap at x 10552 before the pickup and at 10522 after it. Behind the item is only the open ground outside the castle walls, and P1[16] plugs the corridor's foot at (10432, 7680) the same way; the way to `jouind` is the pad at (70, 60) to (119, 30) and the stairs up to (110, 9). A plan that left the two plugs out while the camera window culled them leaked into the open ground, spent the search's node budget there, and sent the walk back and forth along the corridor.
 - **`rugi`'s hub.** West of P2[40] a walk can come to rest at (10754, 7038) with all four wall probes walled, and stays there until the stretch's frame budget runs out; every later beat then reads its way out from (86, 52) as crossing a band that leaves the scene. A plan that also routed round the bodies outside the latched region box took the walks to P1[33] through that corner.
 
+One stretch still stops the arm on some streams:
+
+- **`kor`'s guard dogs before the eighth loaf.** The dogs (P1[9] / P1[10]) hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A run whose gold training in `koin2` ends with the purse still short of the remaining Soru Bread (a party at under half HP after one round, on the traced stream) walks on to `korb2` with chests unfed, and stands at (18, 31) against the dogs, replaying `kor`'s beats until the stretch's budget runs out. Without the arm the walk passes the dogs with the errand short.
+
 ## What it cannot measure
 
 - The seated tier places the player. It proves doors, scripts, gates and the
