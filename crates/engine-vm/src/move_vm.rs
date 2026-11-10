@@ -75,6 +75,7 @@ mod spawn;
 mod state;
 
 pub use dispatch::*;
+pub use ext::bezier_point;
 pub(crate) use ext::*;
 pub use host::*;
 pub use spawn::*;

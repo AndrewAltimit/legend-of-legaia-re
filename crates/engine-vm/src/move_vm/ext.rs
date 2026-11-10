@@ -979,6 +979,15 @@ fn write_bezier_world(state: &mut ActorState, a: [i16; 3], b: [i16; 3], off: [i1
     state.world_z = axis(2);
 }
 
+/// `FUN_801E45BC(c, p0, p2, t)` whole: the quadratic Bezier through `p0`,
+/// control `c` and `p2` at parameter `t` (`0x1000` = 1.0), each axis by
+/// [`bezier_axis`]. Retail writes the point back over `c` in place.
+///
+/// PORT: FUN_801E45BC
+pub fn bezier_point(c: [i16; 3], p0: [i16; 3], p2: [i16; 3], t: u16) -> [i16; 3] {
+    std::array::from_fn(|i| bezier_axis(p0[i], c[i], p2[i], t))
+}
+
 /// One axis of `FUN_801E45BC`, as the bytes compute it. The three basis
 /// weights `(0x1000 - t)^2`, `2 (0x1000 - t) t` and `t^2` are each split
 /// into a whole part (`sra 12`) and a fraction (`andi 0xFFF`); the fractions'
