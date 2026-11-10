@@ -48,13 +48,17 @@ pub fn select_sections(
         if slot >= SECTION_COUNT {
             break;
         }
-        if record.id == equipped[slot] as u32 && selected[slot].is_none() {
+        // Every match overwrites (`0x800529E8..0x800529FC` stores on each
+        // hit), so the last entry carrying the id wins.
+        if record.id == equipped[slot] as u32 {
             selected[slot] = Some(*record);
         }
         if record.id == 0 {
-            // Section default + slot advance. (When the equipped id is 0
-            // the match above already took this entry.)
-            if selected[slot].is_none() {
+            // Section default + slot advance. Retail tests the selected
+            // size word, which case 3 zeroed, so a match whose size is zero
+            // counts as no match. (When the equipped id is 0 the match above
+            // already took this entry.)
+            if selected[slot].is_none_or(|r| r.size == 0) {
                 selected[slot] = Some(*record);
             }
             slot += 1;
