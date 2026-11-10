@@ -124,6 +124,7 @@ mod dance_tutorial;
 mod dead_end_crisis;
 mod deadly_rain;
 mod death_spoils;
+mod debug_char_editor;
 mod default_arm_mesh;
 mod default_move;
 mod defeat_credit;
