@@ -219,6 +219,7 @@ mod nighto_roll;
 mod object_spawn;
 mod options_popup;
 mod ozma_ladder;
+mod panel_script;
 mod pad_resolve;
 mod party_panel_build;
 mod party_table;
