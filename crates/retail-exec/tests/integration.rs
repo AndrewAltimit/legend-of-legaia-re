@@ -269,6 +269,7 @@ mod save_leaves;
 mod save_subscreens;
 mod scale_stage;
 mod scene_entry;
+mod scene_small_leaves;
 mod scene_transition;
 mod screen_dim;
 mod screen_fx;

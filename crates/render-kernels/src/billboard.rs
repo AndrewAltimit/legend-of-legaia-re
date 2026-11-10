@@ -154,7 +154,7 @@ pub struct BillboardCorners {
 /// Its callers are the ports of retail's own riders: the weapon trail
 /// (`FUN_800485BC`, `battle_trail`), the afterimage streaks (`afterimage`),
 /// the field script actors' sprites (`World` in `field_script_actors`) and the
-/// battle on-screen pass (`engine-render`'s `battle_on_screen`). Each takes the
+/// battle on-screen pass (`battle_on_screen`). Each takes the
 /// GTE screen corners retail composes, `behind`-camera saturation included.
 #[allow(clippy::too_many_arguments)]
 pub fn project_billboard(

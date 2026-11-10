@@ -78,8 +78,6 @@ Beyond `window`, `screen_overlay` and `psx_blend` above:
   per-frame candidate list the contact probes walk, not a render cull.
 - `battle_intro` - the renderer-bound half of the field-to-battle transition
   emitter; the wgpu-free half is `legaia_render_kernels::battle_intro`.
-- `battle_on_screen` - the battle on-screen test (`FUN_8005126C`): re-anchor
-  a sprite on its seat actor and test its billboard box against the screen.
 - `gte_trace` - GTE (cop2) trace capture + replay harness.
 - `mode_transition` - the game-mode-entry prologue (`FUN_80016230`): frame
   pacing reset, overlay-cache check, stashing the field state a mode clobbers.

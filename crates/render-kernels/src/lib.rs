@@ -18,6 +18,7 @@ pub mod battle_intro_styles;
 pub mod battle_intro_swirl;
 pub mod battle_intro_tiles;
 pub mod battle_intro_transition;
+pub mod battle_on_screen;
 pub mod battle_trail;
 pub mod billboard;
 // --- lane L ---

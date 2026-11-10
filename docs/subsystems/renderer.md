@@ -1111,7 +1111,7 @@ corner 0 and of corner 1. It rejects only when both are `>= 0x141` or both
 are `< 0`. No Y is read, so an actor a full screen above or below the
 viewport still reads as on-screen.
 
-Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
+Port: [`legaia_render_kernels::battle_on_screen`](../../crates/render-kernels/src/battle_on_screen.rs)
 (`battle_actor_on_screen`), on
 [`billboard::project_billboard`](../../crates/render-kernels/src/billboard.rs).
 It is inert, and so is retail's: `0x8005126C` has no reference of any kind on

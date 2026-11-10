@@ -13,6 +13,8 @@ or cpal, so it builds for native and `wasm32` alike.
   in view space, after the camera matrix, so the battle camera's 4x base
   matrix scales the centre and not the size; `world_half_extents` divides it
   back out. Both hosts' effect billboards build through it.
+- `battle_on_screen` - the battle on-screen test (`FUN_8005126C`): re-anchor
+  a sprite on its seat actor and test its billboard box against the screen.
 - `afterimage` / `streak_pass` / `battle_trail` / `billboard` - the move-FX
   draw kernels: one jittered semi-transparent quad, the per-frame pass that
   turns a battle context's projection block into those quads, the swept

@@ -1018,7 +1018,7 @@ disc references it).
   the rule [`renderer.md`](renderer.md) records as
   replacing the falsified positional one) and reports whether a `0x9C`-byte
   render node must be allocated.
-- [`battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
+- [`battle_on_screen`](../../crates/render-kernels/src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
   a battle sprite on its seat actor and tests the projected box's horizontal
   span against `[0, 0x140]`. Horizontal only: retail reads the X of two
   corners and no Y at all, which is what separates it from the rectangle
