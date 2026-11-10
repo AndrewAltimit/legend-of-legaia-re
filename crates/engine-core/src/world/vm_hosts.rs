@@ -466,12 +466,13 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         let i = (slot_index as u16 & 0x0F) as usize;
         self.world.move_vm.scratchpad_targets[i] = value;
     }
-    fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i16, _ticks: i16) {
+    fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i32, _ticks: i16) {
         // Default world has no per-frame ramp scheduler; record the target
         // immediately so reads see the final state. Engines override to
         // model the per-frame interpolation.
         let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.move_vm.scratchpad_targets[i] = target;
+        // The slot is a halfword: the ramp's last store is the end's low half.
+        self.world.move_vm.scratchpad_targets[i] = target as i16;
     }
 
     // --- ext sub-op 0x2C scanline strip emitter -----------------------

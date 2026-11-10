@@ -166,14 +166,15 @@ fn op2f_subop_25_then_26_round_trips_world_coords() {
     state.world_x = 100;
     state.world_y = 200;
     state.world_z = 300;
-    state.world_y_mirror = 400;
+    state.world_pad = 400;
+    state.world_y_mirror = 7;
     let save = program(&[0x2F, 0x25, 3]);
     step(&mut host, &mut state, &save);
     // Perturb.
     state.world_x = -1;
     state.world_y = -1;
     state.world_z = -1;
-    state.world_y_mirror = -1;
+    state.world_pad = -1;
     // Reset PC for the second program.
     state.pc = 0;
     let load = program(&[0x2F, 0x26, 3]);
@@ -181,7 +182,9 @@ fn op2f_subop_25_then_26_round_trips_world_coords() {
     assert_eq!(state.world_x, 100);
     assert_eq!(state.world_y, 200);
     assert_eq!(state.world_z, 300);
-    assert_eq!(state.world_y_mirror, 400);
+    assert_eq!(state.world_pad, 400);
+    // The `+0x2A` mirror is not in the vector the arms move.
+    assert_eq!(state.world_y_mirror, 7);
 }
 
 #[test]

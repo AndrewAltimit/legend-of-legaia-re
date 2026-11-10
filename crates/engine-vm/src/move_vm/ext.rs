@@ -272,14 +272,14 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(2)
         }
 
-        // 0x11 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
+        // 0x11 - save `actor[+0x14..+0x1C]` (world coords + the vector's pad) into
         // the scratch slot indexed by `actor.field_86 & 0xFF`. Same shape
         // as sub-op 0x25 but the slot index comes from the cycle counter
         // updated by sub-ops 0x0F / 0x10 instead of an operand u16.
         0x11 => {
             let slot = state.field_86 & 0xFF;
             let lo = (state.world_x as u16 as u32) | ((state.world_y as u16 as u32) << 16);
-            let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
+            let hi = (state.world_z as u16 as u32) | ((state.world_pad as u16 as u32) << 16);
             host.move_slot_save_u32(slot, 0, lo);
             host.move_slot_save_u32(slot, 4, hi);
             // Size 2 (`li s2, 0x2` in the 0x801D3A64 exit) - unlike 0x25,
@@ -617,10 +617,11 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(8)
         }
 
-        // 0x25 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
-        // the 16-slot scratch table at `&DAT_801F3498`. Each slot is 8 bytes:
-        // `slot[0..4] = (world_x:u16, world_y:u16)`,
-        // `slot[4..8] = (world_z:u16, world_y_mirror:u16)`.
+        // 0x25 - save `actor[+0x14..+0x1C]` (world coords + the vector's pad
+        // `+0x1A`) into the 16-slot scratch table at `&DAT_801F3498`. Each
+        // slot is 8 bytes: `slot[0..4] = (world_x:u16, world_y:u16)`,
+        // `slot[4..8] = (world_z:u16, pad:u16)`. The pad is `+0x1A`, not the
+        // `+0x2A` mirror: the arms move the 8-byte vector with `lwl`/`lwr`.
         //
         // Size 3 (`li s2, 0x3` in the 0x801D4244 exit): opcode + sub-op +
         // the slot operand. This is the arm whose under-advance re-enters
@@ -629,7 +630,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         0x25 => {
             let slot = op_w(2);
             let lo = (state.world_x as u16 as u32) | ((state.world_y as u16 as u32) << 16);
-            let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
+            let hi = (state.world_z as u16 as u32) | ((state.world_pad as u16 as u32) << 16);
             host.move_slot_save_u32(slot, 0, lo);
             host.move_slot_save_u32(slot, 4, hi);
             MoveExtResult::with_size(3)
@@ -644,7 +645,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             state.world_x = (lo & 0xFFFF) as i16;
             state.world_y = ((lo >> 16) & 0xFFFF) as i16;
             state.world_z = (hi & 0xFFFF) as i16;
-            state.world_y_mirror = ((hi >> 16) & 0xFFFF) as i16;
+            state.world_pad = ((hi >> 16) & 0xFFFF) as i16;
             MoveExtResult::with_size(3)
         }
 
@@ -745,9 +746,9 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let target = op_w(3) as i16;
             let ticks = op_w(4) as i16;
             if ticks != 0 {
-                host.ext_scratchpad_ramp(slot, -target, ticks);
+                host.ext_scratchpad_ramp(slot, -i32::from(target), ticks);
             } else {
-                host.ext_scratchpad_write(slot, -target);
+                host.ext_scratchpad_write(slot, target.wrapping_neg());
             }
             MoveExtResult::with_size(5)
         }
@@ -968,14 +969,38 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
 /// `crate::field_ledge_hop_arc::bezier_at`, which clamps `t` for its own
 /// caller where this one does not)
 fn write_bezier_world(state: &mut ActorState, a: [i16; 3], b: [i16; 3], off: [i16; 3]) {
-    let t = state.field_50 as i64;
-    let u = 0x1000 - t;
+    let t = state.field_50;
     let axis = |i: usize| -> i16 {
         let c = off[i].wrapping_add(((a[i] as i32 + b[i] as i32) >> 1) as i16);
-        let acc = u * u * a[i] as i64 + 2 * u * t * c as i64 + t * t * b[i] as i64;
-        acc.div_euclid(0x100_0000) as i16
+        bezier_axis(a[i], c, b[i], t)
     };
     state.world_x = axis(0);
     state.world_y = axis(1);
     state.world_z = axis(2);
+}
+
+/// One axis of `FUN_801E45BC`, as the bytes compute it. The three basis
+/// weights `(0x1000 - t)^2`, `2 (0x1000 - t) t` and `t^2` are each split
+/// into a whole part (`sra 12`) and a fraction (`andi 0xFFF`); the fractions'
+/// products sum on their own and fold in with `sra 12`, then the whole sum
+/// shifts once more (`0x801E45BC..0x801E4680`). Every product and sum is a
+/// 32-bit word, and `t` is the `lhu` of `+0x50`, so a `t` past `0x1000`
+/// wraps where a widened form would not; inside `0..=0x1000` this is the
+/// exact floor of the quadratic.
+fn bezier_axis(p0: i16, c: i16, p2: i16, t: u16) -> i16 {
+    let t = i32::from(t);
+    let u = 0x1000i32.wrapping_sub(t);
+    let uu = u.wrapping_mul(u);
+    let tt = t.wrapping_mul(t);
+    let ut2 = u.wrapping_mul(t).wrapping_shl(1);
+    let (p0, c, p2) = (i32::from(p0), i32::from(c), i32::from(p2));
+    let frac = (uu & 0xFFF)
+        .wrapping_mul(p0)
+        .wrapping_add((ut2 & 0xFFF).wrapping_mul(c))
+        .wrapping_add((tt & 0xFFF).wrapping_mul(p2));
+    let whole = (uu >> 12)
+        .wrapping_mul(p0)
+        .wrapping_add((ut2 >> 12).wrapping_mul(c))
+        .wrapping_add((tt >> 12).wrapping_mul(p2));
+    (whole.wrapping_add(frac >> 12) >> 12) as i16
 }
