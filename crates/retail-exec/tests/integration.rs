@@ -140,6 +140,7 @@ mod round_end;
 mod round_open;
 mod scale_stage;
 mod separation;
+mod seq_calc;
 mod seru_debuff;
 mod seru_learn;
 mod sfx_cue_route;

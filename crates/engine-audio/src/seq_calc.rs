@@ -607,7 +607,12 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
             let mag = i32::from(step).unsigned_abs() as u16;
             let reach = (vol.0.wrapping_add(mag), vol.1.wrapping_add(mag));
             let hit_end = match dir {
-                SlideDir::Up => reach.0 >= 0x7F && reach.1 >= 0x7F,
+                // `lhu` then `subu` / `slti`: the sum is a 32-bit signed
+                // compare, never a wrapped halfword.
+                SlideDir::Up => {
+                    i32::from(vol.0) + i32::from(mag) >= 0x7F
+                        && i32::from(vol.1) + i32::from(mag) >= 0x7F
+                }
                 SlideDir::Down => {
                     (vol.0 as i32 + i32::from(step)) <= 0 && (vol.1 as i32 + i32::from(step)) <= 0
                 }
@@ -657,6 +662,13 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
     if ch.slide_remaining == 0 || (ch.slide_level as i16) <= 0 {
         ch.flags &= !dir.flag_bit();
         out.settled = true;
+    }
+    // The epilogue reads the pair back through the getter, after the set
+    // `FUN_80067E9C` has stored it: that set clamps each side to `0x7F`
+    // (`sltiu` / `sh 0x7F` at `0x80067EFC..0x80067F24`), so a commit past
+    // the ceiling (an ascending slow step from `0x7F`) caches `0x7F`.
+    if out.commit.is_some() {
+        committed = (committed.0.min(0x7F), committed.1.min(0x7F));
     }
     cache(ch, committed);
     out
