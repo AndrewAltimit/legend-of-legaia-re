@@ -38,7 +38,7 @@
 //!
 //! ```text
 //! t = min(t + DAT_1F800393, d)          // progress, clamped to the duration
-//! for each of the ten axes (start s, end e):
+//! for each axis but focus Y (start s, end e):
 //!     if e == s: value = s              // untouched axis holds
 //!     elif t >= d: value = e            // arrived: exact target, no overshoot
 //!     else: value = s + curve_num(e - s, t, d, curve)
@@ -49,6 +49,9 @@
 //! in display frames 1:1 - live-confirmed on the `opurud` `apply 2300` beat,
 //! whose progress advances exactly 30 per 30 display frames while the factor
 //! reads `3`.
+//!
+//! The tick stores nine of the ten: it has no block for the focus Y pair, so
+//! `0x8008911C` holds through a glide ([`CameraMover::write_globals`]).
 //!
 //! Every axis - the three angles included - uses the same curve. There is no
 //! per-axis curve split and no shortest-arc handling: the angle axes are
@@ -72,6 +75,10 @@
 
 /// Number of camera axes an op-`0x45` beat can stage.
 pub const AXIS_COUNT: usize = 10;
+
+/// The focus Y axis (`0x8008911C`), the one pair the tick never stores
+/// ([`CameraMover::write_globals`]).
+pub const FOCUS_Y_AXIS: usize = 7;
 
 /// Truncating-toward-zero integer division, matching MIPS `div`.
 ///
@@ -200,7 +207,51 @@ impl CameraMover {
         self.t >= self.d
     }
 
-    /// The current pose.
+    /// Lay the current pose onto the ten camera globals, as the tick stores
+    /// them: every axis but focus Y. The tick has a block for nine of the ten
+    /// pairs and none for `+0x1C` / `+0x1E`, so `0x8008911C` keeps whatever it
+    /// held while a glide runs (`0x801DCC88..0x801DD044` step from the focus
+    /// X block straight to the focus Z one). A beat that stages a focus Y
+    /// moves it only by a snap.
+    ///
+    /// PORT: FUN_801DC0BC (the nine axis stores)
+    pub fn write_globals(&self, globals: &mut [i32; AXIS_COUNT]) {
+        let v = self.values();
+        for (k, (g, v)) in globals.iter_mut().zip(v).enumerate() {
+            if k != FOCUS_Y_AXIS {
+                *g = v;
+            }
+        }
+    }
+
+    /// One whole tick's stores after [`Self::tick`]: the nine axes
+    /// ([`Self::write_globals`]), then the shake tail
+    /// (`0x801DD264..0x801DD2F8`), `FUN_801D9D30`'s arithmetic inline: the
+    /// jitter pair `shake_offset` (camera context `+0x18` / `+0x1C`) is
+    /// zeroed, and with a non-zero `amplitude` (`_DAT_8007B630`) two fresh
+    /// `rand()` draws from `seed` go into it and onto eye X / Y. The head's
+    /// removal of the old pair (`0x801DC0BC..0x801DC100`) lands on eye X / Y,
+    /// which the axis stores then overwrite, so a glide shakes about the
+    /// mover's own pose.
+    ///
+    /// PORT: FUN_801DC0BC
+    pub fn store_frame(
+        &self,
+        globals: &mut [i32; AXIS_COUNT],
+        shake_offset: &mut [i32; 2],
+        amplitude: u32,
+        seed: &mut u32,
+    ) {
+        self.write_globals(globals);
+        *shake_offset = [0, 0];
+        let mut eye = [globals[3], globals[4]];
+        crate::battle_camera::apply_shake(&mut eye, shake_offset, amplitude, seed);
+        globals[3] = eye[0];
+        globals[4] = eye[1];
+    }
+
+    /// The current pose of all ten pairs, focus Y's included, which the tick
+    /// never stores ([`Self::write_globals`]).
     pub fn values(&self) -> [i32; AXIS_COUNT] {
         let mut out = [0i32; AXIS_COUNT];
         for (o, &(s, e)) in out.iter_mut().zip(self.pairs.iter()) {

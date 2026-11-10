@@ -416,7 +416,7 @@ impl Camera {
     pub fn align_glide_frames_left(&mut self, left: i32) {
         if let Some(mv) = self.mover.as_mut() {
             mv.t = (mv.d - left).clamp(0, mv.d);
-            self.globals.0 = mv.values();
+            mv.write_globals(&mut self.globals.0);
         }
     }
 
@@ -438,7 +438,7 @@ impl Camera {
             return false;
         }
         mv.pairs = *pairs;
-        self.globals.0 = mv.values();
+        mv.write_globals(&mut self.globals.0);
         true
     }
 }

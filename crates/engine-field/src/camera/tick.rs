@@ -74,7 +74,12 @@ impl Camera {
 
         let gliding = if let Some(mv) = self.mover.as_mut() {
             let arrived = mv.tick(dt);
-            self.globals.0 = mv.values();
+            mv.store_frame(
+                &mut self.globals.0,
+                &mut self.zone.shake_offset,
+                u32::from(world.camera_shake_amplitude()),
+                &mut self.zone.shake_seed,
+            );
             if arrived {
                 self.mover = None;
             }
