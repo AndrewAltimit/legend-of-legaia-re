@@ -340,6 +340,7 @@ mod settle_head;
 mod sfx_cue_route;
 mod sfx_drain;
 mod sfx_emitter_release;
+mod shatter_draw;
 mod shop_panels;
 mod shop_quantity;
 mod sideband_applier;

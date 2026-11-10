@@ -49,6 +49,11 @@ pub enum Stop {
 /// A routine replaced by Rust: runs in place of the call, then returns to `ra`.
 pub type Hook = Box<dyn FnMut(&mut Regs, &mut Memory)>;
 
+/// A probe: called when the run reaches its address, before the instruction
+/// there executes, with read access to the CPU and GTE state; it changes
+/// nothing and the run continues.
+pub type Probe = Box<dyn FnMut(&Regs, &mut Memory, &gte::Gte)>;
+
 /// The integer register file.
 #[derive(Debug, Clone, Default)]
 pub struct Regs {
@@ -173,6 +178,7 @@ pub struct Cpu {
     /// table-driven leaves - that the ledger notes each time the run lands
     /// on them, as [`Cpu::call`] notes its own entry.
     pub watched: std::collections::HashSet<u32>,
+    probes: HashMap<u32, Probe>,
 }
 
 impl Cpu {
@@ -199,6 +205,13 @@ impl Cpu {
     /// Run the routine at `va` again, dropping a hook set on it.
     pub fn unhook(&mut self, va: u32) {
         self.hooks.remove(&va);
+    }
+
+    /// Observe the run each time it reaches `va` (any instruction, not only
+    /// an entry): `f` sees the registers, memory and GTE as they stand before
+    /// that instruction executes.
+    pub fn probe(&mut self, va: u32, f: impl FnMut(&Regs, &mut Memory, &gte::Gte) + 'static) {
+        self.probes.insert(va, Box::new(f));
     }
 
     /// Make the routine at `va` return at once with `v0 = ret`.
@@ -237,6 +250,10 @@ impl Cpu {
         loop {
             if pc == RETURN_SENTINEL {
                 return Stop::Returned;
+            }
+            if let Some(mut p) = self.probes.remove(&pc) {
+                p(&self.regs, &mut self.mem, &self.gte);
+                self.probes.insert(pc, p);
             }
             if self.watched.contains(&pc) {
                 let body = self.mem.read(pc, ledger::BODY_LEN);

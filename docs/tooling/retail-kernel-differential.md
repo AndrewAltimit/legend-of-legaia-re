@@ -66,6 +66,10 @@ A dispatcher's table-driven leaf (`FUN_80043390`'s handler banks, entered by
 `jr`) is never a `Cpu::call` entry. `Cpu::watched` names such entries: the run
 notes each landing on one in the ledger, so a test that drives the dispatcher
 can declare the leaf it reaches and the declaration is checked like any other.
+`Cpu::probe` observes any instruction without replacing it: the probe sees the
+registers, memory and GTE as they stand before it runs, which is how a test reads
+what a routine hands the projector (`shatter_draw` reads the vertices at the
+shatter renderer's `RTPT`).
 
 ## How to add a routine
 
