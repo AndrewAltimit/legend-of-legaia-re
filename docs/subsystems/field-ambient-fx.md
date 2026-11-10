@@ -280,6 +280,14 @@ the adds from the next tick, and the spawn-time run (`FUN_80021B04`, the VM
 alone) neither integrates nor uploads, so a fresh capture uploads on the
 second part tick.
 
+A battle part's first tick comes on the frame that seats it: the seat is made
+from a list-0 callback and the walk reaches list 1 afterwards. Its program has
+stored the rates and armed the gate by then, so a cycler leaves its seat frame
+one step of its rates on with `+0x9C = 2`. PROT 0921's two backdrop cyclers
+read `+0x90 = 4` on the frame arm 3 seats them, a step-`1` frame at a rate of
+`4` a vsync (`--retail-parts`); `World::seat_run_battle_fx` runs the arm on
+each part it seats.
+
 So the "pulsating flesh" never moves a vertex: it is **palette-space HSV
 cycling on the texture's CLUT rows**, re-uploaded every frame from the
 original capture.

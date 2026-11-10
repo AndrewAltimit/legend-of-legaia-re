@@ -51,6 +51,16 @@ impl World {
         let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };
+        // A part a module arm seated earlier this frame is still unrun here:
+        // the scene tick below gives it the seater's VM run and then this
+        // frame's part tick, whose mode-3 arm follows it.
+        let unrun: Vec<usize> = scene
+            .parts
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.finished && p.state.pc == 2 && p.state.wait_timer == -1)
+            .map(|(i, _)| i)
+            .collect();
         self.integrate_battle_part_cyclers(&mut scene.parts, pass);
         {
             // Borrow split: the move-VM host borrows the rest of `World` (sin
@@ -66,6 +76,10 @@ impl World {
             };
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
+        }
+        let delta = self.move_vm.ramp_ratio.max(1) * pass;
+        for i in unrun {
+            self.integrate_battle_part_cycler(&mut scene.parts[i], delta);
         }
         self.queue_battle_part_scrolls_over(&mut scene.parts, pass);
         // The morph-lane ramp envelope `FUN_80020740`, run by the part tick

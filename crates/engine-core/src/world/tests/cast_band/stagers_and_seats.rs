@@ -296,3 +296,56 @@ fn freed_arm_4_turns_then_kills_the_crystals() {
     // there is nothing to seat.
     assert_eq!(scene.parts.len(), 12);
 }
+
+/// A mode-3 cycler takes the part tick's arm on the frame that seats it: the
+/// seater's own VM run has armed the gate and stored the rates, so the part
+/// leaves the frame one step of its rates on with its gate at `2`
+/// (`FUN_80021DF4`'s arm at `0x800226D8`, reached on the seat frame's list
+/// walk). PROT 0921's backdrop cyclers read `+0x90 = 4`, `+0x9C = 2` there.
+#[test]
+fn a_cycler_takes_the_mode_3_arm_on_its_seat_frame() {
+    let mut world = module_code_world();
+    world.mode = legaia_engine_mode::mode::SceneMode::Battle;
+    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+    let mut state = vm::move_vm::ActorState {
+        pc: 2,
+        wait_timer: -1,
+        ..Default::default()
+    };
+    state.move_submode = legaia_engine_effects::summon::RenderMode::Particle.raw();
+    scene
+        .parts
+        .push(legaia_engine_effects::summon::SummonPartRuntime {
+            model_sel: 0x4000,
+            reserved: 0,
+            // `0x2C` capture `(0, 488, 16, 1)`, `0x2E` rates `(2, 0, 0)`,
+            // `WAIT_SET 100`, halt.
+            buf: vec![0, 0, 0x2C, 0, 488, 16, 1, 0x2E, 2, 0, 0, 0x09, 100, 0x08],
+            state,
+            finished: false,
+            origin: Some([0; 3]),
+            tag: None,
+            seat_pokes: Vec::new(),
+            seat_halve_speed: false,
+            halted_walks: 0,
+            walk_reached: false,
+        });
+    world.casting.active_summon = Some(scene);
+    world.seat_run_battle_fx();
+    let part = &world.casting.active_summon.as_ref().unwrap().parts[0];
+    assert_eq!(
+        part.state.tween_scale_x,
+        2 << 3,
+        "the seater's run stored the rate"
+    );
+    assert_eq!(part.state.field_9c, 2, "the gate stepped past its arming");
+    assert!(
+        part.state.tween_src_x > 0,
+        "the add took one step of its rate"
+    );
+    // A second call finds nothing newly seated and leaves the cycler alone.
+    let h = part.state.tween_src_x;
+    world.seat_run_battle_fx();
+    let part = &world.casting.active_summon.as_ref().unwrap().parts[0];
+    assert_eq!((part.state.field_9c, part.state.tween_src_x), (2, h));
+}
