@@ -927,6 +927,8 @@ impl World {
         if emits == 0 {
             return;
         }
+        let pose = (self.battle.camera.is_some() || self.battle.stage_camera.is_some())
+            .then(|| self.battle_cam_pose());
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
             let selector = a.battle.impact_state;
@@ -950,9 +952,19 @@ impl World {
             // gate returns at `0x800481E4` / `0x80048234` with no decode. So a
             // body a module hid (`+0x04 = 0`, `+0x21C = 0xFF`) sheds nothing,
             // whatever selector it still holds - Aluru's victim keeps its `2`
-            // from arm `0x12` through the Done band.
+            // from arm `0x12` through the Done band. Nor does a body the
+            // render dispatcher rejects for standing at the lens
+            // (`FUN_8001ADA4`'s near reject, `0x8001AE94..0x8001AEF4`): the
+            // draw tick is never reached, so PROT 0958's victim, which the
+            // arm-22 cut leaves at the eye with its `+0x21F` still `1`, sheds
+            // no fire across the close-up of the caster.
             let Some(plan) = self
-                .battle_actor_draw_plan(i, None, 4.0, false)
+                .battle_actor_draw_plan(
+                    i,
+                    pose.as_ref(),
+                    legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                    false,
+                )
                 .filter(|p| p.drawn)
             else {
                 continue;
