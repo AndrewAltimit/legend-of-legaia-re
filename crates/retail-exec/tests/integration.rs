@@ -153,6 +153,7 @@ mod ozma_ladder;
 mod pad_resolve;
 mod party_panel_build;
 mod passive_sweep;
+mod popup_numeral;
 mod pose_decoder;
 mod publisher_logos;
 mod puera_crystals;

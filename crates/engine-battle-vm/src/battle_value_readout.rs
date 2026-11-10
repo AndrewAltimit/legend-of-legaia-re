@@ -390,6 +390,12 @@ pub fn value_cells(value: u16, centre_x: i32, start_y: i32, age: u16) -> Vec<Val
 // 5. once the stepped timer passes `0x240` the value is zeroed - the numeral
 //    lives 37 frames at a frame step of one.
 //
+// The projection returns the square's OT depth, and under `0x80` the routine
+// reseats the far corners 32 px from the near one (`0x801DF820..0x801DF854`)
+// before the width clamps. The port's host projection carries no OT depth,
+// so that near arm has no port: a numeral over a body almost on the camera
+// keeps its projected square.
+//
 // `battle_vahn_tri_somersault_super` holds a fresh entry (`242`; the drawn
 // frame's timer is `0x70`, the RAM word already stepped to `0x80`) and its
 // display list draws three 3x3 cells at `x = 183, 187, 191`;
