@@ -356,7 +356,7 @@ The reader leaves at its very top when the formation table's count byte is zero 
 | `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
 | `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
 
-The zero-second-argument exit is at `0x801DA16C`. Apart from op `0x3E`'s region re-read, which passes a literal `0`, the caller passes the return of `FUN_800243F0`, which is `0` only on the frame the party's battle-file streaming finishes (`jal 0x80052770` / `bne` / clear at `0x80024C50..0x80024C60`), `-1` while streaming and `0x80` once done (`0x80024BB4..0x80024BB8`). A capture of a walked run sees exactly one zero-argument call.
+The zero-second-argument exit is at `0x801DA16C`. Apart from op `0x3E`'s region re-read, which passes a literal `0`, the caller passes the return of `FUN_800243F0`, which is `0` only on the frame the party's battle-file streaming finishes (`jal 0x80052770` / `bne` / clear at `0x80024C50..0x80024C60`), `-1` while streaming and `0x80` once done (`0x80024BB4..0x80024BB8`). A capture of a walked run sees exactly one zero-argument call. The port has no such frame: its battle files are read whole at the fight, not streamed behind the walk, so nothing stands in for the one step retail's counter can sit out, and where that frame falls in retail is the drive's timing.
 
 A step onto a door therefore never also starts a fight, and a step that does roll raises the same engaged bit, stopping the player for the battle intro. The engine reads the first three as `World::encounter_roll_held` and the trigger's lock as `World::encounter_owns_player`; `world_map_door_encounter_disc` pins both on `map01`'s door to `dolk2`.
 

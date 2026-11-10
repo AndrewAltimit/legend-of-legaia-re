@@ -1073,3 +1073,30 @@ The Magic screen's caster picker reads no Start: the spell screens' differential
 the port's Start-cancel arm is gone. The save UI's dimmed backdrop `FUN_801E02A4` (`save_backdrop`)
 links two sprites of `192 x 192` and `128 x 255`; the port drew both at the art's full height. The
 stat seeder `FUN_801CF5D0` and the developer menu's flag-number arm `0x801EA51C` match.
+
+The field overlay's op-`0x49` hub family (`hub_actors`), the dispatcher `FUN_801F159C` with the six
+panel machines it indexes and the seven window painters, every draw and call logged, found the
+dispatcher's release arm reading the board flag `_DAT_8007B450` after the handler ran
+(`0x801F1678`), where the port read the frame's snapshot: a handler that zeroes the cell and
+finds the completion gate already down takes the busy-bit arm, not the flag store. The panel-script
+interpreter `FUN_801E9B3C` and the shared list cursor `FUN_801E9DC8` (`panel_script`), and the
+brightness flash, sub-list, records slide and fill fade actors (`panel_actors`), match. The flash's
+phase 0 also clears a byte at `0x801F2AA8` that nothing in the field overlay or the executable
+reads.
+
+The geometry colour grade behind `4C E6` (`colour_grade`), the object walk `FUN_801D5E20` and the
+resident-table walk `FUN_801D8280` over TMDs off the disc, replaced a port that took a flat list
+of colour words: a record's colours are its leading words, and the stride add the port's notes
+called an over-run is the group's footer slot. The count table at `0x801F26F0` covers selectors
+`0xC..=0x13`.
+
+Three spawners return to the worklist's covered side (`timer_spawns`): the shutter `FUN_801DE754`,
+the screen frame `FUN_801DE7BC` and the countdown HUD's install / remove `FUN_801D596C`, each a
+whole-record compare against the allocator's answer.
+
+The player tick `FUN_801D1344`, run whole with its callees logged (`player_tick`), holds the
+pad-hold drain, the walk gate and [the order of the frame's legs](../subsystems/field-locomotion.md#the-player-ticks-legs).
+The World ran the walk-regen tick after the step on every field frame; the tick runs it ahead of
+the pad controller and only past the walk gate, and tests the system lock `0x1F800394 & 0x400`
+there, which the step did not. The scene-transition actor `FUN_80021934` (`scene_transition`)
+matches over whole transitions, both stream arms and the name-buffer rotation.

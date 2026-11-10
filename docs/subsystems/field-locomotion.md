@@ -72,6 +72,27 @@ Every per-frame number on this page is counted in one of two retail clocks. Mixi
 
 The whole field frame lives inside that pass. `FUN_80016444` runs the actor-pool sweeps `FUN_8002519C`, which `jalr` each actor's `+0x0C` handler. The player's handler is `FUN_801D1344`, which calls the controller with `jal 0x801D01B0` at `0x801D16F4`. The only gates ahead of that call are the engaged flag, the system lock, the warp timer and the post-warp hold - not a cadence gate (see [the timed warp](#the-timed-kind-0-warp)).
 
+### The player tick's legs
+
+`FUN_801D1344` is short enough to read whole, and its order is what the port's field frame follows. With every callee answered by a logging hook, one call makes these legs in this order:
+
+| Leg | Call | When |
+|---|---|---|
+| Halt | `FUN_800196A4` | `_DAT_8007BAF4 != 0` (the overworld map display's fade-up): the player's lock `+0x10 \| 0x80000` is raised, this one leg runs and the tick returns |
+| Horizon arm | `FUN_801D8258(0, a, b, c)` | either of the scene words `_DAT_8007BCD0` / `_DAT_8007BCD4` is non-zero |
+| Party sync, party HUD | `FUN_801CF754`, `FUN_801D0D38` | always |
+| Walk regen, pad controller | `FUN_801D0B90`, then `FUN_801D01B0` | the walk gate: the player's lock clear, the system lock `0x1F800394 & 0x400` clear, the warp timer not positive and the pad hold zero |
+| Settle | `FUN_801D1BA0` | always |
+| Clip change | `FUN_80024E08(player, want + base)` | the wanted clip `_DAT_8007B8F8` differs from the latch `_DAT_8007B8A2` |
+| Zone re-query | `FUN_801DE234`, `FUN_801DE3E0` at `(coord + 0x40) >> 7` | the follow arm, with scratchpad bit 22 raised |
+| Camera | `FUN_801DB510`, `FUN_801DAA50` | the follow arm: the player free (both locks clear), or scratchpad bit 16 raised |
+| Camera, held | `FUN_801D9D30` | otherwise |
+| Frame end | `FUN_800172C0` | always |
+
+Between the HUD and the gate the tick drains the pad hold `_DAT_8007B6B4` by the frame step, clamped at zero, and counts the control byte `+0x62` of the scene block down the same way. With both locks clear it also drops bit `8` of the player's own `+0x62`, whatever the warp pair says.
+
+The walk-regen tick sits **inside** the gate and **ahead of** the controller, so a bump pays for the steps earlier frames banked and waits out every frame the player is held: a step that fills the accumulator and starts a fight is paid after the fight, and the Incense window still reads non-zero to the encounter roll on the frame its last step is walked. `World::step_field_locomotion` and the overworld's step take the gate as `field_warp_tile::player_tick_walks` and run the regen from that seat; the [retail kernel differential](../tooling/retail-kernel-differential.md) holds the gate, the drain and the leg order to the routine.
+
 ### Cadence invariance
 
 Because a pass covers a variable number of vsyncs, everything measured inside it is denominated **in vsyncs and scaled by `DAT_1F800393`**, never in passes:
