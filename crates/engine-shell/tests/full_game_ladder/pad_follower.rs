@@ -6,6 +6,9 @@ use super::*;
 /// Frames without progress after which a runner stuck on a corner walks it
 /// (the follower's run-button hold).
 const SLOW_WALK_AFTER: u32 = 20;
+/// Frames pressed into a wall without moving before the solid-arm walk
+/// steps sideways off it.
+const WALL_NUDGE_AFTER: u32 = 8;
 /// The d-pad bits of a pad word.
 const DIRECTIONS: u16 = 0x00F0;
 
@@ -962,6 +965,48 @@ pub(super) fn pad_walk(
             && session.host.world.locomotion.run_default
         {
             pad |= PadButton::R1.mask();
+        }
+        // Pressed into a wall corner the planner reads open, the walk steps
+        // sideways off the wall for a frame: the locomotion's leading probes
+        // (`FUN_801CFE4C`) reach past the player's own column, and after
+        // `rugi` P2[67]'s warp a walk standing at (5176, 8198), against the
+        // wall east of the corridor north of (40, 64), pressed north until
+        // the stretch's frame budget ran out. Gated on the solid arm, which
+        // is the only pass that walked into it, so the default walk is
+        // unchanged.
+        if session.host.world.npcs.solid
+            && since >= WALL_NUDGE_AFTER
+            && !moved
+            && walking_mode == SceneMode::Field
+            && pad & DIRECTIONS != 0
+        {
+            let along_z = dz.abs() >= dx.abs();
+            let dir = match (along_z, dz < 0, dx < 0) {
+                (true, true, _) => 0,
+                (true, false, _) => 2,
+                (false, _, true) => 1,
+                (false, _, false) => 3,
+            };
+            let w = &session.host.world;
+            let side = (w.field_dir_blocked(wx, wz, dir))
+                .then(|| {
+                    [-1i16, 1].into_iter().find(|&s| {
+                        let (nx, nz, side_dir) = if along_z {
+                            (wx + s * 8, wz, if s < 0 { 1 } else { 3 })
+                        } else {
+                            (wx, wz + s * 8, if s < 0 { 0 } else { 2 })
+                        };
+                        !w.field_dir_blocked(wx, wz, side_dir) && !w.field_dir_blocked(nx, nz, dir)
+                    })
+                })
+                .flatten();
+            if let Some(s) = side {
+                pad = if along_z {
+                    pad_for_step(session, s, 0)
+                } else {
+                    pad_for_step(session, 0, s)
+                };
+            }
         }
         pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);
