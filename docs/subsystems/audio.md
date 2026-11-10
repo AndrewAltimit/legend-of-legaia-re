@@ -3591,6 +3591,20 @@ also lock a voice the drive model misplaces onto a louder stretch (Zenoir's whol
 `+2.4` vsyncs and scores `0.45`), so both reaches are mixed and the one that scores better is kept:
 one alignment parameter, chosen on the score, and printed with the reach it came from.
 
+<a id="a-landings-reaction-cue-keys-a-frame-early"></a>
+**A landing's reaction cue keys a frame early.** Under a homing cast the landing pass rings the
+record's cue (`0x49..0x4B`) and lands the hit, and the victim's reaction clip sounds its own cue track
+(Thunder Break on `retona_viguro_v2_pre_thunder_break`: `0x56` on party seat `0`). Retail's probe
+(`seats.csv`) has the reaction staged at `+0x1DA` on the landing vsync and committed at `+0x1D9`, its cue
+cursor `+0x1F6` at `1`, on the next game frame, so the two cues ring a frame apart: `3` vsyncs on
+Thunder Break, `7` on Gaza's Astral Wave, the [cast-sequence](../tooling/cast-sequence-oracle.md#the-sound-channel)
+films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The port commits the reaction on the landing tick
+(`World::queue_battle_reaction` from the cast fold), and its anim pass walks the new clip's cue track
+in that tick, so both ring together; the ring, the drainer and the voice keying read alike
+([sfx-table](../formats/sfx-table.md), the `libsnd_voices` and `sfx_drain` differentials). The gap is the
+battle frame order, which pass of the frame the cast tick's hit falls in relative to the victim's node
+tick, and the fix belongs there.
+
 <a id="the-duck-names-the-states-tick"></a>
 **The duck names the state's tick.** A state taken while the summon duck ramps carries its own
 instant on the engine's clock: the applied level `DAT_8007B6EC` steps one unit a vsync, and the
