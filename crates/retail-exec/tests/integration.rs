@@ -313,6 +313,7 @@ mod save_grid;
 mod save_info;
 mod save_leaves;
 mod save_screen_driver;
+mod save_slide;
 mod save_subscreens;
 mod scale_stage;
 mod scene_entry;
