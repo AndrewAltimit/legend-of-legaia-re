@@ -62,6 +62,8 @@ Fallen and Stoned members receive nothing and leave the divisor; a fallen member
 
 Port: `battle_formulas::victory_exp_per_member` (`crates/engine-battle-vm/src/battle_formulas/victory.rs`), carried as `BattleRewards::xp_share`.
 
+**Terra banks EXP and never levels.** The credit loop adds the share to every standing member's record `+0x0`, Terra's included (`0x8004F2AC..0x8004F2B8`), then calls the applier for the member's record index (`jal 0x801E9504` at `0x8004F34C`). The applier returns at once for index `3` (`andi a0,s6,0xff` / `li v0,0x3` / `beq a0,v0,0x801E9FA4` at `0x801E9510..0x801E9538`), before it reads a threshold or grows a stat, so her level stays `1` and her maxima stay the New Game template's `400` / `200` ([new-game table](../formats/new-game-table.md)); `terra_party_battle` holds exactly that record. Port: `LevelUpTracker::grant_xp` stops after the credit for `NO_LEVEL_SLOT`.
+
 ## XP table
 
 The XP-to-next-level curve is a static table plus a scaling formula, applied inside `FUN_801E9504`.

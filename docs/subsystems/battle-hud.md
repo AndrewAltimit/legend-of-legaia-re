@@ -316,6 +316,26 @@ the per-pass ramp and the recording's own frame steps the engine reads `15` of
 keeps it ahead of the SM. Port: `BattleActor::mp_display` carries `+0x174`,
 `tick_mp_bar` runs `party_mp_step` beside the HP ramp, and the HUD rows draw it.
 
+**Terra's readout is `?` cells.** The readout spawner `FUN_801D8DE8` tests the
+member's present-party id on both arms - the roster panel's
+(`lbu v1,0(DAT_8007BD10 + member)` / `li v0,4` / `beq` at
+`0x801D949C..0x801D94A4`) and the bar's (`0x801D9734..0x801D973C`) - and for id
+`4`, Terra, registers the four number records through `FUN_8003563C` with type
+`5` where every other member gets type `2`. The per-frame draw `FUN_80031D00`
+(`0x80031FAC..0x80032008`) draws a type-`5` record as `FUN_8003C1F8(0xC, x + 8i,
+y)` once per cell, never reading the value: glyph `0xC` is the 8x12 `?` at
+`uv = (0xB0, 0xD0)` on the menu-glyph page. Her HP fields take three cells
+and her MP fields two, seated to keep the usual right edges (bar `x = 0x5E` /
+`0x8A` / `0xCE` / `0xF2` off the pen, panel `0x1C` / `0x44` / `0x24` / `0x4C`),
+so she reads `??? / ???` and `?? / ??`. Her panel also carries no level or
+status element: its frame style is her id plus `0x32` (`FUN_801D84C0`),
+`0x36`, and the frame emitter `FUN_8002C69C` calls the element
+`FUN_8002C2E4` only for styles `0x33..=0x35` (`0x8002C70C..0x8002C764`). The
+retail frame of `terra_party_battle` shows both. The test is identity, not a
+flag: a scripted fight that seats her anywhere draws her this way. Port:
+`BattleSlotHud::hidden_readout`, drawn by `engine-ui::battle_hud` on both
+hosts.
+
 When the bar takes over, the panels do not stop drawing. Retail moves the whole
 cluster to `y = 230`, below the 228-line display window - the same park row the
 arts input screen uses
@@ -930,11 +950,30 @@ seats it ([the shift](#the-record-4142-shift-inside-fun_801d5854)). Captured on
 later copy this record into the commit log's target column (`jal 0x801D5718`
 with `a1 = 0x29`, `0x801D3E64..0x801D3E70`).
 
+The record's string is the target's name payload `+0x1BC`
+(`addiu a0,a0,0x1bc` / `sw a0,0x3ec(s1)` at `0x801D5B40..0x801D5B48`), the
+buffer the bottom-right target plaque prints, so a name carrying the caret
+escape wears its [element badge](#the-element-badges-and-their-per-badge-palette)
+on the picker too, and the measured width grows by `20 + 5`. "Gobu Gobu" is one
+of the names with no escape; `Vera` (`^F`) shows the light badge.
+
+**Slide.** Each cursor step re-seats the pair (records `0x29` / `0x2A`,
+[the shift](#the-record-4142-shift-inside-fun_801d5854)) and opens both on mode
+`0`: the `0x5A` arm's left / right presses run `FUN_801D388C(0xD)`
+(`0x801D2218` / `0x801D2264`), whose step is `01/3 0D/3 1A/3 29/0 2A/0`, and
+the item and spell target steps carry the same pair (`0x14`, `0x18`). The new
+name walks from `max(rest + 0x80, 0x148)` to its rest seat while the name the
+cursor left walks from its rest seat out to record `0x2A`'s disc seat B,
+`x = 328`, on one sixteen-vsync linear glide (`FUN_801D9BBC`). The steps that
+open the cursor (`0x2D`, `0x30`) carry `29/0` alone, so the first name slides
+in with nothing going out.
+
 Both hosts draw it from the shared builder (`BattleHudFrame::target_select`,
-model `battle_hud::battle_target_select_plaque`, seat law
-`battle_chrome::target_select_plaque_x`) at its rest seat. The slide start is a
-pinned kernel (`battle_chrome::target_select_slide_start`) that the builder
-does not animate.
+model `battle_hud::battle_target_select_plate`, seat law
+`battle_chrome::target_select_plaque_x`). The glide is
+`BattleHud::target_select` (`TargetSelectSlide`), seated by the per-tick HUD
+fold and keyed on the pointed actor slot, so two monsters with one name still
+slide.
 
 ### Enemy target strip
 
@@ -1667,7 +1706,7 @@ fixes the 24-byte stride independently of the movers, and it is how
 ```text
 rec42[+0x14] = rec41[+0x14]         ; the outgoing plaque's string,
 rec42[+0x06] = rec41[+0x06]         ; its measured width
-rec42[+0x0A] = rec41[+0x0A]         ; and its seat-B x
+rec42[+0x02] = rec41[+0x0A]         ; and its rest x, as rec42's seat A
 rec41[+0x14] = actor + 0x1BC        ; the incoming actor's display name
 w = FUN_80035F04(actor + 0x1BC)     ; measured, not looked up
 rec41[+0x06] = w
@@ -1681,6 +1720,10 @@ right edge of the 320-wide display, so the plaque slides in from the right.
 The two arms differ only in whose name it is: one resolves the actor through
 the 8-slot table at `0x801C9370` by `actor[+0x1DD]`, the other takes the actor
 it was handed.
+
+Record 42's seat B stays the disc's `x = 328` (the arm writes its seat A
+alone, `sh a0,0x3f2(s1)` at `0x801D5B24`), so a mode-`0` open walks the
+outgoing name off the right edge.
 
 The initialised bytes agree that 41 and 42 are a current / previous pair: their
 seats are mirror images (41 is `328` at A and `200` at B, 42 is `200` at A and

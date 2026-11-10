@@ -219,7 +219,7 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 | `0x20` | - | Space. No glyph; advance X like any glyph, `widths[0x20] + DAT_800740E8 + 1`. |
 | `0x7C` | - | Newline. Advance Y by 14 px; reset X to line-start. |
 | `0xCE` | u8 | Escape - index into the table at `0x80074050`. |
-| `0xCF` | u8 | Color change. Sets `DAT_8007B454` (CLUT additive index 0..15). |
+| `0xCF` | u8 | Color change. Sets `DAT_8007B454` (CLUT additive index 0..15) for the glyphs after it; the field pager restages `7` once a frame before its rows, so an ink carries from row to row ([speaker tags](mes.md#colour-pairs-and-the-speaker-tag)). |
 | `0x00` | - | String terminator. |
 | any other `0x21..=0xFF` | - | Glyph: emit one sprite via the formula above. |
 
