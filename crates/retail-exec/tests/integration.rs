@@ -210,6 +210,7 @@ mod hsv;
 mod hub_actors;
 mod iki_decode;
 mod incense;
+mod incense_confirm;
 mod index_stack;
 mod inn;
 mod interact_probe;

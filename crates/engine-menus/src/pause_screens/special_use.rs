@@ -404,30 +404,38 @@ impl SpecialUseSession {
     /// PORT: FUN_801D8A58 (Door of Light confirm + exit-code 4 handoff)
     /// PORT: FUN_801D8D94 (Incense confirm + class-0x82 apply)
     fn confirm_input(&mut self, pressed: u16) {
-        let up = pressed & PadButton::Up.mask() != 0;
-        let down = pressed & PadButton::Down.mask() != 0;
-        let cross = pressed & PadButton::Cross.mask() != 0;
-        let circle = pressed & PadButton::Circle.mask() != 0;
-        if circle {
-            self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
-            return;
-        }
-        // FUN_801D688C over 2 rows with wrap.
-        if up || down {
-            self.cursor ^= 1;
-        }
-        if cross {
-            self.phase = if self.cursor == 0 {
-                match self.route {
-                    UseRoute::Incense => {
-                        SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress)
-                    }
-                    _ => SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape),
-                }
-            } else {
-                // "No" confirms back to the Use list.
-                SpecialUsePhase::Done(SpecialUseOutcome::Cancelled)
-            };
+        use legaia_engine_system::menu_input::{
+            CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav,
+        };
+        let held = |b: PadButton| pressed & b.mask() != 0;
+        // The list kernel `FUN_801D688C(&cursor, 2, 1)`: confirm, then
+        // cancel, ahead of any move - a press that carries a direction and
+        // Cross confirms the row the cursor is already on.
+        let mut cursor = self.cursor as u32;
+        let nav = menu_cursor_nav(
+            &mut cursor,
+            2,
+            true,
+            NavButtons::new(
+                held(PadButton::Cross),
+                held(PadButton::Circle),
+                held(PadButton::Up),
+                held(PadButton::Down),
+            ),
+        );
+        self.cursor = (cursor & CURSOR_INDEX_MASK) as usize;
+        match nav {
+            CursorNav::Confirm if self.cursor == 0 => {
+                self.phase = SpecialUsePhase::Done(match self.route {
+                    UseRoute::Incense => SpecialUseOutcome::EncounterSuppress,
+                    _ => SpecialUseOutcome::FieldEscape,
+                });
+            }
+            // "No" confirms back to the Use list, as cancel does.
+            CursorNav::Confirm | CursorNav::Cancel => {
+                self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
+            }
+            CursorNav::Moved | CursorNav::None => {}
         }
     }
 
