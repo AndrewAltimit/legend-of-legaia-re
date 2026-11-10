@@ -785,7 +785,9 @@ impl World {
     /// (field overlay PROT 0897, `0x801D1BA0..0x801D1EC0` - two hundred and
     /// one instructions, file offset `0x3388`).
     ///
-    /// PORT: FUN_801d1ba0 (the glide, the hop gate and the anim-clip tail)
+    /// REF: FUN_801d1ba0 (the head is ported as
+    /// [`legaia_engine_field::field_player_clip::settle_head`], the tail as
+    /// [`legaia_engine_field::field_player_clip::settle_clip_pick`])
     /// REF: FUN_80019278, FUN_801d1878, FUN_801d1ec4, FUN_800204F8
     ///
     /// Glides the actor's height toward the floor beneath it at a
@@ -863,15 +865,11 @@ impl World {
             return;
         }
         let flags = self.actors[slot].move_state.flags;
-        // The movement lock routes to the no-hop glide arm (`0x801D1CC8`).
-        let hop_allowed = flags & 0x0008_0000 == 0 && !self.dialogue_owns_input();
-        // Retail rate: `delta_scalar * 3 << 2`, halved for the `0x2000`
-        // slow-fall class.
-        let scalar = self.move_vm.ramp_ratio.max(1) as i32;
-        let mut rate = scalar * 12;
-        if flags & 0x2000 != 0 {
-            rate >>= 1;
-        }
+        // The movement lock and the scratchpad bind block (`0x1F800394 &
+        // 0x400`) route to the no-hop glide arm (`0x801D1CC8`).
+        let bind_block = self.settle_bind_block();
+        let hop_allowed = flags & 0x0008_0000 == 0 && !self.dialogue_owns_input() && !bind_block;
+        let scalar = self.move_vm.ramp_ratio.max(1);
         // The `+0x8E` mirror arm comes first and jumps past both ground arms
         // - see [`Self::field_actor_mirrored_y`]. A scripted eased move that
         // carries the flag holds the actor's Y outright; no glide, no sample.
@@ -884,16 +882,30 @@ impl World {
             // floor sample, clamped to the rate, so a step onto a raised tier
             // takes a few vsyncs and a ladder the field VM moves carries the
             // player at the same rate.
+            // Retail rate: `frame_step * 3 << 2`, halved for the `0x2000`
+            // slow-fall class, in the settle head's 16-bit arithmetic. The
+            // mirror class was taken above; the engine's player carries no
+            // `+0x9E`, so it glides at the grounded value.
+            use legaia_engine_field::field_player_clip as clip;
             let (x, z, y) = {
                 let ms = &self.actors[slot].move_state;
-                (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)
+                (ms.world_x as i32, ms.world_z as i32, ms.world_y)
             };
-            let floor = self.sample_field_floor_height(x, z);
-            let step = (floor - y).clamp(-rate, rate);
-            if step != 0 {
-                let ny = (y + step).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                self.actors[slot].move_state.world_y = ny;
-            }
+            let head = clip::settle_head(
+                &clip::SettleInputs {
+                    flags: flags & !clip::SETTLE_MIRROR_FLAG,
+                    word_9e: clip::SETTLE_GROUNDED,
+                    y,
+                    mirror: 0,
+                    bind_block,
+                    frame_step: scalar,
+                    warp_timer: 0,
+                    warp_hold: 0,
+                    step_delta: (0, 0),
+                },
+                || self.sample_field_floor_height(x, z),
+            );
+            self.actors[slot].move_state.world_y = head.y;
         } else if self.locomotion.follow_terrain_height && ladder_moved {
             // The snap's standing-still half: the field VM moved the floor
             // ladder under the player (op `0x4C` nibble 9), so the footing
@@ -1005,8 +1017,8 @@ impl World {
     /// [`crate::world::FieldLocomotion::clip_override`], the `99` scene
     /// sentinel, or a player whose party-bank bit is down).
     ///
-    /// Scratchpad `0x1F800394 & 0x400` (the bind block) has no writer the
-    /// port models, so the bind always runs.
+    /// Scratchpad `0x1F800394 & 0x400` (the bind block, the world's
+    /// `story_flags` bit) skips the bind (`0x801D1E2C..0x801D1E4C`).
     ///
     /// REF: FUN_801D1BA0 (the tail is ported as
     /// [`legaia_engine_field::field_player_clip::settle_clip_pick`])
@@ -1017,9 +1029,16 @@ impl World {
             leader,
             self.locomotion.clip_override,
             self.locomotion.player_party_bank,
-            false,
+            self.settle_bind_block(),
         );
         self.apply_player_clip_pick(&pick, leader);
+    }
+
+    /// Scratchpad `0x1F800394 & 0x400` - the settle's bind block, which
+    /// sends `FUN_801D1BA0` to its no-hop arm and skips the clip bind. The
+    /// world keeps the scratchpad word as `story_flags`.
+    fn settle_bind_block(&self) -> bool {
+        self.flags.story_flags & legaia_engine_field::camera::CAMERA_HOLD_FLAG != 0
     }
 
     /// A clip id written straight into the player's `+0x5C` as

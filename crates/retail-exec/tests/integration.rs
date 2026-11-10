@@ -250,6 +250,7 @@ mod seq_calc;
 mod seq_slot_release;
 mod seru_debuff;
 mod seru_learn;
+mod settle_head;
 mod sfx_cue_route;
 mod sfx_drain;
 mod shop_quantity;
