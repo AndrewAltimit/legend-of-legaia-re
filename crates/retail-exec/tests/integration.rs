@@ -68,6 +68,7 @@ mod dialog_pager;
 mod drop_shadow;
 mod effect_script;
 mod element_change;
+mod encounter_carve;
 mod encounter_roll;
 mod encounter_top_up;
 mod enemy_impact;
