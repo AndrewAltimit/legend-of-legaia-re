@@ -158,7 +158,7 @@ fn the_st_ring_matches_the_library() {
             match rng.below(10) {
                 0..=5 => {
                     // The next sector of the movie, now and then broken.
-                    let (mut f, mut c, mut k, mut filter) = (frame, chunk, chunks, 0u16);
+                    let (mut f, mut c, k, mut filter) = (frame, chunk, chunks, 0u16);
                     match rng.below(40) {
                         0 => c = c.wrapping_add(1),
                         1 => f += 1,
