@@ -641,7 +641,7 @@ impl World {
                     field_8e: 0,
                     path_target_present: false,
                     scripted_present: true,
-                    ambient_gate: false,
+                    ambient_gate: self.party.scene_save_allowed,
                     frame_step: speed,
                     scene_guard_clear: true,
                     global_suppress: suppressed,

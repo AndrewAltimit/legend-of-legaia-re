@@ -30,6 +30,13 @@ impl World {
     ///
     /// Honored only once [`World::install_hub_equip_restrictions`] has run -
     /// see that method for why.
+    ///
+    /// No play host calls this, and none is owed a call: the class words are
+    /// the menu overlay's. In the field overlay the cell has two writers, the
+    /// flag window's row (`0x801EF0E8`) and the coin counter's digit cursor
+    /// (`0x801F0BCC..0x801F0D6C`), both small counts, so the field's entry
+    /// list stands on the no-candidate arm - which is what the zero default
+    /// draws. The setter is the seam the candidate ladder's tests drive.
     pub fn set_hub_equip_mode(&mut self, mode: u32) {
         self.field_vm.submode_screen.equip_mode = mode;
     }

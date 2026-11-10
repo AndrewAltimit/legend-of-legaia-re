@@ -79,7 +79,7 @@ impl World {
                 field_8e,
                 path_target_present: false,
                 scripted_present: channel.is_some(),
-                ambient_gate: false,
+                ambient_gate: self.party.scene_save_allowed,
                 frame_step: step,
                 scene_guard_clear: true,
                 global_suppress: false,
