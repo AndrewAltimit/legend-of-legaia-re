@@ -12,7 +12,9 @@
 
 use crate::card_bu::{Bios, Call, HANDLE_A, HANDLE_B, flags, pend, rig, tests_of};
 use crate::common::Rng;
-use legaia_engine_menus::card_flow::{CardHealth, CardPollResult};
+use legaia_engine_menus::card_flow::{
+    CardHealth, CardPollResult, CardWriteEvent, CardWriteIo, CardWriteMachine, CardWriteState,
+};
 use legaia_engine_menus::save_select::{
     CARD_DIR_FRAMES, CardDirEntry, CardIoEffect, CardIoMachine, CardStatus, SlotContent,
     card_frame_tick, card_status_poll, classify_card_directory,
@@ -608,4 +610,309 @@ fn the_ticker_sequences_the_frame_as_retail_does() {
         }
     }
     assert!(rebuilds > 100 && gated > 1000, "{rebuilds} {gated}");
+}
+
+/// One call the write machine makes to the layer under it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Io {
+    OpenDir(u32),
+    Free(u32, i32),
+    Find(i32, u32),
+    Compose,
+    Write(u32, u32, u32, bool),
+    Read(u32, u32, u32),
+    Format(u32),
+    Close(u32),
+}
+
+/// The scripted answers both sides read.
+#[derive(Debug, Clone, Default)]
+struct Script {
+    dir: i32,
+    free: i32,
+    found: i32,
+    write: i32,
+    read: i32,
+    formats: Vec<i32>,
+}
+
+struct Double<'a> {
+    script: &'a Script,
+    log: Vec<Io>,
+    formats: usize,
+    port: u32,
+    name: u32,
+    write_buf: u32,
+    read_buf: u32,
+    read_len: u32,
+}
+
+impl CardWriteIo for Double<'_> {
+    fn open_directory(&mut self) -> i32 {
+        self.log.push(Io::OpenDir(self.port));
+        self.script.dir
+    }
+    fn free_blocks(&mut self, dir: i32) -> i32 {
+        self.log.push(Io::Free(self.port, dir));
+        self.script.free
+    }
+    fn find_file(&mut self, dir: i32) -> i32 {
+        self.log.push(Io::Find(dir, self.name));
+        self.script.found
+    }
+    fn write_block(&mut self, create: bool) -> i32 {
+        self.log
+            .push(Io::Write(self.port, self.write_buf, 0x2000, create));
+        self.script.write
+    }
+    fn read_block(&mut self) -> i32 {
+        self.log
+            .push(Io::Read(self.port, self.read_buf, self.read_len));
+        self.script.read
+    }
+    fn format(&mut self) -> i32 {
+        self.log.push(Io::Format(self.port));
+        let r = self.script.formats[self.formats];
+        self.formats += 1;
+        r
+    }
+    fn compose_block(&mut self) {
+        self.log.push(Io::Compose);
+    }
+}
+
+#[test]
+fn the_write_machine_steps_as_retail_steps() {
+    differential!(prot(899, WRITE_SM));
+    let Some((mut cpu, _bios)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const DELAY: u32 = 0x801E_F128;
+    const NAME: u32 = 0x801E_F024;
+    const WRITE_BUF: u32 = 0x801E_F178;
+    const READ_BUF: u32 = 0x801E_F174;
+    const READ_LEN: u32 = 0x801F_01B8;
+    const FD: u32 = 0x801E_F138;
+    const WRITE_FAILED: u32 = 0x801E_F13C;
+    const READ_FAILED: u32 = 0x801E_F140;
+    const MENU_MODE: u32 = 0x801F_0204;
+    const FORMAT_DONE: u32 = 0x801F_0220;
+    const FRAME_DELTA: u32 = 0x1F80_0393;
+    let script: Rc<RefCell<Script>> = Rc::default();
+    let log: Rc<RefCell<Vec<Io>>> = Rc::default();
+    let formats: Rc<RefCell<usize>> = Rc::default();
+    let arg5 = |m: &mut psx_retail_exec::Memory, sp: u32, n: u32| m.rd32(sp + 0x10 + 4 * n);
+    let (s, l) = (script.clone(), log.clone());
+    cpu.hook(0x801E_3AF0, move |r, _| {
+        assert_eq!(r.r[psx_retail_exec::A1], 0);
+        l.borrow_mut().push(Io::OpenDir(r.r[A0]));
+        r.r[V0] = s.borrow().dir as u32;
+    });
+    let (s, l) = (script.clone(), log.clone());
+    cpu.hook(0x801E_3BA0, move |r, _| {
+        l.borrow_mut()
+            .push(Io::Free(r.r[A0], r.r[psx_retail_exec::A1] as i32));
+        r.r[V0] = s.borrow().free as u32;
+    });
+    let (s, l) = (script.clone(), log.clone());
+    cpu.hook(0x801E_3BEC, move |r, _| {
+        l.borrow_mut()
+            .push(Io::Find(r.r[A0] as i32, r.r[psx_retail_exec::A1]));
+        r.r[V0] = s.borrow().found as u32;
+    });
+    let l = log.clone();
+    cpu.hook(0x801E_1934, move |_, _| l.borrow_mut().push(Io::Compose));
+    let (s, l) = (script.clone(), log.clone());
+    cpu.hook(0x801E_3D68, move |r, m| {
+        assert_eq!(
+            (r.r[psx_retail_exec::A1], r.r[psx_retail_exec::A2]),
+            (0, NAME)
+        );
+        let sp = r.r[psx_retail_exec::SP];
+        l.borrow_mut().push(Io::Write(
+            r.r[A0],
+            r.r[psx_retail_exec::A3],
+            arg5(m, sp, 0),
+            arg5(m, sp, 1) != 0,
+        ));
+        r.r[V0] = s.borrow().write as u32;
+    });
+    let (s, l) = (script.clone(), log.clone());
+    cpu.hook(0x801E_3C90, move |r, m| {
+        assert_eq!(
+            (r.r[psx_retail_exec::A1], r.r[psx_retail_exec::A2]),
+            (0, NAME)
+        );
+        let sp = r.r[psx_retail_exec::SP];
+        l.borrow_mut()
+            .push(Io::Read(r.r[A0], r.r[psx_retail_exec::A3], arg5(m, sp, 0)));
+        r.r[V0] = s.borrow().read as u32;
+    });
+    let (s, l, f) = (script.clone(), log.clone(), formats.clone());
+    cpu.hook(0x801E_3E7C, move |r, _| {
+        assert_eq!(r.r[psx_retail_exec::A1], 0);
+        l.borrow_mut().push(Io::Format(r.r[A0]));
+        let mut n = f.borrow_mut();
+        r.r[V0] = s.borrow().formats[*n] as u32;
+        *n += 1;
+    });
+    let l = log.clone();
+    cpu.unhook(0x8005_66D8);
+    cpu.hook(0x8005_66D8, move |r, _| {
+        l.borrow_mut().push(Io::Close(r.r[A0]))
+    });
+
+    let mut rng = Rng(0x5752_534D);
+    let mut events = std::collections::BTreeMap::<String, u32>::new();
+    let mut retried = 0;
+    for walk in 0..1_500 {
+        let mut port = CardWriteMachine::new();
+        let port_no = rng.below(2);
+        cpu.mem.wr32(CHANNEL, port_no);
+        cpu.mem.wr32(DELAY, 0);
+        let (wbuf, rbuf) = (
+            0x8015_0000 + rng.below(16) * 4,
+            0x8016_0000 + rng.below(16) * 4,
+        );
+        let read_len = [0x80u32, 0x2000][rng.below(2) as usize];
+        cpu.mem.wr32(WRITE_BUF, wbuf);
+        cpu.mem.wr32(READ_BUF, rbuf);
+        cpu.mem.wr32(READ_LEN, read_len);
+        let mut state = [1u8, 2, 7, 5, 3, 0, 4, 6, 9][rng.below(9) as usize];
+        for frame in 0..40 {
+            port.set_state(CardWriteState::from_code(state));
+            cpu.mem.wr32(SM_WORD, u32::from(state));
+            let poll = match rng.below(8) {
+                0 => [-4i32, 3, 50][rng.below(3) as usize],
+                _ => rng.below(6) as i32 - 3,
+            };
+            cpu.mem.wr32(FRAME_RESULT, poll as u32);
+            let delta = 1 + rng.below(6);
+            cpu.mem.wr8(FRAME_DELTA, delta as u8);
+            let draw = |rng: &mut Rng| match rng.below(3) {
+                0 => 0,
+                _ => 1 + rng.below(4) as i32,
+            };
+            let format = |rng: &mut Rng| [-3, -3, -3, -1, 1, 0, 2, -2][rng.below(8) as usize];
+            *script.borrow_mut() = Script {
+                dir: rng.below(16) as i32,
+                free: draw(&mut rng),
+                found: draw(&mut rng),
+                write: [0, 0, -1][rng.below(3) as usize],
+                read: [0, 0, -1][rng.below(3) as usize],
+                formats: (0..5).map(|_| format(&mut rng)).collect(),
+            };
+            log.borrow_mut().clear();
+            *formats.borrow_mut() = 0;
+            let fd = 2 + rng.below(6);
+            cpu.mem.wr32(FD, fd);
+            for a in [WRITE_FAILED, READ_FAILED, FORMAT_DONE, FAULT_COUNT] {
+                cpu.mem.wr32(a, 0);
+            }
+            cpu.mem.wr32(MENU_MODE, 0x55);
+            cpu.mem.wr32(CHANGE_COUNT, 7);
+            let what = format!("walk {walk} frame {frame} state {state} poll {poll} delta {delta}");
+            assert_eq!(cpu.call(WRITE_SM, &[]), Stop::Returned, "{what}");
+
+            let s = script.borrow().clone();
+            let mut io = Double {
+                script: &s,
+                log: Vec::new(),
+                formats: 0,
+                port: port_no,
+                name: NAME,
+                write_buf: wbuf,
+                read_buf: rbuf,
+                read_len,
+            };
+            let event = port.tick(CardPollResult::from_code(poll), delta as i32, &mut io);
+            // The close after a failed transfer is the routine's own call,
+            // on the descriptor the layer below left.
+            let retail: Vec<Io> = log.borrow().clone();
+            let closes: Vec<Io> = retail
+                .iter()
+                .copied()
+                .filter(|c| matches!(c, Io::Close(_)))
+                .collect();
+            let failed = matches!(
+                event,
+                Some(CardWriteEvent::WriteFailed | CardWriteEvent::ReadFailed)
+            );
+            assert_eq!(
+                closes,
+                if failed { vec![Io::Close(fd)] } else { vec![] },
+                "{what}"
+            );
+            let calls: Vec<Io> = retail
+                .into_iter()
+                .filter(|c| !matches!(c, Io::Close(_)))
+                .collect();
+            assert_eq!(calls, io.log, "{what}: {event:?}");
+            retried += u32::from(io.formats > 1);
+            assert_eq!(
+                cpu.mem.rd32(SM_WORD),
+                u32::from(port.state().code()),
+                "{what}: {event:?}"
+            );
+            assert_eq!(cpu.mem.rd32(DELAY) as i32, port.delay(), "{what}");
+            let (mode, wf, rf, fault, done) = (
+                cpu.mem.rd32(MENU_MODE),
+                cpu.mem.rd32(WRITE_FAILED),
+                cpu.mem.rd32(READ_FAILED),
+                cpu.mem.rd32(FAULT_COUNT),
+                cpu.mem.rd32(FORMAT_DONE),
+            );
+            let want = match event {
+                Some(CardWriteEvent::Interrupted { mode, saving }) => {
+                    (mode, u32::from(saving), u32::from(!saving), 1, 0)
+                }
+                Some(CardWriteEvent::WriteFailed) => (0x55, 1, 0, 0, 0),
+                Some(CardWriteEvent::ReadFailed) => (0x55, 0, 1, 0, 0),
+                Some(CardWriteEvent::FormatOk) => (0x55, 0, 0, 0, 3),
+                Some(CardWriteEvent::FormatNoCard) => (0x55, 0, 0, 1, 0),
+                _ => (0x55, 0, 0, 0, 0),
+            };
+            assert_eq!((mode, wf, rf, fault, done), want, "{what}: {event:?}");
+            // The format arm also zeroes the change debounce; the port
+            // keeps that counter in `CardHealth` and does not model it here.
+            let formatted = state == 7;
+            assert_eq!(
+                cpu.mem.rd32(CHANGE_COUNT),
+                if formatted { 0 } else { 7 },
+                "{what}"
+            );
+            *events
+                .entry(
+                    format!("{event:?}")
+                        .split([' ', '{'])
+                        .next()
+                        .unwrap()
+                        .to_string(),
+                )
+                .or_default() += 1;
+            state = match port.state().code() {
+                0 | 4 | 6 | 9 => [1u8, 2, 7, 0, 4, 6, 9][rng.below(7) as usize],
+                live => live,
+            };
+        }
+    }
+    for want in [
+        "Some(Interrupted",
+        "Some(WriteOk)",
+        "Some(WriteFailed)",
+        "Some(OutOfSpace)",
+        "Some(ReadOk)",
+        "Some(ReadFailed)",
+        "Some(FormatOk)",
+        "Some(FormatNoCard)",
+        "Some(FormatFailed)",
+        "None",
+    ] {
+        assert!(
+            events.get(want).copied().unwrap_or(0) > 50,
+            "{want}: {events:?}"
+        );
+    }
+    assert!(retried > 200, "{retried}");
 }
