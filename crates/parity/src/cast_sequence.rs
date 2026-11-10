@@ -57,6 +57,17 @@ pub const WHITE_LUMA: f64 = 230.0;
 /// band runs on, `4`).
 pub(crate) const MAX_LAG: u64 = 8;
 
+/// The frame step from which a grab on a frame's bump vsync still shows the
+/// image before: on a step of `3` or `4` the displayed image changes a vsync
+/// after the counter does, on `1` and `2` with it. Measured two ways on the
+/// lone-caster `0x93` recording: consecutive grabs change on the row after a
+/// bump (`579` of `596` step-`4` grab pairs, against `211` for a change on
+/// the bump), and a table rasterised off a RAM image of step-`4` frame `F`'s
+/// last row matches the grabs two and four vsyncs past frame `F + 2`'s bump
+/// and not the one on it, where a step-`2` frame's table matches the grab on
+/// that bump.
+const LATE_FLIP_STEP: u8 = 3;
+
 /// Game frames a retail grab's screen fade stands behind the RAM when only
 /// the other ordering table links the fade's quad ([`Row::fade_back`]): one,
 /// where the scene stands two ([`Side::shown_by_frame`]). The fade actor links
@@ -419,10 +430,11 @@ impl Side {
 
     /// The row whose state a frame grabbed on `row` displays, off the frame
     /// counter: the last row of the frame two counter bumps back. A frame
-    /// that follows one which ran past its step flips a vsync after its
-    /// bump, so on that bump's own vsync the screen still holds the frame
-    /// before; an on-time frame flips on its bump (step `1`: every shot is
-    /// a new image, two rows back). A frame's pass leaves its
+    /// that follows one which ran past its step, or one on a step of three
+    /// or four ([`LATE_FLIP_STEP`]), flips a vsync after its bump, so on
+    /// that bump's own vsync the screen still holds the frame before; an
+    /// on-time frame on step `1` or `2` flips on its bump (step `1`: every
+    /// shot is a new image, two rows back). A frame's pass leaves its
     /// state on its last row, and the double buffer shows what the frame
     /// before last drew ([`Lag::Auto`]). On an ordinary step-`2` frame this
     /// is the `2 * step` rule; counted in frames, a slow frame keeps its
@@ -444,8 +456,8 @@ impl Side {
     fn shown_frames_back(&self, row: &Row, back: u32) -> Option<u64> {
         let f = row.frame?;
         let i = self.rows.binary_search_by_key(&row.t, |r| r.t).ok()?;
-        // The frame before this one ran past its step: its flip lands a
-        // vsync after this frame's bump.
+        // The frame before this one ran past its step, or ran on a step of
+        // three or four: its flip lands a vsync after this frame's bump.
         let late_flip = i > 0 && self.rows[i - 1].frame != Some(f) && {
             let prev = &self.rows[i - 1];
             let len = self.rows[..i]
@@ -453,7 +465,7 @@ impl Side {
                 .rev()
                 .take_while(|r| r.frame == prev.frame)
                 .count();
-            len > usize::from(prev.step.max(1))
+            prev.step >= LATE_FLIP_STEP || len > usize::from(prev.step.max(1))
         };
         let want = f.checked_sub(if late_flip { back + 1 } else { back })?;
         self.rows[..=i]
@@ -1689,6 +1701,16 @@ mod tests {
         // On-time frames flip on their bump.
         let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1)]);
         assert_eq!(t.shown_by_frame(&t.rows[2]), Some(t.rows[0].t));
+        // On-time step-4 frames flip a vsync after their bump: the grab on
+        // the bump still shows the frame three back, the next one two back.
+        let u = side(&[(1, 4, 4), (2, 4, 4), (3, 4, 4), (4, 4, 4)]);
+        let u_last = |f: u32| {
+            let mut rows = u.rows.iter().filter(move |r| r.frame == Some(f));
+            rows.next_back().unwrap().t
+        };
+        let mut f4 = u.rows.iter().filter(|r| r.frame == Some(4));
+        assert_eq!(u.shown_by_frame(f4.next().unwrap()), Some(u_last(1)));
+        assert_eq!(u.shown_by_frame(f4.next().unwrap()), Some(u_last(2)));
         // The fade's own table stands one frame back: frame 3 past its bump
         // shows frame 2's fade.
         for r in rows_of(3).skip(1) {

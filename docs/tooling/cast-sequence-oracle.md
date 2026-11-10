@@ -417,7 +417,9 @@ Frames pair on the action-SM clock, never on wall time:
    earlier ([Replayed casts](retail-compare.md#replayed-casts)), so it is
    keyed on the last row of the frame two counter bumps back. A frame that
    follows one which ran past its step flips a vsync after its bump, so a
-   grab on that bump's vsync is keyed one frame further back. On an on-time
+   grab on that bump's vsync is keyed one frame further back. So does a frame
+   that follows one on a step of `3` or `4`, on time or not
+   ([below](#the-flip-on-a-slow-step)). On an on-time step-`1` or step-`2`
    frame this is the row `2 * step` vsyncs earlier; counted in frames, a slow
    frame keeps its image up for every vsync it overran. `horn_summon` enters
    module phase 9 on a seven-vsync step-`4` frame, and its close-up reaches
@@ -463,6 +465,33 @@ blocks within `24` per channel; [The image channel](retail-compare.md#the-image-
 A pair whose retail frame has mean luma above `230` (a white flash) or below
 `8` (a fade) goes into its own count and stays out of the mean. The cast's
 number is the **mean `within` over the remaining scene pairs**.
+
+### The flip on a slow step
+
+On a step of `3` or `4` the displayed image changes one vsync after the frame
+counter does, whether or not the frame before ran over. Two measurements on
+the lone-caster Odd Dimension recording (`0x93`) agree:
+
+- **Consecutive grabs.** Of the `596` pairs of grabs two vsyncs apart on
+  step-`4` rows, `579` change exactly when a bump lies between the rows
+  *before* them, and `211` when one lies between their own rows. The `0x81`
+  recording reads `292` of `292` against `232`. On steps `1` and `2` every
+  two-vsync window holds a bump, so the count cannot tell the two apart.
+- **A table against the grabs.** A RAM image taken on the last row of a
+  step-`4` frame `F` (`LEGAIA_RAM_AT`), its current ordering table
+  rasterised with `ot-raster.py`, matches the grabs one and three vsyncs past
+  frame `F + 2`'s bump and not the grab on it; the other table matches the
+  pair of grabs before. The same reading of four step-`2` rows puts frame
+  `F`'s table on the grab at frame `F + 2`'s bump.
+
+Keyed on the bump, half the grabs of a step-`4` arm whose frames start on the
+grab's parity were scored against the engine frame one pass later. On a cast
+whose backdrop turns its palette `16` hue units a pass that is most of the
+arm's residual: Odd Dimension's arms 5 to 7 read `.409`, `.487`, `.541` on the
+bump and `.520`, `.637`, `.671` a vsync after it, and each arm then scores
+highest against the engine tick it is paired with, falling off on both sides
+four ticks away. No film of the player Seru set reads lower by more than
+`.001`; Ozma reads `.669` to `.746`.
 
 ## The rand stream
 
