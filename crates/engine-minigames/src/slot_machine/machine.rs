@@ -568,6 +568,17 @@ impl SlotMachine {
         }
     }
 
+    /// Run the bonus-symbol scanner over the seated strips with `landed`
+    /// standing in for the reels' landed flags (`DAT_801d3d10`), as the
+    /// retail kernel differential seats them.
+    #[doc(hidden)]
+    pub fn scan_anticipation_landed(&mut self, landed: [bool; REEL_COUNT]) -> i32 {
+        for (r, &l) in landed.iter().enumerate() {
+            self.stopped[r] = l.then(|| self.payline_row(r));
+        }
+        self.anticipation_scan()
+    }
+
     /// How many reels have taken their Stop press this spin (`DAT_801d3d2c`),
     /// landed or still rolling in.
     pub fn reels_stopped(&self) -> usize {

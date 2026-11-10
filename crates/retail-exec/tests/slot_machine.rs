@@ -1,7 +1,7 @@
 //! The casino slot machine's rule kernels in PROT 0975: the LCG `FUN_801D30CC`,
 //! the per-spin feature roll `FUN_801D258C`, the reel stop `FUN_801D2114` with its
 //! landing search and the roll to the row `FUN_801D0554`, the win evaluation
-//! `FUN_801D13E8`.
+//! `FUN_801D13E8`, the bonus-symbol scanner `FUN_801D1AF4`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::slot_machine::{
@@ -37,6 +37,8 @@ const BUDGET: u32 = 0x801D_3CF0;
 const SPINNING: u32 = 0x801D_3D00;
 const LOCKED: u32 = 0x801D_3D10;
 const SPIN_TIMER: u32 = 0x801D_3C90;
+const SCAN: u32 = 0x801D_1AF4;
+const ANTICIPATION: u32 = 0x801D_3CA4;
 
 fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, slot_payout::SlotPayoutTable)> {
     let (mut cpu, disc) = (scus_cpu()?, disc()?);
@@ -347,4 +349,52 @@ fn the_landing_search_lands_where_retail_lands() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(found > 50_000 && missed > 50_000, "{found} {missed}");
+}
+
+/// The bonus-symbol scanner `FUN_801D1AF4` over random strips with one, two
+/// or three reels landed, against `SlotMachine::anticipation_scan`: the
+/// latch `DAT_801D3CA4` it writes (`1` punch pair, `2` kick pair, untouched
+/// otherwise).
+#[test]
+fn the_bonus_scanner_latches_what_retail_latches() {
+    differential!(prot(975, SCAN));
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, payouts)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut m = SlotMachine::new(payouts, 1, 100);
+    let mut rng = Rng(0x5343_414E);
+    let mut seen = [0; 3];
+    for round in 0..100_000 {
+        // Punch `9` and kick `8` among few kinds, so pairs land often.
+        let strips = gen_strips(&mut rng, 6, 4);
+        let raw: [i32; 3] = std::array::from_fn(|_| rng.below(0x1400) as i32);
+        let landed: [bool; 3] = std::array::from_fn(|_| rng.below(3) != 0);
+        let seat = SlotSeat {
+            strips,
+            reel_pos: raw.map(|p| (p + 0x1000).rem_euclid(0x1400)),
+            feature_mode: 0,
+            bonus_spins: 0,
+            net_take: 0,
+            rng_state: rng.next(),
+            jitter: 0,
+            normal_target: 2,
+        };
+        seed_retail(&mut cpu, &seat, raw);
+        for r in 0..3u32 {
+            cpu.mem.wr32(LOCKED + r * 4, u32::from(landed[r as usize]));
+        }
+        cpu.mem.wr32(ANTICIPATION, 0);
+        assert_eq!(cpu.call(SCAN, &[]), Stop::Returned);
+        let retail = cpu.mem.rd32(ANTICIPATION) as i32;
+        m.seat(seat);
+        let port = m.scan_anticipation_landed(landed);
+        assert_eq!(
+            retail, port,
+            "round {round} raw {raw:?} landed {landed:?} strips {strips:?}"
+        );
+        seen[retail as usize] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 5000), "{seen:?}");
 }
