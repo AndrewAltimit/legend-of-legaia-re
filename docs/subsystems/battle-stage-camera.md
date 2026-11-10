@@ -1383,6 +1383,17 @@ step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_C
 and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
 run short of retail.
 
+A cast module's own voice clip does not. The PCSX-Redux summon films on
+`party_basic_attack_vs_gobu_gobu` run frames of `250` to `460` hblanks inside the
+clip's span (Viguro's step-`2` arms 4..10, Palma's arms 4 and 5), and the
+arms the [arm table](#what-the-arm-step-table-is) leaves to the ring read the
+ring's own step: Palma's settle arm `0xC8` runs `2` and `1` where the clamp held
+the engine at `4`, which put its three closing cues `22` to `39` ticks late,
+and the Done band of every summon whose clip outlived its arms ran `4` where
+retail reads `2` or `3`. The engine marks which clip holds the drive
+(`AudioState::battle_xa_frame_load`): the cue funnel and the arts voice load the
+frame, the module voice (`World::emit_battle_xa_cue`) does not.
+
 An overrun lengthens the frame, not the step: the camera walker runs once a frame,
 scaled by the step (`BattleCamera::sync_step_phase`), so an overrunning frame still
 steps it once.

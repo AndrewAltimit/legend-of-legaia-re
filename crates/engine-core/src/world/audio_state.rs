@@ -75,6 +75,14 @@ pub struct AudioState {
     /// inside one read span collapse to the first. Counted down once per
     /// battle tick.
     pub battle_xa_busy_frames: u16,
+    /// Whether the clip [`Self::battle_xa_busy_frames`] counts down loads
+    /// the battle frame (`frame_clock::XA_STREAM_FRAME_COST`). A clip the
+    /// cue funnel or the arts voice starts does: an item's or a Spirit's
+    /// cue clamps the ring for its whole span. A cast module's own voice
+    /// does not: the PCSX-Redux summon films run step-`2` arms at `250` to
+    /// `460` hblanks inside the clip's span (Viguro's arms 4..10, Palma's
+    /// arms 4 and 5) and their Done bands at about `330`.
+    pub battle_xa_frame_load: bool,
     /// The battle's runtime SFX descriptor bank - `bse.dat` (PROT 888), the
     /// rows behind ring ids `>= 0x200` while a battle is on screen
     /// (`docs/formats/bse-dat.md`). A fresh copy is installed at every battle
@@ -349,6 +357,7 @@ impl AudioState {
             xa_parked_clip: None,
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
+            battle_xa_frame_load: false,
             battle_sfx_bank: None,
             field_xa_cues: Vec::new(),
             field_xa_prestage: Vec::new(),

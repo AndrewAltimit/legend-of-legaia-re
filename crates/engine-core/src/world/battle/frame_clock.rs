@@ -47,7 +47,7 @@ impl World {
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
-        let xa_streaming = self.audio.battle_xa_busy_frames > 0;
+        let xa_streaming = self.audio.battle_xa_busy_frames > 0 && self.audio.battle_xa_frame_load;
         let cost = arm_step.map_or_else(
             || {
                 let (parts, ghosts) = self.battle_frame_load();
@@ -281,6 +281,7 @@ impl World {
         let extra = if measured.is_none()
             && self.toggles.battle_party_cost_step
             && self.audio.battle_xa_busy_frames > 0
+            && self.audio.battle_xa_frame_load
         {
             legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
@@ -1348,11 +1349,27 @@ mod tests {
         use legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA;
         let mut w = World::new();
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_cost_step, 4);
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, XA_STREAM_SPAN_EXTRA);
         w.audio.battle_xa_busy_frames = 0;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    #[test]
+    fn a_cast_modules_voice_leaves_the_frame_its_own_cost() {
+        // The summon films run their Done bands near `330` hblanks while the
+        // module's clip still reads: the clip does not load the frame.
+        let mut w = World::new();
+        w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_frame_load = false;
+        for _ in 0..16 {
+            w.push_frame_cost(None);
+        }
+        assert!(w.battle.frame_cost_step < 4);
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
