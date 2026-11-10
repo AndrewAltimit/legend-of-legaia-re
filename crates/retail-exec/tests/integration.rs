@@ -139,6 +139,7 @@ mod flash_ramp;
 mod floor_height;
 mod fog_render;
 mod fog_spawn;
+mod format_leaves;
 mod frame_blend;
 mod glare_divide;
 mod glyph_count;

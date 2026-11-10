@@ -57,4 +57,5 @@ psx-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-container-formats.workspace = true
 legaia-scene-formats.workspace = true
+legaia-prot.workspace = true
 psx-vab.workspace = true
