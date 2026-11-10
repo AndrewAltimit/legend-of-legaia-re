@@ -108,6 +108,7 @@ mod cursor_sprite;
 mod curvature_table;
 mod dance_floor;
 mod dance_leaves;
+mod dance_tutorial;
 mod dead_end_crisis;
 mod deadly_rain;
 mod death_spoils;

@@ -255,6 +255,17 @@ impl World {
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
         // below-10 state band. The song starts on the frame it clears.
+        // The lesson's load gate holds the hall on state `2`, ahead of the
+        // count-in (`0x801CFA1C`).
+        let gated = self
+            .minigames
+            .dance_tutorial
+            .as_ref()
+            .is_some_and(|t| t.hall.load_gate != 0);
+        if gated && self.minigames.dance_countin.is_some() {
+            self.step_dance_tutorial();
+            return;
+        }
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
             self.minigames.dance_countin_banner = step.banner;
@@ -389,23 +400,19 @@ impl World {
             self.minigames.dance_tutorial_frame = None;
             return;
         }
-        let (score, feedback_frames, combo_hit) = self
-            .minigames
-            .dance
-            .as_ref()
-            .map(|g| {
-                (
-                    g.score() as i32,
-                    g.feedback_frames() as i32,
-                    matches!(g.triangle_feedback(), Some(true)),
-                )
-            })
-            .unwrap_or((0, 0, false));
         let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
-        let Some(tut) = self.minigames.dance_tutorial.as_mut() else {
+        let (Some(tut), Some(game)) = (
+            self.minigames.dance_tutorial.as_mut(),
+            self.minigames.dance.as_mut(),
+        ) else {
             return;
         };
-        let frame = tut.step(pressed, score, feedback_frames, combo_hit, 1);
+        let frame = tut.step_game(game, pressed, 1);
+        // The hall goes back to its count-in (`DAT_801D5334 = 2`); the
+        // count-in itself waits on the load gate.
+        if frame.restart && self.minigames.dance_countin.is_none() {
+            self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
+        }
         if let Some(cue) = frame.cue {
             // `FUN_801d0750` stores its cursor / confirm blips straight into
             // ring slot 0 (`sh id, 0x8007B6D8`).

@@ -248,8 +248,6 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
             sequences += u32::from(cpu.mem.rd32(0x801D_5164) != 0);
             groovies += u32::from(cpu.mem.rd32(FEEDBACK) == 0x3C);
             misses += cpu.mem.rd32(MISSES).min(1);
-            let fb = cpu.mem.rd32(FEEDBACK);
-            cpu.mem.wr32(FEEDBACK, fb.saturating_sub(1));
         }
     }
     assert!(sequences > 100, "{sequences}");
@@ -588,6 +586,23 @@ fn whole_songs_run_as_retail_runs_them() {
                 cpu.mem.rd32(PHASE),
                 cpu.mem.rd32(SONG),
                 cpu.mem.rd32(0x801D_515C),
+            );
+            // The words the how-to script reads off the floor: the miss
+            // window, the triangle window (which only that script steps) and
+            // the frames danced.
+            let hall = g.tutorial_hall(Default::default());
+            assert_eq!(
+                (
+                    cpu.mem.rd32(0x801D_5140),
+                    cpu.mem.rd32(FEEDBACK),
+                    cpu.mem.rd32(0x801D_5150)
+                ),
+                (
+                    hall.miss_window as u32,
+                    hall.feedback as u32,
+                    hall.progress as u32
+                ),
+                "scenario {scenario} frame {frame} state {now:#x}: the lesson's words"
             );
             // The retail capture `minigame_dance_retail_judged`, a hands-off
             // qualifier, holds the two rivals on 295 and 280 at this point of

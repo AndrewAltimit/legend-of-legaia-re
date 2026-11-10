@@ -83,21 +83,13 @@ impl LegaiaMinigames {
         if buttons & 4 != 0 {
             pad |= dt::PAD_CURSOR_NEXT;
         }
-        let (score, feedback_frames, combo_hit) = self
-            .dance
-            .as_ref()
-            .map(|g| {
-                (
-                    g.score() as i32,
-                    g.feedback_frames() as i32,
-                    matches!(g.triangle_feedback(), Some(true)),
-                )
-            })
-            .unwrap_or((0, 0, false));
-        let Some(tut) = self.dance_tutorial.as_mut() else {
+        let (Some(tut), Some(game)) = (self.dance_tutorial.as_mut(), self.dance.as_mut()) else {
             return 0;
         };
-        let frame = tut.step(pad, score, feedback_frames, combo_hit, 1);
+        let frame = tut.step_game(game, pad, 1);
+        if frame.restart && self.dance_countin.is_none() {
+            self.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
+        }
         let cue = frame.cue.map_or(0, u32::from);
         if frame.done {
             self.dance_tutorial = None;

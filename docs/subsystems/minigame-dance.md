@@ -280,15 +280,19 @@ Mode 2 is driven by a dedicated actor script: the Disco King's per-frame state m
 |---|---|
 | opening prompt | Yes / no cursor `DAT_801d607c`, moved by **Left / Right** (`0x1000` / `0x4000`) although the options are stacked at y `0x98` / `0xa8`. The cursor row is masked to one bit and confirms to state `1` (yes) or state `5` (no thanks) - the literal-store tail. |
 | pages 1..4 | Text pages explaining the buttons. State `5`'s `+2` hops the acknowledgement at `6`, which only the "no thanks" path reaches. |
-| case `7` | "Try Square / Circle now": probes the human's press with two direct calls `FUN_801d1960(0, gauge/1000, 0x100)` / `0x101` and praises a correct one. Ends when the progress accumulator `DAT_801d5150` reaches `900`. |
+| case `7` | "Try Square / Circle now": clears the score and the gauge every frame, and asks the chart with two probe calls `FUN_801d1960(0, gauge/1000, 0x100)` / `0x101` whether this beat's cell is a Square or a Circle, printing that button's call when it is. A missed press (`DAT_801d5140`, armed by the award routine) puts a two-line scold up instead. Ends when the frames danced `DAT_801d5150` reach `900`. |
 | level page | "The level rises automatically": arms the load gate (`DAT_801d5830 = 1`, `DAT_801d5334 = 2`). |
 | groovy-move lesson | Text. |
-| case `0xd` | Groovy-move practice: reads the triangle-landed flag `DAT_801d570c` to print praise or a timing scold, for the duration of the feedback window `DAT_801d5144`. Shares the `900` gate. |
-| cases `0xc` / `0x11` | Countdown holds on the timer `DAT_801d6080` that clear the beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) before advancing. |
+| case `0xd` | Groovy-move practice: clears the score every frame, reads the triangle-landed flag `DAT_801d570c` to print praise or a timing scold for the duration of the feedback window `DAT_801d5144`, and prints the combo call while the beat track's flash `DAT_801d512c` runs. Shares the `900` gate, and raises the load gate when it passes. |
+| cases `0xc` / `0x11` | Countdown holds on the timer `DAT_801d6080`, which the page before each seeds. When it runs out they clear the beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) and park the hall on state `2`; `0xc` also restocks three triangles, `0x11` drops the song hold and the load gate and releases the song. |
 
-**Timers.** Case `7`'s scold window `DAT_801d5140` counts **up** and snaps back to zero past `0x20` (a blink). Case `0xd`'s feedback window `DAT_801d5144` counts **down** to a floor of zero (a decay). Both countdown holds seed `DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run one frame longer than the seed reads.
+**Timers.** Case `7`'s scold window `DAT_801d5140` counts **up** and snaps back to zero past `0x20` (a blink). Case `0xd`'s feedback window `DAT_801d5144` counts **down** to a floor of zero (a decay), and that case is its only decay: outside the lesson a spent triangle leaves the word at `0x3c` until the next spend. Both countdown holds seed `DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run one frame longer than the seed reads.
 
-**Port.** The script's output is Sony dialogue, so only its shape is ported: `legaia_engine_minigames::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`) carries the step classification, the option prompt, the advance tails and the two free-dance steps. `DanceTutorial` is the actor as one advancing object - one `step` per frame, fed the live session's score, feedback window and combo latch. Hosts draw placeholder captions at the retail line positions; the strings stay unread.
+**The gate is time, not points.** `DAT_801d5150` is raised by the frame step in the hall's state `10` and by nothing else, and both free-dance cases clear the score on every frame they run. A lesson step therefore ends after `900` units of dancing whatever the player presses.
+
+**The hall around it.** The opening prompt raises the song hold `DAT_801d5138`, which keeps the song timer `DAT_801d5820` still for the whole lesson. The pages at states `8`, `9` and `0xe` raise the load gate `DAT_801d5830`; with it up the award routine takes no press and the hall waits on state `2`. Four advances fade the song through `FUN_80062004` (to a half of the BGM volume from state `0xb`, a quarter from `7`, `0xe` and `0x10`).
+
+**Port.** `legaia_engine_minigames::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`). `DanceTutorial::step` is the routine over the hall's words (`TutorialHall`), and the differential `dance_tutorial` runs it against `FUN_801d0750` whole: the state, every stored word, the printed lines by table address, the cursor, the cue, the probes and the music calls. `step_game` runs it over a live `DanceGame`, which holds the song hold, the load gate, the frames danced and both windows. The script's lines are Sony dialogue and stay unread: a frame names each by the address of its pointer word, and hosts draw placeholder captions at the retail positions.
 
 ## Dancers
 
@@ -819,7 +823,7 @@ Globals live in the overlay's data region around `0x801d5xxx` / `0x801d6xxx`. Pe
 | `DAT_801d581c` | u32 | **Beat phase counter**; `% 0x119` = intra-beat phase, `/ 0x119` = beat index; wraps at `0x2320` |
 | `DAT_801d5820` | u32 | **Total-song timer**; song ends at `0x41dc` / `0x64fc` |
 | `DAT_801d5824` | u32 | Secondary bar counter (wraps `0x464`) |
-| `DAT_801d5138` | u32 | Beat-clock hold flag: freezes the `DAT_801d5820` advance when set *(I)* |
+| `DAT_801d5138` | u32 | Song hold: freezes the `DAT_801d5820` advance when set; raised by the lesson's prompt, dropped by its last countdown |
 | `DAT_801d5338` / `DAT_801d533c` | u32 | Camera key / segment timer |
 | `DAT_801d53cc[]` | u32×3 | **Per-dancer score**, clamped to `999`. `[0]` is the human, and the "dance points" cheat anchor `0x801d53cc` ([`cheats.md`](../reference/cheats.md)) |
 | `DAT_801d544c[]` | u32×3 | **Groove gauge**, clamped `[0,2999]`; `/1000` selects the chart row. Never lowered |
@@ -835,7 +839,7 @@ Globals live in the overlay's data region around `0x801d5xxx` / `0x801d6xxx`. Pe
 | `DAT_801d570c[]` | u32×3 | Last triangle landed on a combo slot (drives the banner and tutorial caption) |
 | `DAT_801d574c[]` | u32×3 | CPU triangle-schedule cursor (index into `DAT_801d41e4`'s kind row) |
 | `DAT_801d578c[]` | u32×3 | CPU combo slots banked since its last triangle |
-| `DAT_801d5144` | u32 | Triangle feedback window (`0x3c`, `-frame_delta`) |
+| `DAT_801d5144` | u32 | Triangle feedback window (`0x3c`; stepped down only by the lesson's case `0xd`) |
 | `DAT_801d5140` / `DAT_801d5150` / `DAT_801d6080` / `DAT_801d607c` | u32 | Tutorial scold blink, progress accumulator, hold timer, prompt cursor |
 | `DAT_801d6088` | u32 | Gauge award staged by the judge on a closed chain (`0xfa`) |
 | `DAT_801d608c` | u32 | Bonus points staged by the judge (accuracy-weighted for the human) |
