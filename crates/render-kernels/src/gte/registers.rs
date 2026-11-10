@@ -177,11 +177,13 @@ impl Gte {
             23 => self.far_color.z as u32,
             24 => self.ofx as u32,
             25 => self.ofy as u32,
-            26 => (self.h as u32) & 0xFFFF,
-            27 => self.dqa as u32,
+            // H is unsigned to the divider but reads back sign-extended, a
+            // hardware quirk; DQA, ZSF3 and ZSF4 are signed halfwords.
+            26 => sign_extend_i16(self.h as i16),
+            27 => sign_extend_i16(self.dqa as i16),
             28 => self.dqb as u32,
-            29 => (self.zsf3 as u32) & 0xFFFF,
-            30 => (self.zsf4 as u32) & 0xFFFF,
+            29 => sign_extend_i16(self.zsf3 as i16),
+            30 => sign_extend_i16(self.zsf4 as i16),
             31 => self.flag,
             _ => unreachable!(),
         }
@@ -265,7 +267,7 @@ impl Gte {
             24 => self.ofx = val as i32,
             25 => self.ofy = val as i32,
             26 => self.h = (val & 0xFFFF) as i32,
-            27 => self.dqa = val as i32,
+            27 => self.dqa = val as i16 as i32,
             28 => self.dqb = val as i32,
             29 => self.zsf3 = (val & 0xFFFF) as i16 as i32,
             30 => self.zsf4 = (val & 0xFFFF) as i16 as i32,

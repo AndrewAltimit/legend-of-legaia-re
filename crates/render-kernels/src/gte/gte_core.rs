@@ -213,6 +213,18 @@ pub mod flag_bits {
     pub const IR0_SATURATED: u32 = 1 << 12;
     /// Sticky "any error happened" bit (set when any of the above set).
     pub const ANY_ERROR: u32 = 1 << 31;
+    /// The bits whose OR is [`ANY_ERROR`]: 30..23 and 18..13. IR3's
+    /// saturation (bit 22) and the colour FIFO's (21..19) stay out of it.
+    pub const ERROR_MASK: u32 = 0x7F87_E000;
+
+    /// `bit`, with [`ANY_ERROR`] when the hardware folds it into bit 31.
+    pub const fn with_error(bit: u32) -> u32 {
+        if bit & ERROR_MASK != 0 {
+            bit | ANY_ERROR
+        } else {
+            bit
+        }
+    }
 }
 
 impl Default for Gte {
@@ -296,10 +308,10 @@ impl Gte {
     /// Saturate `v` to i16 and update the IR-saturation FLAG bit.
     pub(super) fn saturate_ir(&mut self, v: i64, sat_bit: u32) -> i32 {
         if v > i16::MAX as i64 {
-            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            self.flag |= flag_bits::with_error(sat_bit);
             i16::MAX as i32
         } else if v < i16::MIN as i64 {
-            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            self.flag |= flag_bits::with_error(sat_bit);
             i16::MIN as i32
         } else {
             v as i32
