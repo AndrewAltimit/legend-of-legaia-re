@@ -281,7 +281,7 @@ impl World {
     /// [`Self::field_actor_dir_blocked`] is the *walk controller's* shape of
     /// the same routine - three points off a compass table, taken at the
     /// actor's own position - and the two are not interchangeable.
-    pub(crate) fn field_actor_point_blocked(&self, px: i32, pz: i32) -> bool {
+    pub fn field_actor_point_blocked(&self, px: i32, pz: i32) -> bool {
         if self.npcs.solid
             && self.field_moving_actor_centres().any(|(ax, az)| {
                 (px - ax).abs() < FIELD_NPC_BOX_HALF && (pz - az).abs() < FIELD_NPC_BOX_HALF

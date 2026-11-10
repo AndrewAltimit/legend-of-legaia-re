@@ -470,3 +470,79 @@ fn the_seat_relink_matches_retail() {
         );
     }
 }
+
+/// The contact sweep `FUN_801CFC40` at one probe point, as the ledge
+/// classifier calls it (both stack widenings `0`), over generated
+/// moving-class candidate tables (`+0x10 & 0x20000`, the class every placement
+/// actor carries) and probe offsets, against
+/// `World::field_actor_point_blocked` with the same actors as live NPC
+/// positions: result bit `1` against the port's verdict, and the mutual
+/// `+0x98` links a hit writes. The hit's event post `FUN_8003D038` is stubbed.
+#[test]
+fn the_contact_sweep_matches_retail_on_moving_actors() {
+    use legaia_engine_core::world::World;
+    const SWEEP: u32 = 0x801C_FC40;
+    const COUNT: u32 = 0x8007_B6B8;
+    const TABLE: u32 = 0x801C_93C8;
+    const PROBER: u32 = 0x8013_0000;
+    let actor = |i: u32| 0x8013_1000 + i * 0x100;
+    differential!(prot(897, SWEEP));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    cpu.stub(0x8003_D038, 0);
+    let mut rng = crate::common::Rng(0x5357_4550);
+    let (mut hits, mut misses) = (0, 0);
+    for case in 0..20_000 {
+        let n = 1 + rng.below(8);
+        let (x, z) = (rng.below(0x1000) as i16, rng.below(0x1000) as i16);
+        let mut w = World::new();
+        w.npcs.solid = true;
+        cpu.mem.load(PROBER, &[0; 0x100]);
+        cpu.mem.wr16(PROBER + 0x14, x as u16);
+        cpu.mem.wr16(PROBER + 0x18, z as u16);
+        for i in 0..n {
+            let a = actor(i);
+            cpu.mem.load(a, &[0; 0x100]);
+            // Near the prober, so a fair share of probes land in a box.
+            let ax = x.wrapping_add(rng.below(0xC0) as i16 - 0x60);
+            let az = z.wrapping_add(rng.below(0xC0) as i16 - 0x60);
+            cpu.mem
+                .wr32(a + 0x10, 0x0002_0000 | (rng.next() & 0x0800_0884));
+            cpu.mem.wr16(a + 0x14, ax as u16);
+            cpu.mem.wr16(a + 0x18, az as u16);
+            cpu.mem.wr32(TABLE + 4 * i, a);
+            w.npcs.positions.insert(i as u8, (ax, az));
+        }
+        cpu.mem.wr32(COUNT, n);
+        let (dx, dz) = (rng.below(0x80) as i32 - 0x40, rng.below(0x80) as i32 - 0x40);
+        cpu.mem.wr32(crate::common::STACK_TOP + 0x10, 0);
+        cpu.mem.wr32(crate::common::STACK_TOP + 0x14, 0);
+        let args = [PROBER, 0, dx as u32, dz as u32];
+        assert_eq!(cpu.call(SWEEP, &args), Stop::Returned, "case {case}");
+        let bits = cpu.regs.r[V0];
+        let port = w.field_actor_point_blocked(i32::from(x) + dx, i32::from(z) - dz);
+        assert_eq!(bits & 1 != 0, port, "case {case}: bits {bits:#x}");
+        assert_eq!(
+            bits & !1,
+            0,
+            "case {case}: a moving actor is never static-class"
+        );
+        if port {
+            hits += 1;
+            let linked = cpu.mem.rd32(PROBER + 0x98);
+            assert_eq!(
+                cpu.mem.rd32(linked + 0x98),
+                PROBER,
+                "case {case}: mutual link"
+            );
+        } else {
+            misses += 1;
+        }
+    }
+    assert!(hits > 3000 && misses > 3000, "{hits} {misses}");
+}
