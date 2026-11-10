@@ -3,7 +3,9 @@
 //! `FUN_800649B0`, the two volume slides `FUN_8006320C` / `FUN_8006352C`, the
 //! track-end handler `FUN_80063AA8` with the chained restart `FUN_80064090`,
 //! the stop and start arms `FUN_800638D8` / `FUN_8006418C`, the event decoder
-//! `FUN_80063CEC` and the delta-time pump `FUN_80063974` / `FUN_800639A0`.
+//! `FUN_80063CEC` and the delta-time pump `FUN_80063974` / `FUN_800639A0`,
+//! and the frame dispatch over them, `SsSeqCalc` `FUN_80062F98`, with every
+//! handler hooked to a scripted flag scramble both sides apply.
 //!
 //! Each runs on a channel record at `*(0x801CD2C0 + slot * 4) + channel *
 //! 0xB0`, seeded at random, and the whole `0xB0` bytes are compared with the
@@ -744,4 +746,134 @@ fn the_delta_time_pump_matches_retail() {
         ran > 3000 && divided > 1000 && waited > 1000,
         "{ran} {divided} {waited}"
     );
+}
+
+const SEQ_CALC: u32 = 0x8006_2F98;
+const REWIND: u32 = 0x8006_41EC;
+const FLUSH: u32 = 0x8006_5BAC;
+const BUSY: u32 = 0x801C_D2B4;
+const SLOT_MASK: u32 = 0x801C_D2B8;
+const SLOT_COUNT: u32 = 0x801C_DB40;
+const CHANNEL_COUNT: u32 = 0x801C_DB42;
+
+/// What a handler does to the flag word in this test, the same on both
+/// sides: a fixed scramble of the word and the call, so a handler can clear
+/// (or set) the bits the dispatch tests after it.
+fn scramble(call: u32, flags: u32) -> u32 {
+    let h = (flags ^ call.wrapping_mul(0x9E37_79B9)).wrapping_mul(0x85EB_CA6B);
+    flags ^ ((h >> 13) & 0x1FF)
+}
+
+fn call_id(c: legaia_engine_audio::seq_calc::SeqCall) -> u32 {
+    use legaia_engine_audio::seq_calc::SeqCall as C;
+    match c {
+        C::Pump => PUMP,
+        C::VolUp => VOL_UP,
+        C::VolDown => VOL_DOWN,
+        C::Tempo => TEMPO,
+        C::Stop => STOP,
+        C::Start => START,
+        C::Rewind => REWIND,
+    }
+}
+
+#[test]
+fn the_frame_dispatch_matches_retail() {
+    differential!(scus(SEQ_CALC));
+    use legaia_engine_audio::seq_calc::{SeqCalcState, seq_calc};
+    let Some((mut cpu, _)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let trace: Rc<RefCell<Vec<(i16, i16, u32)>>> = Rc::new(RefCell::new(Vec::new()));
+    let flushes = Rc::new(std::cell::Cell::new(0));
+    for at in [PUMP, VOL_UP, VOL_DOWN, TEMPO, STOP, START, REWIND] {
+        let t = trace.clone();
+        cpu.hook(at, move |r, m| {
+            let (slot, chan) = (r.r[A0] as i16, r.r[A1] as i16);
+            t.borrow_mut().push((slot, chan, at));
+            let rec = m.rd32(SLOT_TABLE + slot as u32 * 4) + chan as u32 * STRIDE;
+            let f = m.rd32(rec + 0x98);
+            m.wr32(rec + 0x98, scramble(at, f));
+        });
+    }
+    let f = flushes.clone();
+    cpu.hook(FLUSH, move |_, _| f.set(f.get() + 1));
+    let mut rng = Rng(0x4341_4C43);
+    let (mut fails, mut calls, mut busy_runs) = (Vec::new(), 0, 0);
+    for run in 0..20_000 {
+        let slots = rng.below(5) as i16;
+        let chans = [0, 1, 4, 16, rng.below(17) as i16][rng.below(5) as usize];
+        let mask = [u32::MAX, 0, 1, 0b1010, rng.next()][rng.below(5) as usize];
+        let busy = rng.below(10) == 0;
+        cpu.mem.wr32(BUSY, u32::from(busy));
+        cpu.mem.wr32(SLOT_MASK, mask);
+        cpu.mem.wr16(SLOT_COUNT, slots as u16);
+        cpu.mem.wr16(CHANNEL_COUNT, chans as u16);
+        let mut seeds = Vec::new();
+        for s in 0..4u8 {
+            let mut row = Vec::new();
+            for c in 0..16u8 {
+                let mut b = gen_record(&mut rng);
+                let flags = rng.next() & 0x7FF;
+                b[0x98..0x9C].copy_from_slice(&flags.to_le_bytes());
+                load_record(&mut cpu, s, c, &b);
+                row.push(b);
+            }
+            seeds.push(row);
+        }
+        trace.borrow_mut().clear();
+        flushes.set(0);
+        assert_eq!(cpu.call(SEQ_CALC, &[]), Stop::Returned);
+        let retail_trace = trace.borrow().clone();
+
+        let mut state = SeqCalcState {
+            busy,
+            slot_mask: mask,
+            slot_count: slots,
+            channel_count: chans,
+        };
+        let mut channels: Vec<Vec<SeqChannel>> = seeds
+            .iter()
+            .map(|row| row.iter().map(|b| lift(b, 0)).collect())
+            .collect();
+        let port = seq_calc(&mut state, &mut channels, |call, ch| {
+            ch.flags = scramble(call_id(call), ch.flags);
+        });
+        let port_trace: Vec<(i16, i16, u32)> = port
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(s, c, call)| (s, c, call_id(call)))
+            .collect();
+        if retail_trace != port_trace && fails.len() < 6 {
+            fails.push(format!(
+                "run {run} slots {slots} chans {chans} mask {mask:#x} busy {busy}: trace \
+                 {} vs {}",
+                retail_trace.len(),
+                port_trace.len()
+            ));
+        }
+        assert_eq!(cpu.mem.rd32(BUSY), u32::from(busy), "run {run}: the latch");
+        assert_eq!(
+            flushes.get(),
+            u32::from(!busy),
+            "run {run}: one flush a frame"
+        );
+        for s in 0..4u8 {
+            for c in 0..16u8 {
+                let got = cpu.mem.rd32(rec_addr(s, c) + 0x98);
+                let want = channels[s as usize][c as usize].flags;
+                if got != want && fails.len() < 6 {
+                    fails.push(format!(
+                        "run {run} slot {s} chan {c}: flags {got:#x} vs {want:#x}"
+                    ));
+                }
+            }
+        }
+        calls += port_trace.len();
+        busy_runs += u32::from(port.is_none());
+    }
+    assert!(fails.is_empty(), "{}", fails.join("\n"));
+    assert!(calls > 100_000 && busy_runs > 1000, "{calls} {busy_runs}");
 }
