@@ -303,6 +303,19 @@ pub(super) fn play_beats(
         // until Dr. Usha (P1[15]) has raised `0x379`, and the walk-on after
         // her talk rides the lift up to the street, a walk component and a
         // code lock away from P1[3].
+        // A counter the arrival's visit could not walk to may stand in the
+        // walk component an earlier round's beat carried the party into
+        // (`doman`'s, in the laboratory the intercom's cutscene opens):
+        // the continuous hand shops there before the round's walk-ons can
+        // carry it back out.
+        if pad_hand()
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && round > 0
+            && let Some(s) = retry_out_of_reach_counters(session)?
+        {
+            finish(session, log, ran);
+            return Ok(Some(s));
+        }
         let mut talks: VecDeque<u8> = talk_beats(session, &mf, &man).into();
         let mut dry: Vec<u8> = Vec::new();
         let mut requeued = 0;

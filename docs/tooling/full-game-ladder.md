@@ -252,7 +252,14 @@ one upkeep pass, in this order:
    sells no healing item, a bag short of its three keeps 300 gold back for
    the counter that does. A merchant is visited again only with a
    different purse or bag, or once a counter the story had closed has
-   opened ([below](#a-counter-the-story-has-closed)).
+   opened ([below](#a-counter-the-story-has-closed)). A counter the visit could not walk to is asked again at the start of
+   each round of the scene's beats: `doman`'s (P1[6]) stands in Dr.
+   Usha's laboratory, a walk component the street does not join, which
+   the intercom's cutscene (P1[18]) carries the party into and a later
+   walk-on of the same pass walks it back out of. Visited only on arrival,
+   the counter was reached only when a stalled walk's action tap beside
+   it happened to face it, and otherwise the duels were fought out of
+   what the bag already held.
    A heal is ranked by HP restored per gold, and a full restore (the
    Healing Berry, "Restores maximum HP") counts as a present member's
    maximum HP: `doman`'s counter, the last before Nivora's three solo
@@ -1951,6 +1958,7 @@ With `npcs.solid` armed a body stops the walk exactly as it stops a player, and 
 - **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
 - **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
 - **A wall corner the planner reads open is stepped off sideways.** The locomotion's leading probes reach past the player's own column, so a walk standing a few units off a one-tile corridor's line presses into the wall beside it while the lattice route runs straight ahead. After eight frames pressed without moving, the walk takes a frame's step to the side whose probe and the forward probe from there are both clear. `rugi` P2[67]'s warp leaves the party at (5176, 8198), against the wall east of the corridor north of (40, 64), and every later beat of the scene stalled there until the stretch's frame budget ran out. The rule is armed with the bodies only, so the default walk is unchanged.
+- **A walk held off its line by a person steps back onto it.** A body can stop a walk standing a few units off the lattice line that the line itself passes clear: the actor probes reach 32 units to each side, and the body's box is 40. The hand steps back onto the line for a prop's box on either arm; with the bodies solid it does so for a person too, since one who stands still holds the walk for good. `bubu1` P1[6] at (8500, 3904) stopped the walk north at (8568, 4006), eight units west of the line at x 8576, until the stretch's budget ran out.
 - **A door contact that lands on the tile it is pressed from is not an exit.** With two assistants beside the player on `doman`'s (103, 100), P1[15]'s contact read as the only way out and the walk pressed into it for good; the open step is east.
 
 A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.

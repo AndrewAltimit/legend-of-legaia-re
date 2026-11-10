@@ -33,6 +33,56 @@ thread_local! {
     /// Per scene, the raised story flags its counters were last found
     /// closed on and that the scene can lower again ([`open_counters`]).
     static CLOSED_ON: std::cell::RefCell<HashMap<String, BTreeSet<u16>>> = Default::default();
+    /// Per scene, the merchants whose counter the last visit could not walk
+    /// to: a talk that found no walkable path ([`out_of_reach_counters`]).
+    static OUT_OF_REACH: std::cell::RefCell<HashMap<String, BTreeSet<u8>>> = Default::default();
+}
+
+/// Whether the loaded scene has a merchant the last visit could not walk
+/// to. `doman`'s counter (P1[6]) stands in Dr. Usha's laboratory, a walk
+/// component the street does not join: the party is carried in by the
+/// intercom's cutscene (P1[18]) and walked back out by a later walk-on of
+/// the same beats pass, so a visit made on arrival or after the beats never
+/// reaches it, and the Delilas duels were fought out of what the bag held.
+/// The beats pass asks again each round while one is left
+/// ([`retry_out_of_reach_counters`]).
+pub(super) fn out_of_reach_counters(session: &NativeSession) -> bool {
+    OUT_OF_REACH.with(|o| {
+        o.borrow()
+            .get(&scene_name(session))
+            .is_some_and(|s| !s.is_empty())
+    })
+}
+
+/// Visit the loaded scene's out-of-reach merchants again from where the
+/// party now stands ([`out_of_reach_counters`]). A talk that still finds no
+/// path costs a plan and no frames. Returns the scene a talk left for.
+pub(super) fn retry_out_of_reach_counters(
+    session: &mut NativeSession,
+) -> Result<Option<String>, String> {
+    if !out_of_reach_counters(session)
+        || session.host.world.mode != SceneMode::Field
+        || !walking(session)
+        || !released(session)
+    {
+        return Ok(None);
+    }
+    let name = scene_name(session);
+    let keepers: Vec<u8> = OUT_OF_REACH.with(|o| {
+        o.borrow()
+            .get(&name)
+            .map(|s| s.iter().copied().collect())
+            .unwrap_or_default()
+    });
+    let keepers: Vec<u8> = merchants(session)
+        .into_iter()
+        .filter(|s| keepers.contains(s))
+        .collect();
+    if keepers.is_empty() {
+        return Ok(None);
+    }
+    let (_, left) = visit_merchants(session, &name, &keepers)?;
+    Ok(left)
 }
 
 /// Did a shop screen open and close since the last call?
@@ -1171,6 +1221,16 @@ fn visit_merchants(
         if trace {
             eprintln!("    [shop] {name} talk P1[{slot}] -> {r:?}");
         }
+        let unreached = matches!(&r, Run::Parked(e) if e.contains("no walkable path"));
+        OUT_OF_REACH.with(|o| {
+            let mut o = o.borrow_mut();
+            let set = o.entry(name.to_string()).or_default();
+            if unreached {
+                set.insert(slot);
+            } else {
+                set.remove(&slot);
+            }
+        });
         match r {
             Run::Entered(s) => return Ok((closed, Some(s))),
             Run::Battle(b) => return Err(format!("shop talk P1[{slot}]: {b}")),
@@ -1340,5 +1400,6 @@ fn open_counters(
 pub(super) fn reset_shopping() {
     SHOPPED.with(|s| s.borrow_mut().clear());
     CLOSED_ON.with(|c| c.borrow_mut().clear());
+    OUT_OF_REACH.with(|o| o.borrow_mut().clear());
     SHOP_MENU.with(|m| *m.borrow_mut() = None);
 }
