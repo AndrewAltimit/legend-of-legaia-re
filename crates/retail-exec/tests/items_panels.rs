@@ -31,7 +31,7 @@ const INK: u32 = 0x8007_B454;
 /// A draw's x as the GPU reads it, when it lands in the drawing area.
 fn seen(d: &TextDraw) -> Option<TextDraw> {
     let x = (d.dst.0 + 1024).rem_euclid(2048) - 1024;
-    (x > -(d.dst.2 as i32) && x < 320).then(|| TextDraw {
+    (x > -(d.dst.2 as i32) && x < 320).then_some(TextDraw {
         dst: (x, d.dst.1, d.dst.2, d.dst.3),
         ..*d
     })

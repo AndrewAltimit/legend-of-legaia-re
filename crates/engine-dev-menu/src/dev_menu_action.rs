@@ -64,7 +64,10 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 /// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
     if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
-        return (Some(DEV_MENU_ACTION_PARK_PHASE), DEV_MENU_ACTION_RESULT);
+        return (
+            Some(dev_menu_action_phase(row, false)),
+            DEV_MENU_ACTION_RESULT,
+        );
     }
     (None, DEV_MENU_ACTION_RESULT)
 }

@@ -143,7 +143,7 @@ fn is_two_byte(b: u8) -> bool {
 /// dropped (`0x80036610`). A pair inside a substituted name is copied either
 /// way.
 ///
-/// PORT: FUN_80036514
+/// REF: FUN_80036514 (the port is the private `expand` this wraps)
 pub fn expand_text(
     text: &[u8],
     opts: &MeasureOptions<'_>,
@@ -165,6 +165,8 @@ pub fn expand_text(
 /// a `0xC0..=0xC7` token as its substitution, and every other byte alone -
 /// `0xC8..=0xCD` included, whose operand is therefore read as the next
 /// token.
+///
+/// PORT: FUN_80036514
 fn expand(
     text: &[u8],
     opts: &MeasureOptions<'_>,

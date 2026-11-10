@@ -785,7 +785,7 @@ pub fn items_throw_confirm_draws_for(
 /// area is not drawn. `None` for a draw the screen never shows.
 fn gpu_seen(d: &TextDraw) -> Option<TextDraw> {
     let x = (d.dst.0 + 1024).rem_euclid(2048) - 1024;
-    (x > -(d.dst.2 as i32) && x < 320).then(|| TextDraw {
+    (x > -(d.dst.2 as i32) && x < 320).then_some(TextDraw {
         dst: (x, d.dst.1, d.dst.2, d.dst.3),
         ..*d
     })
