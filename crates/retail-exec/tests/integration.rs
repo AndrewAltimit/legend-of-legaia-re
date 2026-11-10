@@ -71,6 +71,7 @@ mod chip_marks;
 mod clip_cursor;
 mod clip_vertex;
 mod clut_cell;
+mod clut_walk;
 mod coin_counter;
 mod coin_panel;
 mod colour_tween;
