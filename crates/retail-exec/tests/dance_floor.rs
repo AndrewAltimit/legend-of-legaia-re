@@ -62,18 +62,17 @@ struct Row {
     clip: i16,
 }
 
-#[test]
-fn every_dancer_on_the_floor_dances_as_retail_dances() {
-    differential!(
-        prot(980, TICK),
-        prot(980, FEED),
-        prot(980, JUDGE),
-        prot(980, AWARD)
-    );
-    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset");
-        return;
-    };
+/// A CPU with the dance overlay in, `rand()` on a shared stream, the hall's
+/// clip bank seated as the offset table and timing words `FUN_800204F8`
+/// steps, and the draws stubbed.
+#[allow(clippy::type_complexity)]
+fn hall() -> Option<(
+    Cpu,
+    Rc<Cell<u32>>,
+    Vec<u8>,
+    legaia_actor_formats::player_anm::PlayerAnmBundle,
+)> {
+    let (mut cpu, d) = (scus_cpu()?, disc()?);
     use legaia_engine_scene::vfs::Vfs;
     let vfs = legaia_engine_scene::vfs::DiscVfs::open(std::env::var_os("LEGAIA_DISC_BIN").unwrap())
         .expect("disc");
@@ -118,6 +117,21 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
             cpu.mem.wr8(BANK + off + 6, (rec.flag & 0xFF) as u8);
         }
     }
+    Some((cpu, state, overlay, bank_records))
+}
+
+#[test]
+fn every_dancer_on_the_floor_dances_as_retail_dances() {
+    differential!(
+        prot(980, TICK),
+        prot(980, FEED),
+        prot(980, JUDGE),
+        prot(980, AWARD)
+    );
+    let Some((mut cpu, state, overlay, bank_records)) = hall() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
     cpu.mem.wr32(0x8007_B888, BANK);
     let clean = cpu.mem.clone();
     let gp = cpu.regs.r[GP];
@@ -132,7 +146,7 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
         let dt = [1u32, 3][rng.below(2) as usize];
         let seed = rng.next();
 
-        let mut g = DanceGame::from_overlay_for_mode(&overlay, mode, false).expect("run");
+        let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
         g.attach_clip_bank(&bank_records);
 
         cpu.mem = clean.clone();
@@ -463,4 +477,138 @@ fn the_step_marker_flipbook_matches_retail() {
         }
     }
     assert!(stepped > 5000 && wrapped > 500, "{stepped} {wrapped}");
+}
+
+/// Whole songs under the dance state machine `FUN_801CF470`, from state `6`
+/// (the clocks' reset) through the song, the finale and the wipe to the
+/// results state, in the pool walk's order (the state machine, then the
+/// dancers by slot: the actor list of `minigame_dance_retail_dancing`),
+/// against `DanceGame::advance_pressing`. The beat clock here is the state
+/// machine's own.
+#[test]
+fn whole_songs_run_as_retail_runs_them() {
+    differential!(prot(980, SM), prot(980, TICK));
+    const SM: u32 = 0x801C_F470;
+    const SM_ACTOR: u32 = ACTORS + 0x800;
+    const SONG: u32 = 0x801D_5820;
+    let Some((mut cpu, state, overlay, bank_records)) = hall() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The HUD driver, the banner quads, the finale's sprite parts, the
+    // teardown, the fade, the stream calls, the debug prints.
+    for va in [
+        0x801D_231C,
+        0x801D_2F38,
+        0x801D_32F8,
+        0x801D_414C,
+        0x8002_4EE4,
+        0x8001_FC00,
+        0x8001_E54C,
+        0x8003_DE7C,
+        0x8002_6478,
+        0x8005_67A8,
+    ] {
+        cpu.stub(va, 0);
+    }
+    cpu.mem.wr32(0x8007_B888, BANK);
+    cpu.mem.wr32(0x8007_B85C, 0x8010_0000);
+    let clean = cpu.mem.clone();
+    let gp = cpu.regs.r[GP];
+
+    let mut rng = Rng(0x534F_4E47);
+    let mut finals = Vec::new();
+    let mut anchored = false;
+    for scenario in 0..24 {
+        let mode = [DanceMode::Qualifier, DanceMode::Finals, DanceMode::FreePlay][scenario % 3];
+        // Scenario 0 keeps its hands off, as the retail capture's run did.
+        let density = [0, 8, 20, 40, 120][scenario.min(1) * (1 + rng.below(4) as usize)];
+        // The hall's frame step: `DAT_1F800393` reads `3` in every retail
+        // capture of the dance, and the finale's sprite programs are timed
+        // to it.
+        let dt = 3u32;
+        let seed = rng.next();
+
+        let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
+        g.attach_clip_bank(&bank_records);
+
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        state.set(seed);
+        cpu.mem.wr32(STATE, 6);
+        cpu.mem.wr32(MODE, mode as u32);
+        cpu.mem.wr8(0x1F80_0393, dt as u8);
+        let n = g.dancer_count() as u32;
+        for s in 0..n {
+            let a = ACTORS + s * 0x100;
+            let kind = g.dancer_kind(s as usize) as u32;
+            let desc = dc::KIND_TABLE_VA + kind * dc::KIND_STRIDE as u32;
+            let idle = cpu.mem.rd16(desc + 0x10);
+            let rate = cpu.mem.rd16(desc + 0x14);
+            cpu.mem.wr32(a + 0x48, desc);
+            cpu.mem.wr16(a + 0x5A, s as u16);
+            cpu.mem.wr16(a + 0x5C, idle & 0x1FF);
+            cpu.mem.wr16(a + 0x5E, 0xFFFF);
+            cpu.mem.wr16(a + 0x6A, rate);
+            cpu.mem.wr32(KIND + s * 4, kind);
+            cpu.mem.wr32(STOCK + s * 4, 3);
+        }
+        let mut frame = 0;
+        loop {
+            let edge: u32 = if density != 0 && rng.below(density as u32) == 0 {
+                [0x80, 0x20, 0x10][rng.below(3) as usize]
+            } else {
+                0
+            };
+            cpu.mem.wr32(PAD_EDGE, edge);
+            assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
+            let now = cpu.mem.rd32(STATE);
+            for s in 0..n {
+                let stop = cpu.call(TICK, &[ACTORS + s * 0x100]);
+                assert_eq!(stop, Stop::Returned, "frame {frame} dancer {s}");
+            }
+            // The frame state `0xC` hands over still ticks the dancers.
+            if (10..=12).contains(&now) || now == 0x14 {
+                g.advance_pressing(
+                    dt,
+                    match edge {
+                        0x80 => Some(DanceDir::A),
+                        0x20 => Some(DanceDir::B),
+                        0x10 => Some(DanceDir::C),
+                        _ => None,
+                    },
+                );
+            }
+            let retail: Vec<Row> = (0..n as usize).map(|s| row_of(&mut cpu, s)).collect();
+            let port: Vec<Row> = (0..n as usize).map(|s| port_row(&g, s)).collect();
+            assert_eq!(
+                (retail, now == 0x14, (10..=12).contains(&now) && now != 10),
+                (port, g.finished(), g.in_finale()),
+                "scenario {scenario} mode {mode:?} density {density} dt {dt} frame {frame} state {now:#x} phase {:#x} song {:#x} wipe {:#x}",
+                cpu.mem.rd32(PHASE),
+                cpu.mem.rd32(SONG),
+                cpu.mem.rd32(0x801D_515C),
+            );
+            // The retail capture `minigame_dance_retail_judged`, a hands-off
+            // qualifier, holds the two rivals on 295 and 280 at this point of
+            // the song.
+            if scenario == 0 && cpu.mem.rd32(SONG) == 19800 {
+                let scores: Vec<u32> = (0..n as usize).map(|s| g.dancer_score(s)).collect();
+                assert_eq!(scores, [0, 295, 280], "the capture's tally");
+                anchored = true;
+            }
+            frame += 1;
+            assert!(frame < 20_000, "scenario {scenario}: the song never ends");
+            if now == 0x14 {
+                break;
+            }
+        }
+        finals.push(
+            (0..n as usize)
+                .map(|s| g.dancer_score(s))
+                .collect::<Vec<_>>(),
+        );
+    }
+    eprintln!("closing tallies {finals:?}");
+    assert!(anchored, "the hands-off run passed the capture's point");
 }

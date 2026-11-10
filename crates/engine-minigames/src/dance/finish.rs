@@ -65,6 +65,10 @@ const WIPE_STEP: i32 = DT * 3;
 /// State `0xC` hands over to the results once the accumulator reaches this
 /// (`slti v0,a0,0x489` at `0x801CFE38`).
 pub const FINISH_WIPE_END: i32 = 0x489;
+/// State `0xC` raises the pause flag `DAT_801D5130` once the accumulator
+/// reaches this (`slti v0,a0,0x349` at `0x801CFE20`), and the award routine
+/// answers nothing from then on (`0x801D1B38..0x801D1B68`).
+pub const FINISH_JUDGE_CLOSE: i32 = 0x349;
 /// Vsyncs per run.
 const RUN_VSYNCS: u8 = 3;
 
@@ -141,6 +145,9 @@ pub struct FinishCountdown {
     parts: Vec<FinishPart>,
     phase: u8,
     wipe: i32,
+    /// Runs stepped. The first is state `0xB`'s own, which spawns the parts
+    /// and adds nothing to the accumulator.
+    runs: u32,
 }
 
 impl FinishCountdown {
@@ -164,6 +171,7 @@ impl FinishCountdown {
             parts,
             phase: 0,
             wipe: 0,
+            runs: 0,
         }
     }
 
@@ -181,6 +189,11 @@ impl FinishCountdown {
             .collect()
     }
 
+    /// State `0xC`'s accumulator `DAT_801D515C`.
+    pub fn wipe(&self) -> i32 {
+        self.wipe
+    }
+
     /// Whether every part has retired.
     pub fn parts_done(&self) -> bool {
         self.parts.is_empty()
@@ -190,7 +203,12 @@ impl FinishCountdown {
     pub fn step(&mut self) -> FinishStep {
         let mut out = FinishStep::default();
         if self.phase == 0 {
-            self.wipe += WIPE_STEP;
+            // State `0xB` spawns and advances; state `0xC` adds from the
+            // next run on (`0x801CFDBC..0x801CFDF0`).
+            if self.runs > 0 {
+                self.wipe += WIPE_STEP;
+            }
+            self.runs += 1;
             for p in &mut self.parts {
                 // 0x80022B4C..0x80022B7C: the rate is stepped before the VM.
                 let step = (i32::from(p.state.tween_src_x) * DT * RATE_BYTE) >> 6;

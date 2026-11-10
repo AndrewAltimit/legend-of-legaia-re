@@ -182,7 +182,7 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
     let e = dance_scene_entry();
 
     let overlay = dance_overlay(&host.index);
-    let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false)
+    let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier)
         .expect("dance chart parses");
     assert_eq!(e.cleared_dancer_slots, DanceMode::Qualifier.cast_size());
     host.world.enter_dance(game);
@@ -262,7 +262,7 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
         )
     );
 
-    let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false)
+    let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier)
         .expect("dance chart parses");
     let mut camera = Camera::new();
     camera.reset_globals_for_scene_entry();
@@ -472,8 +472,7 @@ fn the_choreography_bank_times_every_judge_move() {
     let bank =
         legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&index).expect("bank loads");
     let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast parses");
-    let mut game =
-        DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false).expect("run");
+    let mut game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier).expect("run");
     game.attach_clip_bank(&bank);
     let latch_ticks = (legaia_engine_minigames::dance::NOTE_LATCH_TIMER
         / legaia_engine_minigames::dance::NOTE_LATCH_DECAY) as u32

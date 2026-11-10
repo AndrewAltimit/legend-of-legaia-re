@@ -8,13 +8,14 @@ impl LegaiaMinigames {
     // ---------------------------------------------------------------- dance
 
     /// Start a dance run on the disc's baked step chart, scoring tables and
-    /// qualifier cast (all rodata of PROT 0980). `long_song` picks the long
-    /// song-length limit. Returns `false` when the overlay didn't decode.
-    pub fn dance_start(&mut self, long_song: bool) -> bool {
+    /// qualifier cast (all rodata of PROT 0980). Returns `false` when the
+    /// overlay didn't decode. The argument is kept for the page's call and
+    /// ignored: the mode alone picks the song's length.
+    pub fn dance_start(&mut self, _long_song: bool) -> bool {
         let Some(img) = self.dance_overlay() else {
             return false;
         };
-        let Some(mut game) = DanceGame::from_overlay(&img, long_song) else {
+        let Some(mut game) = DanceGame::from_overlay(&img) else {
             return false;
         };
         // The hall's choreography bank (decoded with the bodies) times each
@@ -35,7 +36,7 @@ impl LegaiaMinigames {
     /// play - what the native window's `start_dance_minigame_mode` and the
     /// play page's door-warp entry run. Returns `false` when the overlay
     /// didn't decode.
-    pub fn dance_start_mode(&mut self, mode: u8, long_song: bool) -> bool {
+    pub fn dance_start_mode(&mut self, mode: u8, _long_song: bool) -> bool {
         use legaia_engine_minigames::dance::DanceMode as M;
         let mode = match mode {
             1 => M::Finals,
@@ -46,7 +47,7 @@ impl LegaiaMinigames {
         let Some(img) = self.dance_overlay() else {
             return false;
         };
-        let Some(mut game) = DanceGame::from_overlay_for_mode(&img, mode, long_song) else {
+        let Some(mut game) = DanceGame::from_overlay_for_mode(&img, mode) else {
             return false;
         };
         if let Some(b) = self.dance_bodies.as_ref() {
@@ -179,7 +180,10 @@ impl LegaiaMinigames {
     /// `dance_venue_vp` frames the hall through.
     pub fn dance_tick(&mut self, frames: u32) {
         if let Some(g) = self.dance.as_mut() {
-            g.advance(frames);
+            // One game frame every third vsync, as the hall runs.
+            for _ in 0..frames {
+                g.advance_vsync(None);
+            }
             g.advance_camera(frames.min(u32::from(u8::MAX)) as u8);
         }
     }

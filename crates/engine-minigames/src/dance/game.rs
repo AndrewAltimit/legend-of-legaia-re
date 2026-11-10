@@ -20,6 +20,13 @@ pub struct DanceGame {
     pub(super) dancers: Vec<Dancer>,
     /// Triangle feedback window (`DAT_801d5144`), armed on the human's spend.
     pub(super) feedback: u32,
+    /// The pause flag `DAT_801d5130`: raised by the wipe of state `0xC`,
+    /// after which the award routine judges nothing.
+    pub(super) judging_closed: bool,
+    /// Vsyncs since the last game frame ([`Self::advance_vsync`]).
+    pub(super) vsync_phase: u32,
+    /// Press edges held for the next game frame, in the packed pad layout.
+    pub(super) pending_edges: u16,
     /// The mode global (`DAT_801d514c`), which the HUD driver's score-box
     /// permutation and its solo arm both key off.
     pub(super) mode: DanceMode,
@@ -116,6 +123,9 @@ impl DanceGame {
             },
             dancers: kinds.iter().map(|&k| Dancer::new(k)).collect(),
             feedback: 0,
+            judging_closed: false,
+            vsync_phase: 0,
+            pending_edges: 0,
             mode: DanceMode::Qualifier,
             widgets: Vec::new(),
             kinds: Vec::new(),
@@ -149,8 +159,8 @@ impl DanceGame {
     ///
     /// Starts the **qualifier** floor; [`DanceGame::from_overlay_for_mode`] is
     /// the per-mode entry point.
-    pub fn from_overlay(overlay: &[u8], long_song: bool) -> Option<Self> {
-        Self::from_overlay_for_mode(overlay, DanceMode::Qualifier, long_song)
+    pub fn from_overlay(overlay: &[u8]) -> Option<Self> {
+        Self::from_overlay_for_mode(overlay, DanceMode::Qualifier)
     }
 
     /// Start a run on `mode`'s floor.
@@ -161,11 +171,11 @@ impl DanceGame {
     /// single one, so a host that always spawns the qualifier's three is wrong
     /// in two of the four modes.
     ///
-    /// `long_song` stays a parameter because the caller owns the song choice;
-    /// the how-to demo is the one mode whose length retail fixes, and it forces
-    /// [`SONG_LEN_SHORT`] regardless.
+    /// The mode picks the song's length too: the song-end test reads the mode
+    /// word alone (`0x801D00D4..0x801D00FC`), [`SONG_LEN_SHORT`] for the how-to
+    /// demo and [`SONG_LEN_LONG`] for the other three.
     // PORT: FUN_801d0190 (per-mode spawn-table + cast-size selection)
-    pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode, long_song: bool) -> Option<Self> {
+    pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode) -> Option<Self> {
         let chart = legaia_minigame_formats::dance_chart::parse(overlay)?;
         let tables =
             legaia_minigame_formats::dance_chart::parse_tables(overlay).unwrap_or_default();
@@ -198,7 +208,7 @@ impl DanceGame {
                     .collect()
             });
         let kinds: Vec<usize> = spawns.iter().map(|&(k, _)| k).collect();
-        let long = long_song && mode != DanceMode::HowTo;
+        let long = mode != DanceMode::HowTo;
         let mut game = Self::with_tables(chart, tables, &kinds, long);
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
@@ -886,6 +896,9 @@ impl DanceGame {
         for _ in 0..frame_delta {
             let s = fc.step();
             self.finish_cues.extend(s.cues);
+            if fc.wipe() >= super::FINISH_JUDGE_CLOSE {
+                self.judging_closed = true;
+            }
             if s.done {
                 self.finished = true;
                 break;
@@ -1204,6 +1217,32 @@ impl DanceGame {
         self.advance_pressing(frame_delta, None);
     }
 
+    /// One **vsync** of the hall, for a host that ticks once a display frame.
+    ///
+    /// The hall's frame step `DAT_1F800393` is [`HALL_FRAME_STEP`] in every
+    /// retail capture of the dance: the state machine and the dancers run once
+    /// every three vsyncs, on a delta of three. The judge therefore reads the
+    /// beat phase in steps of thirty, and a rival's feed gets one turn per
+    /// game frame, not per vsync. A press is held until the game frame that
+    /// follows it, as the pad pump's edge word holds it, and is judged there in
+    /// the handler's own order (Triangle, Square, Circle). Returns that frame's
+    /// event.
+    pub fn advance_vsync(&mut self, press: Option<DanceDir>) -> Option<DanceEvent> {
+        if let Some(d) = press {
+            self.pending_edges |= d.pad_bit();
+        }
+        self.vsync_phase += 1;
+        if self.vsync_phase < HALL_FRAME_STEP {
+            return None;
+        }
+        self.vsync_phase = 0;
+        let edges = std::mem::take(&mut self.pending_edges);
+        let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
+            .into_iter()
+            .find(|d| edges & d.pad_bit() != 0);
+        self.advance_pressing(HALL_FRAME_STEP, dir)
+    }
+
     /// [`Self::advance`] with this frame's press, judged where retail's handler
     /// reads the pad: in slot 0's turn, so the rivals behind it on the floor see
     /// what it did. Returns the press's event.
@@ -1217,12 +1256,20 @@ impl DanceGame {
         // ahead of this frame's beat clock and judge.
         self.raise_best_score();
         self.advance_step_markers(frame_delta);
-        let step = frame_delta * PHASE_PER_DELTA;
-        self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
-        // The song timer saturates at the length limit (the retail clock keeps
-        // counting but the run ends; clamping keeps `song_over` monotone).
-        self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+        // The state's arm runs ahead of the tail's clock, and the song-end
+        // test sits in the tail (`0x801D00B0..0x801D010C`): the frame that
+        // hits the limit only stores state `0xB`, whose arm runs on the next.
+        // The frame state `0xC` hands over to the results leaves the band the
+        // tail clocks (`0x801CFFA8..0x801CFFBC`).
         self.advance_finish(frame_delta);
+        if !self.finished {
+            let step = frame_delta * PHASE_PER_DELTA;
+            self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
+            // The song timer saturates at the length limit (the retail clock
+            // keeps counting but the run ends; clamping keeps `song_over`
+            // monotone).
+            self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+        }
         self.feedback = self.feedback.saturating_sub(frame_delta);
 
         let beat = self.beat_index();
@@ -1455,6 +1502,11 @@ impl DanceGame {
     /// The award routine (`FUN_801d1af4`), for any dancer: the human's presses
     /// and the CPU dancers' auto-fed ones run through exactly this path.
     pub(super) fn award(&mut self, i: usize, dir: DanceDir) -> DanceEvent {
+        // The wipe's pause flag `DAT_801D5130` turns every press away at the
+        // routine's head (`0x801D1B38..0x801D1B68`), rivals' included.
+        if self.judging_closed {
+            return DanceEvent::Ignored;
+        }
         let beat = self.beat_index();
         if self.dancers[i].locked() {
             return DanceEvent::Ignored;

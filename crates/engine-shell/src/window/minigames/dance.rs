@@ -16,7 +16,6 @@ impl PlayWindowApp {
     pub(in crate::window) fn start_dance_minigame_mode(
         &mut self,
         mode: legaia_engine_minigames::dance::DanceMode,
-        long_song: bool,
     ) -> bool {
         use legaia_overlay_images::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
@@ -39,9 +38,7 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        match legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(
-            &loaded, mode, long_song,
-        ) {
+        match legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(&loaded, mode) {
             Some(mut game) => {
                 // The hall's choreography bank times each judge move.
                 if let Some(bank) = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(

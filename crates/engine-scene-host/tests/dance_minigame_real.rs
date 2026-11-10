@@ -53,7 +53,7 @@ fn real_dance_chart_drives_a_scoring_run() {
         return;
     };
 
-    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart loads");
 
     // Auto-play the run frame by frame (the beat clock advances 10 phase units
     // per frame; a beat spans BEAT_PERIOD=281 units, so ~28 frames per beat).
@@ -138,7 +138,7 @@ fn real_tables_drive_the_rival_dancers() {
         assert_eq!(tables.bonus(kind, 2), base * 3);
     }
 
-    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart + tables load");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart + tables load");
     assert_eq!(
         game.dancer_count(),
         3,
@@ -220,7 +220,7 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
         .entry_bytes_extended(rec.prot_index)
         .expect("read PROT 0980 (extended)");
     let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
-    let game = DanceGame::from_overlay(&loaded, false).expect("real chart loads via shell path");
+    let game = DanceGame::from_overlay(&loaded).expect("real chart loads via shell path");
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -287,8 +287,7 @@ fn each_mode_spawns_its_own_floor() {
     };
 
     let cast = |mode: DanceMode| {
-        let g =
-            DanceGame::from_overlay_for_mode(&overlay, mode, true).expect("real cast table loads");
+        let g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("real cast table loads");
         (0..g.dancer_count())
             .map(|i| g.dancer_kind(i))
             .collect::<Vec<_>>()
@@ -326,7 +325,7 @@ fn each_mode_spawns_its_own_floor() {
     assert_eq!(how_to[..], qualifier[..1]);
 
     // Mode 2 forces the short song regardless of the caller's request.
-    let demo = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo, true).unwrap();
+    let demo = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo).unwrap();
     assert_eq!(
         demo.song_len(),
         legaia_engine_minigames::dance::SONG_LEN_SHORT,
@@ -350,7 +349,7 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
         eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT unset (disc-gated)");
         return;
     };
-    let game = DanceGame::from_overlay(&overlay, false).expect("chart parses");
+    let game = DanceGame::from_overlay(&overlay).expect("chart parses");
 
     // The driver lays out a full frame: three score readouts, three box frames,
     // the human's gauge and beat track.
@@ -450,7 +449,7 @@ fn real_dance_cast_populates_the_dancer_actor_records() {
         eprintln!("[skip] dance overlay unavailable (disc-gated)");
         return;
     };
-    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart loads");
 
     let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast tables decode");
     assert_eq!(game.dancer_actors().len(), game.dancer_count());
@@ -572,7 +571,7 @@ fn real_step_marker_flipbook_cycles_every_class() {
         eprintln!("[skip] dance overlay unavailable (disc-gated)");
         return;
     };
-    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart loads");
     for class in 0..4 {
         assert!(
             game.step_marker_steps(class) > 1,
@@ -618,7 +617,7 @@ fn the_song_end_counts_down_3_2_1_finish() {
         return;
     };
     eprintln!("[ran] dance song-end countdown");
-    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart loads");
     while !game.song_over() {
         game.advance(1);
     }
@@ -658,7 +657,7 @@ fn a_finished_song_hands_its_scores_to_the_script_counters() {
         eprintln!("[skip] LEGAIA_DISC_BIN / extracted PROT.DAT missing (disc-gated)");
         return;
     };
-    let game = DanceGame::from_overlay(&loaded, false).expect("real chart");
+    let game = DanceGame::from_overlay(&loaded).expect("real chart");
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.field_vm.slot_table[..3].copy_from_slice(&[-1, -1, -1]);

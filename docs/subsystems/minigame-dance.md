@@ -85,7 +85,7 @@ stateDiagram-v2
 | `7` | Decrements `DAT_801d513c`; at 0 jumps to `10`. |
 | `10` (`0xa`) | **Main play loop.** The beat clock advances, the song-end test runs. |
 | `11` (`0xb`) | Finish countdown: spawns `3`, `2`, `1` and `FINISH!` as four sprite parts at once and advances. |
-| `12` (`0xc`) | Result wipe: ramps `DAT_801d515c`, raises the pause flag `DAT_801d5130` past a threshold, then jumps to `0x14`. |
+| `12` (`0xc`) | Result wipe: ramps `DAT_801d515c` by three frame steps a frame, raises the pause flag `DAT_801d5130` at `0x349` (the award routine judges nothing from then on, rivals included), then jumps to `0x14` at `0x489`. |
 | `0x14` (20) | Results: copies the scores to display RAM, grades the run, clears the win flag on a loss, and tears down through `FUN_801D414C` once the fade reaches `0x100`. |
 
 A dev shortcut sits ahead of the switch: with `_DAT_8007b9b0` non-zero, pad `0x100` forces state `0x14` with the human score at `999`.
@@ -264,7 +264,9 @@ The feed sits inside the award routine, so its schedule stands still while a mov
 
 All of the Disco King's move clips are his own loop, so a judged press holds him for no time.
 
-`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`.
+`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`. A second test runs the state machine `FUN_801cf470` itself from state `6` to the results, the beat clock, the song-end test, the finale and the wipe included, at the hall's delta of `3`; its hands-off qualifier passes through the retail capture's tally (`295` / `280` for the rivals at song timer `19800`).
+
+**Order within a frame.** The state's arm runs ahead of the tail's clock, and the song-end test sits in the tail (`0x801D00B0..0x801D010C`). The frame that reaches the limit only stores state `0xB`; that state's arm spawns the countdown on the next frame, and state `0xC` first adds to the wipe on the one after. The frame state `0xC` hands over to `0x14` is outside the band the tail clocks, so the beat phase stands still on it while the dancers tick once more.
 
 ## The setumei (how-to) tutorial script (`FUN_801d0750`)
 
@@ -759,6 +761,7 @@ The pad is still read through the countdown, at the [finale tier](#the-triangle-
 
 **Port.**
 
+- `DanceGame::advance_vsync` is the hosts' tick: one game frame every third vsync on a delta of three (`HALL_FRAME_STEP`), as the hall runs, with a press held for the game frame that follows it. The judge therefore reads the beat phase in steps of thirty and a rival's feed takes one turn a game frame. `World::enter_dance` starts the song the mode names through `dance::song_loader_index` ([the BGM pick](#the-bgm-pick)), free play's counter kept in `MinigameState::dance_free_play_song`.
 - `dance::CountIn` runs states 3 to 5 (`COUNTIN_READY_EXIT`, `COUNTIN_GO_STEP`, `COUNTIN_START_CUE`). `World::enter_dance` arms it and the world's dance tick plays it out, holding `DanceGame::advance` off until the `GO!` fade ends. All three surfaces - the native window, the play page and the minigames page (`dance_countin_step`) - draw READY then `GO!` (`dance_countin_prims`, `dance_go_prims`) and fire `0x200` then `0x201` off that one kernel.
 - `dance::FinishCountdown` runs states `0xB` / `0xC` from `DanceGame::advance` once the song is over. The four programs are read out of the overlay and stepped by the port's move VM under `FUN_80021DF4`'s own tick: the `+0x78` rate step before the VM (`0x80022B4C..0x80022B7C`), the wait-timer decrement, and the clamp after it (`0x80022BC0..0x80022BEC`). Op `0x20 2` is the [sprite hook](#the-sprite-part-emit-dispatch) and op `0x1D` the cue, so a part draws exactly on the ticks its program calls the hook. The parts join `DanceGame::sprite_part_emits`.
 - `DanceGame::finished` - the song over and the state `0xC` wipe past `0x489` - is when the world restores the interrupted mode. The disc-gated `dance_minigame_real` test pins `3, 2, 1, FINISH!` with cues `0x209, 0x208, 0x207, 0x206` and the wipe at 384 vsyncs.
@@ -902,7 +905,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 
 **Rules.** `DanceGame::press` returns the full event (Miss / Hit / Sequence with its points / Groovy with its landed flag, lock frames and remaining stock / NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side effects. `judge_press` folds it to a three-way Miss / Hit / Sequence result. `advance` steps the clock and runs the competitors' auto-fed presses through the same award path; `dancer_score(i)` / `dancer_triangles(i)` expose their runs.
 
-**Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the how-to mode also forces the short song. `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
+**Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the mode picks the song's length as well, the short song for the how-to and the long one for the other three, since the song-end test reads the mode word alone (`0x801D00D4..0x801D00FC`). `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
 
 **Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `engine-ui::dance::dance_tutorial_draws_for`.
 
