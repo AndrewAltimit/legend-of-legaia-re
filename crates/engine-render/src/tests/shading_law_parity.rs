@@ -770,8 +770,7 @@ fn page_composite(abr: u8, f: f32, b: f32) -> f32 {
 
 #[test]
 fn the_page_blend_table_is_the_one_evaluated() {
-    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../site/js/webgl-tmd-assembled-scene.js");
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/js/webgl-tmd.js");
     let js = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
     let start = js.find("_setSemiBlend(mode) {").expect("_setSemiBlend");
     let open = start + js[start..].find('{').unwrap();
