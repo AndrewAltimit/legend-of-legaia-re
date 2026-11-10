@@ -152,6 +152,7 @@ mod mesh_swap;
 mod mode_frame;
 mod mode_init;
 mod monster_install;
+mod monster_load;
 mod monster_pick;
 mod morph_envelope;
 mod motion_install;

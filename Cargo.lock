@@ -4412,9 +4412,11 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
+ "legaia-tmd",
  "psx-lzs",
  "psx-mdec",
  "psx-pcsx-redux",
+ "psx-tim",
  "psx-vab",
 ]
 
