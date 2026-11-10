@@ -24,7 +24,10 @@ use legaia_engine_ui::menu::window_painters::{
     label_list_draws_for, record_title_tab_draws_for, sell_quantity_draws_for, title_tab_draws_for,
     two_line_choice_panel_draws_for,
 };
-use legaia_engine_ui::{TextDraw, menu_ink_color, menu_numeral_cell, text_draws_for};
+use legaia_engine_ui::{
+    OptionsPopupDraw, OptionsRowView, TextDraw, confirm_prompt_draws, confirm_prompt_hand_pos,
+    menu_ink_color, menu_numeral_cell, options_draws_for, options_popup_hand_pos, text_draws_for,
+};
 use legaia_font::Font;
 use psx_retail_exec::{A0, A1, A2, A3, Cpu, Memory, SP, Stop, V0};
 use std::cell::RefCell;
@@ -58,6 +61,17 @@ const ITEM_INFO: u32 = 0x801D_4A80;
 const BUY_QTY: u32 = 0x801D_5510;
 const SELL_QTY: u32 = 0x801D_5944;
 const EQUIP_TARGET: u32 = 0x801D_56FC;
+const CONFIRM_2: u32 = 0x801D_1DAC;
+const CONFIRM_3: u32 = 0x801D_1F10;
+const OPTIONS: u32 = 0x801D_CEF0;
+const OPTIONS_ROWS: u32 = 0x801D_2910;
+const OPTIONS_POPUP: u32 = 0x801D_2B44;
+/// The settings window's row layout (`id`, advance) and its descriptor list
+/// (`[value word ptr][choices][ink][id][string index]`), and the string
+/// pointer table both index.
+const ROW_LAYOUT: u32 = 0x801E_4404;
+const DESCRIPTORS: u32 = 0x801E_44B8;
+const STRINGS: u32 = 0x801E_442C;
 
 const TEXT: u32 = 0x8003_6888;
 const NUMBER: u32 = 0x8003_4B78;
@@ -229,16 +243,18 @@ fn rig() -> Option<Rig> {
 impl Rig {
     /// Run `entry` on a window record at `rect`; the log it left.
     fn run(&mut self, entry: u32, rect: PainterRect) -> Vec<Ev> {
+        self.run_with(entry, rect, &[])
+    }
+
+    /// [`Rig::run`] with arguments after the window record.
+    fn run_with(&mut self, entry: u32, rect: PainterRect, more: &[u32]) -> Vec<Ev> {
         for (o, v) in [(0xA, rect.x), (0xC, rect.y), (0xE, rect.w), (0x10, rect.h)] {
             self.cpu.mem.wr16(WINDOW + o, v as u16);
         }
         self.cpu.mem.wr32(INK, 0x33);
         self.log.borrow_mut().clear();
-        assert_eq!(
-            self.cpu.call(entry, &[WINDOW]),
-            Stop::Returned,
-            "{entry:#x}"
-        );
+        let args: Vec<u32> = [WINDOW].iter().chain(more).copied().collect();
+        assert_eq!(self.cpu.call(entry, &args), Stop::Returned, "{entry:#x}");
         self.log.borrow().clone()
     }
 
@@ -735,4 +751,180 @@ fn the_shop_panels_match() {
         passives > 200 && details > 1000 && dimmed > 1000,
         "{passives} {details} {dimmed}"
     );
+}
+
+#[test]
+fn the_confirm_prompts_match() {
+    differential!(prot(899, CONFIRM_2), prot(899, CONFIRM_3));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The 3-line prompt's item token is the host's to expand.
+    rig.poke_str(0x801C_EAB4, "@Will use the Door of Wind.");
+    let one = rig.string(0x801C_EA94);
+    let two = [rig.string(0x801C_EAB4), rig.string(0x801C_EAC8)];
+    let options = [rig.string(0x801C_EA84), rig.string(0x801C_EA8C)];
+    let opts: Vec<&str> = options.iter().map(String::as_str).collect();
+    let mut rng = Rng(0x434F_4E46);
+    for run in 0..4_000 {
+        let r = rect(&mut rng);
+        let f = flags(&mut rng, 1);
+        rig.cpu.mem.wr32(CHOICE, f);
+        for (entry, prompt) in [
+            (CONFIRM_2, vec![one.as_str()]),
+            (CONFIRM_3, vec![&two[0], &two[1]]),
+        ] {
+            let what = format!("run {run} {entry:#x} flags {f:#x}");
+            let log = rig.run(entry, r);
+            let text = confirm_prompt_draws(&rig.font, &prompt, &opts, (r.x, r.y));
+            same_text(&rig, &log, &text, &what);
+            let want: Vec<(i32, i32)> = (0..2u8)
+                .filter(|&row| ChoiceFlags(f).marker_variant(u32::from(row)).is_some())
+                .map(|row| confirm_prompt_hand_pos((r.x, r.y), prompt.len(), row))
+                .collect();
+            let got: Vec<(i32, i32)> = hands(&log).iter().map(|h| (h.x, h.y)).collect();
+            assert_eq!(got, want, "{what}");
+            assert_eq!(rig.cpu.mem.rd32(INK), 7, "{what}: the ink restored");
+        }
+    }
+}
+
+/// One settings row as the descriptor list describes it.
+struct OptionRow {
+    label: String,
+    value: Option<String>,
+    teal: bool,
+    advance: i32,
+    choices: Vec<String>,
+}
+
+fn option_rows(rig: &mut Rig) -> Vec<OptionRow> {
+    let mut rows = Vec::new();
+    for i in 0..10u32 {
+        let id = rig.cpu.mem.rd16(ROW_LAYOUT + i * 4);
+        let advance = rig.cpu.mem.rd16(ROW_LAYOUT + i * 4 + 2) as i16 as i32;
+        let mut d = DESCRIPTORS;
+        while rig.cpu.mem.rd32(d) != 0 && u16::from(rig.cpu.mem.rd8(d + 6)) != id {
+            d += 8;
+        }
+        assert_ne!(rig.cpu.mem.rd32(d), 0, "row {i}: id {id}");
+        let n = u32::from(rig.cpu.mem.rd8(d + 4));
+        let s = u32::from(rig.cpu.mem.rd8(d + 7));
+        let text = |rig: &mut Rig, k: u32| {
+            let va = rig.cpu.mem.rd32(STRINGS + k * 4);
+            rig.string(va)
+        };
+        let choices: Vec<String> = (0..n).map(|k| text(rig, s + 1 + k)).collect();
+        let value = (n > 0).then(|| {
+            let word = rig.cpu.mem.rd32(d);
+            let v = rig.cpu.mem.rd32(word);
+            text(rig, s + 1 + v)
+        });
+        rows.push(OptionRow {
+            label: text(rig, s),
+            value,
+            teal: rig.cpu.mem.rd8(d + 5) == 5,
+            advance,
+            choices,
+        });
+    }
+    rows
+}
+
+#[test]
+fn the_options_window_and_its_popup_match() {
+    differential!(
+        prot(899, OPTIONS),
+        prot(899, OPTIONS_ROWS),
+        prot(899, OPTIONS_POPUP)
+    );
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The `0xCE 0x00` button icon is the host's to resolve.
+    rig.poke_str(0x801C_E8E4, "O button");
+    let mut rng = Rng(0x4F50_5453);
+    let (mut edits, mut greys) = (0, 0);
+    for run in 0..3_000 {
+        let r = rect(&mut rng);
+        // Each row's value word, inside its choice count.
+        let mut d = DESCRIPTORS;
+        while rig.cpu.mem.rd32(d) != 0 {
+            let n = u32::from(rig.cpu.mem.rd8(d + 4));
+            if n > 0 {
+                let word = rig.cpu.mem.rd32(d);
+                rig.cpu.mem.wr32(word, rng.below(n));
+            }
+            d += 8;
+        }
+        let cursor = rng.below(10);
+        let edit = rng.below(2) == 1;
+        let f = cursor | if edit { 0x1000 } else { 0 };
+        rig.cpu.mem.wr32(TARGET_CHOICE, f);
+        let rows = option_rows(&mut rig);
+        let views: Vec<OptionsRowView<'_>> = rows
+            .iter()
+            .map(|o| OptionsRowView {
+                label: &o.label,
+                value: o.value.as_deref(),
+                teal: o.teal,
+                advance: o.advance,
+            })
+            .collect();
+        // A popup off the stage stands for "editing" without covering a row.
+        let away = OptionsPopupDraw {
+            rect: (0x4000, 0x4000, 0, 0),
+            choices: &[],
+            cursor: 0,
+        };
+        let what = format!("run {run} flags {f:#x}");
+        // The window renderer is `FUN_801D2910(win, 0, 9)`; call either.
+        let log = if run % 2 == 0 {
+            rig.run(OPTIONS, r)
+        } else {
+            rig.run_with(OPTIONS_ROWS, r, &[0, 9])
+        };
+        let text = options_draws_for(
+            &rig.font,
+            &views,
+            cursor as u8,
+            edit.then_some(&away),
+            (r.x, r.y),
+        );
+        same_text(&rig, &log, &text, &what);
+        edits += u32::from(edit);
+        greys += log
+            .iter()
+            .filter(|e| matches!(e, Ev::Text(_, _, _, 0)))
+            .count() as u32;
+        // The popup over the cursor row.
+        let choice = rng.below(4);
+        rig.cpu.mem.wr32(CHOICE, choice);
+        let log = rig.run(OPTIONS_POPUP, r);
+        let row = &rows[cursor as usize];
+        let choices: Vec<&str> = row.choices.iter().map(String::as_str).collect();
+        let popup = OptionsPopupDraw {
+            rect: (r.x, r.y, r.w, r.h),
+            choices: &choices,
+            cursor: choice as u8,
+        };
+        let text = options_draws_for(&rig.font, &[], 0, Some(&popup), (r.x, r.y));
+        let labels: Vec<Ev> = log
+            .iter()
+            .map(|e| match e {
+                Ev::Label(va, x, y, ink) => Ev::Text(cstr(&mut rig.cpu.mem, *va), *x, *y, *ink),
+                e => e.clone(),
+            })
+            .collect();
+        same_text(&rig, &labels, &text, &format!("{what} popup {choice}"));
+        let got: Vec<(i32, i32)> = hands(&log).iter().map(|h| (h.x, h.y)).collect();
+        let want: Vec<(i32, i32)> = ((choice as usize) < choices.len())
+            .then(|| options_popup_hand_pos(&popup))
+            .into_iter()
+            .collect();
+        assert_eq!(got, want, "{what} popup {choice}");
+    }
+    assert!(edits > 1000 && greys > 5000, "{edits} {greys}");
 }

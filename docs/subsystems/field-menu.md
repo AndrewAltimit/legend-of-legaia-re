@@ -2016,7 +2016,10 @@ There is no revert. The popup's x / w `(170, 128)` are static; y / h are
 stamped per open: `y = window-48 y + 0x16 + sum of advances above the cursor
 row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px
-pitch, text inset `+0x14`, cursor at the content origin.
+pitch, text inset `+0x14`, and puts the hand sprite (`FUN_8002B994` kind 0)
+at the content origin on the cursor row. `menu_painters` in the retail
+differential holds `engine-ui::options_draws_for` to both routines, the ink-0
+rows and the popup hand included.
 
 **Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,

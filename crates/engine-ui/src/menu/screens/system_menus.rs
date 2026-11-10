@@ -68,11 +68,13 @@ pub const OPTIONS_INK_TEAL: [f32; 4] = crate::MENU_TEXT_TEAL;
 /// cursor arrow at `x-10`, labels at `x+8`, values at `x+140`; per-row
 /// pitch from the layout table (14 px, 20 px on separator rows). Labels
 /// draw in ink 7 (white) or ink 5 (teal), values in ink 6 (gold). While
-/// the value popup is open the retail renderer drops every other row's
-/// ink to 0 (rows above the cursor keep the header lit); the engine dims
-/// them instead. The popup (`FUN_801d2b44`, window id 47) lists choices
-/// at a 13-px pitch, text inset `+0x14`, its cursor at the content
-/// origin. No footer hint - retail has none.
+/// the value popup is open (cursor word bit `0x1000`) the retail renderer
+/// draws every other row's label and value in ink 0, the menu's grey
+/// (`0x801D2A44`); only the value-less header row keeps its label ink when
+/// it sits above the cursor. The popup (`FUN_801d2b44`, window id 47) lists
+/// choices at a 13-px pitch, text inset `+0x14`; its cursor is the hand
+/// sprite at the content origin ([`options_popup_hand_pos`]), drawn by the
+/// sprite pass. No footer hint - retail has none.
 // PORT: FUN_801d2910
 // PORT: FUN_801d2b44
 // PORT: FUN_801dcef0 - the id-48 window renderer is a 9-instruction
@@ -85,7 +87,7 @@ pub fn options_draws_for(
     popup: Option<&OptionsPopupDraw<'_>>,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    let dim = |c: [f32; 4]| [c[0] * 0.45, c[1] * 0.45, c[2] * 0.45, c[3]];
+    let dim = |_: [f32; 4]| crate::menu_ink_color(0);
 
     let mut out = Vec::new();
     let mut y = pen.1;
@@ -132,17 +134,9 @@ pub fn options_draws_for(
             let (w, h) = (w as i32, h as i32);
             x + w <= fx || x >= fx + fw || y + h <= fy || y >= fy + fh
         });
-        const POPUP_LINE_H: i32 = 13;
         let (px, py, _, _) = p.rect;
         for (i, choice) in p.choices.iter().enumerate() {
-            let cy = py + i as i32 * POPUP_LINE_H;
-            if i as u8 == p.cursor {
-                out.extend(text_draws_for(
-                    &font.layout_ascii(">"),
-                    (px, cy),
-                    OPTIONS_INK_WHITE,
-                ));
-            }
+            let cy = py + i as i32 * OPTIONS_POPUP_LINE_H;
             out.extend(text_draws_for(
                 &font.layout_ascii(choice),
                 (px + 0x14, cy),
@@ -151,6 +145,20 @@ pub fn options_draws_for(
         }
     }
     out
+}
+
+/// Row pitch of the options value popup (`addiu s1,s1,0xd` at `0x801D2C60`).
+pub const OPTIONS_POPUP_LINE_H: i32 = 13;
+
+/// Where the options value popup's hand cursor sits: the popup content's
+/// left edge, on the cursor's row. `FUN_801d2b44` draws it through
+/// `FUN_8002B994` kind 0 at `(x, y + row * 13)` (`addiu a2,s3,-0x14` against
+/// the choice text's `x + 0x14`).
+///
+/// REF: FUN_801d2b44
+pub fn options_popup_hand_pos(popup: &OptionsPopupDraw<'_>) -> (i32, i32) {
+    let (px, py, _, _) = popup.rect;
+    (px, py + i32::from(popup.cursor) * OPTIONS_POPUP_LINE_H)
 }
 
 /// The options value popup's window frame around its content rect - the

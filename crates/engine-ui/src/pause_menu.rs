@@ -753,6 +753,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                         ctx.origin,
                         ctx.scale,
                     ));
+                    // The popup's own cursor: the same hand, at the popup
+                    // content's left edge on the cursor row.
+                    let (hx, hy) = crate::options_popup_hand_pos(p);
+                    sprites.push(crate::options_hand_cursor_sprite(
+                        rects,
+                        (hx + 10, hy),
+                        0,
+                        ctx.origin,
+                        ctx.scale,
+                    ));
                 }
                 // The settings screen's pointing hand marks the browse row;
                 // the rebind sub-screen draws its own `>` marker beside the
