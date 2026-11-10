@@ -60,8 +60,8 @@ const PRINTF: u32 = 0x8005_67A8;
 /// The two event-handle arrays, and the handles the test plants in them.
 const ARRAY_A: u32 = 0x8007_B9F0;
 const ARRAY_B: u32 = 0x8007_BA04;
-const HANDLE_A: u32 = 0xF100_0000;
-const HANDLE_B: u32 = 0xF200_0000;
+pub(crate) const HANDLE_A: u32 = 0xF100_0000;
+pub(crate) const HANDLE_B: u32 = 0xF200_0000;
 
 const POLL_COUNTER: u32 = 0x801E_F17C;
 const PHASE: u32 = 0x801F_329C;
@@ -72,7 +72,7 @@ const TRANSFER_LEN: u32 = 0x801F_01B8;
 const DIR_TABLE: u32 = 0x801F_32A8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Call {
+pub(crate) enum Call {
     Test(u32),
     Open(String, u32),
     Seek(u32, u32, u32),
@@ -86,26 +86,26 @@ enum Call {
 }
 
 #[derive(Default)]
-struct Bios {
-    log: Vec<Call>,
+pub(crate) struct Bios {
+    pub(crate) log: Vec<Call>,
     /// Pending events by handle; `TestEvent` consumes the one it reports.
-    pending: Vec<u32>,
+    pub(crate) pending: Vec<u32>,
     /// Events that latch once this many `TestEvent` calls have been made.
-    late: Option<(usize, Vec<u32>)>,
-    tests: usize,
+    pub(crate) late: Option<(usize, Vec<u32>)>,
+    pub(crate) tests: usize,
     /// What each `open` answers, in order.
-    opens: Vec<u32>,
-    seek: u32,
+    pub(crate) opens: Vec<u32>,
+    pub(crate) seek: u32,
     /// The card's files, for `firstfile` / `nextfile`.
-    files: Vec<CardDirEntry>,
-    cursor: usize,
+    pub(crate) files: Vec<CardDirEntry>,
+    pub(crate) cursor: usize,
 }
 
 fn cstr(m: &mut psx_retail_exec::Memory, a: u32) -> String {
     String::from_utf8(crate::menu_painters::cstr(m, a)).expect("ASCII")
 }
 
-fn rig() -> Option<(Cpu, Rc<RefCell<Bios>>)> {
+pub(crate) fn rig() -> Option<(Cpu, Rc<RefCell<Bios>>)> {
     let (mut cpu, d) = (scus_cpu()?, disc()?);
     cpu.mem.load(
         OVERLAY_BASE,
@@ -237,7 +237,7 @@ fn rig() -> Option<(Cpu, Rc<RefCell<Bios>>)> {
     Some((cpu, bios))
 }
 
-fn flags(rng: &mut Rng) -> [bool; 4] {
+pub(crate) fn flags(rng: &mut Rng) -> [bool; 4] {
     let m = match rng.below(4) {
         0 => 0,
         1 => 1 << rng.below(4),
@@ -246,14 +246,14 @@ fn flags(rng: &mut Rng) -> [bool; 4] {
     [0, 1, 2, 3].map(|i| m >> i & 1 != 0)
 }
 
-fn pend(base: u32, e: [bool; 4]) -> Vec<u32> {
+pub(crate) fn pend(base: u32, e: [bool; 4]) -> Vec<u32> {
     (0..4)
         .filter(|&i| e[i as usize])
         .map(|i| base + i)
         .collect()
 }
 
-fn tests_of(base: u32, n: u32) -> Vec<Call> {
+pub(crate) fn tests_of(base: u32, n: u32) -> Vec<Call> {
     (0..n).map(|i| Call::Test(base + i)).collect()
 }
 
