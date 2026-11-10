@@ -273,6 +273,21 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             [state.render_24, state.render_26, state.render_28] = caller.rot;
             return;
         }
+        // PROT 0927's arm 7 jitters its caller and seats nothing: it runs
+        // here, inside the caller's step, so its three draws land where
+        // retail's do.
+        if self.world.casting.module_running_entry == Some(927)
+            && arg0 as u8 == legaia_engine_cast::cast_module_ticks::JUGGERNAUT_STAGER_JITTER_ARM
+        {
+            let world = &mut *self.world;
+            let (v84, z) =
+                legaia_engine_cast::cast_module_ticks::juggernaut_stager_jitter(arg1, || {
+                    world.next_rand()
+                });
+            state.anim_84 = v84;
+            state.render_28 = z;
+            return;
+        }
         self.world
             .casting
             .module_stager_calls

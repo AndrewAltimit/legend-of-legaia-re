@@ -377,3 +377,62 @@ fn the_juggernaut_and_esm_sweeps_match_retail() {
         assert!(landed > 100, "PROT {entry:04}: {landed} hits");
     }
 }
+
+#[test]
+fn the_juggernaut_caller_jitter_matches_retail() {
+    differential!(prot(927, JUGGERNAUT));
+    let Some((mut rig, module)) = Rig::new(927, 0x4A49_5454) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let stream = Rc::new(std::cell::Cell::new(1u32));
+    {
+        let stream = stream.clone();
+        rig.cpu.hook(0x8005_6798, move |r, _| {
+            let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            stream.set(n);
+            r.r[V0] = (n >> 16) & 0x7FFF;
+        });
+    }
+    let (mut odd, mut even) = (0, 0);
+    for round in 0..256 {
+        rig.seed(&module);
+        for o in (0..0x100u32).step_by(4) {
+            let w = rig.rng.next();
+            rig.cpu.mem.wr32(CALLER + o, w);
+        }
+        let arg = rig.rng.next() as i16;
+        let seed = rig.rng.next();
+        stream.set(seed);
+        let (ctx, actors) = (rig.ctx(), rig.actors());
+        let mut want = rig.cpu.mem.read(CALLER, 0x100);
+        assert_eq!(
+            rig.cpu.call(
+                JUGGERNAUT,
+                &[
+                    CALLER,
+                    u32::from(t::JUGGERNAUT_STAGER_JITTER_ARM),
+                    arg as i32 as u32
+                ]
+            ),
+            Stop::Returned
+        );
+        let mut n = seed;
+        let mut draws = 0;
+        let (v84, z) = t::juggernaut_stager_jitter(arg, || {
+            n = n.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            draws += 1;
+            (n >> 16) & 0x7FFF
+        });
+        want[0x84..0x86].copy_from_slice(&v84.to_le_bytes());
+        want[0x28..0x2A].copy_from_slice(&z.to_le_bytes());
+        let c = format!("round {round} arg {arg}");
+        let got = rig.cpu.mem.read(CALLER, 0x100);
+        assert!(got == want, "{c}: {:?}", diffs(&got, &want));
+        assert_eq!(stream.get(), n, "{c}: draws ({draws})");
+        assert!(rig.ctx() == ctx, "{c}: ctx");
+        assert!(rig.actors() == actors, "{c}: actors");
+        if v84 > 0 { odd += 1 } else { even += 1 }
+    }
+    assert!(odd > 50 && even > 50, "{odd} up, {even} down");
+}

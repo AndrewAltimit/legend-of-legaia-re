@@ -31,7 +31,7 @@ fn at(record: u32, caller: StagerCaller) -> StagerSpawn {
 /// | 8 (`0x801F892C`) | `0x801F9B24`, `0x801F9B68` |
 ///
 /// Arm 7 (`0x801F8858`) jitters the caller's own `+0x84` / `+0x28` off
-/// `rand()` and seats nothing; arms 3..5 are [`juggernaut_stager_fade`] /
+/// `rand()` and seats nothing ([`juggernaut_stager_jitter`]); arms 3..5 are [`juggernaut_stager_fade`] /
 /// [`juggernaut_stager_shake`].
 ///
 /// PORT: FUN_801F85A8 (PROT 0927 stager; the spawn arms 0, 1, 2, 6 and 8)
@@ -76,6 +76,34 @@ pub fn juggernaut_stager_shake(arm: u8) -> i32 {
         4 => 0x14,
         _ => 0,
     }
+}
+
+/// The stager arm that jitters its caller ([`juggernaut_stager_jitter`]).
+pub const JUGGERNAUT_STAGER_JITTER_ARM: u8 = 7;
+
+/// PROT 0927's stager arm 7 (`0x801F8858..0x801F8928`): three `rand()`s
+/// that jitter the **caller's** own record and seat nothing.
+///
+/// ```text
+/// v = rand() & 1 ? rand() % 16 + 0x20 : -0x20 - rand() % 16
+/// caller[+0x84] = v                                   ; 0x801F88C4
+/// caller[+0x28] = (arg << 12) / 6 + rand() % 682      ; 0x801F8928
+/// ```
+///
+/// `arg` is op `0x20`'s second operand, the stager's `a2` (`s2`); the divide
+/// by `6` is the `0x2AAAAAAB` multiply-high (round toward zero) and the
+/// `% 682` the `0x300C0301` one. `+0x84` is the part's animation-bank-2 slot 2,
+/// `+0x28` its rotation z. Returns `(+0x84, +0x28)`.
+///
+/// PORT: FUN_801F85A8 (PROT 0927 stager; arm 7's caller jitter)
+pub fn juggernaut_stager_jitter(arg: i16, mut rand: impl FnMut() -> u32) -> (i16, i16) {
+    let v = if rand() & 1 != 0 {
+        (rand() as i32 % 16) + 0x20
+    } else {
+        -0x20 - (rand() as i32 % 16)
+    };
+    let z = (i32::from(arg) << 12) / 6 + (rand() as i32 % 682);
+    (v as i16, z as i16)
 }
 
 /// One pass of PROT 0927's epilogue over the shake word
