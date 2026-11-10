@@ -85,3 +85,82 @@ fn the_done_band_pays_spirit_as_retail_pays_it() {
     }
     assert!(spent > 5000 && capped > 1000, "{spent} {capped}");
 }
+
+const ACTION_SM: u32 = 0x801E_295C;
+const ACTION_SM_END: u32 = 0x801E_6968;
+const CTX_PTR: u32 = 0x8007_BD24;
+const ACTORS: u32 = 0x801C_9370;
+
+/// The same band through the state machine's own entry: `FUN_801E295C` run
+/// whole on state `0x50` with its calls stubbed, so the dispatch reaches the
+/// Spirit block the way a battle frame does. The pass leaves the gauge and
+/// the owed byte as the block wrote them.
+#[test]
+fn the_action_sm_reaches_the_spirit_block_from_its_entry() {
+    differential!(prot(898, ACTION_SM));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((ACTION_SM, ACTION_SM_END));
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x534D_3530);
+    let mut w = World::new();
+    w.load_party(Party::zeroed(3));
+    w.enter_battle(3, 2);
+    w.party.party_count = 3;
+    let mut spent = 0;
+    for round in 0..3000 {
+        let slot = rng.below(3) as u8;
+        let gauge = [0u32, 1, 8, 50, 92, 93, 99, 100][rng.below(8) as usize] as u16;
+        let owed = [0u32, 18, 30, 49, 99, 0xFF][rng.below(6) as usize] as u8;
+        let category = if rng.below(3) == 0 {
+            SPIRIT_CATEGORY
+        } else {
+            rng.below(4) as u8
+        };
+        let bits = [0u32, 0x100, 0x200, 0x300][rng.below(4) as usize];
+        cpu.mem = clean.clone();
+        cpu.mem.wr32(CTX_PTR, CTX);
+        for k in 0..8u32 {
+            cpu.mem.wr32(ACTORS + 4 * k, ACTOR + k * 0x400);
+        }
+        cpu.mem.wr8(CTX + 7, 0x50);
+        cpu.mem.wr8(CTX + 0x13, slot);
+        let actor = ACTOR + u32::from(slot) * 0x400;
+        cpu.mem.wr8(actor + 0x1DD, slot);
+        cpu.mem.wr16(actor + 0x170, gauge);
+        cpu.mem.wr8(actor + 0x224, owed);
+        cpu.mem.wr8(actor + 0x1DE, category);
+        for s in 0..3u32 {
+            cpu.mem.wr8(SEATS + s, s as u8 + 1);
+            cpu.mem.wr32(RECORDS + s * STRIDE + 0x6C0, bits);
+        }
+        assert_eq!(cpu.call(ACTION_SM, &[]), Stop::Returned, "round {round}");
+        let retail = (cpu.mem.rd16(actor + 0x170), cpu.mem.rd8(actor + 0x224));
+
+        for m in 0..3 {
+            let mut b = [0u8; legaia_save::ABILITY_BITS_LEN];
+            b[4..8].copy_from_slice(&bits.to_le_bytes());
+            w.party.roster.members[m].set_ability_bits(b);
+        }
+        let a = &mut w.actors[usize::from(slot)].battle;
+        a.spirit_gauge = gauge;
+        a.action_recoil = owed;
+        a.action_category = category;
+        w.battle_ctx.active_actor = slot;
+        w.battle_ctx.action_state =
+            legaia_engine_battle_vm::battle_action::ActionState::DoneCleanup.as_byte();
+        w.step_battle();
+        let a = &w.actors[usize::from(slot)].battle;
+        assert_eq!(
+            retail,
+            (a.spirit_gauge, a.action_recoil),
+            "round {round} slot {slot} gauge {gauge} owed {owed} category {category} bits {bits:#x}"
+        );
+        spent += i32::from(owed > 0);
+    }
+    assert!(spent > 1500, "{spent}");
+}
