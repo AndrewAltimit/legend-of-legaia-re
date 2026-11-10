@@ -192,3 +192,160 @@ fn the_scripted_arc_spawns_what_retail_spawns() {
     }
     assert!(player > 3000 && torn > 1000, "{player} {torn}");
 }
+
+const GENERIC: u32 = 0x801D_5780;
+const WATCHER: u32 = 0x801D_5D60;
+
+/// The four-argument arc spawn `FUN_801D5780(src, &target, apex, frames)`
+/// against `spawn_arc_helper`: the start is the `src` actor's own position,
+/// one allocation, no walk lock, and a null `src` returns null before
+/// anything is allocated.
+#[test]
+fn the_generic_arc_spawn_matches_retail() {
+    differential!(prot(897, GENERIC));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    let (calls, _) = allocator(&mut cpu);
+    cpu.mem.wr32(PLAYER_PTR, PLAYER);
+    let mut rng = Rng(0x484F_5033);
+    let mut nulls = 0;
+    for round in 0..20_000 {
+        let null = rng.below(10) == 0;
+        let start = seat(&mut cpu, ACTOR, &mut rng);
+        let flags = rng.next();
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        let t = target(&mut cpu, &mut rng);
+        let apex = [0x10i16, 0x18, 0, -0x20, rng.next() as i16][rng.below(5) as usize];
+        let n = frames(&mut rng);
+        calls.set(0);
+        cpu.mem.load(ARC, &[0xA5; 0x100]);
+        let src = if null { 0 } else { ACTOR };
+        let stop = cpu.call(GENERIC, &[src, TARGET, apex as i32 as u32, n as i32 as u32]);
+        assert_eq!(stop, Stop::Returned);
+        let port = legaia_engine_vm::field_ledge_hop_arc::spawn_arc_helper(
+            (!null).then_some(start),
+            t,
+            apex,
+            n,
+        );
+        let label = format!("round {round} start {start:?} {t:?} apex {apex} frames {n}");
+        let Some(port) = port else {
+            nulls += 1;
+            assert_eq!(cpu.regs.r[V0], 0, "{label}");
+            assert_eq!(calls.get(), 0, "{label}");
+            continue;
+        };
+        assert!(port.emitter.is_none());
+        assert_eq!(cpu.regs.r[V0], ARC, "{label}");
+        assert_eq!(calls.get(), 1, "{label}: one allocation");
+        let mut want = port.arc;
+        want.paired_frames = 0;
+        assert_eq!(read_arc(&mut cpu), want, "{label}");
+        assert_eq!(cpu.mem.rd32(ARC + 0x90), ACTOR, "{label}");
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x10), flags, "{label}: no walk lock");
+    }
+    assert!(nulls > 1000, "{nulls}");
+}
+
+/// The release watcher's tick `FUN_801D5D60` against `release_watcher_tick`:
+/// the follow-camera calls when it carries a class and the player, and on
+/// the helper's retire the mask cleared out of the `+0x94` context (and the
+/// player's) and its own retire bit.
+#[test]
+fn the_release_watcher_matches_retail() {
+    differential!(prot(897, WATCHER));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    use legaia_engine_vm::field_ledge_hop_arc::{HopEmitter, release_watcher_tick};
+    const EASE: u32 = 0x801D_B510;
+    const CLAMP: u32 = 0x801D_AA50;
+    let camera = Rc::new(std::cell::RefCell::new(Vec::new()));
+    for va in [EASE, CLAMP] {
+        let camera = camera.clone();
+        cpu.hook(va, move |r, _| {
+            camera.borrow_mut().push((va, r.r[psx_retail_exec::A0]))
+        });
+    }
+    cpu.mem.wr32(PLAYER_PTR, PLAYER);
+    let mut rng = Rng(0x5741_5443);
+    let (mut followed, mut released) = (0, 0);
+    for round in 0..20_000 {
+        let owner_is_player = rng.below(2) == 0;
+        let ctx = if owner_is_player && rng.below(2) == 0 {
+            PLAYER
+        } else {
+            ACTOR
+        };
+        let e = HopEmitter {
+            release_ctx: ctx,
+            release_mask: [0x400, rng.next(), 0][rng.below(3) as usize],
+            class: [0u16, 1, rng.below(0x100) as u16][rng.below(3) as usize],
+            frames: rng.next() as i16,
+            owner_is_player,
+        };
+        let retired = rng.below(2) == 0;
+        let arc_flags = rng.next() & !8 | if retired { 8 } else { 0 };
+        let (ctx_flags, player_flags, own_flags) = (rng.next(), rng.next(), rng.next() & !8);
+        cpu.mem.wr32(ARC + 0x10, arc_flags);
+        cpu.mem.wr32(ACTOR + 0x10, ctx_flags);
+        cpu.mem.wr32(PLAYER + 0x10, player_flags);
+        cpu.mem.wr32(SECOND + 0x10, own_flags);
+        cpu.mem.wr32(SECOND + 0x90, ARC);
+        cpu.mem.wr32(SECOND + 0x94, e.release_ctx);
+        cpu.mem.wr32(SECOND + 0x74, e.release_mask);
+        cpu.mem.wr16(SECOND + 0x5C, e.class);
+        cpu.mem.wr16(SECOND + 0x9E, e.frames as u16);
+        cpu.mem.wr16(SECOND + 0x50, u16::from(e.owner_is_player));
+        camera.borrow_mut().clear();
+        assert_eq!(cpu.call(WATCHER, &[SECOND]), Stop::Returned);
+        let t = release_watcher_tick(&e, retired);
+        let label = format!("round {round} {e:?} retired {retired}");
+        let want_camera = if t.camera_follow {
+            followed += 1;
+            vec![(EASE, PLAYER), (CLAMP, 0)]
+        } else {
+            vec![]
+        };
+        let got: Vec<(u32, u32)> = camera
+            .borrow()
+            .iter()
+            .map(|&(va, a0)| (va, if va == CLAMP { 0 } else { a0 }))
+            .collect();
+        assert_eq!(got, want_camera, "{label}");
+        // Port side: clear the mask in the context, then in the player.
+        let mut want_ctx = if ctx == PLAYER {
+            player_flags
+        } else {
+            ctx_flags
+        };
+        let mut want_player = player_flags;
+        if let Some(mask) = t.release_mask {
+            released += 1;
+            want_ctx &= !mask;
+            if ctx == PLAYER {
+                want_player = want_ctx;
+            }
+            if t.release_player {
+                want_player &= !mask;
+            }
+        }
+        if ctx == ACTOR {
+            assert_eq!(cpu.mem.rd32(ACTOR + 0x10), want_ctx, "{label}");
+        }
+        assert_eq!(cpu.mem.rd32(PLAYER + 0x10), want_player, "{label}");
+        assert_eq!(
+            cpu.mem.rd32(SECOND + 0x10),
+            own_flags | if retired { 8 } else { 0 },
+            "{label}: the watcher retires with the helper"
+        );
+    }
+    assert!(followed > 2000 && released > 5000, "{followed} {released}");
+}
