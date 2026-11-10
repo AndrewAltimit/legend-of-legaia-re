@@ -39,23 +39,32 @@ impl World {
                 self.casting
                     .module_saved_poses
                     .push((e, [s.pos[0], s.pos[1], s.pos[2]], s.facing));
-                let a = &mut self.actors[e];
-                a.move_state.world_x = p.pos[0];
-                a.move_state.world_z = p.pos[2];
-                a.battle.facing_angle = p.facing;
+                Self::stand_battle_seat(&mut self.actors[e], p.pos[0], p.pos[2], p.facing);
             }
         } else if phase == cam::DEAD_END_CRISIS_RESTORE_ARM {
             for (e, pos, facing) in std::mem::take(&mut self.casting.module_saved_poses) {
                 if let Some(a) = self.actors.get_mut(e) {
-                    [
-                        a.move_state.world_x,
-                        a.move_state.world_y,
-                        a.move_state.world_z,
-                    ] = pos;
-                    a.battle.facing_angle = facing;
+                    a.move_state.world_y = pos[1];
+                    Self::stand_battle_seat(a, pos[0], pos[2], facing);
                 }
             }
         }
+    }
+
+    /// Stand an actor's live pair on `(x, z)` facing `facing`, carrying its
+    /// body pair by the same step (as [`Self::line_up_party_for_sweep`] does),
+    /// so a range read before the next drawn frame sees the move.
+    fn stand_battle_seat(a: &mut crate::world::Actor, x: i16, z: i16, facing: u16) {
+        let (dx, dz) = (
+            x.wrapping_sub(a.move_state.world_x),
+            z.wrapping_sub(a.move_state.world_z),
+        );
+        a.move_state.world_x = x;
+        a.move_state.world_z = z;
+        if let Some((bx, bz)) = a.battle.seat {
+            a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+        }
+        a.battle.facing_angle = facing;
     }
 
     /// Fill the capture director inputs of `st` that the seats do not carry:
