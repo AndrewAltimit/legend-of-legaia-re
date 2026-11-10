@@ -36,7 +36,6 @@ pub const DRAW_ORDER_FAR_CORNER: u8 = 1;
 pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
 
 pub mod actor_bind;
-pub mod actor_cull;
 pub mod battle_intro;
 pub mod gte_trace;
 pub mod mode_transition;

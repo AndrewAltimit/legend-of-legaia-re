@@ -168,6 +168,8 @@ a dependent crate.
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry); `actor_colour_tween` - the per-actor **colour tween**
   (`FUN_801DDC20`) whose actors the sweep retires by handler address.
+- `contact_candidates` - the field collision broad phase (`FUN_801CF754`):
+  the per-frame candidate list the contact probes walk, not a render cull.
 - `camera_zone` - the **zone-driven follow camera**: the camera parameter
   block retail keeps at `0x8007B606..` (`CameraZoneConfig`, loaded from a MAN
   section-3 camera-region record by the port of `FUN_801DBC20`), the composer
