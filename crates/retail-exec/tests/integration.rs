@@ -176,6 +176,7 @@ mod format_leaves;
 mod frame_begin;
 mod frame_blend;
 mod frame_pace;
+mod gameover_banner;
 mod gauge_content;
 mod glare_divide;
 mod glyph_count;
