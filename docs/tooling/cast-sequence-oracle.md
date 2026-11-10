@@ -558,8 +558,13 @@ The probe records the frame counter on every vsync. A run of one counter value
 is one game frame of `L` vsyncs, its step the byte its last row reads. The
 **game clock** adds the step per frame, spread evenly over the frame's rows,
 so an overrunning frame advances it by its step, not by `L`. The pairing
-measures retail's offset into a segment on that clock, and the engine's tick
-(one vsync, no overrun) on its own. A capture without the `frame` column
+measures retail's offset into a segment on that clock, and the engine's on its
+own ticks less the ones its frames overran. The engine models one overrun, a
+frame the XA stream loads (`XA_STREAM_SPAN_EXTRA`), and the recorder marks each
+such tick in `meta.csv`'s `over` column (`Side::live_clock`). Counted as game
+time, those ticks left a voiced cast's magic band a pass behind retail's for
+every four it ran: Gaza's Astral Wave read its `0x2B` burst some `45` ticks
+late, `.809` with cues `.500`, and on the clock `.887` with cues `.750`. A capture without the `frame` column
 pairs on wall vsyncs, and the report says which clock it used.
 
 The segment table shows both: `retail vsyncs` (wall), `retail game` (the

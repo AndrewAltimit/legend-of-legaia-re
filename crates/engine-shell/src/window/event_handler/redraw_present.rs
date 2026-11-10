@@ -583,7 +583,7 @@ impl PlayWindowApp {
             use std::io::Write as _;
             let _ = writeln!(
                 meta,
-                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts"
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts,over"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
@@ -777,10 +777,18 @@ impl PlayWindowApp {
                 g.join(";")
             }
         };
+        // `over`: `1` on a tick past its battle frame's step, a vsync the
+        // frame overran (`BattleFrameClock::span_extra`). Its timers drained
+        // no game time there, so the oracle's engine clock skips it as it
+        // skips retail's slow vsyncs (`cast_sequence::Side::live_clock`).
+        let over = {
+            let fc = &w.battle.frame_clock;
+            u8::from(fc.ticks_into_frame(w.clock.display_frames) >= u64::from(fc.step.max(1)))
+        };
         use std::io::Write as _;
         let _ = writeln!(
             rec.meta,
-            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{}",
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{},{over}",
             w.casting.module_phase,
             w.clock.display_frames,
             w.battle_ctx.frame_timer,
