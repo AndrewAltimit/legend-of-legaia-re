@@ -233,10 +233,12 @@ pub const MUSHURA_HIT_ARM: u8 = 0xC;
 /// | 0xC | word | the rampage: a `0xC`-frame framing of the creature every pass |
 /// | 0xD | the creature's tint word, fed by the host | a `0xC`-frame framing every pass; the caption cleared; `0xFF` |
 ///
-/// The creature's walk through arms 6, 7 and the rampage is not carried: it
-/// stays where arm 5 seats it, turned as arms 8 and 9 turn it. The arm 0xD
-/// framing aims at the world anchor `0x80089118` / `0x80089120`, which the
-/// port keeps no twin of; it aims at the origin.
+/// The creature's walk through arms 6..8 and its rampage chase are the
+/// host's (`World::apply_mushura_run`), which keeps the director's creature
+/// seat on the live stand; arm 0xC's chase runs ahead of the director, so
+/// each rampage framing follows the turn of its own pass. The arm 0xD
+/// framing aims at the world anchor `0x80089118` / `0x80089120`, which holds
+/// the last rampage framing's focus: the creature's stand as arm 0xC left it.
 ///
 /// PORT: FUN_801F69D8 (PROT 0915; the whole phase chain's gates, camera writes, captions, creature seat and clips - the seat scatter, the creature's walk and steering, part spawns and the arm-7 hit not carried)
 pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -348,12 +350,15 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
         }
         // The framing re-arms every pass; the arm ends when the fade arm 0xC's
         // pass raised has eased the creature's word to `0` (`0x801F7EB0`).
+        // Its focus is the anchor `0x80089118` / `0x80089120` the last
+        // rampage framing left: the creature's stand as arm 0xC last framed
+        // it, which the host no longer moves.
         0xD if st.creature_word_up => ArmDirection {
             hold: true,
-            ..cut([0, -f], [0, 0x400, 0], [0; 3], 0xC)
+            ..cut([0, -f], [0, 0x400, 0], on(creature), 0xC)
         },
         0xD => finish(caption(
-            cut([0, -f], [0, 0x400, 0], [0; 3], 0xC),
+            cut([0, -f], [0, 0x400, 0], on(creature), 0xC),
             ModuleCaption::Cleared,
         )),
         _ => ArmDirection::HOLD,
@@ -400,13 +405,16 @@ const BARRA_PULL: i32 = P << 7;
 /// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `3`, cut in; word `= 0` |
 /// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | clip `4` after clip `3`; the hit |
 /// | 0xE | word `+= p / 8` until `0x56`, on from arm 0xD's | word `= scalar << 7` |
-/// | 0xF | word, then the victim settled | every pass a cut on the victim at a third of the depth, TR z easing from half the depth; the caption cleared; `0xFF` |
+/// | 0xF | word, then the victim settled | every pass a cut on the victim at a third of the depth, TR z easing from half the depth; on its pass the victim back on arm 4's saved seat, the focus and yaw stored onto it; the caption cleared; `0xFF` |
 ///
 /// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps and the victim and creature arcs are the engine's `World::apply_barra_writes`; part spawns and the epilogue's ctx bytes not carried)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
-    let store = |pitch: i32, yaw: i32, tr: [i32; 3]| {
-        cut([pitch, yaw], [tr[0], tr[1], raw_tr_z(tr[2])], [0; 3], 1)
+    // The global TR z lands as stored: a raw TR z through the builder's
+    // prescale can miss it by a unit or two (arm 0xC's `0x42D3`).
+    let store = |pitch: i32, yaw: i32, tr: [i32; 3]| ArmDirection {
+        tr_z_store: Some(tr[2]),
+        ..cut([pitch, yaw], [tr[0], tr[1], raw_tr_z(tr[2])], [0; 3], 1)
     };
     let depth = i32::from(seats.depth_raw as i16);
     // Arms 3 and 4 store TR z `0xFFFF` as a word (`sw` at `0x801F6E68` and
@@ -463,6 +471,7 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return held(Some(drift(0, 0, 0, 0, -BARRA_PULL)));
             }
             if phase == 4 {
+                st.saved_victim = Some(v);
                 st.ramp = 0xFFFF;
                 return far_store(store(0x60, 0, [0, 0x400, 0]));
             }
@@ -586,7 +595,20 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             if !st.victim_settled {
                 return ArmDirection { hold: true, ..shot };
             }
-            finish(caption(shot, ModuleCaption::Cleared))
+            // The exit puts the victim back on its saved seat and stores the
+            // camera straight onto it after the shot: the focus words
+            // `0x80089118` / `0x80089120` on the seat, the yaw global on its
+            // heading negated (`0x801F81B4..0x801F8204`).
+            let back = st.saved_victim.unwrap_or(v);
+            let exit = ArmDirection {
+                shot: shot.shot.map(|s| ModuleShot {
+                    angles: [s.angles[0], (back.facing as i16).wrapping_neg(), 0],
+                    focus: [back.x.wrapping_neg(), 0, back.z.wrapping_neg()],
+                    ..s
+                }),
+                ..shot
+            };
+            finish(caption(exit, ModuleCaption::Cleared))
         }
         _ => ArmDirection::HOLD,
     }

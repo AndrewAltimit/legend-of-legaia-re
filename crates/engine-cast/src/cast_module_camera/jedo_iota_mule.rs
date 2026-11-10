@@ -71,7 +71,7 @@ fn jedo_creature_advance(st: &mut ModuleCamState) {
 /// | 26 | the word | a cut; `+= 0x40` |
 /// | 27, 28 | none / word; TR z `+= 48 d` | `+= 0x40` |
 /// | 29 | word | two fades; the scripted fight's hit; `+= 0x100` |
-/// | 30 | word | a fade out; the kill (not scripted); `+= 0x80` |
+/// | 30 | word | a fade out; the kill (not scripted); TR y lifted to at least `0x400`; `+= 0x80` |
 /// | 31 | word; TR z `+= 4 d` | the caption cleared, `ctx[+0x6DA] = 0`, the loop counter cleared; done |
 ///
 /// PORT: FUN_801F6A58, overlay_summon_jedo_0931_801f6a58 (PROT 0931; the whole phase chain's gates, camera writes, captions, creature seat and clips - part spawns and their sizes, the monster-row writes and the stage words not carried; the kill and the shatter loop are the host's)
@@ -282,6 +282,12 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
         JEDO_KILL_ARM => {
             if gated(st, 0x80) {
                 return ArmDirection::HOLD;
+            }
+            // The exit lifts a TR y below `0x400` onto it
+            // (`slti v0,v0,0x400` / `sw v0,0x4(v1)` at `0x801F8884..0x801F88A0`).
+            let tr_y = st.live_pitch_tr.map_or(0x400, |(_, tr)| tr[1]);
+            if tr_y < 0x400 {
+                return with_drift(ArmDirection::PASS, Some(drift(0, 0, 0, 0x400 - tr_y, 0)));
             }
             ArmDirection::PASS
         }

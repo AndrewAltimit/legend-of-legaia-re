@@ -35,7 +35,7 @@ impl World {
     /// | 9 | - | the creature's facing on its target; the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
     /// | `0xA` | - | the creature parked on word `0x3FF` |
     /// | `0xB` | - | the creature's target `+0x1DD = 9` |
-    /// | `0xC` | [`Self::mushura_chase`] | the creature's fade `+0x21C = 2` |
+    /// | `0xC` | [`Self::mushura_chase`], ahead of the director ([`Self::mushura_chase_ahead`]) | the creature's fade `+0x21C = 2` |
     ///
     /// Not carried: `+0x48`, the creature's bank, which no engine draw reads.
     #[allow(clippy::too_many_arguments)]
@@ -46,8 +46,6 @@ impl World {
         monster_count: u8,
         victim: u8,
         seat: u8,
-        caster: u8,
-        spell_id: u8,
     ) {
         // The module's two wrapper sites are its only hits: nothing rolls the
         // whole power afterwards.
@@ -146,8 +144,9 @@ impl World {
                     p.set_root_speed(0x50);
                 }
             }
+            // The chase itself ran ahead of the director
+            // ([`Self::mushura_chase_ahead`]).
             (0xC, _) => {
-                self.mushura_chase(monster_count, seat, caster, spell_id);
                 if passed && let Some(a) = self.actors.get_mut(usize::from(seat)) {
                     a.battle.render_flag = 2;
                     a.battle.capture_state = 2;
@@ -156,6 +155,29 @@ impl World {
             _ => return,
         }
         // The arms' framings read the creature's live stand.
+        if let Some(a) = self.actors.get(usize::from(seat)) {
+            self.casting.module_cam.creature = Some(ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle,
+            });
+        }
+    }
+
+    /// Arm `0xC`'s chase, run ahead of the module's director: the arm turns
+    /// the creature before its every-pass framing reads the creature's
+    /// heading (the chase at `0x801F7878..0x801F7D18` precedes the shot), so
+    /// the framing follows this pass's turn rather than the last one's. The
+    /// director then reads the creature's stand off `module_cam.creature`.
+    pub(in crate::world::battle::cast_band) fn mushura_chase_ahead(
+        &mut self,
+        monster_count: u8,
+        seat: u8,
+        caster: u8,
+        spell_id: u8,
+    ) {
+        self.mushura_chase(monster_count, seat, caster, spell_id);
         if let Some(a) = self.actors.get(usize::from(seat)) {
             self.casting.module_cam.creature = Some(ModuleSeat {
                 x: a.move_state.world_x,

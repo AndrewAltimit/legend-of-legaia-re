@@ -215,7 +215,11 @@ pub const PALMA_SETTLE_PHASE: u8 = 0xC8;
 /// globals land straight on these values every pass.
 fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
     let (pitch, yaw, tr_y, tr_z) = palma_sweep_globals(phase, t);
-    cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
+    // TR z lands as stored, not through the builder's prescale.
+    ArmDirection {
+        tr_z_store: Some(tr_z),
+        ..cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
+    }
 }
 
 /// The pitch, yaw, TR y and TR z globals [`palma_sweep`] lands on.
@@ -301,9 +305,9 @@ pub fn gilium_stage_byte(phase: u8) -> Option<u8> {
 /// |---|---|---|
 /// | 0 | - | a cut on the origin |
 /// | 1, 2 | the side-band applier stage `ctx[+0x276]`; the CD poll | arm 2: `T = 0`, two fades |
-/// | 3, 4 | `T` up to `scalar * 256` / `* 128` | the per-pass stores; arm 4's exit a `0x160`-frame pan, the creature seated on the origin, `T = scalar * 384` |
+/// | 3, 4 | `T` up to `scalar * 256` / `* 128` | the per-pass stores, the exit pass's included; arm 4's exit a `0x160`-frame pan, the creature seated on the origin, `T = scalar * 384` |
 /// | 5 | `T` | a `0x10`-frame shot, the spell name, clip `1`, `T = scalar * 64` |
-/// | 6 | `T`, that shot re-armed each pass | a `0x60`-frame shot, clip `2`, `T = scalar * 180` |
+/// | 6 | `T`, that shot re-armed each pass | a `0x60`-frame shot from TR x `0x240` (the arm-5 shot's, left on the stack), clip `2`, `T = scalar * 180` |
 /// | 7 | until clip `2` plays, that shot re-armed | a cut, the attack name, `T = scalar * 128` |
 /// | 8 | the creature's park (`+0x21B` off `0xFF`) | TR z `+= 4 p`, TR y `-= p / 2`; a cut; the cursor back on keyframe 15 and the park re-armed |
 /// | 9, 0xA | the park | cuts; arm 9 replays the swing like arm 8; arm 0xA `T = scalar * 64` |
@@ -349,8 +353,14 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
                 };
             }
             if phase == 3 {
+                // The exit pass stores the globals at the word it reached
+                // too, before it clears the word.
+                let stores = palma_sweep(phase, st.countdown.0);
                 st.countdown.0 = 0;
-                return ArmDirection::PASS;
+                return ArmDirection {
+                    hold: false,
+                    ..stores
+                };
             }
             let origin = palma_pan_origin(st, st.countdown.0);
             st.countdown.0 = 384 * S;
@@ -375,7 +385,14 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
                 };
             }
             st.creature_stage = Some(2);
-            shot6()
+            // The exit builds its shot over the stack the pass's arm-5 shot
+            // left (`0x801F77C0..0x801F77F8` writes every trio slot but TR
+            // x), so it keeps that shot's TR x `0x240`.
+            let mut exit = shot6();
+            if let Some(s) = exit.shot.as_mut() {
+                s.tr[0] = 0x240;
+            }
+            exit
         }
         7 => {
             st.countdown.0 -= P;

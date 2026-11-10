@@ -191,6 +191,9 @@ pub const MODULE_RUMBLE: &[ModuleRumble] = &[
     // PROT 0928 Palma: arm 4's pass (clock at `0x69 << 7`) holds `0x60` flat.
     write(928, 4, Pass, 0x60, 0, 0x801F_753C),
     write(928, 5, Pass, 0xFF, 2, 0x801F_76E4),
+    // Arm 0xD's pass jumps into arm 18's tail (`j 0x801F880C` at
+    // `0x801F7E8C`), the phase bump and the same store: both passes jolt.
+    write(928, 0xD, Pass, 0xFF, 1, 0x801F_7E8C),
     // Rate `fp = 1` (`0x801F69FC`).
     write(928, 18, Pass, 0xFF, 1, 0x801F_8820),
     // PROT 0932 Meta: arm 6's pass.

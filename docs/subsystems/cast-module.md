@@ -2452,9 +2452,13 @@ the outcome lands at arm `9`'s exit; `CastFxState::slippery_rain_words` writes t
 budget and colour words around it; `World::step_module_rain` makes the call
 once a tick through `legaia_render_kernels::cast_rain` on the world's
 `rand()` stream; both hosts draw `World::module_rain_lines` through
-`engine-screens`. Not carried: the arms' captions, breath parts and fades,
-arm `10`'s wait for every monster to be idle, and the group-target framing
-of arm `8`. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
+`engine-screens`. Arm `8`'s exit frames the cast's target off the creature's
+target byte `+0x1DD` (the caster's, copied by the installer at
+`0x801F1D98..0x801F1DB8`): Slippery's own group code frames the monster row's
+centre through `FUN_801DCEAC` with its extent doubled into TR z
+(`0x801F7564..0x801F7590`), a seat that seat at half the framing depth. Not
+carried: the arms' captions, breath parts and fades, and arm `10`'s wait for
+every monster to be idle. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
 halts them all (`World::slippery_storm_clouds`). The exit is the arm's opening test: the
@@ -2800,6 +2804,28 @@ Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pas
 victim's plane less `0x800`.
 Iota hides its creature until arm 3's seat and again from arm 8, and shrinks the row
 into the eye of its vortex on arm 9 (`World::apply_iota_writes`).
+
+The directors' camera and rumble writes are held to the images pass by pass by
+the [retail kernel differential](../tooling/retail-kernel-differential.md)
+(`crates/retail-exec/tests/summon_cameras.rs`): every image above runs off its
+slot-B base from arm 0 to its Done, and each pass compares the hold, the phase,
+the tween's length and where the camera globals are headed after the pass with
+the director's shot, stores and drifts in the band's order. Several of the
+writes it pins sit where a reading of the arm misses them. Jedo's arm 30 exit
+lifts a TR y under `0x400` onto it (`0x801F8884..0x801F88A0`). Barra's arm
+`0xF` exit stores the focus words and the yaw onto the victim's saved seat
+after its last shot (`0x801F81B4..0x801F8204`), and its straight TR z stores
+land as stored, not through the builder's prescale. Palma's arm 3 stores the
+globals on its exit pass too; its arm 6 exit shot keeps the arm-5 shot's TR x
+`0x240`, which the exit leaves on the stack (`0x801F77C0..0x801F77F8`); its
+arm `0xD` pass jolts the controller through arm 18's tail (`j 0x801F880C` at
+`0x801F7E8C`). Ozma's arm 5 stores its shake on the exit pass as well. Vera's
+arm 8 and Slippery's arm 9 push the camera ahead of the gate, so an exit with
+a cut carries no push and one without carries it. Mushura's arm `0xC` turns
+the creature before it frames it, so the host runs the chase ahead of the
+director (`World::mushura_chase_ahead`). Two parts stay out: Palma's sweep
+rolls the camera (by up to `0x80`), which the battle camera has no channel
+for, and Ozma's arm `0x15` aims at its last random spawn's point.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with

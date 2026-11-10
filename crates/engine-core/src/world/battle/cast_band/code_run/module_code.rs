@@ -207,6 +207,13 @@ impl World {
             self.battle.camera_frame_height = d;
             self.battle_ctx.camera_frame_height = d;
         }
+        // PROT 0915's arm `0xC` turns its creature before it frames it.
+        if entry == 915
+            && profile.is_some()
+            && ctx.phase == legaia_engine_cast::cast_module_camera::MUSHURA_HIT_ARM
+        {
+            self.mushura_chase_ahead(ctx.monster_count, seat_slot, caster_slot, spell_id);
+        }
         let drive_holds = self.module_drive_holds(ctx.phase);
         let direction = if has_trampoline {
             None
@@ -2197,8 +2204,6 @@ impl World {
                     ctx.monster_count,
                     victim_slot,
                     seat_slot,
-                    caster_slot,
-                    spell_id,
                 );
             }
             if entry == 929 {
