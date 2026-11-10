@@ -246,8 +246,8 @@ fn the_door_shot_keeps_every_drop_shadow_under_its_body() {
         let v = HostView::new(w, &session.camera, ([0.0; 3], [0.0; 3]));
         let shot = v.scripted_target();
         let drawn = v.frame(Some(shot)).field_view().expect("shot view");
-        let fx = w.field_fx_view(&drawn);
-        let follow = w.field_fx_view(&v.follow_frame().field_view().expect("follow view"));
+        let fx = drawn;
+        let follow = v.follow_frame().field_view().expect("follow view");
         let mut bodies: Vec<[i32; 3]> = Vec::new();
         if let Some(a) = w
             .player_actor_slot
@@ -274,8 +274,14 @@ fn the_door_shot_keeps_every_drop_shadow_under_its_body() {
                 None => {}
             }
         }
-        let on_screen = |view: &legaia_engine_field::fog_particles::FogView, p: [i32; 3]| {
-            view.project_gte(p).map(|(x, y, _)| (x, y))
+        // The blob's grid goes through the GTE's integer camera for the view.
+        let on_screen = |view: &legaia_engine_camera::psx_camera::FieldCameraView, p: [i32; 3]| {
+            let r = legaia_render_kernels::gte::FieldGteView::from_field_view(
+                view,
+                legaia_engine_camera::projection::GTE_OFY as i32,
+            )
+            .rtps(p.map(|c| c as i16));
+            (r.mac[2] > 0).then_some(r.sxy)
         };
         for blob in v.drop_shadow_prims(Some(shot), false).chunks(4) {
             let centre = blob[0].corners()[3];

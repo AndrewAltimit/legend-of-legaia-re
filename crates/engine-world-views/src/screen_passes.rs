@@ -504,9 +504,15 @@ mod tests {
             .expect("drawn")
             .pos
             .map(|c| c as i32);
+        // The blob's grid goes through the GTE's integer camera, the matrix
+        // `FUN_800172C0` loads for the view.
         let centre = |view: &FieldCameraView, p: [i32; 3]| {
-            let (sx, sy, _) = world.field_fx_view(view).project_gte(p).expect("in front");
-            (sx, sy)
+            legaia_render_kernels::gte::FieldGteView::from_field_view(
+                view,
+                legaia_engine_camera::projection::GTE_OFY as i32,
+            )
+            .rtps(p.map(|c| c as i16))
+            .sxy
         };
         let prims = v.drop_shadow_prims(Some(shot), false);
         assert_eq!(prims.len(), 8, "four cells per caster");
