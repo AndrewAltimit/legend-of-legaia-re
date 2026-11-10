@@ -42,6 +42,7 @@ mod cast_cue;
 mod cast_damage;
 mod cast_dispatch;
 mod cast_steal;
+mod chip_marks;
 mod coin_counter;
 mod colour_tween;
 mod combo_records;
