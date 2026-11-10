@@ -243,6 +243,20 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
             }
             _ => assert!(kind.has_data(), "{ctx}"),
         }
+        // The accumulator bit each data type raises
+        // (`docs/formats/asset-type.md`); a lone TIM, SIN and the single
+        // TMD raise none.
+        let bit = match ty {
+            1 => 0x01,
+            2 => 0x02,
+            3 => 0x04,
+            4 => 0x08,
+            5 | 0xB => 0x10,
+            6 => 0x20,
+            7 => 0x40,
+            _ => 0,
+        };
+        assert_eq!(ret, bit, "{ctx}: return");
         let port = decode(&stored, &desc, mode).expect("decode");
         assert_eq!(port, body, "{ctx}: the port's own decode");
         match kind {

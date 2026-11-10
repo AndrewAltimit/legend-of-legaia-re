@@ -53,7 +53,7 @@ Every return is a small bitfield:
 
 | Type | Return |
 |---|---|
-| 0x00 TIM | 0x01 |
+| 0x00 TIM | 0 (the arm never touches the accumulator; only `TIM_LIST` raises bit 0) |
 | 0x01 TIM_LIST | 0x01 |
 | 0x02 TMD | 0x02 |
 | 0x03 MAN | 0x04 |
@@ -61,7 +61,7 @@ Every return is a small bitfield:
 | 0x05 MOVE | 0x10 |
 | 0x06 ANM | 0x20 |
 | 0x07 VDF | 0x40 |
-| 0x08 SIN | 0x80 |
+| 0x08 SIN | 0 (`0x80` is the bit its failed allocation raises in the error word `_DAT_8007B828`, not a return) |
 | 0x09 TMD2 | 0 (success) or asset-error bit |
 | 0x0B MOVE2 | 0x10 (same bit as MOVE) |
 | 0x0A | `0xA00` (`type << 8`) - pure flag |
@@ -74,6 +74,12 @@ The two SCUS call sites (`FUN_8002541C` streaming-walker and `FUN_80020224` desc
 return_value & 0x00FF  = bit per data-bearing asset type seen
 return_value & 0xFF00  = bit per FLAG-type marker seen
 ```
+
+The `asset_dispatch` differential holds every row above to the routine, in both storage modes.
+
+The `VDF` record table at `0x80083E58` is not rewound by an install: its counter `_DAT_8007B7EC` runs on, so a scene
+that stages two `VDF` buffers (`edbalden`: a bundle slot, then a stream chunk) ends with both buffers' records in the
+table. A reader indexes the buffer at `DAT_8007B7DC`, which is the last one installed.
 
 ## Why FLAG types exist
 
