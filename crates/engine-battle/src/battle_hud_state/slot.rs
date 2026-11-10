@@ -61,6 +61,13 @@ pub struct BattleSlotHud {
     /// [`BattleHud::sync_status_word`]. `None` for a host that syncs only the
     /// tracker, which then reads [`Self::status_icons`] alone.
     pub status_word: Option<u16>,
+    /// The readout draws `?` cells in place of the HP / MP figures: retail's
+    /// readout spawner `FUN_801D8DE8` registers the four number records with
+    /// type `5` instead of `2` for present-party character id `4` (Terra),
+    /// and the per-frame draw `FUN_80031D00` blits separator glyph `0xC`
+    /// (`?`) once per cell for a type-`5` record, never reading the value
+    /// ([`BattleHud::sync_hidden_readout`]).
+    pub hidden_readout: bool,
 }
 
 impl BattleSlotHud {

@@ -81,6 +81,33 @@ fn sync_reads_ramped_display_hp_not_live_hp() {
     assert_eq!(hud.slots[0].hp, 100, "settled bar reads live HP");
 }
 
+/// The fold marks the member whose roster record is Terra's (character id
+/// `4`) for the `?` readout, and nobody else: `FUN_801D8DE8` keys the type-5
+/// number records on `DAT_8007BD10[member] == 4`, an identity test - so
+/// Terra on the second ordinal (`terra_party_battle`: present list `2, 4`)
+/// is hidden and Noa beside her is not.
+#[test]
+fn sync_hides_terras_readout_by_identity() {
+    use legaia_engine_core::world::{Actor, World};
+    let mut w = World::new();
+    while w.actors.len() < 4 {
+        w.actors.push(Actor::default());
+    }
+    w.load_party(legaia_save::Party::zeroed(4));
+    w.party.active_party = vec![1, TERRA_ROSTER_SLOT as u8];
+    w.party.party_count = 2;
+    for a in &mut w.actors[..2] {
+        a.battle.hp = 400;
+        a.battle.max_hp = 400;
+        a.battle.liveness = 1;
+    }
+    let mut hud = BattleHud::new();
+    sync_battle_hud_rows(&mut hud, &w);
+    assert!(!hud.slots[0].hidden_readout, "Noa shows her figures");
+    assert!(hud.slots[1].hidden_readout, "Terra's readout is `?` cells");
+    assert!(hud.slot_views()[1].hidden_readout);
+}
+
 // ------------------------------------------------------------------
 // The per-phase rule (retail's sub-draw script + action-SM seed arms)
 // ------------------------------------------------------------------
@@ -946,4 +973,54 @@ fn the_message_bar_leads_a_composed_line_with_its_subject() {
         c.subject = None;
     }
     assert_eq!(battle_message_bar(&w).as_deref(), Some(" tail."));
+}
+
+/// The target-select plaque (record `0x29`) prints the pointed monster's
+/// name payload `+0x1BC` (`FUN_801D5854`, `0x801D5B40`) - the buffer whose
+/// caret escape the bottom-right target plaque already draws as the element
+/// badge - so a badged name wears its badge on the picker too (GitHub issue
+/// 583: retail's `Vera` tag carries its light badge, the port's did not).
+/// The HUD then slides each new target in and the left one out.
+#[test]
+fn the_target_select_plaque_wears_the_element_badge_and_slides() {
+    use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
+    use legaia_engine_battle_menus::battle_input::{
+        BattleCommand, BattleCommandSession, CommandPhase,
+    };
+    let mut w = battle_world(1);
+    let mut cmd = BattleCommandSession::new(0, 0);
+    let live = SlotState::alive(true, true);
+    let empty = SlotState::alive(false, false);
+    cmd.phase = CommandPhase::Targeting {
+        command: BattleCommand::Attack,
+        picker: TargetPickerSession::new(
+            TargetKind::SingleEnemy,
+            0,
+            [live, empty, empty],
+            // `battle_world` seats Gimard at actor 3, monster slot 0
+            // (its roster load leaves the party band at three seats).
+            [live, empty, empty, empty, empty],
+        ),
+    };
+    w.battle.command = Some(cmd);
+    let plate = battle_target_select_plate(&w).expect("cursor on the enemy row");
+    assert_eq!(plate.key, 3, "the pointed actor slot");
+    assert_eq!(plate.name, "Gimard");
+    assert_eq!(plate.badge, Some(0), "the name's own fire badge");
+
+    let mut hud = BattleHud::new();
+    sync_battle_hud_rows(&mut hud, &w);
+    hud.tick();
+    let s = hud.target_select.as_ref().expect("the plaque opened");
+    assert_eq!(s.elapsed, 1, "spawned and stepped on the same pass");
+    assert!(s.outgoing.is_none(), "the first open has nothing going out");
+    for _ in 0..20 {
+        sync_battle_hud_rows(&mut hud, &w);
+        hud.tick();
+    }
+    assert!(hud.target_select.as_ref().unwrap().settled());
+    // Closing the picker drops the pair.
+    w.battle.command = None;
+    sync_battle_hud_rows(&mut hud, &w);
+    assert!(hud.target_select.is_none());
 }

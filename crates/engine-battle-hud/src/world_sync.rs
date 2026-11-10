@@ -16,7 +16,16 @@ struct SlotRow {
     /// Displayed level (char record `+0x130`) for party rows; `0` for
     /// monsters, which retail's status element never draws a count for.
     level: u8,
+    /// The HP / MP figures draw as `?` cells: present-party character id
+    /// `4`, Terra ([`TERRA_ROSTER_SLOT`]).
+    hidden_readout: bool,
 }
+
+/// Roster slot (0-based) of character id `4`, Terra: the one member whose
+/// battle readout retail draws as `?` cells. `FUN_801D8DE8` tests the
+/// present-party id `DAT_8007BD10[member] == 4` on both its readout arms
+/// (`0x801D94A0`, `0x801D9738`) - an identity test, not a seat or a flag.
+pub const TERRA_ROSTER_SLOT: usize = 3;
 
 /// Fold the live battle-actor table into `hud`'s per-slot rows, so a host's
 /// shared `battle_hud_draws_for` builder has something to draw.
@@ -80,6 +89,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
                     .get(world.party_roster_slot(i))
                     .map(|m| m.magic_rank())
                     .unwrap_or(0),
+                hidden_readout: world.party_roster_slot(i) == TERRA_ROSTER_SLOT,
             },
         ));
     }
@@ -114,6 +124,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
                 mp_max: 0,
                 ap_slot: None,
                 level: 0,
+                hidden_readout: false,
             },
         ));
     }
@@ -138,6 +149,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
             },
         );
         hud.sync_level(*slot, row.level);
+        hud.sync_hidden_readout(*slot, row.hidden_readout);
         // The status element and the gauge read the actor's whole word, raw
         // half included (`FUN_8002C2E4`, `FUN_80046A20` at `0x80046AE0`).
         hud.sync_status_word(*slot, world.raw_status_word(*slot));
@@ -145,6 +157,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
     for slot in cleared {
         hud.clear_slot(slot);
     }
+    hud.sync_target_select(crate::battle_target_select_plate(world));
     hud.arm_combo(battle_combo_style(world), world.battle_ctx.active_actor);
     hud.arm_multi_readout(
         world.battle_ctx.active_actor,

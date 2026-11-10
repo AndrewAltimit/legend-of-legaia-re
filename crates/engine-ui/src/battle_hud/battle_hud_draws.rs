@@ -266,6 +266,33 @@ pub fn battle_hud_draws_for(
             }
         }
     };
+    // A hidden figure: `cells` copies of the `?` separator glyph, right-
+    // aligned on the field's edge. Retail's type-5 number record
+    // (`FUN_80031D00`, `0x80031FAC..0x80032008`) calls `FUN_8003C1F8(0xC,
+    // x + 8 * i, y)` once per cell and never reads its value; glyph `0xC`
+    // is the 8x12 `?` at `uv = (0xB0, 0xD0)` on the menu-glyph page.
+    let question_cells = |text: &mut Vec<TextDraw>, cells: i32, right: i32, y: i32, c: [f32; 4]| {
+        let left = right - cells * DIGIT_W;
+        for i in 0..cells {
+            let cell_x = left + i * DIGIT_W;
+            match crate::menu_numeral_cell(font, true, HIDDEN_READOUT_GLYPH, c) {
+                Some((cell, tint)) => text.push(TextDraw {
+                    dst: (
+                        origin.0 + cell_x * scale,
+                        origin.1 + y * scale,
+                        cell.w * scale as u32,
+                        cell.h * scale as u32,
+                    ),
+                    src: (cell.atlas_x, cell.atlas_y, cell.w, cell.h),
+                    color: tint,
+                }),
+                None => {
+                    let advance = font.layout_ascii("?").advance_x as i32;
+                    stage_text(text, font, "?", cell_x + (DIGIT_W - advance) / 2, y, c);
+                }
+            }
+        }
+    };
     // Fallback skin for a plate or panel with no atlas at all: a solid
     // interior plus a 1-px rim, which is what keeps a chrome-less host
     // readable.
@@ -512,14 +539,26 @@ pub fn battle_hud_draws_for(
                 px + PANEL_HP_LABEL.0,
                 py + PANEL_HP_LABEL.1,
             );
-            numerals(
-                &mut sprites,
-                &mut text,
-                u32::from(slot.hp),
-                px + PANEL_CUR_RIGHT,
-                py + PANEL_HP_DIGIT_Y,
-                hp_tint,
-            );
+            if slot.hidden_readout {
+                for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
+                    question_cells(
+                        &mut text,
+                        HIDDEN_HP_CELLS,
+                        px + right,
+                        py + PANEL_HP_DIGIT_Y,
+                        base,
+                    );
+                }
+            } else {
+                numerals(
+                    &mut sprites,
+                    &mut text,
+                    u32::from(slot.hp),
+                    px + PANEL_CUR_RIGHT,
+                    py + PANEL_HP_DIGIT_Y,
+                    hp_tint,
+                );
+            }
             separator(
                 &mut sprites,
                 &mut text,
@@ -527,14 +566,16 @@ pub fn battle_hud_draws_for(
                 py + PANEL_HP_SEPARATOR.1,
                 hp_tint,
             );
-            numerals(
-                &mut sprites,
-                &mut text,
-                u32::from(slot.hp_max),
-                px + PANEL_MAX_RIGHT,
-                py + PANEL_HP_DIGIT_Y,
-                hp_tint,
-            );
+            if !slot.hidden_readout {
+                numerals(
+                    &mut sprites,
+                    &mut text,
+                    u32::from(slot.hp_max),
+                    px + PANEL_MAX_RIGHT,
+                    py + PANEL_HP_DIGIT_Y,
+                    hp_tint,
+                );
+            }
 
             // The MP pair is drawn for every party member, a zero ceiling
             // included: retail's MP tint (`FUN_80046A20`, `0x80046B74`) reads
@@ -548,27 +589,39 @@ pub fn battle_hud_draws_for(
                     px + PANEL_MP_LABEL.0,
                     py + PANEL_MP_LABEL.1,
                 );
-                numerals(
-                    &mut sprites,
-                    &mut text,
-                    u32::from(slot.mp),
-                    px + PANEL_CUR_RIGHT,
-                    py + PANEL_MP_DIGIT_Y,
-                    mp_tint,
-                );
+                if slot.hidden_readout {
+                    for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
+                        question_cells(
+                            &mut text,
+                            HIDDEN_MP_CELLS,
+                            px + right,
+                            py + PANEL_MP_DIGIT_Y,
+                            base,
+                        );
+                    }
+                } else {
+                    numerals(
+                        &mut sprites,
+                        &mut text,
+                        u32::from(slot.mp),
+                        px + PANEL_CUR_RIGHT,
+                        py + PANEL_MP_DIGIT_Y,
+                        mp_tint,
+                    );
+                    numerals(
+                        &mut sprites,
+                        &mut text,
+                        u32::from(slot.mp_max),
+                        px + PANEL_MAX_RIGHT,
+                        py + PANEL_MP_DIGIT_Y,
+                        mp_tint,
+                    );
+                }
                 separator(
                     &mut sprites,
                     &mut text,
                     px + PANEL_MP_SEPARATOR.0,
                     py + PANEL_MP_SEPARATOR.1,
-                    mp_tint,
-                );
-                numerals(
-                    &mut sprites,
-                    &mut text,
-                    u32::from(slot.mp_max),
-                    px + PANEL_MAX_RIGHT,
-                    py + PANEL_MP_DIGIT_Y,
                     mp_tint,
                 );
             }
@@ -618,27 +671,33 @@ pub fn battle_hud_draws_for(
             BAR_HP_LABEL.0,
             BAR_HP_LABEL.1 + dy,
         );
-        numerals(
-            &mut sprites,
-            &mut text,
-            u32::from(slot.hp),
-            BAR_HP_CUR_RIGHT,
-            BAR_DIGIT_Y + dy,
-            hp_tint,
-        );
+        if slot.hidden_readout {
+            for right in [BAR_HP_CUR_RIGHT, BAR_HP_MAX_RIGHT] {
+                question_cells(&mut text, HIDDEN_HP_CELLS, right, BAR_DIGIT_Y + dy, base);
+            }
+        } else {
+            numerals(
+                &mut sprites,
+                &mut text,
+                u32::from(slot.hp),
+                BAR_HP_CUR_RIGHT,
+                BAR_DIGIT_Y + dy,
+                hp_tint,
+            );
+            numerals(
+                &mut sprites,
+                &mut text,
+                u32::from(slot.hp_max),
+                BAR_HP_MAX_RIGHT,
+                BAR_DIGIT_Y + dy,
+                hp_tint,
+            );
+        }
         separator(
             &mut sprites,
             &mut text,
             BAR_HP_SEPARATOR.0,
             BAR_HP_SEPARATOR.1 + dy,
-            hp_tint,
-        );
-        numerals(
-            &mut sprites,
-            &mut text,
-            u32::from(slot.hp_max),
-            BAR_HP_MAX_RIGHT,
-            BAR_DIGIT_Y + dy,
             hp_tint,
         );
         if slot.is_party || slot.mp_max > 0 {
@@ -649,27 +708,33 @@ pub fn battle_hud_draws_for(
                 BAR_MP_LABEL.0,
                 BAR_MP_LABEL.1 + dy,
             );
-            numerals(
-                &mut sprites,
-                &mut text,
-                u32::from(slot.mp),
-                BAR_MP_CUR_RIGHT,
-                BAR_DIGIT_Y + dy,
-                mp_tint,
-            );
+            if slot.hidden_readout {
+                for right in [BAR_MP_CUR_RIGHT, BAR_MP_MAX_RIGHT] {
+                    question_cells(&mut text, HIDDEN_MP_CELLS, right, BAR_DIGIT_Y + dy, base);
+                }
+            } else {
+                numerals(
+                    &mut sprites,
+                    &mut text,
+                    u32::from(slot.mp),
+                    BAR_MP_CUR_RIGHT,
+                    BAR_DIGIT_Y + dy,
+                    mp_tint,
+                );
+                numerals(
+                    &mut sprites,
+                    &mut text,
+                    u32::from(slot.mp_max),
+                    BAR_MP_MAX_RIGHT,
+                    BAR_DIGIT_Y + dy,
+                    mp_tint,
+                );
+            }
             separator(
                 &mut sprites,
                 &mut text,
                 BAR_MP_SEPARATOR.0,
                 BAR_MP_SEPARATOR.1 + dy,
-                mp_tint,
-            );
-            numerals(
-                &mut sprites,
-                &mut text,
-                u32::from(slot.mp_max),
-                BAR_MP_MAX_RIGHT,
-                BAR_DIGIT_Y + dy,
                 mp_tint,
             );
         }
@@ -928,35 +993,55 @@ pub fn battle_hud_draws_for(
     // ---- The target-select plaque ----
     //
     // Placement record `0x29`: `FUN_801D5854`'s target-cursor arm measures
-    // the target's name payload and writes the content box's rest seat
-    // (`0x801D5B4C..0x801D5BAC`); the plate is the blue class (kind pair
-    // `0x0101`), pen `(x, y - 2)`, plate `(x - 8, y - 6)` like every
-    // content-box record. The slide in from `x + 0x80` is not modelled - the
-    // plaque draws at rest.
+    // the target's name payload (the element badge escape included) and
+    // writes the content box's rest seat (`0x801D5B4C..0x801D5BAC`); the
+    // plate is the blue class (kind pair `0x0101`), pen `(x, y - 2)`, plate
+    // `(x - 8, y - 6)` like every content-box record. It slides in from
+    // `max(rest + 0x80, 0x148)` while record `0x2A`, the name the cursor
+    // left, slides from its own rest seat out to its disc seat `x = 328`.
     if let Some((name, badge_index)) = frame.target_select.filter(|(n, _)| !n.is_empty()) {
         use crate::battle_chrome as chrome;
-        let name_w = font.layout_ascii(name).advance_x as i32;
-        let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
-        let lead = if badge.is_some() {
-            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
-        } else {
-            0
+        let glide = frame.target_select_glide.filter(|(e, t)| e < t);
+        let seat = |from: i32, to: i32| match glide {
+            Some((e, t)) => from + (to - from) * i32::from(e) / i32::from(t.max(1)),
+            None => to,
         };
-        let interior = lead + name_w;
-        let x = i32::from(chrome::target_select_plaque_x(interior as u16));
-        let y = i32::from(chrome::TARGET_SELECT_Y);
-        plate_run(
-            &mut text,
-            &mut sprites,
-            x - PLATE_CAP_W,
-            y - 6,
-            interior,
-            false,
-        );
-        if let Some(src) = badge {
-            stage_sprite(&mut sprites, src, x, y - 2);
+        let plaque = |text: &mut Vec<TextDraw>,
+                      sprites: &mut Vec<SpriteDraw>,
+                      name: &str,
+                      badge_index: Option<u8>,
+                      incoming: bool| {
+            let name_w = font.layout_ascii(name).advance_x as i32;
+            let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+            let lead = if badge.is_some() {
+                PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+            } else {
+                0
+            };
+            let interior = lead + name_w;
+            let rest = chrome::target_select_plaque_x(interior as u16);
+            let x = if incoming {
+                seat(
+                    i32::from(chrome::target_select_slide_start(rest)),
+                    i32::from(rest),
+                )
+            } else {
+                seat(i32::from(rest), i32::from(chrome::TARGET_SELECT_OUT_X))
+            };
+            let y = i32::from(chrome::TARGET_SELECT_Y);
+            plate_run(text, sprites, x - PLATE_CAP_W, y - 6, interior, false);
+            if let Some(src) = badge {
+                stage_sprite(sprites, src, x, y - 2);
+            }
+            stage_text(text, font, name, x + lead, y - 2, ink);
+        };
+        if glide.is_some()
+            && let Some((out_name, out_badge)) =
+                frame.target_select_outgoing.filter(|(n, _)| !n.is_empty())
+        {
+            plaque(&mut text, &mut sprites, out_name, out_badge, false);
         }
-        stage_text(&mut text, font, name, x + lead, y - 2, ink);
+        plaque(&mut text, &mut sprites, name, badge_index, true);
     }
 
     // ---- The commit log ----

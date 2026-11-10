@@ -571,3 +571,103 @@ fn plaque_draws_at_the_measured_inset() {
         "the plaque plate is not sized to its name at the pinned seat"
     );
 }
+
+/// Terra's readout is `?` cells, not figures: retail registers her HP / MP
+/// number records with type `5` (`FUN_801D8DE8`, the `DAT_8007BD10 == 4`
+/// arms at `0x801D94A4` / `0x801D973C`), which `FUN_80031D00` draws as one
+/// `?` glyph per cell - three per HP field, two per MP field, on both the
+/// roster panel and the active-actor bar. Without it the bar showed her live
+/// `200 / 430` (GitHub issue 579).
+#[test]
+fn a_hidden_readout_draws_question_cells_on_both_surfaces() {
+    let font = legaia_font::synthetic_for_tests();
+    let q = font.layout_ascii("?").glyphs[0];
+    let q_src = (q.atlas_x, q.atlas_y, q.width, q.height);
+    let digit_srcs: Vec<_> = (b'0'..=b'9')
+        .map(|d| {
+            let g = font.layout_ascii(&(d as char).to_string()).glyphs[0];
+            (g.atlas_x, g.atlas_y, g.width, g.height)
+        })
+        .collect();
+    let mut terra = slot_view("Terra", true, true, 400, 400, 200, 200);
+    terra.hidden_readout = true;
+    for (surface, draws) in [
+        ("panel", hud_draws(&font, &[terra], &[], &[])),
+        ("bar", hud_draws_acting(&font, &[terra])),
+    ] {
+        let questions = draws.iter().filter(|d| d.src == q_src).count();
+        assert_eq!(questions, 3 + 3 + 2 + 2, "{surface}: `?` cells");
+        assert!(
+            !draws.iter().any(|d| digit_srcs.contains(&d.src)),
+            "{surface}: a figure drew under a hidden readout"
+        );
+    }
+    // Every field keeps its right edge (HP 134 / 178, MP 238 / 274), so the
+    // cells start at retail's record x: HP `0x5E` / `0x8A`, MP `0xCE` /
+    // `0xF2` off the bar's pen x 16.
+    let bar = hud_draws_acting(&font, &[terra]);
+    let mut xs: Vec<i32> = bar
+        .iter()
+        .filter(|d| d.src == q_src)
+        .map(|d| d.dst.0 / STAGE_SCALE)
+        .collect();
+    xs.sort_unstable();
+    let adv = font.layout_ascii("?").advance_x as i32;
+    let pad = (DIGIT_W - adv) / 2 + q.dst_x;
+    let want: Vec<i32> = [110, 118, 126, 154, 162, 170, 222, 230, 258, 266]
+        .iter()
+        .map(|x| x + pad)
+        .collect();
+    assert_eq!(xs, want);
+}
+
+/// The target-select plaque (record `0x29`) slides in from
+/// `max(rest + 0x80, 0x148)` to its rest seat while the name the cursor left
+/// (record `0x2A`) slides from its own rest seat out to `x = 328`, on one
+/// sixteen-frame linear glide (GitHub issue 583: the port drew the plaque at
+/// rest with no slide).
+#[test]
+fn the_target_select_pair_slides_on_one_glide() {
+    use legaia_engine_ui::battle_chrome as chrome;
+    let font = legaia_font::synthetic_for_tests();
+    let frame_at = |glide: Option<(u8, u8)>| {
+        battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                target_select: Some(("Vera", None)),
+                target_select_outgoing: Some(("Pump Bat", None)),
+                target_select_glide: glide,
+                ..Default::default()
+            },
+            PEN,
+        )
+        .text
+    };
+    let first_x = |draws: &[TextDraw], name: &str| -> Option<i32> {
+        let g = font.layout_ascii(name).glyphs[0];
+        let src = (g.atlas_x, g.atlas_y, g.width, g.height);
+        draws
+            .iter()
+            .filter(|d| d.src == src)
+            .map(|d| d.dst.0 / STAGE_SCALE - g.dst_x)
+            .min()
+    };
+    let rest = |name: &str| {
+        i32::from(chrome::target_select_plaque_x(
+            font.layout_ascii(name).advance_x as u16,
+        ))
+    };
+    let (vera, bat) = (rest("Vera"), rest("Pump Bat"));
+    let start = i32::from(chrome::target_select_slide_start(vera as i16));
+    // Halfway: each record is half its way along.
+    let mid = frame_at(Some((8, 16)));
+    assert_eq!(first_x(&mid, "Vera"), Some(start + (vera - start) / 2));
+    assert_eq!(first_x(&mid, "Pump Bat"), Some(bat + (328 - bat) / 2));
+    // Landed (or no glide): the new plaque at rest, the old one gone.
+    for landed in [frame_at(Some((16, 16))), frame_at(None)] {
+        assert_eq!(first_x(&landed, "Vera"), Some(vera));
+        assert_eq!(first_x(&landed, "Pump Bat"), None);
+    }
+}

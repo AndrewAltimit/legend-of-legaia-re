@@ -716,3 +716,44 @@ fn a_row_cast_counts_into_the_value_window() {
     hud.arm_multi_readout(0, None);
     assert!(hud.multi_readout.is_none());
 }
+
+/// The target-select pair: a new key spawns the incoming plaque at elapsed
+/// `0` with the old one going out; the same key keeps the glide running;
+/// the outgoing plaque is dropped once the sixteen-frame glide lands.
+#[test]
+fn target_select_slide_restarts_on_a_new_target_only() {
+    let plate = |key: u8, name: &str| TargetSelectPlate {
+        key,
+        name: name.to_string(),
+        badge: None,
+    };
+    let mut hud = BattleHud::new();
+    hud.sync_target_select(Some(plate(3, "Pump Bat")));
+    for _ in 0..5 {
+        hud.tick();
+        hud.sync_target_select(Some(plate(3, "Pump Bat")));
+    }
+    assert_eq!(hud.target_select.as_ref().unwrap().elapsed, 5);
+    hud.sync_target_select(Some(plate(4, "Vera")));
+    let s = hud.target_select.as_ref().unwrap();
+    assert_eq!(s.elapsed, 0);
+    assert_eq!(s.incoming.name, "Vera");
+    assert_eq!(
+        s.outgoing.as_ref().map(|p| p.name.as_str()),
+        Some("Pump Bat")
+    );
+    // Linear `FUN_801D9BBC` seat: halfway at elapsed 8 of 16.
+    for _ in 0..8 {
+        hud.tick();
+    }
+    assert_eq!(hud.target_select.as_ref().unwrap().seat(328, 200), 264);
+    for _ in 0..8 {
+        hud.tick();
+    }
+    let s = hud.target_select.as_ref().unwrap();
+    assert!(s.settled());
+    assert!(s.outgoing.is_none(), "the left name is off the screen");
+    assert_eq!(s.seat(328, 200), 200);
+    hud.sync_target_select(None);
+    assert!(hud.target_select.is_none());
+}

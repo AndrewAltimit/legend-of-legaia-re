@@ -123,6 +123,58 @@ pub struct BattleHud {
     /// A landed melee total waiting for the next battle frame to open the
     /// cluster ([`Self::defer_combo_total`]): `(attacker, frame it landed on)`.
     pending_land: Option<(u8, u64)>,
+    /// The target-select plaque's slide ([`TargetSelectSlide`]), seated by
+    /// [`Self::sync_target_select`] and stepped by [`Self::tick`].
+    pub target_select: Option<TargetSelectSlide>,
+}
+
+/// One target-select plaque the picker shows: its identity (the pointed
+/// actor slot, or `0xFF` for a preset label), name and element badge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetSelectPlate {
+    pub key: u8,
+    pub name: String,
+    pub badge: Option<u8>,
+}
+
+/// The target-select plaque pair on its glide: placement record `0x29` (the
+/// pointed name) spawned at seat A, `max(rest + 0x80, 0x148)`, and walking to
+/// its rest seat, and record `0x2A` (the name the cursor left) walking from
+/// that name's rest seat out to its disc seat B, `x = 328`.
+///
+/// Retail re-seats the pair in the pose driver's target arm
+/// (`FUN_801D5854`, `0x801D5B08..0x801D5BAC`: record `0x2A` takes record
+/// `0x29`'s string, width and rest `x` as its seat A, then `0x29` is measured
+/// off the new target), and the cursor's step (`FUN_801D388C(0xD)` from the
+/// `0x5A` arm at `0x801D2218` / `0x801D2264`; `0x14` / `0x18` on the item
+/// steps) opens both on mode `0`, sixteen vsyncs each (`FUN_801D9BBC`). A
+/// step that opens the cursor (`0x2D`, `0x30`) carries `29/0` alone, so the
+/// first plaque slides in with nothing going out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetSelectSlide {
+    pub incoming: TargetSelectPlate,
+    pub outgoing: Option<TargetSelectPlate>,
+    /// The glide record's `elapsed` byte; both records share it.
+    pub elapsed: u8,
+    /// The glide record's `total` byte (`0x10`).
+    pub total: u8,
+}
+
+impl TargetSelectSlide {
+    /// Has the pair landed (the incoming plaque at rest, the outgoing one
+    /// off the screen)?
+    pub fn settled(&self) -> bool {
+        self.elapsed >= self.total
+    }
+
+    /// `FUN_801D9BBC`'s linear step for a record gliding `from -> to`:
+    /// `from + (to - from) * elapsed / total`, `to` once settled.
+    pub fn seat(&self, from: i32, to: i32) -> i32 {
+        if self.settled() {
+            return to;
+        }
+        from + (to - from) * i32::from(self.elapsed) / i32::from(self.total.max(1))
+    }
 }
 
 /// The value window `0x801F6980` a cast aimed at the whole monster row keeps
@@ -222,6 +274,34 @@ impl BattleHud {
             multi_readout: None,
             combo_melee: false,
             pending_land: None,
+            target_select: None,
+        }
+    }
+
+    /// Seat the target-select plaque the picker points at this tick
+    /// ([`TargetSelectSlide`]). A new identity starts the pair's glide, the
+    /// plaque it replaces going out; the same one leaves the glide running;
+    /// `None` (no cursor) drops both, as the next step's handle-list reset
+    /// does.
+    pub fn sync_target_select(&mut self, plate: Option<TargetSelectPlate>) {
+        let Some(plate) = plate else {
+            self.target_select = None;
+            return;
+        };
+        match &mut self.target_select {
+            Some(s) if s.incoming.key == plate.key => {
+                // Same target: a renamed label (a dedup suffix) keeps its seat.
+                s.incoming = plate;
+            }
+            slot => {
+                let outgoing = slot.take().map(|s| s.incoming);
+                *slot = Some(TargetSelectSlide {
+                    incoming: plate,
+                    outgoing,
+                    elapsed: 0,
+                    total: legaia_engine_battle_vm::battle_commit_log::LAUNCH_GLIDE_FRAMES,
+                });
+            }
         }
     }
 
@@ -283,6 +363,22 @@ impl BattleHud {
     pub fn sync_level(&mut self, slot: u8, level: u8) {
         if let Some(s) = self.slots.get_mut(slot as usize) {
             s.level = level;
+        }
+    }
+
+    /// Mark whether the slot's HP / MP readout is drawn as `?` cells
+    /// ([`BattleSlotHud::hidden_readout`]).
+    ///
+    /// Retail decides it per present-party character id in the readout
+    /// spawner `FUN_801D8DE8`: both the roster-panel arm
+    /// (`lbu v1,0(DAT_8007BD10 + member)` / `li v0,4` / `beq` at
+    /// `0x801D949C..0x801D94A4`, taken to `0x801D9664`) and the
+    /// active-actor bar arm (`0x801D9734..0x801D973C`, taken to `0x801D98D0`)
+    /// register the HP and MP number records through `FUN_8003563C` with
+    /// type `5` for id `4`, Terra, where every other member gets type `2`.
+    pub fn sync_hidden_readout(&mut self, slot: u8, hidden: bool) {
+        if let Some(s) = self.slots.get_mut(slot as usize) {
+            s.hidden_readout = hidden;
         }
     }
 
@@ -610,6 +706,14 @@ impl BattleHud {
         if let Some(m) = &mut self.multi_readout {
             m.age = m.age.saturating_add(1);
         }
+        if let Some(t) = &mut self.target_select
+            && !t.settled()
+        {
+            t.elapsed += 1;
+            if t.settled() {
+                t.outgoing = None;
+            }
+        }
         // A closed cluster is gone once its slide-out has run.
         if self
             .combo
@@ -659,6 +763,7 @@ impl BattleHud {
                     mp_fill,
                     status_sprite: s.status_sprite(),
                     level: s.level,
+                    hidden_readout: s.hidden_readout,
                 }
             })
             .collect()
@@ -719,6 +824,9 @@ pub struct SlotView {
     /// Displayed character level, the base-marker arm's count
     /// ([`BattleSlotHud::level`]).
     pub level: u8,
+    /// The HP / MP figures draw as `?` cells
+    /// ([`BattleSlotHud::hidden_readout`]).
+    pub hidden_readout: bool,
 }
 
 /// Plain popup view.

@@ -775,16 +775,35 @@ pub fn battle_multi_readout_plates(
 pub fn battle_target_select_plaque(
     world: &legaia_engine_core::world::World,
 ) -> Option<(String, Option<u8>)> {
+    battle_target_select_plate(world).map(|p| (p.name, p.badge))
+}
+
+/// [`battle_target_select_plaque`] with the plate's identity: the pointed
+/// actor slot, or [`TARGET_SELECT_LABEL_KEY`] for a preset label. The HUD
+/// keys the plaque's slide on it
+/// ([`legaia_engine_battle::battle_hud_state::BattleHud::sync_target_select`]),
+/// so two monsters with one name still slide.
+pub fn battle_target_select_plate(
+    world: &legaia_engine_core::world::World,
+) -> Option<legaia_engine_battle::battle_hud_state::TargetSelectPlate> {
+    use legaia_engine_battle::battle_hud_state::TargetSelectPlate;
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    let plate = |key: u8, name: String, badge: Option<u8>| TargetSelectPlate { key, name, badge };
     match battle_command_surface(world) {
-        Some(CommandSurface::ItemAllAllies) => return Some(("All Allies".to_string(), None)),
+        Some(CommandSurface::ItemAllAllies) => {
+            return Some(plate(
+                TARGET_SELECT_LABEL_KEY,
+                "All Allies".to_string(),
+                None,
+            ));
+        }
         // A party target: the item target step `0x12` and the spell target
         // step `0x1B` both open record `0x29` (`29/0`), and the arm measures
         // the target's name payload `+0x1BC` whichever side it is on -
         // `battle_item_target_gaza2_retail` holds `Vahn` at plate x `211`,
         // the `0xE8 - w/2` seat of his 27-px name.
         Some(CommandSurface::ItemTarget(Some(slot)) | CommandSurface::SpellTarget(Some(slot))) => {
-            return Some((party_member_name(world, slot), None));
+            return Some(plate(slot, party_member_name(world, slot), None));
         }
         _ => {}
     }
@@ -823,11 +842,22 @@ pub fn battle_target_select_plaque(
     if target.battle.max_hp == 0 {
         return None;
     }
-    // No element badge: the captured record-0x29 width (55 for "Gobu Gobu")
-    // is the bare name's advance, so retail's measured payload carries no
-    // badge escape here, unlike the top-left plaque's.
-    Some((monster_name(world, t), None))
+    // The record's string is the target's name payload `+0x1BC`
+    // (`addiu a0,a0,0x1bc` / `sw a0,0x3ec(s1)` at `0x801D5B40..0x801D5B48`),
+    // the same buffer the bottom-right target plaque prints, so an escaped
+    // name wears its element badge here too and the measured width grows by
+    // it. "Gobu Gobu" (width 55) is one of the names with no escape.
+    Some(plate(
+        t,
+        monster_name(world, t),
+        monster_element_badge(world, t),
+    ))
 }
+
+/// [`battle_target_select_plate`]'s key for a preset label (`All Allies`):
+/// the record adopts a fixed string (`FUN_801D57E8(0x29, 0x3E)`), not an
+/// actor's name.
+pub const TARGET_SELECT_LABEL_KEY: u8 = 0xFF;
 
 /// The element badge a monster slot's plaque wears (`None` for none).
 ///
