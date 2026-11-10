@@ -279,6 +279,7 @@ mod settle_head;
 mod sfx_cue_route;
 mod sfx_drain;
 mod shop_quantity;
+mod sideband_applier;
 mod slot_machine;
 mod slot_marquee;
 mod spell_cam;
