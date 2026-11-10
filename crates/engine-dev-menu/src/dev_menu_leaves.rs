@@ -281,9 +281,11 @@ pub fn panel_geometry(row_start: i32, row_end: i32) -> PanelGeometry {
 /// SFX ids the list-picker fires (`FUN_80035B50` argument).
 pub const SFX_CURSOR_MOVE: u32 = 0x21;
 
-pub const SFX_CONFIRM: u32 = 0x37;
+/// The confirm leg's cue (`li a0,0x36` at `0x801ECC28`).
+pub const SFX_CONFIRM: u32 = 0x36;
 
-pub const SFX_CANCEL: u32 = 0x36;
+/// The cancel leg's cue (`li a0,0x37` at `0x801ECBF8`).
+pub const SFX_CANCEL: u32 = 0x37;
 
 /// One step of the vertical cursor over `row_start..=row_end`. The wrap is a
 /// **swap, not a clamp**: stepping below `row_start` jumps to `row_end` and
@@ -368,6 +370,24 @@ impl ListPickerPhase {
             4 => ListPickerPhase::Teardown,
             _ => return None,
         })
+    }
+}
+
+/// The phase the list picker's Active leg leaves (`FUN_801ECA08`,
+/// `0x801ECBD0..0x801ECC34`): cancel (`cancel`, the edge word against the
+/// cancel mask `0x800846D4`) parks it in [`ListPickerPhase::CancelSettle`],
+/// tested first; else confirm (the mask `0x800846D0`) hands the row to the
+/// row-action dispatcher in [`ListPickerPhase::RowAction`]; else it stays
+/// [`ListPickerPhase::Active`].
+///
+/// PORT: FUN_801ECA08 (the Active leg's exits)
+pub fn list_picker_active_exit(cancel: bool, confirm: bool) -> ListPickerPhase {
+    if cancel {
+        ListPickerPhase::CancelSettle
+    } else if confirm {
+        ListPickerPhase::RowAction
+    } else {
+        ListPickerPhase::Active
     }
 }
 

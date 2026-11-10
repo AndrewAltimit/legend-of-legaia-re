@@ -39,7 +39,7 @@ use legaia_engine_dev_menu::dev_menu_flags::EventFlagEditor;
 use legaia_engine_dev_menu::dev_menu_leaves::{
     DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, SFX_CURSOR_MOVE,
     decode_camera_readout, dev_menu_cursor_step, format_fixed_decimal, list_body_draws,
-    panel_geometry,
+    list_picker_active_exit, panel_geometry,
 };
 use legaia_engine_system::pad::{
     PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_UP,
@@ -308,9 +308,8 @@ impl DevMenuSession {
     /// record afterwards, exactly as `FUN_801D6E18` does - unconditionally,
     /// whichever page is up.
     ///
-    /// PORT: FUN_801ECA08 (the Active leg's exits, cancel `0x801ECBEC` before
-    /// confirm `0x801ECC10`, and the `phase * gate` draw gate off the entry
-    /// phase)
+    /// The Active leg's exits are [`list_picker_active_exit`]; the draw gate
+    /// is taken off the phase the frame entered in.
     pub fn tick(&mut self, pad_edge: u16, pad_held: u16, records: &mut [&mut [u8]]) {
         // The list-picker phase this frame enters in. Retail's `ctx[+0x54]`
         // space, driven off which page has the pad: the list is the `Active`
@@ -333,12 +332,12 @@ impl DevMenuSession {
         // first (`0x801ECBEC`): cancel parks the list in `CancelSettle`,
         // confirm hands the row to the row-action dispatcher `FUN_801EA9B0`,
         // whose return is the draw gate's factor on that leg.
-        if on_list && pad_edge & PACK_CIRCLE != 0 {
-            self.list_phase = ListPickerPhase::CancelSettle;
-        } else if on_list && pad_edge & PACK_CROSS != 0 {
-            let (_, gate) = dev_menu_action(self.row as i16);
-            self.list_gate = gate;
-            self.list_phase = ListPickerPhase::RowAction;
+        if on_list {
+            self.list_phase =
+                list_picker_active_exit(pad_edge & PACK_CIRCLE != 0, pad_edge & PACK_CROSS != 0);
+            if self.list_phase == ListPickerPhase::RowAction {
+                self.list_gate = dev_menu_action(self.row as i16).1;
+            }
         }
         // The gate is taken off the phase the frame entered in, so the frame
         // of either press still draws the list.

@@ -135,3 +135,136 @@ fn the_row_action_parks_and_returns_as_retail_does() {
         "{parked} {ran} {gated}"
     );
 }
+
+const PICKER: u32 = 0x801E_CA08;
+
+/// The list picker `FUN_801ECA08`'s Active leg (phase `1`) against
+/// `engine-dev-menu`: the panel descriptor it sizes (`panel_geometry`), the
+/// row step and wrap (`dev_menu_cursor_step`), the leg's exit
+/// (`list_picker_active_exit`), the cues, and the draw gate
+/// (`list_body_draws`), whose `1` calls the row renderer `FUN_801EAD98`.
+/// The value adjuster and the hand are stubbed and logged.
+#[test]
+fn the_list_pickers_active_leg_steps_as_retail_steps() {
+    differential!(prot(897, PICKER));
+    use legaia_engine_dev_menu::dev_menu_leaves::{
+        ListPickerPhase, SFX_CANCEL, SFX_CONFIRM, SFX_CURSOR_MOVE, dev_menu_cursor_step,
+        list_body_draws, list_picker_active_exit, panel_geometry,
+    };
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    const PANELS: u32 = 0x801F_2B98;
+    const BUSY: u32 = 0x8007_BB80;
+    const HELD: u32 = 0x8007_B850;
+    const STEP_EDGE: u32 = 0x8007_BB84;
+    const EDGE: u32 = 0x8007_B874;
+    const CONFIRM_MASK: u32 = 0x8008_46D0;
+    const CANCEL_MASK: u32 = 0x8008_46D4;
+    type Log = std::rc::Rc<std::cell::RefCell<Vec<(u32, u32)>>>;
+    let log: Log = Default::default();
+    for entry in [
+        0x8003_1D00u32,
+        0x8003_5B50,
+        0x801E_9F64,
+        0x8001_7D98,
+        0x8003_5A4C,
+        0x801E_AD98,
+    ] {
+        let l = log.clone();
+        cpu.hook(entry, move |r, _| {
+            l.borrow_mut().push((entry, r.r[psx_retail_exec::A0]))
+        });
+    }
+    cpu.mem.wr32(CONFIRM_MASK, 0x40);
+    cpu.mem.wr32(CANCEL_MASK, 0x20);
+    let mut rng = Rng(0x5049_434B);
+    let mut seen = [0u32; 4];
+    for run in 0..6_000 {
+        let start = rng.below(8) as i32;
+        let end = start + rng.below(12) as i32;
+        let row = match rng.below(6) {
+            0 => start - 1 - rng.below(3) as i32,
+            1 => end + 1,
+            _ => start + rng.below((end - start + 1) as u32) as i32,
+        };
+        let panel = rng.below(4);
+        cpu.mem.wr16(ACTOR + 0x54, 1);
+        cpu.mem.wr16(ACTOR + 0x9E, row as u16);
+        let busy = rng.below(8) == 0;
+        cpu.mem.wr32(BUSY, u32::from(busy));
+        let held = if rng.below(6) == 0 { 0x40 } else { 0 };
+        cpu.mem.wr32(HELD, held);
+        let (up, down) = (rng.below(3) == 0, rng.below(3) == 0);
+        cpu.mem
+            .wr32(STEP_EDGE, u32::from(up) * 0x1000 | u32::from(down) * 0x4000);
+        let (cancel, confirm) = (rng.below(5) == 0, rng.below(5) == 0);
+        cpu.mem
+            .wr32(EDGE, u32::from(cancel) * 0x20 | u32::from(confirm) * 0x40);
+        log.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(PICKER, &[ACTOR, start as u32, end as u32, panel]),
+            Stop::Returned,
+            "run {run}"
+        );
+        let what = format!(
+            "run {run}: rows {start}..={end} row {row} busy {busy} held {held:#x} up {up} down {down} cancel {cancel} confirm {confirm}"
+        );
+        let calls = log.borrow().clone();
+        let geom = panel_geometry(start, end);
+        let desc = PANELS + panel * 28;
+        assert_eq!(
+            (
+                cpu.mem.rd16(desc + 0xA) as i16,
+                cpu.mem.rd16(desc + 0xE) as i16
+            ),
+            (geom.y, geom.height),
+            "{what}: the panel"
+        );
+        let drawn = calls.iter().any(|c| c.0 == 0x801E_AD98);
+        if busy {
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), 1, "{what}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9E) as i16 as i32, row, "{what}");
+            assert_eq!(drawn, list_body_draws(1, 0), "{what}: the gate");
+            seen[0] += 1;
+            continue;
+        }
+        let stepping = held == 0;
+        let (want_row, _) = dev_menu_cursor_step(row, start, end, up && stepping, down && stepping);
+        assert_eq!(
+            cpu.mem.rd16(ACTOR + 0x9E) as i16 as i32,
+            want_row,
+            "{what}: the row"
+        );
+        let phase = list_picker_active_exit(cancel, confirm);
+        assert_eq!(
+            cpu.mem.rd16(ACTOR + 0x54),
+            phase as u16,
+            "{what}: the phase"
+        );
+        let mut cues = Vec::new();
+        if stepping && up {
+            cues.push(SFX_CURSOR_MOVE);
+        }
+        if stepping && down {
+            cues.push(SFX_CURSOR_MOVE);
+        }
+        match phase {
+            ListPickerPhase::CancelSettle => cues.push(SFX_CANCEL),
+            ListPickerPhase::RowAction => cues.push(SFX_CONFIRM),
+            _ => {}
+        }
+        let got: Vec<u32> = calls
+            .iter()
+            .filter(|c| c.0 == 0x8003_5B50)
+            .map(|c| c.1)
+            .collect();
+        assert_eq!(got, cues, "{what}: the cues");
+        assert_eq!(drawn, list_body_draws(1, 1), "{what}: the gate");
+        seen[phase as usize] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 500), "{seen:?}");
+}
