@@ -1327,7 +1327,19 @@ impl World {
     /// swap and clears sound-flag bit 2: it ends the entry latch
     /// ([`crate::world::AudioState::bgm_entry_latch`]).
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
+        // The system channel's tick is the entity tick `FUN_801DA51C`, once a
+        // game frame: it runs the script and then, at its tail, clears a
+        // `-1000` landed sentinel a kind-0 warp parked in `_DAT_8007B6B0`
+        // (`0x801DA7C4..0x801DA7D8`). So the pass after a landing reads the
+        // sentinel - `4C 2x` turns the player by the octants it moves under it
+        // - and the word is gone before the next.
+        let channel_tick = self.clock.script_slice_due()
+            || self.field_vm.system_install_pass
+            || self.audio.bgm_field_init_open;
         let last = self.run_field_frame_slice();
+        if channel_tick {
+            legaia_engine_field::field_warp_tile::clear_landed_sentinel(&mut self.locomotion.warp);
+        }
         self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;
