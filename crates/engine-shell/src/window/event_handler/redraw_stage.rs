@@ -579,15 +579,14 @@ impl PlayWindowApp {
             self.session.host.world.mode,
         );
         r.set_backface_cull(nclip_mode);
-        // The field's primitives link at their own corners' depth
-        // (`set_draw_order` per draw), on the field frame alone: the world
-        // map, battle and the minigame venues keep their own rules.
+        // Mesh primitives link at their own corners' depth
+        // (`set_draw_order` per draw) on the field, the world map and in
+        // battle (`camera_frame::prim_link_order`): a battle body and the
+        // effect parts around it sort by link, as retail's one ordering
+        // table does. The minigame venues keep their own rules.
         r.set_field_prim_order(
-            matches!(
-                self.session.host.world.mode,
-                legaia_engine_mode::mode::SceneMode::Field
-                    | legaia_engine_mode::mode::SceneMode::WorldMap
-            ) && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
+            legaia_engine_field::camera_frame::prim_link_order(self.session.host.world.mode)
+                && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
         );
         // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
         // table, applied by retail's overworld prim leaves), scaled for

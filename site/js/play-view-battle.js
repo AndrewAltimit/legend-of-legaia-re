@@ -476,6 +476,15 @@
         }
       }
       this._battleFxDraws(rt, b, draws);
+      /* Retail links every battle mesh primitive - bodies, ghosts, effect
+       * parts, the backdrop shell - at its corners' mean in one ordering
+       * table (renderer-port.md, "The battle sorts by each primitive's
+       * link"): PSX mode draws each at that depth, as the native window's
+       * `set_field_prim_order` does. The grid keeps its far slice. */
+      if (this.psxRender && typeof rt.play_field_prim_order === 'function'
+          && rt.play_field_prim_order()) {
+        for (const d of draws) if (!d.meanDepth) d.meanDepth = 1;
+      }
 
       /* Camera: the engine hands the page a READY view-projection - the
        * shared retail phase script's live pose (dialogue close-up / far

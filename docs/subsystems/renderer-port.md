@@ -361,19 +361,57 @@ tick reaches it, which the port does not track per actor), a posed prop's record
 flag `0x800`, and the order inside one bucket (retail's last-linked-first). A
 clean frame keeps per-pixel depth.
 
-### The battle shell sorts by prim mean
+### The battle sorts by each primitive's link
 
-The battle stage is the case where that rule does hold. The shell and its spun
-slot are one object list linked at each prim's own mean `SZ`, so in PSX mode
-both hosts draw them at their corners' mean `w`: `DRAW_WORD_MEAN_DEPTH` on the
-draw's NCLIP word stages `flags.w = -1` (`prim_mean_depth` over
-`prim_c0..prim_c3` on the vertex stage), and the page's `meanDepth` placement
-keys its log depth on the same mean (`primMeanW`). A wall quad nearer by mean
-now paints over the horizon mist as retail's does. Worked on Sol Tower's stage:
-`battle_kor_dead_bone_strike` `.969` to `.993`, `battle_korb2_kemaro_strike`
-`.971` to `.990`, `battle_kor_spoon_strike` `.966` to `.984`. Clean rendering
-keeps per-pixel depth: a mean pops as the camera turns, which the retail frame
-shows and the clean frame need not.
+A battle has one ordering table too, and every mesh in it goes through the same
+per-prim leaves. The bodies are drawn object by object by `FUN_80048A08`
+(`jal 0x80043390` at `0x80048ED0`), the effect parts and draw-kind-4 nodes by
+the render dispatcher `FUN_8001ADA4`, and the backdrop shell as a background
+actor; each leaf links its primitive at the `AVSZ3` / `AVSZ4` mean of its corners
+(`ZSF = 0x555 >> 2` / `0x400 >> 2` under the battle shift `2`, so a bucket is `16`
+`SZ`). Nothing in the GPU tests depth, so a body and the additive ring around it
+sort by link, not by pixel.
+
+In PSX mode both hosts draw every battle mesh primitive at its corners' mean
+`w`, the field's machinery: `camera_frame::prim_link_order` raises
+`Renderer::set_field_prim_order` in battle as on the field, which stages
+`flags.w = -1` on every draw (`prim_mean_depth` over `prim_c0..prim_c3` on the
+vertex stage, the blend pass included, since it shares the vertex stage), and
+the play page sets `meanDepth` on every battle placement (`primMeanW`). In the
+battle units the port draws `SZ` is `w` itself.
+
+| Class | Clean | PSX mode |
+|---|---|---|
+| Backdrop shell and spun slot | per pixel | corner mean |
+| Ground grid | far bucket (`pin_to_far_bucket`, the page's `u_far_slice`) | far bucket |
+| Party and monster bodies | per pixel | corner mean |
+| After-image ghosts | per pixel, pushed past the body about the eye | corner mean of the pushed pose |
+| Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean |
+| Effect-pool billboards | per pixel | corner mean (the quad's centre) |
+| Screen primitives (trails, streaks, cast-arm packets) | over the 3D frame in their own order | unchanged |
+
+A semi-transparent primitive writes no depth and is drawn after every opaque one,
+sorted far to near by its triangle's centroid (`psx_blend`); with every
+primitive at its mean, the depth test it runs against the opaque ones is the
+link comparison.
+
+The retail table of Dohati's Chaos Breath, arm 1, shows the class
+(`ot-raster.py` on a RAM image of the recording): the rings' additive `GT4`s
+(code `0x3E`, CLUT `0x7F84`) sit in buckets `50..64` with corners from the top
+of the screen to below its bottom, and the body's packets (CLUTs
+`0x7900..0x7905`) in `113..308`, so the ring paints over the belly. Per pixel the
+belly stands in front of the ring wherever it reaches past the ring's radius.
+
+Worked on Sol Tower's shell: `battle_kor_dead_bone_strike` `.969` to `.993`,
+`battle_korb2_kemaro_strike` `.971` to `.990`, `battle_kor_spoon_strike` `.966`
+to `.984`.
+
+Not modelled: the order inside one bucket (retail's last-linked-first), a ghost's
+`0x50`-byte table offset (`FUN_80048A08` at `0x80048E7C`, twenty buckets deeper
+than its body; the hosts' eye push stands in), and the screen primitives' links,
+which composite over the 3D frame rather than among it. Clean rendering keeps
+per-pixel depth: a mean pops as the camera turns, which the retail frame shows
+and the clean frame need not.
 
 ## Enhanced lighting (enhancement, NOT retail)
 

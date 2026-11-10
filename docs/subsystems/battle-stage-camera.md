@@ -617,7 +617,7 @@ quad. `battle_korb2_warhalf_strike`'s older table links a band quad at bucket
 where its pixels stand behind it. In PSX mode both hosts draw the shell and
 the spun slot at each prim's corner mean (`DRAW_WORD_MEAN_DEPTH`,
 `prim_mean_depth`; the page's `meanDepth` placement,
-[renderer-port](renderer-port.md#the-battle-shell-sorts-by-prim-mean)).
+[renderer-port](renderer-port.md#the-battle-sorts-by-each-primitives-link)).
 
 **Which side of the ribbon draws.** The backdrop arm hands the prim
 dispatcher `FUN_80043390` the node's colour word ORed with `0x40000000` for
