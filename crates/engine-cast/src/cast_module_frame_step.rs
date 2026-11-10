@@ -9,11 +9,17 @@
 //! value the arm spends the most vsyncs on) on the emulator's cost model. Some
 //! arms one battle frame long read that frame's length in vsyncs instead, since
 //! the `step` column lags the frame that set it: Gimard's arm 7 reads
-//! `1, 1, 1, 4` and its one pass drains `32`. Iota's arm 4 and Viguro's arm 10
-//! show the same shape and keep the modal reading: on Iota's the longer frame
-//! lands the camera on retail's rows and still lowers the film's image score,
-//! for a reason not yet found. An arm too short to read takes the arm before it;
-//! a `0` is an arm no recording has reached.
+//! `1, 1, 1, 4` and its one pass drains `32`. An arm too short to read takes the
+//! arm before it; a `0` is an arm no recording has reached.
+//!
+//! The engine pushes each arm's entry into the frame-cost ring as the cost of the
+//! arm's frames, and the ring's step opens the next pass
+//! (`World::apply_cast_arm_frame_step`), so an entry is read as a cost. On an arm
+//! of several passes the modal step is that cost. An arm one pass long runs on
+//! the step the frames before it left, so its `step` column names the arm before
+//! it; those entries are the recording's `cost` column instead (the ring's newest
+//! entry on the next pass, read through the law): Iota's arm 4 costs the clamp
+//! and its arm 5 opens on `4`, where the step column read `1`.
 //!
 //! What the reading is good for and where it stops is on that page. In short, a
 //! whole-screen arm reads the same in every fight, an arm that shows the stage
@@ -29,17 +35,17 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // gimard
     (903, &[0, 0, 1, 1, 4, 4, 1, 4, 4, 4, 4, 4, 4]),
     // theeder
-    (904, &[0, 0, 1, 1, 1, 4, 3, 3, 3, 4, 4, 3, 4, 4, 4]),
+    (904, &[0, 0, 1, 1, 1, 4, 3, 3, 4, 4, 4, 3, 4, 4, 4]),
     // vera
     (905, &[0, 0, 2, 2, 4, 4, 4, 4, 4, 4, 4]),
     // gizam
-    (906, &[0, 0, 0, 1, 1, 4, 4, 3, 4, 4, 4, 4, 4, 4, 2]),
+    (906, &[0, 0, 0, 1, 1, 4, 3, 3, 4, 4, 4, 4, 4, 4, 2]),
     // nighto
     (907, &[0, 0, 0, 1, 1, 4, 3, 4, 3, 3, 3, 4, 4, 4, 4, 4]),
     // zenoir
     (908, &[0, 0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // viguro
-    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4]),
+    (909, &[0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4]),
     // swordie
     (910, &[0, 0, 1, 4, 4, 4, 4, 4, 4, 4, 4]),
     // orb
@@ -77,7 +83,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     // slippery
     (920, &[0, 0, 1, 3, 3, 3, 4, 4, 4, 4, 4]),
     // iota
-    (921, &[0, 0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4]),
+    (921, &[0, 0, 1, 2, 4, 4, 4, 4, 4, 4, 4, 4]),
     // puera
     (
         922,
@@ -110,7 +116,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
         &[0, 1, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3],
     ),
     // horn
-    (930, &[0, 0, 2, 3, 4, 4, 4, 4, 4, 4, 4, 2]),
+    (930, &[0, 0, 2, 2, 4, 4, 4, 4, 4, 4, 4, 2]),
     // jedo
     (
         931,
@@ -394,6 +400,8 @@ mod tests {
     #[test]
     fn a_whole_screen_arm_reads_four_and_the_band_opening_one() {
         assert_eq!(cast_arm_frame_step(921, 2), Some(1));
+        // Iota's one-pass arm 4 reads its frame's clamped cost.
+        assert_eq!(cast_arm_frame_step(921, 4), Some(4));
         assert_eq!(cast_arm_frame_step(921, 5), Some(4));
         assert_eq!(cast_arm_frame_step(921, 200), None);
         assert_eq!(cast_arm_frame_step(960, 1), None);
