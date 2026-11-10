@@ -168,3 +168,86 @@ fn the_mover_tick_matches_the_glide() {
         "arrivals {arrivals} frames {frames} shaken {shaken} curves {curves:?}"
     );
 }
+
+const ARM: u32 = 0x801D_D310;
+const FIND: u32 = 0x8003_CF04;
+const SPAWN: u32 = 0x8002_0DE0;
+const ALLOC: u32 = 0x8001_7888;
+const STAGING: u32 = 0x8010_0800;
+
+/// The arming `FUN_801DD310` (PROT 0897), its list search, actor spawn and
+/// block allocation answered by hooks (a mover in flight or a fresh one),
+/// against `CameraMover::arm` from the same live globals and staging struct:
+/// the pair block, the progress, the duration and the curve.
+#[test]
+fn the_mover_arming_matches_arm() {
+    differential!(prot(897, ARM));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let in_flight = Rc::new(Cell::new(false));
+    {
+        let in_flight = in_flight.clone();
+        cpu.hook(FIND, move |r, _| {
+            r.r[V0] = if in_flight.get() { ACTOR } else { 0 }
+        });
+    }
+    cpu.hook(SPAWN, |r, _| r.r[V0] = ACTOR);
+    cpu.hook(ALLOC, |r, _| r.r[V0] = BLOCK);
+    let mut rng = Rng(0x4152_4D53);
+    let mut truncated = 0usize;
+    for round in 0..5000 {
+        in_flight.set(round % 3 == 0);
+        cpu.mem.wr32(ACTOR + 0x90, BLOCK);
+        cpu.mem.load(BLOCK, &[0xA5; 0x28]);
+        // Live globals, the words now and then past a halfword.
+        let mut live = [0i32; AXIS_COUNT];
+        for (k, g) in live.iter_mut().enumerate() {
+            *g = match (k, round % 4) {
+                (3..=8, 0) => rng.next() as i32 >> 8,
+                _ => i32::from(rng.next() as i16),
+            };
+        }
+        write_globals(&mut cpu.mem, &live);
+        let mut staged = [0i32; AXIS_COUNT];
+        for (k, v) in staged.iter_mut().enumerate() {
+            *v = i32::from(rng.next() as i16);
+            cpu.mem.wr16(STAGING + 4 * k as u32 + 2, *v as u16);
+        }
+        let apply = if round % 16 == 0 {
+            rng.next() as u16
+        } else {
+            1 + rng.below(0x400) as u16
+        };
+        let curve = rng.below(5) as u16;
+        let stop = cpu.call(ARM, &[STAGING, u32::from(apply), u32::from(curve)]);
+        assert_eq!(stop, Stop::Returned);
+
+        let mut mover = CameraMover::default();
+        mover.arm(live, staged, apply, curve as u8);
+        let ctx = format!("round {round}");
+        for k in 0..AXIS_COUNT {
+            let got = (
+                i32::from(cpu.mem.rd16(BLOCK + 4 * k as u32) as i16),
+                i32::from(cpu.mem.rd16(BLOCK + 4 * k as u32 + 2) as i16),
+            );
+            assert_eq!(got, mover.pairs[k], "pair {k}, {ctx}");
+        }
+        assert_eq!(cpu.mem.rd32(ACTOR + 0x90), BLOCK, "{ctx}");
+        assert_eq!(
+            i32::from(cpu.mem.rd16(ACTOR + 0x9C) as i16),
+            mover.t,
+            "{ctx}"
+        );
+        assert_eq!(
+            i32::from(cpu.mem.rd16(ACTOR + 0x9E) as i16),
+            mover.d,
+            "{ctx}"
+        );
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x50) as i16, mover.curve, "{ctx}");
+        truncated += usize::from(live.iter().any(|g| i32::from(*g as i16) != *g));
+    }
+    assert!(truncated > 0);
+}

@@ -188,15 +188,21 @@ impl CameraMover {
         apply: u16,
         curve: u8,
     ) {
+        // The pair block holds halfwords: the starts are the live globals'
+        // low halves (`lhu` at `0x801DD418..0x801DD490`) and the ends the
+        // staging struct's, and the tick reads both back with `lh`.
+        let half = |v: i32| i32::from(v as i16);
         for (p, (&c, &t)) in self
             .pairs
             .iter_mut()
             .zip(current.iter().zip(targets.iter()))
         {
-            *p = (c, t);
+            *p = (half(c), half(t));
         }
         self.t = 0;
-        self.d = i32::from(apply);
+        // `+0x9E` is a halfword the tick reads with `lh`: a duration past
+        // `0x7FFF` is negative there and the glide lands on its first frame.
+        self.d = i32::from(apply as i16);
         self.curve = i16::from(curve & 0x0F);
     }
 
