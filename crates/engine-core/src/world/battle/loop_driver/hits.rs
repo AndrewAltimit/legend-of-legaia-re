@@ -1302,7 +1302,24 @@ impl World {
         // it for a defender the total has already reached; the juggle arm
         // below reads the pose regardless.
         let can_roll = t.battle.damage_accum < u32::from(t.battle.hp);
+        let seed = self.rng_state;
+        let accum = t.battle.damage_accum;
         let granted = block_entry != 0 && can_roll && block_roll(&roll, &mut || self.next_rand());
+        // `LEGAIA_DIAG_BLOCKS`: the roll's inputs and verdict, the engine half
+        // of a `--hit-trace` recording's `hits.csv` / `blocks.csv` columns.
+        if std::env::var_os("LEGAIA_DIAG_BLOCKS").is_some() {
+            eprintln!(
+                "block: att {attacker} tgt {target} seed {seed} a {}/{} d {}/{} ramps {}/{} spirit {} entry {block_entry} juggle {reacting} accum {} granted {granted}",
+                roll.attacker.spd,
+                roll.attacker.atk,
+                roll.defender.spd,
+                roll.defender.atk,
+                roll.attack_ramp,
+                roll.guard_ramp,
+                roll.defender_spirit,
+                accum,
+            );
+        }
         let mut blocked = granted;
         // A block the roll grants jolts the controller (`0x801EC890..
         // 0x801EC91C`), as does the juggle-window arm that forces one

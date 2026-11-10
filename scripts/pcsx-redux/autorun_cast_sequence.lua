@@ -622,16 +622,33 @@ probe.run({
             -- past the head guards and the limb-miss exit and ahead of the
             -- block roll's two draws, so the BIOS seed word there is the one
             -- the hit's rolls draw from - blocked, missed or landed alike.
+            -- Beside the word, the block roll's inputs: each side's working
+            -- SPD +0x164 and ATK +0x158, the approach terms ctx[+0x6D2] /
+            -- ctx[+0x6D4], and the defender's category +0x1DE, clip +0x1D9,
+            -- block entry +0x1F3 and juggle window +0x1F7.
             local hits = probe.csv_open(probe.out_path("hits.csv"),
-                "vsync,st7,att,tgt,seed")
+                "vsync,st7,att,tgt,seed,aspd,aatk,dspd,datk,c6d2,c6d4,dcat,dclip,dblock,djuggle")
             probe.arm_breakpoint(0x801EC5A8, "Exec", 4, "hit", function()
                 local r = PCSX.getRegisters().GPR.n
                 local cx = u32(CTX_PTR)
                 local att = tou32(r.s6) % 256
                 local a = actor(att)
-                hits:row("%d,%d,%d,%d,%d", last_elapsed,
-                    ptr_ok(cx) and u8(cx + 7) or -1, att,
-                    a ~= nil and u8(a + 0x1DD) or -1, u32(0x80009010))
+                local tgt = a ~= nil and u8(a + 0x1DD) or -1
+                local d = tgt >= 0 and tgt < 8 and actor(tgt) or nil
+                local function st(x, o) return x ~= nil and u16(x + o) or -1 end
+                local function sb(x, o) return x ~= nil and u8(x + o) or -1 end
+                hits:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, att, tgt, u32(0x80009010),
+                    st(a, 0x164), st(a, 0x158), st(d, 0x164), st(d, 0x158),
+                    ptr_ok(cx) and u16(cx + 0x6D2) or -1, ptr_ok(cx) and u16(cx + 0x6D4) or -1,
+                    sb(d, 0x1DE), sb(d, 0x1D9), sb(d, 0x1F3), sb(d, 0x1F7))
+            end)
+            -- The block verdict (0x801EC878, `beq v0,zero` on `sltu v0,s0,s1`):
+            -- the two rolled sides and the verdict, blocked when 1.
+            local blocks = probe.csv_open(probe.out_path("blocks.csv"), "vsync,s0,s1,blocked")
+            probe.arm_breakpoint(0x801EC878, "Exec", 4, "block", function()
+                local r = PCSX.getRegisters().GPR.n
+                blocks:row("%d,%d,%d,%d", last_elapsed, tou32(r.s0), tou32(r.s1), tou32(r.v0))
             end)
         end
         if probe.getenv_num("LEGAIA_GHOST_TRACE", 0) ~= 0 then
