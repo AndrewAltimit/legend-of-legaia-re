@@ -702,7 +702,21 @@ impl World {
                     body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
                 )
                 .is_some();
+                // A hit whose arm marks its victim stages no reaction
+                // (`ticks::chain_hit_stages_no_reaction`, PROT 0956's `0x75`);
+                // a victim the hit downs takes the dead branch's knockdown.
+                let marks = ticks::chain_hit_stages_no_reaction(arm, &victim);
+                if marks {
+                    self.casting.module_fold_quiet = true;
+                }
                 self.fold_pending_cast_at_rate(arm.hit_rate);
+                if marks {
+                    self.casting.module_fold_quiet = false;
+                    let v = usize::from(victim_slot);
+                    if self.actors.get(v).is_some_and(|a| a.battle.hp == 0) {
+                        self.queue_battle_reaction(v, false);
+                    }
+                }
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
                 caster = self.cast_view(caster_slot);

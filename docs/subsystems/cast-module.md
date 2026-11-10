@@ -3259,7 +3259,13 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   character id (`0x801F8664` / `0x801F8678` / `0x801F868C`), `World::raise_paralyzing_wave_caption`.
   Raised by the decode, every victim read "Vahn is paralyzed.", and
   `battle_jou_iota_v3_paralyzing_wave_mid_cast`'s Master-Guarded Noa was marked where
-  retail marks no one.
+  retail marks no one. The reaction is the guarded branch's alone: the `+0x1F1` store and
+  bump (`0x801F6FA0..0x801F6FB4`) jump past the marking leg, which stages nothing, so a
+  marked victim plays no reaction clip and keys none of its cue track. The fold used to
+  stage it on every victim, and `battle_deroa_iota_v2_paralyzing_wave_mid_cast`'s marked
+  Noa sounded `0x62` and two `0x15` where retail's recording holds no cue at all; the fold
+  now lands that hit quietly (`chain_hit_stages_no_reaction`), and a victim the hit downs
+  still takes the dead branch's knockdown.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 

@@ -343,6 +343,19 @@ pub struct ChainTick {
     pub refund: Option<u8>,
 }
 
+/// Whether the fold of `arm`'s hit stages no reaction on `victim` (read
+/// before the hit lands). PROT 0956's `0x75` arm 2 stages the victim's
+/// `+0x1F1` only on its dead-or-guarded branch (`0x801F6FA0..0x801F6FB4`);
+/// the branch that marks a live, unguarded victim (`0x801F6FB8..0x801F70A8`)
+/// stages none, so that victim plays no reaction clip and sounds none of its
+/// cues. A victim the hit downs still takes the dead branch's knockdown,
+/// which the caller stages once the fold has landed.
+pub fn chain_hit_stages_no_reaction(arm: &ChainArm, victim: &CastActorState) -> bool {
+    matches!(arm.effect, Some(ChainEffect::MarkAndStealTurn { .. }))
+        && victim.hp != 0
+        && !victim.numb_guard
+}
+
 /// Run one tick of a [`ChainBody`]: the arm the phase names performs its
 /// stages, rates, context stores and effect, then leaves by its
 /// [`ChainExit`]. `selector` feeds [`ChainExit::Select`].
@@ -1578,6 +1591,26 @@ mod chain_tests {
         assert_eq!(v.flags & 0x0400, 0);
         assert_eq!(v.init_key, 5);
         assert_eq!(ctx.phase, 3);
+    }
+
+    /// Only the marking leg drops the reaction: retail's `battle_deroa_iota_v2_paralyzing_wave_mid_cast`
+    /// marks Noa and keys no cue, `battle_jou_iota_v3_..`'s Master-Guarded Noa
+    /// plays her reaction and its three cues. A downed victim takes the dead
+    /// branch's knockdown, and no other arm is touched.
+    #[test]
+    fn paralyzing_wave_marking_leg_stages_no_reaction() {
+        let hit = WATER_HAZARD_75_CHAIN.arm(2).expect("arm 2");
+        let live = CastActorState { hp: 100, ..actor() };
+        assert!(chain_hit_stages_no_reaction(hit, &live));
+        let guarded = CastActorState {
+            numb_guard: true,
+            ..live
+        };
+        assert!(!chain_hit_stages_no_reaction(hit, &guarded));
+        let down = CastActorState { hp: 0, ..live };
+        assert!(!chain_hit_stages_no_reaction(hit, &down));
+        let other = MEGATON_PRESS_CHAIN.arm(7).expect("arm 7");
+        assert!(!chain_hit_stages_no_reaction(other, &live));
     }
 
     /// PROT 0937's four quarters: hits 1..3 leave the victim a point, the
