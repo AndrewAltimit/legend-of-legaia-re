@@ -691,6 +691,25 @@ with a signed `mult` over whole words and a `divu` (`0x8004AAC8`); the port trun
 a negative radius or a depth past `0xFFFF` sixteenths coloured differently. All three are out of a staged fight's
 reach, and the ports now compute what the bytes compute.
 
+The slot-B stagers, the routine a module's parts reach through move-VM op `0x20`, run arm by arm off their
+images (`stager_spawns`): every seat call whole, each seated part's buffer, the module image, the fades and the
+`efect.dat` pool spawns, with the context, the actor records and the caller held otherwise untouched. Forty-seven
+stagers matched but three. PROT 0959's arm 1 reaches arm 5's tail by `j 0x801F87A4` and seats two more records the
+port left off; PROT 0919's and PROT 0941's arm 1 each spawn into the pool (Spoon's effect `0x14`, Steal's 2D puff),
+which no port carried. The stager arms that move state (`stager_states`) found PROT 0906's arm 1 storing the summon
+seat's tint word `+0x04 = 0x3FF00000`, which the port dropped, and showed PROT 0966's stager arm 4 opening on
+Juggernaut's salmon flash and shake word, which the host never raised for Evil Seru Magic: the body's epilogue
+runs that word down every tick, the code PROT 0927's has.
+
+The capture-class cameras (`capture_cameras`) run every body a camera director ports, pass by pass from arm 0 to
+its end, with the director fed what the host feeds it: the tween builder call `FUN_801D829C` each pass makes, the
+countdown word and every hold are compared. Five arms framed something else. Water Hazard's arm 0 and Mystic
+Circle's arm 0 turn the caster onto its target before the shot (a seat's live pair, or the party's centroid for
+group code `8`) and frame the new heading; the port framed the stale one. Melt Spray's arm 2 and Chaos Flare's arm 2
+turn on the victim's display pair `+0x3C` / `+0x40`, not its live pair. Stone Circle's arm 1 writes no focus, so its
+cut is on the origin the prologue zeroed. Dead End Crisis's arm 0 lines the party up off `0x80077628` and stands
+seat 3 opposite before it frames; the port carries no line-up, and the test names that shot as a gap.
+
 The rest of the battle side's frameless kernels match on their first run: the Seru learn `FUN_801E92DC` over whole
 records and the magic-level line `FUN_801F452C` (`seru_learn`); the swing camera's height `FUN_801F0348`
 (`camera_height`); the popup ring push `FUN_801F44A0`; the cursor step `FUN_801D32BC` and the placement copies
