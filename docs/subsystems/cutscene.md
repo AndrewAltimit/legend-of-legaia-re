@@ -2931,14 +2931,20 @@ TMD's packed colour words**: for every primitive it converts each colour to HSV
   and skips the light-source rows.
 - The `ilen * 4` stride add runs once per primitive **and** once more after the group's loop
   (`801d5FF8` inside, `801d6010` after), and the `count == 0` arm jumps straight to the trailing
-  add. Against the `count x ilen*4` body [`tmd.md`](../formats/tmd.md) documents, that over-runs
-  by one primitive per group.
+  add. That second add is the group's footer slot ([`tmd.md`](../formats/tmd.md#primitive-section)):
+  walked this way, every object of every TMD on the disc sums its groups' counts to its
+  `n_primitive`.
+- Within a primitive the colour words are the record's first words, so a gouraud triangle's
+  three are rewritten and its vertex indices are not. Each written channel is capped at `0xF8`
+  by `FUN_8001A6C8`; the fourth byte of a colour word, the GP0 code, is left alone.
 
 The disc's only callers are the prologue's six `4C E6` sites; what their two-op pair does to a
 word is under [the sepia grade](#full-scene-sepia-grade-the-gold-prologue-look).
 
-Port: `legaia_engine_field::primitive_colour_grade::shift_primitive_colours`; the renderers'
-`prologue_sepia_word` is its two-op result in closed form.
+Port: `legaia_engine_field::primitive_colour_grade::shift_primitive_colours` for the object
+walk and `shift_resident_tmds` for `FUN_801D8280`, both held to the routines over the disc's own
+TMDs by the [retail kernel differential](../tooling/retail-kernel-differential.md); the
+renderers' `prologue_sepia_word` is the two-op result in closed form.
 
 ### What the tween and the emitter do beyond the one-line role
 

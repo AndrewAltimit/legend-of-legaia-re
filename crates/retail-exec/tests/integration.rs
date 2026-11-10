@@ -83,6 +83,7 @@ mod clut_cell;
 mod clut_walk;
 mod coin_counter;
 mod coin_panel;
+mod colour_grade;
 mod colour_tween;
 mod colour_wash;
 mod combo_records;

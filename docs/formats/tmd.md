@@ -70,6 +70,7 @@ The primitive section is a sequence of **groups**. Each group is an 8-byte heade
 | `+6` | u8 | `flag` | PSX SDK flag byte (lighting / shading) | Confirmed |
 | `+7` | u8 | `mode` | PSX SDK mode byte (FT3 / FT4 / GT3 / GT4 ...) | Confirmed |
 | `+8` | `count * ilen * 4` | records | The primitives | Confirmed |
+| after the records | `ilen * 4` | footer | One more record's worth of bytes that no walker reads as a primitive: the renderer and the colour grade `FUN_801D5E20` both step over it before the next header | Confirmed |
 
 The per-prim layout depends on the prim type. The renderer (`FUN_8002735C`)
 treats the 8-byte-stride table at `0x8007326C` as a packed `{u32 first; u32
