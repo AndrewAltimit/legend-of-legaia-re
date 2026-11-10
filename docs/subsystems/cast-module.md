@@ -829,10 +829,25 @@ frames the victim's body pair (`0x801F70BC`): yaw `cd / 32 + 0xB80 - facing`, TR
 reads the arms pass for pass; `cast_module_camera::astral_slash_camera` is the
 port.
 
+The strike plays on a black stage, and no store of the body's makes it so.
+Entry `0x0A` carries the solo byte `+0x87 = 2`; the commit `FUN_8004E13C`
+writes it to `ctx[+0x243]` (`0x8004E2C0`), and the stage ramp of
+`FUN_80050120` then lifts the backdrop pair's ceiling from `0x800` to `0x1000`
+([the stage meshes](battle-stage-camera.md#near-colour-and-depth-cue)). A
+retail film with the pair's `+0x78` words watched reads the weight held at
+`0x800` through the walk, climbing `step << 6` a pass from arm 2's commit to
+`0x1000`, where the pair leaves the draw, and falling back from the `0x71`
+exit's clear.
+
 **Port.** `World::run_cast_module_code` parks the caster's strike index on arm
 2 and marks the band's fold as owed nothing (`module_skips_fold`), so the
 cast's outcome is the hits `World::tick_battle_hit_events` lands off the
-staged clip. Disc oracle: `engine-core/tests/astral_slash_clip_damage_disc.rs`.
+staged clip. The clip commits from inside the action SM's step, which runs on
+a copy of the context: `World::step_battle` carries the commit's stores
+(`CommitCtxStores`: the latch, the swing re-seed, the coin) over the copy's
+write-back, as retail's commit writes the context in the anim tick. Lost
+there, the latch stayed `1` and the film drew the arena behind the strike.
+Disc oracle: `engine-core/tests/astral_slash_clip_damage_disc.rs`.
 
 ### The three clamp shapes
 

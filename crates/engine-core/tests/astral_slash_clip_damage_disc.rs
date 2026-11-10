@@ -15,6 +15,11 @@
 //! of the four clip hits and nothing more (no wrapper roll folded on top), and
 //! it lands on the fourth hit's frame, not at the band's exit.
 //!
+//! It also pins the commit's solo-latch store: entry `0x0A` carries `+0x87 = 2`,
+//! which `FUN_8004E13C` writes to `ctx[+0x243]`, and the stage ramp of
+//! `FUN_80050120` then drives the backdrop pair's weight to `0x1000`, so retail
+//! plays the strike on a black stage.
+//!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_battle::monster_catalog::{
@@ -84,6 +89,8 @@ fn astral_slash_lands_the_clip_melee_total_on_the_last_beat() {
     let clip = clips[0x0A].as_ref().expect("entry 0x0A decodes");
     assert_eq!(clip.entry_power_run(), Some([0x0D, 0x0E, 0x0F, 0x10]));
     assert_eq!(clip.entry_event_frames(), Some([0x14, 0x15, 0x16, 0x17]));
+    // The entry's solo byte `+0x87`: the commit stores it into `ctx[+0x243]`.
+    assert_eq!(clip.entry_solo_flag(), Some(2));
 
     let mut w = World::new();
     while w.actors.len() < CASTER + 1 {
@@ -142,6 +149,15 @@ fn astral_slash_lands_the_clip_melee_total_on_the_last_beat() {
         fx_seen = w.battle.hit_fx.len();
         if casting && state == CAPTURE_TICK_STATE {
             cast_hits.extend(new_fx.iter().filter(|(t, _)| *t < PARTY));
+        }
+        // The module stages the clip from inside the SM's step, and the
+        // commit's `ctx[+0x243] = 2` (`0x8004E2C0`) stands past it: the byte
+        // the stage ramp reads to take the backdrop pair off the draw.
+        if casting && state == CAPTURE_TICK_STATE && w.actors[CASTER].battle.current_anim == 0x0A {
+            assert_eq!(
+                w.battle_ctx.gauge_rearm_latch, 2,
+                "the committed clip's solo byte is lost across the step's write-back"
+            );
         }
         for (i, was) in hp.iter_mut().enumerate() {
             let now = w.actors[i].battle.hp;
