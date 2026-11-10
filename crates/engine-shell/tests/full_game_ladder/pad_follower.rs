@@ -24,6 +24,14 @@ const DIRECTIONS: u16 = 0x00F0;
 /// laid across every pass off Mt. Letona's summit). Crossing one moves
 /// nobody, writes no story flag and changes no scene, so the walk need not
 /// step around it; avoiding it sealed the summit off from its way down.
+///
+/// A cross-context `CC <ch> D6 <abr>` (`4C D6`, an object's draw primitive
+/// flags) is cosmetic too: `chitei2` P2[0] / P2[1] / P2[9] / P2[10] are
+/// nothing else, laid across both pillar corridors to turn the pillars
+/// see-through (`docs/subsystems/script-vm-menuctrl.md`, `4C D6`). Avoiding them walled
+/// the walk into the pocket east of (108..109, 115..117) whenever a step
+/// carried it past the band, and whether one did hung on where the random
+/// encounters had stopped it.
 pub(super) fn inert_band(
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
@@ -36,17 +44,19 @@ pub(super) fn inert_band(
     };
     LinearWalker::new(&man[start..start + len], pc0).all(|i| {
         i.is_ok_and(|i| {
-            i.extended.is_none()
-                && match i.info {
-                    InsnInfo::Nop
-                    | InsnInfo::JmpRel { .. }
-                    | InsnInfo::Camera { .. }
-                    | InsnInfo::CamCfg { .. }
-                    | InsnInfo::ViewWindow { .. }
-                    | InsnInfo::Bgm { .. } => true,
-                    InsnInfo::MenuCtrl { op0, .. } => (0x30..=0x3F).contains(&op0),
-                    _ => false,
-                }
+            if i.extended.is_some() {
+                return matches!(i.info, InsnInfo::MenuCtrl { op0: 0xD6, .. });
+            }
+            match i.info {
+                InsnInfo::Nop
+                | InsnInfo::JmpRel { .. }
+                | InsnInfo::Camera { .. }
+                | InsnInfo::CamCfg { .. }
+                | InsnInfo::ViewWindow { .. }
+                | InsnInfo::Bgm { .. } => true,
+                InsnInfo::MenuCtrl { op0, .. } => (0x30..=0x3F).contains(&op0),
+                _ => false,
+            }
         })
     })
 }
