@@ -2703,6 +2703,29 @@ while its frame falls `.834` to `.749`, the focus `30` units off on the image
 child's walk back. A state the probe did not play keeps the next-tick confirm:
 paced the same way, `battle_vahn_tri_somersault_super` fell `.957` to `.823`.
 
+**The strike loop's framed body.** That focus was not the walk back's. Case 7
+re-arms every pass on the midpoint of the attacker's and the target's body pairs,
+read ahead of the pass's draw, so the RAM's arm framed the pair the previous
+pass's decode left, while a state saved after the draw holds the new decode.
+Across a clip commit the two stand far apart: the Hyper Elbow state holds Vahn's
+body `(214, -87)` on the art's first keyframe, and the arm read `(156, -48)` on
+the clip before, at cursor `120` (the endpoint `(44, -13)` is that pair's midpoint
+with the target's `(-68, 24)`). The clip-record ring `+0x234` keeps each pass's
+committed entry, so cursor-ring slot `1` decodes on its own clip's stream and its
+live pair off the position ring (`framing_body::body_pair_on_ring_slot`). Stood on
+the RAM's pair, the image child armed its framing `40` units off retail's endpoint
+and the alignment carried that gap into the focus (`(159, -70)` on screen where the
+walk back read `(115, -41)`). The capture stands the acting seat on the framed
+pair when that pair, and not the RAM's, is the one the endpoint names
+(`camera_align::strike_framed_body`): `image` `.749` to `.919`,
+`battle_ropeway_party_vahn_slash_kick_mid` `.676` to `.722`,
+`battle_jou_party_vahn_chain_late` `.919` to `.961`, four strike `camera` channels
+to `1.0`, and no state of the 396 strike and party states lower. The walk back
+itself holds: decoded on the ring, the endpoints the two passes behind the RAM's
+chased are `(43, -14)` and `(53, -16)`, so the focus target did not follow Vahn's
+moving body there, and a forward probe from the state (re-arm, then a step of
+`inc * step`) reads the walker the walk back assumes.
+
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the
 arts entry's) onto that row before confirming: the strike shots look at the

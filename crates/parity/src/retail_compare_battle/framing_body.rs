@@ -56,7 +56,39 @@ pub(super) fn body_pair_at(ram: &[u8], actor: u32, cursor: u16) -> Option<[i16; 
         return None;
     }
     let entry = game_anchors::u32_at(ram, node + 0x4C);
-    if !in_ram(entry) {
+    let live = [
+        game_anchors::u16_at(ram, actor + 0x34) as i16,
+        game_anchors::u16_at(ram, actor + 0x38) as i16,
+    ];
+    body_pair_on(ram, actor, entry, cursor, live)
+}
+
+/// The body pair the pass `k` passes behind the RAM's decode left: cursor-ring
+/// slot `k` decoded on the clip record the clip-record ring `+0x234` holds for
+/// that slot, on the position ring's live pair for it. The record ring keeps
+/// each pass's committed entry, so a slot older than a clip commit decodes on
+/// its own clip's stream rather than the one now playing.
+pub(super) fn body_pair_on_ring_slot(ram: &[u8], actor: u32, k: u32) -> Option<[i16; 2]> {
+    let entry = game_anchors::u32_at(ram, actor + super::ram_read::RING_RECORD + k * 4);
+    let cursor = game_anchors::u16_at(ram, actor + RING_CURSOR + k * 2);
+    let at = actor + POSITION_RING + k * 8;
+    let live = [
+        game_anchors::u32_at(ram, at) as i32 as i16,
+        game_anchors::u32_at(ram, at + 4) as i32 as i16,
+    ];
+    body_pair_on(ram, actor, entry, cursor, live)
+}
+
+/// [`body_pair_at`] on clip record `entry` and live pair `live`.
+fn body_pair_on(
+    ram: &[u8],
+    actor: u32,
+    entry: u32,
+    cursor: u16,
+    live: [i16; 2],
+) -> Option<[i16; 2]> {
+    let node = game_anchors::u32_at(ram, actor + 0x22C);
+    if !in_ram(node) || !in_ram(entry) {
         return None;
     }
     let stream = game_anchors::u32_at(ram, entry + 0x88);
@@ -111,8 +143,8 @@ pub(super) fn body_pair_at(ram: &[u8], actor: u32, cursor: u16) -> Option<[i16; 
     let scale = i32::from(game_anchors::u16_at(ram, node + 0x72));
     let x = ((at(sin, facing) * cz) >> 12) + ((at(cos, 0xFFF - facing) * cx) >> 12);
     let z = ((at(sin, 0xFFF - facing) * cx) >> 12) + ((at(cos, facing) * cz) >> 12);
-    let live_x = i32::from(game_anchors::u16_at(ram, actor + 0x34));
-    let live_z = i32::from(game_anchors::u16_at(ram, actor + 0x38));
+    let live_x = i32::from(live[0] as u16);
+    let live_z = i32::from(live[1] as u16);
     Some([
         (live_x + ((x * scale) >> 12)) as i16,
         (live_z + ((z * scale) >> 12)) as i16,
@@ -185,6 +217,42 @@ mod tests {
         assert_eq!(body_pair_at(&ram, ACTOR, 8), Some([124, 233]));
         // The last frame blends toward the queued clip: not read.
         assert_eq!(body_pair_at(&ram, ACTOR, 0x18), None);
+    }
+
+    /// A ring slot decodes on the clip record and live pair the rings hold
+    /// for it, not on the clip now playing: after a commit, slot `1` is the
+    /// clip before's pose where the live entry is the new clip's.
+    #[test]
+    fn a_ring_slot_decodes_on_its_own_clip_record_and_pair() {
+        let mut ram = fight();
+        // The live clip is an empty stream; slot 1 still holds the fight's.
+        let (now, now_stream) = (0x800E_5000u32, 0x800E_5100u32);
+        put(&mut ram, 0x800E_1000 + 0x4C, &now.to_le_bytes());
+        put(&mut ram, now + 0x88, &now_stream.to_le_bytes());
+        put(
+            &mut ram,
+            ACTOR + super::super::ram_read::RING_RECORD,
+            &now.to_le_bytes(),
+        );
+        put(
+            &mut ram,
+            ACTOR + super::super::ram_read::RING_RECORD + 4,
+            &0x800E_2000u32.to_le_bytes(),
+        );
+        put(&mut ram, ACTOR + RING_CURSOR + 2, &8u16.to_le_bytes());
+        put(&mut ram, ACTOR + POSITION_RING + 8, &140i32.to_le_bytes());
+        put(
+            &mut ram,
+            ACTOR + POSITION_RING + 12,
+            &(-10i32).to_le_bytes(),
+        );
+        assert_eq!(
+            body_pair_at(&ram, ACTOR, 8),
+            None,
+            "the live clip has no frames"
+        );
+        // Centroid (24, 34) as above, on slot 1's pair.
+        assert_eq!(body_pair_on_ring_slot(&ram, ACTOR, 1), Some([164, 23]));
     }
 
     /// The displayed frame's framing reads ring slot `3`, and only while

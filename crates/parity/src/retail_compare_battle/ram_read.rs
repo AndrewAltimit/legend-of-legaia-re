@@ -1441,10 +1441,15 @@ impl RetailBattle {
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
                     let h = |o: u32| game_anchors::u16_at(ram, p + o) as i16;
+                    // The acting seat stands where the RAM's case-7 arm framed
+                    // it ([`strike_framed_body`]).
+                    let body = strike_framed_body(ram, ctx)
+                        .filter(|&(seat, _)| seat == slot)
+                        .map_or([h(0x3C), h(0x40)], |(_, b)| b);
                     in_ram(p).then(|| {
                         (
                             [h(0x34), h(0x38)],
-                            [h(0x3C), h(0x40)],
+                            body,
                             game_anchors::u8_at(ram, p + 0x1D9),
                             if slot >= 3 {
                                 let rec = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
