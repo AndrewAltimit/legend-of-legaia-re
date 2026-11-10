@@ -69,7 +69,11 @@ fn the_face_animator_matches_retail() {
         let record = |rng: &mut Rng, frames: usize| FaceTrackRecord {
             frame: rng.below(frames as u32) as u8,
             start: rng.below(0x40) as u8,
-            end: if rng.below(5) == 0 { 0 } else { rng.below(0x100) as u8 },
+            end: if rng.below(5) == 0 {
+                0
+            } else {
+                rng.below(0x100) as u8
+            },
         };
         let tracks = FaceTracks {
             eyes: std::array::from_fn(|_| record(&mut rng, EYE_FRAME_COUNT)),
@@ -83,9 +87,21 @@ fn the_face_animator_matches_retail() {
         let flag = rng.below(4) == 0;
         // The four victory-window gates, each held or not.
         let all = rng.below(3) == 0;
-        let seq = if all || rng.below(2) == 0 { 0xFE } else { rng.below(0xFE) as u8 };
-        let victory = if all || rng.below(2) == 0 { 1 + rng.below(4) as u16 } else { 0 };
-        let bflags = if all || rng.below(2) == 0 { 0x80 | rng.next() as u8 } else { rng.next() as u8 & 0x7F };
+        let seq = if all || rng.below(2) == 0 {
+            0xFE
+        } else {
+            rng.below(0xFE) as u8
+        };
+        let victory = if all || rng.below(2) == 0 {
+            1 + rng.below(4) as u16
+        } else {
+            0
+        };
+        let bflags = if all || rng.below(2) == 0 {
+            0x80 | rng.next() as u8
+        } else {
+            rng.next() as u8 & 0x7F
+        };
         let band = if all || rng.below(2) == 0 {
             ART_BAND_FIRST + rng.below(ART_BAND_COUNT as u32) as u8
         } else {
@@ -114,7 +130,10 @@ fn the_face_animator_matches_retail() {
         cpu.mem.wr32(CURSOR, PACKETS);
         log.borrow_mut().clear();
         assert_eq!(
-            cpu.call(ANIMATOR, &[p as u32, c as u32, clip_frame as u16 as u32, ENTRY]),
+            cpu.call(
+                ANIMATOR,
+                &[p as u32, c as u32, clip_frame as u16 as u32, ENTRY]
+            ),
             Stop::Returned,
             "round {round}"
         );
@@ -128,7 +147,11 @@ fn the_face_animator_matches_retail() {
              band {band:#x} counter {counter:#x} {tracks:?}"
         );
         assert_eq!(*log.borrow(), want, "stamps: {ctx}");
-        assert_eq!(cpu.mem.rd32(CURSOR), PACKETS + 0x10, "the scratch rects: {ctx}");
+        assert_eq!(
+            cpu.mem.rd32(CURSOR),
+            PACKETS + 0x10,
+            "the scratch rects: {ctx}"
+        );
         overridden += u32::from(window);
         neutral_forced += u32::from(flag);
         stamped += want.len();

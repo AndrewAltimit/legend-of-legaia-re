@@ -175,7 +175,11 @@ fn the_code_lock_matches_retail() {
         assert_eq!(got, calls, "calls: {ctx}");
         assert_eq!(cpu.mem.rd16(ACTOR + 0x50), actor.state, "handler: {ctx}");
         assert_eq!(cpu.mem.rd16(ACTOR + 0x54) as i16, actor.sub, "phase: {ctx}");
-        assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, state.dwell, "dwell: {ctx}");
+        assert_eq!(
+            cpu.mem.rd16(ACTOR + 0x9C) as i16,
+            state.dwell,
+            "dwell: {ctx}"
+        );
         assert_eq!(cpu.mem.rd16(GRID + 0x2E) as i16, grid.handback, "{ctx}");
         assert_eq!(cpu.mem.rd16(GRID + 0x40), grid.stashed_state, "{ctx}");
         assert_eq!(cpu.mem.rd32(ROW) as usize, state.index, "cursor: {ctx}");

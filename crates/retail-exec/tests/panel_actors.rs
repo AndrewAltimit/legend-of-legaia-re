@@ -617,7 +617,8 @@ fn the_text_box_matches_retail() {
         let name = 0x8012_6000 + rng.below(0x100);
         // Three party records' HP / MP quartets, and the fourth the loop
         // must leave alone.
-        let party: [[u16; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| rng.next() as u16));
+        let party: [[u16; 4]; 4] =
+            std::array::from_fn(|_| std::array::from_fn(|_| rng.next() as u16));
         write_seat(&mut cpu, before);
         cpu.mem.wr8(FRAME_STEP, fade.frame_delta as u8);
         cpu.mem.wr16(ACTOR + 0x9E, fade.timer as u16);
@@ -633,7 +634,8 @@ fn the_text_box_matches_retail() {
         cpu.mem.wr32(NAME_LATCH, 0x5A5A_5A5A);
         for (i, q) in party.iter().enumerate() {
             for (k, v) in q.iter().enumerate() {
-                cpu.mem.wr16(SAVE_BLOCK + 0x6CC + 0x414 * i as u32 + 2 * k as u32, *v);
+                cpu.mem
+                    .wr16(SAVE_BLOCK + 0x6CC + 0x414 * i as u32 + 2 * k as u32, *v);
             }
         }
         busy.set(u32::from(fade.load_pending));

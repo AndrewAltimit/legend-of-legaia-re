@@ -109,7 +109,11 @@ fn the_narration_roller_matches_retail() {
                 cpu.mem.wr32(ACTOR + 0x10, f & !0x8_0000);
             }
             draws.borrow_mut().clear();
-            assert_eq!(cpu.call(ROLLER, &[ACTOR]), Stop::Returned, "block {block} frame {frame}");
+            assert_eq!(
+                cpu.call(ROLLER, &[ACTOR]),
+                Stop::Returned,
+                "block {block} frame {frame}"
+            );
             port.frame();
             frames_run += 1;
             let ctx = format!("block {block} frame {frame} {seed:?} step {step} pages {n_pages}");
@@ -117,14 +121,26 @@ fn the_narration_roller_matches_retail() {
             let flags = cpu.mem.rd32(ACTOR + 0x10);
             assert_eq!(flags & 8 != 0, port.is_complete(), "complete: {ctx}");
             assert_eq!(flags & 0x8_0000 != 0, port.is_paused(), "paused: {ctx}");
-            assert_eq!(cpu.mem.rd16(CTX + 0x52) as i16, port.seed().release, "release: {ctx}");
+            assert_eq!(
+                cpu.mem.rd16(CTX + 0x52) as i16,
+                port.seed().release,
+                "release: {ctx}"
+            );
             if port.is_complete() {
                 assert_eq!(cpu.mem.rd32(PARENT + 0x10), !0x400, "parent: {ctx}");
                 completed += 1;
                 break;
             }
-            assert_eq!(cpu.mem.rd16(ACTOR + 0x6A) as usize, port.retired(), "retired: {ctx}");
-            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as usize, port.current_index(), "admitted: {ctx}");
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0x6A) as usize,
+                port.retired(),
+                "retired: {ctx}"
+            );
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0x9C) as usize,
+                port.current_index(),
+                "admitted: {ctx}"
+            );
             // Retail draws an empty page as an empty string; the port keeps
             // it out of the line list. Neither puts anything on screen.
             let got: Vec<(String, i32)> = draws
@@ -147,7 +163,11 @@ fn the_narration_roller_matches_retail() {
             let (top, bottom) = port.clip_window();
             let clip = PACKETS + 0xC;
             let off = (buf * 0xF0) as i32;
-            assert_eq!(cpu.mem.rd32(clip + 4), 0xE300_0000 | (((top + off) as u32) << 10), "{ctx}");
+            assert_eq!(
+                cpu.mem.rd32(clip + 4),
+                0xE300_0000 | (((top + off) as u32) << 10),
+                "{ctx}"
+            );
             assert_eq!(
                 cpu.mem.rd32(clip + 8),
                 0xE400_0000 | (((bottom + off) as u32) << 10) | 0x13F,

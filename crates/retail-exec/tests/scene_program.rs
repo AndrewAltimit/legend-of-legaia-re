@@ -97,8 +97,9 @@ fn the_scene_program_matches_retail() {
     });
     let l = log.clone();
     cpu.hook(XA_STREAM, move |r, _| {
-        l.borrow_mut()
-            .push(ProgramEffect::XaStream { clip: r.r[A0] as u8 })
+        l.borrow_mut().push(ProgramEffect::XaStream {
+            clip: r.r[A0] as u8,
+        })
     });
     cpu.mem.wr32(PLAYER_PTR, PLAYER);
 
@@ -247,9 +248,15 @@ fn the_scene_program_matches_retail() {
         }
         advanced += u32::from(step.actor.state == state.wrapping_add(1));
         retired += u32::from(step.retired);
-        released += u32::from(step.retired && step.player.flags & 0x8_0000 == 0 && player.flags & 0x8_0000 != 0);
+        released += u32::from(
+            step.retired && step.player.flags & 0x8_0000 == 0 && player.flags & 0x8_0000 != 0,
+        );
         arrived += u32::from(state == 0x18 && step.actor.state == 0x19);
-        streamed += u32::from(effects.iter().any(|e| matches!(e, ProgramEffect::XaStream { .. })));
+        streamed += u32::from(
+            effects
+                .iter()
+                .any(|e| matches!(e, ProgramEffect::XaStream { .. })),
+        );
     }
     assert!(
         seen[..0x26].iter().all(|&n| n > 1500),

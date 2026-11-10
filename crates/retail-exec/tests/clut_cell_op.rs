@@ -43,7 +43,12 @@ fn the_clut_cell_op_matches_retail() {
     let v = vram.clone();
     cpu.hook(MOVE_IMAGE, move |r, m| {
         let rect = r.r[A0];
-        let (sx, sy, w, h) = (m.rd16(rect), m.rd16(rect + 2), m.rd16(rect + 4), m.rd16(rect + 6));
+        let (sx, sy, w, h) = (
+            m.rd16(rect),
+            m.rd16(rect + 2),
+            m.rd16(rect + 4),
+            m.rd16(rect + 6),
+        );
         let (dx, dy) = (r.r[A1] as u16, r.r[A2] as u16);
         let mut v = v.borrow_mut();
         let block: Vec<u16> = (0..h)
@@ -57,7 +62,12 @@ fn the_clut_cell_op_matches_retail() {
     let v = vram.clone();
     cpu.hook(LOAD_IMAGE, move |r, m| {
         let rect = r.r[A0];
-        let (x, y, w, h) = (m.rd16(rect), m.rd16(rect + 2), m.rd16(rect + 4), m.rd16(rect + 6));
+        let (x, y, w, h) = (
+            m.rd16(rect),
+            m.rd16(rect + 2),
+            m.rd16(rect + 4),
+            m.rd16(rect + 6),
+        );
         assert_eq!((w, h), (16, 1), "one CLUT row");
         let bytes: Vec<u8> = (0..32).map(|i| m.rd8(r.r[A1] + i)).collect();
         v.borrow_mut().write_clut_row(x, y, &bytes);
@@ -83,9 +93,16 @@ fn the_clut_cell_op_matches_retail() {
             cell(&mut rng)
         };
         let dest = cell(&mut rng);
-        let frames = if rng.below(3) == 0 { 1 + rng.below(0x40) as i16 } else { 0 };
+        let frames = if rng.below(3) == 0 {
+            1 + rng.below(0x40) as i16
+        } else {
+            0
+        };
         let mut payload = [0u8; 14];
-        for (k, w) in [a.0, a.1, b.0, b.1, dest.0, dest.1, frames].iter().enumerate() {
+        for (k, w) in [a.0, a.1, b.0, b.1, dest.0, dest.1, frames]
+            .iter()
+            .enumerate()
+        {
             payload[2 * k..2 * k + 2].copy_from_slice(&w.to_le_bytes());
         }
         cpu.mem.wr8(OP, 0x61);
@@ -105,7 +122,11 @@ fn the_clut_cell_op_matches_retail() {
             cpu.mem.wr32(ACTOR + o, 0xA5A5_A5A5);
         }
         spawned.borrow_mut().clear();
-        assert_eq!(cpu.call(EMITTER, &[CTX, OP]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(EMITTER, &[CTX, OP]),
+            Stop::Returned,
+            "round {round}"
+        );
         let ctx = format!("round {round} a {a:?} b {b:?} dest {dest:?} frames {frames}");
 
         let mut w = World::new();
@@ -142,7 +163,10 @@ fn the_clut_cell_op_matches_retail() {
             faded += 1;
         }
     }
-    assert!(moved > 150 && filled > 80 && faded > 100, "{moved} {filled} {faded}");
+    assert!(
+        moved > 150 && filled > 80 && faded > 100,
+        "{moved} {filled} {faded}"
+    );
 }
 
 fn fx_is_flat(b: (i16, i16)) -> bool {

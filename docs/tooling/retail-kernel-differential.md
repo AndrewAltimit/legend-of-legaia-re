@@ -1282,3 +1282,23 @@ an empty line on its landing frame, where the port waited a frame in the water.
 The positional emitter's release `FUN_800250D4` (`sfx_emitter_release`) walks the row's own count and skips a negative first
 voice. The session's emitter ops clamped the count to one and filtered per voice, so a runtime-bank row of count `0` keyed and
 released a voice retail never touches.
+
+The dance hall's floor pass `FUN_801D2A10` found the step-marker lookup keyed on
+the wrong cell: retail asks the kind-1 tile table about the neighbour cell the
+tile record's `+6` / `+7` delta points at, and the port asked about the spawn
+cell. The shipped hall's marker tiles carry zero deltas, so its ten markers are
+unchanged. The same differential split the floor's other pass
+`FUN_801D3A2C` / `FUN_801D6BBC` off it: that walk runs the columns outer over end
+coordinates, tests the neighbour's block bit and raises the actor's `+0x10` bit,
+so it has its own kernel.
+
+The player-file streamer's equipment selector (`FUN_80052770` case 4) found the
+port keeping the first entry that matched an equipped id, where retail stores on
+every match and so keeps the last; retail also takes the section default when the
+stored size is still zero. No shipped player file repeats an id inside a section.
+
+The world-map text box `FUN_801EE90C` found a negative phase skipping the
+text-actor tick: the bound test sends an out-of-range phase to the epilogue, not
+past it. The horizon emitter `FUN_801D7EA0`, compared packet by packet, matches; its
+multiplies now wrap as `mflo` does, so a large staged scale cannot overflow a debug
+build.

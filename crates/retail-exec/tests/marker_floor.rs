@@ -140,7 +140,10 @@ fn the_dance_floor_pass_matches_retail() {
         for _ in 0..rng.below(60) {
             let tx = (x0 + rng.below(w as u32 + 4) as i32 - 2).clamp(0, 0x7F) as u8;
             let tz = (z0 + rng.below(h as u32 + 4) as i32 - 2).clamp(0, 0x7F) as u8;
-            if trig.iter().any(|t: &TileTrigger| (t.tile_x, t.tile_z) == (tx, tz)) {
+            if trig
+                .iter()
+                .any(|t: &TileTrigger| (t.tile_x, t.tile_z) == (tx, tz))
+            {
                 continue;
             }
             let record = if rng.below(2) == 0 {
@@ -220,7 +223,11 @@ fn the_dance_floor_pass_matches_retail() {
                 .expect("a resolved cell");
             let rot = [0x24, 0x26, 0x28].map(|o| cpu.mem.rd16(actor + o));
             assert_eq!(rot, r.rot, "actor {k} rot: {ctx}");
-            assert_eq!(cpu.mem.rd16(actor + 0x60), r.tile_id, "actor {k} tile: {ctx}");
+            assert_eq!(
+                cpu.mem.rd16(actor + 0x60),
+                r.tile_id,
+                "actor {k} tile: {ctx}"
+            );
             let f74 = cpu.mem.rd32(actor + 0x74);
             assert_eq!(f74 & 0x4000_0000 != 0, r.actor_74_tag, "actor {k}: {ctx}");
             assert_eq!(f74 & 0x1000_0000 != 0, r.actor_74_flag, "actor {k}: {ctx}");
@@ -231,10 +238,7 @@ fn the_dance_floor_pass_matches_retail() {
             .iter()
             .map(|t| (t.cell, t.pos, t.rot, t.actor.class))
             .collect();
-        let retail_pool: Vec<_> = want_markers
-            .iter()
-            .map(|m| (m.0, m.1, m.2, m.3))
-            .collect();
+        let retail_pool: Vec<_> = want_markers.iter().map(|m| (m.0, m.1, m.2, m.3)).collect();
         assert_eq!(pool, retail_pool, "marker pool: {ctx}");
         for (k, sp) in got.iter().enumerate() {
             if sp.template == MARKER {
@@ -388,7 +392,10 @@ fn run_floor_pass(pass: FloorPass, seed: u64) {
         let ctx = format!("round {round} rect ({x0}, {z0})..({x1}, {z1}) dev {dev:#x} mode {mode}");
 
         if shut {
-            assert!(spawns.borrow().is_empty() && freed.borrow().is_empty(), "{ctx}");
+            assert!(
+                spawns.borrow().is_empty() && freed.borrow().is_empty(),
+                "{ctx}"
+            );
             assert_eq!(cpu.mem.rd32(pass.counter), 0, "the count resets: {ctx}");
             gated += 1;
             continue;
@@ -415,7 +422,11 @@ fn run_floor_pass(pass: FloorPass, seed: u64) {
             })
             .collect();
         assert_eq!(*spawns.borrow(), want, "spawns: {ctx}");
-        assert_eq!(cpu.mem.rd32(pass.counter), resolved.len() as u32, "count: {ctx}");
+        assert_eq!(
+            cpu.mem.rd32(pass.counter),
+            resolved.len() as u32,
+            "count: {ctx}"
+        );
         for (k, r) in resolved.iter().enumerate() {
             let actor = ACTORS + ACTOR_STRIDE * k as u32;
             let rot = [0x24, 0x26, 0x28].map(|o| cpu.mem.rd16(actor + o));
@@ -424,7 +435,11 @@ fn run_floor_pass(pass: FloorPass, seed: u64) {
             let f74 = cpu.mem.rd32(actor + 0x74);
             assert_eq!(f74 & 0x4000_0000 != 0, r.actor_74_tag, "actor {k}: {ctx}");
             assert_eq!(f74 & 0x1000_0000 != 0, r.actor_74_flag, "actor {k}: {ctx}");
-            assert_eq!(cpu.mem.rd32(actor + 0x10) & 4 != 0, r.actor_10_flag, "actor {k}: {ctx}");
+            assert_eq!(
+                cpu.mem.rd32(actor + 0x10) & 4 != 0,
+                r.actor_10_flag,
+                "actor {k}: {ctx}"
+            );
         }
         spawned += resolved.len();
         col_major += u32::from(resolved.windows(2).any(|w| w[1].cell_x > w[0].cell_x));

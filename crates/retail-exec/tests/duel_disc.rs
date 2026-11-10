@@ -34,7 +34,13 @@ fn the_duel_disc_matches_retail() {
     cpu.mem
         .load(OVERLAY_BASE, &disc.read_entry(976).expect("PROT 0976"));
     // The matrix stack calls around the draw stand in as no-ops.
-    for va in [0x8005_B268, 0x8003_D20C, 0x8003_D344, 0x8003_D1A4, 0x8005_B308] {
+    for va in [
+        0x8005_B268,
+        0x8003_D20C,
+        0x8003_D344,
+        0x8003_D1A4,
+        0x8005_B308,
+    ] {
         cpu.hook(va, |_, _| {});
     }
     let builds = Rc::new(RefCell::new(Vec::<(u32, u32, u32, [u8; 0x24])>::new()));
@@ -45,14 +51,20 @@ fn the_duel_disc_matches_retail() {
         b.borrow_mut().push((r.r[A0], r.r[A1], r.r[A2], src));
     });
     let d = draws.clone();
-    cpu.hook(DRAW, move |r, _| d.borrow_mut().push((r.r[A0], r.r[A1], r.r[A2])));
+    cpu.hook(DRAW, move |r, _| {
+        d.borrow_mut().push((r.r[A0], r.r[A1], r.r[A2]))
+    });
     cpu.mem.wr32(SCRATCH_PTR, SCRATCH);
 
     let mut seen = Vec::new();
     for kind in [0u32, 1, 2, 0xFFFF_FFFF] {
         builds.borrow_mut().clear();
         draws.borrow_mut().clear();
-        assert_eq!(cpu.call(DISC, &[0x8012_0000, kind]), Stop::Returned, "kind {kind}");
+        assert_eq!(
+            cpu.call(DISC, &[0x8012_0000, kind]),
+            Stop::Returned,
+            "kind {kind}"
+        );
         let b = builds.borrow();
         assert_eq!(b.len(), 1, "one build: kind {kind}");
         let (out, mode, columns, src) = b[0];
@@ -72,7 +84,11 @@ fn the_duel_disc_matches_retail() {
         assert_eq!(src, want, "the source record: kind {kind}");
         let d = draws.borrow();
         assert_eq!(d.len(), 1, "one draw: kind {kind}");
-        assert_eq!(d[0].0, out + 0xC, "the drawer reads the built object: kind {kind}");
+        assert_eq!(
+            d[0].0,
+            out + 0xC,
+            "the drawer reads the built object: kind {kind}"
+        );
         assert_eq!(d[0].2, 1, "kind {kind}");
         if kind == 0 {
             assert_eq!(d[0].1, SHADOW_FLAG_WORD, "the shadow's flag word");

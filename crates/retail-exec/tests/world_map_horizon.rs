@@ -45,12 +45,12 @@ fn band_packets(b: &HorizonBand) -> Vec<Vec<u8>> {
             (q.x_left, q.y_bottom),
             (q.x_right, q.y_bottom),
         ];
-        for v in 0..4 {
+        for (v, ((x, y), (u, w))) in xy.iter().zip(q.uv).enumerate() {
             let at = 8 + 8 * v;
-            p[at..at + 2].copy_from_slice(&xy[v].0.to_le_bytes());
-            p[at + 2..at + 4].copy_from_slice(&xy[v].1.to_le_bytes());
-            p[at + 4] = q.uv[v].0;
-            p[at + 5] = q.uv[v].1;
+            p[at..at + 2].copy_from_slice(&x.to_le_bytes());
+            p[at + 2..at + 4].copy_from_slice(&y.to_le_bytes());
+            p[at + 4] = u;
+            p[at + 5] = w;
         }
         // `+0xE` (the CLUT) and `+0x26` are never written.
         p[0xE] = FILL;
@@ -127,7 +127,8 @@ fn the_horizon_emitter_matches_retail_at_packet_level() {
         cpu.mem.wr32(ANGLE, angle);
         cpu.mem.wr32(STEP, step);
         cpu.mem.wr32(LAYER, layer);
-        cpu.mem.wr16(ALT_BAND, if alt { rng.below(0x100) as u16 + 1 } else { 0 });
+        cpu.mem
+            .wr16(ALT_BAND, if alt { rng.below(0x100) as u16 + 1 } else { 0 });
         cpu.mem.wr8(FRAME_STEP, delta);
         cpu.mem.wr32(CURSOR, PACKETS);
         cpu.mem.wr32(OT_BASE, OT);
@@ -142,14 +143,17 @@ fn the_horizon_emitter_matches_retail_at_packet_level() {
         let batch = emit_horizon(scale, angle, step, delta, layer, alt, &|i| {
             trig[usize::from(i)]
         });
-        let ctx = format!(
-            "round {round} scale {scale:#x} angle {angle:#x} step {step:#x} delta {delta}"
-        );
+        let ctx =
+            format!("round {round} scale {scale:#x} angle {angle:#x} step {step:#x} delta {delta}");
         assert_eq!(cpu.mem.rd32(GATE), 0, "the gate clears: {ctx}");
         assert_eq!(cpu.mem.rd32(ANGLE), batch.angle_after, "angle: {ctx}");
         assert_eq!(batch.ot_layer, layer);
         let end = cpu.mem.rd32(CURSOR);
-        assert_eq!(end, PACKETS + band_bytes * BAND_COUNT as u32, "cursor: {ctx}");
+        assert_eq!(
+            end,
+            PACKETS + band_bytes * BAND_COUNT as u32,
+            "cursor: {ctx}"
+        );
         assert_eq!(cpu.mem.rd8(end), FILL, "nothing past the cursor: {ctx}");
 
         // The chain: newest first, all in the one bucket.
@@ -178,13 +182,7 @@ fn the_horizon_emitter_matches_retail_at_packet_level() {
         for (k, (&va, w)) in at.iter().zip(&want).enumerate() {
             let mut got: Vec<u8> = (0..w.len() as u32).map(|o| cpu.mem.rd8(va + o)).collect();
             got[..3].fill(0);
-            assert_eq!(
-                got,
-                *w,
-                "band {} packet {}: {ctx}",
-                k / 4,
-                k % 4
-            );
+            assert_eq!(got, *w, "band {} packet {}: {ctx}", k / 4, k % 4);
         }
     }
 }

@@ -66,7 +66,9 @@ fn run(entry: u32, art: TravelArt, seed: u64) {
         l.borrow_mut().push(Call::FlagSet(r.r[A0]))
     });
     let l = log.clone();
-    cpu.hook(OPENER, move |r, _| l.borrow_mut().push(Call::Opener(r.r[A0])));
+    cpu.hook(OPENER, move |r, _| {
+        l.borrow_mut().push(Call::Opener(r.r[A0]))
+    });
     let b = busy.clone();
     cpu.hook(FLAG_TEST, move |r, _| {
         assert_eq!(r.r[A0], 0xB, "the gate reads system flag 0xB");
@@ -138,7 +140,10 @@ fn run(entry: u32, art: TravelArt, seed: u64) {
             }
             _ => 3,
         };
-        let (tile_x, tile_z) = (rng.below(0x200) as i32 - 0x40, rng.below(0x200) as i32 - 0x40);
+        let (tile_x, tile_z) = (
+            rng.below(0x200) as i32 - 0x40,
+            rng.below(0x200) as i32 - 0x40,
+        );
         let dest_before = [rng.next(), rng.next(), rng.next()];
 
         cpu.mem.wr16(ACTOR + 0x54, phase);
@@ -236,7 +241,11 @@ fn run(entry: u32, art: TravelArt, seed: u64) {
         );
         assert_eq!(*log.borrow(), calls, "calls: {ctx}");
         assert_eq!(cpu.mem.rd16(ACTOR + 0x54), actor.phase, "phase: {ctx}");
-        assert_eq!(cpu.mem.rd16(ACTOR + 0x9E) as i16, actor.dwell, "dwell: {ctx}");
+        assert_eq!(
+            cpu.mem.rd16(ACTOR + 0x9E) as i16,
+            actor.dwell,
+            "dwell: {ctx}"
+        );
         assert_eq!(cpu.mem.rd16(PLAYER + 0x16) as i16, y, "player y: {ctx}");
         assert_eq!(cpu.mem.rd32(PLAYER + 0x10), flags, "player flags: {ctx}");
         assert_eq!(cpu.mem.rd16(PLAYER + 0x72), want_scale, "scale: {ctx}");

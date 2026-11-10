@@ -47,8 +47,12 @@ fn the_strip_emitter_matches_retail_at_packet_level() {
     cpu.mem
         .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
     let mut rng = Rng(0x5354_5250);
-    let cos: Vec<i16> = (0..0x1000).map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16).collect();
-    let sin: Vec<i16> = (0..0x1000).map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16).collect();
+    let cos: Vec<i16> = (0..0x1000)
+        .map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16)
+        .collect();
+    let sin: Vec<i16> = (0..0x1000)
+        .map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16)
+        .collect();
     for i in 0..0x1000u32 {
         cpu.mem.wr16(COS + 2 * i, cos[i as usize] as u16);
         cpu.mem.wr16(SIN + 2 * i, sin[i as usize] as u16);
@@ -95,14 +99,21 @@ fn the_strip_emitter_matches_retail_at_packet_level() {
             half_w: rng.next() as i16,
             half_h: rng.next() as i16,
             wobble_amp: (rng.below(0x80) as i16) - 0x40,
-            wobble_freq: if rng.below(2) == 0 { 0 } else { rng.below(0x100) as i16 - 0x80 },
+            wobble_freq: if rng.below(2) == 0 {
+                0
+            } else {
+                rng.below(0x100) as i16 - 0x80
+            },
         };
         let scroll = StripScroll {
             u_phase: rng.next() as u16,
             wobble_phase: rng.next() as i16,
             v_phase: rng.next() as u16,
         };
-        let (sx, sy) = (rng.below(0x200) as i16 - 0x60, rng.below(0x180) as i16 - 0x40);
+        let (sx, sy) = (
+            rng.below(0x200) as i16 - 0x60,
+            rng.below(0x180) as i16 - 0x40,
+        );
         let w = rng.below(0x80) as i16;
         let (top, bottom) = (sy - rng.below(0x50) as i16, sy + rng.below(0x50) as i16);
         let shift = rng.below(4) as u8 + 6;
@@ -148,7 +159,10 @@ fn the_strip_emitter_matches_retail_at_packet_level() {
         ] {
             cpu.mem.wr16(ACTOR + o, v);
         }
-        for (i, v) in [clip.left, clip.top, clip.right, clip.bottom].iter().enumerate() {
+        for (i, v) in [clip.left, clip.top, clip.right, clip.bottom]
+            .iter()
+            .enumerate()
+        {
             cpu.mem.wr16(CLIP + 2 * i as u32, *v);
         }
         cpu.mem.wr8(OT_SHIFT, shift);
@@ -173,7 +187,11 @@ fn the_strip_emitter_matches_retail_at_packet_level() {
         let n = want.quads.len() as u32;
         let mode_pkt = PACKETS + 0x28 * n;
         assert_eq!(cpu.mem.rd32(CURSOR), mode_pkt + 0xC, "cursor: {ctx}");
-        assert_eq!(*modes.borrow(), [(mode_pkt, u32::from(want.mode_tpage))], "{ctx}");
+        assert_eq!(
+            *modes.borrow(),
+            [(mode_pkt, u32::from(want.mode_tpage))],
+            "{ctx}"
+        );
         // The chain, newest first: the mode packet, then the quads backwards.
         let bucket = OT + 4 * want.ot_index;
         let mut chain = Vec::new();

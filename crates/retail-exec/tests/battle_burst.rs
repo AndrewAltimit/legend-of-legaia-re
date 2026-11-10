@@ -67,8 +67,12 @@ fn the_battle_burst_matches_retail() {
     cpu.mem
         .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
     let mut rng = Rng(0x4255_5253);
-    let cos: Vec<i16> = (0..0x1000).map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16).collect();
-    let sin: Vec<i16> = (0..0x1000).map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16).collect();
+    let cos: Vec<i16> = (0..0x1000)
+        .map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16)
+        .collect();
+    let sin: Vec<i16> = (0..0x1000)
+        .map(|_| (rng.below(0x2001) as i32 - 0x1000) as i16)
+        .collect();
     for i in 0..0x1000u32 {
         cpu.mem.wr16(COS + 2 * i, cos[i as usize] as u16);
         cpu.mem.wr16(SIN + 2 * i, sin[i as usize] as u16);
@@ -114,7 +118,11 @@ fn the_battle_burst_matches_retail() {
         *draws.borrow_mut() = stream.clone();
         *cursor.borrow_mut() = 0;
         spawns.borrow_mut().clear();
-        assert_eq!(cpu.call(BURST, &[PARENT, mode]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(BURST, &[PARENT, mode]),
+            Stop::Returned,
+            "round {round}"
+        );
 
         let mut host = Host {
             draws: stream.iter(),
@@ -130,7 +138,8 @@ fn the_battle_burst_matches_retail() {
         assert_eq!(*cursor.borrow(), used, "rand draws: {ctx}");
         let got = spawns.borrow().clone();
         assert_eq!(got.len(), out.len(), "spawns: {ctx}");
-        for (k, ((pos, srot, record, sc), (rec, req))) in got.iter().zip(&host.spawned).enumerate() {
+        for (k, ((pos, srot, record, sc), (rec, req))) in got.iter().zip(&host.spawned).enumerate()
+        {
             assert_eq!(*pos, PARENT + 0x14, "spawn {k}: {ctx}");
             assert_eq!(*record, *rec, "spawn {k} record: {ctx}");
             assert_eq!(
@@ -140,8 +149,16 @@ fn the_battle_burst_matches_retail() {
             );
             assert_eq!(*sc as i32, req.scale, "spawn {k} scale: {ctx}");
             let child = CHILDREN + CHILD_STRIDE * k as u32;
-            assert_eq!(cpu.mem.rd16(child + 0x3E) as i16, req.spread, "spawn {k}: {ctx}");
-            assert_eq!(cpu.mem.rd16(child + 0x98) as i16, req.tail, "spawn {k}: {ctx}");
+            assert_eq!(
+                cpu.mem.rd16(child + 0x3E) as i16,
+                req.spread,
+                "spawn {k}: {ctx}"
+            );
+            assert_eq!(
+                cpu.mem.rd16(child + 0x98) as i16,
+                req.tail,
+                "spawn {k}: {ctx}"
+            );
         }
         fired += u32::from(!out.is_empty());
         idle += u32::from(out.is_empty());

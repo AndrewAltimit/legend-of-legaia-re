@@ -59,13 +59,11 @@ fn the_equipment_selector_matches_retail() {
             push(&mut records, 0, &mut rng);
             ids.push(sec);
         }
-        let equipped: [u8; 5] = std::array::from_fn(|s| {
-            match rng.below(4) {
-                0 => 0,
-                1 => 1 + rng.below(0x30) as u8,
-                _ if !ids[s].is_empty() => ids[s][rng.below(ids[s].len() as u32) as usize] as u8,
-                _ => 0,
-            }
+        let equipped: [u8; 5] = std::array::from_fn(|s| match rng.below(4) {
+            0 => 0,
+            1 => 1 + rng.below(0x30) as u8,
+            _ if !ids[s].is_empty() => ids[s][rng.below(ids[s].len() as u32) as usize] as u8,
+            _ => 0,
         });
         let member = rng.below(3);
         let char_id = 1 + rng.below(4);
@@ -111,9 +109,11 @@ fn the_equipment_selector_matches_retail() {
                 matched += 1;
             }
         }
-        doubled += u32::from(ids.iter().enumerate().any(|(s, sec)| {
-            sec.iter().filter(|&&i| i == u32::from(equipped[s])).count() > 1
-        }));
+        doubled += u32::from(
+            ids.iter()
+                .enumerate()
+                .any(|(s, sec)| sec.iter().filter(|&&i| i == u32::from(equipped[s])).count() > 1),
+        );
     }
     assert!(
         matched > 20000 && defaulted > 20000 && doubled > 500,

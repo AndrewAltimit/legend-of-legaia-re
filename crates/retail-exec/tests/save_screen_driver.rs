@@ -110,7 +110,11 @@ fn the_save_screen_driver_matches_retail() {
                 _ => 1 + rng.below(0x400) as u16,
             },
         };
-        let save_word = if input.is_save { 1 + rng.below(0x7FFF) as u16 } else { 0 };
+        let save_word = if input.is_save {
+            1 + rng.below(0x7FFF) as u16
+        } else {
+            0
+        };
         let flags = rng.next() & !8;
         cpu.mem.wr16(ACTOR + 0x1A, state);
         cpu.mem.wr16(ACTOR + 0x5C, save_word);

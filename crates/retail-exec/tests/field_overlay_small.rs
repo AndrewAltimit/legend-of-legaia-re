@@ -105,7 +105,10 @@ fn the_field_audio_release_matches_retail() {
     assert_eq!(*log.borrow(), want);
     assert_eq!(globals.len(), 2);
     assert!(
-        matches!(steps[steps.len() - 2..], [ReleaseStep::ClearGlobal(_), ReleaseStep::ClearGlobal(_)]),
+        matches!(
+            steps[steps.len() - 2..],
+            [ReleaseStep::ClearGlobal(_), ReleaseStep::ClearGlobal(_)]
+        ),
         "the clears close the list"
     );
     for &g in &globals {

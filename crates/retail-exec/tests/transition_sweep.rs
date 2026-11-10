@@ -63,7 +63,9 @@ fn the_transition_sweep_matches_retail() {
                     3 => RETIRED_HANDLERS[rng.below(3) as usize] + 4,
                     _ => 0x8002_0000 + 4 * rng.below(0x4000),
                 },
-                flags: rng.next() & !0x1_0808 | [0, 0x800][rng.below(2) as usize] | rng.below(2) * 8,
+                flags: (rng.next() & !0x1_0808)
+                    | [0, 0x800][rng.below(2) as usize]
+                    | (rng.below(2) * 8),
                 render_mode: match rng.below(4) {
                     0 => 4,
                     1 => 0xB | (rng.below(0x10) as u16) << 4,
@@ -81,7 +83,8 @@ fn the_transition_sweep_matches_retail() {
             cpu.mem.wr32(at + 0x44, OLD_SIDE + SIDE_STRIDE * k as u32);
             cpu.mem.wr16(at + 0x56, a.render_mode);
             // Neither rebuild of the move-VM arm.
-            cpu.mem.wr16(at + 0x5A, [0u16, 1, 2, 4, 5, 7][rng.below(6) as usize]);
+            cpu.mem
+                .wr16(at + 0x5A, [0u16, 1, 2, 4, 5, 7][rng.below(6) as usize]);
             cpu.mem.wr16(at + 0x68, 0xA5A5);
             for base in [OLD_SIDE, NEW_SIDE] {
                 let side = base + SIDE_STRIDE * k as u32;
