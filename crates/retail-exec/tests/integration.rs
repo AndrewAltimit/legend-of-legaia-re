@@ -201,6 +201,7 @@ mod unequip;
 mod validator;
 mod vdf_morph;
 mod voice_choose;
+mod value_readout;
 mod walk_on;
 mod walk_regen;
 mod walk_step;
