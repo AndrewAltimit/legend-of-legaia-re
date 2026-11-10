@@ -4145,6 +4145,13 @@ three units). The bodies without that store keep the half turn
   HP back on the neutral word, flag `0` and rate `8` (`0x801F73C4..0x801F7418`).
   The colour word is also what PROT 0940's shield sphere keys on, so the sphere is
   off while Cort is hidden.
+- **0944 `0x37`'s hit** is rolled on arm 0 and lands on arm 3's pass: the popup
+  `FUN_801F44A0` on the latched roll (`jal` at `0x801F7198`), the clamp, the
+  `+0x10` accumulate (`0x801F71E0`) and the HP write (`0x801F71FC`). The
+  accumulate is the bar's travel, so the readout counts down from the HP the
+  hit found while the `DAMAGE` line stands. The port pushes the popup from the
+  arm (`World::run_cast_module_code`), and a kernel's `+0x10` write arms the
+  port's display word on the view's write-back (`write_cast_actor_state`).
 - **0961 drifts**, stored before each gate tests the countdown, with
   `s = scalar * delta`: arm 1 TR z `+s`, TR y `-s/4`, pitch `+s/8`; arm 2 in
   `0xB5` TR y and pitch `+delta`, TR z `+s`; arm 3 TR z `+3s`, TR y `-s`,

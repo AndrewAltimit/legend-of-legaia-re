@@ -252,6 +252,15 @@ impl World {
                 .flag_bits
                 .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
         }
+        // A kernel that accumulated into `+0x10` wrote the bar's travel: the
+        // readout drains from the HP the hit found (`BattleActor::arm_hp_bar`
+        // seats the port's display word there; retail's `+0x172` always
+        // stands). Unarmed, the readout jumped to the new HP on the hit's
+        // tick, as PROT 0944's Guilty Cross did where retail's counts down
+        // through the cross.
+        if st.hp_bar_delta != a.battle.hp_bar_pending {
+            a.battle.arm_hp_bar();
+        }
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
         a.battle.field_flags = st.flags & !tracked;

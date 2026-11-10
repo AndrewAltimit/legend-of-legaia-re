@@ -1194,8 +1194,21 @@ impl World {
                     } else {
                         None
                     };
-                    if hit.is_some() {
+                    if let Some(roll) = hit {
                         self.casting.module_skips_fold = true;
+                        // Arm 3's popup, `FUN_801F44A0` on the latched roll
+                        // (`jal` at `0x801F7198`) ahead of the clamp, the
+                        // `+0x10` accumulate (`0x801F71E0`) and the HP write
+                        // (`0x801F71FC`): the numeral over the victim and
+                        // the readout's `DAMAGE` line.
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: victim_slot,
+                                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                                is_heal: false,
+                                is_crit: false,
+                            });
                     }
                     Some(arms::guilty_cross_tick(
                         &mut ctx,
