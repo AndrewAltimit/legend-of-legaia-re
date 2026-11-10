@@ -230,14 +230,15 @@ pub fn damage_finish_net(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) -> 
 /// if defender_is_party:
 ///     if (resist.hi & 0x200): spirit += pct >> 2     // "spirit gain up" ×1
 ///     if (resist.hi & 0x100): spirit += pct / 10     // "spirit gain up" ×2
-/// spirit = min(100, spirit + pct)
+/// spirit = min(100, spirit + pct)                   // each add a u16 store
 /// ```
 ///
 /// `over` is the **pre-nullify** damage (spirit still accrues when a `+0x16e`
 /// nullify status later zeroes the HP loss). `defender_maxhp` is `actor+0x14e`;
 /// retail `trap`s on a zero max-HP - the kernel instead returns the gauge
 /// unchanged (the caller guarantees a living defender). Returns the new gauge
-/// value (already clamped to `100`).
+/// value, clamped to `100` as retail clamps it: on the stored halfword, so a
+/// percent past `0xFFFF` (a big hit on a tiny max HP) can wrap under the cap.
 ///
 /// The live battle loop drives this on the defender of every damaging hit
 /// (physical and magic) into [`BattleActor::spirit_gauge`] (`actor+0x170`); see
@@ -254,19 +255,23 @@ pub fn spirit_gauge_fill(
     if defender_maxhp == 0 {
         return current_spirit.min(100);
     }
-    let pct = (over * 100) / defender_maxhp as u32;
+    let pct = over.wrapping_mul(100) / defender_maxhp as u32;
     let pct = if pct == 0 { 1 } else { pct };
-    let mut spirit = current_spirit as u32;
+    // Each add is stored back as the halfword `+0x170` (`sh` at
+    // `0x801DE25C` / `0x801DE2B4` / `0x801DE2C4`), and the cap tests the
+    // halfword (`andi 0xffff; sltiu 0x65`): a percent past `0xFFFF` wraps
+    // the gauge, and a wrap that lands at or under `100` is kept.
+    let mut spirit = current_spirit;
     if defender_is_party {
         if resist.hi & 0x200 != 0 {
-            spirit += pct >> 2;
+            spirit = spirit.wrapping_add((pct >> 2) as u16);
         }
         if resist.hi & 0x100 != 0 {
-            spirit += pct / 10;
+            spirit = spirit.wrapping_add((pct / 10) as u16);
         }
     }
-    spirit += pct;
-    spirit.min(100) as u16
+    spirit = spirit.wrapping_add(pct as u16);
+    if spirit > 100 { 100 } else { spirit }
 }
 
 /// The melee body's Spirit accrual (`FUN_801EC3E4`, `0x801EDB80..0x801EDCC8`).
