@@ -31,6 +31,9 @@ pub(crate) struct MediaState {
     tex: Option<(usize, TextureHandle)>,
     /// Scripted `LEGAIA_EXPLORER_MEDIA` applied.
     auto_done: bool,
+    /// Scroll the list to the chosen file on its next draw: a file chosen
+    /// by the last run or a script can sit below the list's first screen.
+    reveal: bool,
 }
 
 impl MediaState {
@@ -62,6 +65,7 @@ impl App {
         };
         self.media.sel = Some(path);
         self.media.frame = frame;
+        self.media.reveal = true;
     }
 
     fn media_start_load(&mut self, bin: &std::path::Path, f: &IsoFile) {
@@ -121,6 +125,7 @@ impl App {
             && files.iter().any(|f| f.path == last)
         {
             pick = Some(last);
+            self.media.reveal = true;
         }
         // Up / Down walk the list, as the archive list does.
         let cur = files
@@ -132,6 +137,7 @@ impl App {
         if let Some(i) = walked {
             pick = Some(files[i].path.clone());
         }
+        let reveal = std::mem::take(&mut self.media.reveal);
         let side_max = super::side_panel_max(ui, 200.0);
         let side = self.side_width("media", 260.0).min(side_max);
         let panel = egui::Panel::left("media_files")
@@ -166,8 +172,11 @@ impl App {
                                 if row.clicked() {
                                     pick = Some(f.path.clone());
                                 }
-                                if walked.is_some() && pick.as_deref() == Some(f.path.as_str()) {
+                                let picked = pick.as_deref() == Some(f.path.as_str());
+                                if walked.is_some() && picked {
                                     row.scroll_to_me(None);
+                                } else if reveal && (sel || picked) {
+                                    row.scroll_to_me(Some(egui::Align::Center));
                                 }
                             }
                             ui.separator();
@@ -262,26 +271,7 @@ impl App {
         sel: &str,
         tracks: &[(u8, u8, u32, psx_xa::Channels, f64)],
     ) {
-        ui.horizontal(|ui| {
-            match &self.player.now_playing {
-                Some(n) => {
-                    ui.label(format!("Playing: {n}"));
-                    if let Some(t) = self.player.stream_secs() {
-                        ui.label(format!("{t:.1} s"));
-                    }
-                    ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_millis(200));
-                }
-                None => {
-                    ui.label("Stopped");
-                }
-            }
-            // Greyed out with nothing playing, as the Audio tab's is.
-            let playing = self.player.now_playing.is_some();
-            if ui.add_enabled(playing, egui::Button::new("Stop")).clicked() {
-                self.player.stop();
-            }
-        });
+        self.transport_row(ui);
         if let Some(note) = media::xa_file_note(sel) {
             ui.label(note);
         }
@@ -292,23 +282,29 @@ impl App {
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (i, (file_no, ch_no, rate, channels, secs)) in tracks.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.monospace(format!(
-                        "file {file_no:2} ch {ch_no:2}  {:<6} {rate} Hz  {:>6.1} s",
-                        if matches!(channels, psx_xa::Channels::Stereo) {
-                            "stereo"
-                        } else {
-                            "mono"
-                        },
-                        secs
-                    ));
+                    // The buttons lead, so a long note never pushes them
+                    // off the pane; the note is cut to what is left.
                     if ui.small_button("Play").clicked() {
                         action = Some((i, false));
                     }
                     if ui.small_button("WAV...").clicked() {
                         action = Some((i, true));
                     }
+                    ui.monospace(format!(
+                        "ch {ch_no:2}  {:<6} {:>7}",
+                        if matches!(channels, psx_xa::Channels::Stereo) {
+                            "stereo"
+                        } else {
+                            "mono"
+                        },
+                        crate::player::clock(*secs)
+                    ))
+                    .on_hover_text(format!(
+                        "file {file_no}, channel {ch_no}, {rate} Hz, {secs:.1} s"
+                    ));
                     if let Some(note) = media::xa_channel_note(sel, *ch_no) {
-                        ui.label(note);
+                        ui.add(egui::Label::new(note.as_ref() as &str).truncate())
+                            .on_hover_text(note);
                     }
                 });
             }
