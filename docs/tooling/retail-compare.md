@@ -1363,8 +1363,14 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   turn the capture holds spent ([below](#combatants-that-had-already-acted)).
   It sits the replayed round out, so nothing restores the heading its earlier
   turn left, and it takes the captured one. The action's target does so only
-  until the first strike commits, since the commit turns it onto the attacker
-  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself.
+  until the first strike lands, since the hit turns it onto the attacker
+  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself. The turn
+  rides the melee kernel `FUN_801EC3E4`, which the anim tick's hit event calls
+  partway into the swing (SCUS `0x800478A0`), not the swing's commit: a capture
+  on the action's first swing whose target still idles in the RAM has not been
+  turned (`battle_ropeway_party_gala_flying_knee_mid`: Gala on `0x0E` at cursor
+  `2`, the Killer Bee on the `2592` its own last turn left; `image` `.539` to
+  `.598`).
 
   The heading moves the approach. The range law `FUN_8004E2F0` measures the
   attacker's live pair against the target's body pair, which is the live pair
@@ -2162,7 +2168,13 @@ too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
 melee's target from the approach `0x14` through the strike loop `0x1E` while
 it idles: the hit that stages its reaction has not landed, and nothing else
 in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
-onto at idle cursor `0` on the displayed frame). So does a monster cast's
+onto at idle cursor `0` on the displayed frame). So does a party strike's
+monster target ahead of the first swing's commit (`battle_ropeway_party_noa_sonic_javelin_open`'s
+Orb, whose idle bob stood it a sphere's height off retail's: `.794` to `.854`), but
+not after it: that commit steps the attacker along the range law to the target's
+body pair (`0x8004BF7C..0x8004C118`), which the replay's own idle phase decided,
+and a loop re-seated after it stands the body where the step never measured
+(`minigame_muscle_dome_retail_red_piura_vahn_strike` `.987` to `.967`). So does a monster cast's
 party target idling through the cast band `0x28..=0x2F`, which stages nothing
 on the victim before the hit (`battle_nilboa_aluru_v2_aluru_cannon_mid_cast`'s
 Vahn, a close-up, `.874` to `.964`; `battle_deene_ironman_jagged_earth_mid_cast`
@@ -2659,6 +2671,20 @@ same state byte. Three refinements:
   the child's frames from tick `460` to `536` of the drive draw one pose, and
   any retake inside that span (`LEGAIA_CAPTURE_DISPLAY_LAG` `3` or `18`)
   lands on it. The gate's own tick `538` is the art's first pass.
+
+**Harvest pacing.** A party-strike capture played by `autorun_battle_harvest.lua`
+(scenario topic `harvest`) had its arts target cursor confirmed 24 vsyncs after
+the entry's own confirm, about the `0xC`-frame tween of the case-1 shot that
+confirm arms (`0x50 -> 0x5A`, `FUN_801D388C(0xC, 0)` at `0x801D20B0`). The drive
+confirms on the next tick everywhere else, so on these captures it holds the
+cursor until the camera has landed (`ActionSteer::harvest_pacing`,
+`CorpusEntry::harvest`): the round's first framing then starts where retail's
+did. `battle_ropeway_party_gala_flying_knee_mid` reads `image` `.592` to `.910`,
+`camera` `.964` to `.981`; `battle_garmel_party_noa_lizard_tail_mid` `.819` to
+`.891`; `battle_garmel_party_vahn_hyper_elbow_mid` takes its `camera` to `.997`
+while its frame falls `.834` to `.749`, the focus `30` units off on the image
+child's walk back. A state the probe did not play keeps the next-tick confirm:
+paced the same way, `battle_vahn_tri_somersault_super` fell `.957` to `.823`.
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the
