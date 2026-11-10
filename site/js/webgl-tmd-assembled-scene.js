@@ -975,24 +975,4 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     p._modelMemo = { x: p.x, y: p.y, z: p.z, rotY, scale, anchor: p.anchor, aabb: memoBox, model };
     return model;
   }
-
-  /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,
-   * F = fragment): 0 = 0.5B + 0.5F, 1 = B + F, 2 = B - F, 3 = B + 0.25F.
-   * Constant-alpha factors carry the 0.5 / 0.25 weights, so no shader
-   * pre-scale is needed. Same table as engine-render's psx_blend. */
-  _setSemiBlend(mode) {
-    const gl = this.gl;
-    gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
-    if (mode === 0) {
-      gl.blendColor(0, 0, 0, 0.5);
-      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
-    } else if (mode === 3) {
-      gl.blendColor(0, 0, 0, 0.25);
-      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
-    } else {
-      gl.blendFunc(gl.ONE, gl.ONE);
-    }
-  }
-
-
 });
