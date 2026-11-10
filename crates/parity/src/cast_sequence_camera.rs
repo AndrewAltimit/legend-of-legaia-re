@@ -110,10 +110,13 @@ pub fn write_camera_csv(retail: &Side, engine: &Side, out: &Path) -> Result<bool
             return false;
         };
         let row = &engine.rows[i];
-        i > 0
-            && row.drive.is_some_and(|d| row.phase == d.seek_arm)
-            && row.display_frames.is_some()
-            && engine.rows[i - 1].display_frames == row.display_frames
+        // A tick its battle frame overran drains no game time either
+        // (`Side::live_clock`).
+        row.over
+            || (i > 0
+                && row.drive.is_some_and(|d| row.phase == d.seek_arm)
+                && row.display_frames.is_some()
+                && engine.rows[i - 1].display_frames == row.display_frames)
     };
     let mut csv = String::from(
         "vsync,tick,key,into,r_step,e_step,r_pitch,r_yaw,r_trx,r_try,r_trz,r_fx,r_fz,\
