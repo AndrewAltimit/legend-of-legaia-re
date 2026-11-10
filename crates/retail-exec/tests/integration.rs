@@ -65,6 +65,7 @@ mod cursor_leaves;
 mod dance_floor;
 mod death_spoils;
 mod default_move;
+mod default_arm_mesh;
 mod defeat_credit;
 mod dialog_pager;
 mod drop_shadow;
