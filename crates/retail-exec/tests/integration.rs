@@ -139,6 +139,7 @@ mod ozma_ladder;
 mod pad_resolve;
 mod passive_sweep;
 mod pose_decoder;
+mod publisher_logos;
 mod puera_crystals;
 mod queue_head;
 mod ramp_pool;
