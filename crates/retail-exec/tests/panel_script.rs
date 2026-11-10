@@ -246,7 +246,11 @@ fn a_panel_script_makes_the_calls_retail_makes() {
         cpu.mem.wr32(SCRIPT + len as u32 * 8, 0);
         cpu.mem.wr32(SCRIPT + len as u32 * 8 + 4, 0x1234_5678);
         log.borrow_mut().clear();
-        assert_eq!(cpu.call(INSTALL, &[SCRIPT]), Stop::Returned, "round {round}");
+        assert_eq!(
+            cpu.call(INSTALL, &[SCRIPT]),
+            Stop::Returned,
+            "round {round}"
+        );
         // The interpreter returns the terminator's address.
         assert_eq!(cpu.regs.r[V0], SCRIPT + len as u32 * 8, "round {round}");
 
