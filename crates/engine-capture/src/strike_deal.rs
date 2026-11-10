@@ -60,6 +60,14 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
+    deal_hit_words(world, deal);
+}
+
+/// Arm the hit words alone: the deal of a cast whose hits are the melee
+/// kernel's (PROT 0952's Astral Slash lands Gaza's clip `0x0A` through
+/// `FUN_801EC3E4`), where the capture's drive holds no strike hand to stand
+/// the queue or the approach terms on.
+pub fn deal_hit_words(world: &mut World, deal: &StrikeDeal) {
     // A timed word lands on the hit nearest its vsync: the gate stands on the
     // recording's first row, so the recording's vsync counts from it.
     let gate = world.clock.display_frames;

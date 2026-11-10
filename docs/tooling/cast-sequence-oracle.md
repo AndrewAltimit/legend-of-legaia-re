@@ -332,6 +332,13 @@ second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 
+A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
+Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
+lands and the three behind it cannot block a victim mid-reaction, while the
+replay's own stream blocked the first and so all four. The capture's drive
+holds no strike hand there, so `--strike-deal` deals the hit words alone
+(`strike_deal::deal_hit_words`), from a recording made with `--hit-trace`.
+
 <a id="the-headings-stand-with-their-pairs"></a>
 
 The headings stand with their pairs. A strike's attacker re-faces every pass onto its

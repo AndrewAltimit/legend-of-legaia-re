@@ -58,9 +58,7 @@ impl PlayWindowApp {
         if sc.strike_deal.is_none() || !self.capture_gate_met() {
             return;
         }
-        let Some(hand) = sc.battle_drive.as_ref().and_then(|d| d.strike_hand()) else {
-            return;
-        };
+        let hand = sc.battle_drive.as_ref().and_then(|d| d.strike_hand());
         let Some(deal) = self
             .screenshot
             .as_mut()
@@ -72,11 +70,19 @@ impl PlayWindowApp {
             "strike deal: {hand:02x?}, {} hit words",
             deal.hit_words.len()
         );
-        legaia_engine_capture::strike_deal::apply_strike_deal(
-            &mut self.session.host.world,
-            &hand,
-            &deal,
-        );
+        // A cast's drive holds no strike hand: its hits are still the melee
+        // kernel's when the module stages a striking clip, and take the words.
+        match hand {
+            Some(hand) => legaia_engine_capture::strike_deal::apply_strike_deal(
+                &mut self.session.host.world,
+                &hand,
+                &deal,
+            ),
+            None => legaia_engine_capture::strike_deal::deal_hit_words(
+                &mut self.session.host.world,
+                &deal,
+            ),
+        }
     }
 
     /// One redraw: drain the sim ticks, prepare the frame, render it (or the
