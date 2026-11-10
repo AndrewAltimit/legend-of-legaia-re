@@ -4391,6 +4391,7 @@ dependencies = [
  "legaia-engine-camera",
  "legaia-engine-cast",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",

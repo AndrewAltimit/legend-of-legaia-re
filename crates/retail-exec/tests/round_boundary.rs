@@ -1,6 +1,8 @@
 //! `FUN_801D88CC`, the round boundary's actor sweep, against
 //! `BattleRound::boundary`: the gauge restore, the action-stream clear, the
-//! stale-target re-pick and the category clear, over every seat.
+//! stale-target re-pick and the category clear, over every seat; and the
+//! re-pick's own kernel `FUN_801DB8B4` against
+//! `BattleRound::first_living_monster`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::battle_round::BattleRound;
@@ -9,6 +11,7 @@ use legaia_save::Party;
 use psx_retail_exec::Stop;
 
 const SWEEP: u32 = 0x801D_88CC;
+const FIRST_LIVE: u32 = 0x801D_B8B4;
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX: u32 = 0x8012_0000;
 const CTX_PTR: u32 = 0x8007_BD24;
@@ -33,7 +36,7 @@ fn actor(slot: u8) -> u32 {
 
 #[test]
 fn the_round_sweep_leaves_every_seat_as_retail_leaves_it() {
-    differential!(prot(898, SWEEP));
+    differential!(prot(898, SWEEP), prot(898, FIRST_LIVE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -80,6 +83,8 @@ fn the_round_sweep_leaves_every_seat_as_retail_leaves_it() {
             cpu.mem.wr8(a + 0x1F9, st.charged);
             cpu.mem.load(a + 0x1DF, &st.stream);
         }
+        assert_eq!(cpu.call(FIRST_LIVE, &[]), Stop::Returned, "round {round}");
+        let first_live = cpu.regs.r[psx_retail_exec::V0] as u8;
         assert_eq!(cpu.call(SWEEP, &[]), Stop::Returned, "round {round}");
 
         w.load_party(Party::zeroed(party as usize));
@@ -109,6 +114,11 @@ fn the_round_sweep_leaves_every_seat_as_retail_leaves_it() {
             a.spirit_shield = st.charged;
             a.params[..16].copy_from_slice(&st.stream);
         }
+        assert_eq!(
+            BattleRound::first_living_monster(&w),
+            port_of(first_live),
+            "round {round} party {party} monsters {monsters}"
+        );
         BattleRound::boundary(&mut w);
         for s in 0..seated {
             let r = retail_of(s);
@@ -132,18 +142,11 @@ fn the_round_sweep_leaves_every_seat_as_retail_leaves_it() {
                 if rt != before.target {
                     repicks += 1;
                 }
-                let want = if rt == 7 {
-                    // The empty-band sentinel is the port's own band end.
-                    None
-                } else {
-                    Some(port_of(rt))
-                };
-                if let Some(want) = want {
-                    assert_eq!(
-                        p.active_target, want,
-                        "round {round} party {party} monsters {monsters} seat {s}: target, {before:?}"
-                    );
-                }
+                assert_eq!(
+                    p.active_target,
+                    port_of(rt),
+                    "round {round} party {party} monsters {monsters} seat {s}: target, {before:?}"
+                );
             }
         }
     }

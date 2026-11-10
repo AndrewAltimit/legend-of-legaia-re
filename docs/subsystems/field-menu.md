@@ -2035,13 +2035,16 @@ eight at the popup's 13-px pitch.
 
 The debug build's developer menu lives in the field overlay (0897), not in the
 pause menu. Its EVENT FLAG editor is a raw index / value poke tool; two
-kernels are ported from the disassembly
-(`ghidra/scripts/funcs/overlay_0897_*`):
+kernels are ported from the disassembly. Both are arms of the dev-menu
+dispatcher, and the `ghidra/scripts/funcs/overlay_0897_*` dumps print them
+`0xE818` low (at `0x801DBD04`, `0x801DB8F4` and `0x801DB8B4`; see
+[dump-corpus integrity](../tooling/dump-corpus-integrity.md)) - the VAs below
+are the slot-A load base's:
 
-- **Value step** (`FUN_801dbd04`): `DAT_801f2aa0` moves by Up / Down (`0x8`,
+- **Value step** (`0x801EA51C`): `DAT_801f2aa0` moves by Up / Down (`0x8`,
   or `0x80` with Triangle held) and Left / Right (`1`), clamped to
   `[0, 0xFFF]`.
-- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the row cursor
+- **List cursor** (`0x801EA10C` / `0x801EA0CC`): the row cursor
   `DAT_801f2e90` steps and wraps across the `'X'` (0x58) end sentinel of the
   stride-`0xA` table at `DAT_801f2e94`.
 

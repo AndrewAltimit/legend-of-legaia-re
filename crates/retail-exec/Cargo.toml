@@ -34,6 +34,7 @@ legaia-engine-ui.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-menus.workspace = true
+legaia-engine-dev-menu.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-menu-runtime.workspace = true
 legaia-engine-fishing.workspace = true

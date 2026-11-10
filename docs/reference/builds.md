@@ -134,7 +134,7 @@ retail debug branches reach:
 | Tool | Retail entry | Lives in |
 |---|---|---|
 | Row list (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ... 24 rows) | `FUN_801EAD98` draws it, `FUN_801E9F64` feeds each row's pad edits | field overlay (PROT 0897) - the world map is a 0897-hosted mode, not an overlay of its own |
-| EVENT FLAG editor | `FUN_801DBD04` value step, `FUN_801DB8B4` / `FUN_801DB8F4` list cursor | field overlay (0897) |
+| EVENT FLAG editor | value step at `0x801EA51C`, list cursor at `0x801EA10C` / `0x801EA0CC` (arms of the dev-menu dispatcher) | field overlay (0897) |
 | Character-parameter editor | `FUN_801D6E18` | menu overlay (0899) |
 | Equip commit | `FUN_801E5A08` | field overlay (0897) |
 

@@ -14,11 +14,11 @@
 //! **slices of one giant dev-menu dispatcher**, not independent functions.
 //! Three carry portable game-state logic:
 //!
-//! - `FUN_801dbd04` - the value-adjust arithmetic for the edited flag
+//! - `0x801EA51C` - the value-adjust arithmetic for the edited flag
 //!   index/value `DAT_801f2aa0` ([`edit_flag_value`]).
-//! - `FUN_801db8f4` - the flag-list cursor `DAT_801f2e90` decrement with
+//! - `0x801EA10C` - the flag-list cursor `DAT_801f2e90` decrement with
 //!   the `'X'`-sentinel wrap-to-bottom search ([`flag_list_prev`]).
-//! - `FUN_801db8b4` - the same cursor's increment with the `'X'`-sentinel
+//! - `0x801EA0CC` - the same cursor's increment with the `'X'`-sentinel
 //!   wrap-to-top ([`flag_list_next`]).
 //!
 //! The other two are decompiler fragments of the same dispatcher and are
@@ -96,8 +96,9 @@ pub fn flag_list_tags(field_overlay: &[u8]) -> Vec<u8> {
 
 /// Step the edited flag index/value `DAT_801f2aa0` by one pad edge.
 ///
-/// Faithful to the disassembly at `0x801dbd04`
-/// (`ghidra/scripts/funcs/overlay_0897_801dbd04.txt`): Up/Down move by the
+/// Faithful to the disassembly at `0x801EA51C`
+/// (`ghidra/scripts/funcs/overlay_0897_801dbd04.txt` prints it `0xE818`
+/// low, at `0x801DBD04`): Up/Down move by the
 /// step size (fine `0x8`, or coarse `0x80` while Triangle is held), Left
 /// nudges by `-1`, Right by `+1`, then the value clamps to `[0, 0xFFF]`.
 ///
@@ -106,7 +107,7 @@ pub fn flag_list_tags(field_overlay: &[u8]) -> Vec<u8> {
 /// same frame; that asymmetry is a slice/redraw-dispatch detail (only one
 /// d-pad edge fires per frame in practice), so the port applies the four
 /// deltas additively - the resulting game state is identical.
-// PORT: FUN_801dbd04
+// PORT: FUN_801EA51C
 pub fn edit_flag_value(value: i32, pad_edge: u16, pad_held: u16) -> i32 {
     let step = if pad_held & PACK_TRIANGLE != 0 {
         FLAG_STEP_COARSE
@@ -131,8 +132,9 @@ pub fn edit_flag_value(value: i32, pad_edge: u16, pad_held: u16) -> i32 {
 
 /// Move the flag-list cursor `DAT_801f2e90` to the previous entry.
 ///
-/// Faithful to the disassembly at `0x801db8f4`
-/// (`ghidra/scripts/funcs/overlay_0897_801db8f4.txt`). `tags` is the
+/// Faithful to the disassembly at `0x801EA10C`, an arm of the dev-menu
+/// dispatcher (`ghidra/scripts/funcs/overlay_0897_801db8f4.txt` prints it
+/// `0xE818` low, at `0x801DB8F4`). `tags` is the
 /// per-entry projection of the stride-`0xA` table at `DAT_801f2e94`: one
 /// byte per entry = that entry's `+2` byte, where [`FLAG_LIST_END_TAG`]
 /// (`'X'`) marks the end of the list.
@@ -142,7 +144,7 @@ pub fn edit_flag_value(value: i32, pad_edge: u16, pad_held: u16) -> i32 {
 ///   carrying the `'X'` end tag and land one before it (the last real
 ///   entry). An empty list (`tags[0] == 'X'`) yields `-1`, matching the
 ///   retail pointer arithmetic.
-// PORT: FUN_801db8f4
+// PORT: FUN_801EA10C
 pub fn flag_list_prev(cursor: i32, tags: &[u8]) -> i32 {
     if cursor > 0 {
         return cursor - 1;
@@ -156,8 +158,9 @@ pub fn flag_list_prev(cursor: i32, tags: &[u8]) -> i32 {
 
 /// Move the flag-list cursor `DAT_801f2e90` to the next entry.
 ///
-/// Faithful to the disassembly at `0x801db8b4`
-/// (`ghidra/scripts/funcs/overlay_0897_801db8b4.txt`), the increment
+/// Faithful to the disassembly at `0x801EA0CC`
+/// (`ghidra/scripts/funcs/overlay_0897_801db8b4.txt` prints it `0xE818`
+/// low, at `0x801DB8B4`, and so do the addresses below), the increment
 /// sibling of [`flag_list_prev`] on the same cursor + stride-`0xA` table
 /// `DAT_801f2e94`. The retail slice unconditionally stores `cursor + 1`,
 /// then - if the newly-landed entry carries the `'X'` end tag
@@ -174,7 +177,7 @@ pub fn flag_list_prev(cursor: i32, tags: &[u8]) -> i32 {
 /// The `'X'` sentinel always sits one past the last real entry, so `next`
 /// stays in range for every real cursor; an out-of-range `next` (never
 /// reached in retail flow) is treated as a non-sentinel and kept.
-// PORT: FUN_801db8b4
+// PORT: FUN_801EA0CC
 pub fn flag_list_next(cursor: i32, tags: &[u8]) -> i32 {
     let next = cursor + 1;
     match tags.get(next as usize) {
