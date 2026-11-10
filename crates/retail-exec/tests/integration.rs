@@ -83,6 +83,7 @@ mod fishing_fight;
 mod fishing_line_clip;
 mod flash_ramp;
 mod floor_height;
+mod fog_spawn;
 mod glare_divide;
 mod glyph_count;
 mod gte_capture;
