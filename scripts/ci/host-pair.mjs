@@ -126,6 +126,10 @@ const monkey = (seed, from, to, step) => {
   }
   return t;
 };
+/* Start with the party readout up: the field darkens under the wipe with no readout on
+ * either host, as retail draws none after the accept tick (field-menu.md, "The party readout
+ * under the pause wipe"). */
+SCENES.pause_hud = { scene: 'town01', ticks: 200, every: 1, taps: [[150, 'Start']] };
 SCENES.monkey_town = { scene: 'town01', ticks: 1800, every: 30, taps: monkey(1, 30, 1790, 11) };
 SCENES.monkey_map = { scene: 'map01', ticks: 1800, every: 30, taps: monkey(2, 30, 1790, 13) };
 SCENES.monkey_shop = { scene: 'bylon', ticks: 1200, every: 30, shop: { tick: 30, idx: 0 }, taps: monkey(3, 60, 1190, 17) };
