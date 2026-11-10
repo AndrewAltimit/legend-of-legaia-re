@@ -16,10 +16,10 @@ pub struct FieldMenuRowView<'a> {
 /// Layout follows the retail top-level pause menu's window-descriptor
 /// geometry (menu overlay window table, `legaia_game_tables::menu_windows`):
 /// the command rows fill the id-50 list window (`list_pen` = its content
-/// origin, 7 rows at the retail 13-px list pitch), and the money +
-/// play-time lines fill the id-49 corner box (`money_pen`). The row
-/// *content* layout (cursor glyph, label inset) is engine-styled - the
-/// retail list renderer `FUN_801CFD68` is untraced.
+/// origin, 7 rows at `FUN_801CFD68`'s `0xE` pitch, labels at `WX + 0x14`),
+/// and the money + play-time lines fill the id-49 corner box (`money_pen`,
+/// `FUN_801D0148`). `crates/retail-exec/tests/pause_root.rs` holds the three
+/// painters to these builders.
 #[allow(clippy::too_many_arguments)]
 pub fn field_menu_draws_for(
     font: &legaia_font::Font,
@@ -171,9 +171,8 @@ pub struct FieldMenuPartyView<'a> {
 }
 
 /// Build [`TextDraw`]s for the top-level pause menu's right party-overview
-/// panel (window id 51, content origin `pen`). Content layout is
-/// engine-styled (the retail renderer `FUN_801D030C` is untraced); the
-/// window geometry is the pinned descriptor rect.
+/// panel (window id 51, content origin `pen`), at `FUN_801D030C`'s pens and
+/// in its draw order (`crates/retail-exec/tests/pause_root.rs`).
 pub fn field_menu_info_draws_for(
     font: &legaia_font::Font,
     party: &[FieldMenuPartyView<'_>],
@@ -222,13 +221,13 @@ pub fn field_menu_info_draws_for(
             ),
         ] {
             out.extend(num_field_draws(font, cur, pen.0 + 0x38, row_y, 4, tier));
+            out.extend(num_field_draws(font, max, pen.0 + 0x60, row_y, 4, tier));
             out.extend(crate::menu::window_painters::separator_glyph_draws(
                 font,
                 crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
                 (pen.0 + 0x58, row_y),
                 white,
             ));
-            out.extend(num_field_draws(font, max, pen.0 + 0x60, row_y, 4, tier));
         }
     }
     out

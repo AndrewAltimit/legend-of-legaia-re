@@ -1499,7 +1499,10 @@ or cancel only, the caster and info windows stay drawn); clear -> the per-member
 
 The caster picker and the target picker both run the list kernel
 `FUN_801D688C` with wrap: confirm and cancel are read before any move, and only
-Up / Down move the hand. The group flow runs it with no rows (confirm first).
+Up / Down move the hand. Confirm and cancel are the edge word against the two
+configured masks (`0x801EF0F0` / `0x801EF0F4`, copied from `0x800846D0` /
+`0x800846D4` when the menu opens) and nothing else: Start is not read, so it
+neither closes the picker nor moves it. The group flow runs it with no rows (confirm first).
 Every way back to the spell list - a cancel from either flow, or a cast that
 leaves the caster short of MP or the spell with nobody to affect - reopens it on
 its first row, because the list's entry step (`FUN_801D9110` at `0x801D9160`)

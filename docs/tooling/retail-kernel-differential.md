@@ -1041,3 +1041,35 @@ The battle-stage stream walker `FUN_8001FE70` (`container_walkers`) copies its
 lead chunk whole and type-tests only the headers after it, so a lead chunk of
 type `0x02` does not end the walk, where the port's type-`0x02`-terminated walk
 stopped on it.
+
+The pause menu's remaining painters, on the same rig (PROT 0899). The Status page's Condition panel
+`FUN_801D33D8` (`status_page`) found the parenthesised HP and MP printing the live maxima, where the
+bytes read the record-side pair `+0x11C` / `+0x11E`: a member wearing an HP or MP percent accessory
+showed the boosted figure twice. The Equip screen's main window `FUN_801D21C0` (`equip_main`) found
+the slot browse's item panel with no port: with the hand on a filled slot row the renderer moves its
+own window record by `(+0x94, +0xC)`, runs the shared item panel on the worn id and frames two shade
+boxes, so the port showed nothing about a worn piece until its candidate list was open. The Best
+Equipment change arrow is the command-arrow cell under ink `0`, where the port drew an ASCII pair.
+The target panel `FUN_801D0520` (`target_panel`) found three: the Life / Magic Water preview draws
+a `MAX` tag (icons `0x64` / `0x65`) ahead of the HP / MP label, which sits twenty pixels further
+right than the port had it alone; a stat preview's left value is the menu block's word, equipment
+included, where the model handed over the bare record stat; and the plain HP row's ink follows the
+status word. The Equip compare panel's HP / MP rows never drew their icon pairs on either host. The
+top level's three windows (`pause_root`: command list, money and play-time box, party panel) match.
+
+The naming screen (PROT 0897, `name_entry`), its machine `FUN_801F03F0` stepped call by call over
+generated pad words with the renderer `FUN_801E6B34` drawn after every call, found the port's cursor
+a different walk. A horizontal step wraps inside its own row, where the port ran on into the next;
+a vertical step onto the control row keeps its column, where the port snapped to the button's first
+cell and so came back up in another column. The arms are exclusive and ordered (cancel, Start alone,
+confirm, d-pad): Start jumps to Select and confirms there, which the port had no arm for, and the
+confirm prompt has no cancel arm, where the port's cancel left it. The call after the Select press
+reads no pad. Select passes a name of blanks, the name is kept untrimmed, the screen queues four
+cues the port never played, the prompt is the named character's own line, and the caret needs room
+for a tenth byte. Up from columns 5 or 11 of the control row never leaves retail's loop; no walk
+reaches those cells.
+
+The Magic screen's caster picker reads no Start: the spell screens' differential now presses it, and
+the port's Start-cancel arm is gone. The save UI's dimmed backdrop `FUN_801E02A4` (`save_backdrop`)
+links two sprites of `192 x 192` and `128 x 255`; the port drew both at the art's full height. The
+stat seeder `FUN_801CF5D0` and the developer menu's flag-number arm `0x801EA51C` match.
