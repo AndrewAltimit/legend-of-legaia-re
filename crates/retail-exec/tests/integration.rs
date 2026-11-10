@@ -169,6 +169,7 @@ mod tint_sm;
 mod turn_pick;
 mod unequip;
 mod validator;
+mod voice_choose;
 mod walk_on;
 mod walk_regen;
 mod walk_step;

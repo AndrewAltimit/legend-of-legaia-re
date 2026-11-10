@@ -45,6 +45,7 @@ mod voices;
 pub use channel_math::channel_tail;
 use channel_math::*;
 use voices::SILENT_RING_LEN;
+pub use voices::choose_voice;
 pub use voices::flush_key_on_lag;
 
 /// Number of MIDI channels (the SsAPI dispatcher iterates 0..=15).

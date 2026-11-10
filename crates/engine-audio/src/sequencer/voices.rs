@@ -481,45 +481,13 @@ impl Sequencer {
     /// past the last voice.
     pub(super) fn alloc_voice(&mut self, spu: &mut Spu, req_prio: u8) -> Option<u8> {
         let n = spu.voices.len().min(crate::spu::NUM_VOICES);
-        let mut chosen: Option<usize> = None;
-        // Steal-candidate evaluation state (retail registers r9/r10/r11/r8/r12).
-        let mut threshold = req_prio as i32;
-        let mut steal: Option<usize> = None;
-        // Initial best-envelope sentinel is 0xFFFF, above any real ADSR level,
-        // so the first voice on the threshold tier always seeds the candidate.
-        let mut steal_env: u32 = 0xFFFF;
-        let mut steal_age: i32 = 0;
-        for v in 0..n {
-            let reserved = self.voice_held & (1 << v) != 0;
-            let env = u32::from(self.voice_env[v]);
-            if !reserved && env == 0 {
-                // First idle voice: taken immediately, scan stops.
-                chosen = Some(v);
-                break;
-            }
-            let pr = self.voice_prio[v] as i32;
-            if pr < threshold {
-                threshold = pr;
-                steal = Some(v);
-                steal_env = env;
-                steal_age = self.voice_age[v] as i32;
-            } else if pr == threshold {
-                if env < steal_env {
-                    steal = Some(v);
-                    steal_env = env;
-                    steal_age = self.voice_age[v] as i32;
-                } else if env == steal_env {
-                    // Retail signedness quirk kept verbatim: the incumbent age
-                    // is zero-extended, the challenger sign-extended, compared
-                    // as i32 - an age >= 0x8000 can defend but never attack.
-                    let age = self.voice_age[v] as i16 as i32;
-                    if steal_age < age {
-                        steal = Some(v);
-                        steal_age = age;
-                    }
-                }
-            }
-        }
+        let (chosen, steal) = choose_voice(
+            self.voice_held,
+            &self.voice_env[..n],
+            &self.voice_prio[..n],
+            &self.voice_age[..n],
+            req_prio,
+        );
         // No idle voice and no steal candidate: every sounding voice outranks
         // the request, so the note is dropped (retail returns the out-of-range
         // voice count).
@@ -547,4 +515,60 @@ impl Sequencer {
         self.forget_silence(winner);
         Some(winner as u8)
     }
+}
+
+/// The scan of `FUN_80066B00` over the voice records, as a pure function:
+/// `(first idle voice, steal candidate)`. A voice is idle when it is not
+/// `held` and its envelope reads `0`; the first one ends the scan. Every
+/// voice the scan passes feeds the steal candidate: a priority below the
+/// threshold (which starts at `req_prio` and drops to each such priority)
+/// takes it, an equal one competes on the lower envelope, then on the larger
+/// age, the challenger's age read signed and the incumbent's as it was
+/// taken (zero-extended where a priority or envelope win took it).
+///
+/// PORT: FUN_80066B00 (the scan, `0x80066B3C..0x80066C80`)
+pub fn choose_voice(
+    held: u32,
+    env: &[u16],
+    prio: &[u8],
+    age: &[u16],
+    req_prio: u8,
+) -> (Option<usize>, Option<usize>) {
+    let mut threshold = req_prio as i32;
+    let mut steal: Option<usize> = None;
+    // Initial best-envelope sentinel is 0xFFFF, above any real ADSR level,
+    // so the first voice on the threshold tier always seeds the candidate.
+    let mut steal_env: u32 = 0xFFFF;
+    let mut steal_age: i32 = 0;
+    for v in 0..env.len() {
+        let reserved = held & (1 << v) != 0;
+        let e = u32::from(env[v]);
+        if !reserved && e == 0 {
+            // First idle voice: taken immediately, scan stops.
+            return (Some(v), steal);
+        }
+        let pr = prio[v] as i32;
+        if pr < threshold {
+            threshold = pr;
+            steal = Some(v);
+            steal_env = e;
+            steal_age = age[v] as i32;
+        } else if pr == threshold {
+            if e < steal_env {
+                steal = Some(v);
+                steal_env = e;
+                steal_age = age[v] as i32;
+            } else if e == steal_env {
+                // Retail signedness quirk kept verbatim: the incumbent age
+                // is zero-extended, the challenger sign-extended, compared
+                // as i32 - an age >= 0x8000 can defend but never attack.
+                let a = age[v] as i16 as i32;
+                if steal_age < a {
+                    steal = Some(v);
+                    steal_age = a;
+                }
+            }
+        }
+    }
+    (None, steal)
 }
