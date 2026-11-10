@@ -93,6 +93,7 @@ mod clip_cursor;
 mod clip_morph;
 mod clip_vertex;
 mod clut_cell;
+mod clut_cell_op;
 mod clut_walk;
 mod code_lock;
 mod coin_counter;
