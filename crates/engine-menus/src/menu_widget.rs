@@ -43,6 +43,11 @@ pub struct MenuWidgetScripts {
     /// as `(script_va, bytes)` - the full per-overlay program table, kept
     /// for tooling and tests.
     pub programs: Vec<(u32, Vec<u8>)>,
+    /// The sub-screen programs the slide lock runs
+    /// ([`crate::menu_slide_lock::lock_program_vas`]), resolved by address:
+    /// several are handed to the VM through a register the `jal`-site scan
+    /// does not follow.
+    pub lock_programs: Vec<(u32, Vec<u8>)>,
 }
 
 impl MenuWidgetScripts {
@@ -63,11 +68,28 @@ impl MenuWidgetScripts {
                 (r.script.va, bytes)
             })
             .collect();
+        let lock_programs = crate::menu_slide_lock::lock_program_vas()
+            .filter_map(|va| {
+                widget_script::script_bytes_at(overlay, va)
+                    .ok()
+                    .map(|b| (va, b))
+            })
+            .collect();
         Some(Self {
             shop_open,
             shop_sell_away,
             programs,
+            lock_programs,
         })
+    }
+
+    /// The program at `va`, terminator included.
+    pub fn program(&self, va: u32) -> Option<&[u8]> {
+        self.lock_programs
+            .iter()
+            .chain(&self.programs)
+            .find(|(v, _)| *v == va)
+            .map(|(_, b)| b.as_slice())
     }
 }
 
@@ -96,18 +118,16 @@ pub struct WidgetWindow {
     /// Slide target, sub-object `+0xA/+0xC`; the home position is the
     /// descriptor's `x`/`y`.
     pub target: vm::Position,
-    /// Whether [`Self::pos`] is still the creator's **park edge** - the
-    /// off-window start `FUN_800326AC` derives from the descriptor's
-    /// direction byte (`+1`) and the screen bounds, which this model does
-    /// not compute. A slide started from the park edge has not arrived,
-    /// whatever the coordinates say.
-    pub at_park: bool,
-    /// Whether [`Self::from`] was taken at the park edge (see
-    /// [`Self::at_park`]).
-    pub from_park: bool,
     /// Node `+0x20`.
     pub motion: WidgetMotion,
-    /// Live node `+0x1D` style byte (`SetField1d`).
+    /// Node `+0x1E`, the motion's frame count: the window walker
+    /// ([`MenuWidgetState::step_motion`]) advances it, a close reverses it.
+    pub progress: i16,
+    /// Sub-object `+2/+4`: the park the creator computed
+    /// ([`park_position`]), where a close carries the window.
+    pub park: vm::Position,
+    /// Live node `+0x1D` style byte: the descriptor's class word's low byte
+    /// at creation, then whatever `SetField1d` writes.
     pub style: u8,
 }
 
@@ -123,35 +143,148 @@ impl WidgetWindow {
     }
 }
 
+/// The motion sub-object's duration `+0`: `FUN_800326AC` writes `0xC` on
+/// every window it creates (`0x801D29FC`), so every slide and close runs
+/// twelve frames.
+pub const WIDGET_MOTION_FRAMES: i16 = 0xC;
+
+/// What a window's creation reads off its descriptor record
+/// ([`legaia_game_tables::menu_windows::MenuWindowDescriptor`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WidgetDescriptor {
+    /// `+4` / `+6`, the home position.
+    pub home: vm::Position,
+    /// `+8` / `+0xA`, the content size the park edge clears.
+    pub size: (i16, i16),
+    /// `+1`, the park-edge class.
+    pub park_edge: u8,
+    /// `+2`, the class word; its low byte seeds node `+0x1D`.
+    pub kind: u16,
+}
+
+/// The display rect the park edges are measured from: the scratchpad
+/// halfwords `0x1F800388` (left), `0x1F80038A` (top), `0x1F80038C` (right)
+/// and `0x1F80038E` (bottom).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenBox {
+    pub left: u16,
+    pub top: u16,
+    pub right: u16,
+    pub bottom: u16,
+}
+
+impl Default for ScreenBox {
+    fn default() -> Self {
+        Self {
+            left: 0,
+            top: 0,
+            right: 0x140,
+            bottom: 0xF0,
+        }
+    }
+}
+
+/// Where `FUN_800326AC` creates a window: off the screen edge its
+/// descriptor's park class names (`0x800326E8..0x80032870`), so the first
+/// slide home comes in from there. Classes `1`, `3`, `5` and `7` are the
+/// diagonals, which move both axes by the smaller of the two clearances; a
+/// class of `8` or more creates the window at home.
+///
+/// PORT: FUN_800326AC (park switch)
+pub fn park_position(desc: &WidgetDescriptor, screen: ScreenBox) -> vm::Position {
+    let (mut x, mut y) = (i32::from(desc.home.x), i32::from(desc.home.y));
+    let (w, h) = (i32::from(desc.size.0), i32::from(desc.size.1));
+    let (left, top, right, bottom) = (
+        i32::from(screen.left),
+        i32::from(screen.top),
+        i32::from(screen.right),
+        i32::from(screen.bottom),
+    );
+    let past_left = (x + 0x14) - (left - w);
+    let past_top = (y + 0x14) - (top - h);
+    let past_right = right - (x - 0xC);
+    let past_bottom = bottom - (y - 0xC);
+    match desc.park_edge {
+        0 => y = bottom + 0xC,
+        2 => x = left - w - 0x14,
+        4 => y = top - h - 0x14,
+        6 => x = right + 0xC,
+        1 => {
+            let d = past_left.min(past_bottom);
+            x -= d;
+            y += d;
+        }
+        3 => {
+            let d = past_left.min(past_top);
+            x -= d;
+            y -= d;
+        }
+        5 => {
+            let d = past_right.min(past_top);
+            x += d;
+            y -= d;
+        }
+        7 => {
+            let d = past_right.min(past_bottom);
+            x += d;
+            y += d;
+        }
+        _ => {}
+    }
+    vm::Position::new(x as i16, y as i16)
+}
+
 /// The window list the widget scripts drive. Implements
 /// [`vm::Host`]; window ids index the menu window descriptor table
-/// ([`legaia_game_tables::menu_windows`]), whose `x`/`y` seed
-/// [`vm::Host::default_position`].
+/// ([`legaia_game_tables::menu_windows`]), whose records seed
+/// [`vm::Host::default_position`] and the creation park.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MenuWidgetState {
     windows: BTreeMap<u8, WidgetWindow>,
-    /// Home positions from the window descriptor table (`+0x4`/`+0x6` of
-    /// each 16-byte record - the pair `FUN_801D6628` reads at
-    /// `0x801D6678/0x801D667C`). Empty until the table installs; a missing
-    /// entry reads as `(0, 0)`.
-    defaults: Vec<vm::Position>,
+    /// The descriptor records `FUN_801D6628` indexes (`0x801E4738`, 16-byte
+    /// stride; home pair read at `0x801D6678/0x801D667C`). Empty until the
+    /// table installs; a missing entry reads as zeros.
+    descriptors: Vec<WidgetDescriptor>,
+    /// The display rect a creation parks against.
+    pub screen: ScreenBox,
     /// `FUN_80035A4C` (close-all) invocations - the scripts open with one.
     pub global_updates: u32,
     /// `FUN_800319A8` (immediate destroy) invocations.
     pub effect_fires: u32,
+    /// `_DAT_8007BB80` (`gp+0x868`): how many windows the last walker pass
+    /// moved ([`Self::step_motion`]). Every menu sub-screen reads it before
+    /// its pad and takes no input while it is non-zero.
+    latch: u32,
 }
 
 impl MenuWidgetState {
-    /// Install home positions from the disc-parsed window descriptor table.
+    /// Install the descriptor records from the disc-parsed window table.
     pub fn set_defaults_from_table(
         &mut self,
         table: &legaia_game_tables::menu_windows::MenuWindowTable,
     ) {
-        self.defaults = table
+        self.descriptors = table
             .windows
             .iter()
-            .map(|w| vm::Position::new(w.x, w.y))
+            .map(|w| WidgetDescriptor {
+                home: vm::Position::new(w.x, w.y),
+                size: (w.w, w.h),
+                park_edge: w.park_edge,
+                kind: w.kind,
+            })
             .collect();
+    }
+
+    /// Install descriptor records directly (tests, tools).
+    pub fn set_descriptors(&mut self, descriptors: Vec<WidgetDescriptor>) {
+        self.descriptors = descriptors;
+    }
+
+    fn descriptor(&self, id: u8) -> WidgetDescriptor {
+        self.descriptors
+            .get(id as usize)
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Ids of the windows on the list that are not closing, ascending.
@@ -172,9 +305,20 @@ impl MenuWidgetState {
             .collect()
     }
 
+    /// Every window on the list in list order (retail keeps the list sorted
+    /// by id, `0x800328F8..0x80032918`).
+    pub fn windows(&self) -> impl Iterator<Item = (u8, &WidgetWindow)> {
+        self.windows.iter().map(|(id, w)| (*id, w))
+    }
+
     /// The live window for `id`, closing or not.
     pub fn window(&self, id: u8) -> Option<&WidgetWindow> {
         self.windows.get(&id)
+    }
+
+    /// The live window for `id`, for the walker that moves it.
+    pub fn window_mut(&mut self, id: u8) -> Option<&mut WidgetWindow> {
+        self.windows.get_mut(&id)
     }
 
     /// Whether any window is open (not closing).
@@ -185,6 +329,107 @@ impl MenuWidgetState {
     /// Drop every window (menu close / overlay swap).
     pub fn reset(&mut self) {
         self.windows.clear();
+        self.latch = 0;
+    }
+
+    /// `_DAT_8007BB80` as the last [`Self::step_motion`] left it: non-zero
+    /// while a window is sliding in or out. A sub-screen that reads it
+    /// before its pad (every one in the menu overlay does) ignores the pad
+    /// until it drops to zero.
+    pub fn slide_latch(&self) -> u32 {
+        self.latch
+    }
+
+    /// One pass of the window motion walker `FUN_80031AE4`, the first thing
+    /// the per-frame window walker `FUN_80031D00` does: it zeroes the latch
+    /// `_DAT_8007BB80`, then for each window on the list
+    ///
+    /// - sliding or closing (`+0x20 = 1 / -1`): adds `frame_delta`
+    ///   (`DAT_1F800393`) to the progress `+0x1E`; once that reaches the
+    ///   duration (`0xC`) the progress resets, the motion word steps down
+    ///   (`1 -> 0`, `-1 -> -2`) and the window lands on its target;
+    /// - then, on the motion word as it now stands: still copies the live
+    ///   position into the slide source; sliding places the window at
+    ///   `source + (target - source) * progress / duration` and closing at
+    ///   `source + (park - source) * progress / duration` (signed, truncated),
+    ///   each counting one onto the latch; `-2` puts it on its park.
+    ///
+    /// A window whose close completed (`-2`) is destroyed by the draw walker
+    /// in the same frame (`0x80031E04..0x80031E20`), so it leaves the list
+    /// here. Returns the latch.
+    ///
+    /// PORT: FUN_80031AE4
+    pub fn step_motion(&mut self, frame_delta: u8) -> u32 {
+        let dur = i32::from(WIDGET_MOTION_FRAMES);
+        let mut latch = 0u32;
+        let mut finished = Vec::new();
+        for (&id, w) in self.windows.iter_mut() {
+            let mut word: i16 = match w.motion {
+                WidgetMotion::Still => 0,
+                WidgetMotion::Sliding => 1,
+                WidgetMotion::Closing => -1,
+            };
+            if word != 0 {
+                let p = (w.progress as u16).wrapping_add(u16::from(frame_delta));
+                w.progress = p as i16;
+                if i32::from(p) >= dur {
+                    w.progress = 0;
+                    word -= 1;
+                    w.pos = w.target;
+                }
+            }
+            let lerp = |from: i16, to: i16, p: i16| -> i16 {
+                let span = (i32::from(to) - i32::from(from)).wrapping_mul(i32::from(p as u16));
+                (i32::from(from as u16) + span / dur) as i16
+            };
+            match word {
+                0 => {
+                    w.motion = WidgetMotion::Still;
+                    w.from = w.pos;
+                }
+                1 => {
+                    w.pos = vm::Position::new(
+                        lerp(w.from.x, w.target.x, w.progress),
+                        lerp(w.from.y, w.target.y, w.progress),
+                    );
+                    latch += 1;
+                }
+                -1 => {
+                    w.pos = vm::Position::new(
+                        lerp(w.from.x, w.park.x, w.progress),
+                        lerp(w.from.y, w.park.y, w.progress),
+                    );
+                    latch += 1;
+                }
+                _ => {
+                    w.pos = w.park;
+                    finished.push(id);
+                }
+            }
+        }
+        for id in finished {
+            self.windows.remove(&id);
+        }
+        self.latch = latch;
+        latch
+    }
+}
+
+/// The close body `FUN_80035978` runs on one window, and `FUN_80035A4C` on
+/// each: a still window starts its close from frame `0`, a sliding one
+/// reverses its slide's progress (`duration - progress`), and one already
+/// closing is left alone (`0x800359F8..0x80035A40`).
+fn begin_close_window(w: &mut WidgetWindow) {
+    match w.motion {
+        WidgetMotion::Still => {
+            w.motion = WidgetMotion::Closing;
+            w.progress = 0;
+        }
+        WidgetMotion::Sliding => {
+            w.motion = WidgetMotion::Closing;
+            w.progress = WIDGET_MOTION_FRAMES.wrapping_sub(w.progress);
+        }
+        WidgetMotion::Closing => {}
     }
 }
 
@@ -198,34 +443,36 @@ impl vm::Host for MenuWidgetState {
     /// Descriptor-table `x`/`y` for `id` (the `s1`/`s2` pair the VM loads
     /// per instruction).
     fn default_position(&self, id: u8) -> vm::Position {
-        self.defaults.get(id as usize).copied().unwrap_or_default()
+        self.descriptor(id).home
     }
 
     /// `FUN_800326AC` - create the window from its descriptor record: the
-    /// node at the park edge, its sub-object sliding from there toward the
-    /// descriptor's home (`0x800329DC..0x80032A0C`: source = park,
-    /// target = descriptor `+4/+6`, node `+0x20 = 1`).
-    fn spawn(&mut self, id: u8, default_position: vm::Position) {
+    /// node at the park edge ([`park_position`]), its sub-object sliding from
+    /// there toward the descriptor's home (`0x800329DC..0x80032A0C`), node
+    /// `+0x1D` from the class word, node `+0x20 = 1`. An id already on the
+    /// list is re-initialised in place.
+    fn spawn(&mut self, id: u8, _default_position: vm::Position) {
+        let desc = self.descriptor(id);
+        let park = park_position(&desc, self.screen);
         self.windows.insert(
             id,
             WidgetWindow {
-                pos: default_position,
-                from: default_position,
-                target: default_position,
-                at_park: true,
-                from_park: true,
+                pos: park,
+                from: park,
+                target: desc.home,
                 motion: WidgetMotion::Sliding,
-                style: 0,
+                progress: 0,
+                park,
+                style: desc.kind as u8,
             },
         );
     }
 
     /// `FUN_800357FC` - start a slide from the live position to `position`
-    /// (tail `0x80035874`). Ops `0x01` / `0x02`.
+    /// (tail `0x80035874`). Ops `0x01` / `0x02`. Progress is untouched.
     fn slide_to(&mut self, id: u8, position: vm::Position) {
         if let Some(w) = self.windows.get_mut(&id) {
             w.from = w.pos;
-            w.from_park = w.at_park;
             w.target = position;
             w.motion = WidgetMotion::Sliding;
         }
@@ -238,8 +485,6 @@ impl vm::Host for MenuWidgetState {
             w.pos = target;
             w.from = target;
             w.target = target;
-            w.at_park = false;
-            w.from_park = false;
             w.motion = WidgetMotion::Still;
         }
     }
@@ -247,15 +492,15 @@ impl vm::Host for MenuWidgetState {
     /// `FUN_80035978` - begin the close; the node stays on the list.
     fn begin_close(&mut self, id: u8) {
         if let Some(w) = self.windows.get_mut(&id) {
-            w.motion = WidgetMotion::Closing;
+            begin_close_window(w);
         }
     }
 
-    /// `FUN_80035A4C` - begin the close on every window.
+    /// `FUN_80035A4C` - [`Self::begin_close`] on every window.
     fn close_all(&mut self) {
         self.global_updates += 1;
         for w in self.windows.values_mut() {
-            w.motion = WidgetMotion::Closing;
+            begin_close_window(w);
         }
     }
 
@@ -281,13 +526,9 @@ impl vm::Host for MenuWidgetState {
 
     /// Retail reads the sub-object at `+0x24` and compares the slide's
     /// source (`+6/+8`) against its target (`+0xA/+0xC`): a slide that
-    /// starts where it ends has nothing to animate. A source taken at the
-    /// park edge never compares equal here, since the park coordinates are
-    /// not modelled.
+    /// starts where it ends has nothing to animate.
     fn snap_clear_condition(&self, id: u8) -> bool {
-        self.windows
-            .get(&id)
-            .is_some_and(|w| !w.from_park && w.from == w.target)
+        self.windows.get(&id).is_some_and(|w| w.from == w.target)
     }
 
     /// `EffectMotion`'s captured position - the node's live `+0xA/+0xC`.
@@ -313,11 +554,10 @@ mod tests {
 
     #[test]
     fn synthetic_program_drives_window_list() {
-        let mut st = MenuWidgetState {
-            defaults: vec![vm::Position::default(); 8],
-            ..Default::default()
-        };
-        st.defaults[2] = vm::Position::new(40, 60);
+        let mut st = MenuWidgetState::default();
+        let mut descs = vec![WidgetDescriptor::default(); 8];
+        descs[2].home = vm::Position::new(40, 60);
+        st.set_descriptors(descs);
         vm::run(&mut st, SYNTH).unwrap();
         assert_eq!(st.open_ids(), vec![2]);
         assert_eq!(st.window(2).unwrap().target, vm::Position::new(40, 60));
@@ -328,10 +568,16 @@ mod tests {
     fn slide_ops_slide_and_snap_ops_snap() {
         // Retail: ops 01/02 -> FUN_800357FC (slide, +0x20 = 1); ops 09/0A ->
         // FUN_800358C0 (snap, +0x20 = 0); op 08 -> FUN_800319A8 (destroy).
-        let mut st = MenuWidgetState {
-            defaults: vec![vm::Position::new(10, 20); 8],
-            ..Default::default()
-        };
+        // Park class 8 creates a window at home.
+        let mut st = MenuWidgetState::default();
+        st.set_descriptors(vec![
+            WidgetDescriptor {
+                home: vm::Position::new(10, 20),
+                park_edge: 8,
+                ..Default::default()
+            };
+            8
+        ]);
         // 02 w3 to packed (x = (w >> 7) & 0x1FE, y = w & 0xFF): w = 0x2040
         // -> (0x40, 0x40).
         vm::run(&mut st, &[0x02, 0x03, 0x40, 0x20, 0, 0, 0, 0]).unwrap();

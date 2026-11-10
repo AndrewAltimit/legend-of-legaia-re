@@ -468,6 +468,32 @@ impl<S: AudioSink> BootSession<S> {
     pub fn current_resume(&self) -> legaia_save::SaveResume {
         self.host.current_resume()
     }
+
+    /// Run the current scene's MAN record `P{partition}[{record}]` as a
+    /// cutscene timeline, the way a walk-on trigger or an entry script would
+    /// start it. A debug affordance for reaching a scripted beat without
+    /// playing up to it: the record runs against whatever flags and seats the
+    /// session holds, so a beat that reads state its predecessors set may play
+    /// differently than in a playthrough. The play window's `--play-record`
+    /// and the play page's `debug_play_record` both land here. `false` when
+    /// the scene carries no MAN, it does not parse, or the record does not
+    /// resolve.
+    pub fn play_scene_record(&mut self, partition: usize, record: usize) -> bool {
+        let man = self
+            .host
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.host.index).ok().flatten());
+        let Some(man) = man else {
+            return false;
+        };
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+            return false;
+        };
+        self.host
+            .world
+            .install_cutscene_timeline_record(&man_file, &man, partition, record, false)
+    }
 }
 
 /// A host's half of a New Game ([`start_new_game_on`]): the session it runs

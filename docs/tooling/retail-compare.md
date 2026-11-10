@@ -621,9 +621,15 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
-  Both are taken back to the displayed table: `retail_fog` rewinds each record's
-  age and drift three passes, the display lag's two and the one the child's step
-  puts back. And a sheet stands against the camera's eased vertical offset
+  Both are taken back to the displayed table. The child's step draws each record
+  from where it stood before the step, so `retail_fog` rewinds age and drift by
+  exactly the passes between the state's pool and the frame on screen: the table
+  still in the state's RAM sits one pass behind the pool on a PCSX-Redux state
+  and two on a Mednafen one (`FOG_TABLE_PASSES`; rolled back that far, the
+  integer fog kernel reproduces that table's packets corner for corner and no
+  other roll-back comes close, `fog_table_passes_capture_disc`), and the frame on
+  screen is the table before it. The seat had rewound three passes on both,
+  one too many on a PCSX-Redux state. And a sheet stands against the camera's eased vertical offset
   `_DAT_8007BCAC` (`FUN_8003F3FC` at `0x8003F448`), a clock of the footing the
   player walked, which the child seats beside them (`LEGAIA_SEAT_FOG_OFFSET`).
   `concnow_field_door_hop`'s word reads `163` to the engine's `233`: every sheet
@@ -1295,6 +1301,23 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   capture, which is sampled before any round ran. The acting seat is placed
   too, even on a captured Attack whose pair is a point on the walk the drive
   replays: the walk ends at its target whatever it starts from.
+- **A party strike before its first swing.** Seated on its captured pair, a
+  party attacker stands where its walk and the strike loop's first commit
+  step left it, inside its reach, so state `0x14`'s range poll skips the walk
+  and the loop opens frames early. While the first swing has not committed
+  (`+0x1D9` still `0`) and the position ring still holds the walk (ring id
+  `1`), the seat is the ring's pair on the slot just older than the walk: the
+  seed pass `0x0C`, after its recentre (`RetailBattle::approach_start`). The
+  walk's arrival then depends on the target's body pair, which its idle sway
+  moves by tens of units, so the drive lands the target's idle loop on the
+  cursor the ring holds for the pass that entered the seed, once, on the first
+  tick the driven seat sits in `0x0C` (`ActionSteer::approach_idle`, token
+  `i<seat>/<cursor>`). `battle_rikuroa_party_vahn_chain_open` then replays
+  retail's ring to the unit: two walk steps `(-206, -384)` to `(-167, -310)`
+  to `(-128, -237)`, and the first commit's step back to `(-128, -258)`
+  (`camera` `.855` to `.994`, `image` `.520` to `.840`). Past the first swing
+  the captured pair stays: the whole walk replayed under a later capture moved
+  `battle_ropeway_party_vahn_slash_kick_mid` from `.676` to `.375`.
 - **Ground on the displayed frame.** The anim tick keeps a per-actor
   position ring (`+0x4C`, slot 0 the live pair, one slot a battle frame),
   so the pairs the frame on screen drew are in RAM two slots down. On the
@@ -1363,8 +1386,14 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   turn the capture holds spent ([below](#combatants-that-had-already-acted)).
   It sits the replayed round out, so nothing restores the heading its earlier
   turn left, and it takes the captured one. The action's target does so only
-  until the first strike commits, since the commit turns it onto the attacker
-  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself.
+  until the first strike lands, since the hit turns it onto the attacker
+  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself. The turn
+  rides the melee kernel `FUN_801EC3E4`, which the anim tick's hit event calls
+  partway into the swing (SCUS `0x800478A0`), not the swing's commit: a capture
+  on the action's first swing whose target still idles in the RAM has not been
+  turned (`battle_ropeway_party_gala_flying_knee_mid`: Gala on `0x0E` at cursor
+  `2`, the Killer Bee on the `2592` its own last turn left; `image` `.539` to
+  `.598`).
 
   The heading moves the approach. The range law `FUN_8004E2F0` measures the
   attacker's live pair against the target's body pair, which is the live pair
@@ -2162,7 +2191,13 @@ too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
 melee's target from the approach `0x14` through the strike loop `0x1E` while
 it idles: the hit that stages its reaction has not landed, and nothing else
 in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
-onto at idle cursor `0` on the displayed frame). So does a monster cast's
+onto at idle cursor `0` on the displayed frame). So does a party strike's
+monster target ahead of the first swing's commit (`battle_ropeway_party_noa_sonic_javelin_open`'s
+Orb, whose idle bob stood it a sphere's height off retail's: `.794` to `.854`), but
+not after it: that commit steps the attacker along the range law to the target's
+body pair (`0x8004BF7C..0x8004C118`), which the replay's own idle phase decided,
+and a loop re-seated after it stands the body where the step never measured
+(`minigame_muscle_dome_retail_red_piura_vahn_strike` `.987` to `.967`). So does a monster cast's
 party target idling through the cast band `0x28..=0x2F`, which stages nothing
 on the victim before the hit (`battle_nilboa_aluru_v2_aluru_cannon_mid_cast`'s
 Vahn, a close-up, `.874` to `.964`; `battle_deene_ironman_jagged_earth_mid_cast`
@@ -2659,6 +2694,43 @@ same state byte. Three refinements:
   the child's frames from tick `460` to `536` of the drive draw one pose, and
   any retake inside that span (`LEGAIA_CAPTURE_DISPLAY_LAG` `3` or `18`)
   lands on it. The gate's own tick `538` is the art's first pass.
+
+**Harvest pacing.** A party-strike capture played by `autorun_battle_harvest.lua`
+(scenario topic `harvest`) had its arts target cursor confirmed 24 vsyncs after
+the entry's own confirm, about the `0xC`-frame tween of the case-1 shot that
+confirm arms (`0x50 -> 0x5A`, `FUN_801D388C(0xC, 0)` at `0x801D20B0`). The drive
+confirms on the next tick everywhere else, so on these captures it holds the
+cursor until the camera has landed (`ActionSteer::harvest_pacing`,
+`CorpusEntry::harvest`): the round's first framing then starts where retail's
+did. `battle_ropeway_party_gala_flying_knee_mid` reads `image` `.592` to `.910`,
+`camera` `.964` to `.981`; `battle_garmel_party_noa_lizard_tail_mid` `.819` to
+`.891`; `battle_garmel_party_vahn_hyper_elbow_mid` takes its `camera` to `.997`
+while its frame falls `.834` to `.749`, the focus `30` units off on the image
+child's walk back. A state the probe did not play keeps the next-tick confirm:
+paced the same way, `battle_vahn_tri_somersault_super` fell `.957` to `.823`.
+
+**The strike loop's framed body.** That focus was not the walk back's. Case 7
+re-arms every pass on the midpoint of the attacker's and the target's body pairs,
+read ahead of the pass's draw, so the RAM's arm framed the pair the previous
+pass's decode left, while a state saved after the draw holds the new decode.
+Across a clip commit the two stand far apart: the Hyper Elbow state holds Vahn's
+body `(214, -87)` on the art's first keyframe, and the arm read `(156, -48)` on
+the clip before, at cursor `120` (the endpoint `(44, -13)` is that pair's midpoint
+with the target's `(-68, 24)`). The clip-record ring `+0x234` keeps each pass's
+committed entry, so cursor-ring slot `1` decodes on its own clip's stream and its
+live pair off the position ring (`framing_body::body_pair_on_ring_slot`). Stood on
+the RAM's pair, the image child armed its framing `40` units off retail's endpoint
+and the alignment carried that gap into the focus (`(159, -70)` on screen where the
+walk back read `(115, -41)`). The capture stands the acting seat on the framed
+pair when that pair, and not the RAM's, is the one the endpoint names
+(`camera_align::strike_framed_body`): `image` `.749` to `.919`,
+`battle_ropeway_party_vahn_slash_kick_mid` `.676` to `.722`,
+`battle_jou_party_vahn_chain_late` `.919` to `.961`, four strike `camera` channels
+to `1.0`, and no state of the 396 strike and party states lower. The walk back
+itself holds: decoded on the ring, the endpoints the two passes behind the RAM's
+chased are `(43, -14)` and `(53, -16)`, so the focus target did not follow Vahn's
+moving body there, and a forward probe from the state (re-arm, then a step of
+`inc * step`) reads the walker the walk back assumes.
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the
@@ -3416,7 +3488,8 @@ seeded: the field seed runs (card-load resume, seat, settle), then the pause
 menu is driven through its own pad path - `Start`, `Down` onto the row,
 `Cross`; one more `Cross` past the character picker for `0x13`, and for
 `0x14` a `Down` past Best Equipment and a `Cross` into the first slot's
-candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
+candidates, one edge every `MENU_PRESS_GAP` ticks (fourteen: a screen change holds the pad
+for thirteen, [`field-menu.md`](../subsystems/field-menu.md#the-window-slide-input-lock)). The headless side
 presses them into `BootSession`'s menu; the image side hands the same edges to
 `play-window` as a `--pad-script` after the card-load resume.
 
@@ -5500,6 +5573,17 @@ stood from its, and the channel reads the endpoints' difference. Eases on the
 same side, and an engine glide that has landed, keep the engine's own yaw.
 `rim_elm_gimard_victory` is the case: its endpoints stand `24` apart, retail
 `27` under its own and the engine `97` over.
+
+That placement is the `camera` channel's. The image child then stands such a
+yaw on the displayed one (`BattleCamera::seat_eased_yaw`): drawn at the
+engine's endpoint less retail's distance, the frame turns by the endpoints'
+difference. A party strike's recover glide re-arms its yaw endpoint on the
+striker's walk back every pass (`battle_rikuroa_party_vahn_chain_open`: `592`,
+`566`, `537`, `510` on the passes after the state, a PCSX-Redux read of the
+step table), so a replay a pass apart lands `28` off, and the bodies the
+[near-camera ghost](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)
+draws beside the eye swing a third of the screen on it (`image` `.840` to
+`.885`; `battle_ropeway_party_vahn_slash_kick_mid` `.722` to `.766`).
 
 The focus follows the yaw's phase. A yaw whose endpoint agrees to the unit
 takes retail's live value - retail's point in its ease - and a focus

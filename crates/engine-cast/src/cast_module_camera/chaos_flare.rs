@@ -75,7 +75,7 @@ fn push(n: i16) -> CaptureDrift {
 /// | arm | camera and seats | countdown as it passes |
 /// |---|---|---|
 /// | 0, 1 (`0x801F6AE0`, `0x801F6BE0`) | the walk into reach, framed by the action SM's case 6 (the host's approach leg) | - |
-/// | 2 (`0x801F6C60`) | the caster turns on the victim and steps back an eighth of its heading's `(sin, cos)`; a cut on it: pitch `0x70`, yaw `0x800 - facing`, TR `(0, 0x800, 0x800)`; clip `8` staged with the bump, rate `2`; the charge's seven records on it; every party seat but the victim hidden | `= scalar * 0xE0` |
+/// | 2 (`0x801F6C60`) | the caster turns on the victim's display pair `+0x3C` / `+0x40` and steps back an eighth of its heading's `(sin, cos)`; a cut on it: pitch `0x70`, yaw `0x800 - facing`, TR `(0, 0x800, 0x800)`; clip `8` staged with the bump, rate `2`; the charge's seven records on it; every party seat but the victim hidden | `= scalar * 0xE0` |
 /// | 3 (`0x801F6EC4`) | the caster's rate `2`; every pass pitch `-delta`, TR z `+product` | `+= scalar << 7` |
 /// | 4 (`0x801F6F44`) | a cut on the caster: pitch `0x100`, yaw `-facing`, TR `(0, 0x600, 0xC00)` | `+= scalar << 7` |
 /// | 5 (`0x801F6FDC`) | every pass TR y and TR z `+8 * delta` | `+= scalar << 6` |
@@ -120,7 +120,10 @@ pub fn chaos_flare_camera(
     }
     match phase {
         2 => {
-            let facing = bearing_12bit_approx(v.z, v.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
+            // The turn reads the victim's display pair `+0x3C` / `+0x40`
+            // (`lh a0,0x40(s1)` / `lh a1,0x3c(s1)` at `0x801F6C68`).
+            let vb = st.victim_body.unwrap_or(v);
+            let facing = bearing_12bit_approx(vb.z, vb.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
             let (s, co) = trig12(facing);
             let at = super::ModuleSeat {
                 x: c.x.wrapping_sub(eighth(s)),

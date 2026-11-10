@@ -218,6 +218,22 @@ impl World {
         })
     }
 
+    /// Arm a fight from this scene's own encounter table now: the lowest
+    /// rollable row ([`Self::first_rollable_formation_id`]) through
+    /// [`Self::force_encounter`], raising the live loop (player-driven) first
+    /// when encounters are off, since the transition rides it. The debug
+    /// "start a battle here" control of both play hosts (the window's `F12`
+    /// Tools row, the page's battle tools button); `None` when the scene
+    /// registers no formation with monsters or the arm is refused.
+    pub fn force_battle_here(&mut self) -> Option<u16> {
+        let id = self.first_rollable_formation_id()?;
+        if !self.toggles.live_gameplay_loop {
+            self.toggles.live_gameplay_loop = true;
+            self.battle.player_driven = true;
+        }
+        self.force_encounter(id).then_some(id)
+    }
+
     /// Install a formation + monster catalog pair. Boot wires this once;
     /// engines read it at battle-load time.
     pub fn set_formation_table(

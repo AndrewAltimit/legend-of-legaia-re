@@ -13,6 +13,7 @@ const FRAME_STEP: u32 = 0x1F80_0393;
 
 #[test]
 fn the_colour_ease_is_the_retail_ease() {
+    differential!(scus(EASE));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

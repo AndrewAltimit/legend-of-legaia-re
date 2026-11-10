@@ -1349,6 +1349,17 @@ stale against the tree:
   baselined states that carry a scored frame, with that N printed beside it -
   the mean rather than the median, so a few badly drawn states move the figure.
 
+A third row says how much of the port is checked against retail's own code:
+the `verification` block of the same JSON, the share of `// PORT:`-tagged
+addresses a [retail kernel differential](retail-kernel-differential.md) runs,
+and the count of retail routines the differential suite executes. It is
+computed from the tests' `differential!` declarations and the tags, both
+committed, so `update-progress-metrics.py` refreshes it even without the disc
+(the tracks then stay as committed), and the freshness check recomputes it
+exactly. It is a separate block rather than a fifth track: the four tracks
+have reached their ceiling, this one has not, and it links to
+[the verification ladder](verification-ladder.md).
+
 A saturated figure is drawn as a figure, not a meter: once all four structural
 tracks read 100% they render as one checked line each, and once every game image
 is complete the per-image cards fold behind a single line. One track or image

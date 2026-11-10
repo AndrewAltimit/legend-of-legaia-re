@@ -113,17 +113,19 @@
 
 <section class="doc-section" id="effect-lists">
   <h2>Effect-id lists (<code>+0x12</code> / <code>+0x16</code>)</h2>
-  <p>Both lists hold up to four ids and are dispatched identically - the only difference is <em>when</em> they fire (contact vs launch). Each byte multiplexes two id spaces by bit 7:</p>
+  <p>Both lists hold up to four ids. The <code>+0x12</code> list is the projectile's flight list, spawned at its head each time its counter runs out; the <code>+0x16</code> list is its landing list, spawned on the target. Each byte multiplexes two id spaces by bit 7, and the two walks do not read the low range alike:</p>
   <table>
-    <thead><tr><th>Entry</th><th>Meaning</th></tr></thead>
+    <thead><tr><th>Entry</th><th><code>+0x16</code> (landing)</th><th><code>+0x12</code> (flight)</th></tr></thead>
     <tbody>
-      <tr><td><code>0x00</code></td><td>Terminator</td></tr>
-      <tr><td><code>0x01..=0x63</code></td><td><strong>Move-FX space</strong>: spawn the 3D prototype record the effect-prototype table points at, and copy the effect's CLUT row from the sibling table when non-zero</td></tr>
-      <tr><td><code>0x64</code> (100)</td><td>Fixed screen flash, no table lookup</td></tr>
-      <tr><td>bit 7 set, <code>!= 0xFF</code></td><td><strong>2D-sprite space</strong>: <code>id &amp; 0x7F</code> into the <a href="effect.html"><code>efect.dat</code></a> <code>pack1</code> billboard pool</td></tr>
-      <tr><td><code>0xFF</code>, unused <code>0x65..=0x7F</code></td><td>No effect, scan continues</td></tr>
+      <tr><td><code>0x00</code></td><td>Terminator</td><td>Terminator</td></tr>
+      <tr><td><code>0x01..=0x63</code></td><td><strong>Move-FX space</strong>: spawn the 3D prototype record the effect-prototype table points at, and copy the effect's CLUT row from the sibling table when non-zero</td><td>The same</td></tr>
+      <tr><td><code>0x64</code> (100)</td><td>A screen flash: black to a dim red over <code>0x78</code> frames</td><td>A prototype spawn like any other byte</td></tr>
+      <tr><td><code>0x65..=0x7F</code></td><td>Nothing</td><td>A prototype spawn, read past the table's end</td></tr>
+      <tr><td>bit 7 set, <code>!= 0xFF</code></td><td><strong>2D-sprite space</strong>: <code>id &amp; 0x7F</code> into the <a href="effect.html"><code>efect.dat</code></a> <code>pack1</code> billboard pool</td><td>The same</td></tr>
+      <tr><td><code>0xFF</code></td><td>No spawn; one streak ribbon at the slot on each pass of the landed countdown</td><td>No spawn; one streak ribbon at the projectile's head on each pass of the flight</td></tr>
     </tbody>
   </table>
+  <p>No shipped flight list holds a byte in <code>0x64..=0x7F</code>. Four records carry a flight list of four <code>0xFF</code> and trail four ribbons from caster to target.</p>
   <p>Both lists index the same two side tables, which sit after the power table in the same overlay (parser <code>move_power::EffectAuxTables</code>):</p>
   <table class="layout">
     <thead><tr><th>VA</th><th>File</th><th>Table</th><th>Contents</th></tr></thead>

@@ -41,8 +41,9 @@ impl Camera {
         // must not be subtracted back out of it on the next ease.
         self.zone.shake_offset = [0, 0];
         // The arrival actor (`FUN_801DBE9C`) re-pins the focus and snaps the
-        // composed shot in on the first frame of the new scene.
-        self.zone.arm_arrival();
+        // composed shot in on the first frame of the new scene the player
+        // is free on (within its countdown).
+        self.zone.arm_scene_arrival();
     }
 
     /// The whole camera-side reset a **direct** scene entry owes - a scene

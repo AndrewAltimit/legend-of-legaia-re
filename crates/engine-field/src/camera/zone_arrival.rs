@@ -49,10 +49,14 @@ pub enum CameraZoneArrival {
 /// The camera-zone **arrival tick** - one frame of `FUN_801DBE9C`'s
 /// query arm (the `_DAT_8007B868 != 0` leg). `_DAT_8007B868` is the
 /// dev/dual-mode gate and retail boots with it `0`, so **retail never runs
-/// this arm**: its `== 0` leg counts the same `+0x54` countdown down, then
-/// re-pins the focus to the player and snaps the composed shot in through
-/// `FUN_801DB8EC` without touching the parameter block. The retail-side
-/// zone query is the script-driven `FUN_801DE3E0` ([`crate::camera_zone`]).
+/// this arm**. Its `== 0` leg (`0x801DBFF8..0x801DC0A4`) never touches the
+/// parameter block and splits on the player's `+0x10 & 0x80000`: with the bit
+/// clear it re-pins the focus to the player, conforms the player's Y to the
+/// floor (unless `+0x10 & 0x20000000`), snaps the composed shot in through
+/// `FUN_801DB8EC` and retires (`+0x10 |= 8`) on its first tick, with no
+/// countdown; with the bit set it only counts `+0x54` down and, at `-1`,
+/// retires without a snap. The retail-side zone query is the script-driven
+/// `FUN_801DE3E0` ([`crate::camera_zone`]).
 ///
 /// PORT: FUN_801dbe9c
 ///
@@ -64,16 +68,18 @@ pub enum CameraZoneArrival {
 /// (`FUN_801DBA20` = [`crate::field_regions::zone_query`]) picks between
 /// the record load and [`CAMERA_ZONE_DEFAULTS`]. Either way the follow
 /// update (`FUN_801DB8EC` + the negated-focus store, see
-/// [`Camera::tick`]) runs and the actor's `+0x10` flags gain bit `8`.
+/// [`Camera::tick`]) runs - unless the player's `+0x10 & 0x80000` is set,
+/// which skips it - and the actor's `+0x10` flags gain bit `8`.
 ///
 /// Provenance: `overlay_0897_locomotion_cluster.txt` at `0x801dbe9c..
 /// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
 /// label of this body, not its entry).
 ///
-/// REPLACED-BY: [`ZoneFollow::arm_arrival`] and the zone-follow tick that
-/// consumes it, which do the retail leg's job - re-pin the focus to the
-/// player and snap the composed shot in - and run the tile query from the
-/// same tick through [`crate::field_regions::zone_query`].
+/// REPLACED-BY: [`ZoneFollow::arm_scene_arrival`] and the zone-follow tick
+/// that consumes it, which do the retail leg's job - re-pin the focus to the
+/// player and snap the composed shot in, or, while the player is engaged,
+/// count the `0xF` countdown and retire at `-1` without a snap - and run the
+/// tile query from the same tick through [`crate::field_regions::zone_query`].
 ///
 /// This is the stronger claim, not "nothing calls it". The body ported here
 /// is the leg the entry gate selects when `_DAT_8007B868` is **non-zero**
@@ -93,8 +99,10 @@ pub fn camera_zone_arrival_tick(
     if *countdown != -1 {
         return CameraZoneArrival::Waiting;
     }
-    let tile_x = i32::from(player_pos.0 - 0x40) >> 7;
-    let tile_z = i32::from(player_pos.1 - 0x40) >> 7;
+    // `lh` then `addiu` / `sra`: the subtraction is 32-bit, so a position
+    // within `0x40` of `-0x8000` goes below it rather than wrapping.
+    let tile_x = (i32::from(player_pos.0) - 0x40) >> 7;
+    let tile_z = (i32::from(player_pos.1) - 0x40) >> 7;
     if zone_hit(tile_x, tile_z) {
         CameraZoneArrival::LoadZoneConfig
     } else {

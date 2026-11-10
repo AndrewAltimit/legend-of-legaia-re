@@ -49,11 +49,12 @@ use super::*;
 ///
 /// PORT: FUN_801cf8ac
 /// REF: FUN_801d5a68
-pub(super) struct AmbientPlayerProbe {
-    pub(super) player: Option<(i16, i16)>,
+pub struct AmbientPlayerProbe {
+    /// The player actor's live `(+0x14, +0x18)`, or `None` with no player.
+    pub player: Option<(i16, i16)>,
     /// The walker's `+0x10 & 3` collision-exempt bits are up: every probe
     /// misses.
-    pub(super) exempt: bool,
+    pub exempt: bool,
 }
 
 /// The 12-bit engine heading that points along `(dx, dz)`: retail's
@@ -91,9 +92,12 @@ impl AmbientPlayerProbe {
         let Some((px, pz)) = self.player else {
             return false;
         };
-        let qx = x.saturating_add(dx) as i32;
-        let qz = z.saturating_sub(dz) as i32;
-        (qx - px as i32).abs() < FIELD_NPC_BOX_HALF && (qz - pz as i32).abs() < FIELD_NPC_BOX_HALF
+        // Word arithmetic on the sign-extended halfwords (`0x801CF950..0x801CF9B4`):
+        // `player.x - dx` against `actor.x`, and `player.z + dz` against `actor.z`.
+        let qx = i32::from(x) + i32::from(dx);
+        let qz = i32::from(z) - i32::from(dz);
+        (qx - i32::from(px)).abs() < FIELD_NPC_BOX_HALF
+            && (qz - i32::from(pz)).abs() < FIELD_NPC_BOX_HALF
     }
 }
 

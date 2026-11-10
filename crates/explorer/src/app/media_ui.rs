@@ -156,7 +156,13 @@ impl App {
                                     f.path,
                                     super::human_size(f.size as u64)
                                 );
-                                let row = ui.selectable_label(sel, RichText::new(text).monospace());
+                                let mut row =
+                                    ui.selectable_label(sel, RichText::new(text).monospace());
+                                if let Some(note) = crate::media::movie_note(&f.path) {
+                                    row = row.on_hover_text(note);
+                                } else if let Some(note) = crate::media::xa_file_note(&f.path) {
+                                    row = row.on_hover_text(note);
+                                }
                                 if row.clicked() {
                                     pick = Some(f.path.clone());
                                 }
@@ -276,6 +282,9 @@ impl App {
                 self.player.stop();
             }
         });
+        if let Some(note) = media::xa_file_note(sel) {
+            ui.label(note);
+        }
         ui.label(format!("{} channels", tracks.len()));
         ui.separator();
         let stem = sel.rsplit('/').next().unwrap_or(sel).replace('.', "_");
@@ -298,6 +307,9 @@ impl App {
                     if ui.small_button("WAV...").clicked() {
                         action = Some((i, true));
                     }
+                    if let Some(note) = media::xa_channel_note(sel, *ch_no) {
+                        ui.label(note);
+                    }
                 });
             }
         });
@@ -308,7 +320,10 @@ impl App {
         let t = &all[i];
         let (pcm, rate, ch, file_no, ch_no) =
             (t.pcm.clone(), t.sample_rate, t.channels, t.file_no, t.ch_no);
-        let label = format!("{sel} file {file_no} ch {ch_no}");
+        let label = match media::xa_channel_note(sel, ch_no) {
+            Some(note) => format!("{sel} ch {ch_no}: {note}"),
+            None => format!("{sel} file {file_no} ch {ch_no}"),
+        };
         if export {
             let name = format!("{stem}_f{file_no}_c{ch_no}.wav");
             if let Some(out) = self.export_target(&name, "wav") {
@@ -341,6 +356,10 @@ impl App {
                 None => "no soundtrack".into(),
             }
         ));
+        if let Some(note) = crate::media::movie_note(sel) {
+            ui.label(RichText::new(note).weak());
+        }
+        let export_key = self.take_export_key();
         let st = &mut self.media;
         st.frame = st.frame.min(n - 1);
         let mut start: Option<usize> = None;
@@ -376,7 +395,12 @@ impl App {
                 stop = true;
             }
             ui.label(format!("{:.2} s", st.frame as f64 * period));
-            if ui.button("Export frame PNG...").clicked() {
+            if ui
+                .button("Export frame PNG...")
+                .on_hover_text("Ctrl+E")
+                .clicked()
+                || export_key
+            {
                 export = true;
             }
         });

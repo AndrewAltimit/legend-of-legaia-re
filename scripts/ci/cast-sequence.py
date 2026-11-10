@@ -173,6 +173,10 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_POSE_OBJECTS"] = "1"
     if a.watch:
         env["LEGAIA_WATCH_W"] = a.watch
+    if a.range_trace:
+        env["LEGAIA_RANGE_TRACE"] = "1"
+    if a.hit_trace:
+        env["LEGAIA_HIT_TRACE"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -180,7 +184,8 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects):
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
+            or a.range_trace or a.hit_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -436,6 +441,32 @@ def _step_row(r: dict) -> str:
     return f"{st7} {phase} {r['step']}\n"
 
 
+def traced_hit_words(out: Path) -> list[str] | None:
+    """The seed word each melee hit of the first action drew from, off a
+    `--hit-trace` recording's `hits.csv` (`word@vsync`), or `None` without
+    one. The probe reads the word at the head of the strike kernel's hit body
+    (`0x801EC5A8`), ahead of the block roll, so a blocked or missed swing has
+    its word as well as a landed one. Rows stop where the meta's first HP-bar
+    settle (`0x51`) begins, as the burst reading does."""
+    path = out / "retail" / "hits.csv"
+    if not path.exists():
+        return None
+    settle = None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if int(r["st7"]) == 0x51:
+                settle = int(r["vsync"])
+                break
+    words = []
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            v = int(r["vsync"])
+            if settle is not None and v >= settle:
+                break
+            words.append(f"{int(r['seed']) & 0xFFFFFFFF}@{v}")
+    return words
+
+
 def retail_hit_words(out: Path) -> list[str]:
     """The seed word retail held going into each melee hit of a `--physical`
     recording's first action, as `word@vsync`. A hit's spark burst makes its
@@ -445,6 +476,9 @@ def retail_hit_words(out: Path) -> list[str]:
     (`0x80046D2C`) ahead of the hit. A blocked or missed swing draws no burst
     and leaves no word, so each word carries its vsync and the engine hands it
     to the hit nearest that time."""
+    traced = traced_hit_words(out)
+    if traced is not None:
+        return traced
     step = lambda w: (w * 0x41C64E6D + 0x3039) & 0xFFFFFFFF
     words, prev, settled = [], None, False
     with open(out / "retail" / "meta.csv") as f:
@@ -732,6 +766,12 @@ def main() -> int:
     ap.add_argument("--watch", default="",
                     help="retail: log each store into these byte addresses (comma list) with its pc and "
                          "ra (retail/watch.csv; breakpoint core)")
+    ap.add_argument("--range-trace", action="store_true",
+                    help="retail: each range-law call FUN_8004E2F0 with the pairs it reads to retail/range.csv "
+                         "(breakpoint core)")
+    ap.add_argument("--hit-trace", action="store_true",
+                    help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
+                         "which --strike-deal then deals in place of the spark-burst reading")
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")

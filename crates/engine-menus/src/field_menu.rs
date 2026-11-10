@@ -519,36 +519,45 @@ impl FieldMenuSession {
                     events.push(FieldMenuEvent::NoticeDismissed);
                 }
             }
-            // Sub-screen 3: a horizontal two-row choice seeded to No.
+            // Sub-screen 3: a two-row choice seeded to No, stepped by the
+            // list kernel `FUN_801D688C` (`0x801D6DA8..0x801D6DB4`: two rows,
+            // wrapping). Confirm and cancel are tested ahead of any move, so
+            // a press that also carries a direction confirms the row the
+            // cursor was already on; the rows step on Up and Down.
             FieldMenuPhase::ReadyConfirm { cursor, resume_row } => {
-                if input.circle {
-                    // Retail's cancel arm returns to the root picker - the
-                    // same destination row 1 takes.
-                    self.phase = FieldMenuPhase::Browsing { cursor: resume_row };
-                    events.push(FieldMenuEvent::Cancelled);
-                    return events;
-                }
-                let mut new_cursor = cursor;
-                if input.left {
-                    new_cursor = cursor.saturating_sub(1);
-                } else if input.right {
-                    new_cursor = (cursor + 1).min(1);
-                }
-                if new_cursor != cursor {
-                    self.phase = FieldMenuPhase::ReadyConfirm {
-                        cursor: new_cursor,
-                        resume_row,
-                    };
-                    events.push(FieldMenuEvent::ReadyConfirmMoved { cursor: new_cursor });
-                }
-                if input.cross {
-                    if new_cursor == READY_CONFIRM_YES_ROW {
-                        // Sub-screen 0: the menu ends.
+                use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
+                let mut cell = u32::from(cursor);
+                let nav = menu_cursor_nav(
+                    &mut cell,
+                    2,
+                    true,
+                    NavButtons::new(input.cross, input.circle, input.up, input.down),
+                );
+                match nav {
+                    CursorNav::Cancel => {
+                        // Retail's cancel arm returns to the root picker - the
+                        // same destination row 1 takes.
+                        self.phase = FieldMenuPhase::Browsing { cursor: resume_row };
+                        events.push(FieldMenuEvent::Cancelled);
+                    }
+                    CursorNav::Moved => {
+                        let new_cursor = (cell & 0xFFF) as u8;
+                        self.phase = FieldMenuPhase::ReadyConfirm {
+                            cursor: new_cursor,
+                            resume_row,
+                        };
+                        events.push(FieldMenuEvent::ReadyConfirmMoved { cursor: new_cursor });
+                    }
+                    // `0x801D6DDC..0x801D6DF4`: row 1 returns to the picker,
+                    // anything else is sub-screen 0, which ends the menu.
+                    CursorNav::Confirm if cursor != READY_CONFIRM_DEFAULT_ROW => {
                         self.phase = FieldMenuPhase::Done(FieldMenuOutcome::Closed);
                         events.push(FieldMenuEvent::Cancelled);
-                    } else {
+                    }
+                    CursorNav::Confirm => {
                         self.phase = FieldMenuPhase::Browsing { cursor: resume_row };
                     }
+                    CursorNav::None => {}
                 }
             }
             FieldMenuPhase::Browsing { cursor } => {

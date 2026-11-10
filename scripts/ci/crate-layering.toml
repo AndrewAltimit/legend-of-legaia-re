@@ -69,7 +69,7 @@ deps = ["engine-battle-vm", "engine-system", "render-kernels"]
 
 [crates.render-kernels]
 role = "GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu"
-deps = ["engine-camera", "engine-vm"]
+deps = ["engine-camera", "engine-system", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"

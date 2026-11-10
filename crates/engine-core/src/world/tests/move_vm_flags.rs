@@ -46,7 +46,8 @@ fn move_vm_slot_table_save_and_load_round_trip() {
     world.actors[0].move_state.world_x = 0x1234u16 as i16;
     world.actors[0].move_state.world_y = 0x5678u16 as i16;
     world.actors[0].move_state.world_z = 0x9ABCu16 as i16;
-    world.actors[0].move_state.world_y_mirror = 0xDEF0u16 as i16;
+    // The fourth halfword is the position vector's pad `+0x1A`.
+    world.actors[0].move_state.world_pad = 0xDEF0u16 as i16;
     world.actors[0].move_state.field_86 = 0x0003; // slot index = 3
     // 0x2F sub-op 0x11 - save world coords into slot 3, then HALT.
     world.set_move_bytecode(0, Some(vec![0x002F, 0x0011, 0x0008]));

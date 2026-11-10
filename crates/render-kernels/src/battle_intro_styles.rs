@@ -446,6 +446,40 @@ pub fn intro_leaves_white(style: IntroStyle, sub_style: i32) -> bool {
     }
 }
 
+/// How many `rand()` draws the transition init `FUN_801CE8CC` makes through
+/// the style's seeder, all on the global BIOS seed (`FUN_80056798`).
+///
+/// The init's style switch (jump table `0x801CE840`) calls one seeder per
+/// style, and the seeders' draw counts are fixed by their loops:
+///
+/// | Style | Seeder | Draws |
+/// |---|---|---|
+/// | scatter | `FUN_801CFBB4` | none (no `jal 0x80056798`) |
+/// | spin-up | `FUN_801D0164` | one per cell, `32 x 40` (`0x801D02B8`) |
+/// | tile shatter | `FUN_801D081C` | two per interior corner, `15 x 15` (`0x801D0920` / `0x801D0958`), plus one per tile, `16 x 16`, on sub-styles `0` (`0x801D0C04`) and `1` (`0x801D0C4C`) |
+/// | curtain / swirl | `FUN_801D1CD4` / `FUN_801D1564` | none |
+///
+/// The ticks draw none: a capture of a walked kor encounter (tile shatter,
+/// sub-style `0`) counts 706 calls inside the init and none from its return
+/// to the battle mode (`scripts/pcsx-redux/autorun_battle_intro_rand.lua`).
+/// The world advances its stream by this many steps on the transition's first
+/// frame, and the emitter replays the same segment
+/// ([`crate::battle_intro_particles::IntroRng`]).
+pub fn intro_seeder_draws(style: IntroStyle, sub_style: i32) -> u32 {
+    match style {
+        IntroStyle::SpinUpParticles => 32 * 40,
+        IntroStyle::TileShatter => {
+            15 * 15 * 2
+                + if matches!(sub_style, 0 | 1) {
+                    16 * 16
+                } else {
+                    0
+                }
+        }
+        IntroStyle::ScatterParticles | IntroStyle::Curtain | IntroStyle::Swirl => 0,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // FUN_801CFDA0 / FUN_801D0370 - the two particle-field ticks
 // ---------------------------------------------------------------------------
@@ -491,6 +525,11 @@ pub struct ParticleTickStyle {
     pub rot_shift: u32,
     /// Right shift on the rotation vector's **z** component only.
     pub rot_z_shift: u32,
+    /// Whether the z component's shift rounds toward zero. Every other
+    /// integration term is an `sra` of the product, which floors; only
+    /// `FUN_801D0370`'s z adds `7` to a negative product first
+    /// (`bgez` / `addiu v1,v1,7` / `sra v1,v1,3` at `0x801D0628..0x801D0638`).
+    pub rot_z_truncates: bool,
     /// Whether the tick pre-divides the rotation vector by 8 before handing it
     /// to `RotMatrix`. `FUN_801D0370` does (`sra ...,0x13` on a sign-extended
     /// halfword); `FUN_801CFDA0` passes `+0x10` straight through.
@@ -519,6 +558,7 @@ pub const PARTICLE_TICK_A: ParticleTickStyle = ParticleTickStyle {
     delay_scale: 0x6E,
     rot_shift: 1,
     rot_z_shift: 1,
+    rot_z_truncates: false,
     rot_prescale_shift: 0,
     spin_up: false,
     colour_decay: false,
@@ -533,6 +573,7 @@ pub const PARTICLE_TICK_B: ParticleTickStyle = ParticleTickStyle {
     delay_scale: 0x40,
     rot_shift: 4,
     rot_z_shift: 3,
+    rot_z_truncates: true,
     rot_prescale_shift: 3,
     spin_up: true,
     colour_decay: true,
@@ -615,13 +656,22 @@ pub fn step_particle(
             };
             p.spin = (ramp(p.spin.0), ramp(p.spin.1), ramp(p.spin.2));
         }
+        // `mult` by the frame step, then `sra`: the shift floors
+        // (`0x801CFF8C`, `0x801D05E4`), except the spin-up's z below.
         let add = |acc: i16, v: i16, bits: u32| -> i16 {
-            (acc as u16).wrapping_add(shr_toward_zero(i32::from(v) * step, bits) as u16) as i16
+            (acc as u16).wrapping_add(((i32::from(v) * step) >> bits) as u16) as i16
+        };
+        let add_z = |acc: i16, v: i16, bits: u32| -> i16 {
+            if style.rot_z_truncates {
+                (acc as u16).wrapping_add(shr_toward_zero(i32::from(v) * step, bits) as u16) as i16
+            } else {
+                add(acc, v, bits)
+            }
         };
         p.rot = (
             add(p.rot.0, p.spin.0, style.rot_shift),
             add(p.rot.1, p.spin.1, style.rot_shift),
-            add(p.rot.2, p.spin.2, style.rot_z_shift),
+            add_z(p.rot.2, p.spin.2, style.rot_z_shift),
         );
         if style.stamp_field_16 {
             p.field_16 = 1;

@@ -48,10 +48,10 @@ pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
 /// and arm the hit words.
 pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal) {
     let actor = usize::from(engine_seat(hand.seat, world.party.party_count));
-    if let Some(a) = world.actors.get_mut(actor) {
-        restage_dealt_byte(&mut a.battle, &hand.queue);
-        let n = hand.queue.len().min(a.battle.params.len());
-        a.battle.params[..n].copy_from_slice(&hand.queue[..n]);
+    if let (Some(a), Some(queue)) = (world.actors.get_mut(actor), hand.queue.as_ref()) {
+        restage_dealt_byte(&mut a.battle, queue);
+        let n = queue.len().min(a.battle.params.len());
+        a.battle.params[..n].copy_from_slice(&queue[..n]);
     }
     if let Some((attack, guard, atk)) = hand.ramps {
         world.battle.attack_ramp = attack;

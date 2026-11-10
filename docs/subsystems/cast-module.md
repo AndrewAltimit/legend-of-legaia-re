@@ -1957,7 +1957,12 @@ phase 3. Arm 7 spawns record `0x801F7F20`, which waits `0x13`, loops a
 20-vsync body six times and calls arm `1`, stepping phase 8. The port queues
 every op-`0x20` call a module's parts make (`CastFxState::module_stager_calls`)
 and runs PROT 0909's through its stager on the module's next tick, so both
-rendezvous fall where the parts' own waits put them. A host that does not
+rendezvous fall where the parts' own waits put them. The seating arms `2`, `3`, `4` and
+`6` run on the caller's frame instead, right after the frame's part tick
+(`World::seat_viguro_stager_spawns_now`), as retail's call inside the caller's step
+seats them: queued to the next tick, every ring arm 12's emitter `0x801F8158` seats
+stood a battle frame (one `+0xC0` step of radius) behind retail's, and arm 12 read
+`.590` frame by frame (`.667` on the caller's frame; the rest is the bolts' `rand()`). A host that does not
 seat one of the two records (no disc, or a driver that steps the module
 without the band seam) keeps that record's clock in its place
 (`cast_module_camera::VIGURO_STAGER_CALLERS`, `CastFxState::module_record_clocks`):
@@ -2450,15 +2455,38 @@ Port: `cast_module_camera::slippery_direct` carries the whole phase chain
 (`ModuleProfile::director_body`), so the band lasts as long as retail's and
 the outcome lands at arm `9`'s exit; `CastFxState::slippery_rain_words` writes the
 budget and colour words around it; `World::step_module_rain` makes the call
-once a tick through `legaia_render_kernels::cast_rain` on the world's
-`rand()` stream; both hosts draw `World::module_rain_lines` through
-`engine-screens`. Not carried: the arms' captions, breath parts and fades,
-arm `10`'s wait for every monster to be idle, and the group-target framing
-of arm `8`. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
+once a battle frame through `legaia_render_kernels::cast_rain` on the world's
+`rand()` stream, at that frame's step; both hosts draw `World::module_rain_lines` through
+`engine-screens`. The call is the draw tick's, latched once a frame by `ctx[+0x272]`
+(`0x80048104..0x800481B0`), and its rate is the step: the arm runs at step `4`, so a
+call per vsync at rate `1` fell each drop a quarter as far and rolled its spawns four
+times as often, and the storm stood about four times as dense as retail's. Arm `3`'s exit
+prints the spell name at the label's place and arm `5`'s exit the attack name over it
+(`0x801F6E08..0x801F6E94`, `0x801F6F70..0x801F6FC0`). Arm `8`'s exit frames the cast's target off the creature's
+target byte `+0x1DD` (the caster's, copied by the installer at
+`0x801F1D98..0x801F1DB8`): Slippery's own group code frames the monster row's
+centre through `FUN_801DCEAC` with its extent doubled into TR z
+(`0x801F7564..0x801F7590`). Arm `9`'s exit, past the hit, tints every struck monster magenta (`+0x04 =
+0x3FF003FF`, `+0x0C = 0x1000`) and seats the two purple rings `0x801F8344` / `0x801F8398`
+and the burst `0x801F83EC` on the camera focus, on the creature's angle trio
+(`0x801F7910..0x801F79E8`, `World::slippery_hit_exit`); its purple flash is the
+presentation decoder's. Without the rings arm 10 read `.830` frame by frame, `.900`
+with them. Not carried: the breath parts and fades, and arm `10`'s wait for
+every monster to be idle. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
-halts them all (`World::slippery_storm_clouds`). The splashes are seated into the cast's scene, but the record is
-a model-less node and nothing of it draws in the port yet. The streaks
+halts them all (`World::slippery_storm_clouds`). The exit is the arm's opening test: the
+pass's whole drain is subtracted and `bgtz` at `0x801F70D8` either holds on to the spawn
+counter (`0x801F7194..`) or takes the halting loop (`0x801F715C..0x801F7184`), so a pass
+that leaves seats no cloud. The port's pass runs `delta` one-vsync ticks and can leave on
+any of them, so the halt runs on the leaving tick and the first tick seats only when the
+whole pass holds: retail's part list holds no cloud a frame into arm 7. The clouds are
+bank-3 quads ([effect VM](effect-vm.md#the-sprite-arms-draw)). The splashes are default-arm rings
+(`+0x9E = 1`, ten columns, radius `16` and height `32` growing at `+0xC0` / `+0xC2`) in the
+rain colour, which the routine writes into the record before each spawn; it then stores
+the landing point's `min(IR3, 0x2000) >> 1` into the part's `+0x78`, so a splash starts on
+its depth cue and its `LEVEL_RATE` fades it from there. A storm holds up to `64` live at
+once on both sides. The streaks
 draw over the scene rather than sorted into it. Slippery's seat arm stores
 only a height (`+0x36 = -(scalar << 8)`, `0x801F6D18..0x801F6D28`) and a clip
 bump, so the creature hangs over the caster where `FUN_801F19EC` leaves it.
@@ -2794,6 +2822,28 @@ Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pas
 victim's plane less `0x800`.
 Iota hides its creature until arm 3's seat and again from arm 8, and shrinks the row
 into the eye of its vortex on arm 9 (`World::apply_iota_writes`).
+
+The directors' camera and rumble writes are held to the images pass by pass by
+the [retail kernel differential](../tooling/retail-kernel-differential.md)
+(`crates/retail-exec/tests/summon_cameras.rs`): every image above runs off its
+slot-B base from arm 0 to its Done, and each pass compares the hold, the phase,
+the tween's length and where the camera globals are headed after the pass with
+the director's shot, stores and drifts in the band's order. Several of the
+writes it pins sit where a reading of the arm misses them. Jedo's arm 30 exit
+lifts a TR y under `0x400` onto it (`0x801F8884..0x801F88A0`). Barra's arm
+`0xF` exit stores the focus words and the yaw onto the victim's saved seat
+after its last shot (`0x801F81B4..0x801F8204`), and its straight TR z stores
+land as stored, not through the builder's prescale. Palma's arm 3 stores the
+globals on its exit pass too; its arm 6 exit shot keeps the arm-5 shot's TR x
+`0x240`, which the exit leaves on the stack (`0x801F77C0..0x801F77F8`); its
+arm `0xD` pass jolts the controller through arm 18's tail (`j 0x801F880C` at
+`0x801F7E8C`). Ozma's arm 5 stores its shake on the exit pass as well. Vera's
+arm 8 and Slippery's arm 9 push the camera ahead of the gate, so an exit with
+a cut carries no push and one without carries it. Mushura's arm `0xC` turns
+the creature before it frames it, so the host runs the chase ahead of the
+director (`World::mushura_chase_ahead`). Two parts stay out: Palma's sweep
+rolls the camera (by up to `0x80`), which the battle camera has no channel
+for, and Ozma's arm `0x15` aims at its last random spawn's point.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
@@ -3259,7 +3309,13 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   character id (`0x801F8664` / `0x801F8678` / `0x801F868C`), `World::raise_paralyzing_wave_caption`.
   Raised by the decode, every victim read "Vahn is paralyzed.", and
   `battle_jou_iota_v3_paralyzing_wave_mid_cast`'s Master-Guarded Noa was marked where
-  retail marks no one.
+  retail marks no one. The reaction is the guarded branch's alone: the `+0x1F1` store and
+  bump (`0x801F6FA0..0x801F6FB4`) jump past the marking leg, which stages nothing, so a
+  marked victim plays no reaction clip and keys none of its cue track. The fold used to
+  stage it on every victim, and `battle_deroa_iota_v2_paralyzing_wave_mid_cast`'s marked
+  Noa sounded `0x62` and two `0x15` where retail's recording holds no cue at all; the fold
+  now lands that hit quietly (`chain_hit_stages_no_reaction`), and a victim the hit downs
+  still takes the dead branch's knockdown.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 
@@ -3311,6 +3367,20 @@ the miss) the engine plays none, and arm 5 reads `.809` to `.914`, the Done tail
 `.902`. The `battle_map01_lippian_kiss_of_death_mid_cast` film is the hit: five cues on each
 side, matched. The difference was the replay's `rand()` stream, a seat of the harness, not
 the cast. Grade `capture`.
+
+The leg labels are right: retail's roll on the `map01` film is `rand() = 20064`, even, the hit
+(probe at `0x801F8CC4`, `andi v0,v0,0x1` / `beq` to the hit leg at `0x801F8CC8`), from the seed
+word `0x4DE7668F`. `--rand-track` still hands the engine the miss because the engine's arm 4
+is two passes shorter. Arm 3's gate re-arms the countdown `0x801F9D28` by `scalar << 7`
+(`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8C98`,
+the step `0x1F800393`): retail's arm 4 runs `34` passes, the last five at step `3` as the frame
+cost falls from `700` to about `595` (step sum `131`), where the engine's table runs every pass
+at `4` (`32` passes). The track keys its words by pass within the phase, so the engine's
+gate pass takes retail's 33rd pass word (`0x6C5CC369`, then the discard), draws from
+`0x333F61EE` and rolls `19943`, odd. Retail's gate pass starts on `0x333F61EE` and draws
+the discard first. The engine's arm 3 gate also falls one pass later than retail's.
+This is the step table's per-arm reading ([the frame step](battle-stage-camera.md#the-frame-step)), not the
+roll. Grade `capture` + `disassembly`.
 
 The lips sample the side-band page, not the module image: record `0x801F9440`'s
 sprite names tpage `0x88` (8bpp at `(512, 0)`) and CLUT `0x7A00` (row 488), which
@@ -5032,6 +5102,18 @@ covers. A ramp's bound is the literal the arm stores behind its bound test
 (`if (alpha > 0x80) alpha = 0x80`). PROT 0905, 0954 and 0966 keep their
 hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
 spawned twice.
+
+**A word an arm does not store is the last writer's.** Every battle fade writes
+its template into the one block at `0x801C9070`, and nothing clears it. PROT
+0914 (Gola Gola)'s arm 13 kills arm 11's held fade and spawns a red and a white
+flash (`0x801F7670..0x801F76D4`) that store end red and green `1` and no end
+blue, so both end on the `64` arm 11 left there: the white flash fades through
+red to a dark purple. The engine keeps the block
+(`CastFxState::fade_block`, written by the action SM's flash templates and every
+presentation fade) and fills a word the decoder found no store for from it.
+Without it the two fades did not resolve and arm 14 opened on the fire, not the
+flash (`.588` against `.884` with it, on the `party_basic_attack_vs_gobu_gobu`
+film).
 
 **Held fades and their kills.** A fade whose hold word is `-1` stays on its
 end colour until something kills it, and a module kills its own: it parks the

@@ -82,6 +82,9 @@
     "battle_balden_verial_cross_beam_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_balden_verial_strike": {
+      "battle_track": 1.0
+    },
     "battle_bubu2_sorcerer_strike": {
       "battle_track": 1.0
     },
@@ -92,6 +95,9 @@
       "battle_track": 1.0
     },
     "battle_bubu2_wailing_bird_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_bubu2_wailing_bird_strike": {
       "battle_track": 1.0
     },
     "battle_bylon_gimard_v2_strike": {
@@ -115,7 +121,22 @@
     "battle_cave01_mushroom_strike": {
       "battle_track": 1.0
     },
+    "battle_cave01_red_piura_strike": {
+      "battle_track": 1.0
+    },
+    "battle_cave01_theeder_strike": {
+      "battle_track": 1.0
+    },
     "battle_cave01_theeder_thunderbolt_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_cort_guilty_cross_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_cort_mystic_circle_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_cort_mystic_shield_mid_cast": {
       "battle_track": 1.0
     },
     "battle_chitei2_gilium_strike": {
@@ -143,6 +164,9 @@
       "battle_track": 1.0
     },
     "battle_deene_lapis_lapis_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deene_lapis_strike": {
       "battle_track": 1.0
     },
     "battle_deene_neo_bison_strike": {
@@ -190,6 +214,9 @@
     "battle_dolk_drake_ghost_windhash_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_dolk_gimard_strike": {
+      "battle_track": 1.0
+    },
     "battle_dolk_skeleton_strike": {
       "battle_track": 1.0
     },
@@ -211,10 +238,55 @@
     "battle_doman_killer_wolf_terror_scream_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_garmel_party_gala_flying_knee_mid": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_gala_thunder_punch_open": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_noa_frost_breath_open": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_noa_lizard_tail_mid": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_noa_lizard_tail_open": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_vahn_hyper_elbow_mid": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_party_vahn_tornado_flame_open": {
+      "battle_track": 1.0
+    },
     "battle_garmel_songi_hyper_wave_mid_cast": {
       "battle_track": 1.0
     },
     "battle_garmel_songi_strike": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_vera_v2_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_vera_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zenoir_fire_claw_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zenoir_strike": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zeto_big_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zeto_call_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zeto_poisonous_bubbles_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_zeto_strike": {
       "battle_track": 1.0
     },
     "battle_geremi_kabuki_rat_steal_mid_cast": {
@@ -298,10 +370,28 @@
     "battle_jou_kemaro_v3_strike": {
       "battle_track": 1.0
     },
+    "battle_jou_lamia_forced_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_mad_golem_forced_earthcrush_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_mad_golem_forced_strike": {
+      "battle_track": 1.0
+    },
     "battle_jou_mushura_v3_strike": {
       "battle_track": 1.0
     },
+    "battle_jou_nightmare_forced_fatal_decision_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_nightmare_forced_strike": {
+      "battle_track": 1.0
+    },
     "battle_jou_nighto_v3_eye_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_nighto_v3_strike": {
       "battle_track": 1.0
     },
     "battle_jou_nova_v3_scythe_wind_mid_cast": {
@@ -316,10 +406,37 @@
     "battle_jou_orb_v3_strike": {
       "battle_track": 1.0
     },
+    "battle_jou_party_gala_chain_mid": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_gala_chain_open": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_gala_super_ironhead_super_open": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_noa_chain_mid": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_noa_dragon_fangs_super_open": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_vahn_chain_late": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_vahn_chain_open": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_vahn_tri_somersault_super_open": {
+      "battle_track": 1.0
+    },
     "battle_jou_puera_v3_death_game_mid_cast": {
       "battle_track": 1.0
     },
     "battle_jou_puera_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_slippery_forced_strike": {
       "battle_track": 1.0
     },
     "battle_jou_slippery_v3_big_wave_mid_cast": {
@@ -454,10 +571,19 @@
     "battle_map01_green_slime_divide_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_map01_green_slime_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_hornet_strike": {
+      "battle_track": 1.0
+    },
     "battle_map01_lippian_kiss_of_death_mid_cast": {
       "battle_track": 1.0
     },
     "battle_map01_ostrich_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_death_wings_strike": {
       "battle_track": 1.0
     },
     "battle_map02_demon_fly_strike": {
@@ -479,6 +605,9 @@
       "battle_track": 1.0
     },
     "battle_map02_lip_kid_kiss_of_death_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_lip_kid_strike": {
       "battle_track": 1.0
     },
     "battle_map02_mad_ogre_power_charge_mid_cast": {
@@ -544,6 +673,9 @@
     "battle_map03_scale_lizard_earthquake_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_map03_scale_lizard_strike": {
+      "battle_track": 1.0
+    },
     "battle_map03_speed_wolf_strike": {
       "battle_track": 1.0
     },
@@ -565,13 +697,40 @@
     "battle_nilboa_amethyst_strike": {
       "battle_track": 1.0
     },
+    "battle_nilboa_che_delilas_strike": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_gi_delilas_strike": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_koru_blade_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_koru_dead_end_crisis_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_koru_gigaton_press_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_koru_thunder_needle_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_koru_ultra_charge_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_nilboa_lava_face_fissure_mid_cast": {
       "battle_track": 1.0
     },
     "battle_nilboa_lava_face_strike": {
       "battle_track": 1.0
     },
+    "battle_nilboa_lu_delilas_strike": {
+      "battle_track": 1.0
+    },
     "battle_nilboa_lucifer_cross_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_lucifer_strike": {
       "battle_track": 1.0
     },
     "battle_nilboa_neo_grude_power_up_mid_cast": {
@@ -581,6 +740,9 @@
       "battle_track": 1.0
     },
     "battle_nilboa_rock_lizard_earthquake_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_rock_lizard_strike": {
       "battle_track": 1.0
     },
     "battle_nilboa_warfish_strike": {
@@ -610,6 +772,9 @@
     "battle_noaru_songi_chaos_flare_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_noaru_songi_strike": {
+      "battle_track": 1.0
+    },
     "battle_results_gimard_retail": {
       "battle_track": 1.0
     },
@@ -634,6 +799,9 @@
     "battle_retona_lip_king_kiss_of_death_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_retona_lip_king_strike": {
+      "battle_track": 1.0
+    },
     "battle_retona_mushura_strike": {
       "battle_track": 1.0
     },
@@ -655,6 +823,9 @@
     "battle_rikuroa2_golem_jagged_earth_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rikuroa2_golem_strike": {
+      "battle_track": 1.0
+    },
     "battle_rikuroa2_pump_bat_strike": {
       "battle_track": 1.0
     },
@@ -667,6 +838,9 @@
     "battle_rikuroa_caruban_strike": {
       "battle_track": 1.0
     },
+    "battle_rikuroa_party_vahn_chain_open": {
+      "battle_track": 1.0
+    },
     "battle_rikuroa_pump_bat_windcutter_mid_cast": {
       "battle_track": 1.0
     },
@@ -674,6 +848,9 @@
       "battle_track": 1.0
     },
     "battle_ropeway_curry_devil_cross_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_curry_devil_strike": {
       "battle_track": 1.0
     },
     "battle_ropeway_mad_mantis_strike": {
@@ -688,13 +865,31 @@
     "battle_ropeway_orb_strike": {
       "battle_track": 1.0
     },
+    "battle_ropeway_party_gala_flying_knee_late": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_party_gala_flying_knee_mid": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_party_noa_sonic_javelin_open": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_party_vahn_slash_kick_mid": {
+      "battle_track": 1.0
+    },
     "battle_rugi_barra_strike": {
       "battle_track": 1.0
     },
     "battle_rugi_barra_windcutter_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rugi_berserker_2_spore_gas_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_rugi_berserker_2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_berserker_3_spore_gas_mid_cast": {
       "battle_track": 1.0
     },
     "battle_rugi_berserker_3_strike": {
@@ -814,6 +1009,9 @@
     "battle_tower_guardian_windhash_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_tower_nighto_v2_strike": {
+      "battle_track": 1.0
+    },
     "battle_tower_swordie_strike": {
       "battle_track": 1.0
     },
@@ -823,7 +1021,13 @@
     "battle_town01_queen_bee_strike": {
       "battle_track": 1.0
     },
+    "battle_town01_tetsu_strike": {
+      "battle_track": 1.0
+    },
     "battle_tunnela_mad_bird_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tunnela_mad_bird_strike": {
       "battle_track": 1.0
     },
     "battle_tunnelb_gel_frog_strike": {
@@ -836,6 +1040,9 @@
       "battle_track": 1.0
     },
     "battle_tunnelb_nova_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelb_stone_lizard_strike": {
       "battle_track": 1.0
     },
     "battle_tunnelb_warman_strike": {
@@ -933,6 +1140,27 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "chitei2_corridor_pillars_before": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "chitei2_corridor_pillars_lit": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "chitei2_cort_pre_guilty_cross": {
+      "battle_track": 1.0
+    },
+    "chitei2_cort_pre_mystic_circle": {
+      "battle_track": 1.0
+    },
+    "chitei2_cort_pre_mystic_shield": {
+      "battle_track": 1.0
+    },
     "chitei2_field_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -943,6 +1171,12 @@
       "battle_track": 1.0
     },
     "conc2_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_field_inn_night": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1103,6 +1337,21 @@
       "battle_track": 1.0
     },
     "freed_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "garmel_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "garmel_zeto_pre_big_wave": {
+      "battle_track": 1.0
+    },
+    "garmel_zeto_pre_call_wave": {
+      "battle_track": 1.0
+    },
+    "garmel_zeto_pre_poisonous_bubbles": {
       "battle_track": 1.0
     },
     "geremi_field_door_hop": {
@@ -1417,6 +1666,21 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "nilboa_koru_pre_blade_breath": {
+      "battle_track": 1.0
+    },
+    "nilboa_koru_pre_dead_end_crisis": {
+      "battle_track": 1.0
+    },
+    "nilboa_koru_pre_gigaton_press": {
+      "battle_track": 1.0
+    },
+    "nilboa_koru_pre_thunder_needle": {
+      "battle_track": 1.0
+    },
+    "nilboa_koru_pre_ultra_charge": {
+      "battle_track": 1.0
+    },
     "nilboa_lava_face_pre_fissure": {
       "battle_track": 1.0
     },
@@ -1575,6 +1839,12 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "rikuroa_field_cave_exit_arrival": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "rikuroa_pump_bat_pre_windcutter": {
       "battle_track": 1.0
     },
@@ -1639,6 +1909,12 @@
       "battle_track": 1.0
     },
     "ropeway_orb_pre_jewel_beam": {
+      "battle_track": 1.0
+    },
+    "rugi_berserker_2_pre_spore_gas": {
+      "battle_track": 1.0
+    },
+    "rugi_berserker_3_pre_spore_gas": {
       "battle_track": 1.0
     },
     "rugi_field_card_boot": {

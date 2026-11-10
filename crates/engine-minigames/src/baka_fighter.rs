@@ -35,6 +35,7 @@
 mod cabinet_flow;
 mod digit_cells;
 mod exchange_rules;
+pub use exchange_rules::ExchangeSeat;
 mod fight;
 mod fighter;
 mod fighter_pack;

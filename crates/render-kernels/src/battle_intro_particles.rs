@@ -281,104 +281,103 @@ pub trait ParticleEnv {
 /// source does too.
 pub const INTRO_RAND_BITS: u32 = 15;
 
-/// Multiplier of the [`IntroRng`] stream. `0x0019660D` (1664525) is the
-/// standard companion of the [`INTRO_RNG_INCREMENT`] already in use, and -
-/// unlike an even multiplier - it makes the generator full-period over
-/// `2^32`.
+/// The seeders' `rand()`: BIOS `A(2Fh)` (`FUN_80056798`) on a lent copy of
+/// the world's one generator.
 ///
-/// This constant is load-bearing rather than cosmetic. A multiplier divisible
-/// by `2^k` drives `k` more low bits of the state to a constant on every step,
-/// so an even one walks the whole 32-bit state into the fixed point
-/// `c * (1 - m)^-1` within a handful of draws and then returns **the same
-/// number forever**. The host stand-in previously used `0x00019660` - the same
-/// digits with one dropped - which collapsed after five draws, handed all 256
-/// tile-shatter records the identical spawn delay, and pinned the whole style
-/// at its seeded rest pose. See [`IntroRng::draw`]'s test.
-pub const INTRO_RNG_MULTIPLIER: u32 = 0x0019_660D;
-
-/// Increment of the [`IntroRng`] stream (1013904223).
-pub const INTRO_RNG_INCREMENT: u32 = 0x3C6E_F35F;
-
-/// The port's stand-in for `FUN_80056798`, shared by every host that arms a
-/// battle intro.
+/// Retail's seeders call the SCUS thunk, which steps the kernel seed word
+/// `0x80009010` every other `rand()` caller in the game steps too
+/// ([`legaia_engine_system::rand::world_rand`]). A capture of a walked kor
+/// encounter reads the word before the transition init `FUN_801CE8CC` and
+/// after it: the tile seeder's 706 draws, the BIOS step applied 706 times,
+/// and no other draw from there to the battle mode
+/// (`scripts/pcsx-redux/autorun_battle_intro_rand.lua`). So the port seeds
+/// this from the world state the transition's first frame saw
+/// (`BattleState::intro_rand_state`) and the world advances its own stream
+/// by [`crate::battle_intro_styles::intro_seeder_draws`] on that frame: the
+/// emitter's draws and the world's are the same segment of one stream.
 ///
-/// Retail's PRNG is a SCUS routine the seeders call; the port does not need
-/// its exact stream (the seeded delays and jitter are not part of any parity
-/// oracle) but it *does* need a stream with the same statistical shape - 15
-/// bits, uniform, non-repeating over the ~700 draws one transition consumes.
-/// Keeping the one implementation here rather than one per host is what stops
-/// the three call sites drifting apart again.
+/// The stream must not converge: the tile seeder's spawn delays are 256
+/// consecutive draws, and a stand-in with an even multiplier once handed
+/// all 256 records the same delay and froze the style at its seeded pose.
+/// The BIOS multiplier is odd, so the stream has full period.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroRng {
     state: u32,
 }
 
 impl IntroRng {
-    /// Seed the stream. A zero seed would be a legal state for a full-period
-    /// LCG, but the odd bias keeps the first draw off the increment itself.
-    pub fn new(seed: u32) -> Self {
-        Self { state: seed | 1 }
+    /// Lend the stream in at `state` (a world RNG word, or retail's
+    /// `0x80009010`).
+    pub fn new(state: u32) -> Self {
+        Self { state }
     }
 
-    /// One 15-bit draw, taken from the state's high half (the low bits of any
-    /// power-of-two-modulus LCG have short periods).
+    /// The stream position after the draws taken so far.
+    pub fn state(&self) -> u32 {
+        self.state
+    }
+
+    /// One `rand()`: `0..=0x7FFF`, the width the seeders' `%` arms assume.
     pub fn draw(&mut self) -> i32 {
-        self.state = self
-            .state
-            .wrapping_mul(INTRO_RNG_MULTIPLIER)
-            .wrapping_add(INTRO_RNG_INCREMENT);
-        ((self.state >> 16) & ((1 << INTRO_RAND_BITS) - 1)) as i32
+        legaia_engine_system::rand::world_rand(&mut self.state) as i32
     }
 }
 
 /// The trig / sqrt / PRNG the intro styles' seeders reach into - the one
 /// [`ParticleEnv`] every host that arms an intro shares.
 ///
-/// Retail reads two 4096-entry tables at `_DAT_8007B7F8` / `_DAT_8007B81C`,
-/// which are runtime-built and which the engine does not carry, so this
-/// computes the same q12 sine and cosine instead. All five styles draw, so
-/// the substitution *is* visible - it decides which way a tile-shatter record
-/// tumbles and where a particle flies, but not whether either happens.
-/// Recorded here rather than hidden because it is the reason the working sets
-/// tick with plausible rather than retail-identical values.
+/// The trig and the root are retail's own: the heading is the bearing
+/// `FUN_80019B28` (`legaia_engine_system::trig::bearing12`), the two tables
+/// are the 12-bit LUT pair the boot installs (`_DAT_8007B7F8` the cosine,
+/// `_DAT_8007B81C` the sine, [`crate::gte::psx_cos`] / [`crate::gte::psx_sin`])
+/// and the root is `FUN_8005AF0C`
+/// (`legaia_engine_system::scus_leaf_kernels::scus_sqrt`), so a seeded grid
+/// is retail's given the same draws (held by the retail-exec differential).
 ///
-/// The draws themselves are **not** a local detail: the tile seeder's spawn
-/// delays are 256 consecutive `rand()` results, so a generator that converges
-/// gives every record the same delay and the whole style freezes at its
-/// seeded pose. Hence the shared [`IntroRng`]. Lives here rather than in a
-/// host so the native window and the browser play page cannot drift apart on
-/// what an intro's randomness looks like.
+/// The draws are retail's too: [`IntroRng`] is BIOS `rand()` over the world
+/// stream, lent in at the position the transition's init saw, so the delays
+/// and the radial jitter are retail's values given the same seed word. Lives
+/// here rather than in a host so the native window and the browser play page
+/// cannot drift apart on what an intro's randomness looks like.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroEnv {
     rng: IntroRng,
 }
 
 impl IntroEnv {
+    /// Lend the world stream in at `seed` (see [`IntroRng`]).
     pub fn new(seed: u32) -> Self {
         Self {
             rng: IntroRng::new(seed),
         }
     }
 
-    fn sin_q12(units: i32) -> i16 {
-        let r = (units.rem_euclid(0x1000) as f64) * std::f64::consts::TAU / 4096.0;
-        (r.sin() * 4096.0) as i16
+    /// `_DAT_8007B81C[units]`, the sine table.
+    fn sin_table(units: i32) -> i16 {
+        crate::gte::psx_sin((units & 0xFFF) as u16) as i16
+    }
+
+    /// `_DAT_8007B7F8[units]`, the cosine table.
+    fn cos_table(units: i32) -> i16 {
+        crate::gte::psx_cos((units & 0xFFF) as u16) as i16
     }
 }
 
 impl ParticleEnv for IntroEnv {
     fn heading(&mut self, x: i32, z: i32) -> i32 {
-        let a = (z as f64).atan2(x as f64);
-        ((a * 4096.0 / std::f64::consts::TAU) as i32).rem_euclid(0x1000)
+        // `FUN_80019B28(0, 0, x, z)`: the first pair's delta leads.
+        i32::from(legaia_engine_system::trig::bearing12(x, z))
     }
     fn sin(&mut self, h: i32) -> i16 {
-        Self::sin_q12(h)
+        // The trait's `sin` is the `_DAT_8007B7F8` read, which is the cosine.
+        Self::cos_table(h)
     }
     fn cos(&mut self, h: i32) -> i16 {
-        Self::sin_q12(h + 0x400)
+        // ...and its `cos` the `_DAT_8007B81C` read, the sine.
+        Self::sin_table(h)
     }
     fn sqrt(&mut self, v: i32) -> i32 {
-        if v <= 0 { 0 } else { (v as f64).sqrt() as i32 }
+        legaia_engine_system::scus_leaf_kernels::scus_sqrt(v)
     }
     fn rand(&mut self) -> i32 {
         // A 15-bit draw, the range the seeders' `%` arms expect.
@@ -388,16 +387,28 @@ impl ParticleEnv for IntroEnv {
 
 impl crate::battle_intro_swirl::SwirlTrig for IntroEnv {
     fn table_x(&mut self, e: i32) -> i16 {
-        Self::sin_q12(e + 0x400)
+        Self::sin_table(e)
     }
     fn table_y(&mut self, e: i32) -> i16 {
-        Self::sin_q12(e)
+        Self::cos_table(e)
     }
 }
 
 #[cfg(test)]
 mod intro_rng_tests {
     use super::*;
+
+    /// The stream is retail's: the kor capture read the seed word
+    /// `0x80009010` at `0x09632944` on the transition init's entry and at
+    /// `0x0D59BDA2` on its return, across the tile seeder's 706 draws.
+    #[test]
+    fn the_stream_is_the_bios_seed_word() {
+        let mut rng = IntroRng::new(0x0963_2944);
+        for _ in 0..706 {
+            rng.draw();
+        }
+        assert_eq!(rng.state(), 0x0D59_BDA2);
+    }
 
     /// The regression the tile shatter needed: the stream must not converge.
     ///

@@ -249,13 +249,24 @@ const DISC_PATCH_TEXEL: u16 = 14;
 /// The lift keeping a coplanar disc above the floor in a depth-tested host.
 const DISC_DEPTH_LIFT: f32 = 2.5;
 
+/// The far colour the floor emitter cues toward: the glow's colour word.
+///
+/// The epilogue's `SetFarColor(0x20, 0x20, 0x20)` (`jal 0x8005B7D8` at
+/// `0x801D1FE0`) does not survive to the floor. The glow disc drawn between
+/// them (`jal 0x801D6BB8` at `0x801D20AC`) hands `FUN_80043390` the flag word
+/// [`GLOW_FLAG_WORD`] with `a2 = 1`, and that routine loads the word's low
+/// three bytes `<< 4` into the far-colour registers (`ctc2` to RFC / GFC /
+/// BFC at `0x800434C8..0x800434D0`) and restores only `ZSF3` / `ZSF4` on the
+/// way out, so `FUN_801CEB84` (`jal` at `0x801D20D8`) cues toward black.
+const FLOOR_FAR: i32 = (GLOW_FLAG_WORD & 0xFF) as i32;
+
 /// The floor's cued colour for a lattice corner's `SZ`: the near word
-/// `0xE0` toward the far colour `0x20` by `IR0 = SZ >> 2`. The `mtc2` load is
-/// unclamped, so a far corner runs past the far colour and the output
+/// `0xE0` toward the far colour [`FLOOR_FAR`] by `IR0 = SZ >> 2`. The `mtc2`
+/// load is unclamped, so a far corner runs past the far colour and the output
 /// saturates (`minigame_baka_fighter_retail_fight`'s far row holds `SZ` `16672`).
 fn floor_cue_colour(sz: i32) -> u8 {
     const NEAR: i32 = 0xE0;
-    const FAR: i32 = 0x20;
+    const FAR: i32 = FLOOR_FAR;
     let ir0 = legaia_engine_battle_vm::battle_ground_grid::grid_ir0_raw(sz);
     (NEAR + (((FAR - NEAR) * ir0) >> 12)).clamp(0, 255) as u8
 }
@@ -751,9 +762,18 @@ impl BakaDuelScene {
     ///
     /// PORT: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
     /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
-    /// stepped at its record's byte `+0x07`)
+    /// stepped at its record's byte `+0x07`). Partial: the second match
+    /// against `DAT_801DBF74` (`0x801D33DC..0x801D33E8`) and the retire arm
+    /// on a non-zero match phase `DAT_801DBF78` (`0x801D33A8..0x801D33B8`)
+    /// are not carried (`DAT_801DBF74` has writers at `0x801CF954`,
+    /// `0x801CFD2C` and `0x801CFD4C` that the select pose does not model).
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
+        // The drop shadows are the combat tick's (`FUN_801D3F44` calls
+        // `FUN_801D6BB8` at `0x801D40B4` / `0x801D47F4`), which no front-end
+        // state runs: unposed, they would sit at the origin under the title
+        // card and the lineup.
+        dead.extend(self.shadows.iter().cloned());
         dead.extend(self.ghost.iter().flatten().cloned());
         dead.push(self.cameo.clone());
         dead.push(self.clear_fighter.clone());
@@ -869,11 +889,17 @@ impl BakaDuelScene {
     /// The floor's per-vertex depth cue: the emitter `FUN_801CEB84` loads
     /// `IR0 = SZ >> 2` for each lattice corner (`0x801CEEC4..0x801CEF4C`) and
     /// runs `DPCS` from the scratch colour word the epilogue stores
-    /// (`0x801D1FCC`: `0xE0E0E0` near, far colour `0x20`). As in the battle
+    /// (`0x801D1FCC`: `0xE0E0E0` near) toward the far colour the glow draw
+    /// leaves in the GTE ([`FLOOR_FAR`], black). As in the battle
     /// grid the `mtc2` is unclamped, so the cue runs past the far colour and
     /// the output clamp bounds it.
     ///
-    /// PORT: FUN_801CEB84 (`DPCS` per lattice corner)
+    /// `FUN_801CEB84` is the battle grid emitter `FUN_801D02C0` relocated into
+    /// the duel overlay (the same 290 instructions modulo relocation), so the
+    /// cue is that port's [`grid_ir0_raw`](legaia_engine_battle_vm::battle_ground_grid::grid_ir0_raw)
+    /// and the duel copy is filed as a duplicate, not ported twice.
+    ///
+    /// REF: FUN_801CEB84 (`DPCS` per lattice corner; ported as `FUN_801D02C0`)
     fn cue_floor(
         &mut self,
         camera: &legaia_engine_minigames::baka_duel::DuelCamera,
@@ -1356,16 +1382,19 @@ impl BakaDuelSurface {
 mod floor_cue_tests {
     use super::floor_cue_colour;
 
-    /// `IR0 = SZ >> 2` from the near word `0xE0` toward far `0x20`, unclamped
-    /// past the far colour by the `mtc2` and bounded by the output clamp. The
-    /// far lattice row of `minigame_baka_fighter_retail_fight` holds `SZ`
-    /// `16672` and reads near the far colour.
+    /// `IR0 = SZ >> 2` from the near word `0xE0` toward black, unclamped
+    /// past the far colour by the `mtc2` and bounded by the output clamp.
+    /// `minigame_baka_fighter_retail_fight`'s floor packets carry `122`, `101`,
+    /// `80`, `59`, `38`, `17` on the lattice rows whose screen rows put them at
+    /// `SZ` `7456 + 1536 k` (the duel's `6x` scale on the `0x100` sub-step),
+    /// and `0` from the far row (`SZ` `16672`) on.
     #[test]
-    fn the_floor_cue_is_sz_over_four_from_near_to_far() {
+    fn the_floor_cue_is_sz_over_four_from_near_to_black() {
         assert_eq!(floor_cue_colour(0), 0xE0);
-        assert_eq!(floor_cue_colour(0x2000), 0x80);
-        assert_eq!(floor_cue_colour(0x4000), 0x20);
-        assert_eq!(floor_cue_colour(16672), 0x1C);
-        assert_eq!(floor_cue_colour(0x7000), 0);
+        assert_eq!(floor_cue_colour(0x2000), 0x70);
+        assert_eq!(floor_cue_colour(0x4000), 0);
+        let rows: Vec<u8> = (0..6).map(|k| floor_cue_colour(7456 + 1536 * k)).collect();
+        assert_eq!(rows, [122, 101, 80, 59, 38, 17]);
+        assert_eq!(floor_cue_colour(16672), 0);
     }
 }

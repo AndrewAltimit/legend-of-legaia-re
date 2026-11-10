@@ -45,6 +45,7 @@ fn clip(flag: u8) -> Option<MonsterAnimation> {
 
 #[test]
 fn the_rate_restore_is_retails() {
+    differential!(prot(898, RESTORE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

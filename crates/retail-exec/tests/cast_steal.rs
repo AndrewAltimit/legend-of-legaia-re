@@ -55,6 +55,7 @@ fn cstr(cpu: &mut psx_retail_exec::Cpu, mut a: u32) -> Vec<u8> {
 
 #[test]
 fn the_steal_takes_what_retail_takes() {
+    differential!(prot(941, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -1031,6 +1031,22 @@ mod tests {
         }
     }
 
+    /// The off-axis open is the port's judgement; the retail-faithful mode
+    /// opens every fight on retail's yaw `0`. A walked kor encounter on
+    /// retail (`scripts/pcsx-redux/autorun_battle_intro_rand.lua`) reads
+    /// `0x8007B792 = 0` on every vsync from battle init through the frame
+    /// driver's sweep and for 90 vsyncs past its park.
+    #[test]
+    fn the_retail_mode_opens_every_fight_on_yaw_zero() {
+        for az in [0u16, 160, 1024, 3000] {
+            let mut world = World::new();
+            world.locomotion.camera_azimuth = az;
+            assert_ne!(battle_cam_inputs(&world).entry_yaw, 0.0, "port default");
+            world.toggles.pin_retail();
+            assert_eq!(battle_cam_inputs(&world).entry_yaw, 0.0, "azimuth {az}");
+        }
+    }
+
     /// Every retail capture on a member's command ring (`ctx[+0x06] = 0x28`)
     /// or arts input (`0x50`) reads case 0's close-up; every capture on the
     /// round's Begin / Run prompt (`0x1E`) reads case 9's far framing.

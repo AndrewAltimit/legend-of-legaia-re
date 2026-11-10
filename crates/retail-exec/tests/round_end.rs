@@ -20,6 +20,7 @@ const ACTOR_STRIDE: u32 = 0x400;
 
 #[test]
 fn numb_wears_off_where_retail_wears_it_off() {
+    differential!(prot(898, WAKER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

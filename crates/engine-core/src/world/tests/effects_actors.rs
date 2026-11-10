@@ -179,6 +179,58 @@ fn active_effect_markers_reflect_pool_and_fade_with_age() {
     assert!(world.active_effect_markers().is_empty());
 }
 
+/// The spawn API and the walker both return at once while the battle-end
+/// byte `DAT_8007BD71` holds `0xFE` (`0x801DFE24..0x801DFE30`,
+/// `0x801E00B8..0x801E00C4`): no new master, no step, nothing drawn.
+#[test]
+fn the_effect_pool_stands_still_once_the_battle_has_ended() {
+    let mut world = World::default();
+    let script = vm::effect_vm::EffectScript {
+        child_count: 2,
+        flags: 0,
+        spread: 0,
+        body: vec![],
+    };
+    let recs = vec![
+        vm::effect_vm::ChildSprite {
+            sprite_id: 0,
+            delay: 4,
+            ..Default::default()
+        };
+        2
+    ];
+    let anims = vec![vm::effect_vm::AnimBatch {
+        flags: 0,
+        frames: vec![
+            vm::effect_vm::AnimFrame {
+                atlas_index: 0,
+                timing: [2, 0, 0, 0, 0],
+            };
+            4
+        ],
+    }];
+    let atlas = vec![vm::effect_vm::SpriteAtlasEntry {
+        w: 8,
+        h: 8,
+        ..Default::default()
+    }];
+    world.effect_catalog =
+        vm::effect_vm::EffectCatalog::from_parts(vec![(script, recs)], atlas, anims);
+    world.mode = SceneMode::Battle;
+    world.try_spawn_effect(0, [10, 0, -10], 0x200);
+    world.tick_effects();
+    assert_eq!(world.effect_pool.active_child_count(), 1);
+    assert_eq!(world.active_effect_sprites().len(), 1);
+
+    world.battle.end = Some(legaia_engine_battle_vm::battle_action::BattleEndCause::MonsterWipe);
+    let before = world.effect_pool.master_slots[0].state;
+    world.try_spawn_effect(0, [0, 0, 0], 0);
+    world.tick_effects();
+    assert_eq!(world.effect_pool.active_count(), 1, "no new master");
+    assert_eq!(world.effect_pool.master_slots[0].state, before, "no step");
+    assert!(world.active_effect_sprites().is_empty(), "nothing drawn");
+}
+
 #[test]
 fn spawn_debug_effect_seats_marker_then_ages_out() {
     let mut world = World::default();

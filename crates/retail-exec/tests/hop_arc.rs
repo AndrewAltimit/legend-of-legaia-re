@@ -22,6 +22,7 @@ fn wr3(cpu: &mut psx_retail_exec::Cpu, a: u32, v: (i16, i16, i16)) {
 
 #[test]
 fn the_hop_arc_flies_as_retail_flies() {
+    differential!(prot(897, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -78,4 +79,54 @@ fn the_hop_arc_flies_as_retail_flies() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(ticks > 40_000, "{ticks}");
+}
+
+const BEZIER: u32 = 0x801E_45BC;
+
+/// The quadratic Bezier `FUN_801E45BC(c, p0, p2, t)` called on its own
+/// against `bezier_point`, over the whole `u16` parameter range the move
+/// VM's `lhu` can hand it (so past `0x1000`, where the 32-bit products wrap).
+#[test]
+fn the_bezier_point_matches_retail() {
+    differential!(prot(897, BEZIER));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    use legaia_engine_vm::move_vm::bezier_point;
+    const C: u32 = 0x8013_8000;
+    const P0: u32 = 0x8013_8010;
+    const P2: u32 = 0x8013_8020;
+    let mut rng = Rng(0x4245_5A49);
+    for round in 0..50_000 {
+        let v = |rng: &mut Rng| -> [i16; 3] {
+            std::array::from_fn(|_| rng.next() as i16 >> rng.below(12))
+        };
+        let (c, p0, p2) = (v(&mut rng), v(&mut rng), v(&mut rng));
+        let t = match rng.below(4) {
+            0 => rng.next() as u16,
+            1 => [0, 0x800, 0x1000, 0xFFFF][rng.below(4) as usize],
+            _ => rng.below(0x1001) as u16,
+        };
+        for (at, p) in [(C, c), (P0, p0), (P2, p2)] {
+            for (i, x) in p.iter().enumerate() {
+                cpu.mem.wr16(at + 2 * i as u32, *x as u16);
+            }
+            cpu.mem.wr16(at + 6, 0x5A5A);
+        }
+        assert_eq!(cpu.call(BEZIER, &[C, P0, P2, u32::from(t)]), Stop::Returned);
+        let retail: [i16; 3] = std::array::from_fn(|i| cpu.mem.rd16(C + 2 * i as u32) as i16);
+        assert_eq!(
+            retail,
+            bezier_point(c, p0, p2, t),
+            "round {round}: c {c:?} p0 {p0:?} p2 {p2:?} t {t:#x}"
+        );
+        assert_eq!(
+            cpu.mem.rd16(C + 6),
+            0x5A5A,
+            "round {round}: the pad halfword"
+        );
+    }
 }

@@ -967,6 +967,59 @@ const CURSOR_RING: u32 = 0x17A;
 /// the walker's body pair is taken as the one the framing read.
 const STRIKE_FOCUS_FIT: i32 = 4;
 
+/// The body pair the RAM's own case-7 arm framed the acting seat on, where it
+/// is not the one the RAM holds: `(seat, body)`.
+///
+/// State `0x1E` re-arms case 7 every pass on the midpoint of the attacker's and
+/// the target's body pairs, read ahead of the pass's draw, so the arm framed
+/// the pair the previous pass's decode left ([`super::framing_body`]). A state
+/// saved after the draw holds the new decode instead, and across a clip commit
+/// the two stand far apart: `battle_garmel_party_vahn_hyper_elbow_mid` holds
+/// Vahn's body `(214, -87)` on Hyper Elbow's first keyframe, where the arm read
+/// `(156, -48)` on the clip before (cursor `120`, decoded on the clip-record
+/// ring's own entry) - the endpoint `(44, -13)` is that pair's midpoint with
+/// the target's `(-68, 24)`. Standing the image child's attacker on the RAM's
+/// pair armed its framing `40` units off retail's endpoint, and the alignment
+/// carried that gap into the focus.
+///
+/// `Some` only off the strike loop's arm when slot `1`'s decode is the pair the
+/// RAM's focus endpoint names and the RAM's own pair is not.
+pub(super) fn strike_framed_body(ram: &[u8], ctx: u32) -> Option<(u32, [i16; 2])> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if seat > 7 || !in_ram(actor) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    let target_body = [
+        i32::from(game_anchors::i16_at(ram, target + 0x3C)),
+        i32::from(game_anchors::i16_at(ram, target + 0x40)),
+    ];
+    // The focus records hold the midpoint negated.
+    let end = |k: u32| i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16);
+    let fits = |b: [i16; 2]| {
+        [(6u32, 0usize), (8, 1)].iter().all(|&(k, i)| {
+            (-end(k) - (i32::from(b[i]) + target_body[i]) / 2).abs() <= STRIKE_FOCUS_FIT
+        })
+    };
+    let held = [
+        game_anchors::i16_at(ram, actor + 0x3C),
+        game_anchors::i16_at(ram, actor + 0x40),
+    ];
+    if fits(held) {
+        return None;
+    }
+    let framed = super::framing_body::body_pair_on_ring_slot(ram, actor, 1)?;
+    fits(framed).then_some((seat, framed))
+}
+
 /// How far the strike loop's focus endpoint stood, on the pass before the
 /// RAM's, from the RAM's own - [`displayed_cam_live_steps`]'s `end_shift`,
 /// in the walker's raw space - while the acting seat still walks.

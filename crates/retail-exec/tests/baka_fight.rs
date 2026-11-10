@@ -146,6 +146,7 @@ fn port_row(f: &BakaFight, rand: u32) -> Row {
 
 #[test]
 fn whole_rounds_play_out_as_retail_plays_them() {
+    differential!(prot(976, ROUND_SM), prot(976, COMBAT));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -258,6 +259,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
 /// `baka_round_score`, at every combo and health the HUD can show.
 #[test]
 fn a_round_win_scores_as_retail_scores() {
+    differential!(prot(976, 0x801D_2A28));
     use legaia_engine_minigames::baka_fighter::{BakaScoreTables, baka_round_score};
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

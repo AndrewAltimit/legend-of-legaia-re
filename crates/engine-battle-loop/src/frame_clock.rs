@@ -213,6 +213,52 @@ pub const fn frame_load_cost(parts: u16, ghosts: u16) -> u16 {
         .saturating_add(ghosts.saturating_mul(GHOST_DRAW_COST))
 }
 
+/// Hblanks one triangle of a body costs each time the draw tick re-runs it
+/// for an after-image ghost, in thousandths. The ghost walk `FUN_80049348`
+/// calls the body's whole object draw `FUN_80048A08` once per ghost
+/// (`jal 0x80048A08` at `0x8004950C`, inside the loop `0x80049458..0x80049544`),
+/// so what a ghost costs is the body's polygon load: Caruban's two ghosts
+/// (`842` triangles) lift a lone Vahn's breath frames from `348` to `427` and
+/// `504` on the two frames they appear, `78` each (`.092` a triangle), and the
+/// strike recordings read `.087` on Caruban and `.081` on Frog (`608`). One
+/// emulated machine's measurement, like the base table.
+pub const GHOST_TRIANGLE_COST_MILLI: u32 = 92;
+
+/// Hblanks one live child of the effect pool `_DAT_8007BD30` adds to a frame
+/// (the 2D sprites the effect VM walks and draws: a breath's flames, a
+/// burning body's puffs), in thousandths. Caruban's Fire Breath on a lone
+/// Vahn runs its pool from `0` to `50` children with the body and its ghosts
+/// unchanged, and its frames' cost follows at `1.6` a child (`R^2` `.71`).
+pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
+
+/// What one after-image ghost of a body of `triangles` costs a frame
+/// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose
+/// polygon count the frame does not know (the party's assembled forms).
+pub const fn ghost_draw_cost(triangles: Option<u16>) -> u16 {
+    match triangles {
+        Some(t) => {
+            let c = (t as u32 * GHOST_TRIANGLE_COST_MILLI + 500) / 1000;
+            if c > u16::MAX as u32 {
+                u16::MAX
+            } else {
+                c as u16
+            }
+        }
+        None => GHOST_DRAW_COST,
+    }
+}
+
+/// What `children` live effect-pool children cost a frame
+/// ([`EFFECT_POOL_CHILD_COST_MILLI`]).
+pub const fn effect_pool_cost(children: u16) -> u16 {
+    let c = (children as u32 * EFFECT_POOL_CHILD_COST_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// The cost a frame an arm table names its step for leaves in the ring, so the
 /// frames after a whole-screen arm read what its cost left there: the mid-rung
 /// of that step.
@@ -520,6 +566,21 @@ mod tests {
 #[cfg(test)]
 mod frame_cost_tests {
     use super::*;
+
+    /// A ghost costs its body's polygon load: Caruban's two ghosts take a
+    /// lone Vahn's breath frame (`0x2B`) to the step-`3` edge, and the
+    /// breath's first pool children carry it over; an unknown body keeps the
+    /// flat walk cost.
+    #[test]
+    fn a_ghost_costs_its_bodys_triangles() {
+        assert_eq!(ghost_draw_cost(Some(842)), 77);
+        assert_eq!(ghost_draw_cost(Some(608)), 56);
+        assert_eq!(ghost_draw_cost(None), GHOST_DRAW_COST);
+        let breath = measured_frame_cost(1, 0x2B) + 2 * ghost_draw_cost(Some(842));
+        assert_eq!(step_of_cost(breath), 2);
+        assert_eq!(step_of_cost(breath + effect_pool_cost(2)), 3);
+        assert_eq!(effect_pool_cost(50), 80);
+    }
 
     #[test]
     fn the_ring_holds_a_costly_frame_for_sixteen_passes() {

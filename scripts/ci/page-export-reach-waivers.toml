@@ -106,6 +106,7 @@ names = [
 kind = "driver"
 reason = "Debug entries a headless driver or disc-gated oracle arms to reach a state no page control is owed (docs/tooling/site-shell.md); the native window's twins are launch flags or dev keys."
 names = [
+    "play_menu_press",
     "debug_arm_scene_shop",
     "debug_host_trace_text",
     "debug_formation_rows",

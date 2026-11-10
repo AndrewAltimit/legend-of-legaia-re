@@ -84,10 +84,13 @@
 /// (`>> 2` / `& 0x3FC`) when packing the GPU colour word - that packing, and
 /// the `FUN_8003d344` GTE transform the depth comes from, are render-track and
 /// live in `docs/subsystems/battle.md`.
-pub fn depth_cue_scale_channel(raw10: u16, num: u16, den: u16) -> u16 {
+pub fn depth_cue_scale_channel(raw10: u16, num: u32, den: u32) -> u16 {
+    // The product is the low word of a signed `mult` (`0x8004AAC8`) and the
+    // divide a `divu` over the whole words, so a negative half-range or a
+    // depth past `0xFFFF` divides as retail divides rather than truncated.
     let raw = (raw10 & 0x3FF) as u32;
-    let den = den.max(1) as u32;
-    let mut p = (raw * num as u32) / den;
+    let den = den.max(1);
+    let mut p = raw.wrapping_mul(num) / den;
     if raw < p {
         p = raw;
     }
@@ -262,7 +265,7 @@ pub fn battle_actor_tint(i: &BattleTintInputs) -> BattleTint {
             weight = WEIGHT_ONE;
         }
         let ch = |shift: u32| {
-            depth_cue_scale_channel(((i.lanes >> shift) & 0x3FF) as u16, a2 as u16, a3 as u16)
+            depth_cue_scale_channel(((i.lanes >> shift) & 0x3FF) as u16, a2 as u32, a3 as u32)
                 as u32
         };
         let (r, g, b) = (ch(0), ch(10), ch(20));

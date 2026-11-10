@@ -40,6 +40,7 @@ fn gen_cue(rng: &mut Rng) -> u16 {
 
 #[test]
 fn the_walker_matches_retail() {
+    differential!(scus(WALK));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

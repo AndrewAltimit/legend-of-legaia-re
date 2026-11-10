@@ -1223,6 +1223,8 @@ pub enum OptionRow {
     Preset,
     Fullscreen,
     WindowSize,
+    /// Show the picture at a whole multiple of 320x240 only.
+    WholeStepScale,
     Theme,
     EnhancedLighting,
     TimeOfDay,
@@ -1264,10 +1266,11 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 40] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 41] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
+    (None, OptionRow::WholeStepScale),
     (None, OptionRow::Theme),
     (None, OptionRow::CameraDistance),
     (None, OptionRow::PsxRender),
@@ -1401,6 +1404,7 @@ impl OptionRow {
             Self::Preset => "Look and feel",
             Self::Fullscreen => "Fullscreen",
             Self::WindowSize => "Window size",
+            Self::WholeStepScale => "Pixel-exact scaling",
             Self::Theme => "Menu colours",
             Self::EnhancedLighting => "Enhanced lighting",
             Self::TimeOfDay => "Time of day",
@@ -1453,6 +1457,10 @@ impl OptionRow {
             Self::WindowSize => {
                 "The game window's size when not fullscreen, in steps of the \
                  PlayStation's 320x240 picture. Dragging its edge still resizes it."
+            }
+            Self::WholeStepScale => {
+                "Keep the picture at a whole multiple of 320x240, so every pixel is one \
+                 size. Off: a window just short of a step shows that step shrunk to fit."
             }
             Self::Theme => {
                 "The launcher's and the game's settings colours: follow your desktop, or \
@@ -1626,6 +1634,7 @@ impl OptionRow {
                 | Self::MonoDownmix
                 | Self::Fullscreen
                 | Self::WindowSize
+                | Self::WholeStepScale
                 | Self::Theme
         )
     }
@@ -1644,6 +1653,7 @@ impl OptionRow {
                 let k = u32::from(opts.window_scale.clamp(WINDOW_SCALES.0, WINDOW_SCALES.1));
                 format!("{}x{}", 320 * k, 240 * k)
             }
+            Self::WholeStepScale => on_off(opts.integer_scale),
             Self::EnhancedLighting => on_off(opts.enhanced_lighting),
             Self::TimeOfDay => capitalise(&opts.lighting_time_of_day),
             Self::LampShadows => on_off(opts.light_shadows),
@@ -1702,6 +1712,7 @@ impl OptionRow {
             Self::Preset
             | Self::Fullscreen
             | Self::WindowSize
+            | Self::WholeStepScale
             | Self::Theme
             | Self::TimeOfDay
             | Self::MasterVolume
@@ -1736,7 +1747,8 @@ impl OptionRow {
             | H::DebugCamera
             | H::CheatMaxAp
             | H::CheatEncounters
-            | H::ReloadPack => {
+            | H::ReloadPack
+            | H::Screenshot => {
                 return None;
             }
         })
@@ -1793,6 +1805,7 @@ impl OptionRow {
             Self::Fullscreen => opts.fullscreen = o.fullscreen,
             Self::Theme => opts.ui_theme = o.ui_theme,
             Self::WindowSize => opts.window_scale = o.window_scale,
+            Self::WholeStepScale => opts.integer_scale = o.integer_scale,
             Self::EnhancedLighting => opts.enhanced_lighting = o.enhanced_lighting,
             Self::TimeOfDay => opts.lighting_time_of_day = o.lighting_time_of_day,
             Self::LampShadows => opts.light_shadows = o.light_shadows,
@@ -1857,6 +1870,7 @@ impl OptionRow {
                 s.switches.psx_render = on;
             }
             Self::Fullscreen => opts.fullscreen ^= true,
+            Self::WholeStepScale => opts.integer_scale ^= true,
             Self::Theme => opts.ui_theme = opts.ui_theme.stepped(dir),
             Self::WindowSize => {
                 let (lo, hi) = WINDOW_SCALES;
@@ -2838,7 +2852,8 @@ mod tests {
     fn page_twin(row: OptionRow) -> Option<&'static str> {
         use OptionRow::*;
         Some(match row {
-            WindowSize | Theme => return None,
+            // The page's canvas takes the size its layout gives it.
+            WindowSize | WholeStepScale | Theme => return None,
             // The page says the same two things with its Retail-faithful switch
             // and its Reset to defaults button.
             Preset => "play-retail-mode",

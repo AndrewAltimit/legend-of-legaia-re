@@ -14,7 +14,10 @@
 //! vsyncs a battle frame spans; the engine ticks once per vsync, so a drift
 //! here is `k` per tick.
 
-use super::{ModuleCamSeats, ModuleCamState, ModuleShot, SPEED_SCALAR, focus_on, yaw_from};
+use super::{
+    ModuleCamSeats, ModuleCamState, ModuleShot, SPEED_SCALAR, bearing_12bit_approx, focus_on,
+    yaw_from,
+};
 
 /// A capture arm's direct writes into the live camera globals, every pass the
 /// arm runs (held or not): pitch / yaw `0x8007B790` / `0x8007B792`, TR y / z
@@ -872,12 +875,12 @@ pub fn dead_end_crisis_camera(
     };
     // The party's rate: `2` as arm 3 lands the hit (`0x801F7418`), on every
     // pass of arm 4 (`li v0,2` in the dispatch's delay slot, `0x801F6AA0`), and
-    // `0` on every pass of arm 5 (the same `v0`, the `slt` at `0x801F6A98`).
-    // The Done band's restore `FUN_801E93C8` puts every seat back.
+    // `2` again on every pass of arm 5, which reloads it (`li v0,0x2` at
+    // `0x801F7524`) before its stores at `0x801F7528..0x801F7540`. The Done
+    // band's restore `FUN_801E93C8` puts every seat back.
     let party_rate = match phase {
         3 if !hold => Some(2),
-        4 => Some(2),
-        5 => Some(0),
+        4 | 5 => Some(2),
         _ => None,
     };
     CaptureCamArm {
@@ -895,6 +898,75 @@ pub fn dead_end_crisis_camera(
 
 /// PROT 0961's terminal arm.
 const DEAD_END_CRISIS_DONE: u8 = 0xFF;
+
+/// The arm whose pass lines the seats up ([`dead_end_crisis_line_up`]).
+pub const DEAD_END_CRISIS_LINE_UP_ARM: u8 = 0;
+/// The arm whose pass puts them back ([`dead_end_crisis_restore`]).
+pub const DEAD_END_CRISIS_RESTORE_ARM: u8 = DEAD_END_CRISIS_DONE;
+/// How many seats the line-up walks: `actor_table[0..4]`, the party row and
+/// the first monster seat (`sltiu v0,s1,0x4` at `0x801F6BCC`).
+pub const DEAD_END_CRISIS_LINE_UP_SEATS: usize = 4;
+
+/// One seat's pose as PROT 0961 saves it: the live trio and the halfword after
+/// it (`+0x34..+0x3B`, copied as two unaligned words) and the facing `+0x46`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LineUpPose {
+    /// `+0x34` x, `+0x36` y, `+0x38` z, `+0x3A`.
+    pub pos: [i16; 4],
+    /// `+0x46`.
+    pub facing: u16,
+}
+
+/// PROT 0961's arm 0 line-up (`0x801F6ADC..0x801F6BD4`), on the arm's one
+/// pass, ahead of its camera cut. For each of `actor_table[0..4]` it saves the
+/// pose into the module's own words (`+0x34..+0x3B` to `0x801F82BC + s * 8`,
+/// `+0x46` to `0x801F82DC + s * 2`) and then stands the seat:
+///
+/// * seats `0..3`: `z = -0x400`, `x = row_x[s] / 2` (`sra` with the
+///   round-toward-zero bias at `0x801F6B70..0x801F6B84`), facing `0`. `row_x`
+///   is the `x` of the one-monster row of the seat table at `0x80077628`
+///   (stride `8`, `addiu a3,a3,0x8`);
+/// * seat `3`, the first monster seat: `z = 0x400`, `x = 0`, facing `0x800`
+///   (`0x801F6B98..0x801F6BB8`).
+///
+/// `y` and the display pair `+0x3C` / `+0x40` are left alone. The seats are
+/// written whether or not they are seated. Returns the saved poses, which
+/// [`dead_end_crisis_restore`] puts back. The `cort_evolved_final_crisis_mid_cast`
+/// capture (arm 1) reads the party at `(0, -0x400)`, `(-300, -0x400)`,
+/// `(300, -0x400)` facing `0` and the evolved Cort at `(0, 0x400)` facing
+/// `0x800`, with the pre-cast poses in the saved words.
+///
+/// PORT: FUN_801F69D8 (PROT 0961; arm 0's line-up, `0x801F6ADC..0x801F6BD4`)
+pub fn dead_end_crisis_line_up(
+    seats: &mut [LineUpPose; DEAD_END_CRISIS_LINE_UP_SEATS],
+    row_x: [i16; 3],
+) -> [LineUpPose; DEAD_END_CRISIS_LINE_UP_SEATS] {
+    let saved = *seats;
+    for (s, p) in seats.iter_mut().enumerate() {
+        if let Some(&x) = row_x.get(s) {
+            p.pos[2] = -0x400;
+            p.pos[0] = x / 2;
+            p.facing = 0;
+        } else {
+            p.pos[2] = 0x400;
+            p.pos[0] = 0;
+            p.facing = 0x800;
+        }
+    }
+    saved
+}
+
+/// PROT 0961's `0xFF` arm restore (`0x801F77D4..0x801F782C`): each of
+/// `actor_table[0..4]` takes back the eight bytes `+0x34..+0x3B` and the
+/// facing [`dead_end_crisis_line_up`] saved.
+///
+/// PORT: FUN_801F69D8 (PROT 0961; the `0xFF` arm's restore, `0x801F77D4..0x801F782C`)
+pub fn dead_end_crisis_restore(
+    seats: &mut [LineUpPose; DEAD_END_CRISIS_LINE_UP_SEATS],
+    saved: &[LineUpPose; DEAD_END_CRISIS_LINE_UP_SEATS],
+) {
+    *seats = *saved;
+}
 
 /// PROT 0938's `0xB7` body (Cort's Mystic Circle).
 pub const MYSTIC_CIRCLE_BODY: u32 = 0x801F_69EC;
@@ -929,14 +1001,34 @@ pub fn mystic_circle_camera(
     const DRAIN: i32 = 8;
     let c = seats.caster;
     if phase == 0 {
+        // The caster first turns on its target - the party's centroid
+        // (`FUN_801DCEAC`) for group code `8`, a seat's live pair otherwise
+        // - plus a half turn (`0x801F6AAC..0x801F6B00`); the shot frames the
+        // new heading.
+        let v = seats.victim;
+        let onto = match st.target_aim {
+            Some(a) => bearing_12bit_approx(
+                a.centroid_z.wrapping_neg(),
+                a.centroid_x.wrapping_neg(),
+                c.z,
+                c.x,
+            ),
+            None => bearing_12bit_approx(v.z, v.x, c.z, c.x),
+        }
+        .wrapping_add(0x800)
+            & 0xFFF;
         st.countdown.0 = 0x800;
         return CaptureCamArm {
             shot: Some(ModuleShot {
-                angles: [-0x40, yaw_from(0x800, c.facing), 0],
+                angles: [-0x40, yaw_from(0x800, onto), 0],
                 tr: [0, 0x600, 0x600],
                 focus: focus_on(c),
                 frames: 1,
             }),
+            caster_write: CaptureSeatWrite {
+                facing: Some(onto),
+                ..Default::default()
+            },
             ..Default::default()
         };
     }

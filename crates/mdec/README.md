@@ -4,7 +4,7 @@ PSX MDEC from-scratch decoder (Iki bitstream variant) and PSX STR video-sector p
 
 ## Scope
 
-- `MdecDecoder` - decodes a complete demuxed Iki frame (header + LZSS qscale/DC table + AC bitstream) into RGBA8 pixels.
+- `MdecDecoder` - decodes a complete demuxed Iki frame (header + LZSS qscale/DC table + AC bitstream) into RGBA8 pixels, through `iki_mdec_codes` (the overlay's converter `FUN_801D0378`: the MDEC command-word list) and `decode_mdec_codes` (the MDEC hardware stage, which also takes a STRv2 list).
 - `str_sector::StrFrameAssembler` - collects 2048-byte Mode 2 Form 1 sector data areas (32-byte sector header) and returns the assembled demuxed frame when a full frame is ready.
 - `str_sector::analyze_str_timing` - recovers the playback frame rate from the sector stride at the 2x CD rate (PSX STR carries no fps field). All six Legaia `MV*.STR` measure 10 sectors/frame → 15 fps; `play-str` and the in-flow cutscene driver pace to this.
 - `str_av::StrAvDemuxer` / `demux_str_av` - one pass over an interleaved STR window's raw 2352-byte sectors: every assembled frame's bitstream (counted on assembly, not on decode success), the sector-stride timing, and the dominant XA channel decoded at its subheader's own sample width. Both play hosts open a movie through it.

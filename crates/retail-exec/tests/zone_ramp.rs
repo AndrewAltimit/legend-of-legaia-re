@@ -18,6 +18,7 @@ const LOCK: u32 = 0x1F80_0394;
 
 #[test]
 fn the_zone_ramp_writes_what_retail_writes() {
+    differential!(scus(TICK));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -759,6 +759,16 @@ A monster's physical attack opens the same label from its clip: the anim commit
 `0x4C` on that name, and the next commit takes it down
 ([monster-animation](../formats/monster-animation.md#a-monster-clip-names-its-move)).
 
+A party art's name opens on the art's **commit**, not on the pass that stages it: the
+anim commit's art-constant arm (`FUN_8004AD80`, `0x8004BB5C..0x8004BC40`) places the
+record with `FUN_8004C650` and opens element `0x4C`. The strike loop stages the art's
+byte as soon as the clip ahead of it commits and raises the `+0x1DC` bit-1 latch
+(`0x801E3758`), so an art behind its starter waits out the starter's whole clip with
+its byte staged and no name on screen. The port names the last art byte the strike
+cursor has passed, less the byte the latch still holds (`battle_move_name`): the
+`battle_ropeway_party_vahn_slash_kick_mid` film shows `Slash Kick` from the art's
+commit on, as retail's frames do, where it had shown it through the `0x19` starter.
+
 The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in

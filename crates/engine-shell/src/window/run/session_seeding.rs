@@ -89,23 +89,7 @@ pub(super) fn install_debug_play_record(
     let Some((partition, record)) = seeds.play_record else {
         return;
     };
-    let man = session
-        .host
-        .scene
-        .as_ref()
-        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten());
-    let Some(man) = man else {
-        log::warn!("play-window: --play-record {partition}:{record}: the scene carries no MAN");
-        return;
-    };
-    let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
-        log::warn!("play-window: --play-record {partition}:{record}: the scene MAN does not parse");
-        return;
-    };
-    let ok = session
-        .host
-        .world
-        .install_cutscene_timeline_record(&man_file, &man, partition, record, false);
+    let ok = session.play_scene_record(partition, record);
     log::info!(
         "play-window: --play-record P{partition}[{record}] {}",
         if ok { "installed" } else { "did not resolve" }
@@ -729,7 +713,9 @@ pub(super) fn teach_debug_spells(
 /// replaces the world's boot seed, so a sweep can be re-rolled onto a
 /// different deterministic stream - the way to reach an AI branch (a
 /// monster cast) the default seed never picks. A development aid for the
-/// parity sweeps, not a player surface.
+/// parity sweeps, not a player surface. The launch applies it twice, before
+/// the launch scene's entry and after the debug seeds, so the entry's draws
+/// and the first tick both read the seeded stream.
 pub(super) fn apply_rng_seed_env(session: &mut NativeSession) {
     if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
         let spec = spec.trim();

@@ -119,7 +119,7 @@ the fall-through width in halfwords. "Slot" is a row of the
 | `0x24` | 8 | World-position lerp, X / Z toward the camera focus - [below](#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07) |
 | `0x25` / `0x26` | 3 | Save / load world coords (8 bytes) to slot `op[2]` |
 | `0x27` / `0x28` | 3 / 5 | Save / load the tween-source triple at `+0x90` |
-| `0x29` | 5 | Scratchpad write (`op[4] == 0`) or ramp of slot `op[2]` toward `-op[3]` over `op[4]` ticks |
+| `0x29` | 5 | Rung `op[2]` of the floor-height ladder `0x1F80035C`: written `-op[3]` (`op[4] == 0`) or ramped there over `op[4]` ticks through the property-ramp pool |
 | `0x2A` | 8 | World-position lerp, X / Z toward the player |
 | `0x2B` | 6 | Strip slab set: `actor[+0xB4..+0xBA] = op[2..5]` |
 | `0x2C` | 7 | Calls the strip emitter `FUN_801D31B0`; operands are padding |
@@ -228,7 +228,7 @@ A 16-slot, 8-byte-stride table shared across actors:
 
 | Save / load | Round-trips |
 |---|---|
-| `0x25` / `0x26` | World coords (8 bytes: `actor[+0x14..+0x1C]`, including the Y mirror) |
+| `0x25` / `0x26` | World coords (8 bytes: the position vector `actor[+0x14..+0x1C]`, its pad `+0x1A` included; not the `+0x2A` mirror) |
 | `0x27` / `0x28` | The tween-source triple at `+0x90` (with `>> 12` fixed-point scaling and `[-0xFF, 0xFF]` clamping on read) |
 | `0x31` / `0x32` | The render-bank section at `+0x24..+0x2C` |
 | `0x34` / `0x35` | `actor[+0x72]` |

@@ -74,7 +74,12 @@ impl Camera {
 
         let gliding = if let Some(mv) = self.mover.as_mut() {
             let arrived = mv.tick(dt);
-            self.globals.0 = mv.values();
+            mv.store_frame(
+                &mut self.globals.0,
+                &mut self.zone.shake_offset,
+                u32::from(world.camera_shake_amplitude()),
+                &mut self.zone.shake_seed,
+            );
             if arrived {
                 self.mover = None;
             }
@@ -143,7 +148,7 @@ impl Camera {
                 // A scripted glide in a free-roam scene drives these same
                 // globals from the zone pose it was primed with; the follow
                 // view keeps reading them rather than its fallback.
-                self.zone.active = !self.zone.snap_pending;
+                self.zone.active = !self.zone.snap_pending && self.zone.arrival.is_none();
             }
             return;
         }

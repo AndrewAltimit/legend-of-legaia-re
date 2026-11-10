@@ -288,6 +288,7 @@ pub fn compare(
             })
             .unwrap_or(t)
     };
+    let live = engine.live_clock();
     let seg_of = |segs: &[Segment], t: u64| segs.iter().position(|s| s.start <= t && t <= s.end);
     let project = |t: u64| -> (Key, Option<u64>) {
         let Some(ri) = seg_of(&rs, t) else {
@@ -298,7 +299,14 @@ pub fn compare(
             return (key, None);
         };
         let into = game(t).saturating_sub(game(rs[ri].start));
-        (key, Some(es[ei].start + into.min(es[ei].len() - 1)))
+        // The engine tick `into` game-clock ticks into its segment
+        // ([`Side::live_clock`]), clamped to the segment's last tick.
+        let base = live[&es[ei].start];
+        let at = live
+            .range(es[ei].start..=es[ei].end)
+            .find(|&(_, &l)| l - base >= into)
+            .map_or(es[ei].end, |(&t, _)| t);
+        (key, Some(at))
     };
     let ekey = |t: u64| seg_of(&es, t).map_or(Key::State(0), |i| es[i].key);
 
@@ -527,6 +535,7 @@ mod tests {
                     drive: None,
                     fade: None,
                     fade_back: None,
+                    over: false,
                 });
                 t += 1;
                 f += 1;

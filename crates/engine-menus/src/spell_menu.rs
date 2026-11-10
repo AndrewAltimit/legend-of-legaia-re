@@ -51,6 +51,7 @@
 
 use legaia_engine_battle::spells::{SpellCatalog, SpellEffect, SpellOutcome};
 use legaia_engine_system::input::PadButton;
+use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// Rows per page of the retail Magic-screen spell list (the capture-pinned
 /// list-page layout, shared with the Items list - see
@@ -58,8 +59,8 @@ use legaia_engine_system::input::PadButton;
 pub const SPELL_LIST_PAGE_ROWS: usize = 12;
 
 /// Per-character roster row. Engines feed in the active party with each
-/// character's current MP / HP so the menu can grey out casters who are
-/// dead or out of MP for the cheapest spell.
+/// character's current MP / HP. Retail's caster picker gates on the spell
+/// count and the Ra-Seru byte only, so a KO'd member still casts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CasterSlot {
     pub slot: u8,
@@ -237,7 +238,6 @@ pub enum SpellMenuEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidReason {
-    DeadCaster,
     EmptySpellList,
     NotEnoughMp,
     NotFieldUsable,
@@ -343,7 +343,9 @@ impl SpellMenuSession {
             return;
         };
         let cursor = row as u8;
-        self.phase = SpellMenuPhase::SpellSelect { caster, cursor };
+        // Leaving for the spell list reopens it on its first row: the list's
+        // entry step clears `0x8007BB98` / `0x8007BB90` (`0x801D9160`).
+        self.phase = SpellMenuPhase::SpellSelect { caster, cursor: 0 };
         let usable = self
             .current_spell_rows()
             .get(row)
@@ -468,6 +470,18 @@ impl SpellMenuSession {
         }
     }
 
+    /// One frame of retail's list kernel `FUN_801D688C` (with wrap) over `n`
+    /// rows, the port of which is [`menu_cursor_nav`]: Up decrements, Down
+    /// increments, Left / Right are not read.
+    fn nav(cell: &mut u32, n: usize, input: SpellMenuInput) -> CursorNav {
+        menu_cursor_nav(
+            cell,
+            n as u32,
+            true,
+            NavButtons::new(input.cross, input.circle, input.up, input.down),
+        )
+    }
+
     fn step(cursor: u8, dir: i8, n: usize) -> u8 {
         if n == 0 {
             return 0;
@@ -479,40 +493,43 @@ impl SpellMenuSession {
         let mut events = Vec::new();
         match self.phase.clone() {
             SpellMenuPhase::CharSelect { cursor } => {
-                if input.circle || input.start {
+                // Retail's caster picker is the list kernel `FUN_801D688C`
+                // over the party count with wrap (`0x801D8FF0`): confirm and
+                // cancel are read before any move, and only Up / Down move.
+                if input.start {
                     self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cancelled);
                     events.push(SpellMenuEvent::Cancelled);
                     return events;
                 }
-                let n = self.party.len();
-                let mut new_cursor = cursor;
-                if input.up || input.left {
-                    new_cursor = Self::step(cursor, -1, n);
-                } else if input.down || input.right {
-                    new_cursor = Self::step(cursor, 1, n);
+                let mut cell = u32::from(cursor);
+                let nav = Self::nav(&mut cell, self.party.len(), input);
+                let new_cursor = cell as u8;
+                match nav {
+                    CursorNav::Cancel => {
+                        self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cancelled);
+                        events.push(SpellMenuEvent::Cancelled);
+                        return events;
+                    }
+                    CursorNav::Moved => {
+                        self.phase = SpellMenuPhase::CharSelect { cursor: new_cursor };
+                        events.push(SpellMenuEvent::CursorMoved { cursor: new_cursor });
+                    }
+                    CursorNav::Confirm | CursorNav::None => {}
                 }
-                if new_cursor != cursor {
-                    self.phase = SpellMenuPhase::CharSelect { cursor: new_cursor };
-                    events.push(SpellMenuEvent::CursorMoved { cursor: new_cursor });
-                }
-                if input.cross {
+                if nav == CursorNav::Confirm {
                     let Some(c) = self.party.get(new_cursor as usize) else {
                         return events;
                     };
-                    if !c.alive() {
-                        events.push(SpellMenuEvent::InvalidConfirm {
-                            reason: InvalidReason::DeadCaster,
-                        });
-                        return events;
-                    }
+                    // Retail's two gates, in its order (`0x801D9030..0x801D90B8`):
+                    // the learned-spell count `record[0x13C]`, then the Ra-Seru
+                    // equip byte. Nothing reads the caster's HP - a KO'd member
+                    // opens the list like any other.
                     if c.spells.is_empty() {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::EmptySpellList,
                         });
                         return events;
                     }
-                    // Retail's second gate: an empty Ra-Seru slot buzzes
-                    // (FUN_801d8f10 at 0x801d908c..0x801d90b8).
                     if c.ra_seru_missing {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::NoRaSeru,
@@ -621,20 +638,23 @@ impl SpellMenuSession {
                 }
             }
             SpellMenuPhase::GroupConfirm {
-                caster,
-                spell_id,
-                cursor,
+                caster, spell_id, ..
             } => {
-                // `FUN_801D9280`: confirm / cancel only. Cancel returns to
-                // the spell list; confirm resolves against every party row
-                // at once and finishes the session.
-                if input.circle {
-                    self.phase = SpellMenuPhase::SpellSelect { caster, cursor };
-                    events.push(SpellMenuEvent::Backed);
-                    return events;
-                }
-                if !input.cross {
-                    return events;
+                // `FUN_801D9280`: the list kernel with no rows, so confirm /
+                // cancel only, confirm read first. Cancel returns to the spell
+                // list, which reopens on its first row (`FUN_801D9110` step
+                // 0 clears the selected row `0x8007BB98` and the scroll top
+                // `0x8007BB90`); confirm resolves against every party row at
+                // once and finishes the session.
+                let mut cell = 0;
+                match Self::nav(&mut cell, 0, input) {
+                    CursorNav::Confirm => {}
+                    CursorNav::Cancel => {
+                        self.phase = SpellMenuPhase::SpellSelect { caster, cursor: 0 };
+                        events.push(SpellMenuEvent::Backed);
+                        return events;
+                    }
+                    _ => return events,
                 }
                 let Some(def) = self.catalog.get(spell_id) else {
                     events.push(SpellMenuEvent::InvalidConfirm {
@@ -691,19 +711,17 @@ impl SpellMenuSession {
                 spell_id,
                 cursor,
             } => {
-                if input.circle {
+                // `FUN_801D9594` step 1: the list kernel over the party
+                // count with wrap (`0x801D9650`), as on the caster picker.
+                let mut cell = u32::from(cursor);
+                let nav = Self::nav(&mut cell, self.targets.len(), input);
+                let new_cursor = cell as u8;
+                if nav == CursorNav::Cancel {
                     self.phase = SpellMenuPhase::SpellSelect { caster, cursor: 0 };
                     events.push(SpellMenuEvent::Backed);
                     return events;
                 }
-                let n = self.targets.len();
-                let mut new_cursor = cursor;
-                if input.up || input.left {
-                    new_cursor = Self::step(cursor, -1, n);
-                } else if input.down || input.right {
-                    new_cursor = Self::step(cursor, 1, n);
-                }
-                if new_cursor != cursor {
+                if nav == CursorNav::Moved {
                     self.phase = SpellMenuPhase::TargetSelect {
                         caster,
                         spell_id,
@@ -711,7 +729,7 @@ impl SpellMenuSession {
                     };
                     events.push(SpellMenuEvent::CursorMoved { cursor: new_cursor });
                 }
-                if input.cross {
+                if nav == CursorNav::Confirm {
                     let Some(target) = self.targets.get(new_cursor as usize) else {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::InvalidTarget,
@@ -947,22 +965,27 @@ mod tests {
         ]
     }
 
+    /// Retail's caster picker reads no HP (`FUN_801D8F10`'s two gates are
+    /// the spell count and the Ra-Seru byte): a KO'd member with spells and a
+    /// Ra-Seru opens the list.
     #[test]
-    fn dead_caster_invalid_confirm() {
+    fn a_kod_caster_opens_the_list() {
         let mut p = party();
-        p[0].hp = 0;
+        p[1].hp = 0;
         let mut s = SpellMenuSession::new(p, targets(), SpellCatalog::vanilla());
+        let _ = s.tick(SpellMenuInput {
+            down: true,
+            ..Default::default()
+        });
         let evs = s.tick(SpellMenuInput {
             cross: true,
             ..Default::default()
         });
         assert!(matches!(
             s.phase(),
-            SpellMenuPhase::CharSelect { cursor: 0 }
+            SpellMenuPhase::SpellSelect { caster: 1, .. }
         ));
-        assert!(evs.contains(&SpellMenuEvent::InvalidConfirm {
-            reason: InvalidReason::DeadCaster,
-        }));
+        assert!(evs.contains(&SpellMenuEvent::EnteredSpellSelect { caster: 1 }));
     }
 
     #[test]

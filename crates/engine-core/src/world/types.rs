@@ -593,6 +593,14 @@ pub struct Actor {
     /// monster.
     pub battle_four_slot_beats: Option<std::sync::Arc<Vec<Option<u8>>>>,
 
+    /// The monster body's triangle count, keyed by the monster id it was
+    /// read for (`(id, triangles)`): what one after-image ghost of the body
+    /// costs a battle frame
+    /// ([`legaia_engine_battle_loop::frame_clock::ghost_draw_cost`]). Read
+    /// off the monster archive's mesh by the scene host; a stale id (a seat
+    /// re-taken by another monster) and a count of `0` (no mesh) read as unknown.
+    pub battle_body_triangles: Option<(u16, u16)>,
+
     /// Pose id the current `battle_animation` was selected for, in the pose-id
     /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
     /// `9` defeat). Lets a repeated request for the same pose keep the playing

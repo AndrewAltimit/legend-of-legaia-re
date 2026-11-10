@@ -352,6 +352,36 @@ fn an_ended_entry_leaves_its_window_draining() {
     assert!(!w.step(3), "drained");
 }
 
+/// `FUN_801D3444`: the closed list latches `View Hyper Arts list` in the
+/// entry, opening it clears the latch, and a latch the entry leaves keeps
+/// the caption up while the window it left slides out.
+#[test]
+fn the_closed_caption_latches_and_outlives_the_entry() {
+    use legaia_engine_battle_vm::arts_list_driver::ArtsListDriverCaption as C;
+    let mut s = ArtsCommandInputSession::new(1, 0, 60, [30; 4], 3).with_list_rows(14);
+    s.step_list_slide(2);
+    assert_eq!(s.list_caption(), Some(C::HyperArtsList));
+    s.input(press("t"), party3(), one_monster());
+    s.step_list_slide(2);
+    assert_eq!(s.list_caption(), Some(C::NextPage), "opened on page 0 of 3");
+    assert_eq!(s.list_caption_latch, 0);
+    for _ in 0..5 {
+        s.step_list_slide(2);
+    }
+    for _ in 0..3 {
+        s.input(press("t"), party3(), one_monster());
+    }
+    assert_eq!(s.list_page, None, "closed again");
+    s.step_list_slide(2);
+    assert_eq!(s.list_caption(), Some(C::HyperArtsList));
+    let mut w = ArtsListWindow::left_by(&s).expect("still sliding out");
+    assert_eq!(w.caption(), Some(C::HyperArtsList));
+    while w.step(2) {
+        assert_eq!(w.caption(), Some(C::HyperArtsList));
+    }
+    assert_eq!(w.caption(), None, "gone with the window");
+}
+
 #[test]
 fn resolver_matches_arts_and_leaves_swings_synthetic() {
     use Command::{Down, Up};

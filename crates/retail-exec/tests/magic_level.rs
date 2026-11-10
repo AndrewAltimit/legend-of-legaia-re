@@ -21,6 +21,7 @@ const TABLE: u32 = 0x8007_656C;
 
 #[test]
 fn the_magic_level_check_levels_what_retail_levels() {
+    differential!(prot(898, CHECK));
     let (Some(mut cpu), Some(disc), Some(_)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -102,6 +103,7 @@ fn the_magic_level_check_levels_what_retail_levels() {
 /// a level `0` reading the halfword ahead of the table.
 #[test]
 fn an_unlearned_spell_is_checked_in_slot_0x20() {
+    differential!(prot(898, CHECK));
     let (Some(mut cpu), Some(disc), Some(_)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

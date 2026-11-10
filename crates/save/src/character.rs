@@ -794,7 +794,7 @@ impl CharacterRecord {
                     0x9D => (0x75, 3),
                     _ => unreachable!(),
                 };
-                if !self.raw[0x19B..0x19E].contains(&item) {
+                if !self.wears_accessory(item) {
                     self.remove_spell_to_stash(spell, stash);
                 }
             }
@@ -802,10 +802,17 @@ impl CharacterRecord {
         }
     }
 
+    /// Whether one of the three accessory bytes `+0x19B..+0x19E` holds `item`.
+    ///
+    /// PORT: FUN_80043264
+    pub fn wears_accessory(&self, item: u8) -> bool {
+        self.raw[0x19B..0x19E].contains(&item)
+    }
+
     /// Whether the spell list carries `spell`.
     ///
     /// PORT: FUN_800431FC
-    fn knows_spell(&self, spell: u8) -> bool {
+    pub fn knows_spell(&self, spell: u8) -> bool {
         let n = self.raw[0x13C] as usize;
         self.raw[0x13D..0x13D + n].contains(&spell)
     }
@@ -814,7 +821,7 @@ impl CharacterRecord {
     /// in stash slot `stash`, level `0` raised to `1`. The stash keeps its bytes.
     ///
     /// PORT: FUN_800432BC
-    fn insert_spell_from_stash(&mut self, spell: u8, stash: usize) {
+    pub fn insert_spell_from_stash(&mut self, spell: u8, stash: usize) {
         let base = 0x2B0 + stash * ACTIVE_SPELL_SLOT_STRIDE;
         let level = self.raw[base + 5].max(1);
         let counter = [
@@ -839,7 +846,7 @@ impl CharacterRecord {
     /// `stash`, and close the gap.
     ///
     /// PORT: FUN_80042DBC
-    fn remove_spell_to_stash(&mut self, spell: u8, stash: usize) {
+    pub fn remove_spell_to_stash(&mut self, spell: u8, stash: usize) {
         let n = self.raw[0x13C] as usize;
         let Some(at) = self.raw[0x13D..0x13D + n].iter().position(|s| *s == spell) else {
             return;

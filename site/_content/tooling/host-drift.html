@@ -97,7 +97,7 @@
   <h2>The host pair run: same frames?</h2>
 <pre><code>scripts/ci/host-pair.mjs --site &lt;site&gt; --engine target/release-test/legaia-engine --out &lt;scratch&gt; \
     [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--from n]</code></pre>
-  <p><code>host-pair.mjs</code> runs one scene on one pad script in the play window and in the built play page, pairs them by world frame, and compares both what they hold (the trace text) and what they drew (the share of pixels off at 320&times;240). It is the one check that sees the page's JavaScript and GL state against the window. <code>--mode enhanced</code> can drop one pass on both hosts (<code>no_ssao</code>, <code>no_lighting</code>, <code>no_fog</code>, <code>no_fade</code>) to split a pixel difference by the pass behind it. Its scenes cover a walk, each pause row, a talk, a shop, an inn, a fight to its results, a summon, every minigame, retail card saves carried from one host to the other, and seeded random presses over the whole pad.</p>
+  <p><code>host-pair.mjs</code> runs one scene on one pad script in the play window and in the built play page, pairs them by world frame, and compares both what they hold (the trace text) and what they drew (the share of pixels off at 320&times;240). It is the one check that sees the page's JavaScript and GL state against the window. <code>--mode enhanced</code> can drop one pass on both hosts (<code>no_ssao</code>, <code>no_lighting</code>, <code>no_fog</code>, <code>no_fade</code>) to split a pixel difference by the pass behind it. Its scenes cover a walk, each pause row, a talk, a shop, an inn, a fight to its results, a summon, every minigame, retail card saves carried from one host to the other, and seeded random presses over the whole pad. A save carries no RNG state, so a card scene seeds one <code>rand()</code> stream on both hosts after the landing (<code>LEGAIA_RNG_SEED</code> natively, <code>debug_seed_rng</code> on the page); unseeded, the two drew different fights.</p>
   <p>A healthy pair agrees on every sampled trace and differs by a few tenths of a percent of pixels: hairline rows on flat 3D edges where a tie lands on the other row. It prints and asserts nothing; it needs a disc, a built bundle and a display.</p>
   <div class="table-wrap">
   <table class="compact">
@@ -109,6 +109,7 @@
       <tr><td>An actor watermark set early</td><td>the window's battle floor took no ambient occlusion where the page's did</td></tr>
       <tr><td>A pass the other host never runs</td><td>the window ran ambient occlusion in the minigame venues; both now ask one scope test</td></tr>
       <tr><td>A cut on half a buffer</td><td>a stage curtain seen from behind covered the whole frame for about a hundred ticks</td></tr>
+      <tr><td>A wash run twice</td><td>a battle's exit fade took the page's results box to black at twice the scene's rate: the page washed its text canvas and then composited it under the same fade</td></tr>
     </tbody>
   </table>
   </div>

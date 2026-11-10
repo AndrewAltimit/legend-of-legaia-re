@@ -63,4 +63,17 @@ impl LegaiaRuntime {
         }
         seated
     }
+
+    /// Debug seed: replace the world's `rand()` state - the page's twin of
+    /// `play-window`'s `LEGAIA_RNG_SEED`. A save carries no RNG state, and
+    /// the page lands a card from whatever scene it had running while the
+    /// window lands it from a cold boot, so a host pair seeds both after the
+    /// landing to compare one stream. `false` with no world.
+    pub fn debug_seed_rng(&mut self, seed: u32) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        host.world.rng_state = seed;
+        true
+    }
 }

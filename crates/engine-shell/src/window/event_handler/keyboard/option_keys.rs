@@ -23,6 +23,18 @@ impl PlayWindowApp {
     /// leading edge toggles, or holding `F9` would flicker the fog on and
     /// off.
     pub(super) fn option_key(&mut self, code: KeyCode, state: ElementState, repeat: bool) -> bool {
+        if code == KeyCode::PrintScreen {
+            // One shot per press, taken on the press, or on the release
+            // where the platform delivers only that (Windows, for this key).
+            let pressed = state == ElementState::Pressed;
+            if (pressed && !repeat && !self.player_shot_key_down)
+                || (!pressed && !self.player_shot_key_down)
+            {
+                self.player_shot_pending = true;
+            }
+            self.player_shot_key_down = pressed;
+            return true;
+        }
         if state != ElementState::Pressed {
             return false;
         }
@@ -75,7 +87,7 @@ impl PlayWindowApp {
             HostHotkey::PreciseMovement => self.key_precise_movement(),
             HostHotkey::Bloom => self.key_bloom(),
             HostHotkey::AmbientOcclusion => self.key_ssao(),
-            HostHotkey::ReloadPack => {}
+            HostHotkey::ReloadPack | HostHotkey::Screenshot => {}
         }
         let notice = self.hotkey_notice(hotkey);
         self.show_notice(notice);

@@ -19,6 +19,7 @@ const WINDOW_END: u32 = 0x8007_B5EC;
 
 #[test]
 fn arrange_sorts_the_bag_retail_sorts() {
+    differential!(prot(899, ARRANGE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

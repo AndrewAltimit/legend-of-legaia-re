@@ -50,6 +50,7 @@ fn record(rng: &mut Rng, spell: u8) -> Vec<u8> {
 
 #[test]
 fn the_spell_list_scans_answer_as_retail() {
+    differential!(prot(898, KNOWN), prot(898, NO_EFFECT));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

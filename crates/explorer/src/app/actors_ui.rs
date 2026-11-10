@@ -179,6 +179,8 @@ impl App {
             });
         self.side_widths
             .insert("actors", panel.response.rect.width());
+        // Ctrl+E is left for the status line when nothing is shown.
+        let key = self.actors.view.is_some() && self.take_export_key();
         let st = &mut self.actors;
 
         // (Re)build the actor when the pick or the loadout changed.
@@ -241,8 +243,9 @@ impl App {
                 v.view.controls(ui, "texel x colour / 128 from the actor's own battle VRAM band");
                 if ui
                     .button("Export .glb...")
-                    .on_hover_text("Save this model with its animation clips as glTF binary")
+                    .on_hover_text("Save this model with its animation clips as glTF binary (Ctrl+E)")
                     .clicked()
+                    || key
                 {
                     export = Some(v.pick);
                 }

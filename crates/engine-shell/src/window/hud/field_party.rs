@@ -155,6 +155,14 @@ impl PlayWindowApp {
         if self.field_party_hud_suppressed() {
             return Default::default();
         }
+        // The `F12` panel's plate sits over the readout, and its bright
+        // digits and dark backing showed through between the rows (most of
+        // all on the light plate). The draw alone steps aside: the readout's
+        // own state machine keeps ticking as it would, so it comes back in
+        // place when the panel closes.
+        if self.hotkey_help {
+            return Default::default();
+        }
         let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {

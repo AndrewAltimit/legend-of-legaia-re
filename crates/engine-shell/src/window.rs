@@ -66,6 +66,8 @@ mod minigames;
 mod netplay;
 #[path = "window/pack_reload.rs"]
 mod pack_reload;
+#[path = "window/player_screenshot.rs"]
+mod player_screenshot;
 #[path = "window/record.rs"]
 mod record;
 #[path = "window/run.rs"]

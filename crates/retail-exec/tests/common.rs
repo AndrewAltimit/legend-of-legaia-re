@@ -28,6 +28,10 @@ pub fn scus_cpu() -> Option<Cpu> {
     Some(cpu)
 }
 
+/// Where `Cpu::call` puts the stack; a routine's fifth argument sits at
+/// `STACK_TOP + 0x10`.
+pub const STACK_TOP: u32 = 0x801F_FF00;
+
 /// A small deterministic generator for test inputs.
 pub struct Rng(pub u64);
 
@@ -96,5 +100,202 @@ pub fn split_statuses(w: &mut legaia_engine_core::world::World, salt: u32) {
         if word != 0 {
             seat_status(w, i as u8, word, salt >> i & 1 != 0);
         }
+    }
+}
+
+/// One retail routine a differential runs: its entry and the image that holds
+/// it. Built by [`differential!`].
+#[derive(Debug, Clone, Copy)]
+pub struct Routine {
+    pub va: u32,
+    /// `None` for `SCUS_942.54`, else the PROT entry (extraction index).
+    pub prot: Option<usize>,
+}
+
+impl Routine {
+    pub const fn scus(va: u32) -> Self {
+        Self { va, prot: None }
+    }
+    pub const fn prot(entry: usize, va: u32) -> Self {
+        Self {
+            va,
+            prot: Some(entry),
+        }
+    }
+}
+
+impl std::fmt::Display for Routine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.prot {
+            None => write!(f, "SCUS FUN_{:08X}", self.va),
+            Some(n) => write!(f, "PROT {n:04} FUN_{:08X}", self.va),
+        }
+    }
+}
+
+/// The guard [`differential!`] plants: when the test ends without a panic and
+/// with the disc present, every declared routine must have been entered by a
+/// [`Cpu::call`] on this thread, and the bytes it ran at its entry must be its
+/// image's. A declaration is therefore checked by the run it describes.
+pub struct Proof {
+    routines: Vec<Routine>,
+    mark: u64,
+}
+
+impl Proof {
+    pub fn new(routines: &[Routine]) -> Self {
+        Self {
+            routines: routines.to_vec(),
+            mark: psx_retail_exec::ledger::mark(),
+        }
+    }
+}
+
+impl Drop for Proof {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            return;
+        }
+        let Some(d) = disc() else {
+            return;
+        };
+        let entered = psx_retail_exec::ledger::entered_since(self.mark);
+        for r in &self.routines {
+            // Several slot-B images hold different routines at one VA, and a
+            // test may enter more than one of them: any body entered at the VA
+            // that is the declared image's proves the declaration.
+            let at: Vec<_> = entered.iter().filter(|e| e.entry == r.va).collect();
+            if at.is_empty() {
+                let ran: Vec<String> = entered.iter().map(|e| format!("{:08X}", e.entry)).collect();
+                panic!("differential! declares {r}, which no Cpu::call entered (entered: {ran:?})");
+            }
+            let image = r.prot.and_then(|n| d.read_entry(n).ok());
+            let held = at
+                .iter()
+                .flat_map(|e| e.bodies.iter())
+                .any(|body| match r.prot {
+                    None => scus().is_some_and(|exe| {
+                        let off = (r.va.wrapping_sub(0x8001_0000) as usize).wrapping_add(0x800);
+                        exe.get(off..off + body.len()) == Some(&body[..])
+                    }),
+                    Some(_) => image
+                        .as_ref()
+                        .is_some_and(|img| img.windows(body.len()).any(|w| w == &body[..])),
+                });
+            assert!(
+                held,
+                "differential! declares {r}, but the bytes entered there are not that image's"
+            );
+        }
+    }
+}
+
+/// Declare the retail routines this test compares, as `scus(VA)` or
+/// `prot(ENTRY, VA)`:
+///
+/// ```ignore
+/// differential!(scus(0x8004_CE2C), prot(898, ACTION_SM));
+/// ```
+///
+/// Put it first in the `#[test]` body. With the disc present the test fails
+/// unless each routine was entered and its bytes are its image's
+/// ([`Proof`]); `scripts/ci/differential-coverage.py` reads the declarations
+/// statically, so each argument is a literal or a `const` of the file.
+macro_rules! differential {
+    ($($img:ident ( $($arg:expr),+ )),+ $(,)?) => {
+        let _differential_proof = $crate::common::Proof::new(&[
+            $($crate::common::Routine::$img($($arg),+)),+
+        ]);
+    };
+}
+
+/// Mark a `#[test]` that runs no routine (a table or data check), with the
+/// reason. `scripts/ci/differential-coverage.py` requires one of the two
+/// macros in every test.
+macro_rules! not_a_differential {
+    ($why:literal) => {};
+}
+
+/// The `POLY_GT4` packet stream a minigame overlay's sprite emitters write:
+/// the packet cursor `0x1F8003A0`, the ordering table at `0x1F8003F4`, and
+/// the overlay's own bucket word, which each emitter resets to `3`.
+pub mod gt4 {
+    use psx_retail_exec::Cpu;
+
+    /// The packet cursor `0x1F800314 + 0x8C` and the ordering table's base
+    /// `0x1F800314 + 0xE0`.
+    pub const CURSOR: u32 = 0x1F80_03A0;
+    pub const OT_BASE: u32 = 0x1F80_03F4;
+    pub const PACKETS: u32 = 0x8010_0000;
+    pub const OT: u32 = 0x8018_0000;
+    pub const OT_LEN: u32 = 8;
+    pub const OT_END: u32 = 0x00FF_FFFF;
+
+    /// One `POLY_GT4` as the GPU reads it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Gt4 {
+        pub code: u8,
+        pub rgb: [[u8; 3]; 4],
+        pub xy: [(i16, i16); 4],
+        pub uv: [(u8, u8); 4],
+        pub clut: u16,
+        pub tpage: u16,
+    }
+
+    /// Empty the packet buffer and the ordering table, and set the overlay's
+    /// bucket word `bucket` to `3`.
+    pub fn reset(cpu: &mut Cpu, bucket: u32) {
+        cpu.mem.wr32(CURSOR, PACKETS);
+        cpu.mem.wr32(OT_BASE, OT);
+        for i in 0..OT_LEN {
+            cpu.mem.wr32(OT + 4 * i, OT_END);
+        }
+        cpu.mem.wr32(bucket, 3);
+    }
+
+    /// Every packet written since [`reset`], in emission order, after checking
+    /// that each is a `0x34`-byte `POLY_GT4` linked into bucket `3` and that the
+    /// bucket's chain walks them newest first.
+    pub fn packets(cpu: &mut Cpu, bucket: u32) -> Vec<Gt4> {
+        let end = cpu.mem.rd32(CURSOR);
+        assert_eq!((end - PACKETS) % 0x34, 0, "{end:#x}");
+        let n = (end - PACKETS) / 0x34;
+        let mut chain = Vec::new();
+        let mut link = cpu.mem.rd32(OT + 3 * 4) & 0xFF_FFFF;
+        while link != OT_END {
+            chain.push(link);
+            link = cpu.mem.rd32(0x8000_0000 | link) & 0xFF_FFFF;
+            assert!(chain.len() <= n as usize, "a loop in the chain");
+        }
+        let expect: Vec<u32> = (0..n)
+            .rev()
+            .map(|i| (PACKETS + i * 0x34) & 0xFF_FFFF)
+            .collect();
+        assert_eq!(chain, expect, "the bucket's chain");
+        for i in (0..OT_LEN).filter(|&i| i != 3) {
+            assert_eq!(cpu.mem.rd32(OT + 4 * i), OT_END, "bucket {i} untouched");
+        }
+        assert_eq!(cpu.mem.rd32(bucket), 3, "the bucket is restored");
+        (0..n)
+            .map(|i| {
+                let p = PACKETS + i * 0x34;
+                assert_eq!(cpu.mem.rd8(p + 3), 0x0C, "packet {i}: twelve words");
+                let mut g = Gt4 {
+                    code: cpu.mem.rd8(p + 7),
+                    rgb: [[0; 3]; 4],
+                    xy: [(0, 0); 4],
+                    uv: [(0, 0); 4],
+                    clut: cpu.mem.rd16(p + 0xE),
+                    tpage: cpu.mem.rd16(p + 0x1A),
+                };
+                for v in 0..4u32 {
+                    let q = p + 4 + 12 * v;
+                    g.rgb[v as usize] = [cpu.mem.rd8(q), cpu.mem.rd8(q + 1), cpu.mem.rd8(q + 2)];
+                    g.xy[v as usize] = (cpu.mem.rd16(q + 4) as i16, cpu.mem.rd16(q + 6) as i16);
+                    g.uv[v as usize] = (cpu.mem.rd8(q + 8), cpu.mem.rd8(q + 9));
+                }
+                g
+            })
+            .collect()
     }
 }

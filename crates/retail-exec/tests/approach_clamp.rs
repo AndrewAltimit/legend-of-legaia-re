@@ -19,6 +19,7 @@ const SINE_TABLE: u32 = 0x8007_0A2C;
 
 #[test]
 fn the_approach_clamp_is_retails() {
+    differential!(prot(898, CLAMP));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

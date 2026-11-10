@@ -207,6 +207,13 @@ impl World {
             self.battle.camera_frame_height = d;
             self.battle_ctx.camera_frame_height = d;
         }
+        // PROT 0915's arm `0xC` turns its creature before it frames it.
+        if entry == 915
+            && profile.is_some()
+            && ctx.phase == legaia_engine_cast::cast_module_camera::MUSHURA_HIT_ARM
+        {
+            self.mushura_chase_ahead(ctx.monster_count, seat_slot, caster_slot, spell_id);
+        }
         let drive_holds = self.module_drive_holds(ctx.phase);
         let direction = if has_trampoline {
             None
@@ -290,6 +297,13 @@ impl World {
         }
         if entry == 966 {
             self.evil_seru_ride_lead();
+            // Arm 0 zeroes the shake word (`sw zero,-0x5B98` at
+            // `0x801F6B90`) and the body's epilogue runs it down every tick
+            // (`0x801F8A94..0x801F8AE8`), the code PROT 0927's has.
+            if phase_entry == 0 {
+                self.casting.module_shake = 0;
+            }
+            self.juggernaut_shake();
         }
         if entry == 927
             && let Some(d) = direction
@@ -388,6 +402,13 @@ impl World {
                 .module_cam
                 .victim_slot
                 .get_or_insert(victim_slot);
+            // PROT 0961's arm 0 stands the seats before its cut frames the
+            // caster; its `0xFF` arm stands them back.
+            if entry == 961
+                && body == Some(legaia_engine_cast::cast_module_camera::DEAD_END_CRISIS_BODY)
+            {
+                self.dead_end_crisis_seats(ctx.phase);
+            }
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
@@ -540,6 +561,19 @@ impl World {
             if passed
                 && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
             {
+                // The stager's arm 4 (`0x801F8E4C`) opens on Juggernaut's
+                // salmon flash and its shake (`+0x14` into `0x801FA468`)
+                // before the sweep.
+                if let Some(t) = ticks::juggernaut_stager_fade(AOE_STAGER_WORKING_ARM) {
+                    let mut fade = None;
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut fade,
+                        &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
+                        1,
+                    );
+                    self.presentation.module_fades.extend(fade);
+                }
+                self.casting.module_shake += ticks::juggernaut_stager_shake(AOE_STAGER_WORKING_ARM);
                 if let Some(r) =
                     self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
                 {
@@ -702,7 +736,21 @@ impl World {
                     body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
                 )
                 .is_some();
+                // A hit whose arm marks its victim stages no reaction
+                // (`ticks::chain_hit_stages_no_reaction`, PROT 0956's `0x75`);
+                // a victim the hit downs takes the dead branch's knockdown.
+                let marks = ticks::chain_hit_stages_no_reaction(arm, &victim);
+                if marks {
+                    self.casting.module_fold_quiet = true;
+                }
                 self.fold_pending_cast_at_rate(arm.hit_rate);
+                if marks {
+                    self.casting.module_fold_quiet = false;
+                    let v = usize::from(victim_slot);
+                    if self.actors.get(v).is_some_and(|a| a.battle.hp == 0) {
+                        self.queue_battle_reaction(v, false);
+                    }
+                }
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
                 caster = self.cast_view(caster_slot);
@@ -2156,8 +2204,6 @@ impl World {
                     ctx.monster_count,
                     victim_slot,
                     seat_slot,
-                    caster_slot,
-                    spell_id,
                 );
             }
             if entry == 929 {

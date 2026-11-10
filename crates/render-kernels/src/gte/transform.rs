@@ -105,17 +105,19 @@ impl Gte {
     pub fn nclip(&mut self) -> i64 {
         self.begin_op(CopOp::Nclip);
         let v = nclip(self.sxy_fifo[0], self.sxy_fifo[1], self.sxy_fifo[2]);
-        // MAC0 saturation is at i32 bounds; track overflow via FLAG.
-        self.mac0 = if v > i32::MAX as i64 {
+        // MAC0 keeps the low 32 bits; the overflow is flagged.
+        self.mac0 = self.wrap_mac0(v);
+        v
+    }
+
+    /// MAC0 takes the low 32 bits of a wider sum, flagging the overflow.
+    fn wrap_mac0(&mut self, v: i64) -> i32 {
+        if v > i32::MAX as i64 {
             self.flag |= flag_bits::MAC0_OVERFLOW_POS | flag_bits::ANY_ERROR;
-            i32::MAX
         } else if v < i32::MIN as i64 {
             self.flag |= flag_bits::MAC0_OVERFLOW_NEG | flag_bits::ANY_ERROR;
-            i32::MIN
-        } else {
-            v as i32
-        };
-        v
+        }
+        v as i32
     }
 
     /// `AVSZ3` - write OTZ ← `((SZ1 + SZ2 + SZ3) * ZSF3) >> ROT_FRAC_BITS`.
@@ -125,7 +127,7 @@ impl Gte {
         self.begin_op(CopOp::Avsz3);
         let sum = self.sz_fifo[1] as i64 + self.sz_fifo[2] as i64 + self.sz_fifo[3] as i64;
         let scaled = sum * self.zsf3 as i64;
-        self.mac0 = scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        self.mac0 = self.wrap_mac0(scaled);
         let shifted = scaled >> ROT_FRAC_BITS;
         let otz = if shifted > u16::MAX as i64 {
             self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
@@ -148,7 +150,7 @@ impl Gte {
             + self.sz_fifo[2] as i64
             + self.sz_fifo[3] as i64;
         let scaled = sum * self.zsf4 as i64;
-        self.mac0 = scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        self.mac0 = self.wrap_mac0(scaled);
         let shifted = scaled >> ROT_FRAC_BITS;
         let otz = if shifted > u16::MAX as i64 {
             self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
@@ -232,10 +234,10 @@ impl Gte {
         let lo = if lm { 0 } else { i16::MIN as i64 };
         let sat = |v: i64, bit: u32, flag: &mut u32| -> i32 {
             if v > i16::MAX as i64 {
-                *flag |= bit | flag_bits::ANY_ERROR;
+                *flag |= flag_bits::with_error(bit);
                 i16::MAX as i32
             } else if v < lo {
-                *flag |= bit | flag_bits::ANY_ERROR;
+                *flag |= flag_bits::with_error(bit);
                 lo as i32
             } else {
                 v as i32

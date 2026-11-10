@@ -100,31 +100,27 @@ fn down_in_slot_picker_advances_cursor_and_emits_event() {
     ));
 }
 
+/// Retail's slot browse runs the list kernel with wrap (`FUN_801D688C(...,
+/// 8, 1)` at `0x801D9B00`): Up on the Best Equipment row lands on the last
+/// Goods row, and Down there comes back to the top.
 #[test]
-fn slot_picker_clamps_cursor_to_zero_on_up() {
+fn slot_picker_wraps_both_ways() {
     let mut s = fresh_session();
     s.input(EquipInput {
         up: true,
         ..Default::default()
     });
-    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 0 });
-}
-
-#[test]
-fn slot_picker_clamps_cursor_to_the_last_slot_row_on_down() {
-    let mut s = fresh_session();
-    for _ in 0..20 {
-        s.input(EquipInput {
-            down: true,
-            ..Default::default()
-        });
-    }
     assert_eq!(
         s.state(),
         EquipState::SlotPicker {
             cursor: SLOT_BROWSE_ROWS - 1
         }
     );
+    s.input(EquipInput {
+        down: true,
+        ..Default::default()
+    });
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 0 });
 }
 
 /// Row `n` of the browse space opens slot `n - 1`: the row space leads

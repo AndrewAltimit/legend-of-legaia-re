@@ -81,19 +81,21 @@ impl Camera {
                     // representation at all, so every scripted shot rendered
                     // and traced from the follow orbit's fixed height.
                     self.script_owns_focus = true;
-                    // Retail's op-`0x45` arms compose the zone camera into
-                    // the same staging struct the beat's slots overwrite
-                    // (`FUN_801DAB90(player, 0x801C6EA8)` at `0x801DF228`),
-                    // so an unmasked slot holds the scene's own shot, and a
-                    // glide starts from it. Snap the zone pose in first if
-                    // this scene has not had its arrival snap yet.
+                    // The Configure arm (`0x801DF0F0..0x801DF1F4`) stages
+                    // the LIVE globals (`FUN_801DDFE4` -> `FUN_801DE004`,
+                    // low halfwords), overwrites the masked slots, and
+                    // commits through `FUN_801DE084`, which clears focus Y.
+                    // An arrival snap still owed for a free player lands
+                    // first (the arrival actor's own tick), so the unmasked
+                    // slots hold the scene's shot.
                     self.prime_zone_before_script(world);
-                    let mut target = self.globals;
+                    let mut staged = self.globals.stage();
                     for p in &params {
                         if (p.slot as usize) < AXIS_COUNT {
-                            target.0[p.slot as usize] = (p.value as i16) as i32;
+                            staged[p.slot as usize] = p.value as i16;
                         }
                     }
+                    let target = RetailCamGlobals::commit_staged(staged);
                     if apply_trigger == 0 {
                         self.globals = target;
                         self.mover = None;

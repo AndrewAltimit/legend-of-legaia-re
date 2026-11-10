@@ -512,6 +512,18 @@ summoning mound, Nighto's crystal and Vera's two arm-5 glows burst this way
 shattered default-arm node is built without handler bank 3's sixteen-way
 quad split, which only the per-prim dispatcher applies.
 
+An effect part's draw reads the row its own `+0x6D` names, the same global
+table move-VM op `0x21` writes (`0x8002377C..0x800237D4`). Terio Punch's
+planet (PROT 0953 record `0x801F7A3C`, a textured default-arm disc on Xain's
+side-band page) sets row 3 to flags `7` before its `+0x7A` ramp: no spin, no
+push, a shrink of `0x1000 - v`, so the disc holds whole on screen. Drawn on
+the zero row it burst into spinning wedges with the backdrop showing through
+them; on its row the `battle_tunnelc_xain_terio_punch_mid_cast` film's arm 6
+reads `.577` to `.683`, the whole film `.770` to `.785` (`.838` to `.861` with the rand stream held). PROT
+0959 carries the same pair of writes. Port: `SummonScene::part_draws_with`,
+`default_arm_draws_with`, `sprite_arm_draws_with` and `ribbon_draws_with`,
+which `World` hands `World::shatter_row`. Grade `disassembly` + `capture`.
+
 **Port.** `legaia_render_kernels::shatter` (`crates/render-kernels/src/shatter.rs`):
 `ShatterObject::new` is the prologue, `ShatterObject::triangle` the
 per-triangle half, integer like the GTE (q12 `RotMatrix`, the `* 0x555 >> 12`
@@ -3020,7 +3032,10 @@ rasteriser does not divide by `1/w`.
 - **Native:** WGSL `@interpolate(linear)`, a static qualifier on the
   vertex-output struct, not a uniform-driven branch. The baked per-prim
   colour carries the same qualifier - PSX gouraud interpolation is affine
-  too.
+  too - on the VRAM mesh and on the untextured colour mesh alike. A
+  perspective-correct colour on the colour mesh shaded the Baka duel's
+  additive floor glow, a fan lying on the floor plane, darker toward the
+  camera than retail and the page draw it.
 - **Browser:** GLSL ES 3.00 lacks `noperspective`, so the vertex shader in
   `site/js/webgl-shaders.js` writes the UV and the gouraud colour
   premultiplied by clip `w`, alongside `w`, and the fragment shader divides.

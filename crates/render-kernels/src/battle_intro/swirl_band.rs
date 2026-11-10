@@ -35,9 +35,14 @@ pub const SWIRL_WALL_RGB: u32 = 0x0040_4040;
 /// (`0x117` primary / `0x115` mirrored - the right and left 320-column halves
 /// of the capture). The flag word `0x1880_8080` sets bit 27, so the dispatch
 /// is **double-sided** ([`CullMode`]) - which is what lets the x-mirrored
-/// half, whose winding is reversed, draw at all - and `a2 = 0` keeps it on
-/// the opaque bank, so the `0x808080` in the flag word never multiplies
-/// anything (`desc + 0xC` is zero and the tint block is skipped).
+/// half, whose winding is reversed, draw at all - though an edge-on quad
+/// still drops. Its non-zero top byte ORs `1` into the dispatcher's third
+/// argument (`0x800433C0..0x800433CC`), which selects the depth-cue bank:
+/// the quad links at its **largest** corner depth (the byte's `0x10`), a quad
+/// wholly off the screen is dropped (`FUN_80044798`), and `DPCS` moves the
+/// colour toward the grey far colour `0x808080` by `IR0 = 1`, which leaves
+/// both shipped colours as they are (`desc + 0xC` is zero, so the tint block
+/// is skipped).
 ///
 /// `band_z` is the band record's `+0x08` scalar **latched before the tick's
 /// integration**: the per-band pose is identity rotation with translation
@@ -46,19 +51,14 @@ pub const SWIRL_WALL_RGB: u32 = 0x0040_4040;
 /// signs make alternating bands fly toward and away from the camera.
 ///
 /// Past the late-phase frame the submit goes through `FUN_80029888` instead,
-/// which stages a mid-grey far colour (`param_2`'s bytes `<< 4` into GTE
-/// control regs `21`/`22`/`23`) and builds an extra Euler rotation from its
-/// fourth argument `(clock - 0x3C) * 4` - the roll that gives the style its
-/// name. The port carries the rotation ([`SwirlBandDraw::late_arg`]); the
-/// far-colour haze has no screen-overlay channel and is left un-carried, like
-/// the tile shatter's depth-cue note.
-///
-/// The rotation axis is read from the instructions now, and it is **two axes**:
-/// `a3 << 4` lands in the X and Z angle halfwords with Y zeroed
-/// (`0x80029930..0x80029940`), and bit `0x10000` of `a3` zeroes all three. The
-/// routine also zeroes the GTE **translation vector** first (`FUN_8003D190` =
-/// `ctc2 zero, cr5/cr6/cr7`), which is what makes that rotation act about the
-/// origin; it writes no light register.
+/// the shatter renderer ([`crate::shatter`]) with draw word `(clock - 0x3C) *
+/// 4` and flag word `0x8180_8080`. That path is **not carried faithfully**:
+/// the shatter draws each quad as `POLY_FT3` triangles (`FUN_80029DD8`), each
+/// spun about its own centroid by `RotMatrix(a3 << 4, 0, a3 << 4)` and pushed
+/// out from the band's origin by `c * v >> 7`, where this function rotates
+/// the whole quad about the origin ([`SwirlBandDraw::late_arg`]). The
+/// retail kernel differential (`crates/retail-exec/tests/intro_swirl.rs`)
+/// compares the early phase only.
 ///
 /// PORT: FUN_801D1A20
 /// REF: FUN_80029888 (the late-phase dispatcher; far colour + roll staging)
@@ -100,6 +100,14 @@ pub fn emit_swirl_band(
                 rgb,
                 false,
                 CullMode::DoubleSided,
+                // `0x1880_8080`: a non-zero top byte selects the depth-cue
+                // bank with `IR0 = 1` toward the grey far colour, and its
+                // `0x10` takes the largest corner depth.
+                Some(DepthCue {
+                    ir0: 1,
+                    far: 0x80,
+                    max_sz: true,
+                }),
                 prims,
             );
         }

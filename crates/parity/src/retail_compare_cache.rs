@@ -167,6 +167,7 @@ impl ResultCache {
         hash_str(&mut h, &format!("{:?}", entry.resident_patch));
         hash_str(&mut h, &format!("{:?}", entry.resident_disc));
         hash_str(&mut h, &format!("{:?}", entry.ram_injected));
+        hash_str(&mut h, &format!("{:?}", entry.harvest));
         hash_file(&mut h, &entry.path).ok()?;
         match &entry.staging_source {
             Some((emulator, source)) => {

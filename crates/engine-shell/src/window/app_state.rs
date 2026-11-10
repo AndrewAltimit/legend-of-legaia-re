@@ -945,6 +945,12 @@ pub(super) struct PlayWindowApp {
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     pub(super) boot_ui: BootUiState,
+    /// The pause menu was raised onto [`Self::boot_ui`] at the end of the
+    /// frame whose last tick the wipe spawned it on, so that frame draws the
+    /// menu; the session still hands the tick over on the next claim
+    /// (`TickOwner::PauseMenuSpawned`), which this holds the boot-UI arm off
+    /// for.
+    pub(super) pause_menu_handover: bool,
     /// A real PSX memory-card image mounted in **port 2** (`--card`), or
     /// `None` for the empty port.
     ///
@@ -1061,6 +1067,12 @@ pub(super) struct PlayWindowApp {
     /// The last hotkey's notice line and when it went up; drawn under the
     /// quit prompt for [`NOTICE_DURATION`].
     pub(super) notice: Option<(String, std::time::Instant)>,
+    /// A `Print Screen` press waiting for the next presented frame
+    /// ([`legaia_engine_session::hotkeys::HostHotkey::Screenshot`]).
+    pub(super) player_shot_pending: bool,
+    /// `Print Screen` is down: its release then takes no second shot. A
+    /// platform that delivers only the release (Windows) shoots on it.
+    pub(super) player_shot_key_down: bool,
     /// The `F12` / `?` panel is up (`window::settings_panel`).
     pub(super) hotkey_help: bool,
     /// Which page of that panel is up.

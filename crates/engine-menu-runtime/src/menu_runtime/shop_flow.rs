@@ -342,13 +342,15 @@ impl MenuRuntime {
         let Some(session) = self.prize_session.as_mut() else {
             return;
         };
-        // The list is vertical (Up/Down) but the shared navigator's axis is
-        // decrement/increment; accept both axes, like the recipient picker.
+        // The counter steps through the list kernel `FUN_801D688C`
+        // (`0x801DC354` browsing, `0x801DC454` Yes / No), which reads Up
+        // (`0x1000`) and Down (`0x4000`) of the held-pad word and nothing on
+        // the other axis.
         let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
             input.circle || input.triangle,
-            input.up || input.left,
-            input.down || input.right,
+            input.up,
+            input.down,
         );
         let coins = world.minigames.casino_coins;
         let inventory = &world.party.inventory;

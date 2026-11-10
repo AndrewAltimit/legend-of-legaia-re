@@ -40,6 +40,7 @@ fn string(rng: &mut Rng) -> [u8; 16] {
 
 #[test]
 fn the_auto_command_strings_are_retails() {
+    differential!(prot(898, PRESEED), prot(898, SAVE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

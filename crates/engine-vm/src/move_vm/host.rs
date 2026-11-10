@@ -139,8 +139,10 @@ pub trait MoveHost {
 
     /// Extension sub-op 0x29 - `func_0x8003C5F0(0, &DAT_1F80035C[idx], 2,
     /// current, -value, ticks)` - schedules a per-frame ramp of a scratchpad
-    /// slot. Default no-op.
-    fn ext_scratchpad_ramp(&mut self, _slot_index: i16, _target: i16, _ticks: i16) {}
+    /// slot. `target` is the installer's word end: the negated `lh` operand
+    /// (`negu` at `0x801D4418`), so an operand of `-0x8000` ramps toward
+    /// `+0x8000`. Default no-op.
+    fn ext_scratchpad_ramp(&mut self, _slot_index: i16, _target: i32, _ticks: i16) {}
 
     /// Extension sub-op 0x29 immediate path - direct write to scratchpad
     /// slot. The VM only fires this when `ticks == 0`.

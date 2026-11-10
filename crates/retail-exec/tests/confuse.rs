@@ -13,6 +13,7 @@ const CTX: u32 = 0x8012_0000;
 
 #[test]
 fn a_confused_monster_turns_where_retail_turns() {
+    differential!(prot(898, 0x801E_7320));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

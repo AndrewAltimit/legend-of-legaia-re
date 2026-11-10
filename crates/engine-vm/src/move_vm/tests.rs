@@ -27,7 +27,7 @@ struct TestHost {
     ext_world_struct_adds: Vec<(i16, [i16; 5])>,
     ext_set_flag_bank_calls: Vec<i16>,
     ext_clear_flag_bank_calls: Vec<i16>,
-    ext_scratchpad_ramp_calls: Vec<(i16, i16, i16)>,
+    ext_scratchpad_ramp_calls: Vec<(i16, i32, i16)>,
     ext_scratchpad_write_calls: Vec<(i16, i16)>,
     ext_emit_ot_calls: u32,
     ext_set_8007b9d8_calls: Vec<i32>,
@@ -105,7 +105,7 @@ impl MoveHost for TestHost {
     fn ext_clear_flag_bank(&mut self, idx: i16) {
         self.ext_clear_flag_bank_calls.push(idx);
     }
-    fn ext_scratchpad_ramp(&mut self, slot: i16, target: i16, ticks: i16) {
+    fn ext_scratchpad_ramp(&mut self, slot: i16, target: i32, ticks: i16) {
         self.ext_scratchpad_ramp_calls.push((slot, target, ticks));
     }
     fn ext_scratchpad_write(&mut self, slot: i16, value: i16) {

@@ -70,7 +70,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Special / summon roll](#roll---fun_801dd0ac) | `FUN_801DD0AC` | INT-driven attacker roll vs INT + HP + DEF defender roll | `summon_predamage`, `arts_physical_predamage` |
 | [Scale](#scale---fun_801dd864-and-the-element-matrix) | `FUN_801DD864` | `atk * matrix[a][d] / 100`, Venom / Toxic, magic level | `apply_element_affinity`, `apply_status_weaken`, `apply_magic_power` |
 | [Finisher](#finisher---fun_801ddb30) | `FUN_801DDB30` | resist halve, guard halve, `rand%9+8` floor, summon %, cap 9999 | `damage_finish` |
-| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
+| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, halfword cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
 | [Capture-class wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4) | `FUN_801DD4B0` / `FUN_801DD6B4` | baked power, respect or bypass the resist ladder | `battle_damage_wrappers` |
 | [Recovery summons](#recovery-summons) | PROT 0905 / 0911 | Vera `level*0x20 + 0xE0`; Orb `(level<<6) + 0x1C0` | `heal_summon_amount` |
 | [Spell XP + magic level](#summon-spell-xp--magic-level-up) | `FUN_801DDB30` tail, `FUN_801E70BC` | `gain = dmg*(12 or 4)/maxHP`; level up when `xp > table*mult>>1` | `summon_spell_xp_gain`, `summon_magic_levels_up` |
@@ -228,6 +228,22 @@ picks into the stream so each swing rolls on its own power byte. Two engine
 choices sit beside it: seating a different monster record drops the seat's
 previous clips, and a combo total still on a target when the band leaves `0x20`
 is landed there, so the `0x51` settle gate (`FUN_801E7250`) cannot hold forever.
+
+**Measured.** A breakpoint probe on the roll (`0x801EC65C` ahead of the first
+draw, `0x801EC878` on the verdict, `0x801ECA84` past the juggle arm) reads `s0`,
+`s1`, the seed word and `s7` for every hit. Fed the same seed words, the engine's
+verdicts are retail's on every hit of three films: Nova's five swings on Gala
+(`battle_jou_nova_v3_strike`, `795` against `795` before the draws, land, block,
+block, land, land), Gaza's four Astral Slash beats on Vahn
+(`battle_kor_gaza_165_astral_slash_mid_cast`) and Vahn's two rolls on the
+Ropeway monster. Astral Slash shows the juggle arm overturning the roll: beats
+two to four roll a block (`534 < 996`, `500 < 567`, `612 < 949`, Vahn's Spirit
+stance and his `+0xF4 & 0x100000` passive each `x3/2`), and the juggle arm clears
+each (`0x801ECA4C..0x801ECA68`) because Vahn is mid-flinch (`+0x1F7 = 1`, `+0x1D9 = 2`, not his
+block entry `0x0B`), so all four land (`715`). On a stream whose first beat
+blocks, the defender holds the block clip with the window up and every later
+beat is blocked at `0x801EC984`: the all-or-nothing outcome is the rule, the
+stream decides which. Grade `capture`.
 
 ### Equipment fold - Base Offense
 
@@ -819,10 +835,17 @@ accessory halves a matching-element monster special and All Guard applies the
 
 ```text
 pct = max(1, damage * 100 / maxHP)
-if defender record +0xF8 & 0x200:  pct += pct >> 2        // AP Boost, passive 0x28 / 0x29
-if defender record +0xF8 & 0x100:  pct += pct / 10
-defender[+0x170] = min(100, defender[+0x170] + pct)
+party defender, record +0xF8 & 0x200:  gauge += pct >> 2     // AP Boost, passive 0x28 / 0x29
+party defender, record +0xF8 & 0x100:  gauge += pct / 10
+gauge += pct
+if gauge > 100: gauge = 100
 ```
+
+`gauge` is the halfword `defender[+0x170]`: each add is stored back as a
+halfword and the cap tests the halfword (copy A, `0x801DE25C..0x801DE2D8`). A
+percent past `0xFFFF` - a big hit on a tiny max HP - therefore wraps the gauge,
+and a wrap that lands at or under `100` stays. Both bonuses read the base
+percent, not each other's sum.
 
 The kernel exists **twice** in overlay 0898, as two independent inlined copies:
 
@@ -2039,8 +2062,7 @@ divide it as a 15-bit quantity, so the shape matters.
 **Which draws are not on the world stream.** Retail has one `rand()` stream, and
 the overlays' own generators are separate words, not reseeds. The port's
 standing exceptions, each a stand-in for a `jal 0x80056798` that draws a
-private seed instead of the world stream: the battle intro's particle seeder
-(`render_kernels::battle_intro_particles::IntroRng`, its own LCG), the PROT
+private seed instead of the world stream: the PROT
 0913 Nova whirlwind ring yaws (`nova_column_yaw`, a hash of the ring index) and
 its ring jitter (the `World` cast band, seeded from the settle countdown), the
 scripted-motion channels (`ambient_motion`, one `psyq_rand_step` seed per
@@ -2048,7 +2070,10 @@ channel), and the opt-in level-up jitter (`LevelUpTracker`). The battle
 overlay's `FUN_801D0290` (`OverlayRng`) is not one of them: retail reseeds it
 from the emitter's parameter block on every call, so it is a shape hash there
 too. Each exception leaves the world stream's position short by its draws; none
-decides anything a battle channel reads.
+decides anything a battle channel reads. The battle intro's seeders are on the
+world stream: the world steps past their draws on the transition's first frame
+and the emitter replays them from the word it left
+([`cutscene.md`](cutscene.md#the-inits-draws)).
 
 Every battle-side consumer draws through `World::next_rand`: the battle-action
 host's `rng`, the damage kernels, initiative, escape and flee, the monster

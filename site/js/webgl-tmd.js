@@ -359,11 +359,19 @@ class TmdRenderer {
 
     /* Opt-in two-pass semi-transparency for the single-mesh `render()`
      * path: pass 0 draws the opaque prims, pass 1 re-draws only the ABE
-     * prims (TSB bit 15) additively with the depth buffer read-only - the
-     * dance hall's smoke columns and spotlight glows are ABE prims that
-     * read as opaque grey slabs without it. Off by default (every existing
-     * consumer keeps the one-pass draw-everything behaviour). */
+     * prims (TSB bit 15) from the per-ABR-mode index tail `uploadMesh`
+     * appends (`buildSemiTail`), each run under its own blend equation
+     * (`_setSemiBlend`) with the depth buffer read-only - the dance hall's
+     * smoke columns and spotlight glows are ABE prims that read as opaque
+     * grey slabs without it, and the Baka duel's drop shadows are `B - F`
+     * prims that a single additive stand-in drew as pools of light. Off by
+     * default (every existing consumer keeps the one-pass draw-everything
+     * behaviour). */
     this.semiTwoPass = false;
+    /* The single mesh's semi tail runs ({ mode, start, count }) and the
+     * CBA/TSB stream it was bucketed from, kept for `updateIndices`. */
+    this.singleSemiRanges = null;
+    this.singleCbaTsb = null;
 
     /* After-image trail for the single-mesh `render()` path (the arts page's
      * per-character tinted echoes). `{ passes: [{ positions, tint: [r,g,b],
@@ -613,8 +621,13 @@ class TmdRenderer {
       this._setNeutralPacketColor();
     }
 
+    /* The original index range, then the per-ABR-mode semi tail the
+     * two-pass draw blends from (the opaque pass draws the original range). */
+    this.singleCbaTsb = cbaTsb;
+    const tail = buildSemiTail(indices, cbaTsb);
+    this.singleSemiRanges = tail ? tail.ranges : null;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
     this.indexCount = indices.length;
     this.posByteLength = positions.byteLength;
@@ -624,6 +637,25 @@ class TmdRenderer {
     this.single.cpuPositions = positions;
     this.single.cpuIndices = indices;
     this.single.normalsDirty = true;
+  }
+
+  /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,
+   * F = fragment): 0 = 0.5B + 0.5F, 1 = B + F, 2 = B - F, 3 = B + 0.25F.
+   * Constant-alpha factors carry the 0.5 / 0.25 weights, so no shader
+   * pre-scale is needed. Same table as engine-render's psx_blend. Shared
+   * by the single-mesh two-pass draw and `renderAssembled`'s blend pass. */
+  _setSemiBlend(mode) {
+    const gl = this.gl;
+    gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+    if (mode === 0) {
+      gl.blendColor(0, 0, 0, 0.5);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    } else if (mode === 3) {
+      gl.blendColor(0, 0, 0, 0.25);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE);
+    }
   }
 
   /* Replace just the position buffer in-place (DYNAMIC_DRAW). For animation:
@@ -646,9 +678,11 @@ class TmdRenderer {
    * frame's eye. */
   updateIndices(indices) {
     const gl = this.gl;
+    const tail = this.singleCbaTsb ? buildSemiTail(indices, this.singleCbaTsb) : null;
+    this.singleSemiRanges = tail ? tail.ranges : null;
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.DYNAMIC_DRAW);
     gl.bindVertexArray(null);
     this.indexCount = indices.length;
     if (this.single) {
@@ -746,16 +780,21 @@ class TmdRenderer {
       gl.uniform1i(this.locSemiPass, 0);
       gl.disable(gl.BLEND);
       gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
-      /* Pass 1: ABE prims, additive, depth-tested but not depth-written -
-       * the closest single-mode stand-in for the PSX blend modes (the hall's
-       * ABE prims are glow/smoke, which retail draws additively). */
-      gl.uniform1i(this.locSemiPass, 1);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE);
-      gl.depthMask(false);
-      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
+      /* Pass 1: each ABR mode's run of ABE prims under that mode's blend
+       * equation, depth-tested but not depth-written - engine-render's
+       * per-mode blend pipelines (`psx_blend::blend_state`). */
+      if (this.singleSemiRanges) {
+        gl.uniform1i(this.locSemiPass, 1);
+        gl.enable(gl.BLEND);
+        gl.depthMask(false);
+        for (const r of this.singleSemiRanges) {
+          this._setSemiBlend(r.mode);
+          gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+        }
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+      }
       gl.uniform1i(this.locSemiPass, -1);
     } else {
       gl.uniform1i(this.locSemiPass, -1);

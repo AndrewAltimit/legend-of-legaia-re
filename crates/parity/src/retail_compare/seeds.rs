@@ -852,13 +852,36 @@ pub(super) const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 /// from pool `+0xA4`, alive byte `+0x05`
 /// ([`legaia_engine_field::fog_particles`] has the layout), taken back to where
 /// the child's step over them draws the displayed table's sheets.
+///
+/// The child's step draws each record from its position **before** the step
+/// (`FUN_8003F3FC` projects the pre-update `x` / `z`), so the records go back
+/// exactly the passes between the displayed table and the state's pool. The
+/// pool walk's table still in RAM is one pass behind the pool on a
+/// PCSX-Redux state and two on a Mednafen one (the integer fog kernel
+/// reproduces every fog packet of that table, corner for corner, at that
+/// roll-back and at no other: [`FOG_TABLE_PASSES`]), and the frame on screen
+/// is the table before it - libgpu double-buffers its ordering tables.
 pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
-    // Vsyncs of age and drift since the pass ahead of the one the displayed
-    // table was built on: the display lag's two passes, plus the one the child
-    // steps the records through to draw them.
-    let back = (i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES) + 1)
-        * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    let passes = fog_table_passes(crate::retail_compare_image::capture_emulator()) + 1;
+    let back = passes * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
     retail_fog_stepped_back(ram, back)
+}
+
+/// Pool passes between a retail state's fog pool and the fog table still in
+/// its RAM, per emulator: `(emulator, passes)`. Measured on the five fog
+/// states of the corpus (`keikoku_chest_preload` on Mednafen, the three
+/// `map0*_field_door_hop` states and `drake_castle_to_worldmap` on
+/// PCSX-Redux) by rolling the records back and running the fog kernel.
+pub const FOG_TABLE_PASSES: [(&str, i32); 2] = [("pcsx-redux", 1), ("mednafen", 2)];
+
+fn fog_table_passes(emulator: &str) -> i32 {
+    FOG_TABLE_PASSES
+        .iter()
+        .find(|(e, _)| *e == emulator)
+        .map_or(
+            i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES),
+            |(_, p)| *p,
+        )
 }
 
 /// The pool's records exactly as the state holds them: what a run resuming

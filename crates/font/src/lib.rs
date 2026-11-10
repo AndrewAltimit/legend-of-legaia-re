@@ -182,6 +182,10 @@ pub mod sprite_cell_ids {
     pub const LIST_UP: u16 = 0x233;
     /// A list's more-rows-below arrow (icon `0x68`, 8x8).
     pub const LIST_DOWN: u16 = 0x234;
+    /// The item info panel's one-member scope icon (icon `0x84`, 12x12).
+    pub const ITEM_SCOPE_ONE: u16 = 0x235;
+    /// The item info panel's whole-party scope icon (icon `0x85`, 12x12).
+    pub const ITEM_SCOPE_ALL: u16 = 0x236;
     /// Base of the 12x12 command arrows the arrow primitive `FUN_8003C310`
     /// blits (menu-glyph page, `uv = (0xD0 + 12 * dir, 0xD0)`, `dir` `0` up,
     /// `1` down, `2` right, `3` left), one block of four per ink-staging id.

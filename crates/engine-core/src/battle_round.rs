@@ -205,17 +205,18 @@ impl BattleRound {
         }
     }
 
-    /// `FUN_801DB8B4`: the first living monster slot, or the one-past-the-end
-    /// sentinel when the monster band is wiped (retail returns `7`, the slot
-    /// count; the engine returns its own band end for the same reason).
+    /// `FUN_801DB8B4`: the first living monster among the first four, else
+    /// the fifth. Retail scans pool slots `3..=6` for a non-zero `+0x14C`
+    /// and falls through to `7`, the fifth monster's seat, without testing
+    /// it - so a wiped band also yields `7`. In the port's compact seats that
+    /// is monster index `0..4` from `party_count`, then index `4`.
     ///
     /// PORT: FUN_801db8b4
-    fn first_living_monster(world: &World) -> u8 {
+    pub fn first_living_monster(world: &World) -> u8 {
         let party_count = (world.party.party_count as usize).max(1);
-        let end = world.actors.len().min(8);
-        (party_count..end)
-            .find(|&i| world.actors[i].battle.liveness != 0)
-            .unwrap_or(end) as u8
+        (party_count..party_count + 4)
+            .find(|&i| world.actors.get(i).is_some_and(|a| a.battle.liveness != 0))
+            .unwrap_or(party_count + 4) as u8
     }
 
     /// End-of-round bookkeeping. Ticks every actor's status effects,

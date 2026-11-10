@@ -100,6 +100,8 @@
        * vantage, the encounter box) come from `__playHotkeyPageState`. */
       this._afterHotkey = (id) => {
         this._runHotkey(id);
+        /* The shot's notice names the file, once it is written. */
+        if (id === 'screenshot') return;
         if (typeof this.rt.play_host_hotkey_notice !== 'function') return;
         const own = id === 'debug_camera'
           ? () => (this.debugCamera ? 'on' : 'off')
@@ -113,6 +115,14 @@
         if (typeof window.__playShowNotice === 'function') window.__playShowNotice(text);
       };
       this._runHotkey = (id) => {
+        if (id === 'screenshot') {
+          /* `Print Screen`: the next drawn frame, composited, downloads as a
+           * PNG (`_savePlayerShot`, play-view-frame.js) - the native
+           * window's shot into the pictures folder. */
+          this._shotKeyDown = true;
+          this._shotPending = true;
+          return;
+        }
         if (id === 'debug_camera') {
           /* `F3`: the debug orbit vantage (`PlayWindowApp::field_debug_camera`
            * natively). Off is the default on both hosts, which is the ENGINE
@@ -128,6 +138,16 @@
         if (typeof act === 'function') act();
       };
       window.addEventListener('keydown', this._onHotkey);
+      /* Windows delivers `Print Screen` as a release alone: a release with no
+       * press before it takes the shot, one press one shot either way. */
+      this._onShotUp = (e) => {
+        if (e.code !== 'PrintScreen') return;
+        if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        if (!this._shotKeyDown) this._shotPending = true;
+        this._shotKeyDown = false;
+        e.preventDefault();
+      };
+      window.addEventListener('keyup', this._onShotUp);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
        * player marching into a wall forever. */
       this._onBlur = () => {

@@ -70,6 +70,10 @@ use crate::target_picker::{
 use legaia_art::power::PowerByte;
 use legaia_art::queue::Command;
 use legaia_art::{ArtRecord, EnemyEffect};
+use legaia_engine_battle_vm::arts_list_driver::{
+    ARTS_LIST_OPEN, ARTS_LIST_REGISTERED, ArtsListDriver, ArtsListDriverCaption,
+    ArtsListDriverInputs,
+};
 
 /// The `+0x16E` Rot limb bit that disables an arts direction.
 ///
@@ -185,6 +189,12 @@ pub struct ArtsCommandInputSession {
     /// ([`Self::step_list_slide`]): the window's `x` is
     /// `slide * 160 / 12 - 146`, off-screen at `0` and seated at `14`.
     pub list_slide: u8,
+    /// The closed list's caption latch `0x801F4E08`
+    /// ([`legaia_engine_battle_vm::arts_list_driver`]): set the first frame
+    /// the closed list sits in the entry with a learned art, cleared when the
+    /// pager opens the list. While set, `View Hyper Arts list` is up - also
+    /// through the slide-out of a list the entry left on screen.
+    pub list_caption_latch: u8,
     /// The character's saved auto command string, loaded when the entry
     /// opened (`FUN_801DA34C` at `0x801D1734`, beside the `0x50` phase
     /// store), as `Command::as_byte()` values. Empty when the record held
@@ -311,7 +321,8 @@ pub const ARTS_LIST_SLIDE_MAX: u8 = 12;
 /// every frame of the command flow, `0x801D0B24`) keeps draining its slide
 /// counter outside the entry state `0x50` until it reaches `0`, so a list
 /// left open slides out across the target cursor and into the round rather
-/// than vanishing with the entry. The next entry's registration
+/// than vanishing with the entry. A caption the closed list latched in the
+/// entry stays up until the window is gone. The next entry's registration
 /// (`FUN_801DBB8C`) resets the counter, ending it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArtsListWindow {
@@ -321,6 +332,9 @@ pub struct ArtsListWindow {
     pub row_page: u8,
     /// The slide counter `0x801F4E0A`.
     pub slide: u8,
+    /// The caption latch `0x801F4E08`
+    /// ([`ArtsCommandInputSession::list_caption_latch`]).
+    pub latch: u8,
 }
 
 impl ArtsListWindow {
@@ -331,6 +345,7 @@ impl ArtsListWindow {
             actor: s.actor,
             row_page,
             slide,
+            latch: s.list_caption_latch,
         })
     }
 
@@ -338,10 +353,28 @@ impl ArtsListWindow {
     /// the step. `false` once the window is off-screen.
     ///
     /// PORT: overlay_battle_action_0898_801d3444 (the drain arm,
-    /// `0x801D34B8..0x801D34E4`)
+    /// `0x801D34B8..0x801D34E4`, through the shared driver kernel)
     pub fn step(&mut self, frame_step: u8) -> bool {
-        self.slide = self.slide.saturating_sub(frame_step);
+        let mut d = ArtsListDriver {
+            flags: ARTS_LIST_REGISTERED,
+            slide: self.slide,
+            latch: self.latch,
+        };
+        d.tick(&ArtsListDriverInputs {
+            entering: false,
+            frame_step,
+            learned: 0,
+            row_offset: u32::from(self.row_page) * 5,
+        });
+        self.slide = d.slide;
+        self.latch = d.latch;
         self.slide > 0
+    }
+
+    /// The caption the driver keeps up while the window slides out: the
+    /// closed list's `View Hyper Arts list`, when it latched in the entry.
+    pub fn caption(&self) -> Option<ArtsListDriverCaption> {
+        (self.latch != 0).then_some(ArtsListDriverCaption::HyperArtsList)
     }
 }
 
@@ -356,27 +389,73 @@ impl ArtsCommandInputSession {
 
     /// Step the Triangle list window's slide one battle frame of
     /// `frame_step` vsyncs, as the arts-list driver `FUN_801D3444` does after
-    /// the frame's input: the counter climbs by the frame step
-    /// (`DAT_1F800393`) while the list is open in the entry state `0x50` and
-    /// drains by it otherwise, clamped to `0..=12`. Drained outside the
-    /// entry, the driver clears the list bits `0x801F4E09` (`0x801D3528..
-    /// 0x801D3554`), so the list is closed and a return to the entry does not
-    /// reopen it. `frame_step == 0` (a tick between two battle passes) holds.
+    /// the frame's input
+    /// ([`legaia_engine_battle_vm::arts_list_driver::ArtsListDriver::tick`]):
+    /// the counter climbs by the frame step (`DAT_1F800393`) while the list
+    /// is open in the entry state `0x50` and drains by it otherwise, clamped
+    /// to `0..=12`. Drained outside the entry, the driver clears the list
+    /// bits `0x801F4E09` (`0x801D3528..0x801D3554`), so the list is closed
+    /// and a return to the entry does not reopen it. `frame_step == 0` (a
+    /// tick between two battle passes) holds. The closed caption's latch
+    /// follows the driver too ([`Self::list_caption`]).
     ///
     /// PORT: overlay_battle_action_0898_801d3444 (the slide counter)
     pub fn step_list_slide(&mut self, frame_step: u8) {
         let entering = matches!(self.phase, ArtsInputPhase::Entering);
-        if entering && self.list_page.is_some() {
-            self.list_slide = self
-                .list_slide
-                .saturating_add(frame_step)
-                .min(ARTS_LIST_SLIDE_MAX);
-        } else {
-            self.list_slide = self.list_slide.saturating_sub(frame_step);
-        }
-        if self.list_slide == 0 && !entering {
+        let mut d = ArtsListDriver {
+            flags: ARTS_LIST_REGISTERED
+                | if self.list_page.is_some() {
+                    ARTS_LIST_OPEN
+                } else {
+                    0
+                },
+            slide: self.list_slide,
+            latch: self.list_caption_latch,
+        };
+        d.tick(&ArtsListDriverInputs {
+            entering,
+            frame_step,
+            learned: self.list_learned(),
+            row_offset: u32::from(self.list_row_page) * 5,
+        });
+        self.list_slide = d.slide.min(ARTS_LIST_SLIDE_MAX);
+        self.list_caption_latch = d.latch;
+        if d.flags & ARTS_LIST_OPEN == 0 {
             self.list_page = None;
         }
+    }
+
+    /// The learned count the driver tests (`record[+0x185]`): the host's
+    /// count with any pack rows, else the page count's full pages.
+    fn list_learned(&self) -> u8 {
+        match self.list_rows {
+            Some(l) => l.saturating_add(self.pack_rows),
+            None => self.list_pages.saturating_mul(5),
+        }
+    }
+
+    /// The help caption the driver drew on the last
+    /// [`Self::step_list_slide`], read off the same kernel without stepping
+    /// it.
+    pub fn list_caption(&self) -> Option<ArtsListDriverCaption> {
+        let mut d = ArtsListDriver {
+            flags: ARTS_LIST_REGISTERED
+                | if self.list_page.is_some() {
+                    ARTS_LIST_OPEN
+                } else {
+                    0
+                },
+            slide: self.list_slide,
+            latch: self.list_caption_latch,
+        };
+        let entering = matches!(self.phase, ArtsInputPhase::Entering);
+        d.tick(&ArtsListDriverInputs {
+            entering,
+            frame_step: 0,
+            learned: self.list_learned(),
+            row_offset: u32::from(self.list_row_page) * 5,
+        })
+        .and_then(|f| f.caption)
     }
 
     /// The entry with the retail pager over `learned` arts
@@ -426,6 +505,7 @@ impl ArtsCommandInputSession {
             list_rows: None,
             pack_rows: 0,
             list_slide: 0,
+            list_caption_latch: 0,
             preseed: Vec::new(),
             preseed_spent: Vec::new(),
             replay: false,
@@ -567,6 +647,7 @@ impl ArtsCommandInputSession {
                 ArtsInputPhase::Entering | ArtsInputPhase::Review
             )
         {
+            let was_closed = self.list_page.is_none();
             self.list_page = match self.list_rows {
                 Some(rows) => arts_list_pager_ext(self.list_page, rows, self.pack_rows),
                 None => match self.list_page {
@@ -577,6 +658,10 @@ impl ArtsCommandInputSession {
             };
             if let Some(p) = self.list_page {
                 self.list_row_page = p;
+            }
+            if was_closed && self.list_page.is_some() {
+                // Opening clears the closed caption's latch (`0x801D3868`).
+                self.list_caption_latch = 0;
             }
             return;
         }

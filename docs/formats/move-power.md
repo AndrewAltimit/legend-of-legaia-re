@@ -238,17 +238,26 @@ sibling table in the same overlay:
 
 ### Effect-id list semantics (`+0x12` / `+0x16`)
 
-Each list is up to 4 ids. Both use the same dispatch in `FUN_801e09f8` (the
-`+0x16` walk enters at `0x801e0f54`, the `+0x12` walk at `0x801e1250`); only
-*when* they fire differs. Bit 7 of each byte selects one of two id spaces:
+Each list is up to 4 ids, read up to the first zero. The `+0x12` list is the
+flight's (spawned at the head of a phase-2 slot each time its counter runs
+out, `0x801E116C..0x801E125C`); the `+0x16` list is the landing's (spawned on
+the target, `0x801E0E00..0x801E0F60` on the hand-over and
+`0x801E1400..0x801E155C` on arrival). Bit 7 of each byte selects one of two
+id spaces, and the two walks do not test the low range alike:
 
-| Entry | Meaning |
-|---|---|
-| `0x00` | terminator |
-| `0x01..=0x63` | **move-FX space**: spawn the 3D prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04`, and copy the effect's CLUT row from source x `0x801f6418[id]` when non-zero |
-| `0x64` | fixed screen-flash effect, no table lookup |
-| bit 7 set, `!= 0xFF` | **2D-sprite space**: `id & 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1` billboard ([effect.md](effect.md)). `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8`, which are burst-arm move-VM trigger programs, not pack1 scripts |
-| `0xFF`, `0x65..=0x7F` | no effect, scan continues |
+| Entry | `+0x16` (landing) | `+0x12` (flight) |
+|---|---|---|
+| `0x00` | terminator | terminator |
+| `0x01..=0x63` | **move-FX space**: spawn the 3D prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04`, and copy the effect's CLUT row from source x `0x801f6418[id]` when non-zero | the same |
+| `0x64` | a screen flash: the template at `0x801C9070` (kind `1`, `0x78` frames, black to `(0x80, 0x40, 0x40)`, hold `1`) through `FUN_80024E80(0x801C9070, 2)` | a prototype spawn like any other byte: the flight walk has no `sltiu 0x64` test |
+| `0x65..=0x7F` | nothing | a prototype spawn, read past the table's end |
+| bit 7 set, `!= 0xFF` | **2D-sprite space**: `id & 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1` billboard ([effect.md](effect.md)). `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8`, which are burst-arm move-VM trigger programs, not pack1 scripts | the same |
+| `0xFF` | no spawn; on each pass of the landed countdown, one streak ribbon at the slot | no spawn; on each pass of the flight, one streak ribbon at the slot's head (`0x801E1284..0x801E12D8`) |
+
+No shipped flight list holds a byte in `0x64..=0x7F`; record 3's landing list
+(`0x28, 0x64, 0x9D`) is the one flash. The two ribbon walks read all four
+bytes whatever their order, so a list of four `0xFF` (records `0x11`, `0x18`,
+`0x1F`, `0x28`) draws four ribbons a pass.
 
 Ids `0x0A`, `0x2D` and `0x2E` also latch the spawned handle into `ctx+0x1028`
 and seed the per-frame delta triple at `ctx+0x1184`, which makes their effect

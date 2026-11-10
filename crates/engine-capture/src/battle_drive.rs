@@ -320,6 +320,22 @@ pub struct ActionSteer {
     /// the Hyper Art `0x1E` at accumulator `0`, the engine still on its
     /// SpecialStarter `0x1A`).
     pub latched: Option<u8>,
+    /// The capture was played by `autorun_battle_harvest.lua`'s party-strike
+    /// arm (scenario topic `harvest`), whose pad presses the target cursor's
+    /// `Cross` 24 vsyncs after the arts entry's: the drive holds that cursor
+    /// until the camera's case-1 glide onto it has landed
+    /// ([`BattleDrive::press`]). A pacing of the capture's own input, read
+    /// off the manifest; no play path reads it.
+    pub harvest_pacing: bool,
+    /// The acting party seat's target and its idle-loop cursor on the frame
+    /// the seat's action entered the seed state `0x0C`, read off the
+    /// capture's cursor history ring (`RetailBattle::approach_start`). The
+    /// next pass's recentre and the Attack arm `0x14` measure the range law
+    /// against the target's body pair, which the idle loop's pose sways, so
+    /// the drive lands the loop there once
+    /// (`World::seat_battle_clip_cursor`) before the approach polls it. A
+    /// seat of the capture's history; no play path reads it.
+    pub approach_idle: Option<(u8, i32)>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -564,6 +580,9 @@ const SPIRIT_WAIT_STATE: u8 = 0x3D;
 
 /// The action SM's Done arm and the fade-down it hands to.
 const ACTION_DONE_STATE: u8 = 0x50;
+/// The action seed (`0x0C`), whose pass recentres the formation and hands an
+/// Attack to `0x14`.
+const ACTION_SEED_STATE: u8 = 0x0C;
 const ACTION_DONE_FADE_STATE: u8 = 0x51;
 
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
@@ -902,6 +921,12 @@ impl BattleDrive {
                 if steer.tough {
                     s.push_str(",z");
                 }
+                if steer.harvest_pacing {
+                    s.push_str(",d");
+                }
+                if let Some((t, c)) = steer.approach_idle {
+                    s.push_str(&format!(",i{t}/{c}"));
+                }
                 if let Some(n) = steer.rung {
                     s.push_str(&format!(",n{n}"));
                 }
@@ -989,6 +1014,11 @@ impl BattleDrive {
                 steer.strike_aim = true;
             } else if last == "z" {
                 steer.tough = true;
+            } else if last == "d" {
+                steer.harvest_pacing = true;
+            } else if let Some(i) = last.strip_prefix('i') {
+                let (t, c) = i.split_once('/')?;
+                steer.approach_idle = Some((t.parse().ok()?, c.parse().ok()?));
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(n) = last.strip_prefix('n') {
@@ -1209,15 +1239,17 @@ impl BattleDrive {
         }
     }
 
-    /// Whether the engine holds the capture's phase.
-    /// What a monster strike's drive holds of the capture's hand.
+    /// What a strike's drive holds of the capture's hand: a monster's queue
+    /// and either striker's approach terms.
     pub fn strike_hand(&self) -> Option<StrikeHand> {
         match self {
-            Self::Action { seat, steer, .. } => steer.played.map(|queue| StrikeHand {
-                seat: *seat,
-                queue,
-                ramps: steer.ramps,
-            }),
+            Self::Action { seat, steer, .. } if steer.played.is_some() || steer.ramps.is_some() => {
+                Some(StrikeHand {
+                    seat: *seat,
+                    queue: steer.played,
+                    ramps: steer.ramps,
+                })
+            }
             _ => None,
         }
     }
@@ -1563,6 +1595,17 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The target's idle loop at the action seed
+        // ([`ActionSteer::approach_idle`]): once, on the first tick the
+        // driven seat's action sits in the seed state `0x0C`.
+        if ours
+            && state == ACTION_SEED_STATE
+            && !world.battle.approach_idle_seated
+            && let Some((target, cursor)) = steer.approach_idle
+        {
+            world.battle.approach_idle_seated = true;
+            world.seat_battle_clip_cursor(usize::from(engine_seat(target, pc)), 0, cursor);
+        }
         // A monster cast's clip bytes ([`ActionSteer::queue`] on a monster
         // seat whose drive is a cast): the capture's `+0x1E0` and the Spirit
         // band's `+0x1E7` (`params[1]` / `params[8]`), held from the seed to
@@ -1857,9 +1900,31 @@ impl BattleDrive {
                 return Some(PadButton::Right);
             }
         }
-        if matches!(self, Self::Action { steer, .. } if steer.arts)
+        if let Self::Action { steer, .. } = self
+            && steer.arts
             && world.battle.arts_input.is_some()
         {
+            // The entry's confirm opens the target cursor and arms its
+            // case-1 shot (`0x50 -> 0x5A`, `FUN_801D388C(0xC, 0)` at
+            // `0x801D20B0`). The party-strike captures were played by
+            // `autorun_battle_harvest.lua`, which presses the cursor's
+            // `Cross` 24 vsyncs after the entry's - about the shot's
+            // `0xC`-frame tween - so the round's first framing starts from a
+            // landed case 1. Confirmed on the next tick, the replay began it
+            // mid-glide (`battle_ropeway_party_gala_flying_knee_mid` `camera`
+            // `.964` to `.981`, `image` `.592` to `.910`). A harness pacing
+            // ([`ActionSteer::harvest_pacing`]): no play path reads it.
+            if steer.harvest_pacing
+                && world
+                    .battle
+                    .arts_input
+                    .as_ref()
+                    .and_then(|a| a.picker())
+                    .is_some()
+                && world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
+            {
+                return None;
+            }
             return Some(PadButton::Cross);
         }
         // The item window's target step: `Cross` on the row the window opens
@@ -2109,13 +2174,14 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 /// The engine battle ordinal of retail pool slot `seat`: party slots are
 /// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
 /// party size while the engine seats them straight after the party.
-/// The capture's monster strike as its state stood: the retail seat, the queue
-/// `+0x1DF..`, the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` and the working
-/// ATK `+0x158`.
+/// The capture's strike as its state stood: the retail seat, a monster's
+/// queue `+0x1DF..` (a party striker's is its own command input, which the
+/// drive already replays), the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]`
+/// and the working ATK `+0x158`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrikeHand {
     pub seat: u8,
-    pub queue: [u8; 16],
+    pub queue: Option<[u8; 16]>,
     pub ramps: Option<(i16, i16, u16)>,
 }
 

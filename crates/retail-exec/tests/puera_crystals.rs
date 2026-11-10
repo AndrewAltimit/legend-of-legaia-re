@@ -23,6 +23,7 @@ fn lcg(s: u32) -> u32 {
 
 #[test]
 fn the_crystals_land_where_retail_lands_them() {
+    differential!(prot(922, SLICE));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

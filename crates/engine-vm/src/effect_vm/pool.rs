@@ -82,12 +82,6 @@ pub struct MasterSlot {
     /// script pointer; the port keeps the id since it stores the catalog
     /// separately.
     pub ui_id: u8,
-    /// Per-record randomized planar offsets (world units) for the
-    /// random-distribution path (`flags & 0x01`). Retail scribbles these
-    /// back into the resident script buffer (`record[+2]` / `record[+6]`);
-    /// the port stores them here and [`Pool::tick_retail`] reads them in
-    /// place of the record's offset legs. Empty when flags bit 0 is clear.
-    pub child_offsets: Vec<(i16, i16)>,
 }
 
 /// Per-sprite render state. Retail layout: 32 bytes per slot at
@@ -151,7 +145,7 @@ pub struct EffectScript {
 /// `0x801E0184..0x801E03F0`. [`Pool::spawn`] additionally rewrites the two
 /// planar offset fields with random values when the script's `flags & 0x01`
 /// bit is set (retail scribbles them back into the resident script buffer;
-/// the port stores the rewrites in [`MasterSlot::child_offsets`]).
+/// the port stores the rewrites in [`Pool::scribbled_legs`], shared by id as the buffer is).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ChildSprite {
     /// `+0x00` - pack0 anim-batch index (a single byte in retail; kept as
@@ -223,6 +217,14 @@ pub struct Pool {
     pub head: PoolHead,
     pub master_slots: [MasterSlot; MAX_MASTER_SLOTS],
     pub children: [ChildSlot; MAX_CHILD_SLOTS],
+    /// The randomized planar legs (`record[+2]` / `record[+6]`) the spawn API
+    /// scribbled into the resident `efect.dat` buffer, per effect id: what a
+    /// `flags & 1` effect's records hold from its first spawn until the next
+    /// spawn of the same id rewrites them. Retail keeps them in the shared
+    /// script (`0x801DFFD0` / `0x801E0028`), so every live master of that id -
+    /// an older one still releasing children included - reads the newest
+    /// draw. The buffer is reloaded with each battle, as this pool is rebuilt.
+    pub scribbled_legs: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
 }
 
 /// 16-byte pool-head record (`_DAT_8007BD30 + 0`). Retail layout:
@@ -273,6 +275,7 @@ impl Default for Pool {
             head: PoolHead::default(),
             master_slots: std::array::from_fn(|_| MasterSlot::default()),
             children: std::array::from_fn(|_| ChildSlot::default()),
+            scribbled_legs: Default::default(),
         }
     }
 }
@@ -420,7 +423,6 @@ impl Pool {
         // We store offset-into-body since we keep the header separately.
         m.script_offset = 0;
         m.ui_id = effect_id;
-        m.child_offsets = Vec::new();
 
         // If the script's flags bit 0 is clear, the spawn records keep their
         // authored offset legs; the walker consumes them as-is. Done.
@@ -430,11 +432,9 @@ impl Pool {
 
         // Random spawn-offset distribution: for each spawn record, rewrite
         // its two planar offset legs with `rand % (2*spread) - spread`.
-        // Retail stores these into `record[+2]` / `record[+6]` - i.e., it
-        // scribbles back into the resident *script* buffer. The port keeps
-        // the catalog immutable: the rewrites land in
-        // `master.child_offsets`, which [`Pool::tick_retail`] reads where
-        // retail reads the scribbled record.
+        // Retail stores these into `record[+2]` / `record[+6]` - it scribbles
+        // back into the resident *script* buffer, shared by every master of
+        // this id ([`Pool::scribbled_legs`]).
         //
         // The remainder is the C-style `%` (truncated toward zero) the MIPS
         // `div` produces; a BIOS `rand()` draw is never negative, so it only
@@ -442,14 +442,16 @@ impl Pool {
         // 1 instead of crashing.
         let _ = children; // record fields are read back through the catalog.
         let spread = script.spread.max(1);
+        let mut legs = Vec::with_capacity(usize::from(script.child_count));
         for _ in 0..script.child_count {
             let modulus = (spread as i32) << 1;
             let raw_x = host.next_random();
             let raw_z = host.next_random();
             let dx = (raw_x % modulus - spread as i32) as i16;
             let dz = (raw_z % modulus - spread as i32) as i16;
-            self.master_slots[slot].child_offsets.push((dx, dz));
+            legs.push((dx, dz));
         }
+        self.scribbled_legs.insert(effect_id, legs);
 
         Some(slot)
     }
@@ -616,7 +618,10 @@ impl Pool {
                     // flags bit 0: the randomized planar legs (retail reads
                     // them back out of the scribbled script buffer).
                     let overridden = if m.flags & 0x01 != 0 {
-                        m.child_offsets.get(idx).copied()
+                        self.scribbled_legs
+                            .get(&m.ui_id)
+                            .and_then(|legs| legs.get(idx))
+                            .copied()
                     } else {
                         None
                     };

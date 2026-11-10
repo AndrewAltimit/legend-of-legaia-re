@@ -23,6 +23,7 @@ const ACTOR: u32 = 0x8013_0000;
 
 #[test]
 fn the_fold_keeps_what_retail_keeps() {
+    differential!(prot(898, HEAD));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

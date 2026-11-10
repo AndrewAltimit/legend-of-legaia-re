@@ -11,7 +11,8 @@ interpreter. Its disc-gated tests load `SCUS_942.54` and any overlay off the
 user's disc, seed RAM with generated inputs, call the routine, and compare what
 it wrote with what the Rust kernel produces. There is no decompiled C and no
 hand reading between the two sides. No Sony bytes are committed; without
-`LEGAIA_DISC_BIN` the tests skip.
+`LEGAIA_DISC_BIN` the tests skip. Where it sits among the project's other
+checks, and what it cannot see, is [the verification ladder](verification-ladder.md).
 
 ```bash
 cargo test -p psx-retail-exec --profile dev-fast --test integration
@@ -21,11 +22,43 @@ cargo test -p psx-retail-exec --profile dev-fast --test integration
 
 Integer instructions, `hi` / `lo`, unaligned loads and stores, RAM and the
 scratchpad. `Cpu::hardware_zero_div` runs a `div` by zero as the chip does, for a
-routine with no `break` guard, where that result is what ships. A routine that reaches the GTE or COP0 stops with
-`Stop::Unsupported`, so a pure kernel is the natural target. A call can be
+routine with no `break` guard, where that result is what ships. COP0 carries
+`mfc0` / `mtc0` as register moves and `rfe` as the status-stack pop; any other
+COP0 operation, `syscall` or an undefined GTE command stops with
+`Stop::Unsupported`. A call can be
 replaced with a `Cpu::hook`, which is how `rand()` is scripted so both sides
 draw one stream. `Cpu::calls` records the calls made, which is how a test proves
 it reached the arm it claims.
+
+### The GTE
+
+`psx_retail_exec::gte` is the coprocessor 2: both register files with their
+read and write quirks (halfword sign and zero extension, the `SXYP` push,
+`IRGB` / `ORGB`, `LZCS` / `LZCR`, `H` reading back sign-extended), every
+command, the 44-bit `MAC1..3` accumulator with its per-step overflow flags,
+the `FLAG` saturation bits with bit 31 over `30..23` and `18..13`, the UNR
+divider and the MVMVA far-colour bug. It is written from the hardware
+documentation (nocash's psx-spx), not from the engine's GTE, so a defect the
+two shared could not cancel in a differential. A test seeds and reads it as
+`Cpu::gte`; `Cpu::gte_ops` counts the commands a call ran.
+
+Its own evidence is twofold. Unit tests pin spec values worked by hand
+(the divider's table and quotients, projection, saturation, the MVMVA bug).
+`gte_capture` replays the GTE register files in the PCSX-Redux state library:
+where a state's outputs are an `RTPS` / `RTPT` of the vertices still in
+`V0..V2`, or an `NCLIP` / `AVSZ` of its FIFOs, re-running the command from the
+state's own inputs lands on the captured outputs, projection and divide
+included. That is the emulator's GTE, not silicon, so it checks the
+interpreter against a second implementation of the same documentation.
+
+`gte_engine` runs the engine's GTE against it with no disc. The live
+perspective divide `gte_divide` matches over every `SZ`, and the light-source
+rows' `field_light::nccs` matches `NCCS` on random matrices, colours and
+normals. The register-file `render_kernels::gte::Gte` matches on `NCLIP`,
+`AVSZ3` / `AVSZ4`, `SQR`, `OP` and `MVMVA`; its `RTPS` / `RTPT` keep the
+struct's own q19.12 scale and its colour ops do not follow the hardware's MAC,
+IR and FIFO steps, which the test reports. Only the `gte-replay` tool runs
+that struct.
 
 ## How to add a routine
 
@@ -36,6 +69,94 @@ it reached the arm it claims.
    one.
 3. Assert the run reached the interesting arms, so a seed change cannot leave
    the test passing on nothing.
+4. Open the test with its declaration, `differential!(scus(VA))` or
+   `differential!(prot(ENTRY, VA))`, naming every routine it compares
+   ([below](#declaring-what-a-test-runs)). A test with no declaration fails
+   the coverage gate.
+
+## Declaring what a test runs
+
+Every `#[test]` in `crates/retail-exec/tests/` opens with one of two macros
+from `tests/common.rs`:
+
+```rust
+#[test]
+fn the_passive_sweep_matches_retail() {
+    differential!(scus(0x8004_CE2C));
+    // ...
+}
+
+#[test]
+fn the_port_arctan_table_is_the_retail_one() {
+    not_a_differential!("compares the port's arctan table with the SCUS table at 0x8006F4C8; runs no routine");
+    // ...
+}
+```
+
+`scus(VA)` names a routine of `SCUS_942.54`, `prot(ENTRY, VA)` one of PROT entry
+`ENTRY` (extraction index); several go in one call. Each argument is an integer
+literal or a `const` of the test's file (or of `common.rs`), so the declaration
+can be read without compiling anything.
+
+**The run checks the declaration.** `Cpu::call` notes every entry it is asked
+to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
+that entry. The macro plants a guard whose `Drop` runs when the test ends
+without a panic and with the disc present, and fails the test unless each
+declared routine was entered on the test's thread and the bytes entered are
+that image's - the `SCUS_942.54` bytes at the VA, or a run of the named PROT
+entry. A declaration naming the wrong address, or the right VA in the wrong
+overlay, fails the test that carries it. A test may enter more than it declares
+(a setup call); it may not declare what it did not run.
+
+**The count needs no disc.** `scripts/ci/differential-coverage.py` reads the
+declarations and the `// PORT:` tags and reports how many tagged addresses a
+differential runs:
+
+```bash
+python3 scripts/ci/differential-coverage.py              # covered / ported, per routine
+python3 scripts/ci/differential-coverage.py --uncovered  # tagged addresses no test runs
+python3 scripts/ci/differential-coverage.py --check      # the gate
+```
+
+`--check` fails on a test with no declaration, a test file `integration.rs`
+does not mount, an argument it cannot resolve, or a figure below
+`scripts/ci/differential-coverage-baseline.json` (`ported_covered`, `routines`,
+`tests_declared`; each may only rise). It runs in the pre-commit hook and in
+the Repo Gates job. A fall is a loosening, and goes through the
+[ledger](ratchet-integrity.md#a-baseline-may-not-loosen-silently). The report
+also lists declared routines that carry no `PORT:` tag, which is either a
+missing tag or a helper the test runs beside the routine it compares.
+
+The same declarations feed two other tools. The [port catalog](port-catalog.md)
+carries a `differential` column, a dashboard figure and a `--no-differential`
+filter (the ported routines no test runs, with `--live` the live ones). The
+[provenance checker](port-provenance.md#a-differential-is-evidence) counts a
+differential-run address as verified.
+
+**Writing the declaration for an existing test.** A test written before the
+macros, or one whose author wants the declaration derived rather than typed,
+can take it from a run:
+
+```bash
+python3 scripts/ci/differential-coverage.py --record           # the suite, with the ledger on
+python3 scripts/ci/differential-coverage.py --propose          # ledger vs declarations
+python3 scripts/ci/differential-coverage.py --propose --apply  # write the missing ones
+```
+
+`--record` runs the suite with `PSX_RETAIL_EXEC_LEDGER` set to
+`target/differential-coverage/ledger.tsv`, one line per test and routine it
+entered (a libtest thread is named after its test). `--propose` names each
+routine's image by finding its entry bytes in `extracted/` - `SCUS_942.54` at
+the VA first, then the PROT entries the test file loads, then every PROT entry
+- and prints the line each undeclared test should open with; `--apply` inserts
+it. The ledger holds the executable's bytes, so it stays under `target/`. The
+proposal declares everything the test entered, setup calls included; trim a
+routine that is only there to seed the one compared.
+
+**What the credit means.** It is per address. A passing differential proves
+which routine ran and that the Rust kernel the test calls computes what it
+wrote; it does not prove that every `PORT:` site carrying the address sits on
+that kernel, nor that every arm was reached (step 3 above is what does that).
 
 ## What it has found
 
@@ -536,7 +657,10 @@ skipping its target arms even in a scripted fight once the results word `_DAT_80
 Normal not walking the live yaw on by `4 * step / 3` at the battle-over signal (`0x801D6978..0x801D69A4`), and the
 scripted tail off Close (`0x801D6E84..0x801D6EDC`, live pitch and height over a fixed depth `0x600`) unported; and the
 far framing's box, whose midpoint floors, built over fallen seats where the walk gates on live HP (`0x801D7000`). Cases
-0, 1 and 3 match. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
+0, 1 and 3 match, and so do the prologue's three counters over every case and frame step (`AttackCamCtx::advance`,
+the byte wrap past step `0x20` included), case 2's fixed shot, cases 4 and 5 arming nothing, and the redirect of a
+seat past the table to case 9 behind the flag-word scrub. That redirect hands case 9 a selector no arm names, so the
+far framing's walk then runs between whatever `s0` / `s8` its caller left; no caller passes such a seat. The HUD glide stepper `FUN_801D9BBC` (`sprite_glide`), the ledge-hop probe `FUN_801D1878` (`ledge_hop`), the
 typewriter count `FUN_80036044` (`glyph_count`) and the cast dispatchers `FUN_801F1ED4` / `FUN_801F2160` (`cast_dispatch`) match.
 The per-frame anim-node cursor `FUN_80047430` (`anim_cursor`) over every rate, frame step, Slowed-idle gate and loop
 window found the port's step keeping a fraction retail drops: the cursor is in sixteenths of a keyframe, so a Slowed idle
@@ -545,3 +669,375 @@ pass, the bystander sweep of `FUN_8004E13C` and the tint machine's arms (`tint_s
 blend, centroid and body pair (`pose_decoder`), a held pad among seated moving and static actors (`FUN_801CFC40`,
 `walk_step`), the hop arc's tick `FUN_801D5C08` over the Bezier `FUN_801E45BC` (`hop_arc`) and the action effect stepper
 `FUN_801DEA50` (`effect_script`) match.
+
+The GTE opened the camera and projection kernels. The camera-relative rotation `FUN_8001CF50` showed the port
+building its axis factors from rounded `f32` trigonometry where retail's `FUN_800461A4` / `FUN_8004629C` /
+`FUN_8004638C` read the truncated sine LUT and post-multiply through MVMVA: the rounded factor misses the LUT on
+three angles in four, and the composed rotation was off retail on three cases in four, by up to four units of
+4.12. `camera_view_rotation` now quantises the hosts' radians back to the 12-bit angle and builds from the LUT
+(`GteMat3::rot_x_psx` and its siblings), and matches. The register-file `Gte` read `H`, `DQA`, `ZSF3` and `ZSF4`
+back as raw words where `cfc2` sign-extends the halfword, clamped `MAC0` on `NCLIP` / `AVSZ` where the register
+keeps the low 32 bits, and raised `FLAG` bit 31 for an `IR3` saturation, which the hardware leaves out of it.
+`MulMatrix` `FUN_8005B3A8`, the Euler builder `FUN_80026988` (both its ports), the overworld curvature table
+`FUN_800271A8` (scene-load, rebuilt and flat), the drop shadow's grid `FUN_800460AC` and packets `FUN_8001C394`,
+and the billboard projector `FUN_800195A8` match. One arm of the shadow differs by choice: a near actor whose blob
+sorts within ten slots of the front links below the ordering table's base in retail, where the port floors the
+slot at `0`; field depths keep the blob far from it.
+
+The cast roll's scale stage `FUN_801DD864`, run on its own (`scale_stage`) against the kernels its port splits it
+into over the affinity tables PROT 0898 carries, matches on every seat pairing, both weaken bits, the Spirit stance
+and the summon body's magic-level arm, the unlearned spell's slot `0x20` included. Its products wrap at the word
+(`mult` / `mflo` at `0x801DD954` and the weaken's `sll` / `addu`), where the port saturated; no roll the game builds
+is large enough to tell them apart. The group aim `FUN_801DCEAC` (`group_aim`) reads its extent back as a halfword
+before the `0x400` floor (`0x801DD084..0x801DD08C`), so a spread past `0x7FFF` takes the floor; the port floored the
+word. The body colour pass `FUN_8004A908` (`actor_tint`), its view transform hooked, scales each depth-cue channel
+with a signed `mult` over whole words and a `divu` (`0x8004AAC8`); the port truncated both operands to 16 bits, so
+a negative radius or a depth past `0xFFFF` sixteenths coloured differently. All three are out of a staged fight's
+reach, and the ports now compute what the bytes compute.
+
+The slot-B stagers, the routine a module's parts reach through move-VM op `0x20`, run arm by arm off their
+images (`stager_spawns`): every seat call whole, each seated part's buffer, the module image, the fades and the
+`efect.dat` pool spawns, with the context, the actor records and the caller held otherwise untouched. Forty-seven
+stagers matched but three. PROT 0959's arm 1 reaches arm 5's tail by `j 0x801F87A4` and seats two more records the
+port left off; PROT 0919's and PROT 0941's arm 1 each spawn into the pool (Spoon's effect `0x14`, Steal's 2D puff),
+which no port carried. The stager arms that move state (`stager_states`) found PROT 0906's arm 1 storing the summon
+seat's tint word `+0x04 = 0x3FF00000`, which the port dropped, and showed PROT 0966's stager arm 4 opening on
+Juggernaut's salmon flash and shake word, which the host never raised for Evil Seru Magic: the body's epilogue
+runs that word down every tick, the code PROT 0927's has.
+
+The capture-class cameras (`capture_cameras`) run every body a camera director ports, pass by pass from arm 0 to
+its end, with the director fed what the host feeds it: the tween builder call `FUN_801D829C` each pass makes, the
+countdown word and every hold are compared. Five arms framed something else. Water Hazard's arm 0 and Mystic
+Circle's arm 0 turn the caster onto its target before the shot (a seat's live pair, or the party's centroid for
+group code `8`) and frame the new heading; the port framed the stale one. Melt Spray's arm 2 and Chaos Flare's arm 2
+turn on the victim's display pair `+0x3C` / `+0x40`, not its live pair. Stone Circle's arm 1 writes no focus, so its
+cut is on the origin the prologue zeroed. Dead End Crisis's arm 0 lines the party up off `0x80077628` and stands
+seat 3 opposite before it frames, which the port did not carry.
+
+That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
+eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
+reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation
+`+0x28` off three `rand()`s (`stager_states`), had no port either: every Dark Eclipse ray stood on one angle.
+
+The phase-chain tick bodies (`chain_ticks`) run from arm 0 to their Done off their images, pass by pass, against the
+port's pass: the chain runner, the body's camera director on every pass, the band's caster pre-pass, the party-row
+rate and the fold's hit rate. The whole context and all eight records are compared, but for the bytes another owner
+writes (the fold's HP side and reaction, presentation, poses, the cue byte, PROT 0963's lighting) and the rate-rule
+gaps the test names. Five arms differed. Dead End Crisis's arm 5 holds the party at rate `2` (`0x801F7524`) where the
+director froze it, which held the engine's Done band for some 1800 ticks after Final Crisis. Genocidal Cannon's
+sweep slows each struck seat and holds the party row at `2`, which the port carried neither of. Megaton Press freezes a
+victim that plays its `+0x1F2` clip under lead roster `1`. Hyper Lightning's arm 7 leaves on the pass its fourth hit
+counts, a pass before the director did. A replayed caster's stage-0 store, its return to idle, belongs to the chain
+runner, not the wind-up pre-pass. The summon tick bodies' phase walks, PROT 0918, 0922, 0924, 0925, 0927, 0949 and
+0958, match but for Water Crystals, whose arm 5 is terminal; the port ended a pass later.
+
+The rest of the battle side's frameless kernels match on their first run: the Seru learn `FUN_801E92DC` over whole
+records and the magic-level line `FUN_801F452C` (`seru_learn`); the swing camera's height `FUN_801F0348`
+(`camera_height`); the popup ring push `FUN_801F44A0`; the cursor step `FUN_801D32BC` and the placement copies
+`FUN_801D57E8` / `FUN_801D5718` / `FUN_801D5778` (`cursor_leaves`); the Super tail replace `FUN_801EF9E4` over every
+character's resident rows and the learned-art check `FUN_801EFBFC` with its gate and draw (`super_learn`); the
+monster install `FUN_80054CB0`, both boost profiles and the reaction map (`monster_install`); the MES escape append
+`FUN_8003CB54`, the event-list probe `FUN_80050E00` and the side-band arm `FUN_80055B4C` (`battle_small_leaves`); the
+dead-target redirect `FUN_801DB124` with its draw count (`target_redirect`); the arts flash ramp `FUN_801E2524` and
+its emitter `FUN_801E2650`, packet by packet (`flash_ramp`); the cast-start cue `FUN_801F3990` and the Seru reward
+line `FUN_801DBA90` (`cast_cue`); the party attach swap `FUN_8004CCD4` (`attach_swap`); the command ring's four
+chip marks `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBDDC` / `FUN_801DBEC4` (`chip_marks`); the arts list pager
+`FUN_801D3748` (`arts_pager`); the applier's cue-group expander `FUN_801E22C8` (`cue_group`); the target banner
+`FUN_801E6D84` (`target_banner`); the bolt ribbon `FUN_801CFA48` with the overlay generator `FUN_801D0290`
+(`ribbon`); the near-camera ghost pass `FUN_8004DC68` with the bearing live beneath it (`camera_ghost`); and the clip
+crossing-vertex interpolator `FUN_80029724` (`clip_vertex`).
+The CLUT-cell HSV writer `FUN_80019D50` (`clut_cell`) found the texel repack ORing the three channels where
+the bytes add them (`0x80019FC8..0x80019FE0`). Op `0x44` takes a signed white-blend velocity and the mode-3
+integrator has no floor, so the white amount can go below zero; a channel then goes negative and its sign
+bits carry into the next field rather than being masked. The RGB / HSV pair under it (`hsv`) matches.
+
+The field and menu leaves under the VMs match on their first run: the system flag bank and the operand
+loaders the field VM calls (`field_leaves`), the handler finder and retire sweep, the text packet length,
+the actor node pool (`actor_node_pool`), the MAN record resolver `FUN_8003C8F0` over every scene MAN
+(`man_record`), the default-move readers (`default_move`), the pad's camera ring remap and wall-slide
+resolver called on their own (`pad_resolve`), the walkability probe and the kind-2 elevation lookup over every
+field `.MAP` (`tile_lookups`), the camera height ease, the floor-ladder oscillator and the eased move
+(`field_timers`), their spawners and the colour tween's (`field_spawners`), the camera-zone record loader and
+its re-query (`zone_record`, `zone_requery`), the reflection controller, the Ra-Seru mesh swap, the morph
+envelope and the clip cursor (`morph_envelope`, `clip_cursor`), the property-ramp pool (`ramp_pool`), the arc
+hop's two spawners and its phase watcher (`hop_spawn`, `hop_session`), the fog emitter, spawner and trig LUT
+install (`ambient_emitter`, `fog_spawn`), the world map's entry fade, the L1 map display's enter, tick,
+stepper and clamp in PROT 0981 (`map_display`, `map_display_tick`), and the menu overlay's category check and
+preview mode (`menu_leaves`). Three stores have no port and no reader the port runs: the post-box byte
+classification `FUN_80038050` (`talk_dispatch`) stores a `4C FE xx` operand to the pager's box-gone count,
+an arm no shipped script reaches; and the fog spawner writes halfword `1` at record `+0x12`. The ramp
+ticker's order is below.
+
+The sound driver's per-frame tier runs in the interpreter too: libsnd's `SsSeqCalc` `FUN_80062F98` with its tempo
+slide, both volume slides, the track end and the chained restart, stop, start, the event decoder and the delta-time
+pump (`seq_calc`); the voice chooser `FUN_80066B00` (`voice_choose`); the key-on volume chain `FUN_80067550` on the
+sequencer and cue paths (`key_on_volume`); the key-on and bend pitch `FUN_80066D8C` / `FUN_80066E50` / `FUN_80067A1C`
+(`audio_pitch`); and the SEQ slot release `FUN_8001FF58`. Two volume-slide arms differed: the slide's cached pair is
+read back through the set `FUN_80067E9C`, which clamps each side to `0x7F`, where the port cached the unclamped
+commit, and the ascending fast arm's ceiling test is a 32-bit sum where the port wrapped a halfword. The pitch arms
+match on every shift the disc's VABs hold (`0..=0x7F`); a larger one would read past the 192-entry table.
+
+The LZS decoder `FUN_8001A55C` matches over every container section on the disc and both packers. The SCUS root
+`FUN_8005AF0C` under the fishing lure's record counted a negative input's leading zeros, where the GTE's `LZCR` counts
+its leading ones. The field animator's sampler `FUN_8001BE80` and angle lerp `FUN_8001D088` over real clip banks, the
+`"ME"` reader `FUN_8002B28C` and codec `FUN_8002A9CC` over every slot of `summon.dat` / `readef.DAT`, the VDF morph
+`FUN_8001C604` / `FUN_8005B038`, the action-tag lookup `FUN_80050E2C`, the record's spell-list helpers, the MAN
+section-0 carve `FUN_8003A110` and the motion-script installer `FUN_8003A9D4` over every scene, the slot machine's LCG,
+landing search and marquee blits, the fishing prize gate and reel decoder, the coin counter's entry panel, the
+publisher-logo quads, and the mode table's per-frame and INIT handlers match. The CARD body's readout takes the
+scratchpad byte `0x1F800391`, which two notes gave as `0x1F800393`, and the dance HUD's displayed-note helper carried
+the CPU feed's tag without the feed's schedule.
+The field-to-battle transition (PROT 0979) runs off the disc packet for packet. The particle fields
+`FUN_801CFDA0` / `FUN_801D0370` showed every per-frame integration term rounded toward zero in the
+port, where retail multiplies by the frame step and shifts with `sra`, which floors; only the
+spin-up's z adds `7` to a negative product first (`0x801D0628..0x801D0638`). The tile shatter
+`FUN_801D0D24` / `FUN_801D0E54`, with the SCUS dispatcher `FUN_80043390` and its leaves live, showed
+every flying tile drawn at its face's full grey: the emitter hands the dispatcher the record's
+progress, a non-zero one selects the depth-cue bank, and slot 17 is then `FUN_80044DC8`, which drops a
+quad wholly off the screen (`FUN_80044798`) and fades the colour toward black by `IR0 = progress`.
+The swirl's early submit `FUN_801D1A20` rides the same bank through its flag word's top byte, which
+also links each quad at its largest corner `SZ`; and under the double-sided `NCLIP` mask an edge-on
+quad still drops, which the port's double-sided arm had skipped. The tick `FUN_801D1888` matches. The
+late swirl, which hands the band to the shatter renderer `FUN_80029888`, is not carried faithfully and
+the test leaves it out.
+
+The procedural mesh builder `FUN_80028158` matches `effect_default_arm::build` byte for byte over
+every shape and texture mode; shapes 1 and 3 on the planes that start at `z` extrapolate vertex 6
+through two pads nothing wrote, so the test seeds the pads zero. The field frame blender
+`FUN_8001BE80` with the angle lerp `FUN_8001D088`, the camera-relative glide `FUN_80021248` /
+`FUN_8002149C` from spawn to retirement, the field-entry camera reset `FUN_80025C24`, the `LZCS`
+square root `FUN_8005B0B8` and the `GPF` morph blend `FUN_8005B038` match.
+
+The field camera build `FUN_800172C0` and the single-point `RTPS` `FUN_8003D368` match
+`render_kernels::gte::FieldGteView`, an integer port of the matrix the build loads. The kernels that
+stand for one of retail's own `RTPS` calls had projected through the hosts' `f32` view instead: on
+screen it missed retail's `SXY` on nearly every point, by a pixel from the divide and the integer
+matrix, and by hundreds where a point sits within `H / 2` of the eye and the divide saturates. The
+framebuffer grab's `rtps_point` and the drop shadow's grid now project through `FieldGteView`.
+The fog particle pass joins them (`fog_render`): the walk `FUN_8003F348`, the per-particle step
+`FUN_8003F3FC` and the half-sheet emitter `FUN_8003F86C`, run whole and step by step over random
+cameras the matrix build made, pools, windows, tints and both arms of the overworld bit, record for
+record and packet for packet with each packet's ordering-table bucket. Through the `f32` view the
+port's corners matched retail's on fewer than one half in twenty; a map01 capture's 104 sheets went from 6
+to 103 exact. The `f32` path also dropped a particle at or behind the eye where retail draws the
+saturated corners, and its overworld `NCLIP` bent all three corners where retail bends only the one it
+writes back (`SXY2`).
+
+The battle routines too large to run whole in one pass run arm by arm, each against the kernel its port keeps for
+that arm. The Triangle arts-list driver `FUN_801D3444` (`arts_list_driver`) carries a caption latch `0x801F4E08`
+the port did not have: the closed list's `View Hyper Arts list` is latched in the entry and stays up while a list
+closed just before the entry ended slides out, which the port now draws. The battle-result build `FUN_801D84C0`
+(`party_panel_build`) publishes the context's `+0x1F9` buffer into two placement records, `0x59` and `0x65`, where
+the port's list named one. The Final Heal sweep `FUN_801E6968` (`final_heal`) keeps the ability bit on a member
+whose bit is set with no Lost Grail equipped, where the port cleared it; the engine still sweeps the whole party
+after every step where retail sweeps the acting actor's target at the action's cleanup. The after-image walk
+`FUN_80049348` (`afterimage_walk`) divides `8` by the anim rate with no guard, so a frozen actor's quotient is all
+ones and the walk draws nothing, where the port drew a deep pair; and a monster at rate `1` samples depths `16` and
+`32`, where the port clamped to `15`. The multi-cast readout `FUN_801E805C` (`value_readout`) draws a five-digit
+row's narrow cells fourteen rows tall, not twelve, and its teardown head closes element `0x50` and drops the flag
+when the string total is live, which the port's fragments did not compose. The damage finisher `FUN_801DDB30`
+(`finisher`), called on its own with the two rolls, matches on the value, the Stone nullify, the strip, the rumble
+and the summon XP; its Spirit fill stores each add as the halfword `+0x170` and caps the halfword, so a percent past
+`0xFFFF` - a big hit on a tiny max HP - wraps under the cap, where the port saturated. The per-hit numeral
+`FUN_801DF6B8` (`popup_numeral`) matches, except an arm with no port: under an OT depth of `0x80` the projection's
+square is reseated `32` px from its near corner, and the host projection carries no OT depth.
+
+Matched on their first run: the side-band tick `FUN_80056208` (`battle_sideband`); the battle floor's grid
+`FUN_801D02C0`, both passes and every packet, the GTE answered by the interpreter's (`ground_grid`); the per-actor
+draw `FUN_80048A08`, per object and the shadow (`actor_draw`); and the arts-entry build `FUN_801D388C` case `9`, the
+four chip records (`arts_entry_build`).
+
+The move projectile's slots in `FUN_801E09F8` (`homing_flight`), run whole pass after pass over every shipped
+move-power record and mutations of it at every frame step, match `HomingSlots::step_pass` and the streak word's
+`MoveFxStreak::tick_counter_by` on every slot's phase, child, position, heading and counter, the census, the spawns,
+the drags, the tints, the shivers and the hits. They found two arms with no port. A flying slot calls the streak ribbon
+once per `0xFF` byte of the `+0x12` list on every pass (`0x801E1284..0x801E12D8`), so the four records whose flight
+list is four `0xFF` drew no bolts between the caster and the target. And the two lists do not read a byte alike: the
+landing list's `0x64` is a screen flash (`FUN_80024E80(0x801C9070, 2)`, `0x801E14E0..0x801E1534`) and `0x65..=0x7F`
+spawns nothing, where the port handed both to the prototype table; the flight list has no such test.
+The menu side runs through a window-VM harness: the interpreter `FUN_801D6628` with its SCUS window-list helpers
+live over a bump heap (`window_vm`), every program the overlay scan recovers chained at random and generated ones
+over every opcode, the whole list compared node by node after each program. The port's window model created every
+window with style `0` where the creator copies the descriptor's class word, never computed the park edge it slides in
+from, and closed a closing window again and a sliding one from frame `0`, where retail leaves the first alone and
+reverses the second's progress. With the helpers live, the sub-screens that wait on them run frame by frame
+(`save_subscreens`): the terminal screen `FUN_801DD12C`, the Yes/No screens `FUN_801D6D38` / `FUN_801D8A58`, the
+notice `FUN_801DD1B8` and the release wait `FUN_801DD26C`, with the list kernel `FUN_801D688C` live beneath them. The
+save graph's Yes/No screens never seeded their cursor. The pause menu's own ready check, against the same
+`FUN_801D6D38`, stepped on Left and Right and stopped at the ends, and moved before it confirmed; retail runs the list
+kernel over two rows, wrapping, on Up and Down, with confirm and cancel ahead of any move.
+The window walker's motion pass `FUN_80031AE4` runs in the same harness frame by frame, programs landing between passes
+at frame deltas of `1` to `3`, the latch `_DAT_8007BB80` it leaves compared with every node: it matched the port's
+`MenuWidgetState::step_motion` as written, and the menu's window-slide input lock
+([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)) stands on it.
+
+The casino prize counter `FUN_801DC1CC` (`prize_exchange`), over every block of the disc's table, found the port
+committing a redeem on the Yes press: retail stores state `3` there and commits on the next frame, which reads no pad,
+so the jingle lands a frame after a silent Yes. The menu's decimal writers `FUN_80034B78` / `FUN_80034E4C`
+(`menu_numerals`) decide each of nine places alone, and six copies in the port right-aligned a string instead: a value
+wider than its field prints its overflow's non-zero digits from the pen in retail, where the port stacked them on the
+first cell, and the zero-padded writer cut the value to its field. One kernel, `decimal_field_cells`, now stands for
+both. The HP and MP ink tiers `FUN_800349EC` / `FUN_80035EA8` match both hosts' readers, and the field's text
+balloon, its spawner `FUN_8003C764` and handler `FUN_801DA7F0` (`text_balloon`), matches tick by tick.
+The property-ramp ticker `FUN_80036D80` walks a list, not the slots: the installer `FUN_8003C5F0` links each
+new slot at the tail through `+0x1A` / `+0x1C` (`0x8003C664..0x8003C688`) whichever slot its first-free scan
+found. Two live ramps on one word therefore end on the newer one's value, where the port, walking slot order,
+let an older ramp in a higher slot overwrite it. `RampScheduler` keeps the install order, and `ramp_pool` now
+shares destinations. The motion VM's player box `FUN_801CF8AC` and its wander fan `FUN_801D5A68` match
+`AmbientPlayerProbe` (`ambient_probe`) on the class arm every placement takes. The party-table rebuild
+`FUN_801DE190` matches `rebuild_battle_party_table` (`party_table`), the kernel the battle entry's companion seat
+now reads; retail would also append Terra beside a full party or beside Terra, which the engine's seat refuses.
+
+The move VM `FUN_80023070`, run over short random programs on a record of random bytes (`move_vm`), found the
+loop's exit wrong: an opcode past `0x46` does not end the frame. The bound check branches to the epilogue
+`0x80024150`, which adds the width the previous opcode left in `$a2` and loops; op `0x0B`'s jump-table word is
+the same epilogue. The port ended the frame on the first and spun on the second. `move_vm::FrameStep` carries
+the width across a frame, for `run_until_break` and the ambient part tick alike. Op `0x46` stores three words,
+`+0xB8 = 1` and the sign-extended operand at `+0xBC` and `+0xC0` (`0x80024134..0x8002414C`), where the port
+wrote two halfwords. Every other opcode matches over the whole record, op `0x3C` / `0x3D`'s pose block, op
+`0x1D`'s global and op `0x21`'s deformation row.
+
+The overlay escape `FUN_801D362C`, every sub-op with a host answering each global from a copy of the RAM the
+arm touches (`move_ext`), found sub-ops `0x11`, `0x25` and `0x26` moving the 8-byte position vector
+`+0x14..+0x1B` with `lwl` / `lwr`: a slot's fourth halfword is the vector's pad `+0x1A`, where the port saved and
+restored the `+0x2A` mirror. The Bezier `FUN_801E45BC` splits each weight into whole and fraction in 32-bit words
+over an `lhu` parameter; the port's widened form agreed only inside `0..=0x1000` and now transcribes the split.
+Sub-op `0x29` negates its operand as a word (`negu` at `0x801D4418`), so `-0x8000` ramps toward `+0x8000`; the
+port negated a halfword. The arm's destination is rung `op[2]` of the scene floor-height ladder at `0x1F80035C`, and its non-zero-duration arm installs a property ramp (`FUN_8003C5F0`, `0x801D43F0..0x801D4428`); the engine's world host had stored the end value in a sixteen-entry array nothing read, so the ladder neither moved nor ramped. It now writes `FieldTerrain::floor_height_lut` and ramps through a `RampScheduler` the field frame ticks. The curve's point is copied out as a whole SVECTOR whose pad is stack the arm never
+wrote, so `+0x1A` after `0x0E` / `0x12` is not compared. Sub-op `0x3C` ramps toward the operand's `lh`, where the
+port's fade request carries a byte; no larger operand is generated.
+
+The battle effect pool runs whole (`effect_vm`): the init and pack fixup `FUN_801DE914` over the real
+`efect.dat`, the spawn API `FUN_801DFDF0` over every effect id with the ids `4` / `0x13` side call, and
+the walker `FUN_801E0080` frame by frame at frame steps `0..=3`, every master and child slot compared
+and every pass-2 packet held to `child_billboards`. The spawn's randomized offsets are written into the
+shared script buffer, so a second spawn of an effect re-deals the legs of an earlier master still
+releasing children; the port kept them per master. Both entries also stand still once the battle-end
+byte leaves `0xFF`, which the engine's spawn, walk and draw did not test.
+
+The PROT 0900 screen-effect widgets run with their spawn and control APIs live (`screen_fx`): the shared
+interpolator `FUN_801DE4C8`, the mask, the letterbox, the image panel and the scripted sprite, every
+record field and packet frame by frame. The panel handler draws from its targets, so a `dur = 0` move
+shows at once where the port kept drawing the old latch; and the sprite's `0x40` byte is tested once on
+entry, so after a passed wait the next record dispatches whatever its first byte is, where the port
+parked on a non-`0x40` byte.
+
+The entity tick `FUN_801DA51C` (`world_map_entity`), over every state with its callees answered by
+recording hooks, found the Activating state blocking the wrong actor: it sets and the transition clears bit
+`0x80000` on the **player** (`_DAT_8007C364[+0x10]`, `0x801DA5C0..0x801DA5E0`, `0x801DA730..0x801DA74C`),
+where `step` wrote the entity's own word; and the encounter roll receives the BGM poll `FUN_800243F0`'s
+return (`0x801DA548`), which `FUN_801D9E1C` requires non-zero (`0x801DA16C`), where `step` passed `0`.
+
+The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
+`.MAP` (`window_rebuild`) match on their first run.
+
+The battle weapon trail runs whole: the band emitter `FUN_800485BC` with the billboard projector
+`FUN_800195A8` live beneath it (`weapon_trail`), its sweep driver `FUN_80048310` and the trigger
+`FUN_8005112C`. The emitter hands the projector a box of half-size `1` and points all four of its
+out-pointers at one slot, so the point it keeps is the last corner, a view unit right and down of the
+control point, projected through the matrix the battle frame loads. The port projected through the
+hosts' `f32` battle view instead, a pixel off on about one point in twenty;
+`FieldGteView::from_battle_pose` now builds the integer matrix and `project_trail_point` stands for
+the projector call, and the packets and their ordering-table links match.
+
+The op-`0x45` camera mover's tick `FUN_801DC0BC` (`camera_mover`) has stores for nine of its ten pairs:
+no block reads the focus Y pair `+0x1C` / `+0x1E`, so `0x8008911C` holds through a glide, where the port
+walked it to the beat's target. The tick's tail re-rolls the shake jitter about the mover's own pose
+(`FUN_801D9D30`'s arithmetic inline), which the port skipped while a glide ran. The arming
+`FUN_801DD310` copies the live globals' low halves into the pair block and stores the duration as a
+halfword the tick reads signed; the port armed on whole words. The tween builder `FUN_801D829C` and the
+shake `FUN_801D9D30` (`camera_tween`) match.
+
+The field-to-battle transition's seeders (`intro_seeders`), run with the production `IntroEnv`, showed
+its trig tables swapped: `_DAT_8007B7F8` is the cosine table and `_DAT_8007B81C` the sine, so every
+particle of `FUN_801CFBB4` / `FUN_801D0164` and every tile of `FUN_801D081C` tumbled about the wrong
+axis and the swirl `FUN_801D1564` built its rings transposed. The heading was a floating-point
+`atan2` where retail reads the bearing `FUN_80019B28`, and the radial seeder's root a float `sqrt`
+where retail runs `FUN_8005AF0C`. The four seeders now match given the same draws, and the draws are
+retail's own: BIOS `rand()` over the world stream, lent in where the transition's init found it.
+
+The battle monster loader `FUN_80055468` (`monster_load`), over every monster at every slot, uploads its
+CLUT row as a `256 x 1` rectangle from the pool's start, so the row's last sixteen entries are the 4bpp
+page's first halfwords; the port wrote only the fifteen palettes. The page, the relocated primitives
+and the upload gate on the acting seat's queue byte match. The party battle mesh's splice
+`FUN_800536BC`, post-pass `FUN_80053898` and texture relocation `FUN_80053A28` (`battle_char_splice`)
+match over the four player files and random loadouts, the TMD registrar `FUN_800268DC`
+(`tmd_register`) over every TMD the raw PROT entries carry, the sprite arm `FUN_8002A5A4`
+(`sprite_arm`) over every mode word, and the overworld sky band `FUN_801F73E4` (`world_map_sky`) over
+random overworld cameras.
+
+The visible-tile crop's decoration pass `FUN_801F7088` (`view_window`), run whole over random maps,
+focus words, windows and region boxes, draws exactly the cells `view_cells` and
+`ViewCells::decoration_visible` pass, hands its ground emitter the clamped window and restores the
+scratchpad bytes after it.
+
+The PsyQ `St` ring (`st_ring`), `StSetRing`, `StSetStream` with its window installer, the demux
+`FUN_8005F024` on its memory-source path, `StGetNext` and `StFreeRing`, run as one stream of operations
+over generated movies, matches `StRing` on every slot status, the cursors (`StRing::cursors`), the trace
+codes and the frames read. The demux compares `chunks - 1` as a word, so a header claiming zero chunks
+leaves its frame filling, where the port completed it.
+
+The menu overlay's sub-screens, run frame by frame against `SaveScreenMachine`
+(`menu_subscreens`), show the shop quantity spinner `FUN_801DBC5C` re-arming its
+list result to `1` on the frame it settles, so that frame never routes, where the
+machine routed on whatever the word held; and the mode select's Buy row clearing
+only the staged item, quantity and list result, where the machine cleared the
+staged slot too. The sprite-descriptor dispatcher `FUN_800198E0` (`title_prims`)
+closes every non-`0x11` upload by recording the texpage's CLUT row in the table
+at `0x8007BEC0`, which its port did not do, and stores its strip width as a
+halfword, so a `w * h` past `0xFFFF` wraps where the port saturated. The slot add
+`FUN_80042FE8` (`save_leaves`) refuses a slot at or past the window's end, which
+the port did not test; the first-live-monster scan `FUN_801DB8B4` falls through
+to the fifth monster's seat when the first four are down, where the port returned
+the band end. The save composer `FUN_801E1934` (`save_compose`) stages exactly the
+block `legaia-save`'s title, identity and summary writers compose from the same
+live state.
+
+The menu overlay's window painters (`menu_painters`), run with every leaf draw logged under the ink
+word `_DAT_8007B454`, found the ink the port had dropped as a draw-order word: the Yes / No labels of
+windows 46 and 5 stage ink `5` (teal) and the port drew them white. Window 34's passive bound falls
+through to the item's own description at `0x40` and above, where `description_source` said none. With
+the options popup open, every row but the cursor's draws in ink `0`, where the port scaled each row's
+own colour; the popup's cursor is the hand sprite, where the port printed `>`. The Magic info window
+prints a spell's level through the template `$<digit>`, and `$` is the font's one-glyph "Lv"
+ligature, which the port spelled out. The field party HUD `FUN_801D0D38` (`field_hud`) stages the MP
+law for the MP pair, so a fallen member's MP keeps its own tier there, where the port painted it red.
+The save screen's grid dispatcher `FUN_801E06C0` (`save_grid`) forms each cell's slide base from the
+previous cell's slot, which only the parked row and the slide frames show.
+
+The fishing HUD's sprite path (`fishing_hud`) and the Muscle Dome hub's (`dome_hud`), run into a
+packet buffer and ordering table and held to the port's primitives packet by packet, match: the shared
+emitters, the digit fields, the banners, the gauge bars and the hub's ROUND banner and course card. So
+do the art-name banner placement `FUN_8004C650` (`art_banner`), the counters, prompts, tabs and shop
+panels of the menu overlay, the save-flow confirms, and the save screen's box guard and caption.
+
+The STR overlay (PROT 0970) runs from the frame bytes to the MDEC word list. Its Iki converter
+`FUN_801D0378` with the table LZSS `FUN_801D0604` (`iki_decode`) matches `psx_mdec::iki_mdec_codes`
+word for word over sampled frames of all six movies, header copy and `0xFE00` padding included;
+`MdecDecoder::decode_frame` now runs through that list and the MDEC stage `decode_mdec_codes` as
+retail splits the work, pixel-identical to the fused decoder it replaced. The STRv2 decoder
+`FUN_801D070C` (`strv2_decode`), one-shot and resumed in chunks, and its table unpacker
+`FUN_801F1A00` match on generated streams. The play loop's context init, frame poll and slice callback,
+the stream open and frame pump over the nine retail dispatch slots on their own movies, the MDEC output
+word, the slice-callback install and the four MDEC DMA sync routines (`str_player`, `mdec_sync`) match.
+
+Among the system and render leaves, the boot SPU-base seeder, the staged character pair, the prompt
+line counter, the DRAWENV seed, the fade ramp step, the rumble actuator kernel and the scene-name sync
+(`system_leaves`), the gouraud colour spread and the display X mirror (`render_leaves`), the battle
+intro's style pick and `POLY_GT4` builder (`intro_style`), the CLUT-walk stepper on the actor walker's
+case `0xB` (`clut_walk`), the placement spawner's model-bank select (`model_select`), the field-load
+entry step (`field_load_entry`), the sustained-cue teardown (in `sfx_drain`) and the battle XA
+seek-ahead (`battle_voice`) all match.
+
+PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
+bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn
+whatever the baseline, where the port tested first, so a bottom billboard at or above the screen top
+grew no segment and drew four `rand()` short. Its single-quad sibling `FUN_801E1AB0`
+(`afterimage_quad`), the colour wash `FUN_801F2410` (`colour_wash`), Swordie's split panels and slash
+streak (`swordie`) and Deadly Rain `FUN_801F7B88` (`deadly_rain`, frame after frame on the real GTE:
+records, splashes, streaks and their ordering-table entries) match.
+
+The battle-stage stream walker `FUN_8001FE70` (`container_walkers`) copies its
+lead chunk whole and type-tests only the headers after it, so a lead chunk of
+type `0x02` does not end the walk, where the port's type-`0x02`-terminated walk
+stopped on it.

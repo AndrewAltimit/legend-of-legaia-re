@@ -318,6 +318,13 @@ pub trait PrimHost {
     /// toggle - and the engine port has to decide whether to enable it.
     fn stp_or_gate_set(&self) -> bool;
 
+    /// Store `clut_row` at entry `texpage` of the 32-halfword texpage ->
+    /// CLUT-row table `0x8007BEC0`, the write that closes every non-`0x11`
+    /// [`exec_sprite_descriptor`] (`sh` at `0x80019B08`). The battle draw
+    /// path resolves a primitive's CLUT row through it. Default: no-op, for
+    /// hosts that resolve CLUT rows another way.
+    fn record_texpage_clut_row(&mut self, _texpage: u8, _clut_row: u16) {}
+
     // ------------------------------------------------------------------
     // Overlay-side helpers consumed by [`exec_centered_bar`] /
     // [`exec_centered_text`] / [`exec_card_init`]. These mirror the menu
@@ -376,7 +383,10 @@ pub trait PrimHost {
     /// 15-byte status buffer at `DAT_801F2A76` (rewinding from
     /// `+0xE` to `+0x0`).
     ///
-    /// PORT: FUN_801E373C
+    /// REF: FUN_801E373C - a no-op hook, not a port: the card-init body's
+    /// pieces are ported where they live (`FUN_801E0598` / `FUN_801E435C`
+    /// in `legaia_engine_menus::card_bu_io`, the fault-counter seed in
+    /// `legaia_engine_menus::card_flow`).
     ///
     /// The retail body is a flat sequence of opaque global writes; the
     /// engine owns the UI state and rewires whatever
@@ -425,7 +435,9 @@ pub fn exec_move_image<H: PrimHost>(
 /// Routes between the simple (tag `0x11`) and complex variants. Under
 /// `flags & 8` the complex variant runs an STP-OR pass over the pixel
 /// array and emits a `(w * h, 1)` strip; then, either way, it emits the
-/// main sprite from [`SpriteDescriptor::main_rect`].
+/// main sprite from [`SpriteDescriptor::main_rect`] and records the main
+/// record's texpage against the first record's row
+/// ([`PrimHost::record_texpage_clut_row`]).
 ///
 /// Read the whole of `0x800198E0` before changing this - three of its
 /// properties are counter-intuitive and an earlier port got all three
@@ -447,7 +459,12 @@ pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor
         // total pixel count: `mult v1,v0` at `0x80019980` feeds
         // `sh a0,0x14(sp)`, and `0x16(sp)` is the literal 1 stored at
         // `0x80019990`.
-        let count = i32::from(desc.rect.w) * i32::from(desc.rect.h);
+        // The product is stored as a halfword (`sh a0,0x14(sp)` at
+        // `0x8001999C`), so it wraps at 16 bits, and the OR loop's gate and
+        // bound read that halfword back signed (`sll`/`blez` at
+        // `0x800199A4`, `lh` at `0x800199C8`).
+        let strip_w = (desc.rect.w as u16).wrapping_mul(desc.rect.h as u16) as i16;
+        let count = i32::from(strip_w);
         // Only the OR loop is gated - on the global AND on a positive
         // pixel count (`beq` at `0x80019998`, `blez` at `0x800199A8`).
         // Both branches land on the emit at `0x800199EC`, not past it.
@@ -457,7 +474,7 @@ pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor
         let strip = Rect12 {
             x: desc.rect.x,
             y: desc.rect.y,
-            w: desc.rect.w.saturating_mul(desc.rect.h),
+            w: strip_w,
             h: 1,
         };
         host.emit_sprite(strip, desc.pixel_data_ptr, true);
@@ -467,6 +484,15 @@ pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor
     // record - `flags & 3` selects nothing (see `SpriteEmitVariant`), and
     // the `== 3` arm is not a skip.
     host.emit_sprite(desc.main_rect, desc.main_pixel_data_ptr, false);
+
+    // Then the texpage -> CLUT-row table `0x8007BEC0` (`0x80019AC8..
+    // 0x80019B08`): the main record's texpage, `x / 64` rounded toward zero
+    // plus `(y >> 8) * 16` from its signed halfwords, masked to 32 entries,
+    // records the first record's `y` - the CLUT's VRAM row when `flags & 8`
+    // put a CLUT ahead of the image, the image's own row otherwise.
+    let texpage =
+        (i32::from(desc.main_rect.x) / 64 + (i32::from(desc.main_rect.y) >> 8) * 16) & 0x1F;
+    host.record_texpage_clut_row(texpage as u8, desc.rect.y as u16);
 }
 
 /// Y-axis viewport gate used by [`exec_centered_bar`] / [`exec_centered_text`]
@@ -541,9 +567,10 @@ pub fn exec_centered_text<H: PrimHost + ?Sized>(
     (block_height + 1) / 2
 }
 
-/// Port-thunk for `FUN_801E373C` (card-init composite).
+/// Thunk for `FUN_801E373C` (card-init composite).
 ///
-/// PORT: FUN_801E373C
+/// REF: FUN_801E373C - dispatches to [`PrimHost::init_card_state`], whose
+/// default does nothing; it computes none of the routine's writes.
 ///
 /// The retail body is a flat sequence of opaque global writes whose
 /// representation is engine-specific, so the port is a single

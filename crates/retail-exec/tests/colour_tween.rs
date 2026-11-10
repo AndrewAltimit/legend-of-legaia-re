@@ -45,6 +45,7 @@ fn emitter(cpu: &mut psx_retail_exec::Cpu) -> Rc<RefCell<Vec<(i16, i32, u32)>>> 
 
 #[test]
 fn the_overlay_tween_lerps_holds_and_retires_as_retail() {
+    differential!(prot(897, TWEEN));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -131,6 +132,7 @@ fn the_overlay_tween_lerps_holds_and_retires_as_retail() {
 
 #[test]
 fn the_fade_actor_accumulates_clamps_and_finishes_as_retail() {
+    differential!(scus(FADE_TICK));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -218,6 +220,7 @@ fn the_fade_actor_accumulates_clamps_and_finishes_as_retail() {
 /// sign always says "overshot", so the first tick lands on the target.
 #[test]
 fn a_loaded_fade_shows_what_retail_shows_to_its_end_and_past_it() {
+    differential!(scus(FADE_LOAD), scus(FADE_TICK));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

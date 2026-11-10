@@ -144,6 +144,10 @@ impl PlayWindowApp {
             // `End` reloads an `--expansion` pack; with none loaded the row
             // names a key that only says there is nothing to reload.
             .filter(|&&(hk, _)| hk != HostHotkey::ReloadPack || self.pack_reload.is_some())
+            // The panel is full at the disc font's metrics (one more row
+            // overflows the 320x240 stage both ways); `Print Screen` is a
+            // one-shot action the guide and the notice it raises name.
+            .filter(|&&(hk, _)| hk != HostHotkey::Screenshot)
             .map(|&(hk, _)| {
                 let line = if hk.is_action() {
                     states.push(None);
@@ -1048,6 +1052,7 @@ mod help_panel_tests {
     fn worst_entries() -> Vec<(&'static str, String)> {
         let mut e: Vec<(&'static str, String)> = HOST_HOTKEYS
             .iter()
+            .filter(|&&(hk, _)| hk != HostHotkey::Screenshot)
             .map(|&(hk, _)| {
                 let state = match hk {
                     HostHotkey::AudioMute => "muted",
@@ -1132,7 +1137,8 @@ mod help_panel_tests {
     fn help_panel_fits_the_stage_at_dialog_font_metrics() {
         assert_fits(&|s: &str| 6 * s.len() as i32, 13, "6 px metric");
         let l = assert_fits(&|s: &str| 4 * s.len() as i32, 13, "4 px metric");
-        let even = (HOST_HOTKEYS.len() + 1).div_ceil(2);
+        // Every hotkey but the screenshot key, and the fullscreen row.
+        let even = HOST_HOTKEYS.len().div_ceil(2);
         assert!(
             l.cells
                 .iter()

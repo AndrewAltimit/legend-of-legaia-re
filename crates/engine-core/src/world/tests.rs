@@ -410,3 +410,4 @@ mod battle_formation_span;
 mod battle_make_way;
 mod battle_rage_turn;
 mod battle_target_ring;
+mod cast_arm_ring_step;

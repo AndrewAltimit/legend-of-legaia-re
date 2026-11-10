@@ -6,7 +6,7 @@
 use super::v_windhash::{HIDDEN, SHOWN};
 use super::{
     CaptureCamArm, CaptureDrift, CaptureSeatWrite, ModuleCamSeats, ModuleCamState, ModuleShot,
-    ModuleSpawn, SPEED_SCALAR, SpawnAnchor, SpawnRecord, focus_on, yaw_from,
+    ModuleSpawn, SPEED_SCALAR, SpawnAnchor, SpawnRecord, bearing_12bit_approx, focus_on, yaw_from,
 };
 use legaia_engine_system::trig::trig12;
 
@@ -50,7 +50,7 @@ pub fn water_hazard_ring(ground: (i16, i16), facing: i16) -> Vec<ModuleSpawn> {
 ///
 /// | arm | drift | on the gate | countdown |
 /// |---|---|---|---|
-/// | 0 (`0x801F738C`) | - | the living seats hidden, the caster shown with `+0x21C = 9`; yaw `0x800 - facing`, TR `(0, 0x300, depth / 2)`, `0xC` frames on the caster's body | `= scalar << 7` |
+/// | 0 (`0x801F738C`) | - | the caster turned on its target (`+0x46`), the living seats hidden, the caster shown with `+0x21C = 9`; yaw `0x800 - facing` off the new heading, TR `(0, 0x300, depth / 2)`, `0xC` frames on the caster's body | `= scalar << 7` |
 /// | 1 (`0x801F7518`) | pitch `+1`, TR z `+32` | the living party shown; a cut on the caster, pitch `0x100`, yaw `-facing - 0x100`, TR `(0, 0, 0x2000)` | `+= scalar << 7` |
 /// | 2 (`0x801F7634`) | TR z `+1`, yaw `+2` | the ring and the sweep | `+= scalar << 7` |
 /// | 3 (`0x801F7B90`) | TR z `+1`, yaw `+2` | the settle, then `0xFF` | - |
@@ -69,15 +69,32 @@ pub fn water_hazard_camera(
     let mut arm = CaptureCamArm::default();
     match phase {
         0 => {
+            // The caster first turns on its target: a seat's live pair, or
+            // the centroid of a group code (`FUN_801DCEAC`), through the
+            // bearing `FUN_80019B28` plus a half turn (`0x801F7394..0x801F73E4`);
+            // the shot frames the new heading.
+            let v = seats.victim;
+            let onto = match st.target_aim {
+                Some(a) => bearing_12bit_approx(
+                    a.centroid_z.wrapping_neg(),
+                    a.centroid_x.wrapping_neg(),
+                    c.z,
+                    c.x,
+                ),
+                None => bearing_12bit_approx(v.z, v.x, c.z, c.x),
+            }
+            .wrapping_add(0x800)
+                & 0xFFF;
             arm.others_write = HIDDEN;
             arm.others_live_only = true;
             arm.caster_write = CaptureSeatWrite {
                 colour: SHOWN.colour,
                 render_flag: Some(9),
+                facing: Some(onto),
                 ..Default::default()
             };
             arm.shot = Some(ModuleShot {
-                angles: [0, yaw_from(0x800, c.facing), 0],
+                angles: [0, yaw_from(0x800, onto), 0],
                 tr: [0, 0x300, (depth / 2) as i16],
                 focus: focus_on(st.caster_body.unwrap_or(c)),
                 frames: 0xC,

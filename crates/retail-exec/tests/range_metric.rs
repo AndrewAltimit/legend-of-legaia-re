@@ -25,6 +25,7 @@ const RECORD: u32 = 0x8014_0000;
 
 #[test]
 fn the_range_metric_is_the_retail_metric() {
+    differential!(scus(METRIC));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

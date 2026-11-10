@@ -179,14 +179,49 @@ impl Renderer {
         // (`psx_native_centre` / `psx_texel_uv`). A sprite drawn one texel
         // per pixel samples the same texels either way; a scaled quad (an
         // ending vignette's shrunk photo panel) samples the GPU's.
-        if self.psx_snap_params().0 >= 1.5 {
+        //
+        // Under the PCSX-Redux texel rule (an instrument for that emulator's
+        // captures, `PsxTexelRule::PcsxRedux`) a textured quad takes no
+        // half-texel bias. A flat `POLY_FT4` is walked whole from the left
+        // edge's `U` / `V` at the first column (`SoftRenderer::drawPoly4TEx4`:
+        // `posX = m_leftU`) and the row's own `V`; a `POLY_GT4` splits into
+        // two triangles, which take the texel at the pixel centre along the
+        // row and at the row itself (the 3D pass's rule, `psx_texel_uv`). One
+        // texel per pixel reads the same texel either way; a scaled quad - a
+        // fog sheet - reads its emulator's. The [`PCSX_TEXEL_NUDGE`] keeps an
+        // exact texel boundary from rounding down through the host's
+        // interpolation.
+        let snap = self.psx_snap_params().0;
+        if snap >= 1.5 {
             let (dx, dy) = (1.0 / w as f32, 1.0 / h as f32);
-            for v in &mut geo.vertices {
-                v.pos[0] += dx;
-                v.pos[1] -= dy;
-                if v.flags & legaia_render_kernels::screen_prim::FLAG_TEXTURED != 0 {
-                    v.uv[0] += 0.5;
-                    v.uv[1] += 0.5;
+            let pcsx = snap >= 2.5;
+            for quad in geo.vertices.chunks_mut(4) {
+                let flags = quad[0].flags;
+                let bias = if !pcsx {
+                    [0.5; 2]
+                } else if flags & legaia_render_kernels::screen_prim::FLAG_GOURAUD != 0
+                    && quad.len() == 4
+                {
+                    // Half a pixel's step along the top edge, the row's.
+                    let px = (quad[1].pos[0] - quad[0].pos[0]) * w as f32 * 0.5;
+                    if px.abs() > f32::EPSILON {
+                        [
+                            0.5 * (quad[1].uv[0] - quad[0].uv[0]) / px + PCSX_TEXEL_NUDGE,
+                            0.5 * (quad[1].uv[1] - quad[0].uv[1]) / px + PCSX_TEXEL_NUDGE,
+                        ]
+                    } else {
+                        [PCSX_TEXEL_NUDGE; 2]
+                    }
+                } else {
+                    [PCSX_TEXEL_NUDGE; 2]
+                };
+                for v in quad {
+                    v.pos[0] += dx;
+                    v.pos[1] -= dy;
+                    if v.flags & legaia_render_kernels::screen_prim::FLAG_TEXTURED != 0 {
+                        v.uv[0] += bias[0];
+                        v.uv[1] += bias[1];
+                    }
                 }
             }
         }
@@ -403,3 +438,9 @@ impl Renderer {
         }
     }
 }
+
+/// The texel offset a composited screen quad samples with under the
+/// PCSX-Redux texel rule: that emulator takes none, and this sliver only
+/// keeps a texel the walk lands on exactly from reading as the one before
+/// through the host's interpolation.
+const PCSX_TEXEL_NUDGE: f32 = 1.0 / 64.0;

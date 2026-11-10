@@ -41,6 +41,7 @@ enum Call {
 
 #[test]
 fn the_effect_stepper_is_retails() {
+    differential!(prot(898, STEP));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

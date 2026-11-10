@@ -199,6 +199,14 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
             .unwrap_or_default()
             .to_string(),
         passive: text.and_then(|t| t.item_passive_text(id)),
+        // `FUN_801D0F1C` asks for the scope icon only on a kind-2 item that
+        // grants a passive.
+        scope_icon: text
+            .and_then(|t| t.passives.as_ref()?.passive_index(id))
+            .and(world.tables.item_effects.as_ref())
+            .filter(|e| e.kind(id) == 2)
+            .and_then(|e| e.descriptor(e.subtype(id)))
+            .map(|e| legaia_engine_menus::pause_screens::item_scope_icon(&e)),
         detail: text.and_then(|t| t.item_detail.as_ref()).map(|tables| {
             use legaia_engine_menus::shop::{expand_name_escapes_bytes, item_detail_line};
             let line = item_detail_line(tables, id);
@@ -268,6 +276,8 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
                 count: world.party.inventory.get(&id).copied().unwrap_or(0),
                 desc: t.desc,
                 passive: t.passive,
+                detail: t.detail,
+                scope_icon: t.scope_icon,
                 use_bits: use_bits.get(&slot).copied().unwrap_or(0),
                 throw_bits: throw_bits.get(&slot).copied().unwrap_or(0),
             }

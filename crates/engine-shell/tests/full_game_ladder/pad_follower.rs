@@ -6,6 +6,9 @@ use super::*;
 /// Frames without progress after which a runner stuck on a corner walks it
 /// (the follower's run-button hold).
 const SLOW_WALK_AFTER: u32 = 20;
+/// Frames pressed into a wall without moving before the solid-arm walk
+/// steps sideways off it.
+const WALL_NUDGE_AFTER: u32 = 8;
 /// The d-pad bits of a pad word.
 const DIRECTIONS: u16 = 0x00F0;
 
@@ -21,6 +24,14 @@ const DIRECTIONS: u16 = 0x00F0;
 /// laid across every pass off Mt. Letona's summit). Crossing one moves
 /// nobody, writes no story flag and changes no scene, so the walk need not
 /// step around it; avoiding it sealed the summit off from its way down.
+///
+/// A cross-context `CC <ch> D6 <abr>` (`4C D6`, an object's draw primitive
+/// flags) is cosmetic too: `chitei2` P2[0] / P2[1] / P2[9] / P2[10] are
+/// nothing else, laid across both pillar corridors to turn the pillars
+/// see-through (`docs/subsystems/script-vm-menuctrl.md`, `4C D6`). Avoiding them walled
+/// the walk into the pocket east of (108..109, 115..117) whenever a step
+/// carried it past the band, and whether one did hung on where the random
+/// encounters had stopped it.
 pub(super) fn inert_band(
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
@@ -33,17 +44,19 @@ pub(super) fn inert_band(
     };
     LinearWalker::new(&man[start..start + len], pc0).all(|i| {
         i.is_ok_and(|i| {
-            i.extended.is_none()
-                && match i.info {
-                    InsnInfo::Nop
-                    | InsnInfo::JmpRel { .. }
-                    | InsnInfo::Camera { .. }
-                    | InsnInfo::CamCfg { .. }
-                    | InsnInfo::ViewWindow { .. }
-                    | InsnInfo::Bgm { .. } => true,
-                    InsnInfo::MenuCtrl { op0, .. } => (0x30..=0x3F).contains(&op0),
-                    _ => false,
-                }
+            if i.extended.is_some() {
+                return matches!(i.info, InsnInfo::MenuCtrl { op0: 0xD6, .. });
+            }
+            match i.info {
+                InsnInfo::Nop
+                | InsnInfo::JmpRel { .. }
+                | InsnInfo::Camera { .. }
+                | InsnInfo::CamCfg { .. }
+                | InsnInfo::ViewWindow { .. }
+                | InsnInfo::Bgm { .. } => true,
+                InsnInfo::MenuCtrl { op0, .. } => (0x30..=0x3F).contains(&op0),
+                _ => false,
+            }
         })
     })
 }
@@ -839,11 +852,16 @@ pub(super) fn pad_walk(
             let w = &session.host.world;
             // A prop's box, not a person: an NPC walks off on its own, and
             // stepping round one changed the walk past `suimon`'s gate
-            // keeper by a few units.
-            let npc_near = w.npcs.positions.values().any(|&(x, z)| {
-                (i32::from(x) - i32::from(wx)).abs() < 256
-                    && (i32::from(z) - i32::from(wz)).abs() < 256
-            });
+            // keeper by a few units. With bodies solid a person stops the
+            // walk as a prop does, and one who stands still holds it for
+            // good: `bubu1` P1[6] at (8500, 3904) stops a walk at
+            // (8568, 4006), eight units west of the route's line at
+            // x 8576, where the line itself passes the body clear.
+            let npc_near = !w.npcs.solid
+                && w.npcs.positions.values().any(|&(x, z)| {
+                    (i32::from(x) - i32::from(wx)).abs() < 256
+                        && (i32::from(z) - i32::from(wz)).abs() < 256
+                });
             !npc_near
                 && w.field_actor_dir_blocked(wx, wz, dir)
                 && !w.field_actor_dir_blocked(tx, tz, dir)
@@ -962,6 +980,48 @@ pub(super) fn pad_walk(
             && session.host.world.locomotion.run_default
         {
             pad |= PadButton::R1.mask();
+        }
+        // Pressed into a wall corner the planner reads open, the walk steps
+        // sideways off the wall for a frame: the locomotion's leading probes
+        // (`FUN_801CFE4C`) reach past the player's own column, and after
+        // `rugi` P2[67]'s warp a walk standing at (5176, 8198), against the
+        // wall east of the corridor north of (40, 64), pressed north until
+        // the stretch's frame budget ran out. Gated on the solid arm, which
+        // is the only pass that walked into it, so the default walk is
+        // unchanged.
+        if session.host.world.npcs.solid
+            && since >= WALL_NUDGE_AFTER
+            && !moved
+            && walking_mode == SceneMode::Field
+            && pad & DIRECTIONS != 0
+        {
+            let along_z = dz.abs() >= dx.abs();
+            let dir = match (along_z, dz < 0, dx < 0) {
+                (true, true, _) => 0,
+                (true, false, _) => 2,
+                (false, _, true) => 1,
+                (false, _, false) => 3,
+            };
+            let w = &session.host.world;
+            let side = (w.field_dir_blocked(wx, wz, dir))
+                .then(|| {
+                    [-1i16, 1].into_iter().find(|&s| {
+                        let (nx, nz, side_dir) = if along_z {
+                            (wx + s * 8, wz, if s < 0 { 1 } else { 3 })
+                        } else {
+                            (wx, wz + s * 8, if s < 0 { 0 } else { 2 })
+                        };
+                        !w.field_dir_blocked(wx, wz, side_dir) && !w.field_dir_blocked(nx, nz, dir)
+                    })
+                })
+                .flatten();
+            if let Some(s) = side {
+                pad = if along_z {
+                    pad_for_step(session, s, 0)
+                } else {
+                    pad_for_step(session, 0, s)
+                };
+            }
         }
         pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);
@@ -1179,6 +1239,17 @@ pub(super) fn pad_walk(
                         .collect();
                     bodies.sort_unstable();
                     eprintln!("      [stall-npc] bodies {bodies:?}");
+                    for c in w.field_vm.channels.iter().filter(|c| !c.object_bind) {
+                        let (x, z) = (i32::from(c.ctx.world_x), i32::from(c.ctx.world_z));
+                        if (x - i32::from(px)).abs() < 400 && (z - i32::from(pz)).abs() < 400 {
+                            eprintln!(
+                                "      [stall-chan] P1[{}] at ({x},{z}) flags {:#x} pos {:?}",
+                                c.placement_index,
+                                c.ctx.flags,
+                                w.npcs.positions.get(&(c.placement_index as u8))
+                            );
+                        }
+                    }
                     for c in &w.props.colliders {
                         if (c.center.0 - i32::from(px)).abs() < 400
                             && (c.center.1 - i32::from(pz)).abs() < 400

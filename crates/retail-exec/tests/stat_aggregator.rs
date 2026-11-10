@@ -89,6 +89,7 @@ fn run_port(raw: &[u8], passives: &AccessoryPassives) -> (Vec<u8>, [u32; 4]) {
 
 #[test]
 fn the_port_rebuilds_a_record_byte_for_byte() {
+    differential!(scus(AGGREGATOR));
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

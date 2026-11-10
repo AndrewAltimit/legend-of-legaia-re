@@ -109,6 +109,7 @@ fn count_of(cpu: &mut Cpu, id: u8) -> u8 {
 
 #[test]
 fn the_buy_stepper_buys_what_retail_buys() {
+    differential!(prot(899, BUY));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -243,6 +244,7 @@ fn the_buy_stepper_buys_what_retail_buys() {
 
 #[test]
 fn the_sell_stepper_sells_what_retail_sells() {
+    differential!(prot(899, SELL));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

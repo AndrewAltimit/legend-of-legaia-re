@@ -10,6 +10,7 @@ from port_catalog.citations import (
     collect_citations,
     collect_doc_citations,
     collect_dumped,
+    collect_differential,
     collect_ports,
 )
 from port_catalog.features import bfs_reachable, build_call_graph, load_features
@@ -52,6 +53,12 @@ def main() -> int:
         "--ported-only",
         action="store_true",
         help="filter: only addresses with a // PORT: tag",
+    )
+    ap.add_argument(
+        "--no-differential",
+        action="store_true",
+        help="filter: ported, and no retail-exec differential runs the routine "
+        "(with --live: live ones only) - the differential worklist",
     )
     ap.add_argument(
         "--ignored-only",
@@ -235,7 +242,16 @@ def main() -> int:
             collect_port_anchors(srcs), srcs, fns, reach, reach_strict
         )
 
-    rows = build_rows(dumped, refs, sources, docs, ports, ignore=ignore, live=live_map)
+    rows = build_rows(
+        dumped,
+        refs,
+        sources,
+        docs,
+        ports,
+        ignore=ignore,
+        live=live_map,
+        differential=collect_differential(),
+    )
 
     if args.check or args.update_baseline:
         return run_ratchet(rows, args)
@@ -325,7 +341,7 @@ def main() -> int:
     if filtered != rows:
         print()
         print(f"filtered rows ({len(filtered)}):")
-        print(f"{'addr':<10} {'bucket':<8} {'D/d/P/I':<8} {'refs':>4}  port crates / ignore / first src")
+        print(f"{'addr':<10} {'bucket':<8} {'DdPILX':<8} {'refs':>4}  port crates / ignore / first src")
         print(f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 4}  {'-' * 60}")
         for r in filtered:
             flags = (
@@ -334,10 +350,13 @@ def main() -> int:
                 + ("P" if r["ported"] else ".")
                 + ("I" if r["ignored"] else ".")
                 + (("L" if r["live"] else "x") if r["live_known"] else ".")
+                + ("X" if r["differential"] else ".")
             )
             crates = ",".join(r["port_crates"]) if r["port_crates"] else "-"
             if r["ported"]:
                 tail = crates
+                if r["differential"]:
+                    tail += "  [differential: " + ", ".join(r["differential_tests"][:3]) + "]"
             elif r["ignored"]:
                 tail = f"[{r['ignore_category']}] {r['ignore_reason']}"
             else:

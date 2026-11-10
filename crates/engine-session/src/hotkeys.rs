@@ -61,10 +61,15 @@ pub enum HostHotkey {
     /// native window's `--expansion` folder or bundle, the play page's pack
     /// library) and re-enter the pack map the player is on, where they stand.
     ReloadPack,
+    /// `Print Screen`: save the frame on screen as a PNG - the native window
+    /// into the player's pictures folder, the play page as a download. Both
+    /// hosts take the key's press or, where the platform delivers only the
+    /// release (Windows does for this key), its release: one shot per press.
+    Screenshot,
 }
 
 /// Every hotkey with its `KeyboardEvent.code`.
-pub const HOST_HOTKEYS: [(HostHotkey, &str); 15] = [
+pub const HOST_HOTKEYS: [(HostHotkey, &str); 16] = [
     (HostHotkey::DiagRows, "F1"),
     (HostHotkey::AudioMute, "F2"),
     (HostHotkey::DebugCamera, "F3"),
@@ -81,6 +86,7 @@ pub const HOST_HOTKEYS: [(HostHotkey, &str); 15] = [
     (HostHotkey::Bloom, "F10"),
     (HostHotkey::AmbientOcclusion, "Home"),
     (HostHotkey::ReloadPack, "End"),
+    (HostHotkey::Screenshot, "PrintScreen"),
 ];
 
 impl HostHotkey {
@@ -120,6 +126,7 @@ impl HostHotkey {
             HostHotkey::Bloom => "bloom",
             HostHotkey::AmbientOcclusion => "ssao",
             HostHotkey::ReloadPack => "reload_pack",
+            HostHotkey::Screenshot => "screenshot",
         }
     }
 
@@ -142,12 +149,16 @@ impl HostHotkey {
             HostHotkey::Bloom => "Bloom",
             HostHotkey::AmbientOcclusion => "Ambient occlusion",
             HostHotkey::ReloadPack => "Reload pack",
+            HostHotkey::Screenshot => "Screenshot",
         }
     }
 
     /// The key as a player reads it: `F9`, or `I` for `KeyI`.
     pub fn key_label(self) -> &'static str {
         let code = self.dom_code();
+        if code == "PrintScreen" {
+            return "PrtSc";
+        }
         code.strip_prefix("Key").unwrap_or(code)
     }
 
@@ -170,7 +181,10 @@ impl HostHotkey {
     /// cheat, the pack reload): the hotkey help lists its label alone, and
     /// its notice is the action's own outcome.
     pub fn is_action(self) -> bool {
-        matches!(self, HostHotkey::CheatMaxAp | HostHotkey::ReloadPack)
+        matches!(
+            self,
+            HostHotkey::CheatMaxAp | HostHotkey::ReloadPack | HostHotkey::Screenshot
+        )
     }
 
     /// Whether a play host refuses this key with `screens` owning its frame:
@@ -243,7 +257,8 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
         | HostHotkey::CheatEncounters
-        | HostHotkey::ReloadPack => return false,
+        | HostHotkey::ReloadPack
+        | HostHotkey::Screenshot => return false,
     }
     true
 }
@@ -273,7 +288,8 @@ pub fn options_hotkey_state(opts: &OptionsState, hotkey: HostHotkey) -> Option<S
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
         | HostHotkey::CheatEncounters
-        | HostHotkey::ReloadPack => return None,
+        | HostHotkey::ReloadPack
+        | HostHotkey::Screenshot => return None,
     })
 }
 

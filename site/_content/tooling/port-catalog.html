@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Tool</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/port-catalog.py"><code>scripts/ci/port-catalog.py</code></a>; drift checker <code>scripts/ci/check-port-tags.py</code></dd>
-    <dt>Unit</dt><dd>One row per retail function address, with independent signals: <em>dumped</em>, <em>documented</em>, <em>ported</em>, <em>live</em> (opt-in), <em>ignored</em></dd>
+    <dt>Unit</dt><dd>One row per retail function address, with independent signals: <em>dumped</em>, <em>documented</em>, <em>ported</em>, <em>differential</em>, <em>live</em> (opt-in), <em>ignored</em></dd>
     <dt>Inputs</dt><dd>Ghidra dumps under <code>ghidra/scripts/funcs/</code>, citations under <code>docs/</code>, <code>// PORT:</code> tags under <code>crates/</code></dd>
     <dt>Outputs</dt><dd><code>target/port-catalog/</code>: <code>catalog.csv</code>/<code>.md</code>, <code>open-work.md</code> dashboard, <code>live-audit.md</code></dd>
     <dt>Gate</dt><dd><code>--check</code> ratchets every figure against <code>scripts/ci/port-catalog-baseline.json</code> in the pre-commit hook</dd>
@@ -64,6 +64,7 @@
       <tr><td><strong>dumped</strong></td><td>A Ghidra decompiler dump exists under <code>ghidra/scripts/funcs/</code> (gitignored - regenerable from the Ghidra project).</td></tr>
       <tr><td><strong>documented</strong></td><td>The address is cited from at least one file under <code>docs/</code> (<code>FUN_&lt;addr&gt;</code> or <code>0x&lt;addr&gt;</code>, case-insensitive).</td></tr>
       <tr><td><strong>ported</strong></td><td>A Rust source under <code>crates/</code> carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag for that address.</td></tr>
+      <tr><td><strong>differential</strong></td><td>A <code>crates/retail-exec</code> test declares (<code>differential!</code>) that it runs the routine at this address against its port, and fails if it did not (<a href="retail-kernel-differential.html#declaring-what-a-test-runs">declarations</a>). Read from the test sources, so it needs no disc.</td></tr>
       <tr><td><strong>live</strong></td><td>The tagged Rust symbol is reachable, through non-test code, from a host entry point. Opt-in (<code>--live</code>); see <a href="#reachability">reachability</a>.</td></tr>
       <tr><td><strong>ignored</strong></td><td>Listed in <code>scripts/ci/port-catalog-ignore.toml</code> as a non-port-site (BIOS thunk, libgte, libsnd, ... - see <a href="#ignore-list">ignore list</a>).</td></tr>
     </tbody>
@@ -76,6 +77,7 @@
       <tr><td><code>cited but not dumped, not ignored</code></td><td><strong>Dump worklist.</strong> Some dump references this address but no dump exists for it. An ignore row retires a row here too: a <code>worklist_*</code> section claims "no routine begins at this VA", and such an address cannot be dumped without fabricating an entry point.</td><td>Add to <code>ghidra/scripts/dump/dump_funcs.py</code> <code>TARGETS</code>, or file the address claim.</td></tr>
       <tr><td><code>ported but not documented</code></td><td><strong>Provenance gap.</strong> A tag with no doc mentioning the source function.</td><td>Backfill the doc, or remove a wrong tag.</td></tr>
       <tr><td><code>ported but not dumped</code></td><td><strong>Provenance gap</strong>, opposite axis.</td><td>Dump it, or question the tag.</td></tr>
+      <tr><td><code>ported + live, no differential</code></td><td><strong>Differential worklist.</strong> Shipped code whose arithmetic nothing has run against the bytes.</td><td>Write a differential; <code>--no-differential --live</code> lists them.</td></tr>
       <tr><td><code>ported but not live</code></td><td><strong>Inert port.</strong> Implemented, but no host reaches it.</td><td>Wire it, or disclose it with <code>NOT WIRED:</code>.</td></tr>
     </tbody>
   </table>
@@ -150,6 +152,7 @@
       <tr><td><code>python3 scripts/ci/port-catalog.py --dashboard</code></td><td>Open-work rollup -> open-work.md</td></tr>
       <tr><td><code>python3 scripts/ci/port-catalog.py --live</code></td><td>Add the reachability column</td></tr>
       <tr><td><code>python3 scripts/ci/port-catalog.py --not-live</code></td><td>Ported but unreachable from any host root</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --no-differential --live</code></td><td>Live ports no retail-exec differential runs</td></tr>
       <tr><td><code>python3 scripts/ci/port-catalog.py --live-audit</code></td><td>Reachability vs `NOT WIRED:` disclosures</td></tr>
       <tr><td><code>python3 scripts/ci/port-catalog.py --check --live</code></td><td>Ratchet every baselined figure</td></tr>
     </tbody>
@@ -215,7 +218,7 @@
     </tbody>
   </table>
   <p>Everything ratcheted is a property of the tags, the docs and the dump corpus; nothing read off the receiver-gated graph is baselined, because its numbers move with graph resolution rather than with the work. Three rules protect figures that need <code>--live</code>: <code>--check</code> fails on an uncompared figure unless the caller says <code>--allow-uncompared</code>; the hook spends the slow pass when the commit stages <code>crates/</code>; and <code>--update-baseline</code> carries forward figures its run did not compute rather than dropping them. <strong>Validate a surprise against rows, never against the count</strong> - a regression report is a prompt to open <code>--missing-ports</code> and <code>--live-audit</code>.</p>
-  <p class="hint">Printing a figure is not comparing it: a run that says <code>NOT COMPARED THIS RUN</code> and exits 0 has checked nothing, which is why live figures need <code>--live</code> on both <code>--check</code> and <code>--update-baseline</code>. Per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port provenance</a> (nothing checks that a <code>// PORT:</code> address names the routine the Rust implements).</p>
+  <p class="hint">Printing a figure is not comparing it: a run that says <code>NOT COMPARED THIS RUN</code> and exits 0 has checked nothing, which is why live figures need <code>--live</code> on both <code>--check</code> and <code>--update-baseline</code>. Per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port provenance</a> (whether a <code>// PORT:</code> address names the routine the Rust implements: a ratchet on unwaived findings, and a <a href="retail-kernel-differential.html#declaring-what-a-test-runs">differential</a> as the proof for the addresses it runs).</p>
 </section>
 
 <section class="doc-section" id="ignore-list">
@@ -271,7 +274,7 @@ scripts/ci/replay-port-coverage.py</code></pre>
   <ul class="bullets">
     <li><strong>The citation graph is dump-local.</strong> An undumped helper has no outgoing edges; the frontier widens only as dumps land.</li>
     <li><strong><code>documented</code> is broader than the curated <a href="../reference/functions.html">functions</a> directory.</strong> Any doc page that mentions the address counts.</li>
-    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; tests and retail comparison do that job.</li>
+    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; the <a href="retail-kernel-differential.html">kernel differential</a>, tests and retail comparison do that job (<a href="verification-ladder.html">the verification ladder</a>).</li>
     <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers surface in <code>--missing-ports</code> until added; treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely candidates.</li>
   </ul>
 </section>
@@ -286,7 +289,7 @@ scripts/ci/replay-port-coverage.py</code></pre>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a></td><td>Per-anchor verdicts for the audit's undisclosed-inert rows.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a></td><td>Per-row verdicts for "tagged <code>NOT WIRED</code> but analysed live".</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a></td><td>Verdicts for the live-but-never-entered set.</td></tr>
-      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a></td><td>Does a tag name the <em>right</em> routine? (Ungated.)</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a></td><td>Does a tag name the <em>right</em> routine? Ranked signals; <code>--check</code> fails a commit that adds an unwaived finding.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md">call-target-integrity</a></td><td>Why a decoded <code>jal</code> target belongs to the bytes, not the load base.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a></td><td>A dump's printed addresses are a property of its load base; only the header tag is evidence.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a></td><td>For each printed <code>0x801C****</code> / <code>0x801D****</code> address, the image and VA its bytes really occupy.</td></tr>
@@ -299,6 +302,8 @@ scripts/ci/replay-port-coverage.py</code></pre>
   <div class="see-also">
     <span class="see-also-label">Tooling</span>
     <a href="disc-coverage.html">Disc coverage</a>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
     <a href="address-reference-scan.html">Address-reference scan</a>
     <a href="ghidra.html">Ghidra in Docker</a>
     <a href="determinism-replay.html">Determinism + replay</a>

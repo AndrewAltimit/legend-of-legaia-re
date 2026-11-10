@@ -1314,8 +1314,9 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--no-tetsu-spar-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere`, `--action-movement` and the battle-tuning sliders `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`, `--enemy-attack-count`, `--enemy-stat-scale` (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--no-player-battle` | the Auto-battle box (`set_player_driven_battles`) |
-| `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
-| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
+| `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting. `--battle first` has a runtime twin on both hosts, `World::force_battle_here`: the page's *Start a battle here* button (`debug_force_battle(-1)`) and the window's `F12` Tools row of the same name |
+| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling. A player's shot is `Print Screen` on both hosts (the window's pictures folder, the page's download) |
+| `--play-record` | `debug_play_record(P, R)` from the console (`window.__playRuntime`); both call `BootSession::play_scene_record` |
 | `--fullscreen`, `--windowed`, `--window-scale` | the page's fullscreen button (`requestFullscreen`); the browser sizes the canvas |
 
 Every `play-window` switch has a row: the binary's
@@ -1414,6 +1415,13 @@ a scratch directory only.
 A card landing enters from the page's running scene first, so its audio record starts a
 command apart and the actor table is longer; `monkey_fight`, `late_*` and the rest filter
 that one record, as do the `ed_*` scenes, which the page enters from town01's, and a `bindings` line on such a run says so rather than a difference.
+A save carries no `rand()` state, so the page's world reaches the landing with however many
+draws its first scene took and the window's with a cold boot's. Every card scene and every
+scene the page enters from town01's seeds one stream on both, ahead of the entry (whose draws
+set the props' start phases) and again after it (`LEGAIA_RNG_SEED` natively, `debug_seed_rng`
+on the page). Unseeded, `late_fight` parted on its first frame's `rng` line and drew a
+different fight (`44%` of every frame off), and `ed_korout`'s props started out of phase and
+its shots parted (`34%`); seeded, they read `0.70%` and `0.13%` with the trace agreeing.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
@@ -1441,6 +1449,9 @@ the world was right and the picture was not:
 | A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
 | A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
 | A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive now takes an eighth of a row; a textured one keeps the 64th, since more shifts the texels the battle intro's rotated shards sample |
+| One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
+| Perspective colour on one host | The window's untextured colour mesh interpolated its packet colour perspective-correct where the page and retail interpolate it screen-linearly, so the Baka duel's additive floor glow, a fan lying on the floor plane, drew darker toward the camera: rows `200..240` read `13.5` brighter on the page at tick `331`. The colour now takes `@interpolate(linear)`, as the VRAM mesh's does; the pair reads `0.12` |
+| A wash run twice | The page washed its 2D overlay canvas for every over-text fade and then composited that canvas into the GL frame under the same fade, the older fallback left running beside the composite that replaced it. A battle's exit fade took the results box to black at twice the scene's rate (`results` ticks `2153..2180`, up to `21.9%` of a frame off). The canvas wash now runs only on a frame whose over half the GL pass cannot draw; the span reads `0.10%` |
 
 ## Pairing frames: what a screenshot adds
 
@@ -1697,7 +1708,7 @@ reverse-engineering questions, so they are not on
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
 | dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F >> 3` steps, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
-| pause wipe, first frames | Two the [host pair](#the-host-pair-run) reads and neither host is yet shown right on: the window draws no party HUD under the opening wipe where the page dims it, and on the frame the menu spawns the window shows the lit field for one frame where the page shows the menu. The windmill's semi-transparent blades also read darker under the window's wipe than under the page's. No retail state sits in a wipe. |
+| pause wipe, first frames | One half closed, one open. The frame the wipe spawns the menu: the window drew the lit field for one frame (the session hands the tick over on the next claim, and the wipe draws nothing once the menu exists), where the page draws the menu; the window now raises its menu state at the end of the spawning frame and holds the boot-UI arm off for the hand-over tick (`pause_menu_handover`), so `monkey_map`'s spawn frame reads `0.00%` where it read `95%`. Under the opening wipe the page dimmed the party HUD the window hides (`monkey_town` ticks 1680..1686); the window is retail ([field-menu.md](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)), and the page now clears its overlay there. |
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
@@ -1915,6 +1926,15 @@ the two notice kernels; the JavaScript half is pinned by
 `F12` panel (every hotkey with its current state) has no page twin beyond
 that list: the page's own checkboxes already show the state.
 
+`Print Screen` (`HostHotkey::Screenshot`) is the one key both hosts also take
+on its release: Windows delivers that key's release alone, so each host shoots
+on the press, or on a release no press came before. The window captures the
+frame it presents (`window::player_screenshot`, the player's pictures folder);
+the page composites its GL canvas and the layers over it at the end of the
+drawn frame (`_savePlayerShot`) and downloads it. The window's `F12` panel
+leaves the row out: one more row overflows the stage at the disc font's
+metrics.
+
 The keys a room, the game modes and the cards take are outside the table, because
 each holds only while its screen or session is up, but they mean the same on both
 hosts. `NetPlay::room_key` is the room's table (`1`..`5` not bound to a pad button
@@ -2016,6 +2036,7 @@ and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
 | title Continue | `engine-session::title_continue::ContinueScreen`: retail's title card manager, no pause-menu gate, with its own `SaveScreenFlow` and frame order (refusal pre-empt, port read, grid filter, tick, block read); the rack and the Continue scan (`card_port_rack`, `card_port_blocks`, `rack_has_save`) beside it. Per host: the ports, the blip, the landing (window `BootUiState::Continue`; page `boot_continue_step`). See [below](#the-title-continue-screen) |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
+| menu window-slide lock | `field_menu_dispatch::pause_slide_gate`, called once per menu frame before any pre-empt or blip by `BootSession::tick_field_menu`, the window's `tick_boot_ui` and the page's `play_menu_input`; the prize counter's inside `MenuRuntime::step_field_session` ([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)). The page's title-row driver (`play_menu_open_row`) skips it, as the window's `open_menu_row_from_title` ticks the picker directly |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
 | Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |

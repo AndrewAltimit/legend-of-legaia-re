@@ -306,10 +306,7 @@ fn buy_recipient_row0_buys_into_bag() {
             point_credit: 0,
         }
     );
-    assert_eq!(
-        s.tick(nav(false, false, false, false)),
-        BuyRecipientEvent::ExitToBuyList
-    );
+    // Without the Point Card retail leaves on the confirm's own frame.
     assert!(s.is_done());
 }
 

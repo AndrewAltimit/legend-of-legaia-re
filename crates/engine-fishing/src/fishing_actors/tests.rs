@@ -281,7 +281,7 @@ fn the_wander_actor_rolls_on_dwell_expiry_and_holds_its_place() {
     let draws = [0u32, 50, 0, 6, 1];
     let mut i = 0;
     let rolled = w
-        .tick(0, || {
+        .tick(0, 1, || {
             let v = draws[i % draws.len()];
             i += 1;
             v
@@ -291,11 +291,11 @@ fn the_wander_actor_rolls_on_dwell_expiry_and_holds_its_place() {
     // The dwell now holds; no re-roll, and the actor stays put - the
     // roll names a ripple point, it does not move the angler.
     let (x0, z0) = (w.x, w.z);
-    assert!(w.tick(0, || 0).is_none());
+    assert!(w.tick(0, 1, || 0).is_none());
     assert_eq!((w.x, w.z), (x0, z0));
     // The facing steps + clamps off the held packed pad.
     let f0 = w.facing;
-    w.tick(PACK_RIGHT, || 0);
+    w.tick(PACK_RIGHT, 1, || 0);
     assert_eq!(w.facing, f0 + FACING_STEP);
 }
 

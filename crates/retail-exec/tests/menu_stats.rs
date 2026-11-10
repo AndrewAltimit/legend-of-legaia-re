@@ -19,6 +19,7 @@ const BLOCK: u32 = 0x801E_F080;
 
 #[test]
 fn the_menu_stat_block_is_what_retail_draws() {
+    differential!(prot(899, SUMMER));
     let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

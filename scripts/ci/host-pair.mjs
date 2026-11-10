@@ -106,6 +106,10 @@ for (const [name, sub, key] of [['slots', 3, 'O'], ['baka', 4, 'B'], ['dance', 6
 
 /* A retail save off a card: the page lands it and writes the LGSF the window then resumes, so
  * every one of these also crosses a save from one host to the other. `card` is under saves/library/cards. */
+/* A save carries no RNG state, and the page lands a card (or enters a scene the picker does not
+ * list) from the scene it had running while the window enters it cold, so both seed one stream
+ * after the entry (LEGAIA_RNG_SEED / debug_seed_rng). */
+const CARD_RNG_SEED = 0x12345678;
 const CARD = { late: 'playthrough-endgame-7saves.mcr', ladder: 'playthrough-ladder-pro00-14.mcr' };
 const cardScenes = (key, card, block) => ({
   [`${key}_walk`]: { card, block, ticks: 300, every: 30, hold: walk },
@@ -126,6 +130,10 @@ const monkey = (seed, from, to, step) => {
   }
   return t;
 };
+/* Start with the party readout up: the field darkens under the wipe with no readout on
+ * either host, as retail draws none after the accept tick (field-menu.md, "The party readout
+ * under the pause wipe"). */
+SCENES.pause_hud = { scene: 'town01', ticks: 200, every: 1, taps: [[150, 'Start']] };
 SCENES.monkey_town = { scene: 'town01', ticks: 1800, every: 30, taps: monkey(1, 30, 1790, 11) };
 SCENES.monkey_map = { scene: 'map01', ticks: 1800, every: 30, taps: monkey(2, 30, 1790, 13) };
 SCENES.monkey_shop = { scene: 'bylon', ticks: 1200, every: 30, shop: { tick: 30, idx: 0 }, taps: monkey(3, 60, 1190, 17) };
@@ -170,6 +178,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
   if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
+  if (sc.lgsfPath || sc.viaTown) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
   const r = spawnSync(engine, a, { env, cwd, encoding: 'utf8', timeout: 1200000 });
@@ -191,11 +200,16 @@ async function pageRun(cfg) {
   for (const id of cfg.unboxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (el.checked) el.click(); }
   const P = (window.__pair = window.__pair);
   P.vt = 1e6; P.virtual = true;
+  /* The window seeds ahead of its scene entry and again after its seeds: this page seeds ahead of
+   * the entry that lands where the window does, and again after it. */
+  const seedRng = () => { if (sc.lgsfPath || sc.viaTown) { if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused'); } };
+  if (pick) seedRng();
   btn.click();
   const view = window.__playView;
   view.stop();
   view.setPaused(true);
-  if (!pick) view.enter(sc.scene);
+  if (!pick) { seedRng(); view.enter(sc.scene); }
+  if (sc.viaTown) seedRng();
   if (sc.seat && !rt.play_debug_seat(sc.seat[0], sc.seat[1])) throw new Error('seat refused');
   /* The native side's LEGAIA_DIAG_FOLLOW_KNOBS: the knobs written raw, every frame. */
   const holdKnobs = () => {
@@ -210,7 +224,9 @@ async function pageRun(cfg) {
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     rt.import_save(bytes);
+    seedRng();
     view.resumeSave();
+    seedRng();
   }
   if (sc.coins) rt.cheat_apply('coins', sc.coins, '');
   const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
@@ -396,7 +412,7 @@ async function main() {
     await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
     await page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 120000 });
     const lgsf = sc.lgsfPath ? fs.readFileSync(sc.lgsfPath).toString('base64') : null;
-    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
+    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
     await context.close();
     let worst = null, sum = 0, offFrames = 0, firstTrace = null, traceOff = 0;
     const rows = [];

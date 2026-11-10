@@ -82,6 +82,9 @@ impl World {
         if self.battle.cast_ribbons.is_some() {
             out.push("cast_ribbons");
         }
+        if self.battle.flight_ribbons.is_some() {
+            out.push("flight_ribbons");
+        }
         if self.battle.clip_ribbon.is_some() {
             out.push("clip_ribbon");
         }
@@ -128,6 +131,7 @@ impl World {
         self.casting.effect_pool = data_pool;
         self.battle.clip_ribbon = None;
         self.battle.cast_ribbons = None;
+        self.battle.flight_ribbons = None;
         self.battle.effect_spawns.clear();
     }
 }

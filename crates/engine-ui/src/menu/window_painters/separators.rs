@@ -96,17 +96,12 @@ pub(crate) fn digits_draws(
     digits: i32,
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    let s = value.to_string();
-    let len = s.len() as i32;
-    let mut out = Vec::new();
-    for (i, ch) in s.chars().enumerate() {
-        let cell = (digits - len + i as i32).max(0);
-        out.extend(crate::numeral_cell_draws(
-            font,
-            ch,
-            (x + cell * NUM_CELL_W, y),
-            color,
-        ));
-    }
-    out
+    crate::menu::decimal_field::decimal_field_draws(
+        font,
+        i64::try_from(value).unwrap_or(i64::MAX),
+        (x, y),
+        digits,
+        false,
+        color,
+    )
 }

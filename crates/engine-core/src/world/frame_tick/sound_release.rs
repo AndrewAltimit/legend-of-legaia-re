@@ -26,7 +26,10 @@ impl World {
         self.audio.pending_sound_release = false;
         self.audio.sound_arm = Some(legaia_engine_system::scus_leaf_kernels::TimedSoundArm::arm(
             0,
-            deadline_vsyncs.max(0) as u32,
+            // Retail stores the operand as it came (`sw a2,0x814(gp)`): the
+            // field op's `s16` may be negative, and the shim then gets
+            // `deadline | 1` of that word.
+            deadline_vsyncs as u32,
             self.audio.levels.configured_level,
         ));
     }

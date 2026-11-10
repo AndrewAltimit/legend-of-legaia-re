@@ -38,6 +38,7 @@ struct Pass {
 
 #[test]
 fn mules_wave_is_retails() {
+    differential!(prot(929, BODY));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, _)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

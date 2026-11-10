@@ -74,6 +74,7 @@ fn read_back(cpu: &mut Cpu) -> (Vec<FormationPos>, i32, i32) {
 
 #[test]
 fn the_round_squash_matches() {
+    differential!(prot(898, 0x801D_B318));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -93,6 +94,7 @@ fn the_round_squash_matches() {
 
 #[test]
 fn the_seed_recentre_matches() {
+    differential!(prot(898, 0x801E_FE44));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -123,6 +125,7 @@ fn the_seed_recentre_matches() {
 
 #[test]
 fn the_selectable_scans_match() {
+    differential!(prot(898, 0x801D_B81C), prot(898, 0x801D_BA04));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -171,6 +174,7 @@ fn the_selectable_scans_match() {
 
 #[test]
 fn the_flag_scrub_matches() {
+    differential!(prot(898, 0x801D_B9C4));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -194,6 +198,7 @@ fn the_flag_scrub_matches() {
 /// writes `0`.
 #[test]
 fn the_attack_ring_matches() {
+    differential!(prot(898, 0x801D_8A88), prot(898, 0x801D_8D00));
     use legaia_engine_battle_vm::battle_action::{
         AttackTargetQueue, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
         cycle_attack_target,

@@ -273,6 +273,21 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             [state.render_24, state.render_26, state.render_28] = caller.rot;
             return;
         }
+        // PROT 0927's arm 7 jitters its caller and seats nothing: it runs
+        // here, inside the caller's step, so its three draws land where
+        // retail's do.
+        if self.world.casting.module_running_entry == Some(927)
+            && arg0 as u8 == legaia_engine_cast::cast_module_ticks::JUGGERNAUT_STAGER_JITTER_ARM
+        {
+            let world = &mut *self.world;
+            let (v84, z) =
+                legaia_engine_cast::cast_module_ticks::juggernaut_stager_jitter(arg1, || {
+                    world.next_rand()
+                });
+            state.anim_84 = v84;
+            state.render_28 = z;
+            return;
+        }
         self.world
             .casting
             .module_stager_calls
@@ -460,18 +475,41 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.system_flag_clear(flag_index as u16);
     }
 
-    // --- ext sub-op 0x29 scratchpad ramp ------------------------------
+    // --- ext sub-op 0x29 floor-ladder rung ---------------------------
 
+    /// The immediate arm: `sh -op[3], 0x48(0x1F800314 + slot * 2)`
+    /// (`0x801D43CC..0x801D43EC`) - rung `slot` of the scene floor-height
+    /// ladder at `0x1F80035C`. Retail does not mask the slot; a rung past the
+    /// sixteen is a write off the end of the array, which the port declines.
     fn ext_scratchpad_write(&mut self, slot_index: i16, value: i16) {
-        let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.move_vm.scratchpad_targets[i] = value;
+        if let Some(rung) = usize::try_from(slot_index)
+            .ok()
+            .and_then(|i| self.world.terrain.floor_height_lut.get_mut(i))
+        {
+            *rung = value;
+        }
     }
-    fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i16, _ticks: i16) {
-        // Default world has no per-frame ramp scheduler; record the target
-        // immediately so reads see the final state. Engines override to
-        // model the per-frame interpolation.
-        let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.move_vm.scratchpad_targets[i] = target;
+    /// The ramp arm: `FUN_8003C5F0(owner 0, &rung, width 2, lh rung,
+    /// -op[3], op[4])` (`0x801D43F0..0x801D4428`). The pool lerps the rung
+    /// from its current value to the word `target` over `ticks` frame steps.
+    fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i32, ticks: i16) {
+        use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind};
+        let Some(start) = usize::try_from(slot_index)
+            .ok()
+            .and_then(|i| self.world.terrain.floor_height_lut.get(i))
+            .copied()
+        else {
+            return;
+        };
+        self.world.terrain.floor_ladder_ramps.install(Ramp {
+            dest: slot_index as u32,
+            owner: 0,
+            start: i32::from(start),
+            end: target,
+            total: i32::from(ticks),
+            remaining: i32::from(ticks),
+            kind: RampKind::U16,
+        });
     }
 
     // --- ext sub-op 0x2C scanline strip emitter -----------------------

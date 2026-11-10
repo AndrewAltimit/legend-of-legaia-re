@@ -135,7 +135,8 @@ pub(super) fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 ///   the fixed [`DANCE_MODE2_CLUT`];
 /// - half-extent per axis = `((cell * scale) >> 13) * size >> 12`, both shifts
 ///   rounding toward zero, so `scale = size = 0x1000` is exactly `cell / 2`;
-/// - every colour channel is `channel * brightness >> 8`; verts 0/1 carry
+/// - every colour channel is `channel * brightness >> 8`, stored as a byte
+///   (it wraps, it does not saturate); verts 0/1 carry
 ///   `rgb_top`, verts 2/3 `rgb_bottom` - a vertical gradient;
 /// - the texpage attribute folds the ABR rate in as `tpage + abr * 0x20`.
 ///
@@ -161,7 +162,9 @@ pub fn dance_hud_widget_quad(
     } else {
         (1, mode as u8)
     };
-    let scale8 = |c: u8| mips_scale(c as i32, brightness, 8).clamp(0, 0xFF) as u8;
+    // Each channel is stored with `sb`: a brightness past `0x100` wraps the
+    // byte rather than saturating it, as the Baka emitter's does.
+    let scale8 = |c: u8| mips_scale(c as i32, brightness, 8) as u8;
     let half = |cell: u8| mips_scale(size, mips_scale(cell as i32, widget.scale, 13), 12) as i16;
     let hw = half(widget.w);
     let hh = half(widget.h);

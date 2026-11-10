@@ -17,6 +17,7 @@ const STRIDE: usize = 0x414;
 
 #[test]
 fn the_unequip_walks_the_party_retail_walks() {
+    differential!(scus(UNEQUIP));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

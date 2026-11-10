@@ -60,9 +60,11 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 ///   yaw `0x800 - facing`, TR `(0, 0x400, 0x600)` on the creature
 ///   (`0x801F73E4`) - and `+= scalar << 5`;
 /// * `8` - every pass TR z `-= p / 2` (`0x801F7504`); on exit a cut on the
-///   victim - pitch `0x100`, yaw `-facing` of the creature, TR `(0, 0x400,
-///   ctx[+0x6D0] / 2)` (`0x801F763C`) - and `+= scalar << 7`;
-/// * `9` - every pass TR z `+= 4 p` (`0x801F7724`); on exit `+= scalar << 7`
+///   target - pitch `0x100`, yaw `-facing` of the creature, TR `(0, 0x400,
+///   ctx[+0x6D0] / 2)` on a seat or `(0, 0x400, 2 * extent)` on a group's
+///   centre (`0x801F763C`) - and `+= scalar << 7`;
+/// * `9` - every pass TR z `+= 4 p` (`0x801F7724`), its exit's included; on
+///   exit `+= scalar << 7`
 ///   (the damage arm);
 /// * `10` - TR z `+= 4 p` while the countdown runs, `+= p >> 3` after it;
 ///   once it is spent the arm stores phase `0xFF`;
@@ -73,14 +75,16 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 /// bumps `+0x1DA` and `+0x1DC` together (`0x801F7414`, `0x801F741C`). Its rise
 /// out of the floor in arms 2 and 3 is `World::apply_slippery_writes`.
 ///
-/// Not carried: the arm 3 / 5 captions; arm 8's
-/// group-target framing (a target byte of `8` or more frames the group
-/// centre through `FUN_801DCEAC` with a doubled TR z) frames the latched
-/// victim seat instead; and arm 10's wait for every monster to be idle
-/// (`+0x1D9 == 0`, `0x801F7A90..0x801F7B18`) - the arm gates on the
-/// countdown alone.
+/// Arm 3's exit prints the spell name and arm 5's the attack name over it.
 ///
-/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates and camera writes - captions, parts, fades and the arm 10 idle wait not carried)
+/// Arm 8's exit frames the cast's target: a group code (Slippery's own,
+/// the monster row) frames the group's centre through `FUN_801DCEAC` with its
+/// extent doubled into TR z.
+///
+/// Not carried: arm 10's wait for every monster to be idle (`+0x1D9 == 0`,
+/// `0x801F7A90..0x801F7B18`) - the arm gates on the countdown alone.
+///
+/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates, camera writes and captions - parts, fades and the arm 10 idle wait not carried)
 pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let p = MODULE_DRAIN_PER_TICK;
@@ -135,8 +139,12 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 }
             }
             st.countdown.add(1 << 7);
+            // The exit prints the spell name at the label's place
+            // (`FUN_8003541C(.., 0x96, ..)` on `DAT_800754C8[+0x1DF].+8`,
+            // `0x801F6E08..0x801F6E94`).
             ArmDirection {
                 nudge: drift,
+                caption: Some(ModuleCaption::SpellName),
                 ..ArmDirection::PASS
             }
         }
@@ -152,7 +160,12 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 return ArmDirection::HOLD;
             }
             st.countdown.add(1 << 8);
-            ArmDirection::PASS
+            // The exit clears the line (`FUN_800319A8(0)`) and prints the
+            // attack name in its place (`0x801F6F70..0x801F6FC0`).
+            ArmDirection {
+                caption: Some(ModuleCaption::AttackName),
+                ..ArmDirection::PASS
+            }
         }
         SLIPPERY_RAIN_DRAIN_ARM => {
             if st.countdown.drain_above(0) {
@@ -175,22 +188,39 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 return ArmDirection::HOLD.nudged(nudge(0, 0, -(p >> 1), 0));
             }
             st.countdown.add(1 << 7);
-            // `sh v0,0x2c(sp)` of `ctx[+0x6D0] / 2` (halfword, rounded
-            // toward zero).
-            let depth = i32::from(seats.depth_raw as i16) / 2;
+            // The creature's target byte `+0x1DD` (the caster's, which the
+            // installer copied) picks the framing (`sltiu v0,a2,0x8` at
+            // `0x801F7564`): a group code frames the group's centre through
+            // `FUN_801DCEAC(code, sp+0x30, sp+0x28)`, its extent doubled into
+            // TR z (`0x801F7570..0x801F7590`); a seat frames that seat at
+            // `ctx[+0x6D0] / 2` (`sh v0,0x2c(sp)`, halfword, rounded toward
+            // zero, `0x801F7594..0x801F7610`).
+            let (focus, depth) = match (st.target_code, st.target_aim) {
+                (Some(code), Some(g)) if code >= 8 => (
+                    [g.centroid_x, 0, g.centroid_z],
+                    i32::from(g.extent.wrapping_mul(2)),
+                ),
+                _ => (
+                    focus_on(seats.victim),
+                    i32::from(seats.depth_raw as i16) / 2,
+                ),
+            };
             ArmDirection::shot(ModuleShot {
                 angles: [0x100, (creature.facing as i16).wrapping_neg(), 0],
                 tr: [0, 0x400, depth as i16],
-                focus: focus_on(seats.victim),
+                focus,
                 frames: 1,
             })
         }
         SLIPPERY_COLOUR_ARM => {
+            // The push runs ahead of the gate (`0x801F7724`), on the pass
+            // that leaves the arm too.
+            let push = nudge(0, 0, 4 * p, 0);
             if st.countdown.drain_above(0) {
-                return ArmDirection::HOLD.nudged(nudge(0, 0, 4 * p, 0));
+                return ArmDirection::HOLD.nudged(push);
             }
             st.countdown.add(1 << 7);
-            ArmDirection::PASS
+            ArmDirection::PASS.nudged(push)
         }
         SLIPPERY_LAST_ARM => {
             let drift = if st.countdown.0 > 0 {

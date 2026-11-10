@@ -427,6 +427,7 @@ struct Outcome {
 
 #[test]
 fn a_melee_hit_lands_what_retail_lands() {
+    differential!(prot(898, RESOLVER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

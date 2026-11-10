@@ -57,6 +57,19 @@ pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
 /// tags (`0x1000` window, `0x2000` emissive, `0x8000` semi).
 pub const TSB_RUNTIME_PACKET_BIT: u16 = 0x0800;
 
+/// Bit 14 of the per-vertex TSB attribute marks a **Gouraud packet whose
+/// corners may agree**: a draw-time `GT3` / `GT4` built with one colour on
+/// every corner. The shaders tell a flat-shaded textured draw from a Gouraud
+/// one by the packet colour's screen derivative, which is zero on both when
+/// the corners agree, and the PCSX-Redux instrument dithers the Gouraud one
+/// whatever its corners (`getTextureTransColShadeXDither`). PROT 0920's storm
+/// clouds are such packets: the render dispatcher's sprite arm builds each
+/// as a `GT4` with one colour (`FUN_8002A5A4`), handler bank 3 splits it into
+/// sixteen `GT3`s, and eight of them stack additively, each floored to five
+/// bits where retail's dither keeps its low bits. Outside every TSB field the
+/// shaders decode and the other tags above.
+pub const TSB_GOURAUD_BIT: u16 = 0x4000;
+
 /// Pack the prim semi-transparency enable into bit 15 of a TSB word (see
 /// [`TSB_SEMI_TRANSPARENT_BIT`]). Clears the bit first so on-disc garbage
 /// in the unused high bits can't leak through as a phantom enable.

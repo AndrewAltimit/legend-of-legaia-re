@@ -414,7 +414,7 @@ pins that in both modes.
 | A VDF morph's mesh build (`_morphHeld`, `_settleMorphs`) | A sphere round each placement reaches neither the camera nor a light | `field_morph_reach` bounds the move off the live deltas and holds them, so a morph whose lanes ended unseen still lands on the last state it reached. The sphere covers the stale mesh as well as the true one, so neither can show. |
 | The overlay canvas's clear, parse and blits (`_overlayPainted`) | The pause menu's answer, or the shop and dialog answers, are the strings last painted | The canvas keeps its pixels. Every other painter on it (the other layers, the developer menu, a stopped view's boot screens) drops the key. |
 | The kernel over a whole atlas for a new ink (`AtlasBlitter._tintThroughPalette`) | Always: the kernel sees the atlas's distinct texels, and the answer goes to the texels with coverage | `tint_texel` reads one texel and the colour, and a transparent texel stays transparent under every tint. The index is built with the blitter, during scene entry. The menu chrome takes dozens of tints over a few rects (its window bands), so a tinted copy fills only the rects asked for, on a canvas of the same size at the same coordinates. |
-| Reading the overlay back for a text wash (`_applyTextWash`, `_washHeld`) | Past the quads this paint made, and on every frame of a fade but its first | Outside the quads the canvas is empty, and the wash leaves alpha 0 alone. A fade is the same quads under another wash, so the unwashed pixels of its first frame stand for the rest; a readback waits on the GPU. A shop's black backdrop reads the whole canvas. A frame with no wash paints. |
+| Reading the overlay back for a text wash (`_applyTextWash`, `_washHeld`) | Past the quads this paint made, on every frame of a fade but its first, and on any frame whose over-text primitives the GL pass draws over the composited canvas (`_screenOver`), which is every frame the pass works | Outside the quads the canvas is empty, and the wash leaves alpha 0 alone. A fade is the same quads under another wash, so the unwashed pixels of its first frame stand for the rest; a readback waits on the GPU. A shop's black backdrop reads the whole canvas. A frame with no wash paints. |
 | A HUD readout's DOM write (`setText` in `play.html`) | The string is the one shown | Assigning `textContent` replaces the text node even when equal, and that sends the page through style, layout and paint. |
 
 The pose and morph decisions wait for `renderer.settleHook`, a one-shot that
@@ -457,7 +457,9 @@ the window.
 `debug_force_battle(row)` is the exported twin of the native
 `--battle <ROW|first>`: it resolves a formation row against the scene's own MAN
 table, turns the live loop on and hands the row to `World::force_encounter`, so
-the intro, the BGM swap and the battle load are the ordinary ones.
+the intro, the BGM swap and the battle load are the ordinary ones. Row `-1`
+is `World::force_battle_here`, the kernel the window's `F12` Tools row *Start
+a battle here* runs too.
 `debug_formation_rows()` lists the rows the current scene registered. Both are
 on the ordinary `#[wasm_bindgen]` surface, not behind a feature: every retail
 town is rate-0 by design and the native `debug_start_test_battle` is

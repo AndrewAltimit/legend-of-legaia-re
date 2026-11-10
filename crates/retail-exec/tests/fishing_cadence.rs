@@ -16,6 +16,7 @@ const FRAME_STEP: u32 = 0x1F80_0393;
 
 #[test]
 fn a_reel_gesture_is_recognised_as_retail_recognises_it() {
+    differential!(prot(972, RECOGNISE));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -110,6 +111,7 @@ const RA: usize = 31;
 
 #[test]
 fn the_waiting_lines_band_and_strike_go_as_retails_do() {
+    differential!(prot(972, CHECK));
     use legaia_engine_fishing::fishing::{
         BandCheck, ReelInput, band4_gate, hook_strength, spawn_species,
     };
@@ -266,6 +268,7 @@ fn the_waiting_lines_band_and_strike_go_as_retails_do() {
 
 #[test]
 fn the_power_meter_sweeps_as_retails_does() {
+    differential!(prot(972, 0x801C_FB30));
     use legaia_engine_fishing::fishing::{CAST_POWER_STEP, CastPower};
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -314,6 +317,12 @@ const PRESS_WORD: u32 = 0x801D_90D8;
 /// The flight arm, its tail, and the in-water head, as `LureActor` runs them.
 #[test]
 fn the_lure_flies_and_comes_in_as_retails_does() {
+    differential!(
+        prot(972, 0x801D_2784),
+        prot(972, 0x801D_29E8),
+        prot(972, CHECK_END),
+        prot(972, 0x801D_39C8)
+    );
     use legaia_engine_fishing::fishing_actors::LureActor;
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

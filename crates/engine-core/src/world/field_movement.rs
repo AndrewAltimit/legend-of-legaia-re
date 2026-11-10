@@ -14,6 +14,7 @@ mod walk_path;
 mod walk_reachability;
 
 pub use action_movement::{ACTION_DASH_BUTTON, ACTION_JUMP_BUTTON};
+pub use ambient_probe::AmbientPlayerProbe;
 use ambient_probe::*;
 
 #[cfg(test)]

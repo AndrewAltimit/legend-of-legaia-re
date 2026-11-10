@@ -55,8 +55,11 @@
 //! walks one arm per tick, so
 //! re-staging the same literals here would restart the wind-up and cut it
 //! off a few ticks later. For those bodies the runner leaves every caster
-//! stage to the pre-pass ([`ChainBody::caster_stages_replayed`]); the
-//! descriptor still records them, and the disc test still checks them.
+//! wind-up stage to the pre-pass ([`ChainBody::caster_stages_replayed`]); the
+//! descriptor still records them, and the disc test still checks them. A
+//! caster stage of clip `0` - the body sending its caster back to idle, at
+//! once with a bump (PROT 0961's arm 5) or at the clip's end without - is
+//! not a wind-up, and the runner makes it.
 //!
 //! **One rate rule.** A `+0x21D` store is carried only where the body itself
 //! puts the actor back to the normal rate `8` before it ends. A body that
@@ -343,6 +346,19 @@ pub struct ChainTick {
     pub refund: Option<u8>,
 }
 
+/// Whether the fold of `arm`'s hit stages no reaction on `victim` (read
+/// before the hit lands). PROT 0956's `0x75` arm 2 stages the victim's
+/// `+0x1F1` only on its dead-or-guarded branch (`0x801F6FA0..0x801F6FB4`);
+/// the branch that marks a live, unguarded victim (`0x801F6FB8..0x801F70A8`)
+/// stages none, so that victim plays no reaction clip and sounds none of its
+/// cues. A victim the hit downs still takes the dead branch's knockdown,
+/// which the caller stages once the fold has landed.
+pub fn chain_hit_stages_no_reaction(arm: &ChainArm, victim: &CastActorState) -> bool {
+    matches!(arm.effect, Some(ChainEffect::MarkAndStealTurn { .. }))
+        && victim.hp != 0
+        && !victim.numb_guard
+}
+
 /// Run one tick of a [`ChainBody`]: the arm the phase names performs its
 /// stages, rates, context stores and effect, then leaves by its
 /// [`ChainExit`]. `selector` feeds [`ChainExit::Select`].
@@ -379,12 +395,12 @@ pub fn run_chain_body(
             ChainActor::Seat => s,
         }
     }
+    // The pre-pass replays the wind-up literals; a body's own stage-0 store,
+    // its return to idle (cut at once with a bump), stays the runner's.
     let replayed = body.caster_stages_replayed();
-    for st in arm
-        .stages
-        .iter()
-        .filter(|s| !s.on_hit && !(replayed && s.actor == ChainActor::Caster))
-    {
+    for st in arm.stages.iter().filter(|s| {
+        !s.on_hit && !(replayed && s.actor == ChainActor::Caster && s.clip != ChainClip::Literal(0))
+    }) {
         let a = pick(st.actor, caster, victim, seat);
         match st.clip {
             ChainClip::Literal(k) => a.staged_anim = k,
@@ -543,11 +559,13 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
 /// | PROT 0941 `0xB9` arm 3 | `2` | `0x801F7180` |
 /// | PROT 0964 `0xB0..=0xB2` arms `7`, `0x37`, `0x69` | `2` | `0x801F86B4`, `0x801F7E98`, `0x801F7648` |
 /// | PROT 0935 `0xFF` | `8` | `0x801F7FA8` |
+/// | PROT 0963 `0xB3` arm `0x0F` | `2` | `0x801F7DB0` |
 pub fn party_rate_sweep(entry: u32, body: Option<u32>, phase: u8) -> Option<u8> {
     match (entry, phase) {
         (941, 3) if body == Some(crate::cast_arm_ticks::STEAL_SWEEP_TICK) => Some(2),
         (964, 7 | 0x37 | 0x69) if body == Some(ELEMENT_STRIKE_CHAIN.body) => Some(2),
         (935, DONE) => Some(8),
+        (963, 0x0F) if body == Some(GENOCIDAL_CANNON_CHAIN.body) => Some(2),
         _ => None,
     }
 }
@@ -1147,8 +1165,10 @@ pub const DEAD_END_CRISIS_WIPE_DAMAGE: u16 = 9999;
 /// battle-end signal `0xFE` with cause `5`) is the same party-wipe end the
 /// action SM's `0x5A` gate raises, which the engine reaches on its own once
 /// the fold has emptied the party. Rate left out under the module's rate
-/// rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). Not ported: the packet
-/// arms, the seat line-up and its restore.
+/// rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). The seat line-up and its
+/// restore are `cast_module_camera::dead_end_crisis_line_up` /
+/// `dead_end_crisis_restore`, run by the host ahead of the arm's camera. Not
+/// ported: the packet arms.
 ///
 /// PORT: FUN_801F69D8 (PROT 0961; phase chain + caster staging, both formation paths; packet arms unported)
 pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
@@ -1182,10 +1202,19 @@ pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
 /// clears the caster's stage (no bump). Arm `0x11` is terminal: `ctx[+0x0D]
 /// = 0` (`0x801F8104`), busy cleared in the delay slot at `0x801F8120`.
 ///
+/// The sweep's struck seats go to rate `2` beside their reactions
+/// (`0x801F7D30`, [`ChainArm::hit_rate`]) and arm `0x0F` holds the party row
+/// there on every pass (`0x801F7DB0`, [`party_rate_sweep`]).
+///
 /// Rates left out under the module's rate rule: arms 6..0x0B alternate the
-/// caster between `3` and `4` and the body leaves it at `4`. Not ported: the
-/// packet arms, the lighting and camera-record writes, the party-row
-/// presentation stores. Countdowns: `capture_countdown::GENOCIDAL_CANNON`.
+/// caster between `3` and `4` and the body leaves it at `4`. Also left out:
+/// arm `0x10`'s party `+0x21D = 0` on every pass (`0x801F7EFC`), which
+/// freezes a row the same arm hides, and arm `0x11`'s restore to `8` with the
+/// row shown (`0x801F8140..0x801F8158`): the hide is a presentation store the
+/// port does not carry, and a frozen row left in view reads worse than one
+/// still at `2`. Not ported: the packet arms, the lighting and camera-record
+/// writes, the party-row presentation stores. Countdowns:
+/// `capture_countdown::GENOCIDAL_CANNON`.
 ///
 /// PORT: FUN_801F6A20 (PROT 0963; phase table + caster staging; packet arms unported)
 pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
@@ -1208,7 +1237,8 @@ pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
         arm(0x0E, 0x801F_7A08, Advance)
             .stages(&[reaction(Bump, 0x801F_7CF0)])
             .ctx_278(1)
-            .hit(0x801F_7C54),
+            .hit(0x801F_7C54)
+            .hit_rate(2), // `0x801F7D30`
         arm(0x0F, 0x801F_7D80, Advance),
         arm(0x10, 0x801F_7ED0, Advance).stages(&[stage(
             Caster,
@@ -1498,19 +1528,35 @@ mod chain_tests {
         }
     }
 
-    /// A body whose caster clips the band replays stages nothing on the
-    /// caster itself; one without such a row does.
+    /// A body whose caster clips the band replays stages no wind-up on the
+    /// caster itself, only its returns to idle; one without such a row
+    /// stages them all.
     #[test]
     fn caster_stages_go_to_the_pre_pass_where_it_has_a_row() {
         for b in chain_bodies() {
             let (_, c, _, _) = walk(b, 0);
-            let stages_caster = b
-                .arms
-                .iter()
-                .flat_map(|a| a.stages)
-                .any(|s| s.actor == ChainActor::Caster && !s.on_hit);
+            let caster_stages = || {
+                b.arms
+                    .iter()
+                    .flat_map(|a| a.stages)
+                    .filter(|s| s.actor == ChainActor::Caster && !s.on_hit)
+            };
+            let stages_caster = caster_stages().count() > 0;
             if b.caster_stages_replayed() {
-                assert_eq!(c.restage, 0, "PROT {:04}", b.prot_entry);
+                let idle_bumps = caster_stages()
+                    .filter(|s| s.clip == Literal(0) && s.restage == Bump)
+                    .count();
+                assert_eq!(
+                    usize::from(c.restage),
+                    idle_bumps,
+                    "PROT {:04}",
+                    b.prot_entry
+                );
+                assert!(
+                    c.staged_anim == 0 || !caster_stages().any(|s| s.clip == Literal(0)),
+                    "PROT {:04}",
+                    b.prot_entry
+                );
             } else if stages_caster {
                 assert_ne!(c.restage, 0, "PROT {:04}", b.prot_entry);
             }
@@ -1578,6 +1624,26 @@ mod chain_tests {
         assert_eq!(v.flags & 0x0400, 0);
         assert_eq!(v.init_key, 5);
         assert_eq!(ctx.phase, 3);
+    }
+
+    /// Only the marking leg drops the reaction: retail's `battle_deroa_iota_v2_paralyzing_wave_mid_cast`
+    /// marks Noa and keys no cue, `battle_jou_iota_v3_..`'s Master-Guarded Noa
+    /// plays her reaction and its three cues. A downed victim takes the dead
+    /// branch's knockdown, and no other arm is touched.
+    #[test]
+    fn paralyzing_wave_marking_leg_stages_no_reaction() {
+        let hit = WATER_HAZARD_75_CHAIN.arm(2).expect("arm 2");
+        let live = CastActorState { hp: 100, ..actor() };
+        assert!(chain_hit_stages_no_reaction(hit, &live));
+        let guarded = CastActorState {
+            numb_guard: true,
+            ..live
+        };
+        assert!(!chain_hit_stages_no_reaction(hit, &guarded));
+        let down = CastActorState { hp: 0, ..live };
+        assert!(!chain_hit_stages_no_reaction(hit, &down));
+        let other = MEGATON_PRESS_CHAIN.arm(7).expect("arm 7");
+        assert!(!chain_hit_stages_no_reaction(other, &live));
     }
 
     /// PROT 0937's four quarters: hits 1..3 leave the victim a point, the

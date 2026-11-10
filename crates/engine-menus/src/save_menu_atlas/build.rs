@@ -393,6 +393,9 @@ pub const SEPARATOR_GLYPHS: u32 = 14;
 ///   `+4..+7` U/V/W/H): the "PAGE" tag (code `0x76`, CLUT 1), the 6x8 page
 ///   digits (`0x7A..=0x83`, CLUT 8) and slash (`0x79`, CLUT 8), and the two
 ///   8x8 page triangles (`0x27` / `0x28`, CLUT 7).
+/// * the item info panel's two 12x12 scope icons (codes `0x84` / `0x85`,
+///   CLUT 1, `uv = (0xE8 / 0xF4, 0x80)`), which `FUN_801D0F1C` draws beside a
+///   passive-bearing consumable's name line.
 ///
 /// `system_ui` is the sheet-rooted (or CLUT-extension-rooted) slice
 /// [`build_atlas`] takes. A source that does not decode contributes no cells
@@ -503,6 +506,8 @@ pub fn menu_font_cells(
         push(ids::SERU_TAG, 8, (0xD8, 0x30, 12, 12));
         push(ids::LIST_UP, 7, (0xA8, 0x40, 8, 8));
         push(ids::LIST_DOWN, 7, (0xA8, 0x48, 8, 8));
+        push(ids::ITEM_SCOPE_ONE, 1, (0xE8, 0x80, 12, 12));
+        push(ids::ITEM_SCOPE_ALL, 1, (0xF4, 0x80, 12, 12));
     }
     cells
 }

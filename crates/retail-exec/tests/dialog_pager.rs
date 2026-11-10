@@ -103,6 +103,7 @@ const SEEN: [u8; 6] = [0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x19];
 
 #[test]
 fn the_pager_pages_as_retail_pages() {
+    differential!(prot(897, PAGER));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

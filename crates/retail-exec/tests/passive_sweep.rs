@@ -34,6 +34,7 @@ const TRACKED: [(StatusKind, u16); 6] = [
 
 #[test]
 fn the_passive_sweep_matches_retail() {
+    differential!(scus(ENTRY));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

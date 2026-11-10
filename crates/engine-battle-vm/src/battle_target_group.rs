@@ -245,14 +245,15 @@ pub fn target_group_aim(code: u8, slots: &[GroupSlot]) -> Option<GroupAim> {
     let centroid_z = (-sum_z) / count;
 
     // `slti`/`beq` at `0x801DD094`: the `0x400` store runs when the measured
-    // extent is BELOW it, so this is a floor.
-    let extent = (max_x - min_x).max(max_z - min_z);
-    let extent = extent.max(MIN_GROUP_EXTENT as i32);
+    // extent is BELOW it, so this is a floor. The floor reads the stored
+    // halfword back (`sh` then `lh` at `0x801DD084..0x801DD08C`), so a spread
+    // past `0x7FFF` reads negative and takes the floor too.
+    let extent = ((max_x - min_x).max(max_z - min_z) as i16).max(MIN_GROUP_EXTENT);
 
     Some(GroupAim {
         centroid_x: centroid_x as i16,
         centroid_z: centroid_z as i16,
-        extent: extent as i16,
+        extent,
     })
 }
 

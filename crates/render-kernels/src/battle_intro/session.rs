@@ -217,7 +217,8 @@ impl BattleIntro {
     /// `field_char_textures` is the raw field-character texture pack, whose
     /// entry 0 is the shade page the shatter's side faces sample. The
     /// particle env and the (unused) trig seam both seed from `rng_seed`, the
-    /// world's RNG word.
+    /// world RNG word the transition's init drew from
+    /// (`BattleState::intro_rand_state`).
     pub fn arm_for_battle(
         inputs: &crate::battle_intro_styles::IntroStyleInputs,
         total_duration: i32,

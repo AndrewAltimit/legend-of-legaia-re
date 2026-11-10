@@ -209,6 +209,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Start here | Look and feel (Enhanced, Original, Custom) | both | - | Enhanced |
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
+| Display | Pixel-exact scaling: whole steps of 320x240 only | `legaia-options.toml` | - | off |
 | Display | Menu colours (System, Light, Dark) | `legaia-options.toml` | - | System |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
 | Display | PlayStation pixel look: the native 320x240 picture, magnified (`--psx-render`) | `launcher.toml` | - | off |
@@ -434,13 +435,23 @@ enhancement has a retail-faithful off position
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
 | `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
+**Screenshots.** `Print Screen` saves the picture on screen as a PNG, menus
+and text included. The native window writes it into your pictures folder,
+under `Legend of Legaia` (`~/Pictures/Legend of Legaia` on most Linux
+desktops, `Pictures\Legend of Legaia` on Windows), named for the scene and
+the time (`legaia-town01-1762750000.png`), and says where on the notice line;
+the browser play page downloads the same picture under the same name. A
+desktop that keeps `Print Screen` for its own screenshot tool may not pass the
+key on; the game's shot then needs that shortcut freed.
+
 In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`, wherever your keyboard layout puts it) opens the panel; a controller opens it with `Select` + `Start`,
 which with `L1` and `R1` also held stays the original game's soft reset. The
-game holds still under it. Its first page, **Settings**, lists what the game
+game holds still under it, and the field party readout, which the panel's
+plate covers, is not drawn until it closes. Its first page, **Settings**, lists what the game
 reads live: every launcher row but *Look and feel* and the window size, in the
 launcher's order and words - the display and enhancement rows, the play rows,
 the gameplay tweaks, the battle tuning, the volumes and *Original game only*.
@@ -472,7 +483,9 @@ minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
 picker and the trading-card menu, then the play page's other debug controls:
 effect outlines, the party, the fight music, teaching the lead a spell, and a
 GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
-folder; the page's box is a text field, a window has none). The list scrolls
+folder; the page's box is a text field, a window has none), and *Start a
+battle here*, the scene's first encounter formation through the normal
+transition (`--battle first`, the page's button of the same name). The list scrolls
 under the cursor. The play page has the debug camera and the diagnostics bar as
 boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key
@@ -502,6 +515,9 @@ keeps whole steps of 320x240 so text and sprites stay sharp; a window a
 little short of a step (a 960x720 window a 768-pixel-tall screen hands back
 about 960x699) draws the frame at that step and shows it shrunk by a few
 percent to fit, rather than dropping to the step below with black around it.
+The *Pixel-exact scaling* row (`integer_scale`, also on the `F12` panel)
+turns that shrink off, for a player who wants every stage pixel the same size
+at the cost of the black border; PSX mode always scales in whole steps.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`

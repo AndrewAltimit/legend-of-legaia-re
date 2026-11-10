@@ -25,6 +25,7 @@ fn actor(s: u32) -> u32 {
 
 #[test]
 fn the_solo_sweep_is_retails() {
+    differential!(scus(SWEEP));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -72,6 +73,7 @@ fn the_solo_sweep_is_retails() {
 
 #[test]
 fn the_tint_arms_are_retails() {
+    differential!(scus(SM));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

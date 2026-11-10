@@ -1193,10 +1193,21 @@ impl RetailBattle {
                 // frame). A target idling in the RAM was not struck inside
                 // the display lag either, so the walk back holds (a wrap of
                 // the loop included).
+                // A party strike's monster target is the same clock: nothing
+                // the strike loop runs touches its loop before the hit
+                // (`battle_ropeway_party_noa_sonic_javelin_open`'s Orb, whose
+                // idle bob stands it a sphere's height off retail's). Only
+                // ahead of the first swing's commit, though: that commit
+                // steps the attacker along the range law to the target's
+                // body pair (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`), which
+                // the replay's own idle phase decided, and a loop re-seated
+                // after it stands the body where the step never measured
+                // (`minigame_muscle_dome_retail_red_piura_vahn_strike`
+                // `.987` to `.967`).
                 let melee_target_idle = clip == 0
                     && slot == self.target_code
-                    && self.active_actor >= 3
                     && self.queued_category == 3
+                    && (self.active_actor >= 3 || self.caster_clip == 0)
                     && (0x14..=0x1E).contains(&self.action_state);
                 // ... and a monster cast's party target still idling ahead of
                 // the hit, the same clock: the cast band stages nothing on the
@@ -1859,7 +1870,9 @@ impl RetailBattle {
                     // stands the fight's stream on it (`strike_deal`).
                     played: (seat >= 3 && state == 0x1E && self.queued_category == 3)
                         .then_some(self.committed_queue),
-                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3).then_some((
+                    // Either striker's: a party swing's first block roll reads
+                    // them as a monster's does.
+                    ramps: (state == 0x1E && self.queued_category == 3).then_some((
                         self.approach_terms.0,
                         self.approach_terms.1,
                         self.acting_attack,
@@ -1898,6 +1911,11 @@ impl RetailBattle {
                     walk_clock: self.walk_clock_capture(),
                     arrival: self.walk_clock_arrival(),
                     strike_aim: self.strike_aim_steer,
+                    harvest_pacing: seat < 3
+                        && self.queued_category == 3
+                        && self.arts_queue
+                        && self.harvest_pacing,
+                    approach_idle: self.approach_start.and_then(|a| a.target_idle),
                     tough: self.party.iter().enumerate().any(|(i, c)| {
                         c.as_ref()
                             .is_some_and(|c| self.party_seat_pool_raised(i, c).is_some())

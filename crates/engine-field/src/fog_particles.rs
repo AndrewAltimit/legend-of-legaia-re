@@ -81,9 +81,13 @@
 //! through it, so the corners are the particle's view point offset by
 //! `(dx0 * S, -0x80 * S, 0)` and `(dx1 * S, 0, 0)`: screen-aligned, both at
 //! the particle's depth, `H * 0x80 * S / vz` pixels tall whatever the camera
-//! pitch. Each half is `2 * half_width` wide - see
-//! [`FogParticle::half_width`] for why that width has no random term despite
-//! the PRNG call. On the overworld (`_DAT_1F800394 & 1`) the routine also
+//! pitch. Each half is `2 * half_width` wide ([`FogParticle::half_width`]).
+//! The port runs both transforms through the integer GTE camera
+//! ([`legaia_render_kernels::gte::FieldGteView`], [`FogView::gte`]): the
+//! `MVMVA` of `FUN_8003D344` into the translation, then the two `RTPT` points
+//! with retail's divide and saturation, so a corner lands on retail's `SXY` to
+//! the pixel and a particle at or behind the eye is drawn with the saturated
+//! corners retail draws, not dropped. On the overworld (`_DAT_1F800394 & 1`) the routine also
 //! culls a half whose depth is under `0x310`, links it at `(SZ - 0x10) >> 5`,
 //! and adds the per-depth screen-Y table `*_DAT_8007BB04` (the curvature
 //! table `FUN_800271A8` builds, [`legaia_render_kernels::overworld_curvature`]) to both
@@ -96,6 +100,7 @@
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_system::rotation_lut::RotationLut;
 use legaia_render_kernels::fog_volume::FogRegion;
+use legaia_render_kernels::gte::{FieldGteView, GteMat3};
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
 pub const FOG_POOL_SLOTS: usize = 0x50;
@@ -247,18 +252,19 @@ impl FogParticle {
         Some(tint.map(|t| ((i32::from(self.grey) * i32::from(t) * bright) >> 15) as u8))
     }
 
-    /// Half-width of each sheet half, from the post-update age
-    /// (`0x8003F730..0x8003F748`).
+    /// Half-width of each sheet half, from the post-update age and the rate
+    /// (`0x8003F714..0x8003F748`).
     ///
-    /// Retail adds a "random" byte here: it stores `rate` into the PRNG
-    /// state `0x1F8002A8` and calls `FUN_8003F838`, whose step is
-    /// `v = state * 12 + 2; state = (v << 16) + (v >> 16)` and whose return
-    /// value is that new state. With `rate <= 15`, `v < 0x8000`, so the
-    /// returned word is `v << 16` and its low byte - the only part the caller
-    /// keeps (`andi s0,v0,0xff`) - is always zero. The width is therefore
-    /// deterministic: `(0x180 + (age >> 4)) >> 1`.
-    pub fn half_width(age: u16) -> i32 {
-        (FOG_WIDTH_BASE + (i32::from(age) >> 4)) >> 1
+    /// Retail stores `rate` into the PRNG word `0x1F8002A8` and calls
+    /// `FUN_8003F838`, whose step is `v = state * 12 + 2; state = (v << 16) +
+    /// (v >> 16)`, and keeps the new state's low byte (`andi s0,v0,0xff`):
+    /// the low byte of `v >> 16`, zero for every rate the spawner draws
+    /// (`(rand & 7) + 8`) and non-zero only from rate `0x1556` up. The width
+    /// is `(byte + (age >> 4) + 0x180) >> 1`.
+    pub fn half_width(age: u16, rate: u16) -> i32 {
+        let v = u32::from(rate) * 12 + 2;
+        let byte = ((v << 16).wrapping_add(v >> 16) & 0xFF) as i32;
+        (byte + FOG_WIDTH_BASE + (i32::from(age) >> 4)) >> 1
     }
 }
 
@@ -313,6 +319,11 @@ pub struct FogView {
     /// the same either way; a depth handed to the meshes' depth buffer is
     /// not.
     depth_scale: f32,
+    /// The integer GTE camera the field render pass leaves loaded
+    /// (`0x1F8003C8`, `FUN_800172C0`): what the sheets' corners are projected
+    /// through. `None` only for a view built from a bare matrix
+    /// ([`Self::from_vp`]), which projects through the `f32` matrix instead.
+    gte: Option<FieldGteView>,
 }
 
 /// PSX stage size the projection maps NDC back onto.
@@ -327,6 +338,10 @@ impl FogView {
             vp: view.vp(4.0 / 3.0),
             h: view.h,
             depth_scale: 1.0,
+            gte: Some(FieldGteView::from_field_view(
+                view,
+                legaia_engine_camera::projection::GTE_OFY as i32,
+            )),
         }
     }
 
@@ -350,7 +365,21 @@ impl FogView {
             vp,
             h,
             depth_scale: 1.0,
+            gte: None,
         }
+    }
+
+    /// The same view projecting through `gte` (see [`Self::gte`]).
+    pub fn with_gte(self, gte: FieldGteView) -> Self {
+        Self {
+            gte: Some(gte),
+            ..self
+        }
+    }
+
+    /// The integer GTE camera the corners project through, if any.
+    pub fn gte(&self) -> Option<&FieldGteView> {
+        self.gte.as_ref()
     }
 
     /// A raw retail world point's normalised depth (`clip.z / clip.w`) in
@@ -575,6 +604,12 @@ impl FogPool {
         self.live = particles.len() as u16;
     }
 
+    /// The free stack as retail lays it out at `pool + 0` / `pool + 4`: the
+    /// top index and the 80 entries.
+    pub fn free_stack(&self) -> (i16, &[i16]) {
+        (self.free_top, &self.free_table)
+    }
+
     /// Slots currently allocated.
     pub fn allocated(&self) -> usize {
         FOG_POOL_SLOTS - (self.free_top + 1).max(0) as usize
@@ -770,7 +805,7 @@ impl FogPool {
             if alive {
                 // 0x8003F720..0x8003F7DC: the two halves; the particle stays
                 // alive while either one is on screen.
-                let hw = FogParticle::half_width(rec.age);
+                let hw = FogParticle::half_width(rec.age, rec.rate);
                 let p = [sx, sy, sz];
                 let ow = self.overworld.then_some(self.curve_bias);
                 let (l_alive, l_quad) = emit_half(view, p, -2 * hw, 0, FOG_LEFT_UV_ROW, rgb, ow);
@@ -792,6 +827,41 @@ impl FogPool {
     }
 }
 
+/// The billboard rotation the field render pass leaves at `0x1F800334`
+/// (`0x8003F374..0x8003F394`): the base matrix `_DAT_8007BF10` turned by
+/// `FUN_800461A4(0x400)`, a quarter turn about X - its columns `c0, c2, -c1`.
+/// `[[S,0,0],[0,0,-S],[0,S,0]]` for the field's `S * I`. The `MVMVA`s that
+/// build it saturate each entry to `i16`.
+pub fn fog_billboard_rotation(base: &GteMat3) -> GteMat3 {
+    GteMat3 {
+        m: base.m.map(|r| [r[0], r[2], r[1].saturating_neg()]),
+    }
+}
+
+/// One half's two `RTPT` corners and `SZ` through the integer camera
+/// (`FUN_8003F3FC` / `FUN_8003F86C`): the particle `p` (`(x >> 4, y - yoff,
+/// z >> 4)` as halfwords) goes through the camera matrix by `FUN_8003D344`
+/// (one `MVMVA`, the 32-bit `MAC` words) into the billboard matrix's
+/// translation, and `(dx0, 0, 0x80)` / `(dx1, 0, 0)` go through that matrix.
+/// Returns `SXY0`, `SXY1` and `SZ2` (the second point's depth, which is what
+/// the link key reads).
+pub fn fog_half_corners(
+    cam: &FieldGteView,
+    p: [i32; 3],
+    dx0: i32,
+    dx1: i32,
+) -> ((i16, i16), (i16, i16), u16) {
+    let eye = cam.rtps(p.map(|c| c as i16)).mac;
+    let sheet = FieldGteView {
+        rot: fog_billboard_rotation(&FieldGteView::field_base()),
+        tr: eye,
+        ..*cam
+    };
+    let v0 = sheet.rtps([dx0 as i16, 0, FOG_SHEET_HEIGHT as i16]);
+    let v1 = sheet.rtps([dx1 as i16, 0, 0]);
+    (v0.sxy, v1.sxy, v1.sz)
+}
+
 /// One half-sheet - `FUN_8003F86C`.
 ///
 /// `p` is the particle's pre-update world position. The half is a
@@ -802,7 +872,7 @@ impl FogPool {
 /// returns (`1` = keep the particle), the quad is present only when it drew.
 ///
 /// PORT: FUN_8003F86C
-fn emit_half(
+pub fn emit_half(
     view: &FogView,
     p: [i32; 3],
     dx0: i32,
@@ -812,11 +882,34 @@ fn emit_half(
     curve_bias: Option<i16>,
 ) -> (bool, Option<FogQuad>) {
     let overworld = curve_bias.is_some();
-    let Some((sx, sy, w)) = view.project_f(p) else {
-        return (false, None);
+    // The two corners before the overworld's curvature term, and `SZ`.
+    let (x0, mut y0, x1, mut y1, sz) = match view.gte.as_ref() {
+        Some(cam) => {
+            let (c0, c1, sz) = fog_half_corners(cam, p, dx0, dx1);
+            (
+                i32::from(c0.0),
+                i32::from(c0.1),
+                i32::from(c1.0),
+                i32::from(c1.1),
+                f32::from(sz),
+            )
+        }
+        None => {
+            let Some((sx, sy, w)) = view.project_f(p) else {
+                return (false, None);
+            };
+            let k = view.h / w;
+            let px = |v: f32| (v.round() as i32).clamp(-1024, 1023);
+            (
+                px(sx + dx0 as f32 * k),
+                px(sy - FOG_SHEET_HEIGHT as f32 * k),
+                px(sx + dx1 as f32 * k),
+                px(sy),
+                // Retail's view depth `SZ`, in the base matrix's scaled space.
+                w * crate::camera::CUTSCENE_WORLD_SCALE,
+            )
+        }
     };
-    // Retail's view depth `SZ`, in the base matrix's scaled space.
-    let sz = w * crate::camera::CUTSCENE_WORLD_SCALE;
     // 0x8003F958..0x8003F984: the overworld near cull and OT bias.
     if overworld && sz < FOG_OVERWORLD_NEAR_Z {
         return (false, None);
@@ -827,18 +920,15 @@ fn emit_half(
         sz
     };
     // 0x8003F98C..0x8003F9A0: the overworld's curvature term, added to both
-    // corners' `SY` before the row tests.
-    let nudge = curve_bias.map_or(0.0, |bias| {
-        (legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) + i32::from(bias))
-            as f32
-    });
-    let k = view.h / w;
-    let px = |v: f32| (v.round() as i32).clamp(-1024, 1023);
-    let (x0, y0) = (
-        px(sx + dx0 as f32 * k),
-        px(sy - FOG_SHEET_HEIGHT as f32 * k + nudge),
-    );
-    let (x1, y1) = (px(sx + dx1 as f32 * k), px(sy + nudge));
+    // corners' `SY` (the high halfword of each `SXY` word) before the row
+    // tests.
+    let y1_raw = y1;
+    if let Some(bias) = curve_bias {
+        let nudge =
+            legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) + i32::from(bias);
+        y0 = i32::from((y0 + nudge) as i16);
+        y1 = i32::from((y1 + nudge) as i16);
+    }
     // 0x8003F91C..0x8003F954: both left of -8, or both at/right of 0x148.
     if x0 + 8 <= 0 && x1 + 8 <= 0 {
         return (false, None);
@@ -857,8 +947,11 @@ fn emit_half(
     if y0 >= 0xF0 && y1 > 0xF0 {
         return (true, None);
     }
-    // 0x8003FA14..0x8003FA30: NCLIP over (x0,y0) (x1,y1) (x1,y0).
-    let mac0 = x0 * y1 + x1 * y0 - x0 * y0 - x1 * y1;
+    // 0x8003FA08..0x8003FA30: NCLIP over `SXY0` / `SXY1` as the RTPT left
+    // them and `SXY2 = (x1, y0)` written with the curvature term in, so on
+    // the overworld the third corner alone is bent: `(x0 - x1) * (y1 - y0)`
+    // over the raw `y1` and the bent `y0`.
+    let mac0 = (x0 - x1) * (y1_raw - y0);
     if (mac0 >> 2) + FOG_NCLIP_TOLERANCE <= 0 {
         return (false, None);
     }
@@ -1102,9 +1195,13 @@ mod tests {
     }
 
     #[test]
-    fn half_width_has_no_random_term() {
-        assert_eq!(FogParticle::half_width(0), 0xC0);
-        assert_eq!(FogParticle::half_width(0x1000), 0xC0 + 0x80);
+    fn half_width_has_no_random_term_at_spawned_rates() {
+        for rate in 8..16 {
+            assert_eq!(FogParticle::half_width(0, rate), 0xC0);
+            assert_eq!(FogParticle::half_width(0x1000, rate), 0xC0 + 0x80);
+        }
+        // `v = 0x1556 * 12 + 2 = 0x1000A`: the state's low byte is `v >> 16`.
+        assert_eq!(FogParticle::half_width(0, 0x1556), (0x180 + 1) >> 1);
     }
 
     fn env() -> FogFrameEnv {
@@ -1157,7 +1254,7 @@ mod tests {
         // A view-space billboard at the particle's depth: `H * 0x80 / w`
         // tall and `H * 2 * half_width / w` wide (the base matrix's `S`
         // cancels against the `1x` eye depth).
-        let hw = FogParticle::half_width(0x800 + 15);
+        let hw = FogParticle::half_width(0x800 + 15, 15);
         for q in &quads {
             let (w, h) = (q.xy[1].0 - q.xy[0].0, q.xy[2].1 - q.xy[0].1);
             assert!((i32::from(h) - 512 * FOG_SHEET_HEIGHT / 2000).abs() <= 1);

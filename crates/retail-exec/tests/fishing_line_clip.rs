@@ -16,6 +16,7 @@ const Q: u32 = 0x8010_0008;
 
 #[test]
 fn the_line_is_clipped_as_retail_clips_it() {
+    differential!(prot(972, CLIP));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

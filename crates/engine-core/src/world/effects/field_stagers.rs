@@ -99,7 +99,7 @@ impl World {
         self.props
             .active_fx
             .iter()
-            .flat_map(|s| s.part_draws())
+            .flat_map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
             .chain(self.ambient_mesh_part_draws())
             .chain(self.map_pointer_part_draws())
             .collect()

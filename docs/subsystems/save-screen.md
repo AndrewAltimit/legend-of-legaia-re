@@ -206,7 +206,7 @@ script through `FUN_801D6628`, then wait for `_DAT_8007BB80 == 0`.
 | `0x1B` | `FUN_801DB21C` | Shop buy list (kind-4): confirm checks gold `0x8008459C` against the price (buzz `0x23`), then routes on the item kind byte - `1` to `0x1C`, `2` to `0x1D`, else `0x1A`; cancel to `0x1A`. |
 | `0x1C` | `FUN_801DB380` | Shop buy recipient picker (equipment buys). |
 | `0x1D` | `FUN_801DB7F4` | Shop buy quantity + commit; quantity law `min(gold/price, 99, 99-held)`. |
-| `0x1E` | `FUN_801DBC5C` | Shop sell list: raises `0x1000` on `DAT_801E46BC`, script `&DAT_801E4EE4`; after the wait it sets `_DAT_8007BB94 = 1`, stages the bag bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branches on `_DAT_8007BB94` - `3` re-runs script `&DAT_801E4EFC`, waits and returns to `0x1A`; `2` goes to `0x1F`. |
+| `0x1E` | `FUN_801DBC5C` | Shop sell list: raises `0x1000` on `DAT_801E46BC`, script `&DAT_801E4EE4`; after the wait it sets `_DAT_8007BB94 = 1`, stages the bag bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branches on `_DAT_8007BB94` (on the settle frame that is the `1` just stored, so it routes from the next frame) - `3` re-runs script `&DAT_801E4EFC`, waits and returns to `0x1A`; `2` goes to `0x1F`. |
 | `0x1F` | `FUN_801DBD94` | Shop sell quantity: d-pad `+-1` / `+-10` clamped to `[1, DAT_801E46B8]`; confirm credits `_DAT_8008459C += (price * qty) >> 1` and walks the bag at `0x80084140 + 0x1818` for a non-empty slot; returns to `0x1A` after a brief delay. |
 | `0x20` | `FUN_801DC1CC` | Casino prize exchange: build rows from the `0x801E4518` table (stops at the first zero id; a set gate flag hides the one-shot row), browse (confirm gated on coins `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes / No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`). Nothing here touches the card. |
 
@@ -317,6 +317,11 @@ the op selector. Each step calls `func_0x80031D00()` before returning.
 | 2 | Call `FUN_801DD35C(1, op)` each frame until it returns non-zero: `op = 2` load (card to RAM), `op = 1` save (RAM to card). |
 | 3 | Write `DAT_801E46A4 = 1` (back to the root picker). The save driver then overwrites it with `0` (exit) when `_DAT_8007B450 != 0`: the unconditional write sits in the branch's delay slot, so a save raised from a parked field script hands control back to the script. |
 
+Both display scripts are the bare close-all `[05]`, so step 1 waits out the
+pause menu's windows sliding off before the card screen starts: twelve frames
+of the [window-slide lock](field-menu.md#the-window-slide-input-lock), which
+the port's Load / Save rows wait out too.
+
 Three independent readings fix the direction (the pair reads naturally the
 other way round):
 
@@ -333,7 +338,8 @@ other way round):
 Sub-screen `0x1A`, 584 bytes. Step 0 clears `_DAT_8007BB98/90/88`, sets
 `_DAT_8007BB94 = 4`, runs script `&DAT_801E4E38` and masks
 `DAT_801E46BC &= 0xFFF`. Step 1 runs `FUN_801D688C(&DAT_801E46BC, 3, 1)`: row 0
-goes to the buy list `0x1B`; row 1 validates, runs script `&DAT_801E4E54` and
+goes to the buy list `0x1B`, resetting only `DAT_801E46B0/B4` and
+`_DAT_8007BB94` (the staged slot `_DAT_8007BB88` survives); row 1 validates, runs script `&DAT_801E4E54` and
 advances to step 2, which clears state and sets `DAT_801E46A4 = 0x1E` (sell
 list); row 2 or cancel exits to `0x00`.
 
@@ -1280,8 +1286,11 @@ Read off the GP0 draw list of the running load screen:
   (cell quads at x = 354..1386, 104 px stagger) and slides left on commit.
   Landed: 32x32 cells, row 0 at `(98, 28)`, pitch `(40, 20)`, each row shifted
   `+4` px right. Per cell the renderer interpolates a slide base
-  `0x15A + slot*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
-  the cell drawer `FUN_801E0FD0` adds a `+8` inset. The focused cell draws at
+  `0x15A + prev*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
+  the cell drawer `FUN_801E0FD0` adds a `+8` inset. `prev` is the previous
+  cell's slot (`0` for the first): `s5` is reassigned to this cell's slot at
+  `0x801E0768`, after the base is formed, so the parked cells 0 and 1 sit one
+  column apart and the last cell's right edge lands on the captured 1386. The focused cell draws at
   `0x80` modulation, the others at `0x60`; the save-icon faces (tile = cell) are 16x16 at cell
   `+8, +8`; the finger cursor sits at cell quad `+(-10, +4)`. Port:
   `engine-ui::slot_grid_quad_x` / `slot_preview_grid_draws_for`.

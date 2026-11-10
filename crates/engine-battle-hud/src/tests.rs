@@ -679,7 +679,22 @@ fn an_art_names_itself_once_the_strike_cursor_passes_its_constant() {
         a.strike_index = 1;
     }
     assert_eq!(battle_move_name(&w), None, "the art's byte is still ahead");
+    // The loop has staged the art behind the playing clip: the `+0x1DC`
+    // bit-1 latch stands until the art's own commit opens the label.
     w.actors[0].battle.strike_index = 2;
+    w.actors[0]
+        .battle
+        .flag_bits
+        .set(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
+    assert_eq!(
+        battle_move_name(&w),
+        None,
+        "the art is staged, not committed"
+    );
+    w.actors[0]
+        .battle
+        .flag_bits
+        .clear(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
     assert_eq!(battle_move_name(&w).as_deref(), Some(name));
 }
 

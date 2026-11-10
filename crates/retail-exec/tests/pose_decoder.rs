@@ -73,6 +73,7 @@ fn gen_part(rng: &mut Rng) -> PartPose {
 
 #[test]
 fn the_pose_decoder_is_retails() {
+    differential!(scus(DECODE));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

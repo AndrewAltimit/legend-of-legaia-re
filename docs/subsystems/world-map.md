@@ -1251,11 +1251,16 @@ stateDiagram-v2
     S23 --> S4: game mode = 8
 ```
 
-In state 0 with `_DAT_8007B868 == 0` it calls `FUN_800243F0` - the per-frame
-**BGM / asset poller**, which resolves the pending BGM id to a PROT slot
+With `_DAT_8007B868 == 0`, before it dispatches on the state, it calls
+`FUN_800243F0` (`0x801DA548`) - the per-frame **BGM / asset poller**, which
+resolves the pending BGM id to a PROT slot
 ([`asset-loader.md`](asset-loader.md#music--sfx-selection-bgm-lookup)), not a
-location resolver - and checks pad buttons against `_DAT_8007BB38` for entity
-interaction.
+location resolver. Its return is the second argument of the state-0 roll
+`FUN_801D9E1C`, which rolls only on a non-zero one (`0x801DA16C`). The
+poller's return starts at `-1` (`0x80024400`) and is `0` on one arm only
+(`0x80024C60`, after `FUN_80052770` answers `0`). The port is
+`world_map_entity::step` (`WorldMapEntityHost::bgm_poll`), held to the
+routine by the `world_map_entity` differential.
 
 #### Encounter-record installation
 

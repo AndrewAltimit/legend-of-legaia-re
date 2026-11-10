@@ -118,7 +118,7 @@ calls its renderer or runs the list kernel.
 - Drawing: [primitives + CLUT staging](#draw-primitives--clut-staging) · [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8)
 - [Top-level pause menu](#top-level-pause-menu)
 - Status: [tab banner](#tab-banner) · [satellites](#status-satellite-windows) · [main panel](#status-main-panel-fun_801d33d8) · [status page](#status-page-submenu-0-or-5) · [magic](#magic-list-submenu-2) · [moves](#moves-list-submenu-3) · [skills](#skills-page-submenu-1)
-- Lists: [sub-screen state machines](#submenu-state-machines) · [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) · [Use-list build](#use-list-row-build-content-id-3-fun_80030628)
+- Lists: [sub-screen state machines](#submenu-state-machines) · [slide input lock](#the-window-slide-input-lock) · [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) · [Use-list build](#use-list-row-build-content-id-3-fun_80030628)
 - [Items screen](#items-screen) · [Magic screen](#magic-screen) · [Equip screen](#equip-screen) · [stat-compare panels](#equip-stat-compare-panels-windows-25-and-41) · [Options screen](#options-screen)
 - [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [windows 34 and 46](#two-more-descriptor-table-renderers-windows-34-and-46)
 - [Name columns](#name-columns-and-translated-text) · [dialog reading box](#dialog-reading-box-fun_801d84d0) · [inn stay](#inn-stay-there-is-no-inn-screen)
@@ -285,7 +285,9 @@ Notes on those rows:
   shop's recipient sub-screen adds only window 36.
 - **Windows 5 / 6 belong to entry-context kind `0x0D`**, a scripted pre-battle
   party menu. Window 5's two headings are the ready check whose Yes exits
-  into the fight; window 6's six labels are the matching briefing - six
+  into the fight (its rows step on Up / Down through the list kernel
+  `FUN_801D688C`, two rows, wrapping, with confirm and cancel tested ahead of
+  any move); window 6's six labels are the matching briefing - six
   static VAs in the overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
   `0x801d636c..0x801d6448`), not content the entry-context record owns.
 - **Window 31** is opened by both shop buy commits with a one-command script
@@ -340,14 +342,18 @@ The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
 [`engine-ui::menu::window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
 (windows 25 and 41 in `menu::equip_stat_compare`). Every window painter
-is reached by a screen on both hosts. The port keeps the pen arithmetic and the
-state-word rules and drops two globals every painter touches - the ink word
-`DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
-composites in call order and lays glyphs out proportionally needs neither.
-The **accent pen** (`DAT_8007B454 = 6`) is kept as a colour
-(`PAINTER_INK_ACCENT`, the same colour as a rising stat): window 34 stages it
-for the item name and owned count, window 24 for its count, window 31 for its
-number, each restoring `7` afterwards.
+is reached by a screen on both hosts. The port keeps the pen arithmetic, the
+state-word rules and the ink word `DAT_8007B454` as each draw's colour. Most
+text is ink `7` (white). The **accent pen** `6` (`PAINTER_INK_ACCENT`, the same
+colour as a rising stat) covers window 34's item name and owned count, window
+24's count and window 31's number; the **choice ink** `5`
+(`PAINTER_INK_CHOICE`, teal) covers the two choice labels of windows 46 and 5,
+staged before the first label and held through the second. Each window
+restores `7` afterwards. The byte some painters stage at `DAT_80073F20` is the
+string writer's width-table entry for byte `0x04` (`0x80073F1C + 4`), not a
+mode; no string these windows draw carries that byte, so the port drops it.
+The retail differential `crates/retail-exec/tests/menu_painters.rs` holds
+every painter here to its routine, ink included.
 
 `FUN_801E4140` is not a painter. Past its `y < 0xF1` guard it calls the
 fill-state setter `FUN_80034B6C` and the box writer
@@ -553,6 +559,19 @@ Disc-gated oracle:
 
 ICO `0x3f` is the same `(208,86,16,10)` sheet rect as status code `0x07`. HP /
 MP values take the [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8).
+
+### The party readout under the pause wipe
+
+The field party readout (`FUN_801D0D38`) is gone before the field starts to
+darken. A capture pressing the menu button in a retail field state with the
+readout up (`scripts/pcsx-redux/autorun_pause_hud_fade.lua`, `town01`) shows
+the routine build the panel on the accept tick and never again: the accept
+raises the player's engaged bit (`+0x10 & 0x80000`), and from the next field
+tick the scene-entry arm rearms the idle countdown to `0x28`, so every frame of
+the wipe (screen fade `_DAT_8007B440` from `20` up to `160`) has no readout.
+None of the suppress words (`_DAT_8007B868`, the D-pad, the menu lock) is
+raised. Both hosts draw none once the press opens the menu; the play page's
+overlay used to keep the last field frame's readout under the wipe quad.
 
 ### The menu does not open at all while a dialogue is up
 
@@ -852,11 +871,11 @@ phase 0.
 | `0x09` | `FUN_801D7FF8` | all-party apply (cursor count 0: confirm / cancel only) |
 | `0x0A` | `FUN_801D8308` | single-target apply |
 | `0x0B` / `0x0C` / `0x0D` | `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` | Door of Light / Door of Wind / Incense |
-| `0x0E` | `FUN_801D8F10` | Magic caster picker; confirm buzzes `0x23` on a caster with no spells or an empty Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`, `0x801D9060..0x801D90B8`) |
+| `0x0E` | `FUN_801D8F10` | Magic caster picker; confirm buzzes `0x23` on a caster with no spells or an empty Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`, `0x801D9060..0x801D90B8`); no HP gate, so a KO'd member casts |
 | `0x0F` | `FUN_801D9110` | spell list (cancel -> `0x0E`; confirm -> `0x10` / `0x11`, `li` at `0x801d920c` / `0x801d924c` / `0x801d9258`) |
 | `0x10` | `FUN_801D9280` | group cast (cursor count 0) |
 | `0x11` | `FUN_801D9594` | single-target cast |
-| `0x12` / `0x13` / `0x14` | `FUN_801D98F0` / `FUN_801D99F0` / `FUN_801D9C14` | Equip character picker / slot browse / candidate list |
+| `0x12` / `0x13` / `0x14` | `FUN_801D98F0` / `FUN_801D99F0` / `FUN_801D9C14` | Equip character picker / slot browse (list kernel over 8 rows with wrap; row 0 Best Equipment cues `0x24` or buzzes `0x23`) / candidate list |
 | `0x15` | `FUN_801DA2A0` | Status (the [per-character list screen](save-screen.md#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)) |
 | `0x17` | `FUN_801DD330` | Options |
 | `0x20` | `FUN_801DC1CC` | casino prize counter |
@@ -883,7 +902,83 @@ below; the overlay talks to it through globals:
 | `_DAT_8007BB88` | selected row's payload (entry low 12 bits; the bag slot on item lists) |
 | `_DAT_8007BB9C` | selected row's class nibble (`entry & 0xF000`; the key `FUN_80034250` dispatches descriptions on) |
 | `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` | scroll top / selected row / row count |
-| `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` |
+| `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` ([below](#the-window-slide-input-lock)) |
+
+### The window-slide input lock
+
+No menu screen reads the pad while a window is moving. The latch is
+`_DAT_8007BB80` (`gp+0x868`), and one routine writes it: the window walker's
+motion pass `FUN_80031AE4`, the first call of the per-frame window walker
+`FUN_80031D00` (`0x80031DC0`). It zeroes the latch (`0x80031AE8`), then for
+every window whose motion word `+0x20` is `1` (sliding) or `-1` (closing) adds
+the frame delta `DAT_1F800393` to the progress `+0x1E`; at the duration (`0xC`,
+the motion sub-object's `+0`) the progress resets, the motion word steps down
+and the window lands on its target. A window still moving after that is
+placed at `source + (target - source) * progress / 12` (closing:
+`(park - source)`) and counted onto the latch (`0x80031CCC..0x80031CD8`). A
+still window copies its live position into the slide source; a finished close
+(`-2`) sits on its park and the draw walker destroys it in the same frame
+(`0x80031E04..0x80031E20`).
+
+The sub-screens all take the same shape (`FUN_801D6B20`, the root picker, is
+the clearest):
+
+- The master tick `FUN_801DC6B4` dispatches a requested screen on the frame
+  **after** the request: it compares the request word `DAT_801E46A4` with the
+  settled copy at `0x801DC950..0x801DC970`, zeroes the phase word, and calls
+  the handler through the table at `0x801E4F40`.
+- Phase 0 hands `FUN_801D6628` the screen's window program and steps to
+  phase 1. It reads no pad.
+- Phase 1 loads the latch and skips its input while it is non-zero
+  (`0x801D6B90..0x801D6B98` in the root picker; `0x801DC334` and `0x801DC438`
+  in the prize counter; the same load heads every handler's input phase).
+- Every handler ends in `FUN_80031D00`, so the latch the next frame reads is
+  the one this frame's motion pass left.
+
+Every phase-0 program closes the open set (`[05]`) or creates a window, so
+every one starts a twelve-frame motion. After a press that changes the
+screen, the pad is next read thirteen frames on: the request frame, the
+phase-0 frame, eleven frames reading a raised latch. A step inside a screen
+that runs its program on the press itself (the prize counter's Yes / No
+window `[01 46]` and its close `[0A 44][04 46]`; the Throw Out confirm's
+`[04 13][01 9]`) is read again twelve frames on. The card drivers `0x18` /
+`0x19` close every window in phase 0 and start the card screen only once the
+latch drops (`0x801DAE94..0x801DAEA8`).
+
+The phase-0 program of each sub-screen, read off the `a0` each handler
+materialises ahead of its `jal 0x801D6628`:
+
+| id | program | id | program |
+|---|---|---|---|
+| `0x01` | `0x801E4BC0` | `0x0E` | `0x801E4D10`, `0x801E4CF4` |
+| `0x03` | `0x801E4BD4` | `0x0F` | `0x801E4D18` |
+| `0x04` | `0x801E4BE0` | `0x10` | `0x801E4D38` |
+| `0x05` | `0x801E4BEC` | `0x11` | `0x801E4D60` |
+| `0x06` | `0x801E4C14` | `0x12` | `0x801E4D88` |
+| `0x07` | `0x801E4C70` | `0x13` | `0x801E4DA0` |
+| `0x09` | `0x801E4C30` | `0x14` | `0x801E4DC8` |
+| `0x0A` | `0x801E4C48` | `0x15` | `0x801E4DEC` |
+| `0x0B` | `0x801E4CBC` | `0x17` | `0x801E4E08` |
+| `0x0C` | `0x801E4CD4` | `0x18` / `0x19` | `0x801E4E28` / `0x801E4E30` |
+| `0x0D` | `0x801E4CE4` | `0x20` | `0x801E4F18` |
+
+**Port.** `MenuWidgetState::step_motion` is the motion pass and keeps the
+latch; the [kernel differential](../tooling/retail-kernel-differential.md)
+runs it against `FUN_80031AE4` pass by pass. `engine-menus::menu_slide_lock`
+holds the program table, and its `MenuSlideLock` runs a screen's programs
+against the window list when the menu changes screen and answers whether the
+pad reaches the screen. The pause menu asks
+`field_menu_dispatch::pause_slide_gate` once per menu frame, ahead of every
+pre-empt and blip, on all three of its paths (`BootSession`, the play window's
+boot-UI arm, the play page's `play_menu_input`); the prize counter asks it
+inside `MenuRuntime::step_field_session`. The walker's delta is the menu
+family's frame floor, `1`. A session installs the overlay's programs at boot
+(`BootSession::from_host`), so headless drivers run the lock the hosts run;
+without the overlay there is no window list and the lock is open. A driver
+that presses into the menu waits on `BootSession::field_menu_settled` (the
+page's `play_menu_press`) rather than on a frame count. Not keyed yet: the
+Options value popup (`[01 47]`), the shop's sub-screens (their own slide model,
+[shop.md](shop.md)) and the save screen's inner card steps.
 
 ### Which cue a confirm sounds
 
@@ -1050,10 +1145,15 @@ staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at `(WX+0x7C, WY)`
 panel `FUN_801D0F1C`:
 
 - name (CLUT 6, item-table `+4`) at `(WX, WY)`; description (CLUT 7,
-  item-table `+8`) at `(WX, WY+0x10)`;
-- for accessories, the passive lines from `0x8007625C` at `(WX, WY+0x38)`
-  (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a single / all-scope icon
-  (`0x84` / `0x85`) at `WX+0x84`;
+  item-table `+8`) at `(WX, WY+0x10)` through the detail printer
+  `FUN_800337B0`, so equipment gets its slot template and stat line here as on
+  the Equip screen's window 24;
+- for an item that grants a passive (index below `0x40`), the passive lines
+  from `0x8007625C` at `(WX, WY+0x38)` (CLUT 4) and `(WX, WY+0x48)` (CLUT 7);
+  a kind-`2` item adds a scope icon at `(WX+0x84, WY+0x38)`, icon `0x85` when
+  its effect descriptor's `+2` flags carry `0x08` with a non-zero `+0` class,
+  or `0x20` without `0x08`, else `0x84` (`0x801D111C..0x801D11B8`). Every
+  shipped passive sits on a kind-`2` item, so every passive line carries one;
 - for a Point Card (id `0xFE`), instead: "Points Left" at
   `(WX+0x18, WY+0x41)` and the 8-digit bank `_DAT_800845B4` at
   `(WX+0x38, WY+0x4E)`. This is a branch (id test at `0x801d0fd0` jumps to the
@@ -1063,7 +1163,11 @@ The renderer always emits a second framed box
 `FUN_8002C69C(WX, WY+0x38, 0x90, 0x28)` under its window; the passive / points
 lines land inside it. Port: the Point Card arm is a separate builder
 (`engine-ui::item_points_panel_draws`) over `items_screen_draws_for`, fed from
-`World::minigames.point_card`.
+`World::minigames.point_card`; the scope icon is the font sprite cell
+`ITEM_SCOPE_ONE` / `ITEM_SCOPE_ALL` picked by
+`engine-menus::pause_screens::item_scope_icon`.
+`crates/retail-exec/tests/menu_screens.rs` runs the command window, window 17
+and the panel against these builders.
 
 ### Command sub-flows (Use / Throw Out / Arrange)
 
@@ -1392,6 +1496,17 @@ A confirmed spell's stats `+2` byte picks the flow: bit `0x20` set -> the
 no-pick **group** flow (`0x10`, `FUN_801D9280`; window 14 with the hand on every row, confirm
 or cancel only, the caster and info windows stay drawn); clear -> the per-member
 **target picker** (`0x11`, `FUN_801D9594`). Cancel returns to the list.
+
+The caster picker and the target picker both run the list kernel
+`FUN_801D688C` with wrap: confirm and cancel are read before any move, and only
+Up / Down move the hand. The group flow runs it with no rows (confirm first).
+Every way back to the spell list - a cancel from either flow, or a cast that
+leaves the caster short of MP or the spell with nobody to affect - reopens it on
+its first row, because the list's entry step (`FUN_801D9110` at `0x801D9160`)
+clears the selected row `0x8007BB98` and the scroll top `0x8007BB90`. Neither
+flow nor the list build reads the caster's HP: a KO'd member with MP casts.
+`crates/retail-exec/tests/spell_screens.rs` steps all four sub-screens against
+`engine-menus::spell_menu` frame by frame.
 
 ### Menu-cast spell leveling + the window-7 notice
 
@@ -1921,7 +2036,10 @@ There is no revert. The popup's x / w `(170, 128)` are static; y / h are
 stamped per open: `y = window-48 y + 0x16 + sum of advances above the cursor
 row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px
-pitch, text inset `+0x14`, cursor at the content origin.
+pitch, text inset `+0x14`, and puts the hand sprite (`FUN_8002B994` kind 0)
+at the content origin on the cursor row. `menu_painters` in the retail
+differential holds `engine-ui::options_draws_for` to both routines, the ink-0
+rows and the popup hand included.
 
 **Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
@@ -1944,13 +2062,16 @@ eight at the popup's 13-px pitch.
 
 The debug build's developer menu lives in the field overlay (0897), not in the
 pause menu. Its EVENT FLAG editor is a raw index / value poke tool; two
-kernels are ported from the disassembly
-(`ghidra/scripts/funcs/overlay_0897_*`):
+kernels are ported from the disassembly. Both are arms of the dev-menu
+dispatcher, and the `ghidra/scripts/funcs/overlay_0897_*` dumps print them
+`0xE818` low (at `0x801DBD04`, `0x801DB8F4` and `0x801DB8B4`; see
+[dump-corpus integrity](../tooling/dump-corpus-integrity.md)) - the VAs below
+are the slot-A load base's:
 
-- **Value step** (`FUN_801dbd04`): `DAT_801f2aa0` moves by Up / Down (`0x8`,
+- **Value step** (`0x801EA51C`): `DAT_801f2aa0` moves by Up / Down (`0x8`,
   or `0x80` with Triangle held) and Left / Right (`1`), clamped to
   `[0, 0xFFF]`.
-- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the row cursor
+- **List cursor** (`0x801EA10C` / `0x801EA0CC`): the row cursor
   `DAT_801f2e90` steps and wraps across the `'X'` (0x58) end sentinel of the
   stride-`0xA` table at `DAT_801f2e94`.
 
@@ -2139,6 +2260,12 @@ numerals on CLUT `(128, 510)`, all three names on `(208, 510)`):
 - a downed member's **name is not tinted**, and its MP field takes the death
   tier even when its own ratio says "normal" - the death override sits above
   the MP tier.
+
+The field party HUD `FUN_801D0D38` has no such override: it stages
+`FUN_80035EA8` before the MP pair (`0x801D1114`), so a fallen member's MP keeps
+its own tier there, and only the HP pair turns red, through the HP law's
+`cur == 0` arm. The retail differential (`field_hud`) holds
+`engine-ui::field_hud_readout_inks` to it.
 
 Port: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
 

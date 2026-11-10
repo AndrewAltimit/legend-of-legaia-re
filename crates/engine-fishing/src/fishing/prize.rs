@@ -103,6 +103,26 @@ impl PrizeExchange {
         }
     }
 
+    /// One frame of the prize list's cursor (`FUN_801d0c3c`): up and down
+    /// each move it one row (both in one frame cancel), and it **wraps**: past
+    /// the first visible row ([`Self::first_visible`]) it lands on the last
+    /// row, past the last row on the first visible one. Retail holds the list
+    /// at six rows (`li v0,0x5` / `slti v0,v0,0x6`); a page with fewer rows
+    /// wraps at its own last row.
+    pub fn step_cursor(&self, cursor: usize, points: i32, up: bool, down: bool) -> usize {
+        // PORT: FUN_801d0c3c (the list cursor: up / down, wrapping at the floor and the last row)
+        let floor = self.first_visible(points) as i32;
+        let last = self.rows.len().max(1) as i32 - 1;
+        let mut c = cursor as i32 - i32::from(up) + i32::from(down);
+        if c < floor {
+            c = last;
+        }
+        if c > last {
+            c = floor;
+        }
+        c as usize
+    }
+
     /// Whether `row`'s **one-time bit is latched** in `purchased_mask` - i.e.
     /// the prize has already been taken.
     ///

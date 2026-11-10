@@ -36,8 +36,9 @@ pub enum FrameBody {
 ///    the mode-entry path spawns from descriptor `0x800706D4` via
 ///    `FUN_80020DE0` (`sw v0,-0x4720(at)` at `0x800257AC`), and `+0x0C` is the
 ///    handler slot that spawner copies out of the descriptor's `+0x8`.
-/// 3. `FUN_800188C8(_DAT_1F800393)` - the dev pad-driven readout HUD, itself
-///    gated on `_DAT_8007B98C` and already out of scope.
+/// 3. `FUN_800188C8(_DAT_1F800391)` (`lbu a0,0x391(a0)` at `0x800179A4`) -
+///    the dev pad-driven readout HUD, itself gated on `_DAT_8007B98C` and
+///    already out of scope.
 ///
 /// So the load-bearing content is step 2 alone, and two things follow that the
 /// declarative [`PerFrameStage`] shape does not otherwise say:

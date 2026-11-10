@@ -157,6 +157,7 @@ fn cpu(state: &Rc<Cell<u32>>) -> Option<Cpu> {
 
 #[test]
 fn the_party_gets_away_when_retail_does() {
+    differential!(prot(898, 0x801E_791C));
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = cpu(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -186,6 +187,7 @@ fn the_party_gets_away_when_retail_does() {
 
 #[test]
 fn a_monster_flees_when_retail_does() {
+    differential!(prot(898, 0x801E_C0DC));
     let state = Rc::new(Cell::new(0));
     let Some(mut cpu) = cpu(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

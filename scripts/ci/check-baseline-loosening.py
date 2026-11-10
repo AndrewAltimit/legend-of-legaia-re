@@ -57,6 +57,11 @@ RULES: dict[str, list[tuple[str, str]]] = {
         ("counts/*", "down"),
     ],
     "scripts/ci/disc-coverage-baseline.json": [("*", "up")],
+    "scripts/ci/differential-coverage-baseline.json": [("*", "up")],
+    "scripts/ci/port-provenance-baseline.json": [
+        ("unwaived/*", "down"),
+        ("stale_waivers", "down"),
+    ],
     "scripts/ci/byte-account-baseline.json": [
         ("*work_bytes*", "down"),
         ("*", "up"),

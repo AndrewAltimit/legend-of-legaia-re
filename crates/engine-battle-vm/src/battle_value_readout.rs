@@ -168,6 +168,43 @@ pub const fn teardown_row_offset(count: u32, index: u32) -> Option<u32> {
     }
 }
 
+/// The whole teardown head of the pass (`0x801E8068..0x801E818C`): the UI
+/// elements it closes through `FUN_801D8DE8(id, 0)`, in order, and the readout
+/// flag `DAT_8007B64C` it leaves.
+///
+/// With the flag up and the string total `_DAT_8007BD14` live it closes
+/// [`SHARED_BUFFER_ELEMENT`] and drops the flag, which skips the batch. With
+/// the flag still up and a value in the window ([`teardown_runs`]) it closes
+/// each queued entry's pair ([`teardown_pair`], the row of `queue` chosen by
+/// [`teardown_row_offset`]) and drops the flag - with no entries too.
+/// `queue` is the sixteen bytes at `0x801F6834`.
+pub fn readout_teardown(
+    flag: u8,
+    shared_total: u32,
+    values: [u16; VALUE_SLOTS],
+    count: u32,
+    queue: &[u8; 16],
+) -> (Vec<i32>, u8) {
+    let mut closed = Vec::new();
+    let mut flag = flag;
+    if flag != 0 && shared_total != 0 {
+        closed.push(i32::from(SHARED_BUFFER_ELEMENT));
+        flag = 0;
+    }
+    if teardown_runs(flag, values) {
+        for i in 0..count {
+            let Some(at) = teardown_row_offset(count, i) else {
+                break;
+            };
+            let (id, pair) = teardown_pair(queue.get(at as usize).copied().unwrap_or(0));
+            closed.push(i32::from(id));
+            closed.push(pair);
+        }
+        flag = 0;
+    }
+    (closed, flag)
+}
+
 /// The widget-pointer index for a readout slot: two indirections, a `0xC`-stride
 /// byte record then a word table.
 ///
@@ -389,6 +426,12 @@ pub fn value_cells(value: u16, centre_x: i32, start_y: i32, age: u16) -> Vec<Val
 //    are laid right to left at a pitch of the corner span plus one;
 // 5. once the stepped timer passes `0x240` the value is zeroed - the numeral
 //    lives 37 frames at a frame step of one.
+//
+// The projection returns the square's OT depth, and under `0x80` the routine
+// reseats the far corners 32 px from the near one (`0x801DF820..0x801DF854`)
+// before the width clamps. The port's host projection carries no OT depth,
+// so that near arm has no port: a numeral over a body almost on the camera
+// keeps its projected square.
 //
 // `battle_vahn_tri_somersault_super` holds a fresh entry (`242`; the drawn
 // frame's timer is `0x70`, the RAM word already stepped to `0x80`) and its
@@ -734,13 +777,16 @@ pub const MULTI_ROW_X: [i32; 4] = [244, 168, 92, 16];
 /// content box's pen stands two above its record.
 pub const MULTI_ROW_VALUE_Y: i32 = 168;
 
+/// Drawn height of a five-digit row's 12-px-wide cells (`widget + 2..=0xF`).
+pub const MULTI_ROW_WIDE_CELL_H: u32 = 14;
+
 /// `x` offset of a row's last value cell's right edge (`+0x3D`, inclusive).
 const MULTI_ROW_RIGHT: i32 = 0x3E;
 
 /// `FUN_801E805C`'s render of the value window `0x801F6980`: one value per
 /// row, rows left to right, the label once over the last. A row's digits are
 /// `16` px cells under the label (`widget + (0x2E..=0x3D, 2..=0x11)`, stepping
-/// `16` left), or `12` px cells from five digits on (`0x32..=0x3D`,
+/// `16` left), or `12 x 14` px cells from five digits on (`0x32..=0x3D`,
 /// `2..=0xF`, stepping `12`). The label is the `DAMAGE` word at
 /// `widget + (0x0A, -0x0E)`, drawn on slot `0` alone (`0x801E8208..0x801E82AC`).
 /// `slide` is the record's glide off its rest seat.
@@ -752,13 +798,21 @@ pub fn multi_row_cluster(values: &[u32], slide: i32) -> ComboCluster {
         let value = value.min(u32::from(u16::MAX)) as u16;
         let wide = value >= 10_000;
         let cell = if wide { 12 } else { COMBO_VALUE_CELL };
-        out.cells.extend(right_aligned_cells(
+        let mut cells = right_aligned_cells(
             value,
             x + MULTI_ROW_RIGHT,
             MULTI_ROW_VALUE_Y + 2,
             cell,
             cell as i32,
-        ));
+        );
+        if wide {
+            // The narrow cells keep most of the height: `2..=0xF`, fourteen
+            // rows (`0x801E84C0..0x801E84E4`).
+            for c in &mut cells {
+                c.h = MULTI_ROW_WIDE_CELL_H;
+            }
+        }
+        out.cells.extend(cells);
         if k + 1 == n {
             out.labels.push(ComboLabel {
                 uv: LABEL_DAMAGE,

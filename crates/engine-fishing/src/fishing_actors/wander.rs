@@ -159,14 +159,21 @@ impl FishWander {
     }
 
     /// One idle/cast frame: step + clamp the facing off the held pad, count
-    /// the dwell down, and re-roll the destination when it expires. Returns
-    /// the roll when one happened - its `ripple_variant` picks the ripple
-    /// descriptor the host spawns at the retarget.
-    pub fn tick<F: FnMut() -> u32>(&mut self, pad_held: u16, rand: F) -> Option<WanderTarget> {
+    /// the dwell down by `frame_step` (`DAT_1F800393`), and re-roll the
+    /// destination once it has gone **negative** (`bgez` at `0x801D22EC`: a
+    /// dwell of `n` holds for `n + 1` single-step frames). Returns the roll
+    /// when one happened - its `ripple_variant` picks the ripple descriptor
+    /// the host spawns at the retarget. `rand` draws `rand()`'s `0..=0x7FFF`.
+    pub fn tick<F: FnMut() -> u32>(
+        &mut self,
+        pad_held: u16,
+        frame_step: i32,
+        rand: F,
+    ) -> Option<WanderTarget> {
         self.facing = step_facing(self.facing, pad_held);
-        self.dwell -= 1;
+        self.dwell -= frame_step;
         let mut rolled = None;
-        if self.dwell <= 0 {
+        if self.dwell < 0 {
             let t = roll_wander_target(self.x as i32, self.z as i32, rand);
             self.dwell = t.dwell;
             rolled = Some(t);

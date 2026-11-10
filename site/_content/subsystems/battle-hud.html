@@ -170,6 +170,7 @@
   <ul>
     <li><strong>The pen is <code>(x, y - 2)</code>.</strong> Both seat arms subtract two from the seat's y before spawning the text actor.</li>
     <li><strong><code>+0x14</code> is the string being drawn.</strong> Name banners measure their string, write the width into <code>+0x06</code> and centre both seats on it - which is how the move name stays centred on the screen whatever its length.</li>
+    <li><strong>A party art names itself when its clip commits.</strong> The anim commit&rsquo;s art-constant arm (<code>FUN_8004AD80</code>, <code>0x8004BB5C..0x8004BC40</code>) places and opens the move name. An art staged behind its starter waits out the starter&rsquo;s clip with no name on screen, so a Hyper Art&rsquo;s name appears as the art itself begins.</li>
     <li><strong>The plate is not stored anywhere.</strong> It is derived from the content box; one record derives every plate.</li>
   </ul>
   <h3>Three movers</h3>

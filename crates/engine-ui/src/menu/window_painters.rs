@@ -32,14 +32,14 @@
 //!
 //! ## What the port keeps and what it drops
 //!
-//! Every routine writes the shared draw-order word `DAT_8007B454` (values
-//! 5, 6 and 7) before each primitive and some also stage the glyph-advance
-//! byte `DAT_80073F20` (`0x10` for the wide pass, `0x0C` for the narrow
-//! one). Both are properties of retail's ordering table and its fixed-cell
-//! text writer; a host that composites in call order and lays glyphs out
-//! through [`legaia_font`] has no use for either, so the port keeps only
-//! the **geometry** - the pen positions, the field widths, and the
-//! cursor-variant arithmetic.
+//! Every routine writes the ink word `DAT_8007B454` before its primitives:
+//! `7` (white) for most text, `6` ([`PAINTER_INK_ACCENT`]) around one field
+//! of windows 24, 31 and 34, and `5` ([`PAINTER_INK_CHOICE`]) around the
+//! two choice labels of windows 5 and 46. The port carries each as the
+//! draw's colour ([`crate::menu_ink_color`] of the staged id). Some also
+//! stage `DAT_80073F20` (`0x10`, then `0x0C`), which is the string writer's
+//! width-table entry for byte `0x04` (`0x80073F1C + 4`); none of these
+//! windows' strings carries that byte, so the port drops it.
 //!
 //! Strings are caller-supplied. The routines resolve theirs from overlay
 //! literals and from live records, which are disc bytes; the port takes
@@ -125,6 +125,12 @@ pub const PAINTER_ROW_PITCH: i32 = 0x0E;
 ///
 /// [`compare_panel_ink`]: crate::compare_panel_ink
 pub const PAINTER_INK_ACCENT: [f32; 4] = MENU_TEXT_GOLD;
+
+/// The ink the two-row choice labels draw in: retail stages
+/// `_DAT_8007B454 = 5` before the first label of windows 46 and 5
+/// (`0x801D60A0` / `0x801D624C`) and holds it through the second, restoring
+/// `7` only on the way out - the menu's teal, not the heading's white.
+pub const PAINTER_INK_CHOICE: [f32; 4] = crate::MENU_TEXT_TEAL;
 
 /// Right-hand pictogram id of the primary counter window (id 32).
 pub const COUNTER_PICTOGRAM_PRIMARY: u8 = 0x62;

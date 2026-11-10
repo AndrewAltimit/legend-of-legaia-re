@@ -268,6 +268,11 @@ pub struct PauseItemInfo<'a> {
     /// The item-detail printer's output (`FUN_800337B0`) when the disc tables
     /// are up: raw text in place of [`Self::desc`], plus equipment's stat line.
     pub detail: Option<PauseItemDetail<'a>>,
+    /// The scope icon beside a passive-bearing consumable's green line, as a
+    /// font sprite cell (`legaia_font::sprite_cell_ids::ITEM_SCOPE_ONE` /
+    /// `ITEM_SCOPE_ALL`): `FUN_801D0F1C` draws icon `0x84` / `0x85` at
+    /// `(X + 0x84, Y + 0x38)` (`0x801D111C..0x801D11B8`).
+    pub scope: Option<u16>,
 }
 
 /// What `FUN_800337B0` prints at the description pen: its text, with the name
@@ -399,8 +404,8 @@ pub(crate) fn list_page_header_draws(
 /// PORT: FUN_801dcb60 (info window: staged-id gate, bag-count echo at
 /// `X+0x7C`, widget-box frame)
 /// PORT: FUN_801d0f1c (info window: name / description at `+0x10` /
-/// passive name+desc at `+0x38`/`+0x48`; the kind-2 scope pictogram
-/// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn. The id-`0xFE` arm is
+/// passive name+desc at `+0x38`/`+0x48` with the scope icon (ICO
+/// `0x84`/`0x85`) at `X+0x84`. The id-`0xFE` arm is
 /// [`item_points_panel_draws_with`], which a host adds on top - retail branches
 /// to it at `0x801d0fd0` and jumps past this routine's passive block, and
 /// the Point Card's own `0x41` no-passive sentinel means that block draws
@@ -492,24 +497,17 @@ pub fn items_screen_draws_for_with(
 /// Equip.
 ///
 /// PORT: FUN_801d0f1c (name / bag count / description at `+0x10` / passive
-/// name + desc at `+0x38` / `+0x48`; the kind-2 scope pictogram
-/// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn, and the id-`0xFE` arm is
-/// [`item_points_panel_draws_with`])
+/// name + desc at `+0x38` / `+0x48` with the scope icon at `X+0x84`; the
+/// id-`0xFE` arm is [`item_points_panel_draws_with`])
 pub fn item_info_panel_draws_for(
     font: &legaia_font::Font,
     pen: (i32, i32),
     info: &PauseItemInfo<'_>,
 ) -> Vec<TextDraw> {
     let (ix, iy) = pen;
-    let mut out = item_info_body_draws(font, pen, info);
-    out.extend(num_field_draws(
-        font,
-        info.count as u64,
-        ix + 0x7c,
-        iy,
-        2,
-        MENU_TEXT_GOLD,
-    ));
+    // `FUN_801DCB60` prints the count before it calls the panel.
+    let mut out = num_field_draws(font, info.count as u64, ix + 0x7c, iy, 2, MENU_TEXT_GOLD);
+    out.extend(item_info_body_draws(font, pen, info));
     out
 }
 
@@ -558,6 +556,15 @@ pub fn item_info_body_draws(
     }
     if let Some((line1, line2)) = info.passive {
         str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
+        if let Some(cell) = info.scope {
+            out.extend(crate::arts_input::list_cell_draw(
+                font,
+                cell,
+                (ix + 0x84, iy + 0x38),
+                (0, 0),
+                1,
+            ));
+        }
         out.extend(broken(font, line2, (ix, iy + 0x48), MENU_TEXT_WHITE));
     }
     out
@@ -863,6 +870,17 @@ pub struct PauseMagicView<'a> {
     pub text_cursor: bool,
 }
 
+/// A learned spell's level as the menu prints it: the overlay's two-byte
+/// template `$<digit>` at `0x801E46E0`, whose digit byte the Magic info
+/// window and the status page patch to `'0' + level` before drawing it. `$`
+/// is the font's one-glyph "Lv" ligature, not the two letters.
+///
+/// REF: FUN_801d2e74 (`addiu v0,v0,0x30; sb v0,0x1(a0)` at `0x801D2FB4`)
+pub fn spell_level_text(level: u8) -> String {
+    let digit = char::from(b'0'.wrapping_add(level));
+    format!("${digit}")
+}
+
 /// Build [`TextDraw`]s for the retail Magic screen's window contents.
 ///
 /// `caster_pen` / `list_pen` / `info_pen` are the content origins of the
@@ -883,7 +901,7 @@ pub struct PauseMagicView<'a> {
 ///   their staged ink ([`PauseMagicRow::ink`]): white while the caster
 ///   window has focus, grey in list focus on each row the build disabled;
 /// - info window: spell name gold at `(X, Y)` (the same leading-plate
-///   string), "Lv<n>" gold at `X+0x78`, description white
+///   string), the level ([`spell_level_text`]) gold at `X+0x78`, description white
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
 ///   green) at `(X+0x18, Y+0x2A)` with the 3-digit cost - also green -
 ///   at `X+0x74` (PORT: FUN_801d2e74).
@@ -935,12 +953,8 @@ pub fn magic_screen_draws_for_with(
             4,
             mp_ink,
         ));
-        out.extend(crate::menu::window_painters::separator_glyph_draws(
-            font,
-            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
-            (cx + 0x54, mp_y),
-            MENU_TEXT_WHITE,
-        ));
+        // Retail writes the maximum before the slash (`0x801D2E10` /
+        // `0x801D2E24`).
         out.extend(num_field_draws(
             font,
             caster.mp_max as u64,
@@ -948,6 +962,12 @@ pub fn magic_screen_draws_for_with(
             mp_y,
             4,
             mp_ink,
+        ));
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+            (cx + 0x54, mp_y),
+            MENU_TEXT_WHITE,
         ));
     }
 
@@ -988,8 +1008,13 @@ pub fn magic_screen_draws_for_with(
             (ix, iy),
             MENU_TEXT_GOLD,
         ));
-        let lv = format!("Lv{}", info.level);
-        str_at(&mut out, &lv, ix + 0x78, iy, MENU_TEXT_GOLD);
+        str_at(
+            &mut out,
+            &spell_level_text(info.level),
+            ix + 0x78,
+            iy,
+            MENU_TEXT_GOLD,
+        );
         for (k, line) in info.desc.split('\n').take(2).enumerate() {
             str_at(
                 &mut out,
@@ -1461,6 +1486,7 @@ mod pause_list_tests {
         let mut view = items_view(&rows, PauseItemsPhase::List);
         view.info = Some(PauseItemInfo {
             detail: None,
+            scope: None,
             name: "Medicine",
             count: 15,
             desc: "Cure all status. Ally.",

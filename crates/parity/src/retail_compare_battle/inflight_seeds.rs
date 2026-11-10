@@ -103,13 +103,29 @@ impl RetailBattle {
     /// Attack whose `+0x34` / `+0x38` is a point on the walk the drive is
     /// about to replay: the walk ends at the target whatever it starts from,
     /// and leaving that seat home measured worse over the corpus.
+    ///
+    /// Where the capture's position ring still holds a party attacker's walk,
+    /// the seat stands on the walk's start instead
+    /// ([`Self::approach_start`]). The walk's end is the arrival pass, which
+    /// state `0x14`'s range poll never sees: seated there, the replay found
+    /// the attacker in reach, skipped the approach and opened the strike loop
+    /// two battle frames early (`battle_rikuroa_party_vahn_chain_open`: Vahn
+    /// walked from `(-206, -384)`, two root-motion steps to `(-128, -237)`, and
+    /// the strike loop's first commit stepped him back to `(-128, -258)`).
     pub fn seeded_ground(
         &self,
     ) -> [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
         if self.seed_plan() == SeedPlan::Opening {
             return [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         }
-        self.engine_ground()
+        let mut out = self.engine_ground();
+        if let Some(start) = self.approach_start
+            && self.active_actor < self.party_count
+            && let Some(o) = out.get_mut(usize::from(self.active_actor))
+        {
+            *o = Some(start.ground);
+        }
+        out
     }
 }
 
@@ -450,12 +466,33 @@ impl RetailBattle {
     /// byte per swing and the swing clip commits at the idle cycle's end
     /// (`player_steal_skeleton_pre`: cursor `1`, clip `0`, the first swing
     /// `0x0F` staged).
+    ///
+    /// The turn itself rides the swing's **hit**, not its commit: the melee
+    /// kernel `FUN_801EC3E4` that stages the reaction and stores the
+    /// defender's heading (`0x801EEC34..0x801EECBC`) runs off the anim
+    /// tick's hit event (SCUS `0x800478A0`), partway into the clip. So the
+    /// action's first swing committed over a target still idling in the RAM
+    /// (clip `0`, nothing staged on it) has not turned it yet
+    /// (`battle_ropeway_party_gala_flying_knee_mid`: Gala on `0x0E`, cursor
+    /// `2`, the Killer Bee idling on the `2592` its own last turn left).
     fn strike_committed(&self) -> bool {
         match self.action_state {
             0x14..=0x19 => false,
-            0x1E => self.caster_clip != 0 || self.strike_cursor > 1,
+            0x1E => {
+                let first_swing_unlanded = self.strike_cursor <= 2
+                    && self.caster_clip == self.committed_queue[0]
+                    && self.target_idle();
+                (self.caster_clip != 0 || self.strike_cursor > 1) && !first_swing_unlanded
+            }
             _ => true,
         }
+    }
+
+    /// The action's target idles in the RAM: its committed clip is `0`.
+    fn target_idle(&self) -> bool {
+        self.clip_cursors
+            .iter()
+            .any(|&(slot, clip, _)| slot == self.target_code && clip == 0)
     }
 
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.

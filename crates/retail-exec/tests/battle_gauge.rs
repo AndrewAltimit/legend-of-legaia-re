@@ -35,6 +35,7 @@ const TRACKED: [(StatusKind, u16); 6] = [
 
 #[test]
 fn the_party_gauges_take_retail_colours() {
+    differential!(scus(FRAME));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

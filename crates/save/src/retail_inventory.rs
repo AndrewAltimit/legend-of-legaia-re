@@ -726,8 +726,9 @@ impl RetailInventory {
 
     /// Raise slot `slot`'s count by `delta`, saturating at [`STACK_CAP`], and
     /// return the new count. `None` is retail's two rejection paths: `slot`
-    /// outside the active window, or an empty slot (id byte zero), both of
-    /// which return 0 without storing.
+    /// at or past the active window's end (the start is not tested), or an
+    /// empty slot (id byte zero); neither stores, and both return the
+    /// caller's `a2` untouched.
     ///
     /// This is the cap in its **primitive** form, addressed by slot rather
     /// than by id: it saturates rather than overflowing or refusing, and it is
@@ -745,6 +746,11 @@ impl RetailInventory {
     /// the byte-denominated coverage sweep surfaced it. See
     /// `docs/tooling/port-catalog.md` - What may carry it, fourth shape.
     pub fn add_to_slot(&mut self, slot: usize, delta: u8) -> Option<u8> {
+        // Retail tests the window's end only (`slt` against `gp[+0x2D4]` at
+        // `0x80042FF4`): a slot below the window's start is accepted.
+        if slot >= self.window.1 {
+            return None;
+        }
         let cell = self.slots.get_mut(slot)?;
         if cell.0 == 0 {
             return None;

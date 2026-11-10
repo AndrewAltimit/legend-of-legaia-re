@@ -269,6 +269,7 @@ fn land(w: &mut World, target: u8, amount: u16) {
 
 #[test]
 fn a_monster_special_rolls_what_retail_rolls() {
+    differential!(prot(898, KERNEL));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, mut w)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -351,6 +352,7 @@ fn a_monster_special_rolls_what_retail_rolls() {
 
 #[test]
 fn a_summon_body_rolls_what_retail_rolls() {
+    differential!(prot(898, KERNEL));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, mut w)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -414,6 +416,7 @@ fn a_summon_body_rolls_what_retail_rolls() {
 /// World's wrapper roll and against the module path's own.
 #[test]
 fn the_two_wrappers_roll_what_retail_rolls() {
+    differential!(prot(898, RESPECT_WRAPPER), prot(898, BYPASS_WRAPPER));
     use legaia_engine_cast::cast_module_ticks::{CastDamageShape, CastWrapper};
     static POWERS: [u16; 5] = [0x30, 0x40, 0x80, 0x100, 0x400];
     let state = Rc::new(Cell::new(0));
@@ -542,6 +545,7 @@ fn module_site(image: &[u8], site: u32) -> Option<(u32, Vec<u16>)> {
 /// finisher halves.
 #[test]
 fn a_capture_special_rolls_what_its_module_site_rolls() {
+    differential!(prot(898, RESPECT_WRAPPER), prot(898, BYPASS_WRAPPER));
     use legaia_engine_cast::cast_module_ticks::CAPTURE_SITE_POWERS;
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, mut w)) = rig(&state) else {

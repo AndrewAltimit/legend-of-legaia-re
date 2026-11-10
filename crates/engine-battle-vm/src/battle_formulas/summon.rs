@@ -90,8 +90,12 @@ pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
 /// defender). The matrix is parsed off the disc by
 /// [`legaia_game_tables::element_affinity`]; retail values are a small nudge -
 /// 100 = neutral, 96 = same-element self-resist, 104 = opposite-element bonus.
+///
+/// The product wraps at the word (`mult` / `mflo` at `0x801DD954`, then an
+/// unsigned divide by 100), as do the weaken and guard products below; a
+/// roll that large never comes out of the roll stage.
 pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
-    roll.saturating_mul(affinity_pct as u32) / 100
+    roll.wrapping_mul(affinity_pct as u32) / 100
 }
 
 /// Status-weaken bits, `FUN_801dd864`: bit `0x1` of the status field scales the
@@ -100,10 +104,10 @@ pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
 pub fn apply_status_weaken(roll: u32, status: u16) -> u32 {
     let mut r = roll;
     if status & 0x1 != 0 {
-        r = r.saturating_mul(9) / 10;
+        r = r.wrapping_mul(9) / 10;
     }
     if status & 0x2 != 0 {
-        r = r.saturating_mul(7) / 10;
+        r = r.wrapping_mul(7) / 10;
     }
     r
 }
@@ -203,7 +207,7 @@ pub fn summon_predamage_lazy(
 
     // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
     if target.guard == GUARD_SPIRIT_STANCE {
-        defender = defender.saturating_mul(2);
+        defender = defender.wrapping_mul(2);
     }
     defender = apply_status_weaken(defender, target.status);
 

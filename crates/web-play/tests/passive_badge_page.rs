@@ -39,7 +39,7 @@ fn field_texts(rt: &mut LegaiaRuntime) -> usize {
 }
 
 fn menu(rt: &mut LegaiaRuntime, edge: PadButton) {
-    rt.play_menu_input(edge.mask());
+    rt.play_menu_press(edge.mask());
     let _ = rt.play_menu_draws_json(320, 240);
 }
 

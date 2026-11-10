@@ -303,6 +303,19 @@ pub(super) fn play_beats(
         // until Dr. Usha (P1[15]) has raised `0x379`, and the walk-on after
         // her talk rides the lift up to the street, a walk component and a
         // code lock away from P1[3].
+        // A counter the arrival's visit could not walk to may stand in the
+        // walk component an earlier round's beat carried the party into
+        // (`doman`'s, in the laboratory the intercom's cutscene opens):
+        // the continuous hand shops there before the round's walk-ons can
+        // carry it back out.
+        if pad_hand()
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && round > 0
+            && let Some(s) = retry_out_of_reach_counters(session)?
+        {
+            finish(session, log, ran);
+            return Ok(Some(s));
+        }
         let mut talks: VecDeque<u8> = talk_beats(session, &mf, &man).into();
         let mut dry: Vec<u8> = Vec::new();
         let mut requeued = 0;
@@ -1307,7 +1320,14 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             s.host.world.field_interact_probe_slot() == Some(slot)
         })
     };
+    // A lean whose next step leaves the box backs off one step at the other
+    // speed and leans again. The walk's step is 8 a frame and the run's 12
+    // (R1 inverts Field Move, `0x801D0364`), so a back-off at the other speed
+    // shifts where the lean lands by 4: `doman`'s intercom (P1[18]) answers a
+    // facing only from z 10490..=10495 of the box row, and a lean from z 10448
+    // steps 10488, 10496 past it.
     let mut found = reaches(session);
+    let mut backoffs = 0;
     for _ in 0..40 {
         if found {
             break;
@@ -1324,7 +1344,20 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
         if !inside(session) {
             restore_player_xz(session, back);
             found = reaches(session);
-            break;
+            if found || backoffs >= 3 {
+                break;
+            }
+            backoffs += 1;
+            let away = pad_for_step(session, (px - nx).signum(), (pz - nz).signum());
+            session.host.world.set_pad(away | PadButton::R1.mask());
+            if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+                return Some(Run::Entered(name));
+            }
+            session.host.world.set_pad(0);
+            if !inside(session) {
+                restore_player_xz(session, back);
+                break;
+            }
         }
         found = reaches(session);
     }

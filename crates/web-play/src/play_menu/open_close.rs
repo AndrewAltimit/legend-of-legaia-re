@@ -71,6 +71,38 @@ impl LegaiaRuntime {
         }
     }
 
+    /// One driver press into the open pause menu, the way a player makes it:
+    /// step on no edge until the wipe has spawned the menu and the windows
+    /// have stopped sliding (the slide lock, retail's `_DAT_8007BB80`), then
+    /// press. For drivers that would otherwise press on a fixed frame.
+    pub fn play_menu_press(&mut self, edge: u16) {
+        for _ in 0..96 {
+            if self.play_menu.is_none() || (self.pause_menu_spawned() && self.play_menu_settled()) {
+                break;
+            }
+            self.play_menu_input(0);
+        }
+        self.play_menu_input(edge);
+    }
+
+    /// Whether the pause menu reads the pad on its next frame: the slide
+    /// lock has seen the screen it stands on and no window is moving.
+    pub(crate) fn play_menu_settled(&self) -> bool {
+        let Some(session) = self.scene_host.session() else {
+            return true;
+        };
+        let sub = self
+            .play_menu
+            .as_ref()
+            .and_then(|m| m.sub.as_ref())
+            .map(|PlaySub::Session(s)| s.as_ref());
+        field_menu_dispatch::pause_slide_settled(
+            &session.host.world,
+            session.field_menu.as_ref(),
+            sub,
+        )
+    }
+
     /// Whether the pause wipe has spawned the menu (always, outside a wipe).
     pub(crate) fn pause_menu_spawned(&self) -> bool {
         self.scene_host
@@ -116,10 +148,16 @@ impl LegaiaRuntime {
         // cursor: `tick` is what puts the session in `Suspended`, which is
         // what `resume` needs to hand control back on close.
         let steps = usize::from(row.index());
+        if let Some(m) = self.play_menu.as_mut() {
+            m.driving_row = true;
+        }
         for _ in 0..steps {
             self.play_menu_input(PadButton::Down.mask());
         }
         self.play_menu_input(PadButton::Cross.mask());
+        if let Some(m) = self.play_menu.as_mut() {
+            m.driving_row = false;
+        }
         self.play_menu
             .as_ref()
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))

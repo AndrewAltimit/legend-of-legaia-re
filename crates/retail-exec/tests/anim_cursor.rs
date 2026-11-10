@@ -34,6 +34,7 @@ fn retail() -> Option<Cpu> {
 
 #[test]
 fn the_anim_cursor_is_retails() {
+    differential!(scus(TICK));
     let Some(mut cpu) = retail() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -129,6 +130,7 @@ fn the_anim_cursor_is_retails() {
 /// on a monster's, against `battle_hp_bar`.
 #[test]
 fn the_readout_ramps_are_retails() {
+    differential!(scus(TICK));
     use legaia_engine_battle_vm::battle_hp_bar::{
         monster_bar_step, monster_mp_step, party_bar_step, party_mp_step,
     };

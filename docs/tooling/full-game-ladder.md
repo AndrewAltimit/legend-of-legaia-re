@@ -252,7 +252,14 @@ one upkeep pass, in this order:
    sells no healing item, a bag short of its three keeps 300 gold back for
    the counter that does. A merchant is visited again only with a
    different purse or bag, or once a counter the story had closed has
-   opened ([below](#a-counter-the-story-has-closed)).
+   opened ([below](#a-counter-the-story-has-closed)). A counter the visit could not walk to is asked again at the start of
+   each round of the scene's beats: `doman`'s (P1[6]) stands in Dr.
+   Usha's laboratory, a walk component the street does not join, which
+   the intercom's cutscene (P1[18]) carries the party into and a later
+   walk-on of the same pass walks it back out of. Visited only on arrival,
+   the counter was reached only when a stalled walk's action tap beside
+   it happened to face it, and otherwise the duels were fought out of
+   what the bag already held.
    A heal is ranked by HP restored per gold, and a full restore (the
    Healing Berry, "Restores maximum HP") counts as a present member's
    maximum HP: `doman`'s counter, the last before Nivora's three solo
@@ -559,6 +566,17 @@ to Nivora set four rules the continuous hand plays by:
   `0x36E` and the lift's `0x371`) for a player standing in (40..41, 81). A
   box record whose only raise is a flag the scene lowers again (the lift)
   is stood in only while a story talk waits in another walk component.
+- **The intercom answers from a six-unit strip.** In `doman` the scratchpad
+  flag `0x20000` is up, so the box test takes the `x >> 7` form, and the
+  box row ends at z `10495`; the facing probe reaches the intercom (centre
+  z `10624`) only from z `10490`. A lean toward it from inside the box
+  steps eight a frame, so a lean that starts at z `10448` lands on
+  `10488`, then `10496`, outside. The hand then backs off one step at the
+  other speed (R1 inverts Field Move, twelve a frame) and leans again,
+  which moves the landing by four. Without it the lift's `0x371` came up
+  only when the walk into the box happened to leave the lean on the
+  right step, and a run that left `doman` short of Dr. Usha's `0x370`
+  reached `nilboa` barred ([Nivora](#nivora)).
 - **A box held by a member.** When the entry script tests a named member's
   actor on the same box as the leader's (`nilboa`'s `CD 31`), that member
   takes control and walks in, and control passes on until a leader stands
@@ -1405,7 +1423,7 @@ map as its street:
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
 - **Minigame cabinets.** The tap is never pressed at a minigame cabinet, a talk record that runs the minigame door-warp (`3E` with `op0 >= 100`) itself or through a record it spawns. `koin1`'s slot machines (P1[51..56]) are props the interact probe reaches but no NPC slot carries; a tap beside one on the walk to the Prize Counter (P1[5]) asked to play, the scripted-sequence hand answered, and the session sat at the slot machine. A session that lands in a minigame anyway leaves it with Start, the engine's shared minigame exit, which also closes the door-warp's round trip back to the field.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
-- **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
+- **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera, the view or an object's draw flags, such as `retona` P2[0] across the summit's passes and `chitei2`'s pillar bands (P2[0] / P2[1] / P2[9] / P2[10], `CC <ch> D6` alone), which once sealed a walk into the pocket east of (108..109, 115..117). A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
 
 A door tile whose centre is wall is aimed at through its open sub-cell, which
 says the side a player steps in from (`teien`'s way down at (42..43, 29) is
@@ -1834,6 +1852,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 - **Scripted sequences** get Cross on a press-2-release-14 duty cycle - and nothing while no script holds the frame. A Cross then is a talk: a seat on `rayman`'s `tunnelb` door beside the gate guard opens his talk on the frame the walk-on band is due.
 - **The naming prompt's Yes/No confirm** gets Up first (it opens on No).
 - **A menu press waits out the field pad hold** (`_DAT_8007B6B4`): every map install seats `0x28` frames of it (`FUN_8003ADAC`), the field-back load after each fight included, and a conversation's release `0x10` (`FUN_80039B7C`). The player tick skips the pad controller and its menu accept while it drains, so a Start sent into it is lost; the heal and dress passes after a fight press only once it is out.
+- **A press into an open menu waits for its windows to land** (`BootSession::field_menu_settled`): every menu screen reads nothing while a window slides, thirteen frames after a press that changes the screen ([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)), and the headless session runs that lock as the play hosts do. A heal pass that pressed into it read its own dropped Cross as an Items screen with nothing to use.
 - **An all-party restorative** (Healing Bloom, Magic Fruit) is confirmed on its party-wide confirm, which picks no row.
 
 The party's battle forms - the action clips the hit events are paced by and
@@ -1932,15 +1951,30 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
 With `npcs.solid` armed a body stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:
 
 - **A person is walked round, not spoken to.** A press held against an NPC re-plans from where the body now stands instead of tapping the action button. In the mist `town0b`'s villagers answer a tap with a fight, and the old stall tap fought one per lean. A door still gets its tap, and a committed teleport-maze route is dropped along with the path.
-- **The planner reads the bodies the walk collides with** (`World::field_moving_actor_centres`), not the talk map: a placement tracked only by its script channel stops the player too, and one hidden or culled does not.
+- **The planner reads the bodies the walk collides with** (the placements `World::field_moving_actor_centres` boxes), not the talk map: a placement tracked only by its script channel stops the player too, and one hidden does not.
+- **A body the camera window hides now is still planned round; one outside the region box is not.** The cull (`+0x10` bit 1, `FUN_801D79E8`) has two halves. The tile window follows the camera, so a body off it is solid again by the time the walker reaches it. The region box is latched at a landing and no walk re-latches it ([the latch](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)), so a body outside it stays passable until the next warp. Some window-culled placements are plugs: `jouinc`'s item P1[17] and P1[16] ([below](#what-stopped-the-arm)).
 - **A body on the goal tile is the destination.** A talk's first walk aims at the NPC's own tile, so that box is left out of the search.
 - **Bodies that seal a route are dropped in stages.** A plan the bodies keep from its goal is searched again with only the bodies within eight tiles of the walker, then with none. The last stage is what lets a walk press on toward a body that may yet move.
 - **A failed plan is remembered only while the bodies stand where they stood.** One walking past un-seals what it sealed.
 - **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
 - **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
+- **A wall corner the planner reads open is stepped off sideways.** The locomotion's leading probes reach past the player's own column, so a walk standing a few units off a one-tile corridor's line presses into the wall beside it while the lattice route runs straight ahead. After eight frames pressed without moving, the walk takes a frame's step to the side whose probe and the forward probe from there are both clear. `rugi` P2[67]'s warp leaves the party at (5176, 8198), against the wall east of the corridor north of (40, 64), and every later beat of the scene stalled there until the stretch's frame budget ran out. The rule is armed with the bodies only, so the default walk is unchanged.
+- **A walk held off its line by a person steps back onto it.** A body can stop a walk standing a few units off the lattice line that the line itself passes clear: the actor probes reach 32 units to each side, and the body's box is 40. The hand steps back onto the line for a prop's box on either arm; with the bodies solid it does so for a person too, since one who stands still holds the walk for good. `bubu1` P1[6] at (8500, 3904) stopped the walk north at (8568, 4006), eight units west of the line at x 8576, until the stretch's budget ran out.
 - **A door contact that lands on the tile it is pressed from is not an exit.** With two assistants beside the player on `doman`'s (103, 100), P1[15]'s contact read as the only way out and the walk pressed into it for good; the open step is east.
 
 A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.
+
+### What stopped the arm
+
+Two stretches stopped the arm, both where the plan and the cull disagreed:
+
+- **`jouinc`'s item in the wall.** The scene entry script (P1[0]) opens tile (82, 39) (`4C 70 52 27 52 27`, mask `0`) while `0x5D` is clear, and the item P1[17] stands in that gap at (10624, 5056), drawn at scale `0` (`4C 40`). Taking it (`50 5D`, `39 EA`) writes no `+0x10` bit, and `FUN_801CF754` drops a candidate only on `+0x10 & 3`, so its box stays.
+  Retail agrees: [`autorun_item_gap_probe.lua`](../../scripts/pcsx-redux/autorun_item_gap_probe.lua) on the `jouinc` library state, with the corridor's region box latched, stops a walk east into the gap at x 10552 before the pickup and at 10522 after it. Behind the item is only the open ground outside the castle walls, and P1[16] plugs the corridor's foot at (10432, 7680) the same way; the way to `jouind` is the pad at (70, 60) to (119, 30) and the stairs up to (110, 9). A plan that left the two plugs out while the camera window culled them leaked into the open ground, spent the search's node budget there, and sent the walk back and forth along the corridor.
+- **`rugi`'s hub.** West of P2[40] a walk can come to rest at (10754, 7038) with all four wall probes walled, and stays there until the stretch's frame budget runs out; every later beat then reads its way out from (86, 52) as crossing a band that leaves the scene. A plan that also routed round the bodies outside the latched region box took the walks to P1[33] through that corner.
+
+One stretch still stops the arm on some streams:
+
+- **`kor`'s guard dogs before the eighth loaf.** The dogs (P1[9] / P1[10]) hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A run whose gold training in `koin2` ends with the purse still short of the remaining Soru Bread (a party at under half HP after one round, on the traced stream) walks on to `korb2` with chests unfed, and stands at (18, 31) against the dogs, replaying `kor`'s beats until the stretch's budget runs out. Without the arm the walk passes the dogs with the errand short.
 
 ## What it cannot measure
 
@@ -2145,7 +2179,15 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
 
   The continuous run plays the chain as the two milestones' `continuous_via`
   ([the spine](#the-spine)). Without it the run reaches `doman` and `nilboa`
-  on arrival and stalls inside the tunnels on P2[32]'s `0x370`. Gaza's second
+  on arrival and stalls inside the tunnels on P2[32]'s `0x370`.
+- `nilboa`'s mouth is barred until `0x370` as well. The `BLOCK` placements
+  P1[27..42] stand round the landing at (10, 24), solid (`+0x10 & 3`
+  clear), and only the entry script's `0x370` arm (P1[0] `+0xD2`) retires
+  placements, nineteen of them (`4C EB <id> 05 00`, `B1 <id> 03` for
+  targets `0x33..0x45`). A run whose hand walks through bodies never sees
+  them; with `npcs.solid` armed, one that arrived without `0x370` stood
+  boxed in at the landing, every beat stalled one step south of (10, 25),
+  and `0x456` was never raised. Gaza's second
   fight is the stretch's risk: it is won out of what the Sol errand leaves
   in the bag ([above](#an-errand-the-story-waits-on)), and a party that
   meets it with one Healing Flower loses it.

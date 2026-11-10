@@ -6,11 +6,10 @@
 //! Retail projects inside the part tick, under the camera `FUN_800172C0`
 //! has just loaded; the port projects here, with the view the host drew the
 //! frame through, the way the move-VM strip emitter does
-//! ([`crate::move_strip`]). The GTE's eye vector is the base matrix times
-//! [`FieldCameraView::eye_space`] (`R * (p - focus) + tr`, which the view
-//! carries over the `6x` base scale), or the base matrix times the point
-//! alone on the camera-locked arm; the screen point is `OFX + H * x / z`,
-//! `OFY + H * y / z` with the field's `OFX = 160` and the engine's `OFY`
+//! ([`crate::move_strip`]), but in the GTE's integers: the view is rebuilt
+//! into the matrix `FUN_800172C0` loads ([`crate::gte::FieldGteView`]), or
+//! the base matrix alone on the camera-locked arm, and the point goes
+//! through one `RTPS` with the field's `OFX = 160` and the engine's `OFY`
 //! ([`GTE_OFY`]); `IR3` is the eye-space depth.
 
 use legaia_engine_camera::projection::GTE_OFY;
@@ -18,16 +17,18 @@ use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_vm::vram_grab::GrabRequest;
 use legaia_engine_vm::vram_rect_copy::RectCopyCall;
 
-use crate::gte::FIELD_BASE_SCALE;
+use crate::gte::FieldGteView;
 use crate::move_strip::FIELD_OT_SHIFT;
-
-/// The field's GTE `OFX` - half the 320-pixel display.
-const FIELD_OFX: f32 = 160.0;
 
 /// One `RTPS` of `pos` under `view`, or under the base matrix alone when
 /// `camera_locked`: the screen point (`SXY2`) and `IR3`. `None` when the
 /// point sits at or behind the eye, where the GTE's divide saturates and the
 /// rect it would place is off any frame.
+///
+/// The projection is the GTE's own, in integers
+/// ([`crate::gte::FieldGteView`]): the view is rebuilt into the matrix
+/// `FUN_800172C0` loads and the point put through `RTPS`, so the grabbed
+/// rectangle starts on the pixel retail's does.
 ///
 /// PORT: FUN_8003D368
 pub fn rtps_point(
@@ -35,21 +36,16 @@ pub fn rtps_point(
     camera_locked: bool,
     view: &FieldCameraView,
 ) -> Option<((i16, i16), i32)> {
-    let p = pos.map(f32::from);
-    let e = if camera_locked {
-        p.map(|c| c * FIELD_BASE_SCALE)
-    } else {
-        view.eye_space(p).map(|c| c * FIELD_BASE_SCALE)
-    };
-    if e[2] <= 0.5 {
+    let mut gte = FieldGteView::from_field_view(view, GTE_OFY as i32);
+    if camera_locked {
+        gte.rot = FieldGteView::field_base();
+        gte.tr = [0; 3];
+    }
+    let r = gte.rtps(pos);
+    if r.mac[2] <= 0 {
         return None;
     }
-    let scale = view.h / e[2];
-    let sx = (FIELD_OFX + e[0] * scale).floor().clamp(-1024.0, 1023.0) as i16;
-    let sy = (GTE_OFY + e[1] * scale).floor().clamp(-1024.0, 1023.0) as i16;
-    // `IR3` with `sf = 1, lm = 0`: the eye depth, saturated to `s16`.
-    let ir3 = e[2].clamp(-32768.0, 32767.0) as i32;
-    Some(((sx, sy), ir3))
+    Some((r.sxy, r.ir[2]))
 }
 
 /// The `FUN_800468A4` call one grab makes under `view`

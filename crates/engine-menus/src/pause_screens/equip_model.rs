@@ -106,6 +106,8 @@ pub struct EquipItemInfoModel {
     pub passive: Option<(String, String)>,
     /// The detail printer's output, when the disc tables are up.
     pub detail: Option<ItemDetailText>,
+    /// The scope icon beside the passive name ([`ItemDisplayText::scope_icon`]).
+    pub scope_icon: Option<u16>,
 }
 
 /// Window 25's model - the Equip screen's own stat-compare panel.
@@ -395,6 +397,7 @@ pub fn equip_screen_model(
             desc: t.desc,
             passive: t.passive,
             detail: t.detail,
+            scope_icon: t.scope_icon,
         }
     });
 

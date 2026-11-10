@@ -345,6 +345,16 @@ impl World {
                     style,
                     choice.sub_style,
                 );
+            // The init's seeder draws its `rand()`s off the one global
+            // seed: record where they start (the emitter replays them from
+            // there) and step the world's stream past them.
+            self.battle.intro_rand_state = self.rng_state;
+            for _ in 0..legaia_render_kernels::battle_intro_styles::intro_seeder_draws(
+                style,
+                choice.sub_style,
+            ) {
+                self.next_rng();
+            }
             let frames = intro_duration_frames(style) as u16;
             if let Some(session) = self.encounters.session.as_mut()
                 && [INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL]

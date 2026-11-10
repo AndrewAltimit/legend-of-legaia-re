@@ -1365,3 +1365,80 @@ and its `_DAT_8007B874 & 0x80` read at 0x801D2998 are the two the comment cites,
 the routine calls the talk's own fade 0x80024E80. frame_tick dispatches many state
 machines, each with its own tables, and this one shares none of them.
 """
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/narration.rs:8002519c"
+reason = """
+Partial, the retire arm. The SCUS dump walks the list at *a0 and, per node, tests
+`andi v0,a0,0x8` on +0x10 (0x800251E8): set, it unlinks (`jal 0x80024DFC`), frees
+(`jal 0x800204A4`) and raises 0x02000000; clear, it calls the node's +0x0C tick
+(`jalr v0` at 0x800252B4). The Rust is that retire test over the placement
+contexts with CONTEXT_RETIRE_BIT = 0x8. The module's siblings are the motion VMs,
+which share no data or callee with an actor-list sweep.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f8eac"
+reason = """
+Full, against PROT 0904's dump: `bne a1,zero` at 0x801F8EB4 returns on any arm but
+0, and arm 0 calls `jal 0x80021B04` with a0 = caller+0x14, a1 = caller+0x24,
+a2 = 0x801F90B0 (`addiu a2,a2,-0x6F50` at 0x801F8EC8) and a3 = 0x1000 - the seat
+theeder_stager_spawns returns. A slot-B stager's record is image-local, so no
+sibling in this module (other images' stagers) forms 0x801F90B0.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-audio/src/sequencer.rs:80026740"
+reason = """
+Partial: the game-side pause wrapper above the libsnd tier the module's siblings
+port. The dump (24 instructions) gates on source +0x08 != 0 and the dev flag
+_DAT_8007B868 == 0, calls `jal 0x8002657C` with a0 = 0 (the sequence volume to
+zero), then `jal 0x8006282C` (a forward to 0x8006275C with a1 = 0, the libsnd
+pause) and clears 0x8007B708. pause() is the volume cut and the key-off; the
+gates and the 0x8007B708 clear are the caller's. Its callees are wrappers, so it
+shares no callee with the libsnd routines it reaches through them.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle/src/magic_xp.rs:801f452c"
+reason = """
+Full, against PROT 0898's dump (30 instructions): copy (`jal 0x8003CA78`) the
+spell name 0x800754C8 + 8 + 12 * actor[+0x1DF] - actor from the table 0x801C9370
+indexed by ctx+0x13 - into ctx+0x1F9, then append (`jal 0x8003CAC4`) the string
+at 0x801F6844. magic_level_increased_message is that name plus that suffix. The
+XP siblings are accrual arithmetic and form neither the string nor the buffer.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/loop_driver.rs:8004ce2c"
+reason = """
+Partial, the party walk 0x8004CE6C..0x8004D018, read against the SCUS dump: for
+each seat up to *(gp+0xA0C), record = 0x80084140 + (id-1)*0x414; a living actor
+(+0x14C != 0) with +0x6C0 & 0x400 (the record's +0xF8) gets +0x170 = 0x64, then
+a non-zero +0x16E is masked by each +0x6BC (+0xF4) bit 0x400000..0x10000000 in
+turn (andi 0xFFFE, 0xFFFC, 0xFF87, 0xEFFF, 0xFFFB, 0xFBFF, 0xE380), mirrored to
++0x6F6. The Rust is that walk minus the mirror its doc names. The active-actor
+half from 0x8004D01C is not this module's, so its siblings share nothing.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/status_effects.rs:8004ce2c"
+reason = """
+Partial: GUARD_SWEEP_MASKS is the seven (bit, andi) pairs at 0x8004CEF4..
+0x8004CFFC in order - +0x6BC (record +0xF4) bits 0x400000, 0x800000, 0x1000000,
+0x2000000, 0x4000000, 0x8000000, 0x10000000 against masks 0xFFFE, 0xFFFC,
+0xFF87, 0xEFFF, 0xFFFB, 0xFBFF, 0xE380 - and MAXIMUM_AP is the +0x6C0 & 0x400 ->
+`li v0,0x64` store at 0x8004CEC0..0x8004CECC. The module's other tags are the
+status appliers, which write the word this sweep clears and form none of its data.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/stats.rs:801ddb30"
+reason = """
+Partial, the spirit stage 0x801DE1C4..0x801DE2D8 of PROT 0898's finisher:
+pct = over * 100 / +0x14E with a floor of 1 (`sltiu a1,v0,0x1; addu`), and for a
+seat below 3 the record's +0xF8 (0x80084140 + 0x6C0) adds pct >> 2 on bit 0x200
+and pct / 10 (multu 0xCCCCCCCD, >> 3) on bit 0x100, then +pct, clamped to 0x64.
+spirit_gauge_fill is that arithmetic. The finisher is 889 instructions; this
+module ports one stage and its siblings are other stat stages with other data.
+"""

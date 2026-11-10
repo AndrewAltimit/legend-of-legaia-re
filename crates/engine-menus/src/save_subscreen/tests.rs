@@ -309,13 +309,25 @@ fn shop_mode_select_row_one_needs_a_sellable_bag() {
     assert_eq!(ok.screen(), SaveSubScreen::QuantitySpinner);
 }
 
-/// The spinner reads the focused inventory entry once it settles, and
-/// its result selector picks between committing and re-running.
+/// The spinner reads the focused inventory entry once it settles, and from
+/// the next frame its result selector picks between committing and
+/// re-running.
 #[test]
 fn quantity_spinner_commits_on_result_two() {
     let mut m = dispatching(SaveEntryContext::DebugParamEditor);
     m.goto(SaveSubScreen::QuantitySpinner);
     m.tick(idle(), 0);
+    // The settle frame re-arms the result word and never routes, whatever
+    // the word held.
+    let settle = m.tick(
+        SubScreenInput {
+            spinner_result: 2,
+            ..idle()
+        },
+        0,
+    );
+    assert_eq!(settle, vec![SubScreenEffect::ReadInventoryEntry]);
+    assert_eq!(m.step(), 2);
 
     let fx = m.tick(
         SubScreenInput {
@@ -335,6 +347,17 @@ fn quantity_spinner_rerun_parks_on_the_wait_step() {
     let mut m = dispatching(SaveEntryContext::DebugParamEditor);
     m.goto(SaveSubScreen::QuantitySpinner);
     m.tick(idle(), 0);
+    // The settle frame re-arms the result word and never routes, whatever
+    // the word held.
+    let settle = m.tick(
+        SubScreenInput {
+            spinner_result: 3,
+            ..idle()
+        },
+        0,
+    );
+    assert_eq!(settle, vec![SubScreenEffect::ReadInventoryEntry]);
+    assert_eq!(m.step(), 2);
 
     let fx = m.tick(
         SubScreenInput {

@@ -373,8 +373,9 @@ impl World {
     }
 
     /// PROT 0927's epilogue shake, once per tick of its body
-    /// ([`legaia_engine_cast::cast_module_ticks::juggernaut_shake_step`]).
-    fn juggernaut_shake(&mut self) {
+    /// ([`legaia_engine_cast::cast_module_ticks::juggernaut_shake_step`]);
+    /// PROT 0966's body carries the same epilogue over its own word.
+    pub(in crate::world::battle::cast_band) fn juggernaut_shake(&mut self) {
         let dy = legaia_engine_cast::cast_module_ticks::juggernaut_shake_step(
             &mut self.casting.module_shake,
         );

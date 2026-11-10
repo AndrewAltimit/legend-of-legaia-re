@@ -4,6 +4,83 @@
 use super::*;
 
 impl World {
+    /// PROT 0961's seat line-up on its arm 0 pass and the restore on its
+    /// `0xFF` arm's, ahead of the arm's camera, which frames the lined-up
+    /// caster ([`legaia_engine_cast::cast_module_camera::dead_end_crisis_line_up`]).
+    /// Retail walks `actor_table[0..4]`; an empty party seat has no engine
+    /// slot and is skipped. The poses saved are the engine's live trio and
+    /// facing.
+    pub(in crate::world::battle::cast_band) fn dead_end_crisis_seats(&mut self, phase: u8) {
+        use legaia_engine_cast::cast_module_camera as cam;
+        const N: usize = cam::DEAD_END_CRISIS_LINE_UP_SEATS;
+        let map = self.cast_seat_map();
+        let slots: [Option<usize>; N] = std::array::from_fn(|s| {
+            map.engine(s as u8)
+                .map(usize::from)
+                .filter(|&e| e < self.actors.len())
+        });
+        if phase == cam::DEAD_END_CRISIS_LINE_UP_ARM {
+            let mut poses = [cam::LineUpPose::default(); N];
+            for (p, e) in poses.iter_mut().zip(slots) {
+                if let Some(a) = e.map(|e| &self.actors[e]) {
+                    let m = &a.move_state;
+                    p.pos = [m.world_x, m.world_y, m.world_z, 0];
+                    p.facing = a.battle.facing_angle;
+                }
+            }
+            // The one-monster row of the seat table at `0x80077628`.
+            let row_x = std::array::from_fn(|s| {
+                legaia_engine_battle::battle_seats::monster_seat(1, s, false).x
+            });
+            let saved = cam::dead_end_crisis_line_up(&mut poses, row_x);
+            self.casting.module_saved_poses.clear();
+            for ((p, s), e) in poses.iter().zip(&saved).zip(slots) {
+                let Some(e) = e else { continue };
+                self.casting
+                    .module_saved_poses
+                    .push((e, [s.pos[0], s.pos[1], s.pos[2]], s.facing));
+                Self::stand_battle_seat(&mut self.actors[e], p.pos[0], p.pos[2], p.facing);
+            }
+        } else if phase == cam::DEAD_END_CRISIS_RESTORE_ARM {
+            let held = std::mem::take(&mut self.casting.module_saved_poses);
+            let mut seats = [cam::LineUpPose::default(); N];
+            let mut saved = [cam::LineUpPose::default(); N];
+            for (i, &(e, pos, facing)) in held.iter().take(N).enumerate() {
+                if let Some(a) = self.actors.get(e) {
+                    let m = &a.move_state;
+                    seats[i].pos = [m.world_x, m.world_y, m.world_z, 0];
+                    seats[i].facing = a.battle.facing_angle;
+                }
+                saved[i].pos = [pos[0], pos[1], pos[2], 0];
+                saved[i].facing = facing;
+            }
+            cam::dead_end_crisis_restore(&mut seats, &saved);
+            for (i, &(e, _, _)) in held.iter().take(N).enumerate() {
+                if let Some(a) = self.actors.get_mut(e) {
+                    let p = seats[i];
+                    a.move_state.world_y = p.pos[1];
+                    Self::stand_battle_seat(a, p.pos[0], p.pos[2], p.facing);
+                }
+            }
+        }
+    }
+
+    /// Stand an actor's live pair on `(x, z)` facing `facing`, carrying its
+    /// body pair by the same step (as [`Self::line_up_party_for_sweep`] does),
+    /// so a range read before the next drawn frame sees the move.
+    fn stand_battle_seat(a: &mut crate::world::Actor, x: i16, z: i16, facing: u16) {
+        let (dx, dz) = (
+            x.wrapping_sub(a.move_state.world_x),
+            z.wrapping_sub(a.move_state.world_z),
+        );
+        a.move_state.world_x = x;
+        a.move_state.world_z = z;
+        if let Some((bx, bz)) = a.battle.seat {
+            a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+        }
+        a.battle.facing_angle = facing;
+    }
+
     /// Fill the capture director inputs of `st` that the seats do not carry:
     /// both bodies' display trios, the lead party member's roster id
     /// `0x8007BD10[0]`, the frame step and whether this tick opens a battle
@@ -29,6 +106,8 @@ impl World {
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
+        let v = self.cast_view(victim_slot);
+        st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));

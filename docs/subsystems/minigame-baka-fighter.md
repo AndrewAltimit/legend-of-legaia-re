@@ -302,6 +302,8 @@ stage == 0xD  && high_score > 0xAAE60 (700,000)  ->  override = 2
 
 `high_score` is the running total `DAT_801DBEE4` the tally's score rows drain into (`0x801D26B0`, `0x801D2734`, `0x801D27E8`), standing across a visit's matches and cleared only at the fighter select (`0x801CF8F0`); the port's `BakaTally::total` carries it and publishes it to the cabinet.
 
+The tally drains its rows in order, but each row's **fade** (`DAT_801DBEF4` / `..BEEC` / `..BEF0` / `..BEFC`, the brightness its row draws at, times ten) advances while the row *just above* it is empty, whatever the rows further up hold: each section tests only its neighbour (`0x801D26C4`, `0x801D274C`, `0x801D2800`). A zero score row therefore lets the row below it fade in while the first row is still counting, and that row starts draining the frame its turn comes, with no fade-in wait. A fade past `0x10` is held there (`0x801D28C0..0x801D292C`). Port: `BakaTally::tick`, run frame by frame against the routine by the retail kernel differential. **Confirmed.**
+
 Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed on use (the install state clears it, and `override == 2` additionally latches `DAT_801DBEB8 = 2`), so each bonus rung is served once per arming. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
 
 Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confirmed.**
@@ -586,11 +588,17 @@ The epilogue draws stage model `0` - the patterned wall with its lattice fence a
 
 The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in PROT 0898) relocated: the same `0x200`-pitch cells of four quarter quads on the `(832, 0)` page's `(0xC0, 0xC0)` window, over the `6 x 6` window the init seeds at `0x1F8003F8` / `0x1F8003FA` (`0x801CF20C..0x801CF218`). It is gated off only when the pitch drops below `-0x4F` (`0x801D20B4..0x801D20C4`).
 
-The emitter's per-vertex colour is the `DPCS` depth cue the battle grid uses: `IR0 = SZ >> 2` (`0x801CEEC4..0x801CEF4C`, the `mtc2` unclamped) from the scratch colour word toward the far colour, both stored by the epilogue (`0x801D1FCC`: `0x8007B7B0 = 0xE0E0E0`, far `0x202020`). `minigame_baka_fighter_retail_fight`'s lattice holds `SZ` `16672` on its far row, whose colour runs to the far word.
+The emitter's per-vertex colour is the `DPCS` depth cue the battle grid uses: `IR0 = SZ >> 2` (`0x801CEEC4..0x801CEF4C`, the `mtc2` unclamped) from the scratch colour word the epilogue stores (`0x801D1FCC`: `0x8007B7B0 = 0xE0E0E0`) toward the GTE's far colour.
 
-`FUN_801D6BB8` draws one `FUN_80028158` ground disc at a world point (mode `1`, the XZ plane, `0x18` columns, flag word through `FUN_80043390`). The combat tick passes each fighter's position with colours `0x808080` / `0x070707`, radius `0x100`, flag `0x8A000000` (subtractive): the drop shadow. The epilogue passes the focus X with `0x80A0C0` / `0x070707`, radius `0x400`, flag `0x99000000` (additive): the warm pool of light on the floor.
+**The floor cues toward black.** The epilogue calls `SetFarColor(0x20, 0x20, 0x20)` (`jal 0x8005B7D8` at `0x801D1FE0`), but the glow disc drawn after it (`jal 0x801D6BB8` at `0x801D20AC`) reaches `FUN_80043390` with the flag word `0x99000000` and `a2 = 1`. That routine loads the word's low three bytes `<< 4` into the far-colour registers (`ctc2` at `0x800434C8..0x800434D0`) and restores only `ZSF3` / `ZSF4` on the way out, so the floor emitter (`jal 0x801CEB84` at `0x801D20D8`) cues toward `0`. Every path that draws the floor draws the glow first (`0x801D2090..0x801D20AC`).
 
-Port: `BakaDuelScene::cue_floor`, the `glow` and `shadows` ranges over `effect_default_arm::ground_disc_mesh`. Both discs sample the builder's patch texel (`0xB9CE`, level `14` of `31`, CLUT row 510 of the system page), which the duel VRAM does not hold, so the port's fill carries `texel * colour / 128`. `0x99` has no bank bit: bits `0x04000000` and `0x20000000` are clear, so the handler is the plain depth-cued bank. Against `minigame_baka_fighter_retail_fight` the floor stays about `+30` brighter than retail on rows above the fighters.
+`minigame_baka_fighter_retail_fight`'s floor packets (`POLY_GT4`, CLUT `0x77C0`) carry `122`, `101`, `80`, `59`, `38`, `17` on the lattice rows whose screen rows place them at `SZ` `7456 + 1536 k`, and `0` from the far row (`SZ` `16672`) on: the cue toward black exactly, where a cue toward `0x20` reads `137` on the first row. **Confirmed** (disassembly + the state's packets).
+
+`FUN_801D6BB8` draws one `FUN_80028158` ground disc at a world point (mode `1`, the XZ plane, `0x18` columns, flag word through `FUN_80043390`). The combat tick passes each fighter's position with colours `0x808080` / `0x070707`, radius `0x100`, flag `0x8A000000` (subtractive): the drop shadow. The epilogue passes the focus X with `0x80A0C0` / `0x070707`, radius `0x400`, flag `0x99000000` (additive): the warm pool of light on the floor. The combat tick's two calls (`0x801D40B4`, `0x801D47F4` in `overlay_baka_fighter_801d3f44.txt`) are the only shadow calls, so no front-end state (the attract card, the player select) draws a shadow.
+
+Port: `BakaDuelScene::cue_floor`, the `glow` and `shadows` ranges over `effect_default_arm::ground_disc_mesh`. Both discs sample the builder's patch texel (`0xB9CE`, level `14` of `31`, CLUT row 510 of the system page), which the duel VRAM does not hold, so the port's fill carries `texel * colour / 128`. `0x99` has no bank bit: bits `0x04000000` and `0x20000000` are clear, so the handler is the plain depth-cued bank.
+
+Paired with `minigame_baka_fighter_retail_fight` (the host pair's `baka` scene at tick `331` holds the same pose), the floor rows of both hosts sit a mean `8.6` off retail's frame, and the hosts within `0.2` of each other. The shadow ranges are collapsed in every front-end state (`pose_front_end`); posed nowhere, they sat at the origin under the title card and the lineup (`baka_duel_scene_real.rs`, `the_drop_shadows_draw_in_the_duel_and_never_in_the_front_end`).
 
 ### In the port
 
@@ -897,7 +905,7 @@ Port: `baka_cabinet::pause_panel` lays both menus out and `BakaFight::pause_pane
 
 `PTR_..._801D7134` (file `+0x891C`) is eleven words running `0x801CE948` **down** to `0x801CE818`. `0x801CE818` is the overlay base: the words address the image's own head string pool at `+0x00..+0x130`, emitted in reading order over a pool the compiler laid out backwards. The lowest word points at the image's leading NUL, so the panel's eleventh line is a deliberate blank.
 
-`FUN_801D6CBC(x, y)` sets the glyph-advance byte `DAT_80073F20` to `0xC` (narrow), walks the table drawing each line through the glyph renderer `FUN_80036888(str, 0, 0, x - 0x10, y)` with `y` advancing `0xD` per line, and closes with the widget dispatcher `FUN_8002C69C(x - 0x10, y, 0xF0, 0x8F)` - a 240x143 frame. Its one caller is the cabinet SM at `0x801D1638`, the state `0xC0` "How to Play" arm. The body forms `0x801D7134` with a `lui` / `addiu` pair split across an unrelated store, so a backward-only scan from the table finds no reference.
+`FUN_801D6CBC(x, y)` sets `DAT_80073F20` (the width-table entry of byte `0x04`) to `0xC`, walks the table drawing each line through the glyph renderer `FUN_80036888(str, 0, 0, x - 0x10, y)` with `y` advancing `0xD` per line, and closes with the widget dispatcher `FUN_8002C69C(x - 0x10, y, 0xF0, 0x8F)` - a 240x143 frame. Its one caller is the cabinet SM at `0x801D1638`, the state `0xC0` "How to Play" arm. The body forms `0x801D7134` with a `lui` / `addiu` pair split across an unrelated store, so a backward-only scan from the table finds no reference.
 
 ### HUD in the port
 
@@ -1088,7 +1096,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D3390` | player-select lineup tick |
 | `FUN_801CEB84` | arena floor grid emitter |
 | `FUN_801D6D60` | placed stage-model draw (the walls) |
-| `FUN_801D6BB8` | flat marker at a world point (drop shadow) - not drawn by the port |
+| `FUN_801D6BB8` | ground disc at a world point: the fighters' drop shadows and the pool of light |
 | `FUN_801D6910` / `FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` | setters of the camera-glide record at `0x80070764`: angles, eye trio, focus, `H` |
 | `FUN_801D6480` / `FUN_801D6770` | raw GPU quad emitters into the OT scratch `_DAT_1F8003A0` (gouraud code `0x3A` / flat `0x28`; `FUN_801D6770` links through `FUN_8003D2C4`) |
 | `FUN_801D657C` | vertex-colour packet build (two packed RGBs -> 6 components) + GTE submit `FUN_80024E80`; the fade actor |
@@ -1246,7 +1254,6 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
 - The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.
 - The minigames page draws the duel HUD page-side rather than through `baka_screen_prims`.
-- The drop shadow `FUN_801D6BB8` is not drawn.
 - The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
 
 **Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.

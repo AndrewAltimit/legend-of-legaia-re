@@ -25,7 +25,7 @@ pub(super) fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
 /// and the tone and program pans: the channel pan (the staged `0x801CE34D`),
 /// then the square taper `v * v / 0x3FFF` per side. Retail's SFX path (owner
 /// `0x21`) skips the taper; this is the sequencer's.
-pub(super) fn channel_tail(head: (i16, i16), pan: u8) -> (i16, i16) {
+pub fn channel_tail(head: (i16, i16), pan: u8) -> (i16, i16) {
     let (l, r) = apply_channel_pan(head.0, head.1, pan);
     let sq = |v: i16| ((v as i32 * v as i32) / 0x3FFF) as i16;
     (sq(l), sq(r))

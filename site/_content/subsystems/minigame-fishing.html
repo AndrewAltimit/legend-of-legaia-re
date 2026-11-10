@@ -414,6 +414,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
   <p>The hub menu&rsquo;s prize row spends the point pool. Each venue has six rows; each row is a 12-byte record of <code>limit</code>, <code>price</code> and <code>item</code>. A limit of 1 is a one-time prize, latched in a saved bitfield (Buma bits 0 to 5, Vidna bits 8 to 13); 99 is repeatable. Both venues spend from and latch into the same globals.</p>
   <ul class="bullets">
     <li><strong>Row 0 is hidden until strictly affordable.</strong> Each venue&rsquo;s top prize appears only once the pool <em>exceeds</em> its price; exactly equal is not enough.</li>
+    <li><strong>The list cursor wraps.</strong> Up from the top visible row lands on the bottom row, and down from the bottom row returns to the top visible one.</li>
     <li>A row shows white (available) when affordable, the item count is not 99, and a one-time row is not latched.</li>
     <li>&ldquo;Trade how many?&rdquo; caps the quantity at <code>min(points / price, limit - owned)</code>.</li>
   </ul>

@@ -166,9 +166,9 @@ pub fn hyper_lightning_camera(
                 arm.drift = Some(push(s));
             }
             // The arm's exit tests the count before the settle
-            // (`bne v1,v0` on `4` at `0x801F77AC`): it holds until the
-            // fourth hit has landed.
-            arm.hold = hits < 4;
+            // (`bne v1,v0` on `4` at `0x801F77AC`), after this pass's hit has
+            // counted (`sw v1,-0x7F68(s4)` at `0x801F766C`): the pass the
+            // fourth hit lands on can leave.
             if hits < 4 {
                 st.module_words[1] -= SPEED_SCALAR;
                 if st.module_words[1] <= 0 {
@@ -190,6 +190,7 @@ pub fn hyper_lightning_camera(
                     };
                 }
             }
+            arm.hold = st.module_words[0] < 4;
         }
         // `0x801F77F8..0x801F7818`: the caster shown again, its clip's park
         // released.

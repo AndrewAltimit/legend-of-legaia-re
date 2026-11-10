@@ -45,8 +45,11 @@ pub const SLOT_GRID_QUAD_PARK_X: i32 = 0x15A + 8;
 pub const SLOT_GRID_QUAD_LANDED_X: i32 = 0x5A + 8;
 /// Per-slot-index extra park stagger (`sll s5, 6` into the slide base at
 /// `0x801e0734`): parked cells fan out 64 px per block-slot on top of the
-/// 40 px column pitch - the GP0-visible 104 px stagger between parked
-/// row-mates.
+/// 40 px column pitch - the 104 px stagger between parked row-mates. The
+/// slot it reads is the **previous** cell's: `s5` is only reassigned to this
+/// cell's slot at `0x801e0768`, after the base is formed, so cell `k` takes
+/// slot `k - 1` (cell 0 the cleared `0`) and cells 0 and 1 park only the
+/// 40 px column pitch apart.
 pub const SLOT_GRID_PARK_SLOT_STAGGER_X: i32 = 64;
 
 /// The commit slide's interpolator at full travel (12-bit fixed point `1.0`) -
@@ -61,7 +64,9 @@ pub const SLOT_GRID_SPRITE_MARGIN: i32 = 6;
 /// A cell quad's x for one frame of the commit slide - the retail grid
 /// dispatcher's per-cell placement law.
 ///
-/// Retail computes `base = 0x15A + slot * 64`, interpolates it toward
+/// Retail computes `base = 0x15A + (slot - 1) * 64` (the previous cell's
+/// slot, `0` for the first - see [`SLOT_GRID_PARK_SLOT_STAGGER_X`]),
+/// interpolates it toward
 /// `0x5A` in 12-bit fixed point (`(0x5A - base) * t`, `+0xFFF` bias on a
 /// negative product, `>> 12` - the same rounding as the slide-in
 /// primitive `FUN_801E1C1C`), then adds the column pitch (`col * 40`)
@@ -78,7 +83,7 @@ pub const SLOT_GRID_SPRITE_MARGIN: i32 = 6;
 /// PORT: FUN_801e06c0 (per-cell x of the grid loop, `0x801e0734..0x801e0784`)
 /// REF: FUN_801e0fd0 (the per-cell drawer whose `+8` inset is folded in)
 pub fn slot_grid_quad_x(col: u32, row: u32, slot: u32, t: u16) -> i32 {
-    let base = 0x15A + (slot as i32) * SLOT_GRID_PARK_SLOT_STAGGER_X;
+    let base = 0x15A + (slot.saturating_sub(1) as i32) * SLOT_GRID_PARK_SLOT_STAGGER_X;
     let mut delta = (0x5A - base) * (t.min(0x1000) as i32);
     if delta < 0 {
         delta += 0xFFF;
@@ -237,11 +242,12 @@ mod tests {
     }
 
     #[test]
-    fn slot_grid_quad_x_parks_offscreen_with_the_104px_fanout() {
-        // t = 0: slot 0 parks at 354; row-mates fan out 64 (slot) + 40
-        // (column) = 104 px apart.
+    fn slot_grid_quad_x_parks_offscreen_on_the_previous_cells_slot() {
+        // t = 0: slot 0 parks at 354, slot 1 one column (40) past it - its
+        // base still reads slot 0 - and every later row-mate 64 (slot) + 40
+        // (column) = 104 px past the one before.
         assert_eq!(slot_grid_quad_x(0, 0, 0, 0), 354);
-        assert_eq!(slot_grid_quad_x(1, 0, 1, 0), 354 + 104);
-        assert_eq!(slot_grid_quad_x(4, 0, 4, 0), 354 + 4 * 104);
+        assert_eq!(slot_grid_quad_x(1, 0, 1, 0), 354 + 40);
+        assert_eq!(slot_grid_quad_x(4, 0, 4, 0), 354 + 40 + 3 * 104);
     }
 }

@@ -113,6 +113,12 @@ pub fn set_capture_emulator(emulator: &'static str) {
     CAPTURE_EMULATOR.with(|c| c.set(emulator));
 }
 
+/// The emulator [`set_capture_emulator`] last named on this thread (`""`
+/// before any).
+pub fn capture_emulator() -> &'static str {
+    CAPTURE_EMULATOR.with(|c| c.get())
+}
+
 /// The render mode the image children run.
 pub fn frame_render() -> FrameRender {
     FRAME_RENDER.get().copied().unwrap_or_default()

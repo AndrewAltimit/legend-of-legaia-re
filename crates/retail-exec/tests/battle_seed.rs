@@ -49,6 +49,7 @@ fn seed(rng: &mut Rng, top: u32, gear: &[u8]) -> Vec<u8> {
 
 #[test]
 fn a_party_actor_opens_a_fight_on_retails_numbers() {
+    differential!(scus(AGGREGATOR), scus(SEED));
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

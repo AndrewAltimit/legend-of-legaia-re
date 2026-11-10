@@ -13,6 +13,9 @@ const ATAN_LUT: u32 = 0x8006_F4C8;
 
 #[test]
 fn the_port_arctan_table_is_the_retail_one() {
+    not_a_differential!(
+        "compares the port's arctan table with the SCUS table at 0x8006F4C8; runs no routine"
+    );
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -35,6 +38,7 @@ fn the_port_arctan_table_is_the_retail_one() {
 
 #[test]
 fn the_bearing_is_the_retail_bearing() {
+    differential!(scus(BEARING));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

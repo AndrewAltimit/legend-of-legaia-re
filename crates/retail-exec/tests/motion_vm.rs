@@ -100,6 +100,7 @@ fn gen_leg(rng: &mut Rng, op: u8, actor_xz: (i16, i16)) -> Leg {
 
 #[test]
 fn the_motion_vm_walks_and_turns_as_retail_does() {
+    differential!(scus(ENTRY));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

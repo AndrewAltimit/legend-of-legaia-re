@@ -1173,3 +1173,70 @@ changes = [
   ["states/rugi_rogue_pre_rogue_thunder/image", 0.999, 0.998],
   ["states/taiku_terror_face_pre_fissure/image", 0.998, 0.997],
 ]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "FUN_801CEB84 is the battle grid emitter FUN_801D02C0 relocated into the Baka Fighter overlay (290 instructions, identical modulo relocation) and the ignore list files it as that duplicate. Its PORT tag on the duel floor cue counted one kernel twice and contradicted the ignore row (the provenance checker's non-entry finding); it is a REF now, and the cue calls FUN_801D02C0's port."
+changes = [
+  ["totals/ported", 1048, 1047],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "play_gzip_bytes grows by code: the menu slide-in input lock and the window walker port, the Print Screen key and the page's debug_play_record twin, the projectile flight bolts and landing flash, the arts list caption, the integer GTE camera for fog, lights, trail and screen grab, and the battle intro's retail trig. No data is added to the bundle; later rounds add the summon camera directors, the menu-screen fixes, the libsnd voice routines and the mesh-priced frame cost. The native battle and summon_cast benches draw 342 where they drew 334 from 4f3e8e8ca, bisected: the battle intro now draws retail's rand() off the world stream, which deals the bench's fight a different frame, not a dearer draw path; their allocations move with it. Browser draw and byte counts fall."
+changes = [
+  ["counts/bundle/gzip_bytes", 7096439, 7119074],
+  ["counts/bundle/play_gzip_bytes", 4962222, 4980077],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4483.2, 4484.6],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1279.4, 1283.3],
+  ["counts/native/battle/enhanced/draws_per_frame", 334, 342],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4454.1, 4456.0],
+  ["counts/native/battle/retail/allocs_per_frame", 1227.1, 1231.0],
+  ["counts/native/battle/retail/draws_per_frame", 334, 342],
+  ["counts/native/summon_cast/enhanced/draws_per_frame", 334, 342],
+  ["counts/native/summon_cast/retail/draws_per_frame", 334, 342],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2651.8, 2651.9],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1390.9, 1391.0],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Harness seats, each bisected to one commit. battle_jou_party_noa_chain_mid falls at 815516be9 (a harvest capture's arts target cursor paced like the capture probe, which lifts rikuroa chain_open .481 -> .840 and gala flying_knee_mid .536 -> .910). minigame_muscle_dome_retail_red_piura_vahn_strike's camera falls at 01b0e777c (a strike-loop attacker stood on the body pair its framing read from the clip-record ring); reverting that commit alone puts the camera back at 1.0 and garmel hyper_elbow_mid back at .749 from .919."
+changes = [
+  ["states/battle_jou_party_noa_chain_mid/image", 0.991, 0.989],
+  ["states/minigame_muscle_dome_retail_red_piura_vahn_strike/camera", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Projections moved from the hosts' f32 view onto the integer GTE camera, each checked against retail's routine in the retail-exec differential: the drop shadow (51f16f14c, FUN_800460AC / FUN_8001C394, bisected for minigame_dance_retail_go_out) and the fog sheets (274aae508, FUN_8003F86C, bisected for concnow_field_door_hop; 103 of 104 sheets match the keikoku capture exactly, up from 6). The still moves by one-pixel edges; the frame it scores is seated, not rendered by retail. minigame_slot_machine_retail_reels and nilboa2_field_door_hop move with the PCSX-Redux texel rule for screen quads (69376909a): the reels draw into a 640-wide buffer halved to 320, which the rule does not model, and nilboa2's fog crosses an already failing block where the engine lacks a mesh wedge retail draws. Both states' mean error falls."
+changes = [
+  ["states/concnow_field_door_hop/image", 1.0, 0.998],
+  ["states/minigame_dance_retail_go_out/image", 0.987, 0.985],
+  ["states/minigame_slot_machine_retail_reels/image", 1.0, 0.999],
+  ["states/nilboa2_field_door_hop/image", 0.999, 0.997],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A cast arm whose table step is cheaper than the arm before runs the frame-cost ring's step until the dear frames leave the ring (75d61ee4f). It brings Kiss of Death's arm 5 onto retail's 45 vsyncs at step 3 (films map01 .892 -> .944, Lip King .887 -> .939) and costs a few summon films; horn_summon_mid_cast's camera moves by one step of pacing. The retail evidence is a cost-column recording of one cast, so this is a pacing model, not a per-cast fit."
+changes = [
+  ["states/horn_summon_mid_cast/camera", 1.0, 0.998],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Two retail-grounded engine changes, each bisected to one commit. kor_field_route_walk falls at 55cbaa6d1: the sprite arm (FUN_8002A5A4) tags its one-colour Gouraud packets so the PCSX-Redux instrument dithers them as it dithers retail's, which lifts the Slippery storm-cloud arm .832 -> .924 and dithers kor's field sprites too. battle_uru2_nurga_heal_mid_cast moves with the native colour mesh going screen-linear (it now matches the page and retail's affine fill). battle_jou_aluru_v3_strike's image (1.000 -> 0.999, inside the checker's tolerance) moves at 67fc7ae07, the ghost cost priced by the monster mesh's triangles, which brings Caruban's Fire Breath onto retail's step 3 (step agreement .315 -> .958)."
+changes = [
+  ["states/battle_uru2_nurga_heal_mid_cast/image", 0.963, 0.962],
+  ["states/kor_field_route_walk/image", 0.923, 0.921],
+]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "Provenance retags, each a `// PORT:` that named a routine the Rust does not implement. engine-vm's field.rs carried module-header tags for the field VM's helpers (FUN_8003C83C, FUN_801D596C, FUN_801DE754, FUN_801DE7BC, FUN_801D8280 among them) and now cites them as REF, so they return to the port worklist as what they are. The dev menu's EVENT FLAG arms were tagged 0xE818 below their runtime addresses (FUN_801DB8F4 is the flag-list cursor arm at 0x801EA10C); the corrected addresses (801EA0CC, 801EA10C, 801EA51C) carry ports and differentials but have no dump under their own address. FUN_801E373C is the card-init no-op hook, now REF; the pieces it stands for are ported where they live."
+changes = [
+  ["totals/ported", 1048, 1043],
+  ["worklist/port", 0, 7],
+  ["worklist/ported_not_dumped", 0, 3],
+]

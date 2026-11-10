@@ -73,8 +73,9 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 /// | 0956 | `FUN_801F7EC4` | 0: `0x801F80B4`; 1: `0x801F8290`, `0x801F82DC`, `0x801F8330`, `0x801F84C4`, at the caller's scale; 2: `0x801F850C`, the same |
 /// | 0964 | `FUN_801F8BF8` | 0: `0x801F8EDC` / `8F38` / `8F94` by the last roll; 1: four `0x801F9008`, each on six draws; 2: `0x801F9568` (all at the caller's scale) |
 ///
-/// Not ported: PROT 0941's arm 0 (`sh zero,0x42` on the caller) and arm 1's 2D
-/// puff `FUN_801DFDF0(3, ..)`.
+/// PROT 0941's arm 1 also spawns the 2D puff `FUN_801DFDF0(3, ..)`
+/// ([`super::stager_effect`]). Not ported: its arm 0, `sh zero,0x42` on the
+/// caller.
 ///
 /// PORT: overlay_cast_earthquake_0935_801f7ff0, overlay_cast_steal_0941_801f7db0, overlay_cast_power_up_0942_801f8118, overlay_cast_chaos_flare_0951_801f81dc, overlay_cast_element_change_0964_801f8bf8
 /// PORT: FUN_801F769C (PROT 0943's stager)
@@ -442,7 +443,7 @@ fn megaton_press_rock_ring(
 /// | Arm | Seats |
 /// |---:|---|
 /// | 0 | `0x801F8868`, `0x801F88C4` on the caller |
-/// | 1 | a ring of twelve rocks `0x801F8C20` around the origin at height `-0x900..-0x700` ([`megaton_press_rock_ring`]), then `0x801F8940`, `0x801F89D8` on the caller |
+/// | 1 | a ring of twelve rocks `0x801F8C20` around the origin at height `-0x900..-0x700` ([`megaton_press_rock_ring`]), then `0x801F8940`, `0x801F89D8`, `0x801F8AE4`, `0x801F8B30` on the caller (the last three through arm 5's tail, `j 0x801F87A4`) |
 /// | 2 | (the host flushes the pool, kills the held white and fades white out: [`MEGATON_PRESS_WHITE_OUT`]) `0x801F8E18`, `0x801F8E60` on the caller |
 /// | 3 | four `0x801F8DD4` on the caller's position, rolled `rand() % 512 + 0x400 k + 0x100` about Z, each then stored `+0x84 = rand() % 65 - 32`; (the host parks [`MEGATON_PRESS_HELD_WHITE`]) |
 /// | 4 | a ring of twelve rocks `0x801F8E34` at height `-0x100..0x100` |
@@ -462,7 +463,15 @@ pub fn megaton_press_stager_spawns(
         0 => vec![at(0x801F_8868), at(0x801F_88C4)],
         1 => {
             let mut out = megaton_press_rock_ring(0x801F_8C20, -0x900, rand);
-            out.extend([at(0x801F_8940), at(0x801F_89D8)]);
+            // `0x801F89D8`'s seat is arm 5's `jal` at `0x801F87A4`, reached
+            // by `j` (`0x801F8470`), so the arm runs on through arm 5's last
+            // two seats.
+            out.extend([
+                at(0x801F_8940),
+                at(0x801F_89D8),
+                at(0x801F_8AE4),
+                at(0x801F_8B30),
+            ]);
             out
         }
         2 => vec![at(0x801F_8E18), at(0x801F_8E60)],
@@ -532,7 +541,7 @@ mod tests {
             0x80
         };
         let s = megaton_press_stager_spawns(1, StagerCaller::default(), &mut rand);
-        assert_eq!(s.len(), 14);
+        assert_eq!(s.len(), 16);
         assert_eq!(n, 72, "six draws per rock");
         // `rand() % 256 - 0x80` is `0` here: each rock sits on the circle of
         // radius `0x400`, rock 0 at entry `0xAA`.

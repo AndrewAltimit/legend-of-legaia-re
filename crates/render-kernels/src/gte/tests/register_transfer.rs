@@ -97,8 +97,8 @@ fn ctc2_zsf3_sign_extends_to_i32() {
     let mut g = Gte::new();
     g.ctc2(29, 0xFFFFu32); // -1 in low half
     assert_eq!(g.zsf3, -1);
-    // cfc2 returns the low 16 bits.
-    assert_eq!(g.cfc2(29), 0xFFFF);
+    // cfc2 reads the signed halfword back sign-extended.
+    assert_eq!(g.cfc2(29), 0xFFFF_FFFF);
 }
 
 #[test]

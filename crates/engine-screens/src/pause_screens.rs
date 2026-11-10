@@ -906,12 +906,17 @@ pub fn items_draws(
             };
             // The command window and the info window stay up behind it; only
             // the list leaves (`menu_items_target_kor_retail`).
+            let stats = item_detail_stats(model.info.as_ref().and_then(|i| i.detail.as_ref()));
             let info = model.info.as_ref().map(|i| ui::PauseItemInfo {
                 name: &i.name,
                 count: i.count,
                 desc: &i.desc,
                 passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-                detail: None,
+                detail: i.detail.as_ref().map(|d| ui::PauseItemDetail {
+                    text: &d.text,
+                    stats: &stats,
+                }),
+                scope: i.scope_icon,
             });
             let items = ui::PauseItemsView {
                 arrows_blink: false,
@@ -950,12 +955,20 @@ pub fn items_draws(
             ink: model.page_row_inks.get(i).copied(),
         })
         .collect();
+    // Window 17's panel prints the description through the item-detail
+    // printer `FUN_800337B0` (`jal` at `0x801D0FB8`): equipment gets its slot
+    // template and stat line there, as on the Equip screen's window 24.
+    let stats = item_detail_stats(model.info.as_ref().and_then(|i| i.detail.as_ref()));
     let info = model.info.as_ref().map(|i| ui::PauseItemInfo {
         name: &i.name,
         count: i.count,
         desc: &i.desc,
         passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-        detail: None,
+        detail: i.detail.as_ref().map(|d| ui::PauseItemDetail {
+            text: &d.text,
+            stats: &stats,
+        }),
+        scope: i.scope_icon,
     });
     let view = ui::PauseItemsView {
         arrows_blink: list_arrows_blink(world),
@@ -1094,22 +1107,7 @@ pub fn equip_draws(
             }
         }
     }
-    let stats: Vec<ui::PauseDetailStat> = model
-        .info
-        .as_ref()
-        .and_then(|i| i.detail.as_ref())
-        .map(|d| {
-            d.stats
-                .iter()
-                .map(|(label, label_dx, value_dx, value)| ui::PauseDetailStat {
-                    label: label.clone(),
-                    label_dx: *label_dx,
-                    value_dx: *value_dx,
-                    value: *value,
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let stats = item_detail_stats(model.info.as_ref().and_then(|i| i.detail.as_ref()));
     let mut input = equip_compose_input(&model, !ctx.chrome_present());
     input.arrows_blink = list_arrows_blink(world);
     if let (Some(info), Some(d)) = (
@@ -1122,6 +1120,21 @@ pub fn equip_draws(
         });
     }
     equip_screen_compose(ctx, &input)
+}
+
+/// The detail printer's stat line as the info panel draws it.
+fn item_detail_stats(detail: Option<&ps::ItemDetailText>) -> Vec<ui::PauseDetailStat> {
+    detail.map_or_else(Vec::new, |d| {
+        d.stats
+            .iter()
+            .map(|(label, label_dx, value_dx, value)| ui::PauseDetailStat {
+                label: label.clone(),
+                label_dx: *label_dx,
+                value_dx: *value_dx,
+                value: *value,
+            })
+            .collect()
+    })
 }
 
 /// The kind-4 kernel's blink gate on the frame word retail reads
@@ -1167,6 +1180,7 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
             desc: i.desc.as_str(),
             passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
             detail: None,
+            scope: i.scope_icon,
         }),
         compare: m.compare.as_ref().map(equip_compare_input),
     }

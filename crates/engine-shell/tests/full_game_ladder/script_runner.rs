@@ -1046,7 +1046,7 @@ pub(super) fn scripted_menu_pad(session: &NativeSession, f: usize) -> Option<u16
         match menu.phase() {
             FieldMenuPhase::Notice => PadButton::Cross,
             FieldMenuPhase::ReadyConfirm { cursor: 0, .. } => PadButton::Cross,
-            FieldMenuPhase::ReadyConfirm { .. } => PadButton::Left,
+            FieldMenuPhase::ReadyConfirm { .. } => PadButton::Up,
             _ => PadButton::Circle,
         }
     };

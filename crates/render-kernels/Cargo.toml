@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-camera.workspace = true
+legaia-engine-system.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
 legaia-engine-vm.workspace = true

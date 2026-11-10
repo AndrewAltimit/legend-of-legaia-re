@@ -217,6 +217,11 @@ pub fn parse_apply_records<'a>(
 ///
 /// Returns the number of records walked.
 ///
+/// A record with a zero delta count is where the two part: the GTE blend
+/// `FUN_8005B038` is a do-while that compares its end pointer only after a
+/// step, so retail walks off the record until the pointer wraps, where the
+/// port applies nothing.
+///
 /// PORT: FUN_8002174C
 ///
 /// Reached on both hosts through `legaia_engine_core::world::World::morph_weight_posed_tmd`,

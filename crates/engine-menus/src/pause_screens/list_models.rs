@@ -83,6 +83,11 @@ pub struct ItemsInfoModel {
     pub count: u16,
     pub desc: String,
     pub passive: Option<(String, String)>,
+    /// The item-detail printer's output (`FUN_800337B0` at the description
+    /// pen), when the disc tables are up.
+    pub detail: Option<ItemDetailText>,
+    /// The scope icon beside the passive name ([`ItemDisplayText::scope_icon`]).
+    pub scope_icon: Option<u16>,
     /// The staged row is the **Point Card** (`0xFE`), which retail's shared
     /// info panel branches on before anything else: `FUN_801D0F1C` compares
     /// the staged id against `0xFE` at `0x801d0fc0` and, on a match, draws
@@ -133,6 +138,8 @@ fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> Item
             count: r.count as u16,
             desc: r.desc.clone(),
             passive: r.passive.clone(),
+            detail: r.detail.clone(),
+            scope_icon: r.scope_icon,
             is_point_card: false,
         }),
         target_select: false,
@@ -202,6 +209,8 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
             count: r.count as u16,
             desc: r.desc.clone(),
             passive: r.passive.clone(),
+            detail: r.detail.clone(),
+            scope_icon: r.scope_icon,
             is_point_card: r.id == crate::shop::POINT_CARD_ITEM_ID,
         })
     };

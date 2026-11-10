@@ -753,6 +753,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                         ctx.origin,
                         ctx.scale,
                     ));
+                    // The popup's own cursor: the same hand, at the popup
+                    // content's left edge on the cursor row.
+                    let (hx, hy) = crate::options_popup_hand_pos(p);
+                    sprites.push(crate::options_hand_cursor_sprite(
+                        rects,
+                        (hx + 10, hy),
+                        0,
+                        ctx.origin,
+                        ctx.scale,
+                    ));
                 }
                 // The settings screen's pointing hand marks the browse row;
                 // the rebind sub-screen draws its own `>` marker beside the
@@ -1211,6 +1221,8 @@ pub struct EquipInfoInput<'a> {
     pub passive: Option<(&'a str, &'a str)>,
     /// The detail printer's output, when the disc tables are up.
     pub detail: Option<crate::PauseItemDetail<'a>>,
+    /// The scope icon's font cell ([`crate::PauseItemInfo::scope`]).
+    pub scope: Option<u16>,
 }
 
 /// Window 25's panel content as a host hands it over: the two eight-word
@@ -1324,6 +1336,7 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
                 desc: i.desc,
                 passive: i.passive,
                 detail: i.detail,
+                scope: i.scope,
             }),
             compare: input.compare,
         }),

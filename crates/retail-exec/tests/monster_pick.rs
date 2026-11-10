@@ -271,6 +271,7 @@ fn seed_port(w: &mut World, p: &Pick) {
 
 #[test]
 fn a_monster_picks_what_retail_picks() {
+    differential!(prot(898, PICKER));
     let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -349,6 +350,7 @@ fn a_monster_picks_what_retail_picks() {
 /// names one past it: what retail reads there is whatever follows the table.
 #[test]
 fn no_shipped_monster_names_a_spell_past_the_table() {
+    not_a_differential!("a census of the PROT 0867 records' spell ids; runs no routine");
     let Some(disc) = disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

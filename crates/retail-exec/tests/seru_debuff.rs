@@ -39,6 +39,7 @@ const COMPARED: [(u32, u32); 6] = [
 
 #[test]
 fn a_stager_call_stages_what_retail_stages() {
+    differential!(prot(898, STAGER));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

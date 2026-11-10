@@ -41,6 +41,7 @@ pub mod menu_glyph_atlas;
 pub mod menu_item_category;
 pub mod menu_list_rows;
 pub mod menu_open_sequence;
+pub mod menu_slide_lock;
 pub mod menu_widget;
 pub mod name_entry;
 pub mod new_game;

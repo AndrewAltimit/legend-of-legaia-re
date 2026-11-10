@@ -66,6 +66,19 @@ pub(super) fn wait_out_pad_hold(session: &mut NativeSession) {
 }
 
 pub(super) fn tap_pad(session: &mut NativeSession, mask: u16) {
+    // An open menu reads nothing while its windows slide (`_DAT_8007BB80`,
+    // `legaia_engine_menus::menu_slide_lock`): the hand waits for them to
+    // land, as a player does, so every press it decides on is one the menu
+    // takes - a dropped Cross used to read as "nothing to use here".
+    for _ in 0..96 {
+        if session.field_menu_settled() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        if session.tick().is_err() {
+            break;
+        }
+    }
     session.host.world.set_pad(mask);
     let _ = session.tick();
     session.host.world.set_pad(0);

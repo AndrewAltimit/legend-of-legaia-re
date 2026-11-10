@@ -532,6 +532,9 @@ impl PlayWindowApp {
                     let mut glide = cam.clone();
                     let by_glide = glide.align_glide_origin_to(shown, end, target)
                         | glide.seat_pose_components(shown, held);
+                    // A yaw the ease band placed short of the engine's own
+                    // endpoint draws retail's (`BattleCamera::seat_eased_yaw`).
+                    glide.seat_eased_yaw(shown, end, target, by_glide);
                     let mut shot = cam.clone();
                     let by_shot = shot.align_module_shot(live, end);
                     if by_shot.count_ones() > by_glide.count_ones() {

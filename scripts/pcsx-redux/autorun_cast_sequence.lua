@@ -48,6 +48,10 @@
 --                FUN_800508DC's), and rates.csv beside it: each seat's animation
 --                rate +0x21D and node cursor +0x68, off which a reaction's
 --                pace reads.
+--   hits.csv     with LEGAIA_HIT_TRACE=1 (breakpoint core): one row per melee
+--                hit FUN_801EC3E4 resolves, at the head of its hit body
+--                (0x801EC5A8): the attacker, its target and the BIOS rand()
+--                seed word the hit's rolls draw from.
 --   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
 --                these bytes with its pc, ra and registers.
 --   manifest.txt the run's knobs.
@@ -608,6 +612,47 @@ probe.run({
                 local r = PCSX.getRegisters()
                 calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
                     -1, tou32(r.GPR.n.ra))
+            end)
+        end
+        if probe.getenv_num("LEGAIA_HIT_TRACE", 0) ~= 0 then
+            -- Each melee hit the strike kernel FUN_801EC3E4 resolves
+            -- (breakpoint core): 0x801EC5A8 is the head of its hit body,
+            -- past the head guards and the limb-miss exit and ahead of the
+            -- block roll's two draws, so the BIOS seed word there is the one
+            -- the hit's rolls draw from - blocked, missed or landed alike.
+            local hits = probe.csv_open(probe.out_path("hits.csv"),
+                "vsync,st7,att,tgt,seed")
+            probe.arm_breakpoint(0x801EC5A8, "Exec", 4, "hit", function()
+                local r = PCSX.getRegisters().GPR.n
+                local cx = u32(CTX_PTR)
+                local att = tou32(r.s6) % 256
+                local a = actor(att)
+                hits:row("%d,%d,%d,%d,%d", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, att,
+                    a ~= nil and u8(a + 0x1DD) or -1, u32(0x80009010))
+            end)
+        end
+        if probe.getenv_num("LEGAIA_RANGE_TRACE", 0) ~= 0 then
+            -- Each entry of the range law FUN_8004E2F0(attacker a0, target
+            -- a1) (breakpoint core): the caller, the attacker's live pair,
+            -- the target's live and body pairs, its heading and its anim
+            -- node cursor. The pairs the law reads are the attacker's live
+            -- `+0x34` / `+0x38` against the target's body `+0x3C` / `+0x40`.
+            local range = probe.csv_open(probe.out_path("range.csv"),
+                "vsync,st7,phase,ra,att,tgt,ax,az,tx,tz,bx,bz,tf,tcur,tclip")
+            probe.arm_breakpoint(0x8004E2F0, "Exec", 4, "range", function()
+                local r = PCSX.getRegisters().GPR.n
+                local att, tgt = tou32(r.a0), tou32(r.a1)
+                if att > 7 or tgt > 7 then return end
+                local a, t = actor(att), actor(tgt)
+                if a == nil or t == nil then return end
+                local node = u32(t + 0x22C)
+                local cx = u32(CTX_PTR)
+                range:row("%d,%d,%d,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, ptr_ok(cx) and u8(cx + 0x279) or -1, tou32(r.ra),
+                    att, tgt, s16(a + 0x34), s16(a + 0x38), s16(t + 0x34), s16(t + 0x38),
+                    s16(t + 0x3C), s16(t + 0x40), u16(t + 0x46), ptr_ok(node) and u16(node + 0x68) or -1,
+                    u8(t + 0x1D9))
             end)
         end
         if FORCE_ROW ~= "" then

@@ -21,7 +21,7 @@
 //! caller (`RecordsLabels`) so no game text lives in this crate.
 //!
 //! PORT: FUN_801ED710 - battle-records screen renderer (layout + emit order)
-//! PORT: FUN_80034e4c - zero-padded fixed-width decimal field
+//! REF: FUN_80034e4c - zero-padded fixed-width decimal field (`crate::menu::decimal_field`)
 //! REF: FUN_8003c1f8 - the separator-glyph primitive this screen's `Symbol`
 //! fields draw through. Its port is
 //! `crate::menu::window_painters::separator_glyph_draws`, shared with
@@ -480,11 +480,9 @@ pub fn records_ink(staging: u8) -> [f32; 4] {
     crate::menu_ink_color(staging)
 }
 
-// Fixed decimal-cell pitch of the retail number primitives (8 px per digit).
-const NUM_CELL_W: i32 = 8;
-
 /// Blank-padded decimal field (`FUN_80034b78`): the value's decimal digits
-/// right-aligned in a `digits`-wide field, leading cells left blank.
+/// right-aligned in a `digits`-wide field, leading cells left blank
+/// ([`crate::menu::decimal_field`]).
 fn blank_number_draws(
     font: &legaia_font::Font,
     value: i64,
@@ -493,25 +491,19 @@ fn blank_number_draws(
     digits: u8,
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    let s = value.max(0).to_string();
-    let len = s.len() as i32;
-    let mut out = Vec::new();
-    for (i, ch) in s.chars().enumerate() {
-        let cell = (digits as i32 - len + i as i32).max(0);
-        out.extend(crate::numeral_cell_draws(
-            font,
-            ch,
-            (x + cell * NUM_CELL_W, y),
-            color,
-        ));
-    }
-    out
+    crate::menu::decimal_field::decimal_field_draws(
+        font,
+        value,
+        (x, y),
+        i32::from(digits),
+        false,
+        color,
+    )
 }
 
-/// Zero-padded decimal field (`FUN_80034e4c`): the value reduced modulo
-/// `10^digits` and printed with leading zeros across the whole field.
-///
-/// PORT: FUN_80034e4c
+/// Zero-padded decimal field (`FUN_80034e4c`): leading zeros across the
+/// field; a wider value prints its overflow rather than being cut
+/// ([`crate::menu::decimal_field`]).
 fn zero_number_draws(
     font: &legaia_font::Font,
     value: i64,
@@ -520,20 +512,14 @@ fn zero_number_draws(
     digits: u8,
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    let width = digits as usize;
-    let pow10 = 10i64.pow(digits as u32);
-    let v = value.max(0) % pow10;
-    let s = format!("{v:0width$}");
-    let mut out = Vec::new();
-    for (i, ch) in s.chars().enumerate() {
-        out.extend(crate::numeral_cell_draws(
-            font,
-            ch,
-            (x + i as i32 * NUM_CELL_W, y),
-            color,
-        ));
-    }
-    out
+    crate::menu::decimal_field::decimal_field_draws(
+        font,
+        value,
+        (x, y),
+        i32::from(digits),
+        true,
+        color,
+    )
 }
 
 /// Build the full records-screen [`TextDraw`] list at origin `pen`. The
@@ -866,11 +852,12 @@ mod tests {
     }
 
     #[test]
-    fn zero_pad_reduces_modulo_field_width() {
+    fn a_zero_field_prints_its_overflow() {
         let font = legaia_font::Font::placeholder();
-        // 1234 in a 2-digit zero field -> "34" (2 glyph quads).
+        // 1234 in a 2-digit zero field prints all four digits
+        // (`FUN_80034E4C` never cuts a value to its field).
         let d = zero_number_draws(&font, 1234, 0, 0, 2, [1.0; 4]);
-        assert_eq!(d.len(), 2);
+        assert_eq!(d.len(), 4);
         // blank field for the same value keeps all 4 digits.
         let b = blank_number_draws(&font, 1234, 0, 0, 5, [1.0; 4]);
         assert_eq!(b.len(), 4);

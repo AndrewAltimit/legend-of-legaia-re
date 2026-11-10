@@ -20,6 +20,8 @@ pub fn step<H: MoveHost + ?Sized>(
     let Some(opcode) = bytecode.get(pc_start).copied() else {
         return StepResult::EndOfBuffer { opcode: 0 };
     };
+    // Past the jump table: [`FrameStep`] skips the word by the previous
+    // opcode's width; a lone `step` reports it.
     if opcode > 0x46 {
         return StepResult::EndOfBuffer { opcode };
     }
@@ -152,12 +154,10 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             state.local_flags = 0;
         }
-        // 0x0B - DefaultBreak: drops out of switch with size 0; the original
-        // skipped the size set, and the epilogue still ran (no PC advance).
+        // 0x0B - no arm: the jump-table word is the epilogue, which adds the
+        // previous opcode's width. A lone `step` cannot know it and leaves
+        // the PC; [`FrameStep`] carries the width across a frame.
         0x0B => {
-            // No change to PC; runtime continues the loop unless a prior
-            // handler set bVar3 = false. We keep size = 0, advance, and rely
-            // on the caller to detect a no-progress loop if it cares.
             size = 0;
         }
         // 0x0C - composite control word build. size 6.
@@ -730,9 +730,13 @@ pub fn step<H: MoveHost + ?Sized>(
             state.tween_scale_x = state.tween_src_y;
             state.tween_scale_y = (read(1) as i16).wrapping_sub(state.tween_src_x);
             state.tween_scale_z = (read(2) as i16).wrapping_sub(state.tween_src_y);
-            // anim_block +0xB8 = 1, +0xC0 = (i32) op[3].
-            state.anim_block_u16_set(0x0C, 1);
-            state.anim_block_u16_set(0x14, read(3));
+            // `0x80024134..0x8002414C`, word stores through `s4 = actor + 0x90`:
+            // `+0xB8 = 1`, and the sign-extended `op[3]` to both `+0xBC` and
+            // `+0xC0`.
+            let span = read(3) as i16 as i32 as u32;
+            state.set_actor_u32(0xB8, 1);
+            state.set_actor_u32(0xBC, span);
+            state.set_actor_u32(0xC0, span);
             size = 4;
         }
         _ => {
@@ -775,15 +779,69 @@ pub fn run_until_break_with<H: MoveHost + ?Sized>(
     budget: usize,
     mut after_step: impl FnMut(&mut H, &ActorState),
 ) -> StepResult {
+    let mut frame = FrameStep::default();
     for _ in 0..budget {
-        let result = step(host, state, bytecode);
-        after_step(host, state);
-        match result {
-            StepResult::Advance => continue,
-            other => return other,
+        let result = frame.step(host, state, bytecode);
+        if let Some(r) = result {
+            after_step(host, state);
+            match r {
+                StepResult::Advance => continue,
+                other => return other,
+            }
         }
     }
     StepResult::Pending { opcode: 0xFFFF }
+}
+
+/// One frame's run of the dispatch loop `FUN_80023070`, opcode by opcode, for
+/// a host that drives the loop itself.
+///
+/// Retail's bound check (`sltiu v0, v1, 0x47; beqz` at `0x800230C8`) does not
+/// leave the loop: it branches to the shared tail `0x80024150`, which adds
+/// `a2` - the width the last opcode's arm left there - to the PC and loops
+/// while `s6` stands; op `0x0B`'s jump-table word is that tail too. Either is
+/// skipped by the previous opcode's width, and only HALT / WAIT end the frame.
+/// Ahead of the frame's first opcode `a2` is the caller's register, so a frame
+/// that opens on one ends there ([`StepResult::EndOfBuffer`]).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameStep {
+    last_size: Option<i16>,
+}
+
+impl FrameStep {
+    /// Run the opcode at the PC, or skip a word the loop skips. `None` is a
+    /// skip: no opcode ran and the PC has moved on.
+    pub fn step<H: MoveHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        state: &mut ActorState,
+        bytecode: &[u16],
+    ) -> Option<StepResult> {
+        let pc_before = state.pc;
+        let opcode = bytecode.get(pc_before as usize).copied();
+        if let Some(op @ (0x0B | 0x47..)) = opcode {
+            return match self.last_size {
+                Some(size) => {
+                    state.pc = state.pc.wrapping_add(size);
+                    None
+                }
+                None => Some(StepResult::EndOfBuffer { opcode: op }),
+            };
+        }
+        let result = step(host, state, bytecode);
+        if result == StepResult::Advance {
+            // A loop op that jumps back leaves `a2 = 2` (`0x80023608` /
+            // `0x8002365C`), not the distance it moved the PC.
+            let looped =
+                matches!(opcode, Some(0x19 | 0x1B)) && state.pc != pc_before.wrapping_add(1);
+            self.last_size = Some(if looped {
+                2
+            } else {
+                state.pc.wrapping_sub(pc_before)
+            });
+        }
+        Some(result)
+    }
 }
 
 /// Outcome of one [`actor_tick`] call. Mirrors the move-VM-relevant control

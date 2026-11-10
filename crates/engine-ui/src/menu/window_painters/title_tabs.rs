@@ -75,9 +75,9 @@ pub fn menu_string_lead(font: &legaia_font::Font) -> i32 {
 /// takes the resolved `&str`; [`title_record_text_offset`] is the offset
 /// arithmetic on its own, so a host reading the record can reuse it.
 ///
-/// The routine also saves the glyph-advance byte, forces it to the wide
-/// `0x10` cell for this draw and restores it afterwards. The port lays the
-/// label out proportionally, which is the engine-wide choice.
+/// The routine also saves `DAT_80073F20`, the string writer's width-table
+/// entry for byte `0x04`, sets it to `0x10` for this draw and restores it
+/// afterwards; a vendor name carries no such byte, so the port drops it.
 ///
 /// The retail record is the armed op-`0x49` payload: `_DAT_8007B450` points
 /// at the opcode's sub-op byte, so for a shop record (`[count][ids][name]`)

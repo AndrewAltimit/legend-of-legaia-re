@@ -558,7 +558,12 @@ voice path is per-caller data, not a single table - an open census, tracked in
 
 ## MDEC decoder (Iki bitstream)
 
-`MdecDecoder::decode_frame(frame)` converts a complete demuxed frame into an RGBA8 pixel buffer.
+`MdecDecoder::decode_frame(frame)` converts a complete demuxed frame into an RGBA8 pixel buffer,
+in retail's two steps: `psx_mdec::iki_mdec_codes` (the port of `FUN_801D0378`) writes the MDEC
+command-word list the overlay DMAs, and `psx_mdec::decode_mdec_codes` stands in for the MDEC
+hardware that list feeds. The STRv2 decoder's list goes through the same pixel stage. The list half
+is held word for word to the overlay by the [retail kernel differential](../tooling/retail-kernel-differential.md);
+the pixel half is written from the MDEC documentation and has no routine on the disc to compare with.
 
 Legaia's movies use the PSX **"Iki"** bitstream variant, **not** the common STRv2 layout. The
 distinguishing trait: the per-block DC and quantization scale are **not** in the entropy
@@ -1367,9 +1372,15 @@ follow-cam `FUN_801DBE9C` sets `_DAT_80089118 = -(anchor+0x14)` /
 `_DAT_80089120 = -(anchor+0x18)`; the culling test `FUN_80021DF4` reads `-_DAT_80089118` as the world focus X;
 the smooth-scroll in `overlay_0896_801ca998` targets `tile*-0x80 - _DAT_80089118`. So the world
 focus is `(-param6, param7, -param8)` (Y is stored un-negated, per the camera-param builder
-`FUN_801DAB90`). Each slot is written **only when its mask bit is set** - an absent slot keeps
-the prior beat's value. `opdeene`'s opening beats supply focus X/Z (slots 6/8) but never slot 7,
-so a beat pans horizontally and Y holds.
+`FUN_801DAB90`). The Configure arm snapshots the live globals into the staging block
+(`FUN_801DDFE4` -> `FUN_801DE004`, the low halfword of each) and overwrites **only the slots its
+mask sets**, so an absent slot keeps the prior value. The commit `FUN_801DE084` then clears the
+block's focus Y and the focus-Y global (`sh zero,0x1e(s0)` in the `apply` branch's delay slot,
+`sw zero` to `0x8008911C`) before it copies the block, on the snap leg and the glide leg alike: a
+staged slot 7 never reaches the camera. No beat the [field-op census](../tooling/field-op-census.md)
+decodes cleanly stages one; the few `45 00` decodes that do all follow a decode failure in an
+event-script carrier. `opdeene`'s opening beats supply focus X/Z (slots 6/8) and pan horizontally. Port: `RetailCamGlobals::stage` / `commit_staged`, held to both routines by the
+retail-exec differential.
 
 **The full transform** is `screen = H · (R·(v − focus) + tr_eye) / Ze`. The view builder
 `FUN_800172c0` assembles it:
@@ -1412,6 +1423,13 @@ Two structural consequences:
 - A beat landing **mid-tween** re-seeds every axis' `start` from the current interpolated
   globals and resets the shared progress to `0`. There is one progress counter, one duration and
   one curve for all ten axes.
+- The tick stores **nine** of them: it has no block for the focus Y pair (`+0x1C` / `+0x1E`), so
+  `0x8008911C` holds through a glide (`0x801DCC88..0x801DD044` step from the focus X block to the
+  focus Z one). Its tail re-rolls the shake jitter about the mover's own pose, `FUN_801D9D30`'s
+  arithmetic inline (`0x801DD264..0x801DD2F8`). The arming routine `FUN_801DD310` copies the live
+  globals' low halves into the block and stores the duration as a halfword the tick reads signed.
+  Port: `CameraMover::store_frame` and `arm`, held to both routines by the retail-exec
+  differential.
 
 **Per-frame law** (`FUN_801DC0BC`, body `0x801DC104..0x801DD220`):
 
@@ -1703,8 +1721,8 @@ in display frames. The host also **merges** each beat's masked slots into a pers
 `opdeene`'s nine op-`0x45` beats sets **only slot 9 (H)** (`[(9, 792)]`), and a wholesale replace
 would drop that shot's focus / pitch / eye depth. The set is cleared on scene entry.
 
-- Each focus slot applies on its own presence; an absent focus Y falls back to retail's `0` (the
-  vertical framing rides the eye-space Y offset in the translation trio).
+- Each focus slot applies on its own presence, except focus Y, which the commit always clears to
+  retail's `0` (the vertical framing rides the eye-space Y offset in the translation trio).
 - In free-roam the follow camera owns the focus globals (`FUN_801DBE9C`, negated anchor XZ);
   once a scene executes any Configure the script keeps them, matching retail's step-shaped focus
   across a shot.
@@ -2138,9 +2156,11 @@ capture has read; the port keeps it under the text.
 
 Both hosts split on that one predicate (`screen_prim::screen_effect_push_prims_split`). The
 native window draws the under-text half beneath its overlay text and the other half above it.
-The browser play page draws both halves over the scene in its GL pass and applies the over-text
-half to its 2D overlay canvas's own pixels (`play_text_layer_washes_json`, the PSX ABR equations
-of `screen_prim::wash_channel`), since that canvas sits above the GL canvas.
+The browser play page draws the under-text half in its GL pass, then composites its 2D overlay
+canvas into the GL frame and draws the over-text half on top, the window's order. Its older
+fallback, washing the canvas's own pixels (`play_text_layer_washes_json`, the PSX ABR equations of
+`screen_prim::wash_channel`), runs only on a frame whose over half the GL pass cannot draw: run
+beside the composite, it washed the text twice.
 
 ##### The arm is a pair, and the sub-op byte carries both selectors
 
@@ -2431,10 +2451,13 @@ Any allocation failure bumps the error counter `_DAT_8007B828` by ten.
 1, 3), `battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). All five styles **draw**
 through the engine's screen-overlay path; the packet builders are in `render-kernels::battle_intro`
 (`emit_particle_field`, `emit_tile`, `intro_quad_to_screen`, `emit_swirl_band`,
-`emit_spinup_ring`). Two retail nuances are not carried, because the screen-overlay path has no
-depth-cue channel: a moving tile's opaque faces and the late-phase swirl fade toward a far
-colour in retail, and keep their packet colours in the port. The spin-up ring models only the
-case-0 annulus of the multi-shape generator `FUN_80028158`.
+`emit_spinup_ring`). The particle fields, the tile shatter and the early swirl are held to
+retail by the [kernel differential](../tooling/retail-kernel-differential.md), packet for packet:
+a tile past progress `0` fades toward black by its progress on the dispatcher's depth-cue bank,
+as retail's does. Two parts are not carried faithfully: the late-phase swirl (retail hands the
+band to the shatter renderer, which draws its quads as triangles spun about their own centroids
+and pushed apart; the port turns whole quads about the origin), and the spin-up ring, which models
+only the case-0 annulus of the multi-shape generator `FUN_80028158`.
 
 #### Which style a battle gets
 
@@ -2480,8 +2503,27 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
-walks its state to a fixed point within a handful of draws). The port's stand-in,
-`render-kernels::battle_intro_particles::IntroRng`, is shared by every host.
+walks its state to a fixed point within a handful of draws). The seeders' `jal 0x80056798` is
+BIOS `rand()` on the one kernel seed word `0x80009010`, and so are the port's: the seeders'
+environment (`render-kernels::battle_intro_particles::IntroEnv`, shared by every host) draws
+`IntroRng`, the BIOS step over a lent copy of `World::rng_state`, and its trig and root are
+retail's (the bearing `FUN_80019B28`, the root `FUN_8005AF0C`, `_DAT_8007B7F8` the cosine and
+`_DAT_8007B81C` the sine). With the same draws the four seeders' grids are retail's byte for byte.
+
+#### The init's draws
+
+Only the init draws, and only through its seeder: the scatter (`FUN_801CFBB4`), curtain and
+swirl seeders make no `rand()` call, the spin-up seeder `FUN_801D0164` one per cell (`32 x 40`),
+and the tile seeder `FUN_801D081C` two per interior corner (`15 x 15`) plus one per tile
+(`16 x 16`) on sub-styles `0` and `1`. A capture of a walked kor encounter
+(`scripts/pcsx-redux/autorun_battle_intro_rand.lua`, tile shatter at sub-style `0`) counts 706
+calls between the init's entry and its return, reads the seed word `0x09632944` before and
+`0x0D59BDA2` after (the BIOS step applied 706 times), and counts none from there to the battle
+mode. The tile records it dumps at the init's return carry all 256 seeded delays (`+0x0A`) equal to
+`rand() % 5000` over that stream past the 450 corner draws. The port takes the same segment of its one stream: on the transition's first frame the
+world records `BattleState::intro_rand_state` and steps `World::rng_state` past
+`battle_intro_styles::intro_seeder_draws`, and the host's emitter replays the draws from the
+recorded word.
 
 #### The transition owns the whole frame
 
@@ -2633,7 +2675,11 @@ outer bands stop being circular and become the screen rectangle.
 - **Before frame `0x5A`** the submit goes to `FUN_80043390` with flag word `0x1880_8080`: bit 27
   selects the **double-sided** NCLIP mask (`0x7FFFFFFF`, the dispatcher's
   `0x80043520..0x80043540` decode), without which the x-mirrored half's reversed winding would
-  cull; `a2 = 0` keeps the opaque bank, and the `0x808080` low bytes multiply nothing because
+  cull, though an edge-on quad (`NCLIP` `0`) still drops. The flag word's non-zero top byte ORs
+  `1` into the dispatcher's third argument (`0x800433C0..0x800433CC`), which selects the
+  depth-cue bank: its byte `0x10` links each quad at its largest corner `SZ` instead of `AVSZ4`,
+  a quad wholly off the screen drops (`FUN_80044798`), and `DPCS` toward the grey far colour at
+  `IR0 = 1` leaves the colours as they are; the `0x808080` low bytes multiply nothing because
   the descriptor's `+0xC` word is zero.
 - **From `0x5A` on** the submit swaps to the light-source TMD renderer,
   `FUN_80029888(desc, 0x8180_8080, 0, (clock - 0x3C) * 4)`, which stages a mid-grey far colour (`param_2`'s three bytes
@@ -2743,9 +2789,10 @@ log) pins the rest:
 **Port.** `battle_intro_tiles::tile_face_quads` is the ten-primitive packet,
 `render-kernels::battle_intro::emit_tile` the projection + accept chain (with `euler_rot_psx` as the
 `FUN_80026988` port), and the capture path re-lands pack entry 0 in the transition's cloned VRAM
-page. Not carried: a moving tile's record (`progress != 0`) dispatches through the depth-cue
-alpha bank in retail (fade toward a zeroed far colour); in the port receding tiles keep their
-face grey instead of also dimming with depth.
+page. A tile whose record has left progress `0` dispatches through the depth-cue bank: slot 17
+is then `FUN_80044DC8`, which drops a quad wholly off the screen (`FUN_80044798`) and runs `DPCS`
+toward the zeroed far colour with `IR0 = progress` (`0x80044F5C..0x80044F74`), so a flying tile
+dims as it goes; `emit_tile` does the same.
 
 ## Script-cutscene helpers (`overlay_cutscene_dialogue`)
 
@@ -2828,6 +2875,9 @@ stateDiagram-v2
 - State `0` caches the three party actors' `x/y/z/facing` into the `0x800845E4` table and runs
   the arm gate. The gate refuses when all three presence flags are set - a full party has
   nothing to swap to - and when only two are set it additionally requires the leader's own flag.
+  Arming raises the player's engaged bit `+0x10 & 0x80000` (`801d29b0..801d29c8`) before the
+  fade-out spawns, so the player stands locked, and its follow ease idle, until state 4 lowers
+  the bit (`801d2ce4..801d2cf8`). State 2's own `FUN_801DB8EC` snap is what moves the camera.
 - State `2` performs the swap and re-anchors the camera and field grid on the incoming leader,
   then spawns the talk's own record: `FUN_8003BDE0(x, z, +0x72, 1)` at `801d2c58..801d2c78`.
   `+0x72` is the `43 02` instruction's record byte less the MAN header's first two partition

@@ -38,6 +38,31 @@ impl MonsterMesh {
         &self.block[self.tmd_offset..]
     }
 
+    /// The mesh's polygon load in triangles: every primitive the Legaia
+    /// group walk decodes, a quad counting two. What one draw of the body
+    /// costs scales with it (an after-image ghost re-runs the whole draw).
+    /// `None` when the TMD does not parse.
+    pub fn triangle_count(&self) -> Option<u32> {
+        let raw = self.tmd_bytes();
+        let tmd = legaia_tmd::parse(raw).ok()?;
+        let mut n = 0u32;
+        for o in &tmd.objects {
+            let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+                raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            );
+            for p in groups.iter().flat_map(|g| &g.prims) {
+                n += match p.vertex_indices().len() {
+                    3 => 1,
+                    4 => 2,
+                    _ => 0,
+                };
+            }
+        }
+        Some(n)
+    }
+
     /// The texture / CLUT pool bytes (from
     /// [`texture_pool_offset`](Self::texture_pool_offset) to the end of the
     /// block), or `None` when the record carries no pool pointer or the
@@ -107,8 +132,8 @@ impl MonsterMesh {
     /// loader relocates them per battle slot. This mirrors that relocation so
     /// the standard PSX VRAM texture path renders the monster directly:
     ///
-    /// - the CLUT region ([`CLUT_REGION_BYTES`], 15 palettes) is written to
-    ///   VRAM row `484 + slot` at x=0, and every prim's CBA row is moved by
+    /// - the CLUT row ([`battle_clut_row`]: the 15 palettes, then the page's
+    ///   first 16 halfwords) is written to VRAM row `484 + slot` at x=0, and every prim's CBA row is moved by
     ///   `slot + 3` ([`relocate_cba`]: on-disc row `481` lands there);
     /// - the 4bpp page is written at [`monster_page_origin`] (`((5+slot)*64,
     ///   256)`), and every prim's TSB column is moved by `slot` with
@@ -148,7 +173,7 @@ impl MonsterMesh {
         if let Some(pool) = self.texture_pool_bytes()
             && pool.len() > CLUT_REGION_BYTES
         {
-            vram.write_clut_row(0, monster_clut_row(slot), &battle_clut_region(pool));
+            vram.write_clut_row(0, monster_clut_row(slot), &battle_clut_row(pool));
 
             let page = &pool[CLUT_REGION_BYTES..];
             let bytes_per_row = page.len() / TEXTURE_HEIGHT;
@@ -201,6 +226,18 @@ pub fn battle_clut_region(pool: &[u8]) -> Vec<u8> {
             *c = (v | 0x8000).to_le_bytes();
         }
     }
+    out
+}
+
+/// The whole CLUT row the battle loader uploads: `LoadImage` of a
+/// `256 x 1` rectangle from the pool's start (`0x80055510..0x80055554`), so
+/// the fifteen palettes of [`battle_clut_region`] (STP set) and then the
+/// first sixteen halfwords of the 4bpp page, raw, as the row's last palette.
+/// No primitive selects palette 15; the bytes are what VRAM holds.
+pub fn battle_clut_row(pool: &[u8]) -> Vec<u8> {
+    let mut out = battle_clut_region(pool);
+    let tail = pool.get(CLUT_REGION_BYTES..).unwrap_or(&[]);
+    out.extend_from_slice(&tail[..tail.len().min(0x200 - CLUT_REGION_BYTES)]);
     out
 }
 

@@ -55,7 +55,11 @@ struct MeshUniforms {
 struct VsOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
-    @location(1) color: vec4<f32>,
+    // PSX gouraud interpolation is affine in screen space, as the VRAM mesh
+    // shader's `prim_color` and the play page's `v_flat_rgba_pw` take it: a
+    // perspective-correct colour shades a big floor-plane fan (the Baka
+    // duel's additive glow disc) darker toward the camera than retail draws it.
+    @location(1) @interpolate(linear) color: vec4<f32>,
     @location(2) @interpolate(flat) blend: u32,
     // World-space position (`u.model * position`) for the per-scene
     // point-light layer.

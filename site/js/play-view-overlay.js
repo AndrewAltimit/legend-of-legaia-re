@@ -207,7 +207,18 @@
         let draws;
         try { draws = JSON.parse(drawsJson); }
         catch (e) { return; }
-        if (!draws || !draws.open) return;
+        if (!draws || !draws.open) {
+          /* The pause wipe: the menu is open but not spawned yet, and the
+           * field darkens under the wipe quad. Nothing of the field's layers
+           * may stay on this canvas - retail's party readout is gone from the
+           * first field tick after the menu press (the press rearms its idle
+           * countdown, `FUN_801D0D38`), and the native window draws none.
+           * Returning without a clear kept the last field frame's readout
+           * here, dimmed by the wipe drawn over it. */
+          ctx.clearRect(0, 0, ov.width, ov.height);
+          this._overlayPainted = menuKey;
+          return;
+        }
         /* Native blacks the whole framebuffer while the pause menu is up
          * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
          * frozen scene is NOT visible around the windows. This overlay canvas sits
@@ -412,8 +423,16 @@
      * are and their colours (`play_text_layer_washes_json`); the equations
      * are the PSX ABR modes `legaia_render_kernels::screen_prim::wash_channel`
      * names. Only called right after a branch repainted the canvas, so a
-     * wash never compounds across frames. */
+     * wash never compounds across frames.
+     *
+     * Every wash is also an `over` screen primitive, so on a frame that
+     * carries one `_drawScreenPrimsOver` composites this canvas into the GL
+     * frame and draws the wash over it there. Washing the canvas as well
+     * washed it twice: a battle's exit fade took the results box to black
+     * at twice the scene's rate. The canvas wash is the fallback for a frame
+     * whose `over` half the GL pass cannot draw. */
     _textWashJson() {
+      if (this._screenOver) return null;
       if (typeof this.rt.play_text_layer_washes_json !== 'function') return null;
       try { return this.rt.play_text_layer_washes_json(); }
       catch (e) { return null; }

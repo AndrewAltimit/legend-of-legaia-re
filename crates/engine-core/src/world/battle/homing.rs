@@ -180,6 +180,8 @@ impl World {
     }
 
     fn tick_homing_slots_with(&mut self, pass_step: Option<u8>, counter: u16) {
+        // The landed bolts are this pass's calls, or none.
+        self.battle.flight_ribbons = None;
         let Some(idx) = self.casting.homing.record else {
             return;
         };
@@ -222,10 +224,48 @@ impl World {
                 }
             }
         }
+        // Every phase-`3` pass stores the record's impact selector and its
+        // tint on the slot's victim (`0x801E1560..0x801E15EC`), so the tint
+        // holds from the landing to the hit; the cast fold's own store at
+        // the hit (`World::apply_enemy_move_status`) is the same triple.
+        for child in homing.landed.iter().filter(|&&child| child != 0) {
+            self.arm_impact_tint(usize::from(child - 1), raw[0x0A]);
+        }
         for child in homing.shocks.iter().filter(|&&child| child != 0) {
             if let Some(a) = self.actors.get_mut(usize::from(child - 1)) {
                 a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(0x20);
             }
+        }
+        // And each such pass with the counter still running draws one streak
+        // ribbon per `0xFF` byte of the `+0x16` list at the slot's position,
+        // in the record's trail (`0x801E17EC..0x801E1834`). A slot in flight
+        // draws one per `0xFF` byte of the `+0x12` list at its head first
+        // (`0x801E1284..0x801E12D8`), so a record whose flight list is bolts
+        // trails them all the way in; retail's slot loop runs both for one
+        // slot before the next.
+        let count = |list: &[u8]| list.iter().filter(|&&b| b == 0xFF).count();
+        let (trails, bolts) = (count(&raw[0x12..0x16]), count(&raw[0x16..0x1A]));
+        let mut ring = legaia_engine_cast::cast_module_camera::CastRibbonRing {
+            points: [[0; 3]; 16],
+            trail_id: raw[0x0B],
+            count: 0,
+        };
+        let clamp =
+            |p: [i32; 3]| p.map(|v| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+        for i in 0..homing.slots.len() {
+            let trail = homing.trails[i].map(|p| (clamp(p), trails));
+            let shock = (homing.shocks[i] != 0).then(|| (clamp(homing.slots[i].pos), bolts));
+            for (p, n) in trail.into_iter().chain(shock) {
+                for _ in 0..n {
+                    if let Some(slot) = ring.points.get_mut(usize::from(ring.count)) {
+                        *slot = p;
+                        ring.count += 1;
+                    }
+                }
+            }
+        }
+        if ring.count > 0 {
+            self.battle.flight_ribbons = Some(ring);
         }
         // A landed slot's hit opens on the record's impact cue
         // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).
@@ -258,6 +298,18 @@ impl World {
         // the `0x801F6324` prototype scene with its CLUT stage
         // (`0x801E1178..0x801E1238`).
         for s in spawns {
+            // The landing list's `0x64` is a screen flash, not a spawn
+            // (`FUN_80024E80(0x801C9070, 2)` at `0x801E1530`); retail's fade
+            // actors run side by side, so it takes a seat of its own.
+            if s.flash {
+                let (mut t, id) =
+                    legaia_engine_effects::action_effect_script::homing_flash_template();
+                t.mode[2] = id;
+                self.presentation
+                    .module_fades
+                    .push(legaia_engine_system::fade::FadeState::load(&t));
+                continue;
+            }
             self.battle.effect_spawns.push(
                 legaia_engine_battle::battle_events::BattleEffectSpawn {
                     actor_slot: caster,

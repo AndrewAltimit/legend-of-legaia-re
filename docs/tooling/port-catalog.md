@@ -40,6 +40,7 @@ One row per function address in the code ranges (SCUS `0x80010000-0x8006FFFF`, o
 | **dumped** | A Ghidra dump exists under `ghidra/scripts/funcs/` (gitignored - regenerable from the Ghidra project). |
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
+| **differential** | A `crates/retail-exec` test declares (`differential!`) that it runs the routine at this address against its port, and fails if it did not ([declarations](retail-kernel-differential.md#declaring-what-a-test-runs)). Read from the test sources, so it needs no disc. Ratcheted separately by `differential-coverage.py --check`. |
 | **live** | The Rust symbol carrying that tag is reachable, through non-test code, from a host entry point. Opt-in (`--live`); see [Reachability](#reachability-the-live-axis). |
 | **replaced** | Not live, and no host is owed: the port carries a `REPLACED-BY:` marker naming the Rust mechanism that does the routine's job. In `catalog.csv` and `--live-audit`; excluded from the wiring worklist and its denominator. See [`REPLACED-BY`](#replaced-by). |
 | **ignored** | The address is listed in `scripts/ci/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
@@ -54,6 +55,7 @@ One row per function address in the code ranges (SCUS `0x80010000-0x8006FFFF`, o
 | cited but not dumped, not ignored | **Dump worklist.** A dump references the address; no dump of it exists. | Add it to a dumper's `TARGETS` ([`ghidra.md`](ghidra.md#adding-a-new-function-dump)) - unless no routine begins there (below). |
 | ported but not documented | Provenance gap. | Backfill the doc, or remove the tag if the attribution is wrong. |
 | ported but not dumped | Provenance gap, opposite axis. | Dump it. |
+| ported + live, no differential | **Differential worklist.** Shipped code whose arithmetic nothing has run against the bytes. | Write a differential ([how](retail-kernel-differential.md#how-to-add-a-routine)); `--no-differential --live` lists them. |
 
 An ignore row retires a dump-worklist row exactly as it retires a port one. A `worklist_*` ignore section holds the claim "no routine begins at this VA", and such an address cannot be dumped without fabricating an entry point ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)). The standing case is PROT 0896: its `jal`s name addresses in a *different* build's executable ([`static-overlay-pipeline.md`](static-overlay-pipeline.md)), every one of them mid-body in this disc's `SCUS_942.54`, so each is an address claim to file rather than a dump to take.
 
@@ -298,6 +300,7 @@ python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature
 python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md
 python3 scripts/ci/port-catalog.py --live                # add the reachability column
 python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
+python3 scripts/ci/port-catalog.py --no-differential --live   # live ports no retail-exec differential runs
 python3 scripts/ci/port-catalog.py --live-audit          # reachability vs the source's class markers
 python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure
 python3 scripts/ci/port-catalog.py --check --allow-uncompared   # fast pass, skips the disclosure gap
@@ -462,7 +465,7 @@ Two consequences that look like defects and are not:
 - **The citation graph is dump-local.** "Cited" comes from grepping dump files, so an undumped helper has no outgoing edges.
 - **`documented` is broader than the curated directory.** Any doc page that mentions `FUN_<addr>` or `0x<addr>` counts. The catalog does not say which docs are authoritative.
 - **A `// PORT:` tag does not guarantee semantic equivalence.** It is a provenance link, not a correctness proof. Tests and retail comparison do that job, and `--live` answers only whether code is *reached*.
-- **No gate checks that a tag names the right routine.** [`port-provenance.md`](port-provenance.md) is the warn-only worklist for that.
+- **A tag naming the right routine is gated on the delta only.** [`port-provenance.md`](port-provenance.md) ranks suspicion and ratchets the unwaived count; a [differential](retail-kernel-differential.md#declaring-what-a-test-runs) is the one input that proves a tag, and it covers the addresses it runs ([the verification ladder](verification-ladder.md)).
 
 ## The runtime denominator (`replay-port-coverage.py`)
 

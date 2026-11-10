@@ -268,8 +268,10 @@ tail (`FUN_80021DF4` mode-3 arm, `0x800226D8..`) then every frame:
    (`FUN_8001A78C`), `H += h` (mod `0x168`), `S += s`, `V += v` (clamped
    `0..0xFF`), HSV->RGB (`FUN_8001A6C8`, caps `0xF8`), and when
    `mode == 1` a white/invert blend `c += (255 - 2c) * white >> 8`; the
-   repacked row is emitted as a fresh `LoadImage` packet onto the captured
-   rect (`FUN_800583C8`);
+   channels are repacked with `addu`, not `or` (`0x80019FC8..0x80019FE0`),
+   so under a negative white amount a negative channel carries into the
+   next field; the row is emitted as a fresh `LoadImage` packet onto the
+   captured rect (`FUN_800583C8`);
 4. advances `+0x9C` (clamped 1000).
 
 The arm runs **before** the part's move VM (`0x80022B94`), after the wait
@@ -929,6 +931,17 @@ and `(dx1 * S, 0, 0)`: screen-aligned, both at the particle's depth,
 corners `0x80` units above the particle - that reading foreshortens the sheet
 by the pitch's cosine (about `0.84` at `map01`'s pitch) and moves its bottom
 edge.
+
+The port runs both steps on the integer GTE camera
+(`legaia_render_kernels::gte::FieldGteView`, `fog_particles::fog_half_corners`):
+`FUN_8003D344`'s `MVMVA` into the translation, then the two points with the
+GTE's divide and saturation. Nothing culls a particle at or behind the eye:
+its `SZ` saturates to `0` and the divide to its ceiling, and the row and
+column tests decide on the saturated corners, as retail's do. The `NCLIP` runs
+on `SXY0` / `SXY1` as the `RTPT` left them and on `SXY2 = (x1, y0)` written
+back with the curvature term in, so on the overworld only that third corner
+is bent. The half-width's PRNG byte (`FUN_8003F838`) is the low byte of
+`(rate * 12 + 2) >> 16`: zero for every rate the spawner draws.
 
 On the overworld (`_DAT_1F800394 & 1`, `0x8003F958..0x8003F9A0`) the emitter
 also drops a half nearer than `SZ 0x310`, links it at `(SZ - 0x10) >> 5`, and

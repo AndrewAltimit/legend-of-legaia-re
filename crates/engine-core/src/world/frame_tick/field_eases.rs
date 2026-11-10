@@ -238,6 +238,17 @@ impl World {
             self.terrain.floor_tier_bobs = bobs;
         }
 
+        // Move-VM sub-op `0x29` ramps on the same ladder, through the SCUS
+        // property-ramp pool (`FUN_80036D80`). A rung past the LUT is
+        // retail writing off the end of the array, which the port declines.
+        if self.terrain.floor_ladder_ramps.active() != 0 {
+            for w in self.terrain.floor_ladder_ramps.tick(frame_delta) {
+                if let Some(rung) = self.terrain.floor_height_lut.get_mut(w.dest as usize) {
+                    *rung = w.value as i16;
+                }
+            }
+        }
+
         // A pack map's living ground: its rungs swing on the same ladder,
         // one wave per motion (`legaia_expansion_format::ground_motion`).
         // No map, no motion, no write.

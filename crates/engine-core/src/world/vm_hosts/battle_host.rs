@@ -578,17 +578,16 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         template: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
         id: i16,
     ) {
-        legaia_engine_system::fade::spawn_fade(
-            &mut self.world.presentation.fade,
-            &legaia_engine_system::fade::FadeTemplate {
-                kind: template.kind,
-                duration: template.duration,
-                start_rgb: template.start_rgb,
-                end_rgb: template.end_rgb,
-                mode: [template.delay, template.hold, 0],
-            },
-            id,
-        );
+        let t = legaia_engine_system::fade::FadeTemplate {
+            kind: template.kind,
+            duration: template.duration,
+            start_rgb: template.start_rgb,
+            end_rgb: template.end_rgb,
+            mode: [template.delay, template.hold, 0],
+        };
+        // The SM writes the whole template into `0x801C9070` first.
+        self.world.casting.fade_block = Some(t);
+        legaia_engine_system::fade::spawn_fade(&mut self.world.presentation.fade, &t, id);
         let pass = self.world.battle.anim_pass_vsyncs;
         self.world.presentation.fade_spawn_step = pass;
         if pass > 0

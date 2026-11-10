@@ -272,7 +272,8 @@ reading as evidence:
 | [`tags.py`](../../scripts/ci/port_provenance/tags.py), [`dumps.py`](../../scripts/ci/port_provenance/dumps.py), [`dump_features.py`](../../scripts/ci/port_provenance/dump_features.py) | `// PORT:` tags and their module; the dump corpus and its consensus; what a dump is evidence of |
 | [`call_sites.py`](../../scripts/ci/port_provenance/call_sites.py), [`citation_support.py`](../../scripts/ci/port_provenance/citation_support.py) | the extracted images and the caller / branch-site test; cited addresses no dump carries |
 | [`signals/`](../../scripts/ci/port_provenance/signals/__init__.py) | one module per signal: `module_orphans`, `absent_citations`, `doc_citations` (also `dual-label`), `non_entry` |
-| [`waivers.py`](../../scripts/ci/port_provenance/waivers.py), [`cli.py`](../../scripts/ci/port_provenance/cli.py) | the waiver file and the live set; the command line and report |
+| [`differential.py`](../../scripts/ci/port_provenance/differential.py) | the [differential declarations](#a-differential-is-evidence) as evidence, read through `scripts/ci/differential_map.py` |
+| [`waivers.py`](../../scripts/ci/port_provenance/waivers.py), [`cli.py`](../../scripts/ci/port_provenance/cli.py) | the waiver file and the live set; the command line, report and `--check` ratchet |
 
 ### A split-module row that names nothing regroups its tags silently
 
@@ -317,11 +318,20 @@ image-qualified tag as a `non-entry` - as a worklist.
 `port-catalog.py --live-only` writes. Prefer it: a wrong tag on an inert port is
 a doc bug, while a wrong tag on a live one also mis-credits disc coverage.
 
-This is a **worklist, not a gate**. It is warn-only and deliberately not wired
-into pre-commit - the surviving signals rank suspicion, they do not prove
-anything, and a blocking check that a reader learns to skip is worse than no
-check. `--strict` fails on any finding without a waiver, for a reader who has
-worked the list down.
+The report is a worklist: the signals rank suspicion, they do not prove
+anything. What gates is the **delta**. `--check` compares the unwaived count of
+each signal, and the count of waivers that match no finding, with
+`scripts/ci/port-provenance-baseline.json`, and fails when any of them rises; a
+fall is reported and kept with `--update-baseline`. The baseline sits at zero
+everywhere, so a commit that adds a finding owes it a read - fix the tag, or
+waive it with what the bytes showed - and a commit that makes a finding stop
+firing owes the waiver's deletion. A rise that has to land goes through the
+[loosening ledger](ratchet-integrity.md#a-baseline-may-not-loosen-silently).
+The ratchet runs in the pre-commit hook and is listed in the Repo Gates job;
+without the dump corpus or the extracted images it prints
+`SKIPPED, NOT RATCHETED` and exits 0, so it has teeth where the corpus is and
+in `full-gate.py`'s data pass. `--strict` remains for a hand run: it fails on
+any unwaived finding at all.
 
 `module-orphan` is the signal that has been pushed hardest on precision, and it
 is still not a gate on its own numbers. Against a hand-reviewed control set the
@@ -348,7 +358,7 @@ findings raised in one full pass:
 |---|---|---|
 | `dual-label` | 4 / 35 | **Yes.** Every one of the four was a byte-settleable contradiction between two pages, and the residue is the documented shapes - a coarse directory row beside a fine write-up, two topic pages of the same directory, a section about one arm of a dispatcher. |
 | `doc-citation` | 1 / 12 | **Yes.** The remaining shapes are enumerable - a callee's global, a field reached by `addu` off a formed base, a contrastive "not this pool", a caller's store site - and each new row is genuinely worth one read. |
-| `module-orphan` | 0 / 24 | **No, and the reason is structural.** |
+| `module-orphan` | 0 / 24 | **Not on its own numbers, and the reason is structural** - the ratchet counts it on the delta anyway (below). |
 | `non-entry` | 7 / 9 | **Yes.** Every row is a contradiction between two committed files; the benign shape (a bare-VA row beside a tag on the image it ports) is settled off the bytes - see [below](#an-image-qualified-tag-is-checkable-from-the-bytes). |
 
 The four `dual-label` defects are the argument for that row: `FUN_8003E8A8`
@@ -357,14 +367,19 @@ count, `FUN_80043264` scanning three slots rather than eight, and
 `FUN_8005E4D4`'s argument order. In three of the four a sibling page already had
 it right, which is exactly what the signal is built to notice.
 
-`module-orphan` is the one to leave warn-only, and this pass found the sharper
-reason. Three findings appeared in `cast_module_ticks.rs` with no Rust and no
+`module-orphan` is the one whose numbers do not stand on their own, and this
+pass found the sharper reason. Three findings appeared in `cast_module_ticks.rs` with no Rust and no
 dump changing: the [inherited-tail cut](disc-coverage.md#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail)
 re-keyed 38 extents in `dump-extent-attribution.csv`, the consensus vote then ran
 among a different set of dumps, and three addresses reported a different feature
 set. A signal that moves when a *neighbouring instrument* is corrected is
 reporting the corpus, and a gate on it fails commits that changed nothing it
 measures.
+
+The ratchet counts it all the same, because it gates the delta and not the
+class. A corpus correction that raises `module-orphan` fails the commit that
+made it, and the new rows are owed a read there - they are the rows the
+correction changed - with the ledger as the record when that read is deferred.
 
 ## Reading the tags against the bytes
 
@@ -502,6 +517,14 @@ whose states already match retail's key-on census exactly.
 | `801D5DE0` module-orphan | waived, partial | the casino prize list's renderer; the shop module ports two scoped slices, the cursor decode `0x801D5E40..0x801D5E9C` and the row ink |
 | `801CECD0` dual-label | resolved | both pages describe the boot asset-load machine; the functions table now links the boot page |
 | `801F69F8` non-entry | image-qualified | PROT 0940 opens `addiu sp,sp,-0x58` there; the tag names `overlay_cast_glare_divide_0940_801f69f8` |
+| `801CEB84` non-entry | `REF` | the battle grid emitter `FUN_801D02C0` relocated into the duel overlay, 290 instructions identical modulo relocation; the floor cue calls that port's `grid_ir0_raw`, so the duplicate is not ported twice |
+| `801D3390` module-orphan | partial, arms named | the lineup tick's `+0x78` pick and clip step match; the `DAT_801DBF74` match (`0x801D33DC`) and the match-phase retire (`0x801D33A8`) are named on the tag as not carried, and with `801CEB84` gone the module has too few siblings to vote |
+| `8002519C` module-orphan | waived, partial | the actor-list sweep's retire arm, `andi 0x8` on `+0x10` at `0x800251E8`; the Rust is that test over the placement contexts |
+| `801F8EAC` module-orphan | waived, full | PROT 0904's stager: arm 0 seats `0x801F90B0` on the caller's `+0x14` / `+0x24` at `0x1000` |
+| `80026740` module-orphan | waived, partial | the game-side pause wrapper: volume to zero (`jal 0x8002657C`), then the libsnd pause through `0x8006282C`; its gates and the `0x8007B708` clear are the caller's |
+| `801F452C` module-orphan | waived, full | copies the spell name off `0x800754D0` into `ctx+0x1F9` and appends the string at `0x801F6844` |
+| `8004CE2C` module-orphan (two modules) | waived, partial | the party walk `0x8004CE6C..0x8004D018`: Maximum AP's `+0x6C0 & 0x400` pin and the seven guard masks at `0x8004CEF4..0x8004CFFC`, matching `GUARD_SWEEP_MASKS` in order |
+| `801DDB30` module-orphan | waived, partial | the finisher's spirit stage `0x801DE1C4..0x801DE2D8`: the percent with its floor, the `0x200` / `0x100` bonuses (`multu 0xCCCCCCCD` is the `/ 10`), the clamp to `0x64` |
 
 ### A waiver can check the operands and miss the owner
 
@@ -659,6 +682,32 @@ corroborating siblings in a `--show-waived --signal module-orphan` run.
   defect - the defect was the claim that the routine was the shop's. A finding
   names both sides and a human decides which it is.
 
+## A differential is evidence
+
+Every signal above ranks how unlikely a pairing looks. A
+[retail kernel differential](retail-kernel-differential.md#declaring-what-a-test-runs)
+answers the question outright: a `differential!` declaration fails its own test
+unless the routine at that entry was run off the named image, and the test
+fails unless a Rust kernel computed what it wrote. So the checker reads the
+declarations (no disc needed) and reports every tag site whose address a
+differential runs as **verified**. A `module-orphan` or `absent-citation`
+finding on a verified site is settled by the run, not by a waiver, and prints
+`[differential-verified: <test>]` under `--show-waived`. `non-entry` is not
+settled this way - it is a contradiction between two committed files - and the
+doc-side signals are about prose.
+
+The credit is per address, as the differential's is. A tag naming an image
+(`overlay_<label>_<NNNN>_<addr>`) is credited only by a declaration of that
+PROT entry. A tag site elsewhere in the tree carrying the same address is
+credited too, though the test exercised one kernel: `FUN_8004998C`'s tag on the
+battle effect emitter reads as verified through the pose decoder's
+differential, which runs the same routine's other half. The waiver there still
+says which half the tag ports.
+
+This is why the two checks are rungs of one ladder rather than alternatives:
+provenance ranks every tag cheaply and gates on the delta, and the
+differential proves the ones it runs ([the verification ladder](verification-ladder.md)).
+
 ## An empty corpus is not a clean run
 
 `ghidra/scripts/funcs/` is gitignored, so a fresh clone or a worktree has no
@@ -672,9 +721,10 @@ zero**, so a reader working where the corpus is absent by construction rather
 than by accident could take a green exit status for a checked tree. A
 corpus-blind run now exits **2**, and the message names the directory it looked
 in and the `--funcs` flag that fixes it. `--allow-vacuous` restores the old exit
-0 for a caller that genuinely wants the no-op. Nothing in CI or pre-commit runs
-this checker, so the new exit code cannot turn a passing gate red; it only stops
-a hand-run from reading as a pass.
+0 for a caller that genuinely wants the no-op. The gate's own mode, `--check`,
+takes the other branch on purpose: it prints `SKIPPED, NOT RATCHETED` and exits
+0, the convention every corpus ratchet here follows, so a clone without the
+corpus passes and the log still says nothing was compared.
 
 A run with the dumps and without the extracted images is the same failure in
 the other direction: it reports too much rather than nothing, and the excess

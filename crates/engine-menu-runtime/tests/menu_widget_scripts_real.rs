@@ -150,3 +150,95 @@ fn every_scanned_program_executes_through_the_interpreter() {
     }
     assert!(executed >= 1);
 }
+
+/// Every program the slide lock runs resolves off the disc, and each entry
+/// program closes the open set or opens a window - so every screen change
+/// raises the latch (`legaia_engine_menus::menu_slide_lock`).
+#[test]
+fn the_slide_lock_programs_resolve_and_each_moves_a_window() {
+    let Some(overlay) = menu_overlay_bytes() else {
+        eprintln!("[skip] extracted/PROT.DAT or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let scripts =
+        legaia_engine_menus::menu_widget::MenuWidgetScripts::resolve_from_overlay(&overlay)
+            .expect("scripts");
+    use legaia_engine_menus::menu_slide_lock::{SUBSCREEN_ENTRY_PROGRAMS, SUBSCREEN_STEP_PROGRAMS};
+    let moves = |va: u32| {
+        let bytes = scripts.program(va).unwrap_or_else(|| panic!("{va:#x}"));
+        bytes
+            .chunks(4)
+            .take_while(|i| i[0] != 0)
+            .any(|i| matches!(i[0], 0x01 | 0x02 | 0x04 | 0x05))
+    };
+    for (id, vas) in SUBSCREEN_ENTRY_PROGRAMS {
+        assert!(vas.iter().any(|&va| moves(va)), "sub-screen {id:#x}");
+    }
+    for &(id, step, enter, leave) in SUBSCREEN_STEP_PROGRAMS {
+        assert!(
+            moves(enter) && moves(leave),
+            "sub-screen {id:#x} step {step}"
+        );
+    }
+}
+
+/// The casino prize counter on the disc's window programs: the opening
+/// frame is the counter's phase 0, the next eleven read a raised latch, and
+/// the twelfth after it takes the pad; the Yes / No window's program runs on
+/// the press that opens it, so the pad is read again twelve frames after
+/// that press. Left and Right never step it.
+#[test]
+fn the_prize_counter_waits_its_windows_out() {
+    use legaia_engine_minigames::prize_exchange::PrizeRecord;
+    use legaia_engine_system::input::PadButton as B;
+    let Some(overlay) = menu_overlay_bytes() else {
+        eprintln!("[skip] extracted/PROT.DAT or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let mut w = world_with_overlay(&overlay);
+    w.shops.prize_blocks = vec![vec![
+        PrizeRecord {
+            item_id: 0x10,
+            gate: 0,
+            price: 100,
+        },
+        PrizeRecord {
+            item_id: 0x11,
+            gate: 0,
+            price: 100,
+        },
+    ]];
+    w.minigames.casino_coins = 1_000;
+    assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
+    let mut menu = MenuRuntime::new(std::env::temp_dir());
+    assert!(
+        menu.poll_field_overlay(&mut w).is_some(),
+        "the counter opens"
+    );
+    let cursor = |m: &MenuRuntime| m.prize_session.as_ref().unwrap().cursor();
+    // Down on every frame until it lands: frames 1..=11 after the open read
+    // the latch the open's slide raised.
+    let mut frame = 0;
+    while cursor(&menu) == 0 {
+        frame += 1;
+        assert!(frame < 40);
+        let _ = menu.step_field_session(&mut w, B::Down as u16);
+    }
+    assert_eq!(frame, 12, "the opening frame plus eleven");
+    // Left / Right: the list kernel reads neither.
+    for b in [B::Left, B::Right] {
+        let _ = menu.step_field_session(&mut w, b as u16);
+        assert_eq!(cursor(&menu), 1, "{b:?}");
+    }
+    // Cross opens the Yes / No window on the press; Up lands twelve later.
+    let _ = menu.step_field_session(&mut w, B::Cross as u16);
+    let confirm = |m: &MenuRuntime| m.prize_session.as_ref().unwrap().confirm_cursor();
+    assert_eq!(confirm(&menu), 1, "No is the default");
+    let mut frame = 0;
+    while confirm(&menu) == 1 {
+        frame += 1;
+        assert!(frame < 40);
+        let _ = menu.step_field_session(&mut w, B::Up as u16);
+    }
+    assert_eq!(frame, 12, "the window's slide-in");
+}

@@ -1198,3 +1198,77 @@ fn the_swirl_transition_runs_its_own_252_frames() {
     assert_eq!(plain_clock as i32, INTRO_DURATION_FRAMES);
     assert_eq!(plain_ticks, INTRO_DURATION_FRAMES + 1);
 }
+
+/// The hosts' "start a battle here" control: the scene's lowest rollable
+/// row, armed through the normal transition, with the live loop raised when
+/// encounters were off; nothing in a scene with no formation.
+#[test]
+fn force_battle_here_arms_the_first_rollable_row() {
+    use legaia_engine_battle::encounter::{EncounterEntry, EncounterPhase, EncounterTable};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+    let mut w = World::new();
+    assert_eq!(w.force_battle_here(), None, "no formation registered");
+    w.set_active_scene_label("forcescene");
+    let mut table = EncounterTable::new("forcescene");
+    table.push(EncounterEntry::new(2, 1));
+    table.push(EncounterEntry::new(5, 1));
+    w.install_man_encounter(
+        table,
+        vec![
+            FormationDef::new(2, Vec::new()),
+            FormationDef::new(5, vec![FormationSlot::new(9)]),
+        ],
+    );
+    w.toggles.live_gameplay_loop = false;
+    w.battle.player_driven = false;
+    assert_eq!(w.force_battle_here(), Some(5), "row 2 carries no monsters");
+    assert!(w.toggles.live_gameplay_loop);
+    assert!(w.battle.player_driven);
+    match w.encounters.session.as_ref().unwrap().phase() {
+        EncounterPhase::Transition { roll, .. } => assert_eq!(roll.formation_id, 5),
+        p => panic!("not armed: {p:?}"),
+    }
+}
+
+/// The transition init's seeder draws come off the world's one stream, as
+/// retail's come off the BIOS seed word: on the first frame the world records
+/// where they start and steps past exactly as many as the style's seeder
+/// makes (a kor capture counts 706 for the tile shatter at sub-style 0), and
+/// no later transition frame draws.
+#[test]
+fn the_intro_seeders_draw_off_the_world_stream() {
+    use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
+    use legaia_render_kernels::battle_intro_styles::{intro_seeder_draws, select_intro_style};
+
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.rng_state = 0x0963_2944;
+    let choice = select_intro_style(&world.battle_intro_style_inputs(3));
+    let draws = intro_seeder_draws(choice.style, choice.sub_style);
+    assert!(draws > 0, "the ordinary encounter's style draws");
+
+    world.tick_encounter();
+    assert_eq!(world.battle.intro_rand_state, 0x0963_2944);
+    let mut expect = 0x0963_2944u32;
+    for _ in 0..draws {
+        expect = legaia_engine_system::rand::world_lcg_step(expect);
+    }
+    assert_eq!(world.rng_state, expect);
+    while matches!(
+        world.encounters.session.as_ref().unwrap().phase(),
+        EncounterPhase::Transition { .. }
+    ) {
+        world.tick_encounter();
+    }
+    assert_eq!(world.rng_state, expect, "the transition's ticks draw none");
+}

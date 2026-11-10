@@ -1,6 +1,7 @@
 //! The exchange rules on [`BakaFight`]: move commit, AI pick, the resolver, damage and round bookkeeping.
 
 use super::*;
+use legaia_engine_system::rand::BiosRand;
 use legaia_minigame_formats::baka_opponents::ROUND_WIN_TARGET;
 
 impl BakaFight {
@@ -573,5 +574,80 @@ impl BakaFight {
         );
         self.score_rows[1] += gain.combo_gain;
         self.score_rows[2] += gain.bonus_gain;
+    }
+}
+
+/// One fighter's exchange state as the retail kernel differential seats it:
+/// the block words `+0x08` HP, `+0x24` chosen type, `+0x2C` down, `+0x30`
+/// combo, `+0x88` pattern cursor and `+0xA0` pending critical.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExchangeSeat {
+    pub hp: i32,
+    /// `0` idle, else [`BakaAttack::type_id`].
+    pub chosen: u8,
+    pub committed: bool,
+    pub combo: i32,
+    pub ai_cursor: usize,
+    pub crit_pending: bool,
+}
+
+impl BakaFight {
+    /// Seat both fighters' exchange state, the settle timer `DAT_801DBF54`
+    /// and the `rand()` stream, for the retail kernel differential.
+    #[doc(hidden)]
+    pub fn seat_exchange(&mut self, seats: [ExchangeSeat; 2], settle_timer: i32, rand_state: u32) {
+        for (f, s) in self.f.iter_mut().zip(seats) {
+            f.hp = s.hp;
+            f.chosen = BakaAttack::from_type_id(s.chosen);
+            f.committed = s.committed;
+            f.combo = s.combo;
+            f.ai_cursor = s.ai_cursor;
+            f.crit_pending = s.crit_pending;
+        }
+        self.settle_timer = settle_timer;
+        self.rng = BiosRand::new(rand_state);
+    }
+
+    /// Both fighters' exchange state as [`Self::seat_exchange`] seats it.
+    #[doc(hidden)]
+    pub fn exchange_seats(&self) -> [ExchangeSeat; 2] {
+        self.f.each_ref().map(|f| ExchangeSeat {
+            hp: f.hp,
+            chosen: f.chosen.map_or(0, BakaAttack::type_id),
+            committed: f.committed,
+            combo: f.combo,
+            ai_cursor: f.ai_cursor,
+            crit_pending: f.crit_pending,
+        })
+    }
+
+    /// The settle timer `DAT_801DBF54`.
+    #[doc(hidden)]
+    pub fn settle_timer(&self) -> i32 {
+        self.settle_timer
+    }
+
+    /// [`Self::resolve`] in the retail routine's return code: `-1` open,
+    /// the winning seat, or `3` for a draw.
+    #[doc(hidden)]
+    pub fn resolve_exchange(&mut self, frame_step: i32) -> i32 {
+        match self.resolve(frame_step) {
+            ExchangeOutcome::Undecided => -1,
+            ExchangeOutcome::FighterWins(s) => s as i32,
+            ExchangeOutcome::Draw => 3,
+        }
+    }
+
+    /// [`Self::ai_pick`], as the attack's type id.
+    #[doc(hidden)]
+    pub fn pick_ai_attack(&mut self, slot: usize) -> u8 {
+        self.ai_pick(slot).type_id()
+    }
+
+    /// [`Self::roll_comeback_crit`].
+    #[doc(hidden)]
+    pub fn roll_crit(&mut self, slot: usize) {
+        self.roll_comeback_crit(slot);
     }
 }

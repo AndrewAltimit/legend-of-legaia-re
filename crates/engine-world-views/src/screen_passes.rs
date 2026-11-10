@@ -291,35 +291,32 @@ impl<'a> HostView<'a> {
 ///
 /// Each control point is turned by the body's facing and set on its ground
 /// base by retail's own arithmetic (`battle_trail::trail_world_point`), then
-/// placed and projected the way both hosts place a battle body
-/// (`battle_trail::project_battle_point`: frame flip, `world_scale`, the
-/// host's `vp`). The hosts pass only their battle view-projection - the
-/// native window's glam composition, which
-/// `battle_vp_matches_the_native_glam_composition` pins to the page's
-/// `legaia_engine_camera::projection::battle_vp` - so the trail is one
-/// kernel on both. A point past the near plane truncates its step's sweep
-/// rather than smearing a wrapped vertex.
-pub fn weapon_trail_prims(world: &World, vp: &[f32; 16], world_scale: f32) -> Vec<ScreenPrim> {
+/// projected as the emitter projects it, through the billboard projector
+/// under the integer matrix the battle frame loads
+/// (`battle_trail::project_trail_point` over
+/// `FieldGteView::from_battle_pose(world.battle_cam_pose())`), onto the
+/// retail 320x240 stage. No host projects a trail point of its own.
+pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
     use legaia_render_kernels::battle_trail as bt;
+    let draws = crate::battle_draws::battle_weapon_trail_draws(world);
+    if draws.is_empty() {
+        return Vec::new();
+    }
+    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_cam_pose());
     let mut out = Vec::new();
-    for d in crate::battle_draws::battle_weapon_trail_draws(world) {
+    for d in draws {
         let Some(actor) = world.actors.get(d.actor_slot as usize) else {
             continue;
         };
         let base = [actor.move_state.world_x, actor.move_state.world_z];
         let yaw = actor.battle.facing_angle;
-        let mut steps = Vec::with_capacity(d.steps.len());
-        'draw: for s in &d.steps {
-            let mut pts = [(0i16, 0i16); bt::TRAIL_POINTS];
-            for (i, t) in s.iter().enumerate() {
-                let p = bt::trail_world_point(base, yaw, *t);
-                match bt::project_battle_point(vp, world_scale, p) {
-                    Some(xy) => pts[i] = xy,
-                    None => break 'draw,
-                }
-            }
-            steps.push(pts);
-        }
+        let steps: Vec<[bt::TrailVertex; bt::TRAIL_POINTS]> = d
+            .steps
+            .iter()
+            .map(|s| {
+                s.map(|t| bt::project_trail_point(&view, 0, bt::trail_world_point(base, yaw, t)))
+            })
+            .collect();
         out.extend(bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT));
     }
     out
@@ -388,12 +385,18 @@ pub fn cast_ribbon_prims(
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
     use legaia_render_kernels::streak_pass::clip_ribbon_quads;
-    let Some(ring) = world.battle.cast_ribbons else {
-        return Vec::new();
-    };
     let frame = world.clock.display_frames as u32;
     let mut out = Vec::new();
-    for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
+    // A landed move projectile's bolts (`BattleState::flight_ribbons`) are the
+    // same call on the slot's position, numbered on after the arm's points.
+    let rings = [world.battle.cast_ribbons, world.battle.flight_ribbons];
+    let points = rings.iter().flatten().flat_map(|ring| {
+        ring.points
+            .iter()
+            .take(usize::from(ring.count))
+            .map(move |p| (*p, ring.trail_id))
+    });
+    for (i, (p, trail_id)) in points.enumerate() {
         // The points are retail battle space (Y down, the stack trio the arm
         // hands `FUN_801E1D98`); the battle view-projection takes the drawn
         // frame, whose models carry the `scale(1,-1,1)` it cancels
@@ -405,7 +408,7 @@ pub fn cast_ribbon_prims(
         let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
         let quads = clip_ribbon_quads(
             at,
-            ring.trail_id,
+            trail_id,
             mvp,
             frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
         );
@@ -443,7 +446,7 @@ mod tests {
         assert!(v.world_map_marker_prims(true).is_empty());
         assert!(v.world_map_sky_prims().is_empty());
         assert_eq!(v.curve_scale(None), 0.0);
-        assert!(weapon_trail_prims(&world, &glam::Mat4::IDENTITY.to_cols_array(), 4.0).is_empty());
+        assert!(weapon_trail_prims(&world).is_empty());
         assert!(move_fx_streak_quads(&world, &glam::Mat4::IDENTITY).is_empty());
     }
 
@@ -498,9 +501,15 @@ mod tests {
             .expect("drawn")
             .pos
             .map(|c| c as i32);
+        // The blob's grid goes through the GTE's integer camera, the matrix
+        // `FUN_800172C0` loads for the view.
         let centre = |view: &FieldCameraView, p: [i32; 3]| {
-            let (sx, sy, _) = world.field_fx_view(view).project_gte(p).expect("in front");
-            (sx, sy)
+            legaia_render_kernels::gte::FieldGteView::from_field_view(
+                view,
+                legaia_engine_camera::projection::GTE_OFY as i32,
+            )
+            .rtps(p.map(|c| c as i16))
+            .sxy
         };
         let prims = v.drop_shadow_prims(Some(shot), false);
         assert_eq!(prims.len(), 8, "four cells per caster");

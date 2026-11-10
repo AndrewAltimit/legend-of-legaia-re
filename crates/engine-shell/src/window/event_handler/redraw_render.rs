@@ -377,6 +377,28 @@ impl PlayWindowApp {
             self.tick_no,
             &mut self.sweep_next_tick,
         );
+        // `Print Screen`: the frame this redraw presents, every layer and
+        // enhancement included, into the player's pictures folder.
+        if std::mem::take(&mut self.player_shot_pending) {
+            let text = match r.capture_rgba_settled(&|| target(&scene)) {
+                Ok(img) => {
+                    let scene_name = self
+                        .session
+                        .host
+                        .scene
+                        .as_ref()
+                        .map(|s| s.name.clone())
+                        .unwrap_or_default();
+                    match crate::window::player_screenshot::save(&img, &scene_name) {
+                        Ok(path) => format!("Screenshot saved: {}", path.display()),
+                        Err(e) => format!("Screenshot failed: {e:#}"),
+                    }
+                }
+                Err(e) => format!("Screenshot failed: {e:#}"),
+            };
+            log::info!("{text}");
+            self.notice = Some((text, std::time::Instant::now()));
+        }
         self.present_frame(r, &scene, &screen_prims, &light_prims);
     }
 }

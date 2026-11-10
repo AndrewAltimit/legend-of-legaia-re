@@ -34,6 +34,7 @@ const S3: usize = 19;
 
 #[test]
 fn a_death_pays_what_retail_pays() {
+    differential!(scus(ARM));
     let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -191,6 +192,9 @@ fn a_death_pays_what_retail_pays() {
 
 #[test]
 fn no_shipped_monster_steals_item_zero() {
+    not_a_differential!(
+        "a census of the steal table against the PROT 0867 records; runs no routine"
+    );
     let (Some(scus), Some(disc)) = (scus(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -207,6 +211,7 @@ fn no_shipped_monster_steals_item_zero() {
 
 #[test]
 fn a_spell_costs_what_retail_charges() {
+    differential!(scus(0x8003_5394));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

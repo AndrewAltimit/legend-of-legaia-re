@@ -1,11 +1,14 @@
 //! The casino slot machine's rule kernels in PROT 0975: the LCG `FUN_801D30CC`,
 //! the per-spin feature roll `FUN_801D258C`, the reel stop `FUN_801D2114` with its
 //! landing search and the roll to the row `FUN_801D0554`, the win evaluation
-//! `FUN_801D13E8`.
+//! `FUN_801D13E8`, the bonus-symbol scanner `FUN_801D1AF4`.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_engine_minigames::slot_machine::{SlotMachine, SlotSeat, feature_roll};
+use legaia_engine_minigames::slot_machine::{
+    SlotMachine, SlotRng, SlotSeat, feature_roll, land_row,
+};
 use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::minigame_slot_scene::{LANDING_LINE_BY_JITTER, PAYLINE_ROW_OFFSETS};
 use legaia_minigame_formats::slot_payout;
 use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
@@ -13,6 +16,8 @@ use std::rc::Rc;
 
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const RAND: u32 = 0x8005_6798;
+const LCG: u32 = 0x801D_30CC;
+const LAND: u32 = 0x801D_2440;
 const LCG_WORD: u32 = 0x801D_3C80;
 const JITTER: u32 = 0x801D_4134;
 const NORMAL_TARGET: u32 = 0x801D_3CB8;
@@ -32,6 +37,8 @@ const BUDGET: u32 = 0x801D_3CF0;
 const SPINNING: u32 = 0x801D_3D00;
 const LOCKED: u32 = 0x801D_3D10;
 const SPIN_TIMER: u32 = 0x801D_3C90;
+const SCAN: u32 = 0x801D_1AF4;
+const ANTICIPATION: u32 = 0x801D_3CA4;
 
 fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, slot_payout::SlotPayoutTable)> {
     let (mut cpu, disc) = (scus_cpu()?, disc()?);
@@ -51,6 +58,7 @@ fn rig(state: &Rc<Cell<u32>>) -> Option<(Cpu, slot_payout::SlotPayoutTable)> {
 
 #[test]
 fn the_feature_roll_rolls_what_retail_rolls() {
+    differential!(prot(975, 0x801D_258C));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, _)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -137,6 +145,7 @@ fn seed_retail(cpu: &mut Cpu, seat: &SlotSeat, raw: [i32; 3]) {
 
 #[test]
 fn a_spin_pays_what_retail_pays() {
+    differential!(prot(975, 0x801D_13E8));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, payouts)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -210,6 +219,7 @@ fn a_spin_pays_what_retail_pays() {
 
 #[test]
 fn a_reel_stops_where_retail_stops() {
+    differential!(prot(975, 0x801D_0554), prot(975, 0x801D_2114));
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, payouts)) = rig(&state) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -258,4 +268,133 @@ fn a_reel_stops_where_retail_stops() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn the_lcg_steps_as_retail_steps() {
+    differential!(prot(975, LCG));
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, _)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x4C43_4720);
+    for chain in 0..2000 {
+        let seed = [0, 1, u32::MAX, 0x3333_3333, 0xFFFF_0000, rng.next()][rng.below(6) as usize];
+        cpu.mem.wr32(LCG_WORD, seed);
+        let mut port = SlotRng::new(seed);
+        for step in 0..50 {
+            assert_eq!(cpu.call(LCG, &[]), Stop::Returned);
+            let p = port.next_u32();
+            assert_eq!(
+                cpu.mem.rd32(LCG_WORD),
+                p,
+                "chain {chain} step {step} seed {seed:#x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_landing_search_lands_where_retail_lands() {
+    differential!(prot(975, LAND));
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, _)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x4C41_4E44);
+    let (mut found, mut missed, mut failures) = (0, 0, Vec::new());
+    for round in 0..200_000 {
+        let kinds = [3, 6, 10][rng.below(3) as usize];
+        let strips = gen_strips(&mut rng, 0, kinds);
+        let reel = rng.below(3) as usize;
+        let raw = rng.below(0x1400) as i32;
+        let jitter = rng.below(5) as i32;
+        let depth = [0, 1, 3, 6, 20, 25, rng.below(8) as usize][rng.below(7) as usize];
+        let target = rng.below(11) as u8;
+        for (r, strip) in strips.iter().enumerate() {
+            for (i, &cell) in strip.iter().enumerate() {
+                cpu.mem
+                    .wr32(STRIPS + (r as u32 * 20 + i as u32) * 4, u32::from(cell));
+            }
+        }
+        cpu.mem.wr32(REEL_POS + reel as u32 * 4, raw as u32);
+        cpu.mem.wr32(JITTER, jitter as u32);
+        let args = [reel as u32, depth as u32, u32::from(target)];
+        assert_eq!(cpu.call(LAND, &args), Stop::Returned);
+        let landed = cpu.regs.r[V0] as i32;
+        let retail = (landed + 0x10).rem_euclid(20) as usize;
+
+        let line = LANDING_LINE_BY_JITTER[jitter as usize];
+        let from_row = ((raw >> 8) + 0x10).rem_euclid(20) as usize;
+        let port = land_row(
+            &strips[reel],
+            from_row,
+            depth,
+            Some(target),
+            PAYLINE_ROW_OFFSETS[line][reel],
+        );
+        let hit =
+            (1..=depth.min(20)).any(|t| strips[reel][((raw >> 8) as usize + t) % 20] == target);
+        found += u32::from(hit);
+        missed += u32::from(!hit);
+        if retail != port && failures.len() < 6 {
+            failures.push(format!(
+                "round {round} reel {reel} raw {raw:#x} jitter {jitter} depth {depth} target \
+                 {target}: retail {landed} ({retail}) port {port} strip {:?}",
+                strips[reel]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(found > 50_000 && missed > 50_000, "{found} {missed}");
+}
+
+/// The bonus-symbol scanner `FUN_801D1AF4` over random strips with one, two
+/// or three reels landed, against `SlotMachine::anticipation_scan`: the
+/// latch `DAT_801D3CA4` it writes (`1` punch pair, `2` kick pair, untouched
+/// otherwise).
+#[test]
+fn the_bonus_scanner_latches_what_retail_latches() {
+    differential!(prot(975, SCAN));
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, payouts)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut m = SlotMachine::new(payouts, 1, 100);
+    let mut rng = Rng(0x5343_414E);
+    let mut seen = [0; 3];
+    for round in 0..100_000 {
+        // Punch `9` and kick `8` among few kinds, so pairs land often.
+        let strips = gen_strips(&mut rng, 6, 4);
+        let raw: [i32; 3] = std::array::from_fn(|_| rng.below(0x1400) as i32);
+        let landed: [bool; 3] = std::array::from_fn(|_| rng.below(3) != 0);
+        let seat = SlotSeat {
+            strips,
+            reel_pos: raw.map(|p| (p + 0x1000).rem_euclid(0x1400)),
+            feature_mode: 0,
+            bonus_spins: 0,
+            net_take: 0,
+            rng_state: rng.next(),
+            jitter: 0,
+            normal_target: 2,
+        };
+        seed_retail(&mut cpu, &seat, raw);
+        for r in 0..3u32 {
+            cpu.mem.wr32(LOCKED + r * 4, u32::from(landed[r as usize]));
+        }
+        cpu.mem.wr32(ANTICIPATION, 0);
+        assert_eq!(cpu.call(SCAN, &[]), Stop::Returned);
+        let retail = cpu.mem.rd32(ANTICIPATION) as i32;
+        m.seat(seat);
+        let port = m.scan_anticipation_landed(landed);
+        assert_eq!(
+            retail, port,
+            "round {round} raw {raw:?} landed {landed:?} strips {strips:?}"
+        );
+        seen[retail as usize] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 5000), "{seen:?}");
 }

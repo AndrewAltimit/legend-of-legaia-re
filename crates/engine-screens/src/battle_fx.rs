@@ -59,7 +59,7 @@ pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
         return Vec::new();
     }
     let vp = battle_fx_vp(world);
-    let mut out = weapon_trail_prims(world, &vp, BATTLE_WORLD_SCALE);
+    let mut out = weapon_trail_prims(world);
     let mvp = glam::Mat4::from_cols_array(&vp)
         * glam::Mat4::from_scale(glam::Vec3::splat(BATTLE_WORLD_SCALE));
     out.extend(

@@ -38,7 +38,26 @@ pub fn is_sprite_arm(s: &ActorState) -> bool {
     s.move_substate == DRAW_KIND_MULTI as i16 && s.field_9e & SPRITE_ARM_BIT != 0
 }
 
-/// The node's quad as a local-space VRAM mesh (one quad, two triangles),
+/// Whether the prim dispatcher draws the node's quad through handler bank
+/// 3's split leaf: the colour word's mode bit `0x20` selects bank 3
+/// (`FUN_80043390`), and bank 3 swaps only the gouraud-textured quad leaf
+/// (kind 19, `FUN_80045BB4`) - a flat `FT4` takes bank 1's leaf whole.
+fn splits_into_gt3s(
+    quad: &legaia_render_kernels::sprite_arm::SpriteArmQuad,
+    colour: &ColourWord,
+) -> bool {
+    colour.split_quads && quad.gouraud
+}
+
+/// Whether a sprite-arm node's quad draws as bank 3's sixteen `GT3`s, which
+/// link on `AVSZ3` (the host's tessellated link offset).
+pub fn sprite_arm_tessellated(s: &ActorState) -> bool {
+    is_sprite_arm(s)
+        && sprite_arm_quad(s.field_9e, s).is_some_and(|q| splits_into_gt3s(&q, &ColourWord::of(s)))
+}
+
+/// The node's quad as a local-space VRAM mesh (one quad, two triangles; or
+/// sixteen triangles when the colour word routes it to bank 3's split leaf),
 /// already scaled by `+0x72 / 0x1000`, with the colour word applied to the
 /// packet colour and the TSB word. `None` for a state that is not a
 /// sprite-arm node or whose plane selector is the uninitialised mode `3`.
@@ -51,11 +70,48 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
     let rgb = colour.cue(quad.rgb);
     // A draw-time packet, not a resident TMD word: the prologue grade's
     // packet rewrite never reaches it (`TSB_RUNTIME_PACKET_BIT`).
+    // A `GT4` (or bank 3's `GT3`s) carries one colour on every corner, so
+    // it is tagged Gouraud for the dither the shaders cannot read off it
+    // (`TSB_GOURAUD_BIT`).
     let tsb = {
         let t = quad.tpage | (u16::from(colour.abr) << 5);
-        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi) | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT
+        let gouraud = if quad.gouraud {
+            legaia_tmd::mesh::TSB_GOURAUD_BIT
+        } else {
+            0
+        };
+        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi)
+            | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT
+            | gouraud
     };
     let k = f32::from(s.field_72) / 4096.0;
+    if splits_into_gt3s(&quad, &colour) {
+        // Handler bank 3's gouraud-textured quad leaf `FUN_80045BB4`: the
+        // quad goes out as sixteen `GT3`s, each cued per vertex.
+        use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
+        let corners = std::array::from_fn(|c| SplitVertex {
+            pos: quad.verts[c],
+            rgb: quad.rgb,
+            uv: quad.uvs[c],
+        });
+        let tris = subdivide_quad(corners);
+        let mut mesh = legaia_tmd::mesh::VramMesh {
+            positions: Vec::with_capacity(tris.len() * 3),
+            uvs: Vec::with_capacity(tris.len() * 3),
+            cba_tsb: Vec::with_capacity(tris.len() * 3),
+            indices: Vec::with_capacity(tris.len() * 3),
+            normals: vec![[0.0; 3]; tris.len() * 3],
+            colors: Vec::with_capacity(tris.len() * 3),
+        };
+        for v in tris.into_iter().flatten() {
+            mesh.indices.push(mesh.positions.len() as u32);
+            mesh.positions.push(v.pos.map(|c| f32::from(c) * k));
+            mesh.uvs.push(v.uv);
+            mesh.cba_tsb.push([quad.clut, tsb]);
+            mesh.colors.push(colour.cue(v.rgb));
+        }
+        return Some(mesh);
+    }
     let mut mesh = legaia_tmd::mesh::VramMesh {
         positions: Vec::with_capacity(4),
         uvs: Vec::with_capacity(4),
@@ -83,16 +139,31 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
 /// in the keyframe-mesh mode draws one quad per posed part instead
 /// ([`sprite_arm_draws`]).
 pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
+    sprite_arm_draw_row(s, Default::default())
+}
+
+/// [`sprite_arm_draw`] under the deformation-table row the part's `+0x6D`
+/// names ([`crate::part_shatter::shatter_part_mesh_row`]).
+pub fn sprite_arm_draw_row(
+    s: &ActorState,
+    row: legaia_render_kernels::shatter::ShatterRow,
+) -> Option<crate::effect_ribbon::RibbonDraw> {
     let mut mesh = sprite_arm_vram_mesh(s)?;
     // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
-    crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
+    crate::part_shatter::apply_part_shatter_row(
+        &mut mesh,
+        crate::part_shatter::part_shatter_word(s),
+        row,
+    );
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
         rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,
         single_sided: !legaia_render_kernels::sprite_arm::ColourWord::of(s).double_sided,
-        tessellated: false,
+        tessellated: sprite_arm_tessellated(s)
+            && crate::part_shatter::part_shatter_word(s) == 0
+            && s.field_42 == 0,
         object_effect_kind: s.field_42,
         object_effect_scale: f32::from(s.field_72) / 4096.0,
     })
@@ -120,7 +191,16 @@ pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDra
 /// to the animated renderer)
 /// PORT: FUN_8001B964 (the per-part pose of a sprite-arm node's slots)
 pub fn sprite_arm_draws(s: &ActorState) -> Vec<crate::effect_ribbon::RibbonDraw> {
-    let Some(base) = sprite_arm_draw(s) else {
+    sprite_arm_draws_row(s, Default::default())
+}
+
+/// [`sprite_arm_draws`] under the deformation-table row the part's `+0x6D`
+/// names.
+pub fn sprite_arm_draws_row(
+    s: &ActorState,
+    row: legaia_render_kernels::shatter::ShatterRow,
+) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    let Some(base) = sprite_arm_draw_row(s, row) else {
         return Vec::new();
     };
     if s.move_submode != 6 {
@@ -204,6 +284,40 @@ mod tests {
         // `+0x78` bit 0 is forced on a non-zero mode byte, so the cue moves
         // the colour by less than one step toward black.
         assert_eq!(m.colors[0], [0x7F, 0x7F, 0x7F]);
+    }
+
+    /// PROT 0920's storm clouds (`0x801F8244..0x801F8304`): colour word
+    /// `0xE9000000`, whose mode bit `0x20` sends the gouraud quad through
+    /// bank 3's split leaf as sixteen `GT3`s; a flat quad (`+0x9E` texture
+    /// mode non-zero) keeps bank 1's one `FT4`.
+    #[test]
+    fn a_bank_3_colour_word_splits_the_gouraud_quad_into_sixteen_gt3s() {
+        let mut s = node();
+        s.field_74 = 0xE900_0000;
+        let m = sprite_arm_vram_mesh(&s).expect("a sprite-arm node");
+        assert_eq!(m.indices.len(), 16 * 3);
+        assert_eq!(m.positions.len(), 16 * 3);
+        // The first triangle is centre / centre-corner-0 midpoint / ...
+        assert_eq!(m.positions[0], [0.0, 0.0, 0.0]);
+        assert!(sprite_arm_draw(&s).unwrap().tessellated);
+        // One colour on every corner, still a Gouraud packet: tagged for the
+        // dither the shader cannot read off a zero colour derivative.
+        assert!(
+            m.cba_tsb
+                .iter()
+                .all(|ct| ct[1] & legaia_tmd::mesh::TSB_GOURAUD_BIT != 0)
+        );
+        let mut flat = s.clone();
+        flat.field_9e |= 1 << 3;
+        let m = sprite_arm_vram_mesh(&flat).expect("a sprite-arm node");
+        assert_eq!(m.indices, vec![0, 1, 2, 2, 1, 3]);
+        assert_eq!(
+            m.cba_tsb[0][1] & legaia_tmd::mesh::TSB_GOURAUD_BIT,
+            0,
+            "an FT4"
+        );
+        assert!(!sprite_arm_draw(&flat).unwrap().tessellated);
+        assert!(!sprite_arm_draw(&node()).unwrap().tessellated);
     }
 
     #[test]

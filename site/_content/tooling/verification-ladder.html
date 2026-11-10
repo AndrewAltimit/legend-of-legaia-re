@@ -1,0 +1,180 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; verification ladder</div>
+  <h1>The verification ladder</h1>
+  <p class="lede">Nothing of the original game runs inside the port, so every claim that it plays like retail rests on a check someone can re-run. No single check covers the whole claim. The project stacks six, each answering one question and each blind to something the next one sees. This page puts them in order, says what each holds retail to and what gates it, and names where each one stops.</p>
+</header>
+
+<section class="doc-section" id="the-ladder" data-doc="contents">
+  <h2>The ladder</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 548" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Six rungs, from the bottom up. One: format docs, is the data read right, held to the disc's bytes traced to their reader, gated by disc coverage and byte accounting. Two: port provenance, does a PORT tag name the right routine, held to the bytes at the tagged address, gated by the provenance ratchet. Three, highlighted: the retail kernel differential, does the Rust compute what the bytes compute, held to the routine itself run off the disc in an R3000 and GTE interpreter, gated by the differential coverage ratchet; a run also settles the provenance of the tags it covers. Four: retail-compare stills, does the engine stand where retail stood at one instant, held to a save state's RAM and VRAM, gated by a per-state per-channel ratchet. Five: films, does it unfold the same over time, held to an emulator recording, reported before and after. Six: the full-game ladder, can the game be finished on pad input, seeded from retail saves at each milestone, gated by a tier ratchet.">
+      <defs>
+        <marker id="vl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="vl-arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-dim)"/></marker>
+      </defs>
+      <text class="dg-sub" x="175" y="18">rung: the question it answers</text>
+      <text class="dg-sub" x="460" y="18">what retail is held to</text>
+      <text class="dg-sub" x="740" y="18">gate</text>
+
+      <!-- the climb -->
+      <path class="dg-edge-dim" d="M24 530 L24 40" marker-end="url(#vl-arrow-dim)"/>
+      <text class="dg-edge-label" transform="translate(16 290) rotate(-90)" text-anchor="middle">each rung stands on the ones below</text>
+
+      <!-- 6 full-game ladder -->
+      <rect class="dg-node" x="50" y="32" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="57">6 &#183; Full-game ladder</text>
+      <text class="dg-sub" x="175" y="77">can the whole game be finished?</text>
+      <rect class="dg-node" x="325" y="32" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="57">Retail saves at each milestone</text>
+      <text class="dg-sub" x="460" y="77">pad input; one unbroken run too</text>
+      <rect class="dg-node-ok" x="620" y="32" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="57">Tier ratchet</text>
+      <text class="dg-sub" x="740" y="77">per segment, over a seed set</text>
+
+      <!-- 5 films -->
+      <rect class="dg-node" x="50" y="118" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="143">5 &#183; Films</text>
+      <text class="dg-sub" x="175" y="163">does it unfold the same over time?</text>
+      <rect class="dg-node" x="325" y="118" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="143">An emulator recording</text>
+      <text class="dg-sub" x="460" y="163">a row a vsync, on the game's clock</text>
+      <rect class="dg-node" x="620" y="118" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="143">Report</text>
+      <text class="dg-sub" x="740" y="163">before and after, one command</text>
+
+      <!-- 4 stills -->
+      <rect class="dg-node" x="50" y="204" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="229">4 &#183; Retail-compare stills</text>
+      <text class="dg-sub" x="175" y="249">same situation at one instant?</text>
+      <rect class="dg-node" x="325" y="204" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="229">A save state's RAM and VRAM</text>
+      <text class="dg-sub" x="460" y="249">read offline, engine seeded from it</text>
+      <rect class="dg-node-ok" x="620" y="204" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="229">Score ratchet</text>
+      <text class="dg-sub" x="740" y="249">per state and channel</text>
+
+      <!-- 3 differential -->
+      <rect class="dg-node-accent" x="50" y="290" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="315">3 &#183; Retail kernel differential</text>
+      <text class="dg-sub" x="175" y="335">same arithmetic as the bytes?</text>
+      <rect class="dg-node-accent" x="325" y="290" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="315">The routine itself, off the disc</text>
+      <text class="dg-sub" x="460" y="335">in an R3000 + GTE interpreter</text>
+      <rect class="dg-node-ok" x="620" y="290" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="315">Coverage ratchet</text>
+      <text class="dg-sub" x="740" y="335">declared, proven, counted</text>
+
+      <!-- settles provenance -->
+      <path class="dg-edge" d="M150 352 L150 374" marker-end="url(#vl-arrow)"/>
+      <text class="dg-edge-label" x="160" y="368">a run settles the tags it covers</text>
+
+      <!-- 2 provenance -->
+      <rect class="dg-node" x="50" y="376" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="401">2 &#183; Port provenance</text>
+      <text class="dg-sub" x="175" y="421">does a tag name the right routine?</text>
+      <rect class="dg-node" x="325" y="376" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="401">The bytes at the tagged address</text>
+      <text class="dg-sub" x="460" y="421">disassembly, docs, the disc's images</text>
+      <rect class="dg-node-ok" x="620" y="376" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="401">Finding ratchet</text>
+      <text class="dg-sub" x="740" y="421">no new unwaived finding</text>
+
+      <!-- 1 formats -->
+      <rect class="dg-node" x="50" y="462" width="250" height="62" rx="5"/>
+      <text class="dg-label" x="175" y="487">1 &#183; Format docs</text>
+      <text class="dg-sub" x="175" y="507">is the data read right?</text>
+      <rect class="dg-node" x="325" y="462" width="270" height="62" rx="5"/>
+      <text class="dg-label" x="460" y="487">The disc's bytes</text>
+      <text class="dg-sub" x="460" y="507">each layout traced to its reader</text>
+      <rect class="dg-node-ok" x="620" y="462" width="240" height="62" rx="5"/>
+      <text class="dg-label" x="740" y="487">Disc denominators</text>
+      <text class="dg-sub" x="740" y="507">disc coverage, byte accounting</text>
+    </svg>
+    <figcaption>Green gates fail a commit on their own and keep a committed baseline that may only improve; the films report, because their recordings carry retail pixels and stay off the repository. The highlighted rung is the first that runs retail's own code, and the only one that reaches inputs no capture holds.</figcaption>
+  </figure>
+  <!--DIFFERENTIAL_COVERAGE-->
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Rung</th><th>Blind to</th><th>Seen by</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#rung-1">Format docs</a></td><td>What the code does with the data</td><td>Provenance names the routine; the differential runs it</td></tr>
+      <tr><td><a href="#rung-2">Port provenance</a></td><td>The arithmetic under a correctly named tag</td><td>The differential</td></tr>
+      <tr><td><a href="#rung-3">Kernel differential</a></td><td>When, and with what, the engine calls the kernel; any routine no test runs</td><td>Stills and films; the <code>--no-differential</code> worklist</td></tr>
+      <tr><td><a href="#rung-4">Retail-compare stills</a></td><td>Time: order, length and timing around the instant</td><td>Films</td></tr>
+      <tr><td><a href="#rung-5">Films</a></td><td>Everything outside the recorded stretch</td><td>The full-game ladder</td></tr>
+      <tr><td><a href="#rung-6">Full-game ladder</a></td><td>Fidelity: it compares nothing with retail</td><td>Every rung below it</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="rung-1" data-doc="rung-1-format-docs">
+  <h2>1 &middot; Format docs</h2>
+  <p>Every format the engine reads has a byte-level page whose layout is traced to the routine that reads it, with a confidence level, and a parser the extraction pipeline and the patcher share (<a href="../formats/index.html">formats</a>). The denominators come from the disc: <a href="disc-coverage.html">disc coverage</a> counts code bytes inside dumped functions and entries with a known format class, and <a href="byte-accounting.html">byte accounting</a> counts the bytes a parser actually consumes. The patcher's disc-gated oracles re-decode a patched copy, so a writer is held to its reader.</p>
+  <p class="hint">Blind to what the code does with the data: a correctly parsed table can still be indexed, clamped or summed differently.</p>
+</section>
+
+<section class="doc-section" id="rung-2" data-doc="rung-2-port-provenance">
+  <h2>2 &middot; Port provenance</h2>
+  <p>A port is a Rust function tagged <code>// PORT: FUN_&lt;addr&gt;</code>. The <a href="port-catalog.html">port catalog</a> derives what is ported and what is reachable from those tags; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md" target="_blank" rel="noopener">port provenance</a> asks whether the address names the routine the code implements. It ranks suspicious pairings by signals read from the disassembly, the docs and the disc images: a routine that shares nothing with the rest of its module, one given a defining description on two unrelated pages, a tag citing evidence its routine's dump does not carry, a tag on an address the repository elsewhere says starts no routine. <code>check-port-provenance.py --check</code> fails a commit that adds an unwaived finding, and each waiver says what the bytes showed.</p>
+  <p class="hint">Blind to the arithmetic: a tag can name exactly the right routine while the Rust under it computes something else.</p>
+</section>
+
+<section class="doc-section" id="rung-3" data-doc="rung-3-the-retail-kernel-differential">
+  <h2>3 &middot; The retail kernel differential</h2>
+  <p>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs the retail routine off your disc in <code>crates/retail-exec</code>, a user-mode R3000 interpreter with a GTE written from the hardware documentation, beside the Rust kernel that ports it. Both sides take the same generated inputs, caps and empty cases included, and one scripted <code>rand()</code> stream; the whole regions they write are compared, not chosen fields.</p>
+  <ol class="steps steps-vertical">
+    <li><b>Declared.</b><span>Each test opens with <code>differential!(scus(VA))</code> or <code>differential!(prot(ENTRY, VA))</code>, naming every routine it compares.</span></li>
+    <li><b>Proven.</b><span>The interpreter logs every entry it runs with the bytes there; the test fails unless each declared routine was entered and its bytes are the named image's. The wrong address, or the right one in the wrong overlay, fails.</span></li>
+    <li><b>Counted.</b><span><code>differential-coverage.py --check</code> reads the declarations with no disc, fails a test with none, and ratchets the covered count, the routine count and the test count. The share is on the <a href="../index.html">landing page</a>.</span></li>
+  </ol>
+  <p class="hint">Blind to when and with what the engine calls the kernel: a routine that matches here can still be wired a frame late, fed the wrong record, or never called. A routine no test runs is not checked at all; <code>port-catalog.py --no-differential --live</code> lists the live ones.</p>
+</section>
+
+<section class="doc-section" id="rung-4" data-doc="rung-4-retail-compare-stills">
+  <h2>4 &middot; Retail-compare stills</h2>
+  <p>The <a href="retail-compare.html">retail comparison corpus</a> seats the engine where each retail save state stood, through the engine's own load path, and scores the frame and the observables the state's RAM holds: scene, camera, player, placements, music, flags, party, enemies. Per-state, per-channel scores may only rise, and a fall needs a ledger entry. <a href="capture-coverage.html">Capture coverage</a> takes its denominator from the disc, so the corpus widens where no state yet looks.</p>
+  <p class="hint">Blind to time: a state is one instant, and a cast's order, length and timing, or a walk's path between two states, are invisible to it.</p>
+</section>
+
+<section class="doc-section" id="rung-5" data-doc="rung-5-films">
+  <h2>5 &middot; Films</h2>
+  <p>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records one cast on both sides and pairs frames on the game's own clock, the action state and then the cast module's phase; the <a href="walk-film.html">walk film</a> does the same for a field walk under a fixed pad schedule. Recordings carry retail pixels and stay off the repository, so a film has no committed baseline: a change reports its before and after on the same command.</p>
+  <p class="hint">Blind to everything outside the recorded stretch, and to residuals smaller than two retail recordings of one cast differ from each other.</p>
+</section>
+
+<section class="doc-section" id="rung-6" data-doc="rung-6-the-full-game-ladder">
+  <h2>6 &middot; The full-game ladder</h2>
+  <p>The <a href="full-game-ladder.html">full-game ladder</a> plays New Game to credits with no human on pad input, segment by segment from retail saves at each story milestone and as one continuous run. Its tiers are ratcheted, and a seed set repeats the run on other random streams.</p>
+  <p class="hint">Blind to fidelity: it proves the game can be finished in the port and compares nothing with retail, which is what the rungs below it do.</p>
+</section>
+
+<section class="doc-section" id="hinge" data-doc="why-the-differential-is-the-hinge">
+  <h2>Why the differential is the hinge</h2>
+  <p>The lower two rungs are about naming: what the bytes are, and which routine a Rust function claims to be. The upper three are about behaviour as a player sees it, sampled where a capture happened to stand. The differential is the first rung that runs retail's own code, and the only one that reaches inputs no capture holds. It also settles the rung below it: the provenance checker reports a differential-run address as verified, because the declaration's run proves which bytes executed.</p>
+  <p>Its findings show the gap it closes. Ports that read right against their dumps, carried a correct tag and passed their own unit tests still computed something else: a level-up applier that drew none of retail's <code>rand()</code> calls, an arctan table rounded where retail's truncates, a stat aggregator whose grant scan had no port behind its heading, a status tick that read the tracker where retail reads the word. <a href="retail-kernel-differential.html#what-it-has-found">What it has found</a> lists them routine by routine.</p>
+</section>
+
+<section class="doc-section" id="gates" data-doc="what-a-gate-does-and-does-not-mean">
+  <h2>What a gate does and does not mean</h2>
+  <p>Each gate fails on its own and is committed as a ratchet that may only improve, and a green gate means only what that gate measures. A disc-gated test that skips for want of its data is not a pass, and an oracle whose retail side is the engine's own model cannot disagree with it. The method written engine-neutral for another project is <a href="retail-oracle-method.html">the retail-oracle method</a>; the seven porting steps these gates sit under are <a href="porting-by-reimplementation.html">porting by reimplementation</a>; the four instruments side by side are <a href="measuring-parity.html">measuring against retail</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Rungs</span>
+    <a href="disc-coverage.html">Disc coverage</a>
+    <a href="byte-accounting.html">Byte accounting</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
+    <a href="walk-film.html">Field walk film</a>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <span class="see-also-label">Method</span>
+    <a href="measuring-parity.html">Measuring against retail</a>
+    <a href="retail-oracle-method.html">The retail-oracle method</a>
+    <a href="porting-by-reimplementation.html">Porting by reimplementation</a>
+  </div>
+</section>

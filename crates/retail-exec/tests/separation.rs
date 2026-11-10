@@ -21,6 +21,7 @@ const B_REC: u32 = 0x8013_1800;
 
 #[test]
 fn the_separation_nudge_is_the_retail_nudge() {
+    differential!(scus(PAIR));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -112,6 +113,7 @@ const NEUTRAL_WORD: u32 = 0x2008_0200;
 /// Retail's gate is the colour word `+0x04` (`0x800510B4..0x800510DC`), not HP.
 #[test]
 fn the_separation_driver_is_the_retail_driver() {
+    differential!(scus(DRIVER));
     use legaia_engine_core::world::World;
     use legaia_save::Party;
     let Some(mut cpu) = scus_cpu() else {

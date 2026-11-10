@@ -65,7 +65,7 @@ int FUN_80023070(int actor);                              // no PC argument
 
 short* op = (short*)(actor[+0x48] + actor[+0x70] * 2);   // u16-aligned PC
 short  v1 = op[0];
-if (v1 >= 0x47) goto epilogue;                            // sltiu v0, v1, 0x47
+if ((unsigned)v1 >= 0x47) goto epilogue;                  // sltiu v0, v1, 0x47
 goto jt[v1];                                              // JT at 0x80010778
 ```
 
@@ -79,7 +79,7 @@ flowchart TD
     gate -- no --> skip["VM not entered this frame"]
     gate -- yes --> fetch["Fetch op at +0x48 + PC*2"]
     fetch --> bound{"op >= 0x47?"}
-    bound -- yes --> out["Exit loop"]
+    bound -- yes --> adv
     bound -- no --> jt["Jump table 0x80010778"]
     jt --> plain["Ordinary handler"]
     jt --> x2f["0x2F: FUN_801D362C, sub-op JT 0x801CE868"]
@@ -95,7 +95,7 @@ flowchart TD
 ```
 
 - **Break opcodes.** `0x08` (HALT, size 0, sets flag bit `0x8`) and `0x09` (WAIT_SET, size 2) clear the loop flag. Every other opcode continues in the same frame.
-- **Out of range.** An opcode `>= 0x47` falls through to the loop exit, the same shape as the field VM's `default` arm. Treat it as "end of move buffer", not "unknown opcode".
+- **Out of range.** An opcode `>= 0x47` (read with `lh`, so `0x8000..` too) branches to the epilogue `0x80024150`, which adds the `$a2` the previous instruction left and loops while the flag stands: the word is skipped by the previous instruction's width, as `0x0B` is ([below](#reading-a-program-asset-move-disasm)), and does not end the frame. Ahead of a pass's first instruction `$a2` is the caller's register. The port's `move_vm::FrameStep` carries the width across the frame; the [differential](../tooling/retail-kernel-differential.md) holds it to retail.
 - **`0x2F` size.** The extension handler's return is the whole instruction's width, added to the PC like any other size ([widths](move-vm-overlay-ext.md#instruction-widths)).
 - **Re-entry.** The next frame's `FUN_80021DF4` runs its integration blocks, then re-enters `FUN_80023070` from the saved PC once the wait has drained below zero. A halted part (`flags & 8`) goes to the tick's halt handler at `0x80023040`.
 - **Sizes hide in delay slots.** Cases that look like no-ops in the decompiled C still advance the PC: `param_3` is set in a MIPS branch-delay slot (same pattern as the field VM, see [`script-vm.md`](script-vm.md) "Decompile quirks").
@@ -123,7 +123,8 @@ before it calls the node's tick (`lw s1,0x0(s1)` at `0x800251D8`, the call
 on the old tail, `sw v0,0xc(a0)` as the list's new tail. So:
 
 - a part seated by the list's last node is past the `next` the walk already read (`0`), and waits for the next frame: PROT 0964's first rays, whose emitter is the newest node when it seats them, are born at level `0x1000` and take their first fade step a frame late;
-- a part seated by a node with anything behind it is reached on the same walk: PROT 0917's arm-7 emitter `0x801F8B18` seats a cloud a frame behind the clouds it seated before, so every cloud shows one step along (`+0x18 = 832` from `1024`) on the frame it is seated, as retail's `parts.csv` holds it.
+- a part seated by a node with anything behind it is reached on the same walk: PROT 0917's arm-7 emitter `0x801F8B18` seats a cloud a frame behind the clouds it seated before, so every cloud shows one step along (`+0x18 = 832` from `1024`) on the frame it is seated, as retail's `parts.csv` holds it;
+- a part seated from a seater's own run is reached too: a module tick seats its records from list 0's callbacks before the list-1 walk starts, and `FUN_80021B04`'s run of the new node (`jal 0x80023070` at `0x80021DC0`) makes any op `0x20` call the program opens with, so what that call seats lands behind every node the walk has still to read. PROT 0909's arm-12 emitter `0x801F8158` calls its stager's arm 2 before its first `WAIT`, and retail's first ring shows radius `176` (one `+0xC0` step) on the frame the arm opens. PROT 0964's ray emitter opens on `WAIT 0`, so its calls come from the walk instead.
 
 A halted node stays linked for two more walks (the first ORs `0x2000000`
 into `+0x10`, the second unlinks it through `FUN_800204A4`), so it still
@@ -862,6 +863,11 @@ same table the overlay-resident dispatcher `FUN_801F2D68` consumes via
 | 3 | `x:i16@3, y:i16@5, rgb:u24@7, mode:u8@0xA, dur:i16@0xB` | tween position + colour; `cursor += 0xD` on completion |
 | 4 | `rgb:u24@3, mode:u8@6, dur:i16@7` | tween colour only; `cursor += 9` on completion |
 
+The `0x40` byte is tested once, on entry (`0x801F7AD0`). A wait that passes
+loops back to `0x801F7ADC`, which dispatches the next record's sub-op without
+testing its first byte again, so a passed wait followed by a zero byte runs
+sub-op `0` and kills the widget.
+
 ### Mask widget
 
 A 4-edge rect tween plus **4 black border quads** (GP0 `0x28`, colour 0):
@@ -886,6 +892,7 @@ wider than 256 px splits across two pages.
 
 - Spawn record: `[x][y][w][h][tex_x][tex_y]` from operand `+1`; `w > 0x100` computes the second page and clamps the first-page width.
 - Move / scale: `scale` is 4.12 fixed against the `+0xb8/ba/bc` base sizes.
+- The handler draws from the **targets** (`0x801F84BC..0x801F84E8`) and has no `dur == 0` latch: a move with `dur = 0` shows at once, and the current values at `+0x14..+0x24` stay where the last tween left them, so the next tween starts there.
 
 ### Letterbox widget
 

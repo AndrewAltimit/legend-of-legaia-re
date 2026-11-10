@@ -262,9 +262,12 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
         };
         let hist = &actor.battle_pose_history;
         let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, base, |depth| {
-            hist.get(per_frame * depth)
-                .map(|f| f.ghost_eligible)
-                .unwrap_or(false)
+            // The depth past the ring reads no history (`ghost_depths`).
+            depth < ai::HISTORY_DEPTH
+                && hist
+                    .get(per_frame * depth)
+                    .map(|f| f.ghost_eligible)
+                    .unwrap_or(false)
         });
         // The walk re-runs the mesh-variant swap per ghost with that
         // ghost's historical entry and cursor, into the live table
@@ -416,9 +419,11 @@ fn battle_live_model_table(
     let per_frame = world.ghost_ring_slots_per_frame();
     let monster = actor.battle_monster_id.is_some();
     let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, [0; 3], |depth| {
-        hist.get(per_frame * depth)
-            .map(|f| f.ghost_eligible)
-            .unwrap_or(false)
+        depth < ai::HISTORY_DEPTH
+            && hist
+                .get(per_frame * depth)
+                .map(|f| f.ghost_eligible)
+                .unwrap_or(false)
     });
     for p in &plans {
         if let Some(f) = hist.get(per_frame * p.depth)

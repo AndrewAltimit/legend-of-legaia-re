@@ -31,6 +31,7 @@ fn damage(r0: u32, r1: u32) -> i32 {
 
 #[test]
 fn the_sweep_draws_damage_and_venom_seat_by_seat() {
+    differential!(prot(956, TICK));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -323,6 +323,13 @@ pub struct CastFxState {
     /// (`crate::world::battle::cast_band::presentation`). Reset when a cast
     /// is armed.
     pub module_pres: crate::module_presentation::ModulePresentation,
+    /// The fade template block `0x801C9070` as the last fade spawn left it.
+    /// Every battle fade writes its template there before `FUN_80024E80`,
+    /// and nothing clears it, so a template word an arm does not store
+    /// carries the last writer's value: PROT 0914's arm 13 stores no end
+    /// blue (`0x801F7670..0x801F76D4`) and its two fades end on arm 11's
+    /// `64`. `None` until a battle fade has been spawned.
+    pub fade_block: Option<legaia_engine_system::fade::FadeTemplate>,
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -580,6 +587,7 @@ impl CastFxState {
             module_settle_countdown: 0,
             module_cam: Default::default(),
             module_pres: Default::default(),
+            fade_block: None,
             capture_spell: None,
             capture_fx_pending: None,
             module_pass_counter: 0,

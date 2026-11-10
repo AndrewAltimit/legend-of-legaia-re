@@ -47,6 +47,11 @@ pub struct ActorState {
     pub world_y: i16,
     /// `+0x18` - world Z.
     pub world_z: i16,
+    /// `+0x1A` - the position vector's pad halfword. Ext sub-ops `0x11` /
+    /// `0x25` save the whole 8-byte vector `+0x14..+0x1B` into a scratch
+    /// slot and `0x26` loads it back (`lwl`/`lwr` pairs at `0x801D3A44` and
+    /// `0x801D3F60` in PROT 0897), so the pad rides along with X, Y and Z.
+    pub world_pad: i16,
     /// `+0x22` - Y-rotation accumulator (cleared by op 0x3D).
     pub y_rot: i16,
     /// `+0x24` - render bank 0.

@@ -891,10 +891,20 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
         world.presentation.fade.is_some(),
         "state 0 spawned the fade-to-white"
     );
+    // `0x801D29B0..0x801D29C8`: the player is engaged for the whole swap.
+    assert!(world.actors[0].move_state.flags & 0x0008_0000 != 0);
+    assert!(world.field_player_movement_locked());
 
     // Run the SM through the fade / swap / fade cycle back to the poll.
     for _ in 0..100 {
         world.tick_three_actor_talk();
+        let phase = world.dialog.three_actor_talk.map(|t| t.swap.phase);
+        if phase != Some(0) {
+            assert!(
+                world.actors[0].move_state.flags & 0x0008_0000 != 0,
+                "{phase:?}"
+            );
+        }
         if world
             .dialog
             .three_actor_talk
@@ -909,6 +919,14 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
         .expect("talk still live after cycle");
     assert_eq!(talk.swap.phase, 0, "SM returned to the state-0 poll");
     assert!(world.system_flag_test(0xD), "talk lock still up");
+    assert_eq!(
+        world.actors[0].move_state.flags & 0x0008_0000,
+        0,
+        "state 4 lowered the engaged bit"
+    );
+    // State 2 re-anchored the camera on the new leader's tile and snapped.
+    let reqs = world.take_camera_zone_requests();
+    assert!(reqs.contains(&legaia_engine_field::camera::CameraZoneRequest::SnapAndClamp));
 
     // Leadership moved to slot 1 (scan from leader+1; flag 0x11 was clear).
     assert_eq!(world.party.party_leader_slot, Some(1));

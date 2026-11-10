@@ -89,22 +89,11 @@ impl GteMat3 {
     };
 
     /// Build a rotation matrix about the +Y axis by `angle` radians, with
-    /// elements quantized to q3.12 (matches the GTE precision).
+    /// elements rounded to q3.12.
     ///
-    // PORT: FUN_8004629C - retail RotMatrixY: indexes the cos/sin LUT pair
-    // (&DAT_80070A2C / &DAT_8007122C) by a 12-bit angle (4096 = 2*PI) and
-    // composes via the GTE; this builds the same +Y rotation in q3.12 with a
-    // radian input (ROT_ONE = 0x1000 matches the LUT's 1.0).
-    //
-    // Live through its one q3.12 consumer, `camera_view_rotation` (the
-    // `FUN_8001CF50` port), which composes the camera-relative rotation a
-    // `+0x52 & 0x780` part is drawn under on both play hosts - the same job
-    // retail's `jal 0x8004629c` at `0x8001CFC0` does. The full camera and
-    // the hosts' model matrices use f32 axis factors instead
-    // (`legaia_engine_camera::psx_camera::camera_rotation`, `Mat4::from_rotation_y`).
-    // The radian argument is a deviation: retail takes a 12-bit angle and
-    // reads the LUT, which `billboard::rot_z_psx` models for Z and
-    // `battle_intro::euler_rot_psx` (the `FUN_80026988` port) for all three.
+    /// Not retail's factor: retail reads the truncated sine LUT by a 12-bit
+    /// angle ([`Self::rot_y_psx`]), and the rounded radian form misses it by
+    /// one unit on three angles in four. Kept for tooling and tests.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -113,12 +102,8 @@ impl GteMat3 {
         }
     }
 
-    /// Build a rotation about the +X axis (pitch).
-    ///
-    // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
-    // as FUN_8004629C, about the +X axis).
-    // Live through `camera_view_rotation` (retail's `jal 0x800461a4` at
-    // `0x8001CF9C`) - see `rot_y`.
+    /// Build a rotation about the +X axis (pitch), radians, rounded; see
+    /// [`Self::rot_y`] and [`Self::rot_x_psx`].
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -127,21 +112,53 @@ impl GteMat3 {
         }
     }
 
-    /// Build a rotation about the +Z axis (roll).
-    ///
-    // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
-    // as FUN_8004629C, about the +Z axis).
-    // Live through `camera_view_rotation` (retail's `jal 0x8004638c` at
-    // `0x8001CFE4`) - see `rot_y`. This
-    // address has a second, more faithful port in `billboard::rot_z_psx`, which takes
-    // the retail 12-bit angle and reads the LUT rather than f32 trig; the two
-    // are pinned to agree at the cardinals by a unit test there. That one is
-    // inert, for the reason recorded on that module.
+    /// Build a rotation about the +Z axis (roll), radians, rounded; see
+    /// [`Self::rot_y`] and [`Self::rot_z_psx`].
     pub fn rot_z(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
         Self {
             m: [[c, -s, 0], [s, c, 0], [0, 0, ROT_ONE as i16]],
+        }
+    }
+
+    /// Retail's +X factor for a PSX 12-bit angle: the matrix `FUN_800461A4`
+    /// post-multiplies the GTE rotation by, its entries read off the
+    /// truncated sine LUT at `0x80070A2C` ([`crate::gte::psx_sin`]).
+    ///
+    // PORT: FUN_800461A4 - Legaia's in-place RotMatrixX: saves TR, runs three
+    // MVMVAs of the current rotation over the factor's columns, restores TR.
+    // `R * rot_x_psx(angle)` through [`Self::mul`] is the whole routine; the
+    // retail kernel differential `rot_matrix` holds both over every angle.
+    pub fn rot_x_psx(angle: u16) -> Self {
+        let (c, s) = lut_pair(angle);
+        let one = ROT_ONE as i16;
+        Self {
+            m: [[one, 0, 0], [0, c, -s], [0, s, c]],
+        }
+    }
+
+    /// Retail's +Y factor for a PSX 12-bit angle (`FUN_8004629C`).
+    ///
+    // PORT: FUN_8004629C - Legaia's in-place RotMatrixY, the same shape as
+    // `FUN_800461A4`: `R * rot_y_psx(angle)`.
+    pub fn rot_y_psx(angle: u16) -> Self {
+        let (c, s) = lut_pair(angle);
+        let one = ROT_ONE as i16;
+        Self {
+            m: [[c, 0, s], [0, one, 0], [-s, 0, c]],
+        }
+    }
+
+    /// Retail's +Z factor for a PSX 12-bit angle (`FUN_8004638C`).
+    ///
+    // PORT: FUN_8004638C - Legaia's in-place RotMatrixZ, the same shape as
+    // `FUN_800461A4`: `R * rot_z_psx(angle)`.
+    pub fn rot_z_psx(angle: u16) -> Self {
+        let (c, s) = lut_pair(angle);
+        let one = ROT_ONE as i16;
+        Self {
+            m: [[c, -s, 0], [s, c, 0], [0, 0, one]],
         }
     }
 
@@ -257,7 +274,10 @@ pub mod view_rot_flags {
 /// 2. Each of `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C` **post**-multiplies
 ///    the current GTE rotation by its axis factor, so the composition order is
 ///    `Rx * Ry * Rz`, pitch outermost - the camera's own order, minus the
-///    skipped factors.
+///    skipped factors. The factors are the LUT's ([`GteMat3::rot_x_psx`] and
+///    siblings), over the 12-bit angle the radian argument stands for
+///    ([`psx_angle`]); the rounded radian builders differ by up to four units
+///    in the composed matrix.
 /// 3. Each factor is skipped when its `node+0x52` bit is set (see
 ///    [`view_rot_flags`]); the angles are the camera globals
 ///    `_DAT_8007B790` (pitch) / `_DAT_8007B792` (yaw) / `_DAT_8007B794` (roll).
@@ -277,15 +297,31 @@ pub fn camera_view_rotation(flags: u16, pitch: f32, yaw: f32, roll: f32) -> Opti
     }
     let mut m = GteMat3::IDENTITY;
     if flags & view_rot_flags::SKIP_PITCH == 0 {
-        m = m.mul(&GteMat3::rot_x(pitch));
+        m = m.mul(&GteMat3::rot_x_psx(psx_angle(pitch)));
     }
     if flags & view_rot_flags::SKIP_YAW == 0 {
-        m = m.mul(&GteMat3::rot_y(yaw));
+        m = m.mul(&GteMat3::rot_y_psx(psx_angle(yaw)));
     }
     if flags & view_rot_flags::SKIP_ROLL == 0 {
-        m = m.mul(&GteMat3::rot_z(roll));
+        m = m.mul(&GteMat3::rot_z_psx(psx_angle(roll)));
     }
     Some(m)
+}
+
+/// The PSX 12-bit angle a radian angle stands for: the hosts carry the
+/// camera's integer angle globals as radians (`u / 4096 * TAU`), and this
+/// rounds them back exactly.
+pub fn psx_angle(radians: f32) -> u16 {
+    let turns = f64::from(radians) / std::f64::consts::TAU;
+    ((turns * 4096.0).round() as i64 & 0xFFF) as u16
+}
+
+/// One angle's LUT `(cos, sin)` pair as the GTE's halfwords.
+fn lut_pair(angle: u16) -> (i16, i16) {
+    (
+        crate::gte::psx_cos(angle) as i16,
+        crate::gte::psx_sin(angle) as i16,
+    )
 }
 
 /// Equivalent of `RTPT` (rotate, translate, perspective transform): apply

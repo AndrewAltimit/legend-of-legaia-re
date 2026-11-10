@@ -131,14 +131,10 @@ pub fn cross_beam_camera(
                 arm.hold = true;
                 return arm;
             }
+            // `0x801F7238`'s stage `0` with a bump, which cuts the long charge
+            // clip still playing behind the hide, is the phase chain's
+            // (`CROSS_BEAM_CHAIN` arm 5).
             arm.others_write = SHOWN;
-            // `0x801F7238`: stage `0` with a bump cuts the long charge clip,
-            // which is still playing behind the hide.
-            arm.caster_write = CaptureSeatWrite {
-                stage: Some(0),
-                restage: true,
-                ..Default::default()
-            };
         }
         _ => {}
     }

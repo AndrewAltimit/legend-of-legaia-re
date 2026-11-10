@@ -32,7 +32,7 @@ pub enum BuyRecipientEvent {
     Buzz,
     /// Backed out (SFX `0x37`) - back to the buy list.
     Cancelled,
-    /// Session finished (post-toast) - back to the buy list.
+    /// The Point Card toast dismissed (SFX `0x20`) - back to the buy list.
     ExitToBuyList,
 }
 
@@ -42,7 +42,6 @@ enum BuyRecipientPhase {
     Interactive,
     /// Point Card toast (script `0x801E4EA8`): waits for a press.
     ToastWait,
-    Exit,
     Done,
 }
 
@@ -119,10 +118,13 @@ impl BuyRecipientSession {
                             0
                         };
                         if row == 0 {
+                            // Without the card retail writes sub-screen `0x1B`
+                            // on the confirm's own frame (`0x801DB4D0` /
+                            // `0x801DB6FC` branch to `0x801DB7BC`).
                             self.phase = if self.point_card_held {
                                 BuyRecipientPhase::ToastWait
                             } else {
-                                BuyRecipientPhase::Exit
+                                BuyRecipientPhase::Done
                             };
                             BuyRecipientEvent::BoughtToBag {
                                 item_id: self.item_id,
@@ -130,10 +132,13 @@ impl BuyRecipientSession {
                                 point_credit,
                             }
                         } else if self.can_equip.get(row as usize - 1) == Some(&true) {
+                            // Without the card retail writes sub-screen `0x1B`
+                            // on the confirm's own frame (`0x801DB4D0` /
+                            // `0x801DB6FC` branch to `0x801DB7BC`).
                             self.phase = if self.point_card_held {
                                 BuyRecipientPhase::ToastWait
                             } else {
-                                BuyRecipientPhase::Exit
+                                BuyRecipientPhase::Done
                             };
                             BuyRecipientEvent::BoughtAndEquipped {
                                 party_index: (row - 1) as u8,
@@ -161,10 +166,6 @@ impl BuyRecipientSession {
                 } else {
                     BuyRecipientEvent::None
                 }
-            }
-            BuyRecipientPhase::Exit => {
-                self.phase = BuyRecipientPhase::Done;
-                BuyRecipientEvent::ExitToBuyList
             }
             BuyRecipientPhase::Done => BuyRecipientEvent::None,
         }

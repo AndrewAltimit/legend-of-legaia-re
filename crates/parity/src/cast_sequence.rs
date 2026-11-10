@@ -130,6 +130,11 @@ pub struct Row {
     /// current one, the two-pass law), `1` (only the other), `None` for no
     /// fade or a recording made before the column.
     pub fade_back: Option<u8>,
+    /// The engine recorder's `over` column: this tick ran past its battle
+    /// frame's step, a vsync the frame overran
+    /// (`BattleFrameClock::span_extra`). No game time passes on it
+    /// ([`Side::live_clock`]). `false` on retail rows and older recordings.
+    pub over: bool,
 }
 
 /// The engine recorder's drive columns (`drive_seek_arm`, `drive_poll_arm`,
@@ -219,6 +224,7 @@ impl Side {
                 ),
                 display_frames: field(r, "frames"),
                 fade_back: field::<u8>(r, "fade_back").filter(|&b| b > 0),
+                over: field::<u8>(r, "over").is_some_and(|o| o > 0),
                 fade: match field::<i32>(r, "fade_white") {
                     Some(w) if w >= 0 => Some(field(r, "fade_level").unwrap_or(255)),
                     _ => None,
@@ -315,6 +321,24 @@ impl Side {
         out
     }
 
+    /// The engine's game clock at each row's time: one per tick, less the
+    /// ticks a battle frame overran ([`Row::over`]). The engine's frames run
+    /// past their step only where it models retail's overrun (an XA-loaded
+    /// frame), and those vsyncs drain no timer, so the clock the pairing
+    /// measures the engine's offset on skips them, as [`Side::game_clock`]
+    /// skips retail's.
+    pub fn live_clock(&self) -> BTreeMap<u64, u64> {
+        let mut out = BTreeMap::new();
+        let mut n = 0u64;
+        for r in &self.rows {
+            out.insert(r.t, n);
+            if !r.over {
+                n += 1;
+            }
+        }
+        out
+    }
+
     /// The **game clock** at every row: vsyncs of game time, the frame step
     /// summed over the game frames run so far.
     ///
@@ -324,8 +348,8 @@ impl Side {
     /// ends, so the frame took `L > step` vsyncs while every drain still
     /// counted `step`. The game clock advances `step` per frame however long
     /// the frame took, spread evenly over its rows, so a slow retail frame
-    /// costs no game time. The engine ticks once a vsync with no overrun, so
-    /// its clock is its tick.
+    /// costs no game time. The engine's clock is its tick less the ticks its
+    /// frames overran ([`Side::live_clock`]).
     ///
     /// `None` without the `frame` column (the engine, or an older capture).
     pub fn game_clock(&self) -> Option<Vec<u64>> {
@@ -844,7 +868,7 @@ pub fn compare_with(
     let mut n = 0u64;
     for r in &engine.rows {
         live.insert(r.t, n);
-        if !frozen.contains(&r.t) {
+        if !frozen.contains(&r.t) && !r.over {
             n += 1;
         }
     }
@@ -1496,6 +1520,7 @@ mod tests {
             drive: None,
             fade: None,
             fade_back: None,
+            over: false,
         };
         let side = Side {
             dir: PathBuf::new(),
@@ -1593,6 +1618,7 @@ mod tests {
                     drive: None,
                     fade: None,
                     fade_back: None,
+                    over: false,
                 });
                 t += 1;
             }
@@ -1627,6 +1653,19 @@ mod tests {
         s.rows[1].frame = None;
         assert!(s.game_clock().is_none());
         assert!(s.frames().is_empty());
+    }
+
+    /// The engine's clock skips the ticks a frame overran: step-`4` frames
+    /// spanning five ticks advance it four a frame.
+    #[test]
+    fn engine_clock_skips_overrun_ticks() {
+        let mut s = side(&[(1, 4, 5), (2, 4, 5)]);
+        for (i, r) in s.rows.iter_mut().enumerate() {
+            r.over = i % 5 == 4;
+        }
+        let c = s.live_clock();
+        let got: Vec<u64> = s.rows.iter().map(|r| c[&r.t]).collect();
+        assert_eq!(got, [0, 1, 2, 3, 4, 4, 5, 6, 7, 8]);
     }
 
     /// A shot shows the last row of the frame two counter bumps back, so a

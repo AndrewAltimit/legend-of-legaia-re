@@ -95,6 +95,17 @@ impl<S: AudioSink> BootSession<S> {
         // shot from them (the browser runtime's `load_disc` reads the same).
         host.world.battle.spell_anim_pairs =
             legaia_engine_scene::battle_overlay_readers::spell_anim_pairs_from_prot(&host.index);
+        // The menu overlay's tables (PROT 0899): window programs, Arrange
+        // ranks, the notify template. Both play hosts install them again on
+        // their own load; installing here as well is what gives a headless
+        // session the pause menu's window list, and with it the slide lock
+        // the hosts' menus wait on (`legaia_engine_menus::menu_slide_lock`).
+        if let Ok(overlay) = host
+            .index
+            .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        {
+            host.world.install_menu_overlay_tables(&overlay);
+        }
         if let Some(scus) = scus {
             host.world.install_retail_progression_tables(scus);
             // Pause-menu text: item names + info-window descriptions,

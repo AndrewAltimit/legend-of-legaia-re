@@ -376,19 +376,61 @@ impl World {
                     }
                 }
             }
-            let record = match arm {
-                2 => 0x801F_81F4,
-                3 => 0x801F_8288,
-                4 => 0x801F_82CC,
-                6 => 0x801F_8310,
-                _ => continue,
+            if let Some(record) = viguro_stager_record(arm) {
+                let spawn = [ModuleSpawn {
+                    record: SpawnRecord::Module(record),
+                    anchor: SpawnAnchor::Literal { pos, rot },
+                }];
+                self.stage_module_arm_spawns(909, &spawn, None, None);
+            }
+        }
+    }
+
+    /// Seat the records PROT 0909's seating arms (`2`, `3`, `4`, `6`) owe
+    /// this frame's op-`0x20` calls, on the caller's frame: retail makes the
+    /// call inside the caller's move-VM step (`FUN_801F7AF4` ->
+    /// `FUN_80050ED4` -> `FUN_80021B04`). Queued to the module's next tick
+    /// instead, every ring arm 12's emitter `0x801F8158` seats stood a battle
+    /// frame behind retail's - one `+0xC0` step of radius - and the expanding
+    /// rings read about two thirds of retail's size frame by frame. The
+    /// rendezvous arms `0` / `1` stay queued for the tick, which owns the
+    /// phase they step. Returns whether anything was seated.
+    pub(in crate::world) fn seat_viguro_stager_spawns_now(&mut self) -> bool {
+        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        let calls = std::mem::take(&mut self.casting.module_stager_calls);
+        let (seats, keep): (Vec<_>, Vec<_>) = calls
+            .into_iter()
+            .partition(|(arm, _)| viguro_stager_record(*arm).is_some());
+        self.casting.module_stager_calls = keep;
+        for (arm, caller) in &seats {
+            let Some(record) = viguro_stager_record(*arm) else {
+                continue;
             };
             let spawn = [ModuleSpawn {
                 record: SpawnRecord::Module(record),
-                anchor: SpawnAnchor::Literal { pos, rot },
+                anchor: SpawnAnchor::Literal {
+                    pos: caller.pos,
+                    rot: caller.rot,
+                },
             }];
+            let before = self
+                .casting
+                .active_summon
+                .as_ref()
+                .map_or(0, |sc| sc.parts.len());
             self.stage_module_arm_spawns(909, &spawn, None, None);
+            // Retail's walk reaches what a caller with a node behind it
+            // seats (`SummonScene::seat_walk`): the ring takes its first
+            // channel step on the frame its emitter seats it.
+            if caller.walk_successor
+                && let Some(sc) = self.casting.active_summon.as_mut()
+            {
+                for p in sc.parts.iter_mut().skip(before) {
+                    p.walk_reached = true;
+                }
+            }
         }
+        !seats.is_empty()
     }
 
     /// Walk PROT 0909's creature in along its facing while arm 4 waits for
@@ -420,5 +462,17 @@ impl World {
     fn creature_root_driven(&self, slot: u8) -> bool {
         self.battle_playing_root_motion(usize::from(slot))
             .is_some_and(|(speed, _)| speed > 0)
+    }
+}
+
+/// The record PROT 0909's stager arm seats on its caller (`2`, `3`, `4`, `6`;
+/// `FUN_801F7AF4`), `None` for the rendezvous arms and arm `5`.
+fn viguro_stager_record(arm: u8) -> Option<u32> {
+    match arm {
+        2 => Some(0x801F_81F4),
+        3 => Some(0x801F_8288),
+        4 => Some(0x801F_82CC),
+        6 => Some(0x801F_8310),
+        _ => None,
     }
 }

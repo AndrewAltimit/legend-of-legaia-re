@@ -41,6 +41,7 @@ pub mod encounter_formation;
 pub mod encounter_man;
 pub mod encounter_registry;
 pub mod encounter_state;
+pub mod final_heal;
 pub mod levelup;
 pub mod magic_xp;
 pub mod monster_ai;

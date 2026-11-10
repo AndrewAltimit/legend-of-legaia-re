@@ -114,6 +114,8 @@ MIRRORS = [
      "site/_content/tooling/porting-by-reimplementation.html"),
     ("docs/tooling/retail-kernel-differential.md",
      "site/_content/tooling/retail-kernel-differential.html"),
+    ("docs/tooling/verification-ladder.md",
+     "site/_content/tooling/verification-ladder.html"),
     ("docs/tooling/cast-sequence-oracle.md",
      "site/_content/tooling/cast-sequence-oracle.html"),
     ("docs/tooling/walk-film.md",

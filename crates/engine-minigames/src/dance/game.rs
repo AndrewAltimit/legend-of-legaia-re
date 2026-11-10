@@ -1162,12 +1162,14 @@ impl DanceGame {
         Some(self.cell(self.lane(), self.beat_index()))
     }
 
-    /// The symbol the **CPU auto-feed** would press for the human's lane
-    /// (`FUN_801d1820` - the display half, which substitutes the triangle symbol
-    /// `3` on the combo slot once the dancer's schedule is due). Kept for hosts
-    /// that draw the retail "displayed" note; only [`Self::judged_symbol`]
-    /// scores a direction.
-    // PORT: FUN_801d1820 (chart lookup - the auto-feed / display half)
+    /// The note a host draws for the human's lane: nothing in the dead zone,
+    /// the triangle symbol `3` on every combo slot, else the lane's chart
+    /// cell. A host aid, not a retail routine: the CPU feed it resembles
+    /// ([`Self::auto_feed`], `FUN_801d1820`) shows the triangle only once the
+    /// dancer's schedule is due, moves that schedule, and reads the lane off
+    /// the dancer's own gauge. Only [`Self::judged_symbol`] scores a
+    /// direction.
+    // REF: FUN_801d1820
     pub fn required_symbol(&self) -> Option<u8> {
         if self.in_dead_zone() {
             return None;
@@ -1391,6 +1393,26 @@ impl DanceGame {
             return Some(3);
         }
         Some(self.cell(lane, beat))
+    }
+
+    /// [`Self::auto_feed`] for dancer `i`, `0` for no symbol, as the retail
+    /// kernel differential calls `FUN_801d1820` on its own.
+    #[doc(hidden)]
+    pub fn feed_symbol(&mut self, i: usize) -> u8 {
+        self.auto_feed(i).unwrap_or(0)
+    }
+
+    /// [`Self::judge_direction`] for dancer `i` on this frame's beat, as the
+    /// retail judge `FUN_801d1960` answers: its return code (`0` miss, `1`
+    /// hit, `2` chain closed), the accuracy weight and the points.
+    #[doc(hidden)]
+    pub fn judge_code(&mut self, i: usize, dir: DanceDir) -> (u32, u32, u32) {
+        let beat = self.beat_index();
+        match self.judge_direction(i, dir, beat) {
+            DanceEvent::Hit { weight } => (1, weight, 0),
+            DanceEvent::Sequence { weight, points } => (2, weight, points),
+            _ => (0, 0, 0),
+        }
     }
 
     /// One dancer's live words, for the differential.

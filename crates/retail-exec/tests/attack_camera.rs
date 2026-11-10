@@ -30,6 +30,7 @@ type Tween = ([i16; 3], [i16; 3], [i16; 3], u32);
 
 #[test]
 fn the_attack_camera_is_retails() {
+    differential!(prot(898, FRAMING));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

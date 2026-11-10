@@ -238,6 +238,7 @@ fn seed_port(world: &mut World, w: &Win) -> (FormationDef, MonsterCatalog) {
 
 #[test]
 fn a_win_pays_what_retail_pays() {
+    differential!(scus(SPOILS));
     let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

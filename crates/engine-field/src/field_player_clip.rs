@@ -223,6 +223,114 @@ pub fn settle_clip_pick(
     }
 }
 
+/// The settle's movement-lock bit (`+0x10 & 0x80000`, `0x801D1BB8`).
+pub const SETTLE_LOCK_FLAG: u32 = 0x0008_0000;
+/// The settle's slow-fall class (`+0x10 & 0x2000`): the glide rate halves.
+pub const SETTLE_SLOW_FALL_FLAG: u32 = 0x2000;
+/// The settle's mirror class (`+0x10 & 0x20000000`): `+0x16 = -(+0x8E)`.
+pub const SETTLE_MIRROR_FLAG: u32 = 0x2000_0000;
+/// The grounded `+0x9E` the settle glides at, and the most it still runs its
+/// tail at (`slti v0, v0, 0x11`).
+pub const SETTLE_GROUNDED: i16 = 0x10;
+
+/// What the head of the vertical settle reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettleInputs {
+    /// The actor's `+0x10`.
+    pub flags: u32,
+    /// The actor's `+0x9E`.
+    pub word_9e: i16,
+    /// The actor's `+0x16` (footing).
+    pub y: i16,
+    /// The actor's `+0x8E`, which the mirror class negates into `+0x16`.
+    pub mirror: i16,
+    /// Scratchpad `0x1F800394 & 0x400`, the bind block.
+    pub bind_block: bool,
+    /// The frame-step byte `0x1F800393`.
+    pub frame_step: u8,
+    /// The kind-0 warp timer `_DAT_8007B6B0` (signed word).
+    pub warp_timer: i32,
+    /// The post-warp pad hold `_DAT_8007B6B4`.
+    pub warp_hold: u32,
+    /// The step-delta pair `_DAT_8007BDE0` / `_DAT_8007BDE4` (halfwords).
+    pub step_delta: (i16, i16),
+}
+
+/// What the head of the vertical settle decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettleHead {
+    /// The actor's `+0x16` after the glide (or the mirror store).
+    pub y: i16,
+    /// The actor's `+0x9E` after the promotion of a `0` to the grounded value.
+    pub word_9e: i16,
+    /// Probe for a ledge hop (`FUN_801D1878`); a probe that starts one skips
+    /// the tail.
+    pub hop_probe: bool,
+    /// Run the tail - the walk-on dispatcher `FUN_801D1EC4`, then
+    /// [`settle_clip_pick`] - unless the hop probe started a hop.
+    pub tail: bool,
+}
+
+/// The head of the field vertical settle: `FUN_801D1BA0` from its entry to
+/// the tail (`0x801D1BA0..0x801D1D80`), the glide, the `+0x9E` gates and the
+/// hop gates. `floor` is the floor sample `FUN_80019278(actor)`, called only
+/// on the arm that glides off the floor.
+///
+/// A free actor (`+0x10 & 0x80000` clear, no bind block) with the grounded
+/// `+0x9E` glides and may probe for a hop when the warp pair is quiet and the
+/// step delta is non-zero. Any other actor takes the no-hop arm at
+/// `0x801D1CC8`: a `+0x9E` of `0` is promoted to the grounded value and
+/// glides, the grounded value glides, any other value does not; the tail runs
+/// while `+0x9E` is at most the grounded value. The glide steps `+0x16`
+/// toward the floor by at most `frame_step * 12` (halved, `sra`, for the
+/// slow-fall class), or stores `-(+0x8E)` for the mirror class, in 16-bit
+/// wrapping arithmetic.
+///
+/// PORT: FUN_801D1BA0 (the head `0x801D1BA0..0x801D1D80`)
+pub fn settle_head(i: &SettleInputs, floor: impl FnOnce() -> i32) -> SettleHead {
+    let mut floor = Some(floor);
+    let mut glide = |y: i16| -> i16 {
+        let mut rate = i32::from(i.frame_step) * 3 * 4;
+        if i.flags & SETTLE_SLOW_FALL_FLAG != 0 {
+            rate >>= 1;
+        }
+        if i.flags & SETTLE_MIRROR_FLAG != 0 {
+            return (i.mirror as u16).wrapping_neg() as i16;
+        }
+        let sample = floor.take().map_or(0, |f| f());
+        let step = sample.wrapping_sub(i32::from(y)).clamp(-rate, rate);
+        (y as u16).wrapping_add(step as u16) as i16
+    };
+    let free = i.flags & SETTLE_LOCK_FLAG == 0 && !i.bind_block;
+    if free && i.word_9e == SETTLE_GROUNDED {
+        let y = glide(i.y);
+        let hop_probe =
+            i.warp_timer <= 0 && i.warp_hold == 0 && (i.step_delta.0 != 0 || i.step_delta.1 != 0);
+        return SettleHead {
+            y,
+            word_9e: i.word_9e,
+            hop_probe,
+            tail: true,
+        };
+    }
+    let word_9e = if i.word_9e == 0 {
+        SETTLE_GROUNDED
+    } else {
+        i.word_9e
+    };
+    let y = if word_9e == SETTLE_GROUNDED {
+        glide(i.y)
+    } else {
+        i.y
+    };
+    SettleHead {
+        y,
+        word_9e,
+        hop_probe: false,
+        tail: word_9e <= SETTLE_GROUNDED,
+    }
+}
+
 /// Bank slot (0-based record inside one character's seven-record bank) a
 /// party-bank pick lands on, given the leader it was strided by. `None` when
 /// the pick is not a party-bank bind or lands outside the leader's bank.

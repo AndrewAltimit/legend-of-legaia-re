@@ -9,7 +9,7 @@ use crate::common::{Rng, scus_cpu};
 use crate::walk_on::{index, map_image};
 use legaia_engine_field::field_regions::{
     MAP_REGION_BLOCK_OFFSET, RegionAttributes, RegionTable, ZONE_RECORD_STRIDE,
-    refresh_region_attributes, zone_query,
+    refresh_region_attributes, region_type_mask, zone_query,
 };
 use legaia_engine_scene::scene::Scene;
 use psx_retail_exec::{Stop, V0};
@@ -29,6 +29,7 @@ const ZONES: u32 = 0x8016_1000;
 
 #[test]
 fn the_region_refresh_and_zone_query_match_over_every_scene() {
+    differential!(scus(REFRESH), prot(897, ZONE_QUERY));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), crate::common::disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -150,5 +151,115 @@ fn the_region_refresh_and_zone_query_match_over_every_scene() {
     assert!(
         scenes > 100 && hits > 1000 && zone_hits > 1000,
         "{scenes} {hits} {zone_hits}"
+    );
+}
+
+const SCAN: u32 = 0x8001_7FBC;
+const TYPE_MASK: u32 = 0x801D_E234;
+/// `gp + 0x608`: the scan's resumable cursor.
+const CURSOR: u32 = 0x8007_B920;
+/// `gp + 3`: the record stride the scan reads (`DAT_8007B31B`).
+const STRIDE: u32 = 0x8007_B31B;
+
+/// The resumable scan itself, call by call (`a0 = 0` resets the cursor, any
+/// other value resumes), and the overlay's mask loop over it, against
+/// `RegionTable::scan` and `region_type_mask` over every field scene's table.
+#[test]
+fn the_region_scan_and_type_mask_match_over_every_scene() {
+    differential!(scus(SCAN), prot(897, TYPE_MASK));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), crate::common::disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    assert_eq!(
+        usize::from(cpu.mem.rd8(STRIDE)),
+        legaia_engine_field::field_regions::REGION_RECORD_STRIDE,
+        "the resident stride byte"
+    );
+    let index = index();
+    let mut rng = Rng(0x5343_414E);
+    let (mut scenes, mut matches, mut resumed, mut masks, mut failures) = (0, 0, 0, 0, Vec::new());
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        if scene.field_map_index(&index).is_none() {
+            continue;
+        }
+        let Some(image) = map_image(&index, &scene) else {
+            continue;
+        };
+        let block = &image[MAP_REGION_BLOCK_OFFSET..];
+        let Some(table) = RegionTable::parse(block) else {
+            continue;
+        };
+        scenes += 1;
+        cpu.mem.load(MAP, &image);
+        cpu.mem.wr32(MAP_PTR, MAP);
+        let body = i16::from_le_bytes([block[0xE], block[0xF]]) as usize;
+        let mut tiles: Vec<(i32, i32)> = Vec::new();
+        for i in 0..table.count() {
+            let r = &block[body + i * 8..body + i * 8 + 4];
+            for (dx, dz) in [(0, 0), (-1, 0), (0, -1), (1, 1), (-2, -2), (2, -1)] {
+                tiles.push((i32::from(r[0]) + dx, i32::from(r[1]) + dz));
+                tiles.push((i32::from(r[2]) + dx, i32::from(r[3]) + dz));
+            }
+        }
+        for _ in 0..48 {
+            tiles.push((rng.below(0x86) as i32 - 3, rng.below(0x86) as i32 - 3));
+        }
+        for (tx, tz) in tiles {
+            // The scan, resumed until it runs dry. A resume from a cursor the
+            // caller left mid-table is what the mask loop does.
+            let mut cursor = 0usize;
+            let mut first = true;
+            loop {
+                let a0 = if first { 0 } else { 1 + rng.below(4) };
+                if first {
+                    cpu.mem.wr16(CURSOR, rng.next() as u16);
+                }
+                assert_eq!(
+                    cpu.call(SCAN, &[a0, tx as u32, tz as u32, 0xDEAD_0000]),
+                    Stop::Returned
+                );
+                let retail = match cpu.regs.r[V0] {
+                    0 => None,
+                    p => Some(((p - MAP - MAP_REGION_BLOCK_OFFSET as u32) as usize - body) / 8),
+                };
+                let port = table.scan(&mut cursor, tx, tz).map(|m| m.index);
+                let retail_cursor = cpu.mem.rd16(CURSOR) as i16 as i64;
+                if (retail, retail_cursor) != (port, cursor as i64) && failures.len() < 16 {
+                    failures.push(format!(
+                        "{name} scan ({tx}, {tz}): retail {retail:?} cursor {retail_cursor} \
+                         port {port:?} cursor {cursor}"
+                    ));
+                }
+                resumed += usize::from(!first);
+                first = false;
+                if retail.is_none() || port.is_none() {
+                    break;
+                }
+                matches += 1;
+            }
+
+            cpu.mem.wr32(MASK, rng.next());
+            assert_eq!(cpu.call(TYPE_MASK, &[tx as u32, tz as u32]), Stop::Returned);
+            let port = region_type_mask(Some(&table), tx, tz);
+            masks += usize::from(port != 0);
+            if cpu.mem.rd32(MASK) != port && failures.len() < 16 {
+                failures.push(format!(
+                    "{name} mask ({tx}, {tz}): retail {:#x} port {port:#x}",
+                    cpu.mem.rd32(MASK)
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    eprintln!("{scenes} scenes, {matches} scan matches, {resumed} resumes, {masks} masks");
+    assert!(
+        scenes > 100 && matches > 1000 && resumed > 5000 && masks > 1000,
+        "{scenes} {matches} {resumed} {masks}"
     );
 }

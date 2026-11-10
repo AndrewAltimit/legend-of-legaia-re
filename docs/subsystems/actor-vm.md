@@ -60,12 +60,26 @@ list at `gp+0x148`, descriptor id at node `+0x8`):
 | Helper | Role |
 |---|---|
 | `FUN_80035334` | look a window up by descriptor id |
-| `FUN_800326AC` | create |
+| `FUN_800326AC` | create, [off its park edge](#creation-and-the-park-edge) |
 | `FUN_800357FC` | **start a slide**: copy the node's current `+0xA` / `+0xC` into the motion sub-object's source, write the target, set `+0x20 = 1` (tail at `0x80035874`) |
 | `FUN_800358C0` | **snap**: write source and target alike and clear `+0x20` (tail at `0x80035938`) |
-| `FUN_80035978` | begin close (`+0x20 = -1`) |
-| `FUN_80035A4C` | close all |
+| `FUN_80035978` | begin close: a still window gets `+0x20 = -1` and `+0x1E = 0`, a sliding one `+0x20 = -1` and `+0x1E = 12 - +0x1E` (the slide reversed), a closing one is left alone |
+| `FUN_80035A4C` | the close body on every window |
 | `FUN_800319A8` | destroy now |
+
+### Creation and the park edge
+
+`FUN_800326AC` keeps the list sorted by id, re-initialises a node already on
+it, and creates every window off screen: the descriptor's park class (`+1`)
+picks an edge of the display rect at `0x1F800388..0x1F80038E` (left, top,
+right, bottom) - class `0` below the bottom by 12, `2` left of the left edge by
+the width and 20, `4` above the top by the height and 20, `6` right of the
+right edge by 12; the odd classes are diagonals that move both axes by the
+smaller clearance, and `8` or more creates the window at home. The live
+position and the slide source take the park, the target the home, node `+0x1D`
+the class word's low byte, `+0x20 = 1`, and the motion sub-object's duration
+`+0` is always `0xC`. Op `0x01`'s "already home" test therefore compares the
+real park with the home.
 
 Motion is target-based: the VM installs slide targets and the per-frame
 window walker animates them. The interpreter's own base materialisation
@@ -74,8 +88,14 @@ window descriptor table.
 
 In the port, the `Host` methods carry the helpers' meaning (`slide_to`,
 `snap_to`, `begin_close`, `close_all`, `destroy`), and `MenuWidgetState` keeps
-each window's live position, slide source and target, and the `+0x20` motion
-word. The world-map panel interpreter `FUN_801E9B3C` calls the same helpers
+each window's live position, slide source and target, style byte, `+0x20`
+motion word and `+0x1E` progress, creating at `menu_widget::park_position`.
+The [kernel differential](../tooling/retail-kernel-differential.md) runs the
+interpreter and the seven helpers against it. The per-frame motion pass that
+animates the slides, `FUN_80031AE4`, is `MenuWidgetState::step_motion`, and
+the count of windows it moved is the latch `_DAT_8007BB80` every menu
+sub-screen waits on before it reads the pad
+([field-menu.md](field-menu.md#the-window-slide-input-lock)). The world-map panel interpreter `FUN_801E9B3C` calls the same helpers
 from the same arm layout (ops `1` / `2` slide, `9` / `10` snap;
 [`world-map.md`](world-map.md)).
 

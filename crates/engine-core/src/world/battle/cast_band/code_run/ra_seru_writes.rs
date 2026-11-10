@@ -142,6 +142,9 @@ impl World {
             }
         }
         self.slippery_storm_clouds(phase, passed, creature);
+        if (phase, passed) == (9, true) {
+            self.slippery_hit_exit(creature);
+        }
         let Some(a) = self.actors.get_mut(usize::from(creature)) else {
             return;
         };
@@ -162,10 +165,20 @@ impl World {
     /// of four cloud records, `rand() % 4` (`0x801F7298..0x801F7344`), a quarter of
     /// the trig table behind the creature at `y = -0x280`, on the creature's angle
     /// trio. The arm's exit halts every handle it kept (`0x801F715C..0x801F7184`).
+    ///
+    /// The exit is the countdown test the arm opens with (`subu` of the whole
+    /// pass's drain, `bgtz` at `0x801F70D8`): a pass that leaves halts the
+    /// handles and seats nothing, and only a pass that holds reaches the spawn
+    /// counter (`0x801F7194..`). The port's pass is `delta` one-vsync ticks and
+    /// the leaving tick need not be its first, so the halt runs on whichever
+    /// tick leaves, and the first tick seats only when the pass's whole drain
+    /// keeps the word above zero.
     fn slippery_storm_clouds(&mut self, phase: u8, passed: bool, creature: u8) {
-        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        use legaia_engine_cast::cast_module_camera::{
+            MODULE_DRAIN_PER_TICK, ModuleSpawn, SpawnAnchor, SpawnRecord,
+        };
         const CLOUDS: [u32; 4] = [0x801F_8244, 0x801F_8284, 0x801F_82C4, 0x801F_8304];
-        if phase != 6 || self.casting.module_pass_repeat {
+        if phase != 6 {
             return;
         }
         if passed {
@@ -176,6 +189,12 @@ impl World {
                     }
                 }
             }
+            return;
+        }
+        let countdown = self.casting.module_cam.countdown;
+        if self.casting.module_pass_repeat
+            || countdown.0 - MODULE_DRAIN_PER_TICK * i32::from(countdown.1) <= 0
+        {
             return;
         }
         let n = self.casting.module_pass_counter.wrapping_add(1) & 3;
@@ -200,6 +219,51 @@ impl World {
             },
         }];
         self.stage_module_arm_spawns(920, &spawn, None, None);
+    }
+
+    /// PROT 0920's arm 9 exit, where the hit lands on the row
+    /// (`0x801F7794..0x801F79E8`), beyond the damage and the purple flash
+    /// (`jal 0x80024E80` at `0x801F77FC`, which the presentation decoder
+    /// already seats):
+    ///
+    /// - every struck monster tinted magenta, `+0x04 = 0x3FF003FF`, `+0x0C =
+    ///   0x1000` (`0x801F7910..0x801F7928`), no `+0x21F` store;
+    /// - three records seated on the camera focus (`x = -*(0x80089118)`, `z =
+    ///   -*(0x80089120)` over the zeroed stack `y`) on the creature's angle
+    ///   trio (`a1 = creature + 0x44`) at scale `0x1000`
+    ///   (`0x801F797C..0x801F79E8`): the two purple rings `0x801F8344` /
+    ///   `0x801F8398` and the burst `0x801F83EC` that spread under the victims
+    ///   through arm 10.
+    fn slippery_hit_exit(&mut self, creature: u8) {
+        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        const RINGS: [u32; 3] = [0x801F_8344, 0x801F_8398, 0x801F_83EC];
+        let party = self.party.party_count.clamp(1, 3);
+        for s in party..party + 4 {
+            if let Some(a) = self.actors.get_mut(usize::from(s))
+                && a.active
+                && a.battle_monster_id.is_some()
+            {
+                a.battle.render_color = 0x3FF0_03FF;
+                a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
+            }
+        }
+        let facing = self
+            .actors
+            .get(usize::from(creature))
+            .map_or(0, |a| a.battle.facing_angle & 0xFFF) as i16;
+        let focus = self
+            .battle_cam_pose()
+            .focus
+            .map(|v| v.round() as i32 as i16);
+        let spawns = RINGS.map(|record| ModuleSpawn {
+            record: SpawnRecord::Module(record),
+            anchor: SpawnAnchor::LiteralScaled {
+                pos: [focus[0], 0, focus[2]],
+                rot: [0, facing, 0],
+                scale: 0x1000,
+            },
+        });
+        self.stage_module_arm_spawns(920, &spawns, None, None);
     }
 
     /// Keep `ModuleCamState::row_tr_y` on the row's middle: `-4 * +0x3E` over

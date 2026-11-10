@@ -336,6 +336,11 @@ pub struct GroundSample {
 ///   rounding bias at all, unlike the blend path) and the patch's whole-step
 ///   and sub-cell biases are subtracted.
 ///
+/// Off the `128 x 128` grid the two sides part: retail masks the cell word's
+/// index (`& 0xFE` on the doubled X, `& 0x7F00` on the Z row), so the cell
+/// wraps around the grid, while [`FloorGrid::cell`] reads an empty cell. No
+/// floor actor stands there; the differential holds the solver inside it.
+///
 /// The flag maintenance runs first and is *not* skipped by either path: a
 /// negative flag word only ORs [`ACTOR_FLAG_OFF_FLOOR`] in, while a
 /// non-negative one clears it and re-raises it when the cell lacks

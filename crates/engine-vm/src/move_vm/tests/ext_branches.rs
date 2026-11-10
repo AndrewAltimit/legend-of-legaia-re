@@ -100,7 +100,8 @@ fn op2f_subop_11_saves_world_to_slot_indexed_by_field_86_low_byte() {
     state.world_x = -50;
     state.world_y = -100;
     state.world_z = -150;
-    state.world_y_mirror = -200;
+    // The slot's fourth halfword is the position vector's pad `+0x1A`.
+    state.world_pad = -200;
     step(&mut host, &mut state, &program(&[0x2F, 0x11]));
     assert_eq!(host.move_slot_load_u16(11, 0) as i16, -50);
     assert_eq!(host.move_slot_load_u16(11, 2) as i16, -100);

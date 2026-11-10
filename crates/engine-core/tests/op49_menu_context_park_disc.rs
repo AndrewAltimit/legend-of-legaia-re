@@ -264,11 +264,11 @@ fn a_surviving_0d_park_opens_the_notice_panel_and_the_ready_check() {
         assert!(!session.is_done());
 
         // Yes ends the session, and closing under the gate releases the park.
-        let left = FieldMenuInput {
-            left: true,
+        let up = FieldMenuInput {
+            up: true,
             ..Default::default()
         };
-        session.tick(left);
+        session.tick(up);
         assert_eq!(session.ready_confirm_cursor(), Some(0));
         session.tick(press);
         assert!(session.is_done(), "{}: Yes must end the menu", site.scene);

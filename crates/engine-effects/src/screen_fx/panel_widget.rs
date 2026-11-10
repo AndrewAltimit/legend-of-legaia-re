@@ -106,12 +106,15 @@ impl PanelWidget {
     }
 
     /// Advance the 5-channel tween one frame and return the 1–2 textured
-    /// quads - the whole of `FUN_801F849C`. Unlike the mask handler this one
-    /// has no `dur == 0` snap arm: with no active tween the latched `cur`
-    /// values draw as-is.
+    /// quads - the whole of `FUN_801F849C`. The draw starts from the
+    /// **targets** (`0x801F84BC..0x801F84E8` loads `+0x3C..+0x42` and `+0x26`
+    /// into the locals). Unlike the mask handler this one has no `dur == 0`
+    /// latch: with no active tween it draws the targets and leaves `cur`
+    /// where it was, so a `dur = 0` move shows at once while the next tween
+    /// still starts from the old latch.
     // PORT: FUN_801F849C
     pub fn tick(&mut self, frame_delta: u8, screen: &Screen) -> (PanelQuad, Option<PanelQuad>) {
-        let mut e = self.cur;
+        let mut e = self.target;
         if self.dur != 0 {
             self.t = self.t.wrapping_add(frame_delta as i16);
             if self.dur < self.t {

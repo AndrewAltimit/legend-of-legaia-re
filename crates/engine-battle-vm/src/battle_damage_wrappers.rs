@@ -192,7 +192,7 @@ fn scale(
 
     let mut def = defender_roll;
     if d.guard == 4 {
-        def = def.saturating_mul(2);
+        def = def.wrapping_mul(2);
     }
     def = apply_status_weaken(def, d.status);
 

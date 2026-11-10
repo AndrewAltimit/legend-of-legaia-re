@@ -516,17 +516,17 @@ pub fn venue_floor_ladder() -> [i16; 16] {
 }
 
 /// The 4096-step sine table the pond swell samples. Retail reads the
-/// shared table through `*_DAT_8007B81C` (runtime data the port does not
-/// stage); this synthesizes an equivalent once.
+/// shared table through `*_DAT_8007B81C`, which points at the SCUS sine
+/// table `0x80070A2C` (runtime data the port does not stage); this is that
+/// table, entry for entry: `sin_4096` truncates toward zero as the disc
+/// table does, where a rounded sine misses it by one on a fraction of the
+/// entries and lifts those swell rungs by one.
 pub fn swell_sine_table() -> &'static [i16] {
     use std::sync::OnceLock;
     static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
     TABLE.get_or_init(|| {
         (0..fc::SINE_TURN)
-            .map(|i| {
-                let f = (i as f64) * std::f64::consts::TAU / fc::SINE_TURN as f64;
-                (f.sin() * 4096.0).round() as i16
-            })
+            .map(|i| legaia_minigame_formats::minigame_slot_scene::sin_4096(i) as i16)
             .collect()
     })
 }
@@ -612,13 +612,16 @@ pub fn tick_venue_actors(
     if phase == PondPhase::Idle {
         let mut rng = v.rng;
         let rolled = v.wander.as_mut().and_then(|w| {
-            w.tick(held_packed, || {
+            // One venue frame is one vsync, so the dwell steps by one; the
+            // draws keep `rand()`'s fifteen bits, which the dwell's signed
+            // `% 200` needs to stay non-negative.
+            w.tick(held_packed, 1, || {
                 let mut x = rng;
                 x ^= x << 13;
                 x ^= x >> 17;
                 x ^= x << 5;
                 rng = x;
-                x
+                x >> 16 & 0x7FFF
             })
         });
         v.rng = rng;

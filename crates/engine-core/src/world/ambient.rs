@@ -82,8 +82,11 @@ fn ambient_actor_tick(
         return ActorTickOutcome::Waiting;
     }
     let mut result = StepResult::Pending { opcode: 0xFFFF };
+    let mut frame = move_vm::FrameStep::default();
     for _ in 0..AMBIENT_PART_BUDGET {
-        let r = move_vm::step(host, state, &buf);
+        let Some(r) = frame.step(host, state, &buf) else {
+            continue;
+        };
         for (&word, &value) in &host.deferred_writes {
             if let Some(slot) = buf.get_mut(word) {
                 *slot = value;

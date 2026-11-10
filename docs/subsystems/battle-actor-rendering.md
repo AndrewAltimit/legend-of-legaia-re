@@ -166,7 +166,7 @@ The mesh's primitives are textured through per-prim CBA / TSB. The palette and p
 +0x1E0  4bpp indices               ; texture page, width x 256 texels, row-major
 ```
 
-- The CLUT region uploads to VRAM `(0, 484 + slot)`, 256 colours wide, with the STP bit set on non-zero entries.
+- The CLUT region uploads to VRAM `(0, 484 + slot)` as a `256 x 1` rectangle from the pool's start (`0x80055510..0x80055554`), with the STP bit set on the fifteen palettes' non-zero entries; the row's last sixteen entries are therefore the page's first halfwords, raw (`monster_archive::battle_clut_row`). No primitive selects palette 15.
 - The page uploads to `(slot*64 + 320, 256)`. It is always 256 rows tall; its width is 128 texels (32 fb-units) for most monsters or 256 texels (64 fb-units) when the per-monster wide flag is set, so `width_texels = (pool_len - 0x1E0) / 256 * 2`.
 - A primitive selects its palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`. Index 0 (colour `0x0000`) is transparent.
 - The arithmetic is exact: Gimard `0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to their pool sizes.
@@ -427,6 +427,16 @@ The action SM's `0x5A` end-of-action sweep clears the bits on every slot (`0x801
 
 **Measured.** Recomputing the pass from RAM over the catalogued battle states reproduces the stored bits on 277 of 279 seated slots. The two misses are bits set where the pass would clear them (action states `0x1E` and `0x35`, flow `0xFF`).
 
+`battle_tunnelc_xain_bloody_horns_mid_cast` shows Noa ghosted where the engine draws her solid. A breakpoint probe on the pass (entry `0x8004DC68`, and `0x8004712C` after it) holds her `+0x8` clear in the state's RAM and sets it on the first pass after the state, which reads the RAM's own pose (yaw `2986`), and on every pass after that as the cast camera swings on. She stands within a few units of the `dist / 4` radius there, so one pass's pose decides her.
+The displayed frame is older than both and shows her ghosted, so the pose its bits were computed on is one the RAM no longer holds; the image channel's walk-back puts it at yaw `2578`, where she clears. Ghosting her on the RAM's pose moves the state's `image` only `.787` to `.793`; Vahn's displayed pose is the larger part of the residual. Grade `capture`.
+
+**The party-art "beam".** In the party Tactical Arts captures a large translucent purple band sweeps across the frame, in a different place in each of the two framebuffers. It is this pass, not an effect: a body standing beside the camera drawn ghosted. Rasterising the state's ordering tables (`scripts/mednafen/ot-raster.py`) puts the band in them, as textured packets of the body's own mesh on texpage `0x75` / `0x7C` (ABR `3`):
+
+- `battle_rikuroa_party_vahn_chain_open`: the second monster (`0x1C`, pool slot 4, `+0x08 = 0x83000000`, mesh `+0x230` on its battle TMD). Its purple band is the TMD's own semi-transparent wing panels (codes `0x26` / `0x2E`, palette `0x7902` on CLUT row `484`), with the opaque body faces (`0x7900` / `0x7901`) ghosted beside them as the dark red strip along the band's edge.
+- `battle_ropeway_party_vahn_slash_kick_mid`: Gala's body (pool slot 2, CLUT row `483`) behind the camera, a fan of large panels over the sky.
+
+The band moves from one buffer to the next because the strike's recover glide turns the camera about `70` yaw units a pass while the panels stand within a few hundred units of the eye, so a pass of yaw moves them a third of the screen. The same nearness puts the wing panels' corners hundreds of pixels apart: the GPU's polygon-size limit decides which of them draw, and a corner a few units off retail's drops a whole panel. Grade `capture` (ordering tables, packet CLUT / texpage, mesh owner by `+0x230`, the forward walker read by a PCSX-Redux probe).
+
 **`ctx[+0x26B]`** is the battle's side-band stream request. `FUN_80055B4C` stores `a0 + 1` there (`0x80055B58`) for the victory hook's win-pose archive and the summon stagers' streams; the stream tick `FUN_801F17F8` clears it once the stream lands (`0x801F19D8`). The pass reads it only with the battle-end signal `0xFE` up, where the request is the win-pose archive the results sequencer also waits on (`0x8004E5C0`). It reads `0` on the one results-frame state (`noa_levelup_banner`). The command-flow byte `ctx[+6]` reads `0x1E`, `0x28` and `0x14` in the library's command-band and round-start states, and `0xFF` in every state of a running action.
 
 **Engine.** `engine-battle-vm::battle_action::camera_ghost_pass` is the kernel. `World::tick_battle_camera_ghost` runs it every frame after the battle camera tick, converting the engine's compacted seating to retail's fixed pool slots, and keeps the word in `BattleActor::flag_word`. `battle_actor_draw_plan` hands that to the tint pass as its top byte (`BattleActorDrawPlan::semi_mode`). Both hosts draw the ghost: `engine-battle::battle_body_blend` ORs the word's ABE / ABR into the body's TSB words, as `FUN_80043390` does into its packets.
@@ -476,9 +486,9 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 
 **Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `engine-world-views::battle_draws::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key.
 
-**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then placed as the hosts place a battle body - frame flip, the 4x world scale - and projected through the battle view-projection (`battle_trail::project_battle_point`).
-The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`, which builds the battle VP itself (`battle_fx_vp`: `battle_vp` at the stage's 4:3, which `battle_vp_matches_the_native_glam_composition` pins to the native window's glam composition). `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both compositions.
-PROT 0904's Theeder beam projects through the same `project_battle_point`, from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
+**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then projected as the emitter projects it: `FUN_800195A8(point, 1, 1, 0, out x4)` with all four out-pointers on one slot, so the point kept is the last corner, a view unit right and down, through the integer matrix the battle frame loads (`battle_trail::project_trail_point` over `FieldGteView::from_battle_pose`). `battle_trail::band_quads` / `trail_packet` give each quad's `POLY_G4` and OT entry, held to the emitter by the retail-exec differential; a band whose corner sits at or behind the eye keeps the GTE's saturated `SXY`, and the GPU's polygon-size limit drops it.
+The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`. `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both hosts' `f32` compositions.
+PROT 0904's Theeder beam projects through the hosts' `f32` battle view (`battle_trail::project_battle_point`), from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 
@@ -527,7 +537,7 @@ The ribbon starts from one `FUN_800195A8` billboard projection of the actor poin
 - **Suppression.** If the projected top edge spans `0x41` px or more (`x1 - x0`, signed), the routine returns without linking anything. The packet already carved out of the frame arena is abandoned; there is no single-quad fallback.
 - **Segment height.** The projected height `y2 - y0` is kept when it is at least `0x40`, otherwise `0x40` is substituted. That is a floor, not a cap: a tall billboard produces tall segments and a shorter chain.
 
-Every further segment reuses the previous segment's top edge as its bottom edge, so the quads form one continuous strip, and the un-jittered baseline steps up by exactly one segment height per iteration. The walk stops when the baseline (sign-extended to 16 bits) is no longer greater than `-height`, i.e. once the strip has left the top of the screen.
+Every further segment reuses the previous segment's top edge as its bottom edge, so the quads form one continuous strip, and the un-jittered baseline steps up by exactly one segment height per iteration. The walk is a `do`-`while` (`0x801E20F8..0x801E2290`): the first segment above the bottom one is drawn whatever the baseline, and the walk stops once the stepped baseline (sign-extended to 16 bits) is no longer greater than `-height`, i.e. once the strip has left the top of the screen. A bottom billboard already at the screen top still grows that one segment.
 
 The jitter magnitudes are all shifts of the segment height `h`:
 
@@ -540,7 +550,9 @@ Because the X wobble is shared inside an edge, the strip keeps its width and sna
 
 Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` returned for the bottom billboard, so the strip is depth-flat.
 
-Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
+A landed move projectile is a third caller: each pass a phase-3 homing slot's counter runs, `FUN_801E09F8` calls the ribbon once per `0xFF` byte of the move-power record's `+0x16` list on the slot's position, in the record's trail ([battle-action-helpers](battle-action-helpers.md#fun_801e09f8---cast-effect-census--projectile-flight--impact)); Thunder Break's lightning columns are these.
+
+Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng; held to the routine segment by segment by the [retail kernel differential](../tooling/retail-kernel-differential.md)); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
 
 ## Port hosts
 

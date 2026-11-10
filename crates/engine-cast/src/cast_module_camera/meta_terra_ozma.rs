@@ -521,7 +521,9 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             });
             st.creature_floor_clip = true;
             st.creature_stage = Some(1);
-            with_ring(with_drift(ArmDirection::PASS, d(-D, D, 0, 0, 8 * D)))
+            // The shake's store runs ahead of the gate, on the pass that
+            // leaves the arm too: no cut follows it here.
+            with_ring(with_drift(ArmDirection::PASS, dd))
         }
         6 => {
             let (odd, rise) = ozma_shake_step(st, 4 * D);

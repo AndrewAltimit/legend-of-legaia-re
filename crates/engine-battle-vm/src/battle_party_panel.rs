@@ -113,12 +113,42 @@ pub const LABEL_BUFFERS: [usize; 4] = [0xA9, 0x129, 0x159, 0x189];
 
 /// Battle-context offsets `FUN_801D84C0` publishes into the screen-element
 /// placement table.
-pub const PUBLISHED_BUFFERS: [(usize, usize); 4] = [
+///
+/// Each is a placement record's `+0x14` string word (records `0x41`, `0x42`,
+/// `0x43`, `0x59` and `0x65`); the last two share the context's `+0x1F9`
+/// buffer (`sw v1,0x86c(a0)` / `sw v1,0x98c(a0)` at `0x801D850C` /
+/// `0x801D8514`).
+pub const PUBLISHED_BUFFERS: [(usize, usize); 5] = [
     (0x62C, 0xA9),
     (0x644, 0x129),
     (0x65C, 0x159),
     (0x86C, 0x1F9),
+    (0x98C, 0x1F9),
 ];
+
+/// Placement-table words `FUN_801D84C0` points at a party slot's display
+/// name ([`name_field_ptr`] of `DAT_8007BD10[slot]`), as `(offset, slot)`:
+/// records `6`, `7` and `0x34` take the lead's, `0x4E` the second slot's and
+/// `0x4F` the third's (`0x801D8784..0x801D87BC`).
+pub const NAME_POINTER_FIELDS: [(usize, usize); 5] =
+    [(0xA4, 0), (0xBC, 0), (0x4F4, 0), (0x764, 1), (0x77C, 2)];
+
+/// The two portrait-cell byte pairs per slot ([`portrait_cell`]), as
+/// `(offset, slot)`: records `6`, `0x4E` and `0x4F` at `+0x0E` / `+0x0F`
+/// (`0x801D87F4..0x801D882C`).
+pub const PORTRAIT_CELL_FIELDS: [(usize, usize); 6] = [
+    (0x9E, 0),
+    (0x9F, 0),
+    (0x75E, 1),
+    (0x75F, 1),
+    (0x776, 2),
+    (0x777, 2),
+];
+
+/// The halfwords [`panel_anchors`] is written to: the primary into record
+/// `6` at `+0x02` / `+0x0A`, the secondary into record `0x4E` at the same
+/// two (`0x801D886C..0x801D8898`). The party size is the context's `+0`.
+pub const ANCHOR_FIELDS: ([usize; 2], [usize; 2]) = ([0x92, 0x9A], [0x752, 0x75A]);
 
 /// The screen-element placement table the panels are published into
 /// (`0x80076C10`). Named "pose-slot table" here once, one of three readings

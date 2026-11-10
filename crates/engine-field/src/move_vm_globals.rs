@@ -1,4 +1,4 @@
-//! Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
+//! Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words and the per-tick outcomes.
 //!
 //! One subsystem's state, held as a unit on the composite `World`.
 //! Fields keep their retail provenance notes.
@@ -6,7 +6,7 @@
 use legaia_engine_vm::MAX_ACTORS;
 use legaia_engine_vm::actor_tick::TickResult;
 
-/// Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
+/// Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words and the per-tick outcomes.
 pub struct MoveVmGlobals {
     /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
     /// vec means "no active move" - the move VM is not ticked for that
@@ -59,10 +59,6 @@ pub struct MoveVmGlobals {
     /// Move-VM `_DAT_8007B9D8` - globally-shared 32-bit slot written by ext
     /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
     pub dat_8007b9d8: i32,
-    /// Move-VM 16-slot scratchpad ramp targets at `_DAT_1F80035C` - used by
-    /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
-    /// pairs (target, current); engines apply per-frame interpolation.
-    pub scratchpad_targets: [i16; 16],
     /// Actor-VM glide targets (op `0x09` `MotionAt` → `start_motion`,
     /// retail `FUN_800358c0`), keyed by actor slot: each entry glides the
     /// actor's `move_state` `(world_x, world_y)` toward the target through
@@ -99,7 +95,6 @@ impl MoveVmGlobals {
             pool_top_override: None,
             ramp_ratio: 0,
             dat_8007b9d8: 0,
-            scratchpad_targets: [0; 16],
             actor_motions: std::collections::BTreeMap::new(),
             outcomes: Vec::new(),
             strip_requests: Vec::new(),

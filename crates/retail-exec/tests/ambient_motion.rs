@@ -81,6 +81,7 @@ fn gen_op(rng: &mut Rng) -> Vec<u8> {
 
 #[test]
 fn the_ambient_vm_runs_its_streams_as_retail_does() {
+    differential!(scus(ENTRY));
     let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

@@ -58,6 +58,7 @@ enum Ev {
 
 #[test]
 fn the_counter_sells_what_retail_sells() {
+    differential!(prot(897, COUNTER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

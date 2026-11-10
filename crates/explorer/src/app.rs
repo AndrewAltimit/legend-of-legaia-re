@@ -290,6 +290,10 @@ pub struct App {
     about_open: bool,
     /// The keyboard-shortcuts box (`?`, or the View menu).
     keys_open: bool,
+    /// Ctrl+E this frame: the shown view's main export button takes it
+    /// ([`Self::take_export_key`]); left over, the status line says the
+    /// view has nothing to save.
+    export_key: bool,
     /// The export running on its own thread, if any.
     export_job: Option<ExportJob>,
     /// The window's inner size, tracked for the settings file.
@@ -421,6 +425,7 @@ impl App {
             tab,
             about_open: false,
             keys_open: false,
+            export_key: false,
             export_job: None,
             window_size: None,
             window_pos: None,
@@ -608,6 +613,12 @@ impl App {
             self.explorer.save_settings();
         }
         picked
+    }
+
+    /// Whether Ctrl+E was pressed this frame, clearing it: the one export
+    /// button the shown view treats as its main one asks once per frame.
+    fn take_export_key(&mut self) -> bool {
+        std::mem::take(&mut self.export_key)
     }
 
     /// Run `work` on its own thread; its result becomes the status line (or
@@ -849,12 +860,13 @@ impl App {
     }
 
     /// The app-wide shortcuts that are not tied to a widget: Ctrl+O, F5
-    /// (Play), Ctrl+1..4 (the views).
+    /// (Play), Ctrl+1..4 (the views), Ctrl+E (save what the view shows).
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let cmd = |k| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, k);
         if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::O))) {
             self.pick_disc();
         }
+        self.export_key = ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::E)));
         if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::L))) {
             self.path_row = !self.path_row;
             self.path_focus = self.path_row;
@@ -1788,7 +1800,16 @@ impl App {
             Tab::Model => self.model_tab(ui, &lib, &a),
             Tab::Audio => self.audio(ui, &lib, &a),
             Tab::Text => self.text(ui, &lib, &a),
-            Tab::Hex => hex_view(ui, &a.bytes),
+            Tab::Hex => {
+                if self.take_export_key() {
+                    let name = format!("{}.BIN", lib.stem(a.index));
+                    if let Some(out) = self.export_target(&name, "BIN") {
+                        let res = export::bytes(&a.bytes, &out);
+                        self.report("entry", res, &out);
+                    }
+                }
+                hex_view(ui, &a.bytes)
+            }
         }
     }
 
@@ -1869,7 +1890,13 @@ impl App {
             });
         }
         ui.add_space(8.0);
-        if ui.button("Export raw entry (.BIN)...").clicked() {
+        let key = self.take_export_key();
+        if ui
+            .button("Export raw entry (.BIN)...")
+            .on_hover_text(EXPORT_KEY_HINT)
+            .clicked()
+            || key
+        {
             let name = format!("{}.BIN", lib.stem(e.index));
             if let Some(out) = self.export_target(&name, "BIN") {
                 let res = export::bytes(&a.bytes, &out);
@@ -1959,8 +1986,14 @@ impl App {
         if stacked {
             ui.horizontal(|ui| zoom_row(ui, &mut self.tim_zoom, slider_w));
         }
+        let key = self.take_export_key();
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Export PNG...").clicked() {
+            if ui
+                .button("Export PNG...")
+                .on_hover_text(EXPORT_KEY_HINT)
+                .clicked()
+                || key
+            {
                 let name = format!(
                     "{}_tim{:02}_clut{}.png",
                     lib.stem(a.index),
@@ -2134,7 +2167,9 @@ impl App {
                     "texel x colour / 128, sampled from the chosen VRAM image",
                 );
             }
-            let mut wanted = None;
+            // Ctrl+E takes the textured glTF, the export that keeps the
+            // most of what the view shows.
+            let mut wanted = self.take_export_key().then_some("glb");
             ui.menu_button("Export", |ui| {
                 if ui.button("Wavefront OBJ (.obj)...").clicked() {
                     wanted = Some("obj");
@@ -2150,7 +2185,7 @@ impl App {
                 }
             })
             .response
-            .on_hover_text("Save this mesh as OBJ or textured glTF");
+            .on_hover_text("Save this mesh as OBJ or textured glTF (Ctrl+E: glTF)");
             match wanted {
                 Some("obj") => {
                     let name = format!("{}_tmd{:02}.obj", lib.stem(a.index), self.tmd_sel);
@@ -2367,7 +2402,13 @@ impl App {
                             );
                         }
                     });
-                if ui.button("Export all samples (WAV)...").clicked() {
+                let key = self.take_export_key();
+                if ui
+                    .button("Export all samples (WAV)...")
+                    .on_hover_text(EXPORT_KEY_HINT)
+                    .clicked()
+                    || key
+                {
                     let stem =
                         format!("{}_vab{:X}", lib.stem(a.index), a.vabs[self.vab_sel].offset);
                     if let Some(first) = self.export_target(&format!("{stem}_000.wav"), "wav") {
@@ -2484,6 +2525,8 @@ impl App {
             ui.label("No dialog text or MES blobs in this entry.");
             return;
         }
+        // Ctrl+E saves the first text block the tab shows.
+        let mut key = self.take_export_key();
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -2496,7 +2539,12 @@ impl App {
                             RichText::new("language-pack markup: | = line break, {c1:00} = a name")
                                 .weak(),
                         );
-                        if ui.small_button("Save text...").clicked() {
+                        if ui
+                            .small_button("Save text...")
+                            .on_hover_text(EXPORT_KEY_HINT)
+                            .clicked()
+                            || std::mem::take(&mut key)
+                        {
                             let name = format!("{}_dialog.txt", lib.stem(a.index));
                             if let Some(out) = self.export_target(&name, "txt") {
                                 let body: String = a
@@ -2538,7 +2586,7 @@ impl App {
                             ))
                             .strong(),
                         );
-                        if ui.small_button("Save text...").clicked() {
+                        if ui.small_button("Save text...").clicked() || std::mem::take(&mut key) {
                             let name = format!("{}_mes{k}.txt", lib.stem(a.index));
                             if let Some(out) = self.export_target(&name, "txt") {
                                 let body: String = m
@@ -3025,6 +3073,9 @@ impl eframe::App for App {
                 egui::CentralPanel::default().show(ui, |ui| self.extract_panel(ui));
             }
         }
+        if self.take_export_key() {
+            self.explorer.status = Some(nothing_to_export(self.mode).into());
+        }
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -3169,6 +3220,10 @@ const KEYS: &[(&str, &str)] = &[
     ("Ctrl+L", "type a path to open"),
     ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
     ("F5", "play the open disc"),
+    (
+        "Ctrl+E",
+        "save what the view shows (texture, model, entry, frame)",
+    ),
     ("Ctrl+F, Esc", "search the archive, clear the search"),
     ("Ctrl+Tab, Ctrl+PgDn", "next preview tab"),
     ("Ctrl+Shift+Tab, Ctrl+PgUp", "previous preview tab"),
@@ -3381,6 +3436,23 @@ fn cycle_tab(from: Tab, forward: bool, enabled: impl Fn(Tab) -> bool) -> Tab {
 
 /// The preview pane's width below which the tab labels leave out their counts.
 const TAB_COUNTS_MIN_WIDTH: f32 = 430.0;
+
+/// The hover line on each view's main export button.
+const EXPORT_KEY_HINT: &str = "Ctrl+E";
+
+/// What the status line says when Ctrl+E finds nothing to save in `mode`.
+fn nothing_to_export(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Browse => {
+            "Ctrl+E saves the entry the preview shows: pick an entry on the left first."
+        }
+        Mode::Actors => "Ctrl+E saves the shown character or monster: pick one on the left first.",
+        Mode::Media => {
+            "Ctrl+E saves the shown movie frame; for voice and music, use a channel's WAV button."
+        }
+        Mode::Extract => "Ctrl+E saves single assets; this view unpacks the whole disc instead.",
+    }
+}
 
 /// A preview tab's label: its name with the count of what it shows, the
 /// count left out when there is nothing (the tab is disabled then).

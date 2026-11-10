@@ -85,7 +85,8 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 ///
 /// `FUN_801D603C` draws the heading at the content origin, then puts the
 /// choice block's marker column at `WX + 0x30` with its first row one
-/// `0x10` step below the heading.
+/// `0x10` step below the heading. The two choice labels draw in
+/// [`PAINTER_INK_CHOICE`], the heading in white.
 ///
 /// **This is the casino prize counter's Yes/No confirm**, not an options
 /// screen. Exactly one command in the menu overlay opens window `0x2E`:
@@ -125,7 +126,7 @@ pub fn choice_panel_draws_for(
         out.extend(text_draws_for(
             &font.layout_ascii(label),
             row.label_pen,
-            MENU_TEXT_WHITE,
+            PAINTER_INK_CHOICE,
         ));
     }
     (out, choice_marker_sprites(&rows, flags))
@@ -177,7 +178,7 @@ pub fn two_line_choice_panel_draws_for(
         out.extend(text_draws_for(
             &font.layout_ascii(label),
             row.label_pen,
-            MENU_TEXT_WHITE,
+            PAINTER_INK_CHOICE,
         ));
     }
     (out, choice_marker_sprites(&rows, flags))

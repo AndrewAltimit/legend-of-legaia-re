@@ -29,6 +29,7 @@ const CHAR_STRIDE: u32 = 0x414;
 
 #[test]
 fn an_arrow_string_builds_the_queue_retail_builds() {
+    differential!(prot(898, BUILDER));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

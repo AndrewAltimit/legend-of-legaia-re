@@ -63,9 +63,6 @@ pub const WIN_SHOP_PICKER: usize = 42;
 /// Row pitch of every list and picker here (`0xE`).
 pub const SHOP_LIST_PITCH: i32 = 0x0E;
 
-/// Fixed cell width of the kernel's digit fields.
-const DIGIT_CELL: i32 = 8;
-
 /// Text tint for a retail ink-staging value (`_DAT_8007B454`).
 pub fn shop_ink_color(ink: u8) -> [f32; 4] {
     match ink {
@@ -372,19 +369,14 @@ fn digit_field(
     cells: i32,
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    let s = value.to_string();
-    let len = s.len() as i32;
-    let mut out = Vec::new();
-    for (i, ch) in s.chars().enumerate() {
-        let cell = (cells - len + i as i32).max(0);
-        out.extend(crate::numeral_cell_draws(
-            font,
-            ch,
-            (x + cell * DIGIT_CELL, y),
-            color,
-        ));
-    }
-    out
+    crate::menu::decimal_field::decimal_field_draws(
+        font,
+        i64::from(value),
+        (x, y),
+        cells,
+        false,
+        color,
+    )
 }
 
 /// The kind-4 list kernel's PAGE header over a list window `(WX, WY, W)`:

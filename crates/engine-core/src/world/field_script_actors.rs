@@ -498,12 +498,20 @@ impl World {
     /// (`tr_eye / S`, [`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`]), so the
     /// extents divide by the same `S` before the `H / z` scale - an extent
     /// of `0x1000` is `0x1000 / 6` world units, and `dolk`'s mask rim lands
-    /// where retail's does. Empty outside a field scene.
+    /// where retail's does. The port runs that projector itself
+    /// ([`legaia_render_kernels::billboard::project_billboard`]) through the
+    /// integer camera ([`legaia_render_kernels::gte::FieldGteView`]), so the
+    /// rim lands on retail's pixels; a light at or behind the eye takes the
+    /// saturated corners retail's divide gives it. Empty outside a field scene.
     pub fn field_light_draws(&self, view: &FieldCameraView) -> Vec<FieldLightDraw> {
         if self.mode != SceneMode::Field || self.script_actors.lights.is_empty() {
             return Vec::new();
         }
-        let fog_view = legaia_engine_field::fog_particles::FogView::from_field_view(view);
+        // The camera matrix `FUN_800172C0` loads, in the GTE's integers.
+        let gte = legaia_render_kernels::gte::FieldGteView::from_field_view(
+            view,
+            legaia_engine_camera::projection::GTE_OFY as i32,
+        );
         let mut out = Vec::new();
         for l in &self.script_actors.lights {
             let parent = self.attached_light_parent_flags(l.parent);
@@ -514,26 +522,27 @@ impl World {
                 l.sprite.half_extent,
                 false,
                 |world, (hw, hh)| {
-                    let p = [i32::from(world.0), i32::from(world.1), i32::from(world.2)];
-                    let eye = view.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);
-                    match fog_view.project(p) {
-                        Some((sx, sy, _)) if eye[2] > 1.0 => {
-                            // `_DAT_8007BF10`'s uniform scale: the extents
-                            // live in retail's scaled view space.
-                            let k = view.h
-                                / (eye[2] * legaia_engine_field::camera::CUTSCENE_WORLD_SCALE);
-                            let ex = (f32::from(hw) * k).round() as i32;
-                            let ey = (f32::from(hh) * k).round() as i32;
-                            let c = |v: i32| v.clamp(-1024, 1023) as i16;
-                            billboard::ProjectedQuad {
-                                p0: (c(sx - ex), c(sy - ey)),
-                                p1: (c(sx + ex), c(sy - ey)),
-                                p2: (c(sx - ex), c(sy + ey)),
-                                p3: (c(sx + ex), c(sy + ey)),
-                            }
-                        }
-                        // Behind the eye: a zero rect, dropped below.
-                        _ => billboard::ProjectedQuad::default(),
+                    let c = legaia_render_kernels::billboard::project_billboard(
+                        &gte.rot,
+                        legaia_render_kernels::gte::GteVec3::new(gte.tr[0], gte.tr[1], gte.tr[2]),
+                        legaia_render_kernels::gte::GteVec3::new(
+                            i32::from(world.0),
+                            i32::from(world.1),
+                            i32::from(world.2),
+                        ),
+                        hw,
+                        hh,
+                        0,
+                        i32::from(gte.h),
+                        gte.ofx,
+                        gte.ofy,
+                        0,
+                    );
+                    billboard::ProjectedQuad {
+                        p0: c.xy[0],
+                        p1: c.xy[1],
+                        p2: c.xy[2],
+                        p3: c.xy[3],
                     }
                 },
                 |r| rect = Some(r),

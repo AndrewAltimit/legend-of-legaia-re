@@ -291,6 +291,14 @@ pub struct OptionsState {
     /// 320x240 display, `2..=6` (`--window-scale`; the launcher's row).
     /// Default 3 = 960x720. Window chrome like [`Self::fullscreen`].
     pub window_scale: u8,
+    /// Native window: show the picture only at a whole multiple of the
+    /// 320x240 display, centred with black around it, so every stage pixel
+    /// is the same size (the launcher's *Pixel-exact scaling* row). Off, the
+    /// default, a clean window just short of the next whole step draws at
+    /// that step and shrinks it to fit (`fill_target_for`); every other
+    /// window, and PSX mode's native target, is whole-step either way.
+    /// Window chrome like [`Self::fullscreen`].
+    pub integer_scale: bool,
 }
 
 impl Default for OptionsState {
@@ -326,6 +334,7 @@ impl Default for OptionsState {
             fullscreen: false,
             ui_theme: UiTheme::System,
             window_scale: 3,
+            integer_scale: false,
         }
     }
 }

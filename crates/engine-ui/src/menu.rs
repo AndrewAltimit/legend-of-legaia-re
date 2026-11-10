@@ -4,6 +4,7 @@
 //! [`window_dispatch`] and [`equip_stat_compare`] are re-exported at the
 //! crate root.
 
+pub mod decimal_field;
 pub mod equip_stat_compare;
 pub mod screens;
 pub mod window_dispatch;

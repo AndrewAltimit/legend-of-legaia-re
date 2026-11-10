@@ -309,6 +309,9 @@ pub struct ModuleCamState {
     /// The present party's first roster id `0x8007BD10[0]`, fed by the host
     /// (PROT 0959's arm `0x10` tests it against `1`).
     pub lead_roster: u8,
+    /// The victim's playing clip `+0x1D9` equals its `+0x1F2` slot, fed by
+    /// the host (PROT 0959's arms 9 and `0x0B` freeze it there).
+    pub victim_on_gate_clip: bool,
     /// Whether this tick opens a battle frame, fed by the host: an arm whose
     /// state steps once a pass (PROT 0959's shake toggle) steps on it.
     pub opens_pass: bool,
@@ -325,6 +328,10 @@ pub struct ModuleCamState {
     /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
     /// camera shake of its arms 5..9.
     pub ozma_shake: (u32, i32),
+    /// The victim's seat as PROT 0917's arm 4 saved it before moving the
+    /// victim onto the origin (`0x801F9354..0x801F935C`), which arm `0xF`'s
+    /// exit puts back and frames.
+    pub saved_victim: Option<ModuleSeat>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6

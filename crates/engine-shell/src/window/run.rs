@@ -602,6 +602,11 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     // `begin_new_game` resets the bank - dropping them there would make the
     // two flags silently exclusive.
     seed_debug_story_flags(&mut session, &debug_seeds);
+    // `LEGAIA_RNG_SEED` goes in ahead of the entry as well as after it: a
+    // scene's entry draws (its props' start phases) then take the seeded
+    // stream, which is what a host pair needs from a page that entered
+    // another scene first.
+    apply_rng_seed_env(&mut session);
     enter_launch_scene(
         &mut session,
         scene,

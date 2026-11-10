@@ -127,7 +127,7 @@
     <li><strong>Text</strong> - a scene's dialog and other messages, with the accented letters of the French, German and Italian discs; export as text.</li>
     <li><strong>Hex</strong> and <strong>Overview</strong> - the raw bytes, where the entry sits on the disc, and a raw <code>.BIN</code> export.</li>
   </ul>
-  <p>After an export, <em>Show folder</em> on the status line opens the folder it went to.</p>
+  <p><kbd>Ctrl</kbd>+<kbd>E</kbd> saves what the view shows without reaching for the button: the selected texture, the model as a textured <code>.glb</code>, the raw entry, the first text block, the character or monster, or the movie frame. After an export, <em>Show folder</em> on the status line opens the folder it went to.</p>
 
   <h3 id="explorer-actors">Characters &amp; monsters</h3>
   <figure class="screenshot">
@@ -137,7 +137,7 @@
   <p>Pick a party member to see the battle model built from the equipment you choose, or a monster from the list (<code>Gimard Lv2</code>, with its element badge). Every battle animation plays at game speed or steps a frame at a time; for Vahn, Noa and Gala the list includes every Tactical Art by name. <em>Export glTF</em> writes the animated model. On a window too narrow for the five equipment pickers in one row, they fold under one <em>Equipment</em> line, which says how many pieces differ from the default; click it to open them.</p>
 
   <h3 id="explorer-media">Movies &amp; voice</h3>
-  <p>The disc's movies play with their soundtrack, or step frame by frame with PNG export of any frame. The streamed CD-XA audio (voices, some music) is listed file by file and channel by channel, each playable and exportable as WAV. These read raw CD sectors, so they need the disc image rather than an extracted folder.</p>
+  <p>The disc's movies, each naming where in the game it plays and which place the story goes on in, play with their soundtrack, or step frame by frame with PNG export of any frame. The streamed CD-XA audio (voices, some music) is listed file by file and channel by channel, each playable and exportable as WAV. These read raw CD sectors, so they need the disc image rather than an extracted folder.</p>
 
   <h3 id="explorer-extract">Extract the whole disc</h3>
   <figure class="screenshot">
@@ -154,7 +154,7 @@
   </figure>
   <ul class="bullets">
     <li><strong>Status line</strong> - a confirmation (an export written, the game started) clears itself after a few seconds; an error is a red banner that stays until <em>Dismiss</em>, and <em>Copy</em> puts its text on the clipboard for a bug report. A game that stopped with an error adds <em>Show log</em>.</li>
-    <li><strong>Keyboard</strong> - <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a disc image and <kbd>Ctrl</kbd>+<kbd>L</kbd> shows the path field; <kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>Ctrl</kbd>+<kbd>4</kbd> switch between Browse, Characters &amp; monsters, Movies &amp; voice and Extract; <kbd>Ctrl</kbd>+<kbd>Tab</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> step through the preview tabs; the arrow keys, <kbd>Page Up</kbd> / <kbd>Page Down</kbd> and <kbd>Home</kbd> / <kbd>End</kbd> walk the archive, the character and monster list and the movie list; <kbd>F5</kbd> plays; <kbd>?</kbd> lists every shortcut.</li>
+    <li><strong>Keyboard</strong> - <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a disc image and <kbd>Ctrl</kbd>+<kbd>L</kbd> shows the path field; <kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>Ctrl</kbd>+<kbd>4</kbd> switch between Browse, Characters &amp; monsters, Movies &amp; voice and Extract; <kbd>Ctrl</kbd>+<kbd>Tab</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> step through the preview tabs; the arrow keys, <kbd>Page Up</kbd> / <kbd>Page Down</kbd> and <kbd>Home</kbd> / <kbd>End</kbd> walk the archive, the character and monster list and the movie list; <kbd>Ctrl</kbd>+<kbd>E</kbd> saves what the view shows; <kbd>F5</kbd> plays; <kbd>?</kbd> lists every shortcut.</li>
     <li><strong>View</strong> - a light or dark theme, or follow the desktop; and the zoom of the whole window, also on <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd>. Both are remembered.</li>
     <li><strong>Remembered</strong> - the window's size and place, the view and entry you had open, the character or monster and the movie, and the width of each list.</li>
     <li><strong>About</strong> (<kbd>F1</kbd>) - the version, the keyboard shortcuts, and where the third-party license notices sit.</li>
@@ -258,7 +258,7 @@
       <path class="dg-edge-dim" d="M780 104 V128 H96 V106" marker-end="url(#da-f12-ah)"/>
       <text class="dg-edge-label" x="442" y="142" text-anchor="middle">and round again</text>
     </svg>
-    <figcaption>The panel&rsquo;s pages. <em>Tools</em> holds the session-only debug switches (developer menu, diagnostics, debug camera, auto-battle, battle cadence, overworld markers, effect outlines), one press for each minigame, the game-mode picker and the card menu, and the party, fight-music, teach-a-spell and GameShark-file controls. <em>Scenes</em> takes your party and bag to the picked scene, seated as the play page seats a picked scene; it refuses on the title, in a menu, a fight, a movie or a minigame, and says why.</figcaption>
+    <figcaption>The panel&rsquo;s pages. <em>Tools</em> holds the session-only debug switches (developer menu, diagnostics, debug camera, auto-battle, battle cadence, overworld markers, effect outlines), one press for each minigame, the game-mode picker and the card menu, the party, fight-music, teach-a-spell and GameShark-file controls, and <em>Start a battle here</em>, which arms the scene's first encounter formation through the normal transition. <em>Scenes</em> takes your party and bag to the picked scene, seated as the play page seats a picked scene; it refuses on the title, in a menu, a fight, a movie or a minigame, and says why.</figcaption>
   </figure>
   <figure class="screenshot">
     <img src="../img/desktop/port-settings.jpg" width="960" height="720" alt="The F12 panel over a dimmed town on its Settings page: fullscreen, camera distance, reduce flashing, the lighting rows, fog, see-through walls, free-angle movement and the volumes, with the focused row's help below" loading="lazy">

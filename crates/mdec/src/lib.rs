@@ -216,7 +216,7 @@ const ESCAPE_CODE: u32 = 0b000001;
 /// allowed (the window is the output produced so far). Stops once `out_len`
 /// bytes have been produced.
 // PORT: FUN_801d0604
-fn iki_lzss_decompress(src: &[u8], out_len: usize) -> Vec<u8> {
+pub fn iki_lzss_decompress(src: &[u8], out_len: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(out_len);
     let mut sp = 0usize;
     'outer: while out.len() < out_len && sp < src.len() {
@@ -395,41 +395,6 @@ fn idct_8x8(block: &mut [i32; 64]) {
     }
 }
 
-// ── Block decode ────────────────────────────────────────────────────────────
-
-/// Decode one 8x8 block: dequantize the table-supplied DC plus the bitstream AC
-/// coefficients, then run the IDCT. Returns the spatial-domain samples.
-fn decode_block(br: &mut BitReader<'_>, qscale: i32, dc: i32) -> [i32; 64] {
-    let mut coeffs = [0i32; 64];
-    coeffs[0] = dc * Q_MAT[0];
-
-    let mut pos = 1usize;
-    // Read AC codes until End-of-Block. A block that fills all 63 AC positions
-    // is still terminated by an explicit EOB in the bitstream, so the loop must
-    // always read the next code rather than stopping the moment `pos` saturates
-    // (otherwise the trailing EOB is left unconsumed and the stream desyncs).
-    loop {
-        match decode_ac(br) {
-            Ac::EndOfBlock | Ac::Err => break,
-            Ac::Code { run, level } => {
-                pos += run as usize;
-                if pos > 63 {
-                    break;
-                }
-                // Dequantize. Arithmetic shift (floor) matches the PSX rounding;
-                // the coefficient is intentionally not range-clamped here (escape
-                // codes carry large levels that the IDCT consumes directly).
-                let q = Q_MAT[pos];
-                coeffs[ZIGZAG[pos]] = (level as i32 * q * qscale + 4) >> 3;
-                pos += 1;
-            }
-        }
-    }
-
-    idct_8x8(&mut coeffs);
-    coeffs
-}
-
 // ── YCbCr -> RGBA ────────────────────────────────────────────────────────────
 
 /// BT.601 YCbCr -> RGB. The MDEC produces zero-centred (signed) samples, so the
@@ -475,15 +440,10 @@ impl MdecDecoder {
     /// Returns `width x height x 4` bytes. Regions the bitstream doesn't reach
     /// (truncated/garbled input) are left zero-filled rather than panicking.
     ///
-    /// This is the port of retail's Iki bitstream converter `FUN_801D0378`,
-    /// fused with the MDEC hardware stage it fed. Retail splits the work in
-    /// two: `FUN_801D0378` walks the LZSS-decompressed qscale/DC table and the
-    /// AC-only bitstream into a list of MDEC codes (using the GTE
-    /// leading-zero-count register as its VLC prefix scanner), then DMAs that
-    /// list into the MDEC, which does the dequantize/IDCT/colour stages. The
-    /// port runs the same bitstream walk but resolves each run/level through
-    /// [`AC_VLC`] and finishes the block in software.
-    // PORT: FUN_801d0378
+    /// Retail splits the work in two, and so does this: [`iki_mdec_codes`]
+    /// (the port of the overlay's Iki converter `FUN_801D0378`) turns the
+    /// payload into the MDEC command-word list, and [`decode_mdec_codes`]
+    /// stands in for the MDEC hardware the list was DMA'd into.
     pub fn decode_frame(&self, frame: &[u8]) -> anyhow::Result<Vec<u8>> {
         use anyhow::bail;
 
@@ -499,91 +459,150 @@ impl MdecDecoder {
             bail!("MDEC: frame dimensions {w}x{h} exceed the {MAX_DIM}px-per-axis limit");
         }
 
-        let mut rgba = vec![0u8; w * h * 4];
-        let mb_cols = w / 16;
-        let mb_rows = h / 16;
-        let block_count = mb_cols * mb_rows * 6;
-
-        // Parse the 10-byte Iki header.
+        // A frame too short for its header, or one that is not Iki, decodes
+        // blank but correctly sized.
         if frame.len() < IKI_HEADER_LEN {
-            return Ok(rgba); // too short to decode; blank frame
+            return Ok(vec![0u8; w * h * 4]);
         }
         let magic = u16::from_le_bytes([frame[2], frame[3]]);
-        let lzss_size = u16::from_le_bytes([frame[8], frame[9]]) as usize;
-        if magic != IKI_MAGIC || IKI_HEADER_LEN + lzss_size > frame.len() {
-            return Ok(rgba); // not a recognisable Iki frame; blank
-        }
-
-        // LZSS-decompress the per-block qscale/DC table.
-        let table = iki_lzss_decompress(
-            &frame[IKI_HEADER_LEN..IKI_HEADER_LEN + lzss_size],
-            block_count * 2,
-        );
-        let qscale_dc = |block: usize| -> (i32, i32) {
-            if block * 2 >= table.len() || block + block_count >= table.len() {
-                return (1, 0);
-            }
-            let v = ((table[block] as u32) << 8) | table[block + block_count] as u32;
-            let qscale = (v >> 10) as i32;
-            let dc10 = v & 0x3FF;
-            let dc = if dc10 & 0x200 != 0 {
-                dc10 as i32 - 1024
-            } else {
-                dc10 as i32
-            };
-            (qscale.max(1), dc)
+        // The converter takes the macroblock grid from the frame's own header;
+        // the pixel stage lays it out at the decoder's size.
+        let mut hdr = frame[..IKI_HEADER_LEN].to_vec();
+        hdr[4..6].copy_from_slice(&(w as u16).to_le_bytes());
+        hdr[6..8].copy_from_slice(&(h as u16).to_le_bytes());
+        hdr.extend_from_slice(&frame[IKI_HEADER_LEN..]);
+        let Some(codes) = (magic == IKI_MAGIC).then(|| iki_mdec_codes(&hdr)).flatten() else {
+            return Ok(vec![0u8; w * h * 4]);
         };
+        Ok(decode_mdec_codes(&codes[2..], w, h))
+    }
+}
 
-        // AC bitstream follows the compressed table.
-        let mut br = BitReader::new(&frame[IKI_HEADER_LEN + lzss_size..]);
+/// The MDEC command-word list of one Iki frame, as retail's converter
+/// `FUN_801D0378` (PROT 0970) writes it for the MDEC DMA.
+///
+/// `[0..2]` copies the header's first two halfwords (the code count and
+/// `0x3800`, which together are the MDEC's 32-bit decode command). Then, per
+/// block in Cr, Cb, Y0..Y3 order over the column-major macroblock grid
+/// (`(w + 15) >> 4` by `(h + 15) >> 4`): the block's `qscale << 10 | DC` word
+/// from the LZSS table, its AC codes (`run << 10 | level & 0x3FF`, an escape's
+/// raw 16 bits verbatim), and the end-of-block `0xFE00`. The list is padded
+/// with `0xFE00` up to `2 + count * 2` halfwords and never cut short.
+///
+/// `None` for a payload too short for its header or its LZSS table. Retail
+/// reads past the end of a truncated bitstream; the port ends each block that
+/// meets the end (or an undecodable code) at once, so the blocks after it keep
+/// their DC.
+// PORT: FUN_801d0378
+pub fn iki_mdec_codes(frame: &[u8]) -> Option<Vec<u16>> {
+    if frame.len() < IKI_HEADER_LEN {
+        return None;
+    }
+    let hw = |o: usize| u16::from_le_bytes([frame[o], frame[o + 1]]);
+    let (count, command) = (hw(0), hw(2));
+    let mb = ((hw(4) as usize + 15) >> 4) * ((hw(6) as usize + 15) >> 4);
+    let block_count = mb * 6;
+    let lzss_size = hw(8) as usize;
+    let table_end = IKI_HEADER_LEN.checked_add(lzss_size)?;
+    if table_end > frame.len() {
+        return None;
+    }
+    let mut table = iki_lzss_decompress(&frame[IKI_HEADER_LEN..table_end], block_count * 2);
+    table.resize(block_count * 2, 0);
 
-        // Macroblocks are laid out column-major: down each column, then the
-        // next column to the right.
-        let mut block_idx = 0usize;
-        for mb_col in 0..mb_cols {
-            for mb_row in 0..mb_rows {
-                let decode_one = |idx: usize, br: &mut BitReader<'_>| {
-                    let (q, dc) = qscale_dc(idx);
-                    decode_block(br, q, dc)
+    let mut out = vec![count, command];
+    let mut br = BitReader::new(&frame[table_end..]);
+    for block in 0..block_count {
+        out.push(u16::from(table[block]) << 8 | u16::from(table[block + block_count]));
+        while let Ac::Code { run, level } = decode_ac(&mut br) {
+            out.push(u16::from(run) << 10 | (level as u16 & 0x3FF));
+        }
+        out.push(MDEC_EOB);
+    }
+    let end = 2 + usize::from(count) * 2;
+    if out.len() < end {
+        out.resize(end, MDEC_EOB);
+    }
+    Some(out)
+}
+
+/// The MDEC end-of-block code: run 63, level 0.
+const MDEC_EOB: u16 = 0xFE00;
+
+/// The MDEC's decode of a command-word list into RGBA8 pixels: each block is
+/// a `qscale << 10 | DC` word (padding `0xFE00` words ahead of it skipped),
+/// then `run << 10 | level` codes until the zigzag index passes 63, which the
+/// end-of-block code's run of 63 does. Blocks come in Cr, Cb, Y0..Y3 order
+/// over column-major `width x height` macroblocks; a list that runs out
+/// leaves the rest of the frame zero.
+///
+/// The hardware stage behind the DMA, not a routine of the disc: written from
+/// the PSX MDEC documentation, so no differential reaches it.
+pub fn decode_mdec_codes(codes: &[u16], width: usize, height: usize) -> Vec<u8> {
+    let mut rgba = vec![0u8; width * height * 4];
+    let mb_cols = width / 16;
+    let mb_rows = height / 16;
+    let mut it = codes.iter().copied().peekable();
+    let mut next_block = || -> Option<[i32; 64]> {
+        while it.next_if_eq(&MDEC_EOB).is_some() {}
+        let head = it.next()?;
+        let qscale = i32::from(head >> 10).max(1);
+        let mut coeffs = [0i32; 64];
+        coeffs[0] = signed10(head) * Q_MAT[0];
+        let mut pos = 0usize;
+        for code in it.by_ref() {
+            pos += usize::from(code >> 10) + 1;
+            if pos > 63 {
+                break;
+            }
+            // Arithmetic shift (floor); the coefficient is not range-clamped
+            // (escape codes carry large levels that the IDCT consumes directly).
+            coeffs[ZIGZAG[pos]] = (signed10(code) * Q_MAT[pos] * qscale + 4) >> 3;
+        }
+        idct_8x8(&mut coeffs);
+        Some(coeffs)
+    };
+    'grid: for mb_col in 0..mb_cols {
+        for mb_row in 0..mb_rows {
+            let (Some(cr), Some(cb)) = (next_block(), next_block()) else {
+                break 'grid;
+            };
+            let mut y_blocks = [[0i32; 64]; 4];
+            for y in &mut y_blocks {
+                let Some(b) = next_block() else {
+                    break 'grid;
                 };
-                let cr = decode_one(block_idx, &mut br);
-                let cb = decode_one(block_idx + 1, &mut br);
-                let y_blocks = [
-                    decode_one(block_idx + 2, &mut br),
-                    decode_one(block_idx + 3, &mut br),
-                    decode_one(block_idx + 4, &mut br),
-                    decode_one(block_idx + 5, &mut br),
-                ];
-                block_idx += 6;
-
-                // Y0=top-left, Y1=top-right, Y2=bottom-left, Y3=bottom-right.
-                for sub_y in 0..2usize {
-                    for sub_x in 0..2usize {
-                        let y_block = &y_blocks[sub_y * 2 + sub_x];
-                        for py in 0..8usize {
-                            for px in 0..8usize {
-                                let luma = y_block[py * 8 + px];
-                                let cx = sub_x * 4 + px / 2;
-                                let cy = sub_y * 4 + py / 2;
-                                let cr_v = cr[cy * 8 + cx];
-                                let cb_v = cb[cy * 8 + cx];
-
-                                let pixel_x = mb_col * 16 + sub_x * 8 + px;
-                                let pixel_y = mb_row * 16 + sub_y * 8 + py;
-                                if pixel_x < w && pixel_y < h {
-                                    let idx = (pixel_y * w + pixel_x) * 4;
-                                    rgba[idx..idx + 4]
-                                        .copy_from_slice(&ycbcr_to_rgba(luma, cb_v, cr_v));
-                                }
-                            }
+                *y = b;
+            }
+            // Y0=top-left, Y1=top-right, Y2=bottom-left, Y3=bottom-right.
+            for sub_y in 0..2usize {
+                for sub_x in 0..2usize {
+                    let y_block = &y_blocks[sub_y * 2 + sub_x];
+                    for py in 0..8usize {
+                        for px in 0..8usize {
+                            let luma = y_block[py * 8 + px];
+                            let cx = sub_x * 4 + px / 2;
+                            let cy = sub_y * 4 + py / 2;
+                            let pixel_x = mb_col * 16 + sub_x * 8 + px;
+                            let pixel_y = mb_row * 16 + sub_y * 8 + py;
+                            let idx = (pixel_y * width + pixel_x) * 4;
+                            rgba[idx..idx + 4].copy_from_slice(&ycbcr_to_rgba(
+                                luma,
+                                cb[cy * 8 + cx],
+                                cr[cy * 8 + cx],
+                            ));
                         }
                     }
                 }
             }
         }
-
-        Ok(rgba)
     }
+    rgba
+}
+
+/// The low ten bits of an MDEC word, sign-extended.
+fn signed10(code: u16) -> i32 {
+    (i32::from(code & 0x3FF) << 22) >> 22
 }
 
 /// A decoded video frame ready for display.

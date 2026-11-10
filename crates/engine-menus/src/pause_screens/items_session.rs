@@ -18,6 +18,12 @@ pub struct PauseItemRow {
     pub desc: String,
     /// Accessory passive lines for the extra widget box.
     pub passive: Option<(String, String)>,
+    /// The item-detail printer's output (`FUN_800337B0`), which window 17's
+    /// panel `FUN_801D0F1C` prints at the description pen: equipment's slot
+    /// template and stat line. `None` without the disc tables.
+    pub detail: Option<ItemDetailText>,
+    /// The info panel's scope icon ([`ItemDisplayText::scope_icon`]).
+    pub scope_icon: Option<u16>,
     /// This slot's [`crate::menu_list_rows::ROW_DISABLED`] /
     /// [`crate::menu_list_rows::ROW_ALT_INK`] bits in the **Use** list build
     /// (content id 3, `crate::menu_list_rows::build_use_list_rows`). `0`

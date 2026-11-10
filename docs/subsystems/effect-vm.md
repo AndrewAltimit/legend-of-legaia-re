@@ -43,6 +43,21 @@ Spawn ids `4` and `0x13` make a side call to the move-VM part spawner
 `0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the
 ordinary spawn path.
 
+Both entries return at once unless the pool-ready byte is set and the
+battle-end byte `DAT_8007BD71` holds `0xFF`: once a wipe or the escape
+teardown stores `0xFE` there, a spawn takes no slot and the walker runs
+neither pass, so no child moves or draws again (`World::tick_effects`,
+`World::active_effect_sprites` and the spawn seat test `battle.end`).
+
+**The randomized offsets live in the script, not the slot.** For an effect
+whose pack1 flags carry bit 0, the spawn draws two `rand()` per record and
+writes `rand % (2 * spread) - spread` back into each record's `+2` / `+6`
+legs in the resident `efect.dat` buffer (`0x801DFF64..0x801E0028`). Every
+master of that id reads its records from that one buffer, so a second spawn
+re-deals the legs of a first one still releasing children. The port keeps the
+legs per effect id (`Pool::scribbled_legs`), dropped with the pool at battle
+teardown as the buffer is reloaded.
+
 ## Lifecycle
 
 ```mermaid
@@ -499,6 +514,23 @@ part:
 
 Its builder is SCUS code, so unlike the ribbon it draws in every mode.
 
+**A bank-3 colour word splits the quad.** The quad goes out as a gouraud `GT4`
+(kind 19) when its texture mode `(+0x9E >> 3) & 7` is `0`, and the prim
+dispatcher `FUN_80043390` sends a colour word with mode bit `0x20` to handler
+bank 3, whose kind-19 leaf `FUN_80045BB4` draws the quad as sixteen `GT3`s,
+each linked on its own `AVSZ3`. PROT 0920's storm clouds (`0x801F8244..
+0x801F8304`, colour word `0xE9000000`) are such quads: sheets `2560 x 640`
+under the camera-relative `6x` scale (`+0x52 = 0x380`), the nearest at an eye
+depth under `1000`. Drawn as one quad each, their halves reach past the
+GPU's span limit and the PCSX-Redux capture rule rejects them, and the sky
+reads about a third as bright as retail's. Split, the small triangles survive
+as retail's do. They are Gouraud packets with one colour on every corner, which
+the PCSX-Redux instrument dithers like any Gouraud draw; a shader that reads
+"flat" off the colour's derivative floors each of the stacked additive sheets to
+five bits instead, and the storm sky stood about two thirds as bright as retail's
+in blocky bands. The sprite arm tags its Gouraud packets (`TSB_GOURAUD_BIT`) so
+the shader dithers them.
+
 **The scale is seated by the spawn, not the record.** `FUN_80021B04` stores
 its fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the
 part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
@@ -513,12 +545,13 @@ PROT 0913's depth-scaled ones and the stager arms that forward a caller's
 `+0x72`).
 
 Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
-into a one-quad mesh. The quad geometry is
+into a one-quad mesh, or bank 3's sixteen triangles
+(`sprite_arm_tessellated`). The quad geometry is
 `render-kernels::sprite_arm::sprite_arm_quad`, the one Baka Fighter's
 impact flash draws through.
 `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports the
 slot-B images whose programs reach the arm and pins that each lands on the
-draw list as one quad.
+draw list as one quad or as the split's sixteen triangles.
 
 ### The default arm's draw
 

@@ -2,6 +2,7 @@
 //! open / suspend / cover state queries hosts read.
 
 use super::*;
+use legaia_engine_menus::menu_slide_lock::MenuScreen;
 
 impl MenuRuntime {
     /// Take the UI cue the last [`Self::tick`] raised (a shop blip), if any.
@@ -80,9 +81,14 @@ impl MenuRuntime {
     /// `0`.
     pub fn step_field_session(&mut self, world: &mut World, edge: u16) -> Option<u8> {
         let mut cue = None;
+        // The window-slide input lock over the screens with a retail window
+        // program (the prize counter): nothing reaches the screen while a
+        // window slides (`_DAT_8007BB80`).
+        let open = self.session_slide_gate(world);
         if self.is_open() {
             // The window kernel's cursor auto-repeat (`gp+0x86C`).
             let edge = edge | world.input.take_menu_repeat();
+            let edge = if open { edge } else { 0 };
             self.tick(world, menu_input_from_pad_edges(edge));
             cue = self.take_ui_cue();
         } else {
@@ -105,6 +111,33 @@ impl MenuRuntime {
             world.finish_prize_exchange();
         }
         cue
+    }
+
+    /// The retail sub-screen the session screens stand on, for the slide
+    /// lock: the casino prize counter (`0x20`, its Yes / No window a step of
+    /// its own). The shop's screens keep their own slide model
+    /// (`shop::ShopSlides`) and are not keyed here.
+    pub fn session_screen(&self) -> Option<MenuScreen> {
+        self.prize_session.as_ref().map(|p| {
+            if p.confirming() {
+                MenuScreen::step(0x20, 1)
+            } else {
+                MenuScreen::at(0x20)
+            }
+        })
+    }
+
+    /// One frame of the session screens' window-slide lock
+    /// ([`legaia_engine_menus::menu_slide_lock`]); whether the pad reaches the
+    /// screen this frame.
+    ///
+    /// REF: FUN_801DC1CC (`0x801DC334` / `0x801DC438`, the latch reads)
+    fn session_slide_gate(&self, world: &mut World) -> bool {
+        let screen = self.session_screen();
+        let delta = legaia_engine_menus::menu_slide_lock::MENU_FRAME_DELTA;
+        let m = &mut world.menu;
+        m.session_slide_lock
+            .frame(&mut m.widgets, m.widget_scripts.as_ref(), screen, delta)
     }
 
     /// Install the disc-pinned equip restrictions the retail buy dispatch

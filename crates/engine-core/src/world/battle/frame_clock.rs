@@ -39,7 +39,7 @@ impl World {
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
         use legaia_engine_battle_loop::frame_clock::{
-            XA_STREAM_FRAME_COST, cost_of_step, frame_load_cost, measured_frame_cost_at,
+            XA_STREAM_FRAME_COST, cost_of_step, measured_frame_cost_at,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -47,12 +47,11 @@ impl World {
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
-        let xa_streaming = self.audio.battle_xa_busy_frames > 0;
+        let xa_streaming = self.audio.battle_xa_busy_frames > 0 && self.audio.battle_xa_frame_load;
         let cost = arm_step.map_or_else(
             || {
-                let (parts, ghosts) = self.battle_frame_load();
                 let cost = measured_frame_cost_at(self.party.party_count, state, passes)
-                    .saturating_add(frame_load_cost(parts, ghosts));
+                    .saturating_add(self.battle_frame_load_cost());
                 // An XA clip's read span: the whole frame runs on the CD
                 // interrupt path (`FUN_8005DAB0`).
                 if xa_streaming {
@@ -98,7 +97,10 @@ impl World {
                 a.battle.anim_rate.get(),
                 a.battle_monster_id.is_some(),
                 [0; 3],
-                |d| hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible),
+                |d| {
+                    d < ai::HISTORY_DEPTH
+                        && hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible)
+                },
             )
             .len();
         }
@@ -106,6 +108,59 @@ impl World {
             u16::try_from(parts).unwrap_or(u16::MAX),
             u16::try_from(ghosts).unwrap_or(u16::MAX),
         )
+    }
+
+    /// What a battle frame's draw load costs over its state's base, in
+    /// hblanks: the live move-VM parts
+    /// ([`EFFECT_PART_COST`](legaia_engine_battle_loop::frame_clock::EFFECT_PART_COST)),
+    /// the effect pool's live children
+    /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)),
+    /// and each planned after-image ghost at its body's polygon load
+    /// ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)):
+    /// a ghost re-runs the body's whole draw (`FUN_80049348` calls
+    /// `FUN_80048A08` per ghost), so a boss's ghost costs what its mesh does.
+    pub fn battle_frame_load_cost(&self) -> u16 {
+        use legaia_engine_battle::battle_afterimage as ai;
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, effect_pool_cost, ghost_draw_cost,
+        };
+        let (parts, _) = self.battle_frame_load();
+        let pool = self
+            .effect_pool
+            .children
+            .iter()
+            .filter(|c| c.frame_count != 0)
+            .count();
+        let mut cost = parts
+            .saturating_mul(EFFECT_PART_COST)
+            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)));
+        let per_frame = self.ghost_ring_slots_per_frame();
+        for a in &self.actors {
+            if a.battle_pose_history.is_empty()
+                || (a.battle.render_color == 0 && a.battle.render_flag != 0)
+            {
+                continue;
+            }
+            let hist = &a.battle_pose_history;
+            let n = ai::plan_ghosts(
+                a.battle.anim_rate.get(),
+                a.battle_monster_id.is_some(),
+                [0; 3],
+                |d| {
+                    d < ai::HISTORY_DEPTH
+                        && hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible)
+                },
+            )
+            .len();
+            let triangles = a
+                .battle_body_triangles
+                .filter(|&(id, _)| Some(id) == a.battle_monster_id)
+                .map(|(_, t)| t)
+                .filter(|&t| t > 0);
+            let each = ghost_draw_cost(triangles);
+            cost = cost.saturating_add(each.saturating_mul(u16::try_from(n).unwrap_or(u16::MAX)));
+        }
+        cost
     }
 
     /// Stand the frame-cost ring where a retail capture's stood (its sixteen
@@ -275,12 +330,25 @@ impl World {
         // (`battle-stage-camera.md`, the frame step). An arm table's step is
         // the length retail's frames ran under the arm, and takes effect on
         // its own pass.
+        //
+        // The step the frames before this pass left in the ring: what a pass
+        // under a cheaper arm still runs at while a dearer arm's entries sit in
+        // the sixteen-frame history (`FUN_80016B6C` reads the ring's maximum,
+        // `0x800170D0..0x800170F4`).
+        let carried = self.battle.frame_cost_step;
         self.push_frame_cost(measured);
+        // An arm table names the cost of the arm's own frames, so a dearer arm
+        // raises the step from its first pass, and a cheaper arm after a dear
+        // one runs the ring's step until the dear entries leave it: Kiss of
+        // Death's arm 5 runs `3` for sixteen passes after arm 4's clamped
+        // frames, then `2`.
+        let measured = measured.map(|step| step.max(carried));
         // A frame the XA stream loads overruns its step (`span_extra`); an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
             && self.toggles.battle_party_cost_step
             && self.audio.battle_xa_busy_frames > 0
+            && self.audio.battle_xa_frame_load
         {
             legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
@@ -1348,11 +1416,27 @@ mod tests {
         use legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA;
         let mut w = World::new();
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_cost_step, 4);
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, XA_STREAM_SPAN_EXTRA);
         w.audio.battle_xa_busy_frames = 0;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    #[test]
+    fn a_cast_modules_voice_leaves_the_frame_its_own_cost() {
+        // The summon films run their Done bands near `330` hblanks while the
+        // module's clip still reads: the clip does not load the frame.
+        let mut w = World::new();
+        w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_frame_load = false;
+        for _ in 0..16 {
+            w.push_frame_cost(None);
+        }
+        assert!(w.battle.frame_cost_step < 4);
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
     }

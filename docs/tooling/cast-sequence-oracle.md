@@ -95,6 +95,8 @@ Flags worth knowing:
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
 | `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
+| `--hit-trace` | Retail: each melee hit's `rand()` seed word to `retail/hits.csv` (breakpoint core), read at the head of `FUN_801EC3E4`'s hit body (`0x801EC5A8`); `--strike-deal` deals these words in place of the spark-burst reading ([below](#a-monsters-physical-attack)) |
+| `--range-trace` | Retail: each call of the range law `FUN_8004E2F0` to `retail/range.csv` (breakpoint core): its caller, the attacker's live pair and the target's live pair, body pair, heading, node cursor and clip, the inputs a walk-in's reach poll reads |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
 | `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, the position halfwords `+0x14..+0x18`, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`, the rotation banks `+0x24..+0x28`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
 | `--pose-objects` | Retail: `pose.csv` (breakpoint core), at each burning-body emit (`0x8004A61C`) on the summon creature, its cursor, live pair, facing and decoded object table; `LEGAIA_DIAG_CAST_PARTS` writes the engine's `pose.csv` from `stream_pose` |
@@ -280,7 +282,11 @@ that facing. The engine child stands each slot on the recorded facing beside its
 `battle_tunnelc_xain_strike`, Gala had struck Xain earlier in the round and faced `839`;
 her body pair stood `425` from Xain against a reach of `416`, so Bloody Horns' arm 0 walks
 one pass in. Unturned she stood `398` off, the engine skipped the walk and Xain cast from
-`67` units further back: the film read `.799` that way and `.873` seated.
+`67` units further back: the film read `.799` that way and `.873` seated. A recording made
+before the probe wrote the facing carries bare `x:z` pairs and replays the unturned stand,
+so re-record it (`--recapture`) rather than read a skipped walk as a port defect: re-recorded,
+`--range-trace` reads arm 0's poll (`ra = 0x801F7280`) on Gala's body `(85, 374)`, the
+engine's on `(84, 376)`, and both walk Xain one step to `(388, 575)`.
 
 Both sides also write `creature.csv`, the summon creature's clip, staged byte,
 cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
@@ -558,8 +564,13 @@ The probe records the frame counter on every vsync. A run of one counter value
 is one game frame of `L` vsyncs, its step the byte its last row reads. The
 **game clock** adds the step per frame, spread evenly over the frame's rows,
 so an overrunning frame advances it by its step, not by `L`. The pairing
-measures retail's offset into a segment on that clock, and the engine's tick
-(one vsync, no overrun) on its own. A capture without the `frame` column
+measures retail's offset into a segment on that clock, and the engine's on its
+own ticks less the ones its frames overran. The engine models one overrun, a
+frame the XA stream loads (`XA_STREAM_SPAN_EXTRA`), and the recorder marks each
+such tick in `meta.csv`'s `over` column (`Side::live_clock`). Counted as game
+time, those ticks left a voiced cast's magic band a pass behind retail's for
+every four it ran: Gaza's Astral Wave read its `0x2B` burst some `45` ticks
+late, `.809` with cues `.500`, and on the clock `.887` with cues `.750`. A capture without the `frame` column
 pairs on wall vsyncs, and the report says which clock it used.
 
 The segment table shows both: `retail vsyncs` (wall), `retail game` (the
@@ -714,9 +725,9 @@ side's own stream. So the channel's number mixes rule differences with deals.
 cue under the seat and clip it landed in, with its offset from the clip's commit,
 on both sides, so a clip both sides played can be read cue for cue.
 
-`--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held:
+`--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held, a monster's strike or a party member's:
 
-- the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
+- a monster striker's queue `+0x1DF..` off the state (a party striker's is its own command input, which the drive already replays). A monster's swings were rolled at its pick, so the
   drive's gate holds only the bytes up to the cursor. A byte the replay's loop has staged and not
   yet committed is re-staged from the queue too (`restage_dealt_byte`): a walking monster opens the
   loop with its first byte over the idle, and `battle_rugi_caruban_3_strike`'s replay had staged its
@@ -726,7 +737,10 @@ on both sides, so a clip both sides played can be read cue for cue.
   holds `393` / `64`, the replay `86` / `116`;
 - the striker's working ATK `+0x158` off the state: `battle_map02_mad_ogre_strike` stands on a Power
   Charge's `257` where the replay, which never cast it, holds `206`;
-- the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
+- the seed word `0x80009010` going into each hit. A `--hit-trace` recording logs it at the head of the
+  strike kernel's hit body (`0x801EC5A8`, past the head guards and ahead of the block roll's two draws),
+  for every hit the kernel resolves, blocked, missed or landed, as `retail/hits.csv`; the deal hands those
+  words out as `word@vsync`. Without the trace the words are read off the recording's `rand` column. A hit's spark burst
   makes its frame draw tens of times where any other frame draws once, so the frames read straight
   off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
   hit, so the word steps on once. A blocked or missed swing draws no burst and leaves no word,
@@ -737,13 +751,20 @@ on both sides, so a clip both sides played can be read cue for cue.
 
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
+scripts/ci/cast-sequence.py --physical --state battle_jou_nova_v3_strike --strike-deal --hit-trace
 ```
 
 Most strike recordings dealt this way match retail cue for cue: block verdict, damage rolls, the flinch's
-impact pick and the times. The ones that still part are not proven to part on a rule, because the deal is
-not complete. An emitter's draw can fall ahead of the hit: Nova's second hit follows a frame with an extra draw,
-and retail's verdict comes out only one word further on. Stepping every hit by the frame before's draws fixes
-Nova and breaks others, so the option keeps the one step the disassembly gives. A walk-clip capture's gate
+impact pick and the times. The burst reading is not complete: a blocked swing leaves no word, and an
+emitter's draw can fall between the frame's first word and the hit. `battle_jou_nova_v3_strike`'s burst words
+named the frame before the hit for its third, fourth and fifth swings (`0xEC2A0320` where the roll drew from
+`0x68CC220A`), so its fourth swing blocked on the engine and landed on retail. On the traced words the engine's
+block verdicts are retail's on all five swings (land, block, block, land, land: the third and fourth with the
+defender still in its block clip, `+0x1D9 == +0x1F3`, and `+0x1F7` down, so the roll's verdict stands), and the
+film's cues match `15` of `15` (`.867` before). `battle_ropeway_party_vahn_slash_kick_mid` is a party strike, which
+the deal did not seat before: Vahn's `0x0E` swing on the Ropeway monster is blocked on retail (`s0 213`,
+`s1 283`, cue `0x0C`) and landed on the engine's own stream (cue `0x07`); dealt, it blocks, and its Slash Kick hit
+lands on both sides (`10` of `10` cues, film `.611` to `.804`). A walk-clip capture's gate
 can also open past the first swing (`battle_retona_king_frog_strike`), and a defender's own stats stay the
 replay's. Read a residual by hand, as `battle_map02_mad_ogre_strike`'s Power Charge was read.
 
@@ -803,6 +824,16 @@ over the id multisets alone, whatever the time.
 
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
+
+**An edge sampler misses a same-id re-push.** The ring is sampled, not watched, so a cue
+pushed into the slot that held the same id one frame earlier reads as one cue: the ager clears
+the slot and the frame body refills it between two samples, and no sample sees the gap. Neither
+the frame counter nor the countdown separates the two, because samples land both inside a
+frame's body and in its vsync wait. `battle_chitei2_kemaro_lv2_lava_breath_mid_cast` is the
+case: three homing landings ring `0x49` (three `FUN_8004FCC8` calls from `0x801E185C` on a
+`--sfx-callers` recording, the third in the frame after the first two), the sampler counts two,
+and the engine's third reads as an extra. A lone extra whose id sat in a slot the frame before
+is checked against `sfxcall.csv` before it is read as an engine defect.
 
 A missing cue is traced back with `--sfx-callers`, which also write-watches
 the ring's id half (a `store` row is any store into `0x8007B6D8..DF`, `a0`

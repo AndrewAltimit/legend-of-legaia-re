@@ -623,7 +623,9 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             st.countdown.add(112);
             // `FUN_800319A8(0)` then `FUN_8003541C(0, 0, attack, 0xA0 - w /
             // 2, 0x96, ..)` (`0x801F799C..0x801F79EC`): the attack name
-            // replaces the spell name.
+            // replaces the spell name. The pass's push ran ahead of the gate,
+            // before this cut: the cut lands over it, and the host's nudge
+            // lands after the shot, so the pass carries none.
             ArmDirection {
                 spawns: &VERA_CREATURE_SPAWNS,
                 caption: Some(ModuleCaption::AttackName),
@@ -634,7 +636,6 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     frames: 1,
                 })
             }
-            .nudged(drift)
         }
         9 => {
             let drift = ModuleNudge {

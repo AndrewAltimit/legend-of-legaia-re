@@ -155,10 +155,10 @@ fn only_accessories_route_through_the_passive_table() {
         description_source(ITEM_KIND_ACCESSORY, 0x3F),
         DescriptionSource::AccessoryPassive(0x3F)
     );
-    // The bound is exclusive, and out-of-range draws nothing at all.
+    // The bound is exclusive; past it the item's own description draws.
     assert_eq!(
         description_source(ITEM_KIND_ACCESSORY, 0x40),
-        DescriptionSource::None
+        DescriptionSource::Item
     );
 }
 

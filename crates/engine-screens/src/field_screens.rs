@@ -141,7 +141,6 @@ pub fn field_party_hud_draws(
             hp_max: m.hp_max,
             mp: m.mp,
             mp_max: m.mp_max,
-            alive: m.alive,
             status: m.status,
         })
         .collect();

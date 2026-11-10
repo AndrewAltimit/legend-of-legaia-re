@@ -62,6 +62,7 @@ const INHERITED: &[(u32, u32, u32)] = &[(911, 0x801F_887C, 910), (951, 0x801F_8E
 
 #[test]
 fn every_summon_roll_site_has_an_owner_that_runs_the_finisher() {
+    not_a_differential!("a census of the jal sites in the slot-B images; runs no routine");
     let Some(disc) = disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

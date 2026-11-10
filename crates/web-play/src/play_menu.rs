@@ -156,6 +156,11 @@ pub struct PlayMenu {
     /// not just the in-memory write, once the page has opted in
     /// ([`LegaiaRuntime::card_store_handshake`]).
     store_wait: Option<u16>,
+    /// The presses [`LegaiaRuntime::play_menu_open_row`] makes to reach a
+    /// title row are a driver's, not a player's: they skip the window-slide
+    /// lock, as the native window's `open_menu_row_from_title` ticks the
+    /// picker directly.
+    driving_row: bool,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -176,6 +181,7 @@ impl PlayMenu {
             from_title: false,
             owns_frame: false,
             store_wait: None,
+            driving_row: false,
         }
     }
 }

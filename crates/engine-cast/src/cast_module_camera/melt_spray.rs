@@ -41,8 +41,11 @@ pub fn melt_spray_camera(
     };
     match phase {
         2 => {
+            // The turn reads the victim's display pair `+0x3C` / `+0x40`
+            // (`lh a0,0x40(s0)` / `lh a1,0x3c(s0)` at `0x801F81CC`).
+            let vb = st.victim_body.unwrap_or(v);
             let caster_facing =
-                bearing_12bit_approx(v.z, v.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
+                bearing_12bit_approx(vb.z, vb.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
             let victim_facing = caster_facing.wrapping_add(0x800) & 0xFFF;
             // The spray clip, staged with the bump (`li v1,0x7` /
             // `sb v1,0x1da(s1)`, `0x801F8264..0x801F8274`).

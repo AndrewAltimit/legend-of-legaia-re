@@ -372,7 +372,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     </tbody>
   </table>
   </div>
-  <p>The rows drain <strong>strictly in sequence</strong>, each starting once the rows before it are empty, with a tick blip every step. A row moves a fifth of what is left per frame while more than 5 remain, half while 3 to 5 remain, and exactly one below that. <strong>Pressing any face button snaps the tally to its end</strong>: the fast-forward latch short-circuits the step to the whole remainder.</p>
+  <p>The rows drain <strong>strictly in sequence</strong>, each starting once the rows before it are empty, with a tick blip every step. A row fades in while the row just above it is empty, so a zero row lets the next one light up early and drain without a pause when its turn comes. A row moves a fifth of what is left per frame while more than 5 remain, half while 3 to 5 remain, and exactly one below that. <strong>Pressing any face button snaps the tally to its end</strong>: the fast-forward latch short-circuits the step to the whole remainder.</p>
   <p>The combo row reads the running maximum of the opponent&rsquo;s hits-taken counter, which the HUD latches once a frame - so the score&rsquo;s combo term tracks the longest streak you land.</p>
   <p class="dg-note">Tally <code>FUN_801D239C</code>, drain step <code>FUN_801D6710</code>, per-exchange accumulator <code>FUN_801D2A28</code>, combo / HP tables <code>DAT_801D70C4</code> / <code>DAT_801D711C</code> (overlay rodata, no terminators). The same drain step is linked into the <a href="minigame-muscle-dome.html">Muscle Dome</a> hub.</p>
 </section>
@@ -399,9 +399,9 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
   <ul class="bullets">
     <li><strong>The camera.</strong> Every round opens on an oblique shot that swings a full turn while backing off, then settles side-on. Nothing moves it during the round except a special commit, which glides it to that fighter&rsquo;s special framing - a per-party-member table for the player, one fixed record for any opponent.</li>
     <li><strong>The player is on the left of the screen.</strong> The settled camera rotation is the identity and the projection is unmirrored; the player stands at <code>X = -(stand_off + 200)</code>, the opponent at <code>+(stand_off + 200)</code>, where <code>stand_off</code> is the roster record&rsquo;s <code>+0x44</code> (<code>0</code> for the first three ladder rungs, up to <code>140</code>).</li>
-    <li><strong>The room.</strong> One wall model is drawn four times as a closed room; a wall draws only when it lies past depth <code>0x2710</code>, which drops the one between the camera and the fighters. The floor is the battle ground-grid emitter relocated into this overlay.</li>
+    <li><strong>The room.</strong> One wall model is drawn four times as a closed room; a wall draws only when it lies past depth <code>0x2710</code>, which drops the one between the camera and the fighters. The floor is the battle ground-grid emitter relocated into this overlay. Its depth cue fades toward black, not toward the far colour the epilogue sets: the warm pool of light is drawn first, and its draw routine leaves its own colour word (black) in the GTE&rsquo;s far-colour registers.</li>
   </ul>
-  <p>In the port, one 3D surface (<code>engine-minigame-scenes::baka_duel_scene</code>) draws the duel on all three hosts: fighters, ghosts, walls, floor, impact parts and the round-start cameo, plus the cabinet&rsquo;s front-end lineup. The actor drop shadow is the one piece of the arena it does not draw.</p>
+  <p>In the port, one 3D surface (<code>engine-minigame-scenes::baka_duel_scene</code>) draws the duel on all three hosts: fighters, ghosts, walls, floor, impact parts and the round-start cameo, plus the cabinet&rsquo;s front-end lineup. The floor carries the epilogue&rsquo;s warm pool of light and, in the duel alone, each fighter&rsquo;s subtractive drop shadow: the combat tick is the only caller that draws one, so the title card and the lineup show none.</p>
 </section>
 
 <section class="doc-section" id="effects" data-doc="effects">
@@ -481,7 +481,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     <li>The result banners last for the round-over hold, not retail&rsquo;s spawn template (no library capture holds a result screen).</li>
     <li>The play hosts draw the tally&rsquo;s digit strips as font glyphs, and the VITAL bars untextured with the system texel&rsquo;s grey folded into their colour.</li>
     <li>The minigames page draws the duel HUD page-side rather than through the shared builder.</li>
-    <li>The drop shadow is not drawn; the developer menu, keyframe editor and slot helpers are not ported.</li>
+    <li>The developer menu, keyframe editor and slot helpers are not ported.</li>
   </ul>
 </section>
 

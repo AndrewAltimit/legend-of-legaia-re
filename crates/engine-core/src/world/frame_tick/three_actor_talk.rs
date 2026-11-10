@@ -74,9 +74,9 @@ impl World {
     ///   retail's one-frame 0 -> 5 despawn delay into the same tick.
     ///
     /// Not modelled: `FUN_801DE190` (party-display rebuild - the engine
-    /// derives the display from `party_actor_slots`) and the grid re-anchor
-    /// pair `FUN_801DE3E0`/`FUN_801DB8EC`/`FUN_801DAA50` (the engine camera
-    /// follows the player actor).
+    /// derives the display from `party_actor_slots`). The camera re-anchor
+    /// `FUN_801DE3E0` / `FUN_801DB8EC` / `FUN_801DAA50` is queued to the
+    /// camera as a tile query plus a snap.
     pub(crate) fn tick_three_actor_talk(&mut self) {
         use legaia_engine_field::leader_swap::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
@@ -162,6 +162,10 @@ impl World {
                     }
                 }
                 LeaderSwapEffect::SpawnFadeOut => {
+                    // `801d29b0..801d29c8`: the player's engaged bit goes up
+                    // for the whole swap, which locks its movement and its
+                    // follow ease until state 4 lowers it.
+                    self.set_player_engaged_bit(true);
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
                     // white, no start delay, a `-1` hold - the landed white
                     // persists until the state-2 fade-in replaces it.
@@ -233,6 +237,21 @@ impl World {
                         // whose zone query rewrites the region-type mask.
                         // REF: FUN_801DE3E0
                         self.zone_query_region_mask(i32::from(nx) >> 7, i32::from(nz) >> 7);
+                        // The same query loads the camera block for that tile,
+                        // and `FUN_801DB8EC` + `FUN_801DAA50` (`0x801D2BF8`,
+                        // `0x801D2C00`) snap the follow shot onto the new
+                        // leader: the engaged bit is up, so the follow ease
+                        // would not carry the camera there.
+                        // REF: FUN_801DB8EC, FUN_801DAA50
+                        self.push_camera_zone_request(
+                            legaia_engine_field::camera::CameraZoneRequest::QueryAtTile {
+                                x: (i32::from(nx) >> 7) as u8,
+                                z: (i32::from(nz) >> 7) as u8,
+                            },
+                        );
+                        self.push_camera_zone_request(
+                            legaia_engine_field::camera::CameraZoneRequest::SnapAndClamp,
+                        );
                     }
                 }
                 LeaderSwapEffect::ClearIncomingPose { slot } => {
@@ -276,10 +295,13 @@ impl World {
                         self.field_vm.pending_record_spawns.push(talk.duration);
                     }
                 }
-                LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
+                LeaderSwapEffect::ReleaseFadeObject => {
                     // The engine fade steps + drops itself
-                    // ([`crate::world::ScreenFxState::fade`]); no modelled camera flag word
-                    // to clear.
+                    // ([`crate::world::ScreenFxState::fade`]).
+                }
+                LeaderSwapEffect::ClearCameraBusy => {
+                    // `801d2ce4..801d2cf8`: the engaged bit comes down.
+                    self.set_player_engaged_bit(false);
                 }
                 LeaderSwapEffect::RetireController => {
                     self.dialog.three_actor_talk = Some(talk);
@@ -319,10 +341,32 @@ impl World {
     ///
     /// No-op without an active session.
     // REF: FUN_801D27E0 (state-5 despawn), FUN_801D2D38 (the collapse this undoes)
+    /// Raise or lower the player's engaged bit (`+0x10 & 0x80000`), as the
+    /// swap controller does through `_DAT_8007C364`.
+    fn set_player_engaged_bit(&mut self, on: bool) {
+        let bit = legaia_engine_field::leader_swap::CAMERA_BUSY_BIT;
+        if let Some(a) = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            if on {
+                a.move_state.flags |= bit;
+            } else {
+                a.move_state.flags &= !bit;
+            }
+        }
+    }
+
     pub fn end_three_actor_talk(&mut self) {
         let Some(talk) = self.dialog.three_actor_talk.take() else {
             return;
         };
+        // A session ended between the fade-out and state 4 leaves the
+        // engaged bit the swap raised; retail's scene teardown rebuilds the
+        // player object, the engine's player persists, so lower it here.
+        if (1..=4).contains(&talk.swap.phase) {
+            self.set_player_engaged_bit(false);
+        }
         self.system_flag_clear(0xD);
         if talk.saved_party_len > 0 {
             self.party.party_actor_slots =
