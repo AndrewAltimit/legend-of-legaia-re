@@ -352,11 +352,12 @@ fn rung2_fishing_prize_exchange_buys_a_row() {
     let (stdout, stderr) = run_window_with(
         &disc,
         &shot,
-        // Five `Down`s walk the cursor to the last row whatever the pool
-        // floors it to: the dear one-time prizes sit at the top of every
-        // venue table and the cheap repeatable ones at the bottom, so the
-        // clamped-at-`last` row is the one a modest point total can pay for.
-        "40:L,100:P,120:Down,140:Down,160:Down,180:Down,200:Down,240:Enter,260:Right",
+        // One `Up` from the top row wraps the cursor to the last row
+        // whatever the pool floors it to (the list wraps at both ends): the
+        // dear one-time prizes sit at the top of every venue table and the
+        // cheap repeatable ones at the bottom, so the last row is the one a
+        // modest point total can pay for.
+        "40:L,100:P,120:Up,240:Enter,260:Right",
         None,
         300,
         &[std::ffi::OsStr::new("--cheat-file"), cheat.as_os_str()],
