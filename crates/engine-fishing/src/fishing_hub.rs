@@ -345,17 +345,20 @@ impl FishingHub {
                 // equipped one in the marked ink (`_DAT_8007B454 = 7`).
                 for i in 0..3u32 {
                     let (name, count) = tackle_row(0x9D + i);
+                    let marked = lure == i && count != 0;
                     out.push(HubLine {
                         text: name,
                         x: TACKLE_ROW_X,
                         y,
-                        marked: lure == i && count != 0,
+                        marked,
                     });
+                    // The count's numerals take the ink word the row's name
+                    // left (`FUN_80034B78` reads `_DAT_8007B454`).
                     out.push(HubLine {
                         text: format!("{count:>4}").into_bytes(),
                         x: TACKLE_COUNT_X,
                         y,
-                        marked: false,
+                        marked,
                     });
                     y += TACKLE_ROW_PITCH;
                 }
