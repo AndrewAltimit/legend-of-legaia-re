@@ -27,7 +27,9 @@
 //! `(timer * 2) & 0x38` - four vsyncs an entry - added to the position for
 //! kinds `0` and `2`, subtracted in X for kind `3`
 //! (`0x8002BADC..0x8002BB7C`). Kind `1` never bobs; its motion is the frame
-//! flip. Mode `0` draws frame-current, unmoved.
+//! flip. Mode `0` draws frame zero, unmoved, and touches no state: the frame
+//! register is cleared on entry (`0x8002B9AC`) and only the mode-1 arm loads
+//! the kind's frame word into it.
 //!
 //! The state is global in retail - one frame / timer pair per kind, whoever
 //! calls - so [`CursorSprites`] is held once by the owner of the screen and

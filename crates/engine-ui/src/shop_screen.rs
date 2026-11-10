@@ -554,7 +554,9 @@ pub fn shop_picker_draws(ctx: &ShopScreenCtx<'_>, picker: &ShopPickerView<'_>) -
             shop_ink_color(*ink),
         ));
         if picker.cursor == Some(i) {
-            hand(ctx, (wx, y - 2), &mut out);
+            // `FUN_8002B994(0, mode, WX, y)`: the hand's quad opens on the
+            // row's own pen line (`move a3,s0` at `0x801D490C`).
+            hand(ctx, (wx, y), &mut out);
         }
     }
     out
