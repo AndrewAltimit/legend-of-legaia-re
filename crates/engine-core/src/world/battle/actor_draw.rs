@@ -109,7 +109,13 @@ impl BattleActorDrawPlan {
     /// the native window on the per-frame posed mesh and on the rest mesh's
     /// blended override, the browser page on its blend re-upload.
     pub fn apply_body_blend(&self, cba_tsb: &mut [[u16; 2]]) {
-        legaia_engine_battle::battle_body_blend::apply_body_blend(cba_tsb, self.semi_mode());
+        use legaia_engine_battle::battle_body_blend as bb;
+        bb::apply_body_blend(cba_tsb, self.semi_mode());
+        // The near-camera ghost's word takes bank 2, whose leaves write
+        // flat packets.
+        if bb::draw_colour_flat_bank(self.draw_colour) {
+            bb::apply_flat_bank(cba_tsb);
+        }
     }
 
     /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)

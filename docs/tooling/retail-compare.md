@@ -4604,9 +4604,23 @@ texel rule (`PsxTexelRule::PcsxRedux`, `psx_params.w = 2`):
   the engine before this rule and match after it;
 - a flat-shaded textured polygon is cut to 5 bits with no dither, as that
   emulator's `getTextureTransColShade` draws it. The test is the packet
-  colour's screen derivative (zero across a flat polygon), which also takes a
-  Gouraud polygon whose corners agree for a flat one; that misreading is the
-  residual on `kor_field_route_walk`.
+  colour's screen derivative (zero across a flat polygon), which alone also
+  takes a Gouraud polygon whose corners agree for a flat one. So the packet
+  kind rides the vertex: a TMD group whose packet shape is Gouraud carries
+  `TSB_GOURAUD_BIT` (`legaia_tmd::mesh::prim_tsb_word`), as the draw-time
+  Gouraud packets do, and dithers whatever its corners hold. A body drawn
+  through handler bank 2 drops the tag again (`battle_body_blend::apply_flat_bank`):
+  the near-camera ghost and the after-images, whose leaves write flat
+  packets. Most textured
+  groups hold one grey on every corner, a battle body's among them: a retail
+  ordering table of PROT 0934's creature links nothing but `POLY_GT3`
+  packets on its eight CLUTs. Without the tag the frame's `4 x 4` dither
+  response on the lone-caster Aluru film stood at `.76`, `.31` and `1.52` of
+  the table's on arms 7, 10 and 11 against retail's `.95`, `.50` and `1.69`;
+  with it the three read `.94`, `.50` and `1.70`. Over the summon, mid-cast
+  and field-route states the PCSX-Redux mean absolute error goes from `8.02`
+  to `7.92` with the block score level (`.941`), no state moving by more
+  than `.009`; `kor_field_route_walk` reads `12.3` to `12.0`.
 
 Over the field states the PCSX-Redux bias moved from `-2.3` to `-0.3` and the
 mean absolute error from `5.7` to `4.2`; the block score moves on a few dozen

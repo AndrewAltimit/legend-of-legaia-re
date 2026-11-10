@@ -88,15 +88,33 @@ pub fn pack_tsb_semi(tsb: u16, abe: bool) -> u16 {
 pub const TSB_FLAT_QUAD_BIT: u16 = 0x0400;
 
 /// The per-vertex TSB word of a TMD primitive: its page word, the group's ABE
-/// ([`pack_tsb_semi`]) and [`TSB_FLAT_QUAD_BIT`].
+/// ([`pack_tsb_semi`]), [`TSB_FLAT_QUAD_BIT`] and [`TSB_GOURAUD_BIT`].
+///
+/// A group whose packet shape is Gouraud goes out as `POLY_GT3` / `POLY_GT4`
+/// whatever its corner colours hold, and most textured groups hold one grey
+/// on every corner: a retail ordering table of PROT 0934's creature in
+/// battle links nothing but `0x34` packets on its eight CLUTs. The tag keeps
+/// such a group Gouraud for the instrument that dithers by packet kind.
 pub(crate) fn prim_tsb_word(
     prim: &crate::legaia_prims::Prim,
     group: &crate::legaia_prims::GroupHeader,
 ) -> u16 {
-    let flat_quad = crate::descriptor::Descriptor::for_flags(group.flags)
-        .is_some_and(|d| d.packet_shape.is_quad() && !d.packet_shape.is_gouraud());
-    (pack_tsb_semi(prim.tsb, group.abe()) & !TSB_FLAT_QUAD_BIT)
+    let shape = crate::descriptor::Descriptor::for_flags(group.flags).map(|d| d.packet_shape);
+    shape_tsb_word(prim.tsb, group.abe(), shape)
+}
+
+/// [`prim_tsb_word`] off the raw page word, the group's ABE and its packet
+/// shape (`None` for a group outside the descriptor table).
+pub(crate) fn shape_tsb_word(
+    tsb: u16,
+    abe: bool,
+    shape: Option<crate::descriptor::PacketShape>,
+) -> u16 {
+    let flat_quad = shape.is_some_and(|s| s.is_quad() && !s.is_gouraud());
+    let gouraud = shape.is_some_and(|s| s.is_gouraud());
+    (pack_tsb_semi(tsb, abe) & !(TSB_FLAT_QUAD_BIT | TSB_GOURAUD_BIT))
         | if flat_quad { TSB_FLAT_QUAD_BIT } else { 0 }
+        | if gouraud { TSB_GOURAUD_BIT } else { 0 }
 }
 
 /// Rotate a vector by the PSX `Rz · Ry · Rx` Euler composition, given the

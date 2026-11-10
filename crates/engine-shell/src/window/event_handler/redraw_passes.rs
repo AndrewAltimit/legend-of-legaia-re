@@ -976,6 +976,8 @@ impl PlayWindowApp {
                 &mut vmesh.cba_tsb,
                 Some(legaia_engine_battle::battle_afterimage::GHOST_ABR),
             );
+            // The walk's word takes bank 2: flat packets.
+            legaia_engine_battle::battle_body_blend::apply_flat_bank(&mut vmesh.cba_tsb);
             match r.upload_vram_mesh(
                 &vmesh.positions,
                 &vmesh.uvs,

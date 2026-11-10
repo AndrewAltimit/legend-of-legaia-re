@@ -539,7 +539,10 @@ last of retail's. Where the engine's two ticks of one pass draw different
 frames the score says so: on the lone-caster Vera recording the monster's
 return from its own turn shows on the second tick of the `0x28` pass and the
 first of the next, where retail shows it for the whole of the next pass, and
-`0x28` reads `.908`.
+`0x28` reads `.908`. Palma's arm 5 is the other arm the count of counter
+runs had flattered: its five-vsync step-`4` frames read `.789` pass for
+pass, and `.899` against the engine tick four earlier, so the engine's arm
+stands a pass ahead of retail's there.
 
 On frames that keep one length the two counts agree, which is why the
 earlier measurements hold. On the lone-caster Odd Dimension recording
