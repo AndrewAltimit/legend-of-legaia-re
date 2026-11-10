@@ -898,6 +898,16 @@ into game mode 3, from `P1[0]` `+0x1B2`. The box test needs the system
 context's position anchor seated on the player in overworld mode as well as
 field mode, or it fails every frame and the op is never reached.
 
+The ease `FUN_801DA390` has one caller, the head of the entity tick `FUN_801DA51C`
+(`jal` at `0x801DA52C`), so it steps once a game pass: one unit while the player's
+height and depth stand still, the gap over sixteen (at most twelve) while they move.
+Its fast arm pins the step at twelve while scratchpad bit 17 is raised (`2E 11`: the
+Sol Tower scenes `kor` / `kor3` / `kor4` / `korb2`, and `jouinc`) and the held pad
+word `_DAT_8007B850` carries a direction. The `kor3` film reads `148, 136, 124` a pass
+down to `0` after the stair warp with Up held. `World::tick_camera_offset_ease` runs on
+the actor game tick with the held pad; it had run once a vsync with the pad word zero,
+which crept one unit a vsync there.
+
 #### The texture blend is 5-bit
 
 A fog half is a texture-blended `POLY_FT4` (command `0x2E`) on an additive
