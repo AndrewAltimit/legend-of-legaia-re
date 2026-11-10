@@ -143,6 +143,7 @@ mod equip_main;
 mod escape;
 mod escape_timer;
 mod euler_rot;
+mod face_anim;
 mod field_actor_plan;
 mod field_camera;
 mod field_ctx;
