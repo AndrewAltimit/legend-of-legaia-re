@@ -160,6 +160,7 @@ mod hop_session;
 mod hop_spawn;
 mod hp_bar_settle;
 mod hsv;
+mod hub_actors;
 mod iki_decode;
 mod index_stack;
 mod inn;

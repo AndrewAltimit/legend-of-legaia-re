@@ -39,12 +39,19 @@ pub fn hub_dispatch(
         out.act(HubAction::RearmSubmode);
     }
     let inner = handler(actor, grid);
+    // The release arm reads `_DAT_8007B450` after the `jalr` (`0x801F1678`),
+    // so a handler that zeroed the cell this frame is seen as zero.
+    let board_flag = if inner.actions.contains(&HubAction::ClearBoardFlag) {
+        0
+    } else {
+        env.board_flag
+    };
     out.draws.extend(inner.draws);
     out.actions.extend(inner.actions);
     if grid.done_gate == 0 {
         actor.flags |= ACTOR_RETIRE;
         out.act(HubAction::ReleasePadLatch);
-        if env.board_flag == 0 {
+        if board_flag == 0 {
             out.act(HubAction::ClearBusyBit);
         } else {
             out.act(HubAction::SetBoardFlag);
