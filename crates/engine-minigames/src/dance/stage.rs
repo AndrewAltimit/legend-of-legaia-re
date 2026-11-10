@@ -247,9 +247,42 @@ pub struct CountInBanner {
     /// Brightness passed to the emit, clamped `0..=0xff`. Halved for the two
     /// sliding halves; full for the single held banner.
     pub brightness: i32,
-    /// `true` = the single centred banner (widget `0x78`, opaque); `false` = the
-    /// two half-brightness sliding halves (widget `0x77`).
+    /// `true` = the single centred banner (row `0x78`, opaque); `false` = the
+    /// two half-brightness sliding halves (row `0x77`, semi-transparent).
     pub hold: bool,
+}
+
+/// One `FUN_801D2F38` call of the count-in banner: widget `0` at `(x, y)`,
+/// with the semi-transparency byte the routine stores into the widget's
+/// record (`+0xF`) ahead of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountInQuad {
+    pub x: i32,
+    pub y: i32,
+    pub brightness: i32,
+    pub translucent: bool,
+}
+
+impl CountInBanner {
+    /// The frame's draws: the two sliding halves on row `0x77`, or the one
+    /// held banner on row `0x78`.
+    // PORT: FUN_801d2d98 (`0x801D2EAC..0x801D2F18`)
+    pub fn quads(&self) -> Vec<CountInQuad> {
+        let quad = |x, y, translucent| CountInQuad {
+            x,
+            y,
+            brightness: self.brightness,
+            translucent,
+        };
+        if self.hold {
+            vec![quad(0xA0 - self.x_offset, 0x78, false)]
+        } else {
+            vec![
+                quad(0xA0 + self.x_offset, 0x77, true),
+                quad(0xA0 - self.x_offset, 0x77, true),
+            ]
+        }
+    }
 }
 
 // Wired: the play window runs a pre-song count-in phase (the shell holds the

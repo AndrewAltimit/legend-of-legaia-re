@@ -33,6 +33,12 @@ pub struct DanceGame {
     pub(super) progress: u32,
     /// `DAT_801d5140`: armed on the human's missed press, read by the lesson.
     pub(super) miss_window: u32,
+    /// `DAT_801d558c`: armed at `0x10` by the human's closed chain, stepped
+    /// by the beat track's draw, which lights its second note while it runs.
+    pub(super) chain_flash: i32,
+    /// `DAT_801d512c`: armed at `0x10` on a flash beat of the human's track;
+    /// the lesson steps it and calls the combo while it runs.
+    pub(super) track_flash: i32,
     /// The beat clock has run a frame since the count-in: the hall's state
     /// was `10` on entry to this one.
     pub(super) clock_started: bool,
@@ -144,6 +150,8 @@ impl DanceGame {
             load_gate: false,
             progress: 0,
             miss_window: 0,
+            chain_flash: 0,
+            track_flash: 0,
             clock_started: false,
             judging_closed: false,
             vsync_phase: 0,
@@ -713,36 +721,15 @@ impl DanceGame {
     /// The body and caps take CLUT `0x7D0D` on a flash beat and `0x7D08`
     /// otherwise: a flash beat is `beat & 7 == 3` (`beat & 3` at level `0`)
     /// within the first `0x46` phase units (`0x801D2620..0x801D266C`). The
-    /// second note's `0xFF` hit-flash pass (`DAT_801D558C`) is not modelled -
-    /// the engine keeps no writer of that counter - so every note draws at
-    /// `0x80`. Empty without a widget table.
-    ///
-    /// PORT: FUN_801d2524 (the emit sequence and draw area; the flash test and
-    /// note x are [`dance_combo_window_bright`] / [`dance_beat_track_note_x`])
+    /// second note draws at `0xFF` while the human's closed chain flashes.
+    /// Empty without a widget table. The calls are
+    /// [`Self::beat_track_emits`].
     pub fn beat_track_quads(&self, slot: usize, x: i16, y: i16) -> Vec<DanceHudQuad> {
-        const CLIP_W: i16 = 0x50;
         if self.widgets.is_empty() {
             return Vec::new();
         }
-        let level = self.dancer_gauge(slot) / GAUGE_STEP;
-        let beat = self.phase / BEAT_PERIOD;
-        let phase_in = self.phase - beat * BEAT_PERIOD;
-        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
-            BEAT_TRACK_CLUT_COMBO
-        } else {
-            BEAT_TRACK_CLUT_IDLE
-        };
-        let quad = |id: usize, qx: i16, qy: i16, clut: Option<u16>| {
-            self.widgets.get(id).map(|(w, abr)| {
-                let mut w = *w;
-                if let Some(c) = clut {
-                    w.clut = c;
-                }
-                dance_hud_widget_quad(&w, *abr, qx, qy, id as u32, DANCE_HUD_BRIGHTNESS, 0x1000)
-            })
-        };
+        let (lo, hi) = super::beat_track_clip(x);
         let clip = |q: DanceHudQuad| -> Option<DanceHudQuad> {
-            let (lo, hi) = (x, x + CLIP_W);
             if q.x1 <= lo || q.x0 >= hi {
                 return None;
             }
@@ -760,24 +747,67 @@ impl DanceGame {
             }
             Some(q)
         };
-        // Emission (submission) order, as retail links the packets; the
-        // screen-prim builder paints a shared bucket last-submitted first.
-        let mut out = Vec::new();
-        out.extend(quad(0x12, x + 8, y - 8, None));
-        out.extend(quad(0x10, x - 4, y, Some(track_clut)));
-        out.extend(quad(0x11, x + 0x54, y, Some(track_clut)));
+        self.beat_track_emits(slot, x, y)
+            .into_iter()
+            .filter_map(|e| {
+                let (w, abr) = self.widgets.get(e.widget as usize)?;
+                let mut w = *w;
+                if let Some(c) = e.clut {
+                    w.clut = c;
+                }
+                let q = dance_hud_widget_quad(&w, *abr, e.x, e.y, e.widget, e.brightness, 0x1000);
+                if e.clipped { clip(q) } else { Some(q) }
+            })
+            .collect()
+    }
+
+    /// The `FUN_801D2F38` calls of one beat track, in call order: what
+    /// [`Self::beat_track_quads`] resolves through the widget table. `clut`
+    /// is the word the routine patches into the widget's record ahead of the
+    /// call, and `clipped` marks the calls that paint under the track's draw
+    /// area ([`super::beat_track_clip`]).
+    // PORT: FUN_801d2524
+    pub fn beat_track_emits(&self, slot: usize, x: i16, y: i16) -> Vec<super::BeatTrackEmit> {
+        use super::BeatTrackEmit;
+        let level = self.dancer_gauge(slot) / GAUGE_STEP;
+        let beat = self.phase / BEAT_PERIOD;
+        let phase_in = self.phase - beat * BEAT_PERIOD;
+        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
+            BEAT_TRACK_CLUT_COMBO
+        } else {
+            BEAT_TRACK_CLUT_IDLE
+        };
+        let emit = |widget: u32, x: i16, y: i16, clut: Option<u16>, clipped: bool| BeatTrackEmit {
+            widget,
+            x,
+            y,
+            brightness: DANCE_HUD_BRIGHTNESS,
+            clut,
+            clipped,
+        };
+        let mut out = vec![
+            emit(0x12, x + 8, y - 8, None, false),
+            emit(0x10, x - 4, y, Some(track_clut), false),
+            emit(0x11, x + 0x54, y, Some(track_clut), false),
+        ];
         let row = self.chart.rows.get(level as usize);
         for i in 0..8u32 {
             let cell = (beat + i).wrapping_sub(1) & 31;
-            let sym = row.map_or(0, |r| r[cell as usize % r.len()]) as usize;
+            let sym = u32::from(row.map_or(0, |r| r[cell as usize % r.len()]));
             let nx = dance_beat_track_note_x(i32::from(x), i, phase_in) as i16;
-            out.extend(quad(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE)).and_then(clip));
+            let mut e = emit(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE), true);
+            // The second note lights while the human's closed chain flashes
+            // (`DAT_801D558C`, `0x801D2844..0x801D287C`), on every track.
+            if i == 1 && self.chain_flash != 0 {
+                e.brightness = 0xFF;
+            }
+            out.push(e);
         }
         for i in 0..12 {
-            out.extend(quad(0x1E, x + 8 * i, y, Some(track_clut)).and_then(clip));
+            out.push(emit(0x1E, x + 8 * i, y, Some(track_clut), true));
         }
         for i in 0..self.triangles() as i16 {
-            out.extend(quad(0x1F, x + 16 * i, y + 0x10, None));
+            out.push(emit(0x1F, x + 16 * i, y + 0x10, None, false));
         }
         out
     }
@@ -1290,6 +1320,9 @@ impl DanceGame {
             self.progress = self.progress.wrapping_add(frame_delta);
         }
         self.clock_started = true;
+        // The beat track's draw steps the chain flash, ahead of this frame's
+        // award.
+        self.chain_flash = super::chain_flash_step(self.chain_flash, frame_delta);
         self.advance_finish(frame_delta);
         if !self.finished {
             let step = frame_delta * PHASE_PER_DELTA;
@@ -1400,6 +1433,16 @@ impl DanceGame {
             if free {
                 self.bind_loop_clip(i);
             }
+        }
+        // The human's track arms the combo call on a flash beat
+        // (`0x801D2648..0x801D2654`).
+        let beat = self.phase / BEAT_PERIOD;
+        if dance_combo_window_bright(
+            beat,
+            self.dancer_gauge(0) / GAUGE_STEP,
+            self.phase - beat * BEAT_PERIOD,
+        ) {
+            self.track_flash = super::CHAIN_FLASH_FRAMES;
         }
         self.sync_dancer_actors();
         self.age_sprite_parts(frame_delta);
@@ -1517,6 +1560,13 @@ impl DanceGame {
         }
     }
 
+    /// Seat the chain flash `DAT_801D558C`, as the retail kernel differential
+    /// seeds it.
+    #[doc(hidden)]
+    pub fn seat_chain_flash(&mut self, flash: i32) {
+        self.chain_flash = flash;
+    }
+
     /// The lesson's probe of the chart (`FUN_801d1960` with its third
     /// argument's high byte set, `0x801D1960..0x801D1A1C` and the exit at
     /// `0x801D1AE4`): whether this frame's cell of row `lane` asks for
@@ -1543,6 +1593,7 @@ impl DanceGame {
             progress: self.progress as i32,
             miss_window: self.miss_window as i32,
             feedback: self.feedback as i32,
+            track_flash: self.track_flash,
             phase: self.phase,
             song: self.song_timer,
             stock: d.triangles,
@@ -1559,6 +1610,7 @@ impl DanceGame {
         self.progress = hall.progress as u32;
         self.miss_window = hall.miss_window as u32;
         self.feedback = hall.feedback as u32;
+        self.track_flash = hall.track_flash;
         self.phase = hall.phase;
         self.song_timer = hall.song;
         let d = &mut self.dancers[0];
@@ -1649,6 +1701,8 @@ impl DanceGame {
                 // The human's closed chain fires the sequence-clear banner,
                 // which is three `FUN_801d3fd0` spawns into the part pool.
                 if i == 0 {
+                    // `sw v1,0(v0)` at `0x801D1F58` / `0x801D2098`.
+                    self.chain_flash = super::CHAIN_FLASH_FRAMES;
                     let b = good_banner_spawn(weight.min(0xFFFF) as u16);
                     self.spawn_sprite_part(&b.banner);
                     for s in &b.stars {

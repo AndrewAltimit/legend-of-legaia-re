@@ -678,7 +678,7 @@ The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`, so `abr =
 | score boxes (widget 8) | centred at `(64, 20)` / `(160, 20)` / `(256, 20)`; digit bases `-0x20` / `0x40` / `0xA0`, 8 slots stepping 16 |
 | gauge | `Lv.` at `(88, 192)`, level digit at `(96, 192)` |
 | beat track | anchored at `(120, 192)`; arrow at `(128, 184)`; caps at `x-4` / `x+84`; 12 body tiles stepping 8; stock markers at `y+16` |
-| scrolling notes | `x = 120 + i*16 - (phase*16/0x119 + 5) - 4`, under a draw area of `[x, x+0x50)` |
+| scrolling notes | `x = 120 + i*16 - (phase*16/0x119 + 5) - 4`, under a draw area of `x ..= x+0x50` |
 | banner spawns (`FUN_801d3fd0`) | `(160, 120)` for `READY...` / `GO!` / the finish countdown; `(160, 128)` for `Miss!`; `(160, 144)` for the rating banners, star sparkles at `±0x38` / `±0x50` |
 
 ### The widget table's two pages
@@ -725,7 +725,7 @@ Mode `3` skips both side boxes and both side digit runs. The default arm (a mode
 
 **Draw order.** Every widget quad links into one ordering-table bucket through `AddPrim` (`jal 0x8003d2c4` at `0x801D32D8` in `FUN_801d2f38`), which prepends. The digit runs are emitted first (`0x801D23D0..0x801D2428`) and so draw last, over the box frames' opaque interiors (emitted at `0x801D2440..0x801D247C`).
 
-**Beat track** (`FUN_801d2524`). The body and notes draw under a draw area of `[x, x + 0x50)` (the `E3` / `E4` pair at `0x801D28E8..0x801D2974`); the caps, arrow and stock markers draw unclipped. The body is twelve tiles of widget `0x1E`; the eight notes are widget `sym + 0xD` (`addiu a2, a2, 0xd` at `0x801D289C`) for the chart cell of beat `(beat + i - 1) & 31`. Body and caps flash to CLUT `0x7D0D` on `beat & 7 == 3` (`beat & 3` at level `0`) inside the first `0x46` phase units (`0x801D2620..0x801D266C`). The stock markers read the triangle stock `DAT_801d534c` directly.
+**Beat track** (`FUN_801d2524`). The body and notes draw under a draw area of columns `x` through `x + 0x50` inclusive (the `E3` / `E4` pair at `0x801D28E8..0x801D2974`; the `E4` corner is the last column drawn); the caps, arrow and stock markers draw unclipped. The body is twelve tiles of widget `0x1E`; the eight notes are widget `sym + 0xD` (`addiu a2, a2, 0xd` at `0x801D289C`) for the chart cell of beat `(beat + i - 1) & 31`. Body and caps flash to CLUT `0x7D0D` on `beat & 7 == 3` (`beat & 3` at level `0`) inside the first `0x46` phase units (`0x801D2620..0x801D266C`). The stock markers read the triangle stock `DAT_801d534c` directly. The second note draws at brightness `0xFF` while the chain flash `DAT_801d558c` runs: the award routine arms it at `0x10` on a closed chain, each track draw steps it down by twice the frame step, and every track reads the human's word. A flash beat also arms `DAT_801d512c = 0x10`, which the lesson reads.
 
 Port: `dance::{dance_hud_draws, dance_score_box_slots}` behind `DanceGame::hud_draws`; `DanceGame::hud_draw_quads` keeps the retail emission order for the port's LIFO screen-primitive pass, and `DanceGame::beat_track_quads` applies the draw area by cropping. The second note's `0xFF` hit-flash pass (`DAT_801D558C`) is the one part not modelled: every note draws at `0x80`.
 

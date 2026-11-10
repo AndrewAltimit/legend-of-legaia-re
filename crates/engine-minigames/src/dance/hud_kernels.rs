@@ -137,6 +137,41 @@ pub fn dance_combo_window_bright(beat: u32, level: u32, frac: u32) -> bool {
     beat & dance_beat_level_mask(level) == 3 && frac < COMBO_FLASH_WINDOW
 }
 
+/// What the human's closed chain arms `DAT_801D558C` at, and a flash beat
+/// `DAT_801D512C`.
+pub const CHAIN_FLASH_FRAMES: i32 = 0x10;
+
+/// One `FUN_801D2F38` call of a beat track ([`DanceGame::beat_track_emits`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BeatTrackEmit {
+    pub widget: u32,
+    pub x: i16,
+    pub y: i16,
+    pub brightness: i32,
+    /// The CLUT word patched into the widget's record ahead of the call.
+    pub clut: Option<u16>,
+    /// The call paints under the track's draw area.
+    pub clipped: bool,
+}
+
+/// The beat track's draw area as half-open columns: the `E3` / `E4` pair at
+/// `0x801D28E8..0x801D2974` opens `x` through `x + 0x50` inclusive.
+// PORT: FUN_801d2524 (the draw area)
+pub fn beat_track_clip(x: i16) -> (i16, i16) {
+    (x, x + 0x51)
+}
+
+/// One beat-track draw's step of the chain flash `DAT_801D558C`: down by
+/// twice the frame step to a floor of zero, and only while it runs.
+// PORT: FUN_801d2524 (`0x801D2844..0x801D287C`)
+pub fn chain_flash_step(flash: i32, frame_step: u32) -> i32 {
+    if flash == 0 {
+        0
+    } else {
+        flash.wrapping_sub(2 * frame_step as i32).max(0)
+    }
+}
+
 /// Wired: the play window's dance HUD places its upcoming-note row at these
 /// offsets (from its own pen, not the overlay's screen constant).
 ///
