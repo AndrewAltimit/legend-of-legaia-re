@@ -137,6 +137,7 @@ mod dev_rows;
 mod dialog_pager;
 mod dome_hud;
 mod dome_tally;
+mod door_of_wind;
 mod drop_shadow;
 mod duel_disc;
 mod duel_init;

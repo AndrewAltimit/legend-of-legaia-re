@@ -233,6 +233,19 @@ pub struct WarpDestination {
     pub menu_y: u8,
 }
 
+impl WarpDestination {
+    /// The triple a pick of this row stages: `FUN_801D8B90` phase 3 reads
+    /// record `_DAT_8007BB88` (this row's [`Self::record_index`]) back out of
+    /// `DAT_80073A98` into `0x80084628` / `0x80084624` / `0x8008462C`.
+    pub fn staged(&self) -> StagedWarp {
+        StagedWarp {
+            scene_id: self.scene_id,
+            menu_x: self.menu_x,
+            menu_y: self.menu_y,
+        }
+    }
+}
+
 /// The destination a committed Door of Wind use staged, in the shape
 /// `FUN_801D8B90` phase 3 writes it (`0x80084624` / `0x80084628` /
 /// `0x8008462C`) before handing the outer menu SM exit code

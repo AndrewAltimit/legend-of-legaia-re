@@ -570,12 +570,10 @@ impl PauseItemsSession {
                     SpecialUseOutcome::Warp { landmark } => {
                         // `landmark` is the visible row; the placement
                         // record behind it carries the staged triple.
-                        self.staged_warp =
-                            self.warp_destinations.get(landmark).map(|d| StagedWarp {
-                                scene_id: d.scene_id,
-                                menu_x: d.menu_x,
-                                menu_y: d.menu_y,
-                            });
+                        self.staged_warp = self
+                            .warp_destinations
+                            .get(landmark)
+                            .map(WarpDestination::staged);
                         self.exit_code = Some(MENU_EXIT_CODE_WORLD_MAP_WARP);
                         self.closed = true;
                     }
