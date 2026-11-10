@@ -115,8 +115,8 @@ fn the_dance_teardown_restores_what_retail_restores() {
 
 #[test]
 fn the_how_to_play_panel_is_laid_out_as_retails_is() {
-    differential!(prot(976, HELP));
-    const HELP: u32 = 0x801D_6CBC;
+    differential!(prot(976, BAKA_HELP));
+    const BAKA_HELP: u32 = 0x801D_6CBC;
     use legaia_engine_minigames::baka_cabinet::{ST_HOWTO, pause_panel};
     let Some((mut cpu, overlay, panel)) = panel_cpu(976) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -126,7 +126,7 @@ fn the_how_to_play_panel_is_laid_out_as_retails_is() {
     // The cabinet's own call (`0x30`, `0x20`), which is the one seat the
     // port's layout holds.
     cpu.mem.wr8(FONT_MODE, 0);
-    assert_eq!(cpu.call(HELP, &[0x30, 0x20]), Stop::Returned);
+    assert_eq!(cpu.call(BAKA_HELP, &[0x30, 0x20]), Stop::Returned);
     let (frame, lines) = pause_panel(ST_HOWTO, 0, &text).expect("the panel");
     let retail = panel.borrow().clone();
     assert_eq!(retail.lines.len(), lines.len());
@@ -149,8 +149,8 @@ fn the_how_to_play_panel_is_laid_out_as_retails_is() {
 
 #[test]
 fn the_fishing_help_panel_is_laid_out_as_retails_is() {
-    differential!(prot(972, HELP));
-    const HELP: u32 = 0x801D_72A0;
+    differential!(prot(972, FISHING_HELP));
+    const FISHING_HELP: u32 = 0x801D_72A0;
     use legaia_engine_fishing::fishing::help_panel_layout;
     use legaia_engine_fishing::fishing_hub::{FishingHubText, HELP_FOOTER_VAS};
     let Some((mut cpu, overlay, panel)) = panel_cpu(972) else {
@@ -165,7 +165,10 @@ fn the_fishing_help_panel_is_laid_out_as_retails_is() {
         cpu.mem.wr8(FONT_MODE, 0);
         *panel.borrow_mut() = Panel::default();
         let arg = if page == 0 { 0 } else { 1 + rng.below(9) };
-        assert_eq!(cpu.call(HELP, &[x as u32, y as u32, arg]), Stop::Returned);
+        assert_eq!(
+            cpu.call(FISHING_HELP, &[x as u32, y as u32, arg]),
+            Stop::Returned
+        );
         let port = help_panel_layout(x, y, page != 0);
         let retail = panel.borrow().clone();
         let (footer, body) = retail.lines.split_last().expect("lines");
