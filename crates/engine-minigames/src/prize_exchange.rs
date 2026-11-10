@@ -184,6 +184,10 @@ pub enum PrizeEvent {
     ConfirmMoved,
     /// Confirmed the Yes/No prompt on its No row: back to the list.
     BackToList,
+    /// Confirmed the Yes/No prompt on its Yes row. The commit runs on the
+    /// next tick, as retail's state 3 does (`0x801DC494` stores the step;
+    /// the commit at `0x801DC4C0` reads no pad).
+    Committing,
     /// Backed out of the Yes/No prompt with the cancel button.
     ConfirmCancelled,
     /// Yes committed: the host applies [`apply_redeem`] with these values,
@@ -213,12 +217,14 @@ impl PrizeEvent {
     ///   `0x801DC48C`), so the No row is silent and Yes is heard only as
     ///   the coin jingle state 3 pushes on the next frame (`0x801DC4C0`).
     ///
-    /// The port's commit is one event, so the jingle rides the same frame.
+    /// The commit is its own tick ([`PrizeEvent::Committing`] then
+    /// [`PrizeEvent::Redeemed`]), so the jingle lands a frame after the press
+    /// as it does in retail.
     ///
     /// REF: FUN_801DC1CC, FUN_801D688C
     pub fn cue(&self) -> Option<u8> {
         match self {
-            PrizeEvent::None | PrizeEvent::BackToList => None,
+            PrizeEvent::None | PrizeEvent::BackToList | PrizeEvent::Committing => None,
             PrizeEvent::Moved | PrizeEvent::ConfirmMoved => Some(SFX_LIST_MOVE),
             PrizeEvent::Refused(_) => Some(SFX_BUZZ),
             PrizeEvent::OpenedConfirm => Some(SFX_LIST_CONFIRM),
@@ -232,6 +238,8 @@ impl PrizeEvent {
 enum Phase {
     Browse,
     Confirm,
+    /// State 3: Yes was confirmed last tick.
+    Commit,
     Done,
 }
 
@@ -275,6 +283,17 @@ impl PrizeExchangeSession {
         self.rows.iter().map(|&i| &self.block[i])
     }
 
+    /// The packed browse cursor `_DAT_8007BB98`: the row in the low 12 bits,
+    /// `0x1000` while the Yes/No prompt is up.
+    pub fn cursor_word(&self) -> u32 {
+        self.cursor
+    }
+
+    /// The visible rows as record indices into the block (`0x801F00E0`).
+    pub fn row_indices(&self) -> &[usize] {
+        &self.rows
+    }
+
     /// Browse-cursor row index.
     pub fn cursor(&self) -> usize {
         (self.cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK) as usize
@@ -290,6 +309,18 @@ impl PrizeExchangeSession {
         self.rows.get(self.cursor()).map(|&i| &self.block[i])
     }
 
+    /// Retail's step `DAT_801E46AC` for the phase: `1` browsing, `2` on the
+    /// Yes/No prompt, `3` committing; `0` once the session is over (retail
+    /// leaves for sub-screen `0`).
+    pub fn retail_step(&self) -> u8 {
+        match self.phase {
+            Phase::Browse => 1,
+            Phase::Confirm => 2,
+            Phase::Commit => 3,
+            Phase::Done => 0,
+        }
+    }
+
     /// `true` once the browse cancel exited the session.
     pub fn is_done(&self) -> bool {
         self.phase == Phase::Done
@@ -298,7 +329,7 @@ impl PrizeExchangeSession {
     /// `true` while the Yes/No confirm prompt is up (retail state 2) - the
     /// hosts draw window 46 over the list exactly then.
     pub fn confirming(&self) -> bool {
-        self.phase == Phase::Confirm
+        matches!(self.phase, Phase::Confirm | Phase::Commit)
     }
 
     /// Drive one frame. `coins` is the live coin bank and `held` the
@@ -306,6 +337,18 @@ impl PrizeExchangeSession {
     pub fn tick(&mut self, nav: NavButtons, coins: u32, held: impl Fn(u8) -> u8) -> PrizeEvent {
         match self.phase {
             Phase::Done => PrizeEvent::None,
+            Phase::Commit => {
+                self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
+                self.phase = Phase::Browse;
+                match self.selected().copied() {
+                    Some(rec) => PrizeEvent::Redeemed {
+                        item_id: rec.item_id,
+                        price: rec.price,
+                        gate: rec.gate,
+                    },
+                    None => PrizeEvent::None,
+                }
+            }
             Phase::Browse => {
                 match menu_cursor_nav(&mut self.cursor, self.rows.len() as u32, true, nav) {
                     CursorNav::Confirm => {
@@ -334,19 +377,14 @@ impl PrizeExchangeSession {
             }
             Phase::Confirm => match menu_cursor_nav(&mut self.confirm_cursor, 2, true, nav) {
                 CursorNav::Confirm => {
-                    self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
-                    self.phase = Phase::Browse;
-                    if self.confirm_cursor() == 1 {
+                    // `0x801DC47C..0x801DC484` compares the whole word.
+                    if self.confirm_cursor == 1 {
+                        self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
+                        self.phase = Phase::Browse;
                         return PrizeEvent::BackToList;
                     }
-                    let Some(rec) = self.selected().copied() else {
-                        return PrizeEvent::BackToList;
-                    };
-                    PrizeEvent::Redeemed {
-                        item_id: rec.item_id,
-                        price: rec.price,
-                        gate: rec.gate,
-                    }
+                    self.phase = Phase::Commit;
+                    PrizeEvent::Committing
                 }
                 CursorNav::Cancel => {
                     self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
@@ -430,8 +468,12 @@ mod tests {
         );
         step(&mut s, nav(true, false, false, false), 1000); // prompt
         step(&mut s, nav(false, false, true, false), 1000); // to Yes
-        assert!(matches!(
+        assert_eq!(
             step(&mut s, nav(true, false, false, false), 1000),
+            PrizeEvent::Committing
+        );
+        assert!(matches!(
+            step(&mut s, nav(false, false, false, false), 1000),
             PrizeEvent::Redeemed { .. }
         ));
         step(&mut s, nav(false, true, false, false), 1000); // leave
@@ -447,6 +489,7 @@ mod tests {
                 Some(0x37),
                 Some(0x36),
                 Some(0x21),
+                None,
                 Some(0x25),
                 Some(0x37),
             ]
@@ -557,7 +600,12 @@ mod tests {
             s.tick(nav(false, false, true, false), 9000, |_| 0),
             PrizeEvent::ConfirmMoved
         );
-        let ev = s.tick(nav(true, false, false, false), 9000, |_| 0);
+        assert_eq!(
+            s.tick(nav(true, false, false, false), 9000, |_| 0),
+            PrizeEvent::Committing
+        );
+        // The commit is the next tick, whatever the pad holds.
+        let ev = s.tick(nav(false, true, false, false), 9000, |_| 0);
         assert_eq!(
             ev,
             PrizeEvent::Redeemed {

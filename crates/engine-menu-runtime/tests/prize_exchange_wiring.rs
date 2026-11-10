@@ -97,7 +97,8 @@ fn redeem_and_exit_through_the_menu_runtime() {
     press(&mut menu, &mut w, |i| i.down = true);
     press(&mut menu, &mut w, |i| i.cross = true); // opens Yes/No (No default)
     press(&mut menu, &mut w, |i| i.up = true); // onto Yes
-    press(&mut menu, &mut w, |i| i.cross = true); // commit
+    press(&mut menu, &mut w, |i| i.cross = true); // Yes
+    press(&mut menu, &mut w, |_| {}); // the commit, a frame later
 
     assert_eq!(
         w.minigames.casino_coins, 500,
@@ -138,7 +139,8 @@ fn redeem_and_exit_through_the_menu_runtime() {
 /// hands it to its blip path. A visit - step, a redeem the coin bank cannot
 /// cover, the prompt, No, the prompt, Yes, leave - reads as retail's ring:
 /// `0x21`, the buzz `0x23`, the list confirm `0x36`, silence, `0x36`, the
-/// step onto Yes, the coin jingle `0x25`, the cancel `0x37`.
+/// step onto Yes, silence, the coin jingle `0x25` a frame later, the cancel
+/// `0x37`.
 #[test]
 fn the_counter_hands_the_hosts_its_cues() {
     use legaia_engine_system::input::PadButton as B;
@@ -162,7 +164,9 @@ fn the_counter_hands_the_hosts_its_cues() {
     edge(&mut menu, &mut w, B::Cross); // No (the default row)
     edge(&mut menu, &mut w, B::Cross); // prompt
     edge(&mut menu, &mut w, B::Up); // onto Yes
-    edge(&mut menu, &mut w, B::Cross); // commit
+    // Yes is silent; the commit and its jingle are the next frame.
+    cues.push(menu.step_field_session(&mut w, B::Cross as u16));
+    cues.push(menu.step_field_session(&mut w, 0));
     assert_eq!(w.minigames.casino_coins, 500);
     cues.push(menu.step_field_session(&mut w, B::Circle as u16)); // leave
     assert!(!menu.is_open());
@@ -175,6 +179,7 @@ fn the_counter_hands_the_hosts_its_cues() {
             None,
             Some(0x36),
             Some(0x21),
+            None,
             Some(0x25),
             Some(0x37),
         ]

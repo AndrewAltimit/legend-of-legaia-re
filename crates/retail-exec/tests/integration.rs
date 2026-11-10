@@ -161,6 +161,7 @@ mod party_panel_build;
 mod passive_sweep;
 mod popup_numeral;
 mod pose_decoder;
+mod prize_exchange;
 mod publisher_logos;
 mod puera_crystals;
 mod queue_head;
