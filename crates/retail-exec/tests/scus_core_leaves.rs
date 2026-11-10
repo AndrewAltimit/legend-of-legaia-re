@@ -211,3 +211,100 @@ fn the_minigame_exit_banks_what_retail_banks() {
     }
     assert!(capped > 4000, "{capped}");
 }
+
+const RESOLVE: u32 = 0x8003_C83C;
+const RESOLVE_PLAYER_PTR: u32 = 0x8007_C364;
+const EFFECT_LIST: u32 = 0x8007_C34C;
+const CONTEXT_LIST: u32 = 0x8007_C354;
+const HEADS: u32 = 0x8013_0000;
+const NODES: u32 = 0x8014_0000;
+
+/// The script target resolver `FUN_8003C83C` against
+/// `scus_leaf_kernels::resolve_script_target`, over generated effect and
+/// context lists: the player id, the system channel's walk by handler, an
+/// ordinary id's walk by script id, duplicates (the first wins), ids that
+/// match nothing and empty lists.
+#[test]
+fn a_script_target_resolves_to_what_retail_resolves_it_to() {
+    use legaia_engine_system::scus_leaf_kernels::{
+        SYSTEM_CHANNEL_HANDLER, ScriptTarget, resolve_script_target,
+    };
+    differential!(scus(RESOLVE));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let player = 0x8015_0000;
+    cpu.mem.wr32(RESOLVE_PLAYER_PTR, player);
+    cpu.mem.wr32(EFFECT_LIST, HEADS);
+    cpu.mem.wr32(CONTEXT_LIST, HEADS + 4);
+    let mut rng = Rng(0x5253_4C56);
+    let (mut system, mut contexts, mut none) = (0, 0, 0);
+    for case in 0..20_000 {
+        let handlers: Vec<u32> = (0..rng.below(6))
+            .map(|_| match rng.below(4) {
+                0 => SYSTEM_CHANNEL_HANDLER,
+                _ => 0x801D_0000 + 4 * rng.below(0x4000),
+            })
+            .collect();
+        let ids: Vec<u16> = (0..rng.below(8))
+            .map(|_| match rng.below(5) {
+                0 => 0xF8,
+                1 => 0xFB,
+                _ => rng.below(8) as u16,
+            })
+            .collect();
+        // Two singly linked lists, each node's first word the next node.
+        let seat = |head: u32, base: u32, n: usize, mem: &mut psx_retail_exec::Memory| {
+            mem.wr32(head, if n == 0 { 0 } else { base });
+            for i in 0..n as u32 {
+                let next = if i + 1 == n as u32 {
+                    0
+                } else {
+                    base + 0x80 * (i + 1)
+                };
+                mem.wr32(base + 0x80 * i, next);
+            }
+        };
+        seat(HEADS, NODES, handlers.len(), &mut cpu.mem);
+        seat(HEADS + 4, NODES + 0x1000, ids.len(), &mut cpu.mem);
+        for (i, h) in handlers.iter().enumerate() {
+            cpu.mem.wr32(NODES + 0x80 * i as u32 + 0xC, *h);
+        }
+        for (i, id) in ids.iter().enumerate() {
+            cpu.mem.wr16(NODES + 0x1000 + 0x80 * i as u32 + 0x50, *id);
+        }
+        let id = match rng.below(6) {
+            0 => 0xF8,
+            1 => 0xFB,
+            2 => 0x1_0000 + rng.below(0x20),
+            _ => rng.below(8),
+        };
+        assert_eq!(cpu.call(RESOLVE, &[id]), Stop::Returned);
+        let retail = cpu.regs.r[psx_retail_exec::V0];
+        let port = resolve_script_target(id, handlers.iter().copied(), ids.iter().copied());
+        let want = match port {
+            ScriptTarget::Player => player,
+            ScriptTarget::SystemNode(i) => {
+                system += 1;
+                NODES + 0x80 * i as u32
+            }
+            ScriptTarget::Context(i) => {
+                contexts += 1;
+                NODES + 0x1000 + 0x80 * i as u32
+            }
+            ScriptTarget::None => {
+                none += 1;
+                0
+            }
+        };
+        assert_eq!(
+            retail, want,
+            "case {case}: id {id:#x} {handlers:x?} {ids:x?}"
+        );
+    }
+    assert!(
+        system > 1000 && contexts > 2000 && none > 3000,
+        "{system} {contexts} {none}"
+    );
+}

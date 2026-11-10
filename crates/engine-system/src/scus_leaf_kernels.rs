@@ -526,6 +526,60 @@ pub const SCENE_CONTROL_BLOCK_ALLOC_FAIL_CODE: u32 = 0x1BC;
 /// into - see `docs/subsystems/tile-board.md`).
 pub const SCENE_RESET_CLEARED_GLOBALS: [u32; 2] = [0x8007_B630, 0x8007_B450];
 
+/// What a script's target byte names, as `FUN_8003C83C` resolves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptTarget {
+    /// `0xF8`: the player object `_DAT_8007C364`.
+    Player,
+    /// `0xFB`: the node of the effect list `_DAT_8007C34C` at this position
+    /// from its head whose handler `+0x0C` is the world-map entity SM.
+    SystemNode(usize),
+    /// Any other id: the node of the context list `_DAT_8007C354` at this
+    /// position from its head whose script id `+0x50` equals it.
+    Context(usize),
+    /// No node matched: the routine returns a null.
+    None,
+}
+
+/// The handler `FUN_8003C83C` looks for under id `0xFB`: the field overlay's
+/// world-map entity SM `FUN_801DA51C`, the scene's system channel.
+pub const SYSTEM_CHANNEL_HANDLER: u32 = 0x801D_A51C;
+
+/// Resolve a script target id to the object it names (`FUN_8003C83C`, 45
+/// instructions, `see ghidra/scripts/funcs/8003c83c.txt`).
+///
+/// Three arms, tested in this order: `0xF8` is the player without a walk
+/// (`li v0,0xf8` / `bne a0,v0` at `0x8003C83C`), `0xFB` walks the effect list
+/// for the first node whose handler is [`SYSTEM_CHANNEL_HANDLER`]
+/// (`0x8003C860..0x8003C898`), and every other id walks the context list for
+/// the first node whose `+0x50` halfword equals it (`0x8003C8B0..0x8003C8E0`).
+/// The id is compared as a whole word against a zero-extended halfword, so
+/// one above `0xFFFF` matches nothing. Both walks start at the node the list
+/// head's first word names, and an empty list is a null.
+///
+/// `effect_handlers` and `context_ids` are the two lists in link order.
+///
+/// PORT: FUN_8003C83C
+///
+/// REPLACED-BY: the three stores the engine keeps apart - the player's actor slot, the world-map entity SM's seat and the field channel list - each read by the caller that already holds the store its id names (`legaia_engine_field::field_channels::resolve_target` answers the channel half and returns `None` for the two specials), so nothing walks one id through all three
+pub fn resolve_script_target(
+    id: u32,
+    effect_handlers: impl IntoIterator<Item = u32>,
+    context_ids: impl IntoIterator<Item = u16>,
+) -> ScriptTarget {
+    match id {
+        0xF8 => ScriptTarget::Player,
+        0xFB => effect_handlers
+            .into_iter()
+            .position(|h| h == SYSTEM_CHANNEL_HANDLER)
+            .map_or(ScriptTarget::None, ScriptTarget::SystemNode),
+        _ => context_ids
+            .into_iter()
+            .position(|c| u32::from(c) == id)
+            .map_or(ScriptTarget::None, ScriptTarget::Context),
+    }
+}
+
 /// The dialog-string **line separator** `FUN_8003CBA8` counts.
 pub const TEXT_LINE_BREAK: u8 = 0x7C;
 
