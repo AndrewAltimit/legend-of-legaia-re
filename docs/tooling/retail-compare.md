@@ -1295,6 +1295,23 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   capture, which is sampled before any round ran. The acting seat is placed
   too, even on a captured Attack whose pair is a point on the walk the drive
   replays: the walk ends at its target whatever it starts from.
+- **A party strike before its first swing.** Seated on its captured pair, a
+  party attacker stands where its walk and the strike loop's first commit
+  step left it, inside its reach, so state `0x14`'s range poll skips the walk
+  and the loop opens frames early. While the first swing has not committed
+  (`+0x1D9` still `0`) and the position ring still holds the walk (ring id
+  `1`), the seat is the ring's pair on the slot just older than the walk: the
+  seed pass `0x0C`, after its recentre (`RetailBattle::approach_start`). The
+  walk's arrival then depends on the target's body pair, which its idle sway
+  moves by tens of units, so the drive lands the target's idle loop on the
+  cursor the ring holds for the pass that entered the seed, once, on the first
+  tick the driven seat sits in `0x0C` (`ActionSteer::approach_idle`, token
+  `i<seat>/<cursor>`). `battle_rikuroa_party_vahn_chain_open` then replays
+  retail's ring to the unit: two walk steps `(-206, -384)` to `(-167, -310)`
+  to `(-128, -237)`, and the first commit's step back to `(-128, -258)`
+  (`camera` `.855` to `.994`, `image` `.520` to `.840`). Past the first swing
+  the captured pair stays: the whole walk replayed under a later capture moved
+  `battle_ropeway_party_vahn_slash_kick_mid` from `.676` to `.375`.
 - **Ground on the displayed frame.** The anim tick keeps a per-actor
   position ring (`+0x4C`, slot 0 the live pair, one slot a battle frame),
   so the pairs the frame on screen drew are in RAM two slots down. On the

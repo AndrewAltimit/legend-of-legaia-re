@@ -120,6 +120,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 spoils: true,
                 park: true,
                 harvest_pacing: true,
+                approach_idle: Some((3, 208)),
                 ..ActionSteer::default()
             },
         },

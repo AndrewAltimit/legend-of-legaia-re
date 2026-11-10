@@ -103,13 +103,29 @@ impl RetailBattle {
     /// Attack whose `+0x34` / `+0x38` is a point on the walk the drive is
     /// about to replay: the walk ends at the target whatever it starts from,
     /// and leaving that seat home measured worse over the corpus.
+    ///
+    /// Where the capture's position ring still holds a party attacker's walk,
+    /// the seat stands on the walk's start instead
+    /// ([`Self::approach_start`]). The walk's end is the arrival pass, which
+    /// state `0x14`'s range poll never sees: seated there, the replay found
+    /// the attacker in reach, skipped the approach and opened the strike loop
+    /// two battle frames early (`battle_rikuroa_party_vahn_chain_open`: Vahn
+    /// walked from `(-206, -384)`, two root-motion steps to `(-128, -237)`, and
+    /// the strike loop's first commit stepped him back to `(-128, -258)`).
     pub fn seeded_ground(
         &self,
     ) -> [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
         if self.seed_plan() == SeedPlan::Opening {
             return [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         }
-        self.engine_ground()
+        let mut out = self.engine_ground();
+        if let Some(start) = self.approach_start
+            && self.active_actor < self.party_count
+            && let Some(o) = out.get_mut(usize::from(self.active_actor))
+        {
+            *o = Some(start.ground);
+        }
+        out
     }
 }
 

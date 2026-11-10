@@ -309,6 +309,24 @@ pub(crate) const CAPTURE_BAND_STATES: std::ops::RangeInclusive<u8> = 0x6E..=0x71
 /// ([`RetailBattle::capture_band_backdrop_cue`]).
 pub(crate) const SPIRIT_STAGE_STATES: std::ops::RangeInclusive<u8> = 0x3D..=0x40;
 
+/// Where a party attacker's walk began, as the capture's history rings hold
+/// it ([`RetailBattle::approach_start`]). In the strike loop of a party
+/// Attack or arts string, the walk is the ring slots whose id is the
+/// approach entry `1` (state `0x14` stages `+0x1DA = 1`, the anim tick stamps
+/// the committed slot into `+0x1FB`); the slot just older is the seed pass
+/// `0x0C`, which recentred the formation, and the slot older again the pass
+/// that entered the seed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApproachStart {
+    /// The acting seat's live pair on the seed pass: where state `0x14`'s
+    /// range poll measured it from.
+    pub ground: [i16; 2],
+    /// The target's pool seat and its idle-loop cursor on the pass that
+    /// entered the seed, when the target stood on its idle (clip `0`) then:
+    /// the loop's pose decides the body pair the approach polls.
+    pub target_idle: Option<(u8, i32)>,
+}
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
@@ -721,6 +739,9 @@ pub struct RetailBattle {
     /// the frame), so the table's endpoint was read off this pair, not off
     /// the RAM's live pair ([`Self::arrival_arm_snaps`]).
     pub arm_ground: Option<[i16; 2]>,
+    /// A party seat's approach start, read off the capture's history rings
+    /// ([`ApproachStart`]).
+    pub approach_start: Option<ApproachStart>,
     /// Each pool slot: whether its anim node committed a clip between the
     /// displayed frame and the RAM's - the ring id `+0x1FB` changed, or the
     /// cursor ring `+0x17A` stepped back, inside the

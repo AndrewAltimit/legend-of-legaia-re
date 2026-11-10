@@ -327,6 +327,15 @@ pub struct ActionSteer {
     /// ([`BattleDrive::press`]). A pacing of the capture's own input, read
     /// off the manifest; no play path reads it.
     pub harvest_pacing: bool,
+    /// The acting party seat's target and its idle-loop cursor on the frame
+    /// the seat's action entered the seed state `0x0C`, read off the
+    /// capture's cursor history ring (`RetailBattle::approach_start`). The
+    /// next pass's recentre and the Attack arm `0x14` measure the range law
+    /// against the target's body pair, which the idle loop's pose sways, so
+    /// the drive lands the loop there once
+    /// (`World::seat_battle_clip_cursor`) before the approach polls it. A
+    /// seat of the capture's history; no play path reads it.
+    pub approach_idle: Option<(u8, i32)>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -571,6 +580,9 @@ const SPIRIT_WAIT_STATE: u8 = 0x3D;
 
 /// The action SM's Done arm and the fade-down it hands to.
 const ACTION_DONE_STATE: u8 = 0x50;
+/// The action seed (`0x0C`), whose pass recentres the formation and hands an
+/// Attack to `0x14`.
+const ACTION_SEED_STATE: u8 = 0x0C;
 const ACTION_DONE_FADE_STATE: u8 = 0x51;
 
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
@@ -912,6 +924,9 @@ impl BattleDrive {
                 if steer.harvest_pacing {
                     s.push_str(",d");
                 }
+                if let Some((t, c)) = steer.approach_idle {
+                    s.push_str(&format!(",i{t}/{c}"));
+                }
                 if let Some(n) = steer.rung {
                     s.push_str(&format!(",n{n}"));
                 }
@@ -1001,6 +1016,9 @@ impl BattleDrive {
                 steer.tough = true;
             } else if last == "d" {
                 steer.harvest_pacing = true;
+            } else if let Some(i) = last.strip_prefix('i') {
+                let (t, c) = i.split_once('/')?;
+                steer.approach_idle = Some((t.parse().ok()?, c.parse().ok()?));
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(n) = last.strip_prefix('n') {
@@ -1575,6 +1593,17 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The target's idle loop at the action seed
+        // ([`ActionSteer::approach_idle`]): once, on the first tick the
+        // driven seat's action sits in the seed state `0x0C`.
+        if ours
+            && state == ACTION_SEED_STATE
+            && !world.battle.approach_idle_seated
+            && let Some((target, cursor)) = steer.approach_idle
+        {
+            world.battle.approach_idle_seated = true;
+            world.seat_battle_clip_cursor(usize::from(engine_seat(target, pc)), 0, cursor);
+        }
         // A monster cast's clip bytes ([`ActionSteer::queue`] on a monster
         // seat whose drive is a cast): the capture's `+0x1E0` and the Spirit
         // band's `+0x1E7` (`params[1]` / `params[8]`), held from the seed to

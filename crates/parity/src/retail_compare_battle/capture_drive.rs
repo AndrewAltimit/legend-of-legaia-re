@@ -1913,6 +1913,7 @@ impl RetailBattle {
                         && self.queued_category == 3
                         && self.arts_queue
                         && self.harvest_pacing,
+                    approach_idle: self.approach_start.and_then(|a| a.target_idle),
                     tough: self.party.iter().enumerate().any(|(i, c)| {
                         c.as_ref()
                             .is_some_and(|c| self.party_seat_pool_raised(i, c).is_some())

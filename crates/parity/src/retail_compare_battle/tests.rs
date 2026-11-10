@@ -2886,3 +2886,72 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     assert!(b.capture_approach_yaw().is_none_or(|a| a.arrive < 568));
     assert!(b.arrival_arm_snaps().is_none());
 }
+
+/// A party strike captured four frames into its strike loop, on the ring
+/// `battle_rikuroa_party_vahn_chain_open` holds: the seed pass on
+/// `(-206, -384)`, two walk slots (id `1`), the loop since. The seed stands the
+/// attacker on the walk's start and lands the target's idle loop on the cursor
+/// it held the pass the seed was entered; once the first swing has committed
+/// neither applies.
+#[test]
+fn a_party_strike_on_its_first_swing_stands_on_the_walks_start() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, FORMATION_CELL, 0x2E);
+    put8(&mut ram, SEAT_CHARS, 1);
+    let (vahn, bat) = (0x800E_C9E8u32, 0x800E_D264u32);
+    let record = 0x800F_0000u32;
+    let idle = 0x800F_1000u32;
+    put32(&mut ram, 0x801C_9348, record);
+    put32(&mut ram, record + 0x4C, idle);
+    for (slot, base) in [(0u32, vahn), (3, bat)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+    }
+    put8(&mut ram, vahn + 0x1DD, 3);
+    put8(&mut ram, vahn + 0x1DE, 3);
+    put16(&mut ram, vahn + 0x34, (-128i16) as u16);
+    put16(&mut ram, vahn + 0x38, (-258i16) as u16);
+    let ring: [(u8, i16, i16); 8] = [
+        (0, -128, -258),
+        (0, -128, -258),
+        (0, -128, -258),
+        (0, -128, -258),
+        (1, -128, -237),
+        (1, -167, -310),
+        (0, -206, -384),
+        (0, -267, -385),
+    ];
+    for (k, &(id, x, z)) in ring.iter().enumerate() {
+        let k = k as u32;
+        put8(&mut ram, vahn + 0x1FB + k, id);
+        put32(&mut ram, vahn + 0x4C + 8 * k, x as u32);
+        put32(&mut ram, vahn + 0x50 + 8 * k, z as u32);
+        put32(&mut ram, bat + 0x234 + 4 * k, idle);
+        put16(&mut ram, bat + 0x17A + 2 * k, 320 - 16 * k as u16);
+    }
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert_eq!(
+        b.approach_start,
+        Some(ApproachStart {
+            ground: [-206, -384],
+            target_idle: Some((3, 208)),
+        })
+    );
+    assert_eq!(b.seeded_ground()[0], Some([-206, -384]));
+
+    put8(&mut ram, vahn + 0x1D9, 0x0E);
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert_eq!(
+        b.approach_start, None,
+        "a committed swing keeps the captured pair"
+    );
+    assert_eq!(b.seeded_ground()[0], Some([-128, -258]));
+}

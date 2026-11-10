@@ -452,6 +452,82 @@ fn is_floor_ring(ram: &[u8], node: u32) -> bool {
     game_anchors::u32_at(ram, node + 0x48) == FLOOR_RING_RECORD
 }
 
+/// The party approach entry: state `0x14` stages `+0x1DA = 1` for a party
+/// attacker out of reach, and the anim tick stamps the committed slot into
+/// the ring id `+0x1FB` (`0x80047FCC`).
+const PARTY_WALK_CLIP: u8 = 1;
+
+/// [`RetailBattle::approach_start`]: the acting party seat's live pair on the
+/// ring slot just older than its walk, and its target's idle cursor one slot
+/// older again. Only in the strike loop (`0x1E..=0x20`) of a party Attack or
+/// arts string (category `0` / `3`) whose first swing has not committed (the
+/// seat's `+0x1D9` still the idle `0`), and only when the ring holds the
+/// whole walk and both older slots.
+fn approach_start(ram: &[u8], ctx: u32) -> Option<ApproachStart> {
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    if seat >= 3 || !matches!(game_anchors::u8_at(ram, ctx + 7), 0x1E..=0x20) {
+        return None;
+    }
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + seat * 4);
+    if !in_ram(p) || !matches!(game_anchors::u8_at(ram, p + 0x1DE), 0 | 3) {
+        return None;
+    }
+    // Ahead of the first swing's commit only. That commit's strike-loop tail
+    // steps the attacker along the range law (`FUN_8004AD80`,
+    // `0x8004BF7C..0x8004C118`) and every swing after it moves the pair
+    // again; past it the captured pair and the undrift seats measure better
+    // than a replay of the whole walk (`battle_ropeway_party_vahn_slash_kick_mid`
+    // `.676` to `.375` with the walk replayed).
+    if game_anchors::u8_at(ram, p + 0x1D9) != 0 {
+        return None;
+    }
+    let id = |k: u32| game_anchors::u8_at(ram, p + RING_ID + k);
+    let newest = (0..RING_SLOTS).find(|&k| id(k) == PARTY_WALK_CLIP)?;
+    let seed = (newest..RING_SLOTS).find(|&k| id(k) != PARTY_WALK_CLIP)?;
+    let at = p + POSITION_RING + seed * 8;
+    let ground = [
+        game_anchors::u32_at(ram, at) as i32 as i16,
+        game_anchors::u32_at(ram, at + 4) as i32 as i16,
+    ];
+    let entered = seed + 1;
+    let target = u32::from(game_anchors::u8_at(ram, p + 0x1DD));
+    let target_idle = (entered < RING_SLOTS)
+        .then(|| ring_clip(ram, target, entered))
+        .flatten()
+        .filter(|&(clip, _)| clip == 0)
+        .map(|(_, cursor)| (target as u8, i32::from(cursor)));
+    Some(ApproachStart {
+        ground,
+        target_idle,
+    })
+}
+
+/// Pool slot `slot`'s clip and cursor `depth` slots down its history rings:
+/// a party seat's ring id is its committed clip slot; a monster's clip-record
+/// ring is resolved through its record's entry array. `None` for an empty
+/// seat or a pointer the array does not hold.
+fn ring_clip(ram: &[u8], slot: u32, depth: u32) -> Option<(u8, u16)> {
+    if slot >= 8 || depth >= RING_SLOTS {
+        return None;
+    }
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+    if !in_ram(p) {
+        return None;
+    }
+    let cursor = game_anchors::u16_at(ram, p + RING_CURSOR + depth * 2);
+    if slot < 3 {
+        return Some((game_anchors::u8_at(ram, p + RING_ID + depth), cursor));
+    }
+    let record = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
+    let shown = game_anchors::u32_at(ram, p + RING_RECORD + depth * 4);
+    if !in_ram(record) || !in_ram(shown) {
+        return None;
+    }
+    let idx = (0..MONSTER_ENTRY_SEARCH)
+        .find(|&i| game_anchors::u32_at(ram, record + 0x4C + i * 4) == shown)?;
+    Some((idx as u8, cursor))
+}
+
 /// A battle actor's ring-id history `+0x1FB`: one byte a battle frame,
 /// slot 0 the live frame (`FUN_80049348` reads `+0x1FB + s0`).
 const RING_ID: u32 = 0x1FB;
@@ -1409,6 +1485,7 @@ impl RetailBattle {
                     ]
                 })
             },
+            approach_start: approach_start(ram, ctx),
             displayed_strike_heading: walk_heading(ram, ctx).map(|h| h.displayed),
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))

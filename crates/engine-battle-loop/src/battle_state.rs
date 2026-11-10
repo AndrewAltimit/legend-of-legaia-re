@@ -580,6 +580,11 @@ pub struct BattleState {
     /// park is replayed with this seat's walk held instead. `None` on every
     /// ordinary fight.
     pub approach_hold: Option<u8>,
+    /// A retail-comparison seed: set once the capture drive has seated the
+    /// acting seat's target idle loop at the action seed
+    /// (`ActionSteer::approach_idle`), so the seat lands once. `false` on
+    /// every ordinary fight.
+    pub approach_idle_seated: bool,
     /// Party melee hits that reached the damage body this battle - each one
     /// a push of retail's damage-number ring (`ctx[+0x273]`, the push at
     /// `0x801EDDE4`), which a blocked hit skips (`bne s7,zero,0x801EE6D4` at
@@ -1436,6 +1441,7 @@ impl BattleState {
             forced_melee_total: None,
             forced_melee_own_clip: None,
             approach_hold: None,
+            approach_idle_seated: false,
             party_melee_pushes: 0,
             forced_absorb: false,
             commit_log_launch: None,
