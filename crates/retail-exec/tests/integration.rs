@@ -154,6 +154,7 @@ mod melee_hit;
 mod menu_leaves;
 mod menu_numerals;
 mod menu_stats;
+mod menu_subscreens;
 mod mesh_swap;
 mod mode_frame;
 mod mode_init;

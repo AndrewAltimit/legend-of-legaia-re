@@ -206,7 +206,7 @@ script through `FUN_801D6628`, then wait for `_DAT_8007BB80 == 0`.
 | `0x1B` | `FUN_801DB21C` | Shop buy list (kind-4): confirm checks gold `0x8008459C` against the price (buzz `0x23`), then routes on the item kind byte - `1` to `0x1C`, `2` to `0x1D`, else `0x1A`; cancel to `0x1A`. |
 | `0x1C` | `FUN_801DB380` | Shop buy recipient picker (equipment buys). |
 | `0x1D` | `FUN_801DB7F4` | Shop buy quantity + commit; quantity law `min(gold/price, 99, 99-held)`. |
-| `0x1E` | `FUN_801DBC5C` | Shop sell list: raises `0x1000` on `DAT_801E46BC`, script `&DAT_801E4EE4`; after the wait it sets `_DAT_8007BB94 = 1`, stages the bag bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branches on `_DAT_8007BB94` - `3` re-runs script `&DAT_801E4EFC`, waits and returns to `0x1A`; `2` goes to `0x1F`. |
+| `0x1E` | `FUN_801DBC5C` | Shop sell list: raises `0x1000` on `DAT_801E46BC`, script `&DAT_801E4EE4`; after the wait it sets `_DAT_8007BB94 = 1`, stages the bag bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branches on `_DAT_8007BB94` (on the settle frame that is the `1` just stored, so it routes from the next frame) - `3` re-runs script `&DAT_801E4EFC`, waits and returns to `0x1A`; `2` goes to `0x1F`. |
 | `0x1F` | `FUN_801DBD94` | Shop sell quantity: d-pad `+-1` / `+-10` clamped to `[1, DAT_801E46B8]`; confirm credits `_DAT_8008459C += (price * qty) >> 1` and walks the bag at `0x80084140 + 0x1818` for a non-empty slot; returns to `0x1A` after a brief delay. |
 | `0x20` | `FUN_801DC1CC` | Casino prize exchange: build rows from the `0x801E4518` table (stops at the first zero id; a set gate flag hides the one-shot row), browse (confirm gated on coins `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes / No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`). Nothing here touches the card. |
 
@@ -338,7 +338,8 @@ other way round):
 Sub-screen `0x1A`, 584 bytes. Step 0 clears `_DAT_8007BB98/90/88`, sets
 `_DAT_8007BB94 = 4`, runs script `&DAT_801E4E38` and masks
 `DAT_801E46BC &= 0xFFF`. Step 1 runs `FUN_801D688C(&DAT_801E46BC, 3, 1)`: row 0
-goes to the buy list `0x1B`; row 1 validates, runs script `&DAT_801E4E54` and
+goes to the buy list `0x1B`, resetting only `DAT_801E46B0/B4` and
+`_DAT_8007BB94` (the staged slot `_DAT_8007BB88` survives); row 1 validates, runs script `&DAT_801E4E54` and
 advances to step 2, which clears state and sets `DAT_801E46A4 = 0x1E` (sell
 list); row 2 or cancel exits to `0x00`.
 

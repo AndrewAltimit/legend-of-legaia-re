@@ -143,8 +143,16 @@ pub enum SubScreenEffect {
     CardOp(CardOp),
     /// Read the focused inventory entry into the screen's staging cells.
     ReadInventoryEntry,
-    /// Zero the screen's staging cells and reset the list parameter.
+    /// Zero the screen's staging cells and reset the list parameter: the
+    /// staged slot `0x8007BB88`, the words `0x8007BB90` / `0x8007BB98`, the
+    /// staged item and quantity `0x801E46B0` / `0x801E46B4`, and the list
+    /// result `0x8007BB94` back to idle (`4`).
     ClearStaging,
+    /// The narrower reset the mode select's Buy row makes on its way to the
+    /// buy list (`0x801DB0F0..0x801DB110`): the staged item and quantity and
+    /// the list result only, leaving the staged slot and the two staging
+    /// words as they were.
+    ClearQuantity,
     /// The current sub-screen is one another `engine-core` module ports:
     /// hand the frame to [`RoutedPort::engine_module`] rather than stepping
     /// it here.
@@ -554,7 +562,7 @@ impl SaveScreenMachine {
             1 if !input.script_busy => match (input.nav, input.cursor & 0xFFF) {
                 (1, 0) => {
                     self.goto(SaveSubScreen::Routed(0x1B));
-                    vec![SubScreenEffect::ClearStaging]
+                    vec![SubScreenEffect::ClearQuantity]
                 }
                 (1, 1) => {
                     if input.sellable_items_available {
@@ -587,7 +595,11 @@ impl SaveScreenMachine {
     ///
     /// Steps 1 and 2 both land on the staging read, so the screen reads
     /// the focused inventory entry on the frame it settles and every
-    /// frame it re-runs.
+    /// frame it re-runs. The settle frame never routes: retail re-arms the
+    /// list result word `0x8007BB94` to `1` (`sw v1,-0x446c(v0)` at
+    /// `0x801DBCEC`) before the shared tail reads it, so whatever the word
+    /// held is dropped and the outcome branch first sees the list tick's
+    /// answer on the next frame.
     ///
     /// PORT: FUN_801DBC5C
     fn tick_quantity_spinner(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
@@ -597,7 +609,10 @@ impl SaveScreenMachine {
                 return vec![SubScreenEffect::RunScript];
             }
             1 if input.script_busy => return Vec::new(),
-            1 => self.step = 2,
+            1 => {
+                self.step = 2;
+                return vec![SubScreenEffect::ReadInventoryEntry];
+            }
             2 => {}
             3 => {
                 if !input.script_busy {
@@ -608,8 +623,7 @@ impl SaveScreenMachine {
             _ => return Vec::new(),
         }
 
-        // Steps 1-settling and 2 share the staging read and the outcome
-        // branch below.
+        // Step 2's staging read and outcome branch.
         let mut effects = vec![SubScreenEffect::ReadInventoryEntry];
         match input.spinner_result {
             3 => {
