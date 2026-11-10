@@ -89,6 +89,7 @@ mod gte_capture;
 mod gte_engine;
 mod group_aim;
 mod hop_arc;
+mod hop_spawn;
 mod hp_bar_settle;
 mod hsv;
 mod inn;
