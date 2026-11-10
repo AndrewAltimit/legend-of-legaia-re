@@ -499,7 +499,7 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 | Quantity picker (`0x7a`) | `FUN_801d092c` | "Trade how many?" Max = `min(points / price, limit - owned)`, `owned` being the live inventory count (`func_0x80042f4c`); a not-yet-purchased one-time row treats `owned` as 0. |
 | Confirm (`0x79`) | `FUN_801d06c8` | "Are you sure?" Yes grants `func_0x800421d4(item_id, qty)`, deducts `price * qty`, raises cue `0x206` (`0x801D089C`), and for a `limit == 1` row latches bit `row + venue*8` of `_DAT_8008446C`. |
 
-**Row 0 is hidden until strictly affordable**: the cursor floor is `(price0 < points) ^ 1`, so each venue's top prize only appears once the pool exceeds its price. A row is available (white, not grey; `FUN_801d6f90`) when it is affordable, the inventory count is not `99`, and - for a one-time row - its purchased bit is not latched.
+**Row 0 is hidden until strictly affordable**: the cursor floor is `(price0 < points) ^ 1`, so each venue's top prize only appears once the pool exceeds its price. The cursor **wraps** at both ends: up past the floor lands on row 5, down past row 5 on the floor (`0x801D0CF8..0x801D0D24`). A row is available (white, not grey; `FUN_801d6f90`) when it is affordable, the inventory count is not `99`, and - for a one-time row - its purchased bit is not latched.
 
 **Record** (12-byte stride, 6 rows per venue, read through `PTR_DAT_801d90b8`):
 

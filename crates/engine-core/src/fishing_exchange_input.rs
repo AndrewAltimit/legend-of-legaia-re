@@ -12,7 +12,7 @@
 //!
 //! [`World::fishing_exchange_input`] is that host-side logic moved into the
 //! engine: toggle (banking the live session's points first, as retail's
-//! running pool has them), cursor moves floored at the first visible row,
+//! running pool has them), cursor moves wrapping at the first visible row,
 //! venue switch, and a buy at the cursor. Hosts map their own input onto
 //! [`ExchangeInput`] and hand over the two decoded venue pages.
 
@@ -24,9 +24,11 @@ use legaia_engine_fishing::fishing::{PrizeExchange, PrizePurchase};
 pub enum ExchangeInput {
     /// Open the sub-screen on the first venue, or close it when open.
     Toggle,
-    /// Move the cursor up one row (never above the first visible row).
+    /// Move the cursor up one row, wrapping from the first visible row to
+    /// the last.
     Up,
-    /// Move the cursor down one row (clamped at the last row).
+    /// Move the cursor down one row, wrapping from the last row to the first
+    /// visible one.
     Down,
     /// Switch to the other venue's page.
     SwitchVenue,
@@ -98,13 +100,10 @@ impl World {
             ExchangeInput::Up | ExchangeInput::Down => {
                 let points = self.minigames.fishing_points;
                 if let Some(ex) = &mut self.minigames.fishing_exchange {
-                    let floor = ex.first_visible(points);
-                    let last = ex.rows.len().saturating_sub(1);
-                    ex.cursor = if input == ExchangeInput::Up {
-                        ex.cursor.saturating_sub(1).max(floor)
-                    } else {
-                        (ex.cursor + 1).min(last)
-                    };
+                    // Retail's list wraps at both ends, the top end at
+                    // the first visible row.
+                    let up = input == ExchangeInput::Up;
+                    ex.cursor = ex.step_cursor(ex.cursor, points, up, !up);
                 }
                 ExchangeOutcome::Moved
             }
