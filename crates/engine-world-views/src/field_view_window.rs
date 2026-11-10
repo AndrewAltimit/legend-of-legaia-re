@@ -333,7 +333,8 @@ mod tests {
 
         let retail = field_view_cells(&world, CropFraming::Retail).unwrap();
         let wide = field_view_cells(&world, framing).unwrap();
-        assert_eq!(wide.window_in, [-12, -10, 10, 15]);
+        // town01's `(-8, -6, 8, 12)` grown by 1.35 and a tile of slack.
+        assert_eq!(wide.window_in, [-12, -10, 12, 18]);
         // Focus tile (32, 92). Nine columns left: outside retail's `-8`,
         // inside the widened `-12`.
         let (x, z) = ((32 - 9) * 128 + 64, 92 * 128 + 64);

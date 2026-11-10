@@ -240,6 +240,7 @@ impl ViewCells {
         eat(self.span[0]);
         eat(self.span[1]);
         eat(i32::from_le_bytes(self.region));
+        eat(i32::from_le_bytes(self.window_in.map(|b| b as u8)));
         h.max(1)
     }
 }
