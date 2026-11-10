@@ -117,6 +117,7 @@ mod passive_sweep;
 mod pose_decoder;
 mod puera_crystals;
 mod queue_head;
+mod ramp_pool;
 mod range_metric;
 mod record_spawn;
 mod reflection;
