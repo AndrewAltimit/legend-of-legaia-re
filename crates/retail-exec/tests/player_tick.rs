@@ -104,7 +104,8 @@ fn the_player_tick_gates_its_legs_as_retail_does() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let log: Rc<RefCell<Vec<(u32, [u32; 4])>>> = Rc::new(RefCell::new(Vec::new()));
+    type Call = (u32, [u32; 4]);
+    let log: Rc<RefCell<Vec<Call>>> = Rc::new(RefCell::new(Vec::new()));
     for va in [
         HALT_LEG,
         HOOKED_ARM,

@@ -195,6 +195,7 @@ fn a_panel_script_makes_the_calls_retail_makes() {
     for round in 0..3000 {
         let mut w = Windows::default();
         let mut desc = [PanelDescriptor::default(); PANELS];
+        #[allow(clippy::needless_range_loop)]
         for p in 0..PANELS {
             w.open[p] = rng.below(2) == 0;
             w.pos[p] = (rng.below(320) as i16 - 20, rng.below(240) as i16 - 20);
@@ -276,6 +277,7 @@ fn a_panel_script_makes_the_calls_retail_makes() {
             .windows(2)
             .filter(|p| matches!(p, [Call::Retire(_), Call::Spawn(..)]))
             .count();
+        #[allow(clippy::needless_range_loop)]
         for p in 0..PANELS {
             let (rec, obj) = (TABLE + p as u32 * STRIDE, object(p as i16));
             assert_eq!(cpu.mem.rd16(rec + 0x0A) as i16, desc[p].y, "y {p}: {ctx}");
@@ -320,8 +322,8 @@ fn the_list_cursor_steps_as_retail_does() {
             },
             pressed: match rng.below(8) {
                 0 => 0,
-                1 | 2 | 3 => 0x1000,
-                4 | 5 | 6 => 0x4000,
+                1..=3 => 0x1000,
+                4..=6 => 0x4000,
                 _ => 0x5000,
             } | (rng.next() & 0xAFFF & if rng.below(2) == 0 { 0 } else { !0 }),
             action_a_mask: 1 << rng.below(16),
