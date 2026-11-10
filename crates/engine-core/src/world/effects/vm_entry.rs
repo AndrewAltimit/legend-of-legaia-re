@@ -394,11 +394,9 @@ impl World {
         self.battle_ctx = ctx;
         // The module band only, where the stager's bump is the commit and a
         // retail film holds the latch from it. A pose the SM stages in
-        // another band also commits inside the step, and carried there the
-        // latch outlives the cast: Multi Cutter's Done band then frames the
-        // monster's pull-in (`.40` of the film's `.93`). Which later store
-        // of the SM's clears it there is not read yet, so those bands keep
-        // the step's bytes.
+        // another band also commits inside the step; no film reads either
+        // way there (the enemy-cast set scores the same carried or not), so
+        // those bands keep the step's bytes until one does.
         if pre_state
             == legaia_engine_battle_vm::battle_action::ActionState::MagicCapturePhase2.as_byte()
         {
