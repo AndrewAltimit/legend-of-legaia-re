@@ -49,6 +49,7 @@ mod colour_tween;
 mod combo_records;
 mod confuse;
 mod curvature_table;
+mod cue_group;
 mod cursor_leaves;
 mod dance_floor;
 mod death_spoils;
