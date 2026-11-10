@@ -612,13 +612,16 @@ pub fn tick_venue_actors(
     if phase == PondPhase::Idle {
         let mut rng = v.rng;
         let rolled = v.wander.as_mut().and_then(|w| {
-            w.tick(held_packed, || {
+            // One venue frame is one vsync, so the dwell steps by one; the
+            // draws keep `rand()`'s fifteen bits, which the dwell's signed
+            // `% 200` needs to stay non-negative.
+            w.tick(held_packed, 1, || {
                 let mut x = rng;
                 x ^= x << 13;
                 x ^= x >> 17;
                 x ^= x << 5;
                 rng = x;
-                x
+                x >> 16 & 0x7FFF
             })
         });
         v.rng = rng;
