@@ -479,8 +479,9 @@ pub struct RecordsScreen {
     pub treasure_percent: i32,
     /// Treasure fractional part `(found*10000/total) - percent*100`.
     pub treasure_fraction: i32,
-    /// Whether the treasure line is drawn at all (`0 < total`).
-    pub treasure_shown: bool,
+    /// Whether the treasure line's percentage half is drawn (`0 < total`);
+    /// its `found / total` half always is.
+    pub treasure_percent_shown: bool,
 }
 
 /// Decompose a `1/60 s` play-time frame counter (`_DAT_800845DC`) into
@@ -489,8 +490,12 @@ pub struct RecordsScreen {
 /// Wired: reached from [`records_screen`], whose host is the native window's
 /// developer-menu Records page.
 /// PORT: FUN_801ED710 (play-time block)
+///
+/// The counter is divided as a signed word (`mult` by the `0x88888889`
+/// reciprocal, truncating toward zero), so a count past `0x7FFFFFFF` -
+/// some nine thousand hours - reads negative and escapes the clamp.
 pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
-    let secs = (frames / 60) as i32;
+    let secs = frames as i32 / 60;
     let mut seconds = secs % 60;
     let total_minutes = secs / 60;
     let mut hours = total_minutes / 60;
@@ -539,7 +544,7 @@ pub fn records_screen(
         out.magic[i] = c.magic;
     }
     if treasure_total > 0 {
-        out.treasure_shown = true;
+        out.treasure_percent_shown = true;
         let percent = treasure_found * 100 / treasure_total;
         out.treasure_percent = percent;
         out.treasure_fraction = treasure_found * 10_000 / treasure_total - percent * 100;

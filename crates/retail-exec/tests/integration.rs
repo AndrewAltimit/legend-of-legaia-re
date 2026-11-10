@@ -296,6 +296,7 @@ mod queue_head;
 mod ramp_pool;
 mod range_metric;
 mod record_spawn;
+mod records_screen;
 mod reflection;
 mod region_scan;
 mod render_leaves;

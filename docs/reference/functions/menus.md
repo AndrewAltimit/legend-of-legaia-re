@@ -52,7 +52,9 @@ bit `0x100` of the special-battle word forced the flee); the port keeps them on
 treasure line's found / total pair is no census: it is slots 0 and 1 of the
 field VM's script-counter table (`lh 0x6460` / `lh 0x2(0x801C6460)` at
 `0x801EDD88` / `0x801EDDB4`), the halfwords `4C CA/CB/CC` and the dance results
-write, drawn as read and hidden while slot 1 is not positive.
+write, drawn as read. While slot 1 is not positive the line still reads
+`found / total`; the `blez` at `0x801EDDC8` skips only the percentage, the point,
+the fraction and the `%`.
 
 ## Field-overlay status / equip panels (overlay 0897)
 
