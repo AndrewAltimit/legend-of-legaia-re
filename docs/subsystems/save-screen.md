@@ -1286,8 +1286,11 @@ Read off the GP0 draw list of the running load screen:
   (cell quads at x = 354..1386, 104 px stagger) and slides left on commit.
   Landed: 32x32 cells, row 0 at `(98, 28)`, pitch `(40, 20)`, each row shifted
   `+4` px right. Per cell the renderer interpolates a slide base
-  `0x15A + slot*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
-  the cell drawer `FUN_801E0FD0` adds a `+8` inset. The focused cell draws at
+  `0x15A + prev*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
+  the cell drawer `FUN_801E0FD0` adds a `+8` inset. `prev` is the previous
+  cell's slot (`0` for the first): `s5` is reassigned to this cell's slot at
+  `0x801E0768`, after the base is formed, so the parked cells 0 and 1 sit one
+  column apart and the last cell's right edge lands on the captured 1386. The focused cell draws at
   `0x80` modulation, the others at `0x60`; the save-icon faces (tile = cell) are 16x16 at cell
   `+8, +8`; the finger cursor sits at cell quad `+(-10, +4)`. Port:
   `engine-ui::slot_grid_quad_x` / `slot_preview_grid_draws_for`.
