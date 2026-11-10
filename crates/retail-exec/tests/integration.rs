@@ -13,6 +13,7 @@ mod common;
 mod action_tag;
 mod actor_cull;
 mod actor_draw;
+mod actor_draw_tick;
 mod actor_node_pool;
 mod actor_tint;
 mod afterimage_quad;
