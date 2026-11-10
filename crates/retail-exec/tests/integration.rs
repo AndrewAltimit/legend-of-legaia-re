@@ -80,6 +80,7 @@ mod cast_damage;
 mod cast_dispatch;
 mod cast_steal;
 mod cast_view;
+mod cd_plumbing;
 mod chain_ticks;
 mod chip_marks;
 mod chunk_install;

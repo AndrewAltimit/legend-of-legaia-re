@@ -92,6 +92,11 @@ pub struct ProtCdDmaHost {
     last_dst: DestAddr,
     last_count: u32,
     last_msf: Option<(u8, u8, u8)>,
+    /// The read cursor, PROT.DAT-relative: the MSF cell at `0x8007BC5C`
+    /// less the archive's base. A lookup that sets the MSF seats it on the
+    /// entry's start; the kick reads from it; a completed wait advances it
+    /// by the count read (`0x8003E030..0x8003E050`).
+    cursor_lba: Lba,
     timeout: u32,
     error: bool,
     read_in_progress: bool,
@@ -126,6 +131,7 @@ impl ProtCdDmaHost {
             last_dst: 0,
             last_count: 0,
             last_msf: None,
+            cursor_lba: 0,
             timeout: 0,
             error: false,
             read_in_progress: false,
@@ -183,6 +189,11 @@ impl ProtCdDmaHost {
         self.main_ram.get(start..end)
     }
 
+    /// The read cursor, in sectors from the archive's start.
+    pub fn cursor_lba(&self) -> Lba {
+        self.cursor_lba
+    }
+
     /// Last PROT index touched by [`CdDmaHost::prot_index_size_lookup`].
     /// Mirrors the `gp+0x90C` retail global.
     pub fn last_prot_idx(&self) -> ProtIndex {
@@ -223,7 +234,7 @@ impl ProtCdDmaHost {
         if !self.read_in_progress {
             return Ok(());
         }
-        let byte_offset = (self.last_start_lba as u64) * (SECTOR_BYTES as u64);
+        let byte_offset = (self.cursor_lba as u64) * (SECTOR_BYTES as u64);
         let len = (self.last_count as usize)
             .checked_mul(SECTOR_BYTES as usize)
             .ok_or_else(|| "lba count overflow".to_string())?;
@@ -244,8 +255,9 @@ impl ProtCdDmaHost {
             ));
         }
         self.main_ram[dst_start..dst_end].copy_from_slice(&bytes);
+        // The sectors have landed; the read stays open until a wait takes
+        // its completion, which is where the cursor moves.
         self.state = PollState::Ready;
-        self.read_in_progress = false;
         Ok(())
     }
 }
@@ -264,12 +276,16 @@ impl CdDmaHost for ProtCdDmaHost {
     /// `ProtCdDmaHost` is constructed only under `#[cfg(test)]` and in the
     /// disc-gated `cd_dma_real_prot` oracle.
     fn prot_index_size_lookup(&mut self, prot_idx: ProtIndex, set_msf: bool) -> u32 {
+        // `jal 0x8003DE7C` with `a0 = 0` at `0x8003E8CC`: a read in flight is
+        // drained before the cells are restamped.
+        let _ = self.read_wait_poll(false);
         let count = self.prot.entry_lba_count_retail(prot_idx).unwrap_or(0);
         let start_lba = self.prot.entry_start_lba_retail(prot_idx).unwrap_or(0);
         self.last_prot_idx = prot_idx;
         self.last_start_lba = start_lba;
         if set_msf {
             self.last_msf = Some(lba_to_bcd_msf(start_lba));
+            self.cursor_lba = start_lba;
         }
         count
     }
@@ -330,22 +346,20 @@ impl CdDmaHost for ProtCdDmaHost {
         }
     }
 
-    /// Mirrors `FUN_8003de7c(gated)`. The retail return convention
-    /// gates on `read_in_progress` (`gp+0x988`):
+    /// Mirrors `FUN_8003de7c(gated)` on the by-index branch, keyed on
+    /// `read_in_progress` (`gp+0x988`):
     ///
-    /// - `gated = true`  (per-frame poll): if `read_in_progress == 0`,
-    ///   return `Ready` immediately (matches the
-    ///   `lw v0,0x988(gp); beq v0,zero,...; clear v0` early-out at
-    ///   `0x8003df70..0x8003df7c`). Otherwise the synthetic kick is
-    ///   already done, but if a previous error stuck the state in
-    ///   `Busy` we surface `InProgress`.
-    /// - `gated = false` (drain stale read): snap `read_in_progress`
-    ///   off, return `Ready` unconditionally.
+    /// - no read open: `Ready`, either way (the `lw v0,0x988(gp); beq
+    ///   v0,zero` early-out at `0x8003DF70..0x8003DF7C`);
+    /// - `gated = true` (per-frame poll): `InProgress` while the sectors are
+    ///   outstanding - a state this host only holds after a failed read -
+    ///   else the completion, returning `Ready`;
+    /// - `gated = false` (blocking wait): the completion, returning
+    ///   `Drained`.
     ///
-    /// The offline host never returns [`ReadWaitOutcome::Idle`]: that
-    /// return is reserved for the dev-arm state machine gated on
-    /// `_DAT_8007BA70` / `_DAT_8007B8C2`, neither of which exist in
-    /// the offline replacement.
+    /// The completion closes the read and advances the cursor by the count
+    /// read, which is what lets a second kick continue where the first
+    /// ended.
     ///
     /// PORT: FUN_8003DE7C
     ///
@@ -356,20 +370,20 @@ impl CdDmaHost for ProtCdDmaHost {
     /// overlay images - so what is replaced is a heavily-used routine, not
     /// dead code: a synchronous read has nothing left to wait for.
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome {
-        if !gated {
-            self.read_in_progress = false;
-            self.state = PollState::Idle;
-            return ReadWaitOutcome::Ready;
-        }
-        if self.timeout > 0 {
-            self.timeout -= 1;
-        }
         if !self.read_in_progress {
             return ReadWaitOutcome::Ready;
         }
-        match self.state {
-            PollState::Ready | PollState::Idle => ReadWaitOutcome::Ready,
-            PollState::Busy => ReadWaitOutcome::InProgress,
+        if gated && self.state == PollState::Busy {
+            return ReadWaitOutcome::InProgress;
+        }
+        // Completion: the read closes and the cursor steps past it.
+        self.read_in_progress = false;
+        self.state = PollState::Idle;
+        self.cursor_lba = self.cursor_lba.wrapping_add(self.last_count);
+        if gated {
+            ReadWaitOutcome::Ready
+        } else {
+            ReadWaitOutcome::Drained
         }
     }
 }
