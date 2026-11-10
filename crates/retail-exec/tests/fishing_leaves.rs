@@ -814,7 +814,7 @@ fn the_pre_hook_readout_matches_retail() {
     const SPAWN_COUNT: u32 = 0x801D_9294;
     const PRINT_FLAG: u32 = 0x8007_B9B0;
     const PAD_HELD: u32 = 0x8007_B850;
-    const CAMERA: u32 = 0x8008_4044;
+    const CAMERA_SEED: u32 = 0x8008_4044;
     const ACTOR: u32 = 0x8012_0000;
     differential!(prot(972, PRE_HOOK));
     let Some(mut cpu) = rig() else {
@@ -840,7 +840,7 @@ fn the_pre_hook_readout_matches_retail() {
         cpu.mem
             .wr32(PRINT_FLAG, u32::from(flag) * (1 + rng.below(9)));
         cpu.mem.wr32(PAD_HELD, u32::from(pad));
-        cpu.mem.wr32(CAMERA, 0);
+        cpu.mem.wr32(CAMERA_SEED, 0);
         prints.borrow_mut().clear();
         assert_eq!(cpu.call(PRE_HOOK, &[ACTOR]), Stop::Returned, "case {case}");
         let prints = prints.borrow();
@@ -853,7 +853,10 @@ fn the_pre_hook_readout_matches_retail() {
             assert!(prints.is_empty(), "case {case}: readout hidden");
         }
         if first {
-            let cam = (cpu.mem.rd16(CAMERA) as i16, cpu.mem.rd16(CAMERA + 2) as i16);
+            let cam = (
+                cpu.mem.rd16(CAMERA_SEED) as i16,
+                cpu.mem.rd16(CAMERA_SEED + 2) as i16,
+            );
             assert_eq!(cam, CAMERA_INIT, "case {case}: camera seed");
         }
     }

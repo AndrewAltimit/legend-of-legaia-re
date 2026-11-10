@@ -901,7 +901,7 @@ fn the_fighter_pack_walk_matches_retail() {
     use psx_retail_exec::{A1, A2, A3};
     use std::cell::RefCell;
     use std::rc::Rc;
-    const INSTALL: u32 = 0x801D_4C50;
+    const PACK_INSTALL: u32 = 0x801D_4C50;
     const ALLOC: u32 = 0x8001_7888;
     const FREE: u32 = 0x8001_7B94;
     const READ_ENTRY: u32 = 0x8003_EB98;
@@ -910,7 +910,7 @@ fn the_fighter_pack_walk_matches_retail() {
     const STREAMING: u32 = 0x8007_B8C2;
     const MESH_INDEX: u32 = 0x801D_C114;
     const BUF: u32 = 0x8014_0000;
-    differential!(prot(976, INSTALL));
+    differential!(prot(976, PACK_INSTALL));
     let Some(mut cpu) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -952,7 +952,11 @@ fn the_fighter_pack_walk_matches_retail() {
         cpu.mem.load(BUF, &pack);
         reads.borrow_mut().clear();
         chunks.borrow_mut().clear();
-        assert_eq!(cpu.call(INSTALL, &[roster]), Stop::Returned, "case {case}");
+        assert_eq!(
+            cpu.call(PACK_INSTALL, &[roster]),
+            Stop::Returned,
+            "case {case}"
+        );
         let (_, entry) = fighter_pack_entry(roster as usize);
         assert_eq!(
             *reads.borrow(),

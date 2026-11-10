@@ -96,7 +96,9 @@ fn the_port_arctan_table_is_the_retail_one() {
 `scus(VA)` names a routine of `SCUS_942.54`, `prot(ENTRY, VA)` one of PROT entry
 `ENTRY` (extraction index); several go in one call. Each argument is an integer
 literal or a `const` of the test's file (or of `common.rs`), so the declaration
-can be read without compiling anything.
+can be read without compiling anything. A `const` in the test's own body shadows
+the file's, as in Rust; a name the file defines with two values and the test does
+not define itself fails the gate, since the scan cannot tell which one it means.
 
 **The run checks the declaration.** `Cpu::call` notes every entry it is asked
 to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
