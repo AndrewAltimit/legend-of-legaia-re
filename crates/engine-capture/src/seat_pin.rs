@@ -76,26 +76,41 @@ mod tests {
     }
 
     #[test]
-    fn a_pinned_entry_seats_the_capture_order_and_draws_nothing() {
-        let mut world = World::new();
-        let cell = crate::formation_cell::FormationCell {
-            ids: vec![4, 4, 7],
-            scripted: false,
+    fn a_pinned_entry_seats_the_capture_order_and_skips_inits_draws() {
+        let enter = |pin: Option<&[u8]>| {
+            let mut world = World::new();
+            let cell = crate::formation_cell::FormationCell {
+                ids: vec![4, 4, 7],
+                scripted: false,
+            };
+            let fid = cell.register(&mut world, "test", || None).unwrap();
+            let def = world.tables.formation_table.formation(fid).unwrap().clone();
+            if let Some(ids) = pin {
+                apply_seat_pin(&mut world, ids);
+            }
+            let seated = world.enter_battle_from_formation(&def);
+            assert!(
+                world.encounters.seat_pin.is_none(),
+                "the entry takes the pin"
+            );
+            let ids: Vec<u16> = seated.slots.iter().map(|s| s.monster_id).collect();
+            (world, ids)
         };
-        let fid = cell.register(&mut world, "test", || None).unwrap();
-        let def = world.tables.formation_table.formation(fid).unwrap().clone();
-        apply_seat_pin(&mut world, &[7, 4, 4]);
-        let rng = world.rng_state;
-        let seated = world.enter_battle_from_formation(&def);
-        let ids: Vec<u16> = seated.slots.iter().map(|s| s.monster_id).collect();
-        assert_eq!(ids, vec![7, 4, 4]);
-        assert_eq!(world.rng_state, rng, "a pinned entry draws nothing");
-        assert!(
-            world.encounters.seat_pin.is_none(),
-            "the entry takes the pin"
-        );
-        // The next entry rolls again.
-        world.enter_battle_from_formation(&def);
-        assert_ne!(world.rng_state, rng);
+        let (mut rolled, _) = enter(Some(&[7, 4, 4]));
+        let (authored, _) = enter(Some(&[4, 4, 7]));
+        let (played, _) = enter(None);
+        assert_eq!(enter(Some(&[7, 4, 4])).1, vec![7, 4, 4]);
+        assert_eq!(enter(Some(&[4, 4, 7])).1, vec![4, 4, 7]);
+        // The order a pin names costs no draw.
+        assert_eq!(rolled.rng_state, authored.rng_state);
+        // A played entry is ahead by init's own: the species roll, then one
+        // opening phase a seated body (three monsters and the party).
+        let mut ahead = 0;
+        while rolled.rng_state != played.rng_state {
+            rolled.next_rand();
+            ahead += 1;
+            assert!(ahead <= 16, "the played entry's stream is not ahead");
+        }
+        assert!(ahead >= 5, "{ahead}");
     }
 }
