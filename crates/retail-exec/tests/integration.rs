@@ -87,6 +87,7 @@ mod fishing_cadence;
 mod fishing_fight;
 mod fishing_line_clip;
 mod flash_ramp;
+mod fishing_prize;
 mod fishing_root;
 mod floor_height;
 mod fog_spawn;
