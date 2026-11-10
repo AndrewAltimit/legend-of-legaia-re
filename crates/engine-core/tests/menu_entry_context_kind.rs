@@ -131,13 +131,13 @@ fn the_locked_kind_opens_the_notice_then_gates_the_exit() {
     assert!(matches!(s.phase(), FieldMenuPhase::Browsing { .. }));
     assert_eq!(s.cursor(), picked_row, "the picker keeps its own cursor");
 
-    // Cancel again, step left to Yes, confirm: the menu ends.
+    // Cancel again, step up to Yes, confirm: the menu ends.
     s.tick(cancel);
-    let left = FieldMenuInput {
-        left: true,
+    let up = FieldMenuInput {
+        up: true,
         ..Default::default()
     };
-    s.tick(left);
+    s.tick(up);
     assert_eq!(s.ready_confirm_cursor(), Some(0));
     s.tick(press);
     assert!(s.is_done(), "Yes routes to sub-screen 0 - the menu ends");

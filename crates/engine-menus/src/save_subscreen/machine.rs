@@ -134,6 +134,9 @@ pub enum SubScreenEffect {
     RunScript,
     /// Play a UI sound cue.
     Sfx(u8),
+    /// Seed the screen's list cursor (`DAT_801E46D0`) before its script
+    /// runs: the Yes/No screens open on a fixed row.
+    SeedCursor(u16),
     /// Install the memory-card handle ahead of a card operation.
     InstallCardHandle,
     /// Drive the card transfer in this direction.
@@ -356,8 +359,9 @@ impl SaveScreenMachine {
     fn tick_confirm_yes_no(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
         match self.step {
             0 => {
+                // `0x801D6D74..0x801D6D80`: the cursor opens on No.
                 self.step = 1;
-                vec![SubScreenEffect::RunScript]
+                vec![SubScreenEffect::SeedCursor(1), SubScreenEffect::RunScript]
             }
             1 if !input.script_busy => match input.nav {
                 1 => {
@@ -427,8 +431,9 @@ impl SaveScreenMachine {
     fn tick_confirm_exit(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
         match self.step {
             0 => {
+                // `0x801D8AAC..0x801D8AB4`: the cursor opens on Yes.
                 self.step = 1;
-                vec![SubScreenEffect::RunScript]
+                vec![SubScreenEffect::SeedCursor(0), SubScreenEffect::RunScript]
             }
             1 if !input.script_busy => match input.nav {
                 1 if input.cursor & 0xFFF == 0 => {
