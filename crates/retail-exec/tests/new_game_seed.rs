@@ -31,9 +31,12 @@ const DEBUG_WORD: u32 = 0x8007_B868;
 /// engine takes them from the level curve.
 const XP_WORDS: [(u32, u32); 4] = [(0x5CC, 0x79), (0x9E0, 0x66), (0xDF4, 0x8C), (0x1208, 0x79)];
 
-fn seeded_cpu() -> Option<(Cpu, Rc<RefCell<Vec<(u32, u32)>>>)> {
+/// The name copies `strcpy` was asked for, as `(dst, src)`.
+type Names = Rc<RefCell<Vec<(u32, u32)>>>;
+
+fn seeded_cpu() -> Option<(Cpu, Names)> {
     let mut cpu = scus_cpu()?;
-    let names: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let names: Names = Rc::default();
     {
         let names = names.clone();
         cpu.hook(STRCPY, move |r, _| {
