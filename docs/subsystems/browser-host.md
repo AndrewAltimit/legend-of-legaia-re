@@ -267,6 +267,16 @@ It shows by default where the only pointer is coarse (`(pointer: coarse)` withou
 `(any-pointer: fine)`); the *Touch pad* button toggles it and the choice is stored
 under `legaia.touch-pad`. Hiding it releases whatever it held.
 
+What only a browser has is driven headless by the `controls` step of
+[`check-pages.mjs`](../../scripts/ci/check-pages.mjs) on the built bundle: a
+file that is not the game (a cue sheet, a 2048-byte `.iso`, an empty or
+arbitrary file) is refused in words and leaves the picker usable; on a
+touch-only device the pad is up, its D-pad walks the lead and lets go, START
+opens the pause menu and the first touch has brought sound up; a controller
+on the standard mapping walks by D-pad and by stick and opens and closes the
+menu on Start; the Fullscreen button presents the 4:3 picture at the screen's
+height with the keyboard still on the canvas.
+
 ## FMV beats (`play_fmv`)
 
 An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)

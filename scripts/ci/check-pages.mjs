@@ -9,7 +9,10 @@
 // instantiates and exposes each runtime's export, the modes page lists its cards, and, when
 // LEGAIA_DISC_BIN names an image, the play page takes the disc through its own file input,
 // enters town01 and draws frames that are not blank (a screenshot lands in --out; it holds
-// disc-derived pixels, so keep --out under target/).
+// disc-derived pixels, so keep --out under target/). `controls` is what only a browser has: a
+// file that is not the game refused in words (no disc needed), then with a disc the on-screen
+// pad of a touch-only device, a controller on the standard mapping, fullscreen, and sound
+// after the first gesture.
 //
 // Needs a built bundle (scripts/ci/build-wasm.sh) and playwright-core; PLAYWRIGHT_CORE names
 // its directory when `~/.npm/_npx` does not hold one. Exit 1 with every failure listed; a
@@ -229,6 +232,138 @@ async function main() {
       }
       await context.close();
       console.log(`[check-pages] play page entered town01, ${drawn.calls} frames`);
+    }
+  }
+
+  // 5. What only a browser has: the refusal of a file that is not the game, the on-screen
+  // pad on a touch screen, a controller, fullscreen, sound after the first gesture.
+  if (want('controls')) {
+    // A file with no game in it is refused in words, and the picker still takes the next one.
+    {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await context.newPage();
+      watch(page, base, failures, 'play.html (refusals)');
+      await page.goto(base + 'play.html', { waitUntil: 'load' });
+      const cooked = Buffer.alloc(40 * 2048);
+      cooked[16 * 2048] = 1;
+      cooked.write('CD001', 16 * 2048 + 1);
+      const refused = [
+        ['garbage.bin', Buffer.alloc(3 << 20, 0x5a), /not a raw CD image/],
+        ['empty.bin', Buffer.alloc(0), /too small/],
+        ['game.cue', Buffer.from('FILE "game.bin" BINARY\n  TRACK 01 MODE2/2352\n'), /cue sheet/],
+        ['cooked.iso', cooked, /2048-byte/],
+      ];
+      for (const [name, buffer, says] of refused) {
+        await page.evaluate(() => document.getElementById('play-status').classList.remove('is-error'));
+        await (await page.$('#play-file')).setInputFiles({ name, mimeType: 'application/octet-stream', buffer });
+        await page.waitForFunction(() => document.getElementById('play-status').classList.contains('is-error') || !!window.__playRuntime,
+          null, { timeout: 120000 }).catch(() => {});
+        const got = await page.evaluate(() => ({ text: document.getElementById('play-status').textContent.trim(), runtime: !!window.__playRuntime }));
+        if (got.runtime) failures.push(`play.html: ${name} was taken as a disc`);
+        else if (!says.test(got.text)) failures.push(`play.html: ${name} refused as "${got.text.slice(0, 120)}"`);
+      }
+      await context.close();
+      console.log(`[check-pages] play page refused ${refused.length} files that are not the game`);
+    }
+    if (!disc || !fs.existsSync(disc)) {
+      console.log('[skip] LEGAIA_DISC_BIN unset: the play page\'s touch pad, controller and fullscreen were not driven');
+    } else {
+      const lead = (page) => page.evaluate(() => {
+        const m = /slot: 0,\s*x: (-?\d+),\s*y: (-?\d+),\s*z: (-?\d+)/.exec(window.__playRuntime.debug_host_trace_text());
+        return m ? [+m[1], +m[3]] : null;
+      });
+      const enter = async (context, label) => {
+        const page = await context.newPage();
+        watch(page, base, failures, label);
+        await page.goto(base + 'play.html', { waitUntil: 'load' });
+        await (await page.$('#play-file')).setInputFiles(disc);
+        await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
+        await page.evaluate(() => document.querySelector('[data-scene="town01"]').click());
+        await page.waitForFunction(() => window.__playView && window.__playView.scene, null, { timeout: 120000 });
+        await page.waitForTimeout(2500);
+        return page;
+      };
+      const moved = (a, b) => a && b && (a[0] !== b[0] || a[1] !== b[1]);
+
+      // A touch screen: the pad is up, its D-pad walks, START opens the pause menu.
+      {
+        const context = await browser.newContext({ viewport: { width: 900, height: 700 }, hasTouch: true, isMobile: true });
+        const page = await enter(context, 'play.html (touch)');
+        const pad = await page.evaluate(() => {
+          const root = document.querySelector('.touch-pad');
+          const box = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.height]; };
+          const start = root && [...root.querySelectorAll('.tp-small')].find((e) => /START/.test(e.textContent));
+          return root && !root.classList.contains('is-hidden') && start ? { dpad: box(root.querySelector('.tp-dpad')), start: box(start) } : null;
+        });
+        if (!pad) {
+          failures.push('play.html: no on-screen pad on a touch-only device');
+        } else {
+          const cdp = await context.newCDPSession(page);
+          const touch = async (x, y, ms) => {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+            await page.waitForTimeout(ms);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await page.waitForTimeout(300);
+          };
+          const at = await lead(page);
+          await touch(pad.dpad[0], pad.dpad[1] + pad.dpad[2] * 0.4, 1200);
+          if (!moved(at, await lead(page))) failures.push('play.html: the on-screen D-pad did not walk the lead');
+          if (await page.evaluate(() => /is-(up|down|left|right)/.test(document.querySelector('.tp-dpad').className))) {
+            failures.push('play.html: the on-screen D-pad stayed held after the touch ended');
+          }
+          if (!(await page.evaluate(() => !!window.__playView._audioUp))) failures.push('play.html: no sound output after the first touch');
+          await touch(pad.start[0], pad.start[1], 120);
+          await page.waitForTimeout(1200);
+          if (!(await page.evaluate(() => window.__playRuntime.play_menu_is_open()))) failures.push('play.html: the on-screen START did not open the pause menu');
+        }
+        await context.close();
+      }
+
+      // A controller on the standard mapping, then fullscreen.
+      {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        await context.addInitScript(() => {
+          window.__pad = { id: 'check-pages pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0],
+            buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+          navigator.getGamepads = () => [window.__pad, null, null, null];
+        });
+        const page = await enter(context, 'play.html (controller)');
+        const button = (i, on) => page.evaluate(([i, on]) => { const b = window.__pad.buttons[i]; b.pressed = on; b.value = on ? 1 : 0; }, [i, on]);
+        const audio = await page.evaluate(() => !!window.__playView._audioUp);
+        if (!audio) failures.push('play.html: no sound output after the scene was picked');
+        let at = await lead(page);
+        await button(13, true); /* D-pad down */
+        await page.waitForTimeout(1200);
+        await button(13, false);
+        await page.waitForTimeout(300);
+        if (!moved(at, await lead(page))) failures.push('play.html: a controller\'s D-pad did not walk the lead');
+        at = await lead(page);
+        await page.evaluate(() => { window.__pad.axes[0] = 1; });
+        await page.waitForTimeout(1200);
+        await page.evaluate(() => { window.__pad.axes[0] = 0; });
+        await page.waitForTimeout(300);
+        if (!moved(at, await lead(page))) failures.push('play.html: a controller\'s left stick did not walk the lead');
+        for (const open of [true, false]) {
+          await button(9, true); /* Start */
+          await page.waitForTimeout(150);
+          await button(9, false);
+          await page.waitForTimeout(1500);
+          if ((await page.evaluate(() => window.__playRuntime.play_menu_is_open())) !== open) {
+            failures.push(`play.html: a controller's Start did not ${open ? 'open' : 'close'} the pause menu`);
+          }
+        }
+        await page.click('#play-fullscreen');
+        await page.waitForTimeout(1000);
+        const fsq = await page.evaluate(() => {
+          const r = document.querySelector('.play-canvas-wrap canvas').getBoundingClientRect();
+          return { el: document.fullscreenElement ? document.fullscreenElement.className : '', w: r.width, h: r.height, vh: innerHeight, focus: document.activeElement ? document.activeElement.className : '' };
+        });
+        if (!/play-screen/.test(fsq.el)) failures.push(`play.html: the Fullscreen button presented "${fsq.el}"`);
+        else if (fsq.h < fsq.vh * 0.9 || Math.abs(fsq.w / fsq.h - 4 / 3) > 0.02) failures.push(`play.html: fullscreen picture is ${fsq.w | 0}x${fsq.h | 0} in a ${fsq.vh}px-high screen`);
+        else if (!/play-canvas/.test(fsq.focus)) failures.push(`play.html: fullscreen left the keyboard on "${fsq.focus}"`);
+        await context.close();
+      }
+      console.log('[check-pages] play page: touch pad, controller, fullscreen and sound driven');
     }
   }
 
