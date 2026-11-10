@@ -1187,3 +1187,28 @@ reason = "play_gzip_bytes grows by code: the menu slide-in input lock and the wi
 changes = [
   ["counts/bundle/play_gzip_bytes", 4962222, 4972542],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Harness seats, each bisected to one commit. battle_jou_party_noa_chain_mid falls at 815516be9 (a harvest capture's arts target cursor paced like the capture probe, which lifts rikuroa chain_open .481 -> .840 and gala flying_knee_mid .536 -> .910). minigame_muscle_dome_retail_red_piura_vahn_strike's camera falls at 01b0e777c (a strike-loop attacker stood on the body pair its framing read from the clip-record ring); reverting that commit alone puts the camera back at 1.0 and garmel hyper_elbow_mid back at .749 from .919."
+changes = [
+  ["states/battle_jou_party_noa_chain_mid/image", 0.991, 0.989],
+  ["states/minigame_muscle_dome_retail_red_piura_vahn_strike/camera", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Projections moved from the hosts' f32 view onto the integer GTE camera, each checked against retail's routine in the retail-exec differential: the drop shadow (51f16f14c, FUN_800460AC / FUN_8001C394, bisected for minigame_dance_retail_go_out) and the fog sheets (274aae508, FUN_8003F86C, bisected for concnow_field_door_hop; 103 of 104 sheets match the keikoku capture exactly, up from 6). The still moves by one-pixel edges; the frame it scores is seated, not rendered by retail. minigame_slot_machine_retail_reels and nilboa2_field_door_hop move with the PCSX-Redux texel rule for screen quads (69376909a): the reels draw into a 640-wide buffer halved to 320, which the rule does not model, and nilboa2's fog crosses an already failing block where the engine lacks a mesh wedge retail draws. Both states' mean error falls."
+changes = [
+  ["states/concnow_field_door_hop/image", 1.0, 0.998],
+  ["states/minigame_dance_retail_go_out/image", 0.987, 0.985],
+  ["states/minigame_slot_machine_retail_reels/image", 1.0, 0.999],
+  ["states/nilboa2_field_door_hop/image", 0.999, 0.997],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A cast arm whose table step is cheaper than the arm before runs the frame-cost ring's step until the dear frames leave the ring (75d61ee4f). It brings Kiss of Death's arm 5 onto retail's 45 vsyncs at step 3 (films map01 .892 -> .944, Lip King .887 -> .939) and costs a few summon films; horn_summon_mid_cast's camera moves by one step of pacing. The retail evidence is a cost-column recording of one cast, so this is a pacing model, not a per-cast fit."
+changes = [
+  ["states/horn_summon_mid_cast/camera", 1.0, 0.998],
+]
