@@ -140,6 +140,8 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         !host.world.party.name_entry.as_ref().unwrap().confirm_yes,
         "the confirm prompt opens with the hand on No (retail default)"
     );
+    // Retail's state 2: the call after the press reads no pad.
+    host.world.step_name_entry(NameEntryInput::default());
     host.world.step_name_entry(NameEntryInput {
         up: true,
         ..Default::default()

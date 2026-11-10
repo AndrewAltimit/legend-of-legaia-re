@@ -255,6 +255,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
         NameEntryState::Confirm,
         "End opens the Yes/No confirm"
     );
+    // The call after the Select press reads no pad (retail's state 2).
+    host.world.step_name_entry(NameEntryInput::default());
     // The prompt opens on No (retail); Up moves the hand to Yes.
     host.world.step_name_entry(NameEntryInput {
         up: true,

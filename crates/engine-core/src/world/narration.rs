@@ -93,7 +93,15 @@ impl World {
         let Some(entry) = self.party.name_entry.as_mut() else {
             return false;
         };
-        entry.step(input);
+        let cue = entry.step(input);
+        match cue {
+            Some(cue) if cue.pushes() => self.push_sfx_cue(cue.id()),
+            Some(cue) => self.replace_last_sfx_cue(cue.id()),
+            None => {}
+        }
+        let Some(entry) = self.party.name_entry.as_mut() else {
+            return false;
+        };
         if entry.state == legaia_engine_menus::name_entry::NameEntryState::Done {
             let slot = entry.char_index;
             let name = entry.committed_name();

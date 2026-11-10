@@ -366,6 +366,8 @@ mod tests {
             world.party.name_entry.as_ref().unwrap().state,
             NameEntryState::Confirm
         );
+        // The call after the Select press reads no pad (retail's state 2).
+        world.step_name_entry(NameEntryInput::default());
         // The prompt opens on No (retail); Up moves the hand to Yes.
         world.step_name_entry(NameEntryInput {
             up: true,

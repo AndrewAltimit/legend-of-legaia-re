@@ -4417,6 +4417,7 @@ dependencies = [
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tmd",
+ "legaia-ui-formats",
  "psx-iso",
  "psx-lzs",
  "psx-mdec",

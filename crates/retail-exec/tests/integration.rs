@@ -212,6 +212,7 @@ mod move_spawn;
 mod move_vm;
 mod mule_wave;
 mod muscle_contest;
+mod name_entry;
 mod new_game_seed;
 mod nighto_roll;
 mod object_spawn;
