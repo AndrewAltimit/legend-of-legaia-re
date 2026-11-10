@@ -1269,9 +1269,7 @@ driver therefore seats the recording drive's seek on the engine child
 harness seat that no play path sets. It matters where the byte outlasts the
 band head, the four-slot bases `0x9A..=0xA0`: Ozma's arm 2 let go nine
 vsyncs late, so the band's fall to black stood that much further on through
-arm 3 (`.798`, with the seat `.999`), and the films of Palma, `0x9B` and
-Horn read `.864`, `.938` and `.825` without it and `.878`, `.955` and `.838`
-with it.
+arm 3, which reads `.969` without the seat and `.999` with it.
 
 ### A fight that opens on an ambush
 
