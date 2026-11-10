@@ -177,6 +177,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_RANGE_TRACE"] = "1"
     if a.hit_trace:
         env["LEGAIA_HIT_TRACE"] = "1"
+    if a.ghost_trace:
+        env["LEGAIA_GHOST_TRACE"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -185,7 +187,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace):
+            or a.range_trace or a.hit_trace or a.ghost_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -769,6 +771,8 @@ def main() -> int:
     ap.add_argument("--range-trace", action="store_true",
                     help="retail: each range-law call FUN_8004E2F0 with the pairs it reads to retail/range.csv "
                          "(breakpoint core)")
+    ap.add_argument("--ghost-trace", action="store_true",
+                    help="retail: each after-image ghost FUN_80049348 draws to retail/ghosts.csv (breakpoint core)")
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")

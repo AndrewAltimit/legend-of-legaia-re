@@ -1634,9 +1634,33 @@ burst at about `+45` over the frames before the ghosts (`605` to `650` on Gel Fr
 burst of fourteen parts already `28` of that), where the mesh says `112` for the ghosts
 alone, so the engine's frames pass `0x2D0` and run `4` where retail's stay at `3`. Their
 HP-bar settle `0x51` also reads `520` to `540` against the table's `595`: those stages
-cost less than the fights the full-party rows came from. Whether a full party's frame hides
-the ghosts' draw or its base is the stage's is what a full-party recording with a counted
-ghost would settle.
+cost less than the fights the full-party rows came from.
+
+Recorded with the ghosts counted (`--ghost-trace`, a row per `jal 0x80048A08` at
+`0x8004950C`), every ghosting frame of the 61 strike states draws two, and what the pair
+adds depends on the party. On a lone member it is the mesh's: Caruban's strike frames with
+no part live read `364` without ghosts and `504` with, `70` a ghost. Seven full-party films
+have a ghosting monster. Two sit on the `0x2BC` clamp with or without (King Frog, Mush Mush).
+The other five read the pair at `626` to `660`, against `582` to `657` on the same film's
+strike frames without ghosts:
+
+| Film (full party) | Strike frames, no ghost | Two ghosts | HP-bar settle `0x51` |
+|---|---:|---:|---:|
+| `battle_tunnelb_gel_frog_strike` | `608` | `626` | `530` |
+| `battle_chitei2_kemaro_lv2_strike` | `621` | `647` | `539` |
+| `battle_nilboa_lava_face_strike` | `634` | `660` | `607` |
+| `battle_taiku_terror_face_strike` | `606` | `630` | `492` |
+| `battle_korb2_kemaro_strike` | `657` | `632` | `544` |
+
+So the pair lifts a full party's frame by about `25`, a quarter of the mesh cost, and on one
+film the ghosting frames are the cheaper. The walk draws both ghosts whole either way; the
+ghosts start with the swing, whose frames differ from the walk-in's in everything else the
+frame draws, so the difference of the two medians is not the ghosts' cost alone. Gel Frog
+shows it frame by frame: the pair's first four frames read `649` to `665` over a `608` base,
+`+45`, and ten frames later, with the same two ghosts up, the frames read `578` to `591`. The
+base moved `70` under them. No count the `World` holds reads that move (the formation term
+above fails the same way), so the table keeps the mesh cost, and these films stay the ones
+it prices a step high.
 
 <a id="the-table-held-out-against-the-films"></a>
 

@@ -48,6 +48,8 @@
 --                FUN_800508DC's), and rates.csv beside it: each seat's animation
 --                rate +0x21D and node cursor +0x68, off which a reaction's
 --                pace reads.
+--   ghosts.csv   with LEGAIA_GHOST_TRACE=1 (breakpoint core): one row per
+--                after-image ghost drawn (`jal 0x80048A08` at 0x8004950C)
 --   hits.csv     with LEGAIA_HIT_TRACE=1 (breakpoint core): one row per melee
 --                hit FUN_801EC3E4 resolves, at the head of its hit body
 --                (0x801EC5A8): the attacker, its target and the BIOS rand()
@@ -630,6 +632,21 @@ probe.run({
                 hits:row("%d,%d,%d,%d,%d", last_elapsed,
                     ptr_ok(cx) and u8(cx + 7) or -1, att,
                     a ~= nil and u8(a + 0x1DD) or -1, u32(0x80009010))
+            end)
+        end
+        if probe.getenv_num("LEGAIA_GHOST_TRACE", 0) ~= 0 then
+            -- Each after-image ghost the draw tick's walk FUN_80049348 draws
+            -- (breakpoint core): 0x8004950C is its `jal 0x80048A08`, the
+            -- body's whole object draw run again per ghost, inside the loop
+            -- 0x80049458..0x80049544. One row per ghost with the ring depth
+            -- `s0` and the seat `s3`, so the rows under one frame counter
+            -- count that frame's ghosts.
+            local ghosts = probe.csv_open(probe.out_path("ghosts.csv"),
+                "vsync,frame,depth,seat")
+            probe.arm_breakpoint(0x8004950C, "Exec", 4, "ghost", function()
+                local r = PCSX.getRegisters().GPR.n
+                ghosts:row("%d,%d,%d,%d", last_elapsed, u32(FRAME_COUNTER),
+                    tou32(r.s0), tou32(r.s3))
             end)
         end
         if probe.getenv_num("LEGAIA_RANGE_TRACE", 0) ~= 0 then
