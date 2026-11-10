@@ -1210,7 +1210,8 @@ MoveImage wrapper `FUN_80058490`, the record copy `FUN_800557B8` and the St fram
 The Throw Out confirm window `FUN_801D1B20` (`items_panels`) showed the port drawing the bag count
 and the window's first prompt line after the item name, where retail seats both at
 `WX + 8 + name[0] * 12` - the name's first byte read as a glyph count - which on this disc is
-hundreds of pixels right of the screen ([the window](../subsystems/field-menu.md)). The shop's root
+hundreds of pixels right of the screen ([the window](../subsystems/field-menu.md)). The port keeps
+its visible layout on purpose and carries retail's seat as the kernel the differential drives. The shop's root
 window `FUN_801D4868` (`shop_panels`) showed the composed picker's hand two pixels above the pen
 line retail opens it on. The save info panel `FUN_801E08D8` (`save_info`) matches once its numeral
 fields walk the retail cell rule and its `Time ` label keeps the literal's trailing space.

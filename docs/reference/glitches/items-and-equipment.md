@@ -953,3 +953,51 @@ The counter-test: clear that bit, set `0x471`, win thirteen fights, and the item
 
 - Whether the party can leave Jette's Fortress between the setting of `0x471` and the Jette fight.
 - Which story beat sets `0x382` first in an ordinary playthrough.
+
+## The Throw Out confirm loses its count
+
+**Status:** explained
+**Reported as:** not a community report. Found by running the window's painter against the port.
+
+Choosing an item under Items > Throw Out opens a small Yes / No window. On the USA disc it shows the item's name and,
+under it, "Throw out?". The window was written to say more: the name, then how many are in the bag, then "You are about
+to", with "Throw out?" below. The count and that first line are drawn, but far off the right edge of the screen, so
+nobody sees them.
+
+### Mechanism
+
+The painter `FUN_801D1B20` (PROT 0899, window 9) draws the name at the window's origin and then has to place the count
+after it. It works the pen out as `WX + 8 + n * 12`, where `n` is meant to be the name's glyph count. It takes `n` from
+the first byte of the name string (`lbu v1,0x0(a1)` at `0x801D1BB4`), off the same pointer it has just handed to the
+string writer. The names on this disc carry no count byte. They open on a letter, so `n` is that letter's code: `P` is
+80, and the pen lands 968 pixels right of the window. The count goes there and "You are about to" 8 or 16 pixels past
+it. The GPU reads a sprite's x as a signed 11-bit number and draws nothing outside the 320-pixel frame.
+
+### Addresses
+
+| Address | What |
+|---|---|
+| `0x801D1B20` | The confirm window's painter (menu overlay, PROT 0899). |
+| `0x801D1BB4` | The load of the name's first byte as a glyph count. |
+| `0x801CEA60` | `@You are about to`, the line that is lost. |
+| `0x801CEA74` | `@Throw out?`, the line that is seen. |
+
+### Scope
+
+Every item, since every name opens on a printable byte. A first byte of `0xAA..=0xC5` would wrap the pen back onto the
+screen; no item name has one.
+
+### In the port
+
+The port draws the count and the line after the name, on both hosts. The retail seat is kept as a kernel
+(`ThrowConfirmSeat::Retail` in `engine-ui`) and is what the retail differential compares.
+
+### Verifying it
+
+Open Items > Throw Out, pick any stack, and read the window: the name's row holds the name alone. In a debugger, break
+at `0x801D1C20` (the count's number writer) and read `a2`, the pen's x.
+
+### Open questions
+
+Whether the Japanese build's item names carry a count byte, which would make the arithmetic right there.
+

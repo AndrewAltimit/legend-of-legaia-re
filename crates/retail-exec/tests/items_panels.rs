@@ -6,9 +6,11 @@
 //! `WX + 8 + name[0] * 12` (`0x801D1BB4..0x801D1BC8`): the item name's first
 //! **byte**, read off the same pointer the string writer was just handed.
 //! On this disc that byte is a letter, so the pen lands hundreds of pixels
-//! right of the screen and neither draw is seen. A sprite is held to be seen
-//! the way the GPU sees it: its x taken as a signed 11-bit coordinate,
-//! inside the 320-px drawing area.
+//! right of the screen and neither draw is seen. That is a retail oversight
+//! the port does not ship: the hosts draw `ThrowConfirmSeat::AfterName`. The
+//! differential drives `ThrowConfirmSeat::Retail`, the seat rule as a kernel.
+//! A sprite is held to be seen the way the GPU sees it: its x taken as a
+//! signed 11-bit coordinate, inside the 320-px drawing area.
 
 use crate::common::{Rng, disc};
 use crate::menu_painters::{Ev, cstr, hands, rig};
@@ -16,7 +18,8 @@ use legaia_engine_menus::pause_screens::ThrowConfirmLabels;
 use legaia_engine_ui::menu::window_painters::PainterRect;
 use legaia_engine_ui::{
     ITEMS_THROW_CONFIRM_RECT, PauseThrowConfirmView, SaveMenuAtlasRects, TextDraw,
-    items_throw_confirm_draws_for, items_throw_confirm_sprites_for,
+    ThrowConfirmSeat, items_throw_confirm_draws_for, items_throw_confirm_draws_seated,
+    items_throw_confirm_sprites_for,
 };
 
 const THROW_CONFIRM: u32 = 0x801D_1B20;
@@ -110,7 +113,19 @@ fn the_throw_out_confirm_window_matches() {
             prompt: [labels.prompt[0].as_str(), labels.prompt[1].as_str()],
             choices: [labels.choices[0].as_str(), labels.choices[1].as_str()],
         };
-        let port = items_throw_confirm_draws_for(&rig.font, &view, (r.x, r.y));
+        let port = items_throw_confirm_draws_seated(
+            &rig.font,
+            &view,
+            (r.x, r.y),
+            ThrowConfirmSeat::Retail,
+        );
+        // What the hosts ship is the other seat: every draw of the retail
+        // layout that is seen, plus the count and the line after the name.
+        let shipped = items_throw_confirm_draws_for(&rig.font, &view, (r.x, r.y));
+        assert!(
+            shipped.len() > port.len(),
+            "{what}: the shipped layout shows more"
+        );
         let text: Vec<Ev> = log
             .iter()
             .filter(|e| matches!(e, Ev::Text(..) | Ev::Number(..)))

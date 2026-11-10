@@ -704,7 +704,7 @@ pub struct PauseThrowConfirmView<'a> {
     /// Emit an ASCII `>` cursor instead of the hand sprite.
     pub text_cursor: bool,
     /// The window's two prompt lines (`0x801CEA60` after the count - which
-    /// retail seats off screen, see [`items_throw_confirm_draws_for`] -
+    /// retail seats off screen, see [`ThrowConfirmSeat`] -
     /// and `0x801CEA74` below) and the Yes / No labels, as the menu
     /// overlay's pool holds them, `@` lead included. Empty strings draw
     /// nothing.
@@ -721,20 +721,65 @@ pub const THROW_CONFIRM_CHOICE_X: i32 = 0x3c;
 /// X offset of the Yes / No hand cursor.
 pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
 
+/// Where the Throw Out confirm seats its bag count and first prompt line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThrowConfirmSeat {
+    /// The port's layout, and what both hosts ship: the count 8 px past the
+    /// name's own advance, the line after it. A deliberate deviation - it
+    /// shows the two draws retail's seat rule loses.
+    #[default]
+    AfterName,
+    /// Retail's rule, `WX + 8 + name[0] * 0xC`: the name's first **byte**
+    /// read as a glyph count (`lbu v1,0x0(a1)` at `0x801D1BB4`, off the
+    /// pointer the string writer was just handed). On this disc a name opens
+    /// on a letter, so both draws land hundreds of pixels right of the
+    /// screen and the window reads as the name over the second line.
+    Retail,
+}
+
+/// The x the Throw Out confirm seats its bag count at under `seat`, for an
+/// item `name` drawn at `wx` whose laid-out advance is `name_advance`.
+///
+/// PORT: FUN_801D1B20 (the count pen, `0x801D1BB4..0x801D1BC8`)
+pub fn throw_confirm_count_x(
+    seat: ThrowConfirmSeat,
+    wx: i32,
+    name: &str,
+    name_advance: i32,
+) -> i32 {
+    match seat {
+        ThrowConfirmSeat::AfterName => wx + 8 + name_advance,
+        // A `char` up to `U+00FF` is the dialog font's byte of that value.
+        ThrowConfirmSeat::Retail => {
+            wx + 8 + name.chars().next().map_or(0, |c| (c as u32 & 0xFF) as i32) * 0x0C
+        }
+    }
+}
+
 /// Build [`TextDraw`]s for the Throw Out confirm window (descriptor
-/// id 9, rect [`ITEMS_THROW_CONFIRM_RECT`]). Retail layout, all from the
-/// window's content origin `(WX, WY)`:
+/// id 9, rect [`ITEMS_THROW_CONFIRM_RECT`]) in the layout the port ships
+/// ([`ThrowConfirmSeat::AfterName`]). See
+/// [`items_throw_confirm_draws_seated`].
+pub fn items_throw_confirm_draws_for(
+    font: &legaia_font::Font,
+    view: &PauseThrowConfirmView<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    items_throw_confirm_draws_seated(font, view, pen, ThrowConfirmSeat::AfterName)
+}
+
+/// The Throw Out confirm window under either seat rule. Retail layout, all
+/// from the window's content origin `(WX, WY)`:
 ///
 /// - item name (staging 7 white) at `(WX, WY)`;
-/// - the bag count (`FUN_80034B78`, one cell) at `WX + 8 + name[0] * 0xC`,
+/// - the bag count (`FUN_80034B78`, one cell) at [`throw_confirm_count_x`],
 ///   and the first prompt line (`0x801CEA60`) 8 px past it (16 px for a
-///   2-digit count). `name[0]` is the name's first **byte**
-///   (`lbu v1,0x0(a1)` at `0x801D1BB4`, off the pointer the string writer
-///   was just handed), so on this disc, where a name opens on a letter,
-///   both land hundreds of pixels right of the screen and are not seen:
-///   the window reads as the name over the second line. They are laid out
+///   2-digit count). Under [`ThrowConfirmSeat::Retail`] they are laid out
 ///   where retail puts them and dropped the way the GPU drops them
-///   ([`gpu_seen`]);
+///   ([`gpu_seen`]) - on this disc, both. The retail differential
+///   `items_panels` drives that seat; the hosts draw
+///   [`ThrowConfirmSeat::AfterName`], which keeps the sentence the window
+///   was written to show;
 /// - the second prompt line (`0x801CEA74`) at `(WX+6, WY+0xE)`;
 /// - Yes / No (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
 ///   `WY+0x2A`, hand cursor at `WX+0x28` on the focused row.
@@ -744,28 +789,27 @@ pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
 /// modelled: no item name on the disc carries the byte.
 ///
 /// PORT: FUN_801D1B20
-pub fn items_throw_confirm_draws_for(
+pub fn items_throw_confirm_draws_seated(
     font: &legaia_font::Font,
     view: &PauseThrowConfirmView<'_>,
     pen: (i32, i32),
+    seat: ThrowConfirmSeat,
 ) -> Vec<TextDraw> {
     let (wx, wy) = pen;
     let mut out = Vec::new();
     let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
         out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
     };
-    str_at(&mut out, view.name, wx, wy, MENU_TEXT_WHITE);
-    // A `char` up to `U+00FF` is the dialog font's byte of that value.
-    let lead = view
-        .name
-        .chars()
-        .next()
-        .map_or(0, |c| (c as u32 & 0xFF) as i32);
-    let count_x = wx + 8 + lead * 0x0C;
-    let mut far = num_field_draws(font, view.count as u64, count_x, wy, 1, MENU_TEXT_WHITE);
+    let name_layout = font.layout_ascii(view.name);
+    out.extend(text_draws_for(&name_layout, (wx, wy), MENU_TEXT_WHITE));
+    let count_x = throw_confirm_count_x(seat, wx, view.name, name_layout.advance_x as i32);
+    let mut tail = num_field_draws(font, view.count as u64, count_x, wy, 1, MENU_TEXT_WHITE);
     let after_count = count_x + if view.count >= 10 { 0x10 } else { 0x8 };
-    str_at(&mut far, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
-    out.extend(far.iter().filter_map(gpu_seen));
+    str_at(&mut tail, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
+    match seat {
+        ThrowConfirmSeat::AfterName => out.extend(tail),
+        ThrowConfirmSeat::Retail => out.extend(tail.iter().filter_map(gpu_seen)),
+    }
     str_at(&mut out, view.prompt[1], wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
     let teal = super::system_menus::OPTIONS_INK_TEAL;
     for (label, y, row) in [
@@ -1774,7 +1818,7 @@ mod pause_list_tests {
     }
 
     /// Throw Out confirm window (FUN_801D1B20): name at the content
-    /// origin, the count off screen, "Throw out?" at `(X+6, Y+0xE)`,
+    /// origin, count right of the name, "Throw out?" at `(X+6, Y+0xE)`,
     /// Yes / No teal at `X+0x3C` on rows `Y+0x1C` / `Y+0x2A`, hand at
     /// `X+0x28` on the focused row.
     #[test]
@@ -1804,24 +1848,10 @@ mod pause_list_tests {
             .map(|d| d.color)
             .unwrap();
         assert_eq!(yes_ink, super::super::system_menus::OPTIONS_INK_TEAL);
-        // The count and the first prompt line are seated off the name's
-        // first byte (`'M' * 12`), right of the screen: the name's row
-        // holds the name and nothing else.
+        // The count sits right of the proportional name advance: the
+        // port's layout, kept on purpose over retail's off-screen seat.
         let name_w = font.layout_ascii("Medicine").advance_x as i32;
-        assert!(
-            !draws
-                .iter()
-                .any(|d| d.dst.1 == wy && d.dst.0 >= wx + name_w),
-            "nothing follows the name on its row"
-        );
-        // A name opening on a byte whose pen wraps back onto the screen
-        // (`0xAB * 12 + 8` is `2060`, `12` as the GPU reads it) shows both.
-        let wrapped = PauseThrowConfirmView {
-            name: "\u{AB}x",
-            ..view
-        };
-        let draws = items_throw_confirm_draws_for(&font, &wrapped, (wx, wy));
-        assert!(draw_at(&draws, wx + 8 + 0xAB * 12 - 2048, wy));
+        assert!(draw_at(&draws, wx + 8 + name_w, wy));
         // Sprite variant: hand at (X+0x28, rowY) for the focused row.
         let sprites = items_throw_confirm_sprites_for(&test_rects(), 0, (wx, wy), (0, 0), 1);
         assert!(
@@ -1829,6 +1859,49 @@ mod pause_list_tests {
                 .iter()
                 .any(|d| d.dst.0 == wx + 0x28 && d.dst.1 == wy + 0x1c)
         );
+    }
+
+    /// Retail's seat rule: the count pen is `WX + 8 + name[0] * 12`, so on
+    /// a name opening on a letter the name's row holds the name alone; a
+    /// lead byte whose pen wraps back onto the screen shows both draws.
+    #[test]
+    fn throw_confirm_retail_seat_is_off_the_first_byte() {
+        let font = legaia_font::synthetic_for_tests();
+        let (wx, wy) = (14, 38);
+        let view = PauseThrowConfirmView {
+            name: "Medicine",
+            count: 12,
+            cursor: 1,
+            text_cursor: false,
+            prompt: ["About", "Drop?"],
+            choices: ["Y", "N"],
+        };
+        let name_w = font.layout_ascii("Medicine").advance_x as i32;
+        assert_eq!(
+            throw_confirm_count_x(ThrowConfirmSeat::Retail, wx, "Medicine", name_w),
+            wx + 8 + i32::from(b'M') * 12
+        );
+        assert_eq!(
+            throw_confirm_count_x(ThrowConfirmSeat::AfterName, wx, "Medicine", name_w),
+            wx + 8 + name_w
+        );
+        let draws =
+            items_throw_confirm_draws_seated(&font, &view, (wx, wy), ThrowConfirmSeat::Retail);
+        assert!(
+            !draws
+                .iter()
+                .any(|d| d.dst.1 == wy && d.dst.0 >= wx + name_w),
+            "nothing follows the name on its row"
+        );
+        assert!(draw_at(&draws, wx + 6, wy + 0x0e));
+        // `0xAB * 12 + 8` is `2060`, `12` as the GPU reads it.
+        let wrapped = PauseThrowConfirmView {
+            name: "\u{AB}x",
+            ..view
+        };
+        let draws =
+            items_throw_confirm_draws_seated(&font, &wrapped, (wx, wy), ThrowConfirmSeat::Retail);
+        assert!(draw_at(&draws, wx + 8 + 0xAB * 12 - 2048, wy));
     }
 
     /// Sprite placement: command hand at `(X, rowY)`, list hand at

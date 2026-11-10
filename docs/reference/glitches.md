@@ -71,6 +71,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Enemy items aimed at an ally (Point Card softlock, Lippian Flute) | explained | The target cursor can step onto an ally. The Point Card's damage skips the HP-counter bookkeeping the end of the action waits on; Lippian's kill runs a fade that stands a party member back up at 0 HP. |
 | Coin vendor sells past 99 (Japanese release) | explained | The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99. |
 | War God Icon can be missed for good | explained | The item and its 'already awarded' flag come from two pieces of code that disagree about what clearing the course means. |
+| The Throw Out confirm loses its count | explained | The window seats the bag count off the item name's first byte, read as a glyph count; the names carry no count byte, so the count and "You are about to" are drawn off screen. |
 
 ## Incense, doors and the Door of Light
 

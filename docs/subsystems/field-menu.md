@@ -1388,9 +1388,15 @@ off the pointer just handed to the string writer), read as a glyph count. The
 names on this disc carry no count byte - they open on a letter - so the pen
 lands several hundred pixels right of the screen, and neither the count nor
 "You are about to" is seen: the window reads as the item name over "Throw
-out?". A `0xF1` second byte re-seats the pen off a party member's name
-(`+0x2A7`); no item name carries one. The differential
-`crates/retail-exec/tests/items_panels.rs` holds the port to it. The
+out?" ([the oversight](../reference/glitches/items-and-equipment.md#the-throw-out-confirm-loses-its-count)).
+A `0xF1` second byte re-seats the pen off a party member's name (`+0x2A7`); no
+item name carries one.
+
+**The port does not ship that seat.** Both hosts draw the count 8 px past the
+name's own advance and the line after it (`ThrowConfirmSeat::AfterName`), the
+sentence the window was written to show. Retail's rule is kept as a kernel
+(`ThrowConfirmSeat::Retail`, `throw_confirm_count_x`), and the differential
+`crates/retail-exec/tests/items_panels.rs` holds that kernel to the routine. The
 strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
 `@Throw out?` at `0x801CEA74` / `@Yes` / `@No`). Port: the confirm draws them
 from `pause_screens::ThrowConfirmLabels` (installed by
