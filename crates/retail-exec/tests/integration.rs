@@ -259,6 +259,7 @@ mod ozma_ladder;
 mod pad_pump;
 mod pad_resolve;
 mod panel_actors;
+mod panel_backread;
 mod panel_script;
 mod party_panel_build;
 mod party_table;
