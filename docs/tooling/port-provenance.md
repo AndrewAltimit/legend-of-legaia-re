@@ -704,6 +704,10 @@ battle effect emitter reads as verified through the pose decoder's
 differential, which runs the same routine's other half. The waiver there still
 says which half the tag ports.
 
+This is why the two checks are rungs of one ladder rather than alternatives:
+provenance ranks every tag cheaply and gates on the delta, and the
+differential proves the ones it runs ([the verification ladder](verification-ladder.md)).
+
 ## An empty corpus is not a clean run
 
 `ghidra/scripts/funcs/` is gitignored, so a fresh clone or a worktree has no

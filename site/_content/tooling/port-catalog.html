@@ -274,7 +274,7 @@ scripts/ci/replay-port-coverage.py</code></pre>
   <ul class="bullets">
     <li><strong>The citation graph is dump-local.</strong> An undumped helper has no outgoing edges; the frontier widens only as dumps land.</li>
     <li><strong><code>documented</code> is broader than the curated <a href="../reference/functions.html">functions</a> directory.</strong> Any doc page that mentions the address counts.</li>
-    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; tests and retail comparison do that job.</li>
+    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; the <a href="retail-kernel-differential.html">kernel differential</a>, tests and retail comparison do that job (<a href="verification-ladder.html">the verification ladder</a>).</li>
     <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers surface in <code>--missing-ports</code> until added; treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely candidates.</li>
   </ul>
 </section>
@@ -289,7 +289,7 @@ scripts/ci/replay-port-coverage.py</code></pre>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a></td><td>Per-anchor verdicts for the audit's undisclosed-inert rows.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a></td><td>Per-row verdicts for "tagged <code>NOT WIRED</code> but analysed live".</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a></td><td>Verdicts for the live-but-never-entered set.</td></tr>
-      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a></td><td>Does a tag name the <em>right</em> routine? (Ungated.)</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a></td><td>Does a tag name the <em>right</em> routine? Ranked signals; <code>--check</code> fails a commit that adds an unwaived finding.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md">call-target-integrity</a></td><td>Why a decoded <code>jal</code> target belongs to the bytes, not the load base.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a></td><td>A dump's printed addresses are a property of its load base; only the header tag is evidence.</td></tr>
       <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a></td><td>For each printed <code>0x801C****</code> / <code>0x801D****</code> address, the image and VA its bytes really occupy.</td></tr>
@@ -302,6 +302,8 @@ scripts/ci/replay-port-coverage.py</code></pre>
   <div class="see-also">
     <span class="see-also-label">Tooling</span>
     <a href="disc-coverage.html">Disc coverage</a>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
     <a href="address-reference-scan.html">Address-reference scan</a>
     <a href="ghidra.html">Ghidra in Docker</a>
     <a href="determinism-replay.html">Determinism + replay</a>

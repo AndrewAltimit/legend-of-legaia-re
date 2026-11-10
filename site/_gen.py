@@ -795,6 +795,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/measuring-parity.html", "Measuring against retail", "tooling/measuring-parity", "tooling/measuring-parity.html"),
+    ("tooling/verification-ladder.html", "The verification ladder", "tooling/verification-ladder", "tooling/verification-ladder.html"),
     ("tooling/retail-compare.html", "Retail comparison corpus", "tooling/retail-compare", "tooling/retail-compare.html"),
     ("tooling/cast-sequence-oracle.html", "Cast-sequence oracle", "tooling/cast-sequence-oracle", "tooling/cast-sequence-oracle.html"),
     ("tooling/walk-film.html", "Field walk film", "tooling/walk-film", "tooling/walk-film.html"),
@@ -1342,13 +1343,17 @@ def build_progress_meter() -> str:
     """
     src = ROOT.parent / "scripts" / "ci" / "progress-metrics.json"
     tracks: list = []
+    verification: list = []
     if src.exists():
         try:
-            tracks = json.loads(src.read_text(encoding="utf-8")).get("tracks", [])
+            doc = json.loads(src.read_text(encoding="utf-8"))
+            tracks = doc.get("tracks", [])
+            verification = doc.get("verification", [])
         except (ValueError, OSError):
             tracks = []
     play = _playability_tiles()
-    if not tracks and not play:
+    checked = _verification_tiles(verification)
+    if not tracks and not play and not checked:
         return ""
 
     # Compact stat strip: big number + one-line label + thin meter. The full
@@ -1430,8 +1435,96 @@ def build_progress_meter() -> str:
             '<div class="stats-foot"><a href="tooling/disc-coverage.html">'
             "How these are measured →</a></div>",
         ]
+    if checked:
+        out += [
+            '<div class="stats-group">How much is checked against retail\'s own code</div>',
+            f'<div class="stats stats-{len(checked)}">',
+            *checked,
+            "</div>",
+            '<div class="stats-foot"><a href="tooling/verification-ladder.html">'
+            "The verification ladder →</a></div>",
+        ]
     out.append("</div>")
     return "\n".join(out)
+
+
+def build_differential_coverage() -> str:
+    """One generated line stating the retail kernel differential's coverage,
+    for the pages that explain it (`<!--DIFFERENTIAL_COVERAGE-->`).
+
+    Read from the `verification` block of `scripts/ci/progress-metrics.json`,
+    the same source as the landing tile, so no page carries a hand-typed
+    figure. Returns "" when the block is missing.
+    """
+    src = ROOT.parent / "scripts" / "ci" / "progress-metrics.json"
+    try:
+        blocks = json.loads(src.read_text(encoding="utf-8")).get("verification", [])
+    except (OSError, ValueError):
+        return ""
+    for t in blocks:
+        if t.get("key") != "differential":
+            continue
+        try:
+            covered, ported = int(t["covered"]), int(t["ported"])
+            routines, tests = int(t["routines"]), int(t["tests"])
+        except (KeyError, TypeError, ValueError):
+            return ""
+        pct = float(t.get("pct", 0.0))
+        return (
+            '<p class="hint"><strong>Coverage.</strong> '
+            f"{covered} of the {ported} retail addresses a <code>// PORT:</code> tag "
+            f"names ({pct:.1f}%) are run by a differential; {tests} tests run "
+            f"{routines} retail routines in all. Generated from the tests' "
+            "declarations by <code>scripts/ci/update-progress-metrics.py</code>, "
+            "and ratcheted by <code>differential-coverage.py --check</code>.</p>"
+        )
+    return ""
+
+
+def _verification_tiles(blocks: list) -> list[str]:
+    """The landing page's "checked against retail" tiles, from the
+    `verification` block of `scripts/ci/progress-metrics.json`.
+
+    The block is written by `update-progress-metrics.py` from the retail kernel
+    differential's `differential!` declarations and the `// PORT:` tags (no
+    disc needed), and `check-progress-metrics-freshness.py` recomputes it
+    exactly. It sits in its own group rather than among the four tracks: those
+    say how much is traced and ported and have reached their ceiling, this says
+    how much of the port has been run against retail's own bytes, and it is far
+    from complete. Each tile names its denominator.
+    """
+    tiles: list[str] = []
+    for t in blocks:
+        if t.get("key") != "differential":
+            continue
+        try:
+            covered, ported = int(t["covered"]), int(t["ported"])
+            routines, tests = int(t["routines"]), int(t["tests"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        pct = max(0.0, min(100.0, float(t.get("pct", 0.0))))
+        href = html.escape(str(t.get("href", "tooling/retail-kernel-differential.html")))
+        detail = html.escape(str(t.get("detail", "")))
+        tiles.append(
+            f'  <a class="stat stat-link" href="{href}" title="{detail}" '
+            f'aria-label="Retail kernel differential: {covered} of {ported} ported '
+            f'routines, {pct:.1f} percent, run off the disc against their port">\n'
+            f'    <div class="num">{pct:.1f}<small>%</small></div>\n'
+            f'    <div class="lbl">of ported routines run off the disc beside their Rust kernel '
+            f'({covered} of {ported})</div>\n'
+            f'    <div class="meter" aria-hidden="true"><i style="width: {pct:.1f}%"></i></div>\n'
+            f'  </a>'
+        )
+        tiles.append(
+            f'  <a class="stat stat-link" href="{href}#what-it-has-found" title="{detail}" '
+            f'aria-label="Retail kernel differential: {tests} tests run {routines} retail '
+            f'routines in an R3000 interpreter">\n'
+            f'    <div class="num">{routines}</div>\n'
+            f'    <div class="lbl">retail routines executed in an R3000 interpreter, '
+            f'by {tests} tests that prove which bytes they ran</div>\n'
+            f'  </a>'
+        )
+    return tiles
 
 
 DOCS_BLOB = "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/"
@@ -2214,6 +2307,7 @@ def main() -> int:
     # into whichever page carries the placeholder.
     disc_patching_table = build_disc_patching_table()
     progress_meter = build_progress_meter()
+    differential_coverage = build_differential_coverage()
     image_port_status = build_image_port_status()
     site_pages = {p[0] for p in PAGES}
 
@@ -2239,6 +2333,8 @@ def main() -> int:
             body = body.replace("<!--DISC_PATCHING_TABLE-->", disc_patching_table)
         if "<!--PROGRESS_METER-->" in body:
             body = body.replace("<!--PROGRESS_METER-->", progress_meter)
+        if "<!--DIFFERENTIAL_COVERAGE-->" in body:
+            body = body.replace("<!--DIFFERENTIAL_COVERAGE-->", differential_coverage)
         if "<!--IMAGE_PORT_STATUS-->" in body:
             body = body.replace("<!--IMAGE_PORT_STATUS-->", image_port_status)
         if "<!--SAMPLE_PACK_CONTENTS-->" in body:

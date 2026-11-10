@@ -169,6 +169,44 @@ a pass. Count skips by reason on the machine that has the data, and fail a run
 in which a test skipped for want of an input that machine is supposed to hold
 ([a skipped test is not a passed test](ratchet-integrity.md#a-skipped-test-is-not-a-passed-test)).
 
+## Run the original's routines beside their ports
+
+A save state answers for the inputs it happened to hold. A rule the original
+computes - a damage roll, a status tick, a sort, a camera matrix - also has
+inputs no capture reached, and a reimplementation can be wrong only there.
+Close that gap by running the original's routine itself.
+
+Load the executable and the overlay the routine lives in off the user's disc
+into a user-mode interpreter of the console's CPU (and its coprocessors, where
+the routine uses them), seed memory with generated inputs in the shapes the
+game reaches, call the routine, and compare every byte of the regions it wrote
+with what the reimplementation's kernel produces from the same inputs. Hook the
+random-number call so both sides draw one stream. Assert that the run reached
+the arms it claims to test, so a seed change cannot leave a test passing on
+nothing ([retail kernel differential](retail-kernel-differential.md)).
+
+Three rules make it a gate rather than a test suite:
+
+- **Each test declares the routines it runs, and the run proves it.** The
+  interpreter logs every entry it executes with the bytes found there; a test
+  fails unless each routine it names was entered and its bytes are the named
+  image's. A declaration that names the wrong address, or the right address in
+  the wrong overlay, fails the test that carries it
+  ([declaring what a test runs](retail-kernel-differential.md#declaring-what-a-test-runs)).
+- **Coverage is counted from the declarations, so it needs no disc.** The
+  share of the reimplementation's tagged routines that some differential runs
+  is computed from the test sources, and ratcheted like any other score.
+- **Write the interpreter's coprocessors from the hardware documentation, not
+  from the reimplementation.** A model copied from the code under test shares
+  its defects, and a defect on both sides cancels in the comparison.
+
+The differential is also the strongest provenance evidence there is: a tag
+claiming a routine is checked by running that routine
+([a differential is evidence](port-provenance.md#a-differential-is-evidence)).
+What it cannot see is when and with what the engine calls the kernel, which is
+what the state corpus and the films measure. Where it sits among the other
+checks is [the verification ladder](verification-ladder.md).
+
 ## Grade every claim by its evidence
 
 Every answered question about the original carries a grade naming what its
@@ -261,17 +299,24 @@ The pieces have an order, because each makes the next one cheaper:
 3. The ratchet, its loosening ledger and the skip tally, before the corpus is
    large enough for a silent regression to hide in.
 4. The image channel at native resolution.
-5. The evidence grades and the falsified register, which cost nothing to
+5. The routine differential, once the reimplementation has rules worth
+   holding to the original's bytes, with its declarations and coverage
+   ratchet from the first test.
+6. The evidence grades and the falsified register, which cost nothing to
    start and only grow in value.
-6. The disc-derived denominators, once there is enough work for a count over
+7. The disc-derived denominators, once there is enough work for a count over
    done work to start flattering.
-7. Determinism replay, as soon as the engine has input.
+8. Determinism replay, as soon as the engine has input.
 
 ## See also
 
 - [Retail comparison corpus](retail-compare.md) - this project's corpus
   oracle, end to end.
 - [Cast-sequence oracle](cast-sequence-oracle.md) - the time-axis sibling.
+- [Retail kernel differential](retail-kernel-differential.md) - the
+  original's routines run beside their ports.
+- [The verification ladder](verification-ladder.md) - every check in one
+  stack, with what each cannot see.
 - [Ratchet integrity](ratchet-integrity.md) - the loosening ledger and the
   skip tally.
 - [Reusing for other PS1 games](reusing-for-other-ps1-games.md) - the crates

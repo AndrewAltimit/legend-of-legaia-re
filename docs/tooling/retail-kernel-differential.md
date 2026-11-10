@@ -11,7 +11,8 @@ interpreter. Its disc-gated tests load `SCUS_942.54` and any overlay off the
 user's disc, seed RAM with generated inputs, call the routine, and compare what
 it wrote with what the Rust kernel produces. There is no decompiled C and no
 hand reading between the two sides. No Sony bytes are committed; without
-`LEGAIA_DISC_BIN` the tests skip.
+`LEGAIA_DISC_BIN` the tests skip. Where it sits among the project's other
+checks, and what it cannot see, is [the verification ladder](verification-ladder.md).
 
 ```bash
 cargo test -p psx-retail-exec --profile dev-fast --test integration

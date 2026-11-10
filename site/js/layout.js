@@ -325,6 +325,7 @@ const NAV = [
       { href: 'tooling/spine-flag-writers-capture.html', text: 'Spine flag-writers capture', key: 'tooling/spine-flag-writers-capture', indent: true },
       { heading: 'Measure the port' },
       { href: 'tooling/measuring-parity.html', text: 'Measuring against retail', key: 'tooling/measuring-parity' },
+      { href: 'tooling/verification-ladder.html', text: 'The verification ladder', key: 'tooling/verification-ladder' },
       { href: 'tooling/port-catalog.html', text: 'Port catalog', key: 'tooling/port-catalog' },
       { href: 'tooling/field-op-census.html', text: 'Field-op census', key: 'tooling/field-op-census', indent: true },
       { href: 'tooling/disc-coverage.html', text: 'Disc coverage', key: 'tooling/disc-coverage' },

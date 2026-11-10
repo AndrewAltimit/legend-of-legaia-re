@@ -85,10 +85,10 @@ A recomp is faithful because the original's code runs. Here nothing of the origi
 - **Stills.** The [retail comparison corpus](tooling/retail-compare.md) seats the engine where each of several hundred retail save states stood and scores the frame, camera, player, placements, music, flags, party and enemies per state, in [`scripts/ci/retail-compare-baseline.json`](../scripts/ci/retail-compare-baseline.json).
 - **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant.
 - **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`.
-- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two.
+- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`).
 - **The whole game.** The [full-game ladder](tooling/full-game-ladder.md) plays New Game to credits on pad input, segment by segment and as one continuous run.
 
-None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
+[The verification ladder](tooling/verification-ladder.md) stacks these with the format docs and port provenance, rung by rung, with what each one cannot see. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
 
 ### The boundary, stated honestly
 
@@ -143,7 +143,9 @@ Every step runs through a gate. A gate here is a check that fails on its own, us
 
 **What it produces.** World-free kernels in the engine's crates, a citation in the docs, and a row in the [port catalog](tooling/port-catalog.md), which derives each function's status from the tree on every run and so cannot go stale the way a hand-kept table does.
 
-**The gate.** `port-catalog.py --check` ratchets the figures. Function worklists are read through [worklist classification](tooling/worklist-classification.md), so that an address which is no real function entry does not read as work. An honest gap remains: nothing gates whether a `// PORT:` address names the routine the Rust actually implements, so [port provenance](tooling/port-provenance.md) is a warn-only worklist.
+**The gate.** Three checks, each on a different question. `port-catalog.py --check` ratchets what is ported, with worklists read through [worklist classification](tooling/worklist-classification.md) so that an address which is no real function entry does not read as work.
+[Port provenance](tooling/port-provenance.md) asks whether a `// PORT:` address names the routine the Rust implements; its signals rank suspicion rather than prove anything, so `check-port-provenance.py --check` gates the delta: a commit that adds an unwaived finding fails, and each waiver records what the bytes showed.
+The [retail kernel differential](tooling/retail-kernel-differential.md) asks whether the Rust computes what the routine computes, by running the routine off the user's disc in an R3000 interpreter beside its kernel. Each test declares the routines it runs and fails unless the run entered exactly those bytes, and `differential-coverage.py --check` ratchets how many tagged routines a differential runs. A differential settles provenance for the addresses it runs; the rest stay on the ranked worklist ([the verification ladder](tooling/verification-ladder.md)).
 
 **An example.** A sweep for writers of `_DAT_8007B8C2` searched the absolute `lui` + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's documented polarity. Its writer is `0x80015F08 sh v0,0x5aa(gp)`, a gp-relative store that scan could not see, and the executable's header clears no BSS at all. The chain is in [`ghidra.md`](tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims), and it is why a negative result is held to the same evidence bar as a positive one.
 
@@ -268,5 +270,6 @@ Then start small on each axis instead of finishing one step at a time: one forma
 - [Engine reimplementation](subsystems/engine.md) - the port as it is: crate layering, hosts, fidelity, legal posture and how it is verified.
 - [Overview](overview.md) - the project in four parts, and how the disc's layers stack.
 - [The retail-oracle method](tooling/retail-oracle-method.md) - the measurement half, written for any game.
+- [The verification ladder](tooling/verification-ladder.md) - every check from format docs to the full-game ladder, and what each cannot see.
 - [Reusing for other PS1 games](tooling/reusing-for-other-ps1-games.md) - which crates and scripts carry.
 - [Open RE threads](reference/open-rev-eng-threads.md) - the live hunts, and [falsified readings](reference/re-do-not-re-walk.md) - the ones not worth repeating.

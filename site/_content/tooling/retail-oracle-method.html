@@ -115,6 +115,18 @@
   <div class="callout callout-trap"><p class="callout-title">Two ways a ratchet is defeated without tripping</p><p><strong>The baseline is edited</strong> in the same commit: a second gate compares every baseline with the base revision and fails on any value that moved the wrong way unless a ledger records that exact step with a reason. <strong>The measurement never runs</strong>: a test that skips for want of data reports as a pass, so count skips by reason on the machine that has the data (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">ratchet integrity</a>).</p></div>
 </section>
 
+<section class="doc-section" id="differential" data-doc="run-the-originals-routines-beside-their-ports">
+  <h2>Run the original's routines beside their ports</h2>
+  <p>A save state answers for the inputs it happened to hold. A rule the original computes - a damage roll, a status tick, a sort, a camera matrix - also has inputs no capture reached, and a reimplementation can be wrong only there. Close that gap by running the original's routine itself: load the executable and its overlay off the user's disc into a user-mode interpreter of the console's CPU and coprocessors, seed memory with generated inputs in the shapes the game reaches, call the routine, and compare every byte of the regions it wrote with what the port's kernel produces from the same inputs. Hook the random-number call so both sides draw one stream, and assert the run reached the arms it claims to test (<a href="retail-kernel-differential.html">retail kernel differential</a>).</p>
+  <p>Three rules make it a gate rather than a test suite:</p>
+  <ul class="bullets">
+    <li><strong>Each test declares the routines it runs, and the run proves it.</strong> The interpreter logs every entry it executes with the bytes there; a test fails unless each routine it names was entered and its bytes are the named image's.</li>
+    <li><strong>Coverage is counted from the declarations</strong>, so it needs no disc, and it is ratcheted like any other score.</li>
+    <li><strong>Write the coprocessors from the hardware documentation</strong>, not from the reimplementation: a model copied from the code under test shares its defects, and a shared defect cancels in the comparison.</li>
+  </ul>
+  <p>A differential is also the strongest provenance evidence there is: a tag claiming a routine is checked by running that routine. What it cannot see is when and with what the engine calls the kernel, which the state corpus and the films measure. Where it sits among the other checks is <a href="verification-ladder.html">the verification ladder</a>.</p>
+</section>
+
 <section class="doc-section" id="grades" data-doc="grade-every-claim-by-its-evidence">
   <h2>Grade every claim by its evidence</h2>
   <p>Every answered question carries the grade of its weakest load-bearing evidence: <code>disassembly</code> (instructions at stated addresses), <code>capture</code> (a state, probe log or measured oracle), <code>decompiled-C</code> (a decompiler's rendering, an inferred signature, a typed-in label) or <code>inference</code> (reasoning from surrounding facts or absence). The third marks a claim nobody has checked against instructions, which makes it a re-audit worklist (<a href="../reference/re-settled-threads.html#grades">the evidence column</a>).</p>
@@ -154,6 +166,7 @@
     <li>One state channel (scene and position) over a handful of states, reported worst first.</li>
     <li>The ratchet, its loosening ledger and the skip tally, before regressions have room to hide.</li>
     <li>The image channel at native resolution.</li>
+    <li>The routine differential, once the port has rules worth holding to the original's bytes, with its declarations and coverage ratchet from the first test.</li>
     <li>Evidence grades and the falsified register: free to start, and they only grow in value.</li>
     <li>The disc-derived denominators, once a count over done work starts to flatter.</li>
     <li>Determinism replay, as soon as the engine takes input.</li>
@@ -168,6 +181,8 @@
     <a href="retail-compare.html">Retail comparison corpus</a>
     <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
     <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
+    <a href="verification-ladder.html">The verification ladder</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">Ratchet integrity</a>
   </div>
 </section>

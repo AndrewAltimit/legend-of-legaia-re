@@ -465,7 +465,7 @@ Two consequences that look like defects and are not:
 - **The citation graph is dump-local.** "Cited" comes from grepping dump files, so an undumped helper has no outgoing edges.
 - **`documented` is broader than the curated directory.** Any doc page that mentions `FUN_<addr>` or `0x<addr>` counts. The catalog does not say which docs are authoritative.
 - **A `// PORT:` tag does not guarantee semantic equivalence.** It is a provenance link, not a correctness proof. Tests and retail comparison do that job, and `--live` answers only whether code is *reached*.
-- **A tag naming the right routine is gated on the delta only.** [`port-provenance.md`](port-provenance.md) ranks suspicion and ratchets the unwaived count; a [differential](retail-kernel-differential.md#declaring-what-a-test-runs) is the one input that proves a tag, and it covers the addresses it runs.
+- **A tag naming the right routine is gated on the delta only.** [`port-provenance.md`](port-provenance.md) ranks suspicion and ratchets the unwaived count; a [differential](retail-kernel-differential.md#declaring-what-a-test-runs) is the one input that proves a tag, and it covers the addresses it runs ([the verification ladder](verification-ladder.md)).
 
 ## The runtime denominator (`replay-port-coverage.py`)
 
