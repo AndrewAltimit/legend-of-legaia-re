@@ -164,6 +164,7 @@ mod fishing_leaves;
 mod fishing_line_clip;
 mod fishing_prize;
 mod fishing_root;
+mod fishing_sky;
 mod fishing_tackle;
 mod flag_window;
 mod flash_ramp;
