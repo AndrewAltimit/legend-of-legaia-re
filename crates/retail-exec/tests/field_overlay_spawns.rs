@@ -213,3 +213,122 @@ fn the_reflection_spawn_matches_retail() {
         );
     }
 }
+
+const CLUT_FADE: u32 = 0x801E_4D8C;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Gpu {
+    Store([i16; 4]),
+    Load([i16; 4], Vec<u16>),
+    Free(u32),
+}
+
+/// The single-source CLUT fade actor `FUN_801E4D8C` frame by frame against
+/// `ClutBlendFade`: the `StoreImage` of the cell on the first tick, every
+/// row it `LoadImage`s back, the `+0x9E` accumulator, and the completion
+/// (the endpoint row, the scratch freed, `+0x10 |= 8`). The GPU calls and
+/// the scratch allocator are hooked; `StoreImage` answers a generated row.
+#[test]
+fn the_clut_blend_fade_matches_retail() {
+    differential!(prot(897, CLUT_FADE));
+    let Some(mut cpu) = cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::clut_fade_actor::{ClutBlendFade, FadeRecord, FadeStep};
+    const RECORD: u32 = 0x8014_0000;
+    const SCRATCH: u32 = 0x8014_1000;
+    let log: Rc<std::cell::RefCell<Vec<Gpu>>> = Rc::default();
+    let row = Rc::new(Cell::new([0u16; 16]));
+    let rect = |m: &mut psx_retail_exec::Memory, p: u32| -> [i16; 4] {
+        std::array::from_fn(|i| m.rd16(p + 2 * i as u32) as i16)
+    };
+    cpu.hook(0x8001_7888, |r, _| r.r[V0] = SCRATCH);
+    {
+        let log = log.clone();
+        cpu.hook(0x8001_7B94, move |r, _| {
+            log.borrow_mut().push(Gpu::Free(r.r[A0]))
+        });
+    }
+    cpu.hook(0x8005_8104, |r, _| r.r[V0] = 0);
+    {
+        let (log, row) = (log.clone(), row.clone());
+        cpu.hook(0x8005_842C, move |r, m| {
+            log.borrow_mut().push(Gpu::Store(rect(m, r.r[A0])));
+            for (i, px) in row.get().iter().enumerate() {
+                m.wr16(r.r[A1] + 2 * i as u32, *px);
+            }
+        });
+    }
+    {
+        let log = log.clone();
+        cpu.hook(0x8005_83C8, move |r, m| {
+            let px = (0..16).map(|i| m.rd16(r.r[A1] + 2 * i)).collect();
+            log.borrow_mut().push(Gpu::Load(rect(m, r.r[A0]), px));
+        });
+    }
+    let mut rng = Rng(0x434C_5546);
+    let (mut rows, mut done) = (0, 0);
+    'run: for run in 0..2000 {
+        let mut bytes: Vec<u8> = (0..12).map(|_| rng.next() as u8).collect();
+        let frac = [
+            0i16,
+            0x800,
+            0x1000,
+            rng.below(0x1001) as i16,
+            rng.next() as i16,
+        ][rng.below(5) as usize];
+        bytes[8..10].copy_from_slice(&frac.to_le_bytes());
+        let duration = [1i16, 2, 30, 0x100, rng.below(0x200) as i16][rng.below(5) as usize];
+        bytes[0xA..0xC].copy_from_slice(&duration.to_le_bytes());
+        let record = FadeRecord::from_bytes(&bytes);
+        cpu.mem.load(RECORD, &bytes);
+        let loaded: [u16; 16] = std::array::from_fn(|_| rng.next() as u16);
+        row.set(loaded);
+        let flags = rng.next() & !8;
+        cpu.mem.load(ACTOR, &[0u8; 0x100]);
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        cpu.mem.wr32(ACTOR + 0x90, RECORD);
+        let mut fade = ClutBlendFade::new(&loaded, &record);
+        let cell = [record.cell.0, record.cell.1, 16, 1];
+        for frame in 0..400 {
+            let speed = [1u8, 1, 2, 3][rng.below(4) as usize];
+            cpu.mem.wr8(0x1F80_0393, speed);
+            log.borrow_mut().clear();
+            assert_eq!(
+                cpu.call(CLUT_FADE, &[ACTOR]),
+                Stop::Returned,
+                "run {run} frame {frame}"
+            );
+            let step = fade.tick(speed);
+            let mut want = Vec::new();
+            if frame == 0 {
+                want.push(Gpu::Store(cell));
+            }
+            let label = format!("run {run} frame {frame}: {record:?}");
+            match step {
+                FadeStep::Row(px) => {
+                    rows += 1;
+                    want.push(Gpu::Load(cell, px.to_vec()));
+                    assert_eq!(*log.borrow(), want, "{label}");
+                    assert_eq!(
+                        cpu.mem.rd16(ACTOR + 0x9E) as i16,
+                        fade.accumulator(),
+                        "{label}"
+                    );
+                    assert_eq!(cpu.mem.rd32(ACTOR + 0x10), flags, "{label}");
+                }
+                FadeStep::Done(px) => {
+                    done += 1;
+                    want.push(Gpu::Load(cell, px.to_vec()));
+                    want.push(Gpu::Free(SCRATCH));
+                    assert_eq!(*log.borrow(), want, "{label}");
+                    assert_eq!(cpu.mem.rd32(ACTOR + 0x10), flags | 8, "{label}");
+                    continue 'run;
+                }
+            }
+        }
+        panic!("run {run}: never finished");
+    }
+    assert!(rows > 50_000 && done == 2000, "{rows} {done}");
+}
