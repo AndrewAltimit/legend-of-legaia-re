@@ -2464,8 +2464,12 @@ times as often, and the storm stood about four times as dense as retail's. Arm `
 target byte `+0x1DD` (the caster's, copied by the installer at
 `0x801F1D98..0x801F1DB8`): Slippery's own group code frames the monster row's
 centre through `FUN_801DCEAC` with its extent doubled into TR z
-(`0x801F7564..0x801F7590`), a seat that seat at half the framing depth. Not
-carried: the arms' captions, breath parts and fades, and arm `10`'s wait for
+(`0x801F7564..0x801F7590`). Arm `9`'s exit, past the hit, tints every struck monster magenta (`+0x04 =
+0x3FF003FF`, `+0x0C = 0x1000`) and seats the two purple rings `0x801F8344` / `0x801F8398`
+and the burst `0x801F83EC` on the camera focus, on the creature's angle trio
+(`0x801F7910..0x801F79E8`, `World::slippery_hit_exit`); its purple flash is the
+presentation decoder's. Without the rings arm 10 read `.830` frame by frame, `.900`
+with them. Not carried: the arms' captions, breath parts and fades, and arm `10`'s wait for
 every monster to be idle. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
