@@ -2129,7 +2129,7 @@ impl World {
             // the clamp), then the shape-A clamp and the HP write. The fold
             // owes the cast nothing.
             if legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
-                && entry == 959
+                && matches!(entry, 958 | 959)
             {
                 self.casting.module_skips_fold = true;
             }
@@ -2158,7 +2158,9 @@ impl World {
                 // body's other `+0x1DA` stores are arm `0x0A`, `0x0F` and `0x11`,
                 // so arm `0x0D` lands on a victim still parked in its get-up
                 // clip, and arm `0x0F`'s barrage restages nothing.
-                if site < 2 {
+                // PROT 0958's six sites are all the bare clamp: each arm
+                // stages the victim's knockdown itself beside its call.
+                if entry == 959 && site < 2 {
                     self.apply_effect_child_hit(0, roll.max(0));
                     if site == 0 && roll > 0 {
                         let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
@@ -2185,6 +2187,13 @@ impl World {
             // raises it as it passes: the cluster opens on that pass.
             if entry == 959 {
                 self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
+            }
+            // PROT 0958's clear the flag the same way and its arm 23 raises
+            // it as it passes (`0x801F8ABC..0x801F8ACC`).
+            if entry == 958 {
+                let readout = legaia_engine_cast::cast_module_camera::BLAZING_SLASH_READOUT_ARM;
+                self.battle.combo_cluster_held =
+                    phase_in < readout || (phase_in == readout && arm.hold);
             }
             if arm.backdrop_off {
                 self.battle.backdrop_cue =

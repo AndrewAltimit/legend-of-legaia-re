@@ -208,6 +208,12 @@ impl World {
         if w.is_empty() {
             return;
         }
+        // Retail plays a reaction on the seat's one clip channel, so an idle
+        // staged with the bump cuts it as it cuts any other clip (PROT
+        // 0958's arm 25 on a victim still in its get-up).
+        if w.stage == Some(0) && w.restage {
+            self.cut_battle_reaction_to_idle(usize::from(slot));
+        }
         let Some(a) = self.actors.get_mut(usize::from(slot)) else {
             return;
         };
@@ -261,6 +267,11 @@ impl World {
             && let Some(p) = a.battle_animation.as_mut()
         {
             p.seek_sixteenths(at);
+        }
+        if w.ghost_ring_clear {
+            for f in a.battle_pose_history.iter_mut() {
+                f.ghost_eligible = false;
+            }
         }
         if w.loop_release {
             a.battle.hit_count_bound = 0;

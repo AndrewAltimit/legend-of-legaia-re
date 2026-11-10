@@ -1134,7 +1134,8 @@ pub use blade_breath::{
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
 pub use blazing_slash::{
-    BLAZING_SLASH_BODY, BLAZING_SLASH_COUNTDOWN, blazing_slash_camera, blazing_slash_hop_height,
+    BLAZING_SLASH_BODY, BLAZING_SLASH_COUNTDOWN, BLAZING_SLASH_READOUT_ARM, blazing_slash_camera,
+    blazing_slash_hop_height,
 };
 pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
 pub use capture::*;

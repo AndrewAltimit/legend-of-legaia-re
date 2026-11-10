@@ -292,6 +292,11 @@ pub struct CaptureSeatWrite {
     /// `+0x1DC` bump (`lbu a0,0x1f1; sb a0,0x1da`): the reaction a body
     /// stages itself beside its damage call (PROT 0958's arms 6, 9, 12, 15).
     pub stage_knockdown: bool,
+    /// The seat's committed-clip ring `+0x1FB..+0x21A` zeroed: the
+    /// after-image walk `FUN_80049348` gates each ghost on its slot's id, so
+    /// the trail the playing clip left goes with the store (PROT 0958's
+    /// arm 7 on the caster).
+    pub ghost_ring_clear: bool,
 }
 
 impl CaptureSeatWrite {

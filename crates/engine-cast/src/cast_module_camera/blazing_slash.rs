@@ -33,6 +33,10 @@ const FLAME_SEED: i32 = 84;
 /// What each of arm 22's paced calls takes off the pacing word, in scalars
 /// (`0x801F88B4..0x801F88D0`).
 const FLAME_STEP: i32 = 12;
+/// The arm that stores `0x78` into the readout flag `0x8007B64C` as it
+/// passes (`0x801F8ABC..0x801F8ACC`): every hit before it clears the flag
+/// (`sb zero,-0x49b4`), so the damage cluster opens here.
+pub const BLAZING_SLASH_READOUT_ARM: u8 = 23;
 /// How many ticks arm 24 waits on the victim's reaction clip before the
 /// engine lets it through. Retail's arm has no bound (the clip's own end
 /// is one); this one keeps a clip the host never ends from parking the band.
@@ -90,10 +94,17 @@ pub fn blazing_slash_hop_height(word: i32) -> i16 {
 /// (`V`) and 24, 25, `C` at `8` through 21 and `3` through 23, both `8` as 25
 /// passes.
 ///
-/// Not carried here: the six `FUN_801DD6B4` sites (arms 6, 9, 12, 15, 21 and
-/// 22's paced one), which the band's fold lands; arm 7's clear of `C`'s
-/// `+0x1FB..+0x21A`; arm 23's `0x8007B64C = 0x78`; arm 24's dead-victim
-/// branch (which forces battle state 5); arm 25's `ctx[+0x6D0] = 0x800`.
+/// The six `FUN_801DD6B4` sites are named as their passes land them
+/// ([`CaptureCamArm::hit_site`], in [`crate::cast_module_ticks::BLAZING_SLASH_POWERS`]'
+/// order): arms 6, 9, 12, 15 and 21 as they pass, and arm 22's on each paced
+/// call. Each is the wrapper's roll, the popup `FUN_801F44A0`, the unsigned
+/// clamp to the live HP of `0x801C9370[0]` and the readout flag
+/// `0x8007B64C` cleared; arm 23 stores `0x78` there as it passes
+/// ([`BLAZING_SLASH_READOUT_ARM`]). Arm 7 clears `C`'s committed-clip ring
+/// `+0x1FB..+0x21A` ([`CaptureSeatWrite::ghost_ring_clear`]).
+///
+/// Not carried here: arm 24's dead-victim branch (which forces battle state
+/// 5); arm 25's `ctx[+0x6D0] = 0x800`.
 ///
 /// PORT: FUN_801F6DD8 (PROT 0958; the camera arms, the countdown and clip
 /// gates and the seat stores)
@@ -227,12 +238,20 @@ pub fn blazing_slash_camera(
         22 => {
             // `0x801F8878..0x801F8954`: the drain, the paced call for every
             // pass the word stands at or under the pacing word, then the
-            // hold. The call's hit is the band's fold's.
+            // hold.
+            // The compare sits ahead of the gate (`slt` / `bne` at
+            // `0x801F8888`, the `bgtz` at `0x801F8950`), so the pass that
+            // leaves makes an eighth call on a spent word: its hit lands,
+            // and its record goes with the flush behind the gate.
             st.countdown.drain();
             let held = st.countdown.0 > 0;
-            if held && st.opens_pass && pace >= st.countdown.0 {
+            if (st.opens_pass || !held) && pace >= st.countdown.0 {
                 pace -= SPEED_SCALAR * FLAME_STEP;
-                arm.pass_spawns[0] = Some(FLAME);
+                if held {
+                    arm.pass_spawns[0] = Some(FLAME);
+                }
+                // `FUN_801DD6B4(0x30)` at `0x801F88D8`, behind the record.
+                arm.hit_site = Some(5);
             }
             if !held {
                 st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
@@ -313,6 +332,8 @@ pub fn blazing_slash_camera(
                 arm.victim_write = knockdown(None, 0);
                 arm.caster_write.loop_release = true;
                 arm.caster_write.render_flag = Some(0);
+                // `FUN_801DD6B4(0x30)` at `0x801F74EC`.
+                arm.hit_site = Some(0);
             }
             7 => {
                 arm.caster_write.z = Some(0x180);
@@ -325,10 +346,17 @@ pub fn blazing_slash_camera(
                     ModuleSeat { z: 0x180, ..c },
                     1,
                 ));
+                // `sb zero,0x1fb(v0)` over `0x20` bytes (`0x801F7630..0x801F7644`).
+                arm.caster_write.ghost_ring_clear = true;
             }
             // `sh zero,0x58(caster[+0x22C])` at `0x801F76A8`.
             8 => arm.caster_radius = Some(0),
-            9 => arm.victim_write = knockdown(None, 0),
+            // `FUN_801DD6B4(0x38)` at `0x801F7854`, `0x801F7CA4` and
+            // `0x801F80E4`, one a run.
+            9 => {
+                arm.victim_write = knockdown(None, 0);
+                arm.hit_site = Some(1);
+            }
             11 | 14 => {
                 let (pitch, yaw_k, facing, z) = if phase == 11 {
                     (0x40, -0x100, 0, -0x580)
@@ -346,8 +374,14 @@ pub fn blazing_slash_camera(
                 arm.caster_write.z = Some(z);
                 arm.caster_write.cursor_reset = true;
             }
-            12 => arm.victim_write = knockdown(Some(0x800), -0x300),
-            15 => arm.victim_write = knockdown(Some(0), 0x300),
+            12 => {
+                arm.victim_write = knockdown(Some(0x800), -0x300);
+                arm.hit_site = Some(2);
+            }
+            15 => {
+                arm.victim_write = knockdown(Some(0), 0x300);
+                arm.hit_site = Some(3);
+            }
             18 => {
                 arm.victim_write.z = Some(-0x100);
                 arm.caster_write.x = Some(-8);
@@ -376,7 +410,9 @@ pub fn blazing_slash_camera(
                 arm.caster_write.z = Some(-0x200);
                 arm.caster_write.y = Some(0);
                 pace = SPEED_SCALAR * FLAME_SEED;
-                // `FUN_8004FCC8(0x56)` at `0x801F87BC`, behind the arm's hit.
+                // `FUN_801DD6B4(0x40)` at `0x801F8754`, then
+                // `FUN_8004FCC8(0x56)` at `0x801F87BC`.
+                arm.hit_site = Some(4);
                 arm.cue = Some(0x56);
             }
             22 => {
@@ -585,22 +621,39 @@ mod tests {
         assert_eq!(landing.caster_write.z, Some(-0x200));
         assert_eq!(landing.caster_write.y, Some(0));
         assert_eq!(st.module_words[0], SPEED_SCALAR * 84);
-        let mut flames = 0;
+        let (mut flames, mut hits) = (0, 0);
         let pass = loop {
             st.opens_pass = true;
             let a = blazing_slash_camera(&mut st, 22, seats());
             flames += usize::from(a.pass_spawns[0].is_some());
+            hits += usize::from(a.hit_site == Some(5));
             if !a.hold {
                 break a;
             }
         };
         // The word crosses `84 s`, `72 s` .. `12 s` held; the crossing at
-        // zero is the pass that leaves, whose flush takes the record.
+        // zero is the pass that leaves, whose flush takes the record and
+        // whose hit still lands.
         assert_eq!(flames, 7);
+        assert_eq!(hits, 8);
         assert_eq!(pass.caster_write.stage, Some(0x0D));
         assert_eq!(pass.caster_write.z, Some(0x1C0));
         assert_eq!(pass.victim_write.z, Some(-0x1C0));
         assert_eq!(pass.shot.unwrap().focus, [0, 0, -0x1C0]);
+    }
+
+    #[test]
+    fn five_arms_land_a_hit_as_they_pass_and_arm_7_clears_the_ring() {
+        let mut st = ModuleCamState::default();
+        let mut sites = Vec::new();
+        for phase in 0..=21u8 {
+            let (_, a) = run(&mut st, phase);
+            if let Some(site) = a.hit_site {
+                sites.push((phase, site));
+            }
+            assert_eq!(a.caster_write.ghost_ring_clear, phase == 7);
+        }
+        assert_eq!(sites, [(6, 0), (9, 1), (12, 2), (15, 3), (21, 4)]);
     }
 
     #[test]

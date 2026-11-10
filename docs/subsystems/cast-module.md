@@ -4351,9 +4351,21 @@ stages, zeroes `ctx[+0x6DA]` and cuts to the hand-back framing.
 
 Records: arm 0 `0x801F8EB8`, arm 5 `0x801F9164`, arms 9 / 12 / 15
 `0x801F91EC` / `0x801F9260` / `0x801F92D4`, arm 21 `0x801F9164` and
-`0x801F9348`, all on the caster's live trio; arms 4, 6 and 22 flush. The six
-`FUN_801DD6B4` sites (`0x801F74EC`, `0x801F7854`, `0x801F7CA4`, `0x801F80E4`,
-`0x801F8754`, `0x801F88D8`) stay with the band's fold. A frozen seat
+`0x801F9348`, all on the caster's live trio; arms 4, 6 and 22 flush.
+
+The six `FUN_801DD6B4` sites are the module's own hits, one shape each
+(`0x801F74EC`, `0x801F7854`, `0x801F7CA4`, `0x801F80E4`, `0x801F8754`,
+`0x801F88D8`): the wrapper's roll with `ctx[+0x13]` as the attacker, the popup
+`FUN_801F44A0(roll, 0)`, the unsigned clamp to the live HP of
+`0x801C9370[0]`, the roll added to that seat's `+0x10` and taken off its HP,
+and the readout flag `0x8007B64C` cleared. Arms 6, 9, 12, 15 and 21 land
+theirs as they pass, beside the knockdown each stages; arm 22 lands the sixth
+on every paced flame call, so the victim takes it once a flame. Arm 23 stores
+`0x78` into the readout flag as it passes, which is where the damage cluster
+opens. Arm 7 zeroes the caster's committed-clip ring `+0x1FB..+0x21A` beside
+its `0x0C` stage, so the dash leaves no after-image of the wind-up. The
+director names each site on its pass (`CaptureCamArm::hit_site`) and the band
+waives its fold, as for PROT 0959. A frozen seat
 (`+0x21D = 0`) takes no root-motion step, so the victim the module freezes
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
