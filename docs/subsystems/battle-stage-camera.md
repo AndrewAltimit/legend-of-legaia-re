@@ -1546,19 +1546,34 @@ Vahn and Noa fight stands on a state reached by a door-tile poke from
 **A frame's draw load.** The table's rows are a state's typical frame, and what lifts
 one frame of a state over another is what it draws. The cast-sequence probe logs the
 ring's newest entry every vsync (`meta.csv`'s `cost`), and beside `--retail-parts`'
-live move-VM parts it reads two loads:
+live move-VM parts and `fxpool.csv`'s effect-pool children it reads three loads:
 
 - **Effect parts.** Each live part (tick `FUN_80021DF4` and its sprite or mesh) costs
   about `2` hblanks: each hit's spark burst of some sixteen parts lifts
   `battle_dolk_drake_ghost_strike`'s lone-member frames from `390` to `424`, and the
   cost falls back as the burst's parts retire.
+- **Effect-pool children.** Each live child of the effect pool `_DAT_8007BD30` (the 2D
+  sprites the effect VM walks and draws: a breath's flames, a burning body's puffs)
+  costs about `1.6`. Caruban's Fire Breath on a lone Vahn
+  (`rikuroa_caruban_pre_fire_breath`) runs the pool from `0` to `50` children while the
+  body and its ghosts stay put, and its frames follow at `1.6` a child (`R^2` `.71`)
+  from `503` to `599`.
 - **After-image ghosts.** The draw tick's walk `FUN_80049348` re-runs the body's whole
-  draw per ghost. `battle_vell_nighto_49_strike`'s special clip raises its frames by
-  `37` and `35` on the two frames its ghosts appear, before any part is live.
+  object draw `FUN_80048A08` per ghost (`jal 0x80048A08` at `0x8004950C`, inside the
+  loop `0x80049458..0x80049544`), so a ghost costs what the body's mesh does. The same
+  breath recording raises Caruban's frames from `348` to `427` and `504` on the two
+  frames its ghosts appear, before any part or pool child is live: `78` a ghost on
+  `842` triangles, `.092` hblanks a triangle. The strike recordings read `.087` on
+  Caruban and `.081` on Frog (`608`); `battle_vell_nighto_49_strike`'s two ghosts read
+  `37` and `35` on a `564`-triangle body.
 
-The engine adds both to the ring's push (`frame_load_cost`, over
-`World::battle_frame_load`: the unfinished parts of every effect scene and the ghosts
-`battle_afterimage::plan_ghosts` plans, the plan both hosts draw). The strike rows
+The engine adds all three to the ring's push (`World::battle_frame_load_cost`): the
+unfinished parts of every effect scene, the effect pool's live children
+(`effect_pool_cost`), and for each ghost `battle_afterimage::plan_ghosts` plans (the
+plan both hosts draw) its body's triangles at `.092` (`ghost_draw_cost`; the scene
+host reads a monster's count off its archive mesh, `MonsterMesh::triangle_count`). A
+body whose count the world does not hold, a party member's assembled form, keeps the
+flat `GHOST_DRAW_COST`. The strike rows
 `0x1E..=0x20` of a lone member and a full party are the strike recordings' frames with
 no part live (`393` / `389` / `386` and `622` / `596` / `596`); the library's
 full-party `700` and `667` held a party strike's load in the base. Nighto's strike is
@@ -1568,20 +1583,37 @@ in, and the yaw counter gains `4` a pass from there. On the base rows alone the
 engine's ran at `2` throughout and its yaw fell `16` units behind; with the load the
 film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 
+Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
+`0x2B` frames sit at `504` to `510` with both ghosts up, on the edge of `0x1FF`, and the
+first pool children carry them over: retail runs the breath at step `3`. Costed at the flat
+`36` a ghost the engine read `426` and ran it at `2`; costed by the mesh it reads `508`
+and the pool's children lift it to `3`, and the film's step agreement with retail goes
+from `.32` to `.96` (frames `.854` to `.862`). On a full party (`battle_rugi_caruban_2`
+and `_3_fire_breath_mid_cast`) the same load takes the breath's frames over `0x2D0` as
+the flames peak, retail's step `4`, which the engine now reaches (`.47` to `.77`). With
+the breath's step the yaw counter gains `4` a pass: the lone Vahn's camera ends the HP-bar
+settle `0x51` at yaw `410` against retail's `416` (`338` on the flat cost), so the stage's
+horizon mist arc sweeps across the view near the settle's end as retail's does, and the
+film's `0x51` segment reads `.74` against `.70`.
+
 A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its curve
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
 
-A ghost's cost is not a constant of the walk. Its redraw re-runs the body's whole draw, and on
-lone-member strikes it reads with the body: over the strike films, frames with the engine's two
-planned ghosts against frames without read `.081` hblanks a triangle on Frog (`608`) and `.087` on
-Caruban (`842`). Costed at that slope the step agreement of the thirteen lone-member strike films rises from
-`.64` to `.70` (Caruban `.35` to `.68`), but it does not transfer to a full party:
-`battle_tunnelb_gel_frog_strike`'s planned ghosts on a `608`-triangle body read `9` hblanks each where the slope
-says `52`, and carrying the term lifted the film to step `4` and its camera error from `8.7` to `15.0`
-px. The table's `GHOST_DRAW_COST` stands for that reason; what a ghost costs inside a full party's
-frame, which a lone member's film does not read, is the open half.
+What a ghost costs inside a full party's frame stays open. Over 61 recorded monster
+strikes (the `battle_*_strike` states' cast-sequence recordings, retail's step every vsync) the mesh
+cost lifts the engine's step agreement from `.916` to `.951` (Frog on `map01` `.20` to
+`.84`, King Frog `.47` to `.81`, Caruban `.35` to `.96`), and two full-party strikes fall:
+`battle_tunnelb_gel_frog_strike` from `1.0` to `.74` and `battle_chitei2_kemaro_lv2_strike`
+from `1.0` to `.93`. Recorded with `--retail-parts`, their frames read two ghosts and a
+burst at about `+45` over the frames before the ghosts (`605` to `650` on Gel Frog, a
+burst of fourteen parts already `28` of that), where the mesh says `112` for the ghosts
+alone, so the engine's frames pass `0x2D0` and run `4` where retail's stay at `3`. Their
+HP-bar settle `0x51` also reads `520` to `540` against the table's `595`: those stages
+cost less than the fights the full-party rows came from. Whether a full party's frame hides
+the ghosts' draw or its base is the stage's is what a full-party recording with a counted
+ghost would settle.
 
 <a id="the-table-held-out-against-the-films"></a>
 
@@ -1702,6 +1734,25 @@ about `595` (the recording's `cost` column) while no effect part changes, so the
 arm 4 stays at `4` (`32` passes to retail's `34`). Gimard's arm 6 opens on `64` vsyncs of
 `4` the same way. Modelling those would take the frame's cost from the engine's own draw,
 which the table stands in for.
+
+**The arms read as a cost.** The Seru recordings log the ring's newest entry, so each arm's
+frames have a cost as well as a step: the median over the arm's frames, `721` for a frame on the
+clamp. Run through the ring law over each recording's own frame sequence, retail's own costs read
+its step on `.996` of the band's game time, the arms' median costs on `.88`, and the step table on
+`.72`; the cost carries a clamped arm's `4` into the cheaper arm after it for sixteen frames and lets
+an arm whose frames sit under the clamp (Ozma's arm 21, Iota's arm 11, `704` and `598`) fall to `3`
+as retail's do. In the engine neither form helps the films. Fed through the ring as the frame's cost
+over the 29 Seru films, step agreement goes from `.895` to `.889` and the frames from `.869` to
+`.862`; taken as the arm's step (`step_of_cost` of the median, the cost left in the ring) it reads
+`.882` and `.864`, and Odd Dimension falls from `.710` to `.577`. The table stays. The opening arms
+read `1` on a lone caster where the table leaves the ordinary `2`, which moves the summon's CD-seek
+hold, and an arm the cost lowers to `3` re-deals what its passes seat.
+
+Neither Ozma (`.635`) nor Odd Dimension (`.710`) loses its film to the step. On retail's own steps
+(`--retail-steps`) they score `.632` and `.724`. Ozma's arms 6 to 20 already match retail's step on
+every game-clock vsync, its slow frames are paired by the game clock, and its arms 7 to 9 score
+`.35` to `.46` on what they draw; Odd Dimension's low arms 5 to 7 (`.41` to `.54`) run no slow frame
+at all.
 
 **The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
 The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at
