@@ -1038,6 +1038,22 @@ magic cursor steps switch on their scope argument: one enemy takes case `1`,
 one party member case `3` on that member (`lbu a0,0x1dd` at `0x801D43F0`), and
 a whole side cases `4` / `5`, which leave the framing as it stands.
 
+Run step by step off the disc in the retail-exec interpreter, with every call but
+`FUN_801D5854` stubbed, the driver's fifty steps arm these framings (`m` = the
+commanding member `ctx[+0x13]`, `t` = its cursor target `actor[m][+0x1DD]`):
+
+| Steps | Framing |
+|---|---|
+| `0x00`, `0x02`, `0x20`, `0x22`, `0x23` | case 9 (selector `0`) |
+| `0x01`, `0x0E..=0x11`, `0x13`, `0x15`, `0x17`, `0x1A`, `0x1C`, `0x1E`, `0x21`, `0x26`, `0x2E`, `0x31` | case 0 on `m` |
+| `0x0C`, `0x0D`, `0x14`, `0x2D`, `0x30` | case 1 on `m` |
+| `0x18` | case 3 on `t` |
+| `0x12`, `0x16`, `0x1D` | by scope: `0` case 1 on `m`, `1` case 4, `2` case 3 on `t`, `3` case 5, past it none |
+| `0x19`, `0x1B`, `0x1F` | by scope: `0` case 1 on `m`, `1` case 3 on `t`, `2` case 4, `3` case 5, past it none |
+| `0x03..=0x0B`, `0x24`, `0x25`, `0x27..=0x2C`, `0x2F` | none |
+
+The two scope-switched groups read the scope's `1` and `2` the other way round.
+
 - Case 1 (`0x801D5A6C..0x801D5B04`) takes its bearing from the cursor's target
   to the camera's current focus word `-_DAT_80089118/20`. With the target dead
   ahead on the seat axis that is yaw `0` - the "submenu exit" swing in the
