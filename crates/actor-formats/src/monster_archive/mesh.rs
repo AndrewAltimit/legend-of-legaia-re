@@ -38,6 +38,31 @@ impl MonsterMesh {
         &self.block[self.tmd_offset..]
     }
 
+    /// The mesh's polygon load in triangles: every primitive the Legaia
+    /// group walk decodes, a quad counting two. What one draw of the body
+    /// costs scales with it (an after-image ghost re-runs the whole draw).
+    /// `None` when the TMD does not parse.
+    pub fn triangle_count(&self) -> Option<u32> {
+        let raw = self.tmd_bytes();
+        let tmd = legaia_tmd::parse(raw).ok()?;
+        let mut n = 0u32;
+        for o in &tmd.objects {
+            let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+                raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            );
+            for p in groups.iter().flat_map(|g| &g.prims) {
+                n += match p.vertex_indices().len() {
+                    3 => 1,
+                    4 => 2,
+                    _ => 0,
+                };
+            }
+        }
+        Some(n)
+    }
+
     /// The texture / CLUT pool bytes (from
     /// [`texture_pool_offset`](Self::texture_pool_offset) to the end of the
     /// block), or `None` when the record carries no pool pointer or the

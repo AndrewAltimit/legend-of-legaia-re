@@ -419,12 +419,35 @@ impl SceneHost {
             .filter(|(_, a)| a.battle_clip_morphs.is_none())
             .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
             .collect();
-        if pending.is_empty() && morph_pending.is_empty() {
+        // Each monster body's polygon load, what one of its after-image
+        // ghosts costs the frame (`World::battle_frame_load_cost`).
+        let tris_pending: Vec<(usize, u16)> = self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .filter_map(|(i, a)| {
+                a.battle_monster_id
+                    .map(|id| (i, id, a.battle_body_triangles))
+            })
+            .filter(|&(_, id, t)| t.is_none_or(|(tid, _)| tid != id))
+            .map(|(i, id, _)| (i, id))
+            .collect();
+        if pending.is_empty() && morph_pending.is_empty() && tris_pending.is_empty() {
             return;
         }
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
+        for (slot, id) in tris_pending {
+            let tris = legaia_actor_formats::monster_archive::mesh(&archive, id)
+                .ok()
+                .flatten()
+                .and_then(|m| m.triangle_count())
+                .unwrap_or(0);
+            self.world.actors[slot].battle_body_triangles =
+                Some((id, u16::try_from(tris).unwrap_or(u16::MAX)));
+        }
         for (slot, id) in morph_pending {
             if let Ok(Some(table)) =
                 legaia_actor_formats::monster_archive::clip_morph_table(&archive, id)

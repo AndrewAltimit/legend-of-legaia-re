@@ -39,7 +39,7 @@ impl World {
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
         use legaia_engine_battle_loop::frame_clock::{
-            XA_STREAM_FRAME_COST, cost_of_step, frame_load_cost, measured_frame_cost_at,
+            XA_STREAM_FRAME_COST, cost_of_step, measured_frame_cost_at,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -50,9 +50,8 @@ impl World {
         let xa_streaming = self.audio.battle_xa_busy_frames > 0 && self.audio.battle_xa_frame_load;
         let cost = arm_step.map_or_else(
             || {
-                let (parts, ghosts) = self.battle_frame_load();
                 let cost = measured_frame_cost_at(self.party.party_count, state, passes)
-                    .saturating_add(frame_load_cost(parts, ghosts));
+                    .saturating_add(self.battle_frame_load_cost());
                 // An XA clip's read span: the whole frame runs on the CD
                 // interrupt path (`FUN_8005DAB0`).
                 if xa_streaming {
@@ -109,6 +108,59 @@ impl World {
             u16::try_from(parts).unwrap_or(u16::MAX),
             u16::try_from(ghosts).unwrap_or(u16::MAX),
         )
+    }
+
+    /// What a battle frame's draw load costs over its state's base, in
+    /// hblanks: the live move-VM parts
+    /// ([`EFFECT_PART_COST`](legaia_engine_battle_loop::frame_clock::EFFECT_PART_COST)),
+    /// the effect pool's live children
+    /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)),
+    /// and each planned after-image ghost at its body's polygon load
+    /// ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)):
+    /// a ghost re-runs the body's whole draw (`FUN_80049348` calls
+    /// `FUN_80048A08` per ghost), so a boss's ghost costs what its mesh does.
+    pub fn battle_frame_load_cost(&self) -> u16 {
+        use legaia_engine_battle::battle_afterimage as ai;
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, effect_pool_cost, ghost_draw_cost,
+        };
+        let (parts, _) = self.battle_frame_load();
+        let pool = self
+            .effect_pool
+            .children
+            .iter()
+            .filter(|c| c.frame_count != 0)
+            .count();
+        let mut cost = parts
+            .saturating_mul(EFFECT_PART_COST)
+            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)));
+        let per_frame = self.ghost_ring_slots_per_frame();
+        for a in &self.actors {
+            if a.battle_pose_history.is_empty()
+                || (a.battle.render_color == 0 && a.battle.render_flag != 0)
+            {
+                continue;
+            }
+            let hist = &a.battle_pose_history;
+            let n = ai::plan_ghosts(
+                a.battle.anim_rate.get(),
+                a.battle_monster_id.is_some(),
+                [0; 3],
+                |d| {
+                    d < ai::HISTORY_DEPTH
+                        && hist.get(per_frame * d).is_some_and(|f| f.ghost_eligible)
+                },
+            )
+            .len();
+            let triangles = a
+                .battle_body_triangles
+                .filter(|&(id, _)| Some(id) == a.battle_monster_id)
+                .map(|(_, t)| t)
+                .filter(|&t| t > 0);
+            let each = ghost_draw_cost(triangles);
+            cost = cost.saturating_add(each.saturating_mul(u16::try_from(n).unwrap_or(u16::MAX)));
+        }
+        cost
     }
 
     /// Stand the frame-cost ring where a retail capture's stood (its sixteen
