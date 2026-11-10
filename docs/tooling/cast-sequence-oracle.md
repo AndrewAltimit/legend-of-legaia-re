@@ -1096,7 +1096,14 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   monster the round's first turn from the first prompt, so no pad drive is
   needed, and stands each slot on the ground retail's earlier actions left: a
   walk-in body walks from there (Koru's walked 840 units from its authored
-  seat against retail's 432 before the ground was carried).
+  seat against retail's 432 before the ground was carried). The handed turn
+  spends the seat's initiative key, as the pick it stands for does
+  (`World::dispatch_forced_monster_turn`). Left unspent, the Done band's
+  re-pick at `0x50` (`FUN_801DABA4`) landed on the same seat, its AI stored
+  Attack into the `+0x1DE` the band's framing fork was reading, and the
+  `0x51` camera left the caster for case `8` on its target: Megaton Press,
+  Scythe Wind, Fissure, Spore Gas and the others whose `0x51` segment read
+  about `.5`.
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
   ally spell. A party caster's group codes are the player picker's
