@@ -51,6 +51,9 @@ pub use camera_relative::*;
 mod camera;
 pub use camera::*;
 
+mod field_view;
+pub use field_view::*;
+
 mod gte_core;
 pub use gte_core::*;
 

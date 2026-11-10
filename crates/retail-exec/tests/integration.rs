@@ -78,6 +78,7 @@ mod enemy_impact;
 mod escape;
 mod escape_timer;
 mod euler_rot;
+mod field_camera;
 mod field_ctx;
 mod field_leaves;
 mod field_magic;
