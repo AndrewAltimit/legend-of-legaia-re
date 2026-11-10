@@ -134,7 +134,7 @@ pub const ALURU_STAGER_FADE_OUT: legaia_engine_battle_vm::battle_action::SummonF
     };
 
 /// PROT 0919 (Spoon) - the stager `0x801F8578`: arm 0 seats `0x801F86FC` at
-/// `0x1000`, arm 1 `0x801F88CC` (and `FUN_801DFDF0(0x14, ..)`, not carried),
+/// `0x1000`, arm 1 `0x801F88CC` (and the pool effect `0x14`, [`super::stager_effect`]),
 /// arm 2 `0x801F8C30` and `0x801F8C74` at the caller's scale.
 ///
 /// PORT: FUN_801F8578 (PROT 0919 stager; every seat)

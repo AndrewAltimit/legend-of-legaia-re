@@ -237,6 +237,13 @@ impl World {
             };
             self.casting.module_barra_counter = barra_counter;
             self.casting.module_ozma_word = ozma_word;
+            // PROT 0919's arm 1 and PROT 0941's arm 1 also spawn into the
+            // `efect.dat` pool (`FUN_801DFDF0`).
+            if let Some(fx) =
+                legaia_engine_cast::cast_module_ticks::stager_effect(entry, arm, caller)
+            {
+                self.try_spawn_effect(fx.id, fx.pos, fx.angle as u16);
+            }
             // PROT 0959's arm 2 flushes the pool, kills the held white its
             // arm 3 parked at `ctx[+0x102C]` and fades white out before its
             // seats (`0x801F8478..0x801F84D4`).

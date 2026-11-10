@@ -72,6 +72,42 @@ impl StagerSpawn {
     }
 }
 
+/// An `efect.dat` pool spawn a stager arm makes beside its seats,
+/// `FUN_801DFDF0(id, pos, angle)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StagerEffect {
+    /// The pool's effect id (`a0`).
+    pub id: u8,
+    /// The point `a1` names.
+    pub pos: [i16; 3],
+    /// `a2`, a 12-bit angle carried as the halfword retail passes.
+    pub angle: i16,
+}
+
+/// The two stager arms that spawn into the `efect.dat` pool:
+///
+/// | PROT | arm | spawn |
+/// |---|---:|---|
+/// | 0919 (Spoon) | 1 | effect `0x14` on the caller's `+0x14`, turned `caller[+0x26] - 0x800` (`0x801F85F8..0x801F860C`), after its seat |
+/// | 0941 (Steal) | 1 | effect `3`, the 2D puff, on the caller's `+0x14` at angle `0` (`0x801F7DF4..0x801F7E00`), before its seat |
+///
+/// PORT: FUN_801F8578 (PROT 0919's arm 1 effect), FUN_801F7DB0 (PROT 0941's arm 1 puff)
+pub fn stager_effect(entry: u32, arm: u8, caller: StagerCaller) -> Option<StagerEffect> {
+    match (entry, arm) {
+        (919, 1) => Some(StagerEffect {
+            id: 0x14,
+            pos: caller.pos,
+            angle: caller.rot[1].wrapping_sub(0x800),
+        }),
+        (941, 1) => Some(StagerEffect {
+            id: 3,
+            pos: caller.pos,
+            angle: 0,
+        }),
+        _ => None,
+    }
+}
+
 /// `sin` / `cos` of a 12-bit angle divided by 32, truncating toward zero
 /// (`bgez; addiu 0x1F; sra 5`).
 fn trunc32(v: i16) -> i16 {
