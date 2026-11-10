@@ -604,6 +604,12 @@ impl World {
     // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
     // term; the approach half is `drive_attack_approach`)
     fn drive_playing_root_motion(&mut self, slot: usize, dt: u8) {
+        // A frozen node (`+0x21D = 0`) scales the product to nothing: a body
+        // a cast module holds mid-reaction stands where the freeze found it
+        // (PROT 0958's victim through arms 18..=23).
+        if self.actors[slot].battle.anim_rate.get() == 0 {
+            return;
+        }
         // A clip another seat's hit walk committed on this seat after its own
         // slice of the pass is, in retail, only staged there
         // (`0x801EEC6C..0x801EEC84`): this seat's tick has already stepped
