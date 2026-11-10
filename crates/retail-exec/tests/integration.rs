@@ -148,6 +148,7 @@ mod nighto_roll;
 mod object_spawn;
 mod ozma_ladder;
 mod pad_resolve;
+mod party_panel_build;
 mod passive_sweep;
 mod pose_decoder;
 mod publisher_logos;
