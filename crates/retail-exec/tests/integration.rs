@@ -111,6 +111,7 @@ mod cue_group;
 mod cursor_leaves;
 mod cursor_sprite;
 mod curvature_table;
+mod dance_entry;
 mod dance_floor;
 mod dance_hud;
 mod dance_leaves;
