@@ -26,6 +26,7 @@ mod arts_roll;
 mod arts_voice;
 mod attach_swap;
 mod attack_camera;
+mod audio_pitch;
 mod auto_combo;
 mod auto_command;
 mod baka_fight;

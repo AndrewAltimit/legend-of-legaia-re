@@ -712,7 +712,7 @@ pub enum PitchPath {
 ///
 /// The cue arm's `fine` argument (`andi a1,a1,0xffff` at `0x80066e7c`) is
 /// [`CUE_FINE`] for a key-on; a bend passes its own ([`pitch_from_key`]).
-fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
+pub fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
     match path {
         PitchPath::Sequencer => {
             pitch_at_index(i32::from(note), ((tone.shift as i32) >> 3).min(15), tone)
@@ -725,7 +725,7 @@ fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
 /// tone's `shift`. An index of 16 or more carries a semitone.
 ///
 /// PORT: FUN_80066E50
-fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
+pub fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
     let raw = ((fine + tone.shift as u32) >> 3) as i32;
     if raw >= 16 {
         pitch_at_index(key + 1, raw - 16, tone)
