@@ -128,6 +128,7 @@ mod stat_aggregator;
 mod stream_slot;
 mod summon_roll_sites;
 mod super_learn;
+mod target_banner;
 mod target_redirect;
 mod text_width;
 mod tint_ease;
