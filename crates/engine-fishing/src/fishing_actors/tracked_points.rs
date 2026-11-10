@@ -36,5 +36,8 @@ pub fn tracked_point_separation(
 ) -> i32 {
     let dx = (a.0 as i32 - b.0 as i32).abs();
     let dy = (a.1 as i32 - b.1 as i32).abs();
-    (sqrt(dx * dx + dy * dy) >> SUBCELL_SHIFT).max(0)
+    // `mult` / `mflo` / `addu`: the sum keeps its low 32 bits, so two points
+    // more than ~46k apart wrap rather than trap.
+    let sum = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+    (sqrt(sum) >> SUBCELL_SHIFT).max(0)
 }

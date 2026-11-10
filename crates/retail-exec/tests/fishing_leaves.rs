@@ -560,4 +560,167 @@ mod chrome {
             }
         }
     }
+
+    /// The float's actor wrapper `FUN_801D70EC` over generated floor buffers,
+    /// with the overlay's height solver `FUN_801D6028` and step-layer lookup
+    /// `FUN_801D79E0` live beneath it, against `float_actor_tick`; and the
+    /// solver and the lookup called on their own against `ground_height` and
+    /// `step_patch_in_layer`. Positions stay on the `0x80`-cell grid: past it
+    /// retail wraps the row index and the port reads an empty cell.
+    #[test]
+    fn the_float_settles_where_retail_settles_it() {
+        differential!(prot(972, FLOAT), prot(972, SOLVER), prot(972, LOOKUP));
+        use legaia_engine_field::minigame_floor::{
+            FloorGrid, STEP_LAYER_KIND, ground_height, step_patch_in_layer,
+        };
+        use legaia_engine_fishing::fishing_chrome::float_actor_tick;
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        const FLOAT: u32 = 0x801D_70EC;
+        const SOLVER: u32 = 0x801D_6028;
+        const LOOKUP: u32 = 0x801D_79E0;
+        const MAP: u32 = 0x8010_0000;
+        const LADDER: u32 = 0x1F80_035C;
+        const ACTOR: u32 = 0x8014_0000;
+        cpu.stub(0x8002_04F8, 0);
+        cpu.mem.wr32(0x1F80_03EC, MAP);
+        let mut rng = Rng(0x464C_4F41);
+        let (mut stepped, mut blended, mut found) = (0, 0, 0);
+        let port_found = |layer: &[u8], gx: u32, gz: u32| {
+            step_patch_in_layer(layer, gx as i32, gz as i32).is_some()
+        };
+        for map in 0..40 {
+            let tiers = 1 + rng.below(16);
+            let mut buf: Vec<u8> = (0..0x14000).map(|_| rng.next() as u8).collect();
+            // The tier nibbles: a few tiers in patches.
+            for b in &mut buf[..0x8000] {
+                *b = (*b & 0xF0) | (rng.below(tiers) as u8);
+            }
+            // Both step layers: the kind-2 descriptor, then records near the
+            // probed cells.
+            for layer in [0x10000usize, 0x12000] {
+                let block = &mut buf[layer..layer + 0x2000];
+                block[..0x40].fill(0);
+                let hdr = STEP_LAYER_KIND * 4;
+                let count = rng.below(40) as i16;
+                block[hdr + 2..hdr + 4].copy_from_slice(&0x40i16.to_le_bytes());
+                block[hdr + 4..hdr + 6].copy_from_slice(&count.to_le_bytes());
+                for i in 0..count as usize {
+                    let r = 0x40 + i * 4;
+                    block[r] = rng.below(0x80) as u8;
+                    block[r + 1] = rng.below(0x80) as u8;
+                }
+            }
+            cpu.mem.load(MAP, &buf);
+            let ramp: Vec<i16> = (0..16).map(|_| rng.below(0x800) as i16 - 0x600).collect();
+            for (i, &h) in ramp.iter().enumerate() {
+                cpu.mem.wr16(LADDER + i as u32 * 2, h as u16);
+            }
+            for round in 0..2000 {
+                let x = rng.below(0x3F80) as i16;
+                let z = rng.below(0x3F80) as i16;
+                let flags = [0, 0x2, 0x0080_0002, 0x8000_0000, rng.next()][rng.below(5) as usize];
+                cpu.mem.wr16(ACTOR + 0x14, x as u16);
+                cpu.mem.wr16(ACTOR + 0x18, z as u16);
+                cpu.mem.wr32(ACTOR + 0x10, flags);
+                assert_eq!(cpu.call(FLOAT, &[ACTOR]), Stop::Returned);
+                let retail = (
+                    cpu.mem.rd16(ACTOR + 0x16) as i16,
+                    cpu.mem.rd32(ACTOR + 0x10),
+                );
+                let port = float_actor_tick(FloorGrid::new(&buf), x, z, flags, &ramp);
+                assert_eq!(
+                    retail,
+                    (port.y, port.flags),
+                    "map {map} round {round} x {x:#x} z {z:#x} flags {flags:#x}"
+                );
+                // The solver alone: its return and the flag word it keeps.
+                cpu.mem.wr32(ACTOR + 0x10, flags);
+                assert_eq!(cpu.call(SOLVER, &[ACTOR]), Stop::Returned);
+                let grid = FloorGrid::new(&buf);
+                let g = ground_height(grid, x, z, flags, &ramp, |gx, gz| grid.step_patch(gx, gz));
+                assert_eq!(
+                    (cpu.regs.r[V0] as i16, cpu.mem.rd32(ACTOR + 0x10)),
+                    (g.height as i16, g.flags),
+                    "solver: map {map} round {round}"
+                );
+                // The lookup alone, on one layer.
+                let layer = [0x10000u32, 0x12000][rng.below(2) as usize];
+                let count = i16::from_le_bytes([
+                    buf[layer as usize + STEP_LAYER_KIND * 4 + 4],
+                    buf[layer as usize + STEP_LAYER_KIND * 4 + 5],
+                ]) as u32;
+                let (gx, gz) = if count > 0 && rng.below(2) == 0 {
+                    let r = layer as usize + 0x40 + rng.below(count) as usize * 4;
+                    (u32::from(buf[r]), u32::from(buf[r + 1]))
+                } else {
+                    (rng.below(0x80), rng.below(0x80))
+                };
+                found += u32::from(port_found(&buf[layer as usize..], gx, gz));
+                let args = [STEP_LAYER_KIND as u32, gx, gz, MAP + layer];
+                assert_eq!(cpu.call(LOOKUP, &args), Stop::Returned);
+                let at = cpu.regs.r[V0];
+                let retail = (at != 0).then(|| (cpu.mem.rd8(at + 2) as i8, cpu.mem.rd8(at + 3)));
+                let port = step_patch_in_layer(&buf[layer as usize..], gx as i32, gz as i32)
+                    .map(|p| (p.step, p.quadrants));
+                assert_eq!(retail, port, "lookup: map {map} round {round} ({gx}, {gz})");
+                let cell = FloorGrid::new(&buf).cell(i32::from(x >> 7), i32::from(z >> 7));
+                stepped += u32::from(cell & 0x800 != 0);
+                blended += u32::from(cell & 0x800 == 0);
+            }
+        }
+        assert!(
+            stepped > 10_000 && blended > 10_000 && found > 10_000,
+            "{stepped} {blended} {found}"
+        );
+    }
+
+    /// The tracked-point separation `FUN_801D765C`, with the SCUS normalise
+    /// `FUN_8005AF0C` it calls answered from the script on both sides, against
+    /// `tracked_point_separation`.
+    #[test]
+    fn the_tracked_points_part_as_retail_parts_them() {
+        differential!(prot(972, SEPARATION));
+        use legaia_engine_fishing::fishing_actors::{
+            TRACKED_POINT_A_VA, TRACKED_POINT_B_VA, tracked_point_separation,
+        };
+        let Some(mut cpu) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        const SEPARATION: u32 = 0x801D_765C;
+        let asked = Rc::new(std::cell::Cell::new((0u32, 0i32)));
+        let a = asked.clone();
+        cpu.hook(0x8005_AF0C, move |r, _| {
+            let (_, answer) = a.get();
+            a.set((r.r[A0], answer));
+            r.r[V0] = answer as u32;
+        });
+        let mut rng = Rng(0x5345_5041);
+        for round in 0..20_000 {
+            let p: [i16; 4] = std::array::from_fn(|_| rng.next() as i16 >> rng.below(8));
+            let answer = match rng.below(3) {
+                0 => -(rng.below(0x1000) as i32),
+                _ => rng.below(0x10_0000) as i32,
+            };
+            asked.set((0, answer));
+            cpu.mem.wr16(TRACKED_POINT_A_VA, p[0] as u16);
+            cpu.mem.wr16(TRACKED_POINT_A_VA + 4, p[1] as u16);
+            cpu.mem.wr16(TRACKED_POINT_B_VA, p[2] as u16);
+            cpu.mem.wr16(TRACKED_POINT_B_VA + 4, p[3] as u16);
+            assert_eq!(cpu.call(SEPARATION, &[]), Stop::Returned);
+            let mut port_asked = 0;
+            let port = tracked_point_separation((p[0], p[1]), (p[2], p[3]), |sq| {
+                port_asked = sq;
+                answer
+            });
+            assert_eq!(
+                (cpu.regs.r[V0] as i32, asked.get().0 as i32),
+                (port, port_asked),
+                "round {round} points {p:?}"
+            );
+        }
+    }
 }
