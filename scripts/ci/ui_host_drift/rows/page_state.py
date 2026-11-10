@@ -100,4 +100,23 @@ PAGE_STATE_RULES = [
         "text, the window's order; drawn inside the minigame frame it would "
         "go under the screen primitives, and on a field frame under the scene",
     },
+    {
+        "what": "every frame stages the game's dither word on the renderer",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "contains",
+        "source": "this.renderer.setDrawDither(rt.play_draw_dither());",
+        "why": "field op `4C ED` and a battle's colour wash clear the word "
+        "(`World::frame_dither`), which the window hands its renderer on every "
+        "redraw; a page that stops asking dithers those frames in PSX mode "
+        "while the window does not",
+    },
+    {
+        "what": "the dither word gates the dither lane of the PSX uniform",
+        "path": REPO / "site/js/webgl-tmd-frame-state.js",
+        "kind": "contains",
+        "source": "on && this.drawDither !== false ? 1 : 0",
+        "why": "the word reaches the shader only through `u_psx.w`, the lane "
+        "the window's `psx_snap_params` clears; staged and never read, the "
+        "page would dither every PSX-mode frame",
+    },
 ]

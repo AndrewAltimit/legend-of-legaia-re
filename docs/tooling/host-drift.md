@@ -1122,7 +1122,8 @@ found wrong, the file that has to hold it, and what it looks like when it does
 not: the winding handed back with the cull, the intro readback declared ahead
 of the ticks, the screen primitives' tie nudge, the hall's ambient tree taken
 off the world on leaving a dance, the screen layers composed on a pause-menu
-tick, zeros staged for a mesh's absent ground refs. A row is `contains` (the line is there) or `before` (the line is there,
+tick, zeros staged for a mesh's absent ground refs, the game's dither word
+staged on the renderer every frame and read into the PSX uniform. A row is `contains` (the line is there) or `before` (the line is there,
 ahead of another). It is a pin on a known defect and does not generalise.
 
 ## Two JavaScript-side gates
@@ -1404,6 +1405,7 @@ a scratch directory only.
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
 | `town_slope`, `town_seat` | town01 with the player seated at tile (30, 22) (`LEGAIA_SEAT` / `play_debug_seat`): the first with the follow knobs held at orbit 2.7, tilt -0.5 (`LEGAIA_DIAG_FOLLOW_KNOBS` / the page's knob setters), the view past the plateau ramp to the sea off retail's vantage; the second at retail's |
 | `battle_menus` | a fight's round prompt, the command ring's Item window and its cursor, the empty Magic window, an item used |
+| `equip` | the pause menu's Equip row down a level at a time: the character picker, the slot browse with the worn item's panel beside each row, a slot's candidate list, and back out |
 | `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
 | `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |

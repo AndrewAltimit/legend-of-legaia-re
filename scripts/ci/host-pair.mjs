@@ -73,6 +73,9 @@ export const SCENES = {
   /* The round prompt's Begin, then the command ring's Item window (Up), its cursor,
    * back out, the Magic direction, and an item picked: engine-screens' battle windows. */
   battle_menus: { scene: 'map01', ticks: 640, every: 10, battle: 30, taps: [[380, 'Cross'], [420, 'Up'], [450, 'Down'], [470, 'Down'], [500, 'Circle'], [530, 'Right'], [560, 'Circle'], [590, 'Up'], [620, 'Cross']] },
+  /* The Equip row down to a candidate list and back: the character picker (its party hand
+   * bobbing), the slot browse with the worn item's panel beside each row, a slot's candidates. */
+  equip: { scene: 'town01', ticks: 600, every: 10, taps: [[30, 'Start'], [90, 'Down'], [110, 'Down'], [140, 'Cross'], [200, 'Cross'], [250, 'Down'], [280, 'Down'], [310, 'Down'], [350, 'Cross'], [420, 'Down'], [470, 'Circle'], [520, 'Circle'], [560, 'Circle']] },
   /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
   arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
   /* The retock innkeeper (placement 26, the 240 G stay): the field-VM inn record's prompt,
