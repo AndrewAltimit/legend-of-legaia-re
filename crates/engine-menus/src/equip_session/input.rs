@@ -2,6 +2,7 @@
 
 use super::*;
 use legaia_engine_system::input::PadButton;
+use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// The row the candidate confirm's tail leaves the hand on: the next row below
 /// `slot`'s own, wrapping at 8 (`0x801DA1E8..0x801DA1F8`).
@@ -14,22 +15,25 @@ impl EquipSession {
     /// Apply a per-frame input.
     pub fn input(&mut self, input: EquipInput) {
         match self.state {
-            EquipState::SlotPicker { mut cursor } => {
-                if input.up && cursor > 0 {
-                    cursor -= 1;
+            EquipState::SlotPicker { cursor } => {
+                // Retail's slot browse is the list kernel `FUN_801D688C`
+                // over the eight rows with wrap (`0x801D9B00`): confirm and
+                // cancel are read before any move, Up / Down wrap.
+                let mut cell = u32::from(cursor);
+                let nav = menu_cursor_nav(
+                    &mut cell,
+                    u32::from(SLOT_BROWSE_ROWS),
+                    true,
+                    NavButtons::new(input.cross, input.circle, input.up, input.down),
+                );
+                let cursor = cell as u8;
+                if nav == CursorNav::Moved {
                     self.state = EquipState::SlotPicker { cursor };
                     self.events.push(EquipEvent::CursorMoved {
                         state: EquipStateKind::SlotPicker,
                         cursor: cursor as u16,
                     });
-                } else if input.down && cursor + 1 < SLOT_BROWSE_ROWS {
-                    cursor += 1;
-                    self.state = EquipState::SlotPicker { cursor };
-                    self.events.push(EquipEvent::CursorMoved {
-                        state: EquipStateKind::SlotPicker,
-                        cursor: cursor as u16,
-                    });
-                } else if input.cross {
+                } else if nav == CursorNav::Confirm {
                     // Retail's `FUN_801D99F0` recomputes the candidate array
                     // (`FUN_801CF88C`) *before* dispatching the row, so row 0
                     // applies a pick made from the state the confirm saw.
@@ -60,7 +64,7 @@ impl EquipSession {
                             }
                         }
                     }
-                } else if input.circle {
+                } else if nav == CursorNav::Cancel {
                     self.state = EquipState::Done;
                     self.events.push(EquipEvent::Cancelled);
                 }

@@ -875,7 +875,7 @@ phase 0.
 | `0x0F` | `FUN_801D9110` | spell list (cancel -> `0x0E`; confirm -> `0x10` / `0x11`, `li` at `0x801d920c` / `0x801d924c` / `0x801d9258`) |
 | `0x10` | `FUN_801D9280` | group cast (cursor count 0) |
 | `0x11` | `FUN_801D9594` | single-target cast |
-| `0x12` / `0x13` / `0x14` | `FUN_801D98F0` / `FUN_801D99F0` / `FUN_801D9C14` | Equip character picker / slot browse / candidate list |
+| `0x12` / `0x13` / `0x14` | `FUN_801D98F0` / `FUN_801D99F0` / `FUN_801D9C14` | Equip character picker / slot browse (list kernel over 8 rows with wrap; row 0 Best Equipment cues `0x24` or buzzes `0x23`) / candidate list |
 | `0x15` | `FUN_801DA2A0` | Status (the [per-character list screen](save-screen.md#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)) |
 | `0x17` | `FUN_801DD330` | Options |
 | `0x20` | `FUN_801DC1CC` | casino prize counter |
