@@ -871,7 +871,7 @@ phase 0.
 | `0x09` | `FUN_801D7FF8` | all-party apply (cursor count 0: confirm / cancel only) |
 | `0x0A` | `FUN_801D8308` | single-target apply |
 | `0x0B` / `0x0C` / `0x0D` | `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` | Door of Light / Door of Wind / Incense |
-| `0x0E` | `FUN_801D8F10` | Magic caster picker; confirm buzzes `0x23` on a caster with no spells or an empty Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`, `0x801D9060..0x801D90B8`) |
+| `0x0E` | `FUN_801D8F10` | Magic caster picker; confirm buzzes `0x23` on a caster with no spells or an empty Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`, `0x801D9060..0x801D90B8`); no HP gate, so a KO'd member casts |
 | `0x0F` | `FUN_801D9110` | spell list (cancel -> `0x0E`; confirm -> `0x10` / `0x11`, `li` at `0x801d920c` / `0x801d924c` / `0x801d9258`) |
 | `0x10` | `FUN_801D9280` | group cast (cursor count 0) |
 | `0x11` | `FUN_801D9594` | single-target cast |
@@ -1487,6 +1487,17 @@ A confirmed spell's stats `+2` byte picks the flow: bit `0x20` set -> the
 no-pick **group** flow (`0x10`, `FUN_801D9280`; window 14 with the hand on every row, confirm
 or cancel only, the caster and info windows stay drawn); clear -> the per-member
 **target picker** (`0x11`, `FUN_801D9594`). Cancel returns to the list.
+
+The caster picker and the target picker both run the list kernel
+`FUN_801D688C` with wrap: confirm and cancel are read before any move, and only
+Up / Down move the hand. The group flow runs it with no rows (confirm first).
+Every way back to the spell list - a cancel from either flow, or a cast that
+leaves the caster short of MP or the spell with nobody to affect - reopens it on
+its first row, because the list's entry step (`FUN_801D9110` at `0x801D9160`)
+clears the selected row `0x8007BB98` and the scroll top `0x8007BB90`. Neither
+flow nor the list build reads the caster's HP: a KO'd member with MP casts.
+`crates/retail-exec/tests/spell_screens.rs` steps all four sub-screens against
+`engine-menus::spell_menu` frame by frame.
 
 ### Menu-cast spell leveling + the window-7 notice
 

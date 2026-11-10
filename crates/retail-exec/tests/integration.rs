@@ -254,6 +254,7 @@ mod slot_marquee;
 mod spell_cam;
 mod spell_list;
 mod spell_list_scans;
+mod spell_screens;
 mod spirit_cleanup;
 mod spoils;
 mod sprite_arm;
