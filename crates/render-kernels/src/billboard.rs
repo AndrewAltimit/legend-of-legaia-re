@@ -151,29 +151,11 @@ pub struct BillboardCorners {
 /// registers (battle uses `H = 256` with the orbit camera); `ot_shift` is
 /// the scratchpad OT-resolution byte `DAT_1F8003A4` (`0` collapses the shift).
 ///
-/// REPLACED-BY: the engine's own billboard surfaces - a 3D quad mesh in the
-/// wgpu path (`engine-shell`'s `effect_billboard_mesh`) and a typed
-/// screen-space draw in `legaia_render_kernels::screen_prim` - each of which produces the
-/// finished quad rather than the GTE screen corners retail composes it from.
-/// No host is owed a call.
-///
-/// This is a measurement, not a shrug. A `jal 0x800195a8` sweep of the dump
-/// corpus returns **17** retail riders over 24 call sites, and the ported ones
-/// are `world_map_panel_actors`, `move_vm_overlay_ext`, `effect_vm::pool`
-/// (the effect-VM walker `FUN_801E0080`, whose older `0x801E0088` dump is the
-/// same body), `afterimage` (two), `field_actor_billboard`, `screen_fx` and
-/// `battle_on_screen`. Every one of those ports reached its
-/// result through one of the two surfaces above, so the projector is the step
-/// each of them **replaced**, not a step any of them is missing - which is
-/// what makes a shared call site something no future wiring produces either.
-/// The seven riders with no port are `FUN_800485BC`, `FUN_801D08E4` (the
-/// slot-machine cabinet), `FUN_801D5C58`, `FUN_801DF6B8`, `FUN_801E7448`,
-/// `FUN_801C2520` and `FUN_801CD998`; `FUN_800485BC`'s four sites share the
-/// three-stack-arg shape that pins this signature's trailing arguments.
-///
-/// The body stays, and its unit tests with it: it is the byte-exact
-/// arithmetic the two surfaces are checked against, and the only place the
-/// `behind`-camera saturation behaviour is written down.
+/// Its callers are the ports of retail's own riders: the weapon trail
+/// (`FUN_800485BC`, `battle_trail`), the afterimage streaks (`afterimage`),
+/// the field script actors' sprites (`World` in `field_script_actors`) and the
+/// battle on-screen pass (`engine-render`'s `battle_on_screen`). Each takes the
+/// GTE screen corners retail composes, `behind`-camera saturation included.
 #[allow(clippy::too_many_arguments)]
 pub fn project_billboard(
     rot: &GteMat3,

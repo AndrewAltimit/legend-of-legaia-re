@@ -969,14 +969,12 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
 /// `crate::field_ledge_hop_arc::bezier_at`, which clamps `t` for its own
 /// caller where this one does not)
 fn write_bezier_world(state: &mut ActorState, a: [i16; 3], b: [i16; 3], off: [i16; 3]) {
-    let t = state.field_50;
-    let axis = |i: usize| -> i16 {
-        let c = off[i].wrapping_add(((a[i] as i32 + b[i] as i32) >> 1) as i16);
-        bezier_axis(a[i], c, b[i], t)
-    };
-    state.world_x = axis(0);
-    state.world_y = axis(1);
-    state.world_z = axis(2);
+    let c: [i16; 3] =
+        std::array::from_fn(|i| off[i].wrapping_add(((a[i] as i32 + b[i] as i32) >> 1) as i16));
+    let [x, y, z] = bezier_point(c, a, b, state.field_50);
+    state.world_x = x;
+    state.world_y = y;
+    state.world_z = z;
 }
 
 /// `FUN_801E45BC(c, p0, p2, t)` whole: the quadratic Bezier through `p0`,
