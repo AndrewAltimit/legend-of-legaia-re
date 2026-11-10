@@ -462,6 +462,10 @@ pub struct RodDrive {
     pub hooked: bool,
     /// The held packed pad word.
     pub held: u32,
+    /// The hooked fish's surge `_DAT_801D90F4` as the frame starts: what the
+    /// fish tick `FUN_801D4004` last wrote, `0` from the lure's landing
+    /// (`0x801D2964`) until a fish is on.
+    pub surge: i32,
 }
 
 /// The fishing rod as an advancing object: `FUN_801D1C5C` per frame, plus the
@@ -581,9 +585,12 @@ impl RodActor {
     /// reel or a fish on bends it (`0x801D2B04..0x801D2C30`), and the D-pad
     /// sides roll it (`0x801D382C..0x801D395C`).
     ///
-    /// The bend clamps read `_DAT_801D90F4`, which is `0` from the landing to
-    /// the snap, so they are the bare `0x1000` / `0x1800`. Returns whether a
-    /// hooked rod's bend ran past its `0x1800` cap this frame - the gate of
+    /// A bend past `0x1800` hooked or `0x1000` otherwise is stored back as
+    /// that bound less twice the fish's surge `_DAT_801D90F4`
+    /// (`0x801D2B84..0x801D2BB0`, `0x801D2C08..0x801D2C30`): the test is on
+    /// the bare bound, so a bend between the lowered store and the bound
+    /// stands. Returns whether a hooked rod's bend ran past `0x1800` this
+    /// frame - the gate of
     /// the creak cue (`0x801D2B84..0x801D2BAC`), whose timer is the
     /// session's ([`crate::fishing::PondSession::take_rod_creaks`]).
     ///
@@ -599,10 +606,10 @@ impl RodActor {
             if d.held & 0x80 != 0 {
                 self.bend += 0x80 * fs;
             }
-            let cap = if d.hooked { 0x1800 } else { 0x1000 };
-            if self.bend > cap {
+            let bound = if d.hooked { 0x1800 } else { 0x1000 };
+            if self.bend > bound {
                 over_cap = d.hooked;
-                self.bend = cap;
+                self.bend = bound - 2 * d.surge;
             }
         }
         let decay = 4 * fs;

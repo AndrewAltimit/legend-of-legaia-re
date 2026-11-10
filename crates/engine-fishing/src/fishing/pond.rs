@@ -56,6 +56,7 @@ impl PondSession {
             reel_held_for: [0; 2],
             reel_repeat_in: 8,
             last_swim: (0, 0),
+            surge: 0,
             lure_probe: Default::default(),
             hub: None,
             rod_actor: None,
@@ -104,6 +105,17 @@ impl PondSession {
     /// locked, then what the flight has left of it, down to `0` at the landing.
     pub fn cast_power(&self) -> i32 {
         self.lure_actor.map_or(self.cast.value(), |l| l.power)
+    }
+
+    /// The session's BIOS `rand()` state: every draw the pond, the band
+    /// check and the hooked fish take comes off it.
+    pub fn rng_state(&self) -> u32 {
+        self.rng.state()
+    }
+
+    /// The band check's strike countdown (`DAT_801D90EC`).
+    pub fn band_countdown(&self) -> i32 {
+        self.band.countdown
     }
 
     /// Line record (`DAT_801d927c`); `0` before a cast.
@@ -253,6 +265,7 @@ impl PondSession {
             crate::fishing_actors::RodDrive {
                 hooked,
                 held: input.reel_mask,
+                surge: self.surge,
             },
             fs,
         );
@@ -280,6 +293,79 @@ impl PondSession {
     /// its own inventory with each.
     pub fn take_spent_lures(&mut self) -> Vec<u32> {
         std::mem::take(&mut self.spent_lures)
+    }
+
+    /// The fight half of a hooked frame, from the fish tick on: `FUN_801D4004`
+    /// at `0x801D396C`, the ring, the sway and the tail's record, the
+    /// far-record strain, the ceiling's break roll and the reel-in landing.
+    /// The hook arm's own frame runs it too, since the fish tick's gate reads
+    /// the hooked word the arm has just set (`0x801D3680`, `0x801D395C`).
+    fn fight_tail(&mut self, sp: FishingSpecies, input: PondInput, fs: i32) {
+        // `FUN_801D4004`: the pull off the hook's bias, the
+        // behaviour arm, the line depth and the reel load.
+        let frame = self.fish.tick(
+            &sp,
+            self.fish_scale as i32,
+            &mut self.depth,
+            self.line_record,
+            input.reel_mask,
+            &mut self.rng,
+            fs,
+        );
+        // Tension: the reel arms over that load.
+        self.gauge.apply_load(input.reel_mask, frame.load, fs);
+        // The lure moved on last frame's swim, ahead of this frame's
+        // fish tick (`0x801D2D08..0x801D2DC8`, `jal 0x801D4004` at
+        // `0x801D3968`).
+        self.last_swim = frame.swim;
+        self.surge = frame.surge;
+        self.lateral = (self.lateral + ((frame.swim.0 / 2) >> 8)).clamp(-0x400, 0x400);
+        self.push_reel_ring();
+        self.end_lure_frame(input, fs);
+        // The lure tick's tail measures the record, then a fish run
+        // far out strains the line (`record >= 0x899`:
+        // `tension += step * 300`, `0x801D3B34..0x801D3B8C`) before
+        // the ceiling test below.
+        self.gauge.far_record_strain(self.line_record, fs);
+        // The lure tick's tail: tension at the ceiling is clamped
+        // there and rolls `rand() % 10 == 0` once a frame for the
+        // break latch `DAT_801D91A4 = 2` (`0x801D3B9C..0x801D3BE4`;
+        // the draw is made only at the ceiling). A set latch breaks
+        // the line ahead of the reel-in test (`0x801D3C04`).
+        // PORT: FUN_801d26cc (the tension-ceiling break roll and the break arm)
+        let broke = self.gauge.at_max() && self.rng.next_u15().is_multiple_of(10);
+        if broke {
+            self.break_line();
+        } else if self.line_record < LAND_RECORD {
+            // Reel-in complete (`record < 0x136`): score the catch.
+            let award = sp.score_for(self.strength);
+            self.record.credit(sp.index, award);
+            self.last_award = award;
+            self.result_ramp = 0;
+            // The landing frame is the lift's first: the line actor's
+            // sub-state `4` runs this frame from a zero timer.
+            self.lift_timer = Some(fs);
+            // The from-right banner (`DAT_801D915C = 1`).
+            self.catch_banner = 1;
+            self.events.push(PondEvent::Landed(award));
+            self.phase = PondPhase::Landed;
+            // So does the reel-in arm (`0x801D3CB4`).
+            if let Some(rod) = self.rod_actor.as_mut() {
+                rod.recover();
+            }
+        }
+    }
+
+    /// An empty line reeled in: the tail's test on a waiting line
+    /// (`record < 0x136`, `0x801D3C68`), mode word `0x32`.
+    fn reel_in_empty_line(&mut self) {
+        if self.phase == PondPhase::Waiting && self.line_record < LAND_RECORD {
+            self.line_record = 0;
+            self.lure_actor = None;
+            self.rod_actor = None;
+            self.events.push(PondEvent::Recast);
+            self.phase = PondPhase::Idle;
+        }
     }
 
     /// The lure tick's line-break arm (`0x801D3C0C..0x801D3C64`): the
@@ -485,10 +571,17 @@ impl PondSession {
                         self.events
                             .push(PondEvent::LureRing(l.tracked.0, l.tracked.2));
                     }
+                    // The landing zeroes the surge word (`0x801D2964`).
+                    self.surge = 0;
                     self.band = BandCheck::default();
                     self.cadence.reset();
                     self.lure_probe = Default::default();
                     self.phase = PondPhase::Waiting;
+                    // The landing arm jumps to the tick's tail (`j 0x801D39C4`
+                    // at `0x801D29E0`), whose reel-in test runs on the state it
+                    // just set (`0x801D3BE8..0x801D3C94`): a cast that comes
+                    // down inside `0x136` is an empty line on its landing frame.
+                    self.reel_in_empty_line();
                 }
             }
             PondPhase::Waiting => {
@@ -578,15 +671,17 @@ impl PondSession {
                         self.phase = PondPhase::Hooked;
                     }
                 }
-                self.push_reel_ring();
-                self.end_lure_frame(input, fs);
-                // An empty line reeled in (`record < 0x136`, `0x801D3C68`).
-                if self.phase == PondPhase::Waiting && self.line_record < LAND_RECORD {
-                    self.line_record = 0;
-                    self.lure_actor = None;
-                    self.rod_actor = None;
-                    self.events.push(PondEvent::Recast);
-                    self.phase = PondPhase::Idle;
+                match self
+                    .fight_species
+                    .and_then(|i| self.species.get(i))
+                    .copied()
+                {
+                    Some(sp) if self.phase == PondPhase::Hooked => self.fight_tail(sp, input, fs),
+                    _ => {
+                        self.push_reel_ring();
+                        self.end_lure_frame(input, fs);
+                        self.reel_in_empty_line();
+                    }
                 }
             }
             PondPhase::Hooked => {
@@ -606,58 +701,12 @@ impl PondSession {
                     lure.pull_step(reel_edge, fs);
                     lure.sink_step(self.line_record, self.lure, fs);
                 }
-                // `FUN_801D4004`: the pull off the hook's bias, the
-                // behaviour arm, the line depth and the reel load.
-                let frame = self.fish.tick(
-                    &sp,
-                    self.fish_scale as i32,
-                    &mut self.depth,
-                    self.line_record,
-                    input.reel_mask,
-                    &mut self.rng,
-                    fs,
-                );
-                // Tension: the reel arms over that load.
-                self.gauge.apply_load(input.reel_mask, frame.load, fs);
-                // The lure moved on last frame's swim, ahead of this frame's
-                // fish tick (`0x801D2D08..0x801D2DC8`, `jal 0x801D4004` at
-                // `0x801D3968`).
-                self.last_swim = frame.swim;
-                self.lateral = (self.lateral + ((frame.swim.0 / 2) >> 8)).clamp(-0x400, 0x400);
-                self.push_reel_ring();
-                self.end_lure_frame(input, fs);
-                // The lure tick's tail measures the record, then a fish run
-                // far out strains the line (`record >= 0x899`:
-                // `tension += step * 300`, `0x801D3B34..0x801D3B8C`) before
-                // the ceiling test below.
-                self.gauge.far_record_strain(self.line_record, fs);
-                // The lure tick's tail: tension at the ceiling is clamped
-                // there and rolls `rand() % 10 == 0` once a frame for the
-                // break latch `DAT_801D91A4 = 2` (`0x801D3B9C..0x801D3BE4`;
-                // the draw is made only at the ceiling). A set latch breaks
-                // the line ahead of the reel-in test (`0x801D3C04`).
-                // PORT: FUN_801d26cc (the tension-ceiling break roll and the break arm)
-                let broke = self.gauge.at_max() && self.rng.next_u15().is_multiple_of(10);
-                if broke {
-                    self.break_line();
-                } else if self.line_record < LAND_RECORD {
-                    // Reel-in complete (`record < 0x136`): score the catch.
-                    let award = sp.score_for(self.strength);
-                    self.record.credit(sp.index, award);
-                    self.last_award = award;
-                    self.result_ramp = 0;
-                    // The landing frame is the lift's first: the line actor's
-                    // sub-state `4` runs this frame from a zero timer.
-                    self.lift_timer = Some(fs);
-                    // The from-right banner (`DAT_801D915C = 1`).
-                    self.catch_banner = 1;
-                    self.events.push(PondEvent::Landed(award));
-                    self.phase = PondPhase::Landed;
-                    // So does the reel-in arm (`0x801D3CB4`).
-                    if let Some(rod) = self.rod_actor.as_mut() {
-                        rod.recover();
-                    }
-                }
+                // The band segment runs on a hooked frame too: the hooked
+                // word sends it past the band roll (`0x801D31B8`) onto the
+                // strike draw (`jal rand` at `0x801D3300`), which nothing
+                // reads with a fish on. The draw falls ahead of the fish tick.
+                self.rng.next_u15();
+                self.fight_tail(sp, input, fs);
             }
             PondPhase::Landed => {
                 // PORT: FUN_801d4948 (sub-state 4: the lift's `+0x22` seat gate)

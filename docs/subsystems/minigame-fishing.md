@@ -216,7 +216,7 @@ band    = DAT_801d90e8                        cast band, 0..4
 
 ### Band roll
 
-While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs on a frame whose step takes the countdown `DAT_801d90ec` below zero, and zeroes it. A held band therefore skips the body, and the recogniser is called only from inside it: its ring stands still through the hold and at a short line, where the countdown keeps falling unclamped. Each entry first consults the cadence recogniser. The strike draw `rand() % interval` is taken every frame, held or not (`0x801D3300`).
+While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs on a frame whose step takes the countdown `DAT_801d90ec` below zero, and zeroes it. A held band therefore skips the body, and the recogniser is called only from inside it: its ring stands still through the hold and at a short line, where the countdown keeps falling unclamped. Each entry first consults the cadence recogniser. The strike draw `rand() % interval` is taken every frame, held or not (`0x801D3300`). With a fish on, the hooked word sends the segment past the band roll (`0x801D31B8`) onto that draw, which nothing then reads: a fight frame spends one `rand()` there, ahead of the fish tick.
 
 - **Match:** the template id is stored as the band, the countdown is armed to `0x40` (the body is skipped for the next 64 frame-steps, so the band holds), and the strike-splash timer `DAT_801d90f0` is seeded. The splash fires for any matched template, including the ones that select common bands.
 - **No match:** the band is re-rolled from `r = rand & 0xfff`, so an unmatched band is only ever the current frame's roll.
@@ -384,6 +384,10 @@ depth   = clamp(depth, 0, ceiling / 2)
 The table's fifth target (`0x801D43C8`) is unreachable: no store to `DAT_801d910c` in the image writes `4`. The run is the hard pull (`13x` the sink's load) and it tires the fish: every frame of it lowers the ceiling, and the line depth is held at half the ceiling. Reeling pulls the line up (`s5`), which both weakens the load and ends a run once the depth is under `0x258`.
 
 **Surge.** A phase `DAT_801D9068` advances `step << 4` a frame (`step << 5` on the run); `DAT_801D90F4 = (sin(phase) + 0x1000) * s4 * f08 / 0xC8000`, capped at `0x3C0`, with `s4 = 0xF0 / 0x1E0 / 0x17C` by arm (`0x801D43EC..0x801D4460`). The lure tick caps the hooked reel speed at `0x1800 - 2 * DAT_801D90F4` (`0x801D2B98..0x801D2BB0`). `DAT_801D9290` takes `load >> 1` (`0x801D44D0`) and nothing in the image reads it.
+
+That cap is the rod's bend, and its test is on the bare bound: a bend past `0x1800` (`0x1000` with no fish) is stored back as the bound less twice the surge, so a bend between the two stands (`0x801D2B84..0x801D2BB0`, `0x801D2C08..0x801D2C30`).
+
+The fish tick runs on its strike frame: the hook arm sets `DAT_801d91b4` (`0x801D3680`) ahead of the tick's gate on that word (`0x801D395C`), and the tail's far-record strain and ceiling roll follow it on the same frame.
 
 **Re-roll** (`0x801D4684..0x801D4920`). After the clamps the countdown `DAT_801d9110` drops by `step`:
 
@@ -1017,7 +1021,7 @@ The cast releases at the power meter's lock (`FUN_801CF3BC` state `0x14`): the l
 
 **Flight** (`FUN_801D26CC`, `0x801D279C..0x801D2944`). Each frame the lure's 24.8 accumulators take `26 * polar(facing, -(power * 640 / 4096), step)` on X and Z, and the height takes `fall / 10 * step << 8`, with `fall` starting at `0x40` and rising `3 * step`. Once the tracked height is above zero the power falls an extra `120 * step`, and a height past `0xC8` spends it all; it always falls `50 * step`. The frame it goes below zero is the landing: the cue `0x204` and the cast counter. A short cast lands inside the `500` the band check needs, so it cannot bite until cast again.
 
-**In the water** (`0x801D2C3C..0x801D2DC8`). The lure moves by `polar(heading, -0x900, step) * pull / 4096`, where `heading` is the bearing from the spawn point to the lure, plus the rod's sway across the facing while a pull runs. The pull comes from presses: a press on an idle reel sets `0xA00` (Cross) or `0xC00` (Square), it falls `0x80` a frame-step and drops to nothing under `0x600` (`0x801D2E60..0x801D2F40`). The press word carries the auto-repeat pulse, so a held button pulses every 8 vsyncs after 32. An empty line under `0x136` ends the cast (`0x801D3C68`); a hooked one lands the fish.
+**In the water** (`0x801D2C3C..0x801D2DC8`). The lure moves by `polar(heading, -0x900, step) * pull / 4096`, where `heading` is the bearing from the spawn point to the lure, plus the rod's sway across the facing while a pull runs. The pull comes from presses: a press on an idle reel sets `0xA00` (Cross) or `0xC00` (Square), it falls `0x80` a frame-step and drops to nothing under `0x600` (`0x801D2E60..0x801D2F40`). The press word carries the auto-repeat pulse, so a held button pulses every 8 vsyncs after 32. An empty line under `0x136` ends the cast (`0x801D3C68`); a hooked one lands the fish. The flight's landing arm jumps to the same tail (`j 0x801D39C4` at `0x801D29E0`) with `+0x22` already `2`, so a cast that comes down inside `0x136` ends as an empty line on its landing frame.
 
 ## Open
 

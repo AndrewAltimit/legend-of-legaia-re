@@ -163,6 +163,7 @@ mod fishing_floor;
 mod fishing_hud;
 mod fishing_leaves;
 mod fishing_line_clip;
+mod fishing_lure_tick;
 mod fishing_prize;
 mod fishing_root;
 mod fishing_sky;

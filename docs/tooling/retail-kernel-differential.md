@@ -1270,3 +1270,15 @@ showed the port running the row-action dispatcher on cancel; retail runs it on c
 cancel in phase `2`. The command arrow `FUN_8003C310` and the pictogram emitter `FUN_8002C488`
 are held to the cells the menu atlas bakes.
 
+
+The lure tick `FUN_801D26CC` run whole from its entry, cast by cast through its `+0x22` states with the rod actor `FUN_801D1C5C`
+ahead of it and the hooked fish, the cadence recogniser and the record live beneath it (`fishing_lure_tick`), against
+`PondSession::tick` on one pad script, found three. The fish did not tick on its strike frame, where the hook arm's word opens
+the tick's gate the same pass, so every fight ran a frame behind retail's `rand()` stream. A hooked frame still takes the
+band segment's strike draw and throws it away, and the port drew none. The rod's bend clamp is the bound less twice the fish's
+surge, where the port stored the bare bound on a note that the surge word stayed zero. A cast that lands inside `0x136` is also
+an empty line on its landing frame, where the port waited a frame in the water.
+
+The positional emitter's release `FUN_800250D4` (`sfx_emitter_release`) walks the row's own count and skips a negative first
+voice. The session's emitter ops clamped the count to one and filtered per voice, so a runtime-bank row of count `0` keyed and
+released a voice retail never touches.

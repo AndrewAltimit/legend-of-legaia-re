@@ -544,6 +544,7 @@ fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
             RodDrive {
                 hooked: false,
                 held: 0x80,
+                ..Default::default()
             },
             1,
         );
@@ -554,17 +555,34 @@ fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
             RodDrive {
                 hooked: true,
                 held: 0,
+                ..Default::default()
             },
             1,
         );
     }
     assert_eq!(rod.bend, 0x1800);
+    // A surging fish stores the bend back below the bound, twice the surge
+    // under it, only when it runs past the bound; under it the bend stands.
+    let surge = RodDrive {
+        hooked: true,
+        held: 0,
+        surge: 0x100,
+    };
+    rod.drive(surge, 1);
+    assert_eq!(rod.bend, 0x1600);
+    rod.drive(surge, 1);
+    assert_eq!(rod.bend, 0x1700);
+    rod.drive(surge, 1);
+    assert_eq!(rod.bend, 0x1800);
+    rod.drive(surge, 1);
+    assert_eq!(rod.bend, 0x1600);
     // D-pad down lifts, capped at 0x1000.
     for _ in 0..64 {
         rod.drive(
             RodDrive {
                 hooked: false,
                 held: 0x4000,
+                ..Default::default()
             },
             1,
         );
@@ -575,6 +593,7 @@ fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
         RodDrive {
             hooked: false,
             held: 0x2000,
+            ..Default::default()
         },
         1,
     );
@@ -584,6 +603,7 @@ fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
             RodDrive {
                 hooked: false,
                 held: 0x2000,
+                ..Default::default()
             },
             1,
         );
