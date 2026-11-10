@@ -1478,8 +1478,9 @@ this order: it stores a pass's cost and returns the step of the next one, and th
 engine installs that step when the next pass opens its frame
 (`BattleState::pending_frame_step`, taken by `World::battle_sm_pass_due` and the
 per-pass claims beside it), so the pass that raised it is still waited out on the step
-it ran at. An arm table's step is the arm's own frames' and installs on the arm's
-first pass. Spanning a pass's own frame with the step its push returned shortened
+it ran at. An arm table's step is the arm's own frames' cost: a dearer arm raises the
+step on its first pass, and a cheaper arm after a dear one runs the ring's step until the
+dear entries leave it ([below](#what-the-arm-step-table-is)). Spanning a pass's own frame with the step its push returned shortened
 every ring-driven step change by a pass, and spanning it with the step read before
 the push (with the pass's timers still on the older step) left the pass's drain a
 step behind its frame.
@@ -1681,6 +1682,23 @@ arm's table step as that arm's cost through the ring, so a cheap arm after a dea
 one runs the ring's step until it empties, moves the film from `.866` to `.867`.
 What differs in those arms is the creature's pose and the burn puffs around it
 ([open threads](../reference/open-rev-eng-threads.md)).
+
+**A cheap arm runs the ring's step until it empties.** The port reads the arm's table
+step as its frames' cost through the ring (`World::apply_cast_arm_frame_step`): the step a
+pass runs is the larger of its arm's and the one the passes before it left. A clamped
+frame stores `0x2BC`, which reads `3`, so the sixteen passes after a step-`4` arm run `3`
+under a cheaper table. Kiss of Death's recording (`--retail-parts`,
+`battle_map01_lippian_kiss_of_death_mid_cast`) holds it: arm 5, the victim alone at `2` by
+its table, runs `3` for `45` vsyncs and then `2`; the engine runs one pass of `4` and
+fifteen of `3`, and the Kiss films' step agreement with retail rises from `.89` to `.94`.
+Gimard's arm 6 gains its `3` band (`45` vsyncs against retail's `46`). Over eighteen
+recorded casts (twelve enemy casts, six summons) the frame means hold (`.8861` to
+`.8863`). What the ring cannot hold is a cost that falls inside an arm: Kiss of Death's
+arm 4 runs its last five passes at `3` because the frame's cost drops from the clamp to
+about `595` (the recording's `cost` column) while no effect part changes, so the engine's
+arm 4 stays at `4` (`32` passes to retail's `34`). Gimard's arm 6 opens on `64` vsyncs of
+`4` the same way. Modelling those would take the frame's cost from the engine's own draw,
+which the table stands in for.
 
 **The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
 The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at

@@ -278,7 +278,19 @@ impl World {
         // (`battle-stage-camera.md`, the frame step). An arm table's step is
         // the length retail's frames ran under the arm, and takes effect on
         // its own pass.
+        //
+        // The step the frames before this pass left in the ring: what a pass
+        // under a cheaper arm still runs at while a dearer arm's entries sit in
+        // the sixteen-frame history (`FUN_80016B6C` reads the ring's maximum,
+        // `0x800170D0..0x800170F4`).
+        let carried = self.battle.frame_cost_step;
         self.push_frame_cost(measured);
+        // An arm table names the cost of the arm's own frames, so a dearer arm
+        // raises the step from its first pass, and a cheaper arm after a dear
+        // one runs the ring's step until the dear entries leave it: Kiss of
+        // Death's arm 5 runs `3` for sixteen passes after arm 4's clamped
+        // frames, then `2`.
+        let measured = measured.map(|step| step.max(carried));
         // A frame the XA stream loads overruns its step (`span_extra`); an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
