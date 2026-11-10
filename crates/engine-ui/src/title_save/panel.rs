@@ -296,12 +296,8 @@ pub fn dialog_window_chrome_draws_for(
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1) as i32;
-    let (px, py, pw, ph) = dst_stage;
-    // Footprint = centre rect inflated by the skin border (8 px each
-    // side); the translucent gradient fill spans the footprint minus
-    // the 4-px border band.
-    let footprint = (px - 8, py - 8, pw + 16, ph + 16);
-    let fill = (px - 4, py - 4, pw + 8, ph + 8);
+    let footprint = dialog_window_footprint(dst_stage);
+    let fill = dialog_window_fill_rect(dst_stage);
     let mut out = Vec::with_capacity(24);
     out.push(SpriteDraw {
         dst: (
@@ -315,6 +311,26 @@ pub fn dialog_window_chrome_draws_for(
     });
     nine_slice_border_into(&mut out, rects, footprint, stage_origin, stage_scale);
     out
+}
+
+/// The dialog window's gradient fill rect for the centre rect `dst_stage`:
+/// the centre inflated by 4 on every side, which is where the emitter's two
+/// fill `POLY_G4`s put their corners.
+///
+/// PORT: FUN_8002C69C (the reading-box skin's fill rect)
+pub fn dialog_window_fill_rect(dst_stage: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let (px, py, pw, ph) = dst_stage;
+    (px - 4, py - 4, pw + 8, ph + 8)
+}
+
+/// The dialog window's whole footprint for the centre rect `dst_stage`: the
+/// centre inflated by the skin's 8-px border on every side, the box the
+/// emitter's border sprites cover.
+///
+/// PORT: FUN_8002C69C (the reading-box skin's border footprint)
+pub fn dialog_window_footprint(dst_stage: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let (px, py, pw, ph) = dst_stage;
+    (px - 8, py - 8, pw + 16, ph + 16)
 }
 
 /// The dialog **option-picker hand cursor**: retail draws the

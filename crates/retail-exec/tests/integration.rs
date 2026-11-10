@@ -390,6 +390,7 @@ mod walk_regen;
 mod walk_step;
 mod water_hazard;
 mod weapon_trail;
+mod window_emitter;
 mod window_rebuild;
 mod window_vm;
 mod world_leaves;
