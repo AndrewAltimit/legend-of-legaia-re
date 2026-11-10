@@ -1,7 +1,8 @@
 //! Scene-bundle loader: locates the per-scene asset table inside a loaded
 //! [`crate::scene::Scene`] and walks the descriptors into typed sub-assets.
 //!
-//! PORT: FUN_8001F7C0
+//! REF: FUN_8001F7C0 (the bundle open: CD path plumbing the port replaces by
+//! reading the CDNAME block through the PROT index)
 //! PORT: FUN_8001F05C (its `a1 >> 24` asset-type switch only - the typed
 //! classification of each descriptor; the per-case allocation, LZS decode /
 //! copy and VRAM upload are the host loader's)

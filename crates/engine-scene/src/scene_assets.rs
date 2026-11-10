@@ -17,7 +17,7 @@
 //! Engines build a [`SceneAssets`] once per scene transition and query it
 //! through the `SceneHost` for the duration of the scene.
 //!
-//! PORT: FUN_8001F7C0
+//! REF: FUN_8001F7C0 (the bundle open; see its `port-catalog-ignore.toml` row)
 //! REF: FUN_800255B8 (the per-kind file fetch, replaced here by the
 //!      CDNAME-block sweep - see its `port-catalog-ignore.toml` row)
 //! REF: FUN_80026B4C

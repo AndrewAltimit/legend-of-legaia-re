@@ -947,19 +947,6 @@ engine-vm's battle_formulas::round, and this tag says so.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/field_movement.rs:8001f7c0"
-reason = """
-A loader in a module of movement kernels. FUN_8001F7C0's distinctive data is the
-0x800104xx / 0x800105xx descriptor block and its callees are the LZS decoder
-0x8001A6A4 plus the dev host traps 0x800608F0 / 0x80060910 - the field-file
-loader, which site/_content and field-locomotion.md both read the same way. Its
-19 siblings are the walk / collision / pose routines that CONSUME the buffer it
-fills, and a producer that hands over a buffer address shares no table with them.
-The tag is scoped to that: it names the +0x4000 sub-region streamed into
-*(_DAT_1F8003EC), not the loader's dispatch.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801ef2b0"
 reason = """
 A host-dispatcher module reporting one of the state machines it dispatches -
