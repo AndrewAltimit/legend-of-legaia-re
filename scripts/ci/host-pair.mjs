@@ -130,7 +130,7 @@ const CARD_RNG_SEED = 0x12345678;
 const CARD = { late: 'playthrough-endgame-7saves.mcr', ladder: 'playthrough-ladder-pro00-14.mcr' };
 const cardScenes = (key, card, block) => ({
   [`${key}_walk`]: { card, block, ticks: 300, every: 30, hold: walk },
-  [`${key}_menu`]: { card, block, ticks: 960, every: 30, taps: menuTaps() },
+  [`${key}_menu`]: { card, block, ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU },
   [`${key}_fight`]: { card, block, ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3], taps: every(300, 890, 40, 'Cross') },
 });
 Object.assign(SCENES, cardScenes('late', CARD.late, 1), cardScenes('late4', CARD.late, 4), cardScenes('ladder', CARD.ladder, 3));
