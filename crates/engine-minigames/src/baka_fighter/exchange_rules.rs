@@ -437,23 +437,17 @@ impl BakaFight {
         if critical {
             dmg = power << 7;
         }
-        // The special carries no HP payload. Its action record's `+0x18` power
-        // is 0 for all 17 fighters (disc corpus), so retail's kernel would
-        // compute `(combo-1)*0x40` = **-0x40** on a fresh combo - but retail
-        // never applies it: type 4 is the auto-finisher, gated on the
-        // opponent's HP already being 0 (`overlay_baka_fighter_801d3f44.txt`),
-        // and the kernel's HP write is `hp > 0`-gated
-        // (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58..0x801d3e68`:
-        // `blez` skips the `subu`). A special that wins against a foe still
-        // standing (the other fighter's special, or a test driving the
-        // resolver) would have the raw arithmetic *heal* the loser by 64;
-        // the faithful HP delta for a special-won exchange is zero - its
-        // payoff is the exchange / round win, never HP.
-        if winner_type == 4 {
-            dmg = 0;
-        }
+        // The special takes the same arithmetic as any blow
+        // (`0x801D3D64..0x801D3E54`): its record's `+0x18` power is 0 for all
+        // 17 fighters, which leaves the streak term `(combo - 1) * 0x40`. In
+        // play the special is the auto-finisher, thrown at a seat whose HP is
+        // already 0, and the HP write is `hp > 0`-gated (`0x801D3E58..
+        // 0x801D3E68`: `blez` skips the `subu`), so nothing is taken. The
+        // damage reported is what the gate let through.
         if self.f[loser].hp > 0 {
             self.f[loser].hp -= dmg;
+        } else {
+            dmg = 0;
         }
         if self.f[loser].hp < 1 {
             self.f[loser].hp = 0;
@@ -649,5 +643,26 @@ impl BakaFight {
     #[doc(hidden)]
     pub fn roll_crit(&mut self, slot: usize) {
         self.roll_comeback_crit(slot);
+    }
+
+    /// [`Self::apply_damage`] on `loser`, with the winner's landed
+    /// sub-keyframe (block `+0x98`) seated first.
+    #[doc(hidden)]
+    pub fn land_blow(&mut self, loser: usize, winner_landed: Option<usize>) {
+        self.f[loser ^ 1].clock.landed = winner_landed;
+        self.apply_damage(loser);
+    }
+
+    /// The blow's push-back `(x, ease)`: the fighters' shared `+0x14` offset
+    /// and `DAT_801DBEC0`.
+    #[doc(hidden)]
+    pub fn push_back(&self) -> (i32, i32) {
+        (self.push_x, self.push_ease)
+    }
+
+    /// Block `+0x38`, the blows a seat has taken this round.
+    #[doc(hidden)]
+    pub fn hits_taken(&self, slot: usize) -> u32 {
+        self.f[slot].hits_taken
     }
 }

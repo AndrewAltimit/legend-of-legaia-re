@@ -165,32 +165,32 @@
           "symbol": -1
         },
         {
-          "balance": 100005,
+          "balance": 99985,
           "bonus": 0,
           "claimed": [
             7,
             6,
-            7
+            4
           ],
-          "line": 3,
+          "line": -1,
           "mode": 0,
           "mode_after": 0,
           "net": 30,
-          "payout": 20,
+          "payout": 0,
           "rows": [
             4,
             5,
-            0
+            15
           ],
-          "symbol": 5
+          "symbol": -1
         },
         {
-          "balance": 100002,
+          "balance": 99982,
           "bonus": 0,
           "claimed": [
-            7,
+            1,
             9,
-            1
+            6
           ],
           "line": -1,
           "mode": 0,
@@ -198,39 +198,39 @@
           "net": 36,
           "payout": 0,
           "rows": [
-            2,
+            16,
             17,
-            6
+            1
           ],
           "symbol": -1
         },
         {
-          "balance": 100007,
+          "balance": 99979,
           "bonus": 0,
           "claimed": [
-            10,
+            8,
             4,
-            6
+            2
           ],
-          "line": 3,
+          "line": -1,
           "mode": 0,
           "mode_after": 0,
           "net": 42,
-          "payout": 8,
+          "payout": 0,
           "rows": [
-            13,
+            11,
             6,
-            14
+            9
           ],
-          "symbol": 3
+          "symbol": -1
         },
         {
-          "balance": 100004,
+          "balance": 99976,
           "bonus": 0,
           "claimed": [
             9,
             8,
-            9
+            7
           ],
           "line": -1,
           "mode": 0,
@@ -240,17 +240,17 @@
           "rows": [
             10,
             0,
-            5
+            0
           ],
           "symbol": -1
         },
         {
-          "balance": 100001,
+          "balance": 99973,
           "bonus": 0,
           "claimed": [
             7,
             3,
-            8
+            7
           ],
           "line": -1,
           "mode": 0,
@@ -260,17 +260,17 @@
           "rows": [
             2,
             9,
-            12
+            7
           ],
           "symbol": -1
         },
         {
-          "balance": 99998,
+          "balance": 99970,
           "bonus": 0,
           "claimed": [
             4,
             7,
-            10
+            8
           ],
           "line": -1,
           "mode": 0,
@@ -280,17 +280,17 @@
           "rows": [
             12,
             4,
-            18
+            13
           ],
           "symbol": -1
         },
         {
-          "balance": 99995,
+          "balance": 99967,
           "bonus": 0,
           "claimed": [
             4,
             2,
-            9
+            7
           ],
           "line": -1,
           "mode": 0,
@@ -300,17 +300,17 @@
           "rows": [
             5,
             13,
-            5
+            0
           ],
           "symbol": -1
         },
         {
-          "balance": 99992,
+          "balance": 99964,
           "bonus": 0,
           "claimed": [
             3,
-            1,
-            6
+            3,
+            2
           ],
           "line": -1,
           "mode": 0,
@@ -319,18 +319,18 @@
           "payout": 0,
           "rows": [
             0,
-            3,
-            14
+            9,
+            9
           ],
           "symbol": -1
         },
         {
-          "balance": 99989,
+          "balance": 99961,
           "bonus": 0,
           "claimed": [
             5,
-            6,
-            1
+            7,
+            6
           ],
           "line": -1,
           "mode": 0,
@@ -339,17 +339,17 @@
           "payout": 0,
           "rows": [
             14,
-            18,
-            6
+            4,
+            1
           ],
           "symbol": -1
         },
         {
-          "balance": 100046,
+          "balance": 100018,
           "bonus": 0,
           "claimed": [
             4,
-            1,
+            4,
             6
           ],
           "line": 2,
@@ -359,37 +359,37 @@
           "payout": 60,
           "rows": [
             12,
-            8,
+            1,
             14
           ],
           "symbol": 7
         },
         {
-          "balance": 100063,
+          "balance": 100045,
           "bonus": 0,
           "claimed": [
             6,
-            6,
+            7,
             6
           ],
-          "line": 1,
+          "line": 4,
           "mode": 0,
           "mode_after": 0,
           "net": 90,
-          "payout": 20,
+          "payout": 30,
           "rows": [
             3,
-            18,
+            11,
             1
           ],
-          "symbol": 5
+          "symbol": 6
         },
         {
-          "balance": 100060,
+          "balance": 100042,
           "bonus": 0,
           "claimed": [
             8,
-            2,
+            4,
             6
           ],
           "line": -1,
@@ -399,17 +399,17 @@
           "payout": 0,
           "rows": [
             17,
-            13,
+            6,
             14
           ],
           "symbol": -1
         },
         {
-          "balance": 100057,
+          "balance": 100039,
           "bonus": 0,
           "claimed": [
             9,
-            1,
+            10,
             6
           ],
           "line": -1,
@@ -419,37 +419,37 @@
           "payout": 0,
           "rows": [
             9,
-            3,
+            16,
             1
           ],
           "symbol": -1
         },
         {
-          "balance": 100062,
+          "balance": 100036,
           "bonus": 0,
           "claimed": [
             7,
             8,
             6
           ],
-          "line": 0,
+          "line": -1,
           "mode": 0,
           "mode_after": 0,
           "net": 108,
-          "payout": 8,
+          "payout": 0,
           "rows": [
             4,
-            0,
+            7,
             14
           ],
-          "symbol": 3
+          "symbol": -1
         },
         {
-          "balance": 100059,
+          "balance": 100033,
           "bonus": 0,
           "claimed": [
             8,
-            9,
+            4,
             3
           ],
           "line": -1,
@@ -459,830 +459,830 @@
           "payout": 0,
           "rows": [
             17,
-            10,
+            1,
             3
           ],
           "symbol": -1
         },
         {
-          "balance": 100056,
-          "bonus": 0,
+          "balance": 100130,
+          "bonus": 1,
           "claimed": [
             9,
-            7,
+            9,
+            9
+          ],
+          "line": 1,
+          "mode": 0,
+          "mode_after": 6,
+          "net": 120,
+          "payout": 100,
+          "rows": [
+            9,
+            17,
+            11
+          ],
+          "symbol": 8
+        },
+        {
+          "balance": 100257,
+          "bonus": 0,
+          "claimed": [
+            24,
+            24,
+            18
+          ],
+          "line": 1,
+          "mode": 6,
+          "mode_after": 0,
+          "net": -7,
+          "payout": 128,
+          "rows": [
+            9,
+            18,
+            10
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100254,
+          "bonus": 0,
+          "claimed": [
+            1,
+            6,
             9
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 120,
+          "net": -1,
           "payout": 0,
           "rows": [
-            9,
-            4,
+            16,
+            18,
             11
           ],
           "symbol": -1
         },
         {
-          "balance": 100053,
+          "balance": 100251,
           "bonus": 0,
           "claimed": [
-            2,
-            8,
+            10,
+            3,
             7
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 126,
+          "net": 5,
           "payout": 0,
           "rows": [
-            19,
-            0,
+            7,
+            9,
             0
           ],
           "symbol": -1
         },
         {
-          "balance": 100050,
+          "balance": 100248,
           "bonus": 0,
           "claimed": [
-            4,
+            2,
             7,
             7
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 132,
+          "net": 11,
           "payout": 0,
           "rows": [
-            12,
-            11,
+            1,
+            4,
             7
           ],
           "symbol": -1
         },
         {
-          "balance": 100047,
+          "balance": 100245,
           "bonus": 0,
           "claimed": [
-            6,
-            10,
+            2,
+            5,
             5
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 138,
+          "net": 17,
           "payout": 0,
           "rows": [
-            3,
-            2,
+            19,
+            15,
             16
           ],
           "symbol": -1
         },
         {
-          "balance": 100044,
+          "balance": 100242,
           "bonus": 0,
           "claimed": [
-            8,
-            2,
-            3
+            3,
+            3,
+            1
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 144,
+          "net": 23,
           "payout": 0,
           "rows": [
-            17,
-            13,
-            3
+            15,
+            12,
+            6
           ],
           "symbol": -1
         },
         {
-          "balance": 100041,
+          "balance": 100239,
           "bonus": 0,
           "claimed": [
             3,
+            1,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 29,
+          "payout": 0,
+          "rows": [
+            15,
+            3,
+            14
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100236,
+          "bonus": 0,
+          "claimed": [
+            10,
+            5,
+            10
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 35,
+          "payout": 0,
+          "rows": [
+            13,
+            14,
+            4
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100233,
+          "bonus": 0,
+          "claimed": [
             7,
+            3,
+            7
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 41,
+          "payout": 0,
+          "rows": [
+            4,
+            12,
+            0
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100230,
+          "bonus": 0,
+          "claimed": [
+            8,
+            1,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 47,
+          "payout": 0,
+          "rows": [
+            17,
+            3,
+            9
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100227,
+          "bonus": 0,
+          "claimed": [
+            9,
+            5,
             4
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 150,
+          "net": 53,
           "payout": 0,
           "rows": [
+            9,
             15,
-            4,
             17
           ],
           "symbol": -1
         },
         {
-          "balance": 100098,
+          "balance": 100224,
           "bonus": 0,
           "claimed": [
-            8,
-            8,
-            8
-          ],
-          "line": 1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 156,
-          "payout": 60,
-          "rows": [
-            11,
-            0,
-            12
-          ],
-          "symbol": 7
-        },
-        {
-          "balance": 100095,
-          "bonus": 0,
-          "claimed": [
-            8,
             7,
-            7
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 162,
-          "payout": 0,
-          "rows": [
-            11,
-            11,
-            0
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100092,
-          "bonus": 0,
-          "claimed": [
             6,
-            10,
-            8
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 168,
-          "payout": 0,
-          "rows": [
-            3,
-            2,
-            13
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100089,
-          "bonus": 0,
-          "claimed": [
-            2,
-            5,
             3
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 174,
+          "net": 59,
           "payout": 0,
           "rows": [
-            1,
-            14,
+            4,
+            5,
             2
           ],
           "symbol": -1
         },
         {
-          "balance": 100086,
+          "balance": 100241,
           "bonus": 0,
           "claimed": [
-            5,
-            6,
-            5
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 180,
-          "payout": 0,
-          "rows": [
-            14,
-            5,
-            16
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100083,
-          "bonus": 0,
-          "claimed": [
-            6,
+            7,
             9,
-            10
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 186,
-          "payout": 0,
-          "rows": [
-            6,
-            17,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100080,
-          "bonus": 0,
-          "claimed": [
-            6,
-            7,
-            6
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 192,
-          "payout": 0,
-          "rows": [
-            3,
-            4,
-            14
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100077,
-          "bonus": 0,
-          "claimed": [
-            1,
-            10,
-            9
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 198,
-          "payout": 0,
-          "rows": [
-            16,
-            16,
-            5
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100074,
-          "bonus": 0,
-          "claimed": [
-            10,
-            3,
-            6
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 204,
-          "payout": 0,
-          "rows": [
-            7,
-            12,
-            14
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100071,
-          "bonus": 0,
-          "claimed": [
-            2,
-            7,
-            10
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 210,
-          "payout": 0,
-          "rows": [
-            1,
-            4,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100068,
-          "bonus": 0,
-          "claimed": [
-            5,
-            8,
-            5
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 216,
-          "payout": 0,
-          "rows": [
-            14,
-            0,
-            16
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100095,
-          "bonus": 0,
-          "claimed": [
-            4,
-            3,
-            6
-          ],
-          "line": 2,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 222,
-          "payout": 30,
-          "rows": [
-            5,
-            12,
-            1
-          ],
-          "symbol": 6
-        },
-        {
-          "balance": 100092,
-          "bonus": 0,
-          "claimed": [
-            2,
-            7,
-            5
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 228,
-          "payout": 0,
-          "rows": [
-            19,
-            4,
-            16
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100089,
-          "bonus": 0,
-          "claimed": [
-            8,
-            9,
-            1
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 234,
-          "payout": 0,
-          "rows": [
-            11,
-            17,
-            6
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100086,
-          "bonus": 0,
-          "claimed": [
-            7,
-            6,
             8
           ],
-          "line": -1,
+          "line": 0,
           "mode": 0,
           "mode_after": 0,
-          "net": 240,
-          "payout": 0,
+          "net": 65,
+          "payout": 20,
           "rows": [
             2,
-            5,
+            17,
             13
           ],
-          "symbol": -1
+          "symbol": 5
         },
         {
-          "balance": 100083,
+          "balance": 100238,
           "bonus": 0,
           "claimed": [
+            10,
             3,
-            6,
-            3
+            5
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 246,
+          "net": 71,
           "payout": 0,
           "rows": [
-            0,
-            18,
-            3
+            13,
+            9,
+            8
           ],
           "symbol": -1
         },
         {
-          "balance": 100080,
+          "balance": 100235,
           "bonus": 0,
           "claimed": [
             4,
-            7,
-            6
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 252,
-          "payout": 0,
-          "rows": [
-            12,
-            11,
-            14
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100077,
-          "bonus": 0,
-          "claimed": [
-            7,
-            2,
-            1
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 258,
-          "payout": 0,
-          "rows": [
-            2,
-            19,
-            19
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100074,
-          "bonus": 0,
-          "claimed": [
-            3,
-            3,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 264,
-          "payout": 0,
-          "rows": [
-            15,
-            12,
-            10
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100071,
-          "bonus": 0,
-          "claimed": [
-            8,
-            6,
-            4
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 270,
-          "payout": 0,
-          "rows": [
-            11,
-            5,
-            15
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100068,
-          "bonus": 0,
-          "claimed": [
             4,
-            6,
-            1
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 276,
-          "payout": 0,
-          "rows": [
-            5,
-            18,
-            6
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100065,
-          "bonus": 0,
-          "claimed": [
-            5,
-            7,
             10
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 282,
+          "net": 77,
           "payout": 0,
           "rows": [
-            18,
-            11,
+            12,
+            6,
             18
           ],
           "symbol": -1
         },
         {
-          "balance": 100062,
+          "balance": 100232,
           "bonus": 0,
           "claimed": [
-            9,
-            8,
-            10
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 288,
-          "payout": 0,
-          "rows": [
-            9,
-            0,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100059,
-          "bonus": 0,
-          "claimed": [
-            6,
-            2,
-            6
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 294,
-          "payout": 0,
-          "rows": [
-            3,
-            13,
-            1
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100056,
-          "bonus": 0,
-          "claimed": [
-            3,
-            10,
-            1
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 300,
-          "payout": 0,
-          "rows": [
-            15,
-            2,
-            6
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100053,
-          "bonus": 0,
-          "claimed": [
-            6,
-            5,
-            8
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 306,
-          "payout": 0,
-          "rows": [
-            6,
-            15,
-            13
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100056,
-          "bonus": 0,
-          "claimed": [
-            2,
-            3,
-            3
-          ],
-          "line": 4,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 312,
-          "payout": 6,
-          "rows": [
-            19,
-            9,
-            3
-          ],
-          "symbol": 2
-        },
-        {
-          "balance": 100053,
-          "bonus": 0,
-          "claimed": [
-            8,
-            6,
-            4
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 318,
-          "payout": 0,
-          "rows": [
-            11,
-            18,
-            15
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100050,
-          "bonus": 0,
-          "claimed": [
-            2,
-            8,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 324,
-          "payout": 0,
-          "rows": [
-            1,
+            4,
             7,
-            9
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100047,
-          "bonus": 0,
-          "claimed": [
-            5,
-            1,
             7
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 330,
+          "net": 83,
           "payout": 0,
           "rows": [
-            14,
-            8,
-            0
+            5,
+            4,
+            7
           ],
           "symbol": -1
         },
         {
-          "balance": 100044,
+          "balance": 100229,
           "bonus": 0,
           "claimed": [
-            4,
-            9,
+            1,
+            5,
             4
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 336,
+          "net": 89,
           "payout": 0,
           "rows": [
-            5,
-            17,
-            15
+            16,
+            15,
+            17
           ],
           "symbol": -1
         },
         {
-          "balance": 100041,
+          "balance": 100226,
           "bonus": 0,
           "claimed": [
-            2,
-            7,
+            5,
+            8,
             1
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 342,
+          "net": 95,
           "payout": 0,
           "rows": [
-            19,
-            11,
+            14,
+            7,
             6
           ],
           "symbol": -1
         },
         {
-          "balance": 100038,
+          "balance": 100223,
           "bonus": 0,
           "claimed": [
-            4,
-            8,
-            8
+            6,
+            7,
+            7
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 348,
+          "net": 101,
           "payout": 0,
           "rows": [
-            12,
-            0,
-            13
+            6,
+            4,
+            0
           ],
           "symbol": -1
         },
         {
-          "balance": 100065,
-          "bonus": 0,
-          "claimed": [
-            6,
-            9,
-            1
-          ],
-          "line": 0,
-          "mode": 0,
-          "mode_after": 0,
-          "net": 354,
-          "payout": 30,
-          "rows": [
-            3,
-            10,
-            19
-          ],
-          "symbol": 6
-        },
-        {
-          "balance": 100062,
+          "balance": 100220,
           "bonus": 0,
           "claimed": [
             8,
+            3,
+            7
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 107,
+          "payout": 0,
+          "rows": [
+            17,
+            12,
+            7
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100217,
+          "bonus": 0,
+          "claimed": [
+            9,
             6,
+            7
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 113,
+          "payout": 0,
+          "rows": [
+            10,
+            5,
+            0
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100214,
+          "bonus": 0,
+          "claimed": [
+            7,
+            6,
+            9
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 119,
+          "payout": 0,
+          "rows": [
+            2,
+            18,
+            11
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100211,
+          "bonus": 0,
+          "claimed": [
+            4,
+            3,
+            5
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 125,
+          "payout": 0,
+          "rows": [
+            12,
+            12,
+            16
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100208,
+          "bonus": 0,
+          "claimed": [
+            4,
+            6,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 131,
+          "payout": 0,
+          "rows": [
+            5,
+            5,
+            14
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100205,
+          "bonus": 0,
+          "claimed": [
+            1,
+            2,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 137,
+          "payout": 0,
+          "rows": [
+            16,
+            13,
+            19
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100202,
+          "bonus": 0,
+          "claimed": [
+            9,
+            4,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 143,
+          "payout": 0,
+          "rows": [
+            10,
+            6,
+            10
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100199,
+          "bonus": 0,
+          "claimed": [
+            6,
+            2,
+            5
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 149,
+          "payout": 0,
+          "rows": [
+            3,
+            19,
+            8
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100196,
+          "bonus": 0,
+          "claimed": [
+            5,
+            1,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 155,
+          "payout": 0,
+          "rows": [
+            14,
+            8,
+            14
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100193,
+          "bonus": 0,
+          "claimed": [
+            1,
+            4,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 161,
+          "payout": 0,
+          "rows": [
+            8,
+            6,
+            6
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100190,
+          "bonus": 0,
+          "claimed": [
+            6,
+            5,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 167,
+          "payout": 0,
+          "rows": [
+            6,
+            15,
+            14
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100187,
+          "bonus": 0,
+          "claimed": [
+            8,
+            7,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 173,
+          "payout": 0,
+          "rows": [
+            17,
+            4,
+            1
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100184,
+          "bonus": 0,
+          "claimed": [
+            9,
+            6,
+            5
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 179,
+          "payout": 0,
+          "rows": [
+            10,
+            18,
+            16
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100181,
+          "bonus": 0,
+          "claimed": [
+            4,
+            8,
+            3
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 185,
+          "payout": 0,
+          "rows": [
+            5,
+            7,
+            3
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100178,
+          "bonus": 0,
+          "claimed": [
+            3,
+            10,
             4
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": 360,
+          "net": 191,
           "payout": 0,
           "rows": [
-            17,
-            5,
+            15,
+            16,
             15
           ],
           "symbol": -1
+        },
+        {
+          "balance": 100275,
+          "bonus": 1,
+          "claimed": [
+            1,
+            9,
+            1
+          ],
+          "line": 4,
+          "mode": 0,
+          "mode_after": 6,
+          "net": 197,
+          "payout": 100,
+          "rows": [
+            8,
+            10,
+            6
+          ],
+          "symbol": 8
+        },
+        {
+          "balance": 100994,
+          "bonus": 0,
+          "claimed": [
+            24,
+            26,
+            25
+          ],
+          "line": 1,
+          "mode": 6,
+          "mode_after": 0,
+          "net": -522,
+          "payout": 720,
+          "rows": [
+            9,
+            9,
+            3
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100997,
+          "bonus": 0,
+          "claimed": [
+            1,
+            2,
+            10
+          ],
+          "line": 2,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -516,
+          "payout": 6,
+          "rows": [
+            16,
+            13,
+            4
+          ],
+          "symbol": 2
+        },
+        {
+          "balance": 100994,
+          "bonus": 0,
+          "claimed": [
+            3,
+            10,
+            4
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -510,
+          "payout": 0,
+          "rows": [
+            15,
+            2,
+            17
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100991,
+          "bonus": 0,
+          "claimed": [
+            6,
+            3,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -504,
+          "payout": 0,
+          "rows": [
+            6,
+            12,
+            9
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 101018,
+          "bonus": 0,
+          "claimed": [
+            6,
+            7,
+            6
+          ],
+          "line": 4,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -498,
+          "payout": 30,
+          "rows": [
+            3,
+            11,
+            1
+          ],
+          "symbol": 6
         }
       ],
       "seed": 1812605680,
@@ -1360,70 +1360,70 @@
     {
       "bonus_strips": [
         [
+          24,
+          21,
+          21,
+          23,
+          25,
           25,
           18,
-          16,
+          22,
           19,
+          17,
+          20,
           18,
           16,
-          20,
-          20,
+          22,
+          17,
+          16,
           19,
-          21,
-          21,
-          22,
+          20,
           23,
-          23,
-          24,
-          17,
-          17,
-          22,
-          24,
-          25
+          24
         ],
         [
           23,
-          24,
-          16,
-          25,
-          19,
-          25,
           20,
+          16,
+          16,
           19,
-          21,
-          21,
-          24,
-          18,
           17,
-          16,
-          18,
-          20,
           22,
+          18,
           22,
           23,
+          24,
+          24,
+          25,
+          25,
+          17,
+          19,
+          18,
+          20,
+          21,
+          21
+        ],
+        [
+          20,
+          22,
+          23,
+          19,
+          19,
+          21,
+          23,
+          25,
+          18,
+          17,
+          22,
+          25,
+          16,
+          20,
+          21,
+          24,
+          16,
+          24,
+          18,
           17
-        ],
-        [
-          18,
-          25,
-          25,
-          22,
-          19,
-          21,
-          18,
-          17,
-          21,
-          24,
-          16,
-          23,
-          23,
-          20,
-          24,
-          17,
-          16,
-          19,
-          20,
-          22
         ]
       ],
       "name": "feature-seed",
@@ -1432,9 +1432,9 @@
           "balance": 99997,
           "bonus": 0,
           "claimed": [
-            3,
-            4,
-            9
+            5,
+            8,
+            8
           ],
           "line": -1,
           "mode": 0,
@@ -1442,8 +1442,8 @@
           "net": 6,
           "payout": 0,
           "rows": [
-            7,
-            5,
+            13,
+            11,
             1
           ],
           "symbol": -1
@@ -1452,9 +1452,9 @@
           "balance": 99994,
           "bonus": 0,
           "claimed": [
-            7,
             5,
-            5
+            5,
+            2
           ],
           "line": -1,
           "mode": 0,
@@ -1462,9 +1462,9 @@
           "net": 12,
           "payout": 0,
           "rows": [
-            1,
-            3,
-            15
+            13,
+            4,
+            12
           ],
           "symbol": -1
         },
@@ -1472,8 +1472,8 @@
           "balance": 99991,
           "bonus": 0,
           "claimed": [
-            2,
-            8,
+            4,
+            10,
             6
           ],
           "line": -1,
@@ -1482,9 +1482,9 @@
           "net": 18,
           "payout": 0,
           "rows": [
-            14,
-            17,
-            8
+            6,
+            18,
+            7
           ],
           "symbol": -1
         },
@@ -1492,9 +1492,9 @@
           "balance": 99988,
           "bonus": 0,
           "claimed": [
-            9,
-            3,
-            5
+            10,
+            6,
+            4
           ],
           "line": -1,
           "mode": 0,
@@ -1502,579 +1502,439 @@
           "net": 24,
           "payout": 0,
           "rows": [
-            5,
-            6,
-            15
+            17,
+            12,
+            14
           ],
           "symbol": -1
         },
         {
-          "balance": 100185,
-          "bonus": 3,
+          "balance": 99985,
+          "bonus": 0,
           "claimed": [
             7,
-            4,
+            6,
             6
-          ],
-          "line": 2,
-          "mode": 0,
-          "mode_after": 6,
-          "net": 30,
-          "payout": 200,
-          "rows": [
-            19,
-            0,
-            8
-          ],
-          "symbol": 9
-        },
-        {
-          "balance": 100190,
-          "bonus": 2,
-          "claimed": [
-            18,
-            17,
-            19
-          ],
-          "line": 1,
-          "mode": 6,
-          "mode_after": 6,
-          "net": 25,
-          "payout": 6,
-          "rows": [
-            1,
-            19,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100329,
-          "bonus": 1,
-          "claimed": [
-            18,
-            23,
-            26
-          ],
-          "line": 1,
-          "mode": 6,
-          "mode_after": 6,
-          "net": -114,
-          "payout": 140,
-          "rows": [
-            1,
-            18,
-            1
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100508,
-          "bonus": 0,
-          "claimed": [
-            18,
-            25,
-            26
-          ],
-          "line": 1,
-          "mode": 6,
-          "mode_after": 0,
-          "net": -293,
-          "payout": 180,
-          "rows": [
-            4,
-            2,
-            2
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100513,
-          "bonus": 0,
-          "claimed": [
-            9,
-            4,
-            3
-          ],
-          "line": 3,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -287,
-          "payout": 8,
-          "rows": [
-            5,
-            5,
-            19
-          ],
-          "symbol": 3
-        },
-        {
-          "balance": 100510,
-          "bonus": 0,
-          "claimed": [
-            4,
-            8,
-            8
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -281,
+          "net": 30,
           "payout": 0,
           "rows": [
-            15,
-            1,
-            5
+            11,
+            12,
+            7
           ],
           "symbol": -1
         },
         {
-          "balance": 100517,
+          "balance": 99988,
           "bonus": 0,
           "claimed": [
-            5,
-            5,
-            5
+            6,
+            8,
+            1
           ],
-          "line": 1,
+          "line": 2,
           "mode": 0,
           "mode_after": 0,
-          "net": -275,
-          "payout": 10,
+          "net": 36,
+          "payout": 6,
           "rows": [
             8,
-            10,
-            15
+            1,
+            19
+          ],
+          "symbol": 2
+        },
+        {
+          "balance": 99985,
+          "bonus": 0,
+          "claimed": [
+            2,
+            6,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 42,
+          "payout": 0,
+          "rows": [
+            19,
+            17,
+            7
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99992,
+          "bonus": 0,
+          "claimed": [
+            2,
+            2,
+            3
+          ],
+          "line": 2,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 48,
+          "payout": 10,
+          "rows": [
+            19,
+            16,
+            18
           ],
           "symbol": 4
         },
         {
-          "balance": 100514,
+          "balance": 99989,
           "bonus": 0,
           "claimed": [
             7,
-            4,
+            7,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 54,
+          "payout": 0,
+          "rows": [
+            11,
+            5,
+            5
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99986,
+          "bonus": 0,
+          "claimed": [
+            9,
+            5,
             2
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -269,
+          "net": 60,
           "payout": 0,
+          "rows": [
+            5,
+            15,
+            11
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99983,
+          "bonus": 0,
+          "claimed": [
+            8,
+            1,
+            3
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 66,
+          "payout": 0,
+          "rows": [
+            4,
+            10,
+            18
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99980,
+          "bonus": 0,
+          "claimed": [
+            1,
+            3,
+            4
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 72,
+          "payout": 0,
+          "rows": [
+            1,
+            0,
+            14
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99985,
+          "bonus": 0,
+          "claimed": [
+            2,
+            4,
+            2
+          ],
+          "line": 4,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 78,
+          "payout": 8,
           "rows": [
             19,
-            0,
-            4
+            2,
+            11
           ],
-          "symbol": -1
+          "symbol": 3
         },
         {
-          "balance": 100511,
+          "balance": 99982,
           "bonus": 0,
           "claimed": [
-            9,
             7,
-            5
+            6,
+            1
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -263,
+          "net": 84,
           "payout": 0,
           "rows": [
-            13,
-            15,
-            16
+            12,
+            12,
+            19
           ],
           "symbol": -1
         },
         {
-          "balance": 100508,
+          "balance": 99979,
           "bonus": 0,
           "claimed": [
-            6,
-            5,
-            4
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -257,
-          "payout": 0,
-          "rows": [
-            6,
-            10,
-            9
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100505,
-          "bonus": 0,
-          "claimed": [
-            5,
+            3,
             4,
-            5
+            10
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -251,
+          "net": 90,
           "payout": 0,
           "rows": [
             3,
-            0,
-            16
+            2,
+            6
           ],
           "symbol": -1
         },
         {
-          "balance": 100502,
+          "balance": 99976,
           "bonus": 0,
           "claimed": [
+            10,
+            4,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 96,
+          "payout": 0,
+          "rows": [
+            17,
+            2,
+            19
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99973,
+          "bonus": 0,
+          "claimed": [
+            10,
+            6,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 102,
+          "payout": 0,
+          "rows": [
+            9,
+            12,
+            11
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99970,
+          "bonus": 0,
+          "claimed": [
+            3,
+            1,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 108,
+          "payout": 0,
+          "rows": [
+            3,
+            3,
+            19
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99967,
+          "bonus": 0,
+          "claimed": [
+            6,
+            3,
+            9
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 114,
+          "payout": 0,
+          "rows": [
+            2,
+            0,
+            8
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99964,
+          "bonus": 0,
+          "claimed": [
+            10,
             5,
-            7,
             7
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -245,
+          "net": 120,
           "payout": 0,
           "rows": [
-            3,
+            17,
             15,
+            16
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99961,
+          "bonus": 0,
+          "claimed": [
+            3,
+            6,
+            1
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 126,
+          "payout": 0,
+          "rows": [
+            7,
+            12,
+            5
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 99958,
+          "bonus": 0,
+          "claimed": [
+            4,
+            1,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": 132,
+          "payout": 0,
+          "rows": [
+            0,
+            3,
             12
           ],
           "symbol": -1
         },
         {
-          "balance": 100499,
-          "bonus": 0,
-          "claimed": [
-            4,
-            5,
-            3
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -239,
-          "payout": 0,
-          "rows": [
-            15,
-            10,
-            19
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100496,
-          "bonus": 0,
-          "claimed": [
-            6,
-            8,
-            6
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -233,
-          "payout": 0,
-          "rows": [
-            6,
-            1,
-            13
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100493,
+          "balance": 99955,
           "bonus": 0,
           "claimed": [
             7,
-            6,
+            9,
             8
           ],
           "line": -1,
           "mode": 0,
           "mode_after": 0,
-          "net": -227,
+          "net": 138,
           "payout": 0,
           "rows": [
-            19,
             11,
-            2
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100490,
-          "bonus": 0,
-          "claimed": [
-            8,
-            1,
+            14,
             1
           ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -221,
-          "payout": 0,
-          "rows": [
-            11,
-            7,
-            10
-          ],
           "symbol": -1
         },
         {
-          "balance": 100487,
-          "bonus": 0,
-          "claimed": [
-            5,
-            2,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -215,
-          "payout": 0,
-          "rows": [
-            8,
-            18,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100484,
-          "bonus": 0,
-          "claimed": [
-            3,
-            6,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -209,
-          "payout": 0,
-          "rows": [
-            7,
-            9,
-            11
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100481,
-          "bonus": 0,
-          "claimed": [
-            10,
-            4,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -203,
-          "payout": 0,
-          "rows": [
-            18,
-            0,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100478,
-          "bonus": 0,
-          "claimed": [
-            8,
-            6,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -197,
-          "payout": 0,
-          "rows": [
-            12,
-            11,
-            11
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100475,
-          "bonus": 0,
+          "balance": 100052,
+          "bonus": 1,
           "claimed": [
             9,
             9,
-            4
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -191,
-          "payout": 0,
-          "rows": [
-            5,
-            2,
-            0
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100472,
-          "bonus": 0,
-          "claimed": [
-            7,
-            1,
-            1
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -185,
-          "payout": 0,
-          "rows": [
-            1,
-            13,
-            10
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100469,
-          "bonus": 0,
-          "claimed": [
-            4,
-            7,
-            8
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -179,
-          "payout": 0,
-          "rows": [
-            15,
-            4,
-            2
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100466,
-          "bonus": 0,
-          "claimed": [
-            3,
-            7,
-            5
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -173,
-          "payout": 0,
-          "rows": [
-            7,
-            15,
-            15
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100483,
-          "bonus": 0,
-          "claimed": [
-            5,
-            6,
-            10
-          ],
-          "line": 3,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -167,
-          "payout": 20,
-          "rows": [
-            3,
-            11,
-            7
-          ],
-          "symbol": 5
-        },
-        {
-          "balance": 100480,
-          "bonus": 0,
-          "claimed": [
-            6,
-            9,
-            5
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -161,
-          "payout": 0,
-          "rows": [
-            2,
-            2,
-            16
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100477,
-          "bonus": 0,
-          "claimed": [
-            2,
-            3,
-            2
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -155,
-          "payout": 0,
-          "rows": [
-            14,
-            14,
-            4
-          ],
-          "symbol": -1
-        },
-        {
-          "balance": 100474,
-          "bonus": 0,
-          "claimed": [
-            4,
-            8,
-            4
-          ],
-          "line": -1,
-          "mode": 0,
-          "mode_after": 0,
-          "net": -149,
-          "payout": 0,
-          "rows": [
-            4,
-            1,
             9
           ],
+          "line": 1,
+          "mode": 0,
+          "mode_after": 6,
+          "net": 144,
+          "payout": 100,
+          "rows": [
+            5,
+            8,
+            8
+          ],
+          "symbol": 8
+        },
+        {
+          "balance": 100345,
+          "bonus": 0,
+          "claimed": [
+            22,
+            23,
+            23
+          ],
+          "line": 1,
+          "mode": 6,
+          "mode_after": 0,
+          "net": -149,
+          "payout": 294,
+          "rows": [
+            7,
+            9,
+            6
+          ],
           "symbol": -1
         },
         {
-          "balance": 100471,
+          "balance": 100342,
           "bonus": 0,
           "claimed": [
-            5,
-            1,
-            4
+            6,
+            6,
+            10
           ],
           "line": -1,
           "mode": 0,
@@ -2082,19 +1942,19 @@
           "net": -143,
           "payout": 0,
           "rows": [
-            3,
-            13,
-            0
+            8,
+            17,
+            6
           ],
           "symbol": -1
         },
         {
-          "balance": 100468,
+          "balance": 100339,
           "bonus": 0,
           "claimed": [
-            2,
             6,
-            7
+            9,
+            4
           ],
           "line": -1,
           "mode": 0,
@@ -2102,39 +1962,39 @@
           "net": -137,
           "payout": 0,
           "rows": [
-            14,
-            9,
-            12
+            2,
+            8,
+            14
           ],
           "symbol": -1
         },
         {
-          "balance": 100525,
+          "balance": 100336,
           "bonus": 0,
           "claimed": [
             8,
-            8,
-            8
+            2,
+            2
           ],
-          "line": 1,
+          "line": -1,
           "mode": 0,
           "mode_after": 0,
           "net": -131,
-          "payout": 60,
+          "payout": 0,
           "rows": [
-            11,
-            1,
-            2
+            14,
+            19,
+            11
           ],
-          "symbol": 7
+          "symbol": -1
         },
         {
-          "balance": 100522,
+          "balance": 100333,
           "bonus": 0,
           "claimed": [
-            4,
+            7,
             8,
-            2
+            3
           ],
           "line": -1,
           "mode": 0,
@@ -2142,19 +2002,19 @@
           "net": -125,
           "payout": 0,
           "rows": [
-            4,
-            17,
-            11
+            12,
+            11,
+            0
           ],
           "symbol": -1
         },
         {
-          "balance": 100519,
+          "balance": 100330,
           "bonus": 0,
           "claimed": [
-            4,
-            7,
-            3
+            9,
+            3,
+            7
           ],
           "line": -1,
           "mode": 0,
@@ -2162,19 +2022,19 @@
           "net": -119,
           "payout": 0,
           "rows": [
-            15,
-            4,
-            19
+            5,
+            9,
+            9
           ],
           "symbol": -1
         },
         {
-          "balance": 100516,
+          "balance": 100327,
           "bonus": 0,
           "claimed": [
-            1,
-            5,
-            6
+            3,
+            8,
+            5
           ],
           "line": -1,
           "mode": 0,
@@ -2182,19 +2042,19 @@
           "net": -113,
           "payout": 0,
           "rows": [
-            9,
             3,
-            8
+            1,
+            4
           ],
           "symbol": -1
         },
         {
-          "balance": 100513,
+          "balance": 100324,
           "bonus": 0,
           "claimed": [
             5,
-            9,
-            10
+            5,
+            7
           ],
           "line": -1,
           "mode": 0,
@@ -2202,19 +2062,19 @@
           "net": -107,
           "payout": 0,
           "rows": [
-            8,
-            16,
-            18
+            18,
+            15,
+            9
           ],
           "symbol": -1
         },
         {
-          "balance": 100510,
+          "balance": 100321,
           "bonus": 0,
           "claimed": [
-            9,
+            7,
             10,
-            8
+            3
           ],
           "line": -1,
           "mode": 0,
@@ -2222,82 +2082,222 @@
           "net": -101,
           "payout": 0,
           "rows": [
+            11,
+            7,
+            0
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100318,
+          "bonus": 0,
+          "claimed": [
+            9,
+            2,
+            10
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -95,
+          "payout": 0,
+          "rows": [
             5,
+            19,
+            13
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100375,
+          "bonus": 0,
+          "claimed": [
+            3,
             8,
-            5
+            6
+          ],
+          "line": 4,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -89,
+          "payout": 60,
+          "rows": [
+            3,
+            11,
+            3
+          ],
+          "symbol": 7
+        },
+        {
+          "balance": 100372,
+          "bonus": 0,
+          "claimed": [
+            1,
+            1,
+            2
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -83,
+          "payout": 0,
+          "rows": [
+            1,
+            3,
+            12
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100369,
+          "bonus": 0,
+          "claimed": [
+            7,
+            1,
+            8
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -77,
+          "payout": 0,
+          "rows": [
+            12,
+            10,
+            1
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100396,
+          "bonus": 0,
+          "claimed": [
+            7,
+            7,
+            4
+          ],
+          "line": 2,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -71,
+          "payout": 30,
+          "rows": [
+            12,
+            6,
+            10
+          ],
+          "symbol": 6
+        },
+        {
+          "balance": 100393,
+          "bonus": 0,
+          "claimed": [
+            10,
+            2,
+            3
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -65,
+          "payout": 0,
+          "rows": [
+            9,
+            19,
+            0
+          ],
+          "symbol": -1
+        },
+        {
+          "balance": 100390,
+          "bonus": 0,
+          "claimed": [
+            4,
+            6,
+            6
+          ],
+          "line": -1,
+          "mode": 0,
+          "mode_after": 0,
+          "net": -59,
+          "payout": 0,
+          "rows": [
+            0,
+            12,
+            7
           ],
           "symbol": -1
         }
       ],
-      "seed": 4096,
+      "seed": 4098,
       "spins": 40,
       "start_balance": 100000,
       "symbol_strips": [
         [
-          3,
-          6,
-          1,
-          5,
           4,
-          9,
+          1,
           6,
           3,
-          5,
-          1,
-          2,
-          0,
-          8,
           7,
-          2,
+          9,
           4,
+          3,
+          6,
+          1,
+          9,
+          0,
+          7,
+          5,
+          8,
+          2,
           0,
           8,
-          9,
-          7
+          5,
+          2
         ],
         [
-          4,
-          8,
-          8,
-          5,
           0,
+          8,
           4,
-          3,
           1,
+          5,
+          7,
+          4,
           9,
-          6,
           5,
-          2,
-          2,
-          1,
           3,
-          7,
-          7,
+          1,
+          8,
           6,
+          3,
+          9,
           0,
-          9
+          2,
+          6,
+          7,
+          2
         ],
         [
-          4,
-          6,
-          7,
           3,
-          2,
           8,
+          0,
+          5,
+          0,
           1,
           9,
-          5,
-          4,
-          1,
-          0,
-          7,
           6,
           8,
-          0,
-          5,
+          7,
+          4,
+          2,
           2,
           9,
-          3
+          4,
+          7,
+          6,
+          5,
+          3,
+          1
         ]
       ]
     }

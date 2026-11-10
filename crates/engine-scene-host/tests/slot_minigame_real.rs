@@ -48,7 +48,10 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.minigames.casino_coins = 200;
-    world.enter_slot_machine(SlotMachine::new(payouts.clone(), 29, 200));
+    let mut machine = SlotMachine::new(payouts.clone(), 29, 200);
+    // Past the entry fade, which holds state 1 off the pad.
+    machine.skip_entry_fade();
+    world.enter_slot_machine(machine);
     assert_eq!(world.mode, SceneMode::SlotMachine);
 
     // Play a handful of spins through the pad; every evaluated spin must

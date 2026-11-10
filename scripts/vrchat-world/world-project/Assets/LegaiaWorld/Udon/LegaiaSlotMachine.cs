@@ -506,6 +506,9 @@ namespace LegaiaWorld
             }
             for (int i = 0; i < displayStrip.Length; i++)
                 displayStrip[i] = symbolStrip[i];
+            // State 0 is a frame of its own, and the state machine's tail
+            // draws the LCG on every frame.
+            NextRng();
         }
 
         // --- spin (FUN_801cf0d8 states 1-2 + FUN_801d258c) -------------------

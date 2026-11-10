@@ -574,11 +574,14 @@ fn slot_test_machine(balance: i32) -> legaia_engine_minigames::slot_machine::Slo
     for (i, p) in payouts.iter_mut().enumerate() {
         *p = ((i + 1) * 2) as u8;
     }
-    legaia_engine_minigames::slot_machine::SlotMachine::new(
+    let mut m = legaia_engine_minigames::slot_machine::SlotMachine::new(
         SlotPayoutTable { payouts },
         0xC0FFEE,
         balance,
-    )
+    );
+    // Past the entry fade, which holds state 1 off the pad.
+    m.skip_entry_fade();
+    m
 }
 
 #[test]

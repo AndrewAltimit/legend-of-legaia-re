@@ -167,6 +167,9 @@ pub struct SlotMachine {
     /// The screen-fade level `DAT_801d3c98` (`0..=0xFF`) the instruction
     /// pages and the leave fade ramp by `0x10` a frame.
     pub(super) fade: i32,
+    /// The entry fade `DAT_801d3794`: state `0` leaves it at `0xFF`, and state
+    /// `1` runs it down by `8` a frame step before it reads the pad.
+    pub(super) entry_fade: i32,
 }
 
 /// One frame's worth of the machine's sound writes, as retail issues them:
@@ -218,6 +221,11 @@ pub(super) fn spin_voice(tone: i32) -> crate::other_game_overlay::VoiceAttrCue {
     }
 }
 
+/// The entry fade's start level (`li v0,0xff` at `0x801CF38C`, state `0`).
+pub const ENTRY_FADE_START: i32 = 0xFF;
+/// The entry fade's step per frame step (`sll v0,v0,0x3` at `0x801CF3E8`).
+pub const ENTRY_FADE_STEP: i32 = 8;
+
 /// Spin-up frames before the reels may be stopped: state `2` ramps the reels up
 /// one at a time, `0xC` a frame to [`SPIN_SPEED`], nine frames each, then one more
 /// to run `DAT_801d3c90` below zero from its `0`.
@@ -236,6 +244,40 @@ pub const BONUS_SPIN_UP_FRAMES: i32 = 0x18;
 pub const SPIN_SPEED: i32 = 0x66;
 /// One frame's ramp on the reel state `2` is bringing up.
 pub const SPIN_RAMP: i32 = 0xC;
+
+/// [`SlotMachine::frame_row`].
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotRow {
+    /// `DAT_801d3c84`.
+    pub state: i32,
+    /// `DAT_801d4114`.
+    pub balance: i32,
+    /// `DAT_801d3d40`.
+    pub net_take: i32,
+    /// `DAT_801d3cac`.
+    pub mode: u8,
+    /// `DAT_801d3cb0`.
+    pub bonus_spins: i32,
+    /// `DAT_801d3cc0..`, in the machine's payline frame (retail's `+ 0x1000`).
+    pub reel_pos: [i32; REEL_COUNT],
+    /// `DAT_801d3d38`.
+    pub payout: i32,
+    /// `DAT_801d3c8c`.
+    pub line: i32,
+    /// `DAT_801d3c80`.
+    pub lcg: u32,
+    /// The BIOS `rand()` state.
+    pub rand: u32,
+    /// `DAT_801d3790`.
+    pub latch: bool,
+    /// `DAT_801d3ca4`.
+    pub anticipation: i32,
+    /// `DAT_801d4110`.
+    pub cursor: u32,
+    /// `DAT_801d3d50..`, the display strip.
+    pub strips: [[u8; STRIP_LEN]; REEL_COUNT],
+}
 
 /// What [`SlotMachine::seat`] stands a machine on.
 #[derive(Debug, Clone, Copy)]
@@ -273,6 +315,9 @@ impl SlotMachine {
             symbol_strips[reel] = symbols;
             bonus_strips[reel] = bonus;
         }
+        // State `0` is a frame of its own, and the state machine's tail draws
+        // the LCG on every frame (`jal 0x801D30CC` at `0x801CFF48`).
+        rng.next_u32();
         Self {
             payouts,
             rng,
@@ -306,11 +351,13 @@ impl SlotMachine {
             anticipation_sounded: false,
             payout_left: 0,
             win_line: -1,
-            frame: 0,
+            // State `0`'s own frame has already stepped it (`0x801CFF14`).
+            frame: 1,
             sounds: SlotSounds::default(),
             menu_state: 0,
             menu_cursor: 0,
             fade: 0,
+            entry_fade: ENTRY_FADE_START,
         }
     }
 
@@ -492,6 +539,56 @@ impl SlotMachine {
     /// The LCG word `DAT_801D3C80`.
     pub fn rng_state(&self) -> u32 {
         self.rng.state()
+    }
+
+    /// Seat the BIOS `rand()` stream the feature roll draws, for the retail
+    /// kernel differential.
+    #[doc(hidden)]
+    pub fn seat_rand(&mut self, state: u32) {
+        self.rand = BiosRand::new(state);
+    }
+
+    /// The BIOS `rand()` stream's state.
+    #[doc(hidden)]
+    pub fn rand_state(&self) -> u32 {
+        self.rand.state()
+    }
+
+    /// Skip the entry fade ([`ENTRY_FADE_START`]), for a caller that seats a
+    /// machine mid-session.
+    pub fn skip_entry_fade(&mut self) {
+        self.entry_fade = 0;
+    }
+
+    /// Seat the feature mode, its bonus-spin count and the net take on an
+    /// idle machine, for the retail kernel differential.
+    #[doc(hidden)]
+    pub fn seat_mode(&mut self, mode: u8, bonus_spins: i32, net_take: i32) {
+        self.feature_mode = mode;
+        self.bonus_spins = bonus_spins;
+        self.net_take = net_take;
+    }
+
+    /// The state machine's words after a frame, in retail's own terms, for
+    /// the retail kernel differential.
+    #[doc(hidden)]
+    pub fn frame_row(&self) -> SlotRow {
+        SlotRow {
+            state: self.retail_state(),
+            balance: self.balance,
+            net_take: self.net_take,
+            mode: self.feature_mode,
+            bonus_spins: self.bonus_spins,
+            reel_pos: self.reel_pos,
+            payout: self.payout_left,
+            line: self.win_line,
+            lcg: self.rng.state(),
+            rand: self.rand.state(),
+            latch: self.spin_up_pressed,
+            anticipation: self.anticipation,
+            cursor: self.menu_cursor,
+            strips: self.strips,
+        }
     }
 
     /// The payline row index of `reel`.

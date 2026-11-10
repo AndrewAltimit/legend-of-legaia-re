@@ -375,6 +375,118 @@ mod exchange {
             |_| {},
         );
     }
+
+    /// The damage kernel `FUN_801D3B18` called on its own over seated blocks
+    /// and actors, every attack type on either seat, the special's last
+    /// sub-keyframe included, against `BakaFight::apply_damage`.
+    #[test]
+    fn a_blow_lands_as_retail_lands_it() {
+        differential!(prot(976, DAMAGE));
+        const DAMAGE: u32 = 0x801D_3B18;
+        const ACTOR: [u32; 2] = [0x8014_0000, 0x8014_0100];
+        const CLIP_BASE: [u32; 2] = [0, 0x400];
+        const ACTION_TABLES: u32 = 0x801D_B8B8;
+        const PUSH: u32 = 0x801D_BEC0;
+        let Some(mut r) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        r.cpu.stub(0x8005_67A8, 0);
+        let mut rng = Rng(0x424C_4F57);
+        let (mut finishers, mut crits, mut specials) = (0, 0, 0);
+        for round in 0..100_000 {
+            let rosters = [
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+            ];
+            let mut seats = random_seats(&mut rng, &r.opponents, rosters);
+            let loser = rng.below(2) as usize;
+            let winner = loser ^ 1;
+            // The winner holds an attack: the caller books a blow only for one.
+            seats[winner].chosen = 1 + rng.below(4) as u8;
+            // A round opens on a streak of 0, where the streak term is `-0x40`.
+            seats[loser].combo = rng.below(6) as i32;
+            let count = r.actions[rosters[winner]].keyframes[bo::ACTION_SPECIAL];
+            let landed = match rng.below(3) {
+                0 => None,
+                1 => Some((count - 1).max(0) as usize),
+                _ => Some(rng.below(count.max(1) as u32) as usize),
+            };
+            let mut f = BakaFight::from_tables(&r.opponents, &r.actions, rosters[0], rosters[1], 0)
+                .expect("fight");
+            f.seat_exchange(seats, 0, 0);
+            for s in 0..2usize {
+                seat(&mut r.cpu, s as u32, rosters[s], seats[s]);
+                let b = BLOCK + s as u32 * STRIDE;
+                let rec = ROSTER + rosters[s] as u32 * 0x6C;
+                let damage_mod = r.cpu.mem.rd32(rec + 0x24);
+                let table = r.cpu.mem.rd32(ACTION_TABLES + rosters[s] as u32 * 4);
+                r.cpu.mem.wr32(b + 0x0C, 1);
+                r.cpu.mem.wr32(b + 0x10, u32::from(seats[s].chosen));
+                r.cpu.mem.wr32(b + 0x14, CLIP_BASE[s]);
+                r.cpu.mem.wr32(b + 0x18, damage_mod);
+                r.cpu.mem.wr32(b + 0x20, 0);
+                r.cpu.mem.wr32(b + 0x34, 0);
+                r.cpu.mem.wr32(b + 0x38, 0);
+                r.cpu.mem.wr32(b + 0x98, u32::MAX);
+                for o in (0..0x100).step_by(4) {
+                    r.cpu.mem.wr32(ACTOR[s] + o, 0);
+                }
+                r.cpu.mem.wr32(ACTOR[s] + 0x48, table);
+                r.cpu.mem.wr32(0x801D_BFA0 + s as u32 * 4, ACTOR[s]);
+                r.cpu.mem.wr32(0x801D_BFAC + s as u32 * 4, ACTOR[s]);
+            }
+            r.cpu.mem.wr32(
+                BLOCK + winner as u32 * STRIDE + 0x98,
+                landed.map_or(u32::MAX, |i| i as u32),
+            );
+            r.cpu.mem.wr32(PUSH, 0);
+            assert_eq!(r.cpu.call(DAMAGE, &[loser as u32]), Stop::Returned);
+            f.land_blow(loser, landed);
+
+            let word =
+                |cpu: &mut Cpu, s: usize, o: u32| cpu.mem.rd32(BLOCK + s as u32 * STRIDE + o);
+            let retail = (
+                [read(&mut r.cpu, 0), read(&mut r.cpu, 1)],
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x34)),
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x38)),
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x20) != 0),
+                word(&mut r.cpu, winner, 0x0C),
+                i32::from(r.cpu.mem.rd16(ACTOR[loser] + 0x5C) as i16) - CLIP_BASE[loser] as i32 - 1,
+                (
+                    i32::from(r.cpu.mem.rd16(ACTOR[0] + 0x14) as i16),
+                    r.cpu.mem.rd32(PUSH) as i32,
+                ),
+                i32::from(r.cpu.mem.rd16(ACTOR[1] + 0x14) as i16),
+            );
+            let strike = match f.strike_clock(winner).state {
+                legaia_engine_minigames::baka_fighter::StrikeState::Armed => 0,
+                legaia_engine_minigames::baka_fighter::StrikeState::Landed => 1,
+                legaia_engine_minigames::baka_fighter::StrikeState::Consumed => 2,
+            };
+            let port = (
+                f.exchange_seats(),
+                [f.round_wins(0), f.round_wins(1)],
+                [f.hits_taken(0), f.hits_taken(1)],
+                [f.locked(0), f.locked(1)],
+                strike,
+                f.motion(loser).record as i32,
+                f.push_back(),
+                f.push_back().0,
+            );
+            assert_eq!(
+                retail, port,
+                "round {round} rosters {rosters:?} seats {seats:?} loser {loser} landed {landed:?}"
+            );
+            finishers += u32::from(retail.1 != [0, 0]);
+            crits += u32::from(seats[winner].crit_pending);
+            specials += u32::from(seats[winner].chosen == 4 && seats[loser].hp > 0);
+        }
+        assert!(
+            finishers > 1000 && crits > 1000 && specials > 1000,
+            "{finishers} {crits} {specials}"
+        );
+    }
 }
 
 /// The HUD's number drawers: the right-aligned 8px field `FUN_801D6A18`, the

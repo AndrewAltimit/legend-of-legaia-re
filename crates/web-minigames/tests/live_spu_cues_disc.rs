@@ -212,6 +212,10 @@ fn the_reel_motor_is_keyed_and_released_by_the_machine() {
     // Cross spins at idle.
     const CROSS: u32 = 0x40;
     assert!(mg.slot_start(1000));
+    // The entry fade holds state 1 off the pad for thirty-two frames.
+    for _ in 0..32 {
+        mg.slot_step(0);
+    }
     mg.slot_step(CROSS);
     for _ in 0..10 {
         mg.slot_step(0);
@@ -292,6 +296,10 @@ fn a_spin_sounds_the_machines_ring_cues() {
     const SQUARE: u32 = 0x80;
     const CIRCLE: u32 = 0x20;
     assert!(mg.slot_start(1000));
+    // The entry fade holds state 1 off the pad for thirty-two frames.
+    for _ in 0..32 {
+        mg.slot_step(0);
+    }
     mg.slot_step(CROSS);
     for _ in 0..60 {
         mg.slot_step(0);

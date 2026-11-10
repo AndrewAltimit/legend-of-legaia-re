@@ -308,14 +308,15 @@ fn special_beats_everything_with_fighter0_priority() {
 }
 
 #[test]
-fn special_won_exchange_never_moves_hp_and_never_heals() {
-    // The regression at the value, not just the sign. The special's action
-    // record carries power 0 (all 17 fighters on the disc), so the raw
-    // kernel total for a special on a fresh combo is the bare combo term
-    // `(0-1)*0x40 = -64` - which used to be *applied*, healing the foe
-    // from 3200 to 3264 ("you hit -64"). The kernel's HP write is
-    // `hp > 0`-gated (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58`),
-    // so a special-won exchange lands exactly zero HP change.
+fn a_special_takes_the_kernels_own_arithmetic() {
+    // The special's action record carries power 0 (all 17 fighters on the
+    // disc), so the kernel's total for one is the bare streak term
+    // `(combo - 1) * 0x40`, and the HP write behind it is gated on the
+    // struck seat's HP alone (`overlay_baka_fighter_801d3b18.txt`
+    // `0x801d3e58`). In play the special is the auto-finisher, thrown at a
+    // seat already at 0 HP, so nothing moves. Forced onto a standing seat on
+    // a fresh streak, as here, the term is `-0x40` and retail's kernel adds
+    // it; the retail kernel differential holds the port to that.
     let mut f = striking_fight(16, &[9], &[1, 3]);
     throw_special(&mut f, 0);
     // A thrown special shuts both seats' pads (`0x801D43A8`).
@@ -330,9 +331,19 @@ fn special_won_exchange_never_moves_hp_and_never_heals() {
     let r = f.last_exchange().expect("resolved");
     assert_eq!(r.winner, 0, "the special wins the exchange");
     assert!(!r.special_round_win, "first of two strikes - no round win");
-    assert_eq!(r.damage, 0, "a special-won exchange's HP delta is zero");
-    assert_eq!(f.hp(1), HP_START, "the foe is neither damaged nor healed");
+    assert_eq!(r.damage, -COMBO_DAMAGE_STEP);
+    assert_eq!(f.hp(1), HP_START + COMBO_DAMAGE_STEP);
     assert_eq!(f.hp(0), HP_START);
+
+    // The finisher's own case: a seat at 0 HP takes nothing.
+    let mut f = striking_fight(16, &[9], &[1, 3]);
+    f.f[1].hp = 0;
+    throw_special(&mut f, 0);
+    while f.last_exchange().is_none() {
+        f.tick(1);
+    }
+    assert_eq!(f.last_exchange().expect("resolved").damage, 0);
+    assert_eq!(f.hp(1), 0);
 }
 
 #[test]
