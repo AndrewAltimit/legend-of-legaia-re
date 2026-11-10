@@ -1267,11 +1267,14 @@ pub(super) fn talk_beats(
     slots
 }
 
-/// Step onto the middle of box-test tile `t`, the tile a script's `CD`
-/// BBoxTest reads off the actor (`(x - 0x40) >> 7`): world `t * 128 + 128`
-/// on each axis. `Some(scene)` if a scene change landed.
+/// Step into box-test tile `t`, the tile a script's `CD` BBoxTest reads off
+/// the actor. The op has two derivations, chosen by a scratchpad bit
+/// (`0x801DFADC`): `(x - 0x40) >> 7` and `x >> 7`. World `t * 128 + 96` on
+/// each axis is inside the tile under both; a stand at `t * 128 + 128` sits
+/// on the second form's tile edge (`doman`'s intercom, z 10496). `Some(scene)`
+/// if a scene change landed.
 pub(super) fn center_on_box_tile(session: &mut NativeSession, t: (u8, u8)) -> Option<String> {
-    let at = (i16::from(t.0) * 128 + 128, i16::from(t.1) * 128 + 128);
+    let at = (i16::from(t.0) * 128 + 96, i16::from(t.1) * 128 + 96);
     pad_lean(
         session,
         |_| Some(at),
@@ -1283,16 +1286,21 @@ pub(super) fn center_on_box_tile(session: &mut NativeSession, t: (u8, u8)) -> Op
     )
 }
 
+/// Whether the player stands inside box-test tile `t` under both of the op's
+/// tile derivations.
+fn inside_box_tile(session: &NativeSession, t: (u8, u8)) -> bool {
+    let (x, z) = player_xz(session);
+    let (tx, tz) = (i32::from(t.0), i32::from(t.1));
+    ((i32::from(x) - 0x40) >> 7, (i32::from(z) - 0x40) >> 7) == (tx, tz)
+        && (i32::from(x) >> 7, i32::from(z) >> 7) == (tx, tz)
+}
+
 /// Talk to `slot` without leaving box-test tile `t`: lean toward its actor
 /// while the player's own tile stays `t`, until a facing's probe reaches it,
 /// then press Cross and page what opens. `None` when no facing reaches it
 /// from inside the box.
 pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) -> Option<Run> {
-    let box_tile = |s: &NativeSession| {
-        let (x, z) = player_xz(s);
-        ((i32::from(x) - 0x40) >> 7, (i32::from(z) - 0x40) >> 7)
-    };
-    let inside = |s: &NativeSession| box_tile(s) == (i32::from(t.0), i32::from(t.1));
+    let inside = |s: &NativeSession| inside_box_tile(s, t);
     let reaches = |s: &mut NativeSession| {
         (0..8u8).any(|d| {
             s.host.world.face_player_sector(d);

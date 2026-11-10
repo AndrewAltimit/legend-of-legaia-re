@@ -1648,6 +1648,8 @@ A tristate state machine on `_DAT_8007B450`, with sub-cases 0..0xD:
 - **Armed** (`!= 0, != 1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (the Done writer is field-overlay `FUN_801F159C`-class).
 - **Done** (`== 1`): clears it and advances the PC.
 
+A talk that reaches the op parks on it like any other context, and runs on from the Done edge when the screen closes. `doman` P1[18] acts on its `49 02` code lock in the same pass: it raises `0x36E` and `0x371` and sends Dr. Usha's assistants off.
+
 Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0
 (`0x801E08DC..0x801E0910`) reads its length from the **third** operand byte:
 with `s6` the operand pointer (`s6 = op + 1`, the sub-op at `s6[0]`), it loads

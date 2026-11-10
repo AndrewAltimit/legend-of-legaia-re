@@ -1938,6 +1938,7 @@ With `npcs.solid` armed a body stops the walk exactly as it stops a player, and 
 - **A failed plan is remembered only while the bodies stand where they stood.** One walking past un-seals what it sealed.
 - **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
 - **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
+- **A door contact that lands on the tile it is pressed from is not an exit.** With two assistants beside the player on `doman`'s (103, 100), P1[15]'s contact read as the only way out and the walk pressed into it for good; the open step is east.
 
 A body can also be a story gate, and then no route is the right answer. `deene` P1[4] and P1[5] stand in the only way to the rest of the town until the `0x6C6` branch moves them, and `kor`'s guard dogs hold the `korb2` doorway until `0x40A` ([an errand the story waits on](#an-errand-the-story-waits-on)). A milestone whose seeded route would need to walk through one names the chain that moves it as `pad_via`, the waypoints the seeded pad tier plays instead of `via`.
 

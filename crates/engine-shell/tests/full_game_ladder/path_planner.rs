@@ -1253,10 +1253,16 @@ pub(super) fn plan_search(
         // axis, so only these doors can answer the contact test below; the
         // list keeps `doors`' order, and the test's first match with it.
         near_doors.clear();
-        near_doors.extend(doors.iter().copied().filter(|((dx, dz), _)| {
+        near_doors.extend(doors.iter().copied().filter(|((dx, dz), land)| {
+            let (lx, lz) = cell_center(*land);
+            // A contact that lands on the tile it is pressed from goes
+            // nowhere, and with bodies solid it is no way out of a corner the
+            // people have closed: `doman`'s P1[15] with two assistants beside
+            // the player on (103, 100), where the step east is the open one.
             (i32::from(cx) - i32::from(*dx)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
                 && (i32::from(cz) - i32::from(*dz)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
                 && !skip.contains(&(*dx, *dz))
+                && !(w.npcs.solid && dispatch_tile(lx, lz) == here)
         }));
         for ((dx, dz), dir) in STEPS {
             let next = (cur.0 + dx, cur.1 + dz);
