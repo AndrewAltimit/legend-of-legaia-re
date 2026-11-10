@@ -758,6 +758,11 @@ impl BakaDuelScene {
     /// `0x801CFD2C` and `0x801CFD4C` that the select pose does not model).
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
+        // The drop shadows are the combat tick's (`FUN_801D3F44` calls
+        // `FUN_801D6BB8` at `0x801D40B4` / `0x801D47F4`), which no front-end
+        // state runs: unposed, they would sit at the origin under the title
+        // card and the lineup.
+        dead.extend(self.shadows.iter().cloned());
         dead.extend(self.ghost.iter().flatten().cloned());
         dead.push(self.cameo.clone());
         dead.push(self.clear_fighter.clone());

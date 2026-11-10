@@ -588,9 +588,9 @@ The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in
 
 The emitter's per-vertex colour is the `DPCS` depth cue the battle grid uses: `IR0 = SZ >> 2` (`0x801CEEC4..0x801CEF4C`, the `mtc2` unclamped) from the scratch colour word toward the far colour, both stored by the epilogue (`0x801D1FCC`: `0x8007B7B0 = 0xE0E0E0`, far `0x202020`). `minigame_baka_fighter_retail_fight`'s lattice holds `SZ` `16672` on its far row, whose colour runs to the far word.
 
-`FUN_801D6BB8` draws one `FUN_80028158` ground disc at a world point (mode `1`, the XZ plane, `0x18` columns, flag word through `FUN_80043390`). The combat tick passes each fighter's position with colours `0x808080` / `0x070707`, radius `0x100`, flag `0x8A000000` (subtractive): the drop shadow. The epilogue passes the focus X with `0x80A0C0` / `0x070707`, radius `0x400`, flag `0x99000000` (additive): the warm pool of light on the floor.
+`FUN_801D6BB8` draws one `FUN_80028158` ground disc at a world point (mode `1`, the XZ plane, `0x18` columns, flag word through `FUN_80043390`). The combat tick passes each fighter's position with colours `0x808080` / `0x070707`, radius `0x100`, flag `0x8A000000` (subtractive): the drop shadow. The epilogue passes the focus X with `0x80A0C0` / `0x070707`, radius `0x400`, flag `0x99000000` (additive): the warm pool of light on the floor. The combat tick's two calls (`0x801D40B4`, `0x801D47F4` in `overlay_baka_fighter_801d3f44.txt`) are the only shadow calls, so no front-end state (the attract card, the player select) draws a shadow.
 
-Port: `BakaDuelScene::cue_floor`, the `glow` and `shadows` ranges over `effect_default_arm::ground_disc_mesh`. Both discs sample the builder's patch texel (`0xB9CE`, level `14` of `31`, CLUT row 510 of the system page), which the duel VRAM does not hold, so the port's fill carries `texel * colour / 128`. `0x99` has no bank bit: bits `0x04000000` and `0x20000000` are clear, so the handler is the plain depth-cued bank. Against `minigame_baka_fighter_retail_fight` the floor stays about `+30` brighter than retail on rows above the fighters.
+Port: `BakaDuelScene::cue_floor`, the `glow` and `shadows` ranges over `effect_default_arm::ground_disc_mesh`. Both discs sample the builder's patch texel (`0xB9CE`, level `14` of `31`, CLUT row 510 of the system page), which the duel VRAM does not hold, so the port's fill carries `texel * colour / 128`. `0x99` has no bank bit: bits `0x04000000` and `0x20000000` are clear, so the handler is the plain depth-cued bank. Against `minigame_baka_fighter_retail_fight` the floor stays about `+30` brighter than retail on rows above the fighters. The shadow ranges are collapsed in every front-end state (`pose_front_end`); posed nowhere, they sat at the origin under the title card and the lineup (`baka_duel_scene_real.rs`, `the_drop_shadows_draw_in_the_duel_and_never_in_the_front_end`).
 
 ### In the port
 
@@ -1088,7 +1088,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D3390` | player-select lineup tick |
 | `FUN_801CEB84` | arena floor grid emitter |
 | `FUN_801D6D60` | placed stage-model draw (the walls) |
-| `FUN_801D6BB8` | flat marker at a world point (drop shadow) - not drawn by the port |
+| `FUN_801D6BB8` | ground disc at a world point: the fighters' drop shadows and the pool of light |
 | `FUN_801D6910` / `FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` | setters of the camera-glide record at `0x80070764`: angles, eye trio, focus, `H` |
 | `FUN_801D6480` / `FUN_801D6770` | raw GPU quad emitters into the OT scratch `_DAT_1F8003A0` (gouraud code `0x3A` / flat `0x28`; `FUN_801D6770` links through `FUN_8003D2C4`) |
 | `FUN_801D657C` | vertex-colour packet build (two packed RGBs -> 6 components) + GTE submit `FUN_80024E80`; the fade actor |
@@ -1246,7 +1246,6 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
 - The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.
 - The minigames page draws the duel HUD page-side rather than through `baka_screen_prims`.
-- The drop shadow `FUN_801D6BB8` is not drawn.
 - The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
 
 **Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.

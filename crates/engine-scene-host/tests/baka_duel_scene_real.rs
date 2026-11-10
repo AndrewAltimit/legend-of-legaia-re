@@ -347,3 +347,88 @@ fn the_all_clear_stands_its_fighter_on_the_surface() {
         assert_eq!(seen, want, "stage {stage}");
     }
 }
+
+/// The drop shadows (`FUN_801D6BB8` with the `0x8A` flag word, `B - F`) are
+/// the combat tick's alone (`FUN_801D3F44` calls it at `0x801D40B4` /
+/// `0x801D47F4`): the cabinet's front end - the attract card and the player
+/// select - draws none, so every one of their prims sits collapsed there,
+/// and the duel draws them. A shadow left at its build position sat at the
+/// origin under the title card and the lineup.
+#[test]
+fn the_drop_shadows_draw_in_the_duel_and_never_in_the_front_end() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(host) = SceneHost::open_disc(&disc) else {
+        eprintln!("[skip] open_disc failed");
+        return;
+    };
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = host
+        .index
+        .entry_bytes_extended(rec.prot_index)
+        .expect("read PROT 0976");
+    let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let opponents = baka_opponents::parse(&loaded).expect("roster parses");
+    let actions = baka_opponents::parse_actions(&loaded).expect("actions parse");
+    let read = |i: usize| host.index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+    let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
+    let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0x5EED)
+        .expect("fight builds")
+        .with_roster_clip_headers(roster_clip_headers(read))
+        .with_attract();
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_baka_fighter(fight);
+    let mut surface = BakaDuelSurface::default();
+
+    // A shadow prim: untextured, semi-transparent, ABR 2.
+    let shadow_extent = |scene: &ds::BakaDuelScene| -> f32 {
+        let mut extent = 0.0f32;
+        for t in scene.untextured_indices.chunks(3) {
+            let tsb = scene.cba_tsb[t[0] as usize][1];
+            if tsb & 0x8000 == 0 || (tsb >> 5) & 3 != 2 {
+                continue;
+            }
+            for &v in t {
+                let p = scene.positions[v as usize];
+                extent = extent.max(p[0].abs().max(p[1].abs()).max(p[2].abs()));
+            }
+        }
+        extent
+    };
+    let (mut front_frames, mut duel_frames) = (0, 0);
+    for frame in 0..1500 {
+        let Some(f) = world.minigames.baka_fighter.as_ref() else {
+            break;
+        };
+        let front = f.cabinet().front_end();
+        let scene = surface.frame(read, Some(f)).expect("surface builds");
+        let extent = shadow_extent(scene);
+        if front {
+            front_frames += 1;
+            assert_eq!(extent, 0.0, "frame {frame}: a front-end shadow is drawn");
+        } else {
+            duel_frames += 1;
+            assert!(extent > 0.0, "frame {frame}: the duel draws its shadows");
+        }
+        if duel_frames > 60 {
+            break;
+        }
+        // Cross through the attract card and the select (the host pair's
+        // minigame rhythm).
+        let pad = if frame >= 20 && frame % 16 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        world.set_pad(pad);
+        let _ = world.tick();
+    }
+    eprintln!("[ok] {front_frames} front-end frames, {duel_frames} duel frames");
+    assert!(front_frames > 0, "the run starts in the front end");
+    assert!(duel_frames > 0, "the run reaches the duel");
+}
