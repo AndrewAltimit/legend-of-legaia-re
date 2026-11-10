@@ -62,6 +62,7 @@ mod camera_mover;
 mod camera_rel;
 mod camera_tween;
 mod capture_cameras;
+mod capture_curse;
 mod capture_takedown;
 mod capture_trampolines;
 mod cast_cue;
