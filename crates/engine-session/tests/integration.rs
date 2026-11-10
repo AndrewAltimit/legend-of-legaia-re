@@ -46,6 +46,7 @@ mod rayman_collapse_audio_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;
 mod rikuroa_cave_far_crop_disc;
+mod rikuroa_summit_cutscene_cull_disc;
 mod rot_clut_disc;
 mod rugi_arrival_player_clip_disc;
 mod save_gate_field_menu;
