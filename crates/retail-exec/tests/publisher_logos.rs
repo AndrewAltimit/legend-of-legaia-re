@@ -95,7 +95,7 @@ fn the_logo_quads_are_the_retail_ones() {
             let want: Vec<LogoQuad> = LOGO_QUADS[logo].to_vec();
             let geometry: Vec<LogoQuad> = got.iter().map(|(q, _)| *q).collect();
             assert_eq!(geometry, want, "logo {logo} level {level:#x}");
-            let shade = (0xFF * level >> 8) as u8;
+            let shade = ((0xFF * level) >> 8) as u8;
             for (_, rgb) in &got {
                 assert_eq!(*rgb, [shade; 3], "logo {logo} level {level:#x}");
             }
