@@ -5,12 +5,16 @@
 //! (`t = *0x801EF1A0`, `0..=0x1000`), read off the per-cell drawer
 //! `FUN_801E0FD0`'s pen, which is hooked; the info panel and its helper are
 //! stubbed. And the info panel's mode selector `FUN_801E3F74` against
-//! `SlotInfoMode::for_grid_cell`.
+//! `SlotInfoMode::for_grid_cell`, the title strips behind the Load window
+//! `FUN_801E0418` against `title_strip_rows`, and the record quad
+//! `FUN_801E3FF0` against `save_ui_record_quad`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::save_select::{SlotContent, SlotInfoMode, SlotSnapshot};
-use legaia_engine_ui::{SLOT_GRID_COLS, SLOT_GRID_ROWS, slot_grid_quad_x};
-use psx_retail_exec::{A0, A1, A2, Stop, V0};
+use legaia_engine_ui::{
+    SLOT_GRID_COLS, SLOT_GRID_ROWS, save_ui_record_quad, slot_grid_quad_x, title_strip_rows,
+};
+use psx_retail_exec::{A0, A1, A2, A3, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,6 +23,13 @@ const GRID: u32 = 0x801E_06C0;
 const CELL: u32 = 0x801E_0FD0;
 const SLIDE: u32 = 0x801E_F1A0;
 const MODE: u32 = 0x801E_3F74;
+const STRIPS: u32 = 0x801E_0418;
+/// The strips' frame clock, advanced `0x20` per skipped frame.
+const STRIP_CLOCK: u32 = 0x801F_3294;
+const RECORD_QUAD: u32 = 0x801E_3FF0;
+/// The save UI's sprite-record table (`[clut][u][v][w][h]`, 12-byte stride,
+/// eight records).
+const RECORDS: u32 = 0x801E_5048;
 /// The per-slot scanned flags and class bytes the card walk writes, and the
 /// card op flag (`0` save, `1` load).
 const SCANNED: u32 = 0x801F_2A68;
@@ -220,4 +231,158 @@ fn the_info_panel_mode_is_the_one_retail_picks() {
         assert_eq!(cpu.regs.r[V0], if cell == 15 { 4 } else { 2 });
     }
     assert!(seen[1..].iter().all(|&n| n > 500), "{seen:?}");
+}
+
+#[test]
+fn the_title_strips_behind_the_load_window_are_retails() {
+    differential!(prot(899, STRIPS));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &d.read_entry_footprint(899).expect("PROT 0899"),
+    );
+    // The record drawer `FUN_801E2EE4(mode, x, y, record, brightness, scale)`.
+    let drawn: Rc<RefCell<Vec<(u32, i32, i32, u32, i32, u32)>>> = Rc::default();
+    let dr = drawn.clone();
+    cpu.hook(0x801E_2EE4, move |r, m| {
+        let sp = r.r[psx_retail_exec::SP];
+        dr.borrow_mut().push((
+            r.r[A0],
+            r.r[A1] as i32,
+            r.r[A2] as i32,
+            r.r[A3],
+            m.rd32(sp + 0x10) as i32,
+            m.rd32(sp + 0x14),
+        ))
+    });
+    let mut rng = Rng(0x5354_5250);
+    for case in 0..2_000 {
+        let selected = [0u32, 1, rng.next()][rng.below(3) as usize];
+        cpu.mem.wr32(0x8007_B820, selected);
+        let brightness = rng.below(0x100) as i32;
+        let counter = rng.next();
+        let skip = rng.below(4) as u8;
+        cpu.mem.wr32(STRIP_CLOCK, counter);
+        cpu.mem.wr8(0x1F80_0393, skip);
+        drawn.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STRIPS, &[brightness as u32]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let want: Vec<(u32, i32, i32, u32, i32, u32)> = title_strip_rows(selected != 0)
+            .iter()
+            .map(|row| {
+                let b = if row.half_bright {
+                    brightness / 2
+                } else {
+                    brightness
+                };
+                (2, 0xA0, row.y, u32::from(row.record), b, 0x1000)
+            })
+            .collect();
+        assert_eq!(*drawn.borrow(), want, "case {case}: selected {selected:#x}");
+        assert_eq!(
+            cpu.mem.rd32(STRIP_CLOCK),
+            counter.wrapping_add(u32::from(skip) * 0x20),
+            "case {case}: the frame clock"
+        );
+    }
+}
+
+#[test]
+fn a_save_ui_record_quad_lands_where_retail_puts_it() {
+    differential!(prot(899, RECORD_QUAD));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &d.read_entry_footprint(899).expect("PROT 0899"),
+    );
+    let linked: Rc<RefCell<Vec<u32>>> = Rc::default();
+    let l = linked.clone();
+    cpu.hook(0x8003_D2C4, move |r, _| l.borrow_mut().push(r.r[A1]));
+    let mut rng = Rng(0x5155_4144);
+    for case in 0..4_000 {
+        let index = rng.below(8);
+        let rgb = (rng.next() as u8, rng.next() as u8, rng.next() as u8);
+        let word = u32::from(rgb.0) | u32::from(rgb.1) << 8 | u32::from(rgb.2) << 16;
+        let (x, y) = (rng.below(320) as i32 - 16, rng.below(240) as i32 - 16);
+        cpu.mem.wr32(0x1F80_03A0, 0x8010_0000);
+        cpu.mem.wr32(0x1F80_03F4, 0x8018_0000);
+        linked.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(RECORD_QUAD, &[index, word, x as u32, y as u32]),
+            Stop::Returned
+        );
+        let p = 0x8010_0000;
+        assert_eq!(*linked.borrow(), [p], "case {case}");
+        let rec = RECORDS + index * 12;
+        let record = (
+            u32::from(cpu.mem.rd8(rec + 2)),
+            u32::from(cpu.mem.rd8(rec + 4)),
+            u32::from(cpu.mem.rd16(rec + 6)),
+            u32::from(cpu.mem.rd16(rec + 8)),
+        );
+        let m = &mut cpu.mem;
+        assert_eq!(m.rd8(p + 7), 0x2C, "case {case}: a textured quad");
+        let rgb_got = (m.rd8(p + 4), m.rd8(p + 5), m.rd8(p + 6));
+        let xy: Vec<(i32, i32)> = (0..4)
+            .map(|k| {
+                (
+                    m.rd16(p + 8 + k * 8) as i16 as i32,
+                    m.rd16(p + 10 + k * 8) as i16 as i32,
+                )
+            })
+            .collect();
+        let uv: Vec<(u32, u32)> = (0..4)
+            .map(|k| {
+                (
+                    u32::from(m.rd8(p + 12 + k * 8)),
+                    u32::from(m.rd8(p + 13 + k * 8)),
+                )
+            })
+            .collect();
+        let q = save_ui_record_quad(record, rgb, (x, y), (0, 0), 1);
+        let what = format!("case {case}: record {index} {record:?}");
+        assert_eq!(rgb_got, rgb, "{what}");
+        let (dx, dy, dw, dh) = q.dst;
+        assert_eq!(
+            xy,
+            vec![
+                (dx, dy),
+                (dx + dw as i32, dy),
+                (dx, dy + dh as i32),
+                (dx + dw as i32, dy + dh as i32)
+            ],
+            "{what}: corners"
+        );
+        let (su, sv, sw, sh) = q.src;
+        let wrap = |v: u32| v & 0xFF;
+        assert_eq!(
+            uv,
+            vec![
+                (su, sv),
+                (wrap(su + sw), sv),
+                (su, wrap(sv + sh)),
+                (wrap(su + sw), wrap(sv + sh))
+            ],
+            "{what}: texels"
+        );
+        assert_eq!(
+            q.color,
+            [
+                f32::from(rgb.0) / 128.0,
+                f32::from(rgb.1) / 128.0,
+                f32::from(rgb.2) / 128.0,
+                1.0
+            ],
+            "{what}"
+        );
+    }
 }
