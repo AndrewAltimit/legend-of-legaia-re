@@ -493,7 +493,7 @@ pub(super) fn phase_ready(session: &NativeSession, flag: u16, on: bool) -> bool 
 
 /// Can a step ever be timed into phase `on` of `flag`? Not when the phase
 /// has been seen to run shorter than the pad takes to test it: `rugi`'s
-/// `0x462` is up for under a hundred frames a lap, and a step taken as it
+/// `0x462` is up for 174 frames of every 872, and a step taken as it
 /// rises is tested after it has dropped. A phase not yet timed is assumed
 /// usable.
 pub(super) fn phase_usable(session: &NativeSession, flag: u16, on: bool) -> bool {
