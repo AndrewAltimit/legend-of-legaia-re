@@ -121,6 +121,7 @@ mod seated_hops;
 mod segment;
 mod session;
 mod spine;
+mod terra_quiz;
 mod walk_links;
 
 use beat_records::*;

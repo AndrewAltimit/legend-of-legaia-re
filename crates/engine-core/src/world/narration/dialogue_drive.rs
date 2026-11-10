@@ -850,7 +850,18 @@ impl World {
                 }
                 r
             } else {
-                field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc)
+                // A talk runs on the touched actor's context, so a plain
+                // `22 <clip>` plays the clip on that actor (`FUN_80024E08`):
+                // Terra's legs through `cave01` P1[2]'s `22 09` walk-off.
+                let own_clip = b == 0x22 && id.prop_anchor.is_none();
+                if own_clip {
+                    host.world.field_vm.executing_channel = id.npc_slot;
+                }
+                let r = field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+                if own_clip {
+                    host.world.field_vm.executing_channel = None;
+                }
+                r
             };
             host.world.dialog.stepping_inline_npc = talker;
             // The talker's own seat (`23 x z`, no target byte): the talk and

@@ -565,6 +565,39 @@ impl World {
                                 || tl.npc_faces.iter().any(|f| f.slot == slot)
                                 || tl.npc_facings.iter().any(|f| f.slot == Some(slot))
                         });
+                // The engaged actor's own leg in flight: as in the talk runner
+                // (`InlineDialogue::own_turn`), plain ops run on, another
+                // acquire on it waits, and `33 0A` spins on the bit the leg
+                // holds. A `4A` counts on the leg's `+0x54` as well, so the
+                // leg runs twice as fast under it.
+                // REF: FUN_801DE840 (0x801DE88C, 0x801DEE2C), FUN_8003774C
+                let engaged_leg = tl.interaction_slot.filter(|slot| {
+                    npc_glide_hold.contains(slot)
+                        || tl.npc_glides.iter().any(|g| g.slot == *slot)
+                        || tl.npc_walks.contains(slot)
+                        || tl.npc_facings.iter().any(|f| f.slot == Some(*slot))
+                });
+                if engaged_leg.is_some() {
+                    if matches!(opcode_byte, 0x37 | 0x38 | 0x41 | 0x43 | 0x47)
+                        || (opcode_byte == 0x33 && tl.bytecode.get(pc + 1) == Some(&0x0A))
+                    {
+                        tl.frames = tl.frames.saturating_sub(1);
+                        break;
+                    }
+                    if opcode_byte == 0x4A {
+                        let delta = host.world.clock.script_frame_delta();
+                        for leg in tl
+                            .npc_glides
+                            .iter_mut()
+                            .filter(|g| Some(g.slot) == engaged_leg)
+                        {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                        for leg in tl.npc_facings.iter_mut().filter(|f| f.slot == engaged_leg) {
+                            leg.state.op_accum = leg.state.op_accum.saturating_add(delta);
+                        }
+                    }
+                }
                 if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;
@@ -590,6 +623,24 @@ impl World {
                     legaia_engine_field::field_channels::resolve_target(&channels, t)
                         .map(|ci| (t, ci))
                 });
+                // A touch-resumed record runs on the touched actor's own
+                // context, so its plain actor ops move that actor: `cave01`
+                // P1[2], engaged by the walk-on `P2[9]`'s `B1 03 08`, closes a
+                // quiz stop with `22 09`, `37 03 82`, `23 4F 42`, `22 0A`.
+                // Stepped on the timeline's stand-in context they moved nothing
+                // and Terra stayed put while her next stop's trigger fired.
+                // REF: FUN_8003BC08, FUN_80039B7C, FUN_801DE840 (0x23, 0x22, 0x37 arms)
+                let own_engaged = tl
+                    .interaction_slot
+                    .filter(|_| matches!(opcode_byte, 0x22 | 0x23 | 0x37 | 0x38 | 0x41 | 0x47))
+                    .and_then(|slot| {
+                        channels
+                            .iter()
+                            .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                    });
+                let target = target.or(own_engaged.map(|ci| (0, ci)));
+                // Where the op's operands start, past the target byte if any.
+                let operands = pc + if opcode_byte & 0x80 != 0 { 2 } else { 1 };
                 if target.is_none()
                     && let Some(t) = vm::field::peek_extended(&tl.bytecode, pc)
                     && t != 0xF8
@@ -692,11 +743,11 @@ impl World {
                 // seats instantly - walking to the off-map box is invisible.
                 // REF: FUN_8003774C (case 0x47)
                 if opcode_byte & 0x7F == 0x47
-                    && opcode_byte & 0x80 != 0
+                    && (opcode_byte & 0x80 != 0 || own_engaged.is_some())
                     && let (Some(&b0), Some(&b1), Some(&b2)) = (
-                        tl.bytecode.get(pc + 2),
-                        tl.bytecode.get(pc + 3),
-                        tl.bytecode.get(pc + 4),
+                        tl.bytecode.get(operands),
+                        tl.bytecode.get(operands + 1),
+                        tl.bytecode.get(operands + 2),
                     )
                 {
                     let ext = vm::field::peek_extended(&tl.bytecode, pc);
@@ -733,7 +784,7 @@ impl World {
                                         legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ,
                                     ),
                                 );
-                                tl.pc = pc + 5;
+                                tl.pc = operands + 3;
                                 continue;
                             }
                             if host.world.start_field_npc_motion(s, tx, tz) {
@@ -749,17 +800,17 @@ impl World {
                                 // player's as well as an NPC's.
                                 tl.npc_walks.retain(|&w| w != s);
                                 tl.npc_walks.push(s);
-                                tl.pc = pc + 5;
+                                tl.pc = operands + 3;
                                 continue;
                             } else {
                                 // No surfaced live position to glide from:
                                 // seat directly (the pre-park fallback).
                                 host.world.npcs.positions.insert(s, (tx, tz));
-                                tl.pc = pc + 5;
+                                tl.pc = operands + 3;
                                 continue;
                             }
                         } else if parked_sentinel {
-                            tl.pc = pc + 5;
+                            tl.pc = operands + 3;
                             continue;
                         }
                         // The kernel takes the player's first step in the
@@ -768,7 +819,7 @@ impl World {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
-                        tl.pc = pc + 5;
+                        tl.pc = operands + 3;
                         glide_hold = true;
                         if grid > 0
                             && grid_live
@@ -782,7 +833,7 @@ impl World {
                                 Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
                                     slot,
                                     target: (tx, tz),
-                                    resume_pc: pc + 5,
+                                    resume_pc: operands + 3,
                                     speed,
                                     approach: b2 >> 4,
                                     frames: 0,
@@ -826,9 +877,9 @@ impl World {
                 // for her whole first conversation.
                 // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
                 if matches!(opcode_byte & 0x7F, 0x37 | 0x41)
-                    && opcode_byte & 0x80 != 0
+                    && (opcode_byte & 0x80 != 0 || own_engaged.is_some())
                     && let (Some(&body0), Some(&body1)) =
-                        (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                        (tl.bytecode.get(operands), tl.bytecode.get(operands + 1))
                     && let Some((_, ci)) = target
                     && !channels[ci].object_bind
                 {
@@ -872,7 +923,7 @@ impl World {
                         tl.npc_landed_hold.push(slot);
                     }
                     npc_glide_hold.push(slot);
-                    tl.pc = pc + 4;
+                    tl.pc = operands + 2;
                     continue;
                 }
                 // The same arm on a placed object (`taiku2`'s `P2[0]` walks
@@ -920,9 +971,9 @@ impl World {
                     _ => None,
                 };
                 if opcode_byte & 0x7F == 0x38
-                    && opcode_byte & 0x80 != 0
+                    && (opcode_byte & 0x80 != 0 || own_engaged.is_some())
                     && let (Some(&op0), Some(&op1)) =
-                        (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                        (tl.bytecode.get(operands), tl.bytecode.get(operands + 1))
                     && let Some(slot) = facing_target
                 {
                     if pc < tl.visited.len() {
@@ -936,7 +987,7 @@ impl World {
                         {
                             host.world.set_timeline_facing(slot, h);
                         }
-                        tl.pc = pc + 4;
+                        tl.pc = operands + 2;
                         continue;
                     }
                     // Seed from the target's live heading (retail reads the
@@ -987,7 +1038,7 @@ impl World {
                             }
                         }
                     }
-                    tl.pc = pc + 4;
+                    tl.pc = operands + 2;
                     continue;
                 }
                 // Halt-acquire of an NPC (`CC <id> 85|8E|8F <lo> <hi> <bind>`
