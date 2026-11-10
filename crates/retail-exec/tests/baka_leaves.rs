@@ -611,3 +611,168 @@ mod widgets {
         }
     }
 }
+
+/// Chrome leaves: the cameo's sprite blit `FUN_801D65F8` (the `MoveImage`
+/// rect it builds), the glyph wrapper `FUN_801D69A8`, and the developer
+/// editor's animation-slot installer `FUN_801D57BC` and remover
+/// `FUN_801D58E0` over the action records' slot blocks.
+mod chrome {
+    use super::*;
+    use legaia_engine_minigames::baka_fighter_chrome::{
+        anim_slot_delete, anim_slot_install, glyph_draw, glyph_u, sprite_blit,
+    };
+    use psx_retail_exec::{A0, A1, A2, A3};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    const BLIT: u32 = 0x801D_65F8;
+    const GLYPH: u32 = 0x801D_69A8;
+    const INSTALL: u32 = 0x801D_57BC;
+    const REMOVE: u32 = 0x801D_58E0;
+    const BLIT_TABLE: u32 = 0x801D_BE84;
+    const STACK_TOP: u32 = 0x801F_FF00;
+
+    #[test]
+    fn the_cameo_blit_moves_the_rect_retail_moves() {
+        differential!(prot(976, BLIT));
+        let Some(mut cpu) = super::rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let moved = Rc::new(RefCell::new(Vec::new()));
+        let sink = moved.clone();
+        cpu.hook(0x8005_8490, move |r, m| {
+            let rect = r.r[A0];
+            sink.borrow_mut().push((
+                [0, 2, 4, 6].map(|o| m.rd16(rect + o) as i16),
+                r.r[A1] as i32,
+                r.r[A2] as i32,
+            ));
+        });
+        let mut rng = Rng(0x424C_4954);
+        for round in 0..5000 {
+            let index = rng.below(8);
+            let entry = [rng.next() as u8, rng.next() as u8];
+            cpu.mem.wr8(BLIT_TABLE + index * 4, entry[0]);
+            cpu.mem.wr8(BLIT_TABLE + index * 4 + 1, entry[1]);
+            moved.borrow_mut().clear();
+            assert_eq!(cpu.call(BLIT, &[0, index]), Stop::Returned);
+            let b = sprite_blit(0, entry).expect("mode 0");
+            assert_eq!(
+                *moved.borrow(),
+                vec![([b.src_x, b.src_y, b.size.0, b.size.1], b.dst_x, b.dst_y)],
+                "round {round}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_glyph_wrapper_pages_and_draws_as_retail_does() {
+        differential!(prot(976, GLYPH));
+        let Some(mut cpu) = super::rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        use legaia_engine_minigames::baka_fighter_chrome::GLYPH_U_VA;
+        let drawn = Rc::new(RefCell::new(Vec::new()));
+        let sink = drawn.clone();
+        cpu.hook(0x801D_5ED0, move |r, m| {
+            sink.borrow_mut().push((
+                r.r[A0] as i16,
+                r.r[A1] as i16,
+                r.r[A2] as u8,
+                r.r[A3] as i32,
+                m.rd32(r.r[psx_retail_exec::SP] + 0x10) as i32,
+                m.rd8(GLYPH_U_VA),
+            ));
+        });
+        let mut rng = Rng(0x474C_5950);
+        for round in 0..5000 {
+            let (x, y) = (rng.below(320) as i16, rng.below(240) as i16);
+            let index = rng.below(40) as i32 - 5;
+            let (b, size) = (rng.below(0x100) as i32, rng.below(0x2000) as i32);
+            cpu.mem.wr32(STACK_TOP + 0x10, size as u32);
+            drawn.borrow_mut().clear();
+            let args = [x as u32, y as u32, index as u32, b as u32];
+            assert_eq!(cpu.call(GLYPH, &args), Stop::Returned);
+            let d = glyph_draw(x, y, index, b, size);
+            assert_eq!(
+                *drawn.borrow(),
+                vec![(d.x, d.y, d.widget, d.brightness, d.size, glyph_u(index))],
+                "round {round}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_editor_slots_install_and_remove_as_retail_does() {
+        differential!(prot(976, INSTALL), prot(976, REMOVE));
+        let Some(mut cpu) = super::rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        cpu.stub(0x8005_67A8, 0);
+        const TABLE: u32 = 0x8015_0000;
+        let mut rng = Rng(0x534C_4F54);
+        let (mut appended, mut reused, mut removed) = (0, 0, 0);
+        for round in 0..20_000 {
+            let fighter = rng.below(17);
+            let action = rng.below(9);
+            cpu.mem.wr32(ACTION_TABLES + fighter * 4, TABLE);
+            let rec = TABLE + action * 0x60;
+            let count = rng.below(9) as usize;
+            let mut keys: Vec<i16> = (0..count).map(|_| rng.below(24) as i16 - 4).collect();
+            cpu.mem.wr32(rec + 0x1C, count as u32);
+            for (i, &k) in keys.iter().enumerate() {
+                let s = rec + 0x20 + i as u32 * 8;
+                cpu.mem.wr16(s, rng.next() as u16);
+                cpu.mem.wr16(s + 2, rng.next() as u16);
+                cpu.mem.wr16(s + 4, rng.next() as u16);
+                cpu.mem.wr16(s + 6, k as u16);
+            }
+            let key_raw = rng.below(24 * 16) as i32 - 4 * 16 - rng.below(16) as i32;
+            let remove = rng.below(2) == 1;
+            let read_keys = |cpu: &mut Cpu| {
+                let n = cpu.mem.rd32(rec + 0x1C) as usize;
+                (0..n.min(8))
+                    .map(|i| cpu.mem.rd16(rec + 0x26 + i as u32 * 8) as i16)
+                    .collect::<Vec<_>>()
+            };
+            if remove {
+                // The remover takes the table in `t1` and the key in `a3`.
+                cpu.regs.r[9] = TABLE;
+                assert_eq!(
+                    cpu.call(REMOVE, &[0, action, 0, key_raw as u32]),
+                    Stop::Returned
+                );
+                let hit = cpu.regs.r[V0] as i32 != -1;
+                let d = anim_slot_delete(&mut keys, key_raw);
+                assert_eq!(
+                    (read_keys(&mut cpu), hit),
+                    (keys.clone(), d.slot.is_some()),
+                    "round {round} remove {key_raw}"
+                );
+                removed += u32::from(hit);
+            } else {
+                assert_eq!(
+                    cpu.call(INSTALL, &[fighter, action, key_raw as u32]),
+                    Stop::Returned
+                );
+                let i = anim_slot_install(&mut keys, key_raw);
+                let retail = read_keys(&mut cpu);
+                assert_eq!(retail, keys, "round {round} install {key_raw}");
+                if !i.full {
+                    // The landed slot's three accumulators are zeroed.
+                    let s = rec + 0x20 + i.slot as u32 * 8;
+                    assert_eq!([0, 2, 4].map(|o| cpu.mem.rd16(s + o)), [0; 3]);
+                }
+                appended += u32::from(!i.full && !i.reused);
+                reused += u32::from(i.reused);
+            }
+        }
+        assert!(
+            appended > 1000 && reused > 1000 && removed > 1000,
+            "{appended} {reused} {removed}"
+        );
+    }
+}
