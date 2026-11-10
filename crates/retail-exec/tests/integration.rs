@@ -17,6 +17,7 @@ mod ambient_motion;
 mod anim_cue_walk;
 mod anim_cursor;
 mod anim_rate_restore;
+mod anm_sampler;
 mod approach_clamp;
 mod arrange;
 mod arts_gauge;
