@@ -2490,11 +2490,26 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
-walks its state to a fixed point within a handful of draws). The port's stand-in,
-`render-kernels::battle_intro_particles::IntroRng`, is shared by every host. The rest of the
-seeders' environment (`IntroEnv`) is retail's: the bearing `FUN_80019B28`, the root
-`FUN_8005AF0C` and the two LUTs, `_DAT_8007B7F8` the cosine and `_DAT_8007B81C` the sine. With the
-same draws the four seeders' grids are retail's byte for byte.
+walks its state to a fixed point within a handful of draws). The seeders' `jal 0x80056798` is
+BIOS `rand()` on the one kernel seed word `0x80009010`, and so are the port's: the seeders'
+environment (`render-kernels::battle_intro_particles::IntroEnv`, shared by every host) draws
+`IntroRng`, the BIOS step over a lent copy of `World::rng_state`, and its trig and root are
+retail's (the bearing `FUN_80019B28`, the root `FUN_8005AF0C`, `_DAT_8007B7F8` the cosine and
+`_DAT_8007B81C` the sine). With the same draws the four seeders' grids are retail's byte for byte.
+
+#### The init's draws
+
+Only the init draws, and only through its seeder: the scatter (`FUN_801CFBB4`), curtain and
+swirl seeders make no `rand()` call, the spin-up seeder `FUN_801D0164` one per cell (`32 x 40`),
+and the tile seeder `FUN_801D081C` two per interior corner (`15 x 15`) plus one per tile
+(`16 x 16`) on sub-styles `0` and `1`. A capture of a walked kor encounter
+(`scripts/pcsx-redux/autorun_battle_intro_rand.lua`, tile shatter at sub-style `0`) counts 706
+calls between the init's entry and its return, reads the seed word `0x09632944` before and
+`0x0D59BDA2` after (the BIOS step applied 706 times), and counts none from there to the battle
+mode. The port takes the same segment of its one stream: on the transition's first frame the
+world records `BattleState::intro_rand_state` and steps `World::rng_state` past
+`battle_intro_styles::intro_seeder_draws`, and the host's emitter replays the draws from the
+recorded word.
 
 #### The transition owns the whole frame
 

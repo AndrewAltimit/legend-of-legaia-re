@@ -953,8 +953,8 @@ its trig tables swapped: `_DAT_8007B7F8` is the cosine table and `_DAT_8007B81C`
 particle of `FUN_801CFBB4` / `FUN_801D0164` and every tile of `FUN_801D081C` tumbled about the wrong
 axis and the swirl `FUN_801D1564` built its rings transposed. The heading was a floating-point
 `atan2` where retail reads the bearing `FUN_80019B28`, and the radial seeder's root a float `sqrt`
-where retail runs `FUN_8005AF0C`. The four seeders now match given the same draws; the draws
-themselves stay the port's stand-in stream.
+where retail runs `FUN_8005AF0C`. The four seeders now match given the same draws, and the draws are
+retail's own: BIOS `rand()` over the world stream, lent in where the transition's init found it.
 
 The battle monster loader `FUN_80055468` (`monster_load`), over every monster at every slot, uploads its
 CLUT row as a `256 x 1` rectangle from the pool's start, so the row's last sixteen entries are the 4bpp
