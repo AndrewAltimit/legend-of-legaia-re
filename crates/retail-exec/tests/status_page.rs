@@ -334,3 +334,179 @@ fn the_condition_page_matches() {
         "{worn} {boosted} {capped}"
     );
 }
+
+/// The Skills page (`0x801D3E64..0x801D4098`): one block per Goods byte whose
+/// item grants a passive under `0x40` - the row's pictogram, the item's name,
+/// the passive's name and its description - or the one "no skills" line.
+/// A label draw is laid out with the port's own `|` line rule; what is held
+/// is every string, pen and ink.
+#[test]
+fn the_skills_page_matches() {
+    differential!(prot(899, STATUS_PANEL));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let scus = scus().unwrap();
+    let pool = MenuPoolLabels::from_menu_overlay(
+        &disc()
+            .unwrap()
+            .read_entry_footprint(899)
+            .expect("PROT 0899"),
+    );
+    let text = legaia_engine_menus::pause_screens::MenuTextTables::from_scus(&scus);
+    let stand_in = 0x8013_0100;
+    rig.poke_str(stand_in, "Stand-in");
+    let mut item_names = Vec::new();
+    for id in 0..256u32 {
+        let p = rig.cpu.mem.rd32(ITEMS + id * 12 + 4);
+        let ascii = (0x8001_0000..0x8008_0000).contains(&p)
+            && cstr(&mut rig.cpu.mem, p)
+                .iter()
+                .all(|b| (0x20..0x80).contains(b));
+        if !ascii {
+            rig.cpu.mem.wr32(ITEMS + id * 12 + 4, stand_in);
+        }
+        let p = rig.cpu.mem.rd32(ITEMS + id * 12 + 4);
+        item_names.push(rig.string(p));
+    }
+    let granting: Vec<u8> = (1..=255u8)
+        .filter(|&id| text.item_passive_text(id).is_some())
+        .collect();
+    assert!(granting.len() > 20, "{} passive items", granting.len());
+    let goods_icon = u32::from(rig.cpu.mem.rd16(ROW_ICONS + 8));
+    let tag = |n: u32| (n, 0, 1, 1);
+    let atlas = SaveMenuAtlasRects {
+        label_lv: tag(0x0A),
+        icon_goods: tag(0x104),
+        ..Default::default()
+    };
+    let mut rng = Rng(0x534B_494C);
+    let (mut empty, mut rows_seen) = (0, 0);
+    for run in 0..3_000 {
+        let id = rng.below(3);
+        let seat = rng.below(3);
+        rig.cpu.mem.wr8(ROSTER + seat, id as u8);
+        rig.cpu.mem.wr32(LIST_CURSOR, seat);
+        // Page 1, or 6 once the pager has wrapped.
+        rig.cpu.mem.wr32(PAGE, [1u32, 6][rng.below(2) as usize]);
+        let rec_va = RECORDS + id * STRIDE;
+        for o in 0..STRIDE {
+            rig.cpu.mem.wr8(rec_va + o, 0);
+        }
+        let name = format!("Hero{id}");
+        rig.poke_str(rec_va + 0x2A7, &name);
+        rig.cpu.mem.wr8(rec_va + 0x130, 7);
+        let mut goods = [0u8; 3];
+        for (i, g) in goods.iter_mut().enumerate() {
+            *g = match rng.below(4) {
+                0 => 0,
+                1 => rng.below(256) as u8,
+                _ => granting[rng.below(granting.len() as u32) as usize],
+            };
+            rig.cpu.mem.wr8(rec_va + 0x196 + 5 + i as u32, *g);
+        }
+        let r = rect(&mut rng);
+        let log = rig.run(STATUS_PANEL, r);
+        let what = format!("run {run} id {id} goods {goods:02x?} at {r:?}");
+
+        let rows: Vec<(String, String, String)> = goods
+            .iter()
+            .filter_map(|&g| {
+                let (effect, desc) = text.item_passive_text(g)?;
+                Some((item_names[usize::from(g)].clone(), effect, desc))
+            })
+            .collect();
+        empty += u32::from(rows.is_empty());
+        rows_seen += rows.len() as u32;
+        let skills: Vec<legaia_engine_ui::StatusSkillRowView<'_>> = rows
+            .iter()
+            .map(
+                |(item, effect, desc)| legaia_engine_ui::StatusSkillRowView {
+                    item_name: item,
+                    effect_name: effect,
+                    description: desc,
+                },
+            )
+            .collect();
+        let panel = StatusPanelView {
+            name: &name,
+            level: 7,
+            xp: 0,
+            xp_to_next: 0,
+            hp: 0,
+            hp_max: 0,
+            hp_base: 0,
+            mp: 0,
+            mp_max: 0,
+            mp_base: 0,
+            ap: 0,
+            ap_max: 100,
+            stat_rows: &[],
+            equip_rows: &[],
+            status: 0,
+            seru: None,
+            page: 1,
+            skills: &skills,
+            spells: &[],
+            moves: &[],
+            list: None,
+            scroll: 0,
+        };
+        let port =
+            status_screen_draws_for_with(&rig.font, Some(&pool), &panel, None, (r.x, r.y), true);
+        let mut want: Vec<TextDraw> = Vec::new();
+        for e in &log {
+            match e {
+                Ev::Label(va, x, y, ink) => {
+                    let bytes = cstr(&mut rig.cpu.mem, *va);
+                    want.extend(legaia_engine_ui::label_lines_draws(
+                        &rig.font,
+                        &bytes,
+                        (*x, *y),
+                        legaia_engine_ui::menu_ink_color(*ink),
+                    ));
+                }
+                Ev::Text(..) | Ev::Number(..) | Ev::Separator(..) => {
+                    want.extend(rig.text_of(std::slice::from_ref(e)))
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(
+            crate::menu_painters::keys(&want),
+            crate::menu_painters::keys(&port),
+            "{what}\n{log:?}"
+        );
+        // The pictograms: the header's LV, then one Goods icon a row.
+        let sprites = status_icon_sprites_for(
+            &atlas,
+            (r.x, r.y),
+            0,
+            StatusIconPage {
+                page: 1,
+                skills: rows.len(),
+                ..Default::default()
+            },
+            (0, 0),
+            1,
+        );
+        let got: Vec<(u32, i32, i32)> = sprites
+            .iter()
+            .map(|s| {
+                let id = if s.src.0 == 0x104 {
+                    goods_icon
+                } else {
+                    s.src.0
+                };
+                (id, s.dst.0, s.dst.1)
+            })
+            .collect();
+        let want: Vec<(u32, i32, i32)> = pictos(&log)
+            .iter()
+            .map(|p| (u32::from(p.id), p.x, p.y))
+            .collect();
+        assert_eq!(got, want, "{what}: pictograms");
+    }
+    assert!(empty > 100 && rows_seen > 3000, "{empty} {rows_seen}");
+}

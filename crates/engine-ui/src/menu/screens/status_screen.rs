@@ -100,7 +100,7 @@ const LINE_BREAK_PITCH: i32 = 0x0E;
 const PREVIEW_H: i32 = 0x28;
 
 /// `FUN_8003CD00`: a string's `|` lines, one pitch apart, from `pen`.
-fn lines_draws(
+pub fn label_lines_draws(
     font: &legaia_font::Font,
     text: &[u8],
     pen: (i32, i32),
@@ -150,14 +150,14 @@ fn status_skills_draws(
             crate::menu_ink_color(6),
         ));
         y += 0x0E;
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.effect_name.as_bytes(),
             (x + 0x20, y),
             crate::menu_ink_color(4),
         ));
         y += 0x0E;
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description.as_bytes(),
             (x + 0x28, y),
@@ -243,7 +243,7 @@ fn status_magic_draws(
             (wx + 0x68, py),
             gold,
         ));
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description.as_bytes(),
             (wx + 0x0C, py + 0x0E),
@@ -368,7 +368,7 @@ fn status_moves_draws(
             }
             ax += 0x0C;
         }
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description,
             (wx + 0x0C, wy + h - 0x1A),
