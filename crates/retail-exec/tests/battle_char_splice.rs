@@ -9,7 +9,7 @@
 
 use crate::common::{Rng, diff_offsets, disc, scus_cpu};
 use legaia_actor_formats::battle_char_assembly::{
-    SECTION_COUNT, assemble_character, select_sections,
+    SECTION_COUNT, assemble_character, relocate_tsb_cba, select_sections,
 };
 use legaia_actor_formats::battle_data_pack::{decode_record, parse};
 use psx_retail_exec::Stop;
@@ -124,4 +124,70 @@ fn the_battle_mesh_splice_matches_the_assembler() {
         built > 150 && fe > 0,
         "built {built} fe {fe} pinned {pinned}"
     );
+}
+
+const RELOCATE: u32 = 0x8005_3A28;
+
+/// The registered blob's form: each object's primitive pointer absolute
+/// (`+0x10` of a 7-word entry), as the relocation walks it.
+fn absolutize(tmd: &mut [u8], base: u32) {
+    let nobj = u32::from_le_bytes(tmd[8..12].try_into().unwrap()) as usize;
+    for k in 0..nobj {
+        let at = 12 + 0x1C * k + 0x10;
+        let rel = u32::from_le_bytes(tmd[at..at + 4].try_into().unwrap());
+        tmd[at..at + 4].copy_from_slice(&(base + 12 + rel).to_le_bytes());
+    }
+}
+
+/// The battle texture relocation `FUN_80053A28` over every assembled mesh of
+/// the loadouts above and every party slot, on the blob as registered,
+/// against `relocate_tsb_cba`: the whole TMD after the walk.
+#[test]
+fn the_texture_relocation_matches_relocate_tsb_cba() {
+    differential!(scus(RELOCATE));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        return;
+    };
+    let mut rng = Rng(0x5453_4243);
+    let mut rewritten = 0usize;
+    for entry in 863..=866 {
+        let buf = disc.read_entry(entry).expect("player file");
+        let pack = parse(&buf).expect("battle data pack");
+        let mut ids: Vec<Vec<u32>> = vec![Vec::new(); SECTION_COUNT];
+        let mut s = 0;
+        for r in &pack.records {
+            if s >= SECTION_COUNT {
+                break;
+            }
+            ids[s].push(r.id);
+            if r.id == 0 {
+                s += 1;
+            }
+        }
+        for round in 0..40 {
+            let equipped: [u8; SECTION_COUNT] = std::array::from_fn(|k| {
+                let c = &ids[k];
+                c[rng.below(c.len() as u32) as usize] as u8
+            });
+            let Ok(port) = assemble_character(&buf, &pack, &equipped) else {
+                continue;
+            };
+            let slot = rng.below(3) as u8;
+            let mut want = port.tmd.clone();
+            rewritten += relocate_tsb_cba(&mut want, slot).expect("relocate");
+            absolutize(&mut want, BLOB);
+            let mut seat = port.tmd.clone();
+            absolutize(&mut seat, BLOB);
+            cpu.mem.load(BLOB, &seat);
+            assert_eq!(cpu.call(RELOCATE, &[BLOB, u32::from(slot)]), Stop::Returned);
+            let got = cpu.mem.read(BLOB, want.len());
+            assert_eq!(
+                got,
+                want,
+                "entry {entry} round {round} slot {slot}: {:?}",
+                diff_offsets(&got, &want)
+            );
+        }
+    }
+    assert!(rewritten > 1000, "rewritten {rewritten}");
 }
