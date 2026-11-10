@@ -201,6 +201,7 @@ impl PlayWindowApp {
             npc_bundle_special: std::collections::HashMap::new(),
             scene_actors_pending: true,
             boot_ui: initial_boot_ui,
+            pause_menu_handover: false,
             card: mounted_card,
             port1_card,
             save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),

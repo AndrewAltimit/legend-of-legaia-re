@@ -186,6 +186,19 @@ impl PlayWindowApp {
         // the keyboard's held set again (the controller's word stays in
         // `gamepad_held`). The scripted harnesses own the pad word and press
         // through `handle_key`, so their presses are not taps.
+        // The wipe spawned the pause menu on this frame's last tick. The
+        // session hands the tick over on the next claim
+        // (`TickOwner::PauseMenuSpawned`), but from this frame on the menu
+        // covers the field and the wipe draws nothing (`PauseWipe::fade_level`),
+        // so the frame drawn now is the menu's - as the page draws it, off
+        // `menu_spawned` - and not one frame of the lit field.
+        if matches!(self.boot_ui, BootUiState::Inactive)
+            && self.session.field_menu_is_open()
+            && self.session.pause_wipe().menu_spawned()
+        {
+            self.boot_ui = BootUiState::FieldMenu { sub: None };
+            self.pause_menu_handover = true;
+        }
         if run_ticks > 0 && self.screenshot.is_none() {
             self.pad = key_pad;
         }
@@ -233,13 +246,18 @@ impl PlayWindowApp {
         // party readout's decision kernel, whose suppression predicate names
         // each of these states and so must be stepped on a tick that skips
         // the tail.
+        let handover = std::mem::take(&mut self.pause_menu_handover);
         let claims = legaia_engine_session::TickClaims {
-            host_screen: self.boot_ui.is_active(),
+            host_screen: self.boot_ui.is_active() && !handover,
             overlay_open: self.menu_runtime.is_open(),
             overlay_suspends: self.menu_runtime.suspends_field(),
             pause_menu_ready: true,
         };
         let owner = self.session.claim_tick(claims, pressed_edge);
+        if handover && !matches!(owner, TickOwner::PauseMenuSpawned) {
+            // The menu went away before its hand-over tick: nothing holds it.
+            self.boot_ui = BootUiState::Inactive;
+        }
         // The multiplayer room's frame runs every tick whoever owns it, so
         // the connection is pumped and a lockstep game keeps its peers fed
         // under a menu; only the field's tick hands it the pad, and what it

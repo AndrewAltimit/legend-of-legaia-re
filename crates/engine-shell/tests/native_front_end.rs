@@ -185,3 +185,52 @@ fn boot_ui_continue_loads_the_port_two_card() {
         "the save's money landed"
     );
 }
+
+/// The frame the pause wipe spawns the menu draws the menu. The session hands
+/// the tick over on the next claim (`TickOwner::PauseMenuSpawned`), and once
+/// the menu exists the wipe draws nothing (`PauseWipe::fade_level` is `None`),
+/// so a window that waited for that claim to raise its menu state drew one
+/// frame of the lit field between the black wipe and the menu - on the world
+/// map, whose one-tick frames put the spawn on a frame's last tick. The page
+/// draws the menu off `menu_spawned`.
+#[test]
+fn the_wipe_spawn_frame_draws_the_menu() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let mut w = HeadlessPlayWindow::open(Path::new(&disc), "map01").expect("open map01");
+    for _ in 0..120 {
+        w.display_frame(0, 1);
+    }
+    assert!(!w.boot_ui_active());
+    // A Start edge every other frame until the press opens the menu.
+    let mut spawned_at = None;
+    for frame in 0..200 {
+        let opened = w.session().field_menu_is_open();
+        let pad = if !opened && frame % 2 == 0 {
+            PadButton::Start.mask()
+        } else {
+            0
+        };
+        w.display_frame(pad, 1);
+        let s = w.session();
+        if s.field_menu_is_open() && s.pause_wipe().menu_spawned() {
+            spawned_at.get_or_insert(frame);
+            if frame > spawned_at.unwrap_or(frame) + 30 {
+                break;
+            }
+            assert!(
+                w.boot_ui_active(),
+                "frame {frame}: the menu exists but the window draws the field"
+            );
+        } else {
+            assert!(
+                !w.boot_ui_active(),
+                "frame {frame}: menu up before the spawn"
+            );
+        }
+    }
+    let at = spawned_at.expect("Start opened the pause menu on the world map");
+    eprintln!("[ok] the wipe spawned the menu on loop frame {at}");
+}

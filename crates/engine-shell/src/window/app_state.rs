@@ -945,6 +945,12 @@ pub(super) struct PlayWindowApp {
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     pub(super) boot_ui: BootUiState,
+    /// The pause menu was raised onto [`Self::boot_ui`] at the end of the
+    /// frame whose last tick the wipe spawned it on, so that frame draws the
+    /// menu; the session still hands the tick over on the next claim
+    /// (`TickOwner::PauseMenuSpawned`), which this holds the boot-UI arm off
+    /// for.
+    pub(super) pause_menu_handover: bool,
     /// A real PSX memory-card image mounted in **port 2** (`--card`), or
     /// `None` for the empty port.
     ///
