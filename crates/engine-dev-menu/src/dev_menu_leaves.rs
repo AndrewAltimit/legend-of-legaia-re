@@ -336,7 +336,8 @@ pub fn dev_menu_cursor_step(
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_phase`
 /// tracks the engine dev menu's page in this phase space, which is what the
 /// retail draw gate below is asked against.
-/// PORT: FUN_801ECA08 (`switch(ctx[+0x54])`)
+/// REF: FUN_801ECA08 (`switch(ctx[+0x54])`; the legs are ported in the
+/// dev-menu host's `tick`)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ListPickerPhase {
     /// Seed cursor = row_start, open panel, then falls through into `Active`.

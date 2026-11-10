@@ -307,6 +307,10 @@ impl DevMenuSession {
     /// writes into it and the retail end-of-tick clamp pass runs over every
     /// record afterwards, exactly as `FUN_801D6E18` does - unconditionally,
     /// whichever page is up.
+    ///
+    /// PORT: FUN_801ECA08 (the Active leg's exits, cancel `0x801ECBEC` before
+    /// confirm `0x801ECC10`, and the `phase * gate` draw gate off the entry
+    /// phase)
     pub fn tick(&mut self, pad_edge: u16, pad_held: u16, records: &mut [&mut [u8]]) {
         // The list-picker phase this frame enters in. Retail's `ctx[+0x54]`
         // space, driven off which page has the pad: the list is the `Active`
