@@ -4185,6 +4185,7 @@
     "engine-scene",
     "engine-system",
     "engine-title",
+    "engine-ui",
     "engine-vm",
     "font",
     "game-tables",
