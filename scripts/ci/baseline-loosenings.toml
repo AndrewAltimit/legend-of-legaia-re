@@ -1183,9 +1183,20 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "play_gzip_bytes grows by code: the menu slide-in input lock and the window walker port, the Print Screen key and the page's debug_play_record twin, the projectile flight bolts and landing flash, the arts list caption, the integer GTE camera for fog, lights, trail and screen grab, and the battle intro's retail trig. No data is added to the bundle; every native frame count stays within its baseline (summon_cast allocations fall)."
+reason = "play_gzip_bytes grows by code: the menu slide-in input lock and the window walker port, the Print Screen key and the page's debug_play_record twin, the projectile flight bolts and landing flash, the arts list caption, the integer GTE camera for fog, lights, trail and screen grab, and the battle intro's retail trig. No data is added to the bundle; later rounds add the summon camera directors, the menu-screen fixes, the libsnd voice routines and the mesh-priced frame cost. The native battle and summon_cast benches draw 342 where they drew 334 from 4f3e8e8ca, bisected: the battle intro now draws retail's rand() off the world stream, which deals the bench's fight a different frame, not a dearer draw path; their allocations move with it. Browser draw and byte counts fall."
 changes = [
-  ["counts/bundle/play_gzip_bytes", 4962222, 4972722],
+  ["counts/bundle/gzip_bytes", 7096439, 7119074],
+  ["counts/bundle/play_gzip_bytes", 4962222, 4980077],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4483.2, 4484.6],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1279.4, 1283.3],
+  ["counts/native/battle/enhanced/draws_per_frame", 334, 342],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4454.1, 4456.0],
+  ["counts/native/battle/retail/allocs_per_frame", 1227.1, 1231.0],
+  ["counts/native/battle/retail/draws_per_frame", 334, 342],
+  ["counts/native/summon_cast/enhanced/draws_per_frame", 334, 342],
+  ["counts/native/summon_cast/retail/draws_per_frame", 334, 342],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2651.8, 2651.9],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1390.9, 1391.0],
 ]
 
 [[loosening]]
@@ -1219,4 +1230,13 @@ reason = "Two retail-grounded engine changes, each bisected to one commit. kor_f
 changes = [
   ["states/battle_uru2_nurga_heal_mid_cast/image", 0.963, 0.962],
   ["states/kor_field_route_walk/image", 0.923, 0.921],
+]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "Provenance retags, each a `// PORT:` that named a routine the Rust does not implement. engine-vm's field.rs carried module-header tags for the field VM's helpers (FUN_8003C83C, FUN_801D596C, FUN_801DE754, FUN_801DE7BC, FUN_801D8280 among them) and now cites them as REF, so they return to the port worklist as what they are. The dev menu's EVENT FLAG arms were tagged 0xE818 below their runtime addresses (FUN_801DB8F4 is the flag-list cursor arm at 0x801EA10C); the corrected addresses (801EA0CC, 801EA10C, 801EA51C) carry ports and differentials but have no dump under their own address. FUN_801E373C is the card-init no-op hook, now REF; the pieces it stands for are ported where they live."
+changes = [
+  ["totals/ported", 1048, 1043],
+  ["worklist/port", 0, 7],
+  ["worklist/ported_not_dumped", 0, 3],
 ]
