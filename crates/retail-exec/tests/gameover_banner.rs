@@ -31,6 +31,9 @@ const TAIL: u32 = 0x8007_B6F4;
 const PAK: u32 = 0x8015_0000;
 const ACTORS: u32 = 0x8016_0000;
 
+/// One spawn: `(x, model_sel, scale, actor)`.
+type Spawn = (i16, i16, i32, u32);
+
 #[test]
 fn the_banner_stager_spawns_what_retail_spawns() {
     differential!(prot(902, INIT));
@@ -44,8 +47,7 @@ fn the_banner_stager_spawns_what_retail_spawns() {
         m.wr32(PAK, 0);
         r.r[V0] = PAK;
     });
-    // `(x, model_sel, scale, actor)` per spawn.
-    let spawns: Rc<RefCell<Vec<(i16, i16, i32, u32)>>> = Rc::default();
+    let spawns: Rc<RefCell<Vec<Spawn>>> = Rc::default();
     let s = spawns.clone();
     cpu.hook(SPAWN, move |r, m| {
         let actor = ACTORS + s.borrow().len() as u32 * 0x100;
