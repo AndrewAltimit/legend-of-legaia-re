@@ -21,11 +21,43 @@ cargo test -p psx-retail-exec --profile dev-fast --test integration
 
 Integer instructions, `hi` / `lo`, unaligned loads and stores, RAM and the
 scratchpad. `Cpu::hardware_zero_div` runs a `div` by zero as the chip does, for a
-routine with no `break` guard, where that result is what ships. A routine that reaches the GTE or COP0 stops with
-`Stop::Unsupported`, so a pure kernel is the natural target. A call can be
+routine with no `break` guard, where that result is what ships. COP0 carries
+`mfc0` / `mtc0` as register moves and `rfe` as the status-stack pop; any other
+COP0 operation, `syscall` or an undefined GTE command stops with
+`Stop::Unsupported`. A call can be
 replaced with a `Cpu::hook`, which is how `rand()` is scripted so both sides
 draw one stream. `Cpu::calls` records the calls made, which is how a test proves
 it reached the arm it claims.
+
+### The GTE
+
+`psx_retail_exec::gte` is the coprocessor 2: both register files with their
+read and write quirks (halfword sign and zero extension, the `SXYP` push,
+`IRGB` / `ORGB`, `LZCS` / `LZCR`, `H` reading back sign-extended), every
+command, the 44-bit `MAC1..3` accumulator with its per-step overflow flags,
+the `FLAG` saturation bits with bit 31 over `30..23` and `18..13`, the UNR
+divider and the MVMVA far-colour bug. It is written from the hardware
+documentation (nocash's psx-spx), not from the engine's GTE, so a defect the
+two shared could not cancel in a differential. A test seeds and reads it as
+`Cpu::gte`; `Cpu::gte_ops` counts the commands a call ran.
+
+Its own evidence is twofold. Unit tests pin spec values worked by hand
+(the divider's table and quotients, projection, saturation, the MVMVA bug).
+`gte_capture` replays the GTE register files in the PCSX-Redux state library:
+where a state's outputs are an `RTPS` / `RTPT` of the vertices still in
+`V0..V2`, or an `NCLIP` / `AVSZ` of its FIFOs, re-running the command from the
+state's own inputs lands on the captured outputs, projection and divide
+included. That is the emulator's GTE, not silicon, so it checks the
+interpreter against a second implementation of the same documentation.
+
+`gte_engine` runs the engine's GTE against it with no disc. The live
+perspective divide `gte_divide` matches over every `SZ`, and the light-source
+rows' `field_light::nccs` matches `NCCS` on random matrices, colours and
+normals. The register-file `render_kernels::gte::Gte` matches on `NCLIP`,
+`AVSZ3` / `AVSZ4`, `SQR`, `OP` and `MVMVA`; its `RTPS` / `RTPT` keep the
+struct's own q19.12 scale and its colour ops do not follow the hardware's MAC,
+IR and FIFO steps, which the test reports. Only the `gte-replay` tool runs
+that struct.
 
 ## How to add a routine
 
@@ -633,3 +665,18 @@ pass, the bystander sweep of `FUN_8004E13C` and the tint machine's arms (`tint_s
 blend, centroid and body pair (`pose_decoder`), a held pad among seated moving and static actors (`FUN_801CFC40`,
 `walk_step`), the hop arc's tick `FUN_801D5C08` over the Bezier `FUN_801E45BC` (`hop_arc`) and the action effect stepper
 `FUN_801DEA50` (`effect_script`) match.
+
+The GTE opened the camera and projection kernels. The camera-relative rotation `FUN_8001CF50` showed the port
+building its axis factors from rounded `f32` trigonometry where retail's `FUN_800461A4` / `FUN_8004629C` /
+`FUN_8004638C` read the truncated sine LUT and post-multiply through MVMVA: the rounded factor misses the LUT on
+three angles in four, and the composed rotation was off retail on three cases in four, by up to four units of
+4.12. `camera_view_rotation` now quantises the hosts' radians back to the 12-bit angle and builds from the LUT
+(`GteMat3::rot_x_psx` and its siblings), and matches. The register-file `Gte` read `H`, `DQA`, `ZSF3` and `ZSF4`
+back as raw words where `cfc2` sign-extends the halfword, clamped `MAC0` on `NCLIP` / `AVSZ` where the register
+keeps the low 32 bits, and raised `FLAG` bit 31 for an `IR3` saturation, which the hardware leaves out of it.
+`MulMatrix` `FUN_8005B3A8`, the Euler builder `FUN_80026988` (both its ports), the overworld curvature table
+`FUN_800271A8` (scene-load, rebuilt and flat), the drop shadow's grid `FUN_800460AC` and packets `FUN_8001C394`,
+and the billboard projector `FUN_800195A8` match. One arm of the shadow differs by choice: a near actor whose blob
+sorts within ten slots of the front links below the ordering table's base in retail, where the port floors the
+slot at `0`; field depths keep the blob far from it.
+

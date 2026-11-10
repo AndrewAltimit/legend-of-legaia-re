@@ -87,6 +87,9 @@ const AVSZ4: u32 = 0x0168_002E;
 
 #[test]
 fn gte_reproduces_the_captured_register_files() {
+    not_a_differential!(
+        "replays captured PCSX-Redux GTE register files through the interpreter's GTE; runs no routine"
+    );
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../saves/library/pcsx-redux");
     let Ok(rd) = std::fs::read_dir(&dir) else {
         eprintln!("no PCSX-Redux state library; skipping");

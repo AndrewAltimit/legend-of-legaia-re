@@ -54,7 +54,7 @@ unless noted.
 | [`psx-mednafen`](../../crates/mednafen/README.md) | Generic, Legaia quirks | `SaveState::from_path`, `main_ram`, `gpu::PsxGpu`, `spu::PsxSpu` | `mednafen-state` |
 | [`psx-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `SaveState::from_path_structural`, `gpu::PcsxGpu::from_path`, `fixture::SyntheticState` | `pcsxr-state --game generic` |
 | [`psx-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice`, `GameProfile` | - |
-| [`psx-retail-exec`](../../crates/retail-exec/README.md) | Generic PS1 | `Cpu::call`, `Cpu::hook`, `Cpu::calls`; the Legaia comparisons are its tests alone ([method](retail-kernel-differential.md)) | - |
+| [`psx-retail-exec`](../../crates/retail-exec/README.md) | Generic PS1 | `Cpu::call`, `Cpu::hook`, `Cpu::calls`, `gte::Gte` (the hardware-exact GTE); the Legaia comparisons are its tests alone ([method](retail-kernel-differential.md)) | - |
 | [`legaia-engine-audio`](../../crates/engine-audio/README.md) | Generic, Legaia quirks | `spu::Spu`, `Sequencer::new(seq, bank)`, `vab_bind::VabBank::upload` | `note-trace` |
 | [`legaia-render-kernels`](../../crates/render-kernels/README.md) | Generic module in a Legaia crate | `gte::Gte`, `gte::Camera`, `gte::gte_divide`, `vram_capture` | - |
 | [`legaia-tmd`](../../crates/tmd/README.md) | Legaia-only | `parse` (Legaia variant only) | `tmd` |
@@ -291,7 +291,12 @@ reader. `AudioOut` is the cpal output; `WebAudioOut` sits behind the
 `NCLIP`, `MVMVA`, `NCS`, `NCT`, `NCDS`, `NCDT`, `NCCS`, `NCCT`, `CC`, `CDP`,
 `DPCS`, `DPCT`, `DCPL`, `INTPL`, `SQR`, `OP`, `GPF`, `GPL`, `AVSZ3`, `AVSZ4`),
 the FLAG bits, per-command cycle costs, and the Unsigned Newton-Raphson
-perspective divide (`gte::divide`) the hardware really runs. `psx_sin` /
+perspective divide (`gte::divide`) the hardware really runs. Its divide,
+`NCLIP`, `AVSZ`, `SQR`, `OP` and `MVMVA` match the hardware; its `RTPS` /
+`RTPT` work in the struct's own q19.12 scale and its colour ops do not follow
+the hardware's MAC / IR / FIFO steps, so a second title wanting a
+register-exact GTE takes `psx-retail-exec`'s `gte` instead
+([the comparison](retail-kernel-differential.md#the-gte)). `psx_sin` /
 `psx_cos` reproduce the q3.12 trig values without the lookup table the executable carries.
 `vram_capture` quantises an RGBA8 frame to BGR555 and blits it into a
 `psx_tim::Vram` rect.
