@@ -922,6 +922,12 @@ shows at once where the port kept drawing the old latch; and the sprite's `0x40`
 entry, so after a passed wait the next record dispatches whatever its first byte is, where the port
 parked on a non-`0x40` byte.
 
+The entity tick `FUN_801DA51C` (`world_map_entity`), over every state with its callees answered by
+recording hooks, found the Activating state blocking the wrong actor: it sets and the transition clears bit
+`0x80000` on the **player** (`_DAT_8007C364[+0x10]`, `0x801DA5C0..0x801DA5E0`, `0x801DA730..0x801DA74C`),
+where `step` wrote the entity's own word; and the encounter roll receives the BGM poll `FUN_800243F0`'s
+return (`0x801DA548`), which `FUN_801D9E1C` requires non-zero (`0x801DA16C`), where `step` passed `0`.
+
 The field actor cull `FUN_801D79E8` (`actor_cull`) and the window rebuild `FUN_801D7B50` over every field scene's
 `.MAP` (`window_rebuild`) match on their first run.
 

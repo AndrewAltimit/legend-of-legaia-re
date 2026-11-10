@@ -60,7 +60,9 @@ pub struct WorldMapEntityCtx {
     pub state: u16,
     /// Packed pad / flag bits for this entity. The SM mutates bits `0x80000`
     /// and `0x100`. Bit semantics per `FUN_801DA51C`:
-    /// - `0x80000` = walking / movement-blocked flag (set in Activating state, cleared on scene transition)
+    /// - `0x80000` = movement-blocked; the SM reads it here and never writes it
+    ///   (the Activating state blocks the **player**'s bit, through
+    ///   [`WorldMapEntityHost::set_player_movement_blocked`])
     /// - `0x100` = interaction-cooldown flag (set once per interaction cycle)
     pub pad_flags: u32,
     /// Auxiliary field. Cleared by the SM on state advances (from `+0x88`).
@@ -87,6 +89,23 @@ pub trait WorldMapEntityHost {
     /// `DAT_8007b5f8 != 0` - encounter-rate flag. When zero, encounters are
     /// disabled regardless of the countdown reaching zero.
     fn encounter_enabled(&self) -> bool;
+
+    /// `FUN_800243F0`, the BGM swap poller the tick runs first whenever the
+    /// gate is open (`0x801DA548`); its return is the second argument of the
+    /// encounter roll, which rolls only on a non-zero one (`0x801DA16C`).
+    /// Its common return is `-1`.
+    fn bgm_poll(&mut self) -> u32 {
+        u32::MAX
+    }
+
+    /// The player actor's movement-block bit (`_DAT_8007C364[+0x10] &
+    /// 0x80000`): raised by the Activating state (`0x801DA5C0..0x801DA5E0`)
+    /// and dropped by the transition (`0x801DA730..0x801DA74C`). It is the
+    /// bit [`Self::player_walking`] reads. The engine's two hosts run the
+    /// Activating state to completion within one tick (a zero countdown), so
+    /// the raise and the drop land on the same frame and neither keeps the
+    /// bit; the default does nothing.
+    fn set_player_movement_blocked(&mut self, _blocked: bool) {}
 
     /// Called when the countdown hits zero and encounters are enabled.
     /// Wraps `FUN_801D9E1C(entity, resolver_result)`. The `resolver_result`
@@ -132,6 +151,7 @@ pub trait WorldMapEntityHost {
 /// the host callbacks for context).
 pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCtx, host: &mut H) {
     if host.activation_gate_open() {
+        let resolver = host.bgm_poll();
         let countdown = host.encounter_countdown();
         match ctx.state {
             0 => {
@@ -145,14 +165,15 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
                 if countdown != 0 {
                     host.set_encounter_countdown(countdown.wrapping_sub(1));
                 } else if host.encounter_enabled() {
-                    host.on_encounter(entity_idx, 0);
+                    host.on_encounter(entity_idx, resolver);
                 }
             }
             1 => {
-                // Activating: set the entity-blocked flag on the player, then
-                // drain the countdown. When it hits 0, advance to state 2 and
-                // fall through to the Transitioning handler.
-                ctx.pad_flags |= 0x80000;
+                // Activating: block the **player**'s movement (the bit lives on
+                // the actor at `_DAT_8007C364`, not on this entity), then drain
+                // the countdown. When it hits 0, advance to state 2 and fall
+                // through to the Transitioning handler.
+                host.set_player_movement_blocked(true);
                 if countdown != 0 {
                     // Unsigned byte in retail (`0x801DA5D4..0x801DA5EC`).
                     host.set_encounter_countdown(countdown.wrapping_sub(1));
@@ -162,11 +183,10 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
                 ctx.field_88 = 0;
                 ctx.scene_data_consumed();
                 ctx.state += 1; // 1 → 2, fall through below
-                host.set_encounter_countdown(host.encounter_countdown()); // re-read
                 // FALLTHROUGH to states 2/3 below:
                 host.on_scene_transition(entity_idx);
                 ctx.state = 4;
-                ctx.pad_flags &= !0x80000;
+                host.set_player_movement_blocked(false);
                 ctx.field_88 = 0;
                 return;
             }
@@ -174,7 +194,7 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
                 // Transitioning: initiate scene change and move to Terminal.
                 host.on_scene_transition(entity_idx);
                 ctx.state = 4;
-                ctx.pad_flags &= !0x80000;
+                host.set_player_movement_blocked(false);
                 ctx.field_88 = 0;
                 return;
             }
@@ -400,7 +420,10 @@ mod tests {
         };
         step(0, &mut ctx, &mut host);
         assert_eq!(ctx.state, 4, "should advance to Terminal");
-        assert_eq!(ctx.pad_flags & 0x80000, 0, "walking flag cleared");
+        assert_eq!(
+            ctx.pad_flags, 0x80000,
+            "the entity's own bit is not the SM's"
+        );
         assert_eq!(ctx.field_88, 0);
         assert!(host.events.contains(&"transition:0".to_string()));
     }
