@@ -35,7 +35,7 @@ const BLAST: [u32; 6] = [
 /// | arm | camera and seats | countdown |
 /// |---|---|---|
 /// | 0 (`0x801F6AB0`) | on the caster: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x500, 0x600)`, `0xC` frames; the charge record | seed `scalar << 8` |
-/// | 1 (`0x801F6B38`) | every pass TR z `+= k`, every party seat hidden; on its pass the pool halted, the party back, a cut: pitch `0x200`, TR `(0, 0, 0x2000)`; the ring | `+= scalar << 7` |
+/// | 1 (`0x801F6B38`) | every pass TR z `+= k`, every party seat hidden; on its pass the pool halted, the party back, a cut on the origin: pitch `0x200`, TR `(0, 0, 0x2000)`; the ring | `+= scalar << 7` |
 /// | 2 (`0x801F6E38`) | every pass TR z `+= 12k`, TR y `-= 2k`; on its pass six records and the hit | `+= scalar << 8` |
 /// | 3 (`0x801F7154`) | on its pass the pool halted, TR `(0, 0x500, 0xC00)`, `0x40` frames | `+= scalar << 6` |
 /// | 4 (`0x801F72A0`) | the wait; on its pass the body's exit | - |
@@ -88,7 +88,12 @@ pub fn stone_circle_camera(
             // The pass halts the part pool ahead of the cut and the ring
             // (`jal 0x80050E74` at `0x801F6BF0`): the charge's column goes.
             arm.flushes_pool = true;
-            arm.shot = Some(shot(0x200, 0, 0x2000, 1));
+            // The arm writes no focus: the trio stays the prologue's zeroes
+            // (`0x801F6BF8..0x801F6C38`), so the cut is on the origin.
+            arm.shot = Some(ModuleShot {
+                focus: [0; 3],
+                ..shot(0x200, 0, 0x2000, 1)
+            });
             st.countdown.add(1 << 7);
             arm.ring = Some((RING_RECORDS, rot));
         }

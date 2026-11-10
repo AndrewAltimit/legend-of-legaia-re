@@ -14,7 +14,10 @@
 //! vsyncs a battle frame spans; the engine ticks once per vsync, so a drift
 //! here is `k` per tick.
 
-use super::{ModuleCamSeats, ModuleCamState, ModuleShot, SPEED_SCALAR, focus_on, yaw_from};
+use super::{
+    ModuleCamSeats, ModuleCamState, ModuleShot, SPEED_SCALAR, bearing_12bit_approx, focus_on,
+    yaw_from,
+};
 
 /// A capture arm's direct writes into the live camera globals, every pass the
 /// arm runs (held or not): pitch / yaw `0x8007B790` / `0x8007B792`, TR y / z
@@ -929,14 +932,34 @@ pub fn mystic_circle_camera(
     const DRAIN: i32 = 8;
     let c = seats.caster;
     if phase == 0 {
+        // The caster first turns on its target - the party's centroid
+        // (`FUN_801DCEAC`) for group code `8`, a seat's live pair otherwise
+        // - plus a half turn (`0x801F6AAC..0x801F6B00`); the shot frames the
+        // new heading.
+        let v = seats.victim;
+        let onto = match st.target_aim {
+            Some(a) => bearing_12bit_approx(
+                a.centroid_z.wrapping_neg(),
+                a.centroid_x.wrapping_neg(),
+                c.z,
+                c.x,
+            ),
+            None => bearing_12bit_approx(v.z, v.x, c.z, c.x),
+        }
+        .wrapping_add(0x800)
+            & 0xFFF;
         st.countdown.0 = 0x800;
         return CaptureCamArm {
             shot: Some(ModuleShot {
-                angles: [-0x40, yaw_from(0x800, c.facing), 0],
+                angles: [-0x40, yaw_from(0x800, onto), 0],
                 tr: [0, 0x600, 0x600],
                 focus: focus_on(c),
                 frames: 1,
             }),
+            caster_write: CaptureSeatWrite {
+                facing: Some(onto),
+                ..Default::default()
+            },
             ..Default::default()
         };
     }
