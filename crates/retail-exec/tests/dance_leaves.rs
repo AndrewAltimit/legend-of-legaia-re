@@ -38,7 +38,9 @@ struct Quad {
     u: u8,
 }
 
-fn rig() -> Option<(Cpu, Rc<RefCell<Vec<Quad>>>, Rc<Cell<u32>>)> {
+type Quads = Rc<RefCell<Vec<Quad>>>;
+
+fn rig() -> Option<(Cpu, Quads, Rc<Cell<u32>>)> {
     let (mut cpu, d) = (scus_cpu()?, disc()?);
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(980).expect("PROT 0980"));
