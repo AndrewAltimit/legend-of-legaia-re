@@ -178,3 +178,201 @@ fn the_keyframe_lookup_finds_what_retail_finds() {
     }
     assert!(hits > 5000 && misses > 5000, "{hits} {misses}");
 }
+
+/// The duel's exchange leaves, each called on its own over seated fighter
+/// blocks, against the `BakaFight` kernels the whole-round differential
+/// (`baka_fight`) only reaches through the round SM: the resolver
+/// `FUN_801D3A14`, the CPU picker `FUN_801D487C` and the comeback critical
+/// `FUN_801D6660`. Both fighters are real roster records; the `rand()`
+/// stream is shared.
+mod exchange {
+    use super::*;
+    use legaia_engine_minigames::baka_fighter::{BakaFight, ExchangeSeat};
+    use legaia_minigame_formats::baka_opponents as bo;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    const RESOLVE: u32 = 0x801D_3A14;
+    const PICK: u32 = 0x801D_487C;
+    const CRIT: u32 = 0x801D_6660;
+    const BLOCK: u32 = 0x801D_BFBC;
+    const STRIDE: u32 = 0xA8;
+    const ROSTER: u32 = 0x801D_769C;
+    const SETTLE: u32 = 0x801D_BF54;
+    const RAND: u32 = 0x8005_6798;
+
+    struct Rig {
+        cpu: Cpu,
+        state: Rc<Cell<u32>>,
+        opponents: Vec<bo::BakaOpponent>,
+        actions: Vec<bo::BakaActionSet>,
+    }
+
+    fn rig() -> Option<Rig> {
+        let mut cpu = super::rig()?;
+        let overlay = disc()?.read_entry(976).expect("PROT 0976");
+        let state = Rc::new(Cell::new(0u32));
+        let stream = state.clone();
+        cpu.hook(RAND, move |r, _| {
+            let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            stream.set(next);
+            r.r[V0] = (next >> 16) & 0x7FFF;
+        });
+        Some(Rig {
+            cpu,
+            state,
+            opponents: bo::parse(&overlay).expect("roster"),
+            actions: bo::parse_actions(&overlay).expect("actions"),
+        })
+    }
+
+    fn seat(cpu: &mut Cpu, slot: u32, roster: usize, s: ExchangeSeat) {
+        let b = BLOCK + slot * STRIDE;
+        cpu.mem.wr32(b + 0x08, s.hp as u32);
+        cpu.mem.wr32(b + 0x24, u32::from(s.chosen));
+        cpu.mem.wr32(b + 0x2C, u32::from(s.committed));
+        cpu.mem.wr32(b + 0x30, s.combo as u32);
+        cpu.mem.wr32(b + 0x88, s.ai_cursor as u32);
+        cpu.mem.wr32(b + 0x94, roster as u32);
+        cpu.mem.wr32(b + 0xA0, u32::from(s.crit_pending));
+        cpu.mem.wr32(b + 0xA4, ROSTER + roster as u32 * 0x6C);
+    }
+
+    fn read(cpu: &mut Cpu, slot: u32) -> ExchangeSeat {
+        let b = BLOCK + slot * STRIDE;
+        ExchangeSeat {
+            hp: cpu.mem.rd32(b + 0x08) as i32,
+            chosen: cpu.mem.rd32(b + 0x24) as u8,
+            committed: cpu.mem.rd32(b + 0x2C) != 0,
+            combo: cpu.mem.rd32(b + 0x30) as i32,
+            ai_cursor: cpu.mem.rd32(b + 0x88) as usize,
+            crit_pending: cpu.mem.rd32(b + 0xA0) != 0,
+        }
+    }
+
+    fn random_seats(
+        rng: &mut Rng,
+        opponents: &[bo::BakaOpponent],
+        rosters: [usize; 2],
+    ) -> [ExchangeSeat; 2] {
+        std::array::from_fn(|s| ExchangeSeat {
+            hp: [0, 1, 0x27F, 0x280, 0xC80, rng.below(0xC81) as i32][rng.below(6) as usize],
+            chosen: [0, 1, 2, 3, 4, rng.below(4) as u8][rng.below(6) as usize],
+            committed: rng.below(4) == 0,
+            combo: 1 + rng.below(5) as i32,
+            ai_cursor: rng.below(opponents[rosters[s]].ai_pattern.len() as u32 + 1) as usize,
+            crit_pending: rng.below(4) == 0,
+        })
+    }
+
+    /// Run `leaf` on both sides from one seated state; `retail` / `port`
+    /// return what the leaf answers, the seats are compared after.
+    fn each_round(
+        seed: u64,
+        rounds: u32,
+        mut retail: impl FnMut(&mut Cpu, &mut Rng) -> (i32, [usize; 2]),
+        mut port: impl FnMut(&mut BakaFight, i32) -> i32,
+        mut tally: impl FnMut(i32),
+    ) {
+        let Some(mut r) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let mut rng = Rng(seed);
+        for round in 0..rounds {
+            let rosters = [
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+            ];
+            let seats = random_seats(&mut rng, &r.opponents, rosters);
+            let settle = [-5, 0, 1, 2, 30][rng.below(5) as usize];
+            let seed = rng.next();
+            let mut f = BakaFight::from_tables(&r.opponents, &r.actions, rosters[0], rosters[1], 0)
+                .expect("fight");
+            f.seat_exchange(seats, settle, seed);
+            for s in 0..2u32 {
+                seat(&mut r.cpu, s, rosters[s as usize], seats[s as usize]);
+            }
+            r.cpu.mem.wr32(SETTLE, settle as u32);
+            r.state.set(seed);
+            let (answer, _) = retail(&mut r.cpu, &mut rng);
+            let ported = port(&mut f, answer);
+            let after = [read(&mut r.cpu, 0), read(&mut r.cpu, 1)];
+            assert_eq!(
+                (answer, after, r.cpu.mem.rd32(SETTLE) as i32, r.state.get()),
+                (ported, f.exchange_seats(), f.settle_timer(), f.rng_state()),
+                "round {round} rosters {rosters:?} seats {seats:?} settle {settle}"
+            );
+            tally(answer);
+        }
+    }
+
+    #[test]
+    fn the_exchange_resolves_as_retail_resolves_it() {
+        differential!(prot(976, RESOLVE));
+        let step = Rc::new(Cell::new(1));
+        let s = step.clone();
+        let mut seen = [0u32; 5];
+        // The call site leaves `a0` at `0x801E0000` and `a1` at a debug
+        // print's return; neither is a special's `4`.
+        each_round(
+            0x5245_534F,
+            100_000,
+            |cpu, rng| {
+                s.set(1 + rng.below(3) as i32);
+                cpu.mem.wr8(FRAME_STEP, s.get() as u8);
+                assert_eq!(cpu.call(RESOLVE, &[0x801E_0000, 0]), Stop::Returned);
+                (cpu.regs.r[V0] as i32, [0, 0])
+            },
+            |f, _| f.resolve_exchange(step.get()),
+            |a| seen[(a + 1) as usize] += 1,
+        );
+        // Open, seat 0, seat 1, (no `2`), draw.
+        if seen != [0; 5] {
+            assert!([0, 1, 2, 4].iter().all(|&i| seen[i] > 1000), "{seen:?}");
+        }
+    }
+
+    #[test]
+    fn the_cpu_picks_the_attack_retail_picks() {
+        differential!(prot(976, PICK));
+        let slot = Rc::new(Cell::new(0usize));
+        let s = slot.clone();
+        let mut kinds = [0u32; 3];
+        each_round(
+            0x5049_434B,
+            100_000,
+            |cpu, rng| {
+                s.set(rng.below(2) as usize);
+                assert_eq!(cpu.call(PICK, &[s.get() as u32]), Stop::Returned);
+                (cpu.regs.r[V0] as i32, [0, 0])
+            },
+            |f, _| i32::from(f.pick_ai_attack(slot.get())) - 1,
+            |a| kinds[a as usize] += 1,
+        );
+        if kinds != [0; 3] {
+            assert!(kinds.iter().all(|&n| n > 10_000), "{kinds:?}");
+        }
+    }
+
+    #[test]
+    fn the_comeback_critical_rolls_as_retail_rolls_it() {
+        differential!(prot(976, CRIT));
+        let slot = Rc::new(Cell::new(0usize));
+        let s = slot.clone();
+        each_round(
+            0x4352_4954,
+            100_000,
+            |cpu, rng| {
+                s.set(rng.below(2) as usize);
+                assert_eq!(cpu.call(CRIT, &[s.get() as u32]), Stop::Returned);
+                (0, [0, 0])
+            },
+            |f, _| {
+                f.roll_crit(slot.get());
+                0
+            },
+            |_| {},
+        );
+    }
+}
