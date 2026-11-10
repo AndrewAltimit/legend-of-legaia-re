@@ -162,6 +162,7 @@ mod sfx_cue_route;
 mod sfx_drain;
 mod shop_quantity;
 mod slot_machine;
+mod slot_marquee;
 mod spell_cam;
 mod spell_list;
 mod spell_list_scans;
