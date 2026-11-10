@@ -30,6 +30,7 @@ legaia-engine-cast.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-dialog.workspace = true
+legaia-engine-ui.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-menus.workspace = true
