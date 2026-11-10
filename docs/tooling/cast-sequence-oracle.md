@@ -548,10 +548,12 @@ over a vsync long, reads `.997` on every film of the set where it read
 
 The pair's engine tick is the last one of the pass, as the keyed row is the
 last of retail's. Where the engine's two ticks of one pass draw different
-frames the score says so: on the lone-caster Vera recording the monster's
-return from its own turn shows on the second tick of the `0x28` pass and the
-first of the next, where retail shows it for the whole of the next pass, and
-`0x28` reads `.908`. Palma's arm 5 is the other arm the count of counter
+frames the score says so: on the lone-caster Vera recording the monster near
+the camera drew as a ghost on the first tick of the `0x28` pass and solid on
+the second, where retail holds one look a pass, and `0x28` read `.910`. The
+engine ran the near-camera ghost pass `FUN_8004DC68` every tick; it is the
+controller node's, once a pass (`World::tick_battle_camera_ghost`), and run so
+`0x28` reads `.999`. Palma's arm 5 is the other arm the count of counter
 runs had flattered: its five-vsync step-`4` frames read `.789` pass for
 pass, and `.899` against the engine tick four earlier. The camera channel
 named the cause: the arm-4 exit's pan sets out from TR x `-0x2000` and TR z

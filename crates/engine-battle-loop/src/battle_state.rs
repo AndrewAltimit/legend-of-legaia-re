@@ -743,6 +743,10 @@ pub struct BattleState {
     pub backdrop_slot_1_yaw: u16,
     /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
     pub backdrop_spin_frame: Option<u64>,
+    /// The battle frame the near-camera ghost pass last ran on
+    /// (`World::tick_battle_camera_ghost`): once a pass, as the controller
+    /// node runs it.
+    pub ghost_pass_frame: Option<u64>,
     /// The battle frame the separation pass last ran on
     /// (`World::tick_battle_separation`): retail runs it once a battle
     /// frame, so a per-vsync replay runs it on the frame's first tick.
@@ -1519,6 +1523,7 @@ impl BattleState {
             round_open_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
+            ghost_pass_frame: None,
             separation_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
