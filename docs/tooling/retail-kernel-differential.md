@@ -704,4 +704,5 @@ line `FUN_801DBA90` (`cast_cue`); the party attach swap `FUN_8004CCD4` (`attach_
 chip marks `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBDDC` / `FUN_801DBEC4` (`chip_marks`); the arts list pager
 `FUN_801D3748` (`arts_pager`); the applier's cue-group expander `FUN_801E22C8` (`cue_group`); the target banner
 `FUN_801E6D84` (`target_banner`); the bolt ribbon `FUN_801CFA48` with the overlay generator `FUN_801D0290`
-(`ribbon`); and the clip crossing-vertex interpolator `FUN_80029724` (`clip_vertex`).
+(`ribbon`); the near-camera ghost pass `FUN_8004DC68` with the bearing live beneath it (`camera_ghost`); and the clip
+crossing-vertex interpolator `FUN_80029724` (`clip_vertex`).

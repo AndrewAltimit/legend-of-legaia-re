@@ -37,6 +37,7 @@ mod bearing;
 mod best_equipment;
 mod billboard;
 mod camera_follow;
+mod camera_ghost;
 mod camera_height;
 mod capture_takedown;
 mod cast_cue;
