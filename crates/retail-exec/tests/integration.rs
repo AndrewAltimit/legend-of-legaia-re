@@ -347,6 +347,7 @@ mod spell_list;
 mod spell_list_scans;
 mod spell_screens;
 mod spell_trigger;
+mod spinup_ring;
 mod spirit_cleanup;
 mod spoils;
 mod sprite_arm;
