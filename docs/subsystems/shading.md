@@ -335,6 +335,32 @@ The port renders clean by default and reproduces the retail
 dither with `set_psx_mode`
 ([`renderer.md`](renderer.md#retails-dither-law-stated-separately-from-the-ports-default)).
 
+### A battle frame can lose its dither
+
+The dither enable is a bit of the GPU's draw mode, so any draw-mode packet in
+the ordering table moves it for everything drawn after. Two battle draws link
+one:
+
+- **The armed wash.** The drain `FUN_80046978` draws a cast's wash through the
+  fade quad `FUN_80024EE4` in the farthest bucket (`jal` at `0x80046A08`, layer
+  `ctx[+0x92] - 1`), and that routine links `SetDrawMode(dfe 0, dtd 0, (abr << 5) | 0xE)`
+  ahead of its quad (`0x80024FAC..0x80024FCC`, `FUN_80059010`). The whole frame
+  behind it is undithered.
+- **The ground grid.** `FUN_80026CE4` brackets the grid with two more in mode
+  `0x15` (`0x80026DB8` and `0x80026E04`, bucket `0x3FEC >> shift`): `dtd = 1`
+  ahead of the grid, then `_DAT_8007BA66` for the rest of the frame.
+  `FUN_8001D058` skips the routine while bit 3 of `0x1F800394` is clear.
+
+A plain battle frame's table holds the grid's pair (`0xE1000200` twice, around
+the grid's prims) and nothing else with the bit until the HUD's sprite pages at
+buckets `1` and `0`. A frame that arms the wash over a stage the grid does not
+draw has no packet to set it again: Ozma's arms 16 to 21 read no 4x4 pattern at
+all in a retail film, where the arms before them read the full one. Their
+stacked additive fans are where it shows, half a 5-bit step a layer.
+`World::frame_dither` carries the law and both hosts gate PSX mode's dither on
+it. The other callers of `FUN_80059010` with `dtd = 1` (the bar widget at
+`0x8002FEE4`, PROT 0900's letterbox at `0x801F8D14`) are not modelled.
+
 ## For modders: editing a texture
 
 - **Edit indices, not a single palette's colours.** On a multi-palette sheet

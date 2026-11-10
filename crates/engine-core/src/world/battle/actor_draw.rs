@@ -618,6 +618,26 @@ mod tests {
         assert!(r > 0xF0 && g == 0 && b == 0, "{r:#x} {g:#x} {b:#x}");
     }
 
+    /// The frame is dithered on the game's word, except a battle frame that
+    /// arms the wash while the grid's gate is closed: the wash's draw-mode
+    /// packet clears the bit and nothing sets it again.
+    #[test]
+    fn the_armed_wash_undithers_a_frame_the_grid_does_not_draw() {
+        let mut world = battle_world();
+        assert!(world.frame_dither());
+        world.battle.ground_grid_drawn = false;
+        assert!(world.frame_dither(), "no wash: the frame keeps the word");
+        world.casting.capture_spell = Some(0x37);
+        world.casting.module_pres.armed_wash = Some(0x10_1010);
+        assert!(world.cast_armed_wash().is_some());
+        assert!(!world.frame_dither());
+        world.battle.ground_grid_drawn = true;
+        assert!(world.frame_dither(), "the grid's packets set it again");
+        world.casting.module_pres.armed_wash = None;
+        world.toggles.draw_dither = false;
+        assert!(!world.frame_dither());
+    }
+
     /// The grid's ambient fades in from the battle-init floor, dims under a
     /// summon close-up's `ctx[+0x243]`, and climbs back once it clears.
     #[test]
