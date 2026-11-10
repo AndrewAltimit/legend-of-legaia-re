@@ -1,14 +1,21 @@
 //! The per-frame **screen-position tween** over the `gp+0x148` drawable list.
 //!
-//! PORT: FUN_80031AE4 - the tween pass.
+//! REF: FUN_80031AE4 -- the live port is `legaia_engine_menus::menu_widget::MenuWidgetState::step_motion`, over the menu's window list
 //! PORT: FUN_800353E0 - the scene-entry reset that empties the list.
 //! PORT: FUN_8003C110 - the one-line mode setter the reset calls.
 //! REF: FUN_800355F0, FUN_80032434, FUN_80031D00, FUN_80030628
 //!
+//! The menu's windows are on that list too, and the port does model them:
+//! `legaia_engine_menus::menu_widget::MenuWidgetState` is the window list the
+//! window-script VM drives, and its `step_motion` is the live port of the pass
+//! below, checked against `FUN_80031AE4` by the retail-exec differential.
+//! [`tick_node`] / [`tick_list`] are the same pass over bare descriptors, kept
+//! for the text and label nodes.
+//!
 //! ## REPLACED-BY: the `engine-ui` per-frame draw-list builders
 //!
-//! Nothing in the engine owns the `gp+0x148` node list these passes walk,
-//! and nothing will: the representation is the substitution.
+//! Nothing in the engine owns the text and label nodes on the `gp+0x148`
+//! list, and nothing will: the representation is the substitution.
 //! On-screen text and labels are rebuilt every frame by the `engine-ui`
 //! draw-list builders from the state that produces them, so no allocation
 //! path ever hands out a `0x34`-byte node, and nothing writes the `+0x24`
@@ -174,7 +181,7 @@ pub struct TweenTick {
 
 /// Advance one node by `frame_step` (`DAT_1F800393`).
 ///
-/// PORT: FUN_80031AE4 - the per-node body, `0x80031B04..0x80031CE0`.
+/// REF: FUN_80031AE4 -- the per-node body, `0x80031B04..0x80031CE0`
 ///
 /// Returns whether the node bumped the active counter. `desc` is taken by
 /// `&mut` because the `ParkedAtB` arm writes the node's current position back
@@ -240,7 +247,7 @@ fn lerp_towards(start: (i16, i16), target: (i16, i16), elapsed: u16, duration: i
 /// Tick a whole list in walk order and return the active-tween count the pass
 /// leaves in `gp+0x868`.
 ///
-/// PORT: FUN_80031AE4 - the list walk, `0x80031AE4..0x80031CF4`.
+/// REF: FUN_80031AE4 -- the list walk, `0x80031AE4..0x80031CF4`
 ///
 /// Retail walks a sentinel-circular list from `head->next` and stops when it
 /// comes back to the head; the counter is zeroed before the walk, so an empty
