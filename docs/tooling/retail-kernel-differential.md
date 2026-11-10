@@ -60,6 +60,13 @@ struct's own q19.12 scale and its colour ops do not follow the hardware's MAC,
 IR and FIFO steps, which the test reports. Only the `gte-replay` tool runs
 that struct.
 
+### Leaves reached by a jump
+
+A dispatcher's table-driven leaf (`FUN_80043390`'s handler banks, entered by
+`jr`) is never a `Cpu::call` entry. `Cpu::watched` names such entries: the run
+notes each landing on one in the ledger, so a test that drives the dispatcher
+can declare the leaf it reaches and the declaration is checked like any other.
+
 ## How to add a routine
 
 1. Read the disassembly and find what it reads and writes. Seed those bytes with

@@ -300,6 +300,7 @@ mod pose_decoder;
 mod prize_exchange;
 mod publisher_logos;
 mod puera_crystals;
+mod quad_split;
 mod queue_head;
 mod ramp_pool;
 mod range_metric;

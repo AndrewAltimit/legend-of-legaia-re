@@ -169,6 +169,10 @@ pub struct Cpu {
     /// GTE commands executed by the last [`Cpu::call`], so a test can prove
     /// it reached its geometry arm.
     pub gte_ops: u64,
+    /// Entries reached by a jump rather than a call - a dispatcher's
+    /// table-driven leaves - that the ledger notes each time the run lands
+    /// on them, as [`Cpu::call`] notes its own entry.
+    pub watched: std::collections::HashSet<u32>,
 }
 
 impl Cpu {
@@ -233,6 +237,10 @@ impl Cpu {
         loop {
             if pc == RETURN_SENTINEL {
                 return Stop::Returned;
+            }
+            if self.watched.contains(&pc) {
+                let body = self.mem.read(pc, ledger::BODY_LEN);
+                ledger::record(pc, body, &Stop::Returned);
             }
             if let Some(mut h) = self.hooks.remove(&pc) {
                 h(&mut self.regs, &mut self.mem);

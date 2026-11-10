@@ -358,6 +358,17 @@ Structural facts, read from the raw table:
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
+  The leaf lists each `GT3`'s corners in the reverse of the port's order
+  (staged index bytes `0x50 0x30 0x00` and siblings at `0x80045BB4..0x80045BE0`);
+  the port keeps the parent quad's winding for the host's face cull, and a
+  `GT3` rasterises the same either way. **A back-facing quad derails it.** The
+  winding reject (`bltz` at `0x80045C54`) loops back without the `addiu a1,a1,0x24`
+  the drawn path takes at `0x80045C5C`, so every remaining prim of the group
+  re-reads the culled one and the group walk resumes `0x24` bytes past it, off
+  its next header. Only a single-sided word reaches the reject; every shipped
+  bank-3 word found (`0xE9`, PROT 0903's fire tunnel) carries the double-sided
+  bit `0x08`. The differential `quad_split` runs the leaf through the
+  dispatcher against the port with the GTE seeded.
   Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
   `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
   nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
