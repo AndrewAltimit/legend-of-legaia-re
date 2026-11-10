@@ -976,3 +976,92 @@ fn the_fighter_pack_walk_matches_retail() {
     }
     assert!(walked > 5000, "only {walked} chunks walked");
 }
+
+/// The special's afterimage actor `FUN_801D49E8`, frame by frame over
+/// generated live masks, cursors, steps, clip records and frame steps, against
+/// `afterimage_pass`: the retire bit on an empty mask, the mask and the kept
+/// cursor after the passes, and each ghost the mesh draw `FUN_8001B964` is
+/// called for, by the lagged cursor `+0x68` and the depth-cue level `+0x78` it
+/// sees. The view transform `FUN_8003D344` (run on a register the body never
+/// sets) is stubbed.
+#[test]
+fn the_afterimage_passes_as_retail_passes_it() {
+    use legaia_engine_minigames::baka_fighter_chrome::afterimage_pass;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const GHOST: u32 = 0x801D_49E8;
+    const MESH_DRAW: u32 = 0x8001_B964;
+    const CLIP_TABLE_PTR: u32 = 0x8007_B888;
+    const CLIP_TABLE: u32 = 0x8016_0000;
+    const OWNERS: u32 = 0x801D_BFAC;
+    const OWNER: u32 = 0x8014_1000;
+    const GHOST_ACTOR: u32 = 0x8014_2000;
+    differential!(prot(976, GHOST));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8003_D344, 0);
+    let draws = Rc::new(RefCell::new(Vec::<(i16, u16)>::new()));
+    let dr = draws.clone();
+    cpu.hook(MESH_DRAW, move |r, m| {
+        let a = r.r[psx_retail_exec::A0];
+        dr.borrow_mut()
+            .push((m.rd16(a + 0x68) as i16, m.rd16(a + 0x78)));
+    });
+    cpu.mem.wr32(CLIP_TABLE_PTR, CLIP_TABLE);
+    cpu.mem.wr32(OWNERS, OWNER);
+    let mut rng = Rng(0x4748_5354);
+    let (mut drawn, mut expired, mut retired) = (0, 0, 0);
+    for case in 0..20_000 {
+        let mask = rng.below(4) as u16;
+        let cursor = rng.below(0x400) as i16 - 0x80;
+        let step = rng.below(0x40) as i16;
+        let n = 1 + rng.below(8) as u8;
+        let frames = rng.below(0x30) as u16;
+        let frame_step = 1 + rng.below(3);
+        let id = rng.below(0x10);
+        cpu.mem.wr32(CLIP_TABLE + 4 * id, 0x400);
+        cpu.mem.wr16(CLIP_TABLE + 0x400 + 2, frames);
+        cpu.mem.wr8(CLIP_TABLE + 0x400 + 6, n);
+        let a = GHOST_ACTOR;
+        cpu.mem.load(a, &[0; 0x100]);
+        cpu.mem.wr16(a + 0x5A, mask);
+        cpu.mem.wr16(a + 0x5C, id as u16);
+        cpu.mem.wr16(a + 0x68, cursor as u16);
+        cpu.mem.wr16(a + 0x6A, step as u16);
+        cpu.mem.wr16(a + 0x78, 0x1234);
+        cpu.mem.wr8(0x1F80_0393, frame_step as u8);
+        draws.borrow_mut().clear();
+        assert_eq!(cpu.call(GHOST, &[a]), Stop::Returned, "case {case}");
+        let port = afterimage_pass(mask, cursor, frame_step as i32, step, n, frames);
+        let label = format!(
+            "case {case}: mask {mask} cursor {cursor} step {step} n {n} frames {frames} fs {frame_step}"
+        );
+        assert_eq!(cpu.mem.rd32(a + 0x10) & 8 != 0, port.retire, "{label}");
+        if port.retire {
+            retired += 1;
+            continue;
+        }
+        assert_eq!(cpu.mem.rd16(a + 0x5A), port.live_mask, "{label}: mask");
+        assert_eq!(
+            cpu.mem.rd16(a + 0x68) as i16,
+            port.cursor,
+            "{label}: kept cursor"
+        );
+        assert_eq!(cpu.mem.rd16(a + 0x78), 0x1234, "{label}: cue restored");
+        let want: Vec<(i16, u16)> = port
+            .passes
+            .iter()
+            .filter(|p| p.drawn)
+            .map(|p| (p.cursor, p.cue))
+            .collect();
+        assert_eq!(*draws.borrow(), want, "{label}");
+        drawn += want.len();
+        expired += port.passes.iter().filter(|p| p.expired).count();
+    }
+    assert!(
+        drawn > 5000 && expired > 1000 && retired > 1000,
+        "{drawn} {expired} {retired}"
+    );
+}
