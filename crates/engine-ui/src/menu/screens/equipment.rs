@@ -432,6 +432,14 @@ pub fn equip_candidate_sprites_for(
 /// slot-browse row at `main_pen + (0, 0xE*row)` - row `0` being the "Best
 /// Equipment" line, so `slot_cursor` is the row, not the slot index.
 ///
+/// Each hand draws in the mode its cursor word names. `party_cursor` is the
+/// character word `DAT_801E46C4` as the party window reads it
+/// (`0x801D2134..0x801D2180`), over `party_rows` rows, the present party's
+/// count: the character picker masks it to the row
+/// (`0x801D9948..0x801D9958`), so its hand bobs, and the slot browse raises
+/// bit `0x1000` on it (`0x801D9A4C`), so the hand stands still while the
+/// main window's reads the pad.
+///
 /// PORT: FUN_801d21c0 / FUN_801d2094 (icon + cursor placement).
 /// REF: FUN_8002c488 / FUN_8002b994 - the UI-icon + cursor primitives.
 #[allow(clippy::too_many_arguments)]
@@ -440,7 +448,8 @@ pub fn equip_screen_sprites_for(
     n_slot_rows: usize,
     main_pen: (i32, i32),
     party_pen: (i32, i32),
-    party_cursor: usize,
+    party_rows: usize,
+    party_cursor: crate::menu::window_painters::ChoiceFlags,
     slot_cursor: Option<crate::menu::window_painters::ChoiceFlags>,
     bob: crate::menu::window_painters::HandBob,
     stage_origin: (i32, i32),
@@ -478,13 +487,19 @@ pub fn equip_screen_sprites_for(
         push(src, mx + 0x10, my + EQUIP_ROW_PITCH * (i as i32 + 1));
     }
 
-    // Party-window hand cursor at X-0xC on the active member's row.
+    // Party-window hand cursor at X-0xC on the active member's row, in the
+    // mode the character word names, over the present party's rows
+    // (`0x801D2188..0x801D2194`).
     let (px, py) = party_pen;
-    push(
-        rects.cursor,
-        px - 0x0c,
-        py + EQUIP_ROW_PITCH * party_cursor as i32,
-    );
+    for (x, y, variant) in crate::menu::window_painters::list_hand_marks(
+        party_cursor,
+        party_rows as u32,
+        (px - 0x0c, py),
+        EQUIP_ROW_PITCH,
+    ) {
+        let (dx, dy) = bob.offset(variant);
+        push(rects.cursor, x + dx, y + dy);
+    }
 
     // Main-window hand cursor on the hovered slot-browse row. Row 0 is the
     // "Best Equipment" line at the window origin (retail's `hand at (X, Y)`),

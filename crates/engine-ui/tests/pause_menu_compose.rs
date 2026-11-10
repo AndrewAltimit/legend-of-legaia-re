@@ -1021,3 +1021,67 @@ fn the_compare_panels_hp_mp_rows_draw_their_icons() {
         "an id with no rect draws nothing"
     );
 }
+
+/// The Equip party window's hand follows the character word: it bobs while
+/// the character picker reads the pad (the browse form with the slot hand
+/// hidden) and stands still once the slot browse has taken it, where the
+/// main window's hand bobs instead (`0x801D9948..0x801D9958`, `0x801D9A4C`).
+#[test]
+fn the_equip_party_hand_bobs_only_in_the_character_picker() {
+    let fx = Fixture::new(true);
+    let ctx = fx.ctx();
+    let bob = legaia_engine_ui::menu::window_painters::HandBob {
+        animated: (3, 0),
+        clocked: (5, 0),
+    };
+    let hands = |slot_cursor: Option<u16>| -> Vec<(i32, i32)> {
+        let party_names = ["Vahn".to_string(), "Noa".to_string()];
+        equip_screen_compose(
+            &ctx,
+            &EquipComposeInput {
+                party_names: &party_names,
+                slot_labels: &[],
+                slot_items: &[],
+                candidate_names: &[],
+                candidate_icons: &[],
+                arrows_blink: true,
+                stat_compare: &[],
+                best_changes: &[],
+                phase: EquipDrawPhase::SlotPicker,
+                cursor: 0,
+                active_slot: 0,
+                char_slot: 1,
+                slot_cursor,
+                hand_bob: bob,
+                pictogram_rows: 0,
+                text_cursor: false,
+                info: None,
+                browse_info: None,
+                compare: None,
+            },
+        )
+        .sprites
+        .iter()
+        .filter(|d| d.src == fx.chrome.as_ref().unwrap().cursor)
+        .map(|d| (d.dst.0, d.dst.1))
+        .collect()
+    };
+    let ids = legaia_game_tables::menu_windows::window_ids::EQUIP_PARTY;
+    let (px, py) = ctx.rects.pen(ids);
+    let stage = |x: i32, y: i32| {
+        (
+            ctx.origin.0 + x * ctx.scale as i32,
+            ctx.origin.1 + y * ctx.scale as i32,
+        )
+    };
+    // The character picker: one hand, on the party row, on mode 1's bob.
+    assert_eq!(hands(None), vec![stage(px - 0xC + 3, py + 0xE)]);
+    // The slot browse: the party hand at rest, the main window's bobbing.
+    let browse = hands(Some(2));
+    assert_eq!(browse.len(), 2);
+    assert_eq!(browse[0], stage(px - 0xC, py + 0xE));
+    let (mx, my) = ctx
+        .rects
+        .pen(legaia_game_tables::menu_windows::window_ids::EQUIP_MAIN);
+    assert_eq!(browse[1], stage(mx + 3, my + 2 * 0xE));
+}

@@ -458,8 +458,13 @@ pub enum GenericContent<'a> {
 pub struct TopLevelView<'a> {
     pub rows: &'a [FieldMenuRowView<'a>],
     pub cursor: u8,
-    /// The command list is not the one reading the pad (the cursor word's
-    /// bit `0x1000`): its hand stands still.
+    /// The cursor word's bit `0x1000`: the hand stands still. The pause
+    /// menu never raises it on this list. The root picker masks the word
+    /// `DAT_801E46BC` to its row on entry (`0x801D6B64..0x801D6B78`), every
+    /// sub-screen it opens closes this window, and the four routines that
+    /// do raise the bit on that word are the shop's (`0x801DB270`,
+    /// `0x801DB3F8`, `0x801DBCB8`, `0x801DBDF4`), where the word is the
+    /// mode select's. So the pause-menu hosts pass `false`.
     pub cursor_static: bool,
     /// The hands' bob this frame.
     pub hand_bob: crate::menu::window_painters::HandBob,
@@ -1164,7 +1169,14 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     v.pictogram_rows,
                     ctx.rects.pen(window_ids::EQUIP_MAIN),
                     ctx.rects.pen(window_ids::EQUIP_PARTY),
-                    v.char_slot,
+                    v.view.party_names.len(),
+                    // The character word: the row, with bit `0x1000` once
+                    // the slot browse has taken the pad (`0x801D9A4C`). The
+                    // character picker is the browse form with the slot hand
+                    // hidden, which is the form `slot_cursor` is `None` in.
+                    crate::menu::window_painters::ChoiceFlags(
+                        v.char_slot as u32 | (u32::from(v.slot_cursor.is_some()) << 12),
+                    ),
                     v.slot_cursor
                         .map(|r| crate::menu::window_painters::ChoiceFlags(u32::from(r))),
                     v.hand_bob,

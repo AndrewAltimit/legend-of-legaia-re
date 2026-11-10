@@ -22,6 +22,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 const EQUIP_MAIN: u32 = 0x801D_21C0;
+const EQUIP_PARTY: u32 = 0x801D_2094;
+const PARTY_COUNT: u32 = 0x8008_4594;
 const ARROW: u32 = 0x8003_C310;
 const ITEM_PANEL: u32 = 0x801D_0F1C;
 const PANEL_MODE: u32 = 0x8003_4B6C;
@@ -336,7 +338,8 @@ fn the_equip_main_window_matches() {
             7,
             (r.x, r.y),
             (0x4000, 0x4000),
-            0,
+            1,
+            ChoiceFlags(0x1000),
             Some(ChoiceFlags(flags)),
             bob,
             (0, 0),
@@ -425,4 +428,80 @@ fn the_equip_main_window_matches() {
         bests > 300 && infos > 1500 && changed > 500 && settled > 2000,
         "{bests} {infos} {changed} {settled}"
     );
+}
+
+/// The Equip party window `FUN_801D2094`: one hand per present row the
+/// character word names, in the word's mode, against the port's party hand.
+#[test]
+fn the_equip_party_window_hands_match() {
+    differential!(prot(899, EQUIP_PARTY));
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let atlas = SaveMenuAtlasRects {
+        cursor: (1, 0, 1, 1),
+        ..Default::default()
+    };
+    let bob = legaia_engine_ui::menu::window_painters::HandBob {
+        animated: (0, 100),
+        clocked: (0, 200),
+    };
+    let mut rng = Rng(0x5041_5254);
+    let (mut still, mut bobbing, mut every) = (0, 0, 0);
+    for run in 0..3_000 {
+        let count = rng.below(4);
+        rig.cpu.mem.wr8(PARTY_COUNT, count as u8);
+        for seat in 0..3 {
+            rig.cpu.mem.wr8(ROSTER + seat, rng.below(3) as u8);
+        }
+        let row = rng.below(4);
+        let flags = match rng.below(6) {
+            0 => 0x4000 | row,
+            1 => 0x2000 | (rng.below(2) << 12) | row,
+            _ => row | (rng.below(2) << 12),
+        };
+        rig.cpu.mem.wr32(LIST_CURSOR, flags);
+        let r = rect(&mut rng);
+        let log = rig.run(EQUIP_PARTY, r);
+        let what = format!("run {run} count {count} flags {flags:#x} at {r:?}");
+        let got: Vec<(i32, i32, u8)> = hands(&log).iter().map(|h| (h.x, h.y, h.variant)).collect();
+        let want: Vec<(i32, i32, u8)> = (0..count)
+            .filter_map(|n| {
+                ChoiceFlags(flags)
+                    .marker_variant(n)
+                    .map(|v| (r.x - 0xC, r.y + n as i32 * 0xE, v))
+            })
+            .collect();
+        assert_eq!(got, want, "{what}: hands");
+        for h in &got {
+            match h.2 {
+                0 => still += 1,
+                4 => every += 1,
+                _ => bobbing += 1,
+            }
+        }
+        let port: Vec<(i32, i32)> = equip_screen_sprites_for(
+            &atlas,
+            0,
+            (0x4000, 0x4000),
+            (r.x, r.y),
+            count as usize,
+            ChoiceFlags(flags),
+            None,
+            bob,
+            (0, 0),
+            1,
+        )
+        .iter()
+        .filter(|s| s.src.0 == 1)
+        .map(|s| (s.dst.0, s.dst.1))
+        .collect();
+        let moved: Vec<(i32, i32)> = got
+            .iter()
+            .map(|h| (h.0, h.1 + [0, 100, 0, 0, 200][usize::from(h.2)]))
+            .collect();
+        assert_eq!(port, moved, "{what}: the port's hands and their modes");
+    }
+    assert!(still > 100 && bobbing > 100 && every > 100);
 }

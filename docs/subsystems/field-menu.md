@@ -643,8 +643,10 @@ The three left-column windows of the Status screen:
 **Party list (id 26, `FUN_801D2094`)** - shared with the Equip screen's
 window 21. One row per roster slot (roster byte `< 3` only) at pitch `0x0e`:
 name (`+0x2A7`) at `(WX+6, Yrow)`, always CLUT 7. The focused row draws the
-hand at `(WX-0xc, Yrow)`, gated by the focus word `DAT_801E46C4` (bit `0x4000`
-hides, `0x2000` selects the blink variant, low 12 bits = row).
+hand at `(WX-0xc, Yrow)`, gated by the focus word `DAT_801E46C4`
+(`0x801D2134..0x801D2180`): bit `0x4000` hides it, `0x2000` puts a hand on
+every present row, otherwise the low 12 bits pick the row; bit `0x1000` makes
+the hand static, and without it the hand bobs.
 
 **Pager (id 27, `FUN_801D30A4`)** - the folded submenu id picks the label
 ("Condition" for the status page; Skills / Magic / Moves for ids 1..3) at
@@ -1595,7 +1597,12 @@ candidate step swaps in a different set, [below](#what-the-candidate-step-draws-
 Dumps `overlay_menu_801d2094.txt`, `_801d21c0.txt`, `_801dca94.txt`.
 
 **Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094`, the same
-renderer as the Status [party list](#status-satellite-windows).
+renderer as the Status [party list](#status-satellite-windows). Its hand
+bobs while the character picker has the pad (`0x12` masks `DAT_801E46C4` to
+the row, `0x801D9948..0x801D9958`) and stands still once the slot browse does
+(`0x13` raises bit `0x1000` on it, `0x801D9A4C`), where the main window's
+hand bobs. Port: `equip_screen_sprites_for` takes both cursor words; the
+`equip_main` differential runs both painters.
 
 **Main window (id 22, rect `(14,96,292,108)`, `FUN_801D21C0`)** - early-outs
 unless the shown character's roster byte is `< 3`. First pass:
