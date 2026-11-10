@@ -1092,7 +1092,14 @@ impl ScreenshotConfig {
                 .and_then(|v| legaia_engine_capture::cast_rand::cast_rand_seed_from_env(&v)),
             strike_deal: std::env::var("LEGAIA_STRIKE_DEAL")
                 .ok()
-                .and_then(|v| legaia_engine_capture::strike_deal::strike_deal_from_env(&v)),
+                .and_then(|v| legaia_engine_capture::strike_deal::strike_deal_from_env(&v))
+                .map(|mut d| {
+                    if let Ok(v) = std::env::var("LEGAIA_STRIKE_DEAL_COIN") {
+                        d.track_coins =
+                            legaia_engine_capture::strike_deal::track_coins_from_env(&v);
+                    }
+                    d
+                }),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

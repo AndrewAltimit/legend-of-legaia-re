@@ -469,6 +469,26 @@ def traced_hit_words(out: Path) -> list[str] | None:
     return words
 
 
+def retail_track_coins(out: Path) -> list[str]:
+    """The attack camera's track coin `ctx[+0x26D]` through the recording, as
+    `coin@vsync` change points (the first row's value first). Retail draws it
+    `rand() % 2` at every commit of a clip whose `+0x87` byte is set
+    (`FUN_8004E13C`, `0x8004E2BC..0x8004E2DC`); a re-draw onto the same value
+    leaves no change point and needs none. Empty for a recording made before
+    the probe wrote the `coin` column."""
+    pts, prev = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            c = r.get("coin")
+            if c is None or c == "":
+                return []
+            c = int(c) & 1
+            if c != prev:
+                pts.append(f"{c}@{r['vsync']}")
+                prev = c
+    return pts
+
+
 def retail_hit_words(out: Path) -> list[str]:
     """The seed word retail held going into each melee hit of a `--physical`
     recording's first action, as `word@vsync`. A hit's spark burst makes its
@@ -620,6 +640,9 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_CAST_STEP_TRACK"] = str(track)
     if a.strike_deal:
         env["LEGAIA_STRIKE_DEAL"] = ",".join(retail_hit_words(out))
+        coins = retail_track_coins(out)
+        if coins:
+            env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))

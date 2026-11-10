@@ -8,6 +8,10 @@ use legaia_engine_mode::mode::SceneMode;
 /// ([`legaia_engine_battle::battle_afterimage::HISTORY_DEPTH`]) at up to
 /// four vsyncs a frame, since the per-vsync cadence pushes a slot a vsync
 /// (`World::ghost_ring_slots_per_frame`).
+/// Display frames past a `+0x87` commit at which the dealt track coin is
+/// read (`World::dealt_track_coin`): a replay's commit lands within a few
+/// frames of retail's, and an art's next `+0x87` commit is tens of frames on.
+const DEALT_COIN_LOOKAHEAD: u64 = 8;
 const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
 
 impl World {
@@ -885,6 +889,21 @@ impl World {
         }
     }
 
+    /// The track coin a capture's strike deal holds for a commit now
+    /// (`BattleState::capture_track_coin`): the value retail's recording
+    /// stood on [`DEALT_COIN_LOOKAHEAD`] display frames on, so a commit a
+    /// few frames ahead of retail's still reads retail's draw. `None` outside
+    /// that oracle; the draw on the world stream stands.
+    fn dealt_track_coin(&self) -> Option<u8> {
+        let at = self.clock.display_frames + DEALT_COIN_LOOKAHEAD;
+        self.battle
+            .capture_track_coin
+            .iter()
+            .take_while(|&&(f, _)| f <= at)
+            .last()
+            .map(|&(_, c)| c)
+    }
+
     pub fn commit_staged_battle_anims(&mut self) {
         for i in 0..self.actors.len() {
             self.commit_staged_battle_anim(i);
@@ -1372,6 +1391,9 @@ impl World {
             // re-seed's own draw.
             self.battle_ctx.track_coin =
                 (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
+            if let Some(coin) = self.dealt_track_coin() {
+                self.battle_ctx.track_coin = coin;
+            }
         }
         let a = &mut self.actors[i];
         // The FUN_8004AD80 rewrite: both id fields hold the committed slot

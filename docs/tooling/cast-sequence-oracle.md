@@ -870,6 +870,16 @@ on both sides, so a clip both sides played can be read cue for cue.
   Handed out in order, `battle_rugi_caruban_3_strike`'s two words (Bite's hit and the last swing's)
   fell on Flap's two events, whose first retail blocks and whose second draws no spark.
 
+- the attack camera's track coin `ctx[+0x26D]`, which `FUN_8004E13C` draws `rand() % 2` at
+  every commit of a clip whose `+0x87` byte is set and which picks the per-art camera's
+  column. The probe logs it per vsync (`meta.csv`'s `coin`), the driver hands its change
+  points over as `LEGAIA_STRIKE_DEAL_COIN` (`coin@vsync`), and each engine draw at such a
+  commit takes the value retail stood on eight display frames on (`World::dealt_track_coin`).
+  `battle_jou_party_vahn_tri_somersault_super_open` holds `1` throughout; the replay's own
+  stream drew `0` at the Super Art's `0x1A` commit and filmed the other shot: `.728`
+  without the deal, `.798` with it, camera `67` px to `27`. A recording made before the
+  column deals no coin.
+
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
 scripts/ci/cast-sequence.py --physical --state battle_jou_nova_v3_strike --strike-deal --hit-trace

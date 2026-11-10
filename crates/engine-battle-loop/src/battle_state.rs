@@ -1255,6 +1255,12 @@ pub struct BattleState {
     /// recording read it on when the deal times it. Empty outside that
     /// oracle: the hit then draws on the world stream as it stands.
     pub capture_hit_rand: std::collections::VecDeque<(u32, Option<u64>)>,
+    /// The attack camera's track coin `ctx[+0x26D]` as retail's recording of
+    /// the same strike held it: `(display frame, coin)` change points, the
+    /// first from the gate (`legaia_engine_capture::strike_deal`). Each
+    /// `+0x87` commit's draw takes the value standing a few frames on.
+    /// Empty outside that oracle.
+    pub capture_track_coin: Vec<(u64, u8)>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1591,6 +1597,7 @@ impl BattleState {
             capture_reseat: None,
             capture_reseat_bars: Vec::new(),
             capture_hit_rand: std::collections::VecDeque::new(),
+            capture_track_coin: Vec::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

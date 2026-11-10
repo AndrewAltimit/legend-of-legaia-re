@@ -1814,7 +1814,7 @@ mod tests {
         // back. The counter alone reads the same rows as on-time frames.
         let mut x = side(&[(1, 2, 2), (2, 2, 2), (3, 2, 2), (4, 2, 2)]);
         for (k, r) in x.rows.iter_mut().enumerate() {
-            r.rand = Some((k as u32 + 1) / 2);
+            r.rand = Some((k as u32).div_ceil(2));
         }
         assert_eq!(
             x.wait_ends()
