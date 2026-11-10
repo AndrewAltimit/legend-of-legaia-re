@@ -1004,7 +1004,13 @@ Facts about the graph:
   `_DAT_8007B820`, up / down on `pad & 0x4000` / `0x1000`, confirm on `0x844`.
   The countdown decrement at `0x801DDCC8` and the two attract stores below it sit
   inside this handler's extent (`0x801DDB0C..0x801DDD94`), and no branch from
-  outside targets the block.
+  outside targets the block. Below `0x11` frames left the input block is
+  skipped, re-arm included, so a held button no longer holds the movie off; a
+  row-0 confirm leaves the tick at once and a row-1 confirm runs on through the
+  countdown. Every frame that does not leave through row 0 then runs the tick's
+  shared tail (`0x801DFFE8..0x801E007C`), which re-cues: L1 / Cross the confirm
+  `0x20`, then a cursor press with no face or shoulder button held the move
+  `0x21` - frozen or not.
 - **`0x15` is the card-check poll.** Counter to `0x259`, "Now checking" / "An
   error occurred" + retry.
 - **Two master-mode-`2` writers.** `LaunchGame` (`0x06`) writes it at

@@ -308,8 +308,9 @@ fn a_confirm_on_row_one_stashes_continue() {
 fn the_last_sixteen_frames_accept_no_input() {
     let mut m = menu();
     m.countdown = ATTRACT_INPUT_FREEZE_BELOW - 1;
-    // Neither the cursor nor the confirm is read below the band; the
-    // countdown still runs, and a held pad still re-arms it.
+    // Neither the cursor nor the confirm is read below the band and a held
+    // pad no longer re-arms the countdown; the tick's shared tail still
+    // cues the press (`0x801DFFF0..0x801E007C`).
     let ev = m.step(
         PADMASK_CURSOR_NEXT | PADMASK_START_L1_CROSS,
         0,
@@ -318,7 +319,15 @@ fn the_last_sixteen_frames_accept_no_input() {
     );
     assert!(ev.is_empty(), "input read below the freeze band: {ev:?}");
     assert_eq!(m.row_counter, 0);
-    assert_eq!(m.sfx, None);
+    assert_eq!(m.sfx, Some(TITLE_SFX_CURSOR_MOVE));
+    let mut m = menu();
+    m.countdown = ATTRACT_INPUT_FREEZE_BELOW - 1;
+    m.step(0, 0x0010, 1, TITLE_MENU_ROWS);
+    assert_eq!(
+        m.countdown,
+        ATTRACT_INPUT_FREEZE_BELOW - 2,
+        "no re-arm once frozen"
+    );
     // One frame above the band the same word is read.
     let mut m = menu();
     m.countdown = ATTRACT_INPUT_FREEZE_BELOW;
@@ -329,7 +338,7 @@ fn the_last_sixteen_frames_accept_no_input() {
 #[test]
 fn any_held_bit_re_arms_the_countdown() {
     let mut m = menu();
-    m.countdown = 3;
+    m.countdown = ATTRACT_INPUT_FREEZE_BELOW;
     m.step(0, 0x0010, 1, TITLE_MENU_ROWS);
     assert_eq!(m.countdown, COUNTDOWN_RESET_VALUE as i32 - 1);
 }

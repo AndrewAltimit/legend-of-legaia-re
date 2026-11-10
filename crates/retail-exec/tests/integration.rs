@@ -384,6 +384,7 @@ mod tile_lookups;
 mod timer_spawns;
 mod tint_ease;
 mod tint_sm;
+mod title_menu;
 mod title_prims;
 mod tmd_register;
 mod transition_sweep;
