@@ -64,7 +64,9 @@ pub fn megaton_press_jump_height(w: i32) -> i16 {
 ///
 /// The anim-rate stores `+0x21D` ride the same seat writes: caster `6` through
 /// arms 5 and 6 and `8` from 6's pass, victim `2` from 7's pass, caster `0` /
-/// victim `2` through arm 9, caster `2` / victim `0` through `0x0A`, both
+/// victim `2` through arm 9 (the victim `0` instead while it plays its `+0x1F2`
+/// clip under lead roster `1`, as on a held `0x0B`), caster `2` / victim `0`
+/// through `0x0A`, both
 /// frozen on `0x0B` / `0x0D`'s passes, caster `0x0C` / victim `1` on `0x0C`'s
 /// and both back at `8` on `0x11`'s.
 ///
@@ -336,6 +338,17 @@ pub fn megaton_press_camera(
         (0x0C, false) => (Some(0x0C), Some(1)),
         (0x11, false) => (Some(8), Some(8)),
         _ => (None, None),
+    };
+    // Arms 9 and `0x0B` then freeze the victim on every pass when the lead
+    // party member is roster `1` and it plays its `+0x1F2` clip
+    // (`0x801F74C0..0x801F74E8`, `0x801F76A0..0x801F76CC`).
+    let vr = if matches!((phase, hold), (9, _) | (0x0B, true))
+        && st.lead_roster == 1
+        && st.victim_on_gate_clip
+    {
+        Some(0)
+    } else {
+        vr
     };
     arm.caster_write.rate = cr;
     arm.victim_write.rate = vr;

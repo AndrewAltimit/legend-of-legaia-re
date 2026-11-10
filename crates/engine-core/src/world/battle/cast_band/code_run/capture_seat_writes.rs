@@ -92,6 +92,8 @@ impl World {
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
+        let v = self.cast_view(victim_slot);
+        st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));

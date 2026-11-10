@@ -62,6 +62,7 @@ mod cast_damage;
 mod cast_dispatch;
 mod cast_steal;
 mod cast_view;
+mod chain_ticks;
 mod chip_marks;
 mod clip_cursor;
 mod clip_vertex;

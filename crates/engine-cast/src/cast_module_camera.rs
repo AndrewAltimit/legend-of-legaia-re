@@ -309,6 +309,9 @@ pub struct ModuleCamState {
     /// The present party's first roster id `0x8007BD10[0]`, fed by the host
     /// (PROT 0959's arm `0x10` tests it against `1`).
     pub lead_roster: u8,
+    /// The victim's playing clip `+0x1D9` equals its `+0x1F2` slot, fed by
+    /// the host (PROT 0959's arms 9 and `0x0B` freeze it there).
+    pub victim_on_gate_clip: bool,
     /// Whether this tick opens a battle frame, fed by the host: an arm whose
     /// state steps once a pass (PROT 0959's shake toggle) steps on it.
     pub opens_pass: bool,

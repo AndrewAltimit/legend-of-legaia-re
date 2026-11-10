@@ -875,12 +875,12 @@ pub fn dead_end_crisis_camera(
     };
     // The party's rate: `2` as arm 3 lands the hit (`0x801F7418`), on every
     // pass of arm 4 (`li v0,2` in the dispatch's delay slot, `0x801F6AA0`), and
-    // `0` on every pass of arm 5 (the same `v0`, the `slt` at `0x801F6A98`).
-    // The Done band's restore `FUN_801E93C8` puts every seat back.
+    // `2` again on every pass of arm 5, which reloads it (`li v0,0x2` at
+    // `0x801F7524`) before its stores at `0x801F7528..0x801F7540`. The Done
+    // band's restore `FUN_801E93C8` puts every seat back.
     let party_rate = match phase {
         3 if !hold => Some(2),
-        4 => Some(2),
-        5 => Some(0),
+        4 | 5 => Some(2),
         _ => None,
     };
     CaptureCamArm {
