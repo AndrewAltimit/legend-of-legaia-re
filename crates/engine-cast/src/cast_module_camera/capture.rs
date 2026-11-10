@@ -1009,7 +1009,7 @@ pub const MYSTIC_CIRCLE_COUNTDOWN: u32 = 0x801F_8040;
 /// | arm | camera |
 /// |---|---|
 /// | 0 (`0x801F6AA4`) | turns the caster to its target, then a cut: pitch `-0x40`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x600)`, focus the caster |
-/// | 1, 2 (`0x801F6C00`, `0x801F6D88`) | drift: TR z `+4`, TR y `-1`; arm 2's exit cuts to pitch `0x180`, yaw `-caster[+0x46]`, TR `(0, 0x600, 0xC00)` |
+/// | 1, 2 (`0x801F6C00`, `0x801F6D88`) | drift: TR z `+4`, TR y `-1`; arm 2's exit cuts to pitch `0x180`, yaw `-caster[+0x46]`, TR `(0, 0x600, 0xC00)`; the caster's rate `+0x21D = 4` as arm 1 passes and through arm 2 |
 /// | 3 (`0x801F6F3C`) | drift: TR z `+96`, TR y `-29` |
 /// | 4 (`0x801F71F8`) | the last gate |
 ///
@@ -1069,6 +1069,14 @@ pub fn mystic_circle_camera(
     };
     let hold = st.countdown.holds_after_drain(DRAIN, 0);
     let mut shot = None;
+    // The caster's anim rate `+0x21D = 4`: stored beside the clip `7` arm 1
+    // stages as it passes (`0x801F6CC8..0x801F6CE4`) and again on every pass
+    // of arm 2, ahead of its gate (`0x801F6D90..0x801F6D9C`), so the clip
+    // plays at half speed through the circle's rise.
+    let mut caster_write = CaptureSeatWrite::default();
+    if phase == 2 || (phase == 1 && !hold) {
+        caster_write.rate = Some(4);
+    }
     if !hold {
         match phase {
             1 => st.countdown.0 += 0x400,
@@ -1090,6 +1098,7 @@ pub fn mystic_circle_camera(
         drift,
         hold,
         next: None,
+        caster_write,
         ..Default::default()
     }
 }

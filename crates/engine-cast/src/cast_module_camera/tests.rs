@@ -1600,3 +1600,32 @@ fn a_gate_opening_mid_pass_drains_the_rest_of_the_pass() {
     cd.pass_drain(MODULE_DRAIN_PER_TICK);
     assert_eq!(cd.0, 1536 - 4 * MODULE_DRAIN_PER_TICK);
 }
+
+/// Mystic Circle stores the caster's rate `+0x21D = 4` beside the clip arm 1
+/// stages as it passes (`0x801F6CD8`) and on every pass of arm 2
+/// (`0x801F6D9C`); arm 1's held passes and arm 3 store none.
+#[test]
+fn mystic_circle_halves_the_casters_clip_through_the_rise() {
+    let mut st = ModuleCamState::default();
+    mystic_circle_camera(&mut st, 0, seats());
+    let mut held = 0;
+    let pass = loop {
+        let a = mystic_circle_camera(&mut st, 1, seats());
+        if !a.hold {
+            break a;
+        }
+        assert_eq!(a.caster_write.rate, None);
+        held += 1;
+    };
+    assert_eq!(held, 0x800 / 8 - 1);
+    assert_eq!(pass.caster_write.rate, Some(4));
+    let a = mystic_circle_camera(&mut st, 2, seats());
+    assert!(a.hold);
+    assert_eq!(a.caster_write.rate, Some(4));
+    st.countdown.0 = 0;
+    mystic_circle_camera(&mut st, 2, seats());
+    assert_eq!(
+        mystic_circle_camera(&mut st, 3, seats()).caster_write.rate,
+        None
+    );
+}
