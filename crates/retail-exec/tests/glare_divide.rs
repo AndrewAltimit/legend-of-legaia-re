@@ -56,8 +56,9 @@ fn the_split_weakens_the_half_retail_weakens() {
         cpu.stub(va, 0);
     }
     cpu.stub(0x8002_4C88, OBJ);
-    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C);
-    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C + 0x800);
+    // The sine / cosine table pointers as `FUN_80026BE0` installs them.
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
     cpu.mem.wr32(CTX_PTR, CTX);
     let mut rng = Rng(0x4449_5649);
     let (mut plain, mut caster_weak, mut clone_weak) = (0, 0, 0);
