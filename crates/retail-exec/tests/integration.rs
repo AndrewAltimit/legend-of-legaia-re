@@ -226,6 +226,7 @@ mod map_display;
 mod map_display_tick;
 mod map_fade;
 mod map_install;
+mod marker_floor;
 mod mdec_sync;
 mod me_codec;
 mod melee_hit;

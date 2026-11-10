@@ -545,7 +545,8 @@ pub enum MarkerTemplate {
 /// draws no marker at all.
 ///
 /// That record is not a marker-specific structure: the floor pass calls
-/// `FUN_801D3EC0(1, x, z)`, and `FUN_801D3F54(kind, x, z, block)` resolves it
+/// `FUN_801D3EC0(1, x + rec[6], z + rec[7])` - at the neighbour cell the
+/// tile record points at, not the spawn cell - and `FUN_801D3F54(kind, x, z, block)` resolves it
 /// by scanning sub-table `kind` of the `.MAP` region block - offset `s16` at
 /// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
 /// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
@@ -645,7 +646,16 @@ impl MarkerFloor {
     ) -> Self {
         let mut tiles = Vec::new();
         for spawn in floor_tile_spawns(grid, ramp, x0, z0, width, height, neighbour_block) {
-            let (Ok(tx), Ok(tz)) = (u8::try_from(spawn.cell_x), u8::try_from(spawn.cell_z)) else {
+            // The record is looked up at the cell the tile record's neighbour
+            // delta points at, not at the spawn cell: `FUN_801D2A10` passes
+            // `(gx + rec[6], gz + rec[7])` to `FUN_801D3EC0`
+            // (`0x801D2BA0..0x801D2BE0`), the same probe the drawn-cell test
+            // bounds to the grid.
+            let rec = grid.tile(spawn.tile_id);
+            let (Ok(tx), Ok(tz)) = (
+                u8::try_from(spawn.cell_x + i32::from(rec.nbr_dx)),
+                u8::try_from(spawn.cell_z + i32::from(rec.nbr_dz)),
+            ) else {
                 continue;
             };
             // Retail spells the clip index `rec[2] + 1`, with `0` standing for

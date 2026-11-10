@@ -424,7 +424,7 @@ Per cell, both passes:
 
 ### Step-marker tiles
 
-The marker lookup is `FUN_801d3ec0(1, x, z)`: kind **1** of the `.MAP` region block. That is the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger record the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`) resolves, scanned primary-then-fallback the same way - not a marker-specific format. See [`field-map.md`](../formats/field-map.md) and [`encounter.md`](../formats/encounter.md); the engine decodes it as `field_regions::TileTrigger`.
+The marker lookup is `FUN_801d3ec0(1, x + rec[6], z + rec[7])` - the neighbour cell step 2 probed, not the spawn cell (`0x801d2ba0..0x801d2be0`): kind **1** of the `.MAP` region block. That is the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger record the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`) resolves, scanned primary-then-fallback the same way - not a marker-specific format. See [`field-map.md`](../formats/field-map.md) and [`encounter.md`](../formats/encounter.md); the engine decodes it as `field_regions::TileTrigger`.
 
 The clip index is the record's `record` byte plus one:
 
